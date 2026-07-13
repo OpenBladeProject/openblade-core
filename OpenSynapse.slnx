@@ -1,0 +1,15 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/OpenSynapse.Capture/OpenSynapse.Capture.csproj" />
+    <Project Path="src/OpenSynapse.Contracts/OpenSynapse.Contracts.csproj" />
+    <Project Path="src/OpenSynapse.Protocol/OpenSynapse.Protocol.csproj" />
+    <Project Path="src/OpenSynapse.Service/OpenSynapse.Service.csproj" />
+    <Project Path="src/OpenSynapse.Setup/OpenSynapse.Setup.csproj" />
+    <Project Path="src/OpenSynapse.Tray/OpenSynapse.Tray.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/OpenSynapse.Contracts.Tests/OpenSynapse.Contracts.Tests.csproj" />
+    <Project Path="tests/OpenSynapse.Protocol.Tests/OpenSynapse.Protocol.Tests.csproj" />
+    <Project Path="tests/OpenSynapse.Service.Tests/OpenSynapse.Service.Tests.csproj" />
+  </Folder>
+</Solution>
