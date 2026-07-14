@@ -27,7 +27,7 @@ public sealed class StatusRequestHandler(IHardwareAccessGuard hardwareAccessGuar
                 ? $"Controller conflict detection failed: {accessDecision.DetectionFailure}"
                 : conflicts.Count == 0
                 ? "PID 02E0 command fixtures have not been admitted."
-                : "Razer controller conflict detected.");
+                : $"Razer controller conflicts detected: {string.Join(", ", conflicts)}.");
 
         return new ServiceResponse(
             OpenSynapseIpc.ProtocolVersion,
