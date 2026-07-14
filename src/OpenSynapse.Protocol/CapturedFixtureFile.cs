@@ -1,3 +1,4 @@
+using System.Security.Cryptography;
 using System.Text.Json;
 
 namespace OpenSynapse.Protocol;
@@ -19,9 +20,28 @@ public static class CapturedFixtureFile
         string path,
         CancellationToken cancellationToken)
     {
-        string json = await File.ReadAllTextAsync(path, cancellationToken);
+        return await LoadCatalogAsync(
+            path,
+            TrustedFixtureHashRegistry.Production,
+            cancellationToken);
+    }
+
+    public static async Task<DeviceCommandCatalog> LoadCatalogAsync(
+        string path,
+        TrustedFixtureHashRegistry trustedHashes,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(trustedHashes);
+        byte[] fixtureBytes = await File.ReadAllBytesAsync(path, cancellationToken);
+        byte[] hash = SHA256.HashData(fixtureBytes);
+        if (!trustedHashes.Contains(hash))
+        {
+            throw new UnvalidatedCommandException(
+                $"Fixture SHA-256 {Convert.ToHexString(hash)} is not present in the code-controlled trusted hash registry.");
+        }
+
         CapturedCommandFixture[]? fixtures =
-            JsonSerializer.Deserialize<CapturedCommandFixture[]>(json, SerializerOptions);
+            JsonSerializer.Deserialize<CapturedCommandFixture[]>(fixtureBytes, SerializerOptions);
 
         if (fixtures is null || fixtures.Length == 0)
         {

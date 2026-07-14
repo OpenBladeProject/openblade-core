@@ -22,4 +22,19 @@ public sealed class TargetBladeDeviceTests
     {
         Assert.Equal(expected, TargetBladeDevice.CanCarryProtocolReport((ushort)length));
     }
+
+    [Fact]
+    public void SelectProductionInterfaces_RequiresExactIdentityAndFeatureLength()
+    {
+        HidInterfaceInfo approved = new("approved", 0x1532, 0x02E0, 1, 2, 91);
+        HidInterfaceInfo wrongVendor = new("vendor", 0x1234, 0x02E0, 1, 2, 91);
+        HidInterfaceInfo wrongProduct = new("product", 0x1532, 0x029F, 1, 2, 91);
+        HidInterfaceInfo wrongLength = new("length", 0x1532, 0x02E0, 1, 2, 90);
+
+        IReadOnlyList<HidInterfaceInfo> selected =
+            WindowsHidEnumerator.SelectProductionInterfaces(
+                [approved, wrongVendor, wrongProduct, wrongLength]);
+
+        Assert.Equal([approved], selected);
+    }
 }

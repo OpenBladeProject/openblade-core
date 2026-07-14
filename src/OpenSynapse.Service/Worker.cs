@@ -5,10 +5,17 @@ namespace OpenSynapse.Service;
 
 public sealed class Worker(
     StatusRequestHandler handler,
+    MachineProfileBootstrapper profileBootstrapper,
     ILogger<Worker> logger) : BackgroundService
 {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
+        ProfileLoadResult profiles = await profileBootstrapper.InitializeAsync(stoppingToken);
+        if (profiles.RecoveredFromInvalidFile)
+        {
+            logger.LogWarning("Invalid machine profiles were replaced with safe defaults.");
+        }
+
         SecurityIdentifier? authorizedUser = ReadAuthorizedUser();
         if (authorizedUser is null)
         {

@@ -1,5 +1,6 @@
 using System.IO.Pipes;
 using System.Security.Principal;
+using System.Text.Json;
 using OpenSynapse.Contracts;
 
 namespace OpenSynapse.Service;
@@ -22,10 +23,24 @@ public sealed class NamedPipeStatusServer(
             PipeSecurityFactory.Create(authorizedUser));
 
         await pipe.WaitForConnectionAsync(cancellationToken);
-        ServiceRequest request = await IpcMessageCodec.ReadAsync<ServiceRequest>(
-            pipe,
-            cancellationToken);
-        ServiceResponse response = handler.Handle(request);
+        ServiceResponse response;
+        try
+        {
+            ServiceRequest request = await IpcMessageCodec.ReadAsync<ServiceRequest>(
+                pipe,
+                cancellationToken);
+            response = handler.Handle(request);
+        }
+        catch (Exception exception) when (exception is InvalidDataException or JsonException)
+        {
+            response = new ServiceResponse(
+                OpenSynapseIpc.ProtocolVersion,
+                Guid.Empty,
+                Success: false,
+                Error: "IPC request is malformed.",
+                Status: null);
+        }
+
         await IpcMessageCodec.WriteAsync(pipe, response, cancellationToken);
     }
 }

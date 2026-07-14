@@ -53,6 +53,57 @@ public sealed class ControlCoordinatorTests
     }
 
     [Fact]
+    public async Task ApplyPerformance_RechecksConflictsImmediatelyBeforeWrite()
+    {
+        FakeBladeDevice device = new() { Performance = PerformancePreset.Silent };
+        ControlCoordinator coordinator = new(
+            device,
+            new SequencedConflictDetector([], ["RazerAppEngine"]));
+
+        ControlResult result = await coordinator.ApplyPerformanceAsync(
+            PerformancePreset.Balanced,
+            CancellationToken.None);
+
+        Assert.Equal(ControlResultStatus.Blocked, result.Status);
+        Assert.Equal(0, device.PerformanceWriteCount);
+    }
+
+    [Fact]
+    public async Task ApplyPerformance_BlocksUnsupportedCapability()
+    {
+        FakeBladeDevice device = new()
+        {
+            Performance = PerformancePreset.Silent,
+            Capabilities = DeviceCapabilities.SafeTargetDefaults() with
+            {
+                PerformancePresets = new HashSet<PerformancePreset> { PerformancePreset.Silent },
+            },
+        };
+        ControlCoordinator coordinator = new(device, new FakeConflictDetector([]));
+
+        ControlResult result = await coordinator.ApplyPerformanceAsync(
+            PerformancePreset.Balanced,
+            CancellationToken.None);
+
+        Assert.Equal(ControlResultStatus.Blocked, result.Status);
+        Assert.Equal(0, device.PerformanceWriteCount);
+    }
+
+    [Fact]
+    public async Task ApplyPerformance_BlocksInvalidEnumValue()
+    {
+        FakeBladeDevice device = new() { Performance = PerformancePreset.Silent };
+        ControlCoordinator coordinator = new(device, new FakeConflictDetector([]));
+
+        ControlResult result = await coordinator.ApplyPerformanceAsync(
+            (PerformancePreset)999,
+            CancellationToken.None);
+
+        Assert.Equal(ControlResultStatus.Blocked, result.Status);
+        Assert.Equal(0, device.PerformanceWriteCount);
+    }
+
+    [Fact]
     public async Task ApplyDesiredState_ReportsSubsystemsIndependently()
     {
         FakeBladeDevice device = new()
@@ -60,7 +111,7 @@ public sealed class ControlCoordinatorTests
             Performance = PerformancePreset.Silent,
             Fans = FanMode.Automatic,
             Battery = BatteryPolicy.Create(75),
-            ThrowOnFanWrite = true,
+            FanWriteException = new InvalidOperationException("simulated fan application failure"),
         };
         ControlCoordinator coordinator = new(device, new FakeConflictDetector([]));
         LightingSettings lighting = new(LightingEffect.Off, new RgbColor(0, 0, 0), 0);
@@ -81,9 +132,81 @@ public sealed class ControlCoordinatorTests
         Assert.Equal(1, device.BatteryWriteCount);
     }
 
+    [Fact]
+    public async Task ApplyDesiredState_StopsWritesAfterTerminalTransportFailure()
+    {
+        FakeBladeDevice device = new()
+        {
+            Performance = PerformancePreset.Silent,
+            Fans = FanMode.Automatic,
+            Battery = BatteryPolicy.Create(75),
+            PerformanceWriteException = new IOException("device disconnected"),
+        };
+        ControlCoordinator coordinator = new(device, new FakeConflictDetector([]));
+        DesiredDeviceState desired = CreateDesiredState();
+
+        SubsystemApplyResults results = await coordinator.ApplyDesiredStateAsync(
+            desired,
+            CancellationToken.None);
+
+        Assert.Equal(ControlResultStatus.Failed, results.Performance.Status);
+        Assert.Equal(ControlResultStatus.Blocked, results.Fans.Status);
+        Assert.Equal(ControlResultStatus.Blocked, results.Battery.Status);
+        Assert.Equal(ControlResultStatus.Blocked, results.Lighting.Status);
+        Assert.Equal(0, device.FanWriteCount);
+        Assert.Equal(0, device.BatteryWriteCount);
+        Assert.Equal(0, device.LightingWriteCount);
+    }
+
+    [Fact]
+    public async Task ApplyDesiredState_RechecksConflictsBeforeEachSetter()
+    {
+        FakeBladeDevice device = new()
+        {
+            Performance = PerformancePreset.Silent,
+            Fans = FanMode.Automatic,
+            Battery = BatteryPolicy.Create(75),
+        };
+        ControlCoordinator coordinator = new(
+            device,
+            new SequencedConflictDetector([], [], ["RazerAppEngine"]));
+
+        SubsystemApplyResults results = await coordinator.ApplyDesiredStateAsync(
+            CreateDesiredState(),
+            CancellationToken.None);
+
+        Assert.Equal(ControlResultStatus.Applied, results.Performance.Status);
+        Assert.Equal(ControlResultStatus.Blocked, results.Fans.Status);
+        Assert.Equal(0, device.FanWriteCount);
+        Assert.Equal(0, device.BatteryWriteCount);
+        Assert.Equal(0, device.LightingWriteCount);
+    }
+
+    private static DesiredDeviceState CreateDesiredState()
+    {
+        LightingSettings lighting = new(LightingEffect.Off, new RgbColor(0, 0, 0), 0);
+        return new DesiredDeviceState(
+            new ResolvedSetting<PerformancePreset>(PerformancePreset.Balanced, SettingValueSource.PowerProfile),
+            new ResolvedSetting<FanMode>(FanMode.Maximum, SettingValueSource.PowerProfile),
+            new ResolvedSetting<LightingSettings>(lighting, SettingValueSource.PowerProfile),
+            BatteryPolicy.Create(80));
+    }
+
     private sealed class FakeConflictDetector(IReadOnlyList<string> conflicts) : IConflictDetector
     {
         public IReadOnlyList<string> GetRunningConflicts() => conflicts;
+    }
+
+    private sealed class SequencedConflictDetector(params IReadOnlyList<string>[] results) : IConflictDetector
+    {
+        private int _index;
+
+        public IReadOnlyList<string> GetRunningConflicts()
+        {
+            int index = Math.Min(_index, results.Length - 1);
+            _index++;
+            return results[index];
+        }
     }
 
     private sealed class FakeBladeDevice : IBladeDevice
@@ -98,18 +221,29 @@ public sealed class ControlCoordinatorTests
 
         public LightingSettings? Lighting { get; set; }
 
-        public bool ThrowOnFanWrite { get; set; }
+        public DeviceCapabilities Capabilities { get; set; } = DeviceCapabilities.SafeTargetDefaults();
+
+        public Exception? PerformanceWriteException { get; set; }
+
+        public Exception? FanWriteException { get; set; }
+
+        public int FanWriteCount { get; private set; }
 
         public int BatteryWriteCount { get; private set; }
 
         public Task<DeviceCapabilities> ReadCapabilitiesAsync(CancellationToken cancellationToken) =>
-            Task.FromResult(DeviceCapabilities.SafeTargetDefaults());
+            Task.FromResult(Capabilities);
 
         public Task<ConfirmedDeviceState> ReadStateAsync(CancellationToken cancellationToken) =>
             Task.FromResult(new ConfirmedDeviceState(Performance, Fans, Battery, Lighting));
 
         public Task SetPerformanceAsync(PerformancePreset value, CancellationToken cancellationToken)
         {
+            if (PerformanceWriteException is not null)
+            {
+                throw PerformanceWriteException;
+            }
+
             PerformanceWriteCount++;
             Performance = value;
             return Task.CompletedTask;
@@ -117,11 +251,12 @@ public sealed class ControlCoordinatorTests
 
         public Task SetFanModeAsync(FanMode value, CancellationToken cancellationToken)
         {
-            if (ThrowOnFanWrite)
+            if (FanWriteException is not null)
             {
-                throw new IOException("simulated fan failure");
+                throw FanWriteException;
             }
 
+            FanWriteCount++;
             Fans = value;
             return Task.CompletedTask;
         }
@@ -135,8 +270,11 @@ public sealed class ControlCoordinatorTests
 
         public Task SetLightingAsync(LightingSettings value, CancellationToken cancellationToken)
         {
+            LightingWriteCount++;
             Lighting = value;
             return Task.CompletedTask;
         }
+
+        public int LightingWriteCount { get; private set; }
     }
 }

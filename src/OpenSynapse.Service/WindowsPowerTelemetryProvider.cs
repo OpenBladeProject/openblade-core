@@ -27,9 +27,12 @@ public sealed class WindowsPowerTelemetryProvider
 
     public static PowerTelemetry Map(byte acLineStatus, byte batteryPercent)
     {
-        PowerSource source = acLineStatus == 1
-            ? PowerSource.PluggedIn
-            : PowerSource.Battery;
+        PowerSource source = acLineStatus switch
+        {
+            0 => PowerSource.Battery,
+            1 => PowerSource.PluggedIn,
+            _ => throw new InvalidDataException("Windows reported an unknown AC line status."),
+        };
         int? percent = batteryPercent == byte.MaxValue ? null : batteryPercent;
         return new PowerTelemetry(source, percent);
     }

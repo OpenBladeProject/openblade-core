@@ -25,7 +25,7 @@ public sealed class SetupCommandRunnerTests
         int exitCode = await runner.RunAsync(["uninstall"], CancellationToken.None);
 
         Assert.Equal(0, exitCode);
-        Assert.Equal(["shortcut-remove", "service-remove", "binaries-remove"], platform.Operations);
+        Assert.Equal(["shortcut-remove", "service-remove", "tray-stop", "binaries-remove"], platform.Operations);
         Assert.DoesNotContain("data-remove", platform.Operations);
     }
 
@@ -38,7 +38,29 @@ public sealed class SetupCommandRunnerTests
         int exitCode = await runner.RunAsync(["uninstall", "--purge"], CancellationToken.None);
 
         Assert.Equal(0, exitCode);
-        Assert.Equal(["shortcut-remove", "service-remove", "binaries-remove", "data-remove"], platform.Operations);
+        Assert.Equal(["shortcut-remove", "service-remove", "tray-stop", "binaries-remove", "data-remove"], platform.Operations);
+    }
+
+    [Fact]
+    public async Task InvalidCommand_PrintsShippedExecutableSyntax()
+    {
+        RecordingSetupPlatform platform = new();
+        SetupCommandRunner runner = new(platform);
+        StringWriter errors = new();
+        TextWriter original = Console.Error;
+        Console.SetError(errors);
+        try
+        {
+            int exitCode = await runner.RunAsync([], CancellationToken.None);
+
+            Assert.Equal(2, exitCode);
+            Assert.Contains("OpenSynapse.Setup.exe install", errors.ToString(), StringComparison.Ordinal);
+            Assert.Contains("OpenSynapse.Setup.exe uninstall [--purge]", errors.ToString(), StringComparison.Ordinal);
+        }
+        finally
+        {
+            Console.SetError(original);
+        }
     }
 
     private sealed class RecordingSetupPlatform : ISetupPlatform
@@ -53,6 +75,7 @@ public sealed class SetupCommandRunnerTests
         public Task InstallStartupShortcutAsync(CancellationToken cancellationToken) => AddAsync("shortcut-install");
         public Task RemoveStartupShortcutAsync(CancellationToken cancellationToken) => AddAsync("shortcut-remove");
         public Task RemoveServiceAsync(CancellationToken cancellationToken) => AddAsync("service-remove");
+        public Task StopTrayAsync(CancellationToken cancellationToken) => AddAsync("tray-stop");
         public Task RemoveBinariesAsync(CancellationToken cancellationToken) => AddAsync("binaries-remove");
         public Task RemoveDataAsync(CancellationToken cancellationToken) => AddAsync("data-remove");
 

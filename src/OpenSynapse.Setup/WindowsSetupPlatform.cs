@@ -8,6 +8,7 @@ public sealed class WindowsSetupPlatform : ISetupPlatform
     private const string ServiceName = "OpenSynapse";
     private const int ServiceDoesNotExist = 1060;
     private const int ServiceNotActive = 1062;
+    private const string TrayShutdownEventName = @"Local\OpenSynapse.Tray.Shutdown";
     private readonly SetupPaths paths = SetupPaths.Create(
         Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles),
         Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
@@ -73,6 +74,62 @@ public sealed class WindowsSetupPlatform : ISetupPlatform
     {
         await RunScAsync(["stop", ServiceName], [ServiceDoesNotExist, ServiceNotActive], cancellationToken);
         await RunScAsync(["delete", ServiceName], [ServiceDoesNotExist], cancellationToken);
+    }
+
+    public async Task StopTrayAsync(CancellationToken cancellationToken)
+    {
+        string installedTray = Path.Combine(paths.InstallDirectory, "OpenSynapse.Tray.exe");
+        List<Process> installedProcesses = [];
+        foreach (Process process in Process.GetProcessesByName("OpenSynapse.Tray"))
+        {
+            try
+            {
+                if (TrayProcessIdentity.IsInstalledTray(process.MainModule?.FileName, installedTray))
+                {
+                    installedProcesses.Add(process);
+                }
+                else
+                {
+                    process.Dispose();
+                }
+            }
+            catch (Exception exception) when (exception is System.ComponentModel.Win32Exception or InvalidOperationException)
+            {
+                process.Dispose();
+            }
+        }
+
+        if (installedProcesses.Count == 0)
+        {
+            return;
+        }
+
+        if (!EventWaitHandle.TryOpenExisting(TrayShutdownEventName, out EventWaitHandle? shutdownEvent))
+        {
+            installedProcesses.ForEach(process => process.Dispose());
+            throw new InvalidOperationException("The installed tray process does not expose its shutdown event.");
+        }
+
+        using (shutdownEvent)
+        {
+            shutdownEvent.Set();
+        }
+
+        try
+        {
+            foreach (Process process in installedProcesses)
+            {
+                await process.WaitForExitAsync(cancellationToken).WaitAsync(TimeSpan.FromSeconds(10), cancellationToken);
+            }
+        }
+        catch (TimeoutException exception)
+        {
+            throw new InvalidOperationException("The installed tray process did not exit; binaries were not removed.", exception);
+        }
+        finally
+        {
+            installedProcesses.ForEach(process => process.Dispose());
+        }
     }
 
     public Task RemoveBinariesAsync(CancellationToken cancellationToken)

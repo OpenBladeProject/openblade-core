@@ -47,6 +47,10 @@ public sealed class MainViewModel : INotifyPropertyChanged
 
     public int ChargeLimitPercent { get; }
 
+    public string TelemetryStatus { get; } = "Telemetry unavailable";
+
+    public bool CanControlHardware { get; } = false;
+
     public ThemePreference Theme
     {
         get => theme;

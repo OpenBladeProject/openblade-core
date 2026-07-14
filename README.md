@@ -31,7 +31,10 @@ Create an untrimmed, self-contained `win-x64` bundle:
 
 The bundle is written to `artifacts\win-x64\OpenSynapse`. Run
 `OpenSynapse.Setup.exe install` from an elevated terminal to install it. Use
-`uninstall` to preserve profiles or `uninstall --purge` to remove them.
+`OpenSynapse.Setup.exe uninstall` to preserve profiles or
+`OpenSynapse.Setup.exe uninstall --purge` to remove them. Uninstall requests a
+graceful shutdown from the installed tray process and waits for that exact
+executable to exit before removing binaries.
 
 ## Capture workflow
 

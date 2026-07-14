@@ -16,6 +16,23 @@ public sealed class MainViewModelTests
         Assert.Equal(FanMode.Automatic, viewModel.SelectedFanMode);
         Assert.Equal(80, viewModel.ChargeLimitPercent);
         Assert.Equal(ThemePreference.FollowWindows, viewModel.Theme);
+        Assert.Equal("Telemetry unavailable", viewModel.TelemetryStatus);
+        Assert.False(viewModel.CanControlHardware);
+    }
+
+    [Fact]
+    public void ServiceStatus_IsUsedEverywhereConnectionStateIsShown()
+    {
+        MainViewModel viewModel = MainViewModel.CreateDisconnected();
+
+        viewModel.ApplyStatus(new ServiceStatusSnapshot(
+            DeviceVerified: false,
+            WritesBlocked: true,
+            Conflicts: ["Razer Synapse"],
+            Message: "Razer Synapse conflict detected"));
+
+        Assert.Equal("Razer Synapse conflict detected", viewModel.ConnectionStatus);
+        Assert.True(viewModel.IsReadOnly);
     }
 
     [Fact]

@@ -73,12 +73,23 @@ public static partial class WindowsHidEnumerator
                 }
             }
 
-            return matches;
+            return SelectProductionInterfaces(matches);
         }
         finally
         {
             _ = SetupDiDestroyDeviceInfoList(deviceSet);
         }
+    }
+
+    public static IReadOnlyList<HidInterfaceInfo> SelectProductionInterfaces(
+        IEnumerable<HidInterfaceInfo> interfaces)
+    {
+        ArgumentNullException.ThrowIfNull(interfaces);
+        return interfaces
+            .Where(device =>
+                TargetBladeDevice.Matches(device.VendorId, device.ProductId)
+                && TargetBladeDevice.CanCarryProtocolReport(device.FeatureReportByteLength))
+            .ToArray();
     }
 
     private static HidCaps GetCaps(SafeFileHandle handle)

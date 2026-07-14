@@ -5,13 +5,24 @@ namespace OpenSynapse.Tray;
 
 public partial class App : System.Windows.Application
 {
+    private const string ShutdownEventName = @"Local\OpenSynapse.Tray.Shutdown";
     private Forms.NotifyIcon? trayIcon;
+    private EventWaitHandle? shutdownEvent;
+    private RegisteredWaitHandle? shutdownRegistration;
 
     public bool ExitRequested { get; private set; }
 
     protected override void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
+
+        shutdownEvent = new EventWaitHandle(false, EventResetMode.ManualReset, ShutdownEventName);
+        shutdownRegistration = ThreadPool.RegisterWaitForSingleObject(
+            shutdownEvent,
+            (_, _) => Dispatcher.BeginInvoke(ExitTray),
+            null,
+            Timeout.Infinite,
+            executeOnlyOnce: true);
 
         Forms.ContextMenuStrip menu = new();
         menu.Items.Add("Open", null, (_, _) => ShowMainWindow());
@@ -29,6 +40,8 @@ public partial class App : System.Windows.Application
 
     protected override void OnExit(ExitEventArgs e)
     {
+        shutdownRegistration?.Unregister(null);
+        shutdownEvent?.Dispose();
         if (trayIcon is not null)
         {
             trayIcon.Visible = false;
@@ -46,6 +59,11 @@ public partial class App : System.Windows.Application
 
     private void ExitTray()
     {
+        if (ExitRequested)
+        {
+            return;
+        }
+
         ExitRequested = true;
         MainWindow?.Close();
         Shutdown();

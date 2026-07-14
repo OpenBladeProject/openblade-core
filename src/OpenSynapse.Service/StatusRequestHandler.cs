@@ -11,7 +11,7 @@ public sealed class StatusRequestHandler(IConflictDetector conflictDetector)
             return Failure(request, "Unsupported IPC protocol version.");
         }
 
-        if (!request.Operation.Equals("status", StringComparison.Ordinal))
+        if (!string.Equals(request.Operation, "status", StringComparison.Ordinal))
         {
             return Failure(request, "Operation is unavailable until its device commands are validated.");
         }

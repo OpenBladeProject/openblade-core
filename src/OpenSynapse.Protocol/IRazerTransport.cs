@@ -16,6 +16,9 @@ public sealed class SerializedRazerTransport(
     IHidFeatureChannel channel,
     TimeSpan timeout) : IRazerTransport, IDisposable
 {
+    private const byte ProtocolReportId = 0;
+    private const int HidFeatureReportLength = RazerReport.ReportLength + 1;
+
     private readonly SemaphoreSlim gate = new(1, 1);
 
     public async Task<ReadOnlyMemory<byte>> TransactAsync(
@@ -31,8 +34,24 @@ public sealed class SerializedRazerTransport(
             exchangeTimeout.CancelAfter(timeout);
             try
             {
-                byte[] response = await channel.ExchangeAsync(report.Encode(), exchangeTimeout.Token);
-                return report.ValidateResponse(response);
+                byte[] request = new byte[HidFeatureReportLength];
+                request[0] = ProtocolReportId;
+                report.Encode().CopyTo(request, 1);
+
+                byte[] response = await channel.ExchangeAsync(request, exchangeTimeout.Token);
+                if (response.Length != HidFeatureReportLength)
+                {
+                    throw new RazerProtocolException(
+                        $"Expected an exact {HidFeatureReportLength}-byte HID feature response.");
+                }
+
+                if (response[0] != ProtocolReportId)
+                {
+                    throw new RazerProtocolException(
+                        $"Expected HID report ID 0x{ProtocolReportId:X2}, received 0x{response[0]:X2}.");
+                }
+
+                return report.ValidateResponse(response.AsSpan(1));
             }
             catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
             {

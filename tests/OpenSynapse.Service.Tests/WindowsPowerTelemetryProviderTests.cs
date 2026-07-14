@@ -20,4 +20,11 @@ public sealed class WindowsPowerTelemetryProviderTests
         Assert.Equal(expectedSource, telemetry.PowerSource);
         Assert.Equal(expectedPercent, telemetry.BatteryPercent);
     }
+
+    [Fact]
+    public void Map_RejectsUnknownAcLineStatus()
+    {
+        Assert.Throws<InvalidDataException>(() =>
+            WindowsPowerTelemetryProvider.Map(byte.MaxValue, 50));
+    }
 }

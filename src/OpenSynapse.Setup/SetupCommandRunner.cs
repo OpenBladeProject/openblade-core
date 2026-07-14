@@ -9,6 +9,7 @@ public interface ISetupPlatform
     Task InstallStartupShortcutAsync(CancellationToken cancellationToken);
     Task RemoveStartupShortcutAsync(CancellationToken cancellationToken);
     Task RemoveServiceAsync(CancellationToken cancellationToken);
+    Task StopTrayAsync(CancellationToken cancellationToken);
     Task RemoveBinariesAsync(CancellationToken cancellationToken);
     Task RemoveDataAsync(CancellationToken cancellationToken);
 }
@@ -19,7 +20,7 @@ public sealed class SetupCommandRunner(ISetupPlatform platform)
     {
         if (!SetupCommandParser.TryParse(arguments, out SetupCommand command))
         {
-            Console.Error.WriteLine("Usage: opensynapse setup install | uninstall [--purge]");
+            Console.Error.WriteLine("Usage: OpenSynapse.Setup.exe install | OpenSynapse.Setup.exe uninstall [--purge]");
             return 2;
         }
 
@@ -34,6 +35,7 @@ public sealed class SetupCommandRunner(ISetupPlatform platform)
 
         await platform.RemoveStartupShortcutAsync(cancellationToken);
         await platform.RemoveServiceAsync(cancellationToken);
+        await platform.StopTrayAsync(cancellationToken);
         await platform.RemoveBinariesAsync(cancellationToken);
         if (command == SetupCommand.UninstallAndPurge)
         {

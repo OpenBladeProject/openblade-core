@@ -3,6 +3,7 @@ using System.ComponentModel;
 using System.IO;
 using System.Windows;
 using System.Windows.Data;
+using Microsoft.Win32;
 
 namespace OpenSynapse.Tray;
 
@@ -21,7 +22,20 @@ public partial class MainWindow : Window
         viewModel.PropertyChanged += OnViewModelPropertyChanged;
         Loaded += OnLoaded;
         Closing += OnClosing;
+        Closed += OnClosed;
+        SystemEvents.UserPreferenceChanged += OnUserPreferenceChanged;
     }
+
+    private void OnUserPreferenceChanged(object sender, UserPreferenceChangedEventArgs e)
+    {
+        if (WindowsThemeChangePolicy.ShouldReapply(viewModel.Theme, e.Category))
+        {
+            Dispatcher.Invoke(() => ThemeManager.Apply(viewModel.Theme));
+        }
+    }
+
+    private void OnClosed(object? sender, EventArgs e) =>
+        SystemEvents.UserPreferenceChanged -= OnUserPreferenceChanged;
 
     private async void OnLoaded(object sender, RoutedEventArgs e)
     {
