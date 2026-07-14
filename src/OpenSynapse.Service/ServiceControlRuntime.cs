@@ -258,7 +258,11 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 FullChargeOverride: automation.BatteryPolicy.TemporaryFullCharge);
             PublishIfChanged(next);
             return new ControlOperationResult(
-                writesBlocked ? ControlOperationStatus.Blocked : ControlOperationStatus.Applied,
+                writesBlocked
+                    ? ControlOperationStatus.Blocked
+                    : ResultsContainFailure(results)
+                        ? ControlOperationStatus.Failed
+                        : ControlOperationStatus.Applied,
                 message);
         }
         catch (OperationCanceledException) when (token.IsCancellationRequested)
@@ -360,6 +364,12 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         || results.Fans.Status == ControlResultStatus.Blocked
         || results.Battery.Status == ControlResultStatus.Blocked
         || results.Lighting.Status == ControlResultStatus.Blocked;
+
+    private static bool ResultsContainFailure(SubsystemApplyResults results) =>
+        results.Performance.Status == ControlResultStatus.Failed
+        || results.Fans.Status == ControlResultStatus.Failed
+        || results.Battery.Status == ControlResultStatus.Failed
+        || results.Lighting.Status == ControlResultStatus.Failed;
 
     private static string Summarize(SubsystemApplyResults results) =>
         string.Join(

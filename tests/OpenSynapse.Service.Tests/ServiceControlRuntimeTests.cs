@@ -160,6 +160,29 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         Assert.Equal(1, context.Runtime.GetStatus().Revision);
     }
 
+    [Fact]
+    public async Task VerifiedDeviceSubsystemFailure_ReturnsFailedWithoutSafetyBlock()
+    {
+        TestContext context = CreateContext(providerAvailable: true);
+        context.Device.Capabilities = DeviceCapabilities.SafeTargetDefaults();
+        context.Device.ConfirmedState = new ConfirmedDeviceState(
+            PerformancePreset.Silent,
+            FanMode.Automatic,
+            BatteryPolicy.Create(80),
+            ProfileDefaults.CreateSafeDefaults().PluggedIn.Lighting);
+        context.Device.PerformanceFailure = new InvalidOperationException("write rejected");
+
+        ControlOperationResult result = await context.Runtime.SetPerformanceOverrideAsync(
+            new ManualOverride<PerformancePreset>(
+                PerformancePreset.Performance,
+                OverrideLifetime.Persistent),
+            CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Failed, result.Status);
+        Assert.False(context.Runtime.GetStatus().WritesBlocked);
+        Assert.Contains("write rejected", result.Message, StringComparison.Ordinal);
+    }
+
     private TestContext CreateContext(
         bool providerAvailable,
         IReadOnlyList<string>? conflicts = null,
@@ -248,21 +271,35 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     {
         public int TotalCalls { get; private set; }
 
+        public DeviceCapabilities Capabilities { get; set; } =
+            DeviceCapabilities.Unavailable();
+
+        public ConfirmedDeviceState ConfirmedState { get; set; } =
+            new(null, null, null, null);
+
+        public Exception? PerformanceFailure { get; set; }
+
         public Task<DeviceCapabilities> ReadCapabilitiesAsync(CancellationToken cancellationToken)
         {
             TotalCalls++;
-            return Task.FromResult(DeviceCapabilities.Unavailable());
+            return Task.FromResult(Capabilities);
         }
 
         public Task<ConfirmedDeviceState> ReadStateAsync(CancellationToken cancellationToken)
         {
             TotalCalls++;
-            return Task.FromResult(new ConfirmedDeviceState(null, null, null, null));
+            return Task.FromResult(ConfirmedState);
         }
 
         public Task SetPerformanceAsync(PerformancePreset value, CancellationToken cancellationToken)
         {
             TotalCalls++;
+            if (PerformanceFailure is not null)
+            {
+                throw PerformanceFailure;
+            }
+
+            ConfirmedState = ConfirmedState with { Performance = value };
             return Task.CompletedTask;
         }
 
