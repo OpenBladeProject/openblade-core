@@ -79,6 +79,38 @@ public sealed class WindowsSetupPlatformServiceTests
     }
 
     [Fact]
+    public async Task StopTray_FreshInstallWithNoTrayProcesses_IsSafe()
+    {
+        RecordingProcessOperations processes = new();
+        WindowsSetupPlatform platform = new(processOperations: processes);
+
+        await platform.StopTrayAsync(CancellationToken.None);
+
+        Assert.Equal(["query:OpenSynapse.Tray"], processes.Operations);
+    }
+
+    [Fact]
+    public async Task StopTray_InstalledTray_SignalsAndWaitsForExit()
+    {
+        string installedTray = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles),
+            "OpenSynapse",
+            "OpenSynapse.Tray.exe");
+        RecordingProcess process = new(installedTray);
+        RecordingProcessOperations processes = new(process);
+        WindowsSetupPlatform platform = new(processOperations: processes);
+
+        await platform.StopTrayAsync(CancellationToken.None);
+
+        Assert.Collection(
+            processes.Operations,
+            operation => Assert.Equal("query:OpenSynapse.Tray", operation),
+            operation => Assert.StartsWith("signal:Local\\OpenSynapse.Tray.Shutdown.", operation, StringComparison.Ordinal));
+        Assert.True(process.WaitedForExit);
+        Assert.True(process.Disposed);
+    }
+
+    [Fact]
     public async Task RemoveService_StopsWaitsDeletesThenWaitsForDeletion()
     {
         RecordingServiceControl serviceControl = new() { Exists = true };
@@ -106,6 +138,39 @@ public sealed class WindowsSetupPlatformServiceTests
         Assert.EndsWith("OpenSynapse.lnk", request.ShortcutPath, StringComparison.OrdinalIgnoreCase);
         Assert.Equal(Path.Combine(installDirectory, "OpenSynapse.Tray.exe"), request.TargetPath);
         Assert.Equal(installDirectory, request.WorkingDirectory);
+    }
+
+    [Fact]
+    public async Task InstallStartupShortcut_RemovesLegacyCommandStartupEntry()
+    {
+        RecordingFileOperations files = new();
+        WindowsSetupPlatform platform = new(
+            new RecordingServiceControl(),
+            new RecordingShortcutWriter(),
+            fileOperations: files);
+
+        await platform.InstallStartupShortcutAsync(CancellationToken.None);
+
+        Assert.Contains(
+            files.DeletedFiles,
+            path => path.EndsWith("OpenSynapse.cmd", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public async Task RemoveStartupShortcut_RemovesCurrentAndLegacyStartupEntries()
+    {
+        RecordingFileOperations files = new();
+        WindowsSetupPlatform platform = new(
+            new RecordingServiceControl(),
+            new RecordingShortcutWriter(),
+            fileOperations: files);
+
+        await platform.RemoveStartupShortcutAsync(CancellationToken.None);
+
+        Assert.Collection(
+            files.DeletedFiles,
+            path => Assert.EndsWith("OpenSynapse.lnk", path, StringComparison.OrdinalIgnoreCase),
+            path => Assert.EndsWith("OpenSynapse.cmd", path, StringComparison.OrdinalIgnoreCase));
     }
 
     [Theory]
@@ -209,5 +274,44 @@ public sealed class WindowsSetupPlatformServiceTests
             Requests.Add(request);
             return Task.CompletedTask;
         }
+    }
+
+    private sealed class RecordingFileOperations : ISetupFileOperations
+    {
+        public List<string> DeletedFiles { get; } = [];
+
+        public void DeleteFile(string path) => DeletedFiles.Add(path);
+    }
+
+    private sealed class RecordingProcessOperations(params ISetupProcess[] processes) : ISetupProcessOperations
+    {
+        public List<string> Operations { get; } = [];
+
+        public IReadOnlyList<ISetupProcess> GetProcessesByName(string processName)
+        {
+            Operations.Add($"query:{processName}");
+            return processes;
+        }
+
+        public bool TrySignalEvent(string eventName)
+        {
+            Operations.Add($"signal:{eventName}");
+            return true;
+        }
+    }
+
+    private sealed class RecordingProcess(string executablePath) : ISetupProcess
+    {
+        public string? ExecutablePath => executablePath;
+        public bool Disposed { get; private set; }
+        public bool WaitedForExit { get; private set; }
+
+        public Task WaitForExitAsync(CancellationToken cancellationToken)
+        {
+            WaitedForExit = true;
+            return Task.CompletedTask;
+        }
+
+        public void Dispose() => Disposed = true;
     }
 }

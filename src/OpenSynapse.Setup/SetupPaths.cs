@@ -16,6 +16,7 @@ public sealed record SetupPaths
         MachineDataDirectory = Path.Combine(machineDataRoot, "OpenSynapse");
         UserDataDirectory = Path.Combine(userDataRoot, "OpenSynapse");
         StartupFile = Path.Combine(startupRoot, "OpenSynapse.lnk");
+        LegacyStartupFile = Path.Combine(startupRoot, "OpenSynapse.cmd");
     }
 
     public string ProgramFilesRoot { get; }
@@ -26,6 +27,7 @@ public sealed record SetupPaths
     public string MachineDataDirectory { get; }
     public string UserDataDirectory { get; }
     public string StartupFile { get; }
+    public string LegacyStartupFile { get; }
 
     public static SetupPaths Create(
         string programFilesRoot,

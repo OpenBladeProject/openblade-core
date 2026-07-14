@@ -28,7 +28,9 @@ public sealed class SetupCommandRunner(ISetupPlatform platform)
 
         if (command == SetupCommand.Install)
         {
+            await platform.RemoveStartupShortcutAsync(cancellationToken);
             await platform.PrepareServiceForInstallAsync(cancellationToken);
+            await platform.StopTrayAsync(cancellationToken);
             await platform.CopyPayloadAsync(cancellationToken);
             await platform.WriteAuthorizedUserSidAsync(platform.CurrentUserSid, cancellationToken);
             await platform.InstallServiceAsync(cancellationToken);

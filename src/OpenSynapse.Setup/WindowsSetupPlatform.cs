@@ -1,8 +1,17 @@
-using System.Diagnostics;
 using System.Security.Principal;
 using OpenSynapse.Contracts;
 
 namespace OpenSynapse.Setup;
+
+public interface ISetupFileOperations
+{
+    void DeleteFile(string path);
+}
+
+internal sealed class WindowsSetupFileOperations : ISetupFileOperations
+{
+    public void DeleteFile(string path) => File.Delete(path);
+}
 
 public sealed class WindowsSetupPlatform : ISetupPlatform
 {
@@ -18,17 +27,23 @@ public sealed class WindowsSetupPlatform : ISetupPlatform
     private readonly IStartupShortcutWriter shortcutWriter;
     private readonly IAuthorizedUserSidWriter sidWriter;
     private readonly ISetupServiceHealthProbe healthProbe;
+    private readonly ISetupFileOperations fileOperations;
+    private readonly ISetupProcessOperations processOperations;
 
     public WindowsSetupPlatform(
         ISetupServiceControl? serviceControl = null,
         IStartupShortcutWriter? shortcutWriter = null,
         IAuthorizedUserSidWriter? sidWriter = null,
-        ISetupServiceHealthProbe? healthProbe = null)
+        ISetupServiceHealthProbe? healthProbe = null,
+        ISetupFileOperations? fileOperations = null,
+        ISetupProcessOperations? processOperations = null)
     {
         this.serviceControl = serviceControl ?? new ScSetupServiceControl();
         this.shortcutWriter = shortcutWriter ?? new WindowsStartupShortcutWriter();
         this.sidWriter = sidWriter ?? new AtomicAuthorizedUserSidWriter();
         this.healthProbe = healthProbe ?? new SetupServiceHealthProbe();
+        this.fileOperations = fileOperations ?? new WindowsSetupFileOperations();
+        this.processOperations = processOperations ?? new WindowsSetupProcessOperations();
     }
 
     public string CurrentUserSid => WindowsIdentity.GetCurrent().User?.Value
@@ -137,12 +152,14 @@ public sealed class WindowsSetupPlatform : ISetupPlatform
         await shortcutWriter.CreateAsync(
             new ShortcutRequest(paths.StartupFile, trayExecutable, paths.InstallDirectory),
             cancellationToken);
+        fileOperations.DeleteFile(paths.LegacyStartupFile);
     }
 
     public Task RemoveStartupShortcutAsync(CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        File.Delete(paths.StartupFile);
+        fileOperations.DeleteFile(paths.StartupFile);
+        fileOperations.DeleteFile(paths.LegacyStartupFile);
         return Task.CompletedTask;
     }
 
@@ -166,12 +183,12 @@ public sealed class WindowsSetupPlatform : ISetupPlatform
     public async Task StopTrayAsync(CancellationToken cancellationToken)
     {
         string installedTray = Path.Combine(paths.InstallDirectory, "OpenSynapse.Tray.exe");
-        List<Process> installedProcesses = [];
-        foreach (Process process in Process.GetProcessesByName("OpenSynapse.Tray"))
+        List<ISetupProcess> installedProcesses = [];
+        foreach (ISetupProcess process in processOperations.GetProcessesByName("OpenSynapse.Tray"))
         {
             try
             {
-                if (TrayProcessIdentity.IsInstalledTray(process.MainModule?.FileName, installedTray))
+                if (TrayProcessIdentity.IsInstalledTray(process.ExecutablePath, installedTray))
                 {
                     installedProcesses.Add(process);
                 }
@@ -192,20 +209,15 @@ public sealed class WindowsSetupPlatform : ISetupPlatform
         }
 
         string shutdownEventName = TrayShutdownEndpoint.ForExecutablePath(installedTray);
-        if (!EventWaitHandle.TryOpenExisting(shutdownEventName, out EventWaitHandle? shutdownEvent))
+        if (!processOperations.TrySignalEvent(shutdownEventName))
         {
             installedProcesses.ForEach(process => process.Dispose());
             throw new InvalidOperationException("The installed tray process does not expose its shutdown event.");
         }
 
-        using (shutdownEvent)
-        {
-            shutdownEvent.Set();
-        }
-
         try
         {
-            foreach (Process process in installedProcesses)
+            foreach (ISetupProcess process in installedProcesses)
             {
                 await process.WaitForExitAsync(cancellationToken).WaitAsync(TimeSpan.FromSeconds(10), cancellationToken);
             }

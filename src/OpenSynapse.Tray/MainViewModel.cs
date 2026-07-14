@@ -104,9 +104,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             parameter => parameter is int value && CanSetChargeLimit(value));
         ToggleFullChargeCommand = CreateCommand(
             ToggleFullChargeAsync,
-            parameter => CanMutate
-                && parameter is null or bool
-                && (FullChargeOverride || Telemetry?.PowerSource == PowerSource.PluggedIn));
+            CanSetFullChargeOverride);
         SaveProfilesCommand = CreateCommand(
             SaveProfilesAsync,
             CanSaveProfiles);
@@ -422,6 +420,24 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             Conflicts.Count: 0,
             Capabilities: not null,
         };
+
+    private bool CanSetFullChargeOverride(object? parameter)
+    {
+        if (parameter is not null and not bool)
+        {
+            return false;
+        }
+
+        bool enable = parameter is bool requested
+            ? requested
+            : !FullChargeOverride;
+        if (!enable)
+        {
+            return Volatile.Read(ref disposed) == 0 && IsConnected;
+        }
+
+        return CanMutate && Telemetry?.PowerSource == PowerSource.PluggedIn;
+    }
 
     public Task StartAsync()
     {

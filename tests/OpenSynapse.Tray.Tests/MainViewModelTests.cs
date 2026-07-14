@@ -182,6 +182,25 @@ public sealed class MainViewModelTests
         Assert.False(viewModel.ToggleFullChargeCommand.CanExecute(null));
     }
 
+    [Fact]
+    public async Task FullChargeCommand_AllowsCancellationWhenHardwareWritesAreBlocked()
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        client.Publish(CreateStatus(verified: true, blocked: true) with
+        {
+            FullChargeOverride = true,
+        });
+        await WaitUntilAsync(() => viewModel.FullChargeOverride);
+
+        Assert.True(viewModel.ToggleFullChargeCommand.CanExecute(null));
+        await Assert.IsType<AsyncRelayCommand>(viewModel.ToggleFullChargeCommand)
+            .ExecuteAsync(null);
+
+        Assert.False(client.FullChargeEnabled);
+    }
+
     [Theory]
     [InlineData(false, false, true)]
     [InlineData(true, true, true)]

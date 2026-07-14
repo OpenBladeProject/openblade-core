@@ -13,7 +13,23 @@ public sealed class SetupCommandRunnerTests
         int exitCode = await runner.RunAsync(["install"], CancellationToken.None);
 
         Assert.Equal(0, exitCode);
-        Assert.Equal(["service-prepare", "copy", "sid:S-1-5-21-test", "service-install", "service-health", "shortcut-install"], platform.Operations);
+        Assert.Equal(
+            ["shortcut-remove", "service-prepare", "tray-stop", "copy", "sid:S-1-5-21-test", "service-install", "service-health", "shortcut-install"],
+            platform.Operations);
+    }
+
+    [Fact]
+    public async Task Install_HealthFailure_LeavesStartupDisabled()
+    {
+        RecordingSetupPlatform platform = new() { FailHealthCheck = true };
+        SetupCommandRunner runner = new(platform);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(
+            () => runner.RunAsync(["install"], CancellationToken.None));
+
+        Assert.Equal(
+            ["shortcut-remove", "service-prepare", "tray-stop", "copy", "sid:S-1-5-21-test", "service-install", "service-health"],
+            platform.Operations);
     }
 
     [Fact]
@@ -66,6 +82,7 @@ public sealed class SetupCommandRunnerTests
     private sealed class RecordingSetupPlatform : ISetupPlatform
     {
         public List<string> Operations { get; } = [];
+        public bool FailHealthCheck { get; init; }
 
         public string CurrentUserSid => "S-1-5-21-test";
 
@@ -73,7 +90,13 @@ public sealed class SetupCommandRunnerTests
         public Task CopyPayloadAsync(CancellationToken cancellationToken) => AddAsync("copy");
         public Task WriteAuthorizedUserSidAsync(string sid, CancellationToken cancellationToken) => AddAsync($"sid:{sid}");
         public Task InstallServiceAsync(CancellationToken cancellationToken) => AddAsync("service-install");
-        public Task VerifyServiceHealthAsync(CancellationToken cancellationToken) => AddAsync("service-health");
+        public Task VerifyServiceHealthAsync(CancellationToken cancellationToken)
+        {
+            Operations.Add("service-health");
+            return FailHealthCheck
+                ? Task.FromException(new InvalidOperationException("health failed"))
+                : Task.CompletedTask;
+        }
         public Task InstallStartupShortcutAsync(CancellationToken cancellationToken) => AddAsync("shortcut-install");
         public Task RemoveStartupShortcutAsync(CancellationToken cancellationToken) => AddAsync("shortcut-remove");
         public Task RemoveServiceAsync(CancellationToken cancellationToken) => AddAsync("service-remove");
