@@ -4,7 +4,7 @@ namespace OpenSynapse.Service;
 
 public sealed class ProfileAutomationState
 {
-    private readonly ProfileSet profiles;
+    private ProfileSet profiles;
     private ManualOverride<PerformancePreset>? temporaryPerformance;
     private ManualOverride<PerformancePreset>? persistentPerformance;
     private ManualOverride<FanMode>? temporaryFans;
@@ -22,6 +22,42 @@ public sealed class ProfileAutomationState
     public PowerSource PowerSource { get; private set; }
 
     public BatteryPolicy BatteryPolicy { get; private set; }
+
+    public ProfileSet Profiles => profiles;
+
+    public ManualOverride<PerformancePreset>? PerformanceOverride =>
+        persistentPerformance ?? temporaryPerformance;
+
+    public ManualOverride<FanMode>? FanOverride => persistentFans ?? temporaryFans;
+
+    public ManualOverride<LightingSettings>? LightingOverride =>
+        persistentLighting ?? temporaryLighting;
+
+    public void UpdateProfiles(ProfileSet value)
+    {
+        ArgumentNullException.ThrowIfNull(value);
+        bool temporaryFullCharge = BatteryPolicy.TemporaryFullCharge;
+        profiles = value;
+        BatteryPolicy = BatteryPolicy.Create(
+            value.BatteryPolicy.ChargeLimitPercent,
+            temporaryFullCharge);
+    }
+
+    public void SetBatteryPolicy(BatteryPolicy value)
+    {
+        ArgumentNullException.ThrowIfNull(value);
+        if (value.TemporaryFullCharge)
+        {
+            throw new ArgumentException(
+                "Temporary full-charge state cannot be persisted.",
+                nameof(value));
+        }
+
+        profiles = profiles with { BatteryPolicy = value };
+        BatteryPolicy = BatteryPolicy.Create(
+            value.ChargeLimitPercent,
+            BatteryPolicy.TemporaryFullCharge);
+    }
 
     public void ChangePowerSource(PowerSource powerSource)
     {

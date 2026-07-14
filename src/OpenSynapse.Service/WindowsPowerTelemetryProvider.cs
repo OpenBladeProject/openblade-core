@@ -6,7 +6,12 @@ namespace OpenSynapse.Service;
 
 public sealed record PowerTelemetry(PowerSource PowerSource, int? BatteryPercent);
 
-public sealed class WindowsPowerTelemetryProvider
+public interface IPowerTelemetryProvider
+{
+    TelemetrySnapshot Capture();
+}
+
+public sealed class WindowsPowerTelemetryProvider : IPowerTelemetryProvider
 {
     public TelemetrySnapshot Capture()
     {
