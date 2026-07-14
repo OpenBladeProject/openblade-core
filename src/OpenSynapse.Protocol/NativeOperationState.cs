@@ -179,6 +179,7 @@ internal sealed class NativeOperationState
     private void RecordCancellationIntentLocked(HidFeatureTermination termination)
     {
         if (_submissionState != SubmissionState.Finalized &&
+            (!_completionObserved || _submissionState == SubmissionState.Submitting) &&
             _termination == HidFeatureTermination.Completed)
         {
             _termination = termination;

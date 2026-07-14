@@ -102,6 +102,32 @@ public sealed class NativeOperationStateTests
         Assert.Equal(1, finalizer.CallCount);
     }
 
+    [Theory]
+    [InlineData((int)HidFeatureTermination.CallerCanceled)]
+    [InlineData((int)HidFeatureTermination.DeadlineExpired)]
+    public async Task CancellationIntentAfterSubmittedCompletion_IsTooLateEvenWhileLeaseIsHeld(
+        int terminationValue)
+    {
+        var termination = (HidFeatureTermination)terminationValue;
+        var finalizer = new FinalizerProbe();
+        var state = CreateSubmittedState(finalizer, out NativeUseLease submissionLease);
+        var nativeCompletion = new NativeIoCompletion(true, 29, 0);
+
+        state.RecordCompletion(nativeCompletion);
+        Assert.False(state.Completion.IsCompleted);
+
+        state.RecordCancellationIntent(termination);
+        submissionLease.Dispose();
+
+        Assert.Equal(
+            new HidFeatureIoResult(
+                nativeCompletion,
+                true,
+                HidFeatureTermination.Completed),
+            await state.Completion);
+        Assert.Equal(1, finalizer.CallCount);
+    }
+
     [Fact]
     public async Task CompletionBetweenCancellationClaimAndNativeCancel_RemainsAliveThroughCancellationLease()
     {
@@ -187,6 +213,33 @@ public sealed class NativeOperationStateTests
 
         Assert.Equal(
             new HidFeatureIoResult(failure, true, HidFeatureTermination.Completed),
+            await state.Completion);
+        Assert.Equal(1, finalizer.CallCount);
+    }
+
+    [Theory]
+    [InlineData((int)HidFeatureTermination.CallerCanceled)]
+    [InlineData((int)HidFeatureTermination.DeadlineExpired)]
+    public async Task CancellationIntentAfterImmediateFailure_IsTooLateEvenWhileLeaseIsHeld(
+        int terminationValue)
+    {
+        var termination = (HidFeatureTermination)terminationValue;
+        var finalizer = new FinalizerProbe();
+        var state = new NativeOperationState(finalizer.FinalizeResources);
+        Assert.True(state.TryBeginSubmission(out NativeUseLease submissionLease));
+        var failure = new NativeIoCompletion(false, 0, 87);
+
+        state.RecordImmediateFailure(failure);
+        Assert.False(state.Completion.IsCompleted);
+
+        state.RecordCancellationIntent(termination);
+        submissionLease.Dispose();
+
+        Assert.Equal(
+            new HidFeatureIoResult(
+                failure,
+                true,
+                HidFeatureTermination.Completed),
             await state.Completion);
         Assert.Equal(1, finalizer.CallCount);
     }
