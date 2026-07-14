@@ -5,15 +5,18 @@ namespace OpenSynapse.Service;
 
 public sealed record ProfileLoadResult(ProfileSet Profiles, bool RecoveredFromInvalidFile);
 
-public sealed class ProfileStore(string path)
+public sealed class ProfileStore(string path, ProfileSetValidator? validator = null)
 {
     private static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web)
     {
         WriteIndented = true,
     };
+    private readonly ProfileSetValidator _validator =
+        validator ?? ProfileSetValidator.CreateUnverifiedSafeDefaults();
 
     public async Task SaveAsync(ProfileSet profiles, CancellationToken cancellationToken)
     {
+        _validator.Validate(profiles);
         string? directory = Path.GetDirectoryName(path);
         if (!string.IsNullOrEmpty(directory))
         {
@@ -37,13 +40,29 @@ public sealed class ProfileStore(string path)
         {
             string json = await File.ReadAllTextAsync(path, cancellationToken);
             ProfileSet? profiles = JsonSerializer.Deserialize<ProfileSet>(json, SerializerOptions);
-            return profiles is null
-                ? new ProfileLoadResult(ProfileDefaults.CreateSafeDefaults(), true)
-                : new ProfileLoadResult(profiles, false);
+            if (profiles is null)
+            {
+                return await RecoverSafeDefaultsAsync(cancellationToken);
+            }
+
+            _validator.Validate(profiles);
+            return new ProfileLoadResult(profiles, false);
         }
-        catch (JsonException)
+        catch (Exception exception) when (exception is
+            JsonException or
+            NotSupportedException or
+            ArgumentException or
+            InvalidDataException)
         {
-            return new ProfileLoadResult(ProfileDefaults.CreateSafeDefaults(), true);
+            return await RecoverSafeDefaultsAsync(cancellationToken);
         }
+    }
+
+    private async Task<ProfileLoadResult> RecoverSafeDefaultsAsync(
+        CancellationToken cancellationToken)
+    {
+        ProfileSet defaults = ProfileDefaults.CreateSafeDefaults();
+        await SaveAsync(defaults, cancellationToken);
+        return new ProfileLoadResult(defaults, true);
     }
 }
