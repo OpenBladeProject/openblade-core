@@ -1,0 +1,209 @@
+using Microsoft.Win32;
+using OpenSynapse.Protocol;
+
+namespace OpenSynapse.Protocol.Tests;
+
+public sealed class WindowsHostIdentitySourceTests
+{
+    private const string BiosKey = @"HARDWARE\DESCRIPTION\System\BIOS";
+    private const string SystemInformationKey = @"SYSTEM\CurrentControlSet\Control\SystemInformation";
+
+    private static readonly RegistryValueRequest[] ExpectedRequests =
+    [
+        new(BiosKey, "SystemManufacturer", "Razer"),
+        new(BiosKey, "SystemProductName", "Blade 16 - RZ09-0581"),
+        new(BiosKey, "SystemSKU", "RZ09-05819EN4"),
+        new(BiosKey, "BIOSVersion", "3.01"),
+        new(SystemInformationKey, "SystemManufacturer", "Razer"),
+        new(SystemInformationKey, "SystemProductName", "Blade 16 - RZ09-0581"),
+        new(SystemInformationKey, "BIOSVersion", "3.01"),
+    ];
+
+    public static TheoryData<string, string> RegistryValues => CreateRequestData(
+        request => $"{request.ExpectedValue}-wrong");
+
+    public static TheoryData<string, string> CaseDifferentRegistryValues
+    {
+        get
+        {
+            TheoryData<string, string> data = new();
+            foreach (RegistryValueRequest request in ExpectedRequests)
+            {
+                string caseDifferentValue = request.ExpectedValue.ToLowerInvariant();
+                if (!string.Equals(caseDifferentValue, request.ExpectedValue, StringComparison.Ordinal))
+                {
+                    data.Add(request.Location, caseDifferentValue);
+                }
+            }
+
+            return data;
+        }
+    }
+
+    public static TheoryData<string> RegistryValueLocations()
+    {
+        TheoryData<string> data = new();
+        foreach (RegistryValueRequest request in ExpectedRequests)
+        {
+            data.Add(request.Location);
+        }
+
+        return data;
+    }
+
+    public static TheoryData<string> OverlappingRegistryValues => new()
+    {
+        { $"{SystemInformationKey}|SystemManufacturer" },
+        { $"{SystemInformationKey}|SystemProductName" },
+        { $"{SystemInformationKey}|BIOSVersion" },
+    };
+
+    [Fact]
+    public void ReadExactIdentity_AcceptsOnlyCompleteExactEvidence()
+    {
+        FakeRegistryValueSource registry = CreateExactRegistry();
+        WindowsHostIdentitySource source = new(registry);
+
+        HostIdentityReadResult result = source.ReadExactIdentity();
+
+        Assert.Equal(
+            new HostIdentityEvidence("Razer", "Blade 16 - RZ09-0581", "RZ09-05819EN4", "3.01"),
+            result.Evidence);
+        Assert.Null(result.Failure);
+        Assert.Equal(
+            ExpectedRequests.Select(request => request.Location).Order(),
+            registry.Requests.Select(request => request.Location).Order());
+        Assert.All(registry.Requests, request =>
+        {
+            Assert.Equal(RegistryHive.LocalMachine, request.Hive);
+            Assert.Equal(RegistryView.Registry64, request.View);
+        });
+    }
+
+    [Theory]
+    [MemberData(nameof(RegistryValues))]
+    public void ReadExactIdentity_BlocksEveryMismatchedValue(string location, string wrongValue)
+    {
+        FakeRegistryValueSource registry = CreateExactRegistry();
+        registry.Values[location] = wrongValue;
+
+        AssertIdentityBlocked(new WindowsHostIdentitySource(registry).ReadExactIdentity());
+    }
+
+    [Theory]
+    [MemberData(nameof(CaseDifferentRegistryValues))]
+    public void ReadExactIdentity_UsesOrdinalCaseSensitiveComparison(string location, string caseDifferentValue)
+    {
+        FakeRegistryValueSource registry = CreateExactRegistry();
+        registry.Values[location] = caseDifferentValue;
+
+        AssertIdentityBlocked(new WindowsHostIdentitySource(registry).ReadExactIdentity());
+    }
+
+    [Theory]
+    [MemberData(nameof(RegistryValueLocations))]
+    public void ReadExactIdentity_BlocksMissingValues(string location)
+    {
+        FakeRegistryValueSource registry = CreateExactRegistry();
+        registry.Values.Remove(location);
+
+        AssertIdentityBlocked(new WindowsHostIdentitySource(registry).ReadExactIdentity());
+    }
+
+    [Theory]
+    [MemberData(nameof(RegistryValueLocations))]
+    public void ReadExactIdentity_BlocksWrongTypeValuesWithoutConvertingThem(string location)
+    {
+        FakeRegistryValueSource registry = CreateExactRegistry();
+        registry.Values[location] = new StringConvertibleRegistryValue((string)registry.Values[location]!);
+
+        AssertIdentityBlocked(new WindowsHostIdentitySource(registry).ReadExactIdentity());
+    }
+
+    [Theory]
+    [MemberData(nameof(RegistryValueLocations))]
+    public void ReadExactIdentity_BlocksAndContainsRegistryReadExceptions(string location)
+    {
+        FakeRegistryValueSource registry = CreateExactRegistry();
+        registry.ThrowAt = location;
+
+        AssertIdentityBlocked(new WindowsHostIdentitySource(registry).ReadExactIdentity());
+    }
+
+    [Theory]
+    [MemberData(nameof(OverlappingRegistryValues))]
+    public void ReadExactIdentity_BlocksCrossKeyDisagreement(string systemInformationLocation)
+    {
+        FakeRegistryValueSource registry = CreateExactRegistry();
+        registry.Values[systemInformationLocation] = $"{registry.Values[systemInformationLocation]} ";
+
+        AssertIdentityBlocked(new WindowsHostIdentitySource(registry).ReadExactIdentity());
+    }
+
+    private static TheoryData<string, string> CreateRequestData(
+        Func<RegistryValueRequest, string> valueFactory)
+    {
+        TheoryData<string, string> data = new();
+        foreach (RegistryValueRequest request in ExpectedRequests)
+        {
+            data.Add(request.Location, valueFactory(request));
+        }
+
+        return data;
+    }
+
+    private static FakeRegistryValueSource CreateExactRegistry()
+    {
+        FakeRegistryValueSource registry = new();
+        foreach (RegistryValueRequest request in ExpectedRequests)
+        {
+            registry.Values.Add(request.Location, request.ExpectedValue);
+        }
+
+        return registry;
+    }
+
+    private static void AssertIdentityBlocked(HostIdentityReadResult result)
+    {
+        Assert.Null(result.Evidence);
+        Assert.Equal(HidSessionFailureKind.IdentityBlocked, result.Failure);
+    }
+
+    private sealed class FakeRegistryValueSource : IRegistryValueSource
+    {
+        public Dictionary<string, object?> Values { get; } = [];
+
+        public List<ObservedRegistryRequest> Requests { get; } = [];
+
+        public string? ThrowAt { get; set; }
+
+        public object? Read(RegistryHive hive, RegistryView view, string key, string valueName)
+        {
+            Assert.Equal(RegistryHive.LocalMachine, hive);
+            Assert.Equal(RegistryView.Registry64, view);
+
+            ObservedRegistryRequest request = new(hive, view, $"{key}|{valueName}");
+            Requests.Add(request);
+            if (request.Location == ThrowAt)
+            {
+                throw new UnauthorizedAccessException("inaccessible test value");
+            }
+
+            return Values.GetValueOrDefault(request.Location);
+        }
+    }
+
+    private sealed class StringConvertibleRegistryValue(string text)
+    {
+        public override string ToString() => text;
+    }
+
+    private readonly record struct RegistryValueRequest(
+        string Key, string ValueName, string ExpectedValue)
+    {
+        public string Location => $"{Key}|{ValueName}";
+    }
+
+    private readonly record struct ObservedRegistryRequest(
+        RegistryHive Hive, RegistryView View, string Location);
+}

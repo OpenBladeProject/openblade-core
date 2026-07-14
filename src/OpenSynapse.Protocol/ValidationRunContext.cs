@@ -1,7 +1,3 @@
-using System.Runtime.CompilerServices;
-
-[assembly: InternalsVisibleTo("OpenSynapse.Protocol.Tests")]
-
 namespace OpenSynapse.Protocol;
 
 internal readonly record struct BatteryValidationTransactionIds(
