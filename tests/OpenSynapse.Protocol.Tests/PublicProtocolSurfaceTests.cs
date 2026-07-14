@@ -87,7 +87,7 @@ public sealed class PublicProtocolSurfaceTests
 
         foreach (Type type in ProtocolAssembly.GetExportedTypes())
         {
-            InspectMembers(type, violations);
+            InspectPublicType(type, violations);
         }
 
         Assert.Empty(violations.OrderBy(violation => violation, StringComparer.Ordinal));
@@ -98,8 +98,50 @@ public sealed class PublicProtocolSurfaceTests
     {
         Assert.True(typeof(RazerProtocolException).IsPublic);
         Assert.True(typeof(UnvalidatedCommandException).IsPublic);
-        Assert.False(SignatureContainsForbiddenType(typeof(RazerProtocolException)));
-        Assert.False(SignatureContainsForbiddenType(typeof(UnvalidatedCommandException)));
+        Assert.False(TypeSurfaceContainsForbiddenType(typeof(RazerProtocolException)));
+        Assert.False(TypeSurfaceContainsForbiddenType(typeof(UnvalidatedCommandException)));
+    }
+
+    [Fact]
+    public void ValidatorRejectsTypeDerivedFromSafeHandle()
+    {
+        AssertSurfaceRejected(typeof(SafeHandleDerivedSurface));
+    }
+
+    [Fact]
+    public void ValidatorRejectsInterfaceInheritingRawGenericSurface()
+    {
+        AssertSurfaceRejected(typeof(IRawGenericSurface));
+    }
+
+    [Fact]
+    public void ValidatorRejectsSafeHandleGenericConstraints()
+    {
+        AssertSurfaceRejected(typeof(SafeHandleConstrainedSurface<>));
+        AssertSurfaceRejected(typeof(SafeHandleMethodConstrainedSurface));
+    }
+
+    [Fact]
+    public void ValidatorRejectsUnmanagedFunctionPointerSignature()
+    {
+        AssertSurfaceRejected(typeof(FunctionPointerSurface));
+    }
+
+    private static void AssertSurfaceRejected(Type type)
+    {
+        List<string> violations = [];
+        InspectPublicType(type, violations);
+        Assert.NotEmpty(violations);
+    }
+
+    private static void InspectPublicType(Type type, ICollection<string> violations)
+    {
+        if (TypeSurfaceContainsForbiddenType(type))
+        {
+            violations.Add($"{type.FullName} has a forbidden type hierarchy or generic constraint.");
+        }
+
+        InspectMembers(type, violations);
     }
 
     private static void InspectMembers(Type type, ICollection<string> violations)
@@ -124,6 +166,15 @@ public sealed class PublicProtocolSurfaceTests
             if (SignatureContainsForbiddenType(method.ReturnType))
             {
                 violations.Add($"{type.FullName}.{method.Name} returns {method.ReturnType}.");
+            }
+
+            foreach (Type genericParameter in method.GetGenericArguments())
+            {
+                if (SignatureContainsForbiddenType(genericParameter))
+                {
+                    violations.Add(
+                        $"{type.FullName}.{method.Name} has a forbidden generic constraint on {genericParameter}.");
+                }
             }
 
             InspectParameters(type, method, method.GetParameters(), violations);
@@ -195,15 +246,38 @@ public sealed class PublicProtocolSurfaceTests
 
     private static bool SignatureContainsForbiddenType(Type type)
     {
+        return SignatureContainsForbiddenType(type, new HashSet<Type>());
+    }
+
+    private static bool SignatureContainsForbiddenType(Type type, ISet<Type> visited)
+    {
+        if (type.IsFunctionPointer)
+        {
+            _ = SignatureContainsForbiddenType(type.GetFunctionPointerReturnType(), visited);
+            foreach (Type parameterType in type.GetFunctionPointerParameterTypes())
+            {
+                _ = SignatureContainsForbiddenType(parameterType, visited);
+            }
+
+            return true;
+        }
+
         if (type.IsPointer)
         {
+            _ = SignatureContainsForbiddenType(type.GetElementType()!, visited);
             return true;
         }
 
         if (type.IsArray || type.IsByRef)
         {
+            if (!visited.Add(type))
+            {
+                return false;
+            }
+
             Type elementType = type.GetElementType()!;
-            return elementType == typeof(byte) || SignatureContainsForbiddenType(elementType);
+            return elementType == typeof(byte)
+                || SignatureContainsForbiddenType(elementType, visited);
         }
 
         if (type == typeof(IntPtr)
@@ -221,7 +295,79 @@ public sealed class PublicProtocolSurfaceTests
             return true;
         }
 
+        if (!visited.Add(type))
+        {
+            return false;
+        }
+
+        if (type.IsGenericParameter)
+        {
+            return type
+                .GetGenericParameterConstraints()
+                .Any(constraint => SignatureContainsForbiddenType(constraint, visited));
+        }
+
         return type.IsGenericType
-            && type.GetGenericArguments().Any(SignatureContainsForbiddenType);
+            && type
+                .GetGenericArguments()
+                .Any(argument => SignatureContainsForbiddenType(argument, visited));
+    }
+
+    private static bool TypeSurfaceContainsForbiddenType(Type type)
+    {
+        return TypeSurfaceContainsForbiddenType(type, new HashSet<Type>());
+    }
+
+    private static bool TypeSurfaceContainsForbiddenType(Type type, ISet<Type> visited)
+    {
+        if (!visited.Add(type))
+        {
+            return false;
+        }
+
+        if (SignatureContainsForbiddenType(type))
+        {
+            return true;
+        }
+
+        if (type.BaseType is not null
+            && TypeSurfaceContainsForbiddenType(type.BaseType, visited))
+        {
+            return true;
+        }
+
+        return type
+            .GetInterfaces()
+            .Any(interfaceType => TypeSurfaceContainsForbiddenType(interfaceType, visited));
+    }
+
+    private sealed class SafeHandleDerivedSurface : SafeHandle
+    {
+        public SafeHandleDerivedSurface()
+            : base(IntPtr.Zero, ownsHandle: false)
+        {
+        }
+
+        public override bool IsInvalid => true;
+
+        protected override bool ReleaseHandle() => true;
+    }
+
+    private interface IRawGenericSurface : IEnumerable<byte[]>;
+
+    private sealed class SafeHandleConstrainedSurface<T>
+        where T : SafeHandle;
+
+    private sealed class SafeHandleMethodConstrainedSurface
+    {
+        public void Use<T>()
+            where T : SafeHandle
+        {
+        }
+    }
+
+    private unsafe sealed class FunctionPointerSurface
+    {
+        public delegate* unmanaged<int, void> Callback => (delegate* unmanaged<int, void>)0;
     }
 }
