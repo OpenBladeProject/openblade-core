@@ -778,7 +778,10 @@ public sealed class WindowsRazerHidSessionTests
                 HidSessionFailurePhase.ProtocolValidation,
                 HidSessionFailureKind.ProtocolFailure,
                 NativeWin32Error: 0,
-                TransferredByteCount: 91),
+                TransferredByteCount: 91)
+            {
+                ProtocolValidationFailure = HidProtocolValidationFailure.Checksum,
+            },
             malformedResult.Diagnostic);
         await enteredDisposal.Task;
         Assert.Equal(

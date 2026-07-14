@@ -98,11 +98,28 @@ public sealed class PublicProtocolSurfaceTests
         Dictionary<string, Type> properties = typeof(HidSessionFailureDiagnostic)
             .GetProperties(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly)
             .ToDictionary(property => property.Name, property => property.PropertyType);
-        Assert.Equal(4, properties.Count);
+        Assert.Equal(5, properties.Count);
         Assert.Equal(typeof(HidSessionFailurePhase), properties["Phase"]);
         Assert.Equal(typeof(HidSessionFailureKind), properties["Failure"]);
         Assert.Equal(typeof(int?), properties["NativeWin32Error"]);
         Assert.Equal(typeof(int?), properties["TransferredByteCount"]);
+        Assert.Equal(
+            typeof(HidProtocolValidationFailure?),
+            properties["ProtocolValidationFailure"]);
+        Assert.Equal(
+            [
+                "Checksum",
+                "CommandClassMismatch",
+                "CommandIdMismatch",
+                "EnvelopeLength",
+                "PayloadLength",
+                "PayloadValidator",
+                "ReportId",
+                "Status",
+                "TransactionMismatch",
+            ],
+            Enum.GetNames<HidProtocolValidationFailure>()
+                .OrderBy(name => name, StringComparer.Ordinal));
 
         var result = new HidSessionResult<int>(1, null);
         var (value, failure) = result;

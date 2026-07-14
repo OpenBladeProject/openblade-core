@@ -9,10 +9,15 @@ internal enum RazerCommandStatus : byte
 
 public sealed class RazerProtocolException : Exception
 {
-    public RazerProtocolException(string message)
+    public RazerProtocolException(
+        string message,
+        HidProtocolValidationFailure validationFailure)
         : base(message)
     {
+        ValidationFailure = validationFailure;
     }
+
+    public HidProtocolValidationFailure ValidationFailure { get; }
 }
 
 internal sealed class RazerReport
@@ -72,39 +77,60 @@ internal sealed class RazerReport
     {
         if (response.Length != ReportLength)
         {
-            throw new RazerProtocolException($"Expected a {ReportLength}-byte response.");
+            throw new RazerProtocolException(
+                $"Expected a {ReportLength}-byte response.",
+                HidProtocolValidationFailure.EnvelopeLength);
         }
 
         if (response[88] != CalculateChecksum(response))
         {
-            throw new RazerProtocolException("Response checksum is invalid.");
+            throw new RazerProtocolException(
+                "Response checksum is invalid.",
+                HidProtocolValidationFailure.Checksum);
         }
 
         if (response[1] != TransactionId)
         {
-            throw new RazerProtocolException("Response transaction does not match the request.");
+            throw new RazerProtocolException(
+                "Response transaction does not match the request.",
+                HidProtocolValidationFailure.TransactionMismatch);
         }
 
-        if (response[6] != CommandClass || response[7] != CommandId)
+        if (response[6] != CommandClass)
         {
-            throw new RazerProtocolException("Response command does not match the request.");
+            throw new RazerProtocolException(
+                "Response command class does not match the request.",
+                HidProtocolValidationFailure.CommandClassMismatch);
+        }
+
+        if (response[7] != CommandId)
+        {
+            throw new RazerProtocolException(
+                "Response command ID does not match the request.",
+                HidProtocolValidationFailure.CommandIdMismatch);
         }
 
         RazerCommandStatus status = (RazerCommandStatus)response[0];
         if (status != RazerCommandStatus.Successful)
         {
-            throw new RazerProtocolException($"Razer command failed with status 0x{response[0]:X2}.");
+            throw new RazerProtocolException(
+                $"Razer command failed with status 0x{response[0]:X2}.",
+                HidProtocolValidationFailure.Status);
         }
 
         int payloadLength = response[5];
         if (payloadLength > MaximumPayloadLength)
         {
-            throw new RazerProtocolException("Response payload length is invalid.");
+            throw new RazerProtocolException(
+                "Response payload length is invalid.",
+                HidProtocolValidationFailure.PayloadLength);
         }
 
         if (expectedPayloadLength is not null && payloadLength != expectedPayloadLength)
         {
-            throw new RazerProtocolException("Response payload length does not match the command contract.");
+            throw new RazerProtocolException(
+                "Response payload length does not match the command contract.",
+                HidProtocolValidationFailure.PayloadLength);
         }
 
         return response.Slice(8, payloadLength).ToArray();

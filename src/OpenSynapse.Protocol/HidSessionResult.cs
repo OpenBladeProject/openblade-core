@@ -27,11 +27,27 @@ public enum HidSessionFailurePhase
     ProtocolValidation,
 }
 
+public enum HidProtocolValidationFailure
+{
+    ReportId,
+    EnvelopeLength,
+    Checksum,
+    TransactionMismatch,
+    CommandClassMismatch,
+    CommandIdMismatch,
+    Status,
+    PayloadLength,
+    PayloadValidator,
+}
+
 public readonly record struct HidSessionFailureDiagnostic(
     HidSessionFailurePhase Phase,
     HidSessionFailureKind Failure,
     int? NativeWin32Error,
-    int? TransferredByteCount);
+    int? TransferredByteCount)
+{
+    public HidProtocolValidationFailure? ProtocolValidationFailure { get; init; }
+}
 
 public readonly record struct HidSessionResult<T>(
     T? Value,

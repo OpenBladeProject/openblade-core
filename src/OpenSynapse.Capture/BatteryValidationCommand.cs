@@ -78,6 +78,8 @@ public sealed class BatteryValidationCommand
                 $"BaselineQueryWin32Error={diagnostic.NativeWin32Error?.ToString() ?? "Unavailable"}").ConfigureAwait(false);
             await _output.WriteLineAsync(
                 $"BaselineQueryTransferredBytes={diagnostic.TransferredByteCount?.ToString() ?? "Unavailable"}").ConfigureAwait(false);
+            await _output.WriteLineAsync(
+                $"BaselineQueryProtocolValidationFailure={diagnostic.ProtocolValidationFailure?.ToString() ?? "Unavailable"}").ConfigureAwait(false);
         }
         if (result.RestorationDiagnostic is { } restorationDiagnostic)
         {
@@ -87,6 +89,8 @@ public sealed class BatteryValidationCommand
                 $"RestorationWin32Error={restorationDiagnostic.NativeWin32Error?.ToString() ?? "Unavailable"}").ConfigureAwait(false);
             await _output.WriteLineAsync(
                 $"RestorationTransferredBytes={restorationDiagnostic.TransferredByteCount?.ToString() ?? "Unavailable"}").ConfigureAwait(false);
+            await _output.WriteLineAsync(
+                $"RestorationProtocolValidationFailure={restorationDiagnostic.ProtocolValidationFailure?.ToString() ?? "Unavailable"}").ConfigureAwait(false);
         }
     }
 

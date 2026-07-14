@@ -445,7 +445,9 @@ internal sealed class WindowsRazerHidSession : IRazerCommandSession
         {
             if (getBuffer[0] != 0)
             {
-                throw new RazerProtocolException("Feature report ID is invalid.");
+                throw new RazerProtocolException(
+                    "Feature report ID is invalid.",
+                    HidProtocolValidationFailure.ReportId);
             }
 
             ReadOnlyMemory<byte> payload = request.ValidateResponse(
@@ -460,24 +462,29 @@ internal sealed class WindowsRazerHidSession : IRazerCommandSession
                 }
                 catch
                 {
-                    throw new RazerProtocolException("Command payload validator failed.");
+                    throw new RazerProtocolException(
+                        "Command payload validator failed.",
+                        HidProtocolValidationFailure.PayloadValidator);
                 }
 
                 if (!valid)
                 {
-                    throw new RazerProtocolException("Command payload validation failed.");
+                    throw new RazerProtocolException(
+                        "Command payload validation failed.",
+                        HidProtocolValidationFailure.PayloadValidator);
                 }
             }
 
             return new(payload.ToArray(), null);
         }
-        catch (RazerProtocolException)
+        catch (RazerProtocolException error)
         {
             Poison();
             return DiagnosticFailure(
                 HidSessionFailureKind.ProtocolFailure,
                 HidSessionFailurePhase.ProtocolValidation,
-                getResult.Completion);
+                getResult.Completion,
+                error.ValidationFailure);
         }
     }
 
@@ -539,14 +546,18 @@ internal sealed class WindowsRazerHidSession : IRazerCommandSession
     private static HidSessionResult<ReadOnlyMemory<byte>> DiagnosticFailure(
         HidSessionFailureKind failure,
         HidSessionFailurePhase phase,
-        NativeIoCompletion? completion = null) =>
+        NativeIoCompletion? completion = null,
+        HidProtocolValidationFailure? protocolValidationFailure = null) =>
         new(default, failure)
         {
             Diagnostic = new HidSessionFailureDiagnostic(
                 phase,
                 failure,
                 completion?.ErrorCode,
-                completion?.BytesTransferred),
+                completion?.BytesTransferred)
+            {
+                ProtocolValidationFailure = protocolValidationFailure,
+            },
         };
 
     private static HidSessionFailurePhase IoPhase(

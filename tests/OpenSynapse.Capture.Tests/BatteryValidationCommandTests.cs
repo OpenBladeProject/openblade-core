@@ -153,7 +153,7 @@ public sealed class BatteryValidationCommandTests
         Assert.Contains("BaselineQuerySessionFailure=NativeIoFailure", output.ToString());
         Assert.Contains("BaselineQueryWin32Error=31", output.ToString());
         Assert.Contains("BaselineQueryTransferredBytes=12", output.ToString());
-        Assert.DoesNotContain("Payload", output.ToString(), StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("Payload=", output.ToString(), StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("Transaction", output.ToString(), StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("Path", output.ToString(), StringComparison.OrdinalIgnoreCase);
     }
@@ -195,7 +195,10 @@ public sealed class BatteryValidationCommandTests
                 HidSessionFailurePhase.GetCompletion,
                 HidSessionFailureKind.Timeout,
                 NativeWin32Error: 995,
-                TransferredByteCount: 0),
+                TransferredByteCount: 0)
+            {
+                ProtocolValidationFailure = HidProtocolValidationFailure.PayloadValidator,
+            },
         };
         var command = CreateCommand(_ => Task.FromResult(result), output);
 
@@ -206,7 +209,8 @@ public sealed class BatteryValidationCommandTests
         Assert.Contains("RestorationSessionFailure=Timeout", output.ToString());
         Assert.Contains("RestorationWin32Error=995", output.ToString());
         Assert.Contains("RestorationTransferredBytes=0", output.ToString());
-        Assert.DoesNotContain("Payload", output.ToString(), StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("RestorationProtocolValidationFailure=PayloadValidator", output.ToString());
+        Assert.DoesNotContain("Payload=", output.ToString(), StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("Transaction", output.ToString(), StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("Path", output.ToString(), StringComparison.OrdinalIgnoreCase);
     }

@@ -79,7 +79,10 @@ internal sealed class BatteryCommandClient : IBatteryCommandClient
                     HidSessionFailurePhase.ProtocolValidation,
                     HidSessionFailureKind.ProtocolFailure,
                     NativeWin32Error: null,
-                    TransferredByteCount: null),
+                    TransferredByteCount: null)
+                {
+                    ProtocolValidationFailure = HidProtocolValidationFailure.PayloadValidator,
+                },
             };
     }
 
@@ -117,7 +120,10 @@ internal sealed class BatteryCommandClient : IBatteryCommandClient
                     HidSessionFailurePhase.ProtocolValidation,
                     HidSessionFailureKind.ProtocolFailure,
                     NativeWin32Error: null,
-                    TransferredByteCount: null),
+                    TransferredByteCount: null)
+                {
+                    ProtocolValidationFailure = HidProtocolValidationFailure.PayloadValidator,
+                },
             };
     }
 }

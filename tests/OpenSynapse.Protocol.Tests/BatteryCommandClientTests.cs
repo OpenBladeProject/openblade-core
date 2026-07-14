@@ -117,7 +117,10 @@ public sealed class BatteryCommandClientTests
                 HidSessionFailurePhase.ProtocolValidation,
                 HidSessionFailureKind.ProtocolFailure,
                 NativeWin32Error: null,
-                TransferredByteCount: null),
+                TransferredByteCount: null)
+            {
+                ProtocolValidationFailure = HidProtocolValidationFailure.PayloadValidator,
+            },
             result.Diagnostic);
     }
 

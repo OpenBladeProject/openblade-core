@@ -37,7 +37,10 @@ public sealed class RazerReportTests
         byte[] response = RazerReport.Create(0x11, 0x0D, 0x02, [1]).Encode();
         response[0] = (byte)RazerCommandStatus.Successful;
 
-        Assert.Throws<RazerProtocolException>(() => request.ValidateResponse(response));
+        RazerProtocolException error = Assert.Throws<RazerProtocolException>(
+            () => request.ValidateResponse(response));
+
+        Assert.Equal(HidProtocolValidationFailure.TransactionMismatch, error.ValidationFailure);
     }
 
     [Fact]
@@ -47,6 +50,9 @@ public sealed class RazerReportTests
         byte[] response = RazerReport.Create(0x10, 0x0D, 0x02, [0xAA]).Encode();
         response[0] = (byte)RazerCommandStatus.Successful;
 
-        Assert.Throws<RazerProtocolException>(() => request.ValidateResponse(response, expectedPayloadLength: 0));
+        RazerProtocolException error = Assert.Throws<RazerProtocolException>(
+            () => request.ValidateResponse(response, expectedPayloadLength: 0));
+
+        Assert.Equal(HidProtocolValidationFailure.PayloadLength, error.ValidationFailure);
     }
 }
