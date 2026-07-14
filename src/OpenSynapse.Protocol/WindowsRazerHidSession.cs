@@ -30,14 +30,38 @@ internal readonly record struct TransactionIdAssignment(
         new(0, HidSessionFailureKind.Exhausted);
 }
 
-internal sealed class WindowsRazerHidSession : IAsyncDisposable
+internal interface IRazerCommandSession
+{
+    Task<HidSessionResult<ReadOnlyMemory<byte>>> ExecuteAsync(
+        RazerCommandSpec command,
+        Func<TransactionIdAssignment> assignTransactionId,
+        TimeSpan exchangeTimeout,
+        CancellationToken cancellationToken);
+}
+
+internal static class RazerCommandSessionTimeout
+{
+    private static readonly TimeSpan MaximumExchangeTimeout =
+        TimeSpan.FromMilliseconds(uint.MaxValue - 1d);
+
+    internal static void Validate(TimeSpan exchangeTimeout)
+    {
+        if (exchangeTimeout <= TimeSpan.Zero ||
+            exchangeTimeout == Timeout.InfiniteTimeSpan ||
+            exchangeTimeout > MaximumExchangeTimeout)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(exchangeTimeout),
+                $"Exchange timeout must be positive and no greater than {MaximumExchangeTimeout.TotalMilliseconds:0} milliseconds.");
+        }
+    }
+}
+
+internal sealed class WindowsRazerHidSession : IRazerCommandSession, IAsyncDisposable
 {
     private const uint IoctlHidSetFeature = 0x000B0191;
     private const uint IoctlHidGetFeature = 0x000B0192;
     private const int FeatureReportLength = RazerReport.ReportLength + 1;
-    private static readonly TimeSpan MaximumExchangeTimeout =
-        TimeSpan.FromMilliseconds(uint.MaxValue - 1d);
-
     private readonly object sync = new();
     private readonly Queue<WorkItem> queue = new();
     private readonly SemaphoreSlim queued = new(0);
@@ -87,14 +111,7 @@ internal sealed class WindowsRazerHidSession : IAsyncDisposable
             throw new ArgumentOutOfRangeException(nameof(command), "Expected payload length must be between 0 and 80 bytes.");
         }
 
-        if (exchangeTimeout <= TimeSpan.Zero ||
-            exchangeTimeout == Timeout.InfiniteTimeSpan ||
-            exchangeTimeout > MaximumExchangeTimeout)
-        {
-            throw new ArgumentOutOfRangeException(
-                nameof(exchangeTimeout),
-                $"Exchange timeout must be positive and no greater than {MaximumExchangeTimeout.TotalMilliseconds:0} milliseconds.");
-        }
+        RazerCommandSessionTimeout.Validate(exchangeTimeout);
 
         var snapshot = new RazerCommandSpec(
             command.ClassId,

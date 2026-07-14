@@ -54,7 +54,7 @@ public static class BatteryValidationProtocol
         };
     }
 
-    private static byte Encode(BatteryValidationSetting setting) => setting switch
+    internal static byte Encode(BatteryValidationSetting setting) => setting switch
     {
         BatteryValidationSetting.ProtectionOff => 0x50,
         BatteryValidationSetting.Limit50 => 0xB2,
