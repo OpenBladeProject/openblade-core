@@ -1,5 +1,59 @@
 namespace OpenSynapse.Service;
 
+public static class ServiceBackgroundTaskGroup
+{
+    public static async Task RunAsync(
+        IEnumerable<Func<CancellationToken, Task>> operations,
+        CancellationToken stoppingToken)
+    {
+        using var linkedCancellation =
+            CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
+        Task[] tasks = operations
+            .Select(operation => operation(linkedCancellation.Token))
+            .ToArray();
+        if (tasks.Length == 0)
+        {
+            return;
+        }
+
+        Task firstCompleted = await Task.WhenAny(tasks);
+        Exception? firstFailure = null;
+        try
+        {
+            await firstCompleted;
+        }
+        catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+        {
+        }
+        catch (Exception exception)
+        {
+            firstFailure = exception;
+        }
+
+        await linkedCancellation.CancelAsync();
+        try
+        {
+            await Task.WhenAll(tasks);
+        }
+        catch when (firstFailure is not null || stoppingToken.IsCancellationRequested)
+        {
+        }
+
+        if (firstFailure is not null)
+        {
+            System.Runtime.ExceptionServices.ExceptionDispatchInfo
+                .Capture(firstFailure)
+                .Throw();
+        }
+
+        if (!stoppingToken.IsCancellationRequested)
+        {
+            throw new InvalidOperationException(
+                "An OpenSynapse service background component stopped unexpectedly.");
+        }
+    }
+}
+
 public sealed class ServiceLifecycleRefreshLoop(
     IServiceControlRuntime runtime,
     IServiceLifecycleEventSource eventSource,
@@ -35,6 +89,7 @@ public sealed class ServiceLifecycleRefreshLoop(
         catch (Exception exception)
         {
             logger.LogError(exception, "Windows lifecycle notifications failed.");
+            throw;
         }
     }
 }

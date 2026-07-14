@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using System.Collections.Concurrent;
 using System.Runtime.InteropServices;
 using System.Threading.Channels;
 
@@ -22,9 +23,106 @@ public interface IWindowsLifecycleNotificationBackend
     IDisposable Subscribe(Action<ServiceLifecycleTrigger> publish);
 }
 
+public interface IWindowsLifecycleUnregistrationApi
+{
+    uint UnregisterDevice(IntPtr registration);
+
+    uint UnregisterPowerSource(IntPtr registration);
+
+    uint UnregisterSuspendResume(IntPtr registration);
+}
+
+public sealed class WindowsLifecycleRegistrationCleanup(
+    IWindowsLifecycleUnregistrationApi api,
+    IntPtr deviceRegistration,
+    IntPtr powerSourceRegistration,
+    IntPtr suspendResumeRegistration,
+    object callbackLifetime) : IDisposable
+{
+    private static readonly ConcurrentBag<WindowsLifecycleRegistrationCleanup>
+        FailedCleanups = [];
+
+    private readonly object sync = new();
+    private object? callbackLifetime = callbackLifetime;
+    private bool attempted;
+    private AggregateException? failure;
+
+    public void Dispose()
+    {
+        lock (sync)
+        {
+            if (attempted)
+            {
+                if (failure is not null)
+                {
+                    throw failure;
+                }
+
+                return;
+            }
+
+            attempted = true;
+            List<Exception> failures = [];
+
+            if (deviceRegistration != IntPtr.Zero)
+            {
+                uint result = api.UnregisterDevice(deviceRegistration);
+                if (result == 0)
+                {
+                    deviceRegistration = IntPtr.Zero;
+                }
+                else
+                {
+                    failures.Add(new InvalidOperationException(
+                        $"CM_Unregister_Notification failed with CONFIGRET 0x{result:X8}."));
+                }
+            }
+
+            if (powerSourceRegistration != IntPtr.Zero)
+            {
+                uint result = api.UnregisterPowerSource(powerSourceRegistration);
+                if (result == 0)
+                {
+                    powerSourceRegistration = IntPtr.Zero;
+                }
+                else
+                {
+                    failures.Add(new Win32Exception((int)result));
+                }
+            }
+
+            if (suspendResumeRegistration != IntPtr.Zero)
+            {
+                uint result = api.UnregisterSuspendResume(suspendResumeRegistration);
+                if (result == 0)
+                {
+                    suspendResumeRegistration = IntPtr.Zero;
+                }
+                else
+                {
+                    failures.Add(new Win32Exception((int)result));
+                }
+            }
+
+            if (failures.Count > 0)
+            {
+                failure = new AggregateException(
+                    "One or more Windows lifecycle notifications could not be unregistered.",
+                    failures);
+                FailedCleanups.Add(this);
+                throw failure;
+            }
+
+            callbackLifetime = null;
+        }
+    }
+}
+
 public sealed class WindowsServiceLifecycleEventSource(
     IWindowsLifecycleNotificationBackend backend) : IServiceLifecycleEventSource
 {
+    private static readonly ConcurrentBag<IDisposable> FailedSubscriptions = [];
+
     public WindowsServiceLifecycleEventSource()
         : this(new NativeWindowsLifecycleNotificationBackend())
     {
@@ -41,13 +139,27 @@ public sealed class WindowsServiceLifecycleEventSource(
                 SingleReader = true,
                 SingleWriter = false,
             });
-        using IDisposable subscription = backend.Subscribe(
+        IDisposable subscription = backend.Subscribe(
             trigger => notifications.Writer.TryWrite(trigger));
-
-        await foreach (ServiceLifecycleTrigger trigger in
-            notifications.Reader.ReadAllAsync(cancellationToken))
+        try
         {
-            yield return trigger;
+            await foreach (ServiceLifecycleTrigger trigger in
+                notifications.Reader.ReadAllAsync(cancellationToken))
+            {
+                yield return trigger;
+            }
+        }
+        finally
+        {
+            try
+            {
+                subscription.Dispose();
+            }
+            catch
+            {
+                FailedSubscriptions.Add(subscription);
+                throw;
+            }
         }
     }
 }
@@ -87,6 +199,7 @@ internal sealed class NativeWindowsLifecycleNotificationBackend
         private IntPtr suspendResumeRegistration;
         private IntPtr powerSourceRegistration;
         private IntPtr deviceRegistration;
+        private readonly WindowsLifecycleRegistrationCleanup cleanup;
         private int disposed;
 
         public NativeSubscription(Action<ServiceLifecycleTrigger> publish)
@@ -132,38 +245,39 @@ internal sealed class NativeWindowsLifecycleNotificationBackend
                     throw new InvalidOperationException(
                         $"CM_Register_Notification failed with CONFIGRET 0x{configurationResult:X8}.");
                 }
+
+                cleanup = new WindowsLifecycleRegistrationCleanup(
+                    NativeUnregistrationApi.Instance,
+                    deviceRegistration,
+                    powerSourceRegistration,
+                    suspendResumeRegistration,
+                    this);
             }
-            catch
+            catch (Exception registrationFailure)
             {
-                Dispose();
+                var partialCleanup = new WindowsLifecycleRegistrationCleanup(
+                    NativeUnregistrationApi.Instance,
+                    deviceRegistration,
+                    powerSourceRegistration,
+                    suspendResumeRegistration,
+                    this);
+                try
+                {
+                    partialCleanup.Dispose();
+                }
+                catch (Exception cleanupFailure)
+                {
+                    throw new AggregateException(registrationFailure, cleanupFailure);
+                }
+
                 throw;
             }
         }
 
         public void Dispose()
         {
-            if (Interlocked.Exchange(ref disposed, 1) != 0)
-            {
-                return;
-            }
-
-            if (deviceRegistration != IntPtr.Zero)
-            {
-                _ = CmUnregisterNotification(deviceRegistration);
-                deviceRegistration = IntPtr.Zero;
-            }
-
-            if (powerSourceRegistration != IntPtr.Zero)
-            {
-                _ = PowerSettingUnregisterNotification(powerSourceRegistration);
-                powerSourceRegistration = IntPtr.Zero;
-            }
-
-            if (suspendResumeRegistration != IntPtr.Zero)
-            {
-                _ = PowerUnregisterSuspendResumeNotification(suspendResumeRegistration);
-                suspendResumeRegistration = IntPtr.Zero;
-            }
+            Volatile.Write(ref disposed, 1);
+            cleanup.Dispose();
         }
 
         private uint OnSuspendResumeNotification(IntPtr context, uint type, IntPtr setting)
@@ -208,6 +322,20 @@ internal sealed class NativeWindowsLifecycleNotificationBackend
             {
                 throw new Win32Exception((int)error);
             }
+        }
+
+        private sealed class NativeUnregistrationApi : IWindowsLifecycleUnregistrationApi
+        {
+            public static NativeUnregistrationApi Instance { get; } = new();
+
+            public uint UnregisterDevice(IntPtr registration) =>
+                CmUnregisterNotification(registration);
+
+            public uint UnregisterPowerSource(IntPtr registration) =>
+                PowerSettingUnregisterNotification(registration);
+
+            public uint UnregisterSuspendResume(IntPtr registration) =>
+                PowerUnregisterSuspendResumeNotification(registration);
         }
 
         [StructLayout(LayoutKind.Sequential)]

@@ -8,6 +8,53 @@ namespace OpenSynapse.Service.Tests;
 public sealed class ServiceLifecycleRefreshLoopTests
 {
     [Fact]
+    public async Task BackgroundTaskGroup_PropagatesFailureAndCancelsPeers()
+    {
+        var expected = new InvalidOperationException("lifecycle failed");
+        var peerCancelled = new TaskCompletionSource(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+
+        InvalidOperationException actual = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => ServiceBackgroundTaskGroup.RunAsync(
+                [
+                    _ => Task.FromException(expected),
+                    async token =>
+                    {
+                        try
+                        {
+                            await Task.Delay(Timeout.InfiniteTimeSpan, token);
+                        }
+                        catch (OperationCanceledException) when (token.IsCancellationRequested)
+                        {
+                            peerCancelled.TrySetResult();
+                        }
+                    },
+                ],
+                CancellationToken.None));
+
+        Assert.Same(expected, actual);
+        await peerCancelled.Task.WaitAsync(TimeSpan.FromSeconds(5));
+    }
+
+    [Fact]
+    public async Task RegistrationFailure_PropagatesFromLoop()
+    {
+        var expected = new InvalidOperationException("registration failed");
+        var source = new ThrowingLifecycleEventSource(expected);
+        var runtime = new RecordingRuntime(failFirstRefresh: false);
+        var loop = new ServiceLifecycleRefreshLoop(
+            runtime,
+            source,
+            NullLogger<ServiceLifecycleRefreshLoop>.Instance);
+
+        InvalidOperationException actual = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => loop.RunAsync(CancellationToken.None));
+
+        Assert.Same(expected, actual);
+        Assert.Equal(0, runtime.RefreshCount);
+    }
+
+    [Fact]
     public async Task Notifications_RefreshSequentiallyAndContinueAfterFailure()
     {
         var source = new FakeLifecycleEventSource();
@@ -41,6 +88,19 @@ public sealed class ServiceLifecycleRefreshLoopTests
         public IAsyncEnumerable<ServiceLifecycleTrigger> WatchAsync(
             CancellationToken cancellationToken) =>
             notifications.Reader.ReadAllAsync(cancellationToken);
+    }
+
+    private sealed class ThrowingLifecycleEventSource(Exception exception)
+        : IServiceLifecycleEventSource
+    {
+        public async IAsyncEnumerable<ServiceLifecycleTrigger> WatchAsync(
+            [System.Runtime.CompilerServices.EnumeratorCancellation]
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            await Task.FromException(exception);
+            yield break;
+        }
     }
 
     private sealed class RecordingRuntime(bool failFirstRefresh) : IServiceControlRuntime

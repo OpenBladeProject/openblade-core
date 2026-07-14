@@ -35,14 +35,15 @@ public sealed class Worker(
             authorizedUser,
             handler,
             subscriptionHub);
-        Task[] tasks =
+        List<Func<CancellationToken, Task>> operations =
         [
-            new ServiceLifecycleRefreshLoop(runtime, lifecycleEventSource, logger)
-                .RunAsync(stoppingToken),
+            token => new ServiceLifecycleRefreshLoop(runtime, lifecycleEventSource, logger)
+                .RunAsync(token),
             .. Enumerable.Range(0, MaximumPipeClients)
-                .Select(_ => RunPipeListenerAsync(server, stoppingToken)),
+                .Select(_ => new Func<CancellationToken, Task>(
+                    token => RunPipeListenerAsync(server, token))),
         ];
-        await Task.WhenAll(tasks);
+        await ServiceBackgroundTaskGroup.RunAsync(operations, stoppingToken);
     }
 
     private async Task RunPipeListenerAsync(
