@@ -3,6 +3,7 @@ namespace OpenSynapse.Protocol;
 public static class TargetBladeDevice
 {
     public const string Model = "RZ09-0581";
+    public const string BiosVersion = "3.01";
     public const ushort VendorId = 0x1532;
     public const ushort ProductId = 0x02E0;
     public const ushort UsagePage = 0x0001;

@@ -47,12 +47,12 @@ public sealed class CapturedFixtureFileTests : IDisposable
     }
 
     [Fact]
-    public async Task LoadCatalogAsync_ProductionRegistryRejectsSelfAuthorizedBooleans()
+    public async Task ValidateCapturedFixtureAsync_ProductionRegistryRejectsSelfAuthorizedBooleans()
     {
         await WriteValidatedFixtureAsync();
 
         UnvalidatedCommandException exception = await Assert.ThrowsAsync<UnvalidatedCommandException>(() =>
-            CapturedFixtureFile.LoadCatalogAsync(_path, CancellationToken.None));
+            CapturedFixtureFile.ValidateCapturedFixtureAsync(_path, CancellationToken.None));
 
         Assert.Contains("SHA-256", exception.Message, StringComparison.OrdinalIgnoreCase);
         Assert.Contains(CurrentFileHash(), exception.Message, StringComparison.OrdinalIgnoreCase);

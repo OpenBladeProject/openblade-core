@@ -2,13 +2,13 @@ using System.Collections.Immutable;
 
 namespace OpenSynapse.Protocol;
 
-public sealed record DeviceIdentity(
+internal sealed record DeviceIdentity(
     string Model,
     ushort VendorId,
     ushort ProductId,
     string BiosVersion);
 
-public sealed record CapturedCommandFixture(
+internal sealed record CapturedCommandFixture(
     DeviceIdentity Device,
     string Action,
     byte CommandClass,
@@ -20,7 +20,7 @@ public sealed record CapturedCommandFixture(
     bool ReadBack,
     bool Restored);
 
-public sealed record RazerCommandDefinition
+internal sealed record RazerCommandDefinition
 {
     public RazerCommandDefinition(
         byte commandClass,
@@ -47,7 +47,7 @@ public sealed class UnvalidatedCommandException : Exception
     }
 }
 
-public sealed class DeviceCommandCatalog
+internal sealed class DeviceCommandCatalog
 {
     private readonly IReadOnlyDictionary<string, RazerCommandDefinition> _commands;
 

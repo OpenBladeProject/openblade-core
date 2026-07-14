@@ -2,10 +2,9 @@ using OpenSynapse.Protocol;
 
 if (args.Length == 1 && args[0].Equals("target", StringComparison.OrdinalIgnoreCase))
 {
-    DeviceIdentity target = CapturedFixtureFile.TargetDevice;
-    Console.WriteLine($"Model: {target.Model}");
-    Console.WriteLine($"USB: {target.VendorId:X4}:{target.ProductId:X4}");
-    Console.WriteLine($"BIOS: {target.BiosVersion}");
+    Console.WriteLine($"Model: {TargetBladeDevice.Model}");
+    Console.WriteLine($"USB: {TargetBladeDevice.VendorId:X4}:{TargetBladeDevice.ProductId:X4}");
+    Console.WriteLine($"BIOS: {TargetBladeDevice.BiosVersion}");
     return 0;
 }
 
@@ -13,7 +12,7 @@ if (args.Length == 2 && args[0].Equals("validate", StringComparison.OrdinalIgnor
 {
     try
     {
-        _ = await CapturedFixtureFile.LoadCatalogAsync(args[1], CancellationToken.None);
+        await CapturedFixtureFile.ValidateCapturedFixtureAsync(args[1], CancellationToken.None);
         Console.WriteLine("Fixture file passed exact-device and five-gate validation.");
         return 0;
     }

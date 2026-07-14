@@ -13,6 +13,13 @@ public sealed class TargetBladeDeviceTests
         0x0002,
         91);
 
+    [Fact]
+    public void TypedTargetIdentityIncludesApprovedBiosVersion()
+    {
+        Assert.Equal("RZ09-0581", TargetBladeDevice.Model);
+        Assert.Equal("3.01", TargetBladeDevice.BiosVersion);
+    }
+
     [Theory]
     [InlineData(0x1532, 0x02E0, true)]
     [InlineData(0x1532, 0x029F, false)]

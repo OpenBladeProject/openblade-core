@@ -1,6 +1,6 @@
 namespace OpenSynapse.Protocol;
 
-public enum RazerCommandStatus : byte
+internal enum RazerCommandStatus : byte
 {
     New = 0x00,
     Successful = 0x02,
@@ -15,7 +15,7 @@ public sealed class RazerProtocolException : Exception
     }
 }
 
-public sealed class RazerReport
+internal sealed class RazerReport
 {
     public const int ReportLength = 90;
     public const int MaximumPayloadLength = 80;

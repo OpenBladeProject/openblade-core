@@ -12,13 +12,20 @@ public static class CapturedFixtureFile
         UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow,
     };
 
-    public static DeviceIdentity TargetDevice { get; } = new(
-        Model: "RZ09-0581",
-        VendorId: 0x1532,
-        ProductId: 0x02E0,
-        BiosVersion: "3.01");
+    internal static DeviceIdentity TargetDevice { get; } = new(
+        Model: TargetBladeDevice.Model,
+        VendorId: TargetBladeDevice.VendorId,
+        ProductId: TargetBladeDevice.ProductId,
+        BiosVersion: TargetBladeDevice.BiosVersion);
 
-    public static async Task<DeviceCommandCatalog> LoadCatalogAsync(
+    public static async Task ValidateCapturedFixtureAsync(
+        string path,
+        CancellationToken cancellationToken = default)
+    {
+        _ = await LoadCatalogAsync(path, cancellationToken);
+    }
+
+    internal static async Task<DeviceCommandCatalog> LoadCatalogAsync(
         string path,
         CancellationToken cancellationToken)
     {
@@ -28,7 +35,7 @@ public static class CapturedFixtureFile
             cancellationToken);
     }
 
-    public static async Task<DeviceCommandCatalog> LoadCatalogAsync(
+    internal static async Task<DeviceCommandCatalog> LoadCatalogAsync(
         string path,
         TrustedFixtureHashRegistry trustedHashes,
         CancellationToken cancellationToken)

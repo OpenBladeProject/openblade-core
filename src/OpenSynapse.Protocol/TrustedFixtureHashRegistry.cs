@@ -1,6 +1,6 @@
 namespace OpenSynapse.Protocol;
 
-public sealed class TrustedFixtureHashRegistry
+internal sealed class TrustedFixtureHashRegistry
 {
     private static readonly string[] ProductionApprovedSha256Hashes = [];
     private readonly HashSet<string> _sha256Hashes;

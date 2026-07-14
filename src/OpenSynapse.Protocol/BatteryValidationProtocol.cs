@@ -12,7 +12,7 @@ public enum BatteryValidationSetting
     Limit80,
 }
 
-public static class BatteryValidationProtocol
+internal static class BatteryValidationProtocol
 {
     private const byte CommandClass = 0x07;
     private const byte QueryCommandId = 0x92;
