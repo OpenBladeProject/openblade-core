@@ -17,15 +17,18 @@ public sealed class WindowsSetupPlatform : ISetupPlatform
     private readonly ISetupServiceControl serviceControl;
     private readonly IStartupShortcutWriter shortcutWriter;
     private readonly IAuthorizedUserSidWriter sidWriter;
+    private readonly ISetupServiceHealthProbe healthProbe;
 
     public WindowsSetupPlatform(
         ISetupServiceControl? serviceControl = null,
         IStartupShortcutWriter? shortcutWriter = null,
-        IAuthorizedUserSidWriter? sidWriter = null)
+        IAuthorizedUserSidWriter? sidWriter = null,
+        ISetupServiceHealthProbe? healthProbe = null)
     {
         this.serviceControl = serviceControl ?? new ScSetupServiceControl();
         this.shortcutWriter = shortcutWriter ?? new WindowsStartupShortcutWriter();
         this.sidWriter = sidWriter ?? new AtomicAuthorizedUserSidWriter();
+        this.healthProbe = healthProbe ?? new SetupServiceHealthProbe();
     }
 
     public string CurrentUserSid => WindowsIdentity.GetCurrent().User?.Value
@@ -112,6 +115,20 @@ public sealed class WindowsSetupPlatform : ISetupPlatform
             SetupServiceState.Running,
             TimeSpan.FromSeconds(30),
             cancellationToken);
+    }
+
+    public async Task VerifyServiceHealthAsync(CancellationToken cancellationToken)
+    {
+        using CancellationTokenSource timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        timeout.CancelAfter(TimeSpan.FromSeconds(10));
+        try
+        {
+            await healthProbe.VerifyAsync(timeout.Token);
+        }
+        catch (OperationCanceledException exception) when (!cancellationToken.IsCancellationRequested)
+        {
+            throw new TimeoutException("The OpenSynapse service did not respond to its health check within 10 seconds.", exception);
+        }
     }
 
     public async Task InstallStartupShortcutAsync(CancellationToken cancellationToken)

@@ -7,6 +7,7 @@ public interface ISetupPlatform
     Task CopyPayloadAsync(CancellationToken cancellationToken);
     Task WriteAuthorizedUserSidAsync(string sid, CancellationToken cancellationToken);
     Task InstallServiceAsync(CancellationToken cancellationToken);
+    Task VerifyServiceHealthAsync(CancellationToken cancellationToken);
     Task InstallStartupShortcutAsync(CancellationToken cancellationToken);
     Task RemoveStartupShortcutAsync(CancellationToken cancellationToken);
     Task RemoveServiceAsync(CancellationToken cancellationToken);
@@ -31,6 +32,7 @@ public sealed class SetupCommandRunner(ISetupPlatform platform)
             await platform.CopyPayloadAsync(cancellationToken);
             await platform.WriteAuthorizedUserSidAsync(platform.CurrentUserSid, cancellationToken);
             await platform.InstallServiceAsync(cancellationToken);
+            await platform.VerifyServiceHealthAsync(cancellationToken);
             await platform.InstallStartupShortcutAsync(cancellationToken);
             return 0;
         }

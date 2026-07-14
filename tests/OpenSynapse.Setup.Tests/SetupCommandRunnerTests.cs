@@ -13,7 +13,7 @@ public sealed class SetupCommandRunnerTests
         int exitCode = await runner.RunAsync(["install"], CancellationToken.None);
 
         Assert.Equal(0, exitCode);
-        Assert.Equal(["service-prepare", "copy", "sid:S-1-5-21-test", "service-install", "shortcut-install"], platform.Operations);
+        Assert.Equal(["service-prepare", "copy", "sid:S-1-5-21-test", "service-install", "service-health", "shortcut-install"], platform.Operations);
     }
 
     [Fact]
@@ -73,6 +73,7 @@ public sealed class SetupCommandRunnerTests
         public Task CopyPayloadAsync(CancellationToken cancellationToken) => AddAsync("copy");
         public Task WriteAuthorizedUserSidAsync(string sid, CancellationToken cancellationToken) => AddAsync($"sid:{sid}");
         public Task InstallServiceAsync(CancellationToken cancellationToken) => AddAsync("service-install");
+        public Task VerifyServiceHealthAsync(CancellationToken cancellationToken) => AddAsync("service-health");
         public Task InstallStartupShortcutAsync(CancellationToken cancellationToken) => AddAsync("shortcut-install");
         public Task RemoveStartupShortcutAsync(CancellationToken cancellationToken) => AddAsync("shortcut-remove");
         public Task RemoveServiceAsync(CancellationToken cancellationToken) => AddAsync("service-remove");
