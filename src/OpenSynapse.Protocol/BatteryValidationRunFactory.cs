@@ -2,27 +2,38 @@ namespace OpenSynapse.Protocol;
 
 internal sealed class BatteryValidationRunFactory : IBatteryValidationRunFactory
 {
-    private static readonly object RetentionSync = new();
-    private static readonly HashSet<Task> RetainedDisposals = [];
     private readonly Func<ValidationRunContext> createContext;
     private readonly IValidationActorFactory actorFactory;
     private readonly TimeProvider timeProvider;
     private readonly TimeSpan cleanupDrainTimeout;
+    private readonly PendingDisposalRegistry pendingDisposals;
 
     internal BatteryValidationRunFactory(
         Func<ValidationRunContext> createContext,
         IValidationActorFactory actorFactory,
         TimeProvider timeProvider,
         TimeSpan cleanupDrainTimeout)
+        : this(createContext, actorFactory, timeProvider, cleanupDrainTimeout, PendingDisposalRegistry.Shared)
+    {
+    }
+
+    internal BatteryValidationRunFactory(
+        Func<ValidationRunContext> createContext,
+        IValidationActorFactory actorFactory,
+        TimeProvider timeProvider,
+        TimeSpan cleanupDrainTimeout,
+        PendingDisposalRegistry pendingDisposals)
     {
         ArgumentNullException.ThrowIfNull(createContext);
         ArgumentNullException.ThrowIfNull(actorFactory);
         ArgumentNullException.ThrowIfNull(timeProvider);
+        ArgumentNullException.ThrowIfNull(pendingDisposals);
         RazerCommandSessionTimeout.Validate(cleanupDrainTimeout);
         this.createContext = createContext;
         this.actorFactory = actorFactory;
         this.timeProvider = timeProvider;
         this.cleanupDrainTimeout = cleanupDrainTimeout;
+        this.pendingDisposals = pendingDisposals;
     }
 
     public async Task<HidSessionResult<IBatteryValidationPort>> OpenAsync(
@@ -60,6 +71,15 @@ internal sealed class BatteryValidationRunFactory : IBatteryValidationRunFactory
 
         if (opened.Failure is not null)
         {
+            if (opened.Value is not null)
+            {
+                await BatteryValidationRun.DisposeBoundedAsync(
+                    opened.Value,
+                    timeProvider,
+                    cleanupDrainTimeout,
+                    pendingDisposals).ConfigureAwait(false);
+            }
+
             return Failure(opened.Failure.Value);
         }
 
@@ -72,40 +92,16 @@ internal sealed class BatteryValidationRunFactory : IBatteryValidationRunFactory
         if (cancellationToken.IsCancellationRequested)
         {
             await BatteryValidationRun.DisposeBoundedAsync(
-                actor, timeProvider, cleanupDrainTimeout, Retain).ConfigureAwait(false);
+                actor, timeProvider, cleanupDrainTimeout, pendingDisposals).ConfigureAwait(false);
             return Failure(HidSessionFailureKind.Canceled);
         }
 
         var run = new BatteryValidationRun(
-            context, ids, actor, actorFactory, timeProvider, cleanupDrainTimeout);
+            context, ids, actor, actorFactory, timeProvider, cleanupDrainTimeout, pendingDisposals);
         return new(new BatteryValidationPort(run), null);
     }
 
     private static HidSessionResult<IBatteryValidationPort> Failure(HidSessionFailureKind failure) =>
         new(null, failure);
 
-    private static void Retain(Task disposal)
-    {
-        lock (RetentionSync)
-        {
-            RetainedDisposals.Add(disposal);
-        }
-
-        _ = disposal.ContinueWith(
-            completed =>
-            {
-                if (completed.IsFaulted)
-                {
-                    _ = completed.Exception;
-                }
-
-                lock (RetentionSync)
-                {
-                    RetainedDisposals.Remove(completed);
-                }
-            },
-            CancellationToken.None,
-            TaskContinuationOptions.ExecuteSynchronously,
-            TaskScheduler.Default);
-    }
 }

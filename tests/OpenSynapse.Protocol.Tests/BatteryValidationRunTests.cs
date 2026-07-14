@@ -57,6 +57,41 @@ public sealed class BatteryValidationRunTests
     }
 
     [Fact]
+    public async Task OpenAsync_MixedFailureAndActor_DisposesActorAndPreservesFailure()
+    {
+        var session = new ScriptedSession();
+        var actors = new ScriptedActorFactory(new HidSessionResult<ValidationActor>(
+            Actor(session, new ScriptedClient()), HidSessionFailureKind.ConflictBlocked));
+
+        HidSessionResult<IBatteryValidationPort> result = await
+            Factory(new ValidationRunContext(), actors).OpenAsync(default);
+
+        Assert.Equal(HidSessionFailureKind.ConflictBlocked, result.Failure);
+        Assert.Null(result.Value);
+        Assert.Equal(1, session.DisposeCount);
+    }
+
+    [Fact]
+    public async Task OpenAsync_MixedFailureRetainsTimedOutActorUntilCompletion()
+    {
+        var time = new ManualTimeProvider();
+        var registry = new PendingDisposalRegistry();
+        var session = new ScriptedSession(pendingDispose: true);
+        var actors = new ScriptedActorFactory(new HidSessionResult<ValidationActor>(
+            Actor(session, new ScriptedClient()), HidSessionFailureKind.IdentityBlocked));
+
+        Task<HidSessionResult<IBatteryValidationPort>> opening =
+            Factory(new ValidationRunContext(), actors, time, registry).OpenAsync(default);
+        time.Advance(Drain);
+        Assert.Equal(HidSessionFailureKind.IdentityBlocked, (await opening).Failure);
+        Assert.Equal(1, registry.Count);
+
+        session.CompleteDispose();
+        await registry.WhenEmptyAsync();
+        Assert.Equal(0, registry.Count);
+    }
+
+    [Fact]
     public async Task HappyPath_UsesFiveReservedIdsOnOneActor()
     {
         var context = new ValidationRunContext();
@@ -129,6 +164,89 @@ public sealed class BatteryValidationRunTests
     }
 
     [Fact]
+    public async Task BaselineCommandException_TerminatesAndDisposes()
+    {
+        var session = new ScriptedSession();
+        var client = new ScriptedClient(new InvalidOperationException("baseline"));
+        IBatteryValidationPort port = (await Factory(new ValidationRunContext(),
+            new ScriptedActorFactory(Actor(session, client))).OpenAsync(default)).Value!;
+
+        Assert.Equal(HidSessionFailureKind.NativeIoFailure, (await port.QueryAsync(default)).Failure);
+        Assert.Equal(HidSessionFailureKind.Disposed, (await port.QueryAsync(default)).Failure);
+        Assert.Equal(["Q1"], client.Events);
+        Assert.Equal(1, session.DisposeCount);
+    }
+
+    [Fact]
+    public async Task CandidateCommandException_BurnsStageAndStillAllowsRestore()
+    {
+        var client = new ScriptedClient(
+            Query(BatteryValidationSetting.Limit80), new InvalidOperationException("candidate"), Unit());
+        IBatteryValidationPort port = (await Factory(new ValidationRunContext(),
+            new ScriptedActorFactory(Actor(new ScriptedSession(), client))).OpenAsync(default)).Value!;
+        await port.QueryAsync(default);
+
+        Assert.Equal(HidSessionFailureKind.NativeIoFailure,
+            (await port.ApplyAsync(BatteryValidationSetting.Limit70, default)).Failure);
+        Assert.Null((await port.ApplyAsync(BatteryValidationSetting.Limit80, default)).Failure);
+        Assert.Equal(["Q1", "S2:Limit70", "S4:Limit80"], client.Events);
+    }
+
+    [Fact]
+    public async Task RestoreCommandException_TerminatesWithoutReusableRestoreId()
+    {
+        var session = new ScriptedSession();
+        var client = new ScriptedClient(
+            Query(BatteryValidationSetting.Limit80), Unit(), new InvalidOperationException("restore"));
+        IBatteryValidationPort port = (await Factory(new ValidationRunContext(),
+            new ScriptedActorFactory(Actor(session, client))).OpenAsync(default)).Value!;
+        await port.QueryAsync(default);
+        await port.ApplyAsync(BatteryValidationSetting.Limit70, default);
+
+        Assert.Equal(HidSessionFailureKind.NativeIoFailure,
+            (await port.ApplyAsync(BatteryValidationSetting.Limit80, default)).Failure);
+        Assert.Equal(HidSessionFailureKind.Disposed,
+            (await port.ApplyAsync(BatteryValidationSetting.Limit80, default)).Failure);
+        Assert.Equal(["Q1", "S2:Limit70", "S4:Limit80"], client.Events);
+        Assert.Equal(1, session.DisposeCount);
+    }
+
+    [Fact]
+    public async Task CandidateQueryException_BurnsQueryAndStillAllowsRestore()
+    {
+        var client = new ScriptedClient(
+            Query(BatteryValidationSetting.Limit80), Unit(),
+            new InvalidOperationException("candidate query"), Unit());
+        IBatteryValidationPort port = (await Factory(new ValidationRunContext(),
+            new ScriptedActorFactory(Actor(new ScriptedSession(), client))).OpenAsync(default)).Value!;
+        await port.QueryAsync(default);
+        await port.ApplyAsync(BatteryValidationSetting.Limit70, default);
+
+        Assert.Equal(HidSessionFailureKind.NativeIoFailure, (await port.QueryAsync(default)).Failure);
+        Assert.Null((await port.ApplyAsync(BatteryValidationSetting.Limit80, default)).Failure);
+        Assert.Equal(["Q1", "S2:Limit70", "Q3", "S4:Limit80"], client.Events);
+    }
+
+    [Fact]
+    public async Task RestoreQueryException_TerminatesWithoutReusableQueryId()
+    {
+        var session = new ScriptedSession();
+        var client = new ScriptedClient(
+            Query(BatteryValidationSetting.Limit80), Unit(), Unit(),
+            new InvalidOperationException("restore query"));
+        IBatteryValidationPort port = (await Factory(new ValidationRunContext(),
+            new ScriptedActorFactory(Actor(session, client))).OpenAsync(default)).Value!;
+        await port.QueryAsync(default);
+        await port.ApplyAsync(BatteryValidationSetting.Limit70, default);
+        await port.ApplyAsync(BatteryValidationSetting.Limit80, default);
+
+        Assert.Equal(HidSessionFailureKind.NativeIoFailure, (await port.QueryAsync(default)).Failure);
+        Assert.Equal(HidSessionFailureKind.Disposed, (await port.QueryAsync(default)).Failure);
+        Assert.Equal(["Q1", "S2:Limit70", "S4:Limit80", "Q5"], client.Events);
+        Assert.Equal(1, session.DisposeCount);
+    }
+
+    [Fact]
     public async Task Recovery_WaitsForFullDisposalAndUsesSameContextAndReservedIds()
     {
         var primaryClient = new ScriptedClient(Query(BatteryValidationSetting.Limit80), Failure<HidUnit>(HidSessionFailureKind.Poisoned));
@@ -173,6 +291,29 @@ public sealed class BatteryValidationRunTests
     }
 
     [Fact]
+    public async Task Recovery_UsesReserved254And255WhenOrdinaryAllocatorIsExhausted()
+    {
+        var context = new ValidationRunContext();
+        Consume(context, 250);
+        var recoveryClient = new ScriptedClient(Unit(), Query(BatteryValidationSetting.Limit80));
+        var actors = new ScriptedActorFactory(
+            Actor(new ScriptedSession(RazerCommandSessionDisposition.RecoveryRequired),
+                new ScriptedClient(Query(BatteryValidationSetting.Limit80), Failure<HidUnit>(HidSessionFailureKind.Poisoned))),
+            Actor(new ScriptedSession(), recoveryClient));
+        IBatteryValidationPort port = (await Factory(context, actors).OpenAsync(default)).Value!;
+        await port.QueryAsync(default);
+        await port.ApplyAsync(BatteryValidationSetting.Limit70, default);
+
+        Assert.Null((await port.ApplyAsync(BatteryValidationSetting.Limit80, default)).Failure);
+        Assert.Null((await port.QueryAsync(default)).Failure);
+
+        Assert.Equal(["S254:Limit80", "Q255"], recoveryClient.Events);
+        Assert.False(context.TryAllocateTransaction(out _));
+        Assert.Equal(2, actors.OpenCount);
+        Assert.Same(actors.Contexts[0], actors.Contexts[1]);
+    }
+
+    [Fact]
     public async Task RecoveryDrainTimeout_NeverOpensRecoveryAndLaterDisposeIsBounded()
     {
         var time = new ManualTimeProvider();
@@ -193,6 +334,29 @@ public sealed class BatteryValidationRunTests
     }
 
     [Fact]
+    public async Task TimedOutDisposal_IsProcessRootedUntilLateCompletion()
+    {
+        var time = new ManualTimeProvider();
+        var registry = new PendingDisposalRegistry();
+        var primary = new ScriptedSession(RazerCommandSessionDisposition.RecoveryRequired, pendingDispose: true);
+        var actors = new ScriptedActorFactory(Actor(primary,
+            new ScriptedClient(Query(BatteryValidationSetting.Limit80), Failure<HidUnit>(HidSessionFailureKind.Poisoned))));
+        IBatteryValidationPort port = (await Factory(
+            new ValidationRunContext(), actors, time, registry).OpenAsync(default)).Value!;
+        await port.QueryAsync(default);
+        await port.ApplyAsync(BatteryValidationSetting.Limit70, default);
+
+        Task<HidSessionResult<HidUnit>> restore = port.ApplyAsync(BatteryValidationSetting.Limit80, default);
+        time.Advance(Drain);
+        Assert.Equal(HidSessionFailureKind.Timeout, (await restore).Failure);
+        Assert.Equal(1, registry.Count);
+
+        primary.FailDispose(new InvalidOperationException("late observed fault"));
+        await registry.WhenEmptyAsync();
+        Assert.Equal(0, registry.Count);
+    }
+
+    [Fact]
     public async Task DeadlineWinner_RemainsWinnerWhenDisposalCompletesBeforeAwaitResumes()
     {
         var time = new ManualTimeProvider();
@@ -208,6 +372,62 @@ public sealed class BatteryValidationRunTests
         Task<HidSessionResult<HidUnit>> restore = port.ApplyAsync(BatteryValidationSetting.Limit80, default);
         time.Advance(Drain);
         primary.CompleteDispose();
+
+        Assert.Equal(HidSessionFailureKind.Timeout, (await restore).Failure);
+        Assert.Equal(1, actors.OpenCount);
+    }
+
+    [Fact]
+    public async Task DeadlineDuringTimerCreation_WinsBeforeLaterDisposalCompletion()
+    {
+        var primary = new ScriptedSession(RazerCommandSessionDisposition.RecoveryRequired, pendingDispose: true);
+        var time = new ImmediateDeadlineTimeProvider(primary.CompleteDispose);
+        var actors = new ScriptedActorFactory(
+            Actor(primary, new ScriptedClient(
+                Query(BatteryValidationSetting.Limit80), Failure<HidUnit>(HidSessionFailureKind.Poisoned))),
+            Actor(new ScriptedSession(), new ScriptedClient(Unit())));
+        IBatteryValidationPort port = (await Factory(new ValidationRunContext(), actors, time).OpenAsync(default)).Value!;
+        await port.QueryAsync(default);
+        await port.ApplyAsync(BatteryValidationSetting.Limit70, default);
+
+        HidSessionResult<HidUnit> restore =
+            await port.ApplyAsync(BatteryValidationSetting.Limit80, default);
+
+        Assert.Equal(HidSessionFailureKind.Timeout, restore.Failure);
+        Assert.Equal(1, actors.OpenCount);
+    }
+
+    [Fact]
+    public async Task DisposalJustBeforeDeadline_Wins()
+    {
+        var time = new ManualTimeProvider();
+        var primary = new ScriptedSession(RazerCommandSessionDisposition.RecoveryRequired, pendingDispose: true);
+        var actors = RecoveryActors(primary);
+        IBatteryValidationPort port = (await Factory(new ValidationRunContext(), actors, time).OpenAsync(default)).Value!;
+        await port.QueryAsync(default);
+        await port.ApplyAsync(BatteryValidationSetting.Limit70, default);
+
+        Task<HidSessionResult<HidUnit>> restore = port.ApplyAsync(BatteryValidationSetting.Limit80, default);
+        time.Advance(Drain - TimeSpan.FromTicks(1));
+        primary.CompleteDispose();
+
+        Assert.Null((await restore).Failure);
+        Assert.Equal(2, actors.OpenCount);
+    }
+
+    [Fact]
+    public async Task DeadlineCallbackAtExactBoundary_WinsBeforeQueuedDisposalObserver()
+    {
+        var time = new ManualTimeProvider();
+        var primary = new ScriptedSession(RazerCommandSessionDisposition.RecoveryRequired, pendingDispose: true);
+        time.Schedule(Drain, primary.CompleteDispose);
+        var actors = RecoveryActors(primary);
+        IBatteryValidationPort port = (await Factory(new ValidationRunContext(), actors, time).OpenAsync(default)).Value!;
+        await port.QueryAsync(default);
+        await port.ApplyAsync(BatteryValidationSetting.Limit70, default);
+
+        Task<HidSessionResult<HidUnit>> restore = port.ApplyAsync(BatteryValidationSetting.Limit80, default);
+        time.Advance(Drain);
 
         Assert.Equal(HidSessionFailureKind.Timeout, (await restore).Failure);
         Assert.Equal(1, actors.OpenCount);
@@ -269,6 +489,27 @@ public sealed class BatteryValidationRunTests
     }
 
     [Fact]
+    public async Task DisposeCallRace_SerializesWithoutDuplicateStageOrIdReuse()
+    {
+        var client = new BlockingCandidateClient(BatteryValidationSetting.Limit80);
+        var session = new ScriptedSession();
+        IBatteryValidationPort port = (await Factory(new ValidationRunContext(),
+            new ScriptedActorFactory(Actor(session, client))).OpenAsync(default)).Value!;
+        await port.QueryAsync(default);
+        Task<HidSessionResult<HidUnit>> candidate = port.ApplyAsync(BatteryValidationSetting.Limit70, default);
+        await client.CandidateEntered.Task;
+        ValueTask disposal = port.DisposeAsync();
+        client.ReleaseCandidate.TrySetResult();
+
+        Assert.Null((await candidate).Failure);
+        await disposal;
+        Assert.Equal(["Q1", "S2:Limit70"], client.Events);
+        Assert.Equal(1, session.DisposeCount);
+        Assert.Equal(HidSessionFailureKind.Disposed,
+            (await port.ApplyAsync(BatteryValidationSetting.Limit80, default)).Failure);
+    }
+
+    [Fact]
     public async Task CandidateQueryFailure_StillAcceptsSavedBaselineOnly()
     {
         var client = new ScriptedClient(
@@ -299,8 +540,54 @@ public sealed class BatteryValidationRunTests
 
         Assert.Equal(HidSessionFailureKind.IdentityBlocked,
             (await port.ApplyAsync(BatteryValidationSetting.Limit80, default)).Failure);
+        await port.DisposeAsync();
         Assert.Equal(2, actors.OpenCount);
+        Assert.Equal(1, primary.DisposeCount);
         Assert.Equal(["Q1", "S2:Limit70"], client.Events);
+    }
+
+    [Fact]
+    public async Task RecoveryOpenMixedResult_DisposesReturnedActorAndPreservesFailure()
+    {
+        var primary = new ScriptedSession(RazerCommandSessionDisposition.RecoveryRequired);
+        var mixed = new ScriptedSession();
+        var actors = new ScriptedActorFactory(
+            Actor(primary, new ScriptedClient(
+                Query(BatteryValidationSetting.Limit80), Failure<HidUnit>(HidSessionFailureKind.Poisoned))),
+            new HidSessionResult<ValidationActor>(
+                Actor(mixed, new ScriptedClient()), HidSessionFailureKind.IdentityBlocked));
+        IBatteryValidationPort port = (await Factory(new ValidationRunContext(), actors).OpenAsync(default)).Value!;
+        await port.QueryAsync(default);
+        await port.ApplyAsync(BatteryValidationSetting.Limit70, default);
+
+        HidSessionResult<HidUnit> restore =
+            await port.ApplyAsync(BatteryValidationSetting.Limit80, default);
+        await port.DisposeAsync();
+
+        Assert.Equal(HidSessionFailureKind.IdentityBlocked, restore.Failure);
+        Assert.Equal(1, primary.DisposeCount);
+        Assert.Equal(1, mixed.DisposeCount);
+        Assert.Equal(2, actors.OpenCount);
+    }
+
+    [Fact]
+    public async Task RecoveryNullSuccess_IsNativeFailureWithoutRestoreIo()
+    {
+        var primary = new ScriptedSession(RazerCommandSessionDisposition.RecoveryRequired);
+        var actors = new ScriptedActorFactory(
+            Actor(primary, new ScriptedClient(
+                Query(BatteryValidationSetting.Limit80), Failure<HidUnit>(HidSessionFailureKind.Poisoned))),
+            new HidSessionResult<ValidationActor>(null, null));
+        IBatteryValidationPort port = (await Factory(new ValidationRunContext(), actors).OpenAsync(default)).Value!;
+        await port.QueryAsync(default);
+        await port.ApplyAsync(BatteryValidationSetting.Limit70, default);
+
+        Assert.Equal(HidSessionFailureKind.NativeIoFailure,
+            (await port.ApplyAsync(BatteryValidationSetting.Limit80, default)).Failure);
+        await port.DisposeAsync();
+        Assert.Equal(1, primary.DisposeCount);
+        Assert.Equal(2, actors.OpenCount);
+        Assert.Same(actors.Contexts[0], actors.Contexts[1]);
     }
 
     [Fact]
@@ -325,8 +612,17 @@ public sealed class BatteryValidationRunTests
     }
 
     private static BatteryValidationRunFactory Factory(
-        ValidationRunContext context, ScriptedActorFactory actors, TimeProvider? time = null) =>
-        new(() => context, actors, time ?? TimeProvider.System, Drain);
+        ValidationRunContext context,
+        ScriptedActorFactory actors,
+        TimeProvider? time = null,
+        PendingDisposalRegistry? registry = null) =>
+        new(() => context, actors, time ?? TimeProvider.System, Drain, registry ?? new PendingDisposalRegistry());
+
+    private static ScriptedActorFactory RecoveryActors(ScriptedSession primary) =>
+        new(
+            Actor(primary, new ScriptedClient(
+                Query(BatteryValidationSetting.Limit80), Failure<HidUnit>(HidSessionFailureKind.Poisoned))),
+            Actor(new ScriptedSession(), new ScriptedClient(Unit())));
 
     private static ValidationActor Actor(ScriptedSession session, IBatteryCommandClient client) => new(session, client);
     private static HidSessionResult<BatteryValidationSetting> Query(BatteryValidationSetting setting) => new(setting, null);
@@ -367,12 +663,18 @@ public sealed class BatteryValidationRunTests
         public Task<HidSessionResult<BatteryValidationSetting>> QueryAsync(byte transactionId, CancellationToken cancellationToken)
         {
             Events.Add($"Q{transactionId}");
-            return Task.FromResult((HidSessionResult<BatteryValidationSetting>)results.Dequeue());
+            object next = results.Dequeue();
+            return next is Exception error
+                ? Task.FromException<HidSessionResult<BatteryValidationSetting>>(error)
+                : Task.FromResult((HidSessionResult<BatteryValidationSetting>)next);
         }
         public Task<HidSessionResult<HidUnit>> SetAsync(byte transactionId, BatteryValidationSetting setting, CancellationToken cancellationToken)
         {
             Events.Add($"S{transactionId}:{setting}");
-            return Task.FromResult((HidSessionResult<HidUnit>)results.Dequeue());
+            object next = results.Dequeue();
+            return next is Exception error
+                ? Task.FromException<HidSessionResult<HidUnit>>(error)
+                : Task.FromResult((HidSessionResult<HidUnit>)next);
         }
     }
 
@@ -433,6 +735,8 @@ public sealed class BatteryValidationRunTests
             now += amount;
             foreach (Timer timer in timers.ToArray()) timer.Fire(now);
         }
+        internal void Schedule(TimeSpan due, Action action) =>
+            _ = CreateTimer(_ => action(), null, due, Timeout.InfiniteTimeSpan);
         private sealed class Timer(ManualTimeProvider owner, TimerCallback callback, object? state, DateTimeOffset due) : ITimer
         {
             private bool disposed;
@@ -440,6 +744,27 @@ public sealed class BatteryValidationRunTests
             public void Dispose() => disposed = true;
             public ValueTask DisposeAsync() { Dispose(); return ValueTask.CompletedTask; }
             internal void Fire(DateTimeOffset now) { if (!disposed && now >= due) { disposed = true; callback(state); } }
+        }
+    }
+
+    private sealed class ImmediateDeadlineTimeProvider(Action afterDeadline) : TimeProvider
+    {
+        public override ITimer CreateTimer(
+            TimerCallback callback,
+            object? state,
+            TimeSpan dueTime,
+            TimeSpan period)
+        {
+            callback(state);
+            afterDeadline();
+            return new CompletedTimer();
+        }
+
+        private sealed class CompletedTimer : ITimer
+        {
+            public bool Change(TimeSpan dueTime, TimeSpan period) => false;
+            public void Dispose() { }
+            public ValueTask DisposeAsync() => ValueTask.CompletedTask;
         }
     }
 }

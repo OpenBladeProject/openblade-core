@@ -8,8 +8,7 @@ internal sealed class BatteryValidationRun : IAsyncDisposable
     private readonly TimeProvider timeProvider;
     private readonly TimeSpan cleanupDrainTimeout;
     private readonly SemaphoreSlim gate = new(1, 1);
-    private readonly object retentionSync = new();
-    private readonly HashSet<Task> retainedDisposals = [];
+    private readonly PendingDisposalRegistry pendingDisposals;
     private ValidationActor? actor;
     private ValidationActor? restoreActor;
     private BatteryValidationSetting baseline;
@@ -22,7 +21,8 @@ internal sealed class BatteryValidationRun : IAsyncDisposable
         ValidationActor actor,
         IValidationActorFactory actorFactory,
         TimeProvider timeProvider,
-        TimeSpan cleanupDrainTimeout)
+        TimeSpan cleanupDrainTimeout,
+        PendingDisposalRegistry pendingDisposals)
     {
         this.context = context;
         this.ids = ids;
@@ -30,6 +30,7 @@ internal sealed class BatteryValidationRun : IAsyncDisposable
         this.actorFactory = actorFactory;
         this.timeProvider = timeProvider;
         this.cleanupDrainTimeout = cleanupDrainTimeout;
+        this.pendingDisposals = pendingDisposals;
     }
 
     internal async Task<HidSessionResult<BatteryValidationSetting>> QueryAsync(
@@ -50,7 +51,8 @@ internal sealed class BatteryValidationRun : IAsyncDisposable
             if (stage == Stage.AwaitingBaseline)
             {
                 HidSessionResult<BatteryValidationSetting> result =
-                    await actor!.BatteryCommands.QueryAsync(ids.BaselineQuery, cancellationToken).ConfigureAwait(false);
+                    await InvokeCommandAsync(() =>
+                        actor!.BatteryCommands.QueryAsync(ids.BaselineQuery, cancellationToken)).ConfigureAwait(false);
                 if (result.Failure is null && IsDefined(result.Value))
                 {
                     baseline = result.Value;
@@ -70,7 +72,8 @@ internal sealed class BatteryValidationRun : IAsyncDisposable
             if (stage == Stage.AwaitingCandidateQueryOrRestore)
             {
                 HidSessionResult<BatteryValidationSetting> result =
-                    await actor!.BatteryCommands.QueryAsync(ids.CandidateQuery, cancellationToken).ConfigureAwait(false);
+                    await InvokeCommandAsync(() =>
+                        actor!.BatteryCommands.QueryAsync(ids.CandidateQuery, cancellationToken)).ConfigureAwait(false);
                 stage = Stage.CleanupEligible;
                 return result;
             }
@@ -78,7 +81,8 @@ internal sealed class BatteryValidationRun : IAsyncDisposable
             if (stage == Stage.AwaitingRestoreQuery)
             {
                 HidSessionResult<BatteryValidationSetting> result =
-                    await restoreActor!.BatteryCommands.QueryAsync(ids.RestoreQuery, cancellationToken).ConfigureAwait(false);
+                    await InvokeCommandAsync(() =>
+                        restoreActor!.BatteryCommands.QueryAsync(ids.RestoreQuery, cancellationToken)).ConfigureAwait(false);
                 stage = Stage.Terminal;
                 await CloseCurrentBoundedAsync().ConfigureAwait(false);
                 return result;
@@ -118,7 +122,8 @@ internal sealed class BatteryValidationRun : IAsyncDisposable
                 // The restoration obligation exists before candidate I/O begins.
                 stage = Stage.CleanupEligible;
                 HidSessionResult<HidUnit> result =
-                    await actor!.BatteryCommands.SetAsync(ids.CandidateSet, setting, cancellationToken).ConfigureAwait(false);
+                    await InvokeCommandAsync(() =>
+                        actor!.BatteryCommands.SetAsync(ids.CandidateSet, setting, cancellationToken)).ConfigureAwait(false);
                 if (result.Failure is null)
                 {
                     stage = Stage.AwaitingCandidateQueryOrRestore;
@@ -185,6 +190,9 @@ internal sealed class BatteryValidationRun : IAsyncDisposable
                 return Failure<HidUnit>(HidSessionFailureKind.Timeout);
             }
 
+            actor = null;
+            restoreActor = null;
+
             HidSessionResult<ValidationActor> reopened;
             try
             {
@@ -196,10 +204,25 @@ internal sealed class BatteryValidationRun : IAsyncDisposable
                 return Failure<HidUnit>(HidSessionFailureKind.NativeIoFailure);
             }
 
-            if (reopened.Failure is not null || reopened.Value is null)
+            if (reopened.Failure is not null)
+            {
+                if (reopened.Value is not null)
+                {
+                    await DisposeBoundedAsync(
+                        reopened.Value,
+                        timeProvider,
+                        cleanupDrainTimeout,
+                        pendingDisposals).ConfigureAwait(false);
+                }
+
+                stage = Stage.Terminal;
+                return Failure<HidUnit>(reopened.Failure.Value);
+            }
+
+            if (reopened.Value is null)
             {
                 stage = Stage.Terminal;
-                return Failure<HidUnit>(reopened.Failure ?? HidSessionFailureKind.NativeIoFailure);
+                return Failure<HidUnit>(HidSessionFailureKind.NativeIoFailure);
             }
 
             selected = reopened.Value;
@@ -208,7 +231,8 @@ internal sealed class BatteryValidationRun : IAsyncDisposable
 
         restoreActor = selected;
         HidSessionResult<HidUnit> result =
-            await selected.BatteryCommands.SetAsync(ids.RestoreSet, setting, cancellationToken).ConfigureAwait(false);
+            await InvokeCommandAsync(() =>
+                selected.BatteryCommands.SetAsync(ids.RestoreSet, setting, cancellationToken)).ConfigureAwait(false);
         if (result.Failure is null)
         {
             stage = Stage.AwaitingRestoreQuery;
@@ -230,31 +254,44 @@ internal sealed class BatteryValidationRun : IAsyncDisposable
             return true;
         }
 
-        Task deadline = Task.Delay(cleanupDrainTimeout, timeProvider);
         var winner = new TaskCompletionSource<bool>(
             TaskCreationOptions.RunContinuationsAsynchronously);
+        int claimed = 0;
         _ = disposal.ContinueWith(
             completed =>
             {
                 Observe(completed);
-                if (primary.Session.Disposition == RazerCommandSessionDisposition.FullyDisposed)
+                if (primary.Session.Disposition == RazerCommandSessionDisposition.FullyDisposed &&
+                    Interlocked.CompareExchange(ref claimed, 1, 0) == 0)
                 {
-                    winner.TrySetResult(true);
+                    winner.SetResult(true);
                 }
             },
             CancellationToken.None,
             TaskContinuationOptions.ExecuteSynchronously,
             TaskScheduler.Default);
-        _ = deadline.ContinueWith(
-            _ => winner.TrySetResult(false),
-            CancellationToken.None,
-            TaskContinuationOptions.ExecuteSynchronously,
-            TaskScheduler.Default);
+
+        if (Volatile.Read(ref claimed) == 1)
+        {
+            return true;
+        }
+
+        using ITimer deadline = timeProvider.CreateTimer(
+            _ =>
+            {
+                if (Interlocked.CompareExchange(ref claimed, 2, 0) == 0)
+                {
+                    winner.SetResult(false);
+                }
+            },
+            null,
+            cleanupDrainTimeout,
+            Timeout.InfiniteTimeSpan);
 
         bool disposalWon = await winner.Task.ConfigureAwait(false);
         if (!disposalWon)
         {
-            Retain(disposal);
+            pendingDisposals.Retain(disposal);
         }
 
         return disposalWon;
@@ -282,7 +319,7 @@ internal sealed class BatteryValidationRun : IAsyncDisposable
         restoreActor = null;
         if (current is not null)
         {
-            await DisposeBoundedAsync(current, timeProvider, cleanupDrainTimeout, Retain).ConfigureAwait(false);
+            await DisposeBoundedAsync(current, timeProvider, cleanupDrainTimeout, pendingDisposals).ConfigureAwait(false);
         }
     }
 
@@ -290,7 +327,7 @@ internal sealed class BatteryValidationRun : IAsyncDisposable
         ValidationActor target,
         TimeProvider timeProvider,
         TimeSpan timeout,
-        Action<Task>? retain)
+        PendingDisposalRegistry pendingDisposals)
     {
         Task disposal;
         try
@@ -314,29 +351,8 @@ internal sealed class BatteryValidationRun : IAsyncDisposable
         }
         else
         {
-            retain?.Invoke(disposal);
+            pendingDisposals.Retain(disposal);
         }
-    }
-
-    private void Retain(Task disposal)
-    {
-        lock (retentionSync)
-        {
-            retainedDisposals.Add(disposal);
-        }
-
-        _ = disposal.ContinueWith(
-            completed =>
-            {
-                Observe(completed);
-                lock (retentionSync)
-                {
-                    retainedDisposals.Remove(completed);
-                }
-            },
-            CancellationToken.None,
-            TaskContinuationOptions.ExecuteSynchronously,
-            TaskScheduler.Default);
     }
 
     private static void Observe(Task task)
@@ -372,6 +388,19 @@ internal sealed class BatteryValidationRun : IAsyncDisposable
 
     private static HidSessionResult<T> Failure<T>(HidSessionFailureKind failure) =>
         new(default, failure);
+
+    private static async Task<HidSessionResult<T>> InvokeCommandAsync<T>(
+        Func<Task<HidSessionResult<T>>> invoke)
+    {
+        try
+        {
+            return await invoke().ConfigureAwait(false);
+        }
+        catch
+        {
+            return Failure<T>(HidSessionFailureKind.NativeIoFailure);
+        }
+    }
 
     private enum Stage
     {
