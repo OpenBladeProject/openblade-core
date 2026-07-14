@@ -55,6 +55,19 @@ public sealed class BatteryValidationSessionTests
     }
 
     [Fact]
+    public async Task Run_MixedFactoryFailureAndPortDisposesBeforeExactMapping()
+    {
+        TestContext context = new();
+        context.Factory.Result = new(context.Port, HidSessionFailureKind.IdentityBlocked);
+
+        BatteryValidationResult result = await context.RunAsync();
+
+        Assert.Equal(BatteryValidationPrimaryFailure.WrongTarget, result.PrimaryFailure);
+        Assert.Equal(["open", "dispose"], context.Events);
+        Assert.Equal(1, context.Port.DisposeCount);
+    }
+
+    [Fact]
     public async Task Run_UnexpectedFactoryExceptionMapsToStableOpenFailed()
     {
         TestContext context = new();
@@ -440,6 +453,68 @@ public sealed class BatteryValidationSessionTests
         Assert.False(context.Port.Disposed);
     }
 
+    [Fact]
+    public async Task Run_PreMutationCancellationWinsOverThrowingDisposal()
+    {
+        using CancellationTokenSource caller = new();
+        TestContext context = new();
+        context.Port.DisposeException = new IOException("dispose must not mask cancellation");
+        context.Factory.Open = _ =>
+        {
+            caller.Cancel();
+            return Task.FromResult(Success<IBatteryValidationPort>(context.Port));
+        };
+
+        OperationCanceledException thrown = await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => context.RunAsync(cancellationToken: caller.Token));
+
+        Assert.Equal(caller.Token, thrown.CancellationToken);
+        Assert.Equal(1, context.Port.DisposeCount);
+        Assert.Empty(context.Port.ApplyTokens);
+        Assert.Equal(["open", "dispose"], context.Events);
+    }
+
+    [Fact]
+    public async Task Run_PostMutationCancellationWinsOverThrowingDisposalAndPreservesOriginal()
+    {
+        using CancellationTokenSource caller = new();
+        TestContext context = new();
+        OperationCanceledException original = new("original caller cancellation", caller.Token);
+        context.Port.DisposeException = new IOException("dispose must not mask cancellation");
+        context.Port.ApplySteps.Clear();
+        context.Port.ApplySteps.Enqueue(_ =>
+        {
+            caller.Cancel();
+            return Task.FromException<HidSessionResult<HidUnit>>(original);
+        });
+        context.Port.ApplySteps.Enqueue(_ => Task.FromResult(Success(new HidUnit())));
+        context.SetQueries(BatteryValidationSetting.Limit80, BatteryValidationSetting.Limit80);
+
+        OperationCanceledException thrown = await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => context.RunAsync(cancellationToken: caller.Token));
+
+        Assert.Same(original, thrown);
+        Assert.Equal(2, context.Port.ApplyTokens.Count);
+        Assert.False(context.Port.ApplyTokens[1].IsCancellationRequested);
+        Assert.Equal(1, context.Port.DisposeCount);
+        Assert.Equal("dispose", context.Events[^1]);
+    }
+
+    [Fact]
+    public async Task Run_ThrowingDisposalPropagatesOnNormalTerminalPath()
+    {
+        TestContext context = new() { ApprovalResult = false };
+        IOException disposal = new("observable disposal failure");
+        context.Port.DisposeException = disposal;
+
+        IOException thrown = await Assert.ThrowsAsync<IOException>(() => context.RunAsync());
+
+        Assert.Same(disposal, thrown);
+        Assert.Equal(1, context.Port.DisposeCount);
+        Assert.Empty(context.Port.ApplyTokens);
+        Assert.Equal(["open", "query", "approve", "dispose"], context.Events);
+    }
+
     private static async Task<HidSessionResult<HidUnit>> CancelApply(
         CancellationTokenSource caller,
         bool stableResult)
@@ -541,6 +616,8 @@ public sealed class BatteryValidationSessionTests
         public List<CancellationToken> QueryTokens { get; } = [];
         public List<CancellationToken> ApplyTokens { get; } = [];
         public bool Disposed { get; private set; }
+        public int DisposeCount { get; private set; }
+        public Exception? DisposeException { get; set; }
 
         public Task<HidSessionResult<BatteryValidationSetting>> QueryAsync(CancellationToken cancellationToken)
         {
@@ -561,8 +638,11 @@ public sealed class BatteryValidationSessionTests
         public ValueTask DisposeAsync()
         {
             events.Add("dispose");
+            DisposeCount++;
             Disposed = true;
-            return ValueTask.CompletedTask;
+            return DisposeException is null
+                ? ValueTask.CompletedTask
+                : ValueTask.FromException(DisposeException);
         }
     }
 
