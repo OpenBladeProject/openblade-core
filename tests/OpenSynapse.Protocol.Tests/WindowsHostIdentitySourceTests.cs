@@ -1,5 +1,6 @@
 using Microsoft.Win32;
 using OpenSynapse.Protocol;
+using System.Runtime.InteropServices;
 
 namespace OpenSynapse.Protocol.Tests;
 
@@ -7,6 +8,11 @@ public sealed class WindowsHostIdentitySourceTests
 {
     private const string BiosKey = @"HARDWARE\DESCRIPTION\System\BIOS";
     private const string SystemInformationKey = @"SYSTEM\CurrentControlSet\Control\SystemInformation";
+
+    private static readonly WindowsPlatformEvidence ExactPlatform = new(
+        IsWindows: true,
+        Version: new Version(10, 0, 26200),
+        Architecture.X64);
 
     private static readonly RegistryValueRequest[] ExpectedRequests =
     [
@@ -62,7 +68,7 @@ public sealed class WindowsHostIdentitySourceTests
     public void ReadExactIdentity_AcceptsOnlyCompleteExactEvidence()
     {
         FakeRegistryValueSource registry = CreateExactRegistry();
-        WindowsHostIdentitySource source = new(registry);
+        WindowsHostIdentitySource source = CreateSource(registry);
 
         HostIdentityReadResult result = source.ReadExactIdentity();
 
@@ -87,7 +93,7 @@ public sealed class WindowsHostIdentitySourceTests
         FakeRegistryValueSource registry = CreateExactRegistry();
         registry.Values[location] = wrongValue;
 
-        AssertIdentityBlocked(new WindowsHostIdentitySource(registry).ReadExactIdentity());
+        AssertIdentityBlocked(CreateSource(registry).ReadExactIdentity());
     }
 
     [Theory]
@@ -97,7 +103,7 @@ public sealed class WindowsHostIdentitySourceTests
         FakeRegistryValueSource registry = CreateExactRegistry();
         registry.Values[location] = caseDifferentValue;
 
-        AssertIdentityBlocked(new WindowsHostIdentitySource(registry).ReadExactIdentity());
+        AssertIdentityBlocked(CreateSource(registry).ReadExactIdentity());
     }
 
     [Theory]
@@ -107,7 +113,7 @@ public sealed class WindowsHostIdentitySourceTests
         FakeRegistryValueSource registry = CreateExactRegistry();
         registry.Values.Remove(location);
 
-        AssertIdentityBlocked(new WindowsHostIdentitySource(registry).ReadExactIdentity());
+        AssertIdentityBlocked(CreateSource(registry).ReadExactIdentity());
     }
 
     [Theory]
@@ -117,7 +123,7 @@ public sealed class WindowsHostIdentitySourceTests
         FakeRegistryValueSource registry = CreateExactRegistry();
         registry.Values[location] = new StringConvertibleRegistryValue((string)registry.Values[location]!);
 
-        AssertIdentityBlocked(new WindowsHostIdentitySource(registry).ReadExactIdentity());
+        AssertIdentityBlocked(CreateSource(registry).ReadExactIdentity());
     }
 
     [Theory]
@@ -127,7 +133,7 @@ public sealed class WindowsHostIdentitySourceTests
         FakeRegistryValueSource registry = CreateExactRegistry();
         registry.ThrowAt = location;
 
-        AssertIdentityBlocked(new WindowsHostIdentitySource(registry).ReadExactIdentity());
+        AssertIdentityBlocked(CreateSource(registry).ReadExactIdentity());
     }
 
     [Theory]
@@ -137,7 +143,59 @@ public sealed class WindowsHostIdentitySourceTests
         FakeRegistryValueSource registry = CreateExactRegistry();
         registry.Values[systemInformationLocation] = $"{registry.Values[systemInformationLocation]} ";
 
-        AssertIdentityBlocked(new WindowsHostIdentitySource(registry).ReadExactIdentity());
+        AssertIdentityBlocked(CreateSource(registry).ReadExactIdentity());
+    }
+
+    [Theory]
+    [InlineData(10, 0, 19045)]
+    [InlineData(6, 3, 9600)]
+    [InlineData(11, 0, 26200)]
+    public void ReadExactIdentity_BlocksNonWindows11Versions(int major, int minor, int build)
+    {
+        FakeRegistryValueSource registry = CreateExactRegistry();
+        FakeWindowsPlatformEvidenceSource platform = new(
+            new WindowsPlatformEvidence(true, new Version(major, minor, build), Architecture.X64));
+
+        AssertIdentityBlocked(new WindowsHostIdentitySource(registry, platform).ReadExactIdentity());
+        Assert.Empty(registry.Requests);
+    }
+
+    [Theory]
+    [InlineData(Architecture.X86)]
+    [InlineData(Architecture.Arm)]
+    [InlineData(Architecture.Arm64)]
+    public void ReadExactIdentity_BlocksNonX64Architectures(Architecture architecture)
+    {
+        FakeRegistryValueSource registry = CreateExactRegistry();
+        FakeWindowsPlatformEvidenceSource platform = new(
+            ExactPlatform with { Architecture = architecture });
+
+        AssertIdentityBlocked(new WindowsHostIdentitySource(registry, platform).ReadExactIdentity());
+        Assert.Empty(registry.Requests);
+    }
+
+    [Fact]
+    public void ReadExactIdentity_BlocksNonWindowsPlatform()
+    {
+        FakeRegistryValueSource registry = CreateExactRegistry();
+        FakeWindowsPlatformEvidenceSource platform = new(
+            ExactPlatform with { IsWindows = false });
+
+        AssertIdentityBlocked(new WindowsHostIdentitySource(registry, platform).ReadExactIdentity());
+        Assert.Empty(registry.Requests);
+    }
+
+    [Fact]
+    public void ReadExactIdentity_BlocksAndContainsPlatformEvidenceSourceFailure()
+    {
+        FakeRegistryValueSource registry = CreateExactRegistry();
+        FakeWindowsPlatformEvidenceSource platform = new(ExactPlatform)
+        {
+            Throw = true,
+        };
+
+        AssertIdentityBlocked(new WindowsHostIdentitySource(registry, platform).ReadExactIdentity());
+        Assert.Empty(registry.Requests);
     }
 
     private static TheoryData<string, string> CreateRequestData(
@@ -162,6 +220,9 @@ public sealed class WindowsHostIdentitySourceTests
 
         return registry;
     }
+
+    private static WindowsHostIdentitySource CreateSource(FakeRegistryValueSource registry) =>
+        new(registry, new FakeWindowsPlatformEvidenceSource(ExactPlatform));
 
     private static void AssertIdentityBlocked(HostIdentityReadResult result)
     {
@@ -196,6 +257,22 @@ public sealed class WindowsHostIdentitySourceTests
     private sealed class StringConvertibleRegistryValue(string text)
     {
         public override string ToString() => text;
+    }
+
+    private sealed class FakeWindowsPlatformEvidenceSource(WindowsPlatformEvidence evidence)
+        : IWindowsPlatformEvidenceSource
+    {
+        public bool Throw { get; set; }
+
+        public WindowsPlatformEvidence Read()
+        {
+            if (Throw)
+            {
+                throw new InvalidOperationException("platform evidence unavailable");
+            }
+
+            return evidence;
+        }
     }
 
     private readonly record struct RegistryValueRequest(
