@@ -96,8 +96,7 @@ internal sealed class NativeOperationState
         Finalization? finalization = null;
         lock (_sync)
         {
-            if (_submissionState is SubmissionState.Allocated or SubmissionState.Finalized ||
-                _abandonedBeforeSubmission)
+            if (_submissionState != SubmissionState.Submitting || _abandonedBeforeSubmission)
             {
                 return;
             }
@@ -179,8 +178,7 @@ internal sealed class NativeOperationState
 
     private void RecordCancellationIntentLocked(HidFeatureTermination termination)
     {
-        if (!_completionObserved &&
-            _submissionState != SubmissionState.Finalized &&
+        if (_submissionState != SubmissionState.Finalized &&
             _termination == HidFeatureTermination.Completed)
         {
             _termination = termination;

@@ -43,6 +43,40 @@ public sealed class NativeOperationStateTests
         Assert.False(state.TryAcquireCancellationLease(out _));
     }
 
+    [Theory]
+    [InlineData((int)HidFeatureTermination.CallerCanceled)]
+    [InlineData((int)HidFeatureTermination.DeadlineExpired)]
+    public async Task CancellationIntentAfterCompletionInsideSubmission_IsPreserved(
+        int terminationValue)
+    {
+        var termination = (HidFeatureTermination)terminationValue;
+        var finalizer = new FinalizerProbe();
+        var state = new NativeOperationState(finalizer.FinalizeResources);
+        Assert.True(state.TryBeginSubmission(out NativeUseLease submissionLease));
+        var completionGate = new ScriptedGate();
+        var nativeCompletion = new NativeIoCompletion(true, 41, 0);
+        Task completion = Task.Run(async () =>
+        {
+            await completionGate.PauseAsync();
+            state.RecordCompletion(nativeCompletion);
+        });
+
+        await completionGate.WaitUntilPausedAsync();
+        completionGate.Release();
+        await completion;
+        Assert.False(state.Completion.IsCompleted);
+
+        state.RecordCancellationIntent(termination);
+        state.RecordSubmitted();
+        Assert.False(state.TryClaimTargetedCancellation());
+        submissionLease.Dispose();
+
+        Assert.Equal(
+            new HidFeatureIoResult(nativeCompletion, true, termination),
+            await state.Completion);
+        Assert.Equal(1, finalizer.CallCount);
+    }
+
     [Fact]
     public async Task CompletionAfterSubmissionBeforeCancellation_DeniesLateCancellation()
     {
@@ -154,6 +188,26 @@ public sealed class NativeOperationStateTests
         Assert.Equal(
             new HidFeatureIoResult(failure, true, HidFeatureTermination.Completed),
             await state.Completion);
+        Assert.Equal(1, finalizer.CallCount);
+    }
+
+    [Fact]
+    public async Task ImmediateFailureAfterSubmission_DoesNotReplaceTheEventualCompletion()
+    {
+        var finalizer = new FinalizerProbe();
+        var state = CreateSubmittedState(finalizer, out NativeUseLease submissionLease);
+        submissionLease.Dispose();
+        var invalidImmediateFailure = new NativeIoCompletion(false, 0, 87);
+        var eventualCompletion = new NativeIoCompletion(true, 23, 0);
+
+        state.RecordImmediateFailure(invalidImmediateFailure);
+
+        Assert.False(state.Completion.IsCompleted);
+        Assert.Equal(0, finalizer.CallCount);
+
+        state.RecordCompletion(eventualCompletion);
+
+        Assert.Equal(eventualCompletion, (await state.Completion).Completion);
         Assert.Equal(1, finalizer.CallCount);
     }
 
