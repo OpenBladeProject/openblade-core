@@ -7,4 +7,8 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
 
+  <ItemGroup>
+    <ProjectReference Include="..\OpenSynapse.Contracts\OpenSynapse.Contracts.csproj" />
+  </ItemGroup>
+
 </Project>

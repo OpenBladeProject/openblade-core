@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Security.Principal;
+using OpenSynapse.Contracts;
 
 namespace OpenSynapse.Setup;
 
@@ -8,7 +9,6 @@ public sealed class WindowsSetupPlatform : ISetupPlatform
     private const string ServiceName = "OpenSynapse";
     private const int ServiceDoesNotExist = 1060;
     private const int ServiceNotActive = 1062;
-    private const string TrayShutdownEventName = @"Local\OpenSynapse.Tray.Shutdown";
     private readonly SetupPaths paths = SetupPaths.Create(
         Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles),
         Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
@@ -104,7 +104,8 @@ public sealed class WindowsSetupPlatform : ISetupPlatform
             return;
         }
 
-        if (!EventWaitHandle.TryOpenExisting(TrayShutdownEventName, out EventWaitHandle? shutdownEvent))
+        string shutdownEventName = TrayShutdownEndpoint.ForExecutablePath(installedTray);
+        if (!EventWaitHandle.TryOpenExisting(shutdownEventName, out EventWaitHandle? shutdownEvent))
         {
             installedProcesses.ForEach(process => process.Dispose());
             throw new InvalidOperationException("The installed tray process does not expose its shutdown event.");

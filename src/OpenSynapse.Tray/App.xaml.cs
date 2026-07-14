@@ -1,11 +1,11 @@
 using System.Windows;
+using OpenSynapse.Contracts;
 using Forms = System.Windows.Forms;
 
 namespace OpenSynapse.Tray;
 
 public partial class App : System.Windows.Application
 {
-    private const string ShutdownEventName = @"Local\OpenSynapse.Tray.Shutdown";
     private Forms.NotifyIcon? trayIcon;
     private EventWaitHandle? shutdownEvent;
     private RegisteredWaitHandle? shutdownRegistration;
@@ -16,7 +16,12 @@ public partial class App : System.Windows.Application
     {
         base.OnStartup(e);
 
-        shutdownEvent = new EventWaitHandle(false, EventResetMode.ManualReset, ShutdownEventName);
+        string executablePath = Environment.ProcessPath
+            ?? throw new InvalidOperationException("Tray executable path is unavailable.");
+        shutdownEvent = new EventWaitHandle(
+            false,
+            EventResetMode.ManualReset,
+            TrayShutdownEndpoint.ForExecutablePath(executablePath));
         shutdownRegistration = ThreadPool.RegisterWaitForSingleObject(
             shutdownEvent,
             (_, _) => Dispatcher.BeginInvoke(ExitTray),

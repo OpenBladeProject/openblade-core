@@ -207,7 +207,10 @@ public sealed class ControlCoordinator(
     }
 
     private static bool IsTerminalDeviceFailure(Exception exception) =>
-        exception is IOException or UnauthorizedAccessException or RazerProtocolException;
+        exception is IOException
+            or UnauthorizedAccessException
+            or RazerProtocolException
+            or TimeoutException;
 
     private static bool IsDefined<TEnum>(TEnum value)
         where TEnum : struct, Enum => Enum.IsDefined(value);

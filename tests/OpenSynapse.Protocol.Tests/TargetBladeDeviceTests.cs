@@ -30,10 +30,12 @@ public sealed class TargetBladeDeviceTests
         HidInterfaceInfo wrongVendor = new("vendor", 0x1234, 0x02E0, 1, 2, 91);
         HidInterfaceInfo wrongProduct = new("product", 0x1532, 0x029F, 1, 2, 91);
         HidInterfaceInfo wrongLength = new("length", 0x1532, 0x02E0, 1, 2, 90);
+        HidInterfaceInfo wrongUsagePage = new("usage-page", 0x1532, 0x02E0, 0x0C, 2, 91);
+        HidInterfaceInfo wrongUsage = new("usage", 0x1532, 0x02E0, 1, 1, 91);
 
         IReadOnlyList<HidInterfaceInfo> selected =
             WindowsHidEnumerator.SelectProductionInterfaces(
-                [approved, wrongVendor, wrongProduct, wrongLength]);
+                [approved, wrongVendor, wrongProduct, wrongLength, wrongUsagePage, wrongUsage]);
 
         Assert.Equal([approved], selected);
     }

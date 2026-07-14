@@ -159,6 +159,29 @@ public sealed class ControlCoordinatorTests
     }
 
     [Fact]
+    public async Task ApplyDesiredState_StopsWritesAfterIndeterminateTimeout()
+    {
+        FakeBladeDevice device = new()
+        {
+            Performance = PerformancePreset.Silent,
+            Fans = FanMode.Automatic,
+            Battery = BatteryPolicy.Create(75),
+            PerformanceWriteException = new TimeoutException("device response timed out"),
+        };
+        ControlCoordinator coordinator = new(device, new FakeConflictDetector([]));
+
+        SubsystemApplyResults results = await coordinator.ApplyDesiredStateAsync(
+            CreateDesiredState(),
+            CancellationToken.None);
+
+        Assert.Equal(ControlResultStatus.Failed, results.Performance.Status);
+        Assert.Equal(ControlResultStatus.Blocked, results.Fans.Status);
+        Assert.Equal(0, device.FanWriteCount);
+        Assert.Equal(0, device.BatteryWriteCount);
+        Assert.Equal(0, device.LightingWriteCount);
+    }
+
+    [Fact]
     public async Task ApplyDesiredState_RechecksConflictsBeforeEachSetter()
     {
         FakeBladeDevice device = new()
