@@ -1,6 +1,18 @@
 namespace OpenSynapse.Protocol;
 
-internal sealed class BatteryCommandClient
+internal interface IBatteryCommandClient
+{
+    Task<HidSessionResult<BatteryValidationSetting>> QueryAsync(
+        byte transactionId,
+        CancellationToken cancellationToken);
+
+    Task<HidSessionResult<HidUnit>> SetAsync(
+        byte transactionId,
+        BatteryValidationSetting setting,
+        CancellationToken cancellationToken);
+}
+
+internal sealed class BatteryCommandClient : IBatteryCommandClient
 {
     private static readonly RazerCommandSpec QueryCommand = new(0x07, 0x92, [0x00], 1);
 
@@ -16,7 +28,7 @@ internal sealed class BatteryCommandClient
         this.exchangeTimeout = exchangeTimeout;
     }
 
-    internal Task<HidSessionResult<BatteryValidationSetting>> QueryAsync(
+    public Task<HidSessionResult<BatteryValidationSetting>> QueryAsync(
         byte transactionId,
         CancellationToken cancellationToken)
     {
@@ -24,7 +36,7 @@ internal sealed class BatteryCommandClient
         return QueryCoreAsync(assignment, cancellationToken);
     }
 
-    internal Task<HidSessionResult<HidUnit>> SetAsync(
+    public Task<HidSessionResult<HidUnit>> SetAsync(
         byte transactionId,
         BatteryValidationSetting setting,
         CancellationToken cancellationToken)

@@ -40,9 +40,7 @@ internal enum RazerCommandSessionDisposition
 
 internal interface IRazerCommandSession : IAsyncDisposable
 {
-    RazerCommandSessionDisposition Disposition => RazerCommandSessionDisposition.Healthy;
-
-    ValueTask IAsyncDisposable.DisposeAsync() => ValueTask.CompletedTask;
+    RazerCommandSessionDisposition Disposition { get; }
 
     Task<HidSessionResult<ReadOnlyMemory<byte>>> ExecuteAsync(
         RazerCommandSpec command,

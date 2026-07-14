@@ -215,6 +215,11 @@ public sealed class BatteryCommandClientTests
 
         internal List<Call> Calls { get; } = [];
 
+        public RazerCommandSessionDisposition Disposition =>
+            RazerCommandSessionDisposition.Healthy;
+
+        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+
         public Task<HidSessionResult<ReadOnlyMemory<byte>>> ExecuteAsync(
             RazerCommandSpec command,
             Func<TransactionIdAssignment> assignTransactionId,
