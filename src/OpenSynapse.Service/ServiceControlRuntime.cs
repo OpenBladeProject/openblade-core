@@ -291,7 +291,10 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             .OrderBy(name => name, StringComparer.Ordinal)
             .ToArray();
         string message = failure ?? (access.DetectionFailure is not null
-            ? $"Controller conflict detection failed: {access.DetectionFailure}"
+            ? conflicts.Length == 0
+                ? $"Controller conflict detection failed: {access.DetectionFailure}"
+                : $"Controller conflict detection failed: {access.DetectionFailure} " +
+                    $"Detected conflicts: {string.Join(", ", conflicts)}."
             : conflicts.Length > 0
                 ? $"Razer controller conflicts detected: {string.Join(", ", conflicts)}."
                 : "No verified PID 02E0 device is available.");

@@ -66,6 +66,27 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     }
 
     [Fact]
+    public void DetectionFailure_PreservesSortedExactConflictNamesInStatusMessage()
+    {
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            conflicts: ["Razer Synapse Service", "Razer Central Service"],
+            detectionFailure: "Windows service enumeration failed.");
+
+        ServiceStatusSnapshot status = context.Runtime.GetStatus();
+
+        Assert.Equal(
+            ["Razer Central Service", "Razer Synapse Service"],
+            status.Conflicts);
+        Assert.Equal(
+            "Controller conflict detection failed: Windows service enumeration failed. " +
+            "Detected conflicts: Razer Central Service, Razer Synapse Service.",
+            status.Message);
+        Assert.Equal(0, context.Provider.TryGetCount);
+        Assert.Equal(0, context.Device.TotalCalls);
+    }
+
+    [Fact]
     public async Task UpdateProfiles_AtomicallyPersistsValidIntentWhileUnavailable()
     {
         TestContext context = CreateContext(providerAvailable: false);
