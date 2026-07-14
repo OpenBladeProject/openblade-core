@@ -17,7 +17,7 @@ public sealed class SetupPathsTests
         Assert.Equal(@"C:\ProgramData\OpenSynapse", paths.MachineDataDirectory);
         Assert.Equal(@"C:\Users\jack\AppData\Local\OpenSynapse", paths.UserDataDirectory);
         Assert.Equal(
-            @"C:\Users\jack\AppData\Roaming\Microsoft\Windows\Start Menu\Programs\Startup\OpenSynapse.cmd",
+            @"C:\Users\jack\AppData\Roaming\Microsoft\Windows\Start Menu\Programs\Startup\OpenSynapse.lnk",
             paths.StartupFile);
     }
 

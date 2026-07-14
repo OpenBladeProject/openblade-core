@@ -91,6 +91,63 @@ public sealed class WindowsSetupPlatformServiceTests
             serviceControl.Operations);
     }
 
+    [Fact]
+    public async Task InstallStartupShortcut_CreatesRealLinkToTrayWithInstallWorkingDirectory()
+    {
+        RecordingShortcutWriter shortcutWriter = new();
+        WindowsSetupPlatform platform = new(new RecordingServiceControl(), shortcutWriter);
+
+        await platform.InstallStartupShortcutAsync(CancellationToken.None);
+
+        string installDirectory = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles),
+            "OpenSynapse");
+        ShortcutRequest request = Assert.Single(shortcutWriter.Requests);
+        Assert.EndsWith("OpenSynapse.lnk", request.ShortcutPath, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(Path.Combine(installDirectory, "OpenSynapse.Tray.exe"), request.TargetPath);
+        Assert.Equal(installDirectory, request.WorkingDirectory);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("not-a-sid")]
+    [InlineData("S-1-1-0")]
+    public async Task WriteAuthorizedUserSid_InvalidOrNonAccountSid_FailsClosed(string sid)
+    {
+        RecordingAuthorizedSidWriter sidWriter = new();
+        WindowsSetupPlatform platform = new(
+            new RecordingServiceControl(),
+            new RecordingShortcutWriter(),
+            sidWriter);
+
+        ArgumentException exception = await Assert.ThrowsAsync<ArgumentException>(
+            () => platform.WriteAuthorizedUserSidAsync(sid, CancellationToken.None));
+
+        Assert.Contains("valid Windows account SID", exception.Message, StringComparison.Ordinal);
+        Assert.Empty(sidWriter.Requests);
+    }
+
+    [Fact]
+    public async Task WriteAuthorizedUserSid_ValidSid_UsesCanonicalValueAndMachineDataPath()
+    {
+        RecordingAuthorizedSidWriter sidWriter = new();
+        WindowsSetupPlatform platform = new(
+            new RecordingServiceControl(),
+            new RecordingShortcutWriter(),
+            sidWriter);
+
+        await platform.WriteAuthorizedUserSidAsync(
+            " S-1-5-21-1-2-3-1001 ",
+            CancellationToken.None);
+
+        AuthorizedSidWriteRequest request = Assert.Single(sidWriter.Requests);
+        Assert.Equal("S-1-5-21-1-2-3-1001", request.Sid);
+        Assert.EndsWith(
+            Path.Combine("OpenSynapse", "authorized-user.sid"),
+            request.Path,
+            StringComparison.OrdinalIgnoreCase);
+    }
+
     private sealed record RecordedCommand(string[] Arguments, int[] ToleratedExitCodes);
 
     private sealed class RecordingServiceControl : ISetupServiceControl
@@ -128,6 +185,28 @@ public sealed class WindowsSetupPlatformServiceTests
             CancellationToken cancellationToken)
         {
             Operations.Add($"wait-deleted:{timeout}");
+            return Task.CompletedTask;
+        }
+    }
+
+    private sealed class RecordingShortcutWriter : IStartupShortcutWriter
+    {
+        public List<ShortcutRequest> Requests { get; } = [];
+
+        public Task CreateAsync(ShortcutRequest request, CancellationToken cancellationToken)
+        {
+            Requests.Add(request);
+            return Task.CompletedTask;
+        }
+    }
+
+    private sealed class RecordingAuthorizedSidWriter : IAuthorizedUserSidWriter
+    {
+        public List<AuthorizedSidWriteRequest> Requests { get; } = [];
+
+        public Task WriteAsync(AuthorizedSidWriteRequest request, CancellationToken cancellationToken)
+        {
+            Requests.Add(request);
             return Task.CompletedTask;
         }
     }

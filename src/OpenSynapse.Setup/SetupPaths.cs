@@ -15,7 +15,7 @@ public sealed record SetupPaths
         InstallDirectory = Path.Combine(programFilesRoot, "OpenSynapse");
         MachineDataDirectory = Path.Combine(machineDataRoot, "OpenSynapse");
         UserDataDirectory = Path.Combine(userDataRoot, "OpenSynapse");
-        StartupFile = Path.Combine(startupRoot, "OpenSynapse.cmd");
+        StartupFile = Path.Combine(startupRoot, "OpenSynapse.lnk");
     }
 
     public string ProgramFilesRoot { get; }

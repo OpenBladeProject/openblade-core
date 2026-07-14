@@ -15,10 +15,17 @@ public sealed class WindowsSetupPlatform : ISetupPlatform
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
         Environment.GetFolderPath(Environment.SpecialFolder.Startup));
     private readonly ISetupServiceControl serviceControl;
+    private readonly IStartupShortcutWriter shortcutWriter;
+    private readonly IAuthorizedUserSidWriter sidWriter;
 
-    public WindowsSetupPlatform(ISetupServiceControl? serviceControl = null)
+    public WindowsSetupPlatform(
+        ISetupServiceControl? serviceControl = null,
+        IStartupShortcutWriter? shortcutWriter = null,
+        IAuthorizedUserSidWriter? sidWriter = null)
     {
         this.serviceControl = serviceControl ?? new ScSetupServiceControl();
+        this.shortcutWriter = shortcutWriter ?? new WindowsStartupShortcutWriter();
+        this.sidWriter = sidWriter ?? new AtomicAuthorizedUserSidWriter();
     }
 
     public string CurrentUserSid => WindowsIdentity.GetCurrent().User?.Value
@@ -63,9 +70,26 @@ public sealed class WindowsSetupPlatform : ISetupPlatform
 
     public async Task WriteAuthorizedUserSidAsync(string sid, CancellationToken cancellationToken)
     {
-        Directory.CreateDirectory(paths.MachineDataDirectory);
-        await File.WriteAllTextAsync(
-            Path.Combine(paths.MachineDataDirectory, "authorized-user.sid"), sid, cancellationToken);
+        SecurityIdentifier identity;
+        try
+        {
+            identity = new SecurityIdentifier(sid?.Trim() ?? string.Empty);
+        }
+        catch (ArgumentException exception)
+        {
+            throw new ArgumentException("A valid Windows account SID is required.", nameof(sid), exception);
+        }
+
+        if (!identity.IsAccountSid())
+        {
+            throw new ArgumentException("A valid Windows account SID is required.", nameof(sid));
+        }
+
+        await sidWriter.WriteAsync(
+            new AuthorizedSidWriteRequest(
+                Path.Combine(paths.MachineDataDirectory, "authorized-user.sid"),
+                identity.Value),
+            cancellationToken);
     }
 
     public async Task InstallServiceAsync(CancellationToken cancellationToken)
@@ -93,9 +117,9 @@ public sealed class WindowsSetupPlatform : ISetupPlatform
     public async Task InstallStartupShortcutAsync(CancellationToken cancellationToken)
     {
         string trayExecutable = Path.Combine(paths.InstallDirectory, "OpenSynapse.Tray.exe");
-        string contents = $"@echo off{Environment.NewLine}start \"\" \"{trayExecutable}\"{Environment.NewLine}";
-        Directory.CreateDirectory(paths.StartupRoot);
-        await File.WriteAllTextAsync(paths.StartupFile, contents, cancellationToken);
+        await shortcutWriter.CreateAsync(
+            new ShortcutRequest(paths.StartupFile, trayExecutable, paths.InstallDirectory),
+            cancellationToken);
     }
 
     public Task RemoveStartupShortcutAsync(CancellationToken cancellationToken)
