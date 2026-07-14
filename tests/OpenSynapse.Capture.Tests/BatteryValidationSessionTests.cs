@@ -246,7 +246,7 @@ public sealed class BatteryValidationSessionTests
         Assert.Equal(caller.Token, context.Port.ApplyTokens[0]);
         Assert.NotEqual(caller.Token, context.Port.ApplyTokens[1]);
         Assert.False(context.Port.ApplyTokens[1].IsCancellationRequested);
-        Assert.Equal(context.Port.ApplyTokens[1], context.Port.QueryTokens[2]);
+        Assert.NotEqual(context.Port.ApplyTokens[1], context.Port.QueryTokens[2]);
         Assert.True(context.Port.Disposed);
     }
 
@@ -360,6 +360,43 @@ public sealed class BatteryValidationSessionTests
         Assert.Equal(BatteryValidationRestorationFailure.RestoreQueryFailed, result.RestorationFailure);
         Assert.False(result.Restored);
         Assert.True(context.Port.Disposed);
+    }
+
+    [Fact]
+    public async Task Run_RestoreQueryFailurePreservesSafeDiagnostic()
+    {
+        TestContext context = new();
+        var diagnostic = new HidSessionFailureDiagnostic(
+            HidSessionFailurePhase.GetCompletion,
+            HidSessionFailureKind.Timeout,
+            NativeWin32Error: 995,
+            TransferredByteCount: 0);
+        context.Port.QuerySteps.Clear();
+        context.Port.QuerySteps.Enqueue(_ => Task.FromResult(Success(BatteryValidationSetting.Limit80)));
+        context.Port.QuerySteps.Enqueue(_ => Task.FromResult(Success(BatteryValidationSetting.Limit75)));
+        context.Port.QuerySteps.Enqueue(_ => Task.FromResult(
+            Failure<BatteryValidationSetting>(HidSessionFailureKind.Timeout) with
+            {
+                Diagnostic = diagnostic,
+            }));
+
+        BatteryValidationResult result = await context.RunAsync();
+
+        Assert.Equal(BatteryValidationRestorationFailure.RestoreQueryFailed, result.RestorationFailure);
+        Assert.Equal(diagnostic, result.RestorationDiagnostic);
+    }
+
+    [Fact]
+    public async Task Run_RestoreVerificationGetsFreshBoundedCleanupToken()
+    {
+        TestContext context = new();
+
+        BatteryValidationResult result = await context.RunAsync();
+
+        Assert.True(result.Restored);
+        Assert.NotEqual(context.Port.ApplyTokens[1], context.Port.QueryTokens[2]);
+        Assert.False(context.Port.ApplyTokens[1].IsCancellationRequested);
+        Assert.False(context.Port.QueryTokens[2].IsCancellationRequested);
     }
 
     [Fact]

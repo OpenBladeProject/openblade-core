@@ -180,6 +180,38 @@ public sealed class BatteryValidationCommandTests
     }
 
     [Fact]
+    public async Task RunAsync_AppendsOnlySafeRestorationDiagnosticFields()
+    {
+        var output = new StringWriter();
+        BatteryValidationResult result = new(
+            ApplyAttempted: true,
+            Applied: true,
+            ReadBack: true,
+            Restored: false,
+            PrimaryFailure: BatteryValidationPrimaryFailure.None,
+            RestorationFailure: BatteryValidationRestorationFailure.RestoreQueryFailed)
+        {
+            RestorationDiagnostic = new HidSessionFailureDiagnostic(
+                HidSessionFailurePhase.GetCompletion,
+                HidSessionFailureKind.Timeout,
+                NativeWin32Error: 995,
+                TransferredByteCount: 0),
+        };
+        var command = CreateCommand(_ => Task.FromResult(result), output);
+
+        int exitCode = await command.RunAsync(["75"], CancellationToken.None);
+
+        Assert.Equal(BatteryValidationCommand.ValidationFailureExitCode, exitCode);
+        Assert.Contains("RestorationPhase=GetCompletion", output.ToString());
+        Assert.Contains("RestorationSessionFailure=Timeout", output.ToString());
+        Assert.Contains("RestorationWin32Error=995", output.ToString());
+        Assert.Contains("RestorationTransferredBytes=0", output.ToString());
+        Assert.DoesNotContain("Payload", output.ToString(), StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("Transaction", output.ToString(), StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("Path", output.ToString(), StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public async Task RunAsync_CancellationTakesPrecedenceOverReturnedFailure()
     {
         Action? cancel = null;

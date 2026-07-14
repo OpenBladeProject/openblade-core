@@ -47,6 +47,8 @@ public sealed record BatteryValidationResult(
 {
     public HidSessionFailureDiagnostic? BaselineQueryDiagnostic { get; init; }
 
+    public HidSessionFailureDiagnostic? RestorationDiagnostic { get; init; }
+
     public bool Success => ApplyAttempted
         && Applied
         && ReadBack
@@ -165,6 +167,7 @@ public sealed class BatteryValidationSession(
         BatteryValidationPrimaryFailure primaryFailure = BatteryValidationPrimaryFailure.None;
         BatteryValidationRestorationFailure restorationFailure =
             BatteryValidationRestorationFailure.None;
+        HidSessionFailureDiagnostic? restorationDiagnostic = null;
         OperationCanceledException? callerCancellation = null;
 
         try
@@ -221,35 +224,40 @@ public sealed class BatteryValidationSession(
         {
             if (applyAttempted)
             {
-                using CancellationTokenSource cleanup = new(_cleanupTimeout);
                 bool restoreApplied = false;
-                try
+                using (CancellationTokenSource restoreApplyCleanup = new(_cleanupTimeout))
                 {
-                    HidSessionResult<HidUnit> restoreApply =
-                        await port.ApplyAsync(prior, cleanup.Token).ConfigureAwait(false);
-                    restoreApplied = restoreApply.Failure is null;
-                    if (!restoreApplied)
+                    try
+                    {
+                        HidSessionResult<HidUnit> restoreApply =
+                            await port.ApplyAsync(prior, restoreApplyCleanup.Token).ConfigureAwait(false);
+                        restoreApplied = restoreApply.Failure is null;
+                        if (!restoreApplied)
+                        {
+                            restorationFailure =
+                                BatteryValidationRestorationFailure.RestoreApplyFailed;
+                            restorationDiagnostic = restoreApply.Diagnostic;
+                        }
+                    }
+                    catch (Exception)
                     {
                         restorationFailure =
                             BatteryValidationRestorationFailure.RestoreApplyFailed;
                     }
                 }
-                catch (Exception)
-                {
-                    restorationFailure =
-                        BatteryValidationRestorationFailure.RestoreApplyFailed;
-                }
 
                 if (restoreApplied)
                 {
+                    using CancellationTokenSource restoreQueryCleanup = new(_cleanupTimeout);
                     try
                     {
                         HidSessionResult<BatteryValidationSetting> restoreQuery =
-                            await port.QueryAsync(cleanup.Token).ConfigureAwait(false);
+                            await port.QueryAsync(restoreQueryCleanup.Token).ConfigureAwait(false);
                         if (restoreQuery.Failure is not null)
                         {
                             restorationFailure =
                                 BatteryValidationRestorationFailure.RestoreQueryFailed;
+                            restorationDiagnostic = restoreQuery.Diagnostic;
                         }
                         else
                         {
@@ -283,7 +291,10 @@ public sealed class BatteryValidationSession(
             ReadBack: readBack,
             Restored: restored,
             PrimaryFailure: primaryFailure,
-            RestorationFailure: restorationFailure);
+            RestorationFailure: restorationFailure)
+        {
+            RestorationDiagnostic = restorationDiagnostic,
+        };
     }
 
     private static async Task<BatteryValidationResult> RunWithOwnedPortAsync(

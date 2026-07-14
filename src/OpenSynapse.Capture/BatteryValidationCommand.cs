@@ -79,6 +79,15 @@ public sealed class BatteryValidationCommand
             await _output.WriteLineAsync(
                 $"BaselineQueryTransferredBytes={diagnostic.TransferredByteCount?.ToString() ?? "Unavailable"}").ConfigureAwait(false);
         }
+        if (result.RestorationDiagnostic is { } restorationDiagnostic)
+        {
+            await _output.WriteLineAsync($"RestorationPhase={restorationDiagnostic.Phase}").ConfigureAwait(false);
+            await _output.WriteLineAsync($"RestorationSessionFailure={restorationDiagnostic.Failure}").ConfigureAwait(false);
+            await _output.WriteLineAsync(
+                $"RestorationWin32Error={restorationDiagnostic.NativeWin32Error?.ToString() ?? "Unavailable"}").ConfigureAwait(false);
+            await _output.WriteLineAsync(
+                $"RestorationTransferredBytes={restorationDiagnostic.TransferredByteCount?.ToString() ?? "Unavailable"}").ConfigureAwait(false);
+        }
     }
 
     private static bool TryParse(
