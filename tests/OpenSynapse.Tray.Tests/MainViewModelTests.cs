@@ -20,9 +20,10 @@ public sealed class MainViewModelTests
             blocked: true,
             conflicts: ["Razer Central Service", "Razer Synapse Service"],
             message: "Razer controller conflicts detected: Razer Central Service, Razer Synapse Service."));
-        await WaitUntilAsync(() => dispatcher.Calls > 0);
+        await WaitUntilAsync(() => viewModel.IsConnected);
 
         Assert.Equal(1, client.WatchCalls);
+        Assert.True(dispatcher.Calls > 0);
         Assert.True(viewModel.IsConnected);
         Assert.True(viewModel.IsReadOnly);
         Assert.Equal(
@@ -305,9 +306,9 @@ public sealed class MainViewModelTests
 
     private static async Task WaitUntilAsync(Func<bool> predicate)
     {
-        for (int index = 0; index < 10_000 && !predicate(); index++)
+        for (int index = 0; index < 2_000 && !predicate(); index++)
         {
-            await Task.Yield();
+            await Task.Delay(1);
         }
         Assert.True(predicate(), "The asynchronous condition was not reached.");
     }

@@ -11,6 +11,7 @@ public partial class App : System.Windows.Application
     private EventWaitHandle? shutdownEvent;
     private RegisteredWaitHandle? shutdownRegistration;
     private TrayInstanceCoordinator? instanceCoordinator;
+    private TrayMenuController? trayMenuController;
 
     public bool ExitRequested { get; private set; }
 
@@ -48,10 +49,9 @@ public partial class App : System.Windows.Application
             Timeout.Infinite,
             executeOnlyOnce: true);
 
-        Forms.ContextMenuStrip menu = new();
-        menu.Items.Add("Open", null, (_, _) => ShowMainWindow());
-        menu.Items.Add(new Forms.ToolStripSeparator());
-        menu.Items.Add("Exit", null, (_, _) => ExitTray());
+        MainViewModel viewModel = (MainViewModel)MainWindow.DataContext;
+        trayMenuController = new TrayMenuController(viewModel, ShowMainWindow, ExitTray);
+        Forms.ContextMenuStrip menu = BuildTrayMenu(trayMenuController);
         trayIcon = new Forms.NotifyIcon
         {
             Text = "OpenSynapse",
@@ -92,5 +92,35 @@ public partial class App : System.Windows.Application
         ExitRequested = true;
         MainWindow?.Close();
         Shutdown();
+    }
+
+    private static Forms.ContextMenuStrip BuildTrayMenu(TrayMenuController controller)
+    {
+        Forms.ContextMenuStrip menu = new();
+        var bindings = new List<(TrayMenuItem Model, Forms.ToolStripMenuItem View)>();
+        TrayMenuGroup? previousGroup = null;
+        foreach (TrayMenuItem item in controller.Items)
+        {
+            if (previousGroup is not null && previousGroup != item.Group)
+            {
+                menu.Items.Add(new Forms.ToolStripSeparator());
+            }
+
+            TrayMenuItem captured = item;
+            var view = new Forms.ToolStripMenuItem(item.Label);
+            view.Click += (_, _) => captured.Invoke();
+            menu.Items.Add(view);
+            bindings.Add((item, view));
+            previousGroup = item.Group;
+        }
+
+        menu.Opening += (_, _) =>
+        {
+            foreach ((TrayMenuItem model, Forms.ToolStripMenuItem view) in bindings)
+            {
+                view.Enabled = model.IsEnabled;
+            }
+        };
+        return menu;
     }
 }
