@@ -19,8 +19,27 @@ public sealed class ControlCoordinatorTests
             CancellationToken.None);
 
         Assert.Equal(ControlResultStatus.Blocked, result.Status);
+        Assert.Equal(0, device.ReadCount);
         Assert.Equal(0, device.PerformanceWriteCount);
         Assert.Contains("Razer Synapse Service", result.Message);
+    }
+
+    [Fact]
+    public async Task ApplyPerformance_BlocksDetectionFailureBeforeDeviceAccess()
+    {
+        FakeBladeDevice device = new();
+        ControlCoordinator coordinator = new(
+            device,
+            new FailedConflictDetector("Windows service enumeration failed."));
+
+        ControlResult result = await coordinator.ApplyPerformanceAsync(
+            PerformancePreset.Balanced,
+            CancellationToken.None);
+
+        Assert.Equal(ControlResultStatus.Blocked, result.Status);
+        Assert.Contains("Windows service enumeration failed.", result.Message);
+        Assert.Equal(0, device.ReadCount);
+        Assert.Equal(0, device.PerformanceWriteCount);
     }
 
     [Fact]
@@ -217,19 +236,25 @@ public sealed class ControlCoordinatorTests
 
     private sealed class FakeConflictDetector(IReadOnlyList<string> conflicts) : IConflictDetector
     {
-        public IReadOnlyList<string> GetRunningConflicts() => conflicts;
+        public ConflictCheck Check() => new(conflicts, null);
     }
 
     private sealed class SequencedConflictDetector(params IReadOnlyList<string>[] results) : IConflictDetector
     {
         private int _index;
 
-        public IReadOnlyList<string> GetRunningConflicts()
+        public ConflictCheck Check()
         {
             int index = Math.Min(_index, results.Length - 1);
             _index++;
-            return results[index];
+            IReadOnlyList<string> conflicts = results[index];
+            return new ConflictCheck(conflicts, null);
         }
+    }
+
+    private sealed class FailedConflictDetector(string failure) : IConflictDetector
+    {
+        public ConflictCheck Check() => new([], failure);
     }
 
     private sealed class FakeBladeDevice : IBladeDevice
@@ -254,11 +279,17 @@ public sealed class ControlCoordinatorTests
 
         public int BatteryWriteCount { get; private set; }
 
-        public Task<DeviceCapabilities> ReadCapabilitiesAsync(CancellationToken cancellationToken) =>
-            Task.FromResult(Capabilities);
+        public Task<DeviceCapabilities> ReadCapabilitiesAsync(CancellationToken cancellationToken)
+        {
+            ReadCount++;
+            return Task.FromResult(Capabilities);
+        }
 
-        public Task<ConfirmedDeviceState> ReadStateAsync(CancellationToken cancellationToken) =>
-            Task.FromResult(new ConfirmedDeviceState(Performance, Fans, Battery, Lighting));
+        public Task<ConfirmedDeviceState> ReadStateAsync(CancellationToken cancellationToken)
+        {
+            ReadCount++;
+            return Task.FromResult(new ConfirmedDeviceState(Performance, Fans, Battery, Lighting));
+        }
 
         public Task SetPerformanceAsync(PerformancePreset value, CancellationToken cancellationToken)
         {
@@ -299,5 +330,7 @@ public sealed class ControlCoordinatorTests
         }
 
         public int LightingWriteCount { get; private set; }
+
+        public int ReadCount { get; private set; }
     }
 }

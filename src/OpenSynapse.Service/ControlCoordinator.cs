@@ -5,7 +5,14 @@ namespace OpenSynapse.Service;
 
 public interface IConflictDetector
 {
-    IReadOnlyList<string> GetRunningConflicts();
+    ConflictCheck Check();
+}
+
+public sealed record ConflictCheck(
+    IReadOnlyList<string> Conflicts,
+    string? DetectionFailure)
+{
+    public bool Safe => Conflicts.Count == 0 && DetectionFailure is null;
 }
 
 public sealed class ControlCoordinator(
@@ -198,12 +205,18 @@ public sealed class ControlCoordinator(
 
     private ControlResult? GetConflictBlock()
     {
-        IReadOnlyList<string> conflicts = conflictDetector.GetRunningConflicts();
-        return conflicts.Count == 0
-            ? null
-            : new ControlResult(
+        ConflictCheck check = conflictDetector.Check();
+        if (check.Safe && check.Conflicts.Count == 0 && check.DetectionFailure is null)
+        {
+            return null;
+        }
+
+        string message = check.DetectionFailure is not null
+            ? $"Hardware writes are blocked because controller conflict detection failed: {check.DetectionFailure}"
+            : $"Hardware writes are blocked while these controllers are running: {string.Join(", ", check.Conflicts)}";
+        return new ControlResult(
                 ControlResultStatus.Blocked,
-                $"Hardware writes are blocked while these controllers are running: {string.Join(", ", conflicts)}");
+                message);
     }
 
     private static bool IsTerminalDeviceFailure(Exception exception) =>

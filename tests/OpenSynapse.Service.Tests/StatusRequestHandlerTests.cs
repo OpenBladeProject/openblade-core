@@ -32,8 +32,27 @@ public sealed class StatusRequestHandlerTests
         Assert.Equal(["RazerAppEngine"], response.Status.Conflicts);
     }
 
-    private sealed class FakeConflictDetector(IReadOnlyList<string> conflicts) : IConflictDetector
+    [Fact]
+    public void Handle_StatusReportsDetectionFailureAndPreservedConflicts()
     {
-        public IReadOnlyList<string> GetRunningConflicts() => conflicts;
+        StatusRequestHandler handler = new(new FakeConflictDetector(
+            ["RazerAppEngine"],
+            "Windows service enumeration failed."));
+        ServiceRequest request = new(OpenSynapseIpc.ProtocolVersion, Guid.NewGuid(), "status");
+
+        ServiceResponse response = handler.Handle(request);
+
+        Assert.True(response.Success);
+        Assert.NotNull(response.Status);
+        Assert.True(response.Status.WritesBlocked);
+        Assert.Equal(["RazerAppEngine"], response.Status.Conflicts);
+        Assert.Contains("Windows service enumeration failed.", response.Status.Message);
+    }
+
+    private sealed class FakeConflictDetector(
+        IReadOnlyList<string> conflicts,
+        string? detectionFailure = null) : IConflictDetector
+    {
+        public ConflictCheck Check() => new(conflicts, detectionFailure);
     }
 }

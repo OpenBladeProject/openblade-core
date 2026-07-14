@@ -16,12 +16,15 @@ public sealed class StatusRequestHandler(IConflictDetector conflictDetector)
             return Failure(request, "Operation is unavailable until its device commands are validated.");
         }
 
-        IReadOnlyList<string> conflicts = conflictDetector.GetRunningConflicts();
+        ConflictCheck conflictCheck = conflictDetector.Check();
+        IReadOnlyList<string> conflicts = conflictCheck.Conflicts;
         ServiceStatusSnapshot status = new(
             DeviceVerified: false,
             WritesBlocked: true,
             Conflicts: conflicts,
-            Message: conflicts.Count == 0
+            Message: conflictCheck.DetectionFailure is not null
+                ? $"Controller conflict detection failed: {conflictCheck.DetectionFailure}"
+                : conflicts.Count == 0
                 ? "PID 02E0 command fixtures have not been admitted."
                 : "Razer controller conflict detected.");
 

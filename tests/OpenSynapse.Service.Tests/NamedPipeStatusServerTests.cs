@@ -101,6 +101,6 @@ public sealed class NamedPipeStatusServerTests
 
     private sealed class FakeConflictDetector(IReadOnlyList<string> conflicts) : IConflictDetector
     {
-        public IReadOnlyList<string> GetRunningConflicts() => conflicts;
+        public ConflictCheck Check() => new(conflicts, null);
     }
 }

@@ -8,6 +8,7 @@ builder.Services.AddWindowsService(options => options.ServiceName = "OpenSynapse
 builder.Services.AddSingleton(new ProfileStore(Path.Combine(machineDataDirectory, "profiles.json")));
 builder.Services.AddSingleton<MachineProfileBootstrapper>();
 builder.Services.AddSingleton<IRunningProcessSource, RunningProcessSource>();
+builder.Services.AddSingleton<IWindowsServiceSource, WindowsServiceSource>();
 builder.Services.AddSingleton<IConflictDetector, WindowsConflictDetector>();
 builder.Services.AddSingleton<StatusRequestHandler>();
 builder.Services.AddHostedService<Worker>();
