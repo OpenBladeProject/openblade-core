@@ -1,0 +1,65 @@
+using OpenSynapse.Setup;
+
+namespace OpenSynapse.Setup.Tests;
+
+public sealed class SetupCommandRunnerTests
+{
+    [Fact]
+    public async Task Install_CopiesPayloadRegistersServiceAndCreatesStartupShortcut()
+    {
+        RecordingSetupPlatform platform = new();
+        SetupCommandRunner runner = new(platform);
+
+        int exitCode = await runner.RunAsync(["install"], CancellationToken.None);
+
+        Assert.Equal(0, exitCode);
+        Assert.Equal(["copy", "sid:S-1-5-21-test", "service-install", "shortcut-install"], platform.Operations);
+    }
+
+    [Fact]
+    public async Task Uninstall_PreservesProfilesUnlessPurgeIsExplicit()
+    {
+        RecordingSetupPlatform platform = new();
+        SetupCommandRunner runner = new(platform);
+
+        int exitCode = await runner.RunAsync(["uninstall"], CancellationToken.None);
+
+        Assert.Equal(0, exitCode);
+        Assert.Equal(["shortcut-remove", "service-remove", "binaries-remove"], platform.Operations);
+        Assert.DoesNotContain("data-remove", platform.Operations);
+    }
+
+    [Fact]
+    public async Task UninstallPurge_RemovesMachineAndUserData()
+    {
+        RecordingSetupPlatform platform = new();
+        SetupCommandRunner runner = new(platform);
+
+        int exitCode = await runner.RunAsync(["uninstall", "--purge"], CancellationToken.None);
+
+        Assert.Equal(0, exitCode);
+        Assert.Equal(["shortcut-remove", "service-remove", "binaries-remove", "data-remove"], platform.Operations);
+    }
+
+    private sealed class RecordingSetupPlatform : ISetupPlatform
+    {
+        public List<string> Operations { get; } = [];
+
+        public string CurrentUserSid => "S-1-5-21-test";
+
+        public Task CopyPayloadAsync(CancellationToken cancellationToken) => AddAsync("copy");
+        public Task WriteAuthorizedUserSidAsync(string sid, CancellationToken cancellationToken) => AddAsync($"sid:{sid}");
+        public Task InstallServiceAsync(CancellationToken cancellationToken) => AddAsync("service-install");
+        public Task InstallStartupShortcutAsync(CancellationToken cancellationToken) => AddAsync("shortcut-install");
+        public Task RemoveStartupShortcutAsync(CancellationToken cancellationToken) => AddAsync("shortcut-remove");
+        public Task RemoveServiceAsync(CancellationToken cancellationToken) => AddAsync("service-remove");
+        public Task RemoveBinariesAsync(CancellationToken cancellationToken) => AddAsync("binaries-remove");
+        public Task RemoveDataAsync(CancellationToken cancellationToken) => AddAsync("data-remove");
+
+        private Task AddAsync(string operation)
+        {
+            Operations.Add(operation);
+            return Task.CompletedTask;
+        }
+    }
+}

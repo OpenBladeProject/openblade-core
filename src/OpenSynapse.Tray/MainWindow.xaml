@@ -47,8 +47,8 @@
                     <TextBlock Text="Razer Blade 16 · RZ09-0581" FontSize="11" Foreground="{StaticResource MutedBrush}" />
                 </StackPanel>
                 <StackPanel HorizontalAlignment="Right" VerticalAlignment="Center">
-                    <TextBlock Text="●  Service unavailable" FontSize="11" Foreground="#B54747" />
-                    <TextBlock Text="Controls are read-only" FontSize="10" Foreground="{StaticResource MutedBrush}" HorizontalAlignment="Right" />
+                    <TextBlock Text="{Binding ConnectionStatus}" FontSize="11" Foreground="#B54747" />
+                    <TextBlock Text="Hardware controls are fail-closed" FontSize="10" Foreground="{StaticResource MutedBrush}" HorizontalAlignment="Right" />
                 </StackPanel>
             </Grid>
         </Border>

@@ -1,16 +1,55 @@
+using System.Security.Principal;
+using OpenSynapse.Contracts;
+
 namespace OpenSynapse.Service;
 
-public class Worker(ILogger<Worker> logger) : BackgroundService
+public sealed class Worker(
+    StatusRequestHandler handler,
+    ILogger<Worker> logger) : BackgroundService
 {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
+        SecurityIdentifier? authorizedUser = ReadAuthorizedUser();
+        if (authorizedUser is null)
+        {
+            logger.LogCritical("Authorized user SID is missing; the IPC service will not start.");
+            return;
+        }
+
+        NamedPipeStatusServer server = new(
+            OpenSynapseIpc.PipeName,
+            authorizedUser,
+            handler);
+
         while (!stoppingToken.IsCancellationRequested)
         {
-            if (logger.IsEnabled(LogLevel.Information))
+            try
             {
-                logger.LogInformation("Worker running at: {time}", DateTimeOffset.Now);
+                await server.ServeOnceAsync(stoppingToken);
             }
-            await Task.Delay(1000, stoppingToken);
+            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+            {
+                break;
+            }
+            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+            {
+                logger.LogError(exception, "Named-pipe request failed.");
+            }
         }
+    }
+
+    private static SecurityIdentifier? ReadAuthorizedUser()
+    {
+        string? configured = Environment.GetEnvironmentVariable("OPENSYNAPSE_USER_SID");
+        string path = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
+            "OpenSynapse",
+            "authorized-user.sid");
+
+        string? value = !string.IsNullOrWhiteSpace(configured)
+            ? configured
+            : File.Exists(path) ? File.ReadAllText(path).Trim() : null;
+
+        return string.IsNullOrWhiteSpace(value) ? null : new SecurityIdentifier(value);
     }
 }

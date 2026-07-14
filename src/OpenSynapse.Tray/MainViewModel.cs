@@ -1,3 +1,5 @@
+using System.ComponentModel;
+using System.Runtime.CompilerServices;
 using OpenSynapse.Contracts;
 
 namespace OpenSynapse.Tray;
@@ -9,21 +11,34 @@ public enum ThemePreference
     Dark,
 }
 
-public sealed class MainViewModel
+public sealed class MainViewModel : INotifyPropertyChanged
 {
+    private bool isReadOnly;
+    private string connectionStatus;
+
     private MainViewModel(ProfileSet profiles)
     {
-        IsReadOnly = true;
-        ConnectionStatus = "Service unavailable";
+        isReadOnly = true;
+        connectionStatus = "Service unavailable";
         SelectedPerformance = profiles.PluggedIn.Performance;
         SelectedFanMode = profiles.PluggedIn.Fans;
         ChargeLimitPercent = profiles.BatteryPolicy.ChargeLimitPercent;
         Theme = ThemePreference.FollowWindows;
     }
 
-    public bool IsReadOnly { get; }
+    public event PropertyChangedEventHandler? PropertyChanged;
 
-    public string ConnectionStatus { get; }
+    public bool IsReadOnly
+    {
+        get => isReadOnly;
+        private set => SetField(ref isReadOnly, value);
+    }
+
+    public string ConnectionStatus
+    {
+        get => connectionStatus;
+        private set => SetField(ref connectionStatus, value);
+    }
 
     public PerformancePreset SelectedPerformance { get; }
 
@@ -35,4 +50,24 @@ public sealed class MainViewModel
 
     public static MainViewModel CreateDisconnected() =>
         new(ProfileDefaults.CreateSafeDefaults());
+
+    public void ApplyStatus(ServiceStatusSnapshot status)
+    {
+        ArgumentNullException.ThrowIfNull(status);
+        IsReadOnly = !status.DeviceVerified
+            || status.WritesBlocked
+            || status.Conflicts.Count > 0;
+        ConnectionStatus = status.Message;
+    }
+
+    private void SetField<T>(ref T field, T value, [CallerMemberName] string? propertyName = null)
+    {
+        if (EqualityComparer<T>.Default.Equals(field, value))
+        {
+            return;
+        }
+
+        field = value;
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
+    }
 }
