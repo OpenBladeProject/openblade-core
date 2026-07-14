@@ -1,4 +1,5 @@
 using OpenSynapse.Contracts;
+using OpenSynapse.Protocol;
 using OpenSynapse.Service;
 
 namespace OpenSynapse.Service.Tests;
@@ -8,7 +9,7 @@ public sealed class StatusRequestHandlerTests
     [Fact]
     public void Handle_RejectsUnknownProtocolVersion()
     {
-        StatusRequestHandler handler = new(new FakeConflictDetector([]));
+        StatusRequestHandler handler = new(new FakeHardwareAccessGuard([]));
         ServiceRequest request = new(99, Guid.NewGuid(), "status");
 
         ServiceResponse response = handler.Handle(request);
@@ -20,7 +21,7 @@ public sealed class StatusRequestHandlerTests
     [Fact]
     public void Handle_StatusReportsConflictAndUnverifiedDevice()
     {
-        StatusRequestHandler handler = new(new FakeConflictDetector(["RazerAppEngine"]));
+        StatusRequestHandler handler = new(new FakeHardwareAccessGuard(["RazerAppEngine"]));
         ServiceRequest request = new(OpenSynapseIpc.ProtocolVersion, Guid.NewGuid(), "status");
 
         ServiceResponse response = handler.Handle(request);
@@ -35,7 +36,7 @@ public sealed class StatusRequestHandlerTests
     [Fact]
     public void Handle_StatusReportsDetectionFailureAndPreservedConflicts()
     {
-        StatusRequestHandler handler = new(new FakeConflictDetector(
+        StatusRequestHandler handler = new(new FakeHardwareAccessGuard(
             ["RazerAppEngine"],
             "Windows service enumeration failed."));
         ServiceRequest request = new(OpenSynapseIpc.ProtocolVersion, Guid.NewGuid(), "status");
@@ -49,10 +50,10 @@ public sealed class StatusRequestHandlerTests
         Assert.Contains("Windows service enumeration failed.", response.Status.Message);
     }
 
-    private sealed class FakeConflictDetector(
+    private sealed class FakeHardwareAccessGuard(
         IReadOnlyList<string> conflicts,
-        string? detectionFailure = null) : IConflictDetector
+        string? detectionFailure = null) : IHardwareAccessGuard
     {
-        public ConflictCheck Check() => new(conflicts, detectionFailure);
+        public HardwareAccessDecision Check() => new(conflicts, detectionFailure);
     }
 }

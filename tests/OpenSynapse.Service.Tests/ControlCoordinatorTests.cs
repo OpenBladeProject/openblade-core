@@ -12,7 +12,7 @@ public sealed class ControlCoordinatorTests
         FakeBladeDevice device = new();
         ControlCoordinator coordinator = new(
             device,
-            new FakeConflictDetector(["Razer Synapse Service"]));
+            new FakeHardwareAccessGuard(["Razer Synapse Service"]));
 
         ControlResult result = await coordinator.ApplyPerformanceAsync(
             PerformancePreset.Balanced,
@@ -30,7 +30,7 @@ public sealed class ControlCoordinatorTests
         FakeBladeDevice device = new();
         ControlCoordinator coordinator = new(
             device,
-            new FailedConflictDetector("Windows service enumeration failed."));
+            new FailedHardwareAccessGuard("Windows service enumeration failed."));
 
         ControlResult result = await coordinator.ApplyPerformanceAsync(
             PerformancePreset.Balanced,
@@ -46,7 +46,7 @@ public sealed class ControlCoordinatorTests
     public async Task ApplyPerformance_SkipsWriteWhenValueIsAlreadyConfirmed()
     {
         FakeBladeDevice device = new() { Performance = PerformancePreset.Balanced };
-        ControlCoordinator coordinator = new(device, new FakeConflictDetector([]));
+        ControlCoordinator coordinator = new(device, new FakeHardwareAccessGuard([]));
 
         ControlResult result = await coordinator.ApplyPerformanceAsync(
             PerformancePreset.Balanced,
@@ -60,7 +60,7 @@ public sealed class ControlCoordinatorTests
     public async Task ApplyPerformance_WritesValidatedChangeWithoutConflicts()
     {
         FakeBladeDevice device = new() { Performance = PerformancePreset.Silent };
-        ControlCoordinator coordinator = new(device, new FakeConflictDetector([]));
+        ControlCoordinator coordinator = new(device, new FakeHardwareAccessGuard([]));
 
         ControlResult result = await coordinator.ApplyPerformanceAsync(
             PerformancePreset.Balanced,
@@ -77,7 +77,7 @@ public sealed class ControlCoordinatorTests
         FakeBladeDevice device = new() { Performance = PerformancePreset.Silent };
         ControlCoordinator coordinator = new(
             device,
-            new SequencedConflictDetector([], ["RazerAppEngine"]));
+            new SequencedHardwareAccessGuard([], ["RazerAppEngine"]));
 
         ControlResult result = await coordinator.ApplyPerformanceAsync(
             PerformancePreset.Balanced,
@@ -98,7 +98,7 @@ public sealed class ControlCoordinatorTests
                 PerformancePresets = new HashSet<PerformancePreset> { PerformancePreset.Silent },
             },
         };
-        ControlCoordinator coordinator = new(device, new FakeConflictDetector([]));
+        ControlCoordinator coordinator = new(device, new FakeHardwareAccessGuard([]));
 
         ControlResult result = await coordinator.ApplyPerformanceAsync(
             PerformancePreset.Balanced,
@@ -112,7 +112,7 @@ public sealed class ControlCoordinatorTests
     public async Task ApplyPerformance_BlocksInvalidEnumValue()
     {
         FakeBladeDevice device = new() { Performance = PerformancePreset.Silent };
-        ControlCoordinator coordinator = new(device, new FakeConflictDetector([]));
+        ControlCoordinator coordinator = new(device, new FakeHardwareAccessGuard([]));
 
         ControlResult result = await coordinator.ApplyPerformanceAsync(
             (PerformancePreset)999,
@@ -132,7 +132,7 @@ public sealed class ControlCoordinatorTests
             Battery = BatteryPolicy.Create(75),
             FanWriteException = new InvalidOperationException("simulated fan application failure"),
         };
-        ControlCoordinator coordinator = new(device, new FakeConflictDetector([]));
+        ControlCoordinator coordinator = new(device, new FakeHardwareAccessGuard([]));
         LightingSettings lighting = new(LightingEffect.Off, new RgbColor(0, 0, 0), 0);
         DesiredDeviceState desired = new(
             new ResolvedSetting<PerformancePreset>(PerformancePreset.Balanced, SettingValueSource.PowerProfile),
@@ -161,7 +161,7 @@ public sealed class ControlCoordinatorTests
             Battery = BatteryPolicy.Create(75),
             PerformanceWriteException = new IOException("device disconnected"),
         };
-        ControlCoordinator coordinator = new(device, new FakeConflictDetector([]));
+        ControlCoordinator coordinator = new(device, new FakeHardwareAccessGuard([]));
         DesiredDeviceState desired = CreateDesiredState();
 
         SubsystemApplyResults results = await coordinator.ApplyDesiredStateAsync(
@@ -187,7 +187,7 @@ public sealed class ControlCoordinatorTests
             Battery = BatteryPolicy.Create(75),
             PerformanceWriteException = new TimeoutException("device response timed out"),
         };
-        ControlCoordinator coordinator = new(device, new FakeConflictDetector([]));
+        ControlCoordinator coordinator = new(device, new FakeHardwareAccessGuard([]));
 
         SubsystemApplyResults results = await coordinator.ApplyDesiredStateAsync(
             CreateDesiredState(),
@@ -211,7 +211,7 @@ public sealed class ControlCoordinatorTests
         };
         ControlCoordinator coordinator = new(
             device,
-            new SequencedConflictDetector([], [], ["RazerAppEngine"]));
+            new SequencedHardwareAccessGuard([], [], ["RazerAppEngine"]));
 
         SubsystemApplyResults results = await coordinator.ApplyDesiredStateAsync(
             CreateDesiredState(),
@@ -234,27 +234,27 @@ public sealed class ControlCoordinatorTests
             BatteryPolicy.Create(80));
     }
 
-    private sealed class FakeConflictDetector(IReadOnlyList<string> conflicts) : IConflictDetector
+    private sealed class FakeHardwareAccessGuard(IReadOnlyList<string> conflicts) : IHardwareAccessGuard
     {
-        public ConflictCheck Check() => new(conflicts, null);
+        public HardwareAccessDecision Check() => new(conflicts, null);
     }
 
-    private sealed class SequencedConflictDetector(params IReadOnlyList<string>[] results) : IConflictDetector
+    private sealed class SequencedHardwareAccessGuard(params IReadOnlyList<string>[] results) : IHardwareAccessGuard
     {
         private int _index;
 
-        public ConflictCheck Check()
+        public HardwareAccessDecision Check()
         {
             int index = Math.Min(_index, results.Length - 1);
             _index++;
             IReadOnlyList<string> conflicts = results[index];
-            return new ConflictCheck(conflicts, null);
+            return new HardwareAccessDecision(conflicts, null);
         }
     }
 
-    private sealed class FailedConflictDetector(string failure) : IConflictDetector
+    private sealed class FailedHardwareAccessGuard(string failure) : IHardwareAccessGuard
     {
-        public ConflictCheck Check() => new([], failure);
+        public HardwareAccessDecision Check() => new([], failure);
     }
 
     private sealed class FakeBladeDevice : IBladeDevice

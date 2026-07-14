@@ -3,21 +3,9 @@ using OpenSynapse.Protocol;
 
 namespace OpenSynapse.Service;
 
-public interface IConflictDetector
-{
-    ConflictCheck Check();
-}
-
-public sealed record ConflictCheck(
-    IReadOnlyList<string> Conflicts,
-    string? DetectionFailure)
-{
-    public bool Safe => Conflicts.Count == 0 && DetectionFailure is null;
-}
-
 public sealed class ControlCoordinator(
     IBladeDevice device,
-    IConflictDetector conflictDetector)
+    IHardwareAccessGuard hardwareAccessGuard)
 {
     public async Task<SubsystemApplyResults> ApplyDesiredStateAsync(
         DesiredDeviceState desired,
@@ -205,7 +193,7 @@ public sealed class ControlCoordinator(
 
     private ControlResult? GetConflictBlock()
     {
-        ConflictCheck check = conflictDetector.Check();
+        HardwareAccessDecision check = hardwareAccessGuard.Check();
         if (check.Safe && check.Conflicts.Count == 0 && check.DetectionFailure is null)
         {
             return null;

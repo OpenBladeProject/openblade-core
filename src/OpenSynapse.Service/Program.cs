@@ -1,3 +1,4 @@
+using OpenSynapse.Protocol;
 using OpenSynapse.Service;
 
 HostApplicationBuilder builder = Host.CreateApplicationBuilder(args);
@@ -9,7 +10,7 @@ builder.Services.AddSingleton(new ProfileStore(Path.Combine(machineDataDirectory
 builder.Services.AddSingleton<MachineProfileBootstrapper>();
 builder.Services.AddSingleton<IRunningProcessSource, RunningProcessSource>();
 builder.Services.AddSingleton<IWindowsServiceSource, WindowsServiceSource>();
-builder.Services.AddSingleton<IConflictDetector, WindowsConflictDetector>();
+builder.Services.AddSingleton<IHardwareAccessGuard, WindowsHardwareAccessGuard>();
 builder.Services.AddSingleton<StatusRequestHandler>();
 builder.Services.AddHostedService<Worker>();
 

@@ -3,6 +3,7 @@ using System.Security.Principal;
 using System.Buffers.Binary;
 using System.Text;
 using OpenSynapse.Contracts;
+using OpenSynapse.Protocol;
 using OpenSynapse.Service;
 
 namespace OpenSynapse.Service.Tests;
@@ -18,7 +19,7 @@ public sealed class NamedPipeStatusServerTests
         NamedPipeStatusServer server = new(
             pipeName,
             user,
-            new StatusRequestHandler(new FakeConflictDetector([])));
+            new StatusRequestHandler(new FakeHardwareAccessGuard([])));
         using CancellationTokenSource timeout = new(TimeSpan.FromSeconds(5));
         Task serverTask = server.ServeOnceAsync(timeout.Token);
         await using NamedPipeClientStream client = new(
@@ -54,7 +55,7 @@ public sealed class NamedPipeStatusServerTests
         NamedPipeStatusServer server = new(
             pipeName,
             user,
-            new StatusRequestHandler(new FakeConflictDetector([])));
+            new StatusRequestHandler(new FakeHardwareAccessGuard([])));
         using CancellationTokenSource timeout = new(TimeSpan.FromSeconds(5));
         Task serverTask = server.ServeOnceAsync(timeout.Token);
         await using NamedPipeClientStream client = new(
@@ -99,8 +100,8 @@ public sealed class NamedPipeStatusServerTests
         return frame;
     }
 
-    private sealed class FakeConflictDetector(IReadOnlyList<string> conflicts) : IConflictDetector
+    private sealed class FakeHardwareAccessGuard(IReadOnlyList<string> conflicts) : IHardwareAccessGuard
     {
-        public ConflictCheck Check() => new(conflicts, null);
+        public HardwareAccessDecision Check() => new(conflicts, null);
     }
 }

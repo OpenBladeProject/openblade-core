@@ -1,8 +1,9 @@
 using OpenSynapse.Contracts;
+using OpenSynapse.Protocol;
 
 namespace OpenSynapse.Service;
 
-public sealed class StatusRequestHandler(IConflictDetector conflictDetector)
+public sealed class StatusRequestHandler(IHardwareAccessGuard hardwareAccessGuard)
 {
     public ServiceResponse Handle(ServiceRequest request)
     {
@@ -16,14 +17,14 @@ public sealed class StatusRequestHandler(IConflictDetector conflictDetector)
             return Failure(request, "Operation is unavailable until its device commands are validated.");
         }
 
-        ConflictCheck conflictCheck = conflictDetector.Check();
-        IReadOnlyList<string> conflicts = conflictCheck.Conflicts;
+        HardwareAccessDecision accessDecision = hardwareAccessGuard.Check();
+        IReadOnlyList<string> conflicts = accessDecision.Conflicts;
         ServiceStatusSnapshot status = new(
             DeviceVerified: false,
             WritesBlocked: true,
             Conflicts: conflicts,
-            Message: conflictCheck.DetectionFailure is not null
-                ? $"Controller conflict detection failed: {conflictCheck.DetectionFailure}"
+            Message: accessDecision.DetectionFailure is not null
+                ? $"Controller conflict detection failed: {accessDecision.DetectionFailure}"
                 : conflicts.Count == 0
                 ? "PID 02E0 command fixtures have not been admitted."
                 : "Razer controller conflict detected.");
