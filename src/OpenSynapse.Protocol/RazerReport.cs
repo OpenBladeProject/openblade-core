@@ -66,7 +66,9 @@ public sealed class RazerReport
         return bytes;
     }
 
-    public ReadOnlyMemory<byte> ValidateResponse(ReadOnlySpan<byte> response)
+    public ReadOnlyMemory<byte> ValidateResponse(
+        ReadOnlySpan<byte> response,
+        int? expectedPayloadLength = null)
     {
         if (response.Length != ReportLength)
         {
@@ -98,6 +100,11 @@ public sealed class RazerReport
         if (payloadLength > MaximumPayloadLength)
         {
             throw new RazerProtocolException("Response payload length is invalid.");
+        }
+
+        if (expectedPayloadLength is not null && payloadLength != expectedPayloadLength)
+        {
+            throw new RazerProtocolException("Response payload length does not match the command contract.");
         }
 
         return response.Slice(8, payloadLength).ToArray();

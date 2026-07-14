@@ -39,4 +39,14 @@ public sealed class RazerReportTests
 
         Assert.Throws<RazerProtocolException>(() => request.ValidateResponse(response));
     }
+
+    [Fact]
+    public void ValidateResponse_RejectsPayloadLengthThatDiffersFromCommandContract()
+    {
+        RazerReport request = RazerReport.Create(0x10, 0x0D, 0x02, []);
+        byte[] response = RazerReport.Create(0x10, 0x0D, 0x02, [0xAA]).Encode();
+        response[0] = (byte)RazerCommandStatus.Successful;
+
+        Assert.Throws<RazerProtocolException>(() => request.ValidateResponse(response, expectedPayloadLength: 0));
+    }
 }
