@@ -6,3 +6,4 @@ artifacts/
 *.user
 *.suo
 TestResults/
+captures/raw/*.pcap
