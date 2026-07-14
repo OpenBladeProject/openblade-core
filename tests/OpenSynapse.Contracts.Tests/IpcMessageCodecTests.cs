@@ -35,6 +35,7 @@ public sealed class IpcMessageCodecTests
             Guid.NewGuid(),
             BatteryPolicy.Create(75)),
         new SetFullChargeOverrideRequest(OpenSynapseIpc.ProtocolVersion, Guid.NewGuid(), true),
+        new SetFullChargeOverrideRequest(OpenSynapseIpc.ProtocolVersion, Guid.NewGuid(), false),
     };
 
     [Theory]

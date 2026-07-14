@@ -38,4 +38,17 @@ public sealed class ProfileAutomationStateTests
         Assert.False(state.BatteryPolicy.TemporaryFullCharge);
         Assert.Equal(80, state.BatteryPolicy.ChargeLimitPercent);
     }
+
+    [Fact]
+    public void ChargeToFull_CannotBeEnabledWhileAlreadyOnBattery()
+    {
+        ProfileAutomationState state = new(
+            ProfileDefaults.CreateSafeDefaults(),
+            PowerSource.Battery);
+
+        state.EnableTemporaryFullCharge();
+
+        Assert.False(state.BatteryPolicy.TemporaryFullCharge);
+        Assert.Equal(80, state.BatteryPolicy.ChargeLimitPercent);
+    }
 }

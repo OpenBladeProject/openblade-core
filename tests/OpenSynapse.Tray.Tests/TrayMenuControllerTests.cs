@@ -27,13 +27,13 @@ public sealed class TrayMenuControllerTests
         }
 
         Assert.Equal(
-            ["Silent", "Balanced", "Performance", "Automatic", "Maximum", "Charge to 100%", "Open", "Exit"],
+            ["Silent", "Balanced", "Performance", "Automatic", "Maximum", "Toggle charge to 100%", "Open", "Exit"],
             controller.Items.Select(item => item.Label));
         Assert.Equal(
             [PerformancePreset.Silent, PerformancePreset.Balanced, PerformancePreset.Performance],
             performance.Parameters);
         Assert.Equal([FanMode.Automatic, FanMode.Maximum], fans.Parameters);
-        Assert.Equal([true], fullCharge.Parameters);
+        Assert.Equal([null], fullCharge.Parameters);
         Assert.Equal(1, opens);
         Assert.Equal(1, exits);
     }

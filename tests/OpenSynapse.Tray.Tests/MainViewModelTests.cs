@@ -145,6 +145,43 @@ public sealed class MainViewModelTests
         Assert.Equal("Intent stored without hardware application.", viewModel.OperationStatusMessage);
     }
 
+    [Fact]
+    public async Task FullChargeCommand_TogglesActiveOverrideOff()
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        client.Publish(CreateStatus(verified: true, blocked: false) with
+        {
+            FullChargeOverride = true,
+        });
+        await WaitUntilAsync(() => viewModel.FullChargeOverride);
+
+        await Assert.IsType<AsyncRelayCommand>(viewModel.ToggleFullChargeCommand)
+            .ExecuteAsync(viewModel.EnableFullChargeOverride);
+
+        Assert.False(client.FullChargeEnabled);
+        Assert.Equal("Cancel charge to 100%", viewModel.FullChargeActionLabel);
+    }
+
+    [Fact]
+    public async Task FullChargeCommand_CannotEnableWhileOnBattery()
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        client.Publish(CreateStatus(verified: true, blocked: false) with
+        {
+            Telemetry = CreateStatus(true, false).Telemetry with
+            {
+                PowerSource = PowerSource.Battery,
+            },
+        });
+        await WaitUntilAsync(() => viewModel.IsConnected);
+
+        Assert.False(viewModel.ToggleFullChargeCommand.CanExecute(null));
+    }
+
     [Theory]
     [InlineData(false, false, true)]
     [InlineData(true, true, true)]
@@ -360,6 +397,7 @@ public sealed class MainViewModelTests
         public bool WatchCanceled { get; private set; }
         public bool MutationCanceled { get; private set; }
         public ManualOverride<PerformancePreset>? PerformanceOverride { get; private set; }
+        public bool? FullChargeEnabled { get; private set; }
         public TaskCompletionSource MutationStarted { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public ControlOperationResult NextResult { get; init; } = new(ControlOperationStatus.Applied, "Applied");
         public void Publish(ServiceStatusSnapshot status) => statuses.Writer.TryWrite(new ServiceWatchUpdate.Connected(status));
@@ -412,7 +450,11 @@ public sealed class MainViewModelTests
 
         public Task<ControlOperationResult> SetFullChargeOverrideAsync(
             bool enabled,
-            CancellationToken token) => MutateAsync(token);
+            CancellationToken token)
+        {
+            FullChargeEnabled = enabled;
+            return MutateAsync(token);
+        }
 
         private async Task<ControlOperationResult> MutateAsync(CancellationToken token)
         {

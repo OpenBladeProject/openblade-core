@@ -85,8 +85,17 @@ public sealed class ProfileAutomationState
     public void SetLightingOverride(ManualOverride<LightingSettings>? value) =>
         SetOverride(value, ref temporaryLighting, ref persistentLighting);
 
-    public void EnableTemporaryFullCharge() =>
-        BatteryPolicy = BatteryPolicy.Create(BatteryPolicy.ChargeLimitPercent, temporaryFullCharge: true);
+    public void EnableTemporaryFullCharge()
+    {
+        if (PowerSource == PowerSource.Battery)
+        {
+            return;
+        }
+
+        BatteryPolicy = BatteryPolicy.Create(
+            BatteryPolicy.ChargeLimitPercent,
+            temporaryFullCharge: true);
+    }
 
     public void CancelTemporaryFullCharge() =>
         BatteryPolicy = BatteryPolicy.Create(BatteryPolicy.ChargeLimitPercent);

@@ -104,7 +104,9 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             parameter => parameter is int value && CanSetChargeLimit(value));
         ToggleFullChargeCommand = CreateCommand(
             ToggleFullChargeAsync,
-            parameter => CanMutate && parameter is null or bool);
+            parameter => CanMutate
+                && parameter is null or bool
+                && (FullChargeOverride || Telemetry?.PowerSource == PowerSource.PluggedIn));
         SaveProfilesCommand = CreateCommand(
             SaveProfilesAsync,
             CanSaveProfiles);
@@ -256,10 +258,28 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     public bool FullChargeOverride
     {
         get => fullChargeOverride;
-        private set => SetField(ref fullChargeOverride, value);
+        private set
+        {
+            if (fullChargeOverride == value)
+            {
+                return;
+            }
+
+            SetField(ref fullChargeOverride, value);
+            PropertyChanged?.Invoke(
+                this,
+                new PropertyChangedEventArgs(nameof(EnableFullChargeOverride)));
+            PropertyChanged?.Invoke(
+                this,
+                new PropertyChangedEventArgs(nameof(FullChargeActionLabel)));
+        }
     }
 
-    public bool EnableFullChargeOverride => true;
+    public bool EnableFullChargeOverride => !FullChargeOverride;
+
+    public string FullChargeActionLabel => FullChargeOverride
+        ? "Cancel charge to 100%"
+        : "Charge to 100% until unplugged";
 
     public DeviceCapabilities Capabilities
     {

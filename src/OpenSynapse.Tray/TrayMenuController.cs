@@ -95,7 +95,7 @@ public sealed class TrayMenuController
             Mutation("Performance", TrayMenuGroup.Performance, setPerformance, PerformancePreset.Performance),
             Mutation("Automatic", TrayMenuGroup.Fans, setFans, FanMode.Automatic),
             Mutation("Maximum", TrayMenuGroup.Fans, setFans, FanMode.Maximum),
-            Mutation("Charge to 100%", TrayMenuGroup.Battery, toggleFullCharge, true),
+            Mutation("Toggle charge to 100%", TrayMenuGroup.Battery, toggleFullCharge, null),
             new TrayMenuItem("Open", TrayMenuGroup.Application, false, action: openTray),
             new TrayMenuItem("Exit", TrayMenuGroup.Application, false, action: exitTray),
         ];
@@ -109,6 +109,6 @@ public sealed class TrayMenuController
         string label,
         TrayMenuGroup group,
         ICommand command,
-        object parameter) =>
+        object? parameter) =>
         new(label, group, true, command, parameter);
 }

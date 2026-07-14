@@ -187,6 +187,43 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     }
 
     [Fact]
+    public async Task EnableFullChargeWhileOnBattery_DoesNotRemainLatentAfterAcTransition()
+    {
+        TestContext context = CreateContext(
+            providerAvailable: false,
+            initialPowerSource: PowerSource.Battery);
+
+        ControlOperationResult result = await context.Runtime.SetFullChargeOverrideAsync(
+            true,
+            CancellationToken.None);
+        context.Telemetry.Current = CreateTelemetry(PowerSource.PluggedIn);
+        await context.Runtime.RefreshAsync(CancellationToken.None);
+
+        ServiceStatusSnapshot status = context.Runtime.GetStatus();
+        Assert.Equal(ControlOperationStatus.Failed, result.Status);
+        Assert.False(status.FullChargeOverride);
+        Assert.False(status.DesiredState.Battery.TemporaryFullCharge);
+        Assert.Equal(80, status.DesiredState.Battery.ChargeLimitPercent);
+    }
+
+    [Fact]
+    public async Task CancelFullCharge_RestoresConfiguredChargeLimitIntent()
+    {
+        TestContext context = CreateContext(providerAvailable: false);
+        await context.Runtime.SetBatteryPolicyAsync(
+            BatteryPolicy.Create(65),
+            CancellationToken.None);
+        await context.Runtime.SetFullChargeOverrideAsync(true, CancellationToken.None);
+
+        await context.Runtime.SetFullChargeOverrideAsync(false, CancellationToken.None);
+
+        ServiceStatusSnapshot status = context.Runtime.GetStatus();
+        Assert.False(status.FullChargeOverride);
+        Assert.False(status.DesiredState.Battery.TemporaryFullCharge);
+        Assert.Equal(65, status.DesiredState.Battery.ChargeLimitPercent);
+    }
+
+    [Fact]
     public async Task AcceptedStateChanges_IncrementRevisionAndPublishEachSnapshot()
     {
         TestContext context = CreateContext(providerAvailable: false);
@@ -271,11 +308,12 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     private TestContext CreateContext(
         bool providerAvailable,
         IReadOnlyList<string>? conflicts = null,
-        string? detectionFailure = null)
+        string? detectionFailure = null,
+        PowerSource initialPowerSource = PowerSource.PluggedIn)
     {
         ProfileSet profiles = ProfileDefaults.CreateSafeDefaults();
         var store = new ProfileStore(Path.Combine(directory, "profiles.json"));
-        var telemetry = new FakeTelemetryProvider { Current = CreateTelemetry(PowerSource.PluggedIn) };
+        var telemetry = new FakeTelemetryProvider { Current = CreateTelemetry(initialPowerSource) };
         var hub = new FakeHub();
         var device = new CountingBladeDevice();
         var provider = new CountingProvider(providerAvailable, device);

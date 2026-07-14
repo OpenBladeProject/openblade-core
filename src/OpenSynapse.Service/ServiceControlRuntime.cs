@@ -143,6 +143,13 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             {
                 if (enabled)
                 {
+                    if (automation.PowerSource == PowerSource.Battery)
+                    {
+                        throw new ArgumentException(
+                            "Temporary full charge can only be enabled while plugged in.",
+                            nameof(enabled));
+                    }
+
                     automation.EnableTemporaryFullCharge();
                 }
                 else

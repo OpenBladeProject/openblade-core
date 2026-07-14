@@ -118,7 +118,7 @@
                                         Value="{Binding ProfileChargeLimitEditor, Mode=TwoWay}" />
                                 <Button Content="Apply charge limit" Command="{Binding SetChargeLimitCommand}"
                                         CommandParameter="{Binding ProfileChargeLimitEditor}" />
-                                <Button Content="Charge to 100% until unplugged"
+                                <Button Content="{Binding FullChargeActionLabel}"
                                         Command="{Binding ToggleFullChargeCommand}"
                                         CommandParameter="{Binding EnableFullChargeOverride}" />
                                 <TextBlock Text="Temporary full charge is active" Margin="4,3"
