@@ -9,6 +9,7 @@
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/OpenSynapse.Contracts.Tests/OpenSynapse.Contracts.Tests.csproj" />
+    <Project Path="tests/OpenSynapse.Capture.Tests/OpenSynapse.Capture.Tests.csproj" />
     <Project Path="tests/OpenSynapse.Protocol.Tests/OpenSynapse.Protocol.Tests.csproj" />
     <Project Path="tests/OpenSynapse.Service.Tests/OpenSynapse.Service.Tests.csproj" />
     <Project Path="tests/OpenSynapse.Setup.Tests/OpenSynapse.Setup.Tests.csproj" />
