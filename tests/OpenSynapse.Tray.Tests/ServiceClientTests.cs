@@ -22,7 +22,9 @@ public sealed class ServiceClientTests
         Assert.Equal(["RazerAppEngine"], status.Conflicts);
     }
 
-    private static async Task RunFakeServerAsync(string pipeName, CancellationToken cancellationToken)
+    private static async Task RunFakeServerAsync(
+        string pipeName,
+        CancellationToken cancellationToken)
     {
         await using NamedPipeServerStream server = new(
             pipeName,
@@ -31,7 +33,7 @@ public sealed class ServiceClientTests
             PipeTransmissionMode.Byte,
             PipeOptions.Asynchronous);
         await server.WaitForConnectionAsync(cancellationToken);
-        ServiceRequest request = await IpcMessageCodec.ReadAsync<ServiceRequest>(
+        ServiceRequest request = await IpcMessageCodec.ReadRequestAsync(
             server,
             cancellationToken);
         ServiceResponse response = new(
@@ -39,7 +41,32 @@ public sealed class ServiceClientTests
             request.RequestId,
             true,
             null,
-            new ServiceStatusSnapshot(false, true, ["RazerAppEngine"], "Blocked"));
-        await IpcMessageCodec.WriteAsync(server, response, cancellationToken);
+            CreateStatus(),
+            null);
+        await IpcMessageCodec.WriteServerFrameAsync(server, response, cancellationToken);
+    }
+
+    private static ServiceStatusSnapshot CreateStatus()
+    {
+        ProfileSet profiles = ProfileDefaults.CreateSafeDefaults();
+        return new ServiceStatusSnapshot(
+            0,
+            false,
+            true,
+            ["RazerAppEngine"],
+            "Blocked",
+            DeviceCapabilities.Unavailable(),
+            null,
+            profiles,
+            new DesiredDeviceState(
+                new ResolvedSetting<PerformancePreset>(PerformancePreset.Balanced, SettingValueSource.PowerProfile),
+                new ResolvedSetting<FanMode>(FanMode.Automatic, SettingValueSource.PowerProfile),
+                new ResolvedSetting<LightingSettings>(profiles.PluggedIn.Lighting, SettingValueSource.PowerProfile),
+                profiles.BatteryPolicy),
+            new TelemetrySnapshot(DateTimeOffset.MinValue, PowerSource.PluggedIn, null, null, null, null),
+            null,
+            null,
+            null,
+            false);
     }
 }

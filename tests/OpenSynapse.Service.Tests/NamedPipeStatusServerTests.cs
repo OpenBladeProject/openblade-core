@@ -1,6 +1,6 @@
+using System.Buffers.Binary;
 using System.IO.Pipes;
 using System.Security.Principal;
-using System.Buffers.Binary;
 using System.Text;
 using OpenSynapse.Contracts;
 using OpenSynapse.Protocol;
@@ -11,7 +11,7 @@ namespace OpenSynapse.Service.Tests;
 public sealed class NamedPipeStatusServerTests
 {
     [Fact]
-    public async Task ServeOnceAsync_RoundTripsStatusRequest()
+    public async Task ServeOnceAsync_RoundTripsTypedGetStatusRequest()
     {
         string pipeName = $"OpenSynapse.Tests.{Guid.NewGuid():N}";
         SecurityIdentifier user = WindowsIdentity.GetCurrent().User
@@ -28,15 +28,13 @@ public sealed class NamedPipeStatusServerTests
             PipeDirection.InOut,
             PipeOptions.Asynchronous);
         await client.ConnectAsync(timeout.Token);
-        ServiceRequest request = new(
+        ServiceRequest request = new GetStatusRequest(
             OpenSynapseIpc.ProtocolVersion,
-            Guid.NewGuid(),
-            "status");
+            Guid.NewGuid());
 
-        await IpcMessageCodec.WriteAsync(client, request, timeout.Token);
-        ServiceResponse response = await IpcMessageCodec.ReadAsync<ServiceResponse>(
-            client,
-            timeout.Token);
+        await IpcMessageCodec.WriteRequestAsync(client, request, timeout.Token);
+        ServiceResponse response = Assert.IsType<ServiceResponse>(
+            await IpcMessageCodec.ReadServerFrameAsync(client, timeout.Token));
         await serverTask;
 
         Assert.True(response.Success);
@@ -67,9 +65,8 @@ public sealed class NamedPipeStatusServerTests
 
         await client.WriteAsync(message, timeout.Token);
         await client.FlushAsync(timeout.Token);
-        ServiceResponse response = await IpcMessageCodec.ReadAsync<ServiceResponse>(
-            client,
-            timeout.Token);
+        ServiceResponse response = Assert.IsType<ServiceResponse>(
+            await IpcMessageCodec.ReadServerFrameAsync(client, timeout.Token));
         await serverTask;
 
         Assert.False(response.Success);

@@ -19,14 +19,17 @@ public sealed class ServiceClient(string pipeName)
             PipeDirection.InOut,
             PipeOptions.Asynchronous);
         await pipe.ConnectAsync(cancellationToken);
-        ServiceRequest request = new(
+        ServiceRequest request = new GetStatusRequest(
             OpenSynapseIpc.ProtocolVersion,
-            Guid.NewGuid(),
-            "status");
-        await IpcMessageCodec.WriteAsync(pipe, request, cancellationToken);
-        ServiceResponse response = await IpcMessageCodec.ReadAsync<ServiceResponse>(
+            Guid.NewGuid());
+        await IpcMessageCodec.WriteRequestAsync(pipe, request, cancellationToken);
+        ServiceServerFrame frame = await IpcMessageCodec.ReadServerFrameAsync(
             pipe,
             cancellationToken);
+        if (frame is not ServiceResponse response)
+        {
+            throw new InvalidDataException("Service returned an unexpected server frame.");
+        }
 
         if (response.Version != OpenSynapseIpc.ProtocolVersion
             || response.RequestId != request.RequestId

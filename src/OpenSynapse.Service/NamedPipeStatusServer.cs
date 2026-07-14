@@ -26,7 +26,7 @@ public sealed class NamedPipeStatusServer(
         ServiceResponse response;
         try
         {
-            ServiceRequest request = await IpcMessageCodec.ReadAsync<ServiceRequest>(
+            ServiceRequest request = await IpcMessageCodec.ReadRequestAsync(
                 pipe,
                 cancellationToken);
             response = handler.Handle(request);
@@ -38,9 +38,10 @@ public sealed class NamedPipeStatusServer(
                 Guid.Empty,
                 Success: false,
                 Error: "IPC request is malformed.",
-                Status: null);
+                Status: null,
+                Result: null);
         }
 
-        await IpcMessageCodec.WriteAsync(pipe, response, cancellationToken);
+        await IpcMessageCodec.WriteServerFrameAsync(pipe, response, cancellationToken);
     }
 }

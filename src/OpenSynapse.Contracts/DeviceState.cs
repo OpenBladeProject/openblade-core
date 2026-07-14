@@ -8,6 +8,14 @@ public sealed record DeviceCapabilities(
     int MaximumChargeLimit,
     int ChargeLimitStep)
 {
+    public static DeviceCapabilities Unavailable() => new(
+        new HashSet<PerformancePreset>(),
+        new HashSet<FanMode>(),
+        new HashSet<LightingEffect>(),
+        MinimumChargeLimit: 0,
+        MaximumChargeLimit: 0,
+        ChargeLimitStep: 0);
+
     public static DeviceCapabilities SafeTargetDefaults() => new(
         new HashSet<PerformancePreset>(Enum.GetValues<PerformancePreset>()),
         new HashSet<FanMode>(Enum.GetValues<FanMode>()),

@@ -25,11 +25,11 @@ public sealed class MainViewModelTests
     {
         MainViewModel viewModel = MainViewModel.CreateDisconnected();
 
-        viewModel.ApplyStatus(new ServiceStatusSnapshot(
-            DeviceVerified: false,
-            WritesBlocked: true,
-            Conflicts: ["Razer Synapse"],
-            Message: "Razer Synapse conflict detected"));
+        viewModel.ApplyStatus(CreateStatus(
+            deviceVerified: false,
+            writesBlocked: true,
+            conflicts: ["Razer Synapse"],
+            message: "Razer Synapse conflict detected"));
 
         Assert.Equal("Razer Synapse conflict detected", viewModel.ConnectionStatus);
         Assert.True(viewModel.IsReadOnly);
@@ -40,11 +40,11 @@ public sealed class MainViewModelTests
     {
         MainViewModel viewModel = MainViewModel.CreateDisconnected();
 
-        viewModel.ApplyStatus(new ServiceStatusSnapshot(
-            DeviceVerified: true,
-            WritesBlocked: false,
-            Conflicts: [],
-            Message: "Ready"));
+        viewModel.ApplyStatus(CreateStatus(
+            deviceVerified: true,
+            writesBlocked: false,
+            conflicts: [],
+            message: "Ready"));
 
         Assert.False(viewModel.IsReadOnly);
         Assert.Equal("Ready", viewModel.ConnectionStatus);
@@ -60,5 +60,33 @@ public sealed class MainViewModelTests
         Assert.Equal(ThemePreference.Dark, viewModel.Theme);
         Assert.Contains(ThemePreference.Light, viewModel.ThemeOptions);
         Assert.Contains(ThemePreference.FollowWindows, viewModel.ThemeOptions);
+    }
+
+    private static ServiceStatusSnapshot CreateStatus(
+        bool deviceVerified,
+        bool writesBlocked,
+        IReadOnlyList<string> conflicts,
+        string message)
+    {
+        ProfileSet profiles = ProfileDefaults.CreateSafeDefaults();
+        return new ServiceStatusSnapshot(
+            0,
+            deviceVerified,
+            writesBlocked,
+            conflicts,
+            message,
+            deviceVerified ? DeviceCapabilities.SafeTargetDefaults() : DeviceCapabilities.Unavailable(),
+            null,
+            profiles,
+            new DesiredDeviceState(
+                new ResolvedSetting<PerformancePreset>(PerformancePreset.Balanced, SettingValueSource.PowerProfile),
+                new ResolvedSetting<FanMode>(FanMode.Automatic, SettingValueSource.PowerProfile),
+                new ResolvedSetting<LightingSettings>(profiles.PluggedIn.Lighting, SettingValueSource.PowerProfile),
+                profiles.BatteryPolicy),
+            new TelemetrySnapshot(DateTimeOffset.MinValue, PowerSource.PluggedIn, null, null, null, null),
+            null,
+            null,
+            null,
+            false);
     }
 }
