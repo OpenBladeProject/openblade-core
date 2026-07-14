@@ -36,8 +36,16 @@ public sealed record PowerProfile(
 
 public sealed record BatteryPolicy
 {
-    private BatteryPolicy(int chargeLimitPercent, bool temporaryFullCharge)
+    public BatteryPolicy(int chargeLimitPercent, bool temporaryFullCharge)
     {
+        if (chargeLimitPercent is < 50 or > 80 || chargeLimitPercent % 5 != 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(chargeLimitPercent),
+                chargeLimitPercent,
+                "Charge limit must be from 50 to 80 percent in 5 percent steps.");
+        }
+
         ChargeLimitPercent = chargeLimitPercent;
         TemporaryFullCharge = temporaryFullCharge;
     }
@@ -48,14 +56,6 @@ public sealed record BatteryPolicy
 
     public static BatteryPolicy Create(int chargeLimitPercent, bool temporaryFullCharge = false)
     {
-        if (chargeLimitPercent is < 50 or > 80 || chargeLimitPercent % 5 != 0)
-        {
-            throw new ArgumentOutOfRangeException(
-                nameof(chargeLimitPercent),
-                chargeLimitPercent,
-                "Charge limit must be from 50 to 80 percent in 5 percent steps.");
-        }
-
         return new BatteryPolicy(chargeLimitPercent, temporaryFullCharge);
     }
 }

@@ -1,12 +1,142 @@
-﻿<Window x:Class="OpenSynapse.Tray.MainWindow"
+<Window x:Class="OpenSynapse.Tray.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
-        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:local="clr-namespace:OpenSynapse.Tray"
-        mc:Ignorable="d"
-        Title="MainWindow" Height="450" Width="800">
-    <Grid>
+        Title="OpenSynapse" Width="440" Height="650" MinWidth="410" MinHeight="590"
+        WindowStartupLocation="CenterScreen" Background="#F4F6F9" Foreground="#202936">
+    <Window.Resources>
+        <SolidColorBrush x:Key="AccentBrush" Color="#218653" />
+        <SolidColorBrush x:Key="CardBrush" Color="#FFFFFFFF" />
+        <SolidColorBrush x:Key="MutedBrush" Color="#687386" />
+        <Style TargetType="Button">
+            <Setter Property="Padding" Value="12,9" />
+            <Setter Property="Margin" Value="3" />
+            <Setter Property="Background" Value="#E9EEF4" />
+            <Setter Property="BorderBrush" Value="#D4DBE5" />
+        </Style>
+        <Style TargetType="TextBlock">
+            <Setter Property="FontFamily" Value="Segoe UI Variable Text" />
+        </Style>
+        <Style x:Key="SectionLabel" TargetType="TextBlock">
+            <Setter Property="Foreground" Value="{StaticResource MutedBrush}" />
+            <Setter Property="FontSize" Value="11" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Margin" Value="2,14,2,7" />
+        </Style>
+        <Style x:Key="Card" TargetType="Border">
+            <Setter Property="Background" Value="{StaticResource CardBrush}" />
+            <Setter Property="BorderBrush" Value="#DDE3EA" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="9" />
+            <Setter Property="Padding" Value="12" />
+            <Setter Property="Margin" Value="0,4" />
+        </Style>
+    </Window.Resources>
 
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <Border Padding="18,15" Background="White" BorderBrush="#DDE3EA" BorderThickness="0,0,0,1">
+            <Grid>
+                <StackPanel>
+                    <TextBlock Text="OpenSynapse" FontSize="18" FontWeight="SemiBold" Foreground="{StaticResource AccentBrush}" />
+                    <TextBlock Text="Razer Blade 16 · RZ09-0581" FontSize="11" Foreground="{StaticResource MutedBrush}" />
+                </StackPanel>
+                <StackPanel HorizontalAlignment="Right" VerticalAlignment="Center">
+                    <TextBlock Text="●  Service unavailable" FontSize="11" Foreground="#B54747" />
+                    <TextBlock Text="Controls are read-only" FontSize="10" Foreground="{StaticResource MutedBrush}" HorizontalAlignment="Right" />
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <TabControl Grid.Row="1" Margin="12" Background="Transparent" BorderThickness="0">
+            <TabItem Header="Dashboard">
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <StackPanel Margin="5,4,5,14" IsEnabled="{Binding IsReadOnly, Converter={x:Static local:BooleanNegationConverter.Instance}}">
+                        <TextBlock Style="{StaticResource SectionLabel}" Text="ACTIVE PROFILE" />
+                        <UniformGrid Columns="3">
+                            <Button Content="Silent" />
+                            <Button Content="Balanced" Background="#D9F0E2" BorderBrush="#79BD94" Foreground="#176A3B" />
+                            <Button Content="Performance" />
+                        </UniformGrid>
+
+                        <TextBlock Style="{StaticResource SectionLabel}" Text="POWER &amp; COOLING" />
+                        <Border Style="{StaticResource Card}">
+                            <Grid>
+                                <StackPanel>
+                                    <TextBlock Text="Fans" FontWeight="SemiBold" />
+                                    <TextBlock Text="Firmware automatic" FontSize="11" Foreground="{StaticResource MutedBrush}" />
+                                </StackPanel>
+                                <ComboBox HorizontalAlignment="Right" Width="120" SelectedIndex="0">
+                                    <ComboBoxItem Content="Automatic" />
+                                    <ComboBoxItem Content="Maximum" />
+                                </ComboBox>
+                            </Grid>
+                        </Border>
+
+                        <TextBlock Style="{StaticResource SectionLabel}" Text="BATTERY" />
+                        <Border Style="{StaticResource Card}">
+                            <StackPanel>
+                                <Grid>
+                                    <TextBlock Text="Charge limit" FontWeight="SemiBold" />
+                                    <TextBlock Text="80%" HorizontalAlignment="Right" FontWeight="SemiBold" />
+                                </Grid>
+                                <Slider Minimum="50" Maximum="80" TickFrequency="5" IsSnapToTickEnabled="True" Value="80" Margin="0,10,0,5" />
+                                <Button Content="Charge to 100% until unplugged" HorizontalAlignment="Stretch" />
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+
+            <TabItem Header="Lighting">
+                <StackPanel Margin="8,10" IsEnabled="False">
+                    <TextBlock Style="{StaticResource SectionLabel}" Text="KEYBOARD EFFECT" />
+                    <ComboBox SelectedIndex="0" Padding="8">
+                        <ComboBoxItem Content="Off (until capture is validated)" />
+                        <ComboBoxItem Content="Static" />
+                        <ComboBoxItem Content="Spectrum" />
+                        <ComboBoxItem Content="Breathing" />
+                        <ComboBoxItem Content="Reactive" />
+                    </ComboBox>
+                    <TextBlock Style="{StaticResource SectionLabel}" Text="BRIGHTNESS" />
+                    <Slider Minimum="0" Maximum="100" Value="0" />
+                    <TextBlock Margin="2,18" TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}"
+                               Text="Lighting effects remain unavailable until their PID 02E0 captures pass application, readback, and restoration checks." />
+                </StackPanel>
+            </TabItem>
+
+            <TabItem Header="Settings">
+                <StackPanel Margin="8,10">
+                    <TextBlock Style="{StaticResource SectionLabel}" Text="APPEARANCE" />
+                    <Border Style="{StaticResource Card}">
+                        <Grid>
+                            <TextBlock Text="Theme" VerticalAlignment="Center" />
+                            <ComboBox HorizontalAlignment="Right" Width="140" SelectedIndex="0">
+                                <ComboBoxItem Content="Follow Windows" />
+                                <ComboBoxItem Content="Light" />
+                                <ComboBoxItem Content="Dark" />
+                            </ComboBox>
+                        </Grid>
+                    </Border>
+                    <TextBlock Style="{StaticResource SectionLabel}" Text="SERVICE" />
+                    <Border Style="{StaticResource Card}">
+                        <StackPanel>
+                            <TextBlock Text="OpenSynapse Service" FontWeight="SemiBold" />
+                            <TextBlock Text="Not connected · hardware writes disabled" Foreground="#B54747" FontSize="11" Margin="0,3,0,8" />
+                            <Button Content="Export diagnostics" HorizontalAlignment="Left" />
+                        </StackPanel>
+                    </Border>
+                </StackPanel>
+            </TabItem>
+        </TabControl>
+
+        <Border Grid.Row="2" Padding="15,9" Background="#E9EDF2" BorderBrush="#D7DEE7" BorderThickness="0,1,0,0">
+            <TextBlock FontSize="11" Foreground="{StaticResource MutedBrush}" Text="CPU —   GPU —   Fans —   Battery 65%   AC power" />
+        </Border>
     </Grid>
 </Window>
