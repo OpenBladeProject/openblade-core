@@ -437,7 +437,7 @@ public sealed class WindowsRazerHidSessionTests
     }
 
     [Fact]
-    public async Task ExchangeUsesExactCodesFreshBuffersAndGetRequiresNinetyOneBytes()
+    public async Task ExchangeUsesExactCodesFreshBuffersAndAcceptsUnnumberedNinetyByteGetCompletion()
     {
         var io = new ScriptedIo(SetSuccess(bytes: 1), GetSuccess(1, 0x0D, 2, [0x55]));
         await using WindowsRazerHidSession actor = CreateActor(io);
@@ -451,21 +451,45 @@ public sealed class WindowsRazerHidSessionTests
         Assert.NotSame(io.Calls[0].Buffer, io.Calls[1].Buffer);
 
         var shortIo = new ScriptedIo(SetSuccess(), GetSuccess(2, 1, 1, [], bytes: 90));
-        WindowsRazerHidSession shortActor = CreateActor(shortIo);
+        await using WindowsRazerHidSession shortActor = CreateActor(shortIo);
         HidSessionResult<ReadOnlyMemory<byte>> shortResult = await shortActor.ExecuteAsync(
             new(1, 1, [], 0),
             () => TransactionIdAssignment.Valid(2),
             Timeout,
             default);
-        Assert.Equal(HidSessionFailureKind.NativeIoFailure, shortResult.Failure);
-        Assert.Equal(
-            new HidSessionFailureDiagnostic(
-                HidSessionFailurePhase.GetCompletion,
-                HidSessionFailureKind.NativeIoFailure,
-                NativeWin32Error: 0,
-                TransferredByteCount: 90),
-            shortResult.Diagnostic);
-        await shortActor.DisposeAsync();
+        Assert.Null(shortResult.Failure);
+        Assert.Null(shortResult.Diagnostic);
+    }
+
+    [Theory]
+    [InlineData(89, 0, HidSessionFailureKind.NativeIoFailure)]
+    [InlineData(90, 1, HidSessionFailureKind.NativeIoFailure)]
+    [InlineData(91, 1, HidSessionFailureKind.ProtocolFailure)]
+    public async Task GetCompletionRejectsOtherShortLengthsAndNonzeroReportIds(
+        int bytesTransferred,
+        byte reportId,
+        HidSessionFailureKind expected)
+    {
+        Func<OpenedHidHandle, uint, byte[], CancellationToken, CancellationToken, Task<HidFeatureIoResult>> get =
+            (_, _, buffer, _, _) =>
+            {
+                Response(1, 1, 1, []).CopyTo(buffer, 0);
+                buffer[0] = reportId;
+                return Task.FromResult(new HidFeatureIoResult(
+                    new NativeIoCompletion(true, bytesTransferred, 0),
+                    WasSubmitted: true,
+                    Termination: HidFeatureTermination.Completed));
+            };
+        await using WindowsRazerHidSession actor = CreateActor(
+            new ScriptedIo(SetSuccess(), get));
+
+        HidSessionResult<ReadOnlyMemory<byte>> result = await actor.ExecuteAsync(
+            new(1, 1, [], 0),
+            () => TransactionIdAssignment.Valid(1),
+            Timeout,
+            default);
+
+        Assert.Equal(expected, result.Failure);
     }
 
     [Theory]

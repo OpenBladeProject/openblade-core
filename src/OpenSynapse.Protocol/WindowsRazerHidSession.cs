@@ -411,7 +411,7 @@ internal sealed class WindowsRazerHidSession : IRazerCommandSession
         }
 
         if (getResult.Termination == HidFeatureTermination.Completed &&
-            getResult.Completion is not { Succeeded: true, BytesTransferred: FeatureReportLength })
+            !IsCompleteGetFeatureReport(getResult.Completion, getBuffer[0]))
         {
             Poison();
             return DiagnosticFailure(
@@ -558,6 +558,13 @@ internal sealed class WindowsRazerHidSession : IRazerCommandSession
             (false, false) => HidSessionFailurePhase.GetSubmit,
             _ => HidSessionFailurePhase.GetCompletion,
         };
+
+    private static bool IsCompleteGetFeatureReport(
+        NativeIoCompletion? completion,
+        byte reportId) =>
+        completion is { Succeeded: true } native &&
+        (native.BytesTransferred == FeatureReportLength ||
+            (native.BytesTransferred == RazerReport.ReportLength && reportId == 0));
 
     private sealed class WorkItem
     {

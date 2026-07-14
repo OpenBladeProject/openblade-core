@@ -309,6 +309,25 @@ public sealed class WindowsHidNativeContractTests
     }
 
     [Fact]
+    public async Task CompletionPreservesSuccessfulUnnumberedNinetyByteCount()
+    {
+        var kernel = new ScriptedKernel { IoResult = new NativeCallResult(false, 997) };
+        var native = new WindowsHidNative(kernel);
+        byte[] buffer = new byte[91];
+
+        Task<HidFeatureIoResult> execution = new OverlappedFeatureOperation(native).ExecuteAsync(
+            CreateHandle(), 0x000B0192u, buffer, CancellationToken.None, CancellationToken.None);
+
+        kernel.Complete(new NativeIoCompletion(true, 90, 0));
+        HidFeatureIoResult result = await execution;
+
+        Assert.Equal(new NativeIoCompletion(true, 90, 0), result.Completion);
+        Assert.True(result.WasSubmitted);
+        Assert.Equal(HidFeatureTermination.Completed, result.Termination);
+        Assert.Equal(1, kernel.FreeCalls);
+    }
+
+    [Fact]
     public async Task CompletionWaitsForFinalNativeUseLeaseBeforeFreeingExactOverlapped()
     {
         var kernel = new ScriptedKernel { IoResult = new NativeCallResult(false, 997) };
