@@ -141,15 +141,15 @@ public sealed class ServiceClientTests
             [CreateStatus(5), CreateStatus(6)],
             timeout.Token);
         IServiceClient client = new ServiceClient(pipeName);
-        await using IAsyncEnumerator<ServiceStatusSnapshot> reader =
+        await using IAsyncEnumerator<ServiceWatchUpdate> reader =
             client.WatchStatusAsync(timeout.Token).GetAsyncEnumerator();
 
         Assert.True(await reader.MoveNextAsync());
-        Assert.Equal(4, reader.Current.Revision);
+        Assert.Equal(4, Assert.IsType<ServiceWatchUpdate.Connected>(reader.Current).Status.Revision);
         Assert.True(await reader.MoveNextAsync());
-        Assert.Equal(5, reader.Current.Revision);
+        Assert.Equal(5, Assert.IsType<ServiceWatchUpdate.Connected>(reader.Current).Status.Revision);
         Assert.True(await reader.MoveNextAsync());
-        Assert.Equal(6, reader.Current.Revision);
+        Assert.Equal(6, Assert.IsType<ServiceWatchUpdate.Connected>(reader.Current).Status.Revision);
         await server;
     }
 
@@ -190,7 +190,7 @@ public sealed class ServiceClientTests
             },
             time);
         using CancellationTokenSource cancellation = new();
-        await using IAsyncEnumerator<ServiceStatusSnapshot> reader =
+        await using IAsyncEnumerator<ServiceWatchUpdate> reader =
             client.WatchStatusAsync(cancellation.Token).GetAsyncEnumerator();
         Task<bool> move = reader.MoveNextAsync().AsTask();
         await WaitUntilAsync(() => attempts == 1);
@@ -203,6 +203,31 @@ public sealed class ServiceClientTests
     }
 
     [Fact]
+    public async Task CancellationDuringSubscriptionHandshake_DisposesAcquiredStream()
+    {
+        var stream = new BlockingHandshakeStream();
+        int attempts = 0;
+        var client = new ServiceClient(
+            _ =>
+            {
+                attempts++;
+                return ValueTask.FromResult<Stream>(stream);
+            },
+            new FakeTimeProvider());
+        using CancellationTokenSource cancellation = new();
+        await using IAsyncEnumerator<ServiceWatchUpdate> reader =
+            client.WatchStatusAsync(cancellation.Token).GetAsyncEnumerator();
+        Task<bool> move = reader.MoveNextAsync().AsTask();
+        await stream.ReadStarted.Task;
+
+        cancellation.Cancel();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => move);
+        Assert.True(stream.Disposed);
+        Assert.Equal(1, attempts);
+    }
+
+    [Fact]
     public async Task WatchStatusAsync_ReconnectsAfterDisconnect()
     {
         string pipeName = NewPipeName();
@@ -211,12 +236,15 @@ public sealed class ServiceClientTests
         Task firstServer = RunSubscriptionServerAsync(
             pipeName, CreateStatus(1), [], cancellation.Token);
         IServiceClient client = new ServiceClient(pipeName, time);
-        await using IAsyncEnumerator<ServiceStatusSnapshot> reader =
+        await using IAsyncEnumerator<ServiceWatchUpdate> reader =
             client.WatchStatusAsync(cancellation.Token).GetAsyncEnumerator();
         Assert.True(await reader.MoveNextAsync());
-        Assert.Equal(1, reader.Current.Revision);
+        Assert.Equal(1, Assert.IsType<ServiceWatchUpdate.Connected>(reader.Current).Status.Revision);
         await firstServer;
         Task<bool> reconnectMove = reader.MoveNextAsync().AsTask();
+        Assert.True(await reconnectMove);
+        Assert.IsType<ServiceWatchUpdate.Reconnecting>(reader.Current);
+        reconnectMove = reader.MoveNextAsync().AsTask();
         await WaitUntilAsync(() => time.Delays.Count == 1);
         Task secondServer = RunSubscriptionServerAsync(
             pipeName, CreateStatus(2), [], cancellation.Token);
@@ -224,7 +252,7 @@ public sealed class ServiceClientTests
         time.Advance(TimeSpan.FromMilliseconds(250));
 
         Assert.True(await reconnectMove);
-        Assert.Equal(2, reader.Current.Revision);
+        Assert.Equal(2, Assert.IsType<ServiceWatchUpdate.Connected>(reader.Current).Status.Revision);
         await secondServer;
     }
 
@@ -241,7 +269,7 @@ public sealed class ServiceClientTests
             },
             time);
         using CancellationTokenSource cancellation = new();
-        await using IAsyncEnumerator<ServiceStatusSnapshot> reader =
+        await using IAsyncEnumerator<ServiceWatchUpdate> reader =
             client.WatchStatusAsync(cancellation.Token).GetAsyncEnumerator();
         Task<bool> move = reader.MoveNextAsync().AsTask();
         TimeSpan[] expected =
@@ -257,14 +285,110 @@ public sealed class ServiceClientTests
 
         for (int index = 0; index < expected.Length; index++)
         {
+            Assert.True(await move);
+            Assert.IsType<ServiceWatchUpdate.Reconnecting>(reader.Current);
+            move = reader.MoveNextAsync().AsTask();
             await WaitUntilAsync(() => time.Delays.Count == index + 1);
             Assert.Equal(expected[index], time.Delays[index]);
             time.Advance(expected[index]);
         }
 
+        Assert.True(await move);
+        Assert.IsType<ServiceWatchUpdate.Reconnecting>(reader.Current);
+        move = reader.MoveNextAsync().AsTask();
         cancellation.Cancel();
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => move);
         Assert.Equal(expected.Length + 1, attempts);
+    }
+
+    [Fact]
+    public async Task WatchStatusAsync_ProtocolFailureTerminatesWithoutReconnect()
+    {
+        int attempts = 0;
+        var stream = new ScriptedStream(Frame(Encoding.UTF8.GetBytes("not-json")));
+        var client = new ServiceClient(
+            _ =>
+            {
+                attempts++;
+                return ValueTask.FromResult<Stream>(stream);
+            },
+            new FakeTimeProvider());
+        await using IAsyncEnumerator<ServiceWatchUpdate> reader =
+            client.WatchStatusAsync(CancellationToken.None).GetAsyncEnumerator();
+
+        await Assert.ThrowsAsync<InvalidDataException>(() => reader.MoveNextAsync().AsTask());
+
+        Assert.Equal(1, attempts);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task WatchStatusAsync_VersionOrNonSuccessFailureTerminatesWithoutReconnect(
+        bool wrongVersion)
+    {
+        string pipeName = NewPipeName();
+        int attempts = 0;
+        using CancellationTokenSource timeout = new(TimeSpan.FromSeconds(5));
+        Task server = wrongVersion
+            ? RunRawServerAsync(
+                pipeName,
+                request => Frame(Encoding.UTF8.GetBytes(
+                    $"{{\"frame\":\"response\",\"version\":1,\"requestId\":\"{request.RequestId}\",\"success\":false,\"error\":\"bad version\",\"status\":null,\"result\":null}}")),
+                timeout.Token)
+            : RunServerAsync(
+                pipeName,
+                request => new ServiceResponse(
+                    OpenSynapseIpc.ProtocolVersion,
+                    request.RequestId,
+                    false,
+                    "Rejected",
+                    null,
+                    null),
+                timeout.Token);
+        var client = new ServiceClient(
+            async token =>
+            {
+                attempts++;
+                var pipe = new NamedPipeClientStream(
+                    ".",
+                    pipeName,
+                    PipeDirection.InOut,
+                    PipeOptions.Asynchronous);
+                await pipe.ConnectAsync(token);
+                return pipe;
+            },
+            new FakeTimeProvider());
+        await using IAsyncEnumerator<ServiceWatchUpdate> reader =
+            client.WatchStatusAsync(timeout.Token).GetAsyncEnumerator();
+
+        await Assert.ThrowsAsync<InvalidDataException>(() => reader.MoveNextAsync().AsTask());
+        await server;
+
+        Assert.Equal(1, attempts);
+    }
+
+    [Fact]
+    public async Task WatchStatusAsync_OversizedFrameTerminatesWithoutReconnect()
+    {
+        int attempts = 0;
+        byte[] prefix = new byte[sizeof(int)];
+        BinaryPrimitives.WriteInt32LittleEndian(
+            prefix,
+            OpenSynapseIpc.MaximumMessageBytes + 1);
+        var client = new ServiceClient(
+            _ =>
+            {
+                attempts++;
+                return ValueTask.FromResult<Stream>(new ScriptedStream(prefix));
+            },
+            new FakeTimeProvider());
+        await using IAsyncEnumerator<ServiceWatchUpdate> reader =
+            client.WatchStatusAsync(CancellationToken.None).GetAsyncEnumerator();
+
+        await Assert.ThrowsAsync<InvalidDataException>(() => reader.MoveNextAsync().AsTask());
+
+        Assert.Equal(1, attempts);
     }
 
     private static async Task AssertInvalidStatusResponseAsync(
@@ -398,6 +522,89 @@ public sealed class ServiceClientTests
             null,
             null,
             false);
+    }
+
+    private sealed class ScriptedStream(byte[] response) : Stream
+    {
+        private readonly MemoryStream input = new(response, writable: false);
+
+        public override bool CanRead => true;
+        public override bool CanSeek => false;
+        public override bool CanWrite => true;
+        public override long Length => throw new NotSupportedException();
+        public override long Position
+        {
+            get => throw new NotSupportedException();
+            set => throw new NotSupportedException();
+        }
+
+        public override void Flush()
+        {
+        }
+
+        public override Task FlushAsync(CancellationToken cancellationToken) =>
+            Task.CompletedTask;
+
+        public override int Read(byte[] buffer, int offset, int count) =>
+            input.Read(buffer, offset, count);
+
+        public override ValueTask<int> ReadAsync(
+            Memory<byte> buffer,
+            CancellationToken cancellationToken = default) =>
+            input.ReadAsync(buffer, cancellationToken);
+
+        public override void Write(byte[] buffer, int offset, int count)
+        {
+        }
+
+        public override ValueTask WriteAsync(
+            ReadOnlyMemory<byte> buffer,
+            CancellationToken cancellationToken = default) =>
+            ValueTask.CompletedTask;
+
+        public override long Seek(long offset, SeekOrigin origin) =>
+            throw new NotSupportedException();
+
+        public override void SetLength(long value) => throw new NotSupportedException();
+    }
+
+    private sealed class BlockingHandshakeStream : Stream
+    {
+        public TaskCompletionSource ReadStarted { get; } = new(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        public bool Disposed { get; private set; }
+        public override bool CanRead => true;
+        public override bool CanSeek => false;
+        public override bool CanWrite => true;
+        public override long Length => throw new NotSupportedException();
+        public override long Position
+        {
+            get => throw new NotSupportedException();
+            set => throw new NotSupportedException();
+        }
+        public override void Flush() { }
+        public override int Read(byte[] buffer, int offset, int count) =>
+            throw new NotSupportedException();
+        public override async ValueTask<int> ReadAsync(
+            Memory<byte> buffer,
+            CancellationToken cancellationToken = default)
+        {
+            ReadStarted.TrySetResult();
+            await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+            return 0;
+        }
+        public override void Write(byte[] buffer, int offset, int count) { }
+        public override ValueTask WriteAsync(
+            ReadOnlyMemory<byte> buffer,
+            CancellationToken cancellationToken = default) => ValueTask.CompletedTask;
+        public override long Seek(long offset, SeekOrigin origin) =>
+            throw new NotSupportedException();
+        public override void SetLength(long value) => throw new NotSupportedException();
+        public override ValueTask DisposeAsync()
+        {
+            Disposed = true;
+            return ValueTask.CompletedTask;
+        }
     }
 
     private sealed class FakeTimeProvider : TimeProvider

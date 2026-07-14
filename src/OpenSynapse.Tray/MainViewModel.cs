@@ -449,10 +449,22 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     {
         try
         {
-            await foreach (ServiceStatusSnapshot status in
-                serviceClient.WatchStatusAsync(token))
+            await foreach (ServiceWatchUpdate update in serviceClient.WatchStatusAsync(token))
             {
-                await dispatcher.InvokeAsync(() => ApplyStatus(status), token);
+                await dispatcher.InvokeAsync(
+                    () =>
+                    {
+                        switch (update)
+                        {
+                            case ServiceWatchUpdate.Connected connected:
+                                ApplyStatus(connected.Status);
+                                break;
+                            case ServiceWatchUpdate.Reconnecting:
+                                MarkDisconnected("Reconnecting to service");
+                                break;
+                        }
+                    },
+                    token);
             }
 
             if (!token.IsCancellationRequested)
@@ -521,12 +533,14 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         NotifyCommands();
     }
 
-    private void MarkDisconnected()
+    private void MarkDisconnected() => MarkDisconnected("Service disconnected");
+
+    private void MarkDisconnected(string message)
     {
         IsConnected = false;
         IsReadOnly = true;
         CanControlHardware = false;
-        ConnectionStatus = "Service disconnected";
+        ConnectionStatus = message;
         NotifyCommands();
     }
 

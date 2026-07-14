@@ -86,75 +86,54 @@ public sealed class ServiceClient : IServiceClient
                 enabled),
             token);
 
-    public async IAsyncEnumerable<ServiceStatusSnapshot> WatchStatusAsync(
+    public async IAsyncEnumerable<ServiceWatchUpdate> WatchStatusAsync(
         [EnumeratorCancellation] CancellationToken token)
     {
         TimeSpan reconnectDelay = InitialReconnectDelay;
         while (true)
         {
             token.ThrowIfCancellationRequested();
-            Stream? connection = null;
-            ServiceStatusSnapshot? initial = null;
-            try
+            SubscriptionOpenResult openResult = await OpenSubscriptionAsync(token);
+            if (openResult.TransportFailed)
             {
-                connection = await connectAsync(token);
-                var request = new SubscribeStatusRequest(
-                    OpenSynapseIpc.ProtocolVersion,
-                    Guid.NewGuid());
-                await IpcMessageCodec.WriteRequestAsync(connection, request, token);
-                ServiceServerFrame frame = await IpcMessageCodec.ReadServerFrameAsync(
-                    connection,
-                    token);
-                ServiceResponse response = ValidateResponse(frame, request);
-                initial = response.Status
-                    ?? throw new InvalidDataException(
-                        "Service subscription response is missing its status body.");
-            }
-            catch (IOException) when (!token.IsCancellationRequested)
-            {
-                if (connection is not null)
-                {
-                    await connection.DisposeAsync();
-                }
-
+                yield return new ServiceWatchUpdate.Reconnecting();
                 await Task.Delay(reconnectDelay, timeProvider, token);
                 reconnectDelay = NextDelay(reconnectDelay);
                 continue;
             }
 
-            await using (connection)
+            await using (Stream connection = openResult.Connection!)
             {
                 reconnectDelay = InitialReconnectDelay;
-                yield return initial;
+                yield return new ServiceWatchUpdate.Connected(openResult.InitialStatus!);
 
-                bool disconnected = false;
-                while (!disconnected)
+                while (true)
                 {
-                    ServiceServerFrame? frame = null;
-                    try
-                    {
-                        frame = await IpcMessageCodec.ReadServerFrameAsync(connection, token);
-                    }
-                    catch (IOException) when (!token.IsCancellationRequested)
-                    {
-                        disconnected = true;
-                    }
-
-                    if (disconnected)
+                    SubscriptionReadResult readResult = await ReadSubscriptionFrameAsync(
+                        connection,
+                        token);
+                    if (readResult.TransportFailed)
                     {
                         break;
                     }
 
-                    if (frame is not ServiceStatusEvent statusEvent)
+                    if (readResult.Frame is not ServiceStatusEvent statusEvent)
                     {
                         throw new InvalidDataException(
                             "Service returned an unexpected subscription frame.");
                     }
 
-                    yield return statusEvent.Status;
+                    if (statusEvent.Version != OpenSynapseIpc.ProtocolVersion)
+                    {
+                        throw new InvalidDataException(
+                            "Service status event version does not match the client.");
+                    }
+
+                    yield return new ServiceWatchUpdate.Connected(statusEvent.Status);
                 }
             }
 
+            yield return new ServiceWatchUpdate.Reconnecting();
             await Task.Delay(reconnectDelay, timeProvider, token);
             reconnectDelay = NextDelay(reconnectDelay);
         }
@@ -208,6 +187,76 @@ public sealed class ServiceClient : IServiceClient
 
     private static TimeSpan NextDelay(TimeSpan current) => TimeSpan.FromMilliseconds(
         Math.Min(current.TotalMilliseconds * 2, MaximumReconnectDelay.TotalMilliseconds));
+
+    private async Task<SubscriptionOpenResult> OpenSubscriptionAsync(
+        CancellationToken token)
+    {
+        Stream? connection = null;
+        try
+        {
+            connection = await connectAsync(token);
+            var request = new SubscribeStatusRequest(
+                OpenSynapseIpc.ProtocolVersion,
+                Guid.NewGuid());
+            await IpcMessageCodec.WriteRequestAsync(connection, request, token);
+            ServiceServerFrame frame = await IpcMessageCodec.ReadServerFrameAsync(
+                connection,
+                token);
+            ServiceResponse response = ValidateResponse(frame, request);
+            ServiceStatusSnapshot initial = response.Status
+                ?? throw new InvalidDataException(
+                    "Service subscription response is missing its status body.");
+            return new SubscriptionOpenResult(connection, initial, false);
+        }
+        catch (Exception exception) when (
+            !token.IsCancellationRequested
+            && IsRetryableTransportFailure(exception))
+        {
+            if (connection is not null)
+            {
+                await connection.DisposeAsync();
+            }
+            return new SubscriptionOpenResult(null, null, true);
+        }
+        catch
+        {
+            if (connection is not null)
+            {
+                await connection.DisposeAsync();
+            }
+            throw;
+        }
+    }
+
+    private static async Task<SubscriptionReadResult> ReadSubscriptionFrameAsync(
+        Stream connection,
+        CancellationToken token)
+    {
+        try
+        {
+            return new SubscriptionReadResult(
+                await IpcMessageCodec.ReadServerFrameAsync(connection, token),
+                false);
+        }
+        catch (Exception exception) when (
+            !token.IsCancellationRequested
+            && IsRetryableTransportFailure(exception))
+        {
+            return new SubscriptionReadResult(null, true);
+        }
+    }
+
+    private static bool IsRetryableTransportFailure(Exception exception) =>
+        exception is IOException && exception is not InvalidDataException;
+
+    private sealed record SubscriptionOpenResult(
+        Stream? Connection,
+        ServiceStatusSnapshot? InitialStatus,
+        bool TransportFailed);
+
+    private sealed record SubscriptionReadResult(
+        ServiceServerFrame? Frame,
+        bool TransportFailed);
 
     private static async ValueTask<Stream> ConnectNamedPipeAsync(
         string pipeName,

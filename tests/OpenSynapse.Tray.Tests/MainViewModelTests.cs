@@ -248,6 +248,31 @@ public sealed class MainViewModelTests
     }
 
     [Fact]
+    public async Task ReconnectingUpdate_RetainsLastSnapshotButImmediatelyDisablesCommands()
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        client.Publish(CreateStatus(verified: true, blocked: false) with
+        {
+            DesiredState = CreateStatus(true, false).DesiredState with
+            {
+                Performance = new ResolvedSetting<PerformancePreset>(
+                    PerformancePreset.Performance,
+                    SettingValueSource.PowerProfile),
+            },
+        });
+        await WaitUntilAsync(() => viewModel.SelectedPerformance == PerformancePreset.Performance);
+
+        client.PublishReconnecting();
+        await WaitUntilAsync(() => !viewModel.IsConnected);
+
+        Assert.Equal(PerformancePreset.Performance, viewModel.SelectedPerformance);
+        Assert.Equal("Reconnecting to service", viewModel.ConnectionStatus);
+        Assert.False(viewModel.SetPerformanceCommand.CanExecute(PerformancePreset.Balanced));
+    }
+
+    [Fact]
     public async Task Theme_RetainsLightDarkAndWindowsFollowingBehavior()
     {
         await using var viewModel = new MainViewModel(
@@ -327,7 +352,7 @@ public sealed class MainViewModelTests
 
     private sealed class FakeServiceClient : IServiceClient
     {
-        private readonly Channel<ServiceStatusSnapshot> statuses = Channel.CreateUnbounded<ServiceStatusSnapshot>();
+        private readonly Channel<ServiceWatchUpdate> statuses = Channel.CreateUnbounded<ServiceWatchUpdate>();
         private readonly TaskCompletionSource mutationCompletion = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public int WatchCalls { get; private set; }
         public int MutationCalls { get; private set; }
@@ -337,17 +362,18 @@ public sealed class MainViewModelTests
         public ManualOverride<PerformancePreset>? PerformanceOverride { get; private set; }
         public TaskCompletionSource MutationStarted { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public ControlOperationResult NextResult { get; init; } = new(ControlOperationStatus.Applied, "Applied");
-        public void Publish(ServiceStatusSnapshot status) => statuses.Writer.TryWrite(status);
+        public void Publish(ServiceStatusSnapshot status) => statuses.Writer.TryWrite(new ServiceWatchUpdate.Connected(status));
+        public void PublishReconnecting() => statuses.Writer.TryWrite(new ServiceWatchUpdate.Reconnecting());
         public void CompleteWatch() => statuses.Writer.TryComplete();
         public void CompleteMutation() => mutationCompletion.TrySetResult();
 
-        public async IAsyncEnumerable<ServiceStatusSnapshot> WatchStatusAsync(
+        public async IAsyncEnumerable<ServiceWatchUpdate> WatchStatusAsync(
             [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken token)
         {
             WatchCalls++;
             try
             {
-                await foreach (ServiceStatusSnapshot status in statuses.Reader.ReadAllAsync(token))
+                await foreach (ServiceWatchUpdate status in statuses.Reader.ReadAllAsync(token))
                 {
                     yield return status;
                 }

@@ -7,10 +7,11 @@ public sealed class AsyncRelayCommand : ICommand, IAsyncDisposable
     private readonly Func<object?, CancellationToken, Task> execute;
     private readonly Predicate<object?> canExecute;
     private readonly CancellationToken lifetimeToken;
+    private readonly object sync = new();
     private CancellationTokenSource? executionCancellation;
     private Task currentExecution = Task.CompletedTask;
-    private int disposed;
-    private int running;
+    private bool disposed;
+    private bool running;
 
     public AsyncRelayCommand(
         Func<object?, CancellationToken, Task> execute,
@@ -24,28 +25,45 @@ public sealed class AsyncRelayCommand : ICommand, IAsyncDisposable
 
     public event EventHandler? CanExecuteChanged;
 
-    public bool IsRunning => Volatile.Read(ref running) != 0;
+    public bool IsRunning
+    {
+        get
+        {
+            lock (sync)
+            {
+                return running;
+            }
+        }
+    }
 
-    public bool CanExecute(object? parameter) =>
-        Volatile.Read(ref disposed) == 0
-        && !IsRunning
-        && canExecute(parameter);
+    public bool CanExecute(object? parameter)
+    {
+        lock (sync)
+        {
+            return !disposed && !running && canExecute(parameter);
+        }
+    }
 
     public void Execute(object? parameter) => _ = ExecuteAsync(parameter);
 
     public Task ExecuteAsync(object? parameter)
     {
-        if (!CanExecute(parameter)
-            || Interlocked.CompareExchange(ref running, 1, 0) != 0)
+        Task task;
+        lock (sync)
         {
-            return Task.CompletedTask;
+            if (disposed || running || !canExecute(parameter))
+            {
+                return Task.CompletedTask;
+            }
+
+            running = true;
+            executionCancellation = CancellationTokenSource.CreateLinkedTokenSource(
+                lifetimeToken);
+            task = RunAsync(parameter, executionCancellation);
+            currentExecution = task;
         }
 
-        var cancellation = CancellationTokenSource.CreateLinkedTokenSource(lifetimeToken);
-        Volatile.Write(ref executionCancellation, cancellation);
         NotifyCanExecuteChanged();
-        Task task = RunAsync(parameter, cancellation);
-        Volatile.Write(ref currentExecution, task);
         return task;
     }
 
@@ -54,15 +72,19 @@ public sealed class AsyncRelayCommand : ICommand, IAsyncDisposable
 
     public async ValueTask DisposeAsync()
     {
-        if (Interlocked.Exchange(ref disposed, 1) != 0)
+        CancellationTokenSource? cancellation;
+        Task activeExecution;
+        lock (sync)
         {
-            return;
+            disposed = true;
+            cancellation = executionCancellation;
+            activeExecution = currentExecution;
         }
 
-        Volatile.Read(ref executionCancellation)?.Cancel();
+        cancellation?.Cancel();
         try
         {
-            await Volatile.Read(ref currentExecution);
+            await activeExecution;
         }
         catch (OperationCanceledException)
         {
@@ -76,6 +98,8 @@ public sealed class AsyncRelayCommand : ICommand, IAsyncDisposable
     {
         try
         {
+            await Task.Yield();
+            cancellation.Token.ThrowIfCancellationRequested();
             await execute(parameter, cancellation.Token);
         }
         catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
@@ -83,9 +107,15 @@ public sealed class AsyncRelayCommand : ICommand, IAsyncDisposable
         }
         finally
         {
-            Interlocked.CompareExchange(ref executionCancellation, null, cancellation);
+            lock (sync)
+            {
+                if (ReferenceEquals(executionCancellation, cancellation))
+                {
+                    executionCancellation = null;
+                }
+                running = false;
+            }
             cancellation.Dispose();
-            Interlocked.Exchange(ref running, 0);
             NotifyCanExecuteChanged();
         }
     }

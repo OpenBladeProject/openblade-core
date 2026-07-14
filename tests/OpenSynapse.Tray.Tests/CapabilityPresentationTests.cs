@@ -238,13 +238,14 @@ public sealed class CapabilityPresentationTests
 
     private sealed class PresentationClient : IServiceClient
     {
-        private readonly Channel<ServiceStatusSnapshot> statuses = Channel.CreateUnbounded<ServiceStatusSnapshot>();
+        private readonly Channel<ServiceWatchUpdate> statuses = Channel.CreateUnbounded<ServiceWatchUpdate>();
         public ProfileSet? SavedProfiles { get; private set; }
-        public void Publish(ServiceStatusSnapshot status) => statuses.Writer.TryWrite(status);
-        public async IAsyncEnumerable<ServiceStatusSnapshot> WatchStatusAsync(
+        public void Publish(ServiceStatusSnapshot status) =>
+            statuses.Writer.TryWrite(new ServiceWatchUpdate.Connected(status));
+        public async IAsyncEnumerable<ServiceWatchUpdate> WatchStatusAsync(
             [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken token)
         {
-            await foreach (ServiceStatusSnapshot status in statuses.Reader.ReadAllAsync(token)) yield return status;
+            await foreach (ServiceWatchUpdate status in statuses.Reader.ReadAllAsync(token)) yield return status;
         }
         public Task<ControlOperationResult> UpdateProfilesAsync(ProfileSet profiles, CancellationToken token)
         {
