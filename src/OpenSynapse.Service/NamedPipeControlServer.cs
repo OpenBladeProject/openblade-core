@@ -1,4 +1,5 @@
 using System.IO.Pipes;
+using System.Runtime.ExceptionServices;
 using System.Security.Principal;
 using System.Text.Json;
 using OpenSynapse.Contracts;
@@ -115,20 +116,73 @@ public sealed class NamedPipeControlServer
             await WriteFrameAsync(connection, initial, cancellationToken);
             long initialRevision = initial.Status?.Revision ?? -1;
 
-            await foreach (ServiceStatusSnapshot snapshot in
-                lease.ReadAllAsync(cancellationToken))
-            {
-                if (snapshot.Revision <= initialRevision)
-                {
-                    continue;
-                }
+            using CancellationTokenSource connectionLifetime =
+                CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            Task streamTask = StreamSubscriptionAsync(
+                connection,
+                lease,
+                initialRevision,
+                connectionLifetime.Token);
+            Task disconnectTask = MonitorDisconnectAsync(
+                connection,
+                connectionLifetime.Token);
 
-                await WriteFrameAsync(
-                    connection,
-                    new ServiceStatusEvent(OpenSynapseIpc.ProtocolVersion, snapshot),
-                    cancellationToken);
+            await Task.WhenAny(streamTask, disconnectTask);
+            connectionLifetime.Cancel();
+
+            Exception? failure = null;
+            foreach (Task task in new[] { streamTask, disconnectTask })
+            {
+                try
+                {
+                    await task;
+                }
+                catch (OperationCanceledException)
+                    when (connectionLifetime.IsCancellationRequested &&
+                          !cancellationToken.IsCancellationRequested)
+                {
+                }
+                catch (Exception exception)
+                {
+                    failure ??= exception;
+                }
+            }
+
+            cancellationToken.ThrowIfCancellationRequested();
+            if (failure is not null)
+            {
+                ExceptionDispatchInfo.Capture(failure).Throw();
             }
         }
+    }
+
+    private async Task StreamSubscriptionAsync(
+        Stream connection,
+        StatusSubscriptionLease lease,
+        long initialRevision,
+        CancellationToken cancellationToken)
+    {
+        await foreach (ServiceStatusSnapshot snapshot in
+            lease.ReadAllAsync(cancellationToken))
+        {
+            if (snapshot.Revision <= initialRevision)
+            {
+                continue;
+            }
+
+            await WriteFrameAsync(
+                connection,
+                new ServiceStatusEvent(OpenSynapseIpc.ProtocolVersion, snapshot),
+                cancellationToken);
+        }
+    }
+
+    private static async Task MonitorDisconnectAsync(
+        Stream connection,
+        CancellationToken cancellationToken)
+    {
+        byte[] probe = new byte[1];
+        _ = await connection.ReadAsync(probe, cancellationToken);
     }
 
     private async Task WriteFrameAsync(

@@ -136,7 +136,6 @@ public sealed class NamedPipeControlServerTests
             timeout.Token);
         _ = await IpcMessageCodec.ReadServerFrameAsync(client, timeout.Token);
         await client.DisposeAsync();
-        context.Hub.Publish(CreateStatus(1));
         await serverTask.WaitAsync(timeout.Token);
 
         StatusSubscriptionLease[] leases =
