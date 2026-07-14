@@ -9,7 +9,7 @@ namespace OpenSynapse.Tray;
 
 public partial class MainWindow : Window
 {
-    private readonly MainViewModel viewModel = MainViewModel.CreateDisconnected();
+    private readonly MainViewModel viewModel;
     private readonly UiPreferenceStore preferenceStore = new(Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
         "OpenSynapse",
@@ -18,6 +18,7 @@ public partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
+        viewModel = new MainViewModel(new ServiceClient(), Dispatcher);
         DataContext = viewModel;
         viewModel.PropertyChanged += OnViewModelPropertyChanged;
         Loaded += OnLoaded;
@@ -34,25 +35,17 @@ public partial class MainWindow : Window
         }
     }
 
-    private void OnClosed(object? sender, EventArgs e) =>
+    private async void OnClosed(object? sender, EventArgs e)
+    {
         SystemEvents.UserPreferenceChanged -= OnUserPreferenceChanged;
+        await viewModel.DisposeAsync();
+    }
 
     private async void OnLoaded(object sender, RoutedEventArgs e)
     {
         viewModel.Theme = (await preferenceStore.LoadAsync()).Theme;
         ThemeManager.Apply(viewModel.Theme);
-        using CancellationTokenSource timeout = new(TimeSpan.FromSeconds(2));
-
-        try
-        {
-            viewModel.ApplyStatus(await new ServiceClient().GetStatusAsync(timeout.Token));
-        }
-        catch (Exception exception) when (exception is IOException
-            or TimeoutException
-            or OperationCanceledException)
-        {
-            // The disconnected model is intentionally fail-closed.
-        }
+        await viewModel.StartAsync();
     }
 
     private async void OnViewModelPropertyChanged(object? sender, PropertyChangedEventArgs e)
