@@ -32,4 +32,16 @@ public sealed class MainViewModelTests
         Assert.False(viewModel.IsReadOnly);
         Assert.Equal("Ready", viewModel.ConnectionStatus);
     }
+
+    [Fact]
+    public void Theme_CanSelectLightDarkOrWindowsFollowing()
+    {
+        MainViewModel viewModel = MainViewModel.CreateDisconnected();
+
+        viewModel.Theme = ThemePreference.Dark;
+
+        Assert.Equal(ThemePreference.Dark, viewModel.Theme);
+        Assert.Contains(ThemePreference.Light, viewModel.ThemeOptions);
+        Assert.Contains(ThemePreference.FollowWindows, viewModel.ThemeOptions);
+    }
 }

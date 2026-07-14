@@ -32,3 +32,9 @@ public enum ControlResultStatus
 }
 
 public sealed record ControlResult(ControlResultStatus Status, string Message);
+
+public sealed record SubsystemApplyResults(
+    ControlResult Performance,
+    ControlResult Fans,
+    ControlResult Battery,
+    ControlResult Lighting);

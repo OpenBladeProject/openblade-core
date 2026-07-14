@@ -3,16 +3,14 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:local="clr-namespace:OpenSynapse.Tray"
         Title="OpenSynapse" Width="440" Height="650" MinWidth="410" MinHeight="590"
-        WindowStartupLocation="CenterScreen" Background="#F4F6F9" Foreground="#202936">
+        WindowStartupLocation="CenterScreen" Background="{DynamicResource WindowBackgroundBrush}" Foreground="{DynamicResource ForegroundBrush}">
     <Window.Resources>
-        <SolidColorBrush x:Key="AccentBrush" Color="#218653" />
-        <SolidColorBrush x:Key="CardBrush" Color="#FFFFFFFF" />
-        <SolidColorBrush x:Key="MutedBrush" Color="#687386" />
         <Style TargetType="Button">
             <Setter Property="Padding" Value="12,9" />
             <Setter Property="Margin" Value="3" />
-            <Setter Property="Background" Value="#E9EEF4" />
-            <Setter Property="BorderBrush" Value="#D4DBE5" />
+            <Setter Property="Background" Value="{DynamicResource ButtonBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}" />
+            <Setter Property="Foreground" Value="{DynamicResource ForegroundBrush}" />
         </Style>
         <Style TargetType="TextBlock">
             <Setter Property="FontFamily" Value="Segoe UI Variable Text" />
@@ -25,7 +23,7 @@
         </Style>
         <Style x:Key="Card" TargetType="Border">
             <Setter Property="Background" Value="{StaticResource CardBrush}" />
-            <Setter Property="BorderBrush" Value="#DDE3EA" />
+            <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}" />
             <Setter Property="BorderThickness" Value="1" />
             <Setter Property="CornerRadius" Value="9" />
             <Setter Property="Padding" Value="12" />
@@ -40,14 +38,14 @@
             <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
 
-        <Border Padding="18,15" Background="White" BorderBrush="#DDE3EA" BorderThickness="0,0,0,1">
+        <Border Padding="18,15" Background="{DynamicResource HeaderBackgroundBrush}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,0,0,1">
             <Grid>
                 <StackPanel>
                     <TextBlock Text="OpenSynapse" FontSize="18" FontWeight="SemiBold" Foreground="{StaticResource AccentBrush}" />
                     <TextBlock Text="Razer Blade 16 · RZ09-0581" FontSize="11" Foreground="{StaticResource MutedBrush}" />
                 </StackPanel>
                 <StackPanel HorizontalAlignment="Right" VerticalAlignment="Center">
-                    <TextBlock Text="{Binding ConnectionStatus}" FontSize="11" Foreground="#B54747" />
+                    <TextBlock Text="{Binding ConnectionStatus}" FontSize="11" Foreground="{DynamicResource DangerBrush}" />
                     <TextBlock Text="Hardware controls are fail-closed" FontSize="10" Foreground="{StaticResource MutedBrush}" HorizontalAlignment="Right" />
                 </StackPanel>
             </Grid>
@@ -116,18 +114,16 @@
                     <Border Style="{StaticResource Card}">
                         <Grid>
                             <TextBlock Text="Theme" VerticalAlignment="Center" />
-                            <ComboBox HorizontalAlignment="Right" Width="140" SelectedIndex="0">
-                                <ComboBoxItem Content="Follow Windows" />
-                                <ComboBoxItem Content="Light" />
-                                <ComboBoxItem Content="Dark" />
-                            </ComboBox>
+                            <ComboBox HorizontalAlignment="Right" Width="140"
+                                      ItemsSource="{Binding ThemeOptions}"
+                                      SelectedItem="{Binding Theme, Mode=TwoWay}" />
                         </Grid>
                     </Border>
                     <TextBlock Style="{StaticResource SectionLabel}" Text="SERVICE" />
                     <Border Style="{StaticResource Card}">
                         <StackPanel>
                             <TextBlock Text="OpenSynapse Service" FontWeight="SemiBold" />
-                            <TextBlock Text="Not connected · hardware writes disabled" Foreground="#B54747" FontSize="11" Margin="0,3,0,8" />
+                            <TextBlock Text="Not connected · hardware writes disabled" Foreground="{DynamicResource DangerBrush}" FontSize="11" Margin="0,3,0,8" />
                             <Button Content="Export diagnostics" HorizontalAlignment="Left" />
                         </StackPanel>
                     </Border>
@@ -135,7 +131,7 @@
             </TabItem>
         </TabControl>
 
-        <Border Grid.Row="2" Padding="15,9" Background="#E9EDF2" BorderBrush="#D7DEE7" BorderThickness="0,1,0,0">
+        <Border Grid.Row="2" Padding="15,9" Background="{DynamicResource FooterBrush}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,1,0,0">
             <TextBlock FontSize="11" Foreground="{StaticResource MutedBrush}" Text="CPU —   GPU —   Fans —   Battery 65%   AC power" />
         </Border>
     </Grid>

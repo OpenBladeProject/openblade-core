@@ -15,6 +15,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
 {
     private bool isReadOnly;
     private string connectionStatus;
+    private ThemePreference theme;
 
     private MainViewModel(ProfileSet profiles)
     {
@@ -23,7 +24,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
         SelectedPerformance = profiles.PluggedIn.Performance;
         SelectedFanMode = profiles.PluggedIn.Fans;
         ChargeLimitPercent = profiles.BatteryPolicy.ChargeLimitPercent;
-        Theme = ThemePreference.FollowWindows;
+        theme = ThemePreference.FollowWindows;
     }
 
     public event PropertyChangedEventHandler? PropertyChanged;
@@ -46,7 +47,13 @@ public sealed class MainViewModel : INotifyPropertyChanged
 
     public int ChargeLimitPercent { get; }
 
-    public ThemePreference Theme { get; }
+    public ThemePreference Theme
+    {
+        get => theme;
+        set => SetField(ref theme, value);
+    }
+
+    public IReadOnlyList<ThemePreference> ThemeOptions { get; } = Enum.GetValues<ThemePreference>();
 
     public static MainViewModel CreateDisconnected() =>
         new(ProfileDefaults.CreateSafeDefaults());

@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.ComponentModel;
 using System.IO;
 using System.Windows;
 using System.Windows.Data;
@@ -13,11 +14,20 @@ public partial class MainWindow : Window
     {
         InitializeComponent();
         DataContext = viewModel;
+        viewModel.PropertyChanged += (_, eventArgs) =>
+        {
+            if (eventArgs.PropertyName == nameof(MainViewModel.Theme))
+            {
+                ThemeManager.Apply(viewModel.Theme);
+            }
+        };
         Loaded += OnLoaded;
+        Closing += OnClosing;
     }
 
     private async void OnLoaded(object sender, RoutedEventArgs e)
     {
+        ThemeManager.Apply(viewModel.Theme);
         using CancellationTokenSource timeout = new(TimeSpan.FromSeconds(2));
 
         try
@@ -29,6 +39,16 @@ public partial class MainWindow : Window
             or OperationCanceledException)
         {
             // The disconnected model is intentionally fail-closed.
+        }
+    }
+
+    private void OnClosing(object? sender, CancelEventArgs e)
+    {
+        bool exitRequested = System.Windows.Application.Current is App app && app.ExitRequested;
+        if (WindowLifecyclePolicy.Decide(exitRequested) == WindowCloseDecision.Hide)
+        {
+            e.Cancel = true;
+            Hide();
         }
     }
 }
