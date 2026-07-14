@@ -13,7 +13,7 @@ public sealed class SetupCommandRunnerTests
         int exitCode = await runner.RunAsync(["install"], CancellationToken.None);
 
         Assert.Equal(0, exitCode);
-        Assert.Equal(["copy", "sid:S-1-5-21-test", "service-install", "shortcut-install"], platform.Operations);
+        Assert.Equal(["service-prepare", "copy", "sid:S-1-5-21-test", "service-install", "shortcut-install"], platform.Operations);
     }
 
     [Fact]
@@ -69,6 +69,7 @@ public sealed class SetupCommandRunnerTests
 
         public string CurrentUserSid => "S-1-5-21-test";
 
+        public Task PrepareServiceForInstallAsync(CancellationToken cancellationToken) => AddAsync("service-prepare");
         public Task CopyPayloadAsync(CancellationToken cancellationToken) => AddAsync("copy");
         public Task WriteAuthorizedUserSidAsync(string sid, CancellationToken cancellationToken) => AddAsync($"sid:{sid}");
         public Task InstallServiceAsync(CancellationToken cancellationToken) => AddAsync("service-install");

@@ -14,9 +14,33 @@ public sealed class WindowsSetupPlatform : ISetupPlatform
         Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
         Environment.GetFolderPath(Environment.SpecialFolder.Startup));
+    private readonly ISetupServiceControl serviceControl;
+
+    public WindowsSetupPlatform(ISetupServiceControl? serviceControl = null)
+    {
+        this.serviceControl = serviceControl ?? new ScSetupServiceControl();
+    }
 
     public string CurrentUserSid => WindowsIdentity.GetCurrent().User?.Value
         ?? throw new InvalidOperationException("The installing user's SID is unavailable.");
+
+    public async Task PrepareServiceForInstallAsync(CancellationToken cancellationToken)
+    {
+        if (!await serviceControl.ExistsAsync(ServiceName, cancellationToken))
+        {
+            return;
+        }
+
+        await serviceControl.RunAsync(
+            ["stop", ServiceName],
+            [ServiceNotActive],
+            cancellationToken);
+        await serviceControl.WaitForStateAsync(
+            ServiceName,
+            SetupServiceState.Stopped,
+            TimeSpan.FromSeconds(30),
+            cancellationToken);
+    }
 
     public async Task CopyPayloadAsync(CancellationToken cancellationToken)
     {
@@ -47,12 +71,23 @@ public sealed class WindowsSetupPlatform : ISetupPlatform
     public async Task InstallServiceAsync(CancellationToken cancellationToken)
     {
         string serviceExecutable = Path.Combine(paths.InstallDirectory, "OpenSynapse.Service.exe");
-        await RunScAsync(
-            ["create", ServiceName, "binPath=", serviceExecutable, "start=", "auto", "obj=", "LocalSystem", "DisplayName=", "OpenSynapse Service"],
+        bool serviceExists = await serviceControl.ExistsAsync(ServiceName, cancellationToken);
+        await serviceControl.RunAsync(
+            [serviceExists ? "config" : "create", ServiceName, "binPath=", $"\"{serviceExecutable}\"", "start=", "auto", "obj=", "LocalSystem", "DisplayName=", "OpenSynapse Service"],
             Array.Empty<int>(),
             cancellationToken);
-        await RunScAsync(["description", ServiceName, "OpenSynapse hardware control and profile service"], Array.Empty<int>(), cancellationToken);
-        await RunScAsync(["start", ServiceName], Array.Empty<int>(), cancellationToken);
+        await serviceControl.RunAsync(["description", ServiceName, "OpenSynapse hardware control and profile service"], Array.Empty<int>(), cancellationToken);
+        await serviceControl.RunAsync(
+            ["failure", ServiceName, "reset=", "86400", "actions=", "restart/5000/restart/15000/restart/60000"],
+            Array.Empty<int>(),
+            cancellationToken);
+        await serviceControl.RunAsync(["failureflag", ServiceName, "1"], Array.Empty<int>(), cancellationToken);
+        await serviceControl.RunAsync(["start", ServiceName], Array.Empty<int>(), cancellationToken);
+        await serviceControl.WaitForStateAsync(
+            ServiceName,
+            SetupServiceState.Running,
+            TimeSpan.FromSeconds(30),
+            cancellationToken);
     }
 
     public async Task InstallStartupShortcutAsync(CancellationToken cancellationToken)
@@ -72,8 +107,19 @@ public sealed class WindowsSetupPlatform : ISetupPlatform
 
     public async Task RemoveServiceAsync(CancellationToken cancellationToken)
     {
-        await RunScAsync(["stop", ServiceName], [ServiceDoesNotExist, ServiceNotActive], cancellationToken);
-        await RunScAsync(["delete", ServiceName], [ServiceDoesNotExist], cancellationToken);
+        if (!await serviceControl.ExistsAsync(ServiceName, cancellationToken))
+        {
+            return;
+        }
+
+        await serviceControl.RunAsync(["stop", ServiceName], [ServiceDoesNotExist, ServiceNotActive], cancellationToken);
+        await serviceControl.WaitForStateAsync(
+            ServiceName,
+            SetupServiceState.Stopped,
+            TimeSpan.FromSeconds(30),
+            cancellationToken);
+        await serviceControl.RunAsync(["delete", ServiceName], [ServiceDoesNotExist], cancellationToken);
+        await serviceControl.WaitForDeletionAsync(ServiceName, TimeSpan.FromSeconds(30), cancellationToken);
     }
 
     public async Task StopTrayAsync(CancellationToken cancellationToken)
@@ -171,31 +217,4 @@ public sealed class WindowsSetupPlatform : ISetupPlatform
         }
     }
 
-    private static async Task RunScAsync(
-        IReadOnlyList<string> arguments,
-        int[] toleratedExitCodes,
-        CancellationToken cancellationToken)
-    {
-        ProcessStartInfo startInfo = new("sc.exe")
-        {
-            UseShellExecute = false,
-            RedirectStandardError = true,
-            RedirectStandardOutput = true,
-            CreateNoWindow = true,
-        };
-        foreach (string argument in arguments)
-        {
-            startInfo.ArgumentList.Add(argument);
-        }
-
-        using Process process = Process.Start(startInfo)
-            ?? throw new InvalidOperationException("Could not start Windows Service Control.");
-        await process.WaitForExitAsync(cancellationToken);
-        if (process.ExitCode != 0 && !toleratedExitCodes.Contains(process.ExitCode))
-        {
-            string error = await process.StandardError.ReadToEndAsync(cancellationToken);
-            string output = await process.StandardOutput.ReadToEndAsync(cancellationToken);
-            throw new InvalidOperationException($"Service Control failed ({process.ExitCode}): {error}{output}".Trim());
-        }
-    }
 }

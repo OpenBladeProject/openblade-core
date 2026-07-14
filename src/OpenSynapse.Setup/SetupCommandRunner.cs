@@ -3,6 +3,7 @@ namespace OpenSynapse.Setup;
 public interface ISetupPlatform
 {
     string CurrentUserSid { get; }
+    Task PrepareServiceForInstallAsync(CancellationToken cancellationToken);
     Task CopyPayloadAsync(CancellationToken cancellationToken);
     Task WriteAuthorizedUserSidAsync(string sid, CancellationToken cancellationToken);
     Task InstallServiceAsync(CancellationToken cancellationToken);
@@ -26,6 +27,7 @@ public sealed class SetupCommandRunner(ISetupPlatform platform)
 
         if (command == SetupCommand.Install)
         {
+            await platform.PrepareServiceForInstallAsync(cancellationToken);
             await platform.CopyPayloadAsync(cancellationToken);
             await platform.WriteAuthorizedUserSidAsync(platform.CurrentUserSid, cancellationToken);
             await platform.InstallServiceAsync(cancellationToken);
