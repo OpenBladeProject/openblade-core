@@ -89,8 +89,8 @@ public static partial class WindowsHidEnumerator
             .Where(device =>
                 TargetBladeDevice.Matches(device.VendorId, device.ProductId)
                 && TargetBladeDevice.CanCarryProtocolReport(device.FeatureReportByteLength)
-                && device.UsagePage == 0x0001
-                && device.Usage == 0x0002)
+                && device.UsagePage == TargetBladeDevice.UsagePage
+                && device.Usage == TargetBladeDevice.Usage)
             .ToArray();
     }
 

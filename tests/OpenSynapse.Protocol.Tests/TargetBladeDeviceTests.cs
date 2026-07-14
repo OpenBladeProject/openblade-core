@@ -1,9 +1,18 @@
 using OpenSynapse.Protocol;
+using System.Reflection;
 
 namespace OpenSynapse.Protocol.Tests;
 
 public sealed class TargetBladeDeviceTests
 {
+    private static readonly HidInterfaceInfo ExactInterface = new(
+        "approved",
+        0x1532,
+        0x02E0,
+        0x0001,
+        0x0002,
+        91);
+
     [Theory]
     [InlineData(0x1532, 0x02E0, true)]
     [InlineData(0x1532, 0x029F, false)]
@@ -38,5 +47,50 @@ public sealed class TargetBladeDeviceTests
                 [approved, wrongVendor, wrongProduct, wrongLength, wrongUsagePage, wrongUsage]);
 
         Assert.Equal([approved], selected);
+    }
+
+    [Fact]
+    public void IsExactInteractiveValidationTarget_AcceptsExactTarget()
+    {
+        Assert.True(TargetBladeDevice.IsExactInteractiveValidationTarget(
+            "RZ09-0581",
+            ExactInterface));
+    }
+
+    public static TheoryData<string?, HidInterfaceInfo> InexactTargets => new()
+    {
+        { "rz09-0581", ExactInterface },
+        { null, ExactInterface },
+        { "RZ09-0581", ExactInterface with { VendorId = 0x1234 } },
+        { "RZ09-0581", ExactInterface with { ProductId = 0x029F } },
+        { "RZ09-0581", ExactInterface with { UsagePage = 0x000C } },
+        { "RZ09-0581", ExactInterface with { Usage = 0x0001 } },
+        { "RZ09-0581", ExactInterface with { FeatureReportByteLength = 90 } },
+    };
+
+    [Theory]
+    [MemberData(nameof(InexactTargets))]
+    public void IsExactInteractiveValidationTarget_RejectsAnyInexactField(
+        string? model,
+        HidInterfaceInfo interfaceInfo)
+    {
+        Assert.False(TargetBladeDevice.IsExactInteractiveValidationTarget(
+            model,
+            interfaceInfo));
+    }
+
+    [Fact]
+    public void IsExactInteractiveValidationTarget_RejectsNullInterfaceWithNullableContract()
+    {
+        Assert.False(TargetBladeDevice.IsExactInteractiveValidationTarget(
+            TargetBladeDevice.Model,
+            null));
+
+        ParameterInfo interfaceParameter = typeof(TargetBladeDevice)
+            .GetMethod(nameof(TargetBladeDevice.IsExactInteractiveValidationTarget))!
+            .GetParameters()[1];
+        NullabilityInfo nullability = new NullabilityInfoContext().Create(interfaceParameter);
+
+        Assert.Equal(NullabilityState.Nullable, nullability.ReadState);
     }
 }
