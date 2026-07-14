@@ -1,0 +1,22 @@
+{
+  "model": "Razer Blade 16 RZ09-0581",
+  "vid": "1532",
+  "pid": "02E0",
+  "bios": "3.01",
+  "synapseVersion": "4.0.695",
+  "usbPcapRoot": 3,
+  "usbDeviceAddress": 2,
+  "rawCapture": "opensynapse-performance-full-power.pcap",
+  "rawCaptureCommitted": false,
+  "actions": [
+    { "action": "plugged-in-silent", "inputAtUtc": "2026-07-14T02:04:16.237Z", "visuallyConfirmed": true },
+    { "action": "plugged-in-balanced-after-silent", "inputAtUtc": "2026-07-14T02:04:26.302Z", "visuallyConfirmed": true },
+    { "action": "plugged-in-performance", "inputAtUtc": "2026-07-14T02:04:37.664Z", "visuallyConfirmed": true },
+    { "action": "plugged-in-balanced-after-performance", "inputAtUtc": "2026-07-14T02:04:51.244Z", "visuallyConfirmed": true }
+  ],
+  "notes": [
+    "Raw PCAP remains outside the repository.",
+    "The OEM full-power adapter was connected before this session.",
+    "Each selected card showed the green active border before Balanced was restored."
+  ]
+}

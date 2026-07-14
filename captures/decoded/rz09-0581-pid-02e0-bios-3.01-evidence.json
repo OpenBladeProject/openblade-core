@@ -1,0 +1,194 @@
+{
+  "schemaVersion": 1,
+  "device": {
+    "model": "RZ09-0581",
+    "vendorId": "1532",
+    "productId": "02E0",
+    "biosVersion": "3.01"
+  },
+  "transport": {
+    "interfaceNumber": 2,
+    "usagePage": "0001",
+    "usage": "0002",
+    "windowsFeatureReportBytes": 91,
+    "usbEnvelopeBytes": 90,
+    "reportId": 0
+  },
+  "captureSources": [
+    {
+      "id": "main",
+      "fileName": "opensynapse-synapse-session.pcap",
+      "sha256": "143387CCE493276DADCA968C8226C5ECFADD1CD8092D139280895AA23FF98041"
+    },
+    {
+      "id": "performance-full-power",
+      "fileName": "opensynapse-performance-full-power.pcap",
+      "sha256": "E15A35D0A0072BD0E3DC84581F3E87B402B84021C2358CEB69AE8B83BD9106E4"
+    }
+  ],
+  "frameProvenance": {
+    "performance-silent": { "capture": "performance-full-power", "setFrames": [729, 733, 737], "getResponseFrames": [732, 736, 740] },
+    "performance-balanced": { "capture": "performance-full-power", "setFrames": [825, 829, 833, 1059, 1063, 1067], "getResponseFrames": [828, 832, 836, 1062, 1066, 1070] },
+    "performance-performance": { "capture": "performance-full-power", "setFrames": [937, 941, 945], "getResponseFrames": [940, 944, 948] },
+    "fan-fixed-3500": { "capture": "main", "setFrames": [4965, 4969], "getResponseFrames": [4968, 4972] },
+    "fan-maximum-5400": { "capture": "main", "setFrames": [5103, 5107], "getResponseFrames": [5106, 5110] },
+    "fan-auto": { "capture": "main", "setFrames": [5351, 5355], "getResponseFrames": [5354, 5358] },
+    "battery-limit-50": { "capture": "main", "setFrames": [6097], "getResponseFrames": [6100] },
+    "battery-limit-55": { "capture": "main", "setFrames": [6069], "getResponseFrames": [6072] },
+    "battery-limit-60": { "capture": "main", "setFrames": [6049], "getResponseFrames": [6052] },
+    "battery-limit-65": { "capture": "main", "setFrames": [6027], "getResponseFrames": [6030] },
+    "battery-limit-70": { "capture": "main", "setFrames": [6007], "getResponseFrames": [6010] },
+    "battery-limit-75": { "capture": "main", "setFrames": [5827], "getResponseFrames": [5830] },
+    "battery-limit-80": { "capture": "main", "setFrames": [6211, 6885], "getResponseFrames": [6214, 6888], "independentQueryFrames": [3173, 3176] },
+    "battery-protection-off": { "capture": "main", "setFrames": [6673], "getResponseFrames": [6676] },
+    "charge-to-100-enable": { "capture": "main", "setFrames": [6335], "getResponseFrames": [6340], "independentQueryFrames": [6497, 6500] },
+    "charge-to-100-cancel": { "capture": "main", "setFrames": [6501], "getResponseFrames": [6504], "independentQueryFrames": [6677, 6680] },
+    "lighting-brightness-49": { "capture": "main", "setFrames": [11265], "getResponseFrames": [11268] },
+    "lighting-brightness-100": { "capture": "main", "setFrames": [11635, 11871], "getResponseFrames": [11638, 11874] },
+    "lighting-off": { "capture": "main", "setFrames": [11747], "getResponseFrames": [11750] }
+  },
+  "actions": [
+    {
+      "action": "performance-silent",
+      "commands": [
+        { "class": "07", "id": "8C", "payloadHex": "0000", "expectedStatus": "02", "expectedPayloadHex": "1111", "semanticStatus": "preflight-purpose-unresolved" },
+        { "class": "0D", "id": "02", "payloadHex": "01010500", "expectedStatus": "02", "expectedPayloadHex": "01010500" },
+        { "class": "0D", "id": "02", "payloadHex": "01020500", "expectedStatus": "02", "expectedPayloadHex": "01020500" }
+      ],
+      "gates": { "captured": true, "decoded": false, "applied": false, "readBack": false, "restored": false }
+    },
+    {
+      "action": "performance-balanced",
+      "commands": [
+        { "class": "07", "id": "8C", "payloadHex": "0000", "expectedStatus": "02", "expectedPayloadHex": "1111", "semanticStatus": "preflight-purpose-unresolved" },
+        { "class": "0D", "id": "02", "payloadHex": "01010000", "expectedStatus": "02", "expectedPayloadHex": "01010000" },
+        { "class": "0D", "id": "02", "payloadHex": "01020000", "expectedStatus": "02", "expectedPayloadHex": "01020000" }
+      ],
+      "gates": { "captured": true, "decoded": false, "applied": false, "readBack": false, "restored": false }
+    },
+    {
+      "action": "performance-performance",
+      "commands": [
+        { "class": "07", "id": "8C", "payloadHex": "0000", "expectedStatus": "02", "expectedPayloadHex": "1111", "semanticStatus": "preflight-purpose-unresolved" },
+        { "class": "0D", "id": "02", "payloadHex": "01010200", "expectedStatus": "02", "expectedPayloadHex": "01010200" },
+        { "class": "0D", "id": "02", "payloadHex": "01020200", "expectedStatus": "02", "expectedPayloadHex": "01020200" }
+      ],
+      "gates": { "captured": true, "decoded": false, "applied": false, "readBack": false, "restored": false }
+    },
+    {
+      "action": "fan-fixed-3500",
+      "commands": [
+        { "class": "0D", "id": "01", "payloadHex": "010123", "expectedStatus": "02", "expectedPayloadHex": "010123" },
+        { "class": "0D", "id": "01", "payloadHex": "010223", "expectedStatus": "02", "expectedPayloadHex": "010223" }
+      ],
+      "gates": { "captured": true, "decoded": true, "applied": false, "readBack": false, "restored": false }
+    },
+    {
+      "action": "fan-maximum-5400",
+      "commands": [
+        { "class": "0D", "id": "01", "payloadHex": "010136", "expectedStatus": "02", "expectedPayloadHex": "010136" },
+        { "class": "0D", "id": "01", "payloadHex": "010236", "expectedStatus": "02", "expectedPayloadHex": "010236" }
+      ],
+      "gates": { "captured": true, "decoded": true, "applied": false, "readBack": false, "restored": false }
+    },
+    {
+      "action": "fan-auto",
+      "commands": [],
+      "semanticStatus": "not-a-standalone-command; Synapse reapplies the active 0D/02 performance selector values",
+      "gates": { "captured": true, "decoded": false, "applied": false, "readBack": false, "restored": false }
+    },
+    {
+      "action": "battery-limit-50",
+      "commands": [{ "class": "07", "id": "12", "payloadHex": "B2", "expectedStatus": "02", "expectedPayloadHex": "B2" }],
+      "readbackCommand": { "class": "07", "id": "92", "payloadHex": "00", "responseEncoding": "enabled-bit OR percentage" },
+      "gates": { "captured": true, "decoded": true, "applied": false, "readBack": false, "restored": false }
+    },
+    {
+      "action": "battery-limit-55",
+      "commands": [{ "class": "07", "id": "12", "payloadHex": "B7", "expectedStatus": "02", "expectedPayloadHex": "B7" }],
+      "readbackCommand": { "class": "07", "id": "92", "payloadHex": "00", "responseEncoding": "enabled-bit OR percentage" },
+      "gates": { "captured": true, "decoded": true, "applied": false, "readBack": false, "restored": false }
+    },
+    {
+      "action": "battery-limit-60",
+      "commands": [{ "class": "07", "id": "12", "payloadHex": "BC", "expectedStatus": "02", "expectedPayloadHex": "BC" }],
+      "readbackCommand": { "class": "07", "id": "92", "payloadHex": "00", "responseEncoding": "enabled-bit OR percentage" },
+      "gates": { "captured": true, "decoded": true, "applied": false, "readBack": false, "restored": false }
+    },
+    {
+      "action": "battery-limit-65",
+      "commands": [{ "class": "07", "id": "12", "payloadHex": "C1", "expectedStatus": "02", "expectedPayloadHex": "C1" }],
+      "readbackCommand": { "class": "07", "id": "92", "payloadHex": "00", "responseEncoding": "enabled-bit OR percentage" },
+      "gates": { "captured": true, "decoded": true, "applied": false, "readBack": false, "restored": false }
+    },
+    {
+      "action": "battery-limit-70",
+      "commands": [{ "class": "07", "id": "12", "payloadHex": "C6", "expectedStatus": "02", "expectedPayloadHex": "C6" }],
+      "readbackCommand": { "class": "07", "id": "92", "payloadHex": "00", "responseEncoding": "enabled-bit OR percentage" },
+      "gates": { "captured": true, "decoded": true, "applied": false, "readBack": false, "restored": false }
+    },
+    {
+      "action": "battery-limit-75",
+      "commands": [{ "class": "07", "id": "12", "payloadHex": "CB", "expectedStatus": "02", "expectedPayloadHex": "CB" }],
+      "readbackCommand": { "class": "07", "id": "92", "payloadHex": "00", "responseEncoding": "enabled-bit OR percentage" },
+      "gates": { "captured": true, "decoded": true, "applied": false, "readBack": false, "restored": false }
+    },
+    {
+      "action": "battery-limit-80",
+      "commands": [{ "class": "07", "id": "12", "payloadHex": "D0", "expectedStatus": "02", "expectedPayloadHex": "D0" }],
+      "readbackCommand": { "class": "07", "id": "92", "payloadHex": "00", "responseEncoding": "enabled-bit OR percentage" },
+      "gates": { "captured": true, "decoded": true, "applied": false, "readBack": false, "restored": false }
+    },
+    {
+      "action": "battery-protection-off",
+      "commands": [{ "class": "07", "id": "12", "payloadHex": "50", "expectedStatus": "02", "expectedPayloadHex": "50" }],
+      "readbackCommand": { "class": "07", "id": "92", "payloadHex": "00", "responseEncoding": "enabled-bit OR percentage" },
+      "gates": { "captured": true, "decoded": true, "applied": false, "readBack": false, "restored": false }
+    },
+    {
+      "action": "charge-to-100-enable",
+      "commands": [{ "class": "07", "id": "0F", "payloadHex": "04", "expectedStatus": "02", "expectedPayloadHex": "04" }],
+      "readbackCommand": { "class": "07", "id": "8F", "payloadHex": "00", "expectedPayloadHex": "04" },
+      "gates": { "captured": true, "decoded": true, "applied": false, "readBack": false, "restored": false }
+    },
+    {
+      "action": "charge-to-100-cancel",
+      "commands": [{ "class": "07", "id": "0F", "payloadHex": "00", "expectedStatus": "02", "expectedPayloadHex": "00" }],
+      "readbackCommand": { "class": "07", "id": "8F", "payloadHex": "00", "expectedPayloadHex": "00" },
+      "gates": { "captured": true, "decoded": true, "applied": false, "readBack": false, "restored": false }
+    },
+    {
+      "action": "lighting-brightness-49",
+      "commands": [{ "class": "03", "id": "03", "payloadHex": "01057D", "expectedStatus": "02", "expectedPayloadHex": "01057D" }],
+      "gates": { "captured": true, "decoded": true, "applied": false, "readBack": false, "restored": false }
+    },
+    {
+      "action": "lighting-brightness-100",
+      "commands": [{ "class": "03", "id": "03", "payloadHex": "0105FF", "expectedStatus": "02", "expectedPayloadHex": "0105FF" }],
+      "gates": { "captured": true, "decoded": true, "applied": false, "readBack": false, "restored": false }
+    },
+    {
+      "action": "lighting-off",
+      "commands": [{ "class": "03", "id": "03", "payloadHex": "010500", "expectedStatus": "02", "expectedPayloadHex": "010500" }],
+      "gates": { "captured": true, "decoded": true, "applied": false, "readBack": false, "restored": false }
+    }
+  ],
+  "unsupportedObservations": [
+    {
+      "feature": "keyboard-effects-and-color",
+      "reason": "Synapse renders effects as continuous 374-byte feature reports on USB interface 3. No GET_REPORT readback was observed and this collection is not admitted by the 91-byte control-interface gate."
+    },
+    {
+      "feature": "battery-profile-ui-selection",
+      "reason": "The Battery Saver and Balanced profile-card clicks produced no distinct setter beyond recurring telemetry reads."
+    },
+    {
+      "feature": "fan-rpm-telemetry",
+      "reason": "0D/88 payload 01 <selector> returns 01 <selector> <rpm/100>. It can corroborate a resulting speed but cannot independently read back fan mode or fixed target."
+    }
+  ],
+  "admission": {
+    "productionHashAdded": false,
+    "reason": "ACK echoes are not independent readback. No action has yet passed typed OpenSynapse apply, independent query/readback, and OpenSynapse restoration."
+  }
+}

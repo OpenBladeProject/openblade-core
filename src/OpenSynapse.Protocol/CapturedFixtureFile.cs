@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace OpenSynapse.Protocol;
 
@@ -8,6 +9,7 @@ public static class CapturedFixtureFile
     private static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web)
     {
         PropertyNameCaseInsensitive = true,
+        UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow,
     };
 
     public static DeviceIdentity TargetDevice { get; } = new(
@@ -40,6 +42,8 @@ public static class CapturedFixtureFile
                 $"Fixture SHA-256 {Convert.ToHexString(hash)} is not present in the code-controlled trusted hash registry.");
         }
 
+        RejectDuplicateJsonMembers(fixtureBytes);
+
         CapturedCommandFixture[]? fixtures =
             JsonSerializer.Deserialize<CapturedCommandFixture[]>(fixtureBytes, SerializerOptions);
 
@@ -49,5 +53,38 @@ public static class CapturedFixtureFile
         }
 
         return DeviceCommandCatalog.Create(TargetDevice, fixtures);
+    }
+
+    private static void RejectDuplicateJsonMembers(ReadOnlyMemory<byte> json)
+    {
+        using JsonDocument document = JsonDocument.Parse(json);
+        RejectDuplicateJsonMembers(document.RootElement);
+    }
+
+    private static void RejectDuplicateJsonMembers(JsonElement element)
+    {
+        if (element.ValueKind == JsonValueKind.Object)
+        {
+            HashSet<string> propertyNames = new(StringComparer.OrdinalIgnoreCase);
+            foreach (JsonProperty property in element.EnumerateObject())
+            {
+                if (!propertyNames.Add(property.Name))
+                {
+                    throw new JsonException($"Duplicate JSON member '{property.Name}'.");
+                }
+
+                RejectDuplicateJsonMembers(property.Value);
+            }
+
+            return;
+        }
+
+        if (element.ValueKind == JsonValueKind.Array)
+        {
+            foreach (JsonElement item in element.EnumerateArray())
+            {
+                RejectDuplicateJsonMembers(item);
+            }
+        }
     }
 }

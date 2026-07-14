@@ -1,3 +1,5 @@
+using System.Collections.Immutable;
+
 namespace OpenSynapse.Protocol;
 
 public sealed record DeviceIdentity(
@@ -18,10 +20,24 @@ public sealed record CapturedCommandFixture(
     bool ReadBack,
     bool Restored);
 
-public sealed record RazerCommandDefinition(
-    byte CommandClass,
-    byte CommandId,
-    byte[] Payload);
+public sealed record RazerCommandDefinition
+{
+    public RazerCommandDefinition(
+        byte commandClass,
+        byte commandId,
+        IEnumerable<byte> payload)
+    {
+        CommandClass = commandClass;
+        CommandId = commandId;
+        Payload = payload.ToImmutableArray();
+    }
+
+    public byte CommandClass { get; }
+
+    public byte CommandId { get; }
+
+    public ImmutableArray<byte> Payload { get; }
+}
 
 public sealed class UnvalidatedCommandException : Exception
 {
@@ -51,6 +67,12 @@ public sealed class DeviceCommandCatalog
 
         foreach (CapturedCommandFixture fixture in fixtures)
         {
+            if (string.IsNullOrWhiteSpace(fixture.Action))
+            {
+                throw new UnvalidatedCommandException(
+                    "A captured command has a null or blank action.");
+            }
+
             bool allGatesPassed = fixture.Captured
                 && fixture.Decoded
                 && fixture.Applied
@@ -63,18 +85,28 @@ public sealed class DeviceCommandCatalog
                     $"Command '{fixture.Action}' has not passed every validation gate for the exact target device.");
             }
 
+            if (fixture.Payload is null)
+            {
+                throw new UnvalidatedCommandException(
+                    $"Command '{fixture.Action}' has a null payload.");
+            }
+
             if (fixture.Payload.Length > RazerReport.MaximumPayloadLength)
             {
                 throw new UnvalidatedCommandException(
                     $"Command '{fixture.Action}' has an oversized payload.");
             }
 
-            commands.Add(
-                fixture.Action,
-                new RazerCommandDefinition(
-                    fixture.CommandClass,
-                    fixture.CommandId,
-                    fixture.Payload.ToArray()));
+            if (!commands.TryAdd(
+                    fixture.Action,
+                    new RazerCommandDefinition(
+                        fixture.CommandClass,
+                        fixture.CommandId,
+                        fixture.Payload)))
+            {
+                throw new UnvalidatedCommandException(
+                    $"Command action '{fixture.Action}' is duplicated.");
+            }
         }
 
         return new DeviceCommandCatalog(commands);

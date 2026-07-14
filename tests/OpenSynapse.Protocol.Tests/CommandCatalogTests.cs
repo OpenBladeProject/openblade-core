@@ -1,4 +1,5 @@
 using OpenSynapse.Protocol;
+using System.Collections.Immutable;
 
 namespace OpenSynapse.Protocol.Tests;
 
@@ -41,6 +42,60 @@ public sealed class CommandCatalogTests
         Assert.Equal(0x0D, command.CommandClass);
         Assert.Equal(0x02, command.CommandId);
         Assert.Equal(new byte[] { 0x01, 0x01, 0x00, 0x00 }, command.Payload);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void Create_RejectsNullOrBlankAction(string? action)
+    {
+        CapturedCommandFixture fixture = CreateFixture() with { Action = action! };
+
+        Assert.Throws<UnvalidatedCommandException>(() =>
+            DeviceCommandCatalog.Create(Target, [fixture]));
+    }
+
+    [Fact]
+    public void Create_RejectsNullDevice()
+    {
+        CapturedCommandFixture fixture = CreateFixture() with { Device = null! };
+
+        Assert.Throws<UnvalidatedCommandException>(() =>
+            DeviceCommandCatalog.Create(Target, [fixture]));
+    }
+
+    [Fact]
+    public void Create_RejectsNullPayload()
+    {
+        CapturedCommandFixture fixture = CreateFixture() with { Payload = null! };
+
+        Assert.Throws<UnvalidatedCommandException>(() =>
+            DeviceCommandCatalog.Create(Target, [fixture]));
+    }
+
+    [Fact]
+    public void Create_RejectsDuplicateActionsWithValidationException()
+    {
+        CapturedCommandFixture fixture = CreateFixture();
+
+        Assert.Throws<UnvalidatedCommandException>(() =>
+            DeviceCommandCatalog.Create(Target, [fixture, fixture]));
+    }
+
+    [Fact]
+    public void TryGet_DoesNotExposeMutablePayloadOrSourceArray()
+    {
+        byte[] sourcePayload = [0x01, 0x01, 0x00, 0x00];
+        DeviceCommandCatalog catalog = DeviceCommandCatalog.Create(
+            Target,
+            [CreateFixture() with { Payload = sourcePayload }]);
+
+        sourcePayload[0] = 0xFF;
+        Assert.True(catalog.TryGet("performance.balanced", out RazerCommandDefinition? command));
+        Assert.NotNull(command);
+        Assert.IsType<ImmutableArray<byte>>(command.Payload);
+        Assert.Equal(0x01, command.Payload[0]);
     }
 
     private static CapturedCommandFixture CreateFixture() => new(

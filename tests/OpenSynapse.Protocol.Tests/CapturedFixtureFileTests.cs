@@ -69,6 +69,39 @@ public sealed class CapturedFixtureFileTests : IDisposable
             CapturedFixtureFile.LoadCatalogAsync(_path, registry, CancellationToken.None));
     }
 
+    [Fact]
+    public async Task LoadCatalogAsync_RejectsUnknownJsonMembers()
+    {
+        await WriteValidatedFixtureAsync();
+        string json = await File.ReadAllTextAsync(_path);
+        json = json.Replace(
+            "\"captured\":true",
+            "\"unexpected\":true,\"captured\":true",
+            StringComparison.OrdinalIgnoreCase);
+        await File.WriteAllTextAsync(_path, json);
+        TrustedFixtureHashRegistry registry = RegistryForCurrentFile();
+
+        await Assert.ThrowsAsync<JsonException>(() =>
+            CapturedFixtureFile.LoadCatalogAsync(_path, registry, CancellationToken.None));
+    }
+
+    [Theory]
+    [InlineData("\"Action\":\"performance.balanced\"", "\"action\":\"other\",\"Action\":\"performance.balanced\"")]
+    [InlineData("\"Captured\":true", "\"captured\":false,\"Captured\":true")]
+    public async Task LoadCatalogAsync_RejectsDuplicateJsonMembers(
+        string originalMember,
+        string duplicateMembers)
+    {
+        await WriteValidatedFixtureAsync();
+        string json = await File.ReadAllTextAsync(_path);
+        json = json.Replace(originalMember, duplicateMembers, StringComparison.Ordinal);
+        await File.WriteAllTextAsync(_path, json);
+        TrustedFixtureHashRegistry registry = RegistryForCurrentFile();
+
+        await Assert.ThrowsAsync<JsonException>(() =>
+            CapturedFixtureFile.LoadCatalogAsync(_path, registry, CancellationToken.None));
+    }
+
     private async Task WriteValidatedFixtureAsync()
     {
         CapturedCommandFixture fixture = new(
