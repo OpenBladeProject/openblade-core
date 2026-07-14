@@ -207,6 +207,24 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     }
 
     [Fact]
+    public async Task EnableFullCharge_RejectsFreshUnplugBeforeRequestIsHandled()
+    {
+        TestContext context = CreateContext(providerAvailable: false);
+        context.Telemetry.Current = CreateTelemetry(PowerSource.Battery, batteryPercent: 79);
+
+        ControlOperationResult result = await context.Runtime.SetFullChargeOverrideAsync(
+            true,
+            CancellationToken.None);
+
+        ServiceStatusSnapshot status = context.Runtime.GetStatus();
+        Assert.Equal(ControlOperationStatus.Failed, result.Status);
+        Assert.False(status.FullChargeOverride);
+        Assert.False(status.DesiredState.Battery.TemporaryFullCharge);
+        Assert.Equal(PowerSource.Battery, status.Telemetry.PowerSource);
+        Assert.Equal(79, status.Telemetry.BatteryPercent);
+    }
+
+    [Fact]
     public async Task CancelFullCharge_RestoresConfiguredChargeLimitIntent()
     {
         TestContext context = CreateContext(providerAvailable: false);
@@ -221,6 +239,24 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         Assert.False(status.FullChargeOverride);
         Assert.False(status.DesiredState.Battery.TemporaryFullCharge);
         Assert.Equal(65, status.DesiredState.Battery.ChargeLimitPercent);
+    }
+
+    [Fact]
+    public async Task CancelFullCharge_UsesFreshTelemetryWhileHardwareIsBlocked()
+    {
+        TestContext context = CreateContext(providerAvailable: false);
+        await context.Runtime.SetFullChargeOverrideAsync(true, CancellationToken.None);
+        context.Telemetry.Current = CreateTelemetry(PowerSource.Battery, batteryPercent: 78);
+
+        ControlOperationResult result = await context.Runtime.SetFullChargeOverrideAsync(
+            false,
+            CancellationToken.None);
+
+        ServiceStatusSnapshot status = context.Runtime.GetStatus();
+        Assert.Equal(ControlOperationStatus.Blocked, result.Status);
+        Assert.False(status.FullChargeOverride);
+        Assert.Equal(PowerSource.Battery, status.Telemetry.PowerSource);
+        Assert.Equal(78, status.Telemetry.BatteryPercent);
     }
 
     [Fact]

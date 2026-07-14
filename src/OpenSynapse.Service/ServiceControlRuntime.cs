@@ -136,30 +136,41 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             },
             token);
 
-    public Task<ControlOperationResult> SetFullChargeOverrideAsync(
+    public async Task<ControlOperationResult> SetFullChargeOverrideAsync(
         bool enabled,
-        CancellationToken token) => ExecuteMutationAsync(
-            _ =>
+        CancellationToken token)
+    {
+        await operationGate.WaitAsync(token);
+        try
+        {
+            TelemetrySnapshot telemetry = telemetryProvider.Capture();
+            automation.ChangePowerSource(telemetry.PowerSource);
+
+            if (enabled && telemetry.PowerSource == PowerSource.Battery)
             {
-                if (enabled)
-                {
-                    if (automation.PowerSource == PowerSource.Battery)
-                    {
-                        throw new ArgumentException(
-                            "Temporary full charge can only be enabled while plugged in.",
-                            nameof(enabled));
-                    }
+                await ReconcileAsync(telemetry, intentStored: false, token);
+                return new ControlOperationResult(
+                    ControlOperationStatus.Failed,
+                    "The requested intent was rejected: Temporary full charge can only " +
+                    "be enabled while plugged in.");
+            }
 
-                    automation.EnableTemporaryFullCharge();
-                }
-                else
-                {
-                    automation.CancelTemporaryFullCharge();
-                }
+            if (enabled)
+            {
+                automation.EnableTemporaryFullCharge();
+            }
+            else
+            {
+                automation.CancelTemporaryFullCharge();
+            }
 
-                return Task.CompletedTask;
-            },
-            token);
+            return await ReconcileAsync(telemetry, intentStored: true, token);
+        }
+        finally
+        {
+            operationGate.Release();
+        }
+    }
 
     public async Task RefreshAsync(CancellationToken token)
     {
