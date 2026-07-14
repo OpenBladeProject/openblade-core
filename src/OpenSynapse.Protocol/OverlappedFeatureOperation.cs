@@ -124,24 +124,52 @@ internal interface IOverlappedFeatureNative
         NativeOperationToken operation);
 }
 
+internal interface ICancellationRegistrationFactory
+{
+    IDisposable Register(CancellationToken cancellationToken, Action callback);
+}
+
+internal sealed class CancellationRegistrationFactory : ICancellationRegistrationFactory
+{
+    internal static CancellationRegistrationFactory Instance { get; } = new();
+
+    private CancellationRegistrationFactory()
+    {
+    }
+
+    public IDisposable Register(CancellationToken cancellationToken, Action callback) =>
+        cancellationToken.Register(callback);
+}
+
 internal sealed class OverlappedFeatureOperation : IHidFeatureIo
 {
     private readonly IOverlappedFeatureNative native;
     private readonly Action<OverlappedFeatureOperationCheckpoint> checkpoint;
+    private readonly ICancellationRegistrationFactory registrationFactory;
 
     internal OverlappedFeatureOperation(IOverlappedFeatureNative native)
-        : this(native, static _ => { })
+        : this(native, static _ => { }, CancellationRegistrationFactory.Instance)
     {
     }
 
     internal OverlappedFeatureOperation(
         IOverlappedFeatureNative native,
         Action<OverlappedFeatureOperationCheckpoint> checkpoint)
+        : this(native, checkpoint, CancellationRegistrationFactory.Instance)
+    {
+    }
+
+    internal OverlappedFeatureOperation(
+        IOverlappedFeatureNative native,
+        Action<OverlappedFeatureOperationCheckpoint> checkpoint,
+        ICancellationRegistrationFactory registrationFactory)
     {
         ArgumentNullException.ThrowIfNull(native);
         ArgumentNullException.ThrowIfNull(checkpoint);
+        ArgumentNullException.ThrowIfNull(registrationFactory);
         this.native = native;
         this.checkpoint = checkpoint;
+        this.registrationFactory = registrationFactory;
     }
 
     public Task<HidFeatureIoResult> ExecuteAsync(
@@ -159,25 +187,57 @@ internal sealed class OverlappedFeatureOperation : IHidFeatureIo
         }
 
         var operation = new NativeOperationToken(buffer, checkpoint);
-        CancellationTokenRegistration callerRegistration = default;
-        CancellationTokenRegistration deadlineRegistration = default;
+        IDisposable? callerRegistration = null;
+        IDisposable? deadlineRegistration = null;
         var state = new NativeOperationState(() =>
         {
-            callerRegistration.Dispose();
-            NotifyCheckpoint(OverlappedFeatureOperationCheckpoint.CallerRegistrationDisposed);
-            deadlineRegistration.Dispose();
-            NotifyCheckpoint(OverlappedFeatureOperationCheckpoint.DeadlineRegistrationDisposed);
+            DisposeRegistration(
+                callerRegistration,
+                OverlappedFeatureOperationCheckpoint.CallerRegistrationDisposed);
+            DisposeRegistration(
+                deadlineRegistration,
+                OverlappedFeatureOperationCheckpoint.DeadlineRegistrationDisposed);
             operation.Dispose();
         });
 
-        callerRegistration = callerCancellation.Register(
-            () => HandleCancellation(state, handle, operation, HidFeatureTermination.CallerCanceled));
-        deadlineRegistration = deadlineCancellation.Register(
-            () => HandleCancellation(state, handle, operation, HidFeatureTermination.DeadlineExpired));
+        try
+        {
+            callerRegistration = registrationFactory.Register(
+                callerCancellation,
+                () => HandleCancellation(
+                    state,
+                    handle,
+                    operation,
+                    HidFeatureTermination.CallerCanceled));
+            deadlineRegistration = registrationFactory.Register(
+                deadlineCancellation,
+                () => HandleCancellation(
+                    state,
+                    handle,
+                    operation,
+                    HidFeatureTermination.DeadlineExpired));
+        }
+        catch
+        {
+            DisposeRegistration(
+                callerRegistration,
+                OverlappedFeatureOperationCheckpoint.CallerRegistrationDisposed);
+            DisposeRegistration(
+                deadlineRegistration,
+                OverlappedFeatureOperationCheckpoint.DeadlineRegistrationDisposed);
+            DisposeOperation(operation);
+            throw;
+        }
 
         if (!state.TryBeginSubmission(out NativeUseLease submissionLease))
         {
-            operation.Dispose();
+            DisposeRegistration(
+                callerRegistration,
+                OverlappedFeatureOperationCheckpoint.CallerRegistrationDisposed);
+            DisposeRegistration(
+                deadlineRegistration,
+                OverlappedFeatureOperationCheckpoint.DeadlineRegistrationDisposed);
+            DisposeOperation(operation);
             throw new InvalidOperationException("The operation could not begin submission.");
         }
 
@@ -231,6 +291,39 @@ internal sealed class OverlappedFeatureOperation : IHidFeatureIo
         try
         {
             checkpoint(value);
+        }
+        catch
+        {
+        }
+    }
+
+    private void DisposeRegistration(
+        IDisposable? registration,
+        OverlappedFeatureOperationCheckpoint disposedCheckpoint)
+    {
+        if (registration is null)
+        {
+            return;
+        }
+
+        try
+        {
+            registration.Dispose();
+        }
+        catch
+        {
+        }
+        finally
+        {
+            NotifyCheckpoint(disposedCheckpoint);
+        }
+    }
+
+    private static void DisposeOperation(NativeOperationToken operation)
+    {
+        try
+        {
+            operation.Dispose();
         }
         catch
         {

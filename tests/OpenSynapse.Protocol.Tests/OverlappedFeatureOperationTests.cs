@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using System.Runtime.CompilerServices;
+using Microsoft.Win32.SafeHandles;
 using OpenSynapse.Protocol;
 
 namespace OpenSynapse.Protocol.Tests;
@@ -40,6 +41,102 @@ public sealed class OverlappedFeatureOperationTests
             null!, 1, new byte[91], CancellationToken.None, CancellationToken.None));
         await Assert.ThrowsAsync<ArgumentNullException>(() => operation.ExecuteAsync(
             CreateHandle(), 1, null!, CancellationToken.None, CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task CallerRegistrationFailure_ReleasesTokenInOrderWithoutTouchingBorrowedHandle()
+    {
+        var setupException = new InvalidOperationException("caller registration setup failed");
+        var registrationFactory = new ScriptedRegistrationFactory(
+            failureCall: 1,
+            setupException,
+            events: null,
+            throwOnDispose: false);
+        var native = new ScriptedNative();
+        var handle = new BorrowedHandleProbe();
+        var checkpoints = new List<OverlappedFeatureOperationCheckpoint>();
+        var operation = new OverlappedFeatureOperation(
+            native,
+            checkpoint =>
+            {
+                checkpoints.Add(checkpoint);
+                throw new InvalidOperationException("cleanup observer failure");
+            },
+            registrationFactory);
+
+        InvalidOperationException exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            operation.ExecuteAsync(
+                handle.Handle,
+                1,
+                new byte[91],
+                CancellationToken.None,
+                CancellationToken.None));
+
+        Assert.Same(setupException, exception);
+        Assert.Empty(registrationFactory.Registrations);
+        Assert.Equal(
+            [
+                OverlappedFeatureOperationCheckpoint.OverlappedReleased,
+                OverlappedFeatureOperationCheckpoint.PinReleased,
+            ],
+            checkpoints);
+        Assert.Equal(0, native.SubmitCalls);
+        Assert.Equal(0, native.CancelCalls);
+        Assert.False(handle.BoundDisposed);
+        Assert.False(handle.FileDisposed);
+    }
+
+    [Fact]
+    public async Task DeadlineRegistrationFailure_DisposesCallerThenTokenAndPreservesSetupException()
+    {
+        var setupException = new InvalidOperationException("deadline registration setup failed");
+        var events = new List<string>();
+        var registrationFactory = new ScriptedRegistrationFactory(
+            failureCall: 2,
+            setupException,
+            events,
+            throwOnDispose: true);
+        var native = new ScriptedNative();
+        var handle = new BorrowedHandleProbe();
+        var checkpoints = new List<OverlappedFeatureOperationCheckpoint>();
+        var operation = new OverlappedFeatureOperation(
+            native,
+            checkpoint =>
+            {
+                checkpoints.Add(checkpoint);
+                events.Add(checkpoint.ToString());
+            },
+            registrationFactory);
+
+        InvalidOperationException exception = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            operation.ExecuteAsync(
+                handle.Handle,
+                1,
+                new byte[91],
+                CancellationToken.None,
+                CancellationToken.None));
+
+        Assert.Same(setupException, exception);
+        Assert.Equal(1, Assert.Single(registrationFactory.Registrations).DisposeCalls);
+        Assert.Equal(
+            [
+                OverlappedFeatureOperationCheckpoint.CallerRegistrationDisposed,
+                OverlappedFeatureOperationCheckpoint.OverlappedReleased,
+                OverlappedFeatureOperationCheckpoint.PinReleased,
+            ],
+            checkpoints);
+        Assert.Equal(
+            [
+                "RegistrationDisposed",
+                "CallerRegistrationDisposed",
+                "OverlappedReleased",
+                "PinReleased",
+            ],
+            events);
+        Assert.Equal(0, native.SubmitCalls);
+        Assert.Equal(0, native.CancelCalls);
+        Assert.False(handle.BoundDisposed);
+        Assert.False(handle.FileDisposed);
     }
 
     [Theory]
@@ -490,6 +587,87 @@ public sealed class OverlappedFeatureOperationTests
 
     private static OpenedHidHandle CreateHandle() =>
         (OpenedHidHandle)RuntimeHelpers.GetUninitializedObject(typeof(OpenedHidHandle));
+
+    private sealed class BorrowedHandleProbe
+    {
+        public BorrowedHandleProbe()
+        {
+            var fileHandle = new SafeFileHandle(IntPtr.Zero, ownsHandle: false);
+            var boundHandle = (ThreadPoolBoundHandle)RuntimeHelpers.GetUninitializedObject(
+                typeof(ThreadPoolBoundHandle));
+            Handle = new OpenedHidHandle(
+                fileHandle,
+                boundHandle,
+                () => BoundDisposed = true,
+                () => FileDisposed = true);
+        }
+
+        public OpenedHidHandle Handle { get; }
+
+        public bool BoundDisposed { get; private set; }
+
+        public bool FileDisposed { get; private set; }
+    }
+
+    private sealed class ScriptedRegistrationFactory : ICancellationRegistrationFactory
+    {
+        private readonly int failureCall;
+        private readonly Exception setupException;
+        private readonly List<string>? events;
+        private readonly bool throwOnDispose;
+        private int calls;
+
+        public ScriptedRegistrationFactory(
+            int failureCall,
+            Exception setupException,
+            List<string>? events,
+            bool throwOnDispose)
+        {
+            this.failureCall = failureCall;
+            this.setupException = setupException;
+            this.events = events;
+            this.throwOnDispose = throwOnDispose;
+        }
+
+        public List<RegistrationProbe> Registrations { get; } = [];
+
+        public IDisposable Register(CancellationToken cancellationToken, Action callback)
+        {
+            int call = Interlocked.Increment(ref calls);
+            if (call == failureCall)
+            {
+                throw setupException;
+            }
+
+            var registration = new RegistrationProbe(events, throwOnDispose);
+            Registrations.Add(registration);
+            return registration;
+        }
+    }
+
+    private sealed class RegistrationProbe : IDisposable
+    {
+        private readonly List<string>? events;
+        private readonly bool throwOnDispose;
+
+        public RegistrationProbe(List<string>? events, bool throwOnDispose)
+        {
+            this.events = events;
+            this.throwOnDispose = throwOnDispose;
+        }
+
+        public int DisposeCalls { get; private set; }
+
+        public void Dispose()
+        {
+            DisposeCalls++;
+            events?.Add("RegistrationDisposed");
+            if (throwOnDispose)
+            {
+                throw new InvalidOperationException("registration cleanup failed");
+            }
+        }
+    }
 
     private readonly record struct SubmitContext(
         OpenedHidHandle Handle,
