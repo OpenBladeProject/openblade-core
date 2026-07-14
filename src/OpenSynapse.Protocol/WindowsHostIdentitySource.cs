@@ -10,7 +10,10 @@ internal readonly record struct HostIdentityReadResult(
     HostIdentityEvidence? Evidence, HidSessionFailureKind? Failure);
 
 internal readonly record struct WindowsPlatformEvidence(
-    bool IsWindows, Version Version, Architecture Architecture);
+    bool IsWindows,
+    bool IsWorkstation,
+    Version Version,
+    Architecture Architecture);
 
 internal interface IRegistryValueSource
 {
@@ -40,10 +43,21 @@ internal interface IWindowsPlatformEvidenceSource
     WindowsPlatformEvidence Read();
 }
 
-internal sealed class RuntimeWindowsPlatformEvidenceSource : IWindowsPlatformEvidenceSource
+internal sealed class RuntimeWindowsPlatformEvidenceSource(
+    IRegistryValueSource registry) : IWindowsPlatformEvidenceSource
 {
+    private const string CurrentVersionKey = @"SOFTWARE\Microsoft\Windows NT\CurrentVersion";
+
     public WindowsPlatformEvidence Read() => new(
         OperatingSystem.IsWindows(),
+        string.Equals(
+            registry.Read(
+                RegistryHive.LocalMachine,
+                RegistryView.Registry64,
+                CurrentVersionKey,
+                "InstallationType") as string,
+            "Client",
+            StringComparison.Ordinal),
         Environment.OSVersion.Version,
         RuntimeInformation.OSArchitecture);
 }
@@ -83,6 +97,7 @@ internal sealed class WindowsHostIdentitySource(
         {
             WindowsPlatformEvidence evidence = platform.Read();
             return evidence.IsWindows
+                && evidence.IsWorkstation
                 && evidence.Architecture == Architecture.X64
                 && evidence.Version.Major == 10
                 && evidence.Version.Minor == 0

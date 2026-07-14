@@ -8,9 +8,11 @@ public sealed class WindowsHostIdentitySourceTests
 {
     private const string BiosKey = @"HARDWARE\DESCRIPTION\System\BIOS";
     private const string SystemInformationKey = @"SYSTEM\CurrentControlSet\Control\SystemInformation";
+    private const string CurrentVersionKey = @"SOFTWARE\Microsoft\Windows NT\CurrentVersion";
 
     private static readonly WindowsPlatformEvidence ExactPlatform = new(
         IsWindows: true,
+        IsWorkstation: true,
         Version: new Version(10, 0, 26200),
         Architecture.X64);
 
@@ -173,7 +175,11 @@ public sealed class WindowsHostIdentitySourceTests
     {
         FakeRegistryValueSource registry = CreateExactRegistry();
         FakeWindowsPlatformEvidenceSource platform = new(
-            new WindowsPlatformEvidence(true, new Version(major, minor, build), Architecture.X64));
+            new WindowsPlatformEvidence(
+                true,
+                true,
+                new Version(major, minor, build),
+                Architecture.X64));
 
         AssertIdentityBlocked(new WindowsHostIdentitySource(registry, platform).ReadExactIdentity());
         Assert.Empty(registry.Requests);
@@ -202,6 +208,43 @@ public sealed class WindowsHostIdentitySourceTests
 
         AssertIdentityBlocked(new WindowsHostIdentitySource(registry, platform).ReadExactIdentity());
         Assert.Empty(registry.Requests);
+    }
+
+    [Fact]
+    public void ReadExactIdentity_BlocksWindowsServerEvenAtAWindows11Build()
+    {
+        FakeRegistryValueSource registry = CreateExactRegistry();
+        FakeWindowsPlatformEvidenceSource platform = new(
+            ExactPlatform with
+            {
+                IsWorkstation = false,
+                Version = new Version(10, 0, 26100),
+            });
+
+        AssertIdentityBlocked(new WindowsHostIdentitySource(registry, platform).ReadExactIdentity());
+        Assert.Empty(registry.Requests);
+    }
+
+    [Theory]
+    [InlineData("Client", true)]
+    [InlineData("Server", false)]
+    [InlineData("Server Core", false)]
+    [InlineData("client", false)]
+    public void RuntimePlatformEvidence_RecognizesOnlyExactClientInstallationType(
+        string installationType,
+        bool expectedWorkstation)
+    {
+        FakeRegistryValueSource registry = new();
+        registry.Values[$"{CurrentVersionKey}|InstallationType"] = installationType;
+        RuntimeWindowsPlatformEvidenceSource source = new(registry);
+
+        WindowsPlatformEvidence evidence = source.Read();
+
+        Assert.Equal(expectedWorkstation, evidence.IsWorkstation);
+        ObservedRegistryRequest request = Assert.Single(registry.Requests);
+        Assert.Equal(RegistryHive.LocalMachine, request.Hive);
+        Assert.Equal(RegistryView.Registry64, request.View);
+        Assert.Equal($"{CurrentVersionKey}|InstallationType", request.Location);
     }
 
     [Fact]

@@ -8,9 +8,10 @@ public static class BatteryValidationFactory
     public static IBatteryValidationRunFactory CreateWindows()
     {
         var native = new WindowsHidNative();
+        var registry = new WindowsRegistryValueSource();
         return CreateWindows(
-            new WindowsRegistryValueSource(),
-            new RuntimeWindowsPlatformEvidenceSource(),
+            registry,
+            new RuntimeWindowsPlatformEvidenceSource(registry),
             new RunningProcessSource(),
             new WindowsServiceSource(),
             native,
