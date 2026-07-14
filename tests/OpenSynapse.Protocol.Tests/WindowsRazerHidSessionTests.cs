@@ -9,6 +9,209 @@ public sealed class WindowsRazerHidSessionTests
     private static readonly TimeSpan Timeout = TimeSpan.FromSeconds(10);
 
     [Fact]
+    public async Task NewActorReportsHealthyDisposition()
+    {
+        IRazerCommandSession actor = CreateActor(new ScriptedIo());
+
+        Assert.Equal(RazerCommandSessionDisposition.Healthy, actor.Disposition);
+
+        await actor.DisposeAsync();
+    }
+
+    [Fact]
+    public async Task HealthyPreSubmissionFailuresRemainHealthy()
+    {
+        using var canceled = new CancellationTokenSource();
+        var io = new ScriptedIo();
+        IRazerCommandSession actor = CreateActor(io, new ScriptedGuard(GuardKind.Conflict));
+
+        Assert.Equal(
+            HidSessionFailureKind.Canceled,
+            (await actor.ExecuteAsync(
+                new(1, 1, [], 0),
+                () =>
+                {
+                    canceled.Cancel();
+                    return TransactionIdAssignment.Valid(1);
+                },
+                Timeout,
+                canceled.Token)).Failure);
+        Assert.Equal(RazerCommandSessionDisposition.Healthy, actor.Disposition);
+        Assert.Equal(
+            HidSessionFailureKind.ConflictBlocked,
+            (await actor.ExecuteAsync(
+                new(1, 2, [], 0),
+                () => TransactionIdAssignment.Valid(2),
+                Timeout,
+                default)).Failure);
+        Assert.Equal(RazerCommandSessionDisposition.Healthy, actor.Disposition);
+        Assert.Empty(io.Calls);
+
+        await actor.DisposeAsync();
+    }
+
+    [Fact]
+    public async Task PoisonDispositionIsVisibleBeforeCommandContinuationRuns()
+    {
+        using var releaseDisposal = new ManualResetEventSlim();
+        var continuationDisposition = new TaskCompletionSource<RazerCommandSessionDisposition>(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        var io = new ScriptedIo(Result(new HidFeatureIoResult(
+            new NativeIoCompletion(false, 0, 5),
+            true,
+            HidFeatureTermination.Completed)));
+        IRazerCommandSession actor = CreateActor(io, disposeBound: releaseDisposal.Wait);
+
+        Task<HidSessionResult<ReadOnlyMemory<byte>>> command = actor.ExecuteAsync(
+            new(1, 1, [], 0),
+            () => TransactionIdAssignment.Valid(1),
+            Timeout,
+            default);
+        _ = command.ContinueWith(
+            _ => continuationDisposition.TrySetResult(actor.Disposition),
+            CancellationToken.None,
+            TaskContinuationOptions.ExecuteSynchronously,
+            TaskScheduler.Default);
+
+        try
+        {
+            Assert.Equal(HidSessionFailureKind.NativeIoFailure, (await command).Failure);
+            Assert.Equal(
+                RazerCommandSessionDisposition.RecoveryRequired,
+                await continuationDisposition.Task);
+        }
+        finally
+        {
+            releaseDisposal.Set();
+            await actor.DisposeAsync();
+        }
+    }
+
+    [Fact]
+    public async Task DisposeReportsDisposingUntilIoHandleAndLeaseCleanupFinish()
+    {
+        var gate = new TaskCompletionSource<HidFeatureIoResult>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var events = new List<string>();
+        var context = new ValidationRunContext();
+        Assert.True(context.TryAcquireActor(out ValidationRunContext.ActorLease lease));
+        var file = (SafeFileHandle)RuntimeHelpers.GetUninitializedObject(typeof(SafeFileHandle));
+        var bound = (ThreadPoolBoundHandle)RuntimeHelpers.GetUninitializedObject(typeof(ThreadPoolBoundHandle));
+        var handle = new OpenedHidHandle(
+            file,
+            bound,
+            () => events.Add("bound"),
+            () =>
+            {
+                events.Add("file");
+                Assert.False(context.TryAcquireActor(out _));
+            });
+        var io = new ScriptedIo((_, _, _, _, _) => gate.Task);
+        IRazerCommandSession actor = new WindowsRazerHidSession(
+            handle,
+            io,
+            new ScriptedGuard(),
+            TimeProvider.System,
+            lease);
+        Task<HidSessionResult<ReadOnlyMemory<byte>>> active = actor.ExecuteAsync(
+            new(1, 1, [], 0),
+            () => TransactionIdAssignment.Valid(1),
+            Timeout,
+            default);
+        await io.WaitForCallsAsync(1);
+
+        Task disposal = actor.DisposeAsync().AsTask();
+        Assert.Equal(RazerCommandSessionDisposition.Disposing, actor.Disposition);
+        Assert.False(disposal.IsCompleted);
+        Assert.Empty(events);
+
+        gate.SetResult(new HidFeatureIoResult(null, false, HidFeatureTermination.CallerCanceled));
+        Assert.Equal(HidSessionFailureKind.Canceled, (await active).Failure);
+        await disposal;
+
+        Assert.Equal(["bound", "file"], events);
+        Assert.Equal(RazerCommandSessionDisposition.FullyDisposed, actor.Disposition);
+        Assert.True(context.TryAcquireActor(out ValidationRunContext.ActorLease replacement));
+        replacement.Dispose();
+    }
+
+    [Fact]
+    public async Task DisposeAfterPoisonTransitionsThroughDisposingToDisposed()
+    {
+        var enteredDisposal = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var releaseDisposal = new ManualResetEventSlim();
+        var io = new ScriptedIo(Result(new HidFeatureIoResult(
+            new NativeIoCompletion(false, 0, 5),
+            true,
+            HidFeatureTermination.Completed)));
+        IRazerCommandSession actor = CreateActor(
+            io,
+            disposeBound: () =>
+            {
+                enteredDisposal.TrySetResult(true);
+                releaseDisposal.Wait();
+            });
+
+        Assert.Equal(
+            HidSessionFailureKind.NativeIoFailure,
+            (await actor.ExecuteAsync(
+                new(1, 1, [], 0),
+                () => TransactionIdAssignment.Valid(1),
+                Timeout,
+                default)).Failure);
+        Assert.Equal(RazerCommandSessionDisposition.RecoveryRequired, actor.Disposition);
+
+        Task disposal = actor.DisposeAsync().AsTask();
+        await enteredDisposal.Task;
+        Assert.Equal(RazerCommandSessionDisposition.Disposing, actor.Disposition);
+
+        releaseDisposal.Set();
+        await disposal;
+        Assert.Equal(RazerCommandSessionDisposition.FullyDisposed, actor.Disposition);
+    }
+
+    [Fact]
+    public async Task HandleDisposalFaultStillReleasesLeaseAndReportsDisposed()
+    {
+        var context = new ValidationRunContext();
+        Assert.True(context.TryAcquireActor(out ValidationRunContext.ActorLease lease));
+        var file = (SafeFileHandle)RuntimeHelpers.GetUninitializedObject(typeof(SafeFileHandle));
+        var bound = (ThreadPoolBoundHandle)RuntimeHelpers.GetUninitializedObject(typeof(ThreadPoolBoundHandle));
+        var handle = new OpenedHidHandle(
+            file,
+            bound,
+            () => throw new IOException("close"),
+            () => Assert.False(context.TryAcquireActor(out _)));
+        IRazerCommandSession actor = new WindowsRazerHidSession(
+            handle,
+            new ScriptedIo(),
+            new ScriptedGuard(),
+            TimeProvider.System,
+            lease);
+
+        Task disposal = actor.DisposeAsync().AsTask();
+        await Assert.ThrowsAsync<IOException>(() => disposal);
+
+        Assert.Equal(RazerCommandSessionDisposition.FullyDisposed, actor.Disposition);
+        Assert.True(context.TryAcquireActor(out ValidationRunContext.ActorLease replacement));
+        replacement.Dispose();
+    }
+
+    [Fact]
+    public async Task RepeatDisposeSharesOneCleanupTaskAndPath()
+    {
+        var events = new List<string>();
+        IRazerCommandSession actor = CreateActor(new ScriptedIo(), events: events);
+
+        Task first = actor.DisposeAsync().AsTask();
+        Task second = actor.DisposeAsync().AsTask();
+
+        Assert.Same(first, second);
+        await Task.WhenAll(first, second);
+        Assert.Equal(["bound", "file"], events);
+        Assert.Equal(RazerCommandSessionDisposition.FullyDisposed, actor.Disposition);
+    }
+
+    [Fact]
     public async Task ExecuteAsync_SerializesFifoAndInvokesAssignmentsExactlyOnce()
     {
         var firstGate = new TaskCompletionSource<HidFeatureIoResult>(TaskCreationOptions.RunContinuationsAsynchronously);

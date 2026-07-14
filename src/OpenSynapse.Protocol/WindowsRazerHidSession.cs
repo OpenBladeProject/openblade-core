@@ -30,8 +30,20 @@ internal readonly record struct TransactionIdAssignment(
         new(0, HidSessionFailureKind.Exhausted);
 }
 
-internal interface IRazerCommandSession
+internal enum RazerCommandSessionDisposition
 {
+    Healthy,
+    RecoveryRequired,
+    Disposing,
+    FullyDisposed,
+}
+
+internal interface IRazerCommandSession : IAsyncDisposable
+{
+    RazerCommandSessionDisposition Disposition => RazerCommandSessionDisposition.Healthy;
+
+    ValueTask IAsyncDisposable.DisposeAsync() => ValueTask.CompletedTask;
+
     Task<HidSessionResult<ReadOnlyMemory<byte>>> ExecuteAsync(
         RazerCommandSpec command,
         Func<TransactionIdAssignment> assignTransactionId,
@@ -57,7 +69,7 @@ internal static class RazerCommandSessionTimeout
     }
 }
 
-internal sealed class WindowsRazerHidSession : IRazerCommandSession, IAsyncDisposable
+internal sealed class WindowsRazerHidSession : IRazerCommandSession
 {
     private const uint IoctlHidSetFeature = 0x000B0191;
     private const uint IoctlHidGetFeature = 0x000B0192;
@@ -71,7 +83,7 @@ internal sealed class WindowsRazerHidSession : IRazerCommandSession, IAsyncDispo
     private readonly TimeProvider timeProvider;
     private readonly ValidationRunContext.ActorLease actorLease;
     private readonly Task worker;
-    private ActorState state = ActorState.Healthy;
+    private RazerCommandSessionDisposition state = RazerCommandSessionDisposition.Healthy;
 
     internal WindowsRazerHidSession(
         OpenedHidHandle handle,
@@ -92,6 +104,17 @@ internal sealed class WindowsRazerHidSession : IRazerCommandSession, IAsyncDispo
         this.timeProvider = timeProvider;
         this.actorLease = actorLease;
         worker = RunAsync();
+    }
+
+    public RazerCommandSessionDisposition Disposition
+    {
+        get
+        {
+            lock (sync)
+            {
+                return state;
+            }
+        }
     }
 
     public Task<HidSessionResult<ReadOnlyMemory<byte>>> ExecuteAsync(
@@ -122,10 +145,10 @@ internal sealed class WindowsRazerHidSession : IRazerCommandSession, IAsyncDispo
 
         lock (sync)
         {
-            if (state != ActorState.Healthy)
+            if (state != RazerCommandSessionDisposition.Healthy)
             {
                 return Task.FromResult(Failure(
-                    state == ActorState.Poisoned
+                    state == RazerCommandSessionDisposition.RecoveryRequired
                         ? HidSessionFailureKind.Poisoned
                         : HidSessionFailureKind.Disposed));
             }
@@ -142,9 +165,9 @@ internal sealed class WindowsRazerHidSession : IRazerCommandSession, IAsyncDispo
     {
         lock (sync)
         {
-            if (state is ActorState.Healthy or ActorState.Poisoned)
+            if (state is RazerCommandSessionDisposition.Healthy or RazerCommandSessionDisposition.RecoveryRequired)
             {
-                state = ActorState.Disposing;
+                state = RazerCommandSessionDisposition.Disposing;
                 DrainQueued(HidSessionFailureKind.Disposed);
                 queued.Release();
             }
@@ -176,7 +199,7 @@ internal sealed class WindowsRazerHidSession : IRazerCommandSession, IAsyncDispo
                         }
                     }
 
-                    stop = item is null && state != ActorState.Healthy;
+                    stop = item is null && state != RazerCommandSessionDisposition.Healthy;
                 }
 
                 if (stop)
@@ -194,7 +217,7 @@ internal sealed class WindowsRazerHidSession : IRazerCommandSession, IAsyncDispo
 
                 lock (sync)
                 {
-                    if (state != ActorState.Healthy)
+                    if (state != RazerCommandSessionDisposition.Healthy)
                     {
                         break;
                     }
@@ -217,7 +240,7 @@ internal sealed class WindowsRazerHidSession : IRazerCommandSession, IAsyncDispo
                 {
                     lock (sync)
                     {
-                        state = ActorState.Disposed;
+                        state = RazerCommandSessionDisposition.FullyDisposed;
                         DrainQueued(HidSessionFailureKind.Disposed);
                     }
 
@@ -430,9 +453,9 @@ internal sealed class WindowsRazerHidSession : IRazerCommandSession, IAsyncDispo
     {
         lock (sync)
         {
-            if (state == ActorState.Healthy)
+            if (state == RazerCommandSessionDisposition.Healthy)
             {
-                state = ActorState.Poisoned;
+                state = RazerCommandSessionDisposition.RecoveryRequired;
                 DrainQueued(HidSessionFailureKind.Poisoned);
             }
         }
@@ -450,14 +473,6 @@ internal sealed class WindowsRazerHidSession : IRazerCommandSession, IAsyncDispo
 
     private static HidSessionResult<ReadOnlyMemory<byte>> Failure(HidSessionFailureKind failure) =>
         new(default, failure);
-
-    private enum ActorState
-    {
-        Healthy,
-        Poisoned,
-        Disposing,
-        Disposed,
-    }
 
     private sealed class WorkItem
     {
