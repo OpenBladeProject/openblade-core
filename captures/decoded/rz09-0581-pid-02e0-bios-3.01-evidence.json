@@ -24,15 +24,52 @@
       "id": "performance-full-power",
       "fileName": "opensynapse-performance-full-power.pcap",
       "sha256": "E15A35D0A0072BD0E3DC84581F3E87B402B84021C2358CEB69AE8B83BD9106E4"
+    },
+    {
+      "id": "performance-silent-online",
+      "fileName": "opensynapse-perf-silent-online-20260714.pcap",
+      "sha256": "565FF0CE7B3C2D3F75D195DF3A92573178FE4F8A69F4F5224C0B8D8DE6D9602D"
+    },
+    {
+      "id": "performance-performance-online",
+      "fileName": "opensynapse-perf-performance-online-20260714.pcap",
+      "sha256": "6F8FB3A9E4B4396FD7F0C7580E183830B8CB18A8090F7751EE4DDC033E30D58F"
+    },
+    {
+      "id": "performance-balanced-online",
+      "fileName": "opensynapse-perf-balanced-online-20260714.pcap",
+      "sha256": "5EC21531D40DC1E96A7716E5E56E0DC224ABD5AFE0AD42FE7CCEEF0B0AB97201"
+    },
+    {
+      "id": "fan-maximum-online",
+      "fileName": "opensynapse-fan-maximum-online-20260714.pcap",
+      "sha256": "99789A0D36A281CCA04E23F2D6F834A772DA0116E9150B0B3B9E8C1A6E643D07"
+    },
+    {
+      "id": "fan-auto-online",
+      "fileName": "opensynapse-fan-auto-online-20260714.pcap",
+      "sha256": "A0A26EB5F8720F373A7B8C23377CCC0C445FC1665E203E5296620F31B9BA1169"
     }
   ],
   "frameProvenance": {
-    "performance-silent": { "capture": "performance-full-power", "setFrames": [729, 733, 737], "getResponseFrames": [732, 736, 740] },
-    "performance-balanced": { "capture": "performance-full-power", "setFrames": [825, 829, 833, 1059, 1063, 1067], "getResponseFrames": [828, 832, 836, 1062, 1066, 1070] },
-    "performance-performance": { "capture": "performance-full-power", "setFrames": [937, 941, 945], "getResponseFrames": [940, 944, 948] },
+    "performance-silent": { "capture": "performance-silent-online", "setFrames": [271, 275], "getResponseFrames": [274, 278] },
+    "performance-balanced": { "capture": "performance-balanced-online", "setFrames": [125, 129], "getResponseFrames": [128, 134] },
+    "performance-performance": { "capture": "performance-performance-online", "setFrames": [179, 183], "getResponseFrames": [182, 186] },
     "fan-fixed-3500": { "capture": "main", "setFrames": [4965, 4969], "getResponseFrames": [4968, 4972] },
-    "fan-maximum-5400": { "capture": "main", "setFrames": [5103, 5107], "getResponseFrames": [5106, 5110] },
-    "fan-auto": { "capture": "main", "setFrames": [5351, 5355], "getResponseFrames": [5354, 5358] },
+    "fan-maximum-5400": {
+      "capture": "fan-maximum-online",
+      "modeSetFrames": [379, 383],
+      "modeResponseFrames": [382, 387],
+      "targetSetFrames": [395, 400],
+      "targetResponseFrames": [398, 404]
+    },
+    "fan-auto": {
+      "capture": "fan-auto-online",
+      "unresolvedPreludeFrames": [73, 76],
+      "modeSetFrames": [77, 83],
+      "modeResponseFrames": [82, 86],
+      "telemetryFrames": [87, 90, 91, 94]
+    },
     "battery-limit-50": { "capture": "main", "setFrames": [6097], "getResponseFrames": [6100] },
     "battery-limit-55": { "capture": "main", "setFrames": [6069], "getResponseFrames": [6072] },
     "battery-limit-60": { "capture": "main", "setFrames": [6049], "getResponseFrames": [6052] },
@@ -55,7 +92,8 @@
         { "class": "0D", "id": "02", "payloadHex": "01010500", "expectedStatus": "02", "expectedPayloadHex": "01010500" },
         { "class": "0D", "id": "02", "payloadHex": "01020500", "expectedStatus": "02", "expectedPayloadHex": "01020500" }
       ],
-      "gates": { "captured": true, "decoded": false, "applied": false, "readBack": false, "restored": false }
+      "onlineEvidence": { "capture": "performance-silent-online", "frameByte10": "05", "allUsbTransfersSucceeded": true, "ackEchoOnly": true },
+      "gates": { "captured": true, "decoded": true, "applied": false, "readBack": false, "restored": false }
     },
     {
       "action": "performance-balanced",
@@ -64,7 +102,8 @@
         { "class": "0D", "id": "02", "payloadHex": "01010000", "expectedStatus": "02", "expectedPayloadHex": "01010000" },
         { "class": "0D", "id": "02", "payloadHex": "01020000", "expectedStatus": "02", "expectedPayloadHex": "01020000" }
       ],
-      "gates": { "captured": true, "decoded": false, "applied": false, "readBack": false, "restored": false }
+      "onlineEvidence": { "capture": "performance-balanced-online", "frameByte10": "00", "allUsbTransfersSucceeded": true, "ackEchoOnly": true },
+      "gates": { "captured": true, "decoded": true, "applied": false, "readBack": false, "restored": false }
     },
     {
       "action": "performance-performance",
@@ -73,7 +112,8 @@
         { "class": "0D", "id": "02", "payloadHex": "01010200", "expectedStatus": "02", "expectedPayloadHex": "01010200" },
         { "class": "0D", "id": "02", "payloadHex": "01020200", "expectedStatus": "02", "expectedPayloadHex": "01020200" }
       ],
-      "gates": { "captured": true, "decoded": false, "applied": false, "readBack": false, "restored": false }
+      "onlineEvidence": { "capture": "performance-performance-online", "frameByte10": "02", "allUsbTransfersSucceeded": true, "ackEchoOnly": true },
+      "gates": { "captured": true, "decoded": true, "applied": false, "readBack": false, "restored": false }
     },
     {
       "action": "fan-fixed-3500",
@@ -86,16 +126,43 @@
     {
       "action": "fan-maximum-5400",
       "commands": [
+        { "class": "0D", "id": "02", "payloadHex": "01010001", "expectedStatus": "02", "expectedPayloadHex": "01010001" },
+        { "class": "0D", "id": "02", "payloadHex": "01020001", "expectedStatus": "02", "expectedPayloadHex": "01020001" },
         { "class": "0D", "id": "01", "payloadHex": "010136", "expectedStatus": "02", "expectedPayloadHex": "010136" },
         { "class": "0D", "id": "01", "payloadHex": "010236", "expectedStatus": "02", "expectedPayloadHex": "010236" }
       ],
+      "onlineEvidence": {
+        "capture": "fan-maximum-online",
+        "visualSelection": "Fixed Fan Speed",
+        "visualDisplay": "5400 RPM / HIGH",
+        "targetHundredsRpm": 54,
+        "visuallyConfirmedRpm": 5400,
+        "stateQuery07_8C": "unresolved-not-an-admitted-setter",
+        "fanTelemetry0D_88": "live-telemetry-not-target-setter-or-mode-readback",
+        "independentModeReadBack": false,
+        "allUsbTransfersSucceeded": true,
+        "ackEchoOnly": true
+      },
       "gates": { "captured": true, "decoded": true, "applied": false, "readBack": false, "restored": false }
     },
     {
       "action": "fan-auto",
-      "commands": [],
-      "semanticStatus": "not-a-standalone-command; Synapse reapplies the active 0D/02 performance selector values",
-      "gates": { "captured": true, "decoded": false, "applied": false, "readBack": false, "restored": false }
+      "commands": [
+        { "class": "0D", "id": "02", "payloadHex": "01010000", "expectedStatus": "02", "expectedPayloadHex": "01010000" },
+        { "class": "0D", "id": "02", "payloadHex": "01020000", "expectedStatus": "02", "expectedPayloadHex": "01020000" }
+      ],
+      "onlineEvidence": {
+        "capture": "fan-auto-online",
+        "visualSelection": "Auto",
+        "stateQuery07_8C": "unresolved-not-an-admitted-setter",
+        "fanTelemetry0D_88": "live-telemetry-not-target-setter-or-mode-readback",
+        "immediateTelemetryRpm": 5300,
+        "targetSetter0D_01Observed": false,
+        "independentModeReadBack": false,
+        "allUsbTransfersSucceeded": true,
+        "ackEchoOnly": true
+      },
+      "gates": { "captured": true, "decoded": true, "applied": false, "readBack": false, "restored": false }
     },
     {
       "action": "battery-limit-50",
