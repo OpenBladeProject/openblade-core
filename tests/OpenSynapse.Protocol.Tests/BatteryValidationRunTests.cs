@@ -135,6 +135,81 @@ public sealed class BatteryValidationRunTests
     }
 
     [Fact]
+    public async Task DuplicateQueryWhileAwaitingCandidateApply_DoesNoIoAndCandidateStillUsesId2()
+    {
+        var client = new ScriptedClient(Query(BatteryValidationSetting.Limit80), Unit());
+        IBatteryValidationPort port = (await Factory(new ValidationRunContext(),
+            new ScriptedActorFactory(Actor(new ScriptedSession(), client))).OpenAsync(default)).Value!;
+        await port.QueryAsync(default);
+        string[] before = [.. client.Events];
+
+        Assert.Equal(HidSessionFailureKind.ProtocolFailure, (await port.QueryAsync(default)).Failure);
+        Assert.Equal(before, client.Events);
+        Assert.Null((await port.ApplyAsync(BatteryValidationSetting.Limit70, default)).Failure);
+        Assert.Equal(["Q1", "S2:Limit70"], client.Events);
+        await port.DisposeAsync();
+    }
+
+    [Fact]
+    public async Task WrongApplyWhileAwaitingCandidateQuery_DoesNoIoAndQueryStillUsesId3()
+    {
+        var client = new ScriptedClient(
+            Query(BatteryValidationSetting.Limit80), Unit(), Query(BatteryValidationSetting.Limit70));
+        IBatteryValidationPort port = (await Factory(new ValidationRunContext(),
+            new ScriptedActorFactory(Actor(new ScriptedSession(), client))).OpenAsync(default)).Value!;
+        await port.QueryAsync(default);
+        await port.ApplyAsync(BatteryValidationSetting.Limit70, default);
+        string[] before = [.. client.Events];
+
+        Assert.Equal(HidSessionFailureKind.ProtocolFailure,
+            (await port.ApplyAsync(BatteryValidationSetting.Limit65, default)).Failure);
+        Assert.Equal(before, client.Events);
+        Assert.Null((await port.QueryAsync(default)).Failure);
+        Assert.Equal(["Q1", "S2:Limit70", "Q3"], client.Events);
+        await port.DisposeAsync();
+    }
+
+    [Fact]
+    public async Task QueryWhileCleanupEligible_DoesNoIoAndRestoreStillUsesId4()
+    {
+        var client = new ScriptedClient(
+            Query(BatteryValidationSetting.Limit80), Unit(),
+            Query(BatteryValidationSetting.Limit70), Unit());
+        IBatteryValidationPort port = (await Factory(new ValidationRunContext(),
+            new ScriptedActorFactory(Actor(new ScriptedSession(), client))).OpenAsync(default)).Value!;
+        await port.QueryAsync(default);
+        await port.ApplyAsync(BatteryValidationSetting.Limit70, default);
+        await port.QueryAsync(default);
+        string[] before = [.. client.Events];
+
+        Assert.Equal(HidSessionFailureKind.ProtocolFailure, (await port.QueryAsync(default)).Failure);
+        Assert.Equal(before, client.Events);
+        Assert.Null((await port.ApplyAsync(BatteryValidationSetting.Limit80, default)).Failure);
+        Assert.Equal(["Q1", "S2:Limit70", "Q3", "S4:Limit80"], client.Events);
+        await port.DisposeAsync();
+    }
+
+    [Fact]
+    public async Task DuplicateRestoreApplyWhileAwaitingRestoreQuery_DoesNoIoAndQueryStillUsesId5()
+    {
+        var client = new ScriptedClient(
+            Query(BatteryValidationSetting.Limit80), Unit(), Unit(),
+            Query(BatteryValidationSetting.Limit80));
+        IBatteryValidationPort port = (await Factory(new ValidationRunContext(),
+            new ScriptedActorFactory(Actor(new ScriptedSession(), client))).OpenAsync(default)).Value!;
+        await port.QueryAsync(default);
+        await port.ApplyAsync(BatteryValidationSetting.Limit70, default);
+        await port.ApplyAsync(BatteryValidationSetting.Limit80, default);
+        string[] before = [.. client.Events];
+
+        Assert.Equal(HidSessionFailureKind.ProtocolFailure,
+            (await port.ApplyAsync(BatteryValidationSetting.Limit80, default)).Failure);
+        Assert.Equal(before, client.Events);
+        Assert.Null((await port.QueryAsync(default)).Failure);
+        Assert.Equal(["Q1", "S2:Limit70", "S4:Limit80", "Q5"], client.Events);
+    }
+
+    [Fact]
     public async Task DirectRestore_BurnsCandidateQueryId()
     {
         var client = new ScriptedClient(Query(BatteryValidationSetting.Limit80), Unit(), Unit(), Query(BatteryValidationSetting.Limit80));
