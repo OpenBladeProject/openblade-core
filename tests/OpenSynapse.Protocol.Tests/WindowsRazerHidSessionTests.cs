@@ -36,7 +36,7 @@ public sealed class WindowsRazerHidSessionTests
     }
 
     [Fact]
-    public async Task QueuedCancellation_WinsBeforeClaimAndConsumesNoId()
+    public async Task QueuedCancellationRace_QueuedWinnerConsumesNoId()
     {
         var gate = new TaskCompletionSource<HidFeatureIoResult>(TaskCreationOptions.RunContinuationsAsynchronously);
         var io = new ScriptedIo((_, _, _, _, _) => gate.Task, GetSuccess(1, 1, 1, []));
@@ -77,6 +77,38 @@ public sealed class WindowsRazerHidSessionTests
     }
 
     [Fact]
+    public async Task QueuedCancellationRace_ClaimedWinnerAssignsExactlyOnceAndMapsCancellation()
+    {
+        using var caller = new CancellationTokenSource();
+        using var releaseAssignment = new ManualResetEventSlim();
+        var assignmentEntered = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var io = new ScriptedIo(SetSuccess(), GetSuccess(2, 1, 2, []));
+        await using WindowsRazerHidSession actor = CreateActor(io);
+        int assignments = 0;
+
+        Task<HidSessionResult<ReadOnlyMemory<byte>>> claimed = actor.ExecuteAsync(
+            new(1, 1, [], 0),
+            () =>
+            {
+                Interlocked.Increment(ref assignments);
+                assignmentEntered.TrySetResult(true);
+                releaseAssignment.Wait();
+                return TransactionIdAssignment.Valid(1);
+            },
+            Timeout,
+            caller.Token);
+
+        await assignmentEntered.Task;
+        caller.Cancel();
+        releaseAssignment.Set();
+
+        Assert.Equal(HidSessionFailureKind.Canceled, (await claimed).Failure);
+        Assert.Equal(1, assignments);
+        Assert.Empty(io.Calls);
+        Assert.Null((await actor.ExecuteAsync(new(1, 2, [], 0), () => TransactionIdAssignment.Valid(2), Timeout, default)).Failure);
+    }
+
+    [Fact]
     public async Task AdmissionSnapshotsMutableArguments()
     {
         var gate = new TaskCompletionSource<HidFeatureIoResult>(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -106,6 +138,49 @@ public sealed class WindowsRazerHidSessionTests
         Assert.Throws<ArgumentOutOfRangeException>(() => { _ = actor.ExecuteAsync(new(1, 1, [], 0), assign, System.Threading.Timeout.InfiniteTimeSpan, default); });
         Assert.Throws<ArgumentNullException>(() => { _ = actor.ExecuteAsync(new(1, 1, [], 0), null!, Timeout, default); });
         Assert.Equal(0, assignments);
+    }
+
+    [Fact]
+    public async Task ExchangeTimeoutAcceptsLargestSchedulableValue()
+    {
+        using var caller = new CancellationTokenSource();
+        await using WindowsRazerHidSession actor = CreateActor(new ScriptedIo());
+        int assignments = 0;
+
+        HidSessionResult<ReadOnlyMemory<byte>> result = await actor.ExecuteAsync(
+            new(1, 1, [], 0),
+            () =>
+            {
+                assignments++;
+                caller.Cancel();
+                return TransactionIdAssignment.Valid(1);
+            },
+            TimeSpan.FromMilliseconds(uint.MaxValue - 1d),
+            caller.Token);
+
+        Assert.Equal(HidSessionFailureKind.Canceled, result.Failure);
+        Assert.Equal(1, assignments);
+    }
+
+    [Fact]
+    public async Task ExchangeTimeoutRejectsFirstUnschedulableValueSynchronouslyWithoutAdmissionOrId()
+    {
+        await using WindowsRazerHidSession actor = CreateActor(new ScriptedIo());
+        int assignments = 0;
+
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+        {
+            _ = actor.ExecuteAsync(
+                new(1, 1, [], 0),
+                () => { assignments++; return TransactionIdAssignment.Valid(1); },
+                TimeSpan.FromMilliseconds(uint.MaxValue),
+                default);
+        });
+
+        Assert.Equal(0, assignments);
+        Assert.Equal(
+            HidSessionFailureKind.Exhausted,
+            (await actor.ExecuteAsync(new(1, 2, [], 0), TransactionIdAssignment.Exhausted, Timeout, default)).Failure);
     }
 
     [Fact]
@@ -228,6 +303,56 @@ public sealed class WindowsRazerHidSessionTests
     }
 
     [Theory]
+    [InlineData(false, false, false)]
+    [InlineData(false, false, true)]
+    [InlineData(false, true, false)]
+    [InlineData(false, true, true)]
+    [InlineData(true, false, false)]
+    [InlineData(true, false, true)]
+    [InlineData(true, true, false)]
+    [InlineData(true, true, true)]
+    public async Task CompletedInvalidNativeCompletionBeatsConcurrentCancellation(
+        bool getPhase,
+        bool failedCompletion,
+        bool deadlineCancellation)
+    {
+        using var caller = new CancellationTokenSource();
+        var time = new ManualTimeProvider();
+        NativeIoCompletion? completion = failedCompletion
+            ? new NativeIoCompletion(false, 0, 5)
+            : null;
+        Func<OpenedHidHandle, uint, byte[], CancellationToken, CancellationToken, Task<HidFeatureIoResult>> invalid =
+            (_, _, _, _, _) =>
+            {
+                if (deadlineCancellation)
+                {
+                    time.Advance(Timeout);
+                }
+                else
+                {
+                    caller.Cancel();
+                }
+
+                return Task.FromResult(new HidFeatureIoResult(
+                    completion,
+                    true,
+                    HidFeatureTermination.Completed));
+            };
+        var io = getPhase
+            ? new ScriptedIo(SetSuccess(), invalid)
+            : new ScriptedIo(invalid);
+        WindowsRazerHidSession actor = CreateActor(io, time: time);
+
+        Assert.Equal(
+            HidSessionFailureKind.NativeIoFailure,
+            (await actor.ExecuteAsync(new(1, 1, [], 0), () => TransactionIdAssignment.Valid(1), Timeout, caller.Token)).Failure);
+        Assert.Contains(
+            (await actor.ExecuteAsync(new(1, 2, [], 0), () => TransactionIdAssignment.Valid(2), Timeout, default)).Failure,
+            new HidSessionFailureKind?[] { HidSessionFailureKind.Poisoned, HidSessionFailureKind.Disposed });
+        await actor.DisposeAsync();
+    }
+
+    [Theory]
     [InlineData(true)]
     [InlineData(false)]
     public async Task TaskSevenFaultMapsNativeFailureAndPoisons(bool faultSet)
@@ -320,13 +445,14 @@ public sealed class WindowsRazerHidSessionTests
     }
 
     [Fact]
-    public async Task PoisonRejectsAdmissionWhileAutomaticCleanupIsDrainingThenBecomesDisposed()
+    public async Task PoisonAdmissionRace_PoisonWinnerRejectsWhileDrainingThenBecomesDisposed()
     {
         byte[] malformed = Response(1, 1, 1, []);
         malformed[88] ^= 1;
         var enteredDisposal = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
         using var releaseDisposal = new ManualResetEventSlim();
         var io = new ScriptedIo(SetSuccess(), GetResult(malformed));
+        int rejectedAssignments = 0;
         WindowsRazerHidSession actor = CreateActor(
             io,
             disposeBound: () =>
@@ -341,7 +467,13 @@ public sealed class WindowsRazerHidSessionTests
         await enteredDisposal.Task;
         Assert.Equal(
             HidSessionFailureKind.Poisoned,
-            (await actor.ExecuteAsync(new(1, 2, [], 0), () => TransactionIdAssignment.Valid(2), Timeout, default)).Failure);
+            (await actor.ExecuteAsync(
+                new(1, 2, [], 0),
+                () => { rejectedAssignments++; return TransactionIdAssignment.Valid(2); },
+                Timeout,
+                default)).Failure);
+        Assert.Equal(0, rejectedAssignments);
+        Assert.Equal(2, io.Calls.Count);
         releaseDisposal.Set();
         await actor.DisposeAsync();
         Assert.Equal(
@@ -350,17 +482,38 @@ public sealed class WindowsRazerHidSessionTests
     }
 
     [Fact]
-    public async Task MalformedResponsePoisonsBeforeQueuedRequestAdvances()
+    public async Task PoisonAdmissionRace_AdmissionWinnerIsDrainedBeforeItCanPerformIo()
     {
         byte[] malformed = Response(1, 1, 1, []);
         malformed[88] ^= 1;
-        var io = new ScriptedIo(SetSuccess(), GetResult(malformed), SetSuccess());
+        var getEntered = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseGet = new TaskCompletionSource<HidFeatureIoResult>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var io = new ScriptedIo(
+            SetSuccess(),
+            (_, _, buffer, _, _) =>
+            {
+                malformed.CopyTo(buffer, 0);
+                getEntered.TrySetResult(true);
+                return releaseGet.Task;
+            },
+            SetSuccess());
         WindowsRazerHidSession actor = CreateActor(io);
+        int queuedAssignments = 0;
         Task<HidSessionResult<ReadOnlyMemory<byte>>> first = actor.ExecuteAsync(new(1, 1, [], 0), () => TransactionIdAssignment.Valid(1), Timeout, default);
-        Task<HidSessionResult<ReadOnlyMemory<byte>>> queued = actor.ExecuteAsync(new(1, 2, [], 0), () => TransactionIdAssignment.Valid(2), Timeout, default);
+        await getEntered.Task;
+        Task<HidSessionResult<ReadOnlyMemory<byte>>> queued = actor.ExecuteAsync(
+            new(1, 2, [], 0),
+            () => { queuedAssignments++; return TransactionIdAssignment.Valid(2); },
+            Timeout,
+            default);
+        releaseGet.SetResult(new HidFeatureIoResult(
+            new NativeIoCompletion(true, 91, 0),
+            true,
+            HidFeatureTermination.Completed));
 
         Assert.Equal(HidSessionFailureKind.ProtocolFailure, (await first).Failure);
         Assert.Equal(HidSessionFailureKind.Poisoned, (await queued).Failure);
+        Assert.Equal(0, queuedAssignments);
         Assert.Equal(2, io.Calls.Count);
         await actor.DisposeAsync();
     }

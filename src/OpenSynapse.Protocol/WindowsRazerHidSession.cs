@@ -35,6 +35,8 @@ internal sealed class WindowsRazerHidSession : IAsyncDisposable
     private const uint IoctlHidSetFeature = 0x000B0191;
     private const uint IoctlHidGetFeature = 0x000B0192;
     private const int FeatureReportLength = RazerReport.ReportLength + 1;
+    private static readonly TimeSpan MaximumExchangeTimeout =
+        TimeSpan.FromMilliseconds(uint.MaxValue - 1d);
 
     private readonly object sync = new();
     private readonly Queue<WorkItem> queue = new();
@@ -85,9 +87,13 @@ internal sealed class WindowsRazerHidSession : IAsyncDisposable
             throw new ArgumentOutOfRangeException(nameof(command), "Expected payload length must be between 0 and 80 bytes.");
         }
 
-        if (exchangeTimeout <= TimeSpan.Zero || exchangeTimeout == Timeout.InfiniteTimeSpan)
+        if (exchangeTimeout <= TimeSpan.Zero ||
+            exchangeTimeout == Timeout.InfiniteTimeSpan ||
+            exchangeTimeout > MaximumExchangeTimeout)
         {
-            throw new ArgumentOutOfRangeException(nameof(exchangeTimeout), "Exchange timeout must be finite and positive.");
+            throw new ArgumentOutOfRangeException(
+                nameof(exchangeTimeout),
+                $"Exchange timeout must be positive and no greater than {MaximumExchangeTimeout.TotalMilliseconds:0} milliseconds.");
         }
 
         var snapshot = new RazerCommandSpec(
@@ -285,6 +291,13 @@ internal sealed class WindowsRazerHidSession : IAsyncDisposable
             return Failure(HidSessionFailureKind.NativeIoFailure);
         }
 
+        if (setResult.Termination == HidFeatureTermination.Completed &&
+            setResult.Completion is not { Succeeded: true })
+        {
+            Poison();
+            return Failure(HidSessionFailureKind.NativeIoFailure);
+        }
+
         cancellation = ClassifyIoCancellation(setResult, item.CancellationToken, deadline.Token);
         if (cancellation is not null)
         {
@@ -296,8 +309,7 @@ internal sealed class WindowsRazerHidSession : IAsyncDisposable
             return Failure(cancellation.Value);
         }
 
-        if (setResult.Termination != HidFeatureTermination.Completed ||
-            setResult.Completion is not { Succeeded: true })
+        if (setResult.Termination != HidFeatureTermination.Completed)
         {
             Poison();
             return Failure(HidSessionFailureKind.NativeIoFailure);
@@ -327,6 +339,13 @@ internal sealed class WindowsRazerHidSession : IAsyncDisposable
             return Failure(HidSessionFailureKind.NativeIoFailure);
         }
 
+        if (getResult.Termination == HidFeatureTermination.Completed &&
+            getResult.Completion is not { Succeeded: true, BytesTransferred: FeatureReportLength })
+        {
+            Poison();
+            return Failure(HidSessionFailureKind.NativeIoFailure);
+        }
+
         cancellation = ClassifyIoCancellation(getResult, item.CancellationToken, deadline.Token);
         if (cancellation is not null)
         {
@@ -334,8 +353,7 @@ internal sealed class WindowsRazerHidSession : IAsyncDisposable
             return Failure(cancellation.Value);
         }
 
-        if (getResult.Termination != HidFeatureTermination.Completed ||
-            getResult.Completion is not { Succeeded: true, BytesTransferred: FeatureReportLength })
+        if (getResult.Termination != HidFeatureTermination.Completed)
         {
             Poison();
             return Failure(HidSessionFailureKind.NativeIoFailure);
