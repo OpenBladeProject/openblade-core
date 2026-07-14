@@ -223,6 +223,32 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         Assert.Contains("write rejected", result.Message, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public async Task MixedSubsystemFailureAndBlock_ReturnsFailed()
+    {
+        TestContext context = CreateContext(providerAvailable: true);
+        context.Device.Capabilities = DeviceCapabilities.SafeTargetDefaults() with
+        {
+            LightingEffects = new HashSet<LightingEffect>(),
+        };
+        context.Device.ConfirmedState = new ConfirmedDeviceState(
+            PerformancePreset.Silent,
+            FanMode.Automatic,
+            BatteryPolicy.Create(80),
+            ProfileDefaults.CreateSafeDefaults().PluggedIn.Lighting);
+        context.Device.PerformanceFailure = new InvalidOperationException("write rejected");
+
+        ControlOperationResult result = await context.Runtime.SetPerformanceOverrideAsync(
+            new ManualOverride<PerformancePreset>(
+                PerformancePreset.Performance,
+                OverrideLifetime.Persistent),
+            CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Failed, result.Status);
+        Assert.True(context.Runtime.GetStatus().WritesBlocked);
+        Assert.Contains("write rejected", result.Message, StringComparison.Ordinal);
+    }
+
     private TestContext CreateContext(
         bool providerAvailable,
         IReadOnlyList<string>? conflicts = null,

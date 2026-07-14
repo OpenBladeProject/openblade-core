@@ -269,10 +269,10 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 FullChargeOverride: automation.BatteryPolicy.TemporaryFullCharge);
             PublishIfChanged(next);
             return new ControlOperationResult(
-                writesBlocked
-                    ? ControlOperationStatus.Blocked
-                    : ResultsContainFailure(results)
-                        ? ControlOperationStatus.Failed
+                ResultsContainFailure(results)
+                    ? ControlOperationStatus.Failed
+                    : writesBlocked
+                        ? ControlOperationStatus.Blocked
                         : ControlOperationStatus.Applied,
                 message);
         }
