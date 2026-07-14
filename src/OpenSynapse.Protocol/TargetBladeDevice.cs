@@ -7,4 +7,7 @@ public static class TargetBladeDevice
 
     public static bool Matches(ushort vendorId, ushort productId) =>
         vendorId == VendorId && productId == ProductId;
+
+    public static bool CanCarryProtocolReport(ushort featureReportByteLength) =>
+        featureReportByteLength == RazerReport.ReportLength + 1;
 }

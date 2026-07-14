@@ -17,7 +17,13 @@ public sealed class SetupCommandRunner(ISetupPlatform platform)
 {
     public async Task<int> RunAsync(IReadOnlyList<string> arguments, CancellationToken cancellationToken)
     {
-        if (arguments.Count == 1 && arguments[0].Equals("install", StringComparison.OrdinalIgnoreCase))
+        if (!SetupCommandParser.TryParse(arguments, out SetupCommand command))
+        {
+            Console.Error.WriteLine("Usage: opensynapse setup install | uninstall [--purge]");
+            return 2;
+        }
+
+        if (command == SetupCommand.Install)
         {
             await platform.CopyPayloadAsync(cancellationToken);
             await platform.WriteAuthorizedUserSidAsync(platform.CurrentUserSid, cancellationToken);
@@ -26,25 +32,14 @@ public sealed class SetupCommandRunner(ISetupPlatform platform)
             return 0;
         }
 
-        bool purge = arguments.Count == 2
-            && arguments[0].Equals("uninstall", StringComparison.OrdinalIgnoreCase)
-            && arguments[1].Equals("--purge", StringComparison.OrdinalIgnoreCase);
-        bool uninstall = arguments.Count == 1
-            && arguments[0].Equals("uninstall", StringComparison.OrdinalIgnoreCase);
-        if (uninstall || purge)
+        await platform.RemoveStartupShortcutAsync(cancellationToken);
+        await platform.RemoveServiceAsync(cancellationToken);
+        await platform.RemoveBinariesAsync(cancellationToken);
+        if (command == SetupCommand.UninstallAndPurge)
         {
-            await platform.RemoveStartupShortcutAsync(cancellationToken);
-            await platform.RemoveServiceAsync(cancellationToken);
-            await platform.RemoveBinariesAsync(cancellationToken);
-            if (purge)
-            {
-                await platform.RemoveDataAsync(cancellationToken);
-            }
-
-            return 0;
+            await platform.RemoveDataAsync(cancellationToken);
         }
 
-        Console.Error.WriteLine("Usage: opensynapse setup install | uninstall [--purge]");
-        return 2;
+        return 0;
     }
 }

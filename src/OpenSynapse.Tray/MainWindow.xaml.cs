@@ -9,24 +9,23 @@ namespace OpenSynapse.Tray;
 public partial class MainWindow : Window
 {
     private readonly MainViewModel viewModel = MainViewModel.CreateDisconnected();
+    private readonly UiPreferenceStore preferenceStore = new(Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+        "OpenSynapse",
+        "preferences.json"));
 
     public MainWindow()
     {
         InitializeComponent();
         DataContext = viewModel;
-        viewModel.PropertyChanged += (_, eventArgs) =>
-        {
-            if (eventArgs.PropertyName == nameof(MainViewModel.Theme))
-            {
-                ThemeManager.Apply(viewModel.Theme);
-            }
-        };
+        viewModel.PropertyChanged += OnViewModelPropertyChanged;
         Loaded += OnLoaded;
         Closing += OnClosing;
     }
 
     private async void OnLoaded(object sender, RoutedEventArgs e)
     {
+        viewModel.Theme = (await preferenceStore.LoadAsync()).Theme;
         ThemeManager.Apply(viewModel.Theme);
         using CancellationTokenSource timeout = new(TimeSpan.FromSeconds(2));
 
@@ -39,6 +38,24 @@ public partial class MainWindow : Window
             or OperationCanceledException)
         {
             // The disconnected model is intentionally fail-closed.
+        }
+    }
+
+    private async void OnViewModelPropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName != nameof(MainViewModel.Theme))
+        {
+            return;
+        }
+
+        ThemeManager.Apply(viewModel.Theme);
+        try
+        {
+            await preferenceStore.SaveAsync(new UiPreferences(viewModel.Theme));
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+            // Appearance changes remain usable even when preferences cannot be persisted.
         }
     }
 

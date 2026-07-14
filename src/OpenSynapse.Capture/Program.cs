@@ -33,7 +33,8 @@ if (args.Length == 1 && args[0].Equals("scan", StringComparison.OrdinalIgnoreCas
     Console.WriteLine($"Found {interfaces.Count} HID interface(s) for 1532:02E0.");
     foreach (HidInterfaceInfo device in interfaces)
     {
-        Console.WriteLine(device.DevicePath);
+        Console.WriteLine(
+            $"Usage {device.UsagePage:X4}:{device.Usage:X4}, feature bytes {device.FeatureReportByteLength}: {device.DevicePath}");
     }
 
     return interfaces.Count > 0 ? 0 : 3;

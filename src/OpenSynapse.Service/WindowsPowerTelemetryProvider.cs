@@ -1,0 +1,51 @@
+using System.ComponentModel;
+using System.Runtime.InteropServices;
+using OpenSynapse.Contracts;
+
+namespace OpenSynapse.Service;
+
+public sealed record PowerTelemetry(PowerSource PowerSource, int? BatteryPercent);
+
+public sealed class WindowsPowerTelemetryProvider
+{
+    public TelemetrySnapshot Capture()
+    {
+        if (!GetSystemPowerStatus(out SystemPowerStatus status))
+        {
+            throw new Win32Exception(Marshal.GetLastWin32Error());
+        }
+
+        PowerTelemetry power = Map(status.AcLineStatus, status.BatteryLifePercent);
+        return new TelemetrySnapshot(
+            DateTimeOffset.UtcNow,
+            power.PowerSource,
+            power.BatteryPercent,
+            CpuTemperatureCelsius: null,
+            GpuTemperatureCelsius: null,
+            FanRpm: null);
+    }
+
+    public static PowerTelemetry Map(byte acLineStatus, byte batteryPercent)
+    {
+        PowerSource source = acLineStatus == 1
+            ? PowerSource.PluggedIn
+            : PowerSource.Battery;
+        int? percent = batteryPercent == byte.MaxValue ? null : batteryPercent;
+        return new PowerTelemetry(source, percent);
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct SystemPowerStatus
+    {
+        public byte AcLineStatus;
+        public byte BatteryFlag;
+        public byte BatteryLifePercent;
+        public byte SystemStatusFlag;
+        public uint BatteryLifeTime;
+        public uint BatteryFullLifeTime;
+    }
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool GetSystemPowerStatus(out SystemPowerStatus systemPowerStatus);
+}

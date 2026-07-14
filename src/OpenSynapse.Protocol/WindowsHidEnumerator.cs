@@ -5,7 +5,13 @@ using Microsoft.Win32.SafeHandles;
 
 namespace OpenSynapse.Protocol;
 
-public sealed record HidInterfaceInfo(string DevicePath, ushort VendorId, ushort ProductId);
+public sealed record HidInterfaceInfo(
+    string DevicePath,
+    ushort VendorId,
+    ushort ProductId,
+    ushort UsagePage,
+    ushort Usage,
+    ushort FeatureReportByteLength);
 
 public static partial class WindowsHidEnumerator
 {
@@ -56,7 +62,14 @@ public static partial class WindowsHidEnumerator
                 if (HidD_GetAttributes(handle, ref attributes)
                     && TargetBladeDevice.Matches(attributes.VendorId, attributes.ProductId))
                 {
-                    matches.Add(new HidInterfaceInfo(devicePath, attributes.VendorId, attributes.ProductId));
+                    HidCaps caps = GetCaps(handle);
+                    matches.Add(new HidInterfaceInfo(
+                        devicePath,
+                        attributes.VendorId,
+                        attributes.ProductId,
+                        caps.UsagePage,
+                        caps.Usage,
+                        caps.FeatureReportByteLength));
                 }
             }
 
@@ -65,6 +78,24 @@ public static partial class WindowsHidEnumerator
         finally
         {
             _ = SetupDiDestroyDeviceInfoList(deviceSet);
+        }
+    }
+
+    private static HidCaps GetCaps(SafeFileHandle handle)
+    {
+        if (!HidD_GetPreparsedData(handle, out IntPtr preparsedData))
+        {
+            return default;
+        }
+
+        try
+        {
+            HidCaps caps = default;
+            return HidP_GetCaps(preparsedData, ref caps) >= 0 ? caps : default;
+        }
+        finally
+        {
+            _ = HidD_FreePreparsedData(preparsedData);
         }
     }
 
@@ -138,12 +169,44 @@ public static partial class WindowsHidEnumerator
         public ushort VersionNumber;
     }
 
+    [StructLayout(LayoutKind.Sequential)]
+    private unsafe struct HidCaps
+    {
+        public ushort Usage;
+        public ushort UsagePage;
+        public ushort InputReportByteLength;
+        public ushort OutputReportByteLength;
+        public ushort FeatureReportByteLength;
+        public fixed ushort Reserved[17];
+        public ushort NumberLinkCollectionNodes;
+        public ushort NumberInputButtonCaps;
+        public ushort NumberInputValueCaps;
+        public ushort NumberInputDataIndices;
+        public ushort NumberOutputButtonCaps;
+        public ushort NumberOutputValueCaps;
+        public ushort NumberOutputDataIndices;
+        public ushort NumberFeatureButtonCaps;
+        public ushort NumberFeatureValueCaps;
+        public ushort NumberFeatureDataIndices;
+    }
+
     [LibraryImport("hid.dll")]
     private static partial void HidD_GetHidGuid(out Guid hidGuid);
 
     [LibraryImport("hid.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
     private static partial bool HidD_GetAttributes(SafeFileHandle device, ref HidAttributes attributes);
+
+    [LibraryImport("hid.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static partial bool HidD_GetPreparsedData(SafeFileHandle device, out IntPtr preparsedData);
+
+    [LibraryImport("hid.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static partial bool HidD_FreePreparsedData(IntPtr preparsedData);
+
+    [LibraryImport("hid.dll")]
+    private static partial int HidP_GetCaps(IntPtr preparsedData, ref HidCaps capabilities);
 
     [LibraryImport("setupapi.dll", EntryPoint = "SetupDiGetClassDevsW", SetLastError = true, StringMarshalling = StringMarshalling.Utf16)]
     private static partial IntPtr SetupDiGetClassDevs(
