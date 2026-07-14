@@ -1,4 +1,5 @@
 using System.Windows;
+using System.Security.Principal;
 using OpenSynapse.Contracts;
 using Forms = System.Windows.Forms;
 
@@ -9,6 +10,7 @@ public partial class App : System.Windows.Application
     private Forms.NotifyIcon? trayIcon;
     private EventWaitHandle? shutdownEvent;
     private RegisteredWaitHandle? shutdownRegistration;
+    private TrayInstanceCoordinator? instanceCoordinator;
 
     public bool ExitRequested { get; private set; }
 
@@ -18,6 +20,23 @@ public partial class App : System.Windows.Application
 
         string executablePath = Environment.ProcessPath
             ?? throw new InvalidOperationException("Tray executable path is unavailable.");
+        string userSid = WindowsIdentity.GetCurrent().User?.Value
+            ?? throw new InvalidOperationException("Current user SID is unavailable.");
+        TrayInstanceEndpoint instanceEndpoint = TrayInstanceEndpoint.Create(
+            executablePath,
+            userSid);
+        if (!TrayInstanceCoordinator.TryStart(
+            instanceEndpoint,
+            () => Dispatcher.BeginInvoke(ShowMainWindow),
+            out instanceCoordinator))
+        {
+            Shutdown();
+            return;
+        }
+
+        MainWindow = new MainWindow();
+        MainWindow.Show();
+
         shutdownEvent = new EventWaitHandle(
             false,
             EventResetMode.ManualReset,
@@ -45,6 +64,7 @@ public partial class App : System.Windows.Application
 
     protected override void OnExit(ExitEventArgs e)
     {
+        instanceCoordinator?.DisposeAsync().AsTask().GetAwaiter().GetResult();
         shutdownRegistration?.Unregister(null);
         shutdownEvent?.Dispose();
         if (trayIcon is not null)
