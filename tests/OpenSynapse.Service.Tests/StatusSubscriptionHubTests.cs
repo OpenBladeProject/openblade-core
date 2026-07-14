@@ -6,6 +6,20 @@ namespace OpenSynapse.Service.Tests;
 public sealed class StatusSubscriptionHubTests
 {
     [Fact]
+    public async Task Subscribe_WithoutBootstrapSnapshot_WaitsForFirstPublication()
+    {
+        var hub = new StatusSubscriptionHub(new FakeTimeProvider());
+        await using StatusSubscriptionLease lease = hub.Subscribe(CancellationToken.None);
+        await using IAsyncEnumerator<ServiceStatusSnapshot> reader =
+            lease.ReadAllAsync().GetAsyncEnumerator();
+
+        hub.Publish(CreateStatus(0));
+
+        Assert.True(await reader.MoveNextAsync());
+        Assert.Equal(0, reader.Current.Revision);
+    }
+
+    [Fact]
     public async Task Subscribe_DeliversCurrentSnapshotImmediately()
     {
         var hub = new StatusSubscriptionHub(CreateStatus(4), new FakeTimeProvider());

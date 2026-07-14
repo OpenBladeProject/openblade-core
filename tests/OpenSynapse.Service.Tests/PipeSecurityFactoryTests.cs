@@ -24,5 +24,19 @@ public sealed class PipeSecurityFactoryTests
         Assert.Contains(pipeRules, rule =>
             rule.IdentityReference == new SecurityIdentifier(WellKnownSidType.LocalSystemSid, null));
         Assert.All(pipeRules, rule => Assert.Equal(AccessControlType.Allow, rule.AccessControlType));
+        Assert.Equal(
+            PipeAccessRights.ReadWrite | PipeAccessRights.Synchronize,
+            pipeRules.Single(rule => rule.IdentityReference == user).PipeAccessRights);
+        Assert.Equal(
+            PipeAccessRights.FullControl,
+            pipeRules.Single(rule =>
+                rule.IdentityReference == new SecurityIdentifier(
+                    WellKnownSidType.LocalSystemSid,
+                    null)).PipeAccessRights);
+        Assert.True(security.AreAccessRulesProtected);
+        Assert.DoesNotContain(pipeRules, rule =>
+            rule.IdentityReference == new SecurityIdentifier(
+                WellKnownSidType.BuiltinUsersSid,
+                null));
     }
 }

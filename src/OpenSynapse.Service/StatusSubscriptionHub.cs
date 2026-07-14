@@ -17,7 +17,7 @@ public sealed class StatusSubscriptionHub : IStatusSubscriptionHub
     private readonly object sync = new();
     private readonly Dictionary<long, SubscriptionState> subscriptions = [];
     private readonly TimeProvider timeProvider;
-    private ServiceStatusSnapshot latest;
+    private ServiceStatusSnapshot? latest;
     private int subscriberCount;
     private long nextSubscriptionId;
 
@@ -26,6 +26,11 @@ public sealed class StatusSubscriptionHub : IStatusSubscriptionHub
         TimeProvider timeProvider)
     {
         latest = initialSnapshot ?? throw new ArgumentNullException(nameof(initialSnapshot));
+        this.timeProvider = timeProvider ?? throw new ArgumentNullException(nameof(timeProvider));
+    }
+
+    public StatusSubscriptionHub(TimeProvider timeProvider)
+    {
         this.timeProvider = timeProvider ?? throw new ArgumentNullException(nameof(timeProvider));
     }
 
@@ -48,7 +53,10 @@ public sealed class StatusSubscriptionHub : IStatusSubscriptionHub
             lock (sync)
             {
                 subscriptions.Add(id, state);
-                state.TryPublish(latest);
+                if (latest is not null)
+                {
+                    state.TryPublish(latest);
+                }
             }
 
             return new StatusSubscriptionLease(state);
@@ -66,7 +74,7 @@ public sealed class StatusSubscriptionHub : IStatusSubscriptionHub
         SubscriptionState[] targets;
         lock (sync)
         {
-            if (snapshot.Revision <= latest.Revision)
+            if (latest is not null && snapshot.Revision <= latest.Revision)
             {
                 return;
             }

@@ -4,10 +4,15 @@ using OpenSynapse.Contracts;
 namespace OpenSynapse.Service;
 
 public sealed class Worker(
-    StatusRequestHandler handler,
+    ControlRequestHandler handler,
+    IServiceControlRuntime runtime,
+    IStatusSubscriptionHub subscriptionHub,
     MachineProfileBootstrapper profileBootstrapper,
     ILogger<Worker> logger) : BackgroundService
 {
+    private const int MaximumPipeClients = 4;
+    private static readonly TimeSpan RefreshInterval = TimeSpan.FromSeconds(2);
+
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         ProfileLoadResult profiles = await profileBootstrapper.InitializeAsync(stoppingToken);
@@ -16,6 +21,8 @@ public sealed class Worker(
             logger.LogWarning("Invalid machine profiles were replaced with safe defaults.");
         }
 
+        await runtime.UpdateProfilesAsync(profiles.Profiles, stoppingToken);
+
         SecurityIdentifier? authorizedUser = ReadAuthorizedUser();
         if (authorizedUser is null)
         {
@@ -23,11 +30,46 @@ public sealed class Worker(
             return;
         }
 
-        NamedPipeStatusServer server = new(
+        var server = new NamedPipeControlServer(
             OpenSynapseIpc.PipeName,
             authorizedUser,
-            handler);
+            handler,
+            subscriptionHub);
+        Task[] tasks =
+        [
+            RunRefreshLoopAsync(stoppingToken),
+            .. Enumerable.Range(0, MaximumPipeClients)
+                .Select(_ => RunPipeListenerAsync(server, stoppingToken)),
+        ];
+        await Task.WhenAll(tasks);
+    }
 
+    private async Task RunRefreshLoopAsync(CancellationToken stoppingToken)
+    {
+        using var timer = new PeriodicTimer(RefreshInterval);
+        try
+        {
+            while (await timer.WaitForNextTickAsync(stoppingToken))
+            {
+                try
+                {
+                    await runtime.RefreshAsync(stoppingToken);
+                }
+                catch (Exception exception) when (exception is not OperationCanceledException)
+                {
+                    logger.LogError(exception, "Service state refresh failed.");
+                }
+            }
+        }
+        catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+        {
+        }
+    }
+
+    private async Task RunPipeListenerAsync(
+        NamedPipeControlServer server,
+        CancellationToken stoppingToken)
+    {
         while (!stoppingToken.IsCancellationRequested)
         {
             try
@@ -36,11 +78,11 @@ public sealed class Worker(
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
             {
-                break;
+                return;
             }
             catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
             {
-                logger.LogError(exception, "Named-pipe request failed.");
+                logger.LogError(exception, "Named-pipe connection failed.");
             }
         }
     }
