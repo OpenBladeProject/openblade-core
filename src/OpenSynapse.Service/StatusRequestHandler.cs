@@ -24,7 +24,10 @@ public sealed class StatusRequestHandler(IHardwareAccessGuard hardwareAccessGuar
             WritesBlocked: true,
             Conflicts: conflicts,
             Message: accessDecision.DetectionFailure is not null
-                ? $"Controller conflict detection failed: {accessDecision.DetectionFailure}"
+                ? conflicts.Count == 0
+                    ? $"Controller conflict detection failed: {accessDecision.DetectionFailure}"
+                    : $"Controller conflict detection failed: {accessDecision.DetectionFailure} " +
+                        $"Detected conflicts: {string.Join(", ", conflicts)}."
                 : conflicts.Count == 0
                 ? "PID 02E0 command fixtures have not been admitted."
                 : $"Razer controller conflicts detected: {string.Join(", ", conflicts)}.");

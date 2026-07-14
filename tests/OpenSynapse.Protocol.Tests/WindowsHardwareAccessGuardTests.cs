@@ -134,6 +134,20 @@ public sealed class WindowsHardwareAccessGuardTests
     }
 
     [Fact]
+    public void Check_ReturnsDeduplicatedConflictsInDeterministicOrdinalOrder()
+    {
+        WindowsHardwareAccessGuard guard = CreateGuard(
+            ["razerwdl", "RazerAppEngine", "GameManagerService3", "RAZERAPPENGINE"],
+            []);
+
+        HardwareAccessDecision result = guard.Check();
+
+        Assert.Equal(
+            ["GameManagerService3", "RazerAppEngine", "razerwdl"],
+            result.Conflicts);
+    }
+
+    [Fact]
     public void Check_ProcessFailureIsUnsafeAndPreservesServiceConflict()
     {
         WindowsHardwareAccessGuard guard = new(

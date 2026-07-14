@@ -64,7 +64,10 @@ public sealed class StatusRequestHandlerTests
         Assert.NotNull(response.Status);
         Assert.True(response.Status.WritesBlocked);
         Assert.Equal(["RazerAppEngine"], response.Status.Conflicts);
-        Assert.Contains("Windows service enumeration failed.", response.Status.Message);
+        Assert.Equal(
+            "Controller conflict detection failed: Windows service enumeration failed. " +
+            "Detected conflicts: RazerAppEngine.",
+            response.Status.Message);
     }
 
     private sealed class FakeHardwareAccessGuard(

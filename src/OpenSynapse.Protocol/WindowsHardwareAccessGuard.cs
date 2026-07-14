@@ -136,6 +136,7 @@ public sealed class WindowsHardwareAccessGuard(
 
         string[] confirmed = conflicts
             .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(conflict => conflict, StringComparer.Ordinal)
             .ToArray();
         string? detectionFailure = (processFailed, serviceFailed) switch
         {
