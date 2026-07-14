@@ -5,206 +5,269 @@ namespace OpenSynapse.Capture.Tests;
 
 public sealed class BatteryValidationSessionTests
 {
-    private static readonly HidInterfaceInfo ExactInterface = new(
-        "approved", 0x1532, 0x02E0, 0x0001, 0x0002, 91);
-
     [Fact]
-    public async Task Run_WrongTargetAbortsBeforeConflictCheck()
+    public async Task Run_UndefinedCandidateAbortsBeforeFactoryOpen()
     {
         TestContext context = new();
 
-        BatteryValidationResult result = await context.Session.RunAsync(
-            "wrong-model",
-            ExactInterface,
-            BatteryValidationSetting.Limit75,
-            CancellationToken.None);
+        BatteryValidationResult result = await context.RunAsync((BatteryValidationSetting)999);
 
-        Assert.Equal(BatteryValidationPrimaryFailure.WrongTarget, result.PrimaryFailure);
+        Assert.Equal(BatteryValidationPrimaryFailure.UndefinedCandidate, result.PrimaryFailure);
         Assert.Empty(context.Events);
         Assert.False(result.ApplyAttempted);
-        Assert.False(result.Success);
     }
 
-    [Fact]
-    public async Task Run_InitialConflictAbortsBeforeQuery()
+    [Theory]
+    [InlineData(HidSessionFailureKind.IdentityBlocked, BatteryValidationPrimaryFailure.WrongTarget)]
+    [InlineData(HidSessionFailureKind.ConflictBlocked, BatteryValidationPrimaryFailure.Conflict)]
+    [InlineData(HidSessionFailureKind.ConflictDetectionFailed, BatteryValidationPrimaryFailure.ConflictDetectionFailed)]
+    [InlineData(HidSessionFailureKind.Poisoned, BatteryValidationPrimaryFailure.OpenFailed)]
+    [InlineData(HidSessionFailureKind.Exhausted, BatteryValidationPrimaryFailure.OpenFailed)]
+    [InlineData(HidSessionFailureKind.Disposed, BatteryValidationPrimaryFailure.OpenFailed)]
+    [InlineData(HidSessionFailureKind.Timeout, BatteryValidationPrimaryFailure.OpenFailed)]
+    [InlineData(HidSessionFailureKind.NativeIoFailure, BatteryValidationPrimaryFailure.OpenFailed)]
+    [InlineData(HidSessionFailureKind.ProtocolFailure, BatteryValidationPrimaryFailure.OpenFailed)]
+    [InlineData(HidSessionFailureKind.Canceled, BatteryValidationPrimaryFailure.OpenFailed)]
+    [InlineData(HidSessionFailureKind.QueuedCanceled, BatteryValidationPrimaryFailure.OpenFailed)]
+    public async Task Run_MapsFactoryFailureExactly(
+        HidSessionFailureKind failure,
+        BatteryValidationPrimaryFailure expected)
     {
         TestContext context = new();
-        context.ConflictChecks.Clear();
-        context.ConflictChecks.Enqueue(new ValidationConflictCheck(["RazerAppEngine"], null));
+        context.Factory.Result = Failure<IBatteryValidationPort>(failure);
 
         BatteryValidationResult result = await context.RunAsync();
 
-        Assert.Equal(BatteryValidationPrimaryFailure.Conflict, result.PrimaryFailure);
-        Assert.Equal(["conflict"], context.Events);
-        Assert.False(result.ApplyAttempted);
+        Assert.Equal(expected, result.PrimaryFailure);
+        Assert.Equal(["open"], context.Events);
+        Assert.False(context.Port.Disposed);
     }
 
     [Fact]
-    public async Task Run_InitialConflictDetectionFailureAbortsBeforeQuery()
+    public async Task Run_NullSuccessFromFactoryMapsToOpenFailed()
     {
         TestContext context = new();
-        context.ConflictChecks.Clear();
-        context.ConflictChecks.Enqueue(new ValidationConflictCheck(
-            ["RazerAppEngine"],
-            "Process enumeration failed."));
+        context.Factory.Result = new(null, null);
 
         BatteryValidationResult result = await context.RunAsync();
 
-        Assert.Equal(
-            BatteryValidationPrimaryFailure.ConflictDetectionFailed,
-            result.PrimaryFailure);
-        Assert.Equal(["conflict"], context.Events);
-        Assert.False(result.ApplyAttempted);
+        Assert.Equal(BatteryValidationPrimaryFailure.OpenFailed, result.PrimaryFailure);
     }
 
     [Fact]
-    public async Task Run_UnknownPriorAbortsBeforeConfirmationOrApply()
+    public async Task Run_UnexpectedFactoryExceptionMapsToStableOpenFailed()
     {
         TestContext context = new();
-        context.QueryResults.Clear();
-        context.QueryResults.Enqueue(BatteryQueryResult.Unknown);
+        context.Factory.Exception = new IOException("unstable factory detail");
 
         BatteryValidationResult result = await context.RunAsync();
 
-        Assert.Equal(BatteryValidationPrimaryFailure.UnknownPrior, result.PrimaryFailure);
-        Assert.Equal(["conflict", "query"], context.Events);
-        Assert.False(result.ApplyAttempted);
+        Assert.Equal(BatteryValidationPrimaryFailure.OpenFailed, result.PrimaryFailure);
+        Assert.DoesNotContain("unstable factory detail", result.ToString(), StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData(HidSessionFailureKind.NativeIoFailure)]
+    [InlineData(HidSessionFailureKind.Canceled)]
+    [InlineData(HidSessionFailureKind.QueuedCanceled)]
+    public async Task Run_BaselineStableFailureMapsToBaselineQueryFailedAndDisposes(
+        HidSessionFailureKind failure)
+    {
+        TestContext context = new();
+        context.Port.QuerySteps.Clear();
+        context.Port.QuerySteps.Enqueue(_ => Task.FromResult(Failure<BatteryValidationSetting>(failure)));
+
+        BatteryValidationResult result = await context.RunAsync();
+
+        Assert.Equal(BatteryValidationPrimaryFailure.BaselineQueryFailed, result.PrimaryFailure);
+        Assert.Equal(["open", "query", "dispose"], context.Events);
+        Assert.True(context.Port.Disposed);
     }
 
     [Fact]
-    public async Task Run_UndefinedPriorAbortsBeforeConfirmationOrApply()
+    public async Task Run_BaselineExceptionMapsToStableFailureAndDisposes()
     {
         TestContext context = new();
-        context.QueryResults.Clear();
-        context.QueryResults.Enqueue(new BatteryQueryResult((BatteryValidationSetting)999));
+        context.Port.QuerySteps.Clear();
+        context.Port.QuerySteps.Enqueue(_ => Task.FromException<HidSessionResult<BatteryValidationSetting>>(
+            new IOException("unstable query detail")));
+
+        BatteryValidationResult result = await context.RunAsync();
+
+        Assert.Equal(BatteryValidationPrimaryFailure.BaselineQueryFailed, result.PrimaryFailure);
+        Assert.True(context.Port.Disposed);
+        Assert.DoesNotContain("unstable query detail", result.ToString(), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Run_UndefinedBaselineAbortsAndDisposes()
+    {
+        TestContext context = new();
+        context.Port.QuerySteps.Clear();
+        context.Port.QuerySteps.Enqueue(_ => Task.FromResult(Success((BatteryValidationSetting)999)));
 
         BatteryValidationResult result = await context.RunAsync();
 
         Assert.Equal(BatteryValidationPrimaryFailure.UndefinedPrior, result.PrimaryFailure);
-        Assert.Equal(["conflict", "query"], context.Events);
-        Assert.False(result.ApplyAttempted);
+        Assert.Equal(["open", "query", "dispose"], context.Events);
     }
 
     [Fact]
-    public async Task Run_UndefinedCandidateAbortsBeforeConfirmationOrApply()
+    public async Task Run_SameCandidateAbortsAndDisposes()
     {
         TestContext context = new();
 
-        BatteryValidationResult result = await context.Session.RunAsync(
-            TargetBladeDevice.Model,
-            ExactInterface,
-            (BatteryValidationSetting)999,
-            CancellationToken.None);
-
-        Assert.Equal(BatteryValidationPrimaryFailure.UndefinedCandidate, result.PrimaryFailure);
-        Assert.Equal(["conflict"], context.Events);
-        Assert.False(result.ApplyAttempted);
-    }
-
-    [Fact]
-    public async Task Run_SameCandidateAbortsBeforeConfirmationOrApply()
-    {
-        TestContext context = new();
-
-        BatteryValidationResult result = await context.Session.RunAsync(
-            TargetBladeDevice.Model,
-            ExactInterface,
-            BatteryValidationSetting.Limit80,
-            CancellationToken.None);
+        BatteryValidationResult result = await context.RunAsync(BatteryValidationSetting.Limit80);
 
         Assert.Equal(BatteryValidationPrimaryFailure.SameCandidate, result.PrimaryFailure);
-        Assert.Equal(["conflict", "query"], context.Events);
-        Assert.False(result.ApplyAttempted);
+        Assert.Equal(["open", "query", "dispose"], context.Events);
     }
 
     [Fact]
-    public async Task Run_DeclinedApprovalAbortsBeforeApply()
+    public async Task Run_ApprovalDeclineUsesNoApplyAndDisposes()
     {
         TestContext context = new() { ApprovalResult = false };
 
         BatteryValidationResult result = await context.RunAsync();
 
         Assert.Equal(BatteryValidationPrimaryFailure.ApprovalDeclined, result.PrimaryFailure);
-        Assert.Equal(["conflict", "query", "approve"], context.Events);
+        Assert.Equal(["open", "query", "approve", "dispose"], context.Events);
+        Assert.Empty(context.Port.ApplyTokens);
         Assert.False(result.ApplyAttempted);
     }
 
-    [Fact]
-    public async Task Run_ConflictOnSecondCheckAbortsImmediatelyBeforeApply()
+    [Theory]
+    [InlineData("open", true)]
+    [InlineData("baseline", true)]
+    [InlineData("approval", true)]
+    [InlineData("approval", false)]
+    public async Task Run_CallerCancellationAfterSuccessfulPreMutationAwaitRethrowsWithoutApply(
+        string stage,
+        bool approvalResult)
     {
-        TestContext context = new();
-        context.ConflictChecks.Clear();
-        context.ConflictChecks.Enqueue(new ValidationConflictCheck([], null));
-        context.ConflictChecks.Enqueue(new ValidationConflictCheck(["RazerAppEngine"], null));
+        using CancellationTokenSource caller = new();
+        TestContext context = new() { ApprovalResult = approvalResult };
+        if (stage == "open")
+        {
+            context.Factory.Open = _ =>
+            {
+                caller.Cancel();
+                return Task.FromResult(Success<IBatteryValidationPort>(context.Port));
+            };
+        }
+        else if (stage == "baseline")
+        {
+            context.Port.QuerySteps.Clear();
+            context.Port.QuerySteps.Enqueue(_ =>
+            {
+                caller.Cancel();
+                return Task.FromResult(Success(BatteryValidationSetting.Limit80));
+            });
+        }
+        else
+        {
+            context.Approval.OnConfirm = () => caller.Cancel();
+        }
 
-        BatteryValidationResult result = await context.RunAsync();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => context.RunAsync(cancellationToken: caller.Token));
 
-        Assert.Equal(BatteryValidationPrimaryFailure.Conflict, result.PrimaryFailure);
-        Assert.Equal(["conflict", "query", "approve", "conflict"], context.Events);
-        Assert.False(result.ApplyAttempted);
+        Assert.Empty(context.Port.ApplyTokens);
+        Assert.True(context.Port.Disposed);
+        Assert.Equal("dispose", context.Events[^1]);
     }
 
     [Fact]
-    public async Task Run_DetectionFailureOnSecondCheckAbortsImmediatelyBeforeApply()
+    public async Task Run_ApprovalReceivesExactBaselineCandidateAndCallerToken()
     {
+        using CancellationTokenSource caller = new();
         TestContext context = new();
-        context.ConflictChecks.Clear();
-        context.ConflictChecks.Enqueue(new ValidationConflictCheck([], null));
-        context.ConflictChecks.Enqueue(new ValidationConflictCheck(
-            ["RazerAppEngine"],
-            "Windows service enumeration failed."));
 
-        BatteryValidationResult result = await context.RunAsync();
+        await context.RunAsync(cancellationToken: caller.Token);
 
-        Assert.Equal(
-            BatteryValidationPrimaryFailure.ConflictDetectionFailed,
-            result.PrimaryFailure);
-        Assert.Equal(["conflict", "query", "approve", "conflict"], context.Events);
-        Assert.False(result.ApplyAttempted);
+        Assert.Equal(BatteryValidationSetting.Limit80, context.Approval.Prior);
+        Assert.Equal(BatteryValidationSetting.Limit75, context.Approval.Candidate);
+        Assert.Equal(caller.Token, context.Approval.Token);
     }
 
     [Fact]
-    public async Task Run_SuccessUsesExactOrderIndependentQueriesAndCleanupToken()
+    public async Task Run_HappyPathUsesExactOrderIndependentCleanupTokenAndDisposes()
     {
         TestContext context = new();
         using CancellationTokenSource caller = new();
 
-        BatteryValidationResult result = await context.Session.RunAsync(
-            TargetBladeDevice.Model,
-            ExactInterface,
-            BatteryValidationSetting.Limit75,
-            caller.Token);
+        BatteryValidationResult result = await context.RunAsync(cancellationToken: caller.Token);
 
         Assert.Equal(
-            [
-                "conflict",
-                "query",
-                "approve",
-                "conflict",
-                "apply:Limit75",
-                "query",
-                "apply:Limit80",
-                "query",
-            ],
+            ["open", "query", "approve", "apply:Limit75", "query", "apply:Limit80", "query", "dispose"],
             context.Events);
         Assert.True(result.ApplyAttempted);
         Assert.True(result.Applied);
         Assert.True(result.ReadBack);
         Assert.True(result.Restored);
         Assert.True(result.Success);
-        Assert.Equal(BatteryValidationPrimaryFailure.None, result.PrimaryFailure);
+        Assert.Equal(caller.Token, context.Port.ApplyTokens[0]);
+        Assert.NotEqual(caller.Token, context.Port.ApplyTokens[1]);
+        Assert.False(context.Port.ApplyTokens[1].IsCancellationRequested);
+        Assert.Equal(context.Port.ApplyTokens[1], context.Port.QueryTokens[2]);
+        Assert.True(context.Port.Disposed);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Run_CandidateApplyFailureOrExceptionStillRestores(bool throws)
+    {
+        TestContext context = new();
+        context.SetQueries(
+            BatteryValidationSetting.Limit80,
+            BatteryValidationSetting.Limit80);
+        context.Port.ApplySteps.Clear();
+        context.Port.ApplySteps.Enqueue(throws
+            ? _ => Task.FromException<HidSessionResult<HidUnit>>(new IOException("unstable apply detail"))
+            : _ => Task.FromResult(Failure<HidUnit>(HidSessionFailureKind.ProtocolFailure)));
+        context.Port.ApplySteps.Enqueue(_ => Task.FromResult(Success(new HidUnit())));
+
+        BatteryValidationResult result = await context.RunAsync();
+
+        Assert.True(result.ApplyAttempted);
+        Assert.False(result.Applied);
+        Assert.False(result.ReadBack);
+        Assert.True(result.Restored);
+        Assert.Equal(BatteryValidationPrimaryFailure.ApplyFailed, result.PrimaryFailure);
         Assert.Equal(BatteryValidationRestorationFailure.None, result.RestorationFailure);
-        Assert.Equal(caller.Token, context.ApplyTokens[0]);
-        Assert.NotEqual(caller.Token, context.ApplyTokens[1]);
-        Assert.False(context.ApplyTokens[1].IsCancellationRequested);
-        Assert.Equal(context.ApplyTokens[1], context.QueryTokens[2]);
+        Assert.Equal(["open", "query", "approve", "apply:Limit75", "apply:Limit80", "query", "dispose"], context.Events);
+        Assert.DoesNotContain("unstable apply detail", result.ToString(), StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Run_CandidateQueryFailureOrExceptionStillRestores(bool throws)
+    {
+        TestContext context = new();
+        context.Port.QuerySteps.Clear();
+        context.Port.QuerySteps.Enqueue(_ => Task.FromResult(Success(BatteryValidationSetting.Limit80)));
+        context.Port.QuerySteps.Enqueue(throws
+            ? _ => Task.FromException<HidSessionResult<BatteryValidationSetting>>(new IOException("unstable readback detail"))
+            : _ => Task.FromResult(Failure<BatteryValidationSetting>(HidSessionFailureKind.ProtocolFailure)));
+        context.Port.QuerySteps.Enqueue(_ => Task.FromResult(Success(BatteryValidationSetting.Limit80)));
+
+        BatteryValidationResult result = await context.RunAsync();
+
+        Assert.True(result.Applied);
+        Assert.False(result.ReadBack);
+        Assert.True(result.Restored);
+        Assert.Equal(BatteryValidationPrimaryFailure.CandidateQueryFailed, result.PrimaryFailure);
+        Assert.Equal(BatteryValidationRestorationFailure.None, result.RestorationFailure);
+        Assert.True(context.Port.Disposed);
     }
 
     [Fact]
-    public async Task Run_CandidateMismatchStillRestoresAndFailsGates()
+    public async Task Run_CandidateMismatchStillRestores()
     {
         TestContext context = new();
-        context.SetQueryResults(
+        context.SetQueries(
             BatteryValidationSetting.Limit80,
             BatteryValidationSetting.Limit70,
             BatteryValidationSetting.Limit80);
@@ -214,410 +277,313 @@ public sealed class BatteryValidationSessionTests
         Assert.True(result.Applied);
         Assert.False(result.ReadBack);
         Assert.True(result.Restored);
-        Assert.False(result.Success);
         Assert.Equal(BatteryValidationPrimaryFailure.CandidateMismatch, result.PrimaryFailure);
-        Assert.Contains("apply:Limit80", context.Events);
+        Assert.False(result.Success);
     }
 
-    [Fact]
-    public async Task Run_UnknownCandidateReadbackStillRestoresAndFailsGates()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Run_RestoreApplyFailureOrExceptionSkipsRestoreQuery(bool throws)
     {
         TestContext context = new();
-        context.QueryResults.Clear();
-        context.QueryResults.Enqueue(new BatteryQueryResult(BatteryValidationSetting.Limit80));
-        context.QueryResults.Enqueue(BatteryQueryResult.Unknown);
-        context.QueryResults.Enqueue(new BatteryQueryResult(BatteryValidationSetting.Limit80));
+        context.Port.ApplySteps.Clear();
+        context.Port.ApplySteps.Enqueue(_ => Task.FromResult(Success(new HidUnit())));
+        context.Port.ApplySteps.Enqueue(throws
+            ? _ => Task.FromException<HidSessionResult<HidUnit>>(new IOException("unstable restore detail"))
+            : _ => Task.FromResult(Failure<HidUnit>(HidSessionFailureKind.NativeIoFailure)));
 
         BatteryValidationResult result = await context.RunAsync();
 
         Assert.True(result.Applied);
-        Assert.False(result.ReadBack);
-        Assert.True(result.Restored);
-        Assert.False(result.Success);
-        Assert.Equal(BatteryValidationPrimaryFailure.CandidateMismatch, result.PrimaryFailure);
-    }
-
-    [Fact]
-    public async Task Run_ApplyExceptionStillRestoresAndPreservesBothOutcomes()
-    {
-        TestContext context = new();
-        context.ApplyFailures[0] = new IOException("unstable detail");
-        context.SetQueryResults(
-            BatteryValidationSetting.Limit80,
-            BatteryValidationSetting.Limit70);
-
-        BatteryValidationResult result = await context.RunAsync();
-
-        Assert.True(result.ApplyAttempted);
-        Assert.False(result.Applied);
-        Assert.False(result.ReadBack);
+        Assert.True(result.ReadBack);
         Assert.False(result.Restored);
-        Assert.False(result.Success);
-        Assert.Equal(BatteryValidationPrimaryFailure.ApplyFailed, result.PrimaryFailure);
-        Assert.Equal(
-            BatteryValidationRestorationFailure.RestoreMismatch,
-            result.RestorationFailure);
-        Assert.Equal(2, context.ApplyTokens.Count);
+        Assert.Equal(BatteryValidationPrimaryFailure.None, result.PrimaryFailure);
+        Assert.Equal(BatteryValidationRestorationFailure.RestoreApplyFailed, result.RestorationFailure);
+        Assert.Equal(2, context.Port.QueryTokens.Count);
+        Assert.True(context.Port.Disposed);
     }
 
-    [Fact]
-    public async Task Run_CandidateQueryExceptionUsesStableFailureAndRestores()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Run_RestoreQueryFailureOrExceptionIsIndependent(bool throws)
     {
         TestContext context = new();
-        context.QueryFailures[1] = new IOException("unstable detail");
-        context.SetQueryResults(
-            BatteryValidationSetting.Limit80,
-            BatteryValidationSetting.Limit80);
+        context.Port.QuerySteps.Clear();
+        context.Port.QuerySteps.Enqueue(_ => Task.FromResult(Success(BatteryValidationSetting.Limit80)));
+        context.Port.QuerySteps.Enqueue(_ => Task.FromResult(Success(BatteryValidationSetting.Limit75)));
+        context.Port.QuerySteps.Enqueue(throws
+            ? _ => Task.FromException<HidSessionResult<BatteryValidationSetting>>(new IOException("unstable restore query"))
+            : _ => Task.FromResult(Failure<BatteryValidationSetting>(HidSessionFailureKind.ProtocolFailure)));
 
         BatteryValidationResult result = await context.RunAsync();
 
-        Assert.Equal(BatteryValidationPrimaryFailure.CandidateQueryFailed, result.PrimaryFailure);
-        Assert.True(result.Applied);
-        Assert.False(result.ReadBack);
-        Assert.True(result.Restored);
-        Assert.DoesNotContain("unstable detail", result.ToString(), StringComparison.Ordinal);
+        Assert.Equal(BatteryValidationPrimaryFailure.None, result.PrimaryFailure);
+        Assert.Equal(BatteryValidationRestorationFailure.RestoreQueryFailed, result.RestorationFailure);
+        Assert.False(result.Restored);
+        Assert.True(context.Port.Disposed);
     }
 
     [Fact]
-    public async Task Run_RestoreMismatchIsReportedSeparately()
+    public async Task Run_RestoreMismatchIsIndependent()
     {
         TestContext context = new();
-        context.SetQueryResults(
+        context.SetQueries(
             BatteryValidationSetting.Limit80,
             BatteryValidationSetting.Limit75,
             BatteryValidationSetting.Limit70);
 
         BatteryValidationResult result = await context.RunAsync();
 
-        Assert.True(result.Applied);
-        Assert.True(result.ReadBack);
-        Assert.False(result.Restored);
-        Assert.False(result.Success);
         Assert.Equal(BatteryValidationPrimaryFailure.None, result.PrimaryFailure);
-        Assert.Equal(
-            BatteryValidationRestorationFailure.RestoreMismatch,
-            result.RestorationFailure);
-    }
-
-    [Fact]
-    public async Task Run_UnknownRestoreReadbackIsRestoreMismatch()
-    {
-        TestContext context = new();
-        context.QueryResults.Clear();
-        context.QueryResults.Enqueue(new BatteryQueryResult(BatteryValidationSetting.Limit80));
-        context.QueryResults.Enqueue(new BatteryQueryResult(BatteryValidationSetting.Limit75));
-        context.QueryResults.Enqueue(BatteryQueryResult.Unknown);
-
-        BatteryValidationResult result = await context.RunAsync();
-
-        Assert.True(result.Applied);
-        Assert.True(result.ReadBack);
+        Assert.Equal(BatteryValidationRestorationFailure.RestoreMismatch, result.RestorationFailure);
         Assert.False(result.Restored);
-        Assert.False(result.Success);
-        Assert.Equal(
-            BatteryValidationRestorationFailure.RestoreMismatch,
-            result.RestorationFailure);
-    }
-
-    [Fact]
-    public async Task Run_RestoreApplyFailureIsReportedWithoutFinalQuery()
-    {
-        TestContext context = new();
-        context.ApplyFailures[1] = new OperationCanceledException();
-
-        BatteryValidationResult result = await context.RunAsync();
-
-        Assert.True(result.Applied);
-        Assert.True(result.ReadBack);
-        Assert.False(result.Restored);
-        Assert.Equal(
-            BatteryValidationRestorationFailure.RestoreApplyFailed,
-            result.RestorationFailure);
-        Assert.Equal(2, context.QueryTokens.Count);
-    }
-
-    [Fact]
-    public async Task Run_RestoreFinalQueryCancellationIsReported()
-    {
-        TestContext context = new();
-        context.QueryFailures[2] = new OperationCanceledException();
-
-        BatteryValidationResult result = await context.RunAsync();
-
-        Assert.False(result.Restored);
-        Assert.Equal(
-            BatteryValidationRestorationFailure.RestoreQueryFailed,
-            result.RestorationFailure);
-        Assert.Equal(2, context.ApplyTokens.Count);
-        Assert.Equal(3, context.QueryTokens.Count);
-    }
-
-    [Fact]
-    public async Task Run_CallerCancellationBeforeMutationPropagatesWithoutRestore()
-    {
-        TestContext context = new();
-        using CancellationTokenSource caller = new();
-        context.QueryFailures[0] = new OperationCanceledException(caller.Token);
-        context.OnQuery = (index, _) =>
-        {
-            if (index == 0)
-            {
-                caller.Cancel();
-            }
-        };
-
-        await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
-            context.Session.RunAsync(
-                TargetBladeDevice.Model,
-                ExactInterface,
-                BatteryValidationSetting.Limit75,
-                caller.Token));
-
-        Assert.Equal(["conflict", "query"], context.Events);
-        Assert.Empty(context.ApplyTokens);
-    }
-
-    [Fact]
-    public async Task Run_CallerCancellationDuringCandidateSetRestoresThenRethrows()
-    {
-        TestContext context = new();
-        using CancellationTokenSource caller = new();
-        context.SetQueryResults(
-            BatteryValidationSetting.Limit80,
-            BatteryValidationSetting.Limit80);
-        context.ApplyFailures[0] = new OperationCanceledException(caller.Token);
-        context.OnApply = (index, _) =>
-        {
-            if (index == 0)
-            {
-                caller.Cancel();
-            }
-        };
-
-        await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
-            context.Session.RunAsync(
-                TargetBladeDevice.Model,
-                ExactInterface,
-                BatteryValidationSetting.Limit75,
-                caller.Token));
-
-        Assert.Equal(
-            ["apply:Limit75", "apply:Limit80"],
-            context.Events.Where(item => item.StartsWith("apply:", StringComparison.Ordinal)));
-        Assert.NotEqual(caller.Token, context.ApplyTokens[1]);
-        Assert.False(context.ApplyTokens[1].IsCancellationRequested);
-    }
-
-    [Fact]
-    public async Task Run_CallerCancellationDuringCandidateQueryRestoresThenRethrows()
-    {
-        TestContext context = new();
-        using CancellationTokenSource caller = new();
-        context.SetQueryResults(
-            BatteryValidationSetting.Limit80,
-            BatteryValidationSetting.Limit80);
-        context.QueryFailures[1] = new OperationCanceledException(caller.Token);
-        context.OnQuery = (index, _) =>
-        {
-            if (index == 1)
-            {
-                caller.Cancel();
-            }
-        };
-
-        await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
-            context.Session.RunAsync(
-                TargetBladeDevice.Model,
-                ExactInterface,
-                BatteryValidationSetting.Limit75,
-                caller.Token));
-
-        Assert.Equal("apply:Limit80", context.Events[^2]);
-        Assert.Equal("query", context.Events[^1]);
-        Assert.False(context.ApplyTokens[1].IsCancellationRequested);
-    }
-
-    [Fact]
-    public async Task Run_CallerCancellationTriggeredDuringRestoreApplyFinishesCleanupThenRethrows()
-    {
-        TestContext context = new();
-        using CancellationTokenSource caller = new();
-        context.OnApply = (index, _) =>
-        {
-            if (index == 1)
-            {
-                caller.Cancel();
-            }
-        };
-
-        await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
-            context.Session.RunAsync(
-                TargetBladeDevice.Model,
-                ExactInterface,
-                BatteryValidationSetting.Limit75,
-                caller.Token));
-
-        Assert.Equal("apply:Limit80", context.Events[^2]);
-        Assert.Equal("query", context.Events[^1]);
-        Assert.NotEqual(caller.Token, context.ApplyTokens[1]);
-        Assert.False(context.ApplyTokens[1].IsCancellationRequested);
-        Assert.Equal(context.ApplyTokens[1], context.QueryTokens[2]);
-    }
-
-    [Fact]
-    public async Task Run_CallerCancellationTriggeredDuringFinalRestoreQueryFinishesThenRethrows()
-    {
-        TestContext context = new();
-        using CancellationTokenSource caller = new();
-        context.OnQuery = (index, _) =>
-        {
-            if (index == 2)
-            {
-                caller.Cancel();
-            }
-        };
-
-        await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
-            context.Session.RunAsync(
-                TargetBladeDevice.Model,
-                ExactInterface,
-                BatteryValidationSetting.Limit75,
-                caller.Token));
-
-        Assert.Equal("query", context.Events[^1]);
-        Assert.NotEqual(caller.Token, context.QueryTokens[2]);
-        Assert.False(context.QueryTokens[2].IsCancellationRequested);
     }
 
     [Theory]
-    [InlineData(false, BatteryValidationPrimaryFailure.None, BatteryValidationRestorationFailure.None)]
-    [InlineData(true, BatteryValidationPrimaryFailure.ApplyFailed, BatteryValidationRestorationFailure.None)]
-    [InlineData(true, BatteryValidationPrimaryFailure.None, BatteryValidationRestorationFailure.RestoreMismatch)]
-    public void Success_RejectsContradictoryResult(
-        bool applyAttempted,
-        BatteryValidationPrimaryFailure primaryFailure,
-        BatteryValidationRestorationFailure restorationFailure)
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Run_CallerCancellationBeforeMutationRethrowsWithoutRestore(bool stableResult)
     {
-        BatteryValidationResult result = new(
-            ApplyAttempted: applyAttempted,
-            Applied: true,
-            ReadBack: true,
-            Restored: true,
-            PrimaryFailure: primaryFailure,
-            RestorationFailure: restorationFailure);
+        using CancellationTokenSource caller = new();
+        TestContext context = new();
+        context.Port.QuerySteps.Clear();
+        context.Port.QuerySteps.Enqueue(_ =>
+        {
+            caller.Cancel();
+            return stableResult
+                ? Task.FromResult(Failure<BatteryValidationSetting>(HidSessionFailureKind.Canceled))
+                : Task.FromException<HidSessionResult<BatteryValidationSetting>>(
+                    new OperationCanceledException(caller.Token));
+        });
 
-        Assert.False(result.Success);
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => context.RunAsync(cancellationToken: caller.Token));
+
+        Assert.Empty(context.Port.ApplyTokens);
+        Assert.True(context.Port.Disposed);
+        Assert.Equal(["open", "query", "dispose"], context.Events);
     }
+
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(false, true)]
+    [InlineData(true, false)]
+    [InlineData(true, true)]
+    public async Task Run_CallerCancellationDuringCandidateOperationRestoresThenRethrows(
+        bool duringQuery,
+        bool stableResult)
+    {
+        using CancellationTokenSource caller = new();
+        TestContext context = new();
+        if (duringQuery)
+        {
+            context.Port.QuerySteps.Clear();
+            context.Port.QuerySteps.Enqueue(_ => Task.FromResult(Success(BatteryValidationSetting.Limit80)));
+            context.Port.QuerySteps.Enqueue(_ => CancelQuery(caller, stableResult));
+            context.Port.QuerySteps.Enqueue(_ => Task.FromResult(Success(BatteryValidationSetting.Limit80)));
+        }
+        else
+        {
+            context.Port.ApplySteps.Clear();
+            context.Port.ApplySteps.Enqueue(_ => CancelApply(caller, stableResult));
+            context.Port.ApplySteps.Enqueue(_ => Task.FromResult(Success(new HidUnit())));
+        }
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => context.RunAsync(cancellationToken: caller.Token));
+
+        Assert.Equal(2, context.Port.ApplyTokens.Count);
+        Assert.True(context.Port.QueryTokens.Count >= 2);
+        Assert.False(context.Port.ApplyTokens[1].IsCancellationRequested);
+        Assert.True(context.Port.Disposed);
+        Assert.Equal("dispose", context.Events[^1]);
+    }
+
+    [Fact]
+    public async Task Run_CancellationTriggeredDuringCleanupCompletesCleanupDisposesThenRethrows()
+    {
+        using CancellationTokenSource caller = new();
+        TestContext context = new();
+        context.Port.ApplySteps.Clear();
+        context.Port.ApplySteps.Enqueue(_ => Task.FromResult(Success(new HidUnit())));
+        context.Port.ApplySteps.Enqueue(cleanupToken =>
+        {
+            Assert.False(cleanupToken.IsCancellationRequested);
+            caller.Cancel();
+            return Task.FromResult(Success(new HidUnit()));
+        });
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => context.RunAsync(cancellationToken: caller.Token));
+
+        Assert.Equal(["open", "query", "approve", "apply:Limit75", "query", "apply:Limit80", "query", "dispose"], context.Events);
+        Assert.False(context.Port.QueryTokens[2].IsCancellationRequested);
+        Assert.True(context.Port.Disposed);
+    }
+
+    [Fact]
+    public async Task Run_FactoryCallerCancellationIsExceptional()
+    {
+        using CancellationTokenSource caller = new();
+        TestContext context = new();
+        context.Factory.Open = token =>
+        {
+            caller.Cancel();
+            return Task.FromResult(Failure<IBatteryValidationPort>(HidSessionFailureKind.QueuedCanceled));
+        };
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => context.RunAsync(cancellationToken: caller.Token));
+
+        Assert.False(context.Port.Disposed);
+    }
+
+    private static async Task<HidSessionResult<HidUnit>> CancelApply(
+        CancellationTokenSource caller,
+        bool stableResult)
+    {
+        caller.Cancel();
+        if (!stableResult)
+        {
+            await Task.Yield();
+            throw new OperationCanceledException(caller.Token);
+        }
+
+        return Failure<HidUnit>(HidSessionFailureKind.Canceled);
+    }
+
+    private static async Task<HidSessionResult<BatteryValidationSetting>> CancelQuery(
+        CancellationTokenSource caller,
+        bool stableResult)
+    {
+        caller.Cancel();
+        if (!stableResult)
+        {
+            await Task.Yield();
+            throw new OperationCanceledException(caller.Token);
+        }
+
+        return Failure<BatteryValidationSetting>(HidSessionFailureKind.QueuedCanceled);
+    }
+
+    private static HidSessionResult<T> Success<T>(T value) => new(value, null);
+
+    private static HidSessionResult<T> Failure<T>(HidSessionFailureKind failure) =>
+        new(default, failure);
 
     private sealed class TestContext
     {
         public TestContext()
         {
-            QueryResults.Enqueue(new BatteryQueryResult(BatteryValidationSetting.Limit80));
-            QueryResults.Enqueue(new BatteryQueryResult(BatteryValidationSetting.Limit75));
-            QueryResults.Enqueue(new BatteryQueryResult(BatteryValidationSetting.Limit80));
-            ConflictChecks.Enqueue(new ValidationConflictCheck([], null));
-            ConflictChecks.Enqueue(new ValidationConflictCheck([], null));
+            Port = new FakePort(Events);
+            Factory = new FakeFactory(Events) { Result = Success<IBatteryValidationPort>(Port) };
             Session = new BatteryValidationSession(
-                new FakePort(this),
-                new FakeConflictGuard(this),
-                new FakeApproval(this),
+                Factory,
+                Approval = new FakeApproval(Events, () => ApprovalResult),
                 TimeSpan.FromSeconds(1));
+
+            SetQueries(
+                BatteryValidationSetting.Limit80,
+                BatteryValidationSetting.Limit75,
+                BatteryValidationSetting.Limit80);
+            Port.ApplySteps.Enqueue(_ => Task.FromResult(Success(new HidUnit())));
+            Port.ApplySteps.Enqueue(_ => Task.FromResult(Success(new HidUnit())));
         }
 
         public List<string> Events { get; } = [];
-
-        public Queue<BatteryQueryResult> QueryResults { get; } = [];
-
-        public Queue<ValidationConflictCheck> ConflictChecks { get; } = [];
-
-        public List<CancellationToken> ApplyTokens { get; } = [];
-
-        public List<CancellationToken> QueryTokens { get; } = [];
-
-        public Dictionary<int, Exception> ApplyFailures { get; } = [];
-
-        public Dictionary<int, Exception> QueryFailures { get; } = [];
-
-        public Action<int, CancellationToken>? OnApply { get; set; }
-
-        public Action<int, CancellationToken>? OnQuery { get; set; }
-
+        public FakeFactory Factory { get; }
+        public FakePort Port { get; }
+        public FakeApproval Approval { get; }
         public BatteryValidationSession Session { get; }
+        public bool ApprovalResult { get; set; } = true;
 
-        public bool ApprovalResult { get; init; } = true;
+        public Task<BatteryValidationResult> RunAsync(
+            BatteryValidationSetting candidate = BatteryValidationSetting.Limit75,
+            CancellationToken cancellationToken = default) =>
+            Session.RunAsync(candidate, cancellationToken);
 
-        public Task<BatteryValidationResult> RunAsync() => Session.RunAsync(
-            TargetBladeDevice.Model,
-            ExactInterface,
-            BatteryValidationSetting.Limit75,
-            CancellationToken.None);
-
-        public void SetQueryResults(params BatteryValidationSetting[] settings)
+        public void SetQueries(params BatteryValidationSetting[] settings)
         {
-            QueryResults.Clear();
+            Port.QuerySteps.Clear();
             foreach (BatteryValidationSetting setting in settings)
             {
-                Assert.True(Enum.IsDefined(setting));
-                QueryResults.Enqueue(new BatteryQueryResult(setting));
+                Port.QuerySteps.Enqueue(_ => Task.FromResult(Success(setting)));
             }
         }
+    }
 
-        private sealed class FakePort(TestContext context) : IBatteryValidationPort
+    private sealed class FakeFactory(List<string> events) : IBatteryValidationRunFactory
+    {
+        public HidSessionResult<IBatteryValidationPort> Result { get; set; }
+        public Exception? Exception { get; set; }
+        public Func<CancellationToken, Task<HidSessionResult<IBatteryValidationPort>>>? Open { get; set; }
+
+        public Task<HidSessionResult<IBatteryValidationPort>> OpenAsync(CancellationToken cancellationToken)
         {
-            public Task<BatteryQueryResult> QueryAsync(CancellationToken cancellationToken)
+            events.Add("open");
+            if (Open is not null)
             {
-                int index = context.QueryTokens.Count;
-                context.Events.Add("query");
-                context.QueryTokens.Add(cancellationToken);
-                context.OnQuery?.Invoke(index, cancellationToken);
-                if (context.QueryFailures.TryGetValue(index, out Exception? failure))
-                {
-                    return Task.FromException<BatteryQueryResult>(failure);
-                }
-
-                return Task.FromResult(context.QueryResults.Dequeue());
+                return Open(cancellationToken);
             }
 
-            public Task ApplyAsync(
-                BatteryValidationSetting setting,
-                CancellationToken cancellationToken)
-            {
-                int index = context.ApplyTokens.Count;
-                Assert.True(Enum.IsDefined(setting));
-                context.Events.Add($"apply:{setting}");
-                context.ApplyTokens.Add(cancellationToken);
-                context.OnApply?.Invoke(index, cancellationToken);
-                if (context.ApplyFailures.TryGetValue(index, out Exception? failure))
-                {
-                    return Task.FromException(failure);
-                }
+            return Exception is null
+                ? Task.FromResult(Result)
+                : Task.FromException<HidSessionResult<IBatteryValidationPort>>(Exception);
+        }
+    }
 
-                return Task.CompletedTask;
-            }
+    private sealed class FakePort(List<string> events) : IBatteryValidationPort
+    {
+        public Queue<Func<CancellationToken, Task<HidSessionResult<BatteryValidationSetting>>>> QuerySteps { get; } = [];
+        public Queue<Func<CancellationToken, Task<HidSessionResult<HidUnit>>>> ApplySteps { get; } = [];
+        public List<CancellationToken> QueryTokens { get; } = [];
+        public List<CancellationToken> ApplyTokens { get; } = [];
+        public bool Disposed { get; private set; }
+
+        public Task<HidSessionResult<BatteryValidationSetting>> QueryAsync(CancellationToken cancellationToken)
+        {
+            events.Add("query");
+            QueryTokens.Add(cancellationToken);
+            return QuerySteps.Dequeue()(cancellationToken);
         }
 
-        private sealed class FakeConflictGuard(TestContext context) : IValidationConflictGuard
+        public Task<HidSessionResult<HidUnit>> ApplyAsync(
+            BatteryValidationSetting setting,
+            CancellationToken cancellationToken)
         {
-            public ValidationConflictCheck Check()
-            {
-                context.Events.Add("conflict");
-                return context.ConflictChecks.Dequeue();
-            }
+            events.Add($"apply:{setting}");
+            ApplyTokens.Add(cancellationToken);
+            return ApplySteps.Dequeue()(cancellationToken);
         }
 
-        private sealed class FakeApproval(TestContext context) : IInteractiveApproval
+        public ValueTask DisposeAsync()
         {
-            public Task<bool> ConfirmAsync(
-                BatteryValidationSetting prior,
-                BatteryValidationSetting candidate,
-                CancellationToken cancellationToken)
-            {
-                Assert.True(Enum.IsDefined(prior));
-                Assert.True(Enum.IsDefined(candidate));
-                context.Events.Add("approve");
-                return Task.FromResult(context.ApprovalResult);
-            }
+            events.Add("dispose");
+            Disposed = true;
+            return ValueTask.CompletedTask;
+        }
+    }
+
+    private sealed class FakeApproval(List<string> events, Func<bool> result) : IInteractiveApproval
+    {
+        public Action? OnConfirm { get; set; }
+        public BatteryValidationSetting? Prior { get; private set; }
+        public BatteryValidationSetting? Candidate { get; private set; }
+        public CancellationToken Token { get; private set; }
+
+        public Task<bool> ConfirmAsync(
+            BatteryValidationSetting prior,
+            BatteryValidationSetting candidate,
+            CancellationToken cancellationToken)
+        {
+            events.Add("approve");
+            Prior = prior;
+            Candidate = candidate;
+            Token = cancellationToken;
+            OnConfirm?.Invoke();
+            return Task.FromResult(result());
         }
     }
 }

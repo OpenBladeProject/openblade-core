@@ -3,32 +3,6 @@ using System.Runtime.ExceptionServices;
 
 namespace OpenSynapse.Capture;
 
-public readonly record struct BatteryQueryResult(BatteryValidationSetting? Setting)
-{
-    public static BatteryQueryResult Unknown { get; } = new(null);
-}
-
-public sealed record ValidationConflictCheck(
-    IReadOnlyList<string> Conflicts,
-    string? DetectionFailure)
-{
-    public bool Safe => Conflicts.Count == 0 && DetectionFailure is null;
-}
-
-public interface IValidationConflictGuard
-{
-    ValidationConflictCheck Check();
-}
-
-public interface IBatteryValidationPort
-{
-    Task<BatteryQueryResult> QueryAsync(CancellationToken cancellationToken);
-
-    Task ApplyAsync(
-        BatteryValidationSetting setting,
-        CancellationToken cancellationToken);
-}
-
 public interface IInteractiveApproval
 {
     Task<bool> ConfirmAsync(
@@ -43,6 +17,8 @@ public enum BatteryValidationPrimaryFailure
     WrongTarget,
     Conflict,
     ConflictDetectionFailed,
+    OpenFailed,
+    BaselineQueryFailed,
     UnknownPrior,
     UndefinedPrior,
     UndefinedCandidate,
@@ -78,8 +54,7 @@ public sealed record BatteryValidationResult(
 }
 
 public sealed class BatteryValidationSession(
-    IBatteryValidationPort port,
-    IValidationConflictGuard conflictGuard,
+    IBatteryValidationRunFactory factory,
     IInteractiveApproval approval,
     TimeSpan cleanupTimeout)
 {
@@ -89,139 +64,231 @@ public sealed class BatteryValidationSession(
             : throw new ArgumentOutOfRangeException(nameof(cleanupTimeout));
 
     public async Task<BatteryValidationResult> RunAsync(
-        string? model,
-        HidInterfaceInfo? interfaceInfo,
         BatteryValidationSetting candidate,
         CancellationToken cancellationToken)
     {
-        if (!TargetBladeDevice.IsExactInteractiveValidationTarget(model, interfaceInfo))
-        {
-            return Abort(BatteryValidationPrimaryFailure.WrongTarget);
-        }
-
-        ValidationConflictCheck initialConflict = conflictGuard.Check();
-        if (!initialConflict.Safe)
-        {
-            return Abort(initialConflict.DetectionFailure is null
-                ? BatteryValidationPrimaryFailure.Conflict
-                : BatteryValidationPrimaryFailure.ConflictDetectionFailed);
-        }
-
         if (!Enum.IsDefined(candidate))
         {
             return Abort(BatteryValidationPrimaryFailure.UndefinedCandidate);
         }
 
-        BatteryQueryResult priorResult = await port.QueryAsync(cancellationToken);
-        if (priorResult.Setting is null)
-        {
-            return Abort(BatteryValidationPrimaryFailure.UnknownPrior);
-        }
-
-        BatteryValidationSetting prior = priorResult.Setting.Value;
-        if (!Enum.IsDefined(prior))
-        {
-            return Abort(BatteryValidationPrimaryFailure.UndefinedPrior);
-        }
-
-        if (candidate == prior)
-        {
-            return Abort(BatteryValidationPrimaryFailure.SameCandidate);
-        }
-
-        if (!await approval.ConfirmAsync(prior, candidate, cancellationToken))
-        {
-            return Abort(BatteryValidationPrimaryFailure.ApprovalDeclined);
-        }
-
-        ValidationConflictCheck preApplyConflict = conflictGuard.Check();
-        if (!preApplyConflict.Safe)
-        {
-            return Abort(preApplyConflict.DetectionFailure is null
-                ? BatteryValidationPrimaryFailure.Conflict
-                : BatteryValidationPrimaryFailure.ConflictDetectionFailed);
-        }
-
-        bool applied = false;
-        bool readBack = false;
-        bool restored = false;
-        BatteryValidationPrimaryFailure primaryFailure = BatteryValidationPrimaryFailure.None;
-        BatteryValidationRestorationFailure restorationFailure =
-            BatteryValidationRestorationFailure.None;
-        OperationCanceledException? callerCancellation = null;
-
+        HidSessionResult<IBatteryValidationPort> opened;
         try
         {
-            await port.ApplyAsync(candidate, cancellationToken);
-            applied = true;
-
-            BatteryQueryResult candidateResult = await port.QueryAsync(cancellationToken);
-            readBack = candidateResult.Setting == candidate;
-            if (!readBack)
-            {
-                primaryFailure = BatteryValidationPrimaryFailure.CandidateMismatch;
-            }
+            opened = await factory.OpenAsync(cancellationToken).ConfigureAwait(false);
         }
-        catch (OperationCanceledException exception) when (cancellationToken.IsCancellationRequested)
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
-            callerCancellation = exception;
-            primaryFailure = applied
-                ? BatteryValidationPrimaryFailure.CandidateQueryFailed
-                : BatteryValidationPrimaryFailure.ApplyFailed;
+            throw;
         }
         catch (Exception)
         {
-            primaryFailure = applied
-                ? BatteryValidationPrimaryFailure.CandidateQueryFailed
-                : BatteryValidationPrimaryFailure.ApplyFailed;
+            return Abort(BatteryValidationPrimaryFailure.OpenFailed);
         }
-        finally
+
+        if (IsCallerCancellation(opened.Failure, cancellationToken))
         {
-            using CancellationTokenSource cleanup = new(_cleanupTimeout);
-            bool restoreApplied = false;
+            cancellationToken.ThrowIfCancellationRequested();
+        }
+
+        if (opened.Failure is not null || opened.Value is not { } port)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return Abort(MapOpenFailure(opened.Failure));
+        }
+
+        await using (port.ConfigureAwait(false))
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            HidSessionResult<BatteryValidationSetting> baseline;
             try
             {
-                await port.ApplyAsync(prior, cleanup.Token);
-                restoreApplied = true;
+                baseline = await port.QueryAsync(cancellationToken).ConfigureAwait(false);
+                cancellationToken.ThrowIfCancellationRequested();
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
             }
             catch (Exception)
             {
-                restorationFailure = BatteryValidationRestorationFailure.RestoreApplyFailed;
+                return Abort(BatteryValidationPrimaryFailure.BaselineQueryFailed);
             }
 
-            if (restoreApplied)
+            if (IsCallerCancellation(baseline.Failure, cancellationToken))
             {
-                try
+                cancellationToken.ThrowIfCancellationRequested();
+            }
+
+            if (baseline.Failure is not null)
+            {
+                return Abort(BatteryValidationPrimaryFailure.BaselineQueryFailed);
+            }
+
+            BatteryValidationSetting prior = baseline.Value;
+            if (!Enum.IsDefined(prior))
+            {
+                return Abort(BatteryValidationPrimaryFailure.UndefinedPrior);
+            }
+
+            if (candidate == prior)
+            {
+                return Abort(BatteryValidationPrimaryFailure.SameCandidate);
+            }
+
+            bool approved = await approval
+                .ConfirmAsync(prior, candidate, cancellationToken)
+                .ConfigureAwait(false);
+            cancellationToken.ThrowIfCancellationRequested();
+            if (!approved)
+            {
+                return Abort(BatteryValidationPrimaryFailure.ApprovalDeclined);
+            }
+
+            bool applyAttempted = false;
+            bool applied = false;
+            bool readBack = false;
+            bool restored = false;
+            BatteryValidationPrimaryFailure primaryFailure = BatteryValidationPrimaryFailure.None;
+            BatteryValidationRestorationFailure restorationFailure =
+                BatteryValidationRestorationFailure.None;
+            OperationCanceledException? callerCancellation = null;
+
+            try
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                applyAttempted = true;
+                HidSessionResult<HidUnit> apply =
+                    await port.ApplyAsync(candidate, cancellationToken).ConfigureAwait(false);
+                if (apply.Failure is not null)
                 {
-                    BatteryQueryResult restoredResult = await port.QueryAsync(cleanup.Token);
-                    restored = restoredResult.Setting == prior;
-                    if (!restored)
+                    primaryFailure = BatteryValidationPrimaryFailure.ApplyFailed;
+                    if (IsCallerCancellation(apply.Failure, cancellationToken))
                     {
-                        restorationFailure = BatteryValidationRestorationFailure.RestoreMismatch;
+                        callerCancellation = new OperationCanceledException(cancellationToken);
                     }
                 }
-                catch (Exception)
+                else
                 {
-                    restorationFailure = BatteryValidationRestorationFailure.RestoreQueryFailed;
+                    applied = true;
+                    HidSessionResult<BatteryValidationSetting> candidateQuery =
+                        await port.QueryAsync(cancellationToken).ConfigureAwait(false);
+                    if (candidateQuery.Failure is not null)
+                    {
+                        primaryFailure = BatteryValidationPrimaryFailure.CandidateQueryFailed;
+                        if (IsCallerCancellation(candidateQuery.Failure, cancellationToken))
+                        {
+                            callerCancellation = new OperationCanceledException(cancellationToken);
+                        }
+                    }
+                    else
+                    {
+                        readBack = candidateQuery.Value == candidate;
+                        if (!readBack)
+                        {
+                            primaryFailure = BatteryValidationPrimaryFailure.CandidateMismatch;
+                        }
+                    }
                 }
             }
+            catch (OperationCanceledException exception) when (cancellationToken.IsCancellationRequested)
+            {
+                callerCancellation = exception;
+                primaryFailure = applied
+                    ? BatteryValidationPrimaryFailure.CandidateQueryFailed
+                    : BatteryValidationPrimaryFailure.ApplyFailed;
+            }
+            catch (Exception)
+            {
+                primaryFailure = applied
+                    ? BatteryValidationPrimaryFailure.CandidateQueryFailed
+                    : BatteryValidationPrimaryFailure.ApplyFailed;
+            }
+            finally
+            {
+                if (applyAttempted)
+                {
+                    using CancellationTokenSource cleanup = new(_cleanupTimeout);
+                    bool restoreApplied = false;
+                    try
+                    {
+                        HidSessionResult<HidUnit> restoreApply =
+                            await port.ApplyAsync(prior, cleanup.Token).ConfigureAwait(false);
+                        restoreApplied = restoreApply.Failure is null;
+                        if (!restoreApplied)
+                        {
+                            restorationFailure =
+                                BatteryValidationRestorationFailure.RestoreApplyFailed;
+                        }
+                    }
+                    catch (Exception)
+                    {
+                        restorationFailure =
+                            BatteryValidationRestorationFailure.RestoreApplyFailed;
+                    }
+
+                    if (restoreApplied)
+                    {
+                        try
+                        {
+                            HidSessionResult<BatteryValidationSetting> restoreQuery =
+                                await port.QueryAsync(cleanup.Token).ConfigureAwait(false);
+                            if (restoreQuery.Failure is not null)
+                            {
+                                restorationFailure =
+                                    BatteryValidationRestorationFailure.RestoreQueryFailed;
+                            }
+                            else
+                            {
+                                restored = restoreQuery.Value == prior;
+                                if (!restored)
+                                {
+                                    restorationFailure =
+                                        BatteryValidationRestorationFailure.RestoreMismatch;
+                                }
+                            }
+                        }
+                        catch (Exception)
+                        {
+                            restorationFailure =
+                                BatteryValidationRestorationFailure.RestoreQueryFailed;
+                        }
+                    }
+                }
+            }
+
+            if (callerCancellation is not null)
+            {
+                ExceptionDispatchInfo.Capture(callerCancellation).Throw();
+            }
+
+            cancellationToken.ThrowIfCancellationRequested();
+
+            return new BatteryValidationResult(
+                ApplyAttempted: applyAttempted,
+                Applied: applied,
+                ReadBack: readBack,
+                Restored: restored,
+                PrimaryFailure: primaryFailure,
+                RestorationFailure: restorationFailure);
         }
-
-        if (callerCancellation is not null)
-        {
-            ExceptionDispatchInfo.Capture(callerCancellation).Throw();
-        }
-
-        cancellationToken.ThrowIfCancellationRequested();
-
-        return new BatteryValidationResult(
-            ApplyAttempted: true,
-            Applied: applied,
-            ReadBack: readBack,
-            Restored: restored,
-            PrimaryFailure: primaryFailure,
-            RestorationFailure: restorationFailure);
     }
+
+    private static bool IsCallerCancellation(
+        HidSessionFailureKind? failure,
+        CancellationToken cancellationToken) =>
+        cancellationToken.IsCancellationRequested
+        && failure is HidSessionFailureKind.Canceled or HidSessionFailureKind.QueuedCanceled;
+
+    private static BatteryValidationPrimaryFailure MapOpenFailure(
+        HidSessionFailureKind? failure) => failure switch
+        {
+            HidSessionFailureKind.IdentityBlocked => BatteryValidationPrimaryFailure.WrongTarget,
+            HidSessionFailureKind.ConflictBlocked => BatteryValidationPrimaryFailure.Conflict,
+            HidSessionFailureKind.ConflictDetectionFailed =>
+                BatteryValidationPrimaryFailure.ConflictDetectionFailed,
+            _ => BatteryValidationPrimaryFailure.OpenFailed,
+        };
 
     private static BatteryValidationResult Abort(BatteryValidationPrimaryFailure failure) => new(
         ApplyAttempted: false,
