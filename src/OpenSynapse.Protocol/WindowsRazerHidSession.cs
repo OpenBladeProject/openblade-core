@@ -4,10 +4,21 @@ internal readonly record struct RazerCommandSpec(
     byte ClassId,
     byte CommandId,
     ReadOnlyMemory<byte> Arguments,
-    int ExpectedPayloadLength)
+    int ExpectedPayloadLength,
+    Func<ReadOnlyMemory<byte>, bool>? PayloadValidator = null)
 {
-    internal RazerCommandSpec(byte classId, byte commandId, byte[] arguments, int expectedPayloadLength)
-        : this(classId, commandId, (ReadOnlyMemory<byte>)arguments, expectedPayloadLength)
+    internal RazerCommandSpec(
+        byte classId,
+        byte commandId,
+        byte[] arguments,
+        int expectedPayloadLength,
+        Func<ReadOnlyMemory<byte>, bool>? payloadValidator = null)
+        : this(
+            classId,
+            commandId,
+            (ReadOnlyMemory<byte>)arguments,
+            expectedPayloadLength,
+            payloadValidator)
     {
     }
 }
@@ -138,7 +149,8 @@ internal sealed class WindowsRazerHidSession : IRazerCommandSession
             command.ClassId,
             command.CommandId,
             command.Arguments.ToArray(),
-            command.ExpectedPayloadLength);
+            command.ExpectedPayloadLength,
+            command.PayloadValidator);
         var item = new WorkItem(snapshot, assignTransactionId, exchangeTimeout, cancellationToken);
 
         lock (sync)
@@ -407,6 +419,23 @@ internal sealed class WindowsRazerHidSession : IRazerCommandSession
             ReadOnlyMemory<byte> payload = request.ValidateResponse(
                 getBuffer.AsSpan(1, RazerReport.ReportLength),
                 item.Command.ExpectedPayloadLength);
+            if (item.Command.PayloadValidator is not null)
+            {
+                bool valid;
+                try
+                {
+                    valid = item.Command.PayloadValidator(payload);
+                }
+                catch
+                {
+                    throw new RazerProtocolException("Command payload validator failed.");
+                }
+
+                if (!valid)
+                {
+                    throw new RazerProtocolException("Command payload validation failed.");
+                }
+            }
 
             return new(payload.ToArray(), null);
         }

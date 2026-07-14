@@ -14,7 +14,14 @@ internal interface IBatteryCommandClient
 
 internal sealed class BatteryCommandClient : IBatteryCommandClient
 {
-    private static readonly RazerCommandSpec QueryCommand = new(0x07, 0x92, [0x00], 1);
+    private static readonly RazerCommandSpec QueryCommand = new(
+        0x07,
+        0x92,
+        [0x00],
+        1,
+        static payload => BatteryValidationProtocol.TryDecodeQuery(
+            payload.Span,
+            out _));
 
     private readonly IRazerCommandSession session;
     private readonly TimeSpan exchangeTimeout;
@@ -72,7 +79,13 @@ internal sealed class BatteryCommandClient : IBatteryCommandClient
         CancellationToken cancellationToken)
     {
         HidSessionResult<ReadOnlyMemory<byte>> response = await session.ExecuteAsync(
-            new RazerCommandSpec(0x07, 0x12, [payload], 1),
+            new RazerCommandSpec(
+                0x07,
+                0x12,
+                [payload],
+                1,
+                acknowledgement =>
+                    acknowledgement.Length == 1 && acknowledgement.Span[0] == payload),
             () => assignment,
             exchangeTimeout,
             cancellationToken).ConfigureAwait(false);

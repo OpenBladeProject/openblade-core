@@ -721,6 +721,121 @@ public sealed class WindowsRazerHidSessionTests
         await actor.DisposeAsync();
     }
 
+    [Fact]
+    public async Task UnknownBatteryQueryValue_PoisonsBeforeQueuedSecondIo()
+    {
+        var getEntered = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseGet = new TaskCompletionSource<HidFeatureIoResult>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var io = new ScriptedIo(
+            SetSuccess(),
+            (_, _, buffer, _, _) =>
+            {
+                Response(1, 0x07, 0x92, [0xFF]).CopyTo(buffer, 0);
+                getEntered.TrySetResult(true);
+                return releaseGet.Task;
+            },
+            SetSuccess());
+        await using WindowsRazerHidSession actor = CreateActor(io);
+        var client = new BatteryCommandClient(actor, Timeout);
+
+        Task<HidSessionResult<BatteryValidationSetting>> query = client.QueryAsync(1, default);
+        await getEntered.Task;
+        Task<HidSessionResult<ReadOnlyMemory<byte>>> queued = actor.ExecuteAsync(
+            new(1, 1, [], 0),
+            () => TransactionIdAssignment.Valid(2),
+            Timeout,
+            default);
+        releaseGet.SetResult(new HidFeatureIoResult(
+            new NativeIoCompletion(true, 91, 0),
+            true,
+            HidFeatureTermination.Completed));
+
+        Assert.Equal(HidSessionFailureKind.ProtocolFailure, (await query).Failure);
+        Assert.Equal(HidSessionFailureKind.Poisoned, (await queued).Failure);
+        Assert.Equal(2, io.Calls.Count);
+    }
+
+    [Fact]
+    public async Task IncorrectBatterySetterAck_PoisonsBeforeQueuedSecondIo()
+    {
+        var getEntered = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseGet = new TaskCompletionSource<HidFeatureIoResult>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var io = new ScriptedIo(
+            SetSuccess(),
+            (_, _, buffer, _, _) =>
+            {
+                Response(1, 0x07, 0x12, [0xC1]).CopyTo(buffer, 0);
+                getEntered.TrySetResult(true);
+                return releaseGet.Task;
+            },
+            SetSuccess());
+        await using WindowsRazerHidSession actor = CreateActor(io);
+        var client = new BatteryCommandClient(actor, Timeout);
+
+        Task<HidSessionResult<HidUnit>> set =
+            client.SetAsync(1, BatteryValidationSetting.Limit70, default);
+        await getEntered.Task;
+        Task<HidSessionResult<ReadOnlyMemory<byte>>> queued = actor.ExecuteAsync(
+            new(1, 1, [], 0),
+            () => TransactionIdAssignment.Valid(2),
+            Timeout,
+            default);
+        releaseGet.SetResult(new HidFeatureIoResult(
+            new NativeIoCompletion(true, 91, 0),
+            true,
+            HidFeatureTermination.Completed));
+
+        Assert.Equal(HidSessionFailureKind.ProtocolFailure, (await set).Failure);
+        Assert.Equal(HidSessionFailureKind.Poisoned, (await queued).Failure);
+        Assert.Equal(2, io.Calls.Count);
+    }
+
+    [Fact]
+    public async Task UnknownBatteryCandidateQuery_ForcesRecoveryActorForRestoration()
+    {
+        var primaryIo = new ScriptedIo(
+            SetSuccess(), GetSuccess(1, 0x07, 0x92, [0xD0]),
+            SetSuccess(), GetSuccess(2, 0x07, 0x12, [0xC6]),
+            SetSuccess(), GetSuccess(3, 0x07, 0x92, [0xFF]));
+        var recoveryIo = new ScriptedIo(
+            SetSuccess(), GetSuccess(4, 0x07, 0x12, [0xD0]),
+            SetSuccess(), GetSuccess(5, 0x07, 0x92, [0xD0]));
+        IBatteryValidationPort port = await OpenValidationPortAsync(primaryIo, recoveryIo);
+
+        Assert.Equal(BatteryValidationSetting.Limit80, (await port.QueryAsync(default)).Value);
+        Assert.Null((await port.ApplyAsync(BatteryValidationSetting.Limit70, default)).Failure);
+        Assert.Equal(HidSessionFailureKind.ProtocolFailure, (await port.QueryAsync(default)).Failure);
+        Assert.Null((await port.ApplyAsync(BatteryValidationSetting.Limit80, default)).Failure);
+        Assert.Equal(BatteryValidationSetting.Limit80, (await port.QueryAsync(default)).Value);
+
+        Assert.Equal(6, primaryIo.Calls.Count);
+        Assert.Equal(4, recoveryIo.Calls.Count);
+        await port.DisposeAsync();
+    }
+
+    [Fact]
+    public async Task IncorrectBatteryCandidateSetterAck_ForcesRecoveryActorForRestoration()
+    {
+        var primaryIo = new ScriptedIo(
+            SetSuccess(), GetSuccess(1, 0x07, 0x92, [0xD0]),
+            SetSuccess(), GetSuccess(2, 0x07, 0x12, [0xC1]));
+        var recoveryIo = new ScriptedIo(
+            SetSuccess(), GetSuccess(4, 0x07, 0x12, [0xD0]),
+            SetSuccess(), GetSuccess(5, 0x07, 0x92, [0xD0]));
+        IBatteryValidationPort port = await OpenValidationPortAsync(primaryIo, recoveryIo);
+
+        Assert.Equal(BatteryValidationSetting.Limit80, (await port.QueryAsync(default)).Value);
+        Assert.Equal(
+            HidSessionFailureKind.ProtocolFailure,
+            (await port.ApplyAsync(BatteryValidationSetting.Limit70, default)).Failure);
+        Assert.Null((await port.ApplyAsync(BatteryValidationSetting.Limit80, default)).Failure);
+        Assert.Equal(BatteryValidationSetting.Limit80, (await port.QueryAsync(default)).Value);
+
+        Assert.Equal(4, primaryIo.Calls.Count);
+        Assert.Equal(4, recoveryIo.Calls.Count);
+        await port.DisposeAsync();
+    }
+
     [Theory]
     [InlineData(0)]
     [InlineData(1)]
@@ -809,6 +924,36 @@ public sealed class WindowsRazerHidSessionTests
     {
         (OpenedHidHandle handle, ValidationRunContext.ActorLease lease) = Resources(events, disposeBound);
         return new WindowsRazerHidSession(handle, io, guard ?? new ScriptedGuard(), time ?? TimeProvider.System, lease);
+    }
+
+    private static async Task<IBatteryValidationPort> OpenValidationPortAsync(params ScriptedIo[] io)
+    {
+        var scripts = new Queue<ScriptedIo>(io);
+        var actors = new ValidationActorFactory(
+            () => new HidSessionResult<OpenedHidHandle>(CreateHandle(), null),
+            (handle, lease) => new WindowsRazerHidSession(
+                handle,
+                scripts.Dequeue(),
+                new ScriptedGuard(),
+                TimeProvider.System,
+                lease),
+            Timeout);
+        var factory = new BatteryValidationRunFactory(
+            () => new ValidationRunContext(),
+            actors,
+            TimeProvider.System,
+            Timeout);
+
+        HidSessionResult<IBatteryValidationPort> opened = await factory.OpenAsync(default);
+        Assert.Null(opened.Failure);
+        return Assert.IsAssignableFrom<IBatteryValidationPort>(opened.Value);
+    }
+
+    private static OpenedHidHandle CreateHandle()
+    {
+        var file = (SafeFileHandle)RuntimeHelpers.GetUninitializedObject(typeof(SafeFileHandle));
+        var bound = (ThreadPoolBoundHandle)RuntimeHelpers.GetUninitializedObject(typeof(ThreadPoolBoundHandle));
+        return new OpenedHidHandle(file, bound, () => { }, () => { });
     }
 
     private static (OpenedHidHandle, ValidationRunContext.ActorLease) Resources(List<string>? events = null, Action? disposeBound = null)
