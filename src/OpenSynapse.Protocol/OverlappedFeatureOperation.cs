@@ -43,8 +43,13 @@ internal enum OverlappedFeatureOperationCheckpoint
 
 internal sealed class NativeOperationToken : IDisposable
 {
+    private readonly object attachmentGate = new();
     private readonly Action<OverlappedFeatureOperationCheckpoint> checkpoint;
     private GCHandle pin;
+    private ThreadPoolBoundHandle? originatingBoundHandle;
+    private IWindowsHidKernel? kernel;
+    private IntPtr nativeOverlapped;
+    private bool attached;
     private int disposed;
     private int disposeCount;
     private int overlappedReleased;
@@ -63,6 +68,8 @@ internal sealed class NativeOperationToken : IDisposable
 
     internal byte[] PinnedBuffer { get; }
 
+    internal IntPtr PinnedAddress => pin.AddrOfPinnedObject();
+
     internal bool IsDisposed => Volatile.Read(ref disposed) != 0;
 
     internal bool IsOverlappedReleased => Volatile.Read(ref overlappedReleased) != 0;
@@ -70,6 +77,48 @@ internal sealed class NativeOperationToken : IDisposable
     internal bool IsPinAllocated => Volatile.Read(ref pinReleased) == 0;
 
     internal int DisposeCount => Volatile.Read(ref disposeCount);
+
+    internal void Attach(
+        ThreadPoolBoundHandle boundHandle,
+        IWindowsHidKernel nativeKernel,
+        IntPtr overlapped)
+    {
+        ArgumentNullException.ThrowIfNull(boundHandle);
+        ArgumentNullException.ThrowIfNull(nativeKernel);
+        if (overlapped == IntPtr.Zero)
+        {
+            throw new ArgumentException(
+                "The native overlapped pointer must be non-null.",
+                nameof(overlapped));
+        }
+
+        lock (attachmentGate)
+        {
+            if (attached || IsDisposed)
+            {
+                throw new InvalidOperationException(
+                    "A native overlapped allocation can be attached only once.");
+            }
+
+            originatingBoundHandle = boundHandle;
+            kernel = nativeKernel;
+            nativeOverlapped = overlapped;
+            attached = true;
+        }
+    }
+
+    internal IntPtr GetNativeOverlapped()
+    {
+        lock (attachmentGate)
+        {
+            if (!attached || nativeOverlapped == IntPtr.Zero)
+            {
+                throw new InvalidOperationException("No native overlapped allocation is attached.");
+            }
+
+            return nativeOverlapped;
+        }
+    }
 
     public void Dispose()
     {
@@ -79,14 +128,44 @@ internal sealed class NativeOperationToken : IDisposable
         }
 
         Interlocked.Increment(ref disposeCount);
-        ReleaseOverlapped();
-        ReleasePin();
+        try
+        {
+            ReleaseOverlapped();
+        }
+        finally
+        {
+            ReleasePin();
+        }
     }
 
     private void ReleaseOverlapped()
     {
-        Interlocked.Exchange(ref overlappedReleased, 1);
-        NotifyCheckpoint(OverlappedFeatureOperationCheckpoint.OverlappedReleased);
+        if (Interlocked.Exchange(ref overlappedReleased, 1) != 0)
+        {
+            return;
+        }
+
+        try
+        {
+            ThreadPoolBoundHandle? boundHandle;
+            IWindowsHidKernel? nativeKernel;
+            IntPtr overlapped;
+            lock (attachmentGate)
+            {
+                boundHandle = originatingBoundHandle;
+                nativeKernel = kernel;
+                overlapped = nativeOverlapped;
+            }
+
+            if (boundHandle is not null && nativeKernel is not null && overlapped != IntPtr.Zero)
+            {
+                nativeKernel.FreeNativeOverlapped(boundHandle, overlapped);
+            }
+        }
+        finally
+        {
+            NotifyCheckpoint(OverlappedFeatureOperationCheckpoint.OverlappedReleased);
+        }
     }
 
     private void ReleasePin()
