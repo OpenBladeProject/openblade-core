@@ -47,6 +47,33 @@ public sealed class BatteryValidationFactoryTests
         Assert.Equal(0, io.ExecutionCount);
     }
 
+    [Fact]
+    public void ProbeWindows_ContainsHostEvidenceFailureBeforeGuardOrHid()
+    {
+        var registry = new ThrowingRegistryValueSource();
+        var platform = new ThrowingPlatformEvidenceSource();
+        var processes = new ThrowingProcessSource();
+        var services = new ThrowingServiceSource();
+        var native = new ThrowingHidCandidateNative();
+
+        BatteryValidationProbeResult result = BatteryValidationFactory.ProbeWindows(
+            registry,
+            platform,
+            processes,
+            services,
+            native);
+
+        Assert.Equal(BatteryValidationProbeStage.HostIdentity, result.Stage);
+        Assert.Equal(
+            BatteryValidationProbeClassification.HostIdentityBlocked,
+            result.Classification);
+        Assert.Equal(0, registry.ReadCount);
+        Assert.Equal(1, platform.ReadCount);
+        Assert.Equal(0, processes.ReadCount);
+        Assert.Equal(0, services.ReadCount);
+        Assert.Equal(0, native.EnumerationCount);
+    }
+
     private sealed class ThrowingRegistryValueSource : IRegistryValueSource
     {
         public int ReadCount { get; private set; }
@@ -105,7 +132,7 @@ public sealed class BatteryValidationFactoryTests
             throw new InvalidOperationException("HID must not be enumerated during composition.");
         }
 
-        public OpenedCandidateHandle? TryOpen(string path, HidOpenParameters parameters) =>
+        public HidCandidateOpenResult TryOpen(string path, HidOpenParameters parameters) =>
             throw new InvalidOperationException("HID must not be opened during composition.");
 
         public HidHandleIdentity ReadIdentity(OpenedCandidateHandle handle) =>

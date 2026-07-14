@@ -90,10 +90,12 @@ public sealed class WindowsHidEnumeratorTests
             return candidates.Keys.ToArray();
         }
 
-        public OpenedCandidateHandle? TryOpen(string path, HidOpenParameters parameters)
+        public HidCandidateOpenResult TryOpen(string path, HidOpenParameters parameters)
         {
             OpenParameters.Add(parameters);
-            return OpenFailures.Contains(path) ? null : candidates[path].Handle;
+            return OpenFailures.Contains(path)
+                ? new(null, 5)
+                : new(candidates[path].Handle, null);
         }
 
         public HidHandleIdentity ReadIdentity(OpenedCandidateHandle handle)

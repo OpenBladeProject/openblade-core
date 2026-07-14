@@ -81,20 +81,47 @@ public sealed class PublicProtocolSurfaceTests
     }
 
     [Fact]
-    public void BatteryValidationFactoryExposesOnlyTypedWindowsComposition()
+    public void BatteryValidationFactoryExposesOnlyTypedWindowsCompositionAndProbe()
     {
         Type factoryType = typeof(BatteryValidationFactory);
         Assert.True(factoryType.IsPublic);
         Assert.True(factoryType.IsAbstract);
         Assert.True(factoryType.IsSealed);
 
-        MethodInfo method = Assert.Single(factoryType.GetMethods(
-            BindingFlags.Public | BindingFlags.Static | BindingFlags.DeclaredOnly));
-        Assert.Equal("CreateWindows", method.Name);
-        Assert.Equal(typeof(IBatteryValidationRunFactory), method.ReturnType);
-        Assert.Empty(method.GetParameters());
+        Dictionary<string, MethodInfo> methods = factoryType.GetMethods(
+                BindingFlags.Public | BindingFlags.Static | BindingFlags.DeclaredOnly)
+            .ToDictionary(method => method.Name, StringComparer.Ordinal);
+        Assert.Equal(2, methods.Count);
+        Assert.Equal(typeof(IBatteryValidationRunFactory), methods["CreateWindows"].ReturnType);
+        Assert.Equal(typeof(BatteryValidationProbeResult), methods["ProbeWindows"].ReturnType);
+        Assert.All(methods.Values, method => Assert.Empty(method.GetParameters()));
         Assert.Empty(factoryType.GetMembers(
             BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly));
+    }
+
+    [Fact]
+    public void BatteryValidationProbeResultExposesOnlyClosedMetadata()
+    {
+        Dictionary<string, Type> properties = typeof(BatteryValidationProbeResult)
+            .GetProperties(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly)
+            .ToDictionary(property => property.Name, property => property.PropertyType);
+
+        Assert.Equal(typeof(BatteryValidationProbeStage), properties["Stage"]);
+        Assert.Equal(typeof(BatteryValidationProbeClassification), properties["Classification"]);
+        Assert.Equal(typeof(int?), properties["CandidateOpenWin32Error"]);
+        Assert.Equal(15, properties.Count);
+        Assert.DoesNotContain(properties.Keys, name =>
+            name.Contains("Path", StringComparison.OrdinalIgnoreCase)
+            || name.Contains("Handle", StringComparison.OrdinalIgnoreCase)
+            || name.Contains("Report", StringComparison.OrdinalIgnoreCase)
+            || name.Contains("Command", StringComparison.OrdinalIgnoreCase)
+            || name.Contains("Payload", StringComparison.OrdinalIgnoreCase)
+            || name.Contains("Transport", StringComparison.OrdinalIgnoreCase)
+            || name.Contains("VendorId", StringComparison.OrdinalIgnoreCase)
+            || name.Contains("ProductId", StringComparison.OrdinalIgnoreCase)
+            || name.Contains("UsageId", StringComparison.OrdinalIgnoreCase));
+        Assert.All(properties.Values, type => Assert.True(
+            type.IsEnum || type == typeof(bool) || type == typeof(int) || type == typeof(int?)));
     }
 
     [Fact]

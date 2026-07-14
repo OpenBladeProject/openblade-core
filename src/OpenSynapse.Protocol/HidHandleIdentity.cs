@@ -16,6 +16,10 @@ internal readonly record struct HidHandleIdentity(
     ushort Usage,
     ushort FeatureReportByteLength);
 
+internal readonly record struct HidCandidateOpenResult(
+    OpenedCandidateHandle? Candidate,
+    int? Win32Error);
+
 internal sealed class OpenedCandidateHandle : IDisposable
 {
     private readonly Action disposeFileHandle;
@@ -108,7 +112,7 @@ internal interface IHidCandidateNative
 {
     IReadOnlyList<string> EnumerateDevicePaths();
 
-    OpenedCandidateHandle? TryOpen(string path, HidOpenParameters parameters);
+    HidCandidateOpenResult TryOpen(string path, HidOpenParameters parameters);
 
     HidHandleIdentity ReadIdentity(OpenedCandidateHandle handle);
 

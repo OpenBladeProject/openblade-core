@@ -103,7 +103,7 @@ internal sealed partial class WindowsHidNative : IHidCandidateNative, IOverlappe
         }
     }
 
-    public unsafe OpenedCandidateHandle? TryOpen(
+    public unsafe HidCandidateOpenResult TryOpen(
         string path,
         HidOpenParameters parameters)
     {
@@ -126,11 +126,12 @@ internal sealed partial class WindowsHidNative : IHidCandidateNative, IOverlappe
             IntPtr.Zero);
         if (fileHandle.IsInvalid)
         {
+            int error = Marshal.GetLastWin32Error();
             fileHandle.Dispose();
-            return null;
+            return new(null, error);
         }
 
-        return new OpenedCandidateHandle(fileHandle);
+        return new(new OpenedCandidateHandle(fileHandle), null);
     }
 
     public HidHandleIdentity ReadIdentity(OpenedCandidateHandle handle)

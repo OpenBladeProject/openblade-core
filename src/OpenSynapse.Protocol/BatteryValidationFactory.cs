@@ -21,6 +21,37 @@ public static class BatteryValidationFactory
             DefaultCleanupDrainTimeout);
     }
 
+    public static BatteryValidationProbeResult ProbeWindows()
+    {
+        var registry = new WindowsRegistryValueSource();
+        return ProbeWindows(
+            registry,
+            new RuntimeWindowsPlatformEvidenceSource(registry),
+            new RunningProcessSource(),
+            new WindowsServiceSource(),
+            new WindowsHidNative());
+    }
+
+    internal static BatteryValidationProbeResult ProbeWindows(
+        IRegistryValueSource registry,
+        IWindowsPlatformEvidenceSource platform,
+        IRunningProcessSource processSource,
+        IWindowsServiceSource serviceSource,
+        IHidCandidateNative native)
+    {
+        ArgumentNullException.ThrowIfNull(registry);
+        ArgumentNullException.ThrowIfNull(platform);
+        ArgumentNullException.ThrowIfNull(processSource);
+        ArgumentNullException.ThrowIfNull(serviceSource);
+        ArgumentNullException.ThrowIfNull(native);
+
+        var guard = new WindowsHardwareAccessGuard(processSource, serviceSource);
+        var hostIdentity = new WindowsHostIdentitySource(registry, platform);
+        var evaluator = new WindowsRazerHidEvidenceEvaluator(hostIdentity, guard, native);
+        using HidEvidenceEvaluation evaluation = evaluator.Evaluate();
+        return evaluation.Result;
+    }
+
     internal static IBatteryValidationRunFactory CreateWindows(
         IRegistryValueSource registry,
         IWindowsPlatformEvidenceSource platform,

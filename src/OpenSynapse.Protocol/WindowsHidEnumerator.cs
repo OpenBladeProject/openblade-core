@@ -37,7 +37,7 @@ public static class WindowsHidEnumerator
             OpenedCandidateHandle? candidate;
             try
             {
-                candidate = native.TryOpen(path, DiagnosticOpenParameters);
+                candidate = native.TryOpen(path, DiagnosticOpenParameters).Candidate;
             }
             catch (Exception)
             {

@@ -343,12 +343,12 @@ public sealed class WindowsRazerHidSessionOpenerTests
             return candidates.Keys.ToArray();
         }
 
-        public OpenedCandidateHandle? TryOpen(string path, HidOpenParameters parameters)
+        public HidCandidateOpenResult TryOpen(string path, HidOpenParameters parameters)
         {
             OpenRequests.Add((path, parameters));
             events.Add($"open:{path}");
             ThrowAt(NativeFailureStage.Open);
-            return candidates[path].Handle;
+            return new(candidates[path].Handle, null);
         }
 
         public HidHandleIdentity ReadIdentity(OpenedCandidateHandle handle)
