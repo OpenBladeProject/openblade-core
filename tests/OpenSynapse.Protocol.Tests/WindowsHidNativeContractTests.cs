@@ -80,7 +80,7 @@ public sealed class WindowsHidNativeContractTests
     }
 
     [Fact]
-    public void ProductionSources_KeepRealFeatureInteropEntirelyUnwired()
+    public void ProductionSources_WireRealFeatureInteropOnlyThroughTypedBatteryFactory()
     {
         string sourceDirectory = Path.Combine(FindRepositoryRoot(), "src");
         string[] sourceFiles = Directory.GetFiles(sourceDirectory, "*.cs", SearchOption.AllDirectories);
@@ -89,13 +89,16 @@ public sealed class WindowsHidNativeContractTests
         Assert.DoesNotContain(sources.Values, source => source.Contains("HidD_SetFeature"));
         Assert.DoesNotContain(sources.Values, source => source.Contains("HidD_GetFeature"));
         Assert.DoesNotContain(
-            sources.Where(pair => !pair.Key.EndsWith("WindowsHidEnumerator.cs")),
+            sources.Where(pair =>
+                !pair.Key.EndsWith("WindowsHidEnumerator.cs")
+                && !pair.Key.EndsWith("BatteryValidationFactory.cs")),
             pair => pair.Value.Contains("new WindowsHidNative("));
-        Assert.DoesNotContain(
+        KeyValuePair<string, string> composition = Assert.Single(
             sources,
             pair => pair.Value.Contains("OverlappedFeatureOperation") &&
                 pair.Value.Contains("WindowsHidNative") &&
                 !pair.Key.EndsWith("WindowsHidNative.cs"));
+        Assert.EndsWith("BatteryValidationFactory.cs", composition.Key);
     }
 
     [Theory]

@@ -25,6 +25,25 @@ public sealed class WindowsHostIdentitySourceTests
         new(SystemInformationKey, "BIOSVersion", "3.01"),
     ];
 
+    [Fact]
+    public void WindowsRegistryValueSource_ReturnsNullForMissingKey()
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        var source = new WindowsRegistryValueSource();
+
+        object? value = source.Read(
+            RegistryHive.LocalMachine,
+            RegistryView.Registry64,
+            @"SOFTWARE\OpenSynapse\A-Key-That-Does-Not-Exist",
+            "MissingValue");
+
+        Assert.Null(value);
+    }
+
     public static TheoryData<string, string> RegistryValues => CreateRequestData(
         request => $"{request.ExpectedValue}-wrong");
 

@@ -81,6 +81,23 @@ public sealed class PublicProtocolSurfaceTests
     }
 
     [Fact]
+    public void BatteryValidationFactoryExposesOnlyTypedWindowsComposition()
+    {
+        Type factoryType = typeof(BatteryValidationFactory);
+        Assert.True(factoryType.IsPublic);
+        Assert.True(factoryType.IsAbstract);
+        Assert.True(factoryType.IsSealed);
+
+        MethodInfo method = Assert.Single(factoryType.GetMethods(
+            BindingFlags.Public | BindingFlags.Static | BindingFlags.DeclaredOnly));
+        Assert.Equal("CreateWindows", method.Name);
+        Assert.Equal(typeof(IBatteryValidationRunFactory), method.ReturnType);
+        Assert.Empty(method.GetParameters());
+        Assert.Empty(factoryType.GetMembers(
+            BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly));
+    }
+
+    [Fact]
     public void PublicProtocolSignaturesDoNotLeakRawCommandOrNativeTypes()
     {
         List<string> violations = [];

@@ -17,6 +17,19 @@ internal interface IRegistryValueSource
     object? Read(RegistryHive hive, RegistryView view, string key, string valueName);
 }
 
+internal sealed class WindowsRegistryValueSource : IRegistryValueSource
+{
+    public object? Read(RegistryHive hive, RegistryView view, string key, string valueName)
+    {
+        using RegistryKey baseKey = RegistryKey.OpenBaseKey(hive, view);
+        using RegistryKey? subKey = baseKey.OpenSubKey(key, writable: false);
+        return subKey?.GetValue(
+            valueName,
+            defaultValue: null,
+            RegistryValueOptions.DoNotExpandEnvironmentNames);
+    }
+}
+
 internal interface IHostIdentitySource
 {
     HostIdentityReadResult ReadExactIdentity();
