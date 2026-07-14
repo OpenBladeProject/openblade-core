@@ -65,12 +65,22 @@ internal sealed class BatteryCommandClient : IBatteryCommandClient
 
         if (response.Failure is not null)
         {
-            return new(default, response.Failure);
+            return new(default, response.Failure)
+            {
+                Diagnostic = response.Diagnostic,
+            };
         }
 
         return BatteryValidationProtocol.TryDecodeQuery(response.Value.Span, out BatteryValidationSetting setting)
             ? new(setting, null)
-            : new(default, HidSessionFailureKind.ProtocolFailure);
+            : new(default, HidSessionFailureKind.ProtocolFailure)
+            {
+                Diagnostic = new HidSessionFailureDiagnostic(
+                    HidSessionFailurePhase.ProtocolValidation,
+                    HidSessionFailureKind.ProtocolFailure,
+                    NativeWin32Error: null,
+                    TransferredByteCount: null),
+            };
     }
 
     private async Task<HidSessionResult<HidUnit>> SetCoreAsync(
@@ -92,12 +102,22 @@ internal sealed class BatteryCommandClient : IBatteryCommandClient
 
         if (response.Failure is not null)
         {
-            return new(default, response.Failure);
+            return new(default, response.Failure)
+            {
+                Diagnostic = response.Diagnostic,
+            };
         }
 
         ReadOnlySpan<byte> acknowledgement = response.Value.Span;
         return acknowledgement.Length == 1 && acknowledgement[0] == payload
             ? new(new HidUnit(), null)
-            : new(default, HidSessionFailureKind.ProtocolFailure);
+            : new(default, HidSessionFailureKind.ProtocolFailure)
+            {
+                Diagnostic = new HidSessionFailureDiagnostic(
+                    HidSessionFailurePhase.ProtocolValidation,
+                    HidSessionFailureKind.ProtocolFailure,
+                    NativeWin32Error: null,
+                    TransferredByteCount: null),
+            };
     }
 }

@@ -419,7 +419,19 @@ public sealed class WindowsRazerHidSessionTests
         var io = new ScriptedIo(SetSuccess(), GetSuccess(2, 1, 2, []));
         await using WindowsRazerHidSession actor = CreateActor(io, guard: guard);
 
-        Assert.Equal(expected, (await actor.ExecuteAsync(new(1, 1, [], 0), () => TransactionIdAssignment.Valid(1), Timeout, default)).Failure);
+        HidSessionResult<ReadOnlyMemory<byte>> blocked = await actor.ExecuteAsync(
+            new(1, 1, [], 0),
+            () => TransactionIdAssignment.Valid(1),
+            Timeout,
+            default);
+        Assert.Equal(expected, blocked.Failure);
+        Assert.Equal(
+            new HidSessionFailureDiagnostic(
+                HidSessionFailurePhase.Guard,
+                expected,
+                NativeWin32Error: null,
+                TransferredByteCount: null),
+            blocked.Diagnostic);
         Assert.Null((await actor.ExecuteAsync(new(1, 2, [], 0), () => TransactionIdAssignment.Valid(2), Timeout, default)).Failure);
         Assert.Equal(2, io.Calls.Count);
     }
@@ -440,8 +452,51 @@ public sealed class WindowsRazerHidSessionTests
 
         var shortIo = new ScriptedIo(SetSuccess(), GetSuccess(2, 1, 1, [], bytes: 90));
         WindowsRazerHidSession shortActor = CreateActor(shortIo);
-        Assert.Equal(HidSessionFailureKind.NativeIoFailure, (await shortActor.ExecuteAsync(new(1, 1, [], 0), () => TransactionIdAssignment.Valid(2), Timeout, default)).Failure);
+        HidSessionResult<ReadOnlyMemory<byte>> shortResult = await shortActor.ExecuteAsync(
+            new(1, 1, [], 0),
+            () => TransactionIdAssignment.Valid(2),
+            Timeout,
+            default);
+        Assert.Equal(HidSessionFailureKind.NativeIoFailure, shortResult.Failure);
+        Assert.Equal(
+            new HidSessionFailureDiagnostic(
+                HidSessionFailurePhase.GetCompletion,
+                HidSessionFailureKind.NativeIoFailure,
+                NativeWin32Error: 0,
+                TransferredByteCount: 90),
+            shortResult.Diagnostic);
         await shortActor.DisposeAsync();
+    }
+
+    [Theory]
+    [InlineData(false, HidSessionFailurePhase.SetSubmit)]
+    [InlineData(true, HidSessionFailurePhase.GetSubmit)]
+    public async Task ImmediateNativeFailureReportsSubmitPhase(bool getPhase, HidSessionFailurePhase phase)
+    {
+        Func<OpenedHidHandle, uint, byte[], CancellationToken, CancellationToken, Task<HidFeatureIoResult>> failure =
+            Result(new HidFeatureIoResult(
+                new NativeIoCompletion(false, 0, 31),
+                WasSubmitted: false,
+                Termination: HidFeatureTermination.Completed));
+        var io = getPhase
+            ? new ScriptedIo(SetSuccess(), failure)
+            : new ScriptedIo(failure);
+        WindowsRazerHidSession actor = CreateActor(io);
+
+        HidSessionResult<ReadOnlyMemory<byte>> result = await actor.ExecuteAsync(
+            new(1, 1, [], 0),
+            () => TransactionIdAssignment.Valid(1),
+            Timeout,
+            default);
+
+        Assert.Equal(
+            new HidSessionFailureDiagnostic(
+                phase,
+                HidSessionFailureKind.NativeIoFailure,
+                NativeWin32Error: 31,
+                TransferredByteCount: 0),
+            result.Diagnostic);
+        await actor.DisposeAsync();
     }
 
     [Fact]
@@ -498,7 +553,19 @@ public sealed class WindowsRazerHidSessionTests
             Result(new HidFeatureIoResult(completion, true, termination)));
         WindowsRazerHidSession actor = CreateActor(io);
 
-        Assert.Equal(expected, (await actor.ExecuteAsync(new(1, 1, [], 0), () => TransactionIdAssignment.Valid(1), Timeout, default)).Failure);
+        HidSessionResult<ReadOnlyMemory<byte>> result = await actor.ExecuteAsync(
+            new(1, 1, [], 0),
+            () => TransactionIdAssignment.Valid(1),
+            Timeout,
+            default);
+        Assert.Equal(expected, result.Failure);
+        Assert.Equal(
+            new HidSessionFailureDiagnostic(
+                HidSessionFailurePhase.GetCompletion,
+                expected,
+                completion?.ErrorCode,
+                completion?.BytesTransferred),
+            result.Diagnostic);
         Assert.Contains(
             (await actor.ExecuteAsync(new(1, 2, [], 0), () => TransactionIdAssignment.Valid(2), Timeout, default)).Failure,
             new HidSessionFailureKind?[] { HidSessionFailureKind.Poisoned, HidSessionFailureKind.Disposed });
@@ -556,9 +623,11 @@ public sealed class WindowsRazerHidSessionTests
     }
 
     [Theory]
-    [InlineData(true)]
-    [InlineData(false)]
-    public async Task TaskSevenFaultMapsNativeFailureAndPoisons(bool faultSet)
+    [InlineData(true, HidSessionFailurePhase.SetSubmit)]
+    [InlineData(false, HidSessionFailurePhase.GetSubmit)]
+    public async Task TaskSevenFaultMapsNativeFailureAndPoisons(
+        bool faultSet,
+        HidSessionFailurePhase phase)
     {
         Func<OpenedHidHandle, uint, byte[], CancellationToken, CancellationToken, Task<HidFeatureIoResult>> fault =
             (_, _, _, _, _) => Task.FromException<HidFeatureIoResult>(new IOException("native"));
@@ -567,9 +636,19 @@ public sealed class WindowsRazerHidSessionTests
             : new ScriptedIo(SetSuccess(), fault);
         WindowsRazerHidSession actor = CreateActor(io);
 
+        HidSessionResult<ReadOnlyMemory<byte>> result = await actor.ExecuteAsync(
+            new(1, 1, [], 0),
+            () => TransactionIdAssignment.Valid(1),
+            Timeout,
+            default);
+        Assert.Equal(HidSessionFailureKind.NativeIoFailure, result.Failure);
         Assert.Equal(
-            HidSessionFailureKind.NativeIoFailure,
-            (await actor.ExecuteAsync(new(1, 1, [], 0), () => TransactionIdAssignment.Valid(1), Timeout, default)).Failure);
+            new HidSessionFailureDiagnostic(
+                phase,
+                HidSessionFailureKind.NativeIoFailure,
+                NativeWin32Error: null,
+                TransferredByteCount: null),
+            result.Diagnostic);
         await actor.DisposeAsync();
     }
 
@@ -664,9 +743,19 @@ public sealed class WindowsRazerHidSessionTests
                 releaseDisposal.Wait();
             });
 
+        HidSessionResult<ReadOnlyMemory<byte>> malformedResult = await actor.ExecuteAsync(
+            new(1, 1, [], 0),
+            () => TransactionIdAssignment.Valid(1),
+            Timeout,
+            default);
+        Assert.Equal(HidSessionFailureKind.ProtocolFailure, malformedResult.Failure);
         Assert.Equal(
-            HidSessionFailureKind.ProtocolFailure,
-            (await actor.ExecuteAsync(new(1, 1, [], 0), () => TransactionIdAssignment.Valid(1), Timeout, default)).Failure);
+            new HidSessionFailureDiagnostic(
+                HidSessionFailurePhase.ProtocolValidation,
+                HidSessionFailureKind.ProtocolFailure,
+                NativeWin32Error: 0,
+                TransferredByteCount: 91),
+            malformedResult.Diagnostic);
         await enteredDisposal.Task;
         Assert.Equal(
             HidSessionFailureKind.Poisoned,

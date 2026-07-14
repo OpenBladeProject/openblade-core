@@ -81,6 +81,37 @@ public sealed class PublicProtocolSurfaceTests
     }
 
     [Fact]
+    public void HidSessionDiagnosticIsClosedAndPreservesTwoValueResultShape()
+    {
+        Assert.Equal(
+            [
+                "GetCompletion",
+                "GetSubmit",
+                "Guard",
+                "ProtocolValidation",
+                "SetCompletion",
+                "SetSubmit",
+            ],
+            Enum.GetNames<HidSessionFailurePhase>()
+                .OrderBy(name => name, StringComparer.Ordinal));
+
+        Dictionary<string, Type> properties = typeof(HidSessionFailureDiagnostic)
+            .GetProperties(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly)
+            .ToDictionary(property => property.Name, property => property.PropertyType);
+        Assert.Equal(4, properties.Count);
+        Assert.Equal(typeof(HidSessionFailurePhase), properties["Phase"]);
+        Assert.Equal(typeof(HidSessionFailureKind), properties["Failure"]);
+        Assert.Equal(typeof(int?), properties["NativeWin32Error"]);
+        Assert.Equal(typeof(int?), properties["TransferredByteCount"]);
+
+        var result = new HidSessionResult<int>(1, null);
+        var (value, failure) = result;
+        Assert.Equal(1, value);
+        Assert.Null(failure);
+        Assert.Null(result.Diagnostic);
+    }
+
+    [Fact]
     public void BatteryValidationFactoryExposesOnlyTypedWindowsCompositionAndProbe()
     {
         Type factoryType = typeof(BatteryValidationFactory);

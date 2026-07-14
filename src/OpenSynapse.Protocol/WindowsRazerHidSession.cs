@@ -306,17 +306,23 @@ internal sealed class WindowsRazerHidSession : IRazerCommandSession
         }
         catch
         {
-            return Failure(HidSessionFailureKind.ConflictDetectionFailed);
+            return DiagnosticFailure(
+                HidSessionFailureKind.ConflictDetectionFailed,
+                HidSessionFailurePhase.Guard);
         }
 
         if (decision.DetectionFailure is not null)
         {
-            return Failure(HidSessionFailureKind.ConflictDetectionFailed);
+            return DiagnosticFailure(
+                HidSessionFailureKind.ConflictDetectionFailed,
+                HidSessionFailurePhase.Guard);
         }
 
         if (decision.Conflicts.Count != 0)
         {
-            return Failure(HidSessionFailureKind.ConflictBlocked);
+            return DiagnosticFailure(
+                HidSessionFailureKind.ConflictBlocked,
+                HidSessionFailurePhase.Guard);
         }
 
         cancellation = ClassifyCancellation(item.CancellationToken, deadline.Token);
@@ -338,14 +344,19 @@ internal sealed class WindowsRazerHidSession : IRazerCommandSession
         catch
         {
             Poison();
-            return Failure(HidSessionFailureKind.NativeIoFailure);
+            return DiagnosticFailure(
+                HidSessionFailureKind.NativeIoFailure,
+                HidSessionFailurePhase.SetSubmit);
         }
 
         if (setResult.Termination == HidFeatureTermination.Completed &&
             setResult.Completion is not { Succeeded: true })
         {
             Poison();
-            return Failure(HidSessionFailureKind.NativeIoFailure);
+            return DiagnosticFailure(
+                HidSessionFailureKind.NativeIoFailure,
+                IoPhase(isSet: true, result: setResult),
+                setResult.Completion);
         }
 
         cancellation = ClassifyIoCancellation(setResult, item.CancellationToken, deadline.Token);
@@ -356,13 +367,21 @@ internal sealed class WindowsRazerHidSession : IRazerCommandSession
                 Poison();
             }
 
-            return Failure(cancellation.Value);
+            return setResult.WasSubmitted
+                ? DiagnosticFailure(
+                    cancellation.Value,
+                    HidSessionFailurePhase.SetCompletion,
+                    setResult.Completion)
+                : Failure(cancellation.Value);
         }
 
         if (setResult.Termination != HidFeatureTermination.Completed)
         {
             Poison();
-            return Failure(HidSessionFailureKind.NativeIoFailure);
+            return DiagnosticFailure(
+                HidSessionFailureKind.NativeIoFailure,
+                IoPhase(isSet: true, result: setResult),
+                setResult.Completion);
         }
 
         cancellation = ClassifyCancellation(item.CancellationToken, deadline.Token);
@@ -386,27 +405,40 @@ internal sealed class WindowsRazerHidSession : IRazerCommandSession
         catch
         {
             Poison();
-            return Failure(HidSessionFailureKind.NativeIoFailure);
+            return DiagnosticFailure(
+                HidSessionFailureKind.NativeIoFailure,
+                HidSessionFailurePhase.GetSubmit);
         }
 
         if (getResult.Termination == HidFeatureTermination.Completed &&
             getResult.Completion is not { Succeeded: true, BytesTransferred: FeatureReportLength })
         {
             Poison();
-            return Failure(HidSessionFailureKind.NativeIoFailure);
+            return DiagnosticFailure(
+                HidSessionFailureKind.NativeIoFailure,
+                IoPhase(isSet: false, result: getResult),
+                getResult.Completion);
         }
 
         cancellation = ClassifyIoCancellation(getResult, item.CancellationToken, deadline.Token);
         if (cancellation is not null)
         {
             Poison();
-            return Failure(cancellation.Value);
+            return getResult.WasSubmitted
+                ? DiagnosticFailure(
+                    cancellation.Value,
+                    HidSessionFailurePhase.GetCompletion,
+                    getResult.Completion)
+                : Failure(cancellation.Value);
         }
 
         if (getResult.Termination != HidFeatureTermination.Completed)
         {
             Poison();
-            return Failure(HidSessionFailureKind.NativeIoFailure);
+            return DiagnosticFailure(
+                HidSessionFailureKind.NativeIoFailure,
+                IoPhase(isSet: false, result: getResult),
+                getResult.Completion);
         }
 
         try
@@ -442,7 +474,10 @@ internal sealed class WindowsRazerHidSession : IRazerCommandSession
         catch (RazerProtocolException)
         {
             Poison();
-            return Failure(HidSessionFailureKind.ProtocolFailure);
+            return DiagnosticFailure(
+                HidSessionFailureKind.ProtocolFailure,
+                HidSessionFailurePhase.ProtocolValidation,
+                getResult.Completion);
         }
     }
 
@@ -500,6 +535,29 @@ internal sealed class WindowsRazerHidSession : IRazerCommandSession
 
     private static HidSessionResult<ReadOnlyMemory<byte>> Failure(HidSessionFailureKind failure) =>
         new(default, failure);
+
+    private static HidSessionResult<ReadOnlyMemory<byte>> DiagnosticFailure(
+        HidSessionFailureKind failure,
+        HidSessionFailurePhase phase,
+        NativeIoCompletion? completion = null) =>
+        new(default, failure)
+        {
+            Diagnostic = new HidSessionFailureDiagnostic(
+                phase,
+                failure,
+                completion?.ErrorCode,
+                completion?.BytesTransferred),
+        };
+
+    private static HidSessionFailurePhase IoPhase(
+        bool isSet,
+        HidFeatureIoResult result) => (isSet, result.WasSubmitted) switch
+        {
+            (true, false) => HidSessionFailurePhase.SetSubmit,
+            (true, true) => HidSessionFailurePhase.SetCompletion,
+            (false, false) => HidSessionFailurePhase.GetSubmit,
+            _ => HidSessionFailurePhase.GetCompletion,
+        };
 
     private sealed class WorkItem
     {

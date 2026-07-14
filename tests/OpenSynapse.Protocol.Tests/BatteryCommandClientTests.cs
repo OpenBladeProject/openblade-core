@@ -112,6 +112,13 @@ public sealed class BatteryCommandClientTests
 
         Assert.Equal(HidSessionFailureKind.ProtocolFailure, result.Failure);
         Assert.Equal(default, result.Value);
+        Assert.Equal(
+            new HidSessionFailureDiagnostic(
+                HidSessionFailurePhase.ProtocolValidation,
+                HidSessionFailureKind.ProtocolFailure,
+                NativeWin32Error: null,
+                TransferredByteCount: null),
+            result.Diagnostic);
     }
 
     [Theory]
@@ -155,6 +162,26 @@ public sealed class BatteryCommandClientTests
 
         Assert.Equal(failure, result.Failure);
         Assert.Equal(default, result.Value);
+    }
+
+    [Fact]
+    public async Task QueryAsync_PropagatesSessionDiagnostic()
+    {
+        var diagnostic = new HidSessionFailureDiagnostic(
+            HidSessionFailurePhase.GetCompletion,
+            HidSessionFailureKind.NativeIoFailure,
+            NativeWin32Error: 31,
+            TransferredByteCount: 12);
+        HidSessionResult<ReadOnlyMemory<byte>> failed = Failed(
+            HidSessionFailureKind.NativeIoFailure) with
+        {
+            Diagnostic = diagnostic,
+        };
+        var client = new BatteryCommandClient(new ScriptedSession(failed), ExchangeTimeout);
+
+        HidSessionResult<BatteryValidationSetting> result = await client.QueryAsync(1, default);
+
+        Assert.Equal(diagnostic, result.Diagnostic);
     }
 
     [Theory]

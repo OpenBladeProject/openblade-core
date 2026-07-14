@@ -45,6 +45,8 @@ public sealed record BatteryValidationResult(
     BatteryValidationPrimaryFailure PrimaryFailure,
     BatteryValidationRestorationFailure RestorationFailure)
 {
+    public HidSessionFailureDiagnostic? BaselineQueryDiagnostic { get; init; }
+
     public bool Success => ApplyAttempted
         && Applied
         && ReadBack
@@ -130,7 +132,10 @@ public sealed class BatteryValidationSession(
 
         if (baseline.Failure is not null)
         {
-            return Abort(BatteryValidationPrimaryFailure.BaselineQueryFailed);
+            return Abort(BatteryValidationPrimaryFailure.BaselineQueryFailed) with
+            {
+                BaselineQueryDiagnostic = baseline.Diagnostic,
+            };
         }
 
         BatteryValidationSetting prior = baseline.Value;

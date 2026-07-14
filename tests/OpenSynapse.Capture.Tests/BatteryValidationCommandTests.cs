@@ -127,6 +127,38 @@ public sealed class BatteryValidationCommandTests
     }
 
     [Fact]
+    public async Task RunAsync_AppendsOnlySafeBaselineDiagnosticFields()
+    {
+        var output = new StringWriter();
+        BatteryValidationResult result = new(
+            ApplyAttempted: false,
+            Applied: false,
+            ReadBack: false,
+            Restored: false,
+            PrimaryFailure: BatteryValidationPrimaryFailure.BaselineQueryFailed,
+            RestorationFailure: BatteryValidationRestorationFailure.None)
+        {
+            BaselineQueryDiagnostic = new HidSessionFailureDiagnostic(
+                HidSessionFailurePhase.GetCompletion,
+                HidSessionFailureKind.NativeIoFailure,
+                NativeWin32Error: 31,
+                TransferredByteCount: 12),
+        };
+        var command = CreateCommand(_ => Task.FromResult(result), output);
+
+        int exitCode = await command.RunAsync(["75"], CancellationToken.None);
+
+        Assert.Equal(BatteryValidationCommand.ValidationFailureExitCode, exitCode);
+        Assert.Contains("BaselineQueryPhase=GetCompletion", output.ToString());
+        Assert.Contains("BaselineQuerySessionFailure=NativeIoFailure", output.ToString());
+        Assert.Contains("BaselineQueryWin32Error=31", output.ToString());
+        Assert.Contains("BaselineQueryTransferredBytes=12", output.ToString());
+        Assert.DoesNotContain("Payload", output.ToString(), StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("Transaction", output.ToString(), StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("Path", output.ToString(), StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public async Task RunAsync_ReturnsFailureWhenRestorationFails()
     {
         var output = new StringWriter();

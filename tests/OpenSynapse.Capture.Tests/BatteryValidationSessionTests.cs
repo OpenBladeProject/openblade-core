@@ -113,6 +113,30 @@ public sealed class BatteryValidationSessionTests
     }
 
     [Fact]
+    public async Task Run_BaselineFailurePreservesSafeDiagnostic()
+    {
+        TestContext context = new();
+        var diagnostic = new HidSessionFailureDiagnostic(
+            HidSessionFailurePhase.GetCompletion,
+            HidSessionFailureKind.NativeIoFailure,
+            NativeWin32Error: 31,
+            TransferredByteCount: 12);
+        context.Port.QuerySteps.Clear();
+        context.Port.QuerySteps.Enqueue(_ => Task.FromResult(
+            Failure<BatteryValidationSetting>(HidSessionFailureKind.NativeIoFailure) with
+            {
+                Diagnostic = diagnostic,
+            }));
+
+        BatteryValidationResult result = await context.RunAsync();
+
+        Assert.Equal(BatteryValidationPrimaryFailure.BaselineQueryFailed, result.PrimaryFailure);
+        Assert.Equal(diagnostic, result.BaselineQueryDiagnostic);
+        Assert.False(result.ApplyAttempted);
+        Assert.Equal(["open", "query", "dispose"], context.Events);
+    }
+
+    [Fact]
     public async Task Run_UndefinedBaselineAbortsAndDisposes()
     {
         TestContext context = new();
