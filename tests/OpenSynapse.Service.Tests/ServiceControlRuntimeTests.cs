@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging.Abstractions;
 using OpenSynapse.Contracts;
 using OpenSynapse.Protocol;
 using OpenSynapse.Service;
@@ -82,6 +83,24 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         Assert.Equal(ControlOperationStatus.Blocked, result.Status);
         Assert.Equal(0, context.Provider.TryGetCount);
         Assert.Equal(0, context.Device.TotalCalls);
+    }
+
+    [Fact]
+    public async Task LifecycleRefresh_WithUnsafeGuard_BlocksBeforeProviderAndDevice()
+    {
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            conflicts: ["RazerAppEngine"]);
+        var loop = new ServiceLifecycleRefreshLoop(
+            context.Runtime,
+            new SingleLifecycleEventSource(ServiceLifecycleTrigger.DeviceArrived),
+            NullLogger<ServiceLifecycleRefreshLoop>.Instance);
+
+        await loop.RunAsync(CancellationToken.None);
+
+        Assert.Equal(0, context.Provider.TryGetCount);
+        Assert.Equal(0, context.Device.TotalCalls);
+        Assert.True(context.Runtime.GetStatus().WritesBlocked);
     }
 
     [Fact]
@@ -333,6 +352,19 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         public required TelemetrySnapshot Current { get; set; }
 
         public TelemetrySnapshot Capture() => Current;
+    }
+
+    private sealed class SingleLifecycleEventSource(ServiceLifecycleTrigger trigger)
+        : IServiceLifecycleEventSource
+    {
+        public async IAsyncEnumerable<ServiceLifecycleTrigger> WatchAsync(
+            [System.Runtime.CompilerServices.EnumeratorCancellation]
+            CancellationToken cancellationToken)
+        {
+            await Task.Yield();
+            cancellationToken.ThrowIfCancellationRequested();
+            yield return trigger;
+        }
     }
 
     private sealed class FakeHub : IStatusSubscriptionHub

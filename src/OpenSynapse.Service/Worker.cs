@@ -8,10 +8,10 @@ public sealed class Worker(
     IServiceControlRuntime runtime,
     IStatusSubscriptionHub subscriptionHub,
     MachineProfileBootstrapper profileBootstrapper,
+    IServiceLifecycleEventSource lifecycleEventSource,
     ILogger<Worker> logger) : BackgroundService
 {
     private const int MaximumPipeClients = 4;
-    private static readonly TimeSpan RefreshInterval = TimeSpan.FromSeconds(2);
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -37,33 +37,12 @@ public sealed class Worker(
             subscriptionHub);
         Task[] tasks =
         [
-            RunRefreshLoopAsync(stoppingToken),
+            new ServiceLifecycleRefreshLoop(runtime, lifecycleEventSource, logger)
+                .RunAsync(stoppingToken),
             .. Enumerable.Range(0, MaximumPipeClients)
                 .Select(_ => RunPipeListenerAsync(server, stoppingToken)),
         ];
         await Task.WhenAll(tasks);
-    }
-
-    private async Task RunRefreshLoopAsync(CancellationToken stoppingToken)
-    {
-        using var timer = new PeriodicTimer(RefreshInterval);
-        try
-        {
-            while (await timer.WaitForNextTickAsync(stoppingToken))
-            {
-                try
-                {
-                    await runtime.RefreshAsync(stoppingToken);
-                }
-                catch (Exception exception) when (exception is not OperationCanceledException)
-                {
-                    logger.LogError(exception, "Service state refresh failed.");
-                }
-            }
-        }
-        catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
-        {
-        }
     }
 
     private async Task RunPipeListenerAsync(

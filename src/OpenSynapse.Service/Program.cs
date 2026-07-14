@@ -17,6 +17,7 @@ builder.Services.AddSingleton<IPowerTelemetryProvider, WindowsPowerTelemetryProv
 builder.Services.AddSingleton<IVerifiedBladeDeviceProvider, UnavailableBladeDeviceProvider>();
 builder.Services.AddSingleton<IStatusSubscriptionHub>(
     _ => new StatusSubscriptionHub(TimeProvider.System));
+builder.Services.AddSingleton<IServiceLifecycleEventSource, WindowsServiceLifecycleEventSource>();
 builder.Services.AddSingleton<IServiceControlRuntime, ServiceControlRuntime>();
 builder.Services.AddSingleton<ControlRequestHandler>();
 builder.Services.AddHostedService<Worker>();
