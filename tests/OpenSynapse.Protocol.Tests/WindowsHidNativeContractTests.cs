@@ -20,11 +20,53 @@ public sealed class WindowsHidNativeContractTests
         Assert.Equal(997, ReadConstant<int>(type, "ErrorIoPending"));
         Assert.Equal(1168, ReadConstant<int>(type, "ErrorNotFound"));
 
-        AssertLibraryImport(type, "DeviceIoControl", "kernel32.dll", setLastError: true);
-        AssertLibraryImport(type, "CancelIoEx", "kernel32.dll", setLastError: true);
         Assert.DoesNotContain(
             typeof(WindowsHidEnumerator).GetMethods(BindingFlags.Static | BindingFlags.NonPublic),
             method => method.GetCustomAttribute<LibraryImportAttribute>() is not null);
+    }
+
+    [Fact]
+    public void DeviceIoControlImport_HasExactUnsafeWindowsSignature()
+    {
+        Type overlappedPointer = typeof(NativeOverlapped).MakePointerType();
+
+        MethodInfo method = AssertLibraryImport(
+            typeof(WindowsHidNative),
+            "DeviceIoControl",
+            "kernel32.dll",
+            "DeviceIoControl",
+            typeof(SafeFileHandle),
+            typeof(uint),
+            typeof(IntPtr),
+            typeof(uint),
+            typeof(IntPtr),
+            typeof(uint),
+            typeof(IntPtr),
+            overlappedPointer);
+
+        ParameterInfo overlapped = Assert.Single(
+            method.GetParameters(),
+            parameter => parameter.Name == "overlapped");
+        Assert.True(overlapped.ParameterType.IsPointer);
+        Assert.Equal(typeof(NativeOverlapped), overlapped.ParameterType.GetElementType());
+    }
+
+    [Fact]
+    public void CancelIoExImport_HasExactUnsafeWindowsSignature()
+    {
+        Type overlappedPointer = typeof(NativeOverlapped).MakePointerType();
+
+        MethodInfo method = AssertLibraryImport(
+            typeof(WindowsHidNative),
+            "CancelIoEx",
+            "kernel32.dll",
+            "CancelIoEx",
+            typeof(SafeFileHandle),
+            overlappedPointer);
+
+        ParameterInfo overlapped = method.GetParameters()[1];
+        Assert.True(overlapped.ParameterType.IsPointer);
+        Assert.Equal(typeof(NativeOverlapped), overlapped.ParameterType.GetElementType());
     }
 
     [Fact]
@@ -264,6 +306,43 @@ public sealed class WindowsHidNativeContractTests
     }
 
     [Fact]
+    public async Task CompletionWaitsForFinalNativeUseLeaseBeforeFreeingExactOverlapped()
+    {
+        var kernel = new ScriptedKernel { IoResult = new NativeCallResult(false, 997) };
+        var native = new WindowsHidNative(kernel);
+        byte[] buffer = new byte[91];
+        var token = new NativeOperationToken(buffer, _ => { });
+        var state = new NativeOperationState(token.Dispose);
+
+        Assert.True(state.TryBeginSubmission(out NativeUseLease submissionLease));
+        NativeSubmissionResult submission = native.Submit(
+            CreateHandle(),
+            0x000B0192u,
+            buffer,
+            token,
+            state.RecordCompletion);
+        Assert.Equal(NativeSubmissionKind.Pending, submission.Kind);
+        state.RecordSubmitted();
+        state.RecordCancellationIntent(HidFeatureTermination.CallerCanceled);
+        Assert.True(state.TryAcquireCancellationLease(out NativeUseLease finalLease));
+
+        kernel.Complete(new NativeIoCompletion(true, 91, 0));
+        submissionLease.Dispose();
+
+        Assert.False(state.Completion.IsCompleted);
+        Assert.Equal(0, kernel.FreeCalls);
+        Assert.False(token.IsDisposed);
+
+        finalLease.Dispose();
+        HidFeatureIoResult result = await state.Completion;
+
+        Assert.Equal(new NativeIoCompletion(true, 91, 0), result.Completion);
+        Assert.Equal(HidFeatureTermination.CallerCanceled, result.Termination);
+        Assert.Equal(1, kernel.FreeCalls);
+        Assert.True(token.IsDisposed);
+    }
+
+    [Fact]
     public void TokenDispose_ReleasesPinEvenWhenNativeFreeThrows()
     {
         var kernel = new ScriptedKernel { FreeException = new InvalidOperationException("free") };
@@ -295,12 +374,24 @@ public sealed class WindowsHidNativeContractTests
             throw new DirectoryNotFoundException("Could not locate the repository root.");
     }
 
-    private static void AssertLibraryImport(Type type, string name, string library, bool setLastError)
+    private static MethodInfo AssertLibraryImport(
+        Type type,
+        string name,
+        string library,
+        string entryPoint,
+        params Type[] parameterTypes)
     {
         MethodInfo method = type.GetMethod(name, BindingFlags.Static | BindingFlags.NonPublic)!;
         LibraryImportAttribute import = method.GetCustomAttribute<LibraryImportAttribute>()!;
         Assert.Equal(library, import.LibraryName);
-        Assert.Equal(setLastError, import.SetLastError);
+        Assert.True(import.SetLastError);
+        Assert.Equal(entryPoint, import.EntryPoint ?? method.Name);
+        Assert.Equal(typeof(bool), method.ReturnType);
+        MarshalAsAttribute returnMarshalling =
+            method.ReturnParameter.GetCustomAttribute<MarshalAsAttribute>()!;
+        Assert.Equal(UnmanagedType.Bool, returnMarshalling.Value);
+        Assert.Equal(parameterTypes, method.GetParameters().Select(parameter => parameter.ParameterType));
+        return method;
     }
 
     private static OpenedHidHandle CreateHandle()
