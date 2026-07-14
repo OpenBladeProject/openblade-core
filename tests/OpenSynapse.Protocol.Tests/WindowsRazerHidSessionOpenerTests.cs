@@ -219,6 +219,31 @@ public sealed class WindowsRazerHidSessionOpenerTests
         Assert.True(fileHandle.IsClosed);
     }
 
+    [Fact]
+    public async Task Open_AccessDeniedRetriesMetadataOnlyAndBindsThatSameExactHandle()
+    {
+        ScriptedNative native = new([]) { AccessDeniedPath = "candidate" };
+        OpenedCandidateHandle candidate = native.AddCandidate("candidate", ExactHandle);
+
+        HidSessionResult<OpenedHidHandle> result = CreateOpener(native).Open();
+
+        Assert.Null(result.Failure);
+        Assert.NotNull(result.Value);
+        Assert.Equal([0xC0000000u, 0u], native.OpenRequests.Select(request => request.Parameters.DesiredAccess));
+        Assert.All(native.OpenRequests, request =>
+        {
+            Assert.Equal(3u, request.Parameters.ShareMode);
+            Assert.Equal(3u, request.Parameters.CreationDisposition);
+            Assert.Equal(0x40000000u, request.Parameters.FlagsAndAttributes);
+            Assert.False(request.Parameters.Inheritable);
+        });
+        Assert.Equal([candidate], native.IdentityHandles);
+        Assert.Same(candidate, native.BoundCandidate);
+        Assert.Equal(1, native.BindCalls);
+
+        await result.Value.DisposeAsync();
+    }
+
     private static WindowsRazerHidSessionOpener CreateOpener(
         ScriptedNative native,
         List<string>? events = null) =>
@@ -308,6 +333,8 @@ public sealed class WindowsRazerHidSessionOpenerTests
 
         public string? ReadFailurePath { get; set; }
 
+        public string? AccessDeniedPath { get; set; }
+
         public int EnumerateCalls { get; private set; }
 
         public int BindCalls { get; private set; }
@@ -348,6 +375,11 @@ public sealed class WindowsRazerHidSessionOpenerTests
             OpenRequests.Add((path, parameters));
             events.Add($"open:{path}");
             ThrowAt(NativeFailureStage.Open);
+            if (path == AccessDeniedPath && parameters.DesiredAccess != 0)
+            {
+                return new(null, 5);
+            }
+
             return new(candidates[path].Handle, null);
         }
 

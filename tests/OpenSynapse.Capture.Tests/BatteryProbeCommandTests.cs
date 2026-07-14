@@ -28,6 +28,7 @@ public sealed class BatteryProbeCommandTests
             "CandidateOpenAttemptCount=3\r\n" +
             "CandidateOpenSuccessCount=2\r\n" +
             "CandidateOpenWin32Error=5\r\n" +
+            "CandidateAccessFallbackCount=0\r\n" +
             "IdentityReadCount=2\r\n" +
             "VendorMatchCount=2\r\n" +
             "ProductMatchCount=1\r\n" +
@@ -60,6 +61,27 @@ public sealed class BatteryProbeCommandTests
         Assert.Equal(BatteryProbeCommand.ProbeFailureExitCode, exitCode);
         Assert.Contains("Classification=HostIdentityBlocked", output.ToString());
         Assert.Contains("CandidateOpenWin32Error=None", output.ToString());
+    }
+
+    [Fact]
+    public async Task RunAsync_AccessFallbackReadyProbeIsSuccessful()
+    {
+        var output = new StringWriter();
+        var command = new BatteryProbeCommand(
+            () => Result(
+                BatteryValidationProbeStage.Ready,
+                BatteryValidationProbeClassification.ReadyWithAccessFallback,
+                openError: 5) with
+            {
+                CandidateAccessFallbackCount = 1,
+            },
+            output);
+
+        int exitCode = await command.RunAsync([], CancellationToken.None);
+
+        Assert.Equal(BatteryProbeCommand.SuccessExitCode, exitCode);
+        Assert.Contains("Classification=ReadyWithAccessFallback", output.ToString());
+        Assert.Contains("CandidateAccessFallbackCount=1", output.ToString());
     }
 
     [Theory]
@@ -95,16 +117,21 @@ public sealed class BatteryProbeCommandTests
             stage,
             classification,
             HostIdentityMatched: classification != BatteryValidationProbeClassification.HostIdentityBlocked,
-            ConflictCheckPassed: classification == BatteryValidationProbeClassification.Ready,
+            ConflictCheckPassed: classification is
+                BatteryValidationProbeClassification.Ready or
+                BatteryValidationProbeClassification.ReadyWithAccessFallback,
             EnumeratedCandidateCount: 3,
             CandidateOpenAttemptCount: 3,
             CandidateOpenSuccessCount: 2,
             CandidateOpenWin32Error: openError,
+            CandidateAccessFallbackCount: 0,
             IdentityReadCount: 2,
             VendorMatchCount: 2,
             ProductMatchCount: 1,
             UsagePageMatchCount: 2,
             UsageMatchCount: 2,
             FeatureLengthMatchCount: 2,
-            ExactMatchCount: classification == BatteryValidationProbeClassification.Ready ? 1 : 0);
+            ExactMatchCount: classification is
+                BatteryValidationProbeClassification.Ready or
+                BatteryValidationProbeClassification.ReadyWithAccessFallback ? 1 : 0);
 }

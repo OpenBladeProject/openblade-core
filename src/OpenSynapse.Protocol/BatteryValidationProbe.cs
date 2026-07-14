@@ -14,6 +14,7 @@ public enum BatteryValidationProbeStage
 public enum BatteryValidationProbeClassification
 {
     Ready,
+    ReadyWithAccessFallback,
     HostIdentityBlocked,
     ConflictBlocked,
     ConflictDetectionFailed,
@@ -33,6 +34,7 @@ public sealed record BatteryValidationProbeResult(
     int CandidateOpenAttemptCount,
     int CandidateOpenSuccessCount,
     int? CandidateOpenWin32Error,
+    int CandidateAccessFallbackCount,
     int IdentityReadCount,
     int VendorMatchCount,
     int ProductMatchCount,
@@ -57,7 +59,9 @@ internal sealed class HidEvidenceEvaluation : IDisposable
 
     internal OpenedCandidateHandle TakeSoleExactCandidate()
     {
-        if (Result.Classification != BatteryValidationProbeClassification.Ready ||
+        if (Result.Classification is not (
+                BatteryValidationProbeClassification.Ready or
+                BatteryValidationProbeClassification.ReadyWithAccessFallback) ||
             exactMatches.Count != 1)
         {
             throw new InvalidOperationException("Evaluation does not own one ready candidate.");
@@ -81,12 +85,17 @@ internal sealed class HidEvidenceEvaluation : IDisposable
 
 internal sealed class WindowsRazerHidEvidenceEvaluator
 {
+    private const int ErrorAccessDenied = 5;
+
     internal static readonly HidOpenParameters OperationalOpenParameters = new(
         DesiredAccess: 0xC0000000u,
         ShareMode: 0x00000003u,
         CreationDisposition: 3u,
         FlagsAndAttributes: 0x40000000u,
         Inheritable: false);
+
+    internal static readonly HidOpenParameters MetadataOnlyOpenParameters =
+        OperationalOpenParameters with { DesiredAccess = 0 };
 
     private static readonly HidHandleIdentity ExactIdentity = new(
         VendorId: 0x1532,
@@ -179,16 +188,19 @@ internal sealed class WindowsRazerHidEvidenceEvaluator
         int openAttempts = 0;
         int openSuccesses = 0;
         int? openError = null;
+        int accessFallbacks = 0;
         int identityReads = 0;
         int vendorMatches = 0;
         int productMatches = 0;
         int usagePageMatches = 0;
         int usageMatches = 0;
         int featureLengthMatches = 0;
+        int fallbackExactMatches = 0;
         List<OpenedCandidateHandle> exactMatches = [];
 
         foreach (string path in paths)
         {
+            bool usedAccessFallback = false;
             openAttempts++;
             HidCandidateOpenResult opened;
             try
@@ -206,7 +218,31 @@ internal sealed class WindowsRazerHidEvidenceEvaluator
             if (candidate is null)
             {
                 openError = opened.Win32Error;
-                continue;
+                if (opened.Win32Error != ErrorAccessDenied)
+                {
+                    continue;
+                }
+
+                accessFallbacks++;
+                usedAccessFallback = true;
+                openAttempts++;
+                try
+                {
+                    opened = native.TryOpen(path, MetadataOnlyOpenParameters);
+                }
+                catch
+                {
+                    return FinishFailure(
+                        BatteryValidationProbeStage.CandidateOpen,
+                        BatteryValidationProbeClassification.CandidateOpenFailed);
+                }
+
+                candidate = opened.Candidate;
+                if (candidate is null)
+                {
+                    openError = opened.Win32Error;
+                    continue;
+                }
             }
 
             openSuccesses++;
@@ -235,6 +271,7 @@ internal sealed class WindowsRazerHidEvidenceEvaluator
                 if (handleIdentity == ExactIdentity)
                 {
                     exactMatches.Add(candidate);
+                    fallbackExactMatches += usedAccessFallback ? 1 : 0;
                     candidate = null;
                 }
             }
@@ -247,6 +284,8 @@ internal sealed class WindowsRazerHidEvidenceEvaluator
         BatteryValidationProbeClassification classification = exactMatches.Count switch
         {
             0 => BatteryValidationProbeClassification.NoExactHandle,
+            1 when fallbackExactMatches == 1 =>
+                BatteryValidationProbeClassification.ReadyWithAccessFallback,
             1 => BatteryValidationProbeClassification.Ready,
             _ => BatteryValidationProbeClassification.AmbiguousExactHandles,
         };
@@ -272,6 +311,7 @@ internal sealed class WindowsRazerHidEvidenceEvaluator
                 CandidateOpenAttemptCount: openAttempts,
                 CandidateOpenSuccessCount: openSuccesses,
                 CandidateOpenWin32Error: openError,
+                CandidateAccessFallbackCount: accessFallbacks,
                 IdentityReadCount: identityReads,
                 VendorMatchCount: vendorMatches,
                 ProductMatchCount: productMatches,
@@ -295,6 +335,7 @@ internal sealed class WindowsRazerHidEvidenceEvaluator
             CandidateOpenAttemptCount: 0,
             CandidateOpenSuccessCount: 0,
             CandidateOpenWin32Error: null,
+            CandidateAccessFallbackCount: 0,
             IdentityReadCount: 0,
             VendorMatchCount: 0,
             ProductMatchCount: 0,

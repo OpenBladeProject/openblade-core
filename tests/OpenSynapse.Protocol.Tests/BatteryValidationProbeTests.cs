@@ -67,7 +67,7 @@ public sealed class BatteryValidationProbeTests
             "partial",
             ExactHandle with { ProductId = 0x029F });
         OpenedCandidateHandle exact = native.Add("exact", ExactHandle);
-        native.AddOpenFailure("denied", 5);
+        native.AddOpenFailure("busy", 32);
 
         BatteryValidationProbeResult result;
         using (HidEvidenceEvaluation evaluation = CreateEvaluator(native, events).Evaluate())
@@ -84,7 +84,8 @@ public sealed class BatteryValidationProbeTests
         Assert.Equal(3, result.EnumeratedCandidateCount);
         Assert.Equal(3, result.CandidateOpenAttemptCount);
         Assert.Equal(2, result.CandidateOpenSuccessCount);
-        Assert.Equal(5, result.CandidateOpenWin32Error);
+        Assert.Equal(32, result.CandidateOpenWin32Error);
+        Assert.Equal(0, result.CandidateAccessFallbackCount);
         Assert.Equal(2, result.IdentityReadCount);
         Assert.Equal(2, result.VendorMatchCount);
         Assert.Equal(1, result.ProductMatchCount);
@@ -182,6 +183,55 @@ public sealed class BatteryValidationProbeTests
         Assert.Equal(0, native.BindCalls);
     }
 
+    [Fact]
+    public void Evaluate_AccessDeniedRetriesMetadataOnlyWithOtherwiseExactParameters()
+    {
+        ScriptedNative native = new([]);
+        OpenedCandidateHandle exact = native.Add("exact", ExactHandle);
+        native.AccessDeniedUntilMetadataOnly.Add("exact");
+
+        BatteryValidationProbeResult result;
+        using (HidEvidenceEvaluation evaluation = CreateEvaluator(native).Evaluate())
+        {
+            result = evaluation.Result;
+        }
+
+        Assert.Equal(
+            BatteryValidationProbeClassification.ReadyWithAccessFallback,
+            result.Classification);
+        Assert.Equal(2, result.CandidateOpenAttemptCount);
+        Assert.Equal(1, result.CandidateOpenSuccessCount);
+        Assert.Equal(1, result.CandidateAccessFallbackCount);
+        Assert.Equal(5, result.CandidateOpenWin32Error);
+        Assert.Collection(
+            native.OpenParameters,
+            parameters => Assert.Equal(
+                new HidOpenParameters(0xC0000000u, 3u, 3u, 0x40000000u, false),
+                parameters),
+            parameters => Assert.Equal(
+                new HidOpenParameters(0u, 3u, 3u, 0x40000000u, false),
+                parameters));
+        Assert.True(exact.FileHandle.IsClosed);
+        Assert.Equal(1, native.DisposeCounts["exact"]);
+        Assert.Equal(0, native.BindCalls);
+    }
+
+    [Fact]
+    public void Evaluate_NonAccessDeniedOpenErrorDoesNotFallback()
+    {
+        ScriptedNative native = new([]);
+        native.AddOpenFailure("busy", 32);
+
+        using HidEvidenceEvaluation evaluation = CreateEvaluator(native).Evaluate();
+
+        Assert.Equal(BatteryValidationProbeClassification.NoExactHandle, evaluation.Result.Classification);
+        Assert.Equal(1, evaluation.Result.CandidateOpenAttemptCount);
+        Assert.Equal(0, evaluation.Result.CandidateAccessFallbackCount);
+        Assert.Equal(32, evaluation.Result.CandidateOpenWin32Error);
+        Assert.Single(native.OpenParameters);
+        Assert.Equal(0xC0000000u, native.OpenParameters[0].DesiredAccess);
+    }
+
     private static WindowsRazerHidEvidenceEvaluator CreateEvaluator(
         ScriptedNative native,
         List<string>? events = null,
@@ -223,6 +273,7 @@ public sealed class BatteryValidationProbeTests
         public int BindCalls { get; private set; }
         public bool ThrowOnEnumeration { get; set; }
         public string? IdentityFailurePath { get; set; }
+        public HashSet<string> AccessDeniedUntilMetadataOnly { get; } = [];
         public List<HidOpenParameters> OpenParameters { get; } = [];
         public Dictionary<string, int> DisposeCounts { get; } = [];
 
@@ -257,6 +308,11 @@ public sealed class BatteryValidationProbeTests
         {
             OpenParameters.Add(parameters);
             events.Add($"open:{path}");
+            if (AccessDeniedUntilMetadataOnly.Contains(path) && parameters.DesiredAccess != 0)
+            {
+                return new(null, 5);
+            }
+
             return openFailures.TryGetValue(path, out int error)
                 ? new(null, error)
                 : new(candidates[path].Handle, null);

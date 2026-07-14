@@ -35,7 +35,9 @@ public sealed class BatteryProbeCommand
         BatteryValidationProbeResult result = probe();
         cancellationToken.ThrowIfCancellationRequested();
         await RenderAsync(result).ConfigureAwait(false);
-        return result.Classification == BatteryValidationProbeClassification.Ready
+        return result.Classification is
+            BatteryValidationProbeClassification.Ready or
+            BatteryValidationProbeClassification.ReadyWithAccessFallback
             ? SuccessExitCode
             : ProbeFailureExitCode;
     }
@@ -52,6 +54,7 @@ public sealed class BatteryProbeCommand
         await output.WriteLineAsync(
                 $"CandidateOpenWin32Error={result.CandidateOpenWin32Error?.ToString() ?? "None"}")
             .ConfigureAwait(false);
+        await output.WriteLineAsync($"CandidateAccessFallbackCount={result.CandidateAccessFallbackCount}").ConfigureAwait(false);
         await output.WriteLineAsync($"IdentityReadCount={result.IdentityReadCount}").ConfigureAwait(false);
         await output.WriteLineAsync($"VendorMatchCount={result.VendorMatchCount}").ConfigureAwait(false);
         await output.WriteLineAsync($"ProductMatchCount={result.ProductMatchCount}").ConfigureAwait(false);

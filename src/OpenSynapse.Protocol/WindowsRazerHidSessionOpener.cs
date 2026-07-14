@@ -37,7 +37,9 @@ internal sealed class WindowsRazerHidSessionOpener
 
         using (evaluation)
         {
-            if (evaluation.Result.Classification != BatteryValidationProbeClassification.Ready)
+            if (evaluation.Result.Classification is not (
+                BatteryValidationProbeClassification.Ready or
+                BatteryValidationProbeClassification.ReadyWithAccessFallback))
             {
                 return Failure(MapFailure(evaluation.Result.Classification));
             }
