@@ -219,6 +219,17 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             return BlockedResult(blocked.Message, intentStored);
         }
 
+        access = hardwareAccessGuard.Check();
+        if (!access.Safe)
+        {
+            ServiceStatusSnapshot blocked = CreateBlockedSnapshot(
+                GetStatus().Revision,
+                telemetry,
+                access);
+            PublishIfChanged(blocked);
+            return BlockedResult(blocked.Message, intentStored);
+        }
+
         if (!deviceProvider.TryGetVerifiedDevice(out IBladeDevice device))
         {
             ServiceStatusSnapshot unavailable = CreateBlockedSnapshot(

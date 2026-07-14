@@ -66,6 +66,25 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     }
 
     [Fact]
+    public async Task ConflictAppearingDuringAdmission_BlocksBeforeProviderAndDevice()
+    {
+        TestContext context = CreateContext(providerAvailable: true);
+        context.Guard.SetScript(
+            new HardwareAccessDecision([], null),
+            new HardwareAccessDecision(["RazerAppEngine"], null));
+
+        ControlOperationResult result = await context.Runtime.SetPerformanceOverrideAsync(
+            new ManualOverride<PerformancePreset>(
+                PerformancePreset.Performance,
+                OverrideLifetime.Persistent),
+            CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Blocked, result.Status);
+        Assert.Equal(0, context.Provider.TryGetCount);
+        Assert.Equal(0, context.Device.TotalCalls);
+    }
+
+    [Fact]
     public void DetectionFailure_PreservesSortedExactConflictNamesInStatusMessage()
     {
         TestContext context = CreateContext(
@@ -215,14 +234,15 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         var hub = new FakeHub();
         var device = new CountingBladeDevice();
         var provider = new CountingProvider(providerAvailable, device);
+        var guard = new FakeGuard(conflicts ?? [], detectionFailure);
         var runtime = new ServiceControlRuntime(
             store,
             profiles,
-            new FakeGuard(conflicts ?? [], detectionFailure),
+            guard,
             telemetry,
             hub,
             provider);
-        return new TestContext(runtime, store, telemetry, hub, provider, device);
+        return new TestContext(runtime, store, telemetry, hub, guard, provider, device);
     }
 
     private static TelemetrySnapshot CreateTelemetry(
@@ -248,14 +268,38 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         ProfileStore Store,
         FakeTelemetryProvider Telemetry,
         FakeHub Hub,
+        FakeGuard Guard,
         CountingProvider Provider,
         CountingBladeDevice Device);
 
-    private sealed class FakeGuard(
-        IReadOnlyList<string> conflicts,
-        string? detectionFailure) : IHardwareAccessGuard
+    private sealed class FakeGuard : IHardwareAccessGuard
     {
-        public HardwareAccessDecision Check() => new(conflicts, detectionFailure);
+        private readonly Queue<HardwareAccessDecision> script = [];
+        private HardwareAccessDecision current;
+
+        public FakeGuard(IReadOnlyList<string> conflicts, string? detectionFailure)
+        {
+            current = new HardwareAccessDecision(conflicts, detectionFailure);
+        }
+
+        public void SetScript(params HardwareAccessDecision[] decisions)
+        {
+            script.Clear();
+            foreach (HardwareAccessDecision decision in decisions)
+            {
+                script.Enqueue(decision);
+            }
+        }
+
+        public HardwareAccessDecision Check()
+        {
+            if (script.TryDequeue(out HardwareAccessDecision? decision))
+            {
+                current = decision;
+            }
+
+            return current;
+        }
     }
 
     private sealed class FakeTelemetryProvider : IPowerTelemetryProvider
