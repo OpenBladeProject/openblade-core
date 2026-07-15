@@ -121,6 +121,41 @@ public sealed class WinUiShellContractTests
     }
 
     [Fact]
+    public void RuntimeThemeSynchronizesMicaBackdropWithRootActualTheme()
+    {
+        string xaml = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml");
+        string window = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml.cs");
+
+        Assert.DoesNotContain("<Window.SystemBackdrop>", xaml, StringComparison.Ordinal);
+        Assert.Contains("new MicaBackdropHost(this, Root)", window, StringComparison.Ordinal);
+        Assert.Contains("micaBackdropHost.Dispose()", window, StringComparison.Ordinal);
+        int ensureDispatcher = window.IndexOf(
+            "dispatcherQueue.EnsureSystemDispatcherQueue()",
+            StringComparison.Ordinal);
+        int createBackdrop = window.IndexOf(
+            "new MicaBackdropHost(this, Root)",
+            StringComparison.Ordinal);
+        Assert.True(ensureDispatcher >= 0 && ensureDispatcher < createBackdrop);
+
+        string host = ReadRepositoryFile("src", "OpenBlade.Tray", "MicaBackdropHost.cs");
+        Assert.Contains("MicaController.IsSupported()", host, StringComparison.Ordinal);
+        Assert.Contains("new SystemBackdropConfiguration", host, StringComparison.Ordinal);
+        Assert.Contains("window.Activated += OnWindowActivated", host, StringComparison.Ordinal);
+        Assert.Contains("window.Activated -= OnWindowActivated", host, StringComparison.Ordinal);
+        Assert.Contains("root.ActualThemeChanged += OnActualThemeChanged", host, StringComparison.Ordinal);
+        Assert.Contains("root.ActualThemeChanged -= OnActualThemeChanged", host, StringComparison.Ordinal);
+        Assert.Contains("configuration.Theme = ToBackdropTheme(root.ActualTheme)", host, StringComparison.Ordinal);
+        Assert.Contains(
+            "args.WindowActivationState != WindowActivationState.Deactivated",
+            host,
+            StringComparison.Ordinal);
+        Assert.Contains("ElementTheme.Light => SystemBackdropTheme.Light", host, StringComparison.Ordinal);
+        Assert.Contains("ElementTheme.Dark => SystemBackdropTheme.Dark", host, StringComparison.Ordinal);
+        Assert.Contains("ElementTheme.Default => SystemBackdropTheme.Default", host, StringComparison.Ordinal);
+        Assert.Contains("controller.Dispose()", host, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void MainWindowLoadsThemeBeforeWatchingAndOwnsPreferenceSaveLifetime()
     {
         string source = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml.cs");

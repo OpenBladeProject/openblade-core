@@ -17,6 +17,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
     private const double InitialHeightDip = 760;
 
     private readonly DispatcherQueue dispatcherQueue;
+    private readonly MicaBackdropHost micaBackdropHost;
     private readonly UiPreferenceStore preferenceStore;
     private readonly UiPreferenceSaveQueue preferenceSaveQueue;
     private readonly object initializationSync = new();
@@ -28,11 +29,13 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
     {
         dispatcherQueue = DispatcherQueue.GetForCurrentThread()
             ?? throw new InvalidOperationException("The tray must start on a dispatcher thread.");
+        dispatcherQueue.EnsureSystemDispatcherQueue();
         ViewModel = new MainViewModel(
             new ServiceClient(),
             new WinUiDispatcher(dispatcherQueue),
             new DiagnosticArchiveSaver(new WinUiDiagnosticArchiveDestination(AppWindow.Id)));
         InitializeComponent();
+        micaBackdropHost = new MicaBackdropHost(this, Root);
         Root.DataContext = ViewModel;
 
         string localApplicationData = Environment.GetFolderPath(
@@ -89,6 +92,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
 
         ViewModel.PropertyChanged -= OnViewModelPropertyChanged;
         AppWindow.Closing -= OnClosing;
+        micaBackdropHost.Dispose();
         await preferenceSaveQueue.DisposeAsync();
         await ViewModel.DisposeAsync();
     }

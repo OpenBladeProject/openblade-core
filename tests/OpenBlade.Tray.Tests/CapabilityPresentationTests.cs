@@ -58,7 +58,10 @@ public sealed class CapabilityPresentationTests
             Assert.Contains(fragment, xaml, StringComparison.Ordinal);
         }
 
-        Assert.Contains("<MicaBackdrop", xaml, StringComparison.Ordinal);
+        Assert.Contains(
+            "new MicaController",
+            ReadTraySource("MicaBackdropHost.cs"),
+            StringComparison.Ordinal);
         Assert.Contains("<Grid.Resources>", xaml, StringComparison.Ordinal);
         Assert.Contains("DashboardFanModeSelector.SelectedItem", xaml, StringComparison.Ordinal);
         Assert.DoesNotContain(
