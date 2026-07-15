@@ -103,6 +103,15 @@
       "bytes": 3177,
       "firstEpoch": "1784092168.904587000",
       "lastEpoch": "1784092212.263108000"
+    },
+    {
+      "id": "battery-query-sequence-settled-success",
+      "fileName": "openblade-battery-query-sequence-settled-20260714.pcap",
+      "sha256": "EEECED460B5B4267988A69D05FABE466EED47B2582520A6C67BB18FDA7B2AFBA",
+      "bytes": 3656,
+      "frameCount": 56,
+      "firstEpoch": "1784094542.297520000",
+      "lastEpoch": "1784094577.836499000"
     }
   ],
   "frameProvenance": {
@@ -562,6 +571,128 @@
     "conclusion": {
       "eightSecondsPreventedBusyInCapture": false,
       "reason": "Eight seconds did not prevent Busy in this capture; selective-suspend/resume is an unresolved confound."
+    }
+  },
+  "batteryQuerySequenceSettledEvidence": {
+    "capture": "battery-query-sequence-settled-success",
+    "scope": "capture-scoped-read-only-success",
+    "captureIdentity": {
+      "rootBus": 3,
+      "deviceAddress": 2,
+      "vendorId": "1532",
+      "productId": "02E0",
+      "featureReportInterface": 2
+    },
+    "commandSummary": {
+      "featureReportBytes": 90,
+      "query07_92Count": 5,
+      "setter07_12Count": 0,
+      "other90ByteFeatureCommandCount": 0
+    },
+    "transactions": [
+      {
+        "queryOrdinal": 1,
+        "transactionId": 1,
+        "setReportFrame": 31,
+        "setReportEpoch": "1784094567.652130000",
+        "setCompletionFrame": 32,
+        "setCompletionEpoch": "1784094567.652613000",
+        "getReportFrame": 33,
+        "getReportEpoch": "1784094567.670339000",
+        "setCompletionToGetMilliseconds": 17.726,
+        "responseFrame": 34,
+        "responseEpoch": "1784094567.670693000",
+        "statusHex": "02",
+        "batterySettingHex": "50",
+        "decodedSetting": "ProtectionOff"
+      },
+      {
+        "queryOrdinal": 2,
+        "transactionId": 2,
+        "setReportFrame": 35,
+        "setReportEpoch": "1784094568.690617000",
+        "setCompletionFrame": 36,
+        "setCompletionEpoch": "1784094568.690994000",
+        "getReportFrame": 37,
+        "getReportEpoch": "1784094568.714859000",
+        "setCompletionToGetMilliseconds": 23.865,
+        "responseFrame": 38,
+        "responseEpoch": "1784094568.715491000",
+        "statusHex": "02",
+        "batterySettingHex": "50",
+        "decodedSetting": "ProtectionOff",
+        "requestSpacingSeconds": 1.038487
+      },
+      {
+        "queryOrdinal": 3,
+        "transactionId": 3,
+        "setReportFrame": 39,
+        "setReportEpoch": "1784094569.734583000",
+        "setCompletionFrame": 40,
+        "setCompletionEpoch": "1784094569.734892000",
+        "getReportFrame": 41,
+        "getReportEpoch": "1784094569.752903000",
+        "setCompletionToGetMilliseconds": 18.011,
+        "responseFrame": 42,
+        "responseEpoch": "1784094569.753310000",
+        "statusHex": "02",
+        "batterySettingHex": "50",
+        "decodedSetting": "ProtectionOff",
+        "requestSpacingSeconds": 1.043966
+      },
+      {
+        "queryOrdinal": 4,
+        "transactionId": 4,
+        "setReportFrame": 43,
+        "setReportEpoch": "1784094570.766632000",
+        "setCompletionFrame": 44,
+        "setCompletionEpoch": "1784094570.767071000",
+        "getReportFrame": 45,
+        "getReportEpoch": "1784094570.785589000",
+        "setCompletionToGetMilliseconds": 18.518,
+        "responseFrame": 46,
+        "responseEpoch": "1784094570.786020000",
+        "statusHex": "02",
+        "batterySettingHex": "50",
+        "decodedSetting": "ProtectionOff",
+        "requestSpacingSeconds": 1.032049
+      },
+      {
+        "queryOrdinal": 5,
+        "transactionId": 5,
+        "setReportFrame": 47,
+        "setReportEpoch": "1784094571.808097000",
+        "setCompletionFrame": 48,
+        "setCompletionEpoch": "1784094571.808647000",
+        "getReportFrame": 49,
+        "getReportEpoch": "1784094571.833650000",
+        "setCompletionToGetMilliseconds": 25.003,
+        "responseFrame": 50,
+        "responseEpoch": "1784094571.834171000",
+        "statusHex": "02",
+        "batterySettingHex": "50",
+        "decodedSetting": "ProtectionOff",
+        "requestSpacingSeconds": 1.041465
+      }
+    ],
+    "cliResult": {
+      "settings": [
+        "ProtectionOff",
+        "ProtectionOff",
+        "ProtectionOff",
+        "ProtectionOff",
+        "ProtectionOff"
+      ],
+      "completedCount": 5,
+      "success": true,
+      "exitCode": 0
+    },
+    "conclusion": {
+      "acceptanceConditionsPassedInCapture": true,
+      "settlingResolvedPriorSameSessionBusyInCapture": true,
+      "productionBatteryWriteAdmissionChanged": false,
+      "writeAuthorizedByReadOnlyEvidence": false,
+      "reason": "For this exact capture/device, adequate SET-completion-to-GET settling resolves the prior same-session Busy behavior. This read-only evidence does not authorize battery writes or change production admission."
     }
   },
   "unsupportedObservations": [

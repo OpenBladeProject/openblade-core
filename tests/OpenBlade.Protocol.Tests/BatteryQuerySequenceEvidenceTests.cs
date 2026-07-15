@@ -9,6 +9,8 @@ public sealed class BatteryQuerySequenceEvidenceTests
     private const string CaptureHash = "83D9C6BDFC6FA757FDF93E431C027F741C2F7172F1A6D3493B8BDA95CB0CCA3D";
     private const string EightSecondCaptureId = "battery-query-sequence-eight-second-negative";
     private const string EightSecondCaptureHash = "23AA9BFD7636C000B7AE5043C7A00C8563025635B6B09D4173D7AEE9774149E8";
+    private const string SettledCaptureId = "battery-query-sequence-settled-success";
+    private const string SettledCaptureHash = "EEECED460B5B4267988A69D05FABE466EED47B2582520A6C67BB18FDA7B2AFBA";
 
     [Fact]
     public void Evidence_RecordsExactCaptureProvenanceAndDeviceIdentity()
@@ -203,6 +205,127 @@ public sealed class BatteryQuerySequenceEvidenceTests
         Assert.DoesNotContain("annotation", evidence, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("trustedFixtureHash", evidence, StringComparison.OrdinalIgnoreCase);
         Assert.False(TrustedFixtureHashRegistry.Production.Contains(Convert.FromHexString(EightSecondCaptureHash)));
+        Assert.False(root.GetProperty("admission").GetProperty("productionHashAdded").GetBoolean());
+    }
+
+    [Fact]
+    public void SettledEvidence_RecordsExactProvenanceIdentityAndScope()
+    {
+        using JsonDocument document = LoadEvidence();
+        JsonElement root = document.RootElement;
+        JsonElement capture = root.GetProperty("captureSources")
+            .EnumerateArray()
+            .Single(source => source.GetProperty("id").GetString() == SettledCaptureId);
+        JsonElement evidence = root.GetProperty("batteryQuerySequenceSettledEvidence");
+        JsonElement identity = evidence.GetProperty("captureIdentity");
+
+        Assert.Equal("openblade-battery-query-sequence-settled-20260714.pcap", capture.GetProperty("fileName").GetString());
+        Assert.Equal(SettledCaptureHash, capture.GetProperty("sha256").GetString());
+        Assert.Equal(3656, capture.GetProperty("bytes").GetInt32());
+        Assert.Equal(56, capture.GetProperty("frameCount").GetInt32());
+        Assert.Equal("1784094542.297520000", capture.GetProperty("firstEpoch").GetString());
+        Assert.Equal("1784094577.836499000", capture.GetProperty("lastEpoch").GetString());
+        Assert.Equal(SettledCaptureId, evidence.GetProperty("capture").GetString());
+        Assert.Equal("capture-scoped-read-only-success", evidence.GetProperty("scope").GetString());
+        Assert.Equal(3, identity.GetProperty("rootBus").GetInt32());
+        Assert.Equal(2, identity.GetProperty("deviceAddress").GetInt32());
+        Assert.Equal("1532", identity.GetProperty("vendorId").GetString());
+        Assert.Equal("02E0", identity.GetProperty("productId").GetString());
+        Assert.Equal(2, identity.GetProperty("featureReportInterface").GetInt32());
+    }
+
+    [Fact]
+    public void SettledEvidence_RecordsFiveExactSuccessfulTransactions()
+    {
+        using JsonDocument document = LoadEvidence();
+        JsonElement[] transactions = document.RootElement
+            .GetProperty("batteryQuerySequenceSettledEvidence")
+            .GetProperty("transactions")
+            .EnumerateArray()
+            .ToArray();
+        var expected = new[]
+        {
+            (1, 1, 31, "1784094567.652130000", 32, "1784094567.652613000", 33, "1784094567.670339000", 17.726m, 34, "1784094567.670693000", (decimal?)null),
+            (2, 2, 35, "1784094568.690617000", 36, "1784094568.690994000", 37, "1784094568.714859000", 23.865m, 38, "1784094568.715491000", 1.038487m),
+            (3, 3, 39, "1784094569.734583000", 40, "1784094569.734892000", 41, "1784094569.752903000", 18.011m, 42, "1784094569.753310000", 1.043966m),
+            (4, 4, 43, "1784094570.766632000", 44, "1784094570.767071000", 45, "1784094570.785589000", 18.518m, 46, "1784094570.786020000", 1.032049m),
+            (5, 5, 47, "1784094571.808097000", 48, "1784094571.808647000", 49, "1784094571.833650000", 25.003m, 50, "1784094571.834171000", 1.041465m),
+        };
+
+        Assert.Equal(expected.Length, transactions.Length);
+        for (int index = 0; index < expected.Length; index++)
+        {
+            var value = expected[index];
+            JsonElement transaction = transactions[index];
+            Assert.Equal(value.Item1, transaction.GetProperty("queryOrdinal").GetInt32());
+            Assert.Equal(value.Item2, transaction.GetProperty("transactionId").GetInt32());
+            Assert.Equal(value.Item3, transaction.GetProperty("setReportFrame").GetInt32());
+            Assert.Equal(value.Item4, transaction.GetProperty("setReportEpoch").GetString());
+            Assert.Equal(value.Item5, transaction.GetProperty("setCompletionFrame").GetInt32());
+            Assert.Equal(value.Item6, transaction.GetProperty("setCompletionEpoch").GetString());
+            Assert.Equal(value.Item7, transaction.GetProperty("getReportFrame").GetInt32());
+            Assert.Equal(value.Item8, transaction.GetProperty("getReportEpoch").GetString());
+            Assert.Equal(value.Item9, transaction.GetProperty("setCompletionToGetMilliseconds").GetDecimal());
+            Assert.Equal(value.Item10, transaction.GetProperty("responseFrame").GetInt32());
+            Assert.Equal(value.Item11, transaction.GetProperty("responseEpoch").GetString());
+            Assert.Equal("02", transaction.GetProperty("statusHex").GetString());
+            Assert.Equal("50", transaction.GetProperty("batterySettingHex").GetString());
+            Assert.Equal("ProtectionOff", transaction.GetProperty("decodedSetting").GetString());
+            if (value.Item12 is { } spacing)
+            {
+                Assert.Equal(spacing, transaction.GetProperty("requestSpacingSeconds").GetDecimal());
+            }
+            else
+            {
+                Assert.False(transaction.TryGetProperty("requestSpacingSeconds", out _));
+            }
+        }
+    }
+
+    [Fact]
+    public void SettledEvidence_RecordsAcceptanceCliResultAndReadOnlyBoundary()
+    {
+        using JsonDocument document = LoadEvidence();
+        JsonElement evidence = document.RootElement.GetProperty("batteryQuerySequenceSettledEvidence");
+        JsonElement commands = evidence.GetProperty("commandSummary");
+        JsonElement cli = evidence.GetProperty("cliResult");
+        JsonElement conclusion = evidence.GetProperty("conclusion");
+
+        Assert.Equal(90, commands.GetProperty("featureReportBytes").GetInt32());
+        Assert.Equal(5, commands.GetProperty("query07_92Count").GetInt32());
+        Assert.Equal(0, commands.GetProperty("setter07_12Count").GetInt32());
+        Assert.Equal(0, commands.GetProperty("other90ByteFeatureCommandCount").GetInt32());
+        Assert.All(
+            evidence.GetProperty("transactions").EnumerateArray(),
+            transaction => Assert.True(
+                transaction.GetProperty("setCompletionToGetMilliseconds").GetDecimal() >= 10m));
+        Assert.Equal(
+            Enumerable.Repeat("ProtectionOff", 5),
+            cli.GetProperty("settings").EnumerateArray().Select(value => value.GetString()));
+        Assert.Equal(5, cli.GetProperty("completedCount").GetInt32());
+        Assert.True(cli.GetProperty("success").GetBoolean());
+        Assert.Equal(0, cli.GetProperty("exitCode").GetInt32());
+        Assert.True(conclusion.GetProperty("acceptanceConditionsPassedInCapture").GetBoolean());
+        Assert.True(conclusion.GetProperty("settlingResolvedPriorSameSessionBusyInCapture").GetBoolean());
+        Assert.False(conclusion.GetProperty("productionBatteryWriteAdmissionChanged").GetBoolean());
+        Assert.False(conclusion.GetProperty("writeAuthorizedByReadOnlyEvidence").GetBoolean());
+        string reason = conclusion.GetProperty("reason").GetString()!;
+        Assert.Contains("this exact capture/device", reason, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("does not authorize battery writes", reason, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void SettledEvidence_KeepsRawReportsAndProductionAdmissionClosed()
+    {
+        using JsonDocument document = LoadEvidence();
+        JsonElement root = document.RootElement;
+        string evidence = root.GetProperty("batteryQuerySequenceSettledEvidence").GetRawText();
+
+        Assert.DoesNotContain("rawReport", evidence, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("reportBody", evidence, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("annotation", evidence, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("trustedFixtureHash", evidence, StringComparison.OrdinalIgnoreCase);
+        Assert.False(TrustedFixtureHashRegistry.Production.Contains(Convert.FromHexString(SettledCaptureHash)));
         Assert.False(root.GetProperty("admission").GetProperty("productionHashAdded").GetBoolean());
     }
 
