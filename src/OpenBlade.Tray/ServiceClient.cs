@@ -13,7 +13,7 @@ public sealed class ServiceClient : IServiceClient
     private readonly TimeProvider timeProvider;
 
     public ServiceClient()
-        : this(OpenSynapseIpc.PipeName)
+        : this(OpenBladeIpc.PipeName)
     {
     }
 
@@ -38,7 +38,7 @@ public sealed class ServiceClient : IServiceClient
 
     public async Task<ServiceStatusSnapshot> GetStatusAsync(CancellationToken token)
     {
-        var request = new GetStatusRequest(OpenSynapseIpc.ProtocolVersion, Guid.NewGuid());
+        var request = new GetStatusRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid());
         ServiceResponse response = await SendOnceAsync(request, token);
         return response.Status
             ?? throw new InvalidDataException("Service status response is missing its status body.");
@@ -47,14 +47,14 @@ public sealed class ServiceClient : IServiceClient
     public Task<ControlOperationResult> UpdateProfilesAsync(
         ProfileSet profiles,
         CancellationToken token) => SendMutationAsync(
-            new UpdateProfilesRequest(OpenSynapseIpc.ProtocolVersion, Guid.NewGuid(), profiles),
+            new UpdateProfilesRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid(), profiles),
             token);
 
     public Task<ControlOperationResult> SetPerformanceOverrideAsync(
         ManualOverride<PerformancePreset>? value,
         CancellationToken token) => SendMutationAsync(
             new SetPerformanceOverrideRequest(
-                OpenSynapseIpc.ProtocolVersion,
+                OpenBladeIpc.ProtocolVersion,
                 Guid.NewGuid(),
                 value),
             token);
@@ -62,26 +62,26 @@ public sealed class ServiceClient : IServiceClient
     public Task<ControlOperationResult> SetFanOverrideAsync(
         ManualOverride<FanMode>? value,
         CancellationToken token) => SendMutationAsync(
-            new SetFanOverrideRequest(OpenSynapseIpc.ProtocolVersion, Guid.NewGuid(), value),
+            new SetFanOverrideRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid(), value),
             token);
 
     public Task<ControlOperationResult> SetLightingOverrideAsync(
         ManualOverride<LightingSettings>? value,
         CancellationToken token) => SendMutationAsync(
-            new SetLightingOverrideRequest(OpenSynapseIpc.ProtocolVersion, Guid.NewGuid(), value),
+            new SetLightingOverrideRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid(), value),
             token);
 
     public Task<ControlOperationResult> SetBatteryPolicyAsync(
         BatteryPolicy value,
         CancellationToken token) => SendMutationAsync(
-            new SetBatteryPolicyRequest(OpenSynapseIpc.ProtocolVersion, Guid.NewGuid(), value),
+            new SetBatteryPolicyRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid(), value),
             token);
 
     public Task<ControlOperationResult> SetFullChargeOverrideAsync(
         bool enabled,
         CancellationToken token) => SendMutationAsync(
             new SetFullChargeOverrideRequest(
-                OpenSynapseIpc.ProtocolVersion,
+                OpenBladeIpc.ProtocolVersion,
                 Guid.NewGuid(),
                 enabled),
             token);
@@ -123,7 +123,7 @@ public sealed class ServiceClient : IServiceClient
                             "Service returned an unexpected subscription frame.");
                     }
 
-                    if (statusEvent.Version != OpenSynapseIpc.ProtocolVersion)
+                    if (statusEvent.Version != OpenBladeIpc.ProtocolVersion)
                     {
                         throw new InvalidDataException(
                             "Service status event version does not match the client.");
@@ -167,7 +167,7 @@ public sealed class ServiceClient : IServiceClient
             throw new InvalidDataException("Service returned an unexpected server frame.");
         }
 
-        if (response.Version != OpenSynapseIpc.ProtocolVersion)
+        if (response.Version != OpenBladeIpc.ProtocolVersion)
         {
             throw new InvalidDataException("Service response version does not match the client.");
         }
@@ -196,7 +196,7 @@ public sealed class ServiceClient : IServiceClient
         {
             connection = await connectAsync(token);
             var request = new SubscribeStatusRequest(
-                OpenSynapseIpc.ProtocolVersion,
+                OpenBladeIpc.ProtocolVersion,
                 Guid.NewGuid());
             await IpcMessageCodec.WriteRequestAsync(connection, request, token);
             ServiceServerFrame frame = await IpcMessageCodec.ReadServerFrameAsync(

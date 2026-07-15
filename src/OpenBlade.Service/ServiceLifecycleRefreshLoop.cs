@@ -49,7 +49,7 @@ public static class ServiceBackgroundTaskGroup
         if (!stoppingToken.IsCancellationRequested)
         {
             throw new InvalidOperationException(
-                "An OpenSynapse service background component stopped unexpectedly.");
+                "An OpenBlade service background component stopped unexpectedly.");
         }
     }
 }

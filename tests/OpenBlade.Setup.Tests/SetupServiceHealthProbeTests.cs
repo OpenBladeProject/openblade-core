@@ -10,11 +10,11 @@ public sealed class SetupServiceHealthProbeTests
     {
         ServiceStatusSnapshot expected = CreateStatus();
         await using MemoryStream response = new();
-        var request = new GetStatusRequest(OpenSynapseIpc.ProtocolVersion, Guid.NewGuid());
+        var request = new GetStatusRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid());
         await IpcMessageCodec.WriteServerFrameAsync(
             response,
             new ServiceResponse(
-                OpenSynapseIpc.ProtocolVersion,
+                OpenBladeIpc.ProtocolVersion,
                 request.RequestId,
                 true,
                 null,
@@ -34,11 +34,11 @@ public sealed class SetupServiceHealthProbeTests
     public async Task VerifyAsync_RejectsResponseForDifferentRequest()
     {
         await using MemoryStream response = new();
-        var request = new GetStatusRequest(OpenSynapseIpc.ProtocolVersion, Guid.NewGuid());
+        var request = new GetStatusRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid());
         await IpcMessageCodec.WriteServerFrameAsync(
             response,
             new ServiceResponse(
-                OpenSynapseIpc.ProtocolVersion,
+                OpenBladeIpc.ProtocolVersion,
                 Guid.NewGuid(),
                 true,
                 null,

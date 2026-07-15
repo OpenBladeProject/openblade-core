@@ -32,6 +32,8 @@ public sealed class CapabilityPresentationTests
             "Visibility=\"{Binding IsLightingVisible, Converter={StaticResource BooleanNegationToVisibility}}\"",
             xaml,
             StringComparison.Ordinal);
+        Assert.Contains("OpenBlade", xaml, StringComparison.Ordinal);
+        Assert.DoesNotContain("Open" + "Synapse", xaml, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("Â", xaml, StringComparison.Ordinal);
     }
 

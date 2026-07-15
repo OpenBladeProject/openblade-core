@@ -8,34 +8,34 @@ public sealed class IpcMessageCodecTests
 {
     public static TheoryData<ServiceRequest> Requests => new()
     {
-        new GetStatusRequest(OpenSynapseIpc.ProtocolVersion, Guid.NewGuid()),
-        new SubscribeStatusRequest(OpenSynapseIpc.ProtocolVersion, Guid.NewGuid()),
+        new GetStatusRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid()),
+        new SubscribeStatusRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid()),
         new UpdateProfilesRequest(
-            OpenSynapseIpc.ProtocolVersion,
+            OpenBladeIpc.ProtocolVersion,
             Guid.NewGuid(),
             ProfileDefaults.CreateSafeDefaults()),
         new SetPerformanceOverrideRequest(
-            OpenSynapseIpc.ProtocolVersion,
+            OpenBladeIpc.ProtocolVersion,
             Guid.NewGuid(),
             new ManualOverride<PerformancePreset>(
                 PerformancePreset.Performance,
                 OverrideLifetime.Persistent)),
         new SetFanOverrideRequest(
-            OpenSynapseIpc.ProtocolVersion,
+            OpenBladeIpc.ProtocolVersion,
             Guid.NewGuid(),
             new ManualOverride<FanMode>(FanMode.Maximum, OverrideLifetime.UntilPowerSourceChange)),
         new SetLightingOverrideRequest(
-            OpenSynapseIpc.ProtocolVersion,
+            OpenBladeIpc.ProtocolVersion,
             Guid.NewGuid(),
             new ManualOverride<LightingSettings>(
                 new LightingSettings(LightingEffect.Off, new RgbColor(0, 0, 0), 0),
                 OverrideLifetime.Persistent)),
         new SetBatteryPolicyRequest(
-            OpenSynapseIpc.ProtocolVersion,
+            OpenBladeIpc.ProtocolVersion,
             Guid.NewGuid(),
             BatteryPolicy.Create(75)),
-        new SetFullChargeOverrideRequest(OpenSynapseIpc.ProtocolVersion, Guid.NewGuid(), true),
-        new SetFullChargeOverrideRequest(OpenSynapseIpc.ProtocolVersion, Guid.NewGuid(), false),
+        new SetFullChargeOverrideRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid(), true),
+        new SetFullChargeOverrideRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid(), false),
     };
 
     [Theory]
@@ -62,13 +62,13 @@ public sealed class IpcMessageCodecTests
         ServiceServerFrame[] expected =
         [
             new ServiceResponse(
-                OpenSynapseIpc.ProtocolVersion,
+                OpenBladeIpc.ProtocolVersion,
                 Guid.NewGuid(),
                 Success: true,
                 Error: null,
                 Status: status,
                 Result: null),
-            new ServiceStatusEvent(OpenSynapseIpc.ProtocolVersion, status),
+            new ServiceStatusEvent(OpenBladeIpc.ProtocolVersion, status),
         ];
 
         foreach (ServiceServerFrame frame in expected)
@@ -117,7 +117,7 @@ public sealed class IpcMessageCodecTests
     {
         using MemoryStream stream = new();
         ServiceRequest request = new GetStatusRequest(
-            OpenSynapseIpc.ProtocolVersion - 1,
+            OpenBladeIpc.ProtocolVersion - 1,
             Guid.NewGuid());
 
         await Assert.ThrowsAsync<InvalidDataException>(() =>
@@ -127,7 +127,7 @@ public sealed class IpcMessageCodecTests
     [Theory]
     [InlineData(0)]
     [InlineData(-1)]
-    [InlineData(OpenSynapseIpc.MaximumMessageBytes + 1)]
+    [InlineData(OpenBladeIpc.MaximumMessageBytes + 1)]
     public async Task ReadRequestAsync_RejectsInvalidLengthBeforePayloadAllocation(int length)
     {
         using MemoryStream stream = new();
@@ -143,10 +143,10 @@ public sealed class IpcMessageCodecTests
     {
         using MemoryStream stream = new();
         ServiceServerFrame frame = new ServiceResponse(
-            OpenSynapseIpc.ProtocolVersion,
+            OpenBladeIpc.ProtocolVersion,
             Guid.NewGuid(),
             Success: false,
-            Error: new string('x', OpenSynapseIpc.MaximumMessageBytes),
+            Error: new string('x', OpenBladeIpc.MaximumMessageBytes),
             Status: null,
             Result: null);
 
@@ -163,7 +163,7 @@ public sealed class IpcMessageCodecTests
             Conflicts = ["Razer Synapse Service", "Razer Central Service"],
         };
         ServiceServerFrame frame = new ServiceStatusEvent(
-            OpenSynapseIpc.ProtocolVersion,
+            OpenBladeIpc.ProtocolVersion,
             status);
 
         await Assert.ThrowsAsync<InvalidDataException>(() =>

@@ -15,6 +15,6 @@ public static class TrayShutdownEndpoint
 
         string normalized = Path.GetFullPath(executablePath).ToUpperInvariant();
         byte[] hash = SHA256.HashData(Encoding.UTF8.GetBytes(normalized));
-        return $@"Local\OpenSynapse.Tray.Shutdown.{Convert.ToHexString(hash.AsSpan(0, 16))}";
+        return $@"Local\OpenBlade.Tray.Shutdown.{Convert.ToHexString(hash.AsSpan(0, 16))}";
     }
 }

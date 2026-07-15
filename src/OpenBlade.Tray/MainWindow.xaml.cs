@@ -12,7 +12,7 @@ public partial class MainWindow : Window
     private readonly MainViewModel viewModel;
     private readonly UiPreferenceStore preferenceStore = new(Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-        "OpenSynapse",
+        "OpenBlade",
         "preferences.json"));
 
     public MainWindow()

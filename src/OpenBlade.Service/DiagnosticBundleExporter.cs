@@ -5,7 +5,7 @@ using System.Text.Json;
 namespace OpenBlade.Service;
 
 public sealed record DiagnosticVersions(
-    string OpenSynapseVersion,
+    string OpenBladeVersion,
     string WindowsVersion,
     string BiosVersion);
 

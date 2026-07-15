@@ -8,32 +8,32 @@ public sealed class TrayInstanceCoordinatorTests
     public void Endpoint_IsStableForSameUserAndPathCasing()
     {
         TrayInstanceEndpoint first = TrayInstanceEndpoint.Create(
-            @"C:\Program Files\OpenSynapse\OpenSynapse.Tray.exe",
+            @"C:\Program Files\OpenBlade\OpenBlade.Tray.exe",
             "S-1-5-21-1000");
         TrayInstanceEndpoint second = TrayInstanceEndpoint.Create(
-            @"c:\program files\opensynapse\opensynapse.tray.exe",
+            @"c:\program files\openblade\openblade.tray.exe",
             "S-1-5-21-1000");
 
         Assert.Equal(first, second);
-        Assert.StartsWith(@"Local\OpenSynapse.Tray.Instance.", first.InstanceEventName, StringComparison.Ordinal);
+        Assert.StartsWith(@"Local\OpenBlade.Tray.Instance.", first.InstanceEventName, StringComparison.Ordinal);
     }
 
     [Fact]
     public void Endpoint_DiffersAcrossUsersAndPortableCopies()
     {
         TrayInstanceEndpoint baseline = TrayInstanceEndpoint.Create(
-            @"C:\Program Files\OpenSynapse\OpenSynapse.Tray.exe",
+            @"C:\Program Files\OpenBlade\OpenBlade.Tray.exe",
             "S-1-5-21-1000");
 
         Assert.NotEqual(
             baseline,
             TrayInstanceEndpoint.Create(
-                @"C:\Program Files\OpenSynapse\OpenSynapse.Tray.exe",
+                @"C:\Program Files\OpenBlade\OpenBlade.Tray.exe",
                 "S-1-5-21-2000"));
         Assert.NotEqual(
             baseline,
             TrayInstanceEndpoint.Create(
-                @"D:\Portable\OpenSynapse.Tray.exe",
+                @"D:\Portable\OpenBlade.Tray.exe",
                 "S-1-5-21-1000"));
     }
 
@@ -64,6 +64,6 @@ public sealed class TrayInstanceCoordinatorTests
     }
 
     private static TrayInstanceEndpoint UniqueEndpoint() => TrayInstanceEndpoint.Create(
-        $@"C:\OpenSynapse.Tests\{Guid.NewGuid():N}\OpenSynapse.Tray.exe",
+        $@"C:\OpenBlade.Tests\{Guid.NewGuid():N}\OpenBlade.Tray.exe",
         "S-1-5-21-TEST");
 }

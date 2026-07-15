@@ -9,9 +9,9 @@ public sealed class ServiceMessageContractTests
     [Fact]
     public void ProtocolConstants_AreClosedVersionTwoAndRetainExactSizeLimit()
     {
-        Assert.Equal(2, OpenSynapseIpc.ProtocolVersion);
-        Assert.Equal("OpenSynapse.Service.v2", OpenSynapseIpc.PipeName);
-        Assert.Equal(64 * 1024, OpenSynapseIpc.MaximumMessageBytes);
+        Assert.Equal(2, OpenBladeIpc.ProtocolVersion);
+        Assert.Equal("OpenBlade.Service.v2", OpenBladeIpc.PipeName);
+        Assert.Equal(64 * 1024, OpenBladeIpc.MaximumMessageBytes);
     }
 
     [Fact]

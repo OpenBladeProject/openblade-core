@@ -44,7 +44,7 @@ public sealed class NamedPipeControlServerTests
         await serverTask;
 
         Assert.False(response.Success);
-        Assert.Equal(OpenSynapseIpc.ProtocolVersion, response.Version);
+        Assert.Equal(OpenBladeIpc.ProtocolVersion, response.Version);
     }
 
     [Fact]
@@ -182,14 +182,14 @@ public sealed class NamedPipeControlServerTests
         data.Add(Frame(Encoding.UTF8.GetBytes(
             "{\"version\":2,\"requestId\":\"00000000-0000-0000-0000-000000000000\",\"operation\":\"getStatus\"}")));
         byte[] oversized = new byte[sizeof(int)];
-        BinaryPrimitives.WriteInt32LittleEndian(oversized, OpenSynapseIpc.MaximumMessageBytes + 1);
+        BinaryPrimitives.WriteInt32LittleEndian(oversized, OpenBladeIpc.MaximumMessageBytes + 1);
         data.Add(oversized);
         return data;
     }
 
     private static TestServer CreateServer(TimeProvider? timeProvider = null)
     {
-        string pipeName = $"OpenSynapse.Tests.{Guid.NewGuid():N}";
+        string pipeName = $"OpenBlade.Tests.{Guid.NewGuid():N}";
         var runtime = new StubRuntime(CreateStatus(0));
         TimeProvider time = timeProvider ?? TimeProvider.System;
         var hub = new StatusSubscriptionHub(runtime.Status, time);

@@ -54,7 +54,7 @@ public partial class App : System.Windows.Application
         Forms.ContextMenuStrip menu = BuildTrayMenu(trayMenuController);
         trayIcon = new Forms.NotifyIcon
         {
-            Text = "OpenSynapse",
+            Text = "OpenBlade",
             Icon = System.Drawing.SystemIcons.Application,
             ContextMenuStrip = menu,
             Visible = true,

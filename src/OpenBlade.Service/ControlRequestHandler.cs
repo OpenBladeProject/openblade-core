@@ -13,7 +13,7 @@ public sealed class ControlRequestHandler(IServiceControlRuntime runtime)
             return Failure(Guid.Empty, "IPC request is missing.");
         }
 
-        if (request.Version != OpenSynapseIpc.ProtocolVersion)
+        if (request.Version != OpenBladeIpc.ProtocolVersion)
         {
             return Failure(request.RequestId, "Unsupported IPC protocol version.");
         }
@@ -49,7 +49,7 @@ public sealed class ControlRequestHandler(IServiceControlRuntime runtime)
     }
 
     private ServiceResponse Status(Guid requestId) => new(
-        OpenSynapseIpc.ProtocolVersion,
+        OpenBladeIpc.ProtocolVersion,
         requestId,
         Success: true,
         Error: null,
@@ -57,7 +57,7 @@ public sealed class ControlRequestHandler(IServiceControlRuntime runtime)
         Result: null);
 
     private static ServiceResponse Result(Guid requestId, ControlOperationResult result) => new(
-        OpenSynapseIpc.ProtocolVersion,
+        OpenBladeIpc.ProtocolVersion,
         requestId,
         Success: true,
         Error: null,
@@ -65,7 +65,7 @@ public sealed class ControlRequestHandler(IServiceControlRuntime runtime)
         Result: result);
 
     private static ServiceResponse Failure(Guid requestId, string error) => new(
-        OpenSynapseIpc.ProtocolVersion,
+        OpenBladeIpc.ProtocolVersion,
         requestId,
         Success: false,
         Error: error,

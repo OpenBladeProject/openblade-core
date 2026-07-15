@@ -105,7 +105,7 @@ public sealed class WindowsSetupPlatformServiceTests
         Assert.Collection(
             processes.Operations,
             operation => Assert.Equal("query:OpenSynapse.Tray", operation),
-            operation => Assert.StartsWith("signal:Local\\OpenSynapse.Tray.Shutdown.", operation, StringComparison.Ordinal));
+            operation => Assert.StartsWith("signal:Local\\OpenBlade.Tray.Shutdown.", operation, StringComparison.Ordinal));
         Assert.True(process.WaitedForExit);
         Assert.True(process.Disposed);
     }

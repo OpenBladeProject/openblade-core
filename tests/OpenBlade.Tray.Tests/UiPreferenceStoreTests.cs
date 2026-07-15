@@ -6,7 +6,7 @@ public sealed class UiPreferenceStoreTests : IDisposable
 {
     private readonly string directory = Path.Combine(
         Path.GetTempPath(),
-        "OpenSynapse.Tray.Tests",
+        "OpenBlade.Tray.Tests",
         Guid.NewGuid().ToString("N"));
 
     [Fact]

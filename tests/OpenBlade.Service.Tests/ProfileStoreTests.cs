@@ -7,7 +7,7 @@ public sealed class ProfileStoreTests : IDisposable
 {
     private readonly string _directory = Path.Combine(
         Path.GetTempPath(),
-        "OpenSynapse.Tests",
+        "OpenBlade.Tests",
         Guid.NewGuid().ToString("N"));
 
     [Fact]

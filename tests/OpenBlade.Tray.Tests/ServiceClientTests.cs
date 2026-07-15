@@ -19,7 +19,7 @@ public sealed class ServiceClientTests
             request =>
             {
                 Assert.IsType<GetStatusRequest>(request);
-                Assert.Equal(OpenSynapseIpc.ProtocolVersion, request.Version);
+                Assert.Equal(OpenBladeIpc.ProtocolVersion, request.Version);
                 Assert.NotEqual(Guid.Empty, request.RequestId);
                 return new ServiceResponse(2, request.RequestId, true, null, expected, null);
             },
@@ -165,7 +165,7 @@ public sealed class ServiceClientTests
                 byte[] prefix = new byte[sizeof(int)];
                 BinaryPrimitives.WriteInt32LittleEndian(
                     prefix,
-                    OpenSynapseIpc.MaximumMessageBytes + 1);
+                    OpenBladeIpc.MaximumMessageBytes + 1);
                 return prefix;
             },
             timeout.Token);
@@ -339,7 +339,7 @@ public sealed class ServiceClientTests
             : RunServerAsync(
                 pipeName,
                 request => new ServiceResponse(
-                    OpenSynapseIpc.ProtocolVersion,
+                    OpenBladeIpc.ProtocolVersion,
                     request.RequestId,
                     false,
                     "Rejected",
@@ -375,7 +375,7 @@ public sealed class ServiceClientTests
         byte[] prefix = new byte[sizeof(int)];
         BinaryPrimitives.WriteInt32LittleEndian(
             prefix,
-            OpenSynapseIpc.MaximumMessageBytes + 1);
+            OpenBladeIpc.MaximumMessageBytes + 1);
         var client = new ServiceClient(
             _ =>
             {
@@ -480,7 +480,7 @@ public sealed class ServiceClientTests
         PipeTransmissionMode.Byte,
         PipeOptions.Asynchronous);
 
-    private static string NewPipeName() => $"OpenSynapse.Tray.Tests.{Guid.NewGuid():N}";
+    private static string NewPipeName() => $"OpenBlade.Tray.Tests.{Guid.NewGuid():N}";
 
     private static byte[] Frame(byte[] payload)
     {

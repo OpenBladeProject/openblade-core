@@ -39,7 +39,7 @@ public sealed class ControlRequestHandlerTests
                 requests[index],
                 CancellationToken.None);
 
-            Assert.Equal(OpenSynapseIpc.ProtocolVersion, response.Version);
+            Assert.Equal(OpenBladeIpc.ProtocolVersion, response.Version);
             Assert.Equal(requests[index].RequestId, response.RequestId);
             Assert.True(response.Success);
             Assert.Equal([expectedCalls[index]], runtime.Calls);
@@ -70,7 +70,7 @@ public sealed class ControlRequestHandlerTests
         ServiceResponse response = await handler.HandleAsync(request, CancellationToken.None);
 
         Assert.False(response.Success);
-        Assert.Equal(OpenSynapseIpc.ProtocolVersion, response.Version);
+        Assert.Equal(OpenBladeIpc.ProtocolVersion, response.Version);
         Assert.Empty(runtime.Calls);
     }
 
@@ -81,7 +81,7 @@ public sealed class ControlRequestHandlerTests
         bool providerAvailable,
         bool conflict)
     {
-        string path = Path.Combine(Path.GetTempPath(), $"OpenSynapse.Handler.{Guid.NewGuid():N}.json");
+        string path = Path.Combine(Path.GetTempPath(), $"OpenBlade.Handler.{Guid.NewGuid():N}.json");
         try
         {
             var device = new CountingDevice();

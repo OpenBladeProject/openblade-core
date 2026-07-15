@@ -45,6 +45,11 @@ public sealed class DiagnosticBundleExporterTests
         using JsonDocument device = JsonDocument.Parse(deviceJson);
         Assert.Equal("RZ09-0581", device.RootElement.GetProperty("model").GetString());
 
+        string versionsJson = await ReadEntryAsync(archive, "versions.json");
+        using JsonDocument versions = JsonDocument.Parse(versionsJson);
+        Assert.Equal("1.2.3", versions.RootElement.GetProperty("openBladeVersion").GetString());
+        Assert.False(versions.RootElement.TryGetProperty("openSynapseVersion", out _));
+
         string commandResultsJson = await ReadEntryAsync(archive, "command-results.json");
         using JsonDocument results = JsonDocument.Parse(commandResultsJson);
         Assert.Equal("Succeeded", results.RootElement[0].GetProperty("status").GetString());

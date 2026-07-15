@@ -14,7 +14,7 @@ public sealed class SetupServiceHealthProbe : ISetupServiceHealthProbe
     private readonly Func<GetStatusRequest> createRequest;
 
     public SetupServiceHealthProbe()
-        : this(ConnectAsync, () => new GetStatusRequest(OpenSynapseIpc.ProtocolVersion, Guid.NewGuid()))
+        : this(ConnectAsync, () => new GetStatusRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid()))
     {
     }
 
@@ -52,7 +52,7 @@ public sealed class SetupServiceHealthProbe : ISetupServiceHealthProbe
     {
         var pipe = new NamedPipeClientStream(
             ".",
-            OpenSynapseIpc.PipeName,
+            OpenBladeIpc.PipeName,
             PipeDirection.InOut,
             PipeOptions.Asynchronous);
         try

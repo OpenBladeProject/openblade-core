@@ -6,7 +6,7 @@ public sealed class MachineProfileBootstrapperTests : IDisposable
 {
     private readonly string directory = Path.Combine(
         Path.GetTempPath(),
-        "OpenSynapse.Service.Tests",
+        "OpenBlade.Service.Tests",
         Guid.NewGuid().ToString("N"));
 
     [Fact]

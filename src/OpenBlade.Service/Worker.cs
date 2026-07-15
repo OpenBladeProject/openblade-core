@@ -31,7 +31,7 @@ public sealed class Worker(
         }
 
         var server = new NamedPipeControlServer(
-            OpenSynapseIpc.PipeName,
+            OpenBladeIpc.PipeName,
             authorizedUser,
             handler,
             subscriptionHub);
@@ -69,10 +69,10 @@ public sealed class Worker(
 
     private static SecurityIdentifier? ReadAuthorizedUser()
     {
-        string? configured = Environment.GetEnvironmentVariable("OPENSYNAPSE_USER_SID");
+        string? configured = Environment.GetEnvironmentVariable("OPENBLADE_USER_SID");
         string path = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
-            "OpenSynapse",
+            "OpenBlade",
             "authorized-user.sid");
 
         string? value = !string.IsNullOrWhiteSpace(configured)

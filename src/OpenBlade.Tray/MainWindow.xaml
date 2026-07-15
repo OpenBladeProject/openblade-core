@@ -3,7 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:contracts="clr-namespace:OpenBlade.Contracts;assembly=OpenBlade.Contracts"
         xmlns:local="clr-namespace:OpenBlade.Tray"
-        Title="OpenSynapse" Width="480" Height="720" MinWidth="430" MinHeight="620"
+        Title="OpenBlade" Width="480" Height="720" MinWidth="430" MinHeight="620"
         WindowStartupLocation="CenterScreen"
         Background="{DynamicResource WindowBackgroundBrush}"
         Foreground="{DynamicResource ForegroundBrush}">
@@ -51,7 +51,7 @@
                 BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,0,0,1">
             <Grid>
                 <StackPanel>
-                    <TextBlock Text="OpenSynapse" FontSize="18" FontWeight="SemiBold"
+                    <TextBlock Text="OpenBlade" FontSize="18" FontWeight="SemiBold"
                                Foreground="{DynamicResource AccentBrush}" />
                     <TextBlock Text="Razer Blade 16 · RZ09-0581" FontSize="11"
                                Foreground="{DynamicResource MutedBrush}" />
@@ -239,7 +239,7 @@
                         <TextBlock Style="{StaticResource SectionLabel}" Text="SERVICE" />
                         <Border Style="{StaticResource Card}">
                             <StackPanel>
-                                <TextBlock Text="OpenSynapse Service" FontWeight="SemiBold" />
+                                <TextBlock Text="OpenBlade Service" FontWeight="SemiBold" />
                                 <TextBlock Text="{Binding ConnectionStatus}" FontSize="11" Margin="0,3,0,8"
                                            Foreground="{DynamicResource DangerBrush}" TextWrapping="Wrap" />
                                 <Button Content="Export diagnostics (unavailable)"

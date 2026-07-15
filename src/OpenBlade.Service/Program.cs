@@ -5,8 +5,8 @@ using OpenBlade.Service;
 HostApplicationBuilder builder = Host.CreateApplicationBuilder(args);
 string machineDataDirectory = Path.Combine(
     Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
-    "OpenSynapse");
-builder.Services.AddWindowsService(options => options.ServiceName = "OpenSynapse Service");
+    "OpenBlade");
+builder.Services.AddWindowsService(options => options.ServiceName = "OpenBlade Service");
 builder.Services.AddSingleton(new ProfileStore(Path.Combine(machineDataDirectory, "profiles.json")));
 builder.Services.AddSingleton(ProfileDefaults.CreateSafeDefaults());
 builder.Services.AddSingleton<MachineProfileBootstrapper>();

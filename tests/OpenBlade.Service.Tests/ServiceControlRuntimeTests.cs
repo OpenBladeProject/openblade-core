@@ -9,7 +9,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
 {
     private readonly string directory = Path.Combine(
         Path.GetTempPath(),
-        "OpenSynapse.Runtime.Tests",
+        "OpenBlade.Runtime.Tests",
         Guid.NewGuid().ToString("N"));
 
     [Fact]

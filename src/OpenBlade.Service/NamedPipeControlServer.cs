@@ -172,7 +172,7 @@ public sealed class NamedPipeControlServer
 
             await WriteFrameAsync(
                 connection,
-                new ServiceStatusEvent(OpenSynapseIpc.ProtocolVersion, snapshot),
+                new ServiceStatusEvent(OpenBladeIpc.ProtocolVersion, snapshot),
                 cancellationToken);
         }
     }
@@ -206,7 +206,7 @@ public sealed class NamedPipeControlServer
     }
 
     private static ServiceResponse Failure(Guid requestId, string error) => new(
-        OpenSynapseIpc.ProtocolVersion,
+        OpenBladeIpc.ProtocolVersion,
         requestId,
         Success: false,
         Error: error,

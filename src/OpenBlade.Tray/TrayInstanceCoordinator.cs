@@ -20,7 +20,7 @@ public sealed record TrayInstanceEndpoint(string InstanceEventName)
         string identity = $"{Path.GetFullPath(executablePath).ToUpperInvariant()}\n{userSid}";
         byte[] hash = SHA256.HashData(Encoding.UTF8.GetBytes(identity));
         return new TrayInstanceEndpoint(
-            $@"Local\OpenSynapse.Tray.Instance.{Convert.ToHexString(hash.AsSpan(0, 16))}");
+            $@"Local\OpenBlade.Tray.Instance.{Convert.ToHexString(hash.AsSpan(0, 16))}");
     }
 }
 

@@ -4,11 +4,11 @@ using System.Text.Json.Serialization;
 
 namespace OpenBlade.Contracts;
 
-public static class OpenSynapseIpc
+public static class OpenBladeIpc
 {
     public const int ProtocolVersion = 2;
     public const int MaximumMessageBytes = 64 * 1024;
-    public const string PipeName = "OpenSynapse.Service.v2";
+    public const string PipeName = "OpenBlade.Service.v2";
 }
 
 public static class IpcMessageCodec
@@ -75,7 +75,7 @@ public static class IpcMessageCodec
             throw new InvalidDataException("IPC message body is invalid.", exception);
         }
 
-        if (payload.Length > OpenSynapseIpc.MaximumMessageBytes)
+        if (payload.Length > OpenBladeIpc.MaximumMessageBytes)
         {
             throw new InvalidDataException("IPC message exceeds the 64 KiB limit.");
         }
@@ -95,7 +95,7 @@ public static class IpcMessageCodec
         byte[] prefix = new byte[sizeof(int)];
         await stream.ReadExactlyAsync(prefix, cancellationToken).ConfigureAwait(false);
         int length = BinaryPrimitives.ReadInt32LittleEndian(prefix);
-        if (length is <= 0 or > OpenSynapseIpc.MaximumMessageBytes)
+        if (length is <= 0 or > OpenBladeIpc.MaximumMessageBytes)
         {
             throw new InvalidDataException("IPC message length is invalid.");
         }
@@ -208,7 +208,7 @@ public static class IpcMessageCodec
 
     private static void ValidateVersion(int version)
     {
-        if (version != OpenSynapseIpc.ProtocolVersion)
+        if (version != OpenBladeIpc.ProtocolVersion)
         {
             throw new InvalidDataException("IPC protocol version is unsupported.");
         }
