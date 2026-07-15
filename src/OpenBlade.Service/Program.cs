@@ -13,7 +13,7 @@ builder.Services.AddSingleton<MachineProfileBootstrapper>();
 builder.Services.AddSingleton<IRunningProcessSource, RunningProcessSource>();
 builder.Services.AddSingleton<IWindowsServiceSource, WindowsServiceSource>();
 builder.Services.AddSingleton<IHardwareAccessGuard, WindowsHardwareAccessGuard>();
-builder.Services.AddSingleton<IPowerTelemetryProvider, WindowsPowerTelemetryProvider>();
+builder.Services.AddWindowsTelemetry();
 builder.Services.AddVerifiedBladeDeviceProvider();
 builder.Services.AddSingleton<IStatusSubscriptionHub>(
     _ => new StatusSubscriptionHub(TimeProvider.System));
