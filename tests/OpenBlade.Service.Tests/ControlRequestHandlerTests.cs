@@ -180,6 +180,8 @@ public sealed class ControlRequestHandlerTests
 
         public Task RefreshAsync(CancellationToken token) => Task.CompletedTask;
 
+        public Task RefreshConflictsAsync(CancellationToken token) => Task.CompletedTask;
+
         private Task<ControlOperationResult> Record(string name)
         {
             Calls.Add(name);

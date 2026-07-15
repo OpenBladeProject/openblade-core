@@ -168,6 +168,12 @@ public sealed class DiagnosticArchiveProviderTests
             throw new InvalidOperationException("Export must not refresh hardware.");
         }
 
+        public Task RefreshConflictsAsync(CancellationToken token)
+        {
+            HardwareOrMutationCalls++;
+            throw new InvalidOperationException("Export must not refresh conflicts.");
+        }
+
         private Task<ControlOperationResult> Unexpected()
         {
             HardwareOrMutationCalls++;

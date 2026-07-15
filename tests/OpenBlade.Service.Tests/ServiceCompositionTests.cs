@@ -118,6 +118,7 @@ public sealed class ServiceCompositionTests
         public Task<ControlOperationResult> SetBatteryPolicyAsync(BatteryPolicy value, CancellationToken token) => throw new NotSupportedException();
         public Task<ControlOperationResult> SetFullChargeOverrideAsync(bool enabled, CancellationToken token) => throw new NotSupportedException();
         public Task RefreshAsync(CancellationToken token) => throw new NotSupportedException();
+        public Task RefreshConflictsAsync(CancellationToken token) => throw new NotSupportedException();
     }
 
     private sealed class CountingNvmlApi(bool available) : INvmlApi

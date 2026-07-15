@@ -8,6 +8,60 @@ namespace OpenBlade.Service.Tests;
 public sealed class ServiceLifecycleRefreshLoopTests
 {
     [Fact]
+    public async Task ConflictRefresh_WaitsForThreeSecondInterval()
+    {
+        var time = new ManualTimeProvider();
+        var runtime = new RecordingRuntime(failFirstRefresh: false);
+        var loop = new ServiceConflictRefreshLoop(
+            runtime,
+            time,
+            NullLogger<ServiceConflictRefreshLoop>.Instance);
+        using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+
+        Task running = loop.RunAsync(cancellation.Token);
+        await WaitUntilAsync(() => time.CreatedTimerCount == 1, cancellation.Token);
+
+        time.Advance(TimeSpan.FromMilliseconds(2_999));
+        await Task.Yield();
+        Assert.Equal(0, runtime.ConflictRefreshCount);
+
+        time.Advance(TimeSpan.FromMilliseconds(1));
+        await runtime.FirstRefresh.Task.WaitAsync(cancellation.Token);
+        await cancellation.CancelAsync();
+        await running;
+
+        Assert.Equal(1, runtime.ConflictRefreshCount);
+        Assert.Equal(0, runtime.RefreshCount);
+    }
+
+    [Fact]
+    public async Task ConflictRefresh_ContinuesAfterTransientRefreshFailure()
+    {
+        var time = new ManualTimeProvider();
+        var runtime = new RecordingRuntime(failFirstRefresh: true);
+        var loop = new ServiceConflictRefreshLoop(
+            runtime,
+            time,
+            NullLogger<ServiceConflictRefreshLoop>.Instance);
+        using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+
+        Task running = loop.RunAsync(cancellation.Token);
+        await WaitUntilAsync(() => time.CreatedTimerCount == 1, cancellation.Token);
+        time.Advance(TimeSpan.FromSeconds(3));
+        await runtime.FirstRefresh.Task.WaitAsync(cancellation.Token);
+        await WaitUntilAsync(() => time.CreatedTimerCount == 2, cancellation.Token);
+
+        time.Advance(TimeSpan.FromSeconds(3));
+        await runtime.TwoRefreshes.Task.WaitAsync(cancellation.Token);
+        await cancellation.CancelAsync();
+        await running;
+
+        Assert.Equal(2, runtime.ConflictRefreshCount);
+        Assert.Equal(0, runtime.RefreshCount);
+        Assert.Equal(1, runtime.MaximumConcurrentRefreshes);
+    }
+
+    [Fact]
     public async Task BackgroundTaskGroup_PropagatesFailureAndCancelsPeers()
     {
         var expected = new InvalidOperationException("lifecycle failed");
@@ -106,7 +160,10 @@ public sealed class ServiceLifecycleRefreshLoopTests
     private sealed class RecordingRuntime(bool failFirstRefresh) : IServiceControlRuntime
     {
         private int concurrentRefreshes;
+        private int conflictRefreshCount;
         private int refreshCount;
+
+        public int ConflictRefreshCount => Volatile.Read(ref conflictRefreshCount);
 
         public int RefreshCount => Volatile.Read(ref refreshCount);
 
@@ -115,11 +172,31 @@ public sealed class ServiceLifecycleRefreshLoopTests
         public TaskCompletionSource TwoRefreshes { get; } =
             new(TaskCreationOptions.RunContinuationsAsynchronously);
 
+        public TaskCompletionSource FirstRefresh { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
         public async Task RefreshAsync(CancellationToken token)
+        {
+            await RecordRefreshAsync(isConflictRefresh: false);
+        }
+
+        public async Task RefreshConflictsAsync(CancellationToken token)
+        {
+            await RecordRefreshAsync(isConflictRefresh: true);
+        }
+
+        private async Task RecordRefreshAsync(bool isConflictRefresh)
         {
             int concurrent = Interlocked.Increment(ref concurrentRefreshes);
             MaximumConcurrentRefreshes = Math.Max(MaximumConcurrentRefreshes, concurrent);
-            int current = Interlocked.Increment(ref refreshCount);
+            int current = isConflictRefresh
+                ? Interlocked.Increment(ref conflictRefreshCount)
+                : Interlocked.Increment(ref refreshCount);
+            if (current == 1)
+            {
+                FirstRefresh.TrySetResult();
+            }
+
             try
             {
                 await Task.Yield();
@@ -164,5 +241,99 @@ public sealed class ServiceLifecycleRefreshLoopTests
         public Task<ControlOperationResult> SetFullChargeOverrideAsync(
             bool enabled,
             CancellationToken token) => throw new NotSupportedException();
+    }
+
+    private static async Task WaitUntilAsync(
+        Func<bool> condition,
+        CancellationToken cancellationToken)
+    {
+        while (!condition())
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            await Task.Yield();
+        }
+    }
+
+    private sealed class ManualTimeProvider : TimeProvider
+    {
+        private readonly object sync = new();
+        private readonly List<ManualTimer> timers = [];
+        private DateTimeOffset now = DateTimeOffset.UnixEpoch;
+        private int createdTimerCount;
+
+        public int CreatedTimerCount => Volatile.Read(ref createdTimerCount);
+
+        public override DateTimeOffset GetUtcNow() => now;
+
+        public override ITimer CreateTimer(
+            TimerCallback callback,
+            object? state,
+            TimeSpan dueTime,
+            TimeSpan period)
+        {
+            ManualTimer timer;
+            lock (sync)
+            {
+                timer = new ManualTimer(callback, state, now + dueTime, period);
+                timers.Add(timer);
+                Interlocked.Increment(ref createdTimerCount);
+            }
+
+            return timer;
+        }
+
+        public void Advance(TimeSpan amount)
+        {
+            ManualTimer[] snapshot;
+            lock (sync)
+            {
+                now += amount;
+                snapshot = timers.ToArray();
+            }
+
+            foreach (ManualTimer timer in snapshot)
+            {
+                timer.FireIfDue(now);
+            }
+        }
+
+        private sealed class ManualTimer(
+            TimerCallback callback,
+            object? state,
+            DateTimeOffset due,
+            TimeSpan period) : ITimer
+        {
+            private bool disposed;
+            private DateTimeOffset next = due;
+
+            public void FireIfDue(DateTimeOffset now)
+            {
+                if (disposed || now < next)
+                {
+                    return;
+                }
+
+                callback(state);
+                if (period == Timeout.InfiniteTimeSpan)
+                {
+                    disposed = true;
+                }
+                else
+                {
+                    next = now + period;
+                }
+            }
+
+            public bool Change(TimeSpan dueTime, TimeSpan period) =>
+                throw new NotSupportedException();
+
+            public void Dispose() => disposed = true;
+
+            public ValueTask DisposeAsync()
+            {
+                Dispose();
+                return ValueTask.CompletedTask;
+            }
+        }
     }
 }

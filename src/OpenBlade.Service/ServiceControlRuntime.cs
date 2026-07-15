@@ -32,6 +32,8 @@ public interface IServiceControlRuntime
         CancellationToken token);
 
     Task RefreshAsync(CancellationToken token);
+
+    Task RefreshConflictsAsync(CancellationToken token);
 }
 
 public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
@@ -51,6 +53,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
     private readonly ProfileSetValidator validator =
         ProfileSetValidator.CreateUnverifiedSafeDefaults();
     private readonly ProfileAutomationState automation;
+    private bool conflictBlocked;
     private ServiceStatusSnapshot status;
 
     public ServiceControlRuntime(
@@ -77,6 +80,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         TelemetrySnapshot telemetry = telemetryProvider.Capture();
         automation = new ProfileAutomationState(profiles, telemetry.PowerSource);
         HardwareAccessDecision access = hardwareAccessGuard.Check();
+        conflictBlocked = !access.Safe;
         status = CreateBlockedSnapshot(0, telemetry, access);
     }
 
@@ -192,6 +196,44 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         }
     }
 
+    public async Task RefreshConflictsAsync(CancellationToken token)
+    {
+        await operationGate.WaitAsync(token);
+        try
+        {
+            HardwareAccessDecision access = hardwareAccessGuard.Check();
+            if (!access.Safe)
+            {
+                conflictBlocked = true;
+                long previousRevision = GetStatus().Revision;
+                ServiceStatusSnapshot blocked = CreateBlockedSnapshot(
+                    previousRevision,
+                    GetStatus().Telemetry,
+                    access);
+                PublishIfChanged(blocked);
+                if (GetStatus().Revision != previousRevision)
+                {
+                    history.RecordSummary(ControlOperationStatus.Blocked, blocked.Message);
+                }
+
+                return;
+            }
+
+            if (!conflictBlocked)
+            {
+                return;
+            }
+
+            TelemetrySnapshot telemetry = telemetryProvider.Capture();
+            automation.ChangePowerSource(telemetry.PowerSource);
+            await ReconcileAsync(telemetry, intentStored: false, token);
+        }
+        finally
+        {
+            operationGate.Release();
+        }
+    }
+
     public void Dispose() => operationGate.Dispose();
 
     private async Task<ControlOperationResult> ExecuteMutationAsync(
@@ -236,6 +278,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         HardwareAccessDecision access = hardwareAccessGuard.Check();
         if (!access.Safe)
         {
+            conflictBlocked = true;
             ServiceStatusSnapshot blocked = CreateBlockedSnapshot(
                 GetStatus().Revision,
                 telemetry,
@@ -248,6 +291,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         access = hardwareAccessGuard.Check();
         if (!access.Safe)
         {
+            conflictBlocked = true;
             ServiceStatusSnapshot blocked = CreateBlockedSnapshot(
                 GetStatus().Revision,
                 telemetry,
@@ -256,6 +300,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             history.RecordSummary(ControlOperationStatus.Blocked, blocked.Message);
             return BlockedResult(blocked.Message, intentStored);
         }
+
+        conflictBlocked = false;
 
         if (!deviceProvider.TryGetVerifiedDevice(out IBladeDevice device))
         {

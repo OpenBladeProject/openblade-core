@@ -86,6 +86,116 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     }
 
     [Fact]
+    public async Task Refresh_TracksConflictAppearanceAndRecoveryWithoutRestart()
+    {
+        TestContext context = CreateContext(providerAvailable: true);
+        context.Device.Capabilities = DeviceCapabilities.SafeTargetDefaults();
+        context.Device.ConfirmedState = new ConfirmedDeviceState(
+            PerformancePreset.Balanced,
+            FanMode.Automatic,
+            BatteryPolicy.Create(80),
+            ProfileDefaults.CreateSafeDefaults().PluggedIn.Lighting);
+        context.Guard.SetScript(new HardwareAccessDecision(["RazerAppEngine"], null));
+
+        await context.Runtime.RefreshAsync(CancellationToken.None);
+
+        ServiceStatusSnapshot blocked = context.Runtime.GetStatus();
+        Assert.True(blocked.WritesBlocked);
+        Assert.Equal(["RazerAppEngine"], blocked.Conflicts);
+        Assert.Equal(0, context.Provider.TryGetCount);
+        Assert.Equal(0, context.Device.TotalCalls);
+
+        context.Guard.SetScript(new HardwareAccessDecision([], null));
+        await context.Runtime.RefreshAsync(CancellationToken.None);
+
+        ServiceStatusSnapshot recovered = context.Runtime.GetStatus();
+        Assert.True(recovered.DeviceVerified);
+        Assert.False(recovered.WritesBlocked);
+        Assert.Empty(recovered.Conflicts);
+        Assert.Equal(blocked.Revision + 1, recovered.Revision);
+        Assert.Equal(0, context.Device.PerformanceSetCalls);
+        Assert.Equal(0, context.Device.FanSetCalls);
+        Assert.Equal(0, context.Device.BatterySetCalls);
+        Assert.Equal(0, context.Device.LightingSetCalls);
+    }
+
+    [Fact]
+    public async Task ConflictRefresh_WhenSafeAndUnchanged_DoesNotTouchTelemetryOrDevice()
+    {
+        TestContext context = CreateContext(providerAvailable: true);
+        int telemetryCaptures = context.Telemetry.CaptureCount;
+        long revision = context.Runtime.GetStatus().Revision;
+
+        await context.Runtime.RefreshConflictsAsync(CancellationToken.None);
+
+        Assert.Equal(telemetryCaptures, context.Telemetry.CaptureCount);
+        Assert.Equal(0, context.Provider.TryGetCount);
+        Assert.Equal(0, context.Device.TotalCalls);
+        Assert.Equal(revision, context.Runtime.GetStatus().Revision);
+        Assert.Empty(context.Hub.Published);
+    }
+
+    [Fact]
+    public async Task ConflictRefresh_PublishesConflictChangesWithoutTouchingTelemetryOrDevice()
+    {
+        TestContext context = CreateContext(providerAvailable: true);
+        int telemetryCaptures = context.Telemetry.CaptureCount;
+
+        context.Guard.SetScript(new HardwareAccessDecision(["RazerAppEngine"], null));
+        await context.Runtime.RefreshConflictsAsync(CancellationToken.None);
+        ServiceStatusSnapshot conflict = context.Runtime.GetStatus();
+
+        context.Guard.SetScript(new HardwareAccessDecision(
+            ["RazerAppEngine"],
+            "process enumeration failed"));
+        await context.Runtime.RefreshConflictsAsync(CancellationToken.None);
+        ServiceStatusSnapshot detectionFailure = context.Runtime.GetStatus();
+
+        Assert.Equal(["RazerAppEngine"], conflict.Conflicts);
+        Assert.Equal(
+            "Razer controller conflicts detected: RazerAppEngine.",
+            conflict.Message);
+        Assert.Equal(conflict.Revision + 1, detectionFailure.Revision);
+        Assert.Contains("Controller conflict detection failed", detectionFailure.Message);
+        Assert.Equal(telemetryCaptures, context.Telemetry.CaptureCount);
+        Assert.Equal(0, context.Provider.TryGetCount);
+        Assert.Equal(0, context.Device.TotalCalls);
+    }
+
+    [Fact]
+    public async Task ConflictRefresh_WhenConflictClears_ReconcilesExactlyOnce()
+    {
+        TestContext context = CreateContext(providerAvailable: true);
+        context.Device.Capabilities = DeviceCapabilities.SafeTargetDefaults();
+        context.Device.ConfirmedState = new ConfirmedDeviceState(
+            PerformancePreset.Balanced,
+            FanMode.Automatic,
+            BatteryPolicy.Create(80),
+            ProfileDefaults.CreateSafeDefaults().PluggedIn.Lighting);
+        await context.Runtime.RefreshAsync(CancellationToken.None);
+
+        context.Guard.SetScript(new HardwareAccessDecision(["RazerAppEngine"], null));
+        await context.Runtime.RefreshConflictsAsync(CancellationToken.None);
+        int telemetryCapturesWhileBlocked = context.Telemetry.CaptureCount;
+        int providerCallsWhileBlocked = context.Provider.TryGetCount;
+        int deviceCallsWhileBlocked = context.Device.TotalCalls;
+
+        context.Guard.SetScript(new HardwareAccessDecision([], null));
+        await context.Runtime.RefreshConflictsAsync(CancellationToken.None);
+        await context.Runtime.RefreshConflictsAsync(CancellationToken.None);
+
+        Assert.True(context.Runtime.GetStatus().DeviceVerified);
+        Assert.False(context.Runtime.GetStatus().WritesBlocked);
+        Assert.Equal(telemetryCapturesWhileBlocked + 1, context.Telemetry.CaptureCount);
+        Assert.Equal(providerCallsWhileBlocked + 1, context.Provider.TryGetCount);
+        Assert.Equal(deviceCallsWhileBlocked + 5, context.Device.TotalCalls);
+        Assert.Equal(0, context.Device.PerformanceSetCalls);
+        Assert.Equal(0, context.Device.FanSetCalls);
+        Assert.Equal(0, context.Device.BatterySetCalls);
+        Assert.Equal(0, context.Device.LightingSetCalls);
+    }
+
+    [Fact]
     public async Task LifecycleRefresh_WithUnsafeGuard_BlocksBeforeProviderAndDevice()
     {
         TestContext context = CreateContext(
@@ -513,7 +623,13 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     {
         public required TelemetrySnapshot Current { get; set; }
 
-        public TelemetrySnapshot Capture() => Current;
+        public int CaptureCount { get; private set; }
+
+        public TelemetrySnapshot Capture()
+        {
+            CaptureCount++;
+            return Current;
+        }
     }
 
     private sealed class SingleLifecycleEventSource(ServiceLifecycleTrigger trigger)

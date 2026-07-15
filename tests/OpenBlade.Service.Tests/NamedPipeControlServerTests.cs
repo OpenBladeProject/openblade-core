@@ -282,6 +282,7 @@ public sealed class NamedPipeControlServerTests
         public Task<ControlOperationResult> SetBatteryPolicyAsync(BatteryPolicy value, CancellationToken token) => Result();
         public Task<ControlOperationResult> SetFullChargeOverrideAsync(bool enabled, CancellationToken token) => Result();
         public Task RefreshAsync(CancellationToken token) => Task.CompletedTask;
+        public Task RefreshConflictsAsync(CancellationToken token) => Task.CompletedTask;
         private static Task<ControlOperationResult> Result() => Task.FromResult(
             new ControlOperationResult(ControlOperationStatus.Stored, "Stored"));
     }

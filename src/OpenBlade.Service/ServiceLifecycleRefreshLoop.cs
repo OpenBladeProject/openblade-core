@@ -93,3 +93,37 @@ public sealed class ServiceLifecycleRefreshLoop(
         }
     }
 }
+
+public sealed class ServiceConflictRefreshLoop(
+    IServiceControlRuntime runtime,
+    TimeProvider timeProvider,
+    ILogger logger)
+{
+    private static readonly TimeSpan RefreshInterval = TimeSpan.FromSeconds(3);
+
+    public async Task RunAsync(CancellationToken stoppingToken)
+    {
+        try
+        {
+            while (!stoppingToken.IsCancellationRequested)
+            {
+                await Task.Delay(RefreshInterval, timeProvider, stoppingToken);
+                try
+                {
+                    await runtime.RefreshConflictsAsync(stoppingToken);
+                }
+                catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+                {
+                    return;
+                }
+                catch (Exception exception)
+                {
+                    logger.LogError(exception, "Periodic controller conflict refresh failed.");
+                }
+            }
+        }
+        catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+        {
+        }
+    }
+}
