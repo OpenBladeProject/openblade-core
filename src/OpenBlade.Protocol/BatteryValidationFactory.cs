@@ -4,7 +4,7 @@ public static class BatteryValidationFactory
 {
     private static readonly TimeSpan DefaultExchangeTimeout = TimeSpan.FromSeconds(3);
     private static readonly TimeSpan DefaultCleanupDrainTimeout = TimeSpan.FromSeconds(5);
-    private static readonly TimeSpan QuerySequenceFeatureReportSettleDelay =
+    private static readonly TimeSpan BatteryFeatureReportSettleDelay =
         TimeSpan.FromMilliseconds(10);
 
     public static IBatteryValidationRunFactory CreateWindows()
@@ -98,10 +98,14 @@ public static class BatteryValidationFactory
             hardwareAccessGuard,
             native);
         var actorFactory = new ValidationActorFactory(
-            opener,
-            featureIo,
-            hardwareAccessGuard,
-            timeProvider,
+            opener.Open,
+            (handle, lease) => new WindowsRazerHidSession(
+                handle,
+                featureIo,
+                hardwareAccessGuard,
+                timeProvider,
+                lease,
+                BatteryFeatureReportSettleDelay),
             exchangeTimeout);
 
         return new BatteryValidationRunFactory(
@@ -146,7 +150,7 @@ public static class BatteryValidationFactory
                 hardwareAccessGuard,
                 timeProvider,
                 lease,
-                QuerySequenceFeatureReportSettleDelay),
+                BatteryFeatureReportSettleDelay),
             exchangeTimeout);
 
         return new BatteryQuerySequenceRunFactory(

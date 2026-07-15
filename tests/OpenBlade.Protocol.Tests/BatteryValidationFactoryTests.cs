@@ -101,6 +101,7 @@ public sealed class BatteryValidationFactoryTests
 
         Task<HidSessionResult<BatteryValidationSetting>> query = port.QueryAsync(default);
         await io.WaitForCallsAsync(1);
+        await time.WaitForTimerCountAsync(2);
         time.Advance(TimeSpan.FromMilliseconds(9));
         await Task.Yield();
         Assert.Equal(1, io.CallCount);
@@ -112,7 +113,7 @@ public sealed class BatteryValidationFactoryTests
     }
 
     [Fact]
-    public async Task CreateWindows_LeavesFeatureReportSettleAtZero()
+    public async Task CreateWindows_ConfiguresTenMillisecondFeatureReportSettleForQuery()
     {
         var time = new ManualTimeProvider();
         var io = new SuccessfulQueryIo();
@@ -132,18 +133,123 @@ public sealed class BatteryValidationFactoryTests
 
         Task<HidSessionResult<BatteryValidationSetting>> query = port.QueryAsync(default);
         await io.WaitForCallsAsync(1);
-        Task secondCall = io.WaitForSecondCallAsync();
-        bool submittedWithoutAdvance = ReferenceEquals(
-            await Task.WhenAny(secondCall, Task.Delay(TimeSpan.FromSeconds(1))),
-            secondCall);
-        if (!submittedWithoutAdvance)
-        {
-            time.Advance(TimeSpan.FromMilliseconds(10));
-        }
+        await time.WaitForTimerCountAsync(2);
+        time.Advance(TimeSpan.FromMilliseconds(9));
+        await Task.Yield();
+        Assert.Equal(1, io.CallCount);
+        Assert.False(query.IsCompleted);
 
-        Assert.True(submittedWithoutAdvance);
+        time.Advance(TimeSpan.FromMilliseconds(1));
         Assert.Equal(BatteryValidationSetting.ProtectionOff, (await query).Value);
         Assert.Equal(2, io.CallCount);
+    }
+
+    [Fact]
+    public async Task CreateWindows_ConfiguresTenMillisecondFeatureReportSettleForSetter()
+    {
+        var time = new ManualTimeProvider();
+        var io = new SuccessfulQueryIo();
+        IBatteryValidationRunFactory factory = BatteryValidationFactory.CreateWindows(
+            new ExactRegistryValueSource(),
+            new ExactPlatformEvidenceSource(),
+            new EmptyProcessSource(),
+            new EmptyServiceSource(),
+            new ExactHidCandidateNative(),
+            io,
+            time,
+            TimeSpan.FromSeconds(3),
+            TimeSpan.FromSeconds(5));
+        HidSessionResult<IBatteryValidationPort> opened = await factory.OpenAsync(default);
+        await using IBatteryValidationPort port = Assert.IsAssignableFrom<IBatteryValidationPort>(
+            opened.Value);
+
+        Task<HidSessionResult<BatteryValidationSetting>> baseline = port.QueryAsync(default);
+        await io.WaitForCallsAsync(1);
+        await time.WaitForTimerCountAsync(2);
+        time.Advance(TimeSpan.FromMilliseconds(10));
+        Assert.Equal(BatteryValidationSetting.ProtectionOff, (await baseline).Value);
+
+        Task<HidSessionResult<HidUnit>> setter = port.ApplyAsync(
+            BatteryValidationSetting.Limit80,
+            default);
+        await io.WaitForCallsAsync(3);
+        await time.WaitForTimerCountAsync(4);
+        time.Advance(TimeSpan.FromMilliseconds(9));
+        await Task.Yield();
+        Assert.Equal(3, io.CallCount);
+        Assert.False(setter.IsCompleted);
+
+        time.Advance(TimeSpan.FromMilliseconds(1));
+        Assert.Null((await setter).Failure);
+        Assert.Equal(4, io.CallCount);
+        Assert.Contains(io.SetReports, report =>
+            report[1] == 2 && report[6] == 0x07 && report[7] == 0x12 && report[8] == 0xD0);
+    }
+
+    [Fact]
+    public async Task CreateWindows_RecoveryActorRetainsTenMillisecondFeatureReportSettle()
+    {
+        var time = new ManualTimeProvider();
+        var native = new ExactHidCandidateNative();
+        var io = new SuccessfulQueryIo(busyCandidateSet: true);
+        IBatteryValidationRunFactory factory = BatteryValidationFactory.CreateWindows(
+            new ExactRegistryValueSource(),
+            new ExactPlatformEvidenceSource(),
+            new EmptyProcessSource(),
+            new EmptyServiceSource(),
+            native,
+            io,
+            time,
+            TimeSpan.FromSeconds(3),
+            TimeSpan.FromSeconds(5));
+        HidSessionResult<IBatteryValidationPort> opened = await factory.OpenAsync(default);
+        await using IBatteryValidationPort port = Assert.IsAssignableFrom<IBatteryValidationPort>(
+            opened.Value);
+
+        Task<HidSessionResult<BatteryValidationSetting>> baseline = port.QueryAsync(default);
+        await io.WaitForCallsAsync(1);
+        await time.WaitForTimerCountAsync(2);
+        time.Advance(TimeSpan.FromMilliseconds(10));
+        Assert.Equal(BatteryValidationSetting.ProtectionOff, (await baseline).Value);
+
+        Task<HidSessionResult<HidUnit>> candidate = port.ApplyAsync(
+            BatteryValidationSetting.Limit80,
+            default);
+        await io.WaitForCallsAsync(3);
+        await time.WaitForTimerCountAsync(4);
+        time.Advance(TimeSpan.FromMilliseconds(10));
+        Assert.Equal(HidSessionFailureKind.ProtocolFailure, (await candidate).Failure);
+
+        Task<HidSessionResult<HidUnit>> restore = port.ApplyAsync(
+            BatteryValidationSetting.ProtectionOff,
+            default);
+        await io.WaitForCallsAsync(5);
+        await time.WaitForTimerCountAsync(6);
+        Assert.Equal(2, native.OpenCount);
+        time.Advance(TimeSpan.FromMilliseconds(9));
+        await Task.Yield();
+        Assert.Equal(5, io.CallCount);
+        Assert.False(restore.IsCompleted);
+
+        time.Advance(TimeSpan.FromMilliseconds(1));
+        Assert.Null((await restore).Failure);
+        Assert.Equal(6, io.CallCount);
+        Assert.Contains(io.SetReports, report =>
+            report[1] == 4 && report[6] == 0x07 && report[7] == 0x12 && report[8] == 0x50);
+
+        Task<HidSessionResult<BatteryValidationSetting>> restoreQuery = port.QueryAsync(default);
+        await io.WaitForCallsAsync(7);
+        await time.WaitForTimerCountAsync(8);
+        time.Advance(TimeSpan.FromMilliseconds(9));
+        await Task.Yield();
+        Assert.Equal(7, io.CallCount);
+        Assert.False(restoreQuery.IsCompleted);
+
+        time.Advance(TimeSpan.FromMilliseconds(1));
+        Assert.Equal(BatteryValidationSetting.ProtectionOff, (await restoreQuery).Value);
+        Assert.Equal(8, io.CallCount);
+        Assert.Contains(io.SetReports, report =>
+            report[1] == 5 && report[6] == 0x07 && report[7] == 0x92 && report[8] == 0x00);
     }
 
     [Fact]
@@ -294,14 +400,17 @@ public sealed class BatteryValidationFactoryTests
 
     private sealed class ExactHidCandidateNative : IHidCandidateNative
     {
-        private readonly OpenedCandidateHandle candidate = new(
-            (SafeFileHandle)RuntimeHelpers.GetUninitializedObject(typeof(SafeFileHandle)),
-            static () => { });
+        public int OpenCount { get; private set; }
 
         public IReadOnlyList<string> EnumerateDevicePaths() => ["exact"];
 
-        public HidCandidateOpenResult TryOpen(string path, HidOpenParameters parameters) =>
-            new(candidate, null);
+        public HidCandidateOpenResult TryOpen(string path, HidOpenParameters parameters)
+        {
+            OpenCount++;
+            return new(new OpenedCandidateHandle(
+                (SafeFileHandle)RuntimeHelpers.GetUninitializedObject(typeof(SafeFileHandle)),
+                static () => { }), null);
+        }
 
         public HidHandleIdentity ReadIdentity(OpenedCandidateHandle handle) =>
             new(0x1532, 0x02E0, 0x0001, 0x0002, 91);
@@ -318,12 +427,20 @@ public sealed class BatteryValidationFactoryTests
     {
         private readonly TaskCompletionSource<bool> called = new(
             TaskCreationOptions.RunContinuationsAsynchronously);
-        private readonly TaskCompletionSource<bool> secondCalled = new(
-            TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly bool busyCandidateSet;
+        private readonly object sync = new();
+        private byte[]? request;
 
         private int callCount;
 
+        public SuccessfulQueryIo(bool busyCandidateSet = false)
+        {
+            this.busyCandidateSet = busyCandidateSet;
+        }
+
         public int CallCount => Volatile.Read(ref callCount);
+
+        public List<byte[]> SetReports { get; } = [];
 
         public Task<HidFeatureIoResult> ExecuteAsync(
             OpenedHidHandle handle,
@@ -334,14 +451,31 @@ public sealed class BatteryValidationFactoryTests
         {
             int currentCall = Interlocked.Increment(ref callCount);
             called.TrySetResult(true);
-            if (currentCall == 2)
+            if (controlCode == 0x000B0191)
             {
-                secondCalled.TrySetResult(true);
+                byte[] report = buffer.AsSpan(1, RazerReport.ReportLength).ToArray();
+                lock (sync)
+                {
+                    request = report;
+                    SetReports.Add(report);
+                }
             }
             if (controlCode == 0x000B0192)
             {
-                byte[] report = RazerReport.Create(1, 0x07, 0x92, [0x50]).Encode();
-                report[0] = (byte)RazerCommandStatus.Successful;
+                byte[] report;
+                lock (sync)
+                {
+                    byte[] source = request ?? throw new InvalidOperationException();
+                    report = RazerReport.Create(
+                        source[1],
+                        source[6],
+                        source[7],
+                        source[7] == 0x92 ? [0x50] : [source[8]]).Encode();
+                }
+
+                report[0] = busyCandidateSet && report[1] == 2
+                    ? (byte)0x01
+                    : (byte)RazerCommandStatus.Successful;
                 byte checksum = 0;
                 for (int index = 2; index <= 87; index++)
                 {
@@ -370,7 +504,6 @@ public sealed class BatteryValidationFactoryTests
             }
         }
 
-        public Task WaitForSecondCallAsync() => secondCalled.Task;
     }
 
     private sealed class ManualTimeProvider : TimeProvider
@@ -412,6 +545,28 @@ public sealed class BatteryValidationFactoryTests
             foreach (Timer timer in due)
             {
                 timer.Fire();
+            }
+        }
+
+        public async Task WaitForTimerCountAsync(int count)
+        {
+            DateTime deadline = DateTime.UtcNow + TimeSpan.FromSeconds(1);
+            while (true)
+            {
+                lock (sync)
+                {
+                    if (timers.Count >= count)
+                    {
+                        return;
+                    }
+                }
+
+                if (DateTime.UtcNow >= deadline)
+                {
+                    throw new TimeoutException($"Expected {count} timers to be registered.");
+                }
+
+                await Task.Yield();
             }
         }
 
