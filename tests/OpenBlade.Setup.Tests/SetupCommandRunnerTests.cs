@@ -143,45 +143,43 @@ public sealed class SetupCommandRunnerTests
     }
 
     [Fact]
-    public async Task Install_NoOldBinaryTreeButExistingService_PreActivationFailurePreservesRegistration()
+    public async Task Install_NoOldBinaryTreeButRunningService_FailsClosedBeforeAnyLifecycleMutation()
     {
         RecordingSetupPlatform platform = new()
         {
             ServiceExists = true,
-            FailurePoint = "tray-stop",
             Transaction = new RecordingPayloadTransaction(hadExistingInstall: false),
         };
 
-        await Assert.ThrowsAsync<InvalidOperationException>(
+        InvalidOperationException failure = await Assert.ThrowsAsync<InvalidOperationException>(
             () => new SetupCommandRunner(platform).RunAsync(["install"], CancellationToken.None));
 
-        Assert.DoesNotContain("service-remove", platform.Operations);
-        AssertEndsWith(platform.Operations, ["payload-rollback", "service-restore", "shortcut-install"]);
+        Assert.Contains("manual repair or uninstall", failure.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(["payload-stage", "lifecycle-capture", "payload-rollback"], platform.Operations);
         Assert.True(platform.ServiceRegistered);
         Assert.True(platform.ServiceRunning);
         Assert.True(platform.ShortcutPresent);
     }
 
     [Fact]
-    public async Task Install_NoOldBinaryTreePriorStoppedService_RemainsRegisteredStoppedAndRestoresShortcut()
+    public async Task Install_NoOldBinaryTreeButStoppedService_FailsClosedBeforeAnyLifecycleMutation()
     {
         RecordingSetupPlatform platform = new()
         {
             ServiceExists = true,
             ServiceWasRunning = false,
             ShortcutExisted = true,
-            FailurePoint = "tray-stop",
             Transaction = new RecordingPayloadTransaction(hadExistingInstall: false),
         };
 
-        await Assert.ThrowsAsync<InvalidOperationException>(
+        InvalidOperationException failure = await Assert.ThrowsAsync<InvalidOperationException>(
             () => new SetupCommandRunner(platform).RunAsync(["install"], CancellationToken.None));
 
-        AssertEndsWith(platform.Operations, ["payload-rollback", "service-restore", "shortcut-install"]);
+        Assert.Contains("manual repair or uninstall", failure.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(["payload-stage", "lifecycle-capture", "payload-rollback"], platform.Operations);
         Assert.True(platform.ServiceRegistered);
         Assert.False(platform.ServiceRunning);
         Assert.True(platform.ShortcutPresent);
-        Assert.DoesNotContain("service-remove", platform.Operations);
     }
 
     [Fact]
@@ -249,6 +247,38 @@ public sealed class SetupCommandRunnerTests
         {
             Console.SetError(original);
         }
+    }
+
+    [Fact]
+    public async Task Install_CommittedCleanupWarningWriterFailure_CannotEnterRecoveryOrFailInstall()
+    {
+        RecordingSetupPlatform platform = new()
+        {
+            ShortcutExisted = false,
+            Transaction = new RecordingPayloadTransaction(
+                false,
+                commitWarning: "guarded rollback directory retained"),
+        };
+        TextWriter original = Console.Error;
+        Console.SetError(new ThrowingTextWriter());
+        int exitCode;
+        try
+        {
+            exitCode = await new SetupCommandRunner(platform).RunAsync(["install"], CancellationToken.None);
+        }
+        finally
+        {
+            Console.SetError(original);
+        }
+
+        Assert.Equal(0, exitCode);
+        int commitIndex = platform.Operations.IndexOf("payload-commit");
+        Assert.True(commitIndex >= 0);
+        Assert.DoesNotContain("payload-rollback", platform.Operations.Skip(commitIndex + 1));
+        Assert.DoesNotContain("shortcut-remove", platform.Operations.Skip(commitIndex + 1));
+        Assert.DoesNotContain("service-remove", platform.Operations.Skip(commitIndex + 1));
+        Assert.DoesNotContain("service-prepare", platform.Operations.Skip(commitIndex + 1));
+        Assert.DoesNotContain("tray-stop", platform.Operations.Skip(commitIndex + 1));
     }
 
     [Fact]
@@ -499,5 +529,13 @@ public sealed class SetupCommandRunnerTests
 
             return ValueTask.CompletedTask;
         }
+    }
+
+    private sealed class ThrowingTextWriter : TextWriter
+    {
+        public override System.Text.Encoding Encoding => System.Text.Encoding.UTF8;
+
+        public override void WriteLine(string? value) =>
+            throw new IOException("stderr is unavailable");
     }
 }

@@ -59,6 +59,13 @@ public sealed class SetupCommandRunner(ISetupPlatform platform)
             try
             {
                 priorLifecycle = await platform.CaptureInstallLifecycleStateAsync(cancellationToken);
+                if (priorLifecycle.Service.Existed && !transaction.HadExistingInstall)
+                {
+                    throw new InvalidOperationException(
+                        "An OpenBlade service registration exists without its installed binary tree. "
+                        + "Setup stopped before making changes; perform a manual repair or uninstall first.");
+                }
+
                 mutationStarted = true;
                 await platform.RemoveStartupShortcutAsync(cancellationToken);
                 await platform.PrepareServiceForInstallAsync(cancellationToken);
@@ -69,10 +76,7 @@ public sealed class SetupCommandRunner(ISetupPlatform platform)
                 await platform.VerifyServiceHealthAsync(cancellationToken);
                 await platform.InstallStartupShortcutAsync(cancellationToken);
                 await transaction.CommitAsync(cancellationToken);
-                if (!string.IsNullOrWhiteSpace(transaction.CommitWarning))
-                {
-                    Console.Error.WriteLine(transaction.CommitWarning);
-                }
+                WriteCommitWarningNoThrow(transaction.CommitWarning);
                 return 0;
             }
             catch (Exception failure)
@@ -155,6 +159,23 @@ public sealed class SetupCommandRunner(ISetupPlatform platform)
         catch (Exception exception)
         {
             failures.Add(exception);
+        }
+    }
+
+    private static void WriteCommitWarningNoThrow(string? warning)
+    {
+        if (string.IsNullOrWhiteSpace(warning))
+        {
+            return;
+        }
+
+        try
+        {
+            Console.Error.WriteLine(warning);
+        }
+        catch
+        {
+            // Reporting after the commit point must never enter payload or lifecycle recovery.
         }
     }
 }
