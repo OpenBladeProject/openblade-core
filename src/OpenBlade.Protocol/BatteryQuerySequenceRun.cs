@@ -2,8 +2,6 @@ namespace OpenBlade.Protocol;
 
 internal sealed class BatteryQuerySequenceRun : IAsyncDisposable
 {
-    private static readonly TimeSpan QuerySpacing = TimeSpan.FromSeconds(1);
-
     private readonly byte[] transactionIds;
     private readonly TimeProvider timeProvider;
     private readonly TimeSpan cleanupDrainTimeout;
@@ -11,6 +9,7 @@ internal sealed class BatteryQuerySequenceRun : IAsyncDisposable
     private readonly SemaphoreSlim gate = new(1, 1);
     private ValidationActor? actor;
     private int nextQuery;
+    private int stopRequested;
     private bool terminal;
 
     internal BatteryQuerySequenceRun(
@@ -35,43 +34,34 @@ internal sealed class BatteryQuerySequenceRun : IAsyncDisposable
     internal async Task<HidSessionResult<BatteryValidationSetting>> QueryAsync(
         CancellationToken cancellationToken)
     {
+        using CancellationTokenRegistration stopRegistration = cancellationToken.Register(
+            static state => ((BatteryQuerySequenceRun)state!).RequestStop(),
+            this);
+
         if (!await EnterAsync(cancellationToken).ConfigureAwait(false))
         {
-            await gate.WaitAsync().ConfigureAwait(false);
-            try
-            {
-                if (!terminal)
-                {
-                    await TerminateAsync().ConfigureAwait(false);
-                }
-            }
-            finally
-            {
-                gate.Release();
-            }
-
+            RequestStop();
+            await StopAsync().ConfigureAwait(false);
             return Failure(HidSessionFailureKind.Canceled);
         }
 
         try
         {
+            if (cancellationToken.IsCancellationRequested)
+            {
+                await TerminateAsync().ConfigureAwait(false);
+                return Failure(HidSessionFailureKind.Canceled);
+            }
+
             if (terminal)
             {
                 return Failure(HidSessionFailureKind.Disposed);
             }
 
-            if (nextQuery > 0)
+            if (IsStopRequested)
             {
-                try
-                {
-                    await Task.Delay(QuerySpacing, timeProvider, cancellationToken)
-                        .ConfigureAwait(false);
-                }
-                catch (OperationCanceledException)
-                {
-                    await TerminateAsync().ConfigureAwait(false);
-                    return Failure(HidSessionFailureKind.Canceled);
-                }
+                await TerminateAsync().ConfigureAwait(false);
+                return Failure(HidSessionFailureKind.Disposed);
             }
 
             HidSessionResult<BatteryValidationSetting> result;
@@ -95,12 +85,14 @@ internal sealed class BatteryQuerySequenceRun : IAsyncDisposable
             }
 
             nextQuery++;
-            if (nextQuery == transactionIds.Length)
+            if (nextQuery == transactionIds.Length || IsStopRequested)
             {
                 await TerminateAsync().ConfigureAwait(false);
             }
 
-            return result;
+            return cancellationToken.IsCancellationRequested
+                ? Failure(HidSessionFailureKind.Canceled)
+                : result;
         }
         finally
         {
@@ -135,6 +127,23 @@ internal sealed class BatteryQuerySequenceRun : IAsyncDisposable
                 pendingDisposals).ConfigureAwait(false);
         }
     }
+
+    private async Task StopAsync()
+    {
+        await gate.WaitAsync().ConfigureAwait(false);
+        try
+        {
+            await TerminateAsync().ConfigureAwait(false);
+        }
+        finally
+        {
+            gate.Release();
+        }
+    }
+
+    private bool IsStopRequested => Volatile.Read(ref stopRequested) != 0;
+
+    private void RequestStop() => Interlocked.Exchange(ref stopRequested, 1);
 
     private async Task<bool> EnterAsync(CancellationToken cancellationToken)
     {

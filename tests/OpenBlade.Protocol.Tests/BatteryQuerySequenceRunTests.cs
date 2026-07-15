@@ -29,10 +29,7 @@ public sealed class BatteryQuerySequenceRunTests
         Assert.Equal(expectedIds, commands.QueryTransactionIds);
         Assert.Equal(0, commands.SetCount);
         Assert.Equal(1, actors.OpenCount);
-        Assert.Equal(
-            [TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(1),
-             TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(1)],
-            time.DueTimes);
+        Assert.Empty(time.DueTimes);
 
         Assert.Equal(
             HidSessionFailureKind.Disposed,
@@ -64,28 +61,6 @@ public sealed class BatteryQuerySequenceRunTests
     }
 
     [Fact]
-    public async Task QueryAsync_CancellationDuringSpacingPerformsNoLaterQueryAndTerminatesRun()
-    {
-        var commands = new ScriptedBatteryCommands(Success(), Success());
-        var session = new ScriptedSession();
-        var actors = new ScriptedActorFactory(new ValidationActor(session, commands));
-        var time = new BlockingTimeProvider();
-        IBatteryQuerySequencePort port = (await Factory(
-            new ValidationRunContext(), actors, time).OpenAsync(default)).Value!;
-        Assert.Null((await port.QueryAsync(default)).Failure);
-
-        using var canceled = new CancellationTokenSource();
-        Task<HidSessionResult<BatteryValidationSetting>> second = port.QueryAsync(canceled.Token);
-        await time.DelayStarted.Task;
-        canceled.Cancel();
-
-        Assert.Equal(HidSessionFailureKind.Canceled, (await second).Failure);
-        Assert.Equal(new byte[] { 1 }, commands.QueryTransactionIds);
-        Assert.Equal(HidSessionFailureKind.Disposed, (await port.QueryAsync(default)).Failure);
-        Assert.Equal(1, session.DisposeCount);
-    }
-
-    [Fact]
     public async Task QueryAsync_PreCanceledCallPerformsNoQueryAndTerminatesRun()
     {
         var commands = new ScriptedBatteryCommands(Success());
@@ -103,6 +78,32 @@ public sealed class BatteryQuerySequenceRunTests
     }
 
     [Fact]
+    public async Task QueryAsync_CanceledWaiterCannotBeOvertakenByLaterQueuedQuery()
+    {
+        var commands = new BlockingFirstQueryCommands();
+        var session = new ScriptedSession();
+        var actors = new ScriptedActorFactory(new ValidationActor(session, commands));
+        IBatteryQuerySequencePort port = (await Factory(
+            new ValidationRunContext(), actors, new ImmediateTimeProvider()).OpenAsync(default)).Value!;
+
+        Task<HidSessionResult<BatteryValidationSetting>> first = port.QueryAsync(default);
+        await commands.FirstQueryEntered.Task;
+        using var canceled = new CancellationTokenSource();
+        Task<HidSessionResult<BatteryValidationSetting>> second = port.QueryAsync(canceled.Token);
+        Task<HidSessionResult<BatteryValidationSetting>> third = port.QueryAsync(default);
+        canceled.Cancel();
+        commands.ReleaseFirstQuery.TrySetResult();
+
+        Assert.Null((await first).Failure);
+        Assert.Equal(HidSessionFailureKind.Canceled, (await second).Failure);
+        Assert.Equal(HidSessionFailureKind.Disposed, (await third).Failure);
+        Assert.Equal(new byte[] { 1 }, commands.QueryTransactionIds);
+        Assert.Equal(1, session.DisposeCount);
+        await port.DisposeAsync();
+        Assert.Equal(1, session.DisposeCount);
+    }
+
+    [Fact]
     public void TryReserveBatteryQuerySequence_ReturnsFreshAtomicFiveIdReservations()
     {
         var context = new ValidationRunContext();
@@ -112,15 +113,26 @@ public sealed class BatteryQuerySequenceRunTests
         first[0] = 99;
         Assert.True(context.TryReserveBatteryQuerySequence(out byte[] second));
         Assert.Equal(new byte[] { 6, 7, 8, 9, 10 }, second);
+    }
 
-        for (int i = 0; i < 245; i++)
+    [Theory]
+    [InlineData(251)]
+    [InlineData(252)]
+    [InlineData(253)]
+    [InlineData(254)]
+    public void TryReserveBatteryQuerySequence_WithOneToFourIdsRemainingFailsWithoutAdvancing(
+        int consumedCount)
+    {
+        var context = new ValidationRunContext();
+        for (int index = 0; index < consumedCount; index++)
         {
             Assert.True(context.TryAllocateTransaction(out _));
         }
 
         Assert.False(context.TryReserveBatteryQuerySequence(out byte[] unavailable));
         Assert.Empty(unavailable);
-        Assert.False(context.TryAllocateTransaction(out _));
+        Assert.True(context.TryAllocateTransaction(out byte unchangedNext));
+        Assert.Equal(consumedCount + 1, unchangedNext);
     }
 
     private static BatteryQuerySequenceRunFactory Factory(
@@ -171,6 +183,35 @@ public sealed class BatteryQuerySequenceRunTests
         }
     }
 
+    private sealed class BlockingFirstQueryCommands : IBatteryCommandClient
+    {
+        internal TaskCompletionSource FirstQueryEntered { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+        internal TaskCompletionSource ReleaseFirstQuery { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+        internal List<byte> QueryTransactionIds { get; } = [];
+
+        public async Task<HidSessionResult<BatteryValidationSetting>> QueryAsync(
+            byte transactionId,
+            CancellationToken cancellationToken)
+        {
+            QueryTransactionIds.Add(transactionId);
+            if (QueryTransactionIds.Count == 1)
+            {
+                FirstQueryEntered.TrySetResult();
+                await ReleaseFirstQuery.Task;
+            }
+
+            return Success();
+        }
+
+        public Task<HidSessionResult<HidUnit>> SetAsync(
+            byte transactionId,
+            BatteryValidationSetting setting,
+            CancellationToken cancellationToken) =>
+            throw new InvalidOperationException("Query sequence must never set battery state.");
+    }
+
     private sealed class ScriptedSession : IRazerCommandSession
     {
         public RazerCommandSessionDisposition Disposition { get; private set; } =
@@ -203,22 +244,6 @@ public sealed class BatteryQuerySequenceRunTests
         {
             DueTimes.Add(dueTime);
             callback(state);
-            return new CompletedTimer();
-        }
-    }
-
-    private sealed class BlockingTimeProvider : TimeProvider
-    {
-        internal TaskCompletionSource DelayStarted { get; } =
-            new(TaskCreationOptions.RunContinuationsAsynchronously);
-
-        public override ITimer CreateTimer(
-            TimerCallback callback,
-            object? state,
-            TimeSpan dueTime,
-            TimeSpan period)
-        {
-            DelayStarted.TrySetResult();
             return new CompletedTimer();
         }
     }
