@@ -25,4 +25,12 @@
     <ProjectReference Include="..\OpenBlade.Contracts\OpenBlade.Contracts.csproj" />
     <ProjectReference Include="..\OpenBlade.Tray.Core\OpenBlade.Tray.Core.csproj" />
   </ItemGroup>
+  <Target Name="PublishApplicationResourceIndex" AfterTargets="Publish">
+    <Error
+      Condition="!Exists('$(TargetDir)$(AssemblyName).pri')"
+      Text="The generated WinUI resource index was not found at '$(TargetDir)$(AssemblyName).pri'." />
+    <Copy
+      SourceFiles="$(TargetDir)$(AssemblyName).pri"
+      DestinationFiles="$(PublishDir)$(AssemblyName).pri" />
+  </Target>
 </Project>

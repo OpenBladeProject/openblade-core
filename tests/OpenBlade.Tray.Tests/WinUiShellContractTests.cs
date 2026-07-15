@@ -5,6 +5,20 @@ namespace OpenBlade.Tray.Tests;
 public sealed class WinUiShellContractTests
 {
     [Fact]
+    public void SelfContainedPublishRequiresAndCopiesApplicationResourceIndex()
+    {
+        string project = ReadRepositoryFile("src", "OpenBlade.Tray", "OpenBlade.Tray.csproj");
+
+        Assert.Contains("Name=\"PublishApplicationResourceIndex\"", project, StringComparison.Ordinal);
+        Assert.Contains("AfterTargets=\"Publish\"", project, StringComparison.Ordinal);
+        Assert.Contains("$(TargetDir)$(AssemblyName).pri", project, StringComparison.Ordinal);
+        Assert.Contains("$(PublishDir)$(AssemblyName).pri", project, StringComparison.Ordinal);
+        Assert.Contains("<Error", project, StringComparison.Ordinal);
+        Assert.Contains("!Exists('$(TargetDir)$(AssemblyName).pri')", project, StringComparison.Ordinal);
+        Assert.Contains("<Copy", project, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void TrayExecutableIsPinnedUnpackagedSelfContainedWinUiAndContainsNoWpf()
     {
         string project = ReadRepositoryFile("src", "OpenBlade.Tray", "OpenBlade.Tray.csproj");
