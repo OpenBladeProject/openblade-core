@@ -6,6 +6,22 @@ namespace OpenBlade.Capture.Tests;
 public sealed class BatteryValidationSessionTests
 {
     [Fact]
+    public void Constructor_AcceptsConfigurableSettlingDelayAndDelayFunction()
+    {
+        TestContext context = new();
+        Func<TimeSpan, CancellationToken, Task> delay = (_, _) => Task.CompletedTask;
+
+        var session = new BatteryValidationSession(
+            context.Factory,
+            context.Approval,
+            TimeSpan.FromSeconds(1),
+            TimeSpan.FromMilliseconds(250),
+            delay);
+
+        Assert.NotNull(session);
+    }
+
+    [Fact]
     public async Task Run_UndefinedCandidateAbortsBeforeFactoryOpen()
     {
         TestContext context = new();
@@ -277,6 +293,32 @@ public sealed class BatteryValidationSessionTests
         Assert.DoesNotContain("unstable apply detail", result.ToString(), StringComparison.Ordinal);
     }
 
+    [Fact]
+    public async Task Run_CandidateApplyFailurePreservesSafeDiagnostic()
+    {
+        TestContext context = new();
+        var diagnostic = new HidSessionFailureDiagnostic(
+            HidSessionFailurePhase.SetCompletion,
+            HidSessionFailureKind.NativeIoFailure,
+            NativeWin32Error: 31,
+            TransferredByteCount: 0);
+        context.SetQueries(
+            BatteryValidationSetting.Limit80,
+            BatteryValidationSetting.Limit80);
+        context.Port.ApplySteps.Clear();
+        context.Port.ApplySteps.Enqueue(_ => Task.FromResult(
+            Failure<HidUnit>(HidSessionFailureKind.NativeIoFailure) with
+            {
+                Diagnostic = diagnostic,
+            }));
+        context.Port.ApplySteps.Enqueue(_ => Task.FromResult(Success(new HidUnit())));
+
+        BatteryValidationResult result = await context.RunAsync();
+
+        Assert.Equal(BatteryValidationPrimaryFailure.ApplyFailed, result.PrimaryFailure);
+        Assert.Equal(diagnostic, result.CandidateApplyDiagnostic);
+    }
+
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
@@ -360,6 +402,172 @@ public sealed class BatteryValidationSessionTests
         Assert.Equal(BatteryValidationRestorationFailure.RestoreQueryFailed, result.RestorationFailure);
         Assert.False(result.Restored);
         Assert.True(context.Port.Disposed);
+    }
+
+    [Fact]
+    public async Task Run_WaitsDefaultIntervalBeforeEveryPostBaselineHardwareCommand()
+    {
+        TestContext context = new(recordDelays: true);
+        using CancellationTokenSource caller = new();
+
+        BatteryValidationResult result = await context.RunAsync(cancellationToken: caller.Token);
+
+        Assert.True(result.Success);
+        Assert.Equal(
+            [
+                "open",
+                "query",
+                "approve",
+                "settle:1000",
+                "apply:Limit75",
+                "settle:1000",
+                "query",
+                "settle:1000",
+                "apply:Limit80",
+                "settle:1000",
+                "query",
+                "dispose",
+            ],
+            context.Events);
+        Assert.Equal(4, context.DelayCalls.Count);
+        Assert.All(context.DelayCalls, call => Assert.Equal(TimeSpan.FromSeconds(1), call.Delay));
+        Assert.Equal(caller.Token, context.DelayCalls[0].Token);
+        Assert.Equal(caller.Token, context.DelayCalls[1].Token);
+        Assert.False(context.DelayCalls[2].Token.CanBeCanceled);
+        Assert.False(context.DelayCalls[3].Token.CanBeCanceled);
+        Assert.True(context.Port.ApplyTokens[1].CanBeCanceled);
+        Assert.True(context.Port.QueryTokens[2].CanBeCanceled);
+        Assert.NotEqual(context.Port.ApplyTokens[1], context.Port.QueryTokens[2]);
+    }
+
+    [Fact]
+    public async Task Run_UsesConfiguredSettlingInterval()
+    {
+        TestContext context = new(
+            settlingDelay: TimeSpan.FromMilliseconds(250),
+            recordDelays: true);
+
+        BatteryValidationResult result = await context.RunAsync();
+
+        Assert.True(result.Success);
+        Assert.Equal(4, context.DelayCalls.Count);
+        Assert.All(
+            context.DelayCalls,
+            call => Assert.Equal(TimeSpan.FromMilliseconds(250), call.Delay));
+    }
+
+    [Fact]
+    public async Task Run_CallerCancellationDuringCandidateApplySettleSkipsMutationAndRestore()
+    {
+        using CancellationTokenSource caller = new();
+        TestContext context = new(recordDelays: true);
+        context.DelaySteps.Enqueue(token =>
+        {
+            Assert.Equal(caller.Token, token);
+            caller.Cancel();
+            return Task.FromCanceled(token);
+        });
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => context.RunAsync(cancellationToken: caller.Token));
+
+        Assert.Empty(context.Port.ApplyTokens);
+        Assert.Equal(
+            ["open", "query", "approve", "settle:1000", "dispose"],
+            context.Events);
+    }
+
+    [Fact]
+    public async Task Run_CallerCancellationDuringCandidateQuerySettleRestoresWithCleanupTokens()
+    {
+        using CancellationTokenSource caller = new();
+        TestContext context = new(recordDelays: true);
+        context.DelaySteps.Enqueue(_ => Task.CompletedTask);
+        context.DelaySteps.Enqueue(token =>
+        {
+            Assert.Equal(caller.Token, token);
+            caller.Cancel();
+            return Task.FromCanceled(token);
+        });
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => context.RunAsync(cancellationToken: caller.Token));
+
+        Assert.Equal(2, context.Port.ApplyTokens.Count);
+        Assert.Equal(2, context.Port.QueryTokens.Count);
+        Assert.Equal(4, context.DelayCalls.Count);
+        Assert.Equal(caller.Token, context.DelayCalls[0].Token);
+        Assert.Equal(caller.Token, context.DelayCalls[1].Token);
+        Assert.False(context.DelayCalls[2].Token.CanBeCanceled);
+        Assert.False(context.DelayCalls[3].Token.CanBeCanceled);
+        Assert.True(context.Port.ApplyTokens[1].CanBeCanceled);
+        Assert.True(context.Port.QueryTokens[1].CanBeCanceled);
+        Assert.NotEqual(context.Port.ApplyTokens[1], context.Port.QueryTokens[1]);
+        Assert.Equal(
+            [
+                "open",
+                "query",
+                "approve",
+                "settle:1000",
+                "apply:Limit75",
+                "settle:1000",
+                "settle:1000",
+                "apply:Limit80",
+                "settle:1000",
+                "query",
+                "dispose",
+            ],
+            context.Events);
+    }
+
+    [Fact]
+    public async Task Run_RestoreSettlingCannotConsumeHardwareCleanupTimeout()
+    {
+        TestContext context = new(
+            cleanupTimeout: TimeSpan.FromMilliseconds(20),
+            recordDelays: true);
+        context.DelaySteps.Enqueue(_ => Task.CompletedTask);
+        context.DelaySteps.Enqueue(_ => Task.CompletedTask);
+        context.DelaySteps.Enqueue(_ => Task.Delay(TimeSpan.FromMilliseconds(80)));
+        context.DelaySteps.Enqueue(_ => Task.Delay(TimeSpan.FromMilliseconds(80)));
+
+        BatteryValidationResult result = await context.RunAsync();
+
+        Assert.True(result.Success);
+        Assert.Equal(2, context.Port.ApplyTokens.Count);
+        Assert.Equal(3, context.Port.QueryTokens.Count);
+        Assert.False(context.DelayCalls[2].Token.CanBeCanceled);
+        Assert.False(context.DelayCalls[3].Token.CanBeCanceled);
+        Assert.True(context.Port.ApplyTokens[1].CanBeCanceled);
+        Assert.True(context.Port.QueryTokens[2].CanBeCanceled);
+        Assert.NotEqual(context.Port.ApplyTokens[1], context.Port.QueryTokens[2]);
+    }
+
+    [Fact]
+    public async Task Run_CandidateQueryFailurePreservesSafeDiagnostic()
+    {
+        TestContext context = new();
+        var diagnostic = new HidSessionFailureDiagnostic(
+            HidSessionFailurePhase.GetCompletion,
+            HidSessionFailureKind.Timeout,
+            NativeWin32Error: 995,
+            TransferredByteCount: 0)
+        {
+            ProtocolValidationFailure = HidProtocolValidationFailure.PayloadValidator,
+        };
+        context.Port.QuerySteps.Clear();
+        context.Port.QuerySteps.Enqueue(_ => Task.FromResult(Success(BatteryValidationSetting.Limit80)));
+        context.Port.QuerySteps.Enqueue(_ => Task.FromResult(
+            Failure<BatteryValidationSetting>(HidSessionFailureKind.Timeout) with
+            {
+                Diagnostic = diagnostic,
+            }));
+        context.Port.QuerySteps.Enqueue(_ => Task.FromResult(Success(BatteryValidationSetting.Limit80)));
+
+        BatteryValidationResult result = await context.RunAsync();
+
+        Assert.Equal(BatteryValidationPrimaryFailure.CandidateQueryFailed, result.PrimaryFailure);
+        Assert.Equal(diagnostic, result.CandidateQueryDiagnostic);
     }
 
     [Fact]
@@ -611,14 +819,31 @@ public sealed class BatteryValidationSessionTests
 
     private sealed class TestContext
     {
-        public TestContext()
+        public TestContext(
+            TimeSpan? cleanupTimeout = null,
+            TimeSpan? settlingDelay = null,
+            bool recordDelays = false)
         {
             Port = new FakePort(Events);
             Factory = new FakeFactory(Events) { Result = Success<IBatteryValidationPort>(Port) };
+            Func<TimeSpan, CancellationToken, Task> delayAsync = (delay, token) =>
+            {
+                DelayCalls.Add((delay, token));
+                if (recordDelays)
+                {
+                    Events.Add($"settle:{delay.TotalMilliseconds:0}");
+                }
+
+                return DelaySteps.Count == 0
+                    ? Task.CompletedTask
+                    : DelaySteps.Dequeue()(token);
+            };
             Session = new BatteryValidationSession(
                 Factory,
                 Approval = new FakeApproval(Events, () => ApprovalResult),
-                TimeSpan.FromSeconds(1));
+                cleanupTimeout ?? TimeSpan.FromSeconds(1),
+                settlingDelay,
+                delayAsync);
 
             SetQueries(
                 BatteryValidationSetting.Limit80,
@@ -634,6 +859,8 @@ public sealed class BatteryValidationSessionTests
         public FakeApproval Approval { get; }
         public BatteryValidationSession Session { get; }
         public bool ApprovalResult { get; set; } = true;
+        public List<(TimeSpan Delay, CancellationToken Token)> DelayCalls { get; } = [];
+        public Queue<Func<CancellationToken, Task>> DelaySteps { get; } = [];
 
         public Task<BatteryValidationResult> RunAsync(
             BatteryValidationSetting candidate = BatteryValidationSetting.Limit75,

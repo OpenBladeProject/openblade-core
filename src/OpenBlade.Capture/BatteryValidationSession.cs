@@ -47,6 +47,10 @@ public sealed record BatteryValidationResult(
 {
     public HidSessionFailureDiagnostic? BaselineQueryDiagnostic { get; init; }
 
+    public HidSessionFailureDiagnostic? CandidateApplyDiagnostic { get; init; }
+
+    public HidSessionFailureDiagnostic? CandidateQueryDiagnostic { get; init; }
+
     public HidSessionFailureDiagnostic? RestorationDiagnostic { get; init; }
 
     public bool Success => ApplyAttempted
@@ -60,12 +64,20 @@ public sealed record BatteryValidationResult(
 public sealed class BatteryValidationSession(
     IBatteryValidationRunFactory factory,
     IInteractiveApproval approval,
-    TimeSpan cleanupTimeout)
+    TimeSpan cleanupTimeout,
+    TimeSpan? settlingDelay = null,
+    Func<TimeSpan, CancellationToken, Task>? delayAsync = null)
 {
+    private static readonly TimeSpan DefaultSettlingDelay = TimeSpan.FromSeconds(1);
+
     private readonly TimeSpan _cleanupTimeout = cleanupTimeout > TimeSpan.Zero
         && cleanupTimeout != Timeout.InfiniteTimeSpan
             ? cleanupTimeout
             : throw new ArgumentOutOfRangeException(nameof(cleanupTimeout));
+    private readonly TimeSpan _settlingDelay = ValidateSettlingDelay(
+        settlingDelay ?? DefaultSettlingDelay);
+    private readonly Func<TimeSpan, CancellationToken, Task> _delayAsync =
+        delayAsync ?? ((delay, token) => Task.Delay(delay, token));
 
     public async Task<BatteryValidationResult> RunAsync(
         BatteryValidationSetting candidate,
@@ -167,18 +179,22 @@ public sealed class BatteryValidationSession(
         BatteryValidationPrimaryFailure primaryFailure = BatteryValidationPrimaryFailure.None;
         BatteryValidationRestorationFailure restorationFailure =
             BatteryValidationRestorationFailure.None;
+        HidSessionFailureDiagnostic? candidateApplyDiagnostic = null;
+        HidSessionFailureDiagnostic? candidateQueryDiagnostic = null;
         HidSessionFailureDiagnostic? restorationDiagnostic = null;
         OperationCanceledException? callerCancellation = null;
 
         try
         {
             cancellationToken.ThrowIfCancellationRequested();
+            await WaitForSettlingAsync(cancellationToken).ConfigureAwait(false);
             applyAttempted = true;
             HidSessionResult<HidUnit> apply =
                 await port.ApplyAsync(candidate, cancellationToken).ConfigureAwait(false);
             if (apply.Failure is not null)
             {
                 primaryFailure = BatteryValidationPrimaryFailure.ApplyFailed;
+                candidateApplyDiagnostic = apply.Diagnostic;
                 if (IsCallerCancellation(apply.Failure, cancellationToken))
                 {
                     callerCancellation = new OperationCanceledException(cancellationToken);
@@ -187,11 +203,13 @@ public sealed class BatteryValidationSession(
             else
             {
                 applied = true;
+                await WaitForSettlingAsync(cancellationToken).ConfigureAwait(false);
                 HidSessionResult<BatteryValidationSetting> candidateQuery =
                     await port.QueryAsync(cancellationToken).ConfigureAwait(false);
                 if (candidateQuery.Failure is not null)
                 {
                     primaryFailure = BatteryValidationPrimaryFailure.CandidateQueryFailed;
+                    candidateQueryDiagnostic = candidateQuery.Diagnostic;
                     if (IsCallerCancellation(candidateQuery.Failure, cancellationToken))
                     {
                         callerCancellation = new OperationCanceledException(cancellationToken);
@@ -225,9 +243,10 @@ public sealed class BatteryValidationSession(
             if (applyAttempted)
             {
                 bool restoreApplied = false;
-                using (CancellationTokenSource restoreApplyCleanup = new(_cleanupTimeout))
+                try
                 {
-                    try
+                    await WaitForSettlingAsync(CancellationToken.None).ConfigureAwait(false);
+                    using (CancellationTokenSource restoreApplyCleanup = new(_cleanupTimeout))
                     {
                         HidSessionResult<HidUnit> restoreApply =
                             await port.ApplyAsync(prior, restoreApplyCleanup.Token).ConfigureAwait(false);
@@ -239,20 +258,22 @@ public sealed class BatteryValidationSession(
                             restorationDiagnostic = restoreApply.Diagnostic;
                         }
                     }
-                    catch (Exception)
-                    {
-                        restorationFailure =
-                            BatteryValidationRestorationFailure.RestoreApplyFailed;
-                    }
+                }
+                catch (Exception)
+                {
+                    restorationFailure =
+                        BatteryValidationRestorationFailure.RestoreApplyFailed;
                 }
 
                 if (restoreApplied)
                 {
-                    using CancellationTokenSource restoreQueryCleanup = new(_cleanupTimeout);
                     try
                     {
-                        HidSessionResult<BatteryValidationSetting> restoreQuery =
-                            await port.QueryAsync(restoreQueryCleanup.Token).ConfigureAwait(false);
+                        await WaitForSettlingAsync(CancellationToken.None).ConfigureAwait(false);
+                        using CancellationTokenSource restoreQueryCleanup = new(_cleanupTimeout);
+                        HidSessionResult<BatteryValidationSetting> restoreQuery = await port
+                            .QueryAsync(restoreQueryCleanup.Token)
+                            .ConfigureAwait(false);
                         if (restoreQuery.Failure is not null)
                         {
                             restorationFailure =
@@ -293,6 +314,8 @@ public sealed class BatteryValidationSession(
             PrimaryFailure: primaryFailure,
             RestorationFailure: restorationFailure)
         {
+            CandidateApplyDiagnostic = candidateApplyDiagnostic,
+            CandidateQueryDiagnostic = candidateQueryDiagnostic,
             RestorationDiagnostic = restorationDiagnostic,
         };
     }
@@ -377,4 +400,16 @@ public sealed class BatteryValidationSession(
         Restored: false,
         PrimaryFailure: failure,
         RestorationFailure: BatteryValidationRestorationFailure.None);
+
+    private async Task WaitForSettlingAsync(CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        await _delayAsync(_settlingDelay, cancellationToken).ConfigureAwait(false);
+        cancellationToken.ThrowIfCancellationRequested();
+    }
+
+    private static TimeSpan ValidateSettlingDelay(TimeSpan delay) =>
+        delay > TimeSpan.Zero && delay != Timeout.InfiniteTimeSpan
+            ? delay
+            : throw new ArgumentOutOfRangeException(nameof(delay));
 }

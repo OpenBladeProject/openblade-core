@@ -81,6 +81,28 @@ public sealed class BatteryValidationCommand
             await _output.WriteLineAsync(
                 $"BaselineQueryProtocolValidationFailure={diagnostic.ProtocolValidationFailure?.ToString() ?? "Unavailable"}").ConfigureAwait(false);
         }
+        if (result.CandidateApplyDiagnostic is { } candidateApplyDiagnostic)
+        {
+            await _output.WriteLineAsync($"CandidateApplyPhase={candidateApplyDiagnostic.Phase}").ConfigureAwait(false);
+            await _output.WriteLineAsync($"CandidateApplySessionFailure={candidateApplyDiagnostic.Failure}").ConfigureAwait(false);
+            await _output.WriteLineAsync(
+                $"CandidateApplyWin32Error={candidateApplyDiagnostic.NativeWin32Error?.ToString() ?? "Unavailable"}").ConfigureAwait(false);
+            await _output.WriteLineAsync(
+                $"CandidateApplyTransferredBytes={candidateApplyDiagnostic.TransferredByteCount?.ToString() ?? "Unavailable"}").ConfigureAwait(false);
+            await _output.WriteLineAsync(
+                $"CandidateApplyProtocolValidationFailure={candidateApplyDiagnostic.ProtocolValidationFailure?.ToString() ?? "Unavailable"}").ConfigureAwait(false);
+        }
+        if (result.CandidateQueryDiagnostic is { } candidateQueryDiagnostic)
+        {
+            await _output.WriteLineAsync($"CandidateQueryPhase={candidateQueryDiagnostic.Phase}").ConfigureAwait(false);
+            await _output.WriteLineAsync($"CandidateQuerySessionFailure={candidateQueryDiagnostic.Failure}").ConfigureAwait(false);
+            await _output.WriteLineAsync(
+                $"CandidateQueryWin32Error={candidateQueryDiagnostic.NativeWin32Error?.ToString() ?? "Unavailable"}").ConfigureAwait(false);
+            await _output.WriteLineAsync(
+                $"CandidateQueryTransferredBytes={candidateQueryDiagnostic.TransferredByteCount?.ToString() ?? "Unavailable"}").ConfigureAwait(false);
+            await _output.WriteLineAsync(
+                $"CandidateQueryProtocolValidationFailure={candidateQueryDiagnostic.ProtocolValidationFailure?.ToString() ?? "Unavailable"}").ConfigureAwait(false);
+        }
         if (result.RestorationDiagnostic is { } restorationDiagnostic)
         {
             await _output.WriteLineAsync($"RestorationPhase={restorationDiagnostic.Phase}").ConfigureAwait(false);
