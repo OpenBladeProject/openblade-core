@@ -1,5 +1,6 @@
 using System.Buffers.Binary;
 using System.Text;
+using System.Text.Json;
 using OpenBlade.Contracts;
 
 namespace OpenBlade.Contracts.Tests;
@@ -9,6 +10,7 @@ public sealed class IpcMessageCodecTests
     public static TheoryData<ServiceRequest> Requests => new()
     {
         new GetStatusRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid()),
+        new ObserveStateRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid()),
         new SubscribeStatusRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid()),
         new ExportDiagnosticsRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid()),
         new UpdateProfilesRequest(
@@ -54,6 +56,22 @@ public sealed class IpcMessageCodecTests
 
         Assert.Equal(expected, actual);
         Assert.Equal(expected.GetType(), actual.GetType());
+    }
+
+    [Fact]
+    public async Task VersionThreeAdvisoryAndObserveRequest_RoundTripExactShape()
+    {
+        ServiceStatusSnapshot status = CreateStatus() with
+        {
+            PotentialControllers = ["RazerAppEngine"],
+            ControllerDetectionWarning = null,
+            ExternalChanges = [DeviceSubsystem.Fans, DeviceSubsystem.Lighting],
+        };
+        ServiceRequest request = new ObserveStateRequest(3, Guid.NewGuid());
+
+        Assert.Equal(3, OpenBladeIpc.ProtocolVersion);
+        Assert.Equal(request, await RoundTripRequestAsync(request));
+        AssertStatusEqual(status, await RoundTripStatusAsync(status));
     }
 
     [Fact]
@@ -211,7 +229,7 @@ public sealed class IpcMessageCodecTests
     {
         const string secret = "unknown-secret-operation";
         using MemoryStream stream = FrameJson(
-            $$"""{"operation":"{{secret}}","version":2,"requestId":"{{Guid.NewGuid()}}"}""");
+            $$"""{"operation":"{{secret}}","version":3,"requestId":"{{Guid.NewGuid()}}"}""");
 
         InvalidDataException exception = await Assert.ThrowsAsync<InvalidDataException>(() =>
             IpcMessageCodec.ReadRequestAsync(stream, CancellationToken.None));
@@ -227,8 +245,10 @@ public sealed class IpcMessageCodecTests
             OpenBladeIpc.ProtocolVersion - 1,
             Guid.NewGuid());
 
-        await Assert.ThrowsAsync<InvalidDataException>(() =>
+        InvalidDataException exception = await Assert.ThrowsAsync<InvalidDataException>(() =>
             IpcMessageCodec.WriteRequestAsync(stream, request, CancellationToken.None));
+
+        Assert.Equal("IPC protocol version is unsupported.", exception.Message);
     }
 
     [Theory]
@@ -262,12 +282,12 @@ public sealed class IpcMessageCodecTests
     }
 
     [Fact]
-    public async Task WriteServerFrameAsync_RejectsUnsortedConflictNames()
+    public async Task WriteServerFrameAsync_RejectsUnsortedControllerNames()
     {
         using MemoryStream stream = new();
         ServiceStatusSnapshot status = CreateStatus() with
         {
-            Conflicts = ["Razer Synapse Service", "Razer Central Service"],
+            PotentialControllers = ["Razer Synapse Service", "Razer Central Service"],
         };
         ServiceServerFrame frame = new ServiceStatusEvent(
             OpenBladeIpc.ProtocolVersion,
@@ -277,6 +297,103 @@ public sealed class IpcMessageCodecTests
             IpcMessageCodec.WriteServerFrameAsync(stream, frame, CancellationToken.None));
     }
 
+    [Fact]
+    public async Task WriteServerFrameAsync_RejectsDuplicateControllerNames()
+    {
+        ServiceStatusSnapshot status = CreateStatus() with
+        {
+            PotentialControllers = ["RazerAppEngine", "RazerAppEngine"],
+        };
+
+        await AssertStatusWriteRejectedAsync(status);
+    }
+
+    [Fact]
+    public async Task WriteServerFrameAsync_RejectsMoreThanSixteenControllerNames()
+    {
+        ServiceStatusSnapshot status = CreateStatus() with
+        {
+            PotentialControllers = Enumerable.Range(0, 17)
+                .Select(index => $"Controller{index:D2}")
+                .ToArray(),
+        };
+
+        await AssertStatusWriteRejectedAsync(status);
+    }
+
+    [Fact]
+    public async Task WriteServerFrameAsync_RejectsUnsortedExternalChanges()
+    {
+        ServiceStatusSnapshot status = CreateStatus() with
+        {
+            ExternalChanges = [DeviceSubsystem.Lighting, DeviceSubsystem.Fans],
+        };
+
+        await AssertStatusWriteRejectedAsync(status);
+    }
+
+    [Fact]
+    public async Task WriteServerFrameAsync_RejectsDuplicateExternalChanges()
+    {
+        ServiceStatusSnapshot status = CreateStatus() with
+        {
+            ExternalChanges = [DeviceSubsystem.Fans, DeviceSubsystem.Fans],
+        };
+
+        await AssertStatusWriteRejectedAsync(status);
+    }
+
+    [Fact]
+    public async Task WriteServerFrameAsync_RejectsMoreThanFourExternalChanges()
+    {
+        ServiceStatusSnapshot status = CreateStatus() with
+        {
+            ExternalChanges =
+            [
+                DeviceSubsystem.Performance,
+                DeviceSubsystem.Fans,
+                DeviceSubsystem.Battery,
+                DeviceSubsystem.Lighting,
+                DeviceSubsystem.Lighting,
+            ],
+        };
+
+        await AssertStatusWriteRejectedAsync(status);
+    }
+
+    [Fact]
+    public async Task ReadServerFrameAsync_RejectsUnknownDeviceSubsystemValue()
+    {
+        ServiceStatusSnapshot status = CreateStatus() with
+        {
+            ExternalChanges = [(DeviceSubsystem)9],
+        };
+        ServiceServerFrame frame = new ServiceStatusEvent(OpenBladeIpc.ProtocolVersion, status);
+        string json = JsonSerializer.Serialize<ServiceServerFrame>(frame);
+        using MemoryStream stream = FrameJson(json);
+
+        await Assert.ThrowsAsync<InvalidDataException>(() =>
+            IpcMessageCodec.ReadServerFrameAsync(stream, CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task WriteServerFrameAsync_RejectsOversizedAdvisoryAtSixtyFourKiBFrameLimit()
+    {
+        ServiceStatusSnapshot status = CreateStatus() with
+        {
+            ControllerDetectionWarning = new string('x', OpenBladeIpc.MaximumMessageBytes),
+        };
+
+        using MemoryStream stream = new();
+        InvalidDataException exception = await Assert.ThrowsAsync<InvalidDataException>(() =>
+            IpcMessageCodec.WriteServerFrameAsync(
+                stream,
+                new ServiceStatusEvent(OpenBladeIpc.ProtocolVersion, status),
+                CancellationToken.None));
+
+        Assert.Equal("IPC message exceeds the 64 KiB limit.", exception.Message);
+    }
+
     private static MemoryStream FrameJson(string json)
     {
         byte[] payload = Encoding.UTF8.GetBytes(json);
@@ -284,6 +401,38 @@ public sealed class IpcMessageCodecTests
         BinaryPrimitives.WriteInt32LittleEndian(framed, payload.Length);
         payload.CopyTo(framed.AsSpan(sizeof(int)));
         return new MemoryStream(framed);
+    }
+
+    private static async Task<ServiceRequest> RoundTripRequestAsync(ServiceRequest request)
+    {
+        using MemoryStream stream = new();
+        await IpcMessageCodec.WriteRequestAsync(stream, request, CancellationToken.None);
+        stream.Position = 0;
+        return await IpcMessageCodec.ReadRequestAsync(stream, CancellationToken.None);
+    }
+
+    private static async Task<ServiceStatusSnapshot> RoundTripStatusAsync(
+        ServiceStatusSnapshot status)
+    {
+        using MemoryStream stream = new();
+        await IpcMessageCodec.WriteServerFrameAsync(
+            stream,
+            new ServiceStatusEvent(OpenBladeIpc.ProtocolVersion, status),
+            CancellationToken.None);
+        stream.Position = 0;
+        ServiceStatusEvent statusEvent = Assert.IsType<ServiceStatusEvent>(
+            await IpcMessageCodec.ReadServerFrameAsync(stream, CancellationToken.None));
+        return statusEvent.Status;
+    }
+
+    private static async Task AssertStatusWriteRejectedAsync(ServiceStatusSnapshot status)
+    {
+        using MemoryStream stream = new();
+        await Assert.ThrowsAsync<InvalidDataException>(() =>
+            IpcMessageCodec.WriteServerFrameAsync(
+                stream,
+                new ServiceStatusEvent(OpenBladeIpc.ProtocolVersion, status),
+                CancellationToken.None));
     }
 
     private static ServiceResponse CreateArchiveResponse(DiagnosticArchive archive) =>
@@ -333,7 +482,9 @@ public sealed class IpcMessageCodecTests
             Revision: 1,
             DeviceVerified: false,
             WritesBlocked: true,
-            Conflicts: ["RazerAppEngine"],
+            PotentialControllers: ["RazerAppEngine"],
+            ControllerDetectionWarning: null,
+            ExternalChanges: [],
             Message: "Blocked",
             Capabilities: DeviceCapabilities.Unavailable(),
             ConfirmedState: null,
@@ -353,7 +504,9 @@ public sealed class IpcMessageCodecTests
         Assert.Equal(expected.Revision, actual.Revision);
         Assert.Equal(expected.DeviceVerified, actual.DeviceVerified);
         Assert.Equal(expected.WritesBlocked, actual.WritesBlocked);
-        Assert.Equal(expected.Conflicts, actual.Conflicts);
+        Assert.Equal(expected.PotentialControllers, actual.PotentialControllers);
+        Assert.Equal(expected.ControllerDetectionWarning, actual.ControllerDetectionWarning);
+        Assert.Equal(expected.ExternalChanges, actual.ExternalChanges);
         Assert.Equal(expected.Message, actual.Message);
         Assert.NotNull(expected.Capabilities);
         Assert.NotNull(actual.Capabilities);

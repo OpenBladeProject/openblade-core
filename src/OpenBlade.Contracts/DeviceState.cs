@@ -1,5 +1,13 @@
 namespace OpenBlade.Contracts;
 
+public enum DeviceSubsystem
+{
+    Performance,
+    Fans,
+    Battery,
+    Lighting,
+}
+
 public sealed record DeviceCapabilities(
     IReadOnlySet<PerformancePreset> PerformancePresets,
     IReadOnlySet<FanMode> FanModes,

@@ -7,9 +7,9 @@ namespace OpenBlade.Contracts.Tests;
 public sealed class ServiceMessageContractTests
 {
     [Fact]
-    public void ProtocolConstants_AreClosedVersionTwoAndRetainExactSizeLimit()
+    public void ProtocolConstants_AreClosedVersionThreeAndRetainExactSizeLimit()
     {
-        Assert.Equal(2, OpenBladeIpc.ProtocolVersion);
+        Assert.Equal(3, OpenBladeIpc.ProtocolVersion);
         Assert.Equal("OpenBlade.Service.v2", OpenBladeIpc.PipeName);
         Assert.Equal(64 * 1024, OpenBladeIpc.MaximumMessageBytes);
         Assert.Equal(32 * 1024, OpenBladeIpc.MaximumDiagnosticArchiveBytes);
@@ -21,6 +21,7 @@ public sealed class ServiceMessageContractTests
         AssertDerivedTypes(
             typeof(ServiceRequest),
             (typeof(GetStatusRequest), "getStatus"),
+            (typeof(ObserveStateRequest), "observeState"),
             (typeof(SubscribeStatusRequest), "subscribeStatus"),
             (typeof(ExportDiagnosticsRequest), "exportDiagnostics"),
             (typeof(UpdateProfilesRequest), "updateProfiles"),
@@ -40,7 +41,8 @@ public sealed class ServiceMessageContractTests
     {
         string[] expected =
         [
-            "Revision", "DeviceVerified", "WritesBlocked", "Conflicts", "Message",
+            "Revision", "DeviceVerified", "WritesBlocked", "PotentialControllers",
+            "ControllerDetectionWarning", "ExternalChanges", "Message",
             "Capabilities", "ConfirmedState", "Profiles", "DesiredState", "Telemetry",
             "PerformanceOverride", "FanOverride", "LightingOverride", "FullChargeOverride",
         ];
@@ -50,6 +52,14 @@ public sealed class ServiceMessageContractTests
             typeof(ServiceStatusSnapshot).GetProperties().Select(property => property.Name).Order());
         Assert.Equal(typeof(DeviceCapabilities), typeof(ServiceStatusSnapshot).GetProperty("Capabilities")!.PropertyType);
         Assert.Equal(typeof(ConfirmedDeviceState), typeof(ServiceStatusSnapshot).GetProperty("ConfirmedState")!.PropertyType);
+    }
+
+    [Fact]
+    public void DeviceSubsystem_DeclaresOnlyTheClosedControlPlaneSubsystems()
+    {
+        Assert.Equal(
+            ["Performance", "Fans", "Battery", "Lighting"],
+            Enum.GetNames<DeviceSubsystem>());
     }
 
     [Fact]

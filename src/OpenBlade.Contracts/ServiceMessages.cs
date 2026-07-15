@@ -14,6 +14,7 @@ public sealed record ControlOperationResult(ControlOperationStatus Status, strin
 
 [JsonPolymorphic(TypeDiscriminatorPropertyName = "operation")]
 [JsonDerivedType(typeof(GetStatusRequest), "getStatus")]
+[JsonDerivedType(typeof(ObserveStateRequest), "observeState")]
 [JsonDerivedType(typeof(SubscribeStatusRequest), "subscribeStatus")]
 [JsonDerivedType(typeof(ExportDiagnosticsRequest), "exportDiagnostics")]
 [JsonDerivedType(typeof(UpdateProfilesRequest), "updateProfiles")]
@@ -25,6 +26,9 @@ public sealed record ControlOperationResult(ControlOperationStatus Status, strin
 public abstract record ServiceRequest(int Version, Guid RequestId);
 
 public sealed record GetStatusRequest(int Version, Guid RequestId)
+    : ServiceRequest(Version, RequestId);
+
+public sealed record ObserveStateRequest(int Version, Guid RequestId)
     : ServiceRequest(Version, RequestId);
 
 public sealed record SubscribeStatusRequest(int Version, Guid RequestId)
@@ -67,7 +71,9 @@ public sealed record ServiceStatusSnapshot(
     long Revision,
     bool DeviceVerified,
     bool WritesBlocked,
-    IReadOnlyList<string> Conflicts,
+    IReadOnlyList<string> PotentialControllers,
+    string? ControllerDetectionWarning,
+    IReadOnlyList<DeviceSubsystem> ExternalChanges,
     string Message,
     DeviceCapabilities? Capabilities,
     ConfirmedDeviceState? ConfirmedState,

@@ -6,7 +6,7 @@ namespace OpenBlade.Contracts;
 
 public static class OpenBladeIpc
 {
-    public const int ProtocolVersion = 2;
+    public const int ProtocolVersion = 3;
     public const int MaximumMessageBytes = 64 * 1024;
     public const int MaximumDiagnosticArchiveBytes = 32 * 1024;
     public const string PipeName = "OpenBlade.Service.v2";
@@ -134,6 +134,7 @@ public static class IpcMessageCodec
         bool validBody = request switch
         {
             GetStatusRequest => true,
+            ObserveStateRequest => true,
             SubscribeStatusRequest => true,
             ExportDiagnosticsRequest => true,
             UpdateProfilesRequest update => update.Profiles is not null,
@@ -215,7 +216,8 @@ public static class IpcMessageCodec
     {
         if (status is null
             || status.Revision < 0
-            || status.Conflicts is null
+            || status.PotentialControllers is null
+            || status.ExternalChanges is null
             || status.Message is null
             || status.Profiles is null
             || status.DesiredState is null
@@ -224,9 +226,18 @@ public static class IpcMessageCodec
             return false;
         }
 
-        return status.Conflicts.SequenceEqual(
-            status.Conflicts.OrderBy(conflict => conflict, StringComparer.Ordinal),
-            StringComparer.Ordinal);
+        return status.PotentialControllers.Count <= 16
+            && status.PotentialControllers.Distinct(StringComparer.Ordinal).Count()
+                == status.PotentialControllers.Count
+            && status.PotentialControllers.SequenceEqual(
+                status.PotentialControllers.OrderBy(
+                    controller => controller,
+                    StringComparer.Ordinal),
+                StringComparer.Ordinal)
+            && status.ExternalChanges.Count <= 4
+            && status.ExternalChanges.All(Enum.IsDefined)
+            && status.ExternalChanges.Distinct().Count() == status.ExternalChanges.Count
+            && status.ExternalChanges.SequenceEqual(status.ExternalChanges.Order());
     }
 
     private static void ValidateVersion(int version)
