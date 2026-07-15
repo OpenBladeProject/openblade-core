@@ -19,12 +19,32 @@ public interface ISetupPayloadFileSystem
 
 public sealed class WindowsSetupPayloadFileSystem : ISetupPayloadFileSystem
 {
+    private const int CopyBufferSize = 128 * 1024;
+
     public bool DirectoryExists(string path) => Directory.Exists(path);
     public FileAttributes GetAttributes(string path) => File.GetAttributes(path);
     public IEnumerable<string> EnumerateFiles(string path) => Directory.EnumerateFiles(path);
     public IEnumerable<string> EnumerateDirectories(string path) => Directory.EnumerateDirectories(path);
     public void CreateDirectory(string path) => Directory.CreateDirectory(path);
-    public void CopyFile(string source, string destination) => File.Copy(source, destination, overwrite: false);
+    public void CopyFile(string source, string destination)
+    {
+        using FileStream sourceStream = new(
+            source,
+            FileMode.Open,
+            FileAccess.Read,
+            FileShare.Read,
+            CopyBufferSize,
+            FileOptions.SequentialScan);
+        using FileStream destinationStream = new(
+            destination,
+            FileMode.CreateNew,
+            FileAccess.Write,
+            FileShare.None,
+            CopyBufferSize,
+            FileOptions.WriteThrough);
+        sourceStream.CopyTo(destinationStream, CopyBufferSize);
+        destinationStream.Flush(flushToDisk: true);
+    }
     public long GetFileLength(string path) => new FileInfo(path).Length;
     public Stream OpenRead(string path) => File.Open(path, FileMode.Open, FileAccess.Read, FileShare.Read);
     public void MoveDirectory(string source, string destination) => Directory.Move(source, destination);
@@ -78,6 +98,8 @@ public sealed class SetupPayloadTransaction : ISetupPayloadTransaction
     public bool IsActivated => state is TransactionState.BackupMoved
         or TransactionState.Active
         or TransactionState.RestoreFailed;
+
+    public string? CommitWarning { get; private set; }
 
     public static async Task<ISetupPayloadTransaction> StageAsync(
         SetupPaths paths,
@@ -237,9 +259,10 @@ public sealed class SetupPayloadTransaction : ISetupPayloadTransaction
             }
             catch (Exception exception)
             {
-                Trace.TraceWarning(
-                    "OpenBlade setup committed the verified payload, but could not remove backup '{0}': {1}",
-                    backupDirectory,
+                CommitWarning = CreateBoundedCommitWarning(backupDirectory);
+                TraceWarningNoThrow(
+                    "{0} Cleanup detail: {1}",
+                    CommitWarning,
                     exception.Message);
             }
         }
@@ -295,8 +318,18 @@ public sealed class SetupPayloadTransaction : ISetupPayloadTransaction
     {
         if (state == TransactionState.Staged && files.DirectoryExists(stagingDirectory))
         {
-            DeleteTransactionDirectory(files, paths, stagingDirectory);
-            state = TransactionState.RolledBack;
+            try
+            {
+                DeleteTransactionDirectory(files, paths, stagingDirectory);
+                state = TransactionState.RolledBack;
+            }
+            catch (Exception exception)
+            {
+                TraceWarningNoThrow(
+                    "OpenBlade setup retained guarded staging directory '{0}' after best-effort disposal cleanup failed: {1}",
+                    stagingDirectory,
+                    exception.Message);
+            }
         }
 
         return ValueTask.CompletedTask;
@@ -543,6 +576,29 @@ public sealed class SetupPayloadTransaction : ISetupPayloadTransaction
 
     private static string NormalizeRelativePath(string relativePath) =>
         relativePath.Replace(Path.AltDirectorySeparatorChar, Path.DirectorySeparatorChar);
+
+    private static string CreateBoundedCommitWarning(string retainedBackup)
+    {
+        string warning =
+            $"OpenBlade was updated successfully, but backup cleanup failed. "
+            + $"The guarded rollback directory was retained at '{retainedBackup}'.";
+        return warning.Length <= 512
+            ? warning
+            : "OpenBlade was updated successfully, but backup cleanup failed. "
+                + "A guarded OpenBlade.rollback directory was retained under Program Files for manual inspection.";
+    }
+
+    private static void TraceWarningNoThrow(string format, params object?[] arguments)
+    {
+        try
+        {
+            Trace.TraceWarning(format, arguments);
+        }
+        catch
+        {
+            // Cleanup and committed-state reporting must never replace the primary setup result.
+        }
+    }
 
     private sealed record PayloadEntry(string RelativePath, long Length, string Sha256)
     {

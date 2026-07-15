@@ -6,6 +6,7 @@ public interface ISetupPayloadTransaction : IAsyncDisposable
 {
     bool HadExistingInstall { get; }
     bool IsActivated { get; }
+    string? CommitWarning { get; }
     Task ActivateAsync(CancellationToken cancellationToken);
     Task CommitAsync(CancellationToken cancellationToken);
     Task RollbackAsync(CancellationToken cancellationToken);
@@ -68,6 +69,10 @@ public sealed class SetupCommandRunner(ISetupPlatform platform)
                 await platform.VerifyServiceHealthAsync(cancellationToken);
                 await platform.InstallStartupShortcutAsync(cancellationToken);
                 await transaction.CommitAsync(cancellationToken);
+                if (!string.IsNullOrWhiteSpace(transaction.CommitWarning))
+                {
+                    Console.Error.WriteLine(transaction.CommitWarning);
+                }
                 return 0;
             }
             catch (Exception failure)
@@ -100,7 +105,7 @@ public sealed class SetupCommandRunner(ISetupPlatform platform)
 
                 await RecoverAsync(() => transaction.RollbackAsync(recoveryToken), recoveryFailures);
 
-                if (mutationStarted && transaction.HadExistingInstall)
+                if (mutationStarted)
                 {
                     if (priorLifecycle?.Service is { Existed: true } priorService)
                     {
@@ -108,17 +113,15 @@ public sealed class SetupCommandRunner(ISetupPlatform platform)
                             () => platform.RestoreServiceInstallStateAsync(priorService, recoveryToken),
                             recoveryFailures);
                     }
+                    else if (!wasActivated)
+                    {
+                        await RecoverAsync(() => platform.RemoveServiceAsync(recoveryToken), recoveryFailures);
+                    }
 
                     if (priorLifecycle?.Startup is { ShortcutExisted: true })
                     {
                         await RecoverAsync(() => platform.InstallStartupShortcutAsync(recoveryToken), recoveryFailures);
                     }
-                }
-                else if (mutationStarted
-                    && !wasActivated
-                    && priorLifecycle?.Service is not { Existed: true })
-                {
-                    await RecoverAsync(() => platform.RemoveServiceAsync(recoveryToken), recoveryFailures);
                 }
 
                 if (recoveryFailures.Count > 0)

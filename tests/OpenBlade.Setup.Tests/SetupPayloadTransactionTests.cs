@@ -1,4 +1,6 @@
+using System.Security.AccessControl;
 using System.Security.Cryptography;
+using System.Security.Principal;
 using OpenBlade.Setup;
 
 namespace OpenBlade.Setup.Tests;
@@ -56,6 +58,62 @@ public sealed class SetupPayloadTransactionTests
         Assert.Empty(Directory.GetDirectories(tree.ProgramFiles, "OpenBlade.installing.*"));
         Assert.Empty(Directory.GetDirectories(tree.ProgramFiles, "OpenBlade.rollback.*"));
         Assert.Empty(Directory.GetDirectories(tree.ProgramFiles, "OpenBlade.failed.*"));
+    }
+
+    [Fact]
+    public async Task StagePayload_ServiceExecutableIsStreamCreatedAndInheritsDestinationAcl()
+    {
+        using TestTree tree = new();
+        tree.CreateCompletePayload();
+        string source = Path.Combine(tree.Payload, "OpenBlade.Service.exe");
+        SecurityIdentifier sourceOnlySid = new("S-1-5-21-1111111111-2222222222-3333333333-4444");
+        FileInfo sourceFile = new(source);
+        FileSecurity sourceSecurity = sourceFile.GetAccessControl();
+        sourceSecurity.AddAccessRule(new FileSystemAccessRule(
+            sourceOnlySid,
+            FileSystemRights.Modify,
+            AccessControlType.Allow));
+        sourceFile.SetAccessControl(sourceSecurity);
+        Assert.Contains(
+            sourceFile.GetAccessControl()
+                .GetAccessRules(includeExplicit: true, includeInherited: true, typeof(SecurityIdentifier))
+                .Cast<FileSystemAccessRule>(),
+            rule => rule.IdentityReference == sourceOnlySid
+                && !rule.IsInherited
+                && (rule.FileSystemRights & FileSystemRights.Modify) != 0);
+
+        SecurityIdentifier currentUser = WindowsIdentity.GetCurrent().User
+            ?? throw new InvalidOperationException("Current user SID unavailable for ACL test.");
+        DirectoryInfo destinationParent = new(tree.ProgramFiles);
+        DirectorySecurity parentSecurity = destinationParent.GetAccessControl();
+        parentSecurity.SetAccessRuleProtection(isProtected: true, preserveInheritance: false);
+        parentSecurity.AddAccessRule(new FileSystemAccessRule(
+            currentUser,
+            FileSystemRights.FullControl,
+            InheritanceFlags.ContainerInherit | InheritanceFlags.ObjectInherit,
+            PropagationFlags.None,
+            AccessControlType.Allow));
+        destinationParent.SetAccessControl(parentSecurity);
+
+        await using ISetupPayloadTransaction transaction =
+            await tree.CreatePlatform().StagePayloadAsync(CancellationToken.None);
+        await transaction.ActivateAsync(CancellationToken.None);
+
+        string installed = Path.Combine(tree.Install, "OpenBlade.Service.exe");
+        FileSecurity installedSecurity = new FileInfo(installed).GetAccessControl();
+        FileSystemAccessRule[] rules = installedSecurity
+            .GetAccessRules(includeExplicit: true, includeInherited: true, typeof(SecurityIdentifier))
+            .Cast<FileSystemAccessRule>()
+            .ToArray();
+        Assert.DoesNotContain(rules, rule => rule.IdentityReference == sourceOnlySid);
+        Assert.Contains(rules, rule =>
+            rule.IdentityReference == currentUser
+            && rule.IsInherited
+            && (rule.FileSystemRights & FileSystemRights.FullControl) == FileSystemRights.FullControl);
+        Assert.False(installedSecurity.AreAccessRulesProtected);
+        Assert.Equal(File.ReadAllBytes(source), File.ReadAllBytes(installed));
+
+        await transaction.RollbackAsync(CancellationToken.None);
     }
 
     [Fact]
@@ -210,9 +268,54 @@ public sealed class SetupPayloadTransactionTests
 
         Assert.Equal(expected, ReadManifest(tree.Install));
         Assert.False(transaction.IsActivated);
+        Assert.NotNull(transaction.CommitWarning);
+        Assert.Contains("rollback", transaction.CommitWarning, StringComparison.OrdinalIgnoreCase);
+        Assert.True(transaction.CommitWarning.Length <= 512);
         await Assert.ThrowsAsync<InvalidOperationException>(
             () => transaction.RollbackAsync(CancellationToken.None));
         Assert.Single(Directory.GetDirectories(tree.ProgramFiles, "OpenBlade.rollback.*"));
+    }
+
+    [Fact]
+    public async Task Dispose_UnactivatedStagingCleanupFailureIsBestEffortAndRetainsSibling()
+    {
+        using TestTree tree = new();
+        tree.CreateCompletePayload();
+        DelegatingPayloadFileSystem files = new()
+        {
+            DeleteFailure = path => path.Contains(".installing.", StringComparison.OrdinalIgnoreCase)
+                ? new IOException("injected disposal cleanup failure")
+                : null,
+        };
+        ISetupPayloadTransaction transaction =
+            await tree.CreatePlatform(files).StagePayloadAsync(CancellationToken.None);
+
+        await transaction.DisposeAsync();
+
+        Assert.Single(Directory.GetDirectories(tree.ProgramFiles, "OpenBlade.installing.*"));
+    }
+
+    [Fact]
+    public async Task Runner_OriginalAndRollbackFailuresSurviveRealTransactionDisposeCleanupRetry()
+    {
+        using TestTree tree = new();
+        tree.CreateCompletePayload();
+        DelegatingPayloadFileSystem files = new()
+        {
+            DeleteFailure = path => path.Contains(".installing.", StringComparison.OrdinalIgnoreCase)
+                ? new IOException("staging cleanup failed")
+                : null,
+        };
+        ISetupPayloadTransaction transaction =
+            await tree.CreatePlatform(files).StagePayloadAsync(CancellationToken.None);
+        SetupCommandRunner runner = new(new CaptureFailingSetupPlatform(transaction));
+
+        AggregateException failure = await Assert.ThrowsAsync<AggregateException>(
+            () => runner.RunAsync(["install"], CancellationToken.None));
+
+        Assert.Equal("lifecycle capture failed", failure.InnerExceptions[0].Message);
+        Assert.Contains(failure.InnerExceptions, exception => exception.Message == "staging cleanup failed");
+        Assert.Single(Directory.GetDirectories(tree.ProgramFiles, "OpenBlade.installing.*"));
     }
 
     [Fact]
@@ -458,5 +561,37 @@ public sealed class SetupPayloadTransactionTests
 
             inner.DeleteDirectory(path);
         }
+    }
+
+    private sealed class CaptureFailingSetupPlatform(ISetupPayloadTransaction transaction) : ISetupPlatform
+    {
+        public string CurrentUserSid => throw new NotSupportedException();
+
+        public Task<ISetupPayloadTransaction> StagePayloadAsync(CancellationToken cancellationToken) =>
+            Task.FromResult(transaction);
+
+        public Task<SetupInstallLifecycleState> CaptureInstallLifecycleStateAsync(
+            CancellationToken cancellationToken) =>
+            Task.FromException<SetupInstallLifecycleState>(
+                new InvalidOperationException("lifecycle capture failed"));
+
+        public Task PrepareServiceForInstallAsync(CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
+
+        public Task RestoreServiceInstallStateAsync(
+            SetupServiceInstallState priorState,
+            CancellationToken cancellationToken) => throw new NotSupportedException();
+
+        public Task WriteAuthorizedUserSidAsync(string sid, CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
+
+        public Task InstallServiceAsync(CancellationToken cancellationToken) => throw new NotSupportedException();
+        public Task VerifyServiceHealthAsync(CancellationToken cancellationToken) => throw new NotSupportedException();
+        public Task InstallStartupShortcutAsync(CancellationToken cancellationToken) => throw new NotSupportedException();
+        public Task RemoveStartupShortcutAsync(CancellationToken cancellationToken) => throw new NotSupportedException();
+        public Task RemoveServiceAsync(CancellationToken cancellationToken) => throw new NotSupportedException();
+        public Task StopTrayAsync(CancellationToken cancellationToken) => throw new NotSupportedException();
+        public Task RemoveBinariesAsync(CancellationToken cancellationToken) => throw new NotSupportedException();
+        public Task RemoveDataAsync(CancellationToken cancellationToken) => throw new NotSupportedException();
     }
 }

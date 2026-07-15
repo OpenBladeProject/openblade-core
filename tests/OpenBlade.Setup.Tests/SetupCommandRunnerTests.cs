@@ -87,6 +87,7 @@ public sealed class SetupCommandRunnerTests
         RecordingSetupPlatform platform = new()
         {
             FailurePoint = "service-health",
+            ShortcutExisted = false,
             Transaction = new RecordingPayloadTransaction(hadExistingInstall: false),
         };
 
@@ -155,7 +156,32 @@ public sealed class SetupCommandRunnerTests
             () => new SetupCommandRunner(platform).RunAsync(["install"], CancellationToken.None));
 
         Assert.DoesNotContain("service-remove", platform.Operations);
-        Assert.Contains("payload-rollback", platform.Operations);
+        AssertEndsWith(platform.Operations, ["payload-rollback", "service-restore", "shortcut-install"]);
+        Assert.True(platform.ServiceRegistered);
+        Assert.True(platform.ServiceRunning);
+        Assert.True(platform.ShortcutPresent);
+    }
+
+    [Fact]
+    public async Task Install_NoOldBinaryTreePriorStoppedService_RemainsRegisteredStoppedAndRestoresShortcut()
+    {
+        RecordingSetupPlatform platform = new()
+        {
+            ServiceExists = true,
+            ServiceWasRunning = false,
+            ShortcutExisted = true,
+            FailurePoint = "tray-stop",
+            Transaction = new RecordingPayloadTransaction(hadExistingInstall: false),
+        };
+
+        await Assert.ThrowsAsync<InvalidOperationException>(
+            () => new SetupCommandRunner(platform).RunAsync(["install"], CancellationToken.None));
+
+        AssertEndsWith(platform.Operations, ["payload-rollback", "service-restore", "shortcut-install"]);
+        Assert.True(platform.ServiceRegistered);
+        Assert.False(platform.ServiceRunning);
+        Assert.True(platform.ShortcutPresent);
+        Assert.DoesNotContain("service-remove", platform.Operations);
     }
 
     [Fact]
@@ -176,6 +202,53 @@ public sealed class SetupCommandRunnerTests
         Assert.Equal("service-health failed", failure.InnerExceptions[0].Message);
         Assert.Contains(failure.InnerExceptions, exception => exception.Message == "rollback failed");
         Assert.DoesNotContain("data-remove", platform.Operations);
+    }
+
+    [Fact]
+    public async Task Install_RollbackAndDisposeCleanupFailures_DoNotMaskOriginalFailure()
+    {
+        RecordingPayloadTransaction transaction = new(
+            hadExistingInstall: true,
+            rollbackFailure: new IOException("rollback cleanup failed"),
+            disposeCleanupFailure: new IOException("dispose cleanup failed"));
+        RecordingSetupPlatform platform = new()
+        {
+            FailurePoint = "lifecycle-capture",
+            Transaction = transaction,
+        };
+
+        AggregateException failure = await Assert.ThrowsAsync<AggregateException>(
+            () => new SetupCommandRunner(platform).RunAsync(["install"], CancellationToken.None));
+
+        Assert.Equal("lifecycle-capture failed", failure.InnerExceptions[0].Message);
+        Assert.Contains(failure.InnerExceptions, exception => exception.Message == "rollback cleanup failed");
+        Assert.True(transaction.DisposeCleanupFailureObserved);
+        Assert.DoesNotContain(failure.InnerExceptions, exception => exception.Message == "dispose cleanup failed");
+    }
+
+    [Fact]
+    public async Task Install_CommittedCleanupWarning_IsOperatorVisibleWithoutRollback()
+    {
+        const string warning = "OpenBlade updated; guarded rollback directory retained.";
+        RecordingSetupPlatform platform = new()
+        {
+            Transaction = new RecordingPayloadTransaction(false, commitWarning: warning),
+        };
+        StringWriter errors = new();
+        TextWriter original = Console.Error;
+        Console.SetError(errors);
+        try
+        {
+            int exitCode = await new SetupCommandRunner(platform).RunAsync(["install"], CancellationToken.None);
+
+            Assert.Equal(0, exitCode);
+            Assert.Contains(warning, errors.ToString(), StringComparison.Ordinal);
+            Assert.DoesNotContain("payload-rollback", platform.Operations);
+        }
+        finally
+        {
+            Console.SetError(original);
+        }
     }
 
     [Fact]
@@ -261,6 +334,14 @@ public sealed class SetupCommandRunnerTests
         public string? FailurePoint { get; set; }
         public CancellationTokenSource? Cancellation { get; init; }
         public RecordingPayloadTransaction Transaction { get; init; } = new(hadExistingInstall: false);
+        private bool lifecycleInitialized;
+        private bool serviceRegistered;
+        private bool serviceRunning;
+        private bool shortcutPresent;
+
+        public bool ServiceRegistered => serviceRegistered;
+        public bool ServiceRunning => serviceRunning;
+        public bool ShortcutPresent => shortcutPresent;
 
         public string CurrentUserSid => "S-1-5-21-test";
 
@@ -284,13 +365,22 @@ public sealed class SetupCommandRunnerTests
                     new InvalidOperationException("lifecycle-capture failed"));
             }
 
+            if (!lifecycleInitialized)
+            {
+                serviceRegistered = ServiceExists;
+                serviceRunning = ServiceExists && ServiceWasRunning;
+                shortcutPresent = ShortcutExisted;
+                lifecycleInitialized = true;
+            }
+
             return Task.FromResult(new SetupInstallLifecycleState(
-                new(ServiceExists, ServiceExists && ServiceWasRunning),
-                new(ShortcutExisted)));
+                new(serviceRegistered, serviceRunning),
+                new(shortcutPresent)));
         }
 
         public Task PrepareServiceForInstallAsync(CancellationToken cancellationToken)
         {
+            serviceRunning = false;
             if (Operations.Contains("payload-activate"))
             {
                 CleanupTokens.Add(cancellationToken);
@@ -300,7 +390,12 @@ public sealed class SetupCommandRunnerTests
 
         public Task RestoreServiceInstallStateAsync(
             SetupServiceInstallState priorState,
-            CancellationToken cancellationToken) => AddAsync("service-restore", cancellationToken);
+            CancellationToken cancellationToken)
+        {
+            serviceRegistered = priorState.Existed;
+            serviceRunning = priorState.Existed && priorState.WasRunning;
+            return AddAsync("service-restore", cancellationToken);
+        }
 
         public Task WriteAuthorizedUserSidAsync(string sid, CancellationToken cancellationToken)
         {
@@ -314,11 +409,29 @@ public sealed class SetupCommandRunnerTests
             return Task.CompletedTask;
         }
 
-        public Task InstallServiceAsync(CancellationToken cancellationToken) => AddAsync("service-install", cancellationToken);
+        public Task InstallServiceAsync(CancellationToken cancellationToken)
+        {
+            serviceRegistered = true;
+            serviceRunning = true;
+            return AddAsync("service-install", cancellationToken);
+        }
         public Task VerifyServiceHealthAsync(CancellationToken cancellationToken) => AddAsync("service-health", cancellationToken);
-        public Task InstallStartupShortcutAsync(CancellationToken cancellationToken) => AddAsync("shortcut-install", cancellationToken);
-        public Task RemoveStartupShortcutAsync(CancellationToken cancellationToken) => AddAsync("shortcut-remove", cancellationToken);
-        public Task RemoveServiceAsync(CancellationToken cancellationToken) => AddAsync("service-remove", cancellationToken);
+        public Task InstallStartupShortcutAsync(CancellationToken cancellationToken)
+        {
+            shortcutPresent = true;
+            return AddAsync("shortcut-install", cancellationToken);
+        }
+        public Task RemoveStartupShortcutAsync(CancellationToken cancellationToken)
+        {
+            shortcutPresent = false;
+            return AddAsync("shortcut-remove", cancellationToken);
+        }
+        public Task RemoveServiceAsync(CancellationToken cancellationToken)
+        {
+            serviceRegistered = false;
+            serviceRunning = false;
+            return AddAsync("service-remove", cancellationToken);
+        }
         public Task StopTrayAsync(CancellationToken cancellationToken) => AddAsync("tray-stop", cancellationToken);
         public Task RemoveBinariesAsync(CancellationToken cancellationToken) => AddAsync("binaries-remove", cancellationToken);
         public Task RemoveDataAsync(CancellationToken cancellationToken) => AddAsync("data-remove", cancellationToken);
@@ -343,11 +456,15 @@ public sealed class SetupCommandRunnerTests
 
     private sealed class RecordingPayloadTransaction(
         bool hadExistingInstall,
-        Exception? rollbackFailure = null) : ISetupPayloadTransaction
+        Exception? rollbackFailure = null,
+        string? commitWarning = null,
+        Exception? disposeCleanupFailure = null) : ISetupPayloadTransaction
     {
         public List<string> Operations { private get; set; } = [];
         public bool HadExistingInstall => hadExistingInstall;
         public bool IsActivated { get; private set; }
+        public string? CommitWarning => commitWarning;
+        public bool DisposeCleanupFailureObserved { get; private set; }
 
         public Task ActivateAsync(CancellationToken cancellationToken)
         {
@@ -370,6 +487,17 @@ public sealed class SetupCommandRunnerTests
             return rollbackFailure is null ? Task.CompletedTask : Task.FromException(rollbackFailure);
         }
 
-        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+        public ValueTask DisposeAsync()
+        {
+            if (disposeCleanupFailure is not null)
+            {
+                DisposeCleanupFailureObserved = true;
+                System.Diagnostics.Trace.TraceWarning(
+                    "Best-effort fake cleanup retained staging: {0}",
+                    disposeCleanupFailure.Message);
+            }
+
+            return ValueTask.CompletedTask;
+        }
     }
 }
