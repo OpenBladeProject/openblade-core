@@ -81,6 +81,97 @@ public sealed class WinUiShellContractTests
             "The setup event, tray command, and shared method must all reference ExitTrayAsync().");
     }
 
+    [Fact]
+    public void RuntimeThemeUsesRootRequestedThemeWithoutLegacyThemeWatchers()
+    {
+        string themeManager = ReadRepositoryFile("src", "OpenBlade.Tray", "ThemeManager.cs");
+        Assert.Contains("ThemeSelectionPolicy.Resolve", themeManager, StringComparison.Ordinal);
+        Assert.Contains("root.RequestedTheme", themeManager, StringComparison.Ordinal);
+
+        string appXaml = ReadRepositoryFile("src", "OpenBlade.Tray", "App.xaml");
+        Assert.DoesNotContain("RequestedTheme", appXaml, StringComparison.Ordinal);
+
+        string trayRoot = Path.GetDirectoryName(ProjectPath)!;
+        foreach (string file in Directory.EnumerateFiles(trayRoot, "*", SearchOption.AllDirectories)
+                     .Where(path => (path.EndsWith(".cs") || path.EndsWith(".xaml"))
+                         && !path.Contains($"{Path.DirectorySeparatorChar}bin{Path.DirectorySeparatorChar}")
+                         && !path.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}")))
+        {
+            string source = File.ReadAllText(file);
+            Assert.DoesNotContain("Microsoft.Win32", source, StringComparison.Ordinal);
+            Assert.DoesNotContain("SystemEvents", source, StringComparison.Ordinal);
+            Assert.DoesNotContain("UISettings", source, StringComparison.Ordinal);
+            Assert.DoesNotContain("ColorValuesChanged", source, StringComparison.Ordinal);
+            Assert.DoesNotContain("Application.RequestedTheme", source, StringComparison.Ordinal);
+        }
+    }
+
+    [Fact]
+    public void MainWindowLoadsThemeBeforeWatchingAndOwnsPreferenceSaveLifetime()
+    {
+        string source = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml.cs");
+        Assert.Contains("Environment.SpecialFolder.LocalApplicationData", source, StringComparison.Ordinal);
+        Assert.Contains("\"OpenBlade\"", source, StringComparison.Ordinal);
+        Assert.Contains("\"preferences.json\"", source, StringComparison.Ordinal);
+        Assert.Contains("ViewModel.PropertyChanged += OnViewModelPropertyChanged", source, StringComparison.Ordinal);
+        Assert.Contains("ViewModel.PropertyChanged -= OnViewModelPropertyChanged", source, StringComparison.Ordinal);
+        Assert.Contains("preferenceSaveQueue.Enqueue", source, StringComparison.Ordinal);
+        Assert.Contains("await preferenceSaveQueue.DisposeAsync()", source, StringComparison.Ordinal);
+
+        int load = source.IndexOf("await preferenceStore.LoadAsync", StringComparison.Ordinal);
+        int apply = source.IndexOf("ThemeManager.Apply", StringComparison.Ordinal);
+        int subscribe = source.IndexOf(
+            "ViewModel.PropertyChanged += OnViewModelPropertyChanged",
+            StringComparison.Ordinal);
+        int watch = source.IndexOf("await ViewModel.StartAsync()", StringComparison.Ordinal);
+        Assert.True(load >= 0 && load < apply && apply < subscribe && subscribe < watch);
+
+        string app = ReadRepositoryFile("src", "OpenBlade.Tray", "App.xaml.cs");
+        Assert.Contains(
+            "windowInitializationTask = mainWindow.InitializeAsync()",
+            app,
+            StringComparison.Ordinal);
+        Assert.Contains("await windowInitializationTask", app, StringComparison.Ordinal);
+        Assert.True(
+            app.IndexOf("await windowInitializationTask", StringComparison.Ordinal)
+            < app.LastIndexOf("exitLifecycle.TryRunWhileActive", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void ActivationAndSetupShutdownEndpointsExistWhileInitializationIsPending()
+    {
+        string app = ReadRepositoryFile("src", "OpenBlade.Tray", "App.xaml.cs");
+        int initializationAwait = app.IndexOf(
+            "await windowInitializationTask",
+            StringComparison.Ordinal);
+        int exitLifecycle = app.IndexOf("exitLifecycle = new TrayExitLifecycle", StringComparison.Ordinal);
+        int setupShutdown = app.IndexOf("shutdownRegistration =", StringComparison.Ordinal);
+        int trayIcon = app.IndexOf("trayIconHost =", StringComparison.Ordinal);
+        int initialShow = app.LastIndexOf("ShowMainWindow();", StringComparison.Ordinal);
+        Assert.True(exitLifecycle >= 0 && exitLifecycle < initializationAwait);
+        Assert.True(setupShutdown >= 0 && setupShutdown < initializationAwait);
+        Assert.True(trayIcon >= 0 && trayIcon < initializationAwait);
+        Assert.True(exitLifecycle < initialShow);
+        Assert.True(setupShutdown < initialShow);
+        Assert.True(trayIcon < initialShow);
+        Assert.Contains("exitLifecycle.TryRunWhileActive", app, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void InitialPlacementUsesWindowDpiAndDisplayRelativeMoveAndResize()
+    {
+        string source = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml.cs");
+        Assert.Contains("WindowNative.GetWindowHandle(this)", source, StringComparison.Ordinal);
+        Assert.Contains("GetDpiForWindow", source, StringComparison.Ordinal);
+        Assert.Contains("DisplayArea.GetFromWindowId", source, StringComparison.Ordinal);
+        Assert.Contains("DisplayAreaFallback.Primary", source, StringComparison.Ordinal);
+        Assert.Contains("WindowPlacementPolicy.Center", source, StringComparison.Ordinal);
+        Assert.Contains("AppWindow.MoveAndResize(rect, displayArea)", source, StringComparison.Ordinal);
+        Assert.Contains("initialPlacementAttempted", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("Root.MinWidth", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("Root.MinHeight", source, StringComparison.Ordinal);
+    }
+
     private static string ProjectPath => GetProjectPath();
 
     private static string ReadRepositoryFile(params string[] segments) =>

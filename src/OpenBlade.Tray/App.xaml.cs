@@ -14,6 +14,7 @@ public partial class App : Microsoft.UI.Xaml.Application
     private MainWindow? mainWindow;
     private ITrayIconHost? trayIconHost;
     private TrayExitLifecycle? exitLifecycle;
+    private Task windowInitializationTask = Task.CompletedTask;
     private DispatcherQueue uiDispatcherQueue = null!;
 
     public bool ExitRequested => exitLifecycle?.ExitRequested == true;
@@ -40,6 +41,8 @@ public partial class App : Microsoft.UI.Xaml.Application
         }
 
         mainWindow = new MainWindow();
+        windowInitializationTask = mainWindow.InitializeAsync();
+
         exitLifecycle = new TrayExitLifecycle(
             new TrayExitSteps(
                 UnregisterShutdown: () =>
@@ -111,8 +114,21 @@ public partial class App : Microsoft.UI.Xaml.Application
         return exitLifecycle.ExitAsync();
     }
 
-    private void ShowMainWindow()
+    private void ShowMainWindow() => _ = ShowMainWindowWhenReadyAsync();
+
+    private async Task ShowMainWindowWhenReadyAsync()
     {
+        try
+        {
+            await windowInitializationTask;
+        }
+        catch (Exception exception)
+        {
+            Trace.TraceError(
+                "OpenBlade window initialization failed; continuing with the usable shell: {0}",
+                exception);
+        }
+
         if (exitLifecycle is null)
         {
             return;
