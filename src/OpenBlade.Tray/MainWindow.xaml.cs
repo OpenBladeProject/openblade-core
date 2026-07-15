@@ -1,101 +1,62 @@
-using System.Globalization;
-using System.ComponentModel;
-using System.IO;
-using System.Windows;
-using System.Windows.Data;
-using Microsoft.Win32;
+using Microsoft.UI.Windowing;
+using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Data;
 
 namespace OpenBlade.Tray;
 
-public partial class MainWindow : Window
+public sealed partial class MainWindow : Window, IAsyncDisposable
 {
-    private readonly MainViewModel viewModel;
-    private readonly UiPreferenceStore preferenceStore = new(Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-        "OpenBlade",
-        "preferences.json"));
+    private int disposed;
 
     public MainWindow()
     {
         InitializeComponent();
-        viewModel = new MainViewModel(
+        ViewModel = new MainViewModel(
             new ServiceClient(),
-            new WpfUiDispatcher(Dispatcher),
-            new DiagnosticArchiveSaver(new WpfDiagnosticArchiveDestination()));
-        DataContext = viewModel;
-        viewModel.PropertyChanged += OnViewModelPropertyChanged;
-        Loaded += OnLoaded;
-        Closing += OnClosing;
-        Closed += OnClosed;
-        SystemEvents.UserPreferenceChanged += OnUserPreferenceChanged;
+            new WinUiDispatcher(DispatcherQueue));
+        Root.DataContext = ViewModel;
+        Root.Loaded += OnLoaded;
+        AppWindow.Closing += OnClosing;
     }
 
-    private void OnUserPreferenceChanged(object sender, UserPreferenceChangedEventArgs e)
-    {
-        if (WindowsThemeChangePolicy.ShouldReapply(viewModel.Theme, e.Category))
-        {
-            Dispatcher.Invoke(() => ThemeManager.Apply(viewModel.Theme));
-        }
-    }
+    public MainViewModel ViewModel { get; }
 
-    private async void OnClosed(object? sender, EventArgs e)
-    {
-        SystemEvents.UserPreferenceChanged -= OnUserPreferenceChanged;
-        await viewModel.DisposeAsync();
-    }
+    public void ShowAndActivate() => AppWindow.Show(true);
 
-    private async void OnLoaded(object sender, RoutedEventArgs e)
+    public async ValueTask DisposeAsync()
     {
-        viewModel.Theme = (await preferenceStore.LoadAsync()).Theme;
-        ThemeManager.Apply(viewModel.Theme);
-        await viewModel.StartAsync();
-    }
-
-    private async void OnViewModelPropertyChanged(object? sender, PropertyChangedEventArgs e)
-    {
-        if (e.PropertyName != nameof(MainViewModel.Theme))
+        if (Interlocked.Exchange(ref disposed, 1) != 0)
         {
             return;
         }
 
-        ThemeManager.Apply(viewModel.Theme);
-        try
-        {
-            await preferenceStore.SaveAsync(new UiPreferences(viewModel.Theme));
-        }
-        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
-        {
-            // Appearance changes remain usable even when preferences cannot be persisted.
-        }
+        Root.Loaded -= OnLoaded;
+        AppWindow.Closing -= OnClosing;
+        await ViewModel.DisposeAsync();
     }
 
-    private void OnClosing(object? sender, CancelEventArgs e)
+    private async void OnLoaded(object sender, RoutedEventArgs args)
     {
-        bool exitRequested = System.Windows.Application.Current is App app && app.ExitRequested;
+        Root.Loaded -= OnLoaded;
+        await ViewModel.StartAsync();
+    }
+
+    private void OnClosing(AppWindow sender, AppWindowClosingEventArgs args)
+    {
+        bool exitRequested = Microsoft.UI.Xaml.Application.Current is App app && app.ExitRequested;
         if (WindowLifecyclePolicy.Decide(exitRequested) == WindowCloseDecision.Hide)
         {
-            e.Cancel = true;
-            Hide();
+            args.Cancel = true;
+            AppWindow.Hide();
         }
     }
-}
-
-public sealed class BooleanNegationConverter : IValueConverter
-{
-    public static BooleanNegationConverter Instance { get; } = new();
-
-    public object Convert(object value, Type targetType, object parameter, CultureInfo culture) =>
-        value is bool boolean && !boolean;
-
-    public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture) =>
-        throw new NotSupportedException();
 }
 
 public sealed class BooleanNegationToVisibilityConverter : IValueConverter
 {
-    public object Convert(object value, Type targetType, object parameter, CultureInfo culture) =>
+    public object Convert(object value, Type targetType, object parameter, string language) =>
         value is true ? Visibility.Collapsed : Visibility.Visible;
 
-    public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture) =>
+    public object ConvertBack(object value, Type targetType, object parameter, string language) =>
         throw new NotSupportedException();
 }

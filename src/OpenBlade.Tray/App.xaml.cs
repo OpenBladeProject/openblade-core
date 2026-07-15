@@ -1,23 +1,26 @@
-using System.Windows;
 using System.Security.Principal;
+using Microsoft.UI.Dispatching;
+using Microsoft.UI.Xaml;
 using OpenBlade.Contracts;
-using Forms = System.Windows.Forms;
 
 namespace OpenBlade.Tray;
 
-public partial class App : System.Windows.Application
+public partial class App : Microsoft.UI.Xaml.Application
 {
-    private Forms.NotifyIcon? trayIcon;
     private EventWaitHandle? shutdownEvent;
     private RegisteredWaitHandle? shutdownRegistration;
     private TrayInstanceCoordinator? instanceCoordinator;
-    private TrayMenuController? trayMenuController;
+    private MainWindow? mainWindow;
+    private ITrayIconHost? trayIconHost;
+    private Task? exitTask;
+    private DispatcherQueue uiDispatcherQueue = null!;
 
     public bool ExitRequested { get; private set; }
 
-    protected override void OnStartup(StartupEventArgs e)
+    protected override void OnLaunched(LaunchActivatedEventArgs args)
     {
-        base.OnStartup(e);
+        base.OnLaunched(args);
+        uiDispatcherQueue = DispatcherQueue.GetForCurrentThread();
 
         string executablePath = Environment.ProcessPath
             ?? throw new InvalidOperationException("Tray executable path is unavailable.");
@@ -28,15 +31,14 @@ public partial class App : System.Windows.Application
             userSid);
         if (!TrayInstanceCoordinator.TryStart(
             instanceEndpoint,
-            () => Dispatcher.BeginInvoke(ShowMainWindow),
+            () => Enqueue(ShowMainWindow),
             out instanceCoordinator))
         {
-            Shutdown();
+            Exit();
             return;
         }
 
-        MainWindow = new MainWindow();
-        MainWindow.Show();
+        mainWindow = new MainWindow();
 
         shutdownEvent = new EventWaitHandle(
             false,
@@ -44,83 +46,48 @@ public partial class App : System.Windows.Application
             TrayShutdownEndpoint.ForExecutablePath(executablePath));
         shutdownRegistration = ThreadPool.RegisterWaitForSingleObject(
             shutdownEvent,
-            (_, _) => Dispatcher.BeginInvoke(ExitTray),
+            (_, _) => Enqueue(() => _ = ExitTrayAsync()),
             null,
             Timeout.Infinite,
             executeOnlyOnce: true);
 
-        MainViewModel viewModel = (MainViewModel)MainWindow.DataContext;
-        trayMenuController = new TrayMenuController(viewModel, ShowMainWindow, ExitTray);
-        Forms.ContextMenuStrip menu = BuildTrayMenu(trayMenuController);
-        trayIcon = new Forms.NotifyIcon
-        {
-            Text = "OpenBlade",
-            Icon = System.Drawing.SystemIcons.Application,
-            ContextMenuStrip = menu,
-            Visible = true,
-        };
-        trayIcon.DoubleClick += (_, _) => ShowMainWindow();
+        var trayMenuController = new TrayMenuController(
+            mainWindow.ViewModel,
+            () => Enqueue(ShowMainWindow),
+            () => Enqueue(() => _ = ExitTrayAsync()));
+        trayIconHost = new WinFormsTrayIconHost(trayMenuController);
+        ShowMainWindow();
     }
 
-    protected override void OnExit(ExitEventArgs e)
+    public Task ExitTrayAsync() => exitTask ??= ExitTrayCoreAsync();
+
+    private async Task ExitTrayCoreAsync()
     {
-        instanceCoordinator?.DisposeAsync().AsTask().GetAwaiter().GetResult();
+        ExitRequested = true;
         shutdownRegistration?.Unregister(null);
         shutdownEvent?.Dispose();
-        if (trayIcon is not null)
+        trayIconHost?.Dispose();
+        if (mainWindow is not null)
         {
-            trayIcon.Visible = false;
-            trayIcon.Dispose();
+            await mainWindow.DisposeAsync();
+            mainWindow.Close();
         }
 
-        base.OnExit(e);
-    }
-
-    private void ShowMainWindow()
-    {
-        MainWindow?.Show();
-        MainWindow?.Activate();
-    }
-
-    private void ExitTray()
-    {
-        if (ExitRequested)
+        if (instanceCoordinator is not null)
         {
-            return;
+            await instanceCoordinator.DisposeAsync();
         }
 
-        ExitRequested = true;
-        MainWindow?.Close();
-        Shutdown();
+        Exit();
     }
 
-    private static Forms.ContextMenuStrip BuildTrayMenu(TrayMenuController controller)
+    private void ShowMainWindow() => mainWindow?.ShowAndActivate();
+
+    private void Enqueue(Action action)
     {
-        Forms.ContextMenuStrip menu = new();
-        var bindings = new List<(TrayMenuItem Model, Forms.ToolStripMenuItem View)>();
-        TrayMenuGroup? previousGroup = null;
-        foreach (TrayMenuItem item in controller.Items)
+        if (!uiDispatcherQueue.TryEnqueue(() => action()))
         {
-            if (previousGroup is not null && previousGroup != item.Group)
-            {
-                menu.Items.Add(new Forms.ToolStripSeparator());
-            }
-
-            TrayMenuItem captured = item;
-            var view = new Forms.ToolStripMenuItem(item.Label);
-            view.Click += (_, _) => captured.Invoke();
-            menu.Items.Add(view);
-            bindings.Add((item, view));
-            previousGroup = item.Group;
+            // Shutdown won the race; no UI work remains valid.
         }
-
-        menu.Opening += (_, _) =>
-        {
-            foreach ((TrayMenuItem model, Forms.ToolStripMenuItem view) in bindings)
-            {
-                view.Enabled = model.IsEnabled;
-            }
-        };
-        return menu;
     }
 }

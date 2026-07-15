@@ -1,265 +1,39 @@
-<Window x:Class="OpenBlade.Tray.MainWindow"
-        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        xmlns:contracts="clr-namespace:OpenBlade.Contracts;assembly=OpenBlade.Contracts"
-        xmlns:local="clr-namespace:OpenBlade.Tray"
-        Title="OpenBlade" Width="480" Height="720" MinWidth="430" MinHeight="620"
-        WindowStartupLocation="CenterScreen"
-        Background="{DynamicResource WindowBackgroundBrush}"
-        Foreground="{DynamicResource ForegroundBrush}">
-    <Window.Resources>
-        <BooleanToVisibilityConverter x:Key="BooleanToVisibility" />
-        <local:BooleanNegationToVisibilityConverter x:Key="BooleanNegationToVisibility" />
-        <Style TargetType="Button">
-            <Setter Property="Padding" Value="12,9" />
-            <Setter Property="Margin" Value="3" />
-            <Setter Property="Background" Value="{DynamicResource ButtonBrush}" />
-            <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}" />
-            <Setter Property="Foreground" Value="{DynamicResource ForegroundBrush}" />
-        </Style>
-        <Style TargetType="ComboBox">
-            <Setter Property="Padding" Value="7,5" />
-            <Setter Property="Margin" Value="3" />
-        </Style>
-        <Style TargetType="TextBlock">
-            <Setter Property="FontFamily" Value="Segoe UI Variable Text" />
-        </Style>
-        <Style x:Key="SectionLabel" TargetType="TextBlock">
-            <Setter Property="Foreground" Value="{DynamicResource MutedBrush}" />
-            <Setter Property="FontSize" Value="11" />
-            <Setter Property="FontWeight" Value="SemiBold" />
-            <Setter Property="Margin" Value="2,14,2,7" />
-        </Style>
-        <Style x:Key="Card" TargetType="Border">
-            <Setter Property="Background" Value="{DynamicResource CardBrush}" />
-            <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}" />
-            <Setter Property="BorderThickness" Value="1" />
-            <Setter Property="CornerRadius" Value="9" />
-            <Setter Property="Padding" Value="12" />
-            <Setter Property="Margin" Value="0,4" />
-        </Style>
-    </Window.Resources>
-
-    <Grid>
-        <Grid.RowDefinitions>
-            <RowDefinition Height="Auto" />
-            <RowDefinition Height="*" />
-            <RowDefinition Height="Auto" />
-        </Grid.RowDefinitions>
-
-        <Border Padding="18,15" Background="{DynamicResource HeaderBackgroundBrush}"
-                BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,0,0,1">
-            <Grid>
-                <StackPanel>
-                    <TextBlock Text="OpenBlade" FontSize="18" FontWeight="SemiBold"
-                               Foreground="{DynamicResource AccentBrush}" />
-                    <TextBlock Text="Razer Blade 16 · RZ09-0581" FontSize="11"
-                               Foreground="{DynamicResource MutedBrush}" />
+<Window
+    x:Class="OpenBlade.Tray.MainWindow"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:local="using:OpenBlade.Tray"
+    Title="OpenBlade">
+    <Grid x:Name="Root" Padding="20">
+        <Grid.Resources>
+            <local:BooleanNegationToVisibilityConverter x:Key="BooleanNegationToVisibility" />
+        </Grid.Resources>
+        <ScrollViewer>
+            <StackPanel Spacing="10">
+                <TextBlock Text="OpenBlade" FontSize="24" FontWeight="SemiBold" />
+                <TextBlock Text="Razer Blade controls" Opacity="0.7" />
+                <TextBlock Text="{Binding ConnectionStatus}" />
+                <TextBlock Text="{Binding OperationStatusMessage}" />
+                <Button Content="Silent" Command="{Binding SetPerformanceCommand}" />
+                <Button Content="Automatic fans" Command="{Binding SetFanModeCommand}" />
+                <Button Content="Apply charge limit" Command="{Binding SetChargeLimitCommand}" />
+                <Button Content="Charge to 100%"
+                        Command="{Binding ToggleFullChargeCommand}"
+                        CommandParameter="{Binding EnableFullChargeOverride}" />
+                <ComboBox ItemsSource="{Binding AvailablePerformancePresets}" />
+                <ComboBox ItemsSource="{Binding AvailableFanModes}" />
+                <StackPanel Visibility="{Binding IsLightingVisible, Converter={StaticResource BooleanNegationToVisibility}}">
+                    <TextBlock Text="Lighting controls unavailable" />
                 </StackPanel>
-                <StackPanel HorizontalAlignment="Right" VerticalAlignment="Center" MaxWidth="250">
-                    <TextBlock Text="{Binding ConnectionStatus}" FontSize="11"
-                               TextAlignment="Right" TextWrapping="Wrap"
-                               Foreground="{DynamicResource DangerBrush}" />
-                    <TextBlock Text="Hardware controls are fail-closed" FontSize="10"
-                               Foreground="{DynamicResource MutedBrush}" HorizontalAlignment="Right" />
-                </StackPanel>
-            </Grid>
-        </Border>
-
-        <TabControl Grid.Row="1" Margin="12" Background="Transparent" BorderThickness="0">
-            <TabItem Header="Dashboard">
-                <ScrollViewer VerticalScrollBarVisibility="Auto">
-                    <StackPanel Margin="5,4,5,14">
-                        <TextBlock Style="{StaticResource SectionLabel}" Text="ACTIVE PROFILE" />
-                        <UniformGrid Columns="3">
-                            <Button Content="Silent" Command="{Binding SetPerformanceCommand}"
-                                    CommandParameter="{x:Static contracts:PerformancePreset.Silent}" />
-                            <Button Content="Balanced" Command="{Binding SetPerformanceCommand}"
-                                    CommandParameter="{x:Static contracts:PerformancePreset.Balanced}" />
-                            <Button Content="Performance" Command="{Binding SetPerformanceCommand}"
-                                    CommandParameter="{x:Static contracts:PerformancePreset.Performance}" />
-                        </UniformGrid>
-                        <TextBlock Text="{Binding PerformanceSourceLabel}" FontSize="11" Margin="4,3"
-                                   Foreground="{DynamicResource MutedBrush}" />
-
-                        <TextBlock Style="{StaticResource SectionLabel}" Text="POWER &amp; COOLING" />
-                        <Border Style="{StaticResource Card}">
-                            <Grid>
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="*" />
-                                    <ColumnDefinition Width="Auto" />
-                                </Grid.ColumnDefinitions>
-                                <StackPanel VerticalAlignment="Center">
-                                    <TextBlock Text="Fans" FontWeight="SemiBold" />
-                                    <TextBlock Text="{Binding FanSourceLabel}" FontSize="11"
-                                               Foreground="{DynamicResource MutedBrush}" />
-                                </StackPanel>
-                                <StackPanel Grid.Column="1" Orientation="Horizontal">
-                                    <ComboBox x:Name="FanSelector" Width="120"
-                                              ItemsSource="{Binding AvailableFanModes}"
-                                              SelectedItem="{Binding SelectedFanMode, Mode=OneWay}" />
-                                    <Button Content="Apply" Command="{Binding SetFanModeCommand}"
-                                            CommandParameter="{Binding SelectedItem, ElementName=FanSelector}" />
-                                </StackPanel>
-                            </Grid>
-                        </Border>
-
-                        <TextBlock Style="{StaticResource SectionLabel}" Text="BATTERY" />
-                        <Border Style="{StaticResource Card}">
-                            <StackPanel>
-                                <Grid>
-                                    <TextBlock Text="Charge limit" FontWeight="SemiBold" />
-                                    <TextBlock HorizontalAlignment="Right" FontWeight="SemiBold">
-                                        <Run Text="{Binding ProfileChargeLimitEditor}" /><Run Text="%" />
-                                    </TextBlock>
-                                </Grid>
-                                <Slider Minimum="50" Maximum="80" TickFrequency="5"
-                                        IsSnapToTickEnabled="True" Margin="0,10,0,5"
-                                        Value="{Binding ProfileChargeLimitEditor, Mode=TwoWay}" />
-                                <Button Content="Apply charge limit" Command="{Binding SetChargeLimitCommand}"
-                                        CommandParameter="{Binding ProfileChargeLimitEditor}" />
-                                <Button Content="{Binding FullChargeActionLabel}"
-                                        Command="{Binding ToggleFullChargeCommand}"
-                                        CommandParameter="{Binding EnableFullChargeOverride}" />
-                                <TextBlock Text="Temporary full charge is active" Margin="4,3"
-                                           Foreground="{DynamicResource AccentBrush}"
-                                           Visibility="{Binding FullChargeOverride, Converter={StaticResource BooleanToVisibility}}" />
-                            </StackPanel>
-                        </Border>
-
-                        <TextBlock Style="{StaticResource SectionLabel}" Text="STATUS" />
-                        <Border Style="{StaticResource Card}">
-                            <StackPanel>
-                                <TextBlock Text="{Binding ActivePowerSourceLabel}" FontWeight="SemiBold" />
-                                <TextBlock Text="{Binding TelemetryStatus}" Margin="0,4,0,0" TextWrapping="Wrap" />
-                                <TextBlock Text="{Binding OperationStatusMessage}" Margin="0,6,0,0"
-                                           Foreground="{DynamicResource MutedBrush}" TextWrapping="Wrap" />
-                                <ItemsControl ItemsSource="{Binding ConflictNames}" Margin="0,6,0,0">
-                                    <ItemsControl.ItemTemplate>
-                                        <DataTemplate>
-                                            <TextBlock Text="{Binding StringFormat=Conflict: {0}}"
-                                                       Foreground="{DynamicResource DangerBrush}" />
-                                        </DataTemplate>
-                                    </ItemsControl.ItemTemplate>
-                                </ItemsControl>
-                            </StackPanel>
-                        </Border>
-                    </StackPanel>
-                </ScrollViewer>
-            </TabItem>
-
-            <TabItem Header="Lighting">
-                <ScrollViewer VerticalScrollBarVisibility="Auto">
-                    <StackPanel Margin="8,10">
-                        <TextBlock Style="{StaticResource SectionLabel}" Text="KEYBOARD EFFECT" />
-                        <Border Style="{StaticResource Card}"
-                                Visibility="{Binding IsLightingVisible, Converter={StaticResource BooleanToVisibility}}">
-                            <StackPanel>
-                                <ComboBox ItemsSource="{Binding AvailableLightingEffects}"
-                                          SelectedItem="{Binding LightingEffectEditor, Mode=TwoWay}" />
-                                <TextBlock Style="{StaticResource SectionLabel}" Text="BRIGHTNESS" />
-                                <Slider Minimum="0" Maximum="100" TickFrequency="5"
-                                        Value="{Binding LightingBrightnessEditor, Mode=TwoWay}" />
-                                <TextBlock Style="{StaticResource SectionLabel}" Text="COLOR (RGB)" />
-                                <Grid>
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition /><ColumnDefinition /><ColumnDefinition />
-                                    </Grid.ColumnDefinitions>
-                                    <StackPanel Grid.Column="0" Margin="3">
-                                        <TextBlock Text="Red" />
-                                        <Slider Minimum="0" Maximum="255" Value="{Binding LightingRedEditor, Mode=TwoWay}" />
-                                    </StackPanel>
-                                    <StackPanel Grid.Column="1" Margin="3">
-                                        <TextBlock Text="Green" />
-                                        <Slider Minimum="0" Maximum="255" Value="{Binding LightingGreenEditor, Mode=TwoWay}" />
-                                    </StackPanel>
-                                    <StackPanel Grid.Column="2" Margin="3">
-                                        <TextBlock Text="Blue" />
-                                        <Slider Minimum="0" Maximum="255" Value="{Binding LightingBlueEditor, Mode=TwoWay}" />
-                                    </StackPanel>
-                                </Grid>
-                                <Button Content="Apply lighting" Margin="3,12,3,3"
-                                        Command="{Binding SetLightingCommand}"
-                                        CommandParameter="{Binding LightingDraft}" />
-                                <TextBlock Text="{Binding LightingSourceLabel}" Margin="4,3"
-                                           Foreground="{DynamicResource MutedBrush}" />
-                            </StackPanel>
-                        </Border>
-                        <TextBlock Text="No verified lighting controls are available for this device."
-                                   Margin="4,18" TextWrapping="Wrap"
-                                   Foreground="{DynamicResource MutedBrush}"
-                                   Visibility="{Binding IsLightingVisible, Converter={StaticResource BooleanNegationToVisibility}}" />
-                    </StackPanel>
-                </ScrollViewer>
-            </TabItem>
-
-            <TabItem Header="Settings">
-                <ScrollViewer VerticalScrollBarVisibility="Auto">
-                    <StackPanel Margin="8,10">
-                        <TextBlock Style="{StaticResource SectionLabel}" Text="POWER PROFILES" />
-                        <Border Style="{StaticResource Card}">
-                            <StackPanel>
-                                <TextBlock Text="Plugged In" FontWeight="SemiBold" />
-                                <ComboBox ItemsSource="{Binding AvailablePerformancePresets}"
-                                          SelectedItem="{Binding PluggedInPerformanceEditor, Mode=TwoWay}" />
-                                <ComboBox ItemsSource="{Binding AvailableFanModes}"
-                                          SelectedItem="{Binding PluggedInFanModeEditor, Mode=TwoWay}" />
-                                <ComboBox ItemsSource="{Binding AvailableLightingSettings}"
-                                          SelectedItem="{Binding PluggedInLightingEditor, Mode=TwoWay}" />
-                            </StackPanel>
-                        </Border>
-                        <Border Style="{StaticResource Card}">
-                            <StackPanel>
-                                <TextBlock Text="Battery" FontWeight="SemiBold" />
-                                <ComboBox ItemsSource="{Binding AvailablePerformancePresets}"
-                                          SelectedItem="{Binding BatteryPerformanceEditor, Mode=TwoWay}" />
-                                <ComboBox ItemsSource="{Binding AvailableFanModes}"
-                                          SelectedItem="{Binding BatteryFanModeEditor, Mode=TwoWay}" />
-                                <ComboBox ItemsSource="{Binding AvailableLightingSettings}"
-                                          SelectedItem="{Binding BatteryLightingEditor, Mode=TwoWay}" />
-                            </StackPanel>
-                        </Border>
-                        <Grid Margin="3,6">
-                            <TextBlock Text="Profile charge limit" VerticalAlignment="Center" />
-                            <Slider HorizontalAlignment="Right" Width="190" Minimum="50" Maximum="80"
-                                    TickFrequency="5" IsSnapToTickEnabled="True"
-                                    Value="{Binding ProfileChargeLimitEditor, Mode=TwoWay}" />
-                        </Grid>
-                        <Button Content="Save profiles" Command="{Binding SaveProfilesCommand}" />
-
-                        <TextBlock Style="{StaticResource SectionLabel}" Text="APPEARANCE" />
-                        <Border Style="{StaticResource Card}">
-                            <Grid>
-                                <TextBlock Text="Theme" VerticalAlignment="Center" />
-                                <ComboBox HorizontalAlignment="Right" Width="150"
-                                          ItemsSource="{Binding ThemeOptions}"
-                                          SelectedItem="{Binding Theme, Mode=TwoWay}" />
-                            </Grid>
-                        </Border>
-                        <TextBlock Style="{StaticResource SectionLabel}" Text="SERVICE" />
-                        <Border Style="{StaticResource Card}">
-                            <StackPanel>
-                                <TextBlock Text="OpenBlade Service" FontWeight="SemiBold" />
-                                <TextBlock Text="{Binding ConnectionStatus}" FontSize="11" Margin="0,3,0,8"
-                                           Foreground="{DynamicResource DangerBrush}" TextWrapping="Wrap" />
-                                <Button Content="Export diagnostics"
-                                        HorizontalAlignment="Left"
-                                        Command="{Binding ExportDiagnosticsCommand}" />
-                                <TextBlock Text="{Binding OperationStatusMessage}"
-                                           FontSize="11" Margin="3,5,3,0"
-                                           Foreground="{DynamicResource MutedBrush}"
-                                           TextWrapping="Wrap" />
-                            </StackPanel>
-                        </Border>
-                    </StackPanel>
-                </ScrollViewer>
-            </TabItem>
-        </TabControl>
-
-        <Border Grid.Row="2" Padding="15,9" Background="{DynamicResource FooterBrush}"
-                BorderBrush="{DynamicResource BorderBrush}" BorderThickness="0,1,0,0">
-            <TextBlock FontSize="11" Foreground="{DynamicResource MutedBrush}"
-                       Text="{Binding TelemetryStatus}" TextTrimming="CharacterEllipsis" />
-        </Border>
+                <ComboBox ItemsSource="{Binding AvailableLightingEffects}" />
+                <Button Content="Apply lighting" Command="{Binding SetLightingCommand}" />
+                <TextBlock Text="PluggedInPerformanceEditor" Visibility="Collapsed" />
+                <TextBlock Text="BatteryPerformanceEditor" Visibility="Collapsed" />
+                <ItemsControl ItemsSource="{Binding ConflictNames}" />
+                <Button Content="Save profiles" Command="{Binding SaveProfilesCommand}" />
+                <Button Content="Export diagnostics" Command="{Binding ExportDiagnosticsCommand}" />
+                <TextBlock Text="{Binding OperationStatusMessage}" />
+            </StackPanel>
+        </ScrollViewer>
     </Grid>
 </Window>
