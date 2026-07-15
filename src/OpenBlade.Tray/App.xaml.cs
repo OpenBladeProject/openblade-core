@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Security.Principal;
 using Microsoft.UI.Dispatching;
 using Microsoft.UI.Xaml;
@@ -12,10 +13,10 @@ public partial class App : Microsoft.UI.Xaml.Application
     private TrayInstanceCoordinator? instanceCoordinator;
     private MainWindow? mainWindow;
     private ITrayIconHost? trayIconHost;
-    private Task? exitTask;
+    private TrayExitLifecycle? exitLifecycle;
     private DispatcherQueue uiDispatcherQueue = null!;
 
-    public bool ExitRequested { get; private set; }
+    public bool ExitRequested => exitLifecycle?.ExitRequested == true;
 
     protected override void OnLaunched(LaunchActivatedEventArgs args)
     {
@@ -39,6 +40,47 @@ public partial class App : Microsoft.UI.Xaml.Application
         }
 
         mainWindow = new MainWindow();
+        exitLifecycle = new TrayExitLifecycle(
+            new TrayExitSteps(
+                UnregisterShutdown: () =>
+                {
+                    shutdownRegistration?.Unregister(null);
+                    shutdownRegistration = null;
+                },
+                DisposeShutdownEvent: () =>
+                {
+                    shutdownEvent?.Dispose();
+                    shutdownEvent = null;
+                },
+                DisposeTrayIcon: () =>
+                {
+                    trayIconHost?.Dispose();
+                    trayIconHost = null;
+                },
+                DisposeViewModelAsync: async () =>
+                {
+                    if (mainWindow is not null)
+                    {
+                        await mainWindow.DisposeAsync();
+                    }
+                },
+                CloseWindow: () =>
+                {
+                    mainWindow?.Close();
+                    mainWindow = null;
+                },
+                DisposeInstanceCoordinatorAsync: async () =>
+                {
+                    if (instanceCoordinator is not null)
+                    {
+                        await instanceCoordinator.DisposeAsync();
+                        instanceCoordinator = null;
+                    }
+                },
+                ExitApplication: Exit),
+            exception => Trace.TraceError(
+                "OpenBlade tray shutdown cleanup failed: {0}",
+                exception));
 
         shutdownEvent = new EventWaitHandle(
             false,
@@ -59,29 +101,25 @@ public partial class App : Microsoft.UI.Xaml.Application
         ShowMainWindow();
     }
 
-    public Task ExitTrayAsync() => exitTask ??= ExitTrayCoreAsync();
-
-    private async Task ExitTrayCoreAsync()
+    public Task ExitTrayAsync()
     {
-        ExitRequested = true;
-        shutdownRegistration?.Unregister(null);
-        shutdownEvent?.Dispose();
-        trayIconHost?.Dispose();
-        if (mainWindow is not null)
+        if (exitLifecycle is null)
         {
-            await mainWindow.DisposeAsync();
-            mainWindow.Close();
+            return Task.CompletedTask;
         }
 
-        if (instanceCoordinator is not null)
-        {
-            await instanceCoordinator.DisposeAsync();
-        }
-
-        Exit();
+        return exitLifecycle.ExitAsync();
     }
 
-    private void ShowMainWindow() => mainWindow?.ShowAndActivate();
+    private void ShowMainWindow()
+    {
+        if (exitLifecycle is null)
+        {
+            return;
+        }
+
+        exitLifecycle.TryRunWhileActive(() => mainWindow?.ShowAndActivate());
+    }
 
     private void Enqueue(Action action)
     {
