@@ -49,6 +49,36 @@
       "id": "fan-auto-online",
       "fileName": "opensynapse-fan-auto-online-20260714.pcap",
       "sha256": "A0A26EB5F8720F373A7B8C23377CCC0C445FC1665E203E5296620F31B9BA1169"
+    },
+    {
+      "id": "lighting-static-online",
+      "fileName": "opensynapse-lighting-static-online-20260714.pcap",
+      "sha256": "76CA001583EC41F2ABE53872278686A8E5CA3419F6D0583BD6E3802CD2400B0A"
+    },
+    {
+      "id": "lighting-spectrum-online",
+      "fileName": "opensynapse-lighting-spectrum-online-20260714.pcap",
+      "sha256": "00F3D449110411497DB894A07009BDF5B13B183A2931A129C8189BC7AE921171"
+    },
+    {
+      "id": "lighting-breathing-online",
+      "fileName": "opensynapse-lighting-breathing-online-20260714.pcap",
+      "sha256": "30B199AD90D675223E29D0B31E8DD9F786AB248282B1F9CA3FC23A283693FE31"
+    },
+    {
+      "id": "lighting-reactive-online",
+      "fileName": "opensynapse-lighting-reactive-online-20260714.pcap",
+      "sha256": "84545D9F5214B1650EF931F9CAD8A0A9ED8B914CBA06567FDA4064967A3828B6"
+    },
+    {
+      "id": "lighting-off-online",
+      "fileName": "opensynapse-lighting-off-online-20260714.pcap",
+      "sha256": "BB4F15926F7D896586109EC45C6E56EAB18550226B4E65C302E6329E81CE8870"
+    },
+    {
+      "id": "lighting-brightness-50-online",
+      "fileName": "opensynapse-lighting-brightness-50-online-20260714.pcap",
+      "sha256": "4ED4F52BDDC14C72758405F867F8DE533F11E9F68346E00CD12A7DD0EC77CC8A"
     }
   ],
   "frameProvenance": {
@@ -82,7 +112,13 @@
     "charge-to-100-cancel": { "capture": "main", "setFrames": [6501], "getResponseFrames": [6504], "independentQueryFrames": [6677, 6680] },
     "lighting-brightness-49": { "capture": "main", "setFrames": [11265], "getResponseFrames": [11268] },
     "lighting-brightness-100": { "capture": "main", "setFrames": [11635, 11871], "getResponseFrames": [11638, 11874] },
-    "lighting-off": { "capture": "main", "setFrames": [11747], "getResponseFrames": [11750] }
+    "lighting-off": { "capture": "main", "setFrames": [11747], "getResponseFrames": [11750] },
+    "lighting-off-online": {
+      "capture": "lighting-off-online",
+      "setFrames": [153],
+      "status02EchoFrames": [156],
+      "lastInterface3StreamFrame": 151
+    }
   },
   "actions": [
     {
@@ -236,10 +272,132 @@
     },
     {
       "action": "lighting-off",
-      "commands": [{ "class": "03", "id": "03", "payloadHex": "010500", "expectedStatus": "02", "expectedPayloadHex": "010500" }],
+      "commands": [{ "class": "03", "id": "03", "payloadHex": "010500", "checksumHex": "07", "expectedStatus": "02", "expectedPayloadHex": "010500" }],
+      "onlineEvidence": {
+        "capture": "lighting-off-online",
+        "semantic": "brightness-zero-not-effect-disable",
+        "interface3StreamStopped": true,
+        "interface3StreamAbsentForRemainder": true,
+        "status02EchoOnly": true,
+        "independentReadBack": false
+      },
       "gates": { "captured": true, "decoded": true, "applied": false, "readBack": false, "restored": false }
     }
   ],
+  "lightingOnlineEvidence": {
+    "quickEffects": {
+      "sharedTransitionHandshake": {
+        "interfaceNumber": 2,
+        "featureReportBytes": 90,
+        "operations": ["00/86", "00/84", "03/0A"],
+        "entryPayloadHex": "0500",
+        "identifiesEffect": false,
+        "semanticStatus": "likely-generic-custom-matrix-mode-entry",
+        "unresolvedOperations": ["00/86", "00/84"]
+      },
+      "nativeColorSetterIsolated": false,
+      "nativeDurationSetterIsolated": false,
+      "effects": [
+        {
+          "name": "Static",
+          "capture": "lighting-static-online",
+          "requestFrames": [464, 471, 475],
+          "readbackFrames": [468, 474, 480],
+          "firstNormalizedGreenMatrixFrame": 669,
+          "renderingObservation": "sparse-uniform-green-keepalives",
+          "hostRenderedMatrixStream": true,
+          "nativeEffectSetterIsolated": false,
+          "productionAdmitted": false
+        },
+        {
+          "name": "Spectrum",
+          "capture": "lighting-spectrum-online",
+          "requestFrames": [181, 185, 189],
+          "readbackFrames": [184, 188, 192],
+          "streamStartFrame": 193,
+          "renderingObservation": "software-hue-cycle-about-20-hz",
+          "hostRenderedMatrixStream": true,
+          "nativeEffectSetterIsolated": false,
+          "productionAdmitted": false
+        },
+        {
+          "name": "Breathing",
+          "capture": "lighting-breathing-online",
+          "requestFrames": [1243, 1251, 1255, 1261],
+          "successfulReadbackFrames": [1246, 1254, 1264],
+          "retryReason": "03/0A-retried-after-short-read",
+          "transitionStreamFrame": 1257,
+          "renderingObservation": "software-rendered-green-intensity-ramp",
+          "hostRenderedMatrixStream": true,
+          "nativeEffectSetterIsolated": false,
+          "productionAdmitted": false
+        },
+        {
+          "name": "Reactive",
+          "capture": "lighting-reactive-online",
+          "requestFrames": [927, 937, 941],
+          "readbackFrames": [932, 940, 944],
+          "streamStartFrame": 929,
+          "renderingObservation": "black-idle-after-transition",
+          "keyActivationCaptured": false,
+          "durationInferred": false,
+          "hostRenderedMatrixStream": true,
+          "nativeEffectSetterIsolated": false,
+          "productionAdmitted": false
+        }
+      ]
+    },
+    "matrixTransport": {
+      "interfaceNumber": 3,
+      "featureReportBytes": 374,
+      "class": "03",
+      "id": "0B",
+      "argumentDataSizeHex": "0136",
+      "matrixSpanEndHex": "65",
+      "rgbTripletCountApprox": 102,
+      "litPositionCount": 86,
+      "layoutHoleCount": 16,
+      "checksumRule": "xor-bytes-2-through-byte-before-checksum",
+      "reservedFinalByteZero": true,
+      "getReportReadbackExists": false,
+      "productionAdmitted": false,
+      "streamingBoundary": "outside-safe-mvp-command-table",
+      "boundaryReason": "continuous-animation-streaming-has-ownership-timer-and-power-implications"
+    },
+    "brightness": {
+      "command": "03/03",
+      "payloadPrefixHex": "0105",
+      "mapping": "round(percent * 255 / 100)",
+      "observed": {
+        "ui0Hex": "00",
+        "ui49Hex": "7D",
+        "ui100Hex": "FF"
+      },
+      "ui50Capture": {
+        "capture": "lighting-brightness-50-online",
+        "inferredHex": "80",
+        "inferredPayloadHex": "010580",
+        "directlyObserved": false,
+        "brightnessTransactionEmitted": false,
+        "ambientMatrixScaled": false
+      },
+      "excludedSelector0018Reports": {
+        "operations": ["03/01", "03/02", "03/00"],
+        "selectorHex": "0018",
+        "requestFrames": [871, 875, 879, 971],
+        "responseFrames": [874, 878, 882, 974],
+        "deviceProtocolStatusHex": "05",
+        "semanticStatus": "unsupported",
+        "explicitlyExcludedAsBrightnessWrites": true
+      }
+    },
+    "productionAdmission": {
+      "quickEffectsAdmitted": false,
+      "matrixStreamingAdmitted": false,
+      "brightnessZeroAdmitted": false,
+      "reason": "No lighting action has passed typed OpenSynapse apply, independent readback, and OpenSynapse restoration."
+    }
+  },
   "unsupportedObservations": [
     {
       "feature": "keyboard-effects-and-color",
