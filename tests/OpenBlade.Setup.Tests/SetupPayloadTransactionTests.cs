@@ -138,6 +138,175 @@ public sealed class SetupPayloadTransactionTests
         Assert.Empty(Directory.GetDirectories(tree.ProgramFiles, "OpenBlade.rollback.*"));
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Activate_LiveMoveTransientFailure_RetriesAndActivates(bool unauthorized)
+    {
+        using TestTree tree = new();
+        tree.CreateCompletePayload();
+        tree.WriteInstall("old.bin", [9, 7, 5]);
+        int liveMoveAttempts = 0;
+        DelegatingPayloadFileSystem files = new()
+        {
+            MoveFailure = (source, destination) =>
+            {
+                if (!source.Equals(tree.Install, StringComparison.OrdinalIgnoreCase)
+                    || !destination.Contains(".rollback.", StringComparison.OrdinalIgnoreCase))
+                {
+                    return null;
+                }
+
+                liveMoveAttempts++;
+                return liveMoveAttempts == 1
+                    ? unauthorized
+                        ? new UnauthorizedAccessException("service process still releasing the install tree")
+                        : new IOException("service process still releasing the install tree")
+                    : null;
+            },
+        };
+
+        await using ISetupPayloadTransaction transaction =
+            await tree.CreatePlatform(files).StagePayloadAsync(CancellationToken.None);
+        await transaction.ActivateAsync(CancellationToken.None);
+
+        Assert.Equal(2, liveMoveAttempts);
+        Assert.True(transaction.IsActivated);
+        Assert.Equal(ReadManifest(tree.Payload), ReadManifest(tree.Install));
+    }
+
+    [Fact]
+    public async Task Activate_LiveMoveCancellationDuringRetry_StopsBeforeSecondAttempt()
+    {
+        using TestTree tree = new();
+        tree.CreateCompletePayload();
+        tree.WriteInstall("old.bin", [1, 6, 1, 8]);
+        using CancellationTokenSource cancellation = new();
+        int liveMoveAttempts = 0;
+        DelegatingPayloadFileSystem files = new()
+        {
+            MoveFailure = (source, destination) =>
+            {
+                if (!source.Equals(tree.Install, StringComparison.OrdinalIgnoreCase)
+                    || !destination.Contains(".rollback.", StringComparison.OrdinalIgnoreCase))
+                {
+                    return null;
+                }
+
+                liveMoveAttempts++;
+                cancellation.Cancel();
+                return new IOException("service process still releasing the install tree");
+            },
+        };
+
+        await using ISetupPayloadTransaction transaction =
+            await tree.CreatePlatform(files).StagePayloadAsync(CancellationToken.None);
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => transaction.ActivateAsync(cancellation.Token));
+
+        Assert.Equal(1, liveMoveAttempts);
+        Assert.True(File.Exists(Path.Combine(tree.Install, "old.bin")));
+        Assert.Empty(Directory.GetDirectories(tree.ProgramFiles, "OpenBlade.rollback.*"));
+    }
+
+    [Fact]
+    public async Task Activate_LiveMoveNonTransientFailure_DoesNotRetry()
+    {
+        using TestTree tree = new();
+        tree.CreateCompletePayload();
+        tree.WriteInstall("old.bin", [4, 2]);
+        int liveMoveAttempts = 0;
+        DelegatingPayloadFileSystem files = new()
+        {
+            MoveFailure = (source, destination) =>
+            {
+                if (!source.Equals(tree.Install, StringComparison.OrdinalIgnoreCase)
+                    || !destination.Contains(".rollback.", StringComparison.OrdinalIgnoreCase))
+                {
+                    return null;
+                }
+
+                liveMoveAttempts++;
+                return new InvalidOperationException("permanent move failure");
+            },
+        };
+
+        await using ISetupPayloadTransaction transaction =
+            await tree.CreatePlatform(files).StagePayloadAsync(CancellationToken.None);
+        InvalidOperationException failure = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => transaction.ActivateAsync(CancellationToken.None));
+
+        Assert.Equal("permanent move failure", failure.Message);
+        Assert.Equal(1, liveMoveAttempts);
+    }
+
+    [Fact]
+    public async Task Activate_LiveMoveTransientFailureWithOccupiedDestination_DoesNotRetry()
+    {
+        using TestTree tree = new();
+        tree.CreateCompletePayload();
+        tree.WriteInstall("old.bin", [6, 2, 6]);
+        int liveMoveAttempts = 0;
+        DelegatingPayloadFileSystem files = new()
+        {
+            MoveFailure = (source, destination) =>
+            {
+                if (!source.Equals(tree.Install, StringComparison.OrdinalIgnoreCase)
+                    || !destination.Contains(".rollback.", StringComparison.OrdinalIgnoreCase))
+                {
+                    return null;
+                }
+
+                liveMoveAttempts++;
+                Directory.CreateDirectory(destination);
+                return new IOException("destination became occupied");
+            },
+        };
+
+        await using ISetupPayloadTransaction transaction =
+            await tree.CreatePlatform(files).StagePayloadAsync(CancellationToken.None);
+        IOException failure = await Assert.ThrowsAsync<IOException>(
+            () => transaction.ActivateAsync(CancellationToken.None));
+
+        Assert.Equal("destination became occupied", failure.Message);
+        Assert.Equal(1, liveMoveAttempts);
+        Assert.True(File.Exists(Path.Combine(tree.Install, "old.bin")));
+        Assert.Single(Directory.GetDirectories(tree.ProgramFiles, "OpenBlade.rollback.*"));
+    }
+
+    [Fact]
+    public async Task Activate_LiveMovePersistentTransientFailure_IsBounded()
+    {
+        using TestTree tree = new();
+        tree.CreateCompletePayload();
+        tree.WriteInstall("old.bin", [8, 8]);
+        int liveMoveAttempts = 0;
+        DelegatingPayloadFileSystem files = new()
+        {
+            MoveFailure = (source, destination) =>
+            {
+                if (!source.Equals(tree.Install, StringComparison.OrdinalIgnoreCase)
+                    || !destination.Contains(".rollback.", StringComparison.OrdinalIgnoreCase))
+                {
+                    return null;
+                }
+
+                liveMoveAttempts++;
+                return new IOException("persistent move failure");
+            },
+        };
+
+        await using ISetupPayloadTransaction transaction =
+            await tree.CreatePlatform(files).StagePayloadAsync(CancellationToken.None);
+        IOException failure = await Assert.ThrowsAsync<IOException>(
+            () => transaction.ActivateAsync(CancellationToken.None));
+
+        Assert.Equal("persistent move failure", failure.Message);
+        Assert.Equal(25, liveMoveAttempts);
+        Assert.True(File.Exists(Path.Combine(tree.Install, "old.bin")));
+        Assert.Empty(Directory.GetDirectories(tree.ProgramFiles, "OpenBlade.rollback.*"));
+    }
+
     [Fact]
     public async Task Activate_StagingMoveFailure_RestoresOldTree()
     {
@@ -163,6 +332,48 @@ public sealed class SetupPayloadTransactionTests
         Assert.Equal(before, ReadManifest(tree.Install));
         Assert.False(transaction.IsActivated);
         Assert.Empty(Directory.GetDirectories(tree.ProgramFiles, "OpenBlade.rollback.*"));
+    }
+
+    [Fact]
+    public async Task Activate_TransientRestoreMoveFailure_RetriesAndPreservesOriginalActivationFailure()
+    {
+        using TestTree tree = new();
+        tree.CreateCompletePayload();
+        tree.WriteInstall("old.bin", [3, 1, 4]);
+        SortedDictionary<string, string> before = ReadManifest(tree.Install);
+        int restoreAttempts = 0;
+        DelegatingPayloadFileSystem files = new()
+        {
+            MoveFailure = (source, destination) =>
+            {
+                if (source.Contains(".installing.", StringComparison.OrdinalIgnoreCase)
+                    && destination.Equals(tree.Install, StringComparison.OrdinalIgnoreCase))
+                {
+                    return new IOException("activate move failed");
+                }
+
+                if (source.Contains(".rollback.", StringComparison.OrdinalIgnoreCase)
+                    && destination.Equals(tree.Install, StringComparison.OrdinalIgnoreCase))
+                {
+                    restoreAttempts++;
+                    return restoreAttempts == 1
+                        ? new UnauthorizedAccessException("old service handle still releasing")
+                        : null;
+                }
+
+                return null;
+            },
+        };
+
+        await using ISetupPayloadTransaction transaction =
+            await tree.CreatePlatform(files).StagePayloadAsync(CancellationToken.None);
+        IOException failure = await Assert.ThrowsAsync<IOException>(
+            () => transaction.ActivateAsync(CancellationToken.None));
+
+        Assert.Equal("activate move failed", failure.Message);
+        Assert.Equal(2, restoreAttempts);
+        Assert.Equal(before, ReadManifest(tree.Install));
+        Assert.False(transaction.IsActivated);
     }
 
     [Fact]
@@ -242,6 +453,42 @@ public sealed class SetupPayloadTransactionTests
         await transaction.ActivateAsync(CancellationToken.None);
         await transaction.RollbackAsync(CancellationToken.None);
 
+        Assert.Equal(before, ReadManifest(tree.Install));
+        Assert.Empty(Directory.GetDirectories(tree.ProgramFiles, "OpenBlade.rollback.*"));
+        Assert.Empty(Directory.GetDirectories(tree.ProgramFiles, "OpenBlade.failed.*"));
+    }
+
+    [Fact]
+    public async Task Rollback_TransientBackupRestoreFailure_RetriesAndRestoresOldTree()
+    {
+        using TestTree tree = new();
+        tree.CreateCompletePayload();
+        tree.WriteInstall("old.bin", [2, 7, 1, 8]);
+        SortedDictionary<string, string> before = ReadManifest(tree.Install);
+        int restoreAttempts = 0;
+        DelegatingPayloadFileSystem files = new()
+        {
+            MoveFailure = (source, destination) =>
+            {
+                if (!source.Contains(".rollback.", StringComparison.OrdinalIgnoreCase)
+                    || !destination.Equals(tree.Install, StringComparison.OrdinalIgnoreCase))
+                {
+                    return null;
+                }
+
+                restoreAttempts++;
+                return restoreAttempts == 1
+                    ? new IOException("restore handle still releasing")
+                    : null;
+            },
+        };
+
+        await using ISetupPayloadTransaction transaction =
+            await tree.CreatePlatform(files).StagePayloadAsync(CancellationToken.None);
+        await transaction.ActivateAsync(CancellationToken.None);
+        await transaction.RollbackAsync(CancellationToken.None);
+
+        Assert.Equal(2, restoreAttempts);
         Assert.Equal(before, ReadManifest(tree.Install));
         Assert.Empty(Directory.GetDirectories(tree.ProgramFiles, "OpenBlade.rollback.*"));
         Assert.Empty(Directory.GetDirectories(tree.ProgramFiles, "OpenBlade.failed.*"));

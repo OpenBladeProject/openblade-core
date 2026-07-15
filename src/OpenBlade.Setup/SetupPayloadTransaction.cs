@@ -53,6 +53,9 @@ public sealed class WindowsSetupPayloadFileSystem : ISetupPayloadFileSystem
 
 public sealed class SetupPayloadTransaction : ISetupPayloadTransaction
 {
+    private const int AtomicMoveMaximumAttempts = 25;
+    private static readonly TimeSpan AtomicMoveRetryDelay = TimeSpan.FromMilliseconds(100);
+
     private static readonly string[] RequiredRelativePaths =
     [
         "OpenBlade.Service.exe",
@@ -184,7 +187,7 @@ public sealed class SetupPayloadTransaction : ISetupPayloadTransaction
         }
     }
 
-    public Task ActivateAsync(CancellationToken cancellationToken)
+    public async Task ActivateAsync(CancellationToken cancellationToken)
     {
         if (state != TransactionState.Staged)
         {
@@ -201,7 +204,10 @@ public sealed class SetupPayloadTransaction : ISetupPayloadTransaction
 
         if (HadExistingInstall)
         {
-            files.MoveDirectory(paths.InstallDirectory, backupDirectory);
+            await MoveAtomicDirectoryWithRetryAsync(
+                paths.InstallDirectory,
+                backupDirectory,
+                cancellationToken);
             state = TransactionState.BackupMoved;
             try
             {
@@ -213,7 +219,10 @@ public sealed class SetupPayloadTransaction : ISetupPayloadTransaction
             {
                 try
                 {
-                    files.MoveDirectory(backupDirectory, paths.InstallDirectory);
+                    await MoveAtomicDirectoryWithRetryAsync(
+                        backupDirectory,
+                        paths.InstallDirectory,
+                        CancellationToken.None);
                     state = TransactionState.Staged;
                 }
                 catch (Exception restoreFailure)
@@ -234,8 +243,34 @@ public sealed class SetupPayloadTransaction : ISetupPayloadTransaction
             state = TransactionState.Active;
         }
 
-        return Task.CompletedTask;
     }
+
+    private async Task MoveAtomicDirectoryWithRetryAsync(
+        string source,
+        string destination,
+        CancellationToken cancellationToken)
+    {
+        for (int attempt = 1; ; attempt++)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            try
+            {
+                files.MoveDirectory(source, destination);
+                return;
+            }
+            catch (Exception exception) when (
+                attempt < AtomicMoveMaximumAttempts
+                && IsTransientMoveFailure(exception)
+                && files.DirectoryExists(source)
+                && !files.DirectoryExists(destination))
+            {
+                await Task.Delay(AtomicMoveRetryDelay, cancellationToken);
+            }
+        }
+    }
+
+    private static bool IsTransientMoveFailure(Exception exception) =>
+        exception is UnauthorizedAccessException or IOException;
 
     public Task CommitAsync(CancellationToken cancellationToken)
     {
@@ -269,11 +304,11 @@ public sealed class SetupPayloadTransaction : ISetupPayloadTransaction
         return Task.CompletedTask;
     }
 
-    public Task RollbackAsync(CancellationToken cancellationToken)
+    public async Task RollbackAsync(CancellationToken cancellationToken)
     {
         if (state == TransactionState.RolledBack)
         {
-            return Task.CompletedTask;
+            return;
         }
 
         if (state == TransactionState.Committed)
@@ -294,14 +329,14 @@ public sealed class SetupPayloadTransaction : ISetupPayloadTransaction
 
             case TransactionState.BackupMoved:
             case TransactionState.RestoreFailed:
-                RestoreStrandedBackup();
+                await RestoreStrandedBackupAsync(cancellationToken);
                 state = TransactionState.RolledBack;
                 break;
 
             case TransactionState.Active:
                 if (HadExistingInstall)
                 {
-                    RollbackUpdate();
+                    await RollbackUpdateAsync(cancellationToken);
                 }
                 else
                 {
@@ -311,7 +346,6 @@ public sealed class SetupPayloadTransaction : ISetupPayloadTransaction
                 break;
         }
 
-        return Task.CompletedTask;
     }
 
     public ValueTask DisposeAsync()
@@ -335,12 +369,15 @@ public sealed class SetupPayloadTransaction : ISetupPayloadTransaction
         return ValueTask.CompletedTask;
     }
 
-    private void RollbackUpdate()
+    private async Task RollbackUpdateAsync(CancellationToken cancellationToken)
     {
         files.MoveDirectory(paths.InstallDirectory, failedDirectory);
         try
         {
-            files.MoveDirectory(backupDirectory, paths.InstallDirectory);
+            await MoveAtomicDirectoryWithRetryAsync(
+                backupDirectory,
+                paths.InstallDirectory,
+                cancellationToken);
         }
         catch (Exception restoreFailure)
         {
@@ -363,7 +400,7 @@ public sealed class SetupPayloadTransaction : ISetupPayloadTransaction
         DeleteTransactionDirectory(files, paths, failedDirectory);
     }
 
-    private void RestoreStrandedBackup()
+    private async Task RestoreStrandedBackupAsync(CancellationToken cancellationToken)
     {
         if (files.DirectoryExists(paths.InstallDirectory))
         {
@@ -371,7 +408,10 @@ public sealed class SetupPayloadTransaction : ISetupPayloadTransaction
                 $"Cannot restore '{backupDirectory}' because the live install path is occupied.");
         }
 
-        files.MoveDirectory(backupDirectory, paths.InstallDirectory);
+        await MoveAtomicDirectoryWithRetryAsync(
+            backupDirectory,
+            paths.InstallDirectory,
+            cancellationToken);
         if (files.DirectoryExists(stagingDirectory))
         {
             DeleteTransactionDirectory(files, paths, stagingDirectory);
