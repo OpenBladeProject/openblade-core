@@ -53,6 +53,14 @@ if (args.Length > 0 && args[0].Equals("query-battery", StringComparison.OrdinalI
     return await command.RunAsync(args[1..], CancellationToken.None);
 }
 
+if (args.Length > 0 && args[0].Equals("probe-battery-sequence", StringComparison.OrdinalIgnoreCase))
+{
+    var session = new BatteryQuerySequenceSession(
+        BatteryValidationFactory.CreateWindowsQuerySequence());
+    var command = new BatteryQuerySequenceCommand(session.RunAsync, Console.Out);
+    return await command.RunAsync(args[1..], CancellationToken.None);
+}
+
 if (args.Length > 0 && args[0].Equals("validate-battery", StringComparison.OrdinalIgnoreCase))
 {
     var approval = new ConsoleBatteryApproval(Console.In, Console.Out);
@@ -70,6 +78,7 @@ Console.WriteLine("  OpenBlade.Capture scan");
 Console.WriteLine("  OpenBlade.Capture validate <fixtures.json>");
 Console.WriteLine("  OpenBlade.Capture probe-battery");
 Console.WriteLine("  OpenBlade.Capture query-battery");
+Console.WriteLine("  OpenBlade.Capture probe-battery-sequence");
 Console.WriteLine("  OpenBlade.Capture validate-battery <off|50|55|60|65|70|75|80>");
 Console.WriteLine("See captures/README.md for the gated USBPcap workflow.");
 return args.Length == 0 ? 0 : 1;
