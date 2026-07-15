@@ -12,11 +12,11 @@ public sealed record SetupPaths
         MachineDataRoot = machineDataRoot;
         UserDataRoot = userDataRoot;
         StartupRoot = startupRoot;
-        InstallDirectory = Path.Combine(programFilesRoot, "OpenSynapse");
-        MachineDataDirectory = Path.Combine(machineDataRoot, "OpenSynapse");
-        UserDataDirectory = Path.Combine(userDataRoot, "OpenSynapse");
-        StartupFile = Path.Combine(startupRoot, "OpenSynapse.lnk");
-        LegacyStartupFile = Path.Combine(startupRoot, "OpenSynapse.cmd");
+        InstallDirectory = Path.Combine(programFilesRoot, "OpenBlade");
+        MachineDataDirectory = Path.Combine(machineDataRoot, "OpenBlade");
+        UserDataDirectory = Path.Combine(userDataRoot, "OpenBlade");
+        StartupFile = Path.Combine(startupRoot, "OpenBlade.lnk");
+        LegacyStartupFile = Path.Combine(startupRoot, "OpenBlade.cmd");
     }
 
     public string ProgramFilesRoot { get; }
@@ -39,7 +39,7 @@ public sealed record SetupPaths
             NormalizeKnownFolder(userDataRoot, nameof(userDataRoot)),
             NormalizeKnownFolder(startupRoot, nameof(startupRoot)));
 
-    public static bool IsExactOpenSynapseDirectory(string candidate, string knownFolderRoot)
+    public static bool IsExactOpenBladeDirectory(string candidate, string knownFolderRoot)
     {
         if (string.IsNullOrWhiteSpace(candidate) || string.IsNullOrWhiteSpace(knownFolderRoot))
         {
@@ -49,7 +49,7 @@ public sealed record SetupPaths
         try
         {
             string root = NormalizeKnownFolder(knownFolderRoot, nameof(knownFolderRoot));
-            string expected = Path.Combine(root, "OpenSynapse");
+            string expected = Path.Combine(root, "OpenBlade");
             string actual = Path.TrimEndingDirectorySeparator(Path.GetFullPath(candidate));
             return string.Equals(actual, expected, StringComparison.OrdinalIgnoreCase);
         }

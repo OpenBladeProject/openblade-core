@@ -32,7 +32,7 @@ internal sealed class WindowsStartupShortcutWriter : IStartupShortcutWriter
             dynamicShortcut.TargetPath = request.TargetPath;
             dynamicShortcut.WorkingDirectory = request.WorkingDirectory;
             dynamicShortcut.WindowStyle = 1;
-            dynamicShortcut.Description = "OpenSynapse";
+            dynamicShortcut.Description = "OpenBlade";
             dynamicShortcut.Save();
         }
         finally

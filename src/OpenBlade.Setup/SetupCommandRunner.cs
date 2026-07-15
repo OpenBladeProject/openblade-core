@@ -22,7 +22,7 @@ public sealed class SetupCommandRunner(ISetupPlatform platform)
     {
         if (!SetupCommandParser.TryParse(arguments, out SetupCommand command))
         {
-            Console.Error.WriteLine("Usage: OpenSynapse.Setup.exe install | OpenSynapse.Setup.exe uninstall [--purge]");
+            Console.Error.WriteLine("Usage: OpenBlade.Setup.exe install | OpenBlade.Setup.exe uninstall [--purge]");
             return 2;
         }
 

@@ -7,6 +7,6 @@ try
 }
 catch (Exception exception)
 {
-    Console.Error.WriteLine($"OpenSynapse setup failed: {exception.Message}");
+    Console.Error.WriteLine($"OpenBlade setup failed: {exception.Message}");
     return 1;
 }

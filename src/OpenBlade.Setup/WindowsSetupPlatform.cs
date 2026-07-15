@@ -15,7 +15,7 @@ internal sealed class WindowsSetupFileOperations : ISetupFileOperations
 
 public sealed class WindowsSetupPlatform : ISetupPlatform
 {
-    private const string ServiceName = "OpenSynapse";
+    private const string ServiceName = "OpenBlade";
     private const int ServiceDoesNotExist = 1060;
     private const int ServiceNotActive = 1062;
     private readonly SetupPaths paths = SetupPaths.Create(
@@ -70,8 +70,8 @@ public sealed class WindowsSetupPlatform : ISetupPlatform
     public async Task CopyPayloadAsync(CancellationToken cancellationToken)
     {
         string source = Path.Combine(AppContext.BaseDirectory, "payload");
-        RequirePayloadFile(source, "OpenSynapse.Service.exe");
-        RequirePayloadFile(source, "OpenSynapse.Tray.exe");
+        RequirePayloadFile(source, "OpenBlade.Service.exe");
+        RequirePayloadFile(source, "OpenBlade.Tray.exe");
         Directory.CreateDirectory(paths.InstallDirectory);
 
         foreach (string file in Directory.EnumerateFiles(source, "*", SearchOption.AllDirectories))
@@ -112,13 +112,13 @@ public sealed class WindowsSetupPlatform : ISetupPlatform
 
     public async Task InstallServiceAsync(CancellationToken cancellationToken)
     {
-        string serviceExecutable = Path.Combine(paths.InstallDirectory, "OpenSynapse.Service.exe");
+        string serviceExecutable = Path.Combine(paths.InstallDirectory, "OpenBlade.Service.exe");
         bool serviceExists = await serviceControl.ExistsAsync(ServiceName, cancellationToken);
         await serviceControl.RunAsync(
-            [serviceExists ? "config" : "create", ServiceName, "binPath=", $"\"{serviceExecutable}\"", "start=", "auto", "obj=", "LocalSystem", "DisplayName=", "OpenSynapse Service"],
+            [serviceExists ? "config" : "create", ServiceName, "binPath=", $"\"{serviceExecutable}\"", "start=", "auto", "obj=", "LocalSystem", "DisplayName=", "OpenBlade Service"],
             Array.Empty<int>(),
             cancellationToken);
-        await serviceControl.RunAsync(["description", ServiceName, "OpenSynapse hardware control and profile service"], Array.Empty<int>(), cancellationToken);
+        await serviceControl.RunAsync(["description", ServiceName, "OpenBlade hardware control and profile service"], Array.Empty<int>(), cancellationToken);
         await serviceControl.RunAsync(
             ["failure", ServiceName, "reset=", "86400", "actions=", "restart/5000/restart/15000/restart/60000"],
             Array.Empty<int>(),
@@ -142,13 +142,13 @@ public sealed class WindowsSetupPlatform : ISetupPlatform
         }
         catch (OperationCanceledException exception) when (!cancellationToken.IsCancellationRequested)
         {
-            throw new TimeoutException("The OpenSynapse service did not respond to its health check within 10 seconds.", exception);
+            throw new TimeoutException("The OpenBlade service did not respond to its health check within 10 seconds.", exception);
         }
     }
 
     public async Task InstallStartupShortcutAsync(CancellationToken cancellationToken)
     {
-        string trayExecutable = Path.Combine(paths.InstallDirectory, "OpenSynapse.Tray.exe");
+        string trayExecutable = Path.Combine(paths.InstallDirectory, "OpenBlade.Tray.exe");
         await shortcutWriter.CreateAsync(
             new ShortcutRequest(paths.StartupFile, trayExecutable, paths.InstallDirectory),
             cancellationToken);
@@ -182,9 +182,9 @@ public sealed class WindowsSetupPlatform : ISetupPlatform
 
     public async Task StopTrayAsync(CancellationToken cancellationToken)
     {
-        string installedTray = Path.Combine(paths.InstallDirectory, "OpenSynapse.Tray.exe");
+        string installedTray = Path.Combine(paths.InstallDirectory, "OpenBlade.Tray.exe");
         List<ISetupProcess> installedProcesses = [];
-        foreach (ISetupProcess process in processOperations.GetProcessesByName("OpenSynapse.Tray"))
+        foreach (ISetupProcess process in processOperations.GetProcessesByName("OpenBlade.Tray"))
         {
             try
             {
@@ -250,7 +250,7 @@ public sealed class WindowsSetupPlatform : ISetupPlatform
 
     private static void DeleteOwnedDirectoryIfPresent(string directory, string knownFolderRoot)
     {
-        if (!SetupPaths.IsExactOpenSynapseDirectory(directory, knownFolderRoot))
+        if (!SetupPaths.IsExactOpenBladeDirectory(directory, knownFolderRoot))
         {
             throw new InvalidOperationException($"Refusing to recursively delete unexpected path '{directory}'.");
         }

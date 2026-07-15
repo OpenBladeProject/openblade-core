@@ -70,8 +70,8 @@ public sealed class SetupCommandRunnerTests
             int exitCode = await runner.RunAsync([], CancellationToken.None);
 
             Assert.Equal(2, exitCode);
-            Assert.Contains("OpenSynapse.Setup.exe install", errors.ToString(), StringComparison.Ordinal);
-            Assert.Contains("OpenSynapse.Setup.exe uninstall [--purge]", errors.ToString(), StringComparison.Ordinal);
+            Assert.Contains("OpenBlade.Setup.exe install", errors.ToString(), StringComparison.Ordinal);
+            Assert.Contains("OpenBlade.Setup.exe uninstall [--purge]", errors.ToString(), StringComparison.Ordinal);
         }
         finally
         {

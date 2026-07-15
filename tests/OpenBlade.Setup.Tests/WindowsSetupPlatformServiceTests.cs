@@ -14,12 +14,30 @@ public sealed class WindowsSetupPlatformServiceTests
 
         string executable = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles),
-            "OpenSynapse",
-            "OpenSynapse.Service.exe");
+            "OpenBlade",
+            "OpenBlade.Service.exe");
         RecordedCommand create = Assert.Single(
             serviceControl.Commands,
             command => command.Arguments[0] == "create");
         Assert.Contains($"\"{executable}\"", create.Arguments);
+        Assert.Contains("OpenBlade Service", create.Arguments);
+        Assert.All(serviceControl.Commands, command => Assert.Equal("OpenBlade", command.Arguments[1]));
+    }
+
+    [Fact]
+    public async Task InstallService_SetsExactDescription()
+    {
+        RecordingServiceControl serviceControl = new();
+        WindowsSetupPlatform platform = new(serviceControl);
+
+        await platform.InstallServiceAsync(CancellationToken.None);
+
+        RecordedCommand description = Assert.Single(
+            serviceControl.Commands,
+            command => command.Arguments[0] == "description");
+        Assert.Equal(
+            ["description", "OpenBlade", "OpenBlade hardware control and profile service"],
+            description.Arguments);
     }
 
     [Fact]
@@ -46,11 +64,11 @@ public sealed class WindowsSetupPlatformServiceTests
             serviceControl.Commands,
             command => command.Arguments[0] == "failure");
         Assert.Equal(
-            ["failure", "OpenSynapse", "reset=", "86400", "actions=", "restart/5000/restart/15000/restart/60000"],
+            ["failure", "OpenBlade", "reset=", "86400", "actions=", "restart/5000/restart/15000/restart/60000"],
             recovery.Arguments);
         Assert.Contains(
             serviceControl.Commands,
-            command => command.Arguments.SequenceEqual(["failureflag", "OpenSynapse", "1"]));
+            command => command.Arguments.SequenceEqual(["failureflag", "OpenBlade", "1"]));
     }
 
     [Fact]
@@ -86,7 +104,7 @@ public sealed class WindowsSetupPlatformServiceTests
 
         await platform.StopTrayAsync(CancellationToken.None);
 
-        Assert.Equal(["query:OpenSynapse.Tray"], processes.Operations);
+        Assert.Equal(["query:OpenBlade.Tray"], processes.Operations);
     }
 
     [Fact]
@@ -94,8 +112,8 @@ public sealed class WindowsSetupPlatformServiceTests
     {
         string installedTray = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles),
-            "OpenSynapse",
-            "OpenSynapse.Tray.exe");
+            "OpenBlade",
+            "OpenBlade.Tray.exe");
         RecordingProcess process = new(installedTray);
         RecordingProcessOperations processes = new(process);
         WindowsSetupPlatform platform = new(processOperations: processes);
@@ -104,7 +122,7 @@ public sealed class WindowsSetupPlatformServiceTests
 
         Assert.Collection(
             processes.Operations,
-            operation => Assert.Equal("query:OpenSynapse.Tray", operation),
+            operation => Assert.Equal("query:OpenBlade.Tray", operation),
             operation => Assert.StartsWith("signal:Local\\OpenBlade.Tray.Shutdown.", operation, StringComparison.Ordinal));
         Assert.True(process.WaitedForExit);
         Assert.True(process.Disposed);
@@ -133,10 +151,10 @@ public sealed class WindowsSetupPlatformServiceTests
 
         string installDirectory = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles),
-            "OpenSynapse");
+            "OpenBlade");
         ShortcutRequest request = Assert.Single(shortcutWriter.Requests);
-        Assert.EndsWith("OpenSynapse.lnk", request.ShortcutPath, StringComparison.OrdinalIgnoreCase);
-        Assert.Equal(Path.Combine(installDirectory, "OpenSynapse.Tray.exe"), request.TargetPath);
+        Assert.EndsWith("OpenBlade.lnk", request.ShortcutPath, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(Path.Combine(installDirectory, "OpenBlade.Tray.exe"), request.TargetPath);
         Assert.Equal(installDirectory, request.WorkingDirectory);
     }
 
@@ -153,7 +171,7 @@ public sealed class WindowsSetupPlatformServiceTests
 
         Assert.Contains(
             files.DeletedFiles,
-            path => path.EndsWith("OpenSynapse.cmd", StringComparison.OrdinalIgnoreCase));
+            path => path.EndsWith("OpenBlade.cmd", StringComparison.OrdinalIgnoreCase));
     }
 
     [Fact]
@@ -169,8 +187,8 @@ public sealed class WindowsSetupPlatformServiceTests
 
         Assert.Collection(
             files.DeletedFiles,
-            path => Assert.EndsWith("OpenSynapse.lnk", path, StringComparison.OrdinalIgnoreCase),
-            path => Assert.EndsWith("OpenSynapse.cmd", path, StringComparison.OrdinalIgnoreCase));
+            path => Assert.EndsWith("OpenBlade.lnk", path, StringComparison.OrdinalIgnoreCase),
+            path => Assert.EndsWith("OpenBlade.cmd", path, StringComparison.OrdinalIgnoreCase));
     }
 
     [Theory]
@@ -208,9 +226,24 @@ public sealed class WindowsSetupPlatformServiceTests
         AuthorizedSidWriteRequest request = Assert.Single(sidWriter.Requests);
         Assert.Equal("S-1-5-21-1-2-3-1001", request.Sid);
         Assert.EndsWith(
-            Path.Combine("OpenSynapse", "authorized-user.sid"),
+            Path.Combine("OpenBlade", "authorized-user.sid"),
             request.Path,
             StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task InstallAndRemoveService_NeverTargetsFormerServiceIdentity()
+    {
+        RecordingServiceControl serviceControl = new() { Exists = true };
+        WindowsSetupPlatform platform = new(serviceControl);
+
+        await platform.PrepareServiceForInstallAsync(CancellationToken.None);
+        await platform.InstallServiceAsync(CancellationToken.None);
+        await platform.RemoveServiceAsync(CancellationToken.None);
+
+        Assert.DoesNotContain(
+            serviceControl.Commands.SelectMany(command => command.Arguments),
+            argument => argument.Contains("Open" + "Synapse", StringComparison.OrdinalIgnoreCase));
     }
 
     private sealed record RecordedCommand(string[] Arguments, int[] ToleratedExitCodes);

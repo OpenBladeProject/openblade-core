@@ -9,7 +9,7 @@ public sealed class AuthorizedUserSidWriterTests
     {
         RecordingFileOperations files = new();
         AtomicAuthorizedUserSidWriter writer = new(files);
-        const string target = @"C:\ProgramData\OpenSynapse\authorized-user.sid";
+        const string target = @"C:\ProgramData\OpenBlade\authorized-user.sid";
 
         await writer.WriteAsync(
             new AuthorizedSidWriteRequest(target, "S-1-5-21-1-2-3-1001"),
