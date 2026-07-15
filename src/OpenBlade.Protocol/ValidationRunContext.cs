@@ -54,6 +54,27 @@ internal sealed class ValidationRunContext
         }
     }
 
+    public bool TryReserveBatteryQuerySequence(out byte[] transactionIds)
+    {
+        lock (_sync)
+        {
+            if (_nextTransactionId > MaximumTransactionId - BatteryValidationTransactionCount + 1)
+            {
+                transactionIds = [];
+                return false;
+            }
+
+            transactionIds = new byte[BatteryValidationTransactionCount];
+            for (int index = 0; index < transactionIds.Length; index++)
+            {
+                transactionIds[index] = (byte)(_nextTransactionId + index);
+            }
+
+            _nextTransactionId += BatteryValidationTransactionCount;
+            return true;
+        }
+    }
+
     public bool TryAcquireActor(out ActorLease lease)
     {
         lock (_sync)

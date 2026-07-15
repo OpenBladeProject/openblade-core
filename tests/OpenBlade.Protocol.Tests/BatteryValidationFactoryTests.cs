@@ -48,6 +48,36 @@ public sealed class BatteryValidationFactoryTests
     }
 
     [Fact]
+    public void CreateWindowsQuerySequence_DoesNotReadHostEvidenceOrOpenHidDuringConstruction()
+    {
+        var registry = new ThrowingRegistryValueSource();
+        var platform = new ThrowingPlatformEvidenceSource();
+        var processes = new ThrowingProcessSource();
+        var services = new ThrowingServiceSource();
+        var native = new ThrowingHidCandidateNative();
+        var io = new ThrowingHidFeatureIo();
+
+        IBatteryQuerySequenceRunFactory factory = BatteryValidationFactory.CreateWindowsQuerySequence(
+            registry,
+            platform,
+            processes,
+            services,
+            native,
+            io,
+            TimeProvider.System,
+            TimeSpan.FromSeconds(3),
+            TimeSpan.FromSeconds(5));
+
+        Assert.NotNull(factory);
+        Assert.Equal(0, registry.ReadCount);
+        Assert.Equal(0, platform.ReadCount);
+        Assert.Equal(0, processes.ReadCount);
+        Assert.Equal(0, services.ReadCount);
+        Assert.Equal(0, native.EnumerationCount);
+        Assert.Equal(0, io.ExecutionCount);
+    }
+
+    [Fact]
     public void ProbeWindows_ContainsHostEvidenceFailureBeforeGuardOrHid()
     {
         var registry = new ThrowingRegistryValueSource();

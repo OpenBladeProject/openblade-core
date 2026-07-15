@@ -77,7 +77,24 @@ public sealed class PublicProtocolSurfaceTests
     {
         Assert.Contains(typeof(IBatteryValidationRunFactory), ProtocolAssembly.GetExportedTypes());
         Assert.Contains(typeof(IBatteryValidationPort), ProtocolAssembly.GetExportedTypes());
+        Assert.Contains(typeof(IBatteryQuerySequenceRunFactory), ProtocolAssembly.GetExportedTypes());
+        Assert.Contains(typeof(IBatteryQuerySequencePort), ProtocolAssembly.GetExportedTypes());
         Assert.Contains(typeof(IAsyncDisposable), typeof(IBatteryValidationPort).GetInterfaces());
+        Assert.Contains(typeof(IAsyncDisposable), typeof(IBatteryQuerySequencePort).GetInterfaces());
+
+        MethodInfo open = Assert.Single(typeof(IBatteryQuerySequenceRunFactory).GetMethods());
+        Assert.Equal("OpenAsync", open.Name);
+        Assert.Equal(
+            typeof(Task<HidSessionResult<IBatteryQuerySequencePort>>),
+            open.ReturnType);
+        Assert.Equal(typeof(CancellationToken), Assert.Single(open.GetParameters()).ParameterType);
+
+        MethodInfo query = Assert.Single(typeof(IBatteryQuerySequencePort).GetMethods());
+        Assert.Equal("QueryAsync", query.Name);
+        Assert.Equal(
+            typeof(Task<HidSessionResult<BatteryValidationSetting>>),
+            query.ReturnType);
+        Assert.Equal(typeof(CancellationToken), Assert.Single(query.GetParameters()).ParameterType);
     }
 
     [Fact]
@@ -139,8 +156,11 @@ public sealed class PublicProtocolSurfaceTests
         Dictionary<string, MethodInfo> methods = factoryType.GetMethods(
                 BindingFlags.Public | BindingFlags.Static | BindingFlags.DeclaredOnly)
             .ToDictionary(method => method.Name, StringComparer.Ordinal);
-        Assert.Equal(2, methods.Count);
+        Assert.Equal(3, methods.Count);
         Assert.Equal(typeof(IBatteryValidationRunFactory), methods["CreateWindows"].ReturnType);
+        Assert.Equal(
+            typeof(IBatteryQuerySequenceRunFactory),
+            methods["CreateWindowsQuerySequence"].ReturnType);
         Assert.Equal(typeof(BatteryValidationProbeResult), methods["ProbeWindows"].ReturnType);
         Assert.All(methods.Values, method => Assert.Empty(method.GetParameters()));
         Assert.Empty(factoryType.GetMembers(
