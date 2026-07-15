@@ -5,7 +5,7 @@ public static class BatteryValidationFactory
     private static readonly TimeSpan DefaultExchangeTimeout = TimeSpan.FromSeconds(3);
     private static readonly TimeSpan DefaultCleanupDrainTimeout = TimeSpan.FromSeconds(5);
     private static readonly TimeSpan BatteryFeatureReportSettleDelay =
-        TimeSpan.FromMilliseconds(10);
+        TimeSpan.FromMilliseconds(20);
 
     public static IBatteryValidationRunFactory CreateWindows()
     {
