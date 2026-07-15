@@ -395,7 +395,7 @@
       "quickEffectsAdmitted": false,
       "matrixStreamingAdmitted": false,
       "brightnessZeroAdmitted": false,
-      "reason": "No lighting action has passed typed OpenSynapse apply, independent readback, and OpenSynapse restoration."
+      "reason": "No lighting action has passed typed OpenBlade apply, independent readback, and OpenBlade restoration."
     }
   },
   "unsupportedObservations": [
@@ -414,6 +414,6 @@
   ],
   "admission": {
     "productionHashAdded": false,
-    "reason": "ACK echoes are not independent readback. No action has yet passed typed OpenSynapse apply, independent query/readback, and OpenSynapse restoration."
+    "reason": "ACK echoes are not independent readback. No action has yet passed typed OpenBlade apply, independent query/readback, and OpenBlade restoration."
   }
 }

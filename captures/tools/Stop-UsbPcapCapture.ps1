@@ -7,12 +7,12 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
-if (-not ('OpenSynapse.ConsoleControl' -as [type])) {
+if (-not ('OpenBlade.ConsoleControl' -as [type])) {
     Add-Type -TypeDefinition @'
 using System;
 using System.Runtime.InteropServices;
 
-namespace OpenSynapse
+namespace OpenBlade
 {
     public static class ConsoleControl
     {
@@ -37,14 +37,14 @@ if ($process.ProcessName -ne 'USBPcapCMD') {
     throw "Refusing to signal non-USBPcap process $ProcessId ($($process.ProcessName))."
 }
 
-[void][OpenSynapse.ConsoleControl]::FreeConsole()
-if (-not [OpenSynapse.ConsoleControl]::AttachConsole([uint32]$ProcessId)) {
+[void][OpenBlade.ConsoleControl]::FreeConsole()
+if (-not [OpenBlade.ConsoleControl]::AttachConsole([uint32]$ProcessId)) {
     throw "Could not attach to USBPcap process $ProcessId (Win32 $([Runtime.InteropServices.Marshal]::GetLastWin32Error()))."
 }
 
 try {
-    [void][OpenSynapse.ConsoleControl]::SetConsoleCtrlHandler([IntPtr]::Zero, $true)
-    if (-not [OpenSynapse.ConsoleControl]::GenerateConsoleCtrlEvent(0, 0)) {
+    [void][OpenBlade.ConsoleControl]::SetConsoleCtrlHandler([IntPtr]::Zero, $true)
+    if (-not [OpenBlade.ConsoleControl]::GenerateConsoleCtrlEvent(0, 0)) {
         throw "Could not send Ctrl+C to USBPcap process $ProcessId."
     }
 
@@ -54,6 +54,6 @@ try {
     }
 }
 finally {
-    [void][OpenSynapse.ConsoleControl]::FreeConsole()
+    [void][OpenBlade.ConsoleControl]::FreeConsole()
     $process.Dispose()
 }

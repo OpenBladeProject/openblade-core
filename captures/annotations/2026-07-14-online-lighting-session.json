@@ -90,6 +90,6 @@
     "The UI 50 value implies byte 80 from the established scaling rule but was not directly emitted in this capture.",
     "Status-05 selector-0018 reports are unsupported operations and are excluded as brightness writes.",
     "Status-02 echoes are acknowledgements, not independent readback.",
-    "Typed OpenSynapse application, independent readback, and OpenSynapse restoration remain pending."
+    "Typed OpenBlade application, independent readback, and OpenBlade restoration remain pending."
   ]
 }

@@ -64,12 +64,12 @@ if (args.Length > 0 && args[0].Equals("validate-battery", StringComparison.Ordin
     return await command.RunAsync(args[1..], CancellationToken.None);
 }
 
-Console.WriteLine("OpenSynapse capture utility (no raw hardware command support)");
-Console.WriteLine("  OpenSynapse.Capture target");
-Console.WriteLine("  OpenSynapse.Capture scan");
-Console.WriteLine("  OpenSynapse.Capture validate <fixtures.json>");
-Console.WriteLine("  OpenSynapse.Capture probe-battery");
-Console.WriteLine("  OpenSynapse.Capture query-battery");
-Console.WriteLine("  OpenSynapse.Capture validate-battery <off|50|55|60|65|70|75|80>");
+Console.WriteLine("OpenBlade capture utility (no raw hardware command support)");
+Console.WriteLine("  OpenBlade.Capture target");
+Console.WriteLine("  OpenBlade.Capture scan");
+Console.WriteLine("  OpenBlade.Capture validate <fixtures.json>");
+Console.WriteLine("  OpenBlade.Capture probe-battery");
+Console.WriteLine("  OpenBlade.Capture query-battery");
+Console.WriteLine("  OpenBlade.Capture validate-battery <off|50|55|60|65|70|75|80>");
 Console.WriteLine("See captures/README.md for the gated USBPcap workflow.");
 return args.Length == 0 ? 0 : 1;

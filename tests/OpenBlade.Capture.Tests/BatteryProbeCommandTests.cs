@@ -106,7 +106,7 @@ public sealed class BatteryProbeCommandTests
 
         Assert.Equal(BatteryProbeCommand.UsageExitCode, exitCode);
         Assert.False(invoked);
-        Assert.Equal("Usage: OpenSynapse.Capture probe-battery\r\n", output.ToString());
+        Assert.Equal("Usage: OpenBlade.Capture probe-battery\r\n", output.ToString());
     }
 
     private static BatteryValidationProbeResult Result(

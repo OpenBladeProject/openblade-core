@@ -1,6 +1,6 @@
-# OpenSynapse
+# OpenBlade
 
-OpenSynapse is a lightweight, standalone Synapse replacement targeting only the
+OpenBlade is a lightweight, standalone Synapse replacement targeting only the
 Razer Blade 16 RZ09-0581 with USB identity `1532:02E0` and BIOS `3.01`.
 
 ## Safety state
@@ -8,7 +8,7 @@ Razer Blade 16 RZ09-0581 with USB identity `1532:02E0` and BIOS `3.01`.
 The application is deliberately fail-closed. Device discovery is read-only and
 all hardware writes remain unavailable until each PID `02E0` operation has a
 sanitized capture fixture that passed decoding, interactive application,
-readback, and restoration. OpenSynapse never exposes a raw-command IPC endpoint.
+readback, and restoration. OpenBlade never exposes a raw-command IPC endpoint.
 
 If a Razer/Synapse controller process is running, the service reports the
 conflict and performs zero hardware writes.
@@ -18,9 +18,9 @@ conflict and performs zero hardware writes.
 Requires Windows 11 and the .NET 10 SDK.
 
 ```powershell
-dotnet restore OpenSynapse.slnx
-dotnet build OpenSynapse.slnx --no-restore
-dotnet test OpenSynapse.slnx --no-build --no-restore
+dotnet restore OpenBlade.slnx
+dotnet build OpenBlade.slnx --no-restore
+dotnet test OpenBlade.slnx --no-build --no-restore
 ```
 
 Create an untrimmed, self-contained `win-x64` bundle:
@@ -29,10 +29,10 @@ Create an untrimmed, self-contained `win-x64` bundle:
 .\build\Publish.ps1
 ```
 
-The bundle is written to `artifacts\win-x64\OpenSynapse`. Run
-`OpenSynapse.Setup.exe install` from an elevated terminal to install it. Use
-`OpenSynapse.Setup.exe uninstall` to preserve profiles or
-`OpenSynapse.Setup.exe uninstall --purge` to remove them. Uninstall requests a
+The bundle is written to `artifacts\win-x64\OpenBlade`. Run
+`OpenBlade.Setup.exe install` from an elevated terminal to install it. Use
+`OpenBlade.Setup.exe uninstall` to preserve profiles or
+`OpenBlade.Setup.exe uninstall --purge` to remove them. Uninstall requests a
 graceful shutdown from the installed tray process and waits for that exact
 executable to exit before removing binaries.
 
@@ -44,9 +44,9 @@ capture exactly one UI operation at a time. The capture CLI can perform only
 target display, read-only discovery, and fixture validation:
 
 ```powershell
-dotnet run --project src/OpenSynapse.Capture -- target
-dotnet run --project src/OpenSynapse.Capture -- scan
-dotnet run --project src/OpenSynapse.Capture -- validate captures/fixtures.json
+dotnet run --project src/OpenBlade.Capture -- target
+dotnet run --project src/OpenBlade.Capture -- scan
+dotnet run --project src/OpenBlade.Capture -- validate captures/fixtures.json
 ```
 
 Do not infer commands from older Blade models or admit partially validated

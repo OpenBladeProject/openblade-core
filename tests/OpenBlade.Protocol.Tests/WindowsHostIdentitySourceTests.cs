@@ -40,7 +40,7 @@ public sealed class WindowsHostIdentitySourceTests
         object? value = source.Read(
             RegistryHive.LocalMachine,
             RegistryView.Registry64,
-            @"SOFTWARE\OpenSynapse\A-Key-That-Does-Not-Exist",
+            @"SOFTWARE\OpenBlade\A-Key-That-Does-Not-Exist",
             "MissingValue");
 
         Assert.Null(value);

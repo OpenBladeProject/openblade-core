@@ -77,7 +77,7 @@ public sealed class BatteryQueryCommandTests
 
         Assert.Equal(BatteryQueryCommand.UsageExitCode, exitCode);
         Assert.False(invoked);
-        Assert.Equal(Lines("Usage: OpenSynapse.Capture query-battery"), output.ToString());
+        Assert.Equal(Lines("Usage: OpenBlade.Capture query-battery"), output.ToString());
     }
 
     private static string Lines(params string[] lines) =>

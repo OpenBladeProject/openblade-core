@@ -7,9 +7,15 @@ param(
 $ErrorActionPreference = 'Stop'
 $repository = Split-Path -Parent $PSScriptRoot
 $artifacts = [IO.Path]::GetFullPath((Join-Path $repository 'artifacts'))
-$bundle = [IO.Path]::GetFullPath((Join-Path $artifacts 'win-x64\OpenSynapse'))
+
+& (Join-Path $PSScriptRoot 'Verify-Branding.ps1') -Repository $repository
+if ($LASTEXITCODE -ne 0) {
+    throw "OpenBlade branding verification failed with exit code $LASTEXITCODE"
+}
+
+$bundle = [IO.Path]::GetFullPath((Join-Path $artifacts 'win-x64\OpenBlade'))
 $stagingRoot = [IO.Path]::GetFullPath((Join-Path $artifacts ('.staging\' + [Guid]::NewGuid().ToString('N'))))
-$stagingBundle = Join-Path $stagingRoot 'OpenSynapse'
+$stagingBundle = Join-Path $stagingRoot 'OpenBlade'
 $payload = Join-Path $stagingBundle 'payload'
 
 function Assert-SafeArtifactPath {
@@ -48,10 +54,10 @@ $publishArguments = @(
 try {
     New-Item -ItemType Directory -Path $payload -Force | Out-Null
 
-    Invoke-CheckedPublish (Join-Path $repository 'src\OpenSynapse.Service\OpenSynapse.Service.csproj') $payload
-    Invoke-CheckedPublish (Join-Path $repository 'src\OpenSynapse.Tray\OpenSynapse.Tray.csproj') $payload
-    Invoke-CheckedPublish (Join-Path $repository 'src\OpenSynapse.Capture\OpenSynapse.Capture.csproj') $payload
-    Invoke-CheckedPublish (Join-Path $repository 'src\OpenSynapse.Setup\OpenSynapse.Setup.csproj') $stagingBundle
+    Invoke-CheckedPublish (Join-Path $repository 'src\OpenBlade.Service\OpenBlade.Service.csproj') $payload
+    Invoke-CheckedPublish (Join-Path $repository 'src\OpenBlade.Tray\OpenBlade.Tray.csproj') $payload
+    Invoke-CheckedPublish (Join-Path $repository 'src\OpenBlade.Capture\OpenBlade.Capture.csproj') $payload
+    Invoke-CheckedPublish (Join-Path $repository 'src\OpenBlade.Setup\OpenBlade.Setup.csproj') $stagingBundle
 
     if (Test-Path -LiteralPath $bundle) {
         Remove-Item -LiteralPath $bundle -Recurse -Force

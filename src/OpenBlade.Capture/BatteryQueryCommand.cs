@@ -27,7 +27,7 @@ public sealed class BatteryQueryCommand
         ArgumentNullException.ThrowIfNull(arguments);
         if (arguments.Count != 0)
         {
-            await _output.WriteLineAsync("Usage: OpenSynapse.Capture query-battery")
+            await _output.WriteLineAsync("Usage: OpenBlade.Capture query-battery")
                 .ConfigureAwait(false);
             return UsageExitCode;
         }

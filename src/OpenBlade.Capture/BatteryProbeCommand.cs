@@ -26,7 +26,7 @@ public sealed class BatteryProbeCommand
         ArgumentNullException.ThrowIfNull(arguments);
         if (arguments.Count != 0)
         {
-            await output.WriteLineAsync("Usage: OpenSynapse.Capture probe-battery")
+            await output.WriteLineAsync("Usage: OpenBlade.Capture probe-battery")
                 .ConfigureAwait(false);
             return UsageExitCode;
         }

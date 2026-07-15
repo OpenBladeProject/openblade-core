@@ -8,7 +8,7 @@ public sealed class CapturedFixtureFileTests : IDisposable
 {
     private readonly string _path = Path.Combine(
         Path.GetTempPath(),
-        $"opensynapse-fixture-{Guid.NewGuid():N}.json");
+        $"openblade-fixture-{Guid.NewGuid():N}.json");
 
     [Fact]
     public async Task LoadCatalogAsync_AdmitsValidatedFixtureFile()

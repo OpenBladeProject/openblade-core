@@ -36,7 +36,7 @@ public sealed class BatteryValidationCommand
         if (!TryParse(arguments, out BatteryValidationSetting candidate))
         {
             await _output
-                .WriteLineAsync("Usage: OpenSynapse.Capture validate-battery <off|50|55|60|65|70|75|80>")
+                .WriteLineAsync("Usage: OpenBlade.Capture validate-battery <off|50|55|60|65|70|75|80>")
                 .ConfigureAwait(false);
             return UsageExitCode;
         }

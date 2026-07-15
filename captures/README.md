@@ -17,7 +17,7 @@ Production hardware writes remain disabled until every command has passed all fi
 5. Stop USBPcap with Ctrl+C so the PCAP is flushed and the root handle is released. The helper in `captures/tools/Stop-UsbPcapCapture.ps1` sends that signal only after confirming the target process is `USBPcapCMD`.
 6. Export only the matching feature-report request and response bytes. Do not commit raw PCAP files, serial numbers, or unrelated USB traffic.
 7. Create a sanitized fixture entry with the exact device identity and all validation flags initially false except `captured` and `decoded`.
-8. Run `OpenSynapse.Capture validate fixtures.json`. It must fail until interactive application, readback, and restoration have each been confirmed. After review, add the exact fixture-file SHA-256 to the code-controlled production registry; fixture metadata alone cannot authorize commands.
+8. Run `OpenBlade.Capture validate fixtures.json`. It must fail until interactive application, readback, and restoration have each been confirmed. After review, add the exact fixture-file SHA-256 to the code-controlled production registry; fixture metadata alone cannot authorize commands.
 
 Decoded but unadmitted PID `02E0` evidence lives under `captures/decoded`. It intentionally uses an evidence schema rather than the production fixture schema so incomplete gates, multi-command operations, expected ACKs, and readback candidates remain explicit. Files under `captures/annotations` contain only sanitized UI action timestamps used for correlation. Neither directory authorizes a hardware write.
 
