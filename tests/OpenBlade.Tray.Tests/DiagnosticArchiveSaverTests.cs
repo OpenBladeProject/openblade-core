@@ -48,6 +48,29 @@ public sealed class DiagnosticArchiveSaverTests
     }
 
     [Fact]
+    public async Task SaveAsync_CancellationAtSelectionWriteBoundary_CreatesNoFiles()
+    {
+        string directory = CreateTemporaryDirectory();
+        string path = Path.Combine(directory, "chosen-name.zip");
+        using var source = new CancellationTokenSource();
+        var destination = new CancelingDestination(path, source);
+        var saver = new DiagnosticArchiveSaver(destination);
+        try
+        {
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(() => saver.SaveAsync(
+                CreateArchive(),
+                source.Token));
+
+            Assert.False(File.Exists(path));
+            Assert.Empty(Directory.EnumerateFileSystemEntries(directory));
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [Fact]
     public async Task SaveAsync_ReplacesExistingDestinationAndLeavesNoTemporarySibling()
     {
         string directory = CreateTemporaryDirectory();
@@ -135,6 +158,20 @@ public sealed class DiagnosticArchiveSaverTests
             SelectionStarted.SetResult();
             await Task.Delay(Timeout.InfiniteTimeSpan, token);
             return null;
+        }
+    }
+
+    private sealed class CancelingDestination(
+        string path,
+        CancellationTokenSource cancellation) : IDiagnosticArchiveDestination
+    {
+        public Task<string?> ChooseDestinationAsync(
+            string suggestedFileName,
+            CancellationToken token)
+        {
+            token.ThrowIfCancellationRequested();
+            cancellation.Cancel();
+            return Task.FromResult<string?>(path);
         }
     }
 }

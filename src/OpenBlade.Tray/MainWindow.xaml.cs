@@ -30,7 +30,8 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
             ?? throw new InvalidOperationException("The tray must start on a dispatcher thread.");
         ViewModel = new MainViewModel(
             new ServiceClient(),
-            new WinUiDispatcher(dispatcherQueue));
+            new WinUiDispatcher(dispatcherQueue),
+            new DiagnosticArchiveSaver(new WinUiDiagnosticArchiveDestination(AppWindow.Id)));
         InitializeComponent();
         Root.DataContext = ViewModel;
 

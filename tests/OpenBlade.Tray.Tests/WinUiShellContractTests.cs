@@ -172,6 +172,53 @@ public sealed class WinUiShellContractTests
         Assert.DoesNotContain("Root.MinHeight", source, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void DiagnosticDestinationUsesWindowOwnedWindowsAppSdkPicker()
+    {
+        string source = ReadRepositoryFile(
+            "src",
+            "OpenBlade.Tray",
+            "WinUiDiagnosticArchiveDestination.cs");
+        Assert.Contains("Microsoft.Windows.Storage.Pickers", source, StringComparison.Ordinal);
+        Assert.Contains("new FileSavePicker(windowId)", source, StringComparison.Ordinal);
+        Assert.Contains(
+            "Path.GetFileNameWithoutExtension(suggestedFileName)",
+            source,
+            StringComparison.Ordinal);
+        Assert.Contains("SuggestedFileName = suggestedBaseName", source, StringComparison.Ordinal);
+        Assert.Contains("DefaultFileExtension = \".zip\"", source, StringComparison.Ordinal);
+        Assert.Contains(
+            "FileTypeChoices.Add(\"ZIP archives\", [\".zip\"])",
+            source,
+            StringComparison.Ordinal);
+        Assert.Contains("ShowOverwritePrompt = true", source, StringComparison.Ordinal);
+        Assert.Contains(
+            "Title = \"Export OpenBlade diagnostics\"",
+            source,
+            StringComparison.Ordinal);
+        Assert.Contains("PickSaveFileAsync().AsTask(token)", source, StringComparison.Ordinal);
+        Assert.Contains("return result?.Path", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("using Windows.Storage.Pickers", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("Microsoft.Win32", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("DispatcherQueue", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("FileStream", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("File.Write", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("File.Move", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("File.Delete", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("ZipArchive", source, StringComparison.Ordinal);
+        Assert.DoesNotContain(".tmp", source, StringComparison.Ordinal);
+
+        string window = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml.cs");
+        Assert.Contains(
+            "new DiagnosticArchiveSaver(new WinUiDiagnosticArchiveDestination(AppWindow.Id))",
+            window,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "new MainViewModel(\n            new ServiceClient(),\n            new WinUiDispatcher(dispatcherQueue),",
+            window.Replace("\r\n", "\n", StringComparison.Ordinal),
+            StringComparison.Ordinal);
+    }
+
     private static string ProjectPath => GetProjectPath();
 
     private static string ReadRepositoryFile(params string[] segments) =>
