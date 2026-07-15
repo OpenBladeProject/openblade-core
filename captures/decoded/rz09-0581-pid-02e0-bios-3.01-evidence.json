@@ -79,6 +79,14 @@
       "id": "lighting-brightness-50-online",
       "fileName": "opensynapse-lighting-brightness-50-online-20260714.pcap",
       "sha256": "4ED4F52BDDC14C72758405F867F8DE533F11E9F68346E00CD12A7DD0EC77CC8A"
+    },
+    {
+      "id": "performance-fan-state-refresh-negative",
+      "fileName": "openblade-performance-fan-refresh-20260714.pcap",
+      "sha256": "8D323555E7CF173E41B0E7AFB3690D395815C4430378A4DD7B229183F836C499",
+      "bytes": 235494,
+      "firstEpoch": "1784084232.487321000",
+      "lastEpoch": "1784084361.799563000"
     }
   ],
   "frameProvenance": {
@@ -396,6 +404,56 @@
       "matrixStreamingAdmitted": false,
       "brightnessZeroAdmitted": false,
       "reason": "No lighting action has passed typed OpenBlade apply, independent readback, and OpenBlade restoration."
+    }
+  },
+  "performanceFanRefreshEvidence": {
+    "capture": "performance-fan-state-refresh-negative",
+    "condition": {
+      "acOnline": true,
+      "displayedPerformance": "Balanced",
+      "displayedFanMode": "Auto (Default)",
+      "userInitiatedSettingMutation": false
+    },
+    "modeAckEchoes0D_02": {
+      "command": "0D/02",
+      "requestCount": 32,
+      "replyCount": 32,
+      "firstRequestFrame": 97,
+      "lastRequestFrame": 851,
+      "firstReplyGetRequestFrame": 99,
+      "firstReplyFrame": 100,
+      "lastReplyGetRequestFrame": 853,
+      "lastReplyFrame": 854,
+      "status02AckEchoesOnly": true,
+      "independentStateValues": false,
+      "observation": "All 32 replies are status-02 echoes of the preceding 0D/02 request payload; they do not independently report performance or fan mode."
+    },
+    "fanTelemetry0D_88": {
+      "command": "0D/88",
+      "firstAfterNavigateAway": {
+        "requestFrames": [1091, 1095],
+        "responseFrames": [1094, 1100]
+      },
+      "firstAfterReturn": {
+        "requestFrames": [1151, 1155],
+        "responseFrames": [1154, 1158]
+      },
+      "semantic": "fan-rpm-only",
+      "performanceOrFanModeReadback": false,
+      "observation": "The paired selector responses report live fan RPM only; continuous polling was observed across both navigation windows and does not encode performance or fan mode."
+    },
+    "unresolved07_8C": {
+      "command": "07/8C",
+      "responsePayloadHex": "1111",
+      "semantic": "unresolved-not-associated-with-performance-page-refresh",
+      "performanceOrFanModeReadback": false,
+      "observation": "The command remains semantically unresolved and was not temporally associated with the captured Performance-page refresh."
+    },
+    "conclusion": {
+      "independentReadbackObservedInCapture": false,
+      "performanceFanProductionAdmissionAllowed": false,
+      "typedMutationHarnessAllowed": false,
+      "reason": "No independent performance or fan-mode readback was observed in this capture, so it cannot establish baseline, post-apply readback, or restoration for production admission."
     }
   },
   "unsupportedObservations": [

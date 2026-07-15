@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "uiActions": [
+    {
+      "atUtc": "2026-07-15T02:58:24.157Z",
+      "observation": "Performance displayed Balanced and fan mode displayed Auto (Default)"
+    },
+    {
+      "atUtc": "2026-07-15T02:58:40.298Z",
+      "observation": "Navigated from Performance to Display without selecting a setting"
+    },
+    {
+      "atUtc": "2026-07-15T02:58:42.873Z",
+      "observation": "Returned to Performance without selecting a setting"
+    },
+    {
+      "atUtc": "2026-07-15T02:58:48.009Z",
+      "observation": "Performance UI repopulated with Balanced and Auto (Default)"
+    }
+  ]
+}
