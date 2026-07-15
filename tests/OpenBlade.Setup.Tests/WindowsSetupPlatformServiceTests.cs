@@ -86,14 +86,69 @@ public sealed class WindowsSetupPlatformServiceTests
     }
 
     [Fact]
-    public async Task PrepareServiceForInstall_ExistingService_StopsAndWaitsBeforePayloadCopy()
+    public async Task CaptureThenPrepareService_RunningService_RecordsStateBeforeStopping()
     {
-        RecordingServiceControl serviceControl = new() { Exists = true };
+        RecordingServiceControl serviceControl = new() { State = SetupServiceState.Running };
         WindowsSetupPlatform platform = new(serviceControl);
 
+        SetupInstallLifecycleState prior = await platform.CaptureInstallLifecycleStateAsync(CancellationToken.None);
         await platform.PrepareServiceForInstallAsync(CancellationToken.None);
 
+        Assert.Equal(new SetupServiceInstallState(true, true), prior.Service);
         Assert.Equal(["run:stop", "wait:Stopped:00:00:30"], serviceControl.Operations);
+    }
+
+    [Fact]
+    public async Task CaptureThenPrepareService_StoppedService_RecordsStateWithoutStartingOrStoppingIt()
+    {
+        RecordingServiceControl serviceControl = new() { State = SetupServiceState.Stopped };
+        WindowsSetupPlatform platform = new(serviceControl);
+
+        SetupInstallLifecycleState prior = await platform.CaptureInstallLifecycleStateAsync(CancellationToken.None);
+        await platform.PrepareServiceForInstallAsync(CancellationToken.None);
+
+        Assert.Equal(new SetupServiceInstallState(true, false), prior.Service);
+        Assert.Empty(serviceControl.Operations);
+    }
+
+    [Fact]
+    public async Task CaptureInstallLifecycle_ReadsShortcutExistenceWithoutMutatingIt()
+    {
+        RecordingFileOperations files = new() { FileExistsResult = true };
+        WindowsSetupPlatform platform = new(fileOperations: files);
+
+        SetupInstallLifecycleState prior =
+            await platform.CaptureInstallLifecycleStateAsync(CancellationToken.None);
+
+        Assert.True(prior.Startup.ShortcutExisted);
+        Assert.Empty(files.DeletedFiles);
+    }
+
+    [Fact]
+    public async Task RestoreServiceInstallState_PriorRunningAndStillRunning_DoesNotStartAgainAndChecksHealth()
+    {
+        RecordingServiceControl serviceControl = new() { State = SetupServiceState.Running };
+        RecordingHealthProbe health = new();
+        WindowsSetupPlatform platform = new(serviceControl, healthProbe: health);
+
+        await platform.RestoreServiceInstallStateAsync(new(true, true), CancellationToken.None);
+
+        Assert.DoesNotContain(serviceControl.Commands, command => command.Arguments[0] == "start");
+        Assert.Equal(1, health.Verifications);
+    }
+
+    [Fact]
+    public async Task RestoreServiceInstallState_PriorStoppedAndRegistrationMissing_RecreatesWithoutStarting()
+    {
+        RecordingServiceControl serviceControl = new();
+        RecordingHealthProbe health = new();
+        WindowsSetupPlatform platform = new(serviceControl, healthProbe: health);
+
+        await platform.RestoreServiceInstallStateAsync(new(true, false), CancellationToken.None);
+
+        Assert.Contains(serviceControl.Commands, command => command.Arguments[0] == "create");
+        Assert.DoesNotContain(serviceControl.Commands, command => command.Arguments[0] == "start");
+        Assert.Equal(0, health.Verifications);
     }
 
     [Fact]
@@ -251,11 +306,15 @@ public sealed class WindowsSetupPlatformServiceTests
     private sealed class RecordingServiceControl : ISetupServiceControl
     {
         public bool Exists { get; init; }
+        public SetupServiceState? State { get; init; }
         public List<RecordedCommand> Commands { get; } = [];
         public List<string> Operations { get; } = [];
 
         public Task<bool> ExistsAsync(string serviceName, CancellationToken cancellationToken) =>
-            Task.FromResult(Exists);
+            Task.FromResult(Exists || State is not null);
+
+        public Task<SetupServiceState?> GetStateAsync(string serviceName, CancellationToken cancellationToken) =>
+            Task.FromResult(State ?? (Exists ? SetupServiceState.Running : null));
 
         public Task RunAsync(
             IReadOnlyList<string> arguments,
@@ -312,8 +371,22 @@ public sealed class WindowsSetupPlatformServiceTests
     private sealed class RecordingFileOperations : ISetupFileOperations
     {
         public List<string> DeletedFiles { get; } = [];
+        public bool FileExistsResult { get; init; }
+
+        public bool FileExists(string path) => FileExistsResult;
 
         public void DeleteFile(string path) => DeletedFiles.Add(path);
+    }
+
+    private sealed class RecordingHealthProbe : ISetupServiceHealthProbe
+    {
+        public int Verifications { get; private set; }
+
+        public Task VerifyAsync(CancellationToken cancellationToken)
+        {
+            Verifications++;
+            return Task.CompletedTask;
+        }
     }
 
     private sealed class RecordingProcessOperations(params ISetupProcess[] processes) : ISetupProcessOperations

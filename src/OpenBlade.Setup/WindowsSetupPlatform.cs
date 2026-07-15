@@ -5,11 +5,13 @@ namespace OpenBlade.Setup;
 
 public interface ISetupFileOperations
 {
+    bool FileExists(string path);
     void DeleteFile(string path);
 }
 
 internal sealed class WindowsSetupFileOperations : ISetupFileOperations
 {
+    public bool FileExists(string path) => File.Exists(path);
     public void DeleteFile(string path) => File.Delete(path);
 }
 
@@ -18,11 +20,9 @@ public sealed class WindowsSetupPlatform : ISetupPlatform
     private const string ServiceName = "OpenBlade";
     private const int ServiceDoesNotExist = 1060;
     private const int ServiceNotActive = 1062;
-    private readonly SetupPaths paths = SetupPaths.Create(
-        Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles),
-        Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
-        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-        Environment.GetFolderPath(Environment.SpecialFolder.Startup));
+    private readonly SetupPaths paths;
+    private readonly string payloadDirectory;
+    private readonly ISetupPayloadFileSystem payloadFileSystem;
     private readonly ISetupServiceControl serviceControl;
     private readonly IStartupShortcutWriter shortcutWriter;
     private readonly IAuthorizedUserSidWriter sidWriter;
@@ -36,8 +36,18 @@ public sealed class WindowsSetupPlatform : ISetupPlatform
         IAuthorizedUserSidWriter? sidWriter = null,
         ISetupServiceHealthProbe? healthProbe = null,
         ISetupFileOperations? fileOperations = null,
-        ISetupProcessOperations? processOperations = null)
+        ISetupProcessOperations? processOperations = null,
+        SetupPaths? paths = null,
+        string? payloadDirectory = null,
+        ISetupPayloadFileSystem? payloadFileSystem = null)
     {
+        this.paths = paths ?? SetupPaths.Create(
+            Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles),
+            Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            Environment.GetFolderPath(Environment.SpecialFolder.Startup));
+        this.payloadDirectory = payloadDirectory ?? Path.Combine(AppContext.BaseDirectory, "payload");
+        this.payloadFileSystem = payloadFileSystem ?? new WindowsSetupPayloadFileSystem();
         this.serviceControl = serviceControl ?? new ScSetupServiceControl();
         this.shortcutWriter = shortcutWriter ?? new WindowsStartupShortcutWriter();
         this.sidWriter = sidWriter ?? new AtomicAuthorizedUserSidWriter();
@@ -49,41 +59,78 @@ public sealed class WindowsSetupPlatform : ISetupPlatform
     public string CurrentUserSid => WindowsIdentity.GetCurrent().User?.Value
         ?? throw new InvalidOperationException("The installing user's SID is unavailable.");
 
+    public async Task<SetupInstallLifecycleState> CaptureInstallLifecycleStateAsync(
+        CancellationToken cancellationToken)
+    {
+        SetupServiceState? state = await serviceControl.GetStateAsync(ServiceName, cancellationToken);
+        bool shortcutExisted = fileOperations.FileExists(paths.StartupFile)
+            || fileOperations.FileExists(paths.LegacyStartupFile);
+        return new(
+            new(state is not null, state == SetupServiceState.Running),
+            new(shortcutExisted));
+    }
+
     public async Task PrepareServiceForInstallAsync(CancellationToken cancellationToken)
     {
-        if (!await serviceControl.ExistsAsync(ServiceName, cancellationToken))
+        SetupServiceState? state = await serviceControl.GetStateAsync(ServiceName, cancellationToken);
+
+        if (state == SetupServiceState.Running)
         {
+            await serviceControl.RunAsync(
+                ["stop", ServiceName],
+                [ServiceNotActive],
+                cancellationToken);
+            await serviceControl.WaitForStateAsync(
+                ServiceName,
+                SetupServiceState.Stopped,
+                TimeSpan.FromSeconds(30),
+                cancellationToken);
+        }
+
+    }
+
+    public Task<ISetupPayloadTransaction> StagePayloadAsync(CancellationToken cancellationToken) =>
+        SetupPayloadTransaction.StageAsync(paths, payloadDirectory, payloadFileSystem, cancellationToken);
+
+    public async Task RestoreServiceInstallStateAsync(
+        SetupServiceInstallState priorState,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(priorState);
+        if (!priorState.Existed)
+        {
+            await RemoveServiceAsync(cancellationToken);
             return;
         }
 
-        await serviceControl.RunAsync(
-            ["stop", ServiceName],
-            [ServiceNotActive],
-            cancellationToken);
-        await serviceControl.WaitForStateAsync(
-            ServiceName,
-            SetupServiceState.Stopped,
-            TimeSpan.FromSeconds(30),
-            cancellationToken);
-    }
-
-    public async Task CopyPayloadAsync(CancellationToken cancellationToken)
-    {
-        string source = Path.Combine(AppContext.BaseDirectory, "payload");
-        RequirePayloadFile(source, "OpenBlade.Service.exe");
-        RequirePayloadFile(source, "OpenBlade.Tray.exe");
-        Directory.CreateDirectory(paths.InstallDirectory);
-
-        foreach (string file in Directory.EnumerateFiles(source, "*", SearchOption.AllDirectories))
+        SetupServiceState? current = await serviceControl.GetStateAsync(ServiceName, cancellationToken);
+        if (priorState.WasRunning)
         {
-            cancellationToken.ThrowIfCancellationRequested();
-            string relative = Path.GetRelativePath(source, file);
-            string destination = Path.Combine(paths.InstallDirectory, relative);
-            Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
-            File.Copy(file, destination, overwrite: true);
+            if (current != SetupServiceState.Running)
+            {
+                await ConfigureServiceAsync(startService: true, cancellationToken);
+            }
+
+            await VerifyServiceHealthAsync(cancellationToken);
+            return;
         }
 
-        await Task.CompletedTask;
+        if (current is null)
+        {
+            await ConfigureServiceAsync(startService: false, cancellationToken);
+        }
+        else if (current == SetupServiceState.Running)
+        {
+            await serviceControl.RunAsync(
+                ["stop", ServiceName],
+                [ServiceNotActive],
+                cancellationToken);
+            await serviceControl.WaitForStateAsync(
+                ServiceName,
+                SetupServiceState.Stopped,
+                TimeSpan.FromSeconds(30),
+                cancellationToken);
+        }
     }
 
     public async Task WriteAuthorizedUserSidAsync(string sid, CancellationToken cancellationToken)
@@ -110,7 +157,12 @@ public sealed class WindowsSetupPlatform : ISetupPlatform
             cancellationToken);
     }
 
-    public async Task InstallServiceAsync(CancellationToken cancellationToken)
+    public Task InstallServiceAsync(CancellationToken cancellationToken) =>
+        ConfigureServiceAsync(startService: true, cancellationToken);
+
+    private async Task ConfigureServiceAsync(
+        bool startService,
+        CancellationToken cancellationToken)
     {
         string serviceExecutable = Path.Combine(paths.InstallDirectory, "OpenBlade.Service.exe");
         bool serviceExists = await serviceControl.ExistsAsync(ServiceName, cancellationToken);
@@ -124,12 +176,15 @@ public sealed class WindowsSetupPlatform : ISetupPlatform
             Array.Empty<int>(),
             cancellationToken);
         await serviceControl.RunAsync(["failureflag", ServiceName, "1"], Array.Empty<int>(), cancellationToken);
-        await serviceControl.RunAsync(["start", ServiceName], Array.Empty<int>(), cancellationToken);
-        await serviceControl.WaitForStateAsync(
-            ServiceName,
-            SetupServiceState.Running,
-            TimeSpan.FromSeconds(30),
-            cancellationToken);
+        if (startService)
+        {
+            await serviceControl.RunAsync(["start", ServiceName], Array.Empty<int>(), cancellationToken);
+            await serviceControl.WaitForStateAsync(
+                ServiceName,
+                SetupServiceState.Running,
+                TimeSpan.FromSeconds(30),
+                cancellationToken);
+        }
     }
 
     public async Task VerifyServiceHealthAsync(CancellationToken cancellationToken)
@@ -258,15 +313,6 @@ public sealed class WindowsSetupPlatform : ISetupPlatform
         if (Directory.Exists(directory))
         {
             Directory.Delete(directory, recursive: true);
-        }
-    }
-
-    private static void RequirePayloadFile(string payloadDirectory, string fileName)
-    {
-        string path = Path.Combine(payloadDirectory, fileName);
-        if (!File.Exists(path))
-        {
-            throw new InvalidOperationException($"The setup payload is incomplete: '{fileName}' is missing.");
         }
     }
 

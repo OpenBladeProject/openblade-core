@@ -1,0 +1,562 @@
+using System.Diagnostics;
+using System.Security.Cryptography;
+
+namespace OpenBlade.Setup;
+
+public interface ISetupPayloadFileSystem
+{
+    bool DirectoryExists(string path);
+    FileAttributes GetAttributes(string path);
+    IEnumerable<string> EnumerateFiles(string path);
+    IEnumerable<string> EnumerateDirectories(string path);
+    void CreateDirectory(string path);
+    void CopyFile(string source, string destination);
+    long GetFileLength(string path);
+    Stream OpenRead(string path);
+    void MoveDirectory(string source, string destination);
+    void DeleteDirectory(string path);
+}
+
+public sealed class WindowsSetupPayloadFileSystem : ISetupPayloadFileSystem
+{
+    public bool DirectoryExists(string path) => Directory.Exists(path);
+    public FileAttributes GetAttributes(string path) => File.GetAttributes(path);
+    public IEnumerable<string> EnumerateFiles(string path) => Directory.EnumerateFiles(path);
+    public IEnumerable<string> EnumerateDirectories(string path) => Directory.EnumerateDirectories(path);
+    public void CreateDirectory(string path) => Directory.CreateDirectory(path);
+    public void CopyFile(string source, string destination) => File.Copy(source, destination, overwrite: false);
+    public long GetFileLength(string path) => new FileInfo(path).Length;
+    public Stream OpenRead(string path) => File.Open(path, FileMode.Open, FileAccess.Read, FileShare.Read);
+    public void MoveDirectory(string source, string destination) => Directory.Move(source, destination);
+    public void DeleteDirectory(string path) => Directory.Delete(path, recursive: true);
+}
+
+public sealed class SetupPayloadTransaction : ISetupPayloadTransaction
+{
+    private static readonly string[] RequiredRelativePaths =
+    [
+        "OpenBlade.Service.exe",
+        "OpenBlade.Capture.exe",
+        "OpenBlade.Tray.exe",
+        "OpenBlade.Tray.dll",
+        "OpenBlade.Tray.deps.json",
+        "OpenBlade.Tray.runtimeconfig.json",
+        "OpenBlade.Tray.pri",
+        "Microsoft.WindowsAppRuntime.dll",
+        "Microsoft.WindowsAppRuntime.pri",
+        "Microsoft.ui.xaml.dll",
+        "Microsoft.UI.Xaml.Controls.dll",
+        "Microsoft.UI.Xaml.Controls.pri",
+        @"Microsoft.UI.Xaml\Assets\NoiseAsset_256x256_PNG.png",
+    ];
+
+    private readonly SetupPaths paths;
+    private readonly ISetupPayloadFileSystem files;
+    private readonly string stagingDirectory;
+    private readonly string backupDirectory;
+    private readonly string failedDirectory;
+    private TransactionState state = TransactionState.Staged;
+
+    private SetupPayloadTransaction(
+        SetupPaths paths,
+        ISetupPayloadFileSystem files,
+        string stagingDirectory,
+        string backupDirectory,
+        string failedDirectory,
+        bool hadExistingInstall)
+    {
+        this.paths = paths;
+        this.files = files;
+        this.stagingDirectory = stagingDirectory;
+        this.backupDirectory = backupDirectory;
+        this.failedDirectory = failedDirectory;
+        HadExistingInstall = hadExistingInstall;
+    }
+
+    public bool HadExistingInstall { get; }
+
+    public bool IsActivated => state is TransactionState.BackupMoved
+        or TransactionState.Active
+        or TransactionState.RestoreFailed;
+
+    public static async Task<ISetupPayloadTransaction> StageAsync(
+        SetupPaths paths,
+        string payloadDirectory,
+        ISetupPayloadFileSystem files,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(paths);
+        ArgumentException.ThrowIfNullOrWhiteSpace(payloadDirectory);
+        ArgumentNullException.ThrowIfNull(files);
+
+        string payloadRoot = NormalizeRoot(payloadDirectory);
+        IReadOnlyDictionary<string, PayloadEntry> sourceManifest =
+            BuildManifest(payloadRoot, files, cancellationToken);
+        ValidateRequiredPayload(sourceManifest);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        EnsureNoAmbiguousTransactionSiblings(paths, files);
+
+        string transactionId = Guid.NewGuid().ToString("N");
+        string staging = Path.Combine(paths.ProgramFilesRoot, $"OpenBlade.installing.{transactionId}");
+        string backup = Path.Combine(paths.ProgramFilesRoot, $"OpenBlade.rollback.{transactionId}");
+        string failed = Path.Combine(paths.ProgramFilesRoot, $"OpenBlade.failed.{transactionId}");
+        EnsureTransactionPaths(paths, staging, backup, failed);
+
+        bool stagingCreated = false;
+        try
+        {
+            files.CreateDirectory(staging);
+            stagingCreated = true;
+
+            foreach (PayloadEntry entry in sourceManifest.Values.OrderBy(entry => entry.RelativePath, StringComparer.OrdinalIgnoreCase))
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                string source = ResolveContainedPath(payloadRoot, entry.RelativePath);
+                string destination = ResolveContainedPath(staging, entry.RelativePath);
+                files.CreateDirectory(Path.GetDirectoryName(destination)!);
+                files.CopyFile(source, destination);
+                cancellationToken.ThrowIfCancellationRequested();
+
+                PayloadEntry currentSource = ReadEntry(payloadRoot, source, files);
+                if (!entry.ContentEquals(currentSource))
+                {
+                    throw new InvalidDataException(
+                        $"Payload file '{entry.RelativePath}' changed while staging.");
+                }
+            }
+
+            IReadOnlyDictionary<string, PayloadEntry> stagedManifest =
+                BuildManifest(staging, files, cancellationToken);
+            RequireExactManifest(sourceManifest, stagedManifest);
+
+            return new SetupPayloadTransaction(
+                paths,
+                files,
+                staging,
+                backup,
+                failed,
+                files.DirectoryExists(paths.InstallDirectory));
+        }
+        catch (Exception failure)
+        {
+            if (!stagingCreated || !files.DirectoryExists(staging))
+            {
+                throw;
+            }
+
+            try
+            {
+                DeleteTransactionDirectory(files, paths, staging);
+            }
+            catch (Exception cleanupFailure)
+            {
+                throw new AggregateException(failure, cleanupFailure);
+            }
+
+            throw;
+        }
+        finally
+        {
+            await Task.CompletedTask;
+        }
+    }
+
+    public Task ActivateAsync(CancellationToken cancellationToken)
+    {
+        if (state != TransactionState.Staged)
+        {
+            throw new InvalidOperationException("The payload transaction can only be activated once.");
+        }
+
+        cancellationToken.ThrowIfCancellationRequested();
+        EnsureTransactionPaths(paths, stagingDirectory, backupDirectory, failedDirectory);
+        bool liveExists = files.DirectoryExists(paths.InstallDirectory);
+        if (liveExists != HadExistingInstall)
+        {
+            throw new InvalidOperationException("The installed payload changed while setup was staging; no files were replaced.");
+        }
+
+        if (HadExistingInstall)
+        {
+            files.MoveDirectory(paths.InstallDirectory, backupDirectory);
+            state = TransactionState.BackupMoved;
+            try
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                files.MoveDirectory(stagingDirectory, paths.InstallDirectory);
+                state = TransactionState.Active;
+            }
+            catch (Exception activationFailure)
+            {
+                try
+                {
+                    files.MoveDirectory(backupDirectory, paths.InstallDirectory);
+                    state = TransactionState.Staged;
+                }
+                catch (Exception restoreFailure)
+                {
+                    state = TransactionState.RestoreFailed;
+                    throw new AggregateException(
+                        $"Payload activation and restoration failed. The prior installation is retained at '{backupDirectory}'.",
+                        activationFailure,
+                        restoreFailure);
+                }
+
+                throw;
+            }
+        }
+        else
+        {
+            files.MoveDirectory(stagingDirectory, paths.InstallDirectory);
+            state = TransactionState.Active;
+        }
+
+        return Task.CompletedTask;
+    }
+
+    public Task CommitAsync(CancellationToken cancellationToken)
+    {
+        if (state == TransactionState.Committed)
+        {
+            return Task.CompletedTask;
+        }
+
+        if (state != TransactionState.Active)
+        {
+            throw new InvalidOperationException("The payload transaction must be activated before it can be committed.");
+        }
+
+        cancellationToken.ThrowIfCancellationRequested();
+        state = TransactionState.Committed;
+        if (HadExistingInstall && files.DirectoryExists(backupDirectory))
+        {
+            try
+            {
+                DeleteTransactionDirectory(files, paths, backupDirectory);
+            }
+            catch (Exception exception)
+            {
+                Trace.TraceWarning(
+                    "OpenBlade setup committed the verified payload, but could not remove backup '{0}': {1}",
+                    backupDirectory,
+                    exception.Message);
+            }
+        }
+        return Task.CompletedTask;
+    }
+
+    public Task RollbackAsync(CancellationToken cancellationToken)
+    {
+        if (state == TransactionState.RolledBack)
+        {
+            return Task.CompletedTask;
+        }
+
+        if (state == TransactionState.Committed)
+        {
+            throw new InvalidOperationException("A committed payload transaction cannot be rolled back.");
+        }
+
+        cancellationToken.ThrowIfCancellationRequested();
+        switch (state)
+        {
+            case TransactionState.Staged:
+                if (files.DirectoryExists(stagingDirectory))
+                {
+                    DeleteTransactionDirectory(files, paths, stagingDirectory);
+                }
+                state = TransactionState.RolledBack;
+                break;
+
+            case TransactionState.BackupMoved:
+            case TransactionState.RestoreFailed:
+                RestoreStrandedBackup();
+                state = TransactionState.RolledBack;
+                break;
+
+            case TransactionState.Active:
+                if (HadExistingInstall)
+                {
+                    RollbackUpdate();
+                }
+                else
+                {
+                    DeleteLiveDirectory(files, paths);
+                }
+                state = TransactionState.RolledBack;
+                break;
+        }
+
+        return Task.CompletedTask;
+    }
+
+    public ValueTask DisposeAsync()
+    {
+        if (state == TransactionState.Staged && files.DirectoryExists(stagingDirectory))
+        {
+            DeleteTransactionDirectory(files, paths, stagingDirectory);
+            state = TransactionState.RolledBack;
+        }
+
+        return ValueTask.CompletedTask;
+    }
+
+    private void RollbackUpdate()
+    {
+        files.MoveDirectory(paths.InstallDirectory, failedDirectory);
+        try
+        {
+            files.MoveDirectory(backupDirectory, paths.InstallDirectory);
+        }
+        catch (Exception restoreFailure)
+        {
+            try
+            {
+                files.MoveDirectory(failedDirectory, paths.InstallDirectory);
+            }
+            catch (Exception reverseFailure)
+            {
+                state = TransactionState.RestoreFailed;
+                throw new AggregateException(
+                    $"Payload rollback failed. The prior installation is retained at '{backupDirectory}'.",
+                    restoreFailure,
+                    reverseFailure);
+            }
+
+            throw;
+        }
+
+        DeleteTransactionDirectory(files, paths, failedDirectory);
+    }
+
+    private void RestoreStrandedBackup()
+    {
+        if (files.DirectoryExists(paths.InstallDirectory))
+        {
+            throw new InvalidOperationException(
+                $"Cannot restore '{backupDirectory}' because the live install path is occupied.");
+        }
+
+        files.MoveDirectory(backupDirectory, paths.InstallDirectory);
+        if (files.DirectoryExists(stagingDirectory))
+        {
+            DeleteTransactionDirectory(files, paths, stagingDirectory);
+        }
+    }
+
+    private static IReadOnlyDictionary<string, PayloadEntry> BuildManifest(
+        string root,
+        ISetupPayloadFileSystem files,
+        CancellationToken cancellationToken)
+    {
+        if (!files.DirectoryExists(root))
+        {
+            throw new InvalidOperationException($"The setup payload directory '{root}' is missing or empty.");
+        }
+
+        RejectReparsePoint(root, files);
+        Dictionary<string, PayloadEntry> manifest = new(StringComparer.OrdinalIgnoreCase);
+        Stack<string> pending = new();
+        pending.Push(root);
+        while (pending.Count > 0)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            string directory = pending.Pop();
+            RejectReparsePoint(directory, files);
+
+            foreach (string childDirectory in files.EnumerateDirectories(directory))
+            {
+                RejectReparsePoint(childDirectory, files);
+                _ = GetSafeRelativePath(root, childDirectory);
+                pending.Push(childDirectory);
+            }
+
+            foreach (string file in files.EnumerateFiles(directory))
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                RejectReparsePoint(file, files);
+                PayloadEntry entry = ReadEntry(root, file, files);
+                if (!manifest.TryAdd(entry.RelativePath, entry))
+                {
+                    throw new InvalidDataException(
+                        $"The payload contains duplicate path '{entry.RelativePath}' when compared case-insensitively.");
+                }
+            }
+        }
+
+        if (manifest.Count == 0)
+        {
+            throw new InvalidOperationException($"The setup payload directory '{root}' is missing or empty.");
+        }
+
+        return manifest;
+    }
+
+    private static PayloadEntry ReadEntry(string root, string file, ISetupPayloadFileSystem files)
+    {
+        string relative = GetSafeRelativePath(root, file);
+        long length = files.GetFileLength(file);
+        using Stream content = files.OpenRead(file);
+        string hash = Convert.ToHexString(SHA256.HashData(content));
+        return new(relative, length, hash);
+    }
+
+    private static void ValidateRequiredPayload(IReadOnlyDictionary<string, PayloadEntry> manifest)
+    {
+        foreach (string required in RequiredRelativePaths)
+        {
+            string normalized = NormalizeRelativePath(required);
+            if (!manifest.ContainsKey(normalized))
+            {
+                throw new InvalidOperationException(
+                    $"The setup payload is incomplete: '{required}' is missing.");
+            }
+        }
+    }
+
+    private static void RequireExactManifest(
+        IReadOnlyDictionary<string, PayloadEntry> expected,
+        IReadOnlyDictionary<string, PayloadEntry> actual)
+    {
+        if (expected.Count != actual.Count)
+        {
+            throw new InvalidDataException("The staged payload file set does not match the source payload.");
+        }
+
+        foreach ((string relativePath, PayloadEntry expectedEntry) in expected)
+        {
+            if (!actual.TryGetValue(relativePath, out PayloadEntry? actualEntry)
+                || !expectedEntry.ContentEquals(actualEntry))
+            {
+                throw new InvalidDataException(
+                    $"The staged payload does not match source file '{relativePath}'.");
+            }
+        }
+    }
+
+    private static void EnsureNoAmbiguousTransactionSiblings(
+        SetupPaths paths,
+        ISetupPayloadFileSystem files)
+    {
+        foreach (string directory in files.EnumerateDirectories(paths.ProgramFilesRoot))
+        {
+            string name = Path.GetFileName(Path.TrimEndingDirectorySeparator(directory));
+            if (name.StartsWith("OpenBlade.installing.", StringComparison.OrdinalIgnoreCase)
+                || name.StartsWith("OpenBlade.rollback.", StringComparison.OrdinalIgnoreCase)
+                || name.StartsWith("OpenBlade.failed.", StringComparison.OrdinalIgnoreCase))
+            {
+                throw new InvalidOperationException(
+                    $"An existing OpenBlade setup transaction directory requires manual inspection: '{directory}'.");
+            }
+        }
+    }
+
+    private static void EnsureTransactionPaths(SetupPaths paths, params string[] transactionPaths)
+    {
+        if (!SetupPaths.IsExactOpenBladeDirectory(paths.InstallDirectory, paths.ProgramFilesRoot))
+        {
+            throw new InvalidOperationException($"Unexpected live install path '{paths.InstallDirectory}'.");
+        }
+
+        foreach (string path in transactionPaths)
+        {
+            if (!SetupPaths.IsExactTransactionSiblingDirectory(path, paths.ProgramFilesRoot))
+            {
+                throw new InvalidOperationException($"Unexpected setup transaction path '{path}'.");
+            }
+        }
+    }
+
+    private static void DeleteTransactionDirectory(
+        ISetupPayloadFileSystem files,
+        SetupPaths paths,
+        string directory)
+    {
+        if (!SetupPaths.IsExactTransactionSiblingDirectory(directory, paths.ProgramFilesRoot))
+        {
+            throw new InvalidOperationException(
+                $"Refusing to recursively delete unexpected transaction path '{directory}'.");
+        }
+
+        files.DeleteDirectory(directory);
+    }
+
+    private static void DeleteLiveDirectory(ISetupPayloadFileSystem files, SetupPaths paths)
+    {
+        if (!SetupPaths.IsExactOpenBladeDirectory(paths.InstallDirectory, paths.ProgramFilesRoot))
+        {
+            throw new InvalidOperationException(
+                $"Refusing to recursively delete unexpected install path '{paths.InstallDirectory}'.");
+        }
+
+        if (files.DirectoryExists(paths.InstallDirectory))
+        {
+            files.DeleteDirectory(paths.InstallDirectory);
+        }
+    }
+
+    private static void RejectReparsePoint(string path, ISetupPayloadFileSystem files)
+    {
+        if ((files.GetAttributes(path) & FileAttributes.ReparsePoint) != 0)
+        {
+            throw new InvalidDataException($"Payload reparse points are not allowed: '{path}'.");
+        }
+    }
+
+    private static string GetSafeRelativePath(string root, string path)
+    {
+        string resolved = Path.GetFullPath(path);
+        string relative = Path.GetRelativePath(root, resolved);
+        if (Path.IsPathRooted(relative)
+            || relative == "."
+            || relative.Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
+                .Any(segment => segment is "." or ".."))
+        {
+            throw new InvalidDataException($"Payload path escapes its root: '{path}'.");
+        }
+
+        _ = ResolveContainedPath(root, relative);
+        return NormalizeRelativePath(relative);
+    }
+
+    private static string ResolveContainedPath(string root, string relativePath)
+    {
+        if (Path.IsPathRooted(relativePath))
+        {
+            throw new InvalidDataException($"Rooted payload-relative path is not allowed: '{relativePath}'.");
+        }
+
+        string normalizedRoot = NormalizeRoot(root);
+        string resolved = Path.GetFullPath(Path.Combine(normalizedRoot, relativePath));
+        string prefix = normalizedRoot + Path.DirectorySeparatorChar;
+        if (!resolved.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidDataException($"Payload path escapes its root: '{relativePath}'.");
+        }
+
+        return resolved;
+    }
+
+    private static string NormalizeRoot(string path) =>
+        Path.TrimEndingDirectorySeparator(Path.GetFullPath(path));
+
+    private static string NormalizeRelativePath(string relativePath) =>
+        relativePath.Replace(Path.AltDirectorySeparatorChar, Path.DirectorySeparatorChar);
+
+    private sealed record PayloadEntry(string RelativePath, long Length, string Sha256)
+    {
+        public bool ContentEquals(PayloadEntry other) =>
+            Length == other.Length && string.Equals(Sha256, other.Sha256, StringComparison.Ordinal);
+    }
+
+    private enum TransactionState
+    {
+        Staged,
+        BackupMoved,
+        Active,
+        RestoreFailed,
+        Committed,
+        RolledBack,
+    }
+}

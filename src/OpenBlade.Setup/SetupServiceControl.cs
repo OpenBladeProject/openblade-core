@@ -11,6 +11,7 @@ public enum SetupServiceState
 public interface ISetupServiceControl
 {
     Task<bool> ExistsAsync(string serviceName, CancellationToken cancellationToken);
+    Task<SetupServiceState?> GetStateAsync(string serviceName, CancellationToken cancellationToken);
     Task RunAsync(
         IReadOnlyList<string> arguments,
         IReadOnlyCollection<int> toleratedExitCodes,
@@ -39,6 +40,35 @@ internal sealed class ScSetupServiceControl : ISetupServiceControl
             ServiceDoesNotExist => false,
             _ => throw CreateFailure(result),
         };
+    }
+
+    public async Task<SetupServiceState?> GetStateAsync(
+        string serviceName,
+        CancellationToken cancellationToken)
+    {
+        ProcessResult result = await RunProcessAsync(["query", serviceName], cancellationToken);
+        if (result.ExitCode == ServiceDoesNotExist)
+        {
+            return null;
+        }
+
+        if (result.ExitCode != 0)
+        {
+            throw CreateFailure(result);
+        }
+
+        if (result.Output.Contains("RUNNING", StringComparison.OrdinalIgnoreCase))
+        {
+            return SetupServiceState.Running;
+        }
+
+        if (result.Output.Contains("STOPPED", StringComparison.OrdinalIgnoreCase))
+        {
+            return SetupServiceState.Stopped;
+        }
+
+        throw new InvalidOperationException(
+            $"Service '{serviceName}' is in a transitional state; retry setup after it settles.");
     }
 
     public async Task RunAsync(

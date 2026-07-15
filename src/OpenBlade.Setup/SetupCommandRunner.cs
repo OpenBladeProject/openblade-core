@@ -1,10 +1,33 @@
+using System.Runtime.ExceptionServices;
+
 namespace OpenBlade.Setup;
+
+public interface ISetupPayloadTransaction : IAsyncDisposable
+{
+    bool HadExistingInstall { get; }
+    bool IsActivated { get; }
+    Task ActivateAsync(CancellationToken cancellationToken);
+    Task CommitAsync(CancellationToken cancellationToken);
+    Task RollbackAsync(CancellationToken cancellationToken);
+}
+
+public sealed record SetupServiceInstallState(bool Existed, bool WasRunning);
+
+public sealed record SetupStartupInstallState(bool ShortcutExisted);
+
+public sealed record SetupInstallLifecycleState(
+    SetupServiceInstallState Service,
+    SetupStartupInstallState Startup);
 
 public interface ISetupPlatform
 {
     string CurrentUserSid { get; }
+    Task<ISetupPayloadTransaction> StagePayloadAsync(CancellationToken cancellationToken);
+    Task<SetupInstallLifecycleState> CaptureInstallLifecycleStateAsync(CancellationToken cancellationToken);
     Task PrepareServiceForInstallAsync(CancellationToken cancellationToken);
-    Task CopyPayloadAsync(CancellationToken cancellationToken);
+    Task RestoreServiceInstallStateAsync(
+        SetupServiceInstallState priorState,
+        CancellationToken cancellationToken);
     Task WriteAuthorizedUserSidAsync(string sid, CancellationToken cancellationToken);
     Task InstallServiceAsync(CancellationToken cancellationToken);
     Task VerifyServiceHealthAsync(CancellationToken cancellationToken);
@@ -28,15 +51,84 @@ public sealed class SetupCommandRunner(ISetupPlatform platform)
 
         if (command == SetupCommand.Install)
         {
-            await platform.RemoveStartupShortcutAsync(cancellationToken);
-            await platform.PrepareServiceForInstallAsync(cancellationToken);
-            await platform.StopTrayAsync(cancellationToken);
-            await platform.CopyPayloadAsync(cancellationToken);
-            await platform.WriteAuthorizedUserSidAsync(platform.CurrentUserSid, cancellationToken);
-            await platform.InstallServiceAsync(cancellationToken);
-            await platform.VerifyServiceHealthAsync(cancellationToken);
-            await platform.InstallStartupShortcutAsync(cancellationToken);
-            return 0;
+            await using ISetupPayloadTransaction transaction =
+                await platform.StagePayloadAsync(cancellationToken);
+            SetupInstallLifecycleState? priorLifecycle = null;
+            bool mutationStarted = false;
+            try
+            {
+                priorLifecycle = await platform.CaptureInstallLifecycleStateAsync(cancellationToken);
+                mutationStarted = true;
+                await platform.RemoveStartupShortcutAsync(cancellationToken);
+                await platform.PrepareServiceForInstallAsync(cancellationToken);
+                await platform.StopTrayAsync(cancellationToken);
+                await transaction.ActivateAsync(cancellationToken);
+                await platform.WriteAuthorizedUserSidAsync(platform.CurrentUserSid, cancellationToken);
+                await platform.InstallServiceAsync(cancellationToken);
+                await platform.VerifyServiceHealthAsync(cancellationToken);
+                await platform.InstallStartupShortcutAsync(cancellationToken);
+                await transaction.CommitAsync(cancellationToken);
+                return 0;
+            }
+            catch (Exception failure)
+            {
+                List<Exception> recoveryFailures = [];
+                using CancellationTokenSource recoveryTimeout = new(TimeSpan.FromSeconds(60));
+                CancellationToken recoveryToken = recoveryTimeout.Token;
+
+                if (mutationStarted)
+                {
+                    await RecoverAsync(
+                        () => platform.RemoveStartupShortcutAsync(recoveryToken),
+                        recoveryFailures);
+                }
+
+                bool wasActivated = transaction.IsActivated;
+                if (wasActivated)
+                {
+                    if (priorLifecycle?.Service is { Existed: true })
+                    {
+                        await RecoverAsync(() => platform.PrepareServiceForInstallAsync(recoveryToken), recoveryFailures);
+                    }
+                    else
+                    {
+                        await RecoverAsync(() => platform.RemoveServiceAsync(recoveryToken), recoveryFailures);
+                    }
+
+                    await RecoverAsync(() => platform.StopTrayAsync(recoveryToken), recoveryFailures);
+                }
+
+                await RecoverAsync(() => transaction.RollbackAsync(recoveryToken), recoveryFailures);
+
+                if (mutationStarted && transaction.HadExistingInstall)
+                {
+                    if (priorLifecycle?.Service is { Existed: true } priorService)
+                    {
+                        await RecoverAsync(
+                            () => platform.RestoreServiceInstallStateAsync(priorService, recoveryToken),
+                            recoveryFailures);
+                    }
+
+                    if (priorLifecycle?.Startup is { ShortcutExisted: true })
+                    {
+                        await RecoverAsync(() => platform.InstallStartupShortcutAsync(recoveryToken), recoveryFailures);
+                    }
+                }
+                else if (mutationStarted
+                    && !wasActivated
+                    && priorLifecycle?.Service is not { Existed: true })
+                {
+                    await RecoverAsync(() => platform.RemoveServiceAsync(recoveryToken), recoveryFailures);
+                }
+
+                if (recoveryFailures.Count > 0)
+                {
+                    throw new AggregateException([failure, .. recoveryFailures]);
+                }
+
+                ExceptionDispatchInfo.Capture(failure).Throw();
+                throw new InvalidOperationException("Unreachable setup recovery path.");
+            }
         }
 
         await platform.RemoveStartupShortcutAsync(cancellationToken);
@@ -49,5 +141,17 @@ public sealed class SetupCommandRunner(ISetupPlatform platform)
         }
 
         return 0;
+    }
+
+    private static async Task RecoverAsync(Func<Task> recovery, List<Exception> failures)
+    {
+        try
+        {
+            await recovery();
+        }
+        catch (Exception exception)
+        {
+            failures.Add(exception);
+        }
     }
 }

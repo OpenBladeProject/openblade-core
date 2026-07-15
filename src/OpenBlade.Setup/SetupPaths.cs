@@ -63,6 +63,43 @@ public sealed record SetupPaths
         }
     }
 
+    public static bool IsExactTransactionSiblingDirectory(string candidate, string programFilesRoot)
+    {
+        if (string.IsNullOrWhiteSpace(candidate) || string.IsNullOrWhiteSpace(programFilesRoot))
+        {
+            return false;
+        }
+
+        try
+        {
+            string root = NormalizeKnownFolder(programFilesRoot, nameof(programFilesRoot));
+            string actual = Path.TrimEndingDirectorySeparator(Path.GetFullPath(candidate));
+            if (!string.Equals(Path.GetDirectoryName(actual), root, StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+
+            string name = Path.GetFileName(actual);
+            string[] prefixes = ["OpenBlade.installing.", "OpenBlade.rollback.", "OpenBlade.failed."];
+            string? prefix = prefixes.SingleOrDefault(
+                candidatePrefix => name.StartsWith(candidatePrefix, StringComparison.OrdinalIgnoreCase));
+            if (prefix is null || name.Length != prefix.Length + 32)
+            {
+                return false;
+            }
+
+            return name.AsSpan(prefix.Length).IndexOfAnyExcept("0123456789abcdefABCDEF") < 0;
+        }
+        catch (ArgumentException)
+        {
+            return false;
+        }
+        catch (NotSupportedException)
+        {
+            return false;
+        }
+    }
+
     private static string NormalizeKnownFolder(string path, string parameterName)
     {
         if (string.IsNullOrWhiteSpace(path) || !Path.IsPathFullyQualified(path))

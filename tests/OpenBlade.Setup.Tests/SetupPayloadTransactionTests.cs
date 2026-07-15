@@ -1,0 +1,462 @@
+using System.Security.Cryptography;
+using OpenBlade.Setup;
+
+namespace OpenBlade.Setup.Tests;
+
+public sealed class SetupPayloadTransactionTests
+{
+    [Theory]
+    [InlineData("OpenBlade.Service.exe")]
+    [InlineData("OpenBlade.Capture.exe")]
+    [InlineData("OpenBlade.Tray.exe")]
+    [InlineData("OpenBlade.Tray.dll")]
+    [InlineData("OpenBlade.Tray.deps.json")]
+    [InlineData("OpenBlade.Tray.runtimeconfig.json")]
+    [InlineData("OpenBlade.Tray.pri")]
+    [InlineData("Microsoft.WindowsAppRuntime.dll")]
+    [InlineData("Microsoft.WindowsAppRuntime.pri")]
+    [InlineData("Microsoft.ui.xaml.dll")]
+    [InlineData("Microsoft.UI.Xaml.Controls.dll")]
+    [InlineData("Microsoft.UI.Xaml.Controls.pri")]
+    [InlineData(@"Microsoft.UI.Xaml\Assets\NoiseAsset_256x256_PNG.png")]
+    public async Task StagePayload_MissingRequiredFile_FailsBeforeCreatingTransactionDirectories(string missing)
+    {
+        using TestTree tree = new();
+        tree.CreateCompletePayload();
+        File.Delete(Path.Combine(tree.Payload, missing));
+
+        InvalidOperationException failure = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => tree.CreatePlatform().StagePayloadAsync(CancellationToken.None));
+
+        Assert.Contains(missing, failure.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Empty(Directory.GetDirectories(tree.ProgramFiles));
+    }
+
+    [Fact]
+    public async Task Commit_InstallsExactBytePreservingPayloadTreeAndRemovesObsoleteWpfFiles()
+    {
+        using TestTree tree = new();
+        tree.CreateCompletePayload();
+        tree.WriteInstall("PresentationCore.dll", [1]);
+        tree.WriteInstall("PresentationFramework.dll", [2]);
+        tree.WriteInstall(@"Themes\Light.xaml", [3]);
+        tree.WriteInstall("obsolete.txt", [4]);
+        byte[] expectedAsset = File.ReadAllBytes(
+            Path.Combine(tree.Payload, @"Microsoft.UI.Xaml\Assets\NoiseAsset_256x256_PNG.png"));
+
+        await using ISetupPayloadTransaction transaction =
+            await tree.CreatePlatform().StagePayloadAsync(CancellationToken.None);
+        await transaction.ActivateAsync(CancellationToken.None);
+        await transaction.CommitAsync(CancellationToken.None);
+
+        Assert.Equal(expectedAsset, File.ReadAllBytes(
+            Path.Combine(tree.Install, @"Microsoft.UI.Xaml\Assets\NoiseAsset_256x256_PNG.png")));
+        Assert.Equal(ReadManifest(tree.Payload), ReadManifest(tree.Install));
+        Assert.False(File.Exists(Path.Combine(tree.Install, "PresentationCore.dll")));
+        Assert.Empty(Directory.GetDirectories(tree.ProgramFiles, "OpenBlade.installing.*"));
+        Assert.Empty(Directory.GetDirectories(tree.ProgramFiles, "OpenBlade.rollback.*"));
+        Assert.Empty(Directory.GetDirectories(tree.ProgramFiles, "OpenBlade.failed.*"));
+    }
+
+    [Fact]
+    public async Task StagePayload_CopyFailure_CleansOnlyStagingAndLeavesOldTreeByteExact()
+    {
+        using TestTree tree = new();
+        tree.CreateCompletePayload();
+        tree.WriteInstall("old.bin", [9, 8, 7]);
+        SortedDictionary<string, string> before = ReadManifest(tree.Install);
+        DelegatingPayloadFileSystem files = new()
+        {
+            CopyFailure = (_, destination) => destination.EndsWith("NoiseAsset_256x256_PNG.png", StringComparison.OrdinalIgnoreCase)
+                ? new IOException("injected copy failure")
+                : null,
+        };
+
+        await Assert.ThrowsAsync<IOException>(
+            () => tree.CreatePlatform(files).StagePayloadAsync(CancellationToken.None));
+
+        Assert.Equal(before, ReadManifest(tree.Install));
+        Assert.Empty(Directory.GetDirectories(tree.ProgramFiles, "OpenBlade.installing.*"));
+        Assert.Empty(Directory.GetDirectories(tree.ProgramFiles, "OpenBlade.rollback.*"));
+    }
+
+    [Fact]
+    public async Task Activate_StagingMoveFailure_RestoresOldTree()
+    {
+        using TestTree tree = new();
+        tree.CreateCompletePayload();
+        tree.WriteInstall("old.bin", [6, 5, 4]);
+        SortedDictionary<string, string> before = ReadManifest(tree.Install);
+        DelegatingPayloadFileSystem files = new()
+        {
+            MoveFailure = (source, destination) =>
+                source.Contains(".installing.", StringComparison.OrdinalIgnoreCase)
+                && destination.Equals(tree.Install, StringComparison.OrdinalIgnoreCase)
+                    ? new IOException("activate move failed")
+                    : null,
+        };
+
+        await using ISetupPayloadTransaction transaction =
+            await tree.CreatePlatform(files).StagePayloadAsync(CancellationToken.None);
+        IOException failure = await Assert.ThrowsAsync<IOException>(
+            () => transaction.ActivateAsync(CancellationToken.None));
+
+        Assert.Equal("activate move failed", failure.Message);
+        Assert.Equal(before, ReadManifest(tree.Install));
+        Assert.False(transaction.IsActivated);
+        Assert.Empty(Directory.GetDirectories(tree.ProgramFiles, "OpenBlade.rollback.*"));
+    }
+
+    [Fact]
+    public async Task Activate_ActivationAndRestoreMoveFailures_RetainsBackupAndReportsBoth()
+    {
+        using TestTree tree = new();
+        tree.CreateCompletePayload();
+        tree.WriteInstall("old.bin", [3, 2, 1]);
+        DelegatingPayloadFileSystem files = new()
+        {
+            MoveFailure = (source, destination) =>
+            {
+                if (destination.Equals(tree.Install, StringComparison.OrdinalIgnoreCase))
+                {
+                    return source.Contains(".installing.", StringComparison.OrdinalIgnoreCase)
+                        ? new IOException("activate move failed")
+                        : new IOException("restore move failed");
+                }
+
+                return null;
+            },
+        };
+
+        await using ISetupPayloadTransaction transaction =
+            await tree.CreatePlatform(files).StagePayloadAsync(CancellationToken.None);
+        AggregateException failure = await Assert.ThrowsAsync<AggregateException>(
+            () => transaction.ActivateAsync(CancellationToken.None));
+
+        Assert.Equal("activate move failed", failure.InnerExceptions[0].Message);
+        Assert.Equal("restore move failed", failure.InnerExceptions[1].Message);
+        string backup = Assert.Single(Directory.GetDirectories(tree.ProgramFiles, "OpenBlade.rollback.*"));
+        Assert.True(File.Exists(Path.Combine(backup, "old.bin")));
+        Assert.True(transaction.IsActivated);
+    }
+
+    [Fact]
+    public async Task Activate_CancellationBetweenRenames_RestoresOldTreeAndLeavesTransactionRollbackable()
+    {
+        using TestTree tree = new();
+        tree.CreateCompletePayload();
+        tree.WriteInstall("old.bin", [8, 6, 4, 2]);
+        SortedDictionary<string, string> before = ReadManifest(tree.Install);
+        using CancellationTokenSource cancellation = new();
+        DelegatingPayloadFileSystem files = new()
+        {
+            AfterMove = (source, destination) =>
+            {
+                if (source.Equals(tree.Install, StringComparison.OrdinalIgnoreCase)
+                    && destination.Contains(".rollback.", StringComparison.OrdinalIgnoreCase))
+                {
+                    cancellation.Cancel();
+                }
+            },
+        };
+
+        await using ISetupPayloadTransaction transaction =
+            await tree.CreatePlatform(files).StagePayloadAsync(CancellationToken.None);
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => transaction.ActivateAsync(cancellation.Token));
+
+        Assert.Equal(before, ReadManifest(tree.Install));
+        Assert.False(transaction.IsActivated);
+        await transaction.RollbackAsync(CancellationToken.None);
+        Assert.Empty(Directory.GetDirectories(tree.ProgramFiles, "OpenBlade.installing.*"));
+    }
+
+    [Fact]
+    public async Task Rollback_AfterSuccessfulActivation_RestoresExactOldTreeAndRemovesNewTree()
+    {
+        using TestTree tree = new();
+        tree.CreateCompletePayload();
+        tree.WriteInstall("old.bin", [5, 5, 5]);
+        SortedDictionary<string, string> before = ReadManifest(tree.Install);
+
+        await using ISetupPayloadTransaction transaction =
+            await tree.CreatePlatform().StagePayloadAsync(CancellationToken.None);
+        await transaction.ActivateAsync(CancellationToken.None);
+        await transaction.RollbackAsync(CancellationToken.None);
+
+        Assert.Equal(before, ReadManifest(tree.Install));
+        Assert.Empty(Directory.GetDirectories(tree.ProgramFiles, "OpenBlade.rollback.*"));
+        Assert.Empty(Directory.GetDirectories(tree.ProgramFiles, "OpenBlade.failed.*"));
+    }
+
+    [Fact]
+    public async Task Commit_BackupCleanupFailure_IsPointOfNoReturnAndKeepsHealthyNewTree()
+    {
+        using TestTree tree = new();
+        tree.CreateCompletePayload();
+        tree.WriteInstall("old.bin", [1, 3, 5]);
+        SortedDictionary<string, string> expected = ReadManifest(tree.Payload);
+        DelegatingPayloadFileSystem files = new()
+        {
+            DeleteFailure = path => path.Contains(".rollback.", StringComparison.OrdinalIgnoreCase)
+                ? new IOException("injected backup cleanup failure")
+                : null,
+        };
+
+        await using ISetupPayloadTransaction transaction =
+            await tree.CreatePlatform(files).StagePayloadAsync(CancellationToken.None);
+        await transaction.ActivateAsync(CancellationToken.None);
+        await transaction.CommitAsync(CancellationToken.None);
+
+        Assert.Equal(expected, ReadManifest(tree.Install));
+        Assert.False(transaction.IsActivated);
+        await Assert.ThrowsAsync<InvalidOperationException>(
+            () => transaction.RollbackAsync(CancellationToken.None));
+        Assert.Single(Directory.GetDirectories(tree.ProgramFiles, "OpenBlade.rollback.*"));
+    }
+
+    [Fact]
+    public async Task CommitAndRollback_PreCancelledBoundariesDoNotMutateAndRollbackCanRetry()
+    {
+        using TestTree tree = new();
+        tree.CreateCompletePayload();
+        tree.WriteInstall("old.bin", [2, 4, 6, 8]);
+        SortedDictionary<string, string> before = ReadManifest(tree.Install);
+        await using ISetupPayloadTransaction transaction =
+            await tree.CreatePlatform().StagePayloadAsync(CancellationToken.None);
+        await transaction.ActivateAsync(CancellationToken.None);
+        using CancellationTokenSource cancellation = new();
+        cancellation.Cancel();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => transaction.CommitAsync(cancellation.Token));
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => transaction.RollbackAsync(cancellation.Token));
+        Assert.True(transaction.IsActivated);
+
+        await transaction.RollbackAsync(CancellationToken.None);
+        Assert.Equal(before, ReadManifest(tree.Install));
+    }
+
+    [Fact]
+    public async Task StagePayload_SourceMutationDuringCopy_IsRejectedWithoutTouchingLiveTree()
+    {
+        using TestTree tree = new();
+        tree.CreateCompletePayload();
+        tree.WriteInstall("old.bin", [4, 4, 4]);
+        string mutableSource = Path.Combine(tree.Payload, "OpenBlade.Tray.dll");
+        DelegatingPayloadFileSystem files = new()
+        {
+            AfterCopy = (source, _) =>
+            {
+                if (source.Equals(mutableSource, StringComparison.OrdinalIgnoreCase))
+                {
+                    File.AppendAllText(source, "changed");
+                }
+            },
+        };
+
+        InvalidDataException failure = await Assert.ThrowsAsync<InvalidDataException>(
+            () => tree.CreatePlatform(files).StagePayloadAsync(CancellationToken.None));
+
+        Assert.Contains("changed while staging", failure.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.True(File.Exists(Path.Combine(tree.Install, "old.bin")));
+        Assert.Empty(Directory.GetDirectories(tree.ProgramFiles, "OpenBlade.installing.*"));
+    }
+
+    [Fact]
+    public async Task StagePayload_CancellationDuringCopy_CleansStagingAndLeavesLiveTree()
+    {
+        using TestTree tree = new();
+        tree.CreateCompletePayload();
+        tree.WriteInstall("old.bin", [7]);
+        using CancellationTokenSource cancellation = new();
+        DelegatingPayloadFileSystem files = new()
+        {
+            AfterCopy = (_, _) => cancellation.Cancel(),
+        };
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => tree.CreatePlatform(files).StagePayloadAsync(cancellation.Token));
+
+        Assert.True(File.Exists(Path.Combine(tree.Install, "old.bin")));
+        Assert.Empty(Directory.GetDirectories(tree.ProgramFiles, "OpenBlade.installing.*"));
+    }
+
+    [Fact]
+    public async Task Transaction_EnforcesStateBoundariesAndSafeTerminalIdempotence()
+    {
+        using TestTree tree = new();
+        tree.CreateCompletePayload();
+        await using ISetupPayloadTransaction transaction =
+            await tree.CreatePlatform().StagePayloadAsync(CancellationToken.None);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(
+            () => transaction.CommitAsync(CancellationToken.None));
+        await transaction.ActivateAsync(CancellationToken.None);
+        await Assert.ThrowsAsync<InvalidOperationException>(
+            () => transaction.ActivateAsync(CancellationToken.None));
+        await transaction.RollbackAsync(CancellationToken.None);
+        await transaction.RollbackAsync(CancellationToken.None);
+
+        Assert.False(Directory.Exists(tree.Install));
+    }
+
+    [Fact]
+    public async Task StagePayload_AmbiguousTransactionSibling_FailsClosedAndPreservesIt()
+    {
+        using TestTree tree = new();
+        tree.CreateCompletePayload();
+        string ambiguous = Path.Combine(tree.ProgramFiles, $"OpenBlade.rollback.{Guid.NewGuid():N}");
+        Directory.CreateDirectory(ambiguous);
+        File.WriteAllText(Path.Combine(ambiguous, "evidence.txt"), "preserve");
+
+        InvalidOperationException failure = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => tree.CreatePlatform().StagePayloadAsync(CancellationToken.None));
+
+        Assert.Contains("transaction", failure.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.True(File.Exists(Path.Combine(ambiguous, "evidence.txt")));
+    }
+
+    private static SortedDictionary<string, string> ReadManifest(string root)
+    {
+        SortedDictionary<string, string> result = new(StringComparer.OrdinalIgnoreCase);
+        if (!Directory.Exists(root))
+        {
+            return result;
+        }
+
+        foreach (string file in Directory.EnumerateFiles(root, "*", SearchOption.AllDirectories))
+        {
+            result[Path.GetRelativePath(root, file)] = Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(file)));
+        }
+
+        return result;
+    }
+
+    private sealed class TestTree : IDisposable
+    {
+        private static readonly string[] RequiredFiles =
+        [
+            "OpenBlade.Service.exe",
+            "OpenBlade.Capture.exe",
+            "OpenBlade.Tray.exe",
+            "OpenBlade.Tray.dll",
+            "OpenBlade.Tray.deps.json",
+            "OpenBlade.Tray.runtimeconfig.json",
+            "OpenBlade.Tray.pri",
+            "Microsoft.WindowsAppRuntime.dll",
+            "Microsoft.WindowsAppRuntime.pri",
+            "Microsoft.ui.xaml.dll",
+            "Microsoft.UI.Xaml.Controls.dll",
+            "Microsoft.UI.Xaml.Controls.pri",
+            @"Microsoft.UI.Xaml\Assets\NoiseAsset_256x256_PNG.png",
+        ];
+
+        public TestTree()
+        {
+            Root = Path.Combine(Path.GetTempPath(), "OpenBlade.Setup.Tests", Guid.NewGuid().ToString("N"));
+            ProgramFiles = Path.Combine(Root, "ProgramFiles");
+            Payload = Path.Combine(Root, "payload");
+            Directory.CreateDirectory(ProgramFiles);
+            Directory.CreateDirectory(Payload);
+            Paths = SetupPaths.Create(
+                ProgramFiles,
+                Path.Combine(Root, "ProgramData"),
+                Path.Combine(Root, "LocalData"),
+                Path.Combine(Root, "Startup"));
+        }
+
+        public string Root { get; }
+        public string ProgramFiles { get; }
+        public string Payload { get; }
+        public string Install => Paths.InstallDirectory;
+        public SetupPaths Paths { get; }
+
+        public void CreateCompletePayload()
+        {
+            for (int index = 0; index < RequiredFiles.Length; index++)
+            {
+                Write(Payload, RequiredFiles[index], [(byte)(index + 1), 0xA5, 0x5A]);
+            }
+
+            Write(Payload, @"locales\en-US\resources.pri", [0x10, 0x20]);
+        }
+
+        public void WriteInstall(string relativePath, byte[] bytes) => Write(Install, relativePath, bytes);
+
+        public WindowsSetupPlatform CreatePlatform(ISetupPayloadFileSystem? files = null) => new(
+            paths: Paths,
+            payloadDirectory: Payload,
+            payloadFileSystem: files);
+
+        public void Dispose()
+        {
+            if (Directory.Exists(Root))
+            {
+                Directory.Delete(Root, recursive: true);
+            }
+        }
+
+        private static void Write(string root, string relativePath, byte[] bytes)
+        {
+            string path = Path.Combine(root, relativePath);
+            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+            File.WriteAllBytes(path, bytes);
+        }
+    }
+
+    private sealed class DelegatingPayloadFileSystem : ISetupPayloadFileSystem
+    {
+        private readonly WindowsSetupPayloadFileSystem inner = new();
+
+        public Func<string, string, Exception?>? CopyFailure { get; init; }
+        public Func<string, string, Exception?>? MoveFailure { get; init; }
+        public Func<string, Exception?>? DeleteFailure { get; init; }
+        public Action<string, string>? AfterCopy { get; init; }
+        public Action<string, string>? AfterMove { get; init; }
+
+        public bool DirectoryExists(string path) => inner.DirectoryExists(path);
+        public FileAttributes GetAttributes(string path) => inner.GetAttributes(path);
+        public IEnumerable<string> EnumerateFiles(string path) => inner.EnumerateFiles(path);
+        public IEnumerable<string> EnumerateDirectories(string path) => inner.EnumerateDirectories(path);
+        public void CreateDirectory(string path) => inner.CreateDirectory(path);
+        public long GetFileLength(string path) => inner.GetFileLength(path);
+        public Stream OpenRead(string path) => inner.OpenRead(path);
+
+        public void CopyFile(string source, string destination)
+        {
+            Exception? failure = CopyFailure?.Invoke(source, destination);
+            if (failure is not null)
+            {
+                throw failure;
+            }
+
+            inner.CopyFile(source, destination);
+            AfterCopy?.Invoke(source, destination);
+        }
+
+        public void MoveDirectory(string source, string destination)
+        {
+            Exception? failure = MoveFailure?.Invoke(source, destination);
+            if (failure is not null)
+            {
+                throw failure;
+            }
+
+            inner.MoveDirectory(source, destination);
+            AfterMove?.Invoke(source, destination);
+        }
+
+        public void DeleteDirectory(string path)
+        {
+            Exception? failure = DeleteFailure?.Invoke(path);
+            if (failure is not null)
+            {
+                throw failure;
+            }
+
+            inner.DeleteDirectory(path);
+        }
+    }
+}

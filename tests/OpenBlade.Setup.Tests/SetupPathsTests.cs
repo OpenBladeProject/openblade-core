@@ -49,4 +49,19 @@ public sealed class SetupPathsTests
     [InlineData(@"C:\Program Files\Open" + "Synapse")]
     public void IsExactOpenBladeDirectory_RejectsUnownedPaths(string candidate) =>
         Assert.False(SetupPaths.IsExactOpenBladeDirectory(candidate, @"C:\Program Files"));
+
+    [Theory]
+    [InlineData(@"C:\Program Files\OpenBlade.installing.0123456789abcdef0123456789abcdef")]
+    [InlineData(@"C:\Program Files\OpenBlade.rollback.0123456789abcdef0123456789abcdef")]
+    [InlineData(@"C:\Program Files\OpenBlade.failed.0123456789abcdef0123456789abcdef")]
+    public void IsExactTransactionSiblingDirectory_AcceptsOnlyStrictOwnedSiblingNames(string candidate) =>
+        Assert.True(SetupPaths.IsExactTransactionSiblingDirectory(candidate, @"C:\Program Files"));
+
+    [Theory]
+    [InlineData(@"C:\Program Files\OpenBlade.installing.bad")]
+    [InlineData(@"C:\Program Files\OpenBlade.rollback.0123456789abcdef0123456789abcdef\child")]
+    [InlineData(@"C:\Other\OpenBlade.failed.0123456789abcdef0123456789abcdef")]
+    [InlineData(@"C:\Program Files\Other.installing.0123456789abcdef0123456789abcdef")]
+    public void IsExactTransactionSiblingDirectory_RejectsAnythingOutsideExactSiblingPattern(string candidate) =>
+        Assert.False(SetupPaths.IsExactTransactionSiblingDirectory(candidate, @"C:\Program Files"));
 }
