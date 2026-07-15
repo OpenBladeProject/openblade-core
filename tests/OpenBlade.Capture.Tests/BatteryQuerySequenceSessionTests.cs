@@ -96,15 +96,22 @@ public sealed class BatteryQuerySequenceSessionTests
         Assert.Equal(1, port.DisposeCount);
     }
 
-    [Fact]
-    public async Task RunAsync_OpenFailureDoesNotQueryOrDelay()
+    [Theory]
+    [InlineData(HidSessionFailureKind.IdentityBlocked, BatteryQuerySequenceFailure.WrongTarget)]
+    [InlineData(HidSessionFailureKind.ConflictBlocked, BatteryQuerySequenceFailure.Conflict)]
+    [InlineData(
+        HidSessionFailureKind.ConflictDetectionFailed,
+        BatteryQuerySequenceFailure.ConflictDetectionFailed)]
+    public async Task RunAsync_MapsOpenFailureWithoutQueryDelayOrDisposal(
+        HidSessionFailureKind sessionFailure,
+        BatteryQuerySequenceFailure expectedFailure)
     {
         var events = new List<string>();
         int delayCount = 0;
         var session = new BatteryQuerySequenceSession(
             new FakeFactory(
                 events,
-                new(null, HidSessionFailureKind.IdentityBlocked)),
+                new(null, sessionFailure)),
             (_, _) =>
             {
                 delayCount++;
@@ -116,7 +123,7 @@ public sealed class BatteryQuerySequenceSessionTests
         Assert.Equal(["open"], events);
         Assert.Equal(0, delayCount);
         Assert.Equal(0, result.CompletedCount);
-        Assert.Equal(BatteryQuerySequenceFailure.WrongTarget, result.Query1.Failure);
+        Assert.Equal(expectedFailure, result.Query1.Failure);
         Assert.False(result.Success);
     }
 

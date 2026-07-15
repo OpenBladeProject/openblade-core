@@ -109,6 +109,36 @@ public sealed class BatteryQuerySequenceCommandTests
         Assert.Contains("Success=False", output.ToString());
     }
 
+    [Fact]
+    public async Task RunAsync_CancellationReturnsSafeOutputAndDisposesRegistration()
+    {
+        var output = new StringWriter();
+        var registration = new TrackingDisposable();
+        Action? registeredCancel = null;
+        int registrationCount = 0;
+        var command = new BatteryQuerySequenceCommand(
+            token =>
+            {
+                registeredCancel!();
+                token.ThrowIfCancellationRequested();
+                return Task.FromResult(SuccessResult());
+            },
+            output,
+            _ =>
+            {
+                registrationCount++;
+                registeredCancel = _;
+                return registration;
+            });
+
+        int exitCode = await command.RunAsync([], default);
+
+        Assert.Equal(BatteryQuerySequenceCommand.CanceledExitCode, exitCode);
+        Assert.Equal(Lines("Canceled=True"), output.ToString());
+        Assert.Equal(1, registrationCount);
+        Assert.Equal(1, registration.DisposeCount);
+    }
+
     private static BatteryQuerySequenceCommand Command(
         BatteryQuerySequenceResult result,
         TextWriter output) =>
@@ -131,6 +161,16 @@ public sealed class BatteryQuerySequenceCommandTests
 
         public void Dispose()
         {
+        }
+    }
+
+    private sealed class TrackingDisposable : IDisposable
+    {
+        public int DisposeCount { get; private set; }
+
+        public void Dispose()
+        {
+            DisposeCount++;
         }
     }
 }
