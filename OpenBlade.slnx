@@ -5,6 +5,7 @@
     <Project Path="src/OpenBlade.Protocol/OpenBlade.Protocol.csproj" />
     <Project Path="src/OpenBlade.Service/OpenBlade.Service.csproj" />
     <Project Path="src/OpenBlade.Setup/OpenBlade.Setup.csproj" />
+    <Project Path="src/OpenBlade.Tray.Core/OpenBlade.Tray.Core.csproj" />
     <Project Path="src/OpenBlade.Tray/OpenBlade.Tray.csproj" />
   </Folder>
   <Folder Name="/tests/">

@@ -3,7 +3,6 @@ using System.Globalization;
 using System.IO;
 using System.Runtime.CompilerServices;
 using System.Windows.Input;
-using System.Windows.Threading;
 using OpenBlade.Contracts;
 
 namespace OpenBlade.Tray;
@@ -13,11 +12,6 @@ public enum ThemePreference
     FollowWindows,
     Light,
     Dark,
-}
-
-public interface IUiDispatcher
-{
-    Task InvokeAsync(Action action, CancellationToken token);
 }
 
 public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
@@ -76,16 +70,8 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     private ThemePreference theme = ThemePreference.FollowWindows;
     private int disposed;
 
-    public MainViewModel(IServiceClient serviceClient, Dispatcher dispatcher)
-        : this(
-            serviceClient,
-            new WpfUiDispatcher(dispatcher),
-            CreateDefaultDiagnosticArchiveSaver())
-    {
-    }
-
     public MainViewModel(IServiceClient serviceClient, IUiDispatcher dispatcher)
-        : this(serviceClient, dispatcher, CreateDefaultDiagnosticArchiveSaver())
+        : this(serviceClient, dispatcher, new UnavailableDiagnosticArchiveSaver())
     {
     }
 
@@ -136,6 +122,15 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             (AsyncRelayCommand)SaveProfilesCommand,
             (AsyncRelayCommand)ExportDiagnosticsCommand,
         ];
+    }
+
+    private sealed class UnavailableDiagnosticArchiveSaver : IDiagnosticArchiveSaver
+    {
+        public Task<DiagnosticArchiveSaveResult> SaveAsync(
+            DiagnosticArchive archive,
+            CancellationToken token) =>
+            Task.FromException<DiagnosticArchiveSaveResult>(
+                new InvalidOperationException("A diagnostic archive saver was not configured."));
     }
 
     public event PropertyChangedEventHandler? PropertyChanged;
@@ -941,27 +936,4 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         NotifyCommands();
     }
 
-    private static IDiagnosticArchiveSaver CreateDefaultDiagnosticArchiveSaver() =>
-        new DiagnosticArchiveSaver(new WpfDiagnosticArchiveDestination());
-
-    private sealed class WpfUiDispatcher(Dispatcher dispatcher) : IUiDispatcher
-    {
-        private readonly Dispatcher dispatcher = dispatcher
-            ?? throw new ArgumentNullException(nameof(dispatcher));
-
-        public Task InvokeAsync(Action action, CancellationToken token)
-        {
-            if (dispatcher.CheckAccess())
-            {
-                token.ThrowIfCancellationRequested();
-                action();
-                return Task.CompletedTask;
-            }
-
-            return dispatcher.InvokeAsync(
-                action,
-                DispatcherPriority.DataBind,
-                token).Task;
-        }
-    }
 }

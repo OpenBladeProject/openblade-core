@@ -18,7 +18,10 @@ public partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
-        viewModel = new MainViewModel(new ServiceClient(), Dispatcher);
+        viewModel = new MainViewModel(
+            new ServiceClient(),
+            new WpfUiDispatcher(Dispatcher),
+            new DiagnosticArchiveSaver(new WpfDiagnosticArchiveDestination()));
         DataContext = viewModel;
         viewModel.PropertyChanged += OnViewModelPropertyChanged;
         Loaded += OnLoaded;
