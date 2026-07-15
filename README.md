@@ -22,6 +22,25 @@ degrades to `GPU unavailable`; OpenBlade does not launch `nvidia-smi` or install
 a sensor kernel driver. CPU temperature and fan RPM remain unavailable unless a
 safe, independently validated source is present.
 
+## Diagnostics
+
+The connected tray can export a redacted diagnostic ZIP even when hardware
+controls are read-only, conflicted, or unavailable. The LocalSystem service
+creates a snapshot-only archive and never accepts a destination path; the
+unelevated tray writes the user-selected file through a temporary sibling and
+replacement move. Archives are capped at 32 KiB and contain only these entries:
+
+- `versions.json`
+- `device.json`
+- `capabilities.json`
+- `configuration.json`
+- `command-results.json`
+- `logs.jsonl`
+
+Only bounded OpenBlade-owned log messages are retained. Raw HID reports,
+payloads, checksums, transaction IDs, native handles, stack traces, serial
+numbers, and configured local identity/path tokens are excluded or redacted.
+
 ## Build and test
 
 Requires Windows 11 and the .NET 10 SDK.
