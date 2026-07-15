@@ -279,6 +279,96 @@ public sealed class BatteryValidationFactoryTests
         Assert.Equal(0, native.EnumerationCount);
     }
 
+    [Fact]
+    public void ProbeWindows_RemainsStrictWhenControllerIsPresent()
+    {
+        BatteryValidationProbeResult result = BatteryValidationFactory.ProbeWindows(
+            new ExactRegistryValueSource(),
+            new ExactPlatformEvidenceSource(),
+            new ControllerProcessSource(),
+            new EmptyServiceSource(),
+            new ExactHidCandidateNative());
+
+        Assert.Equal(BatteryValidationProbeClassification.ConflictBlocked, result.Classification);
+        Assert.False(result.ConflictCheckPassed);
+    }
+
+    [Fact]
+    public async Task CreateWindows_RemainsStrictWhenControllerIsPresent()
+    {
+        IBatteryValidationRunFactory factory = BatteryValidationFactory.CreateWindows(
+            new ExactRegistryValueSource(),
+            new ExactPlatformEvidenceSource(),
+            new ControllerProcessSource(),
+            new EmptyServiceSource(),
+            new ExactHidCandidateNative(),
+            new ThrowingHidFeatureIo(),
+            TimeProvider.System,
+            TimeSpan.FromSeconds(3),
+            TimeSpan.FromSeconds(5));
+
+        HidSessionResult<IBatteryValidationPort> opened = await factory.OpenAsync(default);
+
+        Assert.Equal(HidSessionFailureKind.ConflictBlocked, opened.Failure);
+        Assert.Null(opened.Value);
+    }
+
+    [Fact]
+    public async Task CreateWindowsQuerySequence_RemainsStrictWhenControllerIsPresent()
+    {
+        IBatteryQuerySequenceRunFactory factory = BatteryValidationFactory.CreateWindowsQuerySequence(
+            new ExactRegistryValueSource(),
+            new ExactPlatformEvidenceSource(),
+            new ControllerProcessSource(),
+            new EmptyServiceSource(),
+            new ExactHidCandidateNative(),
+            new ThrowingHidFeatureIo(),
+            TimeProvider.System,
+            TimeSpan.FromSeconds(3),
+            TimeSpan.FromSeconds(5));
+
+        HidSessionResult<IBatteryQuerySequencePort> opened = await factory.OpenAsync(default);
+
+        Assert.Equal(HidSessionFailureKind.ConflictBlocked, opened.Failure);
+        Assert.Null(opened.Value);
+    }
+
+    [Fact]
+    public void ProbeWindowsForService_IsAdvisoryAndReportsConflictCheckNotPerformed()
+    {
+        BatteryValidationProbeResult result = BatteryValidationFactory.ProbeWindowsForService(
+            new ExactRegistryValueSource(),
+            new ExactPlatformEvidenceSource(),
+            new ControllerProcessSource(),
+            new EmptyServiceSource(),
+            new ExactHidCandidateNative());
+
+        Assert.Equal(BatteryValidationProbeClassification.Ready, result.Classification);
+        Assert.False(result.ConflictCheckPassed);
+        Assert.Equal(1, result.ExactMatchCount);
+    }
+
+    [Fact]
+    public async Task CreateWindowsQuerySequenceForService_UsesAdvisoryAdmission()
+    {
+        IBatteryQuerySequenceRunFactory factory =
+            BatteryValidationFactory.CreateWindowsQuerySequenceForService(
+                new ExactRegistryValueSource(),
+                new ExactPlatformEvidenceSource(),
+                new ControllerProcessSource(),
+                new EmptyServiceSource(),
+                new ExactHidCandidateNative(),
+                new ThrowingHidFeatureIo(),
+                TimeProvider.System,
+                TimeSpan.FromSeconds(3),
+                TimeSpan.FromSeconds(5));
+
+        HidSessionResult<IBatteryQuerySequencePort> opened = await factory.OpenAsync(default);
+
+        Assert.Null(opened.Failure);
+        await Assert.IsAssignableFrom<IBatteryQuerySequencePort>(opened.Value).DisposeAsync();
+    }
+
     private sealed class ThrowingRegistryValueSource : IRegistryValueSource
     {
         public int ReadCount { get; private set; }
@@ -391,6 +481,11 @@ public sealed class BatteryValidationFactoryTests
     private sealed class EmptyProcessSource : IRunningProcessSource
     {
         public IReadOnlyList<string> GetProcessNames() => [];
+    }
+
+    private sealed class ControllerProcessSource : IRunningProcessSource
+    {
+        public IReadOnlyList<string> GetProcessNames() => ["RazerAppEngine"];
     }
 
     private sealed class EmptyServiceSource : IWindowsServiceSource

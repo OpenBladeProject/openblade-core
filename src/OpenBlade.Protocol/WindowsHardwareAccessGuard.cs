@@ -79,78 +79,28 @@ public sealed class WindowsServiceSource : IWindowsServiceSource
     };
 }
 
-public sealed class WindowsHardwareAccessGuard(
-    IRunningProcessSource processSource,
-    IWindowsServiceSource serviceSource) : IHardwareAccessGuard
+public sealed class WindowsHardwareAccessGuard : IHardwareAccessGuard
 {
-    private static readonly HashSet<string> KnownControllers = new(StringComparer.OrdinalIgnoreCase)
+    private readonly IControllerPresenceMonitor monitor;
+
+    public WindowsHardwareAccessGuard(
+        IRunningProcessSource processSource,
+        IWindowsServiceSource serviceSource)
+        : this(new WindowsControllerPresenceMonitor(processSource, serviceSource))
     {
-        "GameManagerService3",
-        "razer_elevation_service",
-        "RazerAppEngine",
-        "razerwdl",
-        "Razer Chroma SDK Diagnostic Service",
-        "Razer Chroma SDK Server",
-        "Razer Chroma SDK Service",
-        "Razer Chroma Stream Server",
-        "Razer Elevation Service",
-        "Razer Game Manager Service 3",
-        "RGS",
-        "Razer Gaming Services Updater",
-        "Razer Synapse Service",
-    };
+    }
+
+    public WindowsHardwareAccessGuard(IControllerPresenceMonitor monitor)
+    {
+        ArgumentNullException.ThrowIfNull(monitor);
+        this.monitor = monitor;
+    }
 
     public HardwareAccessDecision Check()
     {
-        List<string> conflicts = [];
-        bool processFailed = false;
-        bool serviceFailed = false;
-
-        try
-        {
-            conflicts.AddRange(processSource
-                .GetProcessNames()
-                .Where(KnownControllers.Contains));
-        }
-        catch (Exception)
-        {
-            processFailed = true;
-        }
-
-        try
-        {
-            conflicts.AddRange(serviceSource
-                .GetServices()
-                .Where(service => IsActive(service.State))
-                .Where(service =>
-                    KnownControllers.Contains(service.ServiceName)
-                    || KnownControllers.Contains(service.DisplayName))
-                .Select(service => KnownControllers.Contains(service.DisplayName)
-                    ? service.DisplayName
-                    : service.ServiceName));
-        }
-        catch (Exception)
-        {
-            serviceFailed = true;
-        }
-
-        string[] confirmed = conflicts
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .OrderBy(conflict => conflict, StringComparer.Ordinal)
-            .ToArray();
-        string? detectionFailure = (processFailed, serviceFailed) switch
-        {
-            (true, true) => "Process and Windows service enumeration failed.",
-            (true, false) => "Process enumeration failed.",
-            (false, true) => "Windows service enumeration failed.",
-            _ => null,
-        };
-
-        return new HardwareAccessDecision(confirmed, detectionFailure);
+        ControllerPresenceObservation observation = monitor.Observe();
+        return new HardwareAccessDecision(
+            observation.PotentialControllers,
+            observation.DetectionWarning);
     }
-
-    private static bool IsActive(WindowsServiceState state) =>
-        state is WindowsServiceState.Running
-            or WindowsServiceState.StartPending
-            or WindowsServiceState.ContinuePending;
 }

@@ -111,7 +111,8 @@ public sealed class WindowsRazerHidSessionTests
             io,
             new ScriptedGuard(),
             TimeProvider.System,
-            lease);
+            lease,
+            ControllerExclusivityPolicy.Strict);
         Task<HidSessionResult<ReadOnlyMemory<byte>>> active = actor.ExecuteAsync(
             new(1, 1, [], 0),
             () => TransactionIdAssignment.Valid(1),
@@ -186,7 +187,8 @@ public sealed class WindowsRazerHidSessionTests
             new ScriptedIo(),
             new ScriptedGuard(),
             TimeProvider.System,
-            lease);
+            lease,
+            ControllerExclusivityPolicy.Strict);
 
         Task disposal = actor.DisposeAsync().AsTask();
         await Assert.ThrowsAsync<IOException>(() => disposal);
@@ -1000,6 +1002,58 @@ public sealed class WindowsRazerHidSessionTests
         Assert.Equal(2, io.Calls.Count);
     }
 
+    [Theory]
+    [InlineData(GuardKind.Conflict)]
+    [InlineData(GuardKind.DetectionFailure)]
+    [InlineData(GuardKind.Throw)]
+    public async Task AdvisorySkipsPerOperationControllerPresenceGuard(GuardKind kind)
+    {
+        var io = new ScriptedIo(SetSuccess(), GetSuccess(1, 1, 1, []));
+        await using WindowsRazerHidSession actor = CreateActor(
+            io,
+            new ScriptedGuard(kind),
+            policy: ControllerExclusivityPolicy.Advisory);
+
+        HidSessionResult<ReadOnlyMemory<byte>> result = await actor.ExecuteAsync(
+            new(1, 1, [], 0),
+            () => TransactionIdAssignment.Valid(1),
+            Timeout,
+            default);
+
+        Assert.Null(result.Failure);
+        Assert.Equal(2, io.Calls.Count);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task AdvisoryStillRejectsMalformedAndMismatchedResponses(bool transactionMismatch)
+    {
+        byte[] response = Response(1, 1, 1, []);
+        if (transactionMismatch)
+        {
+            response[2] = 2;
+            Rechecksum(response);
+        }
+        else
+        {
+            response[89] ^= 1;
+        }
+
+        var io = new ScriptedIo(SetSuccess(), GetResult(response));
+        await using WindowsRazerHidSession actor = CreateActor(
+            io,
+            policy: ControllerExclusivityPolicy.Advisory);
+
+        HidSessionResult<ReadOnlyMemory<byte>> result = await actor.ExecuteAsync(
+            new(1, 1, [], 0),
+            () => TransactionIdAssignment.Valid(1),
+            Timeout,
+            default);
+
+        Assert.Equal(HidSessionFailureKind.ProtocolFailure, result.Failure);
+    }
+
     [Fact]
     public async Task IncorrectBatterySetterAck_PoisonsBeforeQueuedSecondIo()
     {
@@ -1130,7 +1184,13 @@ public sealed class WindowsRazerHidSessionTests
                 Assert.False(context.TryAcquireActor(out _));
             });
         var io = new ScriptedIo((_, _, _, _, _) => gate.Task);
-        WindowsRazerHidSession actor = new(handle, io, new ScriptedGuard(), TimeProvider.System, lease);
+        WindowsRazerHidSession actor = new(
+            handle,
+            io,
+            new ScriptedGuard(),
+            TimeProvider.System,
+            lease,
+            ControllerExclusivityPolicy.Strict);
         Task<HidSessionResult<ReadOnlyMemory<byte>>> active = actor.ExecuteAsync(new(1, 1, [], 0), () => TransactionIdAssignment.Valid(1), Timeout, default);
         await io.WaitForCallsAsync(1);
 
@@ -1154,13 +1214,20 @@ public sealed class WindowsRazerHidSessionTests
     {
         var events = new List<string>();
         (OpenedHidHandle handle, ValidationRunContext.ActorLease lease) = Resources(events);
-        Assert.Throws<ArgumentNullException>(() => new WindowsRazerHidSession(handle, null!, new ScriptedGuard(), TimeProvider.System, lease));
+        Assert.Throws<ArgumentNullException>(() => new WindowsRazerHidSession(
+            handle,
+            null!,
+            new ScriptedGuard(),
+            TimeProvider.System,
+            lease,
+            ControllerExclusivityPolicy.Strict));
         Assert.Throws<ArgumentOutOfRangeException>(() => new WindowsRazerHidSession(
             handle,
             new ScriptedIo(),
             new ScriptedGuard(),
             TimeProvider.System,
             lease,
+            ControllerExclusivityPolicy.Strict,
             System.Threading.Timeout.InfiniteTimeSpan));
         Assert.Empty(events);
 
@@ -1178,7 +1245,8 @@ public sealed class WindowsRazerHidSessionTests
         TimeProvider? time = null,
         List<string>? events = null,
         Action? disposeBound = null,
-        TimeSpan featureReportSettleDelay = default)
+        TimeSpan featureReportSettleDelay = default,
+        ControllerExclusivityPolicy policy = ControllerExclusivityPolicy.Strict)
     {
         (OpenedHidHandle handle, ValidationRunContext.ActorLease lease) = Resources(events, disposeBound);
         return new WindowsRazerHidSession(
@@ -1187,6 +1255,7 @@ public sealed class WindowsRazerHidSessionTests
             guard ?? new ScriptedGuard(),
             time ?? TimeProvider.System,
             lease,
+            policy,
             featureReportSettleDelay);
     }
 
@@ -1200,7 +1269,8 @@ public sealed class WindowsRazerHidSessionTests
                 scripts.Dequeue(),
                 new ScriptedGuard(),
                 TimeProvider.System,
-                lease),
+                lease,
+                ControllerExclusivityPolicy.Strict),
             Timeout);
         var factory = new BatteryValidationRunFactory(
             () => new ValidationRunContext(),

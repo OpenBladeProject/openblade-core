@@ -11,7 +11,8 @@ internal sealed class WindowsRazerHidSessionOpener
     public WindowsRazerHidSessionOpener(
         IHostIdentitySource hostIdentity,
         IHardwareAccessGuard hardwareAccessGuard,
-        IHidCandidateNative native)
+        IHidCandidateNative native,
+        ControllerExclusivityPolicy exclusivityPolicy)
     {
         ArgumentNullException.ThrowIfNull(hostIdentity);
         ArgumentNullException.ThrowIfNull(hardwareAccessGuard);
@@ -19,7 +20,8 @@ internal sealed class WindowsRazerHidSessionOpener
         evaluator = new WindowsRazerHidEvidenceEvaluator(
             hostIdentity,
             hardwareAccessGuard,
-            native);
+            native,
+            exclusivityPolicy);
         this.native = native;
     }
 

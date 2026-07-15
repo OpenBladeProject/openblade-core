@@ -22,7 +22,8 @@ public sealed class BatteryValidationProbeTests
                 new HostIdentityReadResult(null, HidSessionFailureKind.IdentityBlocked),
                 events),
             new ScriptedGuard(new HardwareAccessDecision([], null), events),
-            native);
+            native,
+            ControllerExclusivityPolicy.Strict);
 
         using HidEvidenceEvaluation evaluation = evaluator.Evaluate();
 
@@ -56,6 +57,49 @@ public sealed class BatteryValidationProbeTests
         Assert.Equal(["identity", "guard"], events);
         Assert.Equal(0, native.EnumerateCalls);
         Assert.Equal(0, native.BindCalls);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void Evaluate_AdvisorySkipsOnlyControllerPresenceClassification(
+        bool detectionFailure)
+    {
+        List<string> events = [];
+        ScriptedNative native = new(events);
+        native.Add("exact", ExactHandle);
+        HardwareAccessDecision access = detectionFailure
+            ? new([], "unavailable")
+            : new(["Razer Synapse Service"], null);
+
+        using HidEvidenceEvaluation evaluation = CreateEvaluator(
+            native,
+            events,
+            access,
+            ControllerExclusivityPolicy.Advisory).Evaluate();
+
+        Assert.Equal(BatteryValidationProbeClassification.Ready, evaluation.Result.Classification);
+        Assert.False(evaluation.Result.ConflictCheckPassed);
+        Assert.DoesNotContain("guard", events);
+        Assert.Equal(1, evaluation.Result.ExactMatchCount);
+    }
+
+    [Fact]
+    public void Evaluate_AdvisoryStillRejectsWrongHostIdentity()
+    {
+        var evaluator = new WindowsRazerHidEvidenceEvaluator(
+            new ScriptedIdentitySource(
+                new HostIdentityReadResult(null, HidSessionFailureKind.IdentityBlocked),
+                null),
+            new ScriptedGuard(new HardwareAccessDecision(["controller"], null), null),
+            new ScriptedNative([]),
+            ControllerExclusivityPolicy.Advisory);
+
+        using HidEvidenceEvaluation evaluation = evaluator.Evaluate();
+
+        Assert.Equal(
+            BatteryValidationProbeClassification.HostIdentityBlocked,
+            evaluation.Result.Classification);
     }
 
     [Fact]
@@ -235,11 +279,13 @@ public sealed class BatteryValidationProbeTests
     private static WindowsRazerHidEvidenceEvaluator CreateEvaluator(
         ScriptedNative native,
         List<string>? events = null,
-        HardwareAccessDecision? access = null) =>
+        HardwareAccessDecision? access = null,
+        ControllerExclusivityPolicy policy = ControllerExclusivityPolicy.Strict) =>
         new(
             new ScriptedIdentitySource(ExactHost, events),
             new ScriptedGuard(access ?? new HardwareAccessDecision([], null), events),
-            native);
+            native,
+            policy);
 
     private sealed class ScriptedIdentitySource(
         HostIdentityReadResult result,

@@ -8,14 +8,20 @@ namespace OpenBlade.Service;
 
 public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDeviceProvider, IDisposable
 {
+    internal static Func<BatteryValidationProbeResult> ProductionProbeFactory { get; } =
+        BatteryValidationFactory.ProbeWindowsForService;
+
+    internal static Func<IBatteryQuerySequenceRunFactory> ProductionQuerySequenceFactory { get; } =
+        BatteryValidationFactory.CreateWindowsQuerySequenceForService;
+
     private readonly Func<BatteryValidationProbeResult> probe;
     private readonly ReadOnlyBladeDevice device;
     private int disposed;
 
     public WindowsVerifiedBladeDeviceProvider()
         : this(
-            BatteryValidationFactory.ProbeWindows,
-            BatteryValidationFactory.CreateWindowsQuerySequence())
+            ProductionProbeFactory,
+            ProductionQuerySequenceFactory())
     {
     }
 

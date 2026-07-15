@@ -156,12 +156,18 @@ public sealed class PublicProtocolSurfaceTests
         Dictionary<string, MethodInfo> methods = factoryType.GetMethods(
                 BindingFlags.Public | BindingFlags.Static | BindingFlags.DeclaredOnly)
             .ToDictionary(method => method.Name, StringComparer.Ordinal);
-        Assert.Equal(3, methods.Count);
+        Assert.Equal(5, methods.Count);
         Assert.Equal(typeof(IBatteryValidationRunFactory), methods["CreateWindows"].ReturnType);
         Assert.Equal(
             typeof(IBatteryQuerySequenceRunFactory),
             methods["CreateWindowsQuerySequence"].ReturnType);
         Assert.Equal(typeof(BatteryValidationProbeResult), methods["ProbeWindows"].ReturnType);
+        Assert.Equal(
+            typeof(IBatteryQuerySequenceRunFactory),
+            methods["CreateWindowsQuerySequenceForService"].ReturnType);
+        Assert.Equal(
+            typeof(BatteryValidationProbeResult),
+            methods["ProbeWindowsForService"].ReturnType);
         Assert.All(methods.Values, method => Assert.Empty(method.GetParameters()));
         Assert.Empty(factoryType.GetMembers(
             BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly));

@@ -37,7 +37,8 @@ public sealed class WindowsRazerHidSessionOpenerTests
                 new HostIdentityReadResult(null, HidSessionFailureKind.IdentityBlocked),
                 events),
             new ScriptedGuard(new HardwareAccessDecision([], null), events),
-            native);
+            native,
+            ControllerExclusivityPolicy.Strict);
 
         HidSessionResult<OpenedHidHandle> result = opener.Open();
 
@@ -62,7 +63,8 @@ public sealed class WindowsRazerHidSessionOpenerTests
         WindowsRazerHidSessionOpener opener = new(
             new ScriptedIdentitySource(ExactHost, events),
             new ScriptedGuard(decision, events),
-            native);
+            native,
+            ControllerExclusivityPolicy.Strict);
 
         HidSessionResult<OpenedHidHandle> result = opener.Open();
 
@@ -70,6 +72,50 @@ public sealed class WindowsRazerHidSessionOpenerTests
         Assert.Equal(["identity", "guard"], events);
         Assert.Equal(0, native.EnumerateCalls);
         Assert.Empty(native.OpenRequests);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Open_AdvisorySkipsControllerPresenceButKeepsExactAdmission(
+        bool detectionFailed)
+    {
+        List<string> events = [];
+        ScriptedNative native = new(events);
+        native.AddCandidate("exact", ExactHandle);
+        HardwareAccessDecision decision = detectionFailed
+            ? new([], "scripted failure")
+            : new(["Razer Synapse Service"], null);
+        WindowsRazerHidSessionOpener opener = new(
+            new ScriptedIdentitySource(ExactHost, events),
+            new ScriptedGuard(decision, events),
+            native,
+            ControllerExclusivityPolicy.Advisory);
+
+        HidSessionResult<OpenedHidHandle> result = opener.Open();
+
+        Assert.Null(result.Failure);
+        Assert.NotNull(result.Value);
+        Assert.DoesNotContain("guard", events);
+        Assert.Equal(1, native.BindCalls);
+        await result.Value.DisposeAsync();
+    }
+
+    [Fact]
+    public void Open_AdvisoryStillRejectsWrongPidAndAmbiguousExactHandles()
+    {
+        ScriptedNative wrongPid = new([]);
+        wrongPid.AddCandidate("wrong", ExactHandle with { ProductId = 0x029F });
+        AssertFailure(
+            CreateOpener(wrongPid, policy: ControllerExclusivityPolicy.Advisory).Open(),
+            HidSessionFailureKind.IdentityBlocked);
+
+        ScriptedNative ambiguous = new([]);
+        ambiguous.AddCandidate("first", ExactHandle);
+        ambiguous.AddCandidate("second", ExactHandle);
+        AssertFailure(
+            CreateOpener(ambiguous, policy: ControllerExclusivityPolicy.Advisory).Open(),
+            HidSessionFailureKind.IdentityBlocked);
     }
 
     [Fact]
@@ -246,11 +292,13 @@ public sealed class WindowsRazerHidSessionOpenerTests
 
     private static WindowsRazerHidSessionOpener CreateOpener(
         ScriptedNative native,
-        List<string>? events = null) =>
+        List<string>? events = null,
+        ControllerExclusivityPolicy policy = ControllerExclusivityPolicy.Strict) =>
         new(
             new ScriptedIdentitySource(ExactHost, events),
             new ScriptedGuard(new HardwareAccessDecision([], null), events),
-            native);
+            native,
+            policy);
 
     private static void AssertFailure(
         HidSessionResult<OpenedHidHandle> result,

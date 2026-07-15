@@ -107,11 +107,13 @@ internal sealed class WindowsRazerHidEvidenceEvaluator
     private readonly IHostIdentitySource hostIdentity;
     private readonly IHardwareAccessGuard hardwareAccessGuard;
     private readonly IHidCandidateNative native;
+    private readonly ControllerExclusivityPolicy exclusivityPolicy;
 
     internal WindowsRazerHidEvidenceEvaluator(
         IHostIdentitySource hostIdentity,
         IHardwareAccessGuard hardwareAccessGuard,
-        IHidCandidateNative native)
+        IHidCandidateNative native,
+        ControllerExclusivityPolicy exclusivityPolicy)
     {
         ArgumentNullException.ThrowIfNull(hostIdentity);
         ArgumentNullException.ThrowIfNull(hardwareAccessGuard);
@@ -119,6 +121,7 @@ internal sealed class WindowsRazerHidEvidenceEvaluator
         this.hostIdentity = hostIdentity;
         this.hardwareAccessGuard = hardwareAccessGuard;
         this.native = native;
+        this.exclusivityPolicy = exclusivityPolicy;
     }
 
     internal HidEvidenceEvaluation Evaluate()
@@ -142,33 +145,37 @@ internal sealed class WindowsRazerHidEvidenceEvaluator
                 BatteryValidationProbeClassification.HostIdentityBlocked);
         }
 
-        HardwareAccessDecision access;
-        try
+        bool conflictCheckPassed = exclusivityPolicy == ControllerExclusivityPolicy.Strict;
+        if (exclusivityPolicy == ControllerExclusivityPolicy.Strict)
         {
-            access = hardwareAccessGuard.Check();
-        }
-        catch
-        {
-            return Failure(
-                BatteryValidationProbeStage.ConflictCheck,
-                BatteryValidationProbeClassification.ConflictDetectionFailed,
-                hostIdentityMatched: true);
-        }
+            HardwareAccessDecision access;
+            try
+            {
+                access = hardwareAccessGuard.Check();
+            }
+            catch
+            {
+                return Failure(
+                    BatteryValidationProbeStage.ConflictCheck,
+                    BatteryValidationProbeClassification.ConflictDetectionFailed,
+                    hostIdentityMatched: true);
+            }
 
-        if (access.DetectionFailure is not null)
-        {
-            return Failure(
-                BatteryValidationProbeStage.ConflictCheck,
-                BatteryValidationProbeClassification.ConflictDetectionFailed,
-                hostIdentityMatched: true);
-        }
+            if (access.DetectionFailure is not null)
+            {
+                return Failure(
+                    BatteryValidationProbeStage.ConflictCheck,
+                    BatteryValidationProbeClassification.ConflictDetectionFailed,
+                    hostIdentityMatched: true);
+            }
 
-        if (access.Conflicts.Count != 0)
-        {
-            return Failure(
-                BatteryValidationProbeStage.ConflictCheck,
-                BatteryValidationProbeClassification.ConflictBlocked,
-                hostIdentityMatched: true);
+            if (access.Conflicts.Count != 0)
+            {
+                return Failure(
+                    BatteryValidationProbeStage.ConflictCheck,
+                    BatteryValidationProbeClassification.ConflictBlocked,
+                    hostIdentityMatched: true);
+            }
         }
 
         IReadOnlyList<string> paths;
@@ -182,7 +189,7 @@ internal sealed class WindowsRazerHidEvidenceEvaluator
                 BatteryValidationProbeStage.Enumeration,
                 BatteryValidationProbeClassification.EnumerationFailed,
                 hostIdentityMatched: true,
-                conflictCheckPassed: true);
+                conflictCheckPassed: conflictCheckPassed);
         }
 
         int openAttempts = 0;
@@ -306,7 +313,7 @@ internal sealed class WindowsRazerHidEvidenceEvaluator
                 stage,
                 classification,
                 HostIdentityMatched: true,
-                ConflictCheckPassed: true,
+                ConflictCheckPassed: conflictCheckPassed,
                 EnumeratedCandidateCount: paths.Count,
                 CandidateOpenAttemptCount: openAttempts,
                 CandidateOpenSuccessCount: openSuccesses,

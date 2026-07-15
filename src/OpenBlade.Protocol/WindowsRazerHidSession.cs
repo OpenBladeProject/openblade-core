@@ -89,6 +89,7 @@ internal sealed class WindowsRazerHidSession : IRazerCommandSession
     private readonly OpenedHidHandle handle;
     private readonly IHidFeatureIo io;
     private readonly IHardwareAccessGuard guard;
+    private readonly ControllerExclusivityPolicy exclusivityPolicy;
     private readonly TimeProvider timeProvider;
     private readonly ValidationRunContext.ActorLease actorLease;
     private readonly TimeSpan featureReportSettleDelay;
@@ -101,6 +102,7 @@ internal sealed class WindowsRazerHidSession : IRazerCommandSession
         IHardwareAccessGuard guard,
         TimeProvider timeProvider,
         ValidationRunContext.ActorLease actorLease,
+        ControllerExclusivityPolicy exclusivityPolicy,
         TimeSpan featureReportSettleDelay = default)
     {
         ArgumentNullException.ThrowIfNull(handle);
@@ -116,6 +118,7 @@ internal sealed class WindowsRazerHidSession : IRazerCommandSession
         this.handle = handle;
         this.io = io;
         this.guard = guard;
+        this.exclusivityPolicy = exclusivityPolicy;
         this.timeProvider = timeProvider;
         this.actorLease = actorLease;
         this.featureReportSettleDelay = featureReportSettleDelay;
@@ -306,30 +309,33 @@ internal sealed class WindowsRazerHidSession : IRazerCommandSession
             item.Command.Arguments.Span);
         request.Encode().CopyTo(setBuffer, 1);
 
-        HardwareAccessDecision decision;
-        try
+        if (exclusivityPolicy == ControllerExclusivityPolicy.Strict)
         {
-            decision = guard.Check();
-        }
-        catch
-        {
-            return DiagnosticFailure(
-                HidSessionFailureKind.ConflictDetectionFailed,
-                HidSessionFailurePhase.Guard);
-        }
+            HardwareAccessDecision decision;
+            try
+            {
+                decision = guard.Check();
+            }
+            catch
+            {
+                return DiagnosticFailure(
+                    HidSessionFailureKind.ConflictDetectionFailed,
+                    HidSessionFailurePhase.Guard);
+            }
 
-        if (decision.DetectionFailure is not null)
-        {
-            return DiagnosticFailure(
-                HidSessionFailureKind.ConflictDetectionFailed,
-                HidSessionFailurePhase.Guard);
-        }
+            if (decision.DetectionFailure is not null)
+            {
+                return DiagnosticFailure(
+                    HidSessionFailureKind.ConflictDetectionFailed,
+                    HidSessionFailurePhase.Guard);
+            }
 
-        if (decision.Conflicts.Count != 0)
-        {
-            return DiagnosticFailure(
-                HidSessionFailureKind.ConflictBlocked,
-                HidSessionFailurePhase.Guard);
+            if (decision.Conflicts.Count != 0)
+            {
+                return DiagnosticFailure(
+                    HidSessionFailureKind.ConflictBlocked,
+                    HidSessionFailurePhase.Guard);
+            }
         }
 
         cancellation = ClassifyCancellation(item.CancellationToken, deadline.Token);

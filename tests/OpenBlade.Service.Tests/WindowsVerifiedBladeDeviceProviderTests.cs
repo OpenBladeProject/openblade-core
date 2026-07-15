@@ -6,6 +6,17 @@ namespace OpenBlade.Service.Tests;
 
 public sealed class WindowsVerifiedBladeDeviceProviderTests
 {
+    [Fact]
+    public void ProductionCompositionUsesOnlyServiceAdvisoryFactories()
+    {
+        Assert.Equal(
+            nameof(BatteryValidationFactory.ProbeWindowsForService),
+            WindowsVerifiedBladeDeviceProvider.ProductionProbeFactory.Method.Name);
+        Assert.Equal(
+            nameof(BatteryValidationFactory.CreateWindowsQuerySequenceForService),
+            WindowsVerifiedBladeDeviceProvider.ProductionQuerySequenceFactory.Method.Name);
+    }
+
     [Theory]
     [InlineData(BatteryValidationProbeClassification.Ready)]
     [InlineData(BatteryValidationProbeClassification.ReadyWithAccessFallback)]

@@ -39,10 +39,37 @@ public static class BatteryValidationFactory
             DefaultCleanupDrainTimeout);
     }
 
+    public static IBatteryQuerySequenceRunFactory CreateWindowsQuerySequenceForService()
+    {
+        var native = new WindowsHidNative();
+        var registry = new WindowsRegistryValueSource();
+        return CreateWindowsQuerySequenceForService(
+            registry,
+            new RuntimeWindowsPlatformEvidenceSource(registry),
+            new RunningProcessSource(),
+            new WindowsServiceSource(),
+            native,
+            new OverlappedFeatureOperation(native),
+            TimeProvider.System,
+            DefaultExchangeTimeout,
+            DefaultCleanupDrainTimeout);
+    }
+
     public static BatteryValidationProbeResult ProbeWindows()
     {
         var registry = new WindowsRegistryValueSource();
         return ProbeWindows(
+            registry,
+            new RuntimeWindowsPlatformEvidenceSource(registry),
+            new RunningProcessSource(),
+            new WindowsServiceSource(),
+            new WindowsHidNative());
+    }
+
+    public static BatteryValidationProbeResult ProbeWindowsForService()
+    {
+        var registry = new WindowsRegistryValueSource();
+        return ProbeWindowsForService(
             registry,
             new RuntimeWindowsPlatformEvidenceSource(registry),
             new RunningProcessSource(),
@@ -55,7 +82,36 @@ public static class BatteryValidationFactory
         IWindowsPlatformEvidenceSource platform,
         IRunningProcessSource processSource,
         IWindowsServiceSource serviceSource,
-        IHidCandidateNative native)
+        IHidCandidateNative native) =>
+        ProbeWindows(
+            registry,
+            platform,
+            processSource,
+            serviceSource,
+            native,
+            ControllerExclusivityPolicy.Strict);
+
+    internal static BatteryValidationProbeResult ProbeWindowsForService(
+        IRegistryValueSource registry,
+        IWindowsPlatformEvidenceSource platform,
+        IRunningProcessSource processSource,
+        IWindowsServiceSource serviceSource,
+        IHidCandidateNative native) =>
+        ProbeWindows(
+            registry,
+            platform,
+            processSource,
+            serviceSource,
+            native,
+            ControllerExclusivityPolicy.Advisory);
+
+    private static BatteryValidationProbeResult ProbeWindows(
+        IRegistryValueSource registry,
+        IWindowsPlatformEvidenceSource platform,
+        IRunningProcessSource processSource,
+        IWindowsServiceSource serviceSource,
+        IHidCandidateNative native,
+        ControllerExclusivityPolicy exclusivityPolicy)
     {
         ArgumentNullException.ThrowIfNull(registry);
         ArgumentNullException.ThrowIfNull(platform);
@@ -65,7 +121,11 @@ public static class BatteryValidationFactory
 
         var guard = new WindowsHardwareAccessGuard(processSource, serviceSource);
         var hostIdentity = new WindowsHostIdentitySource(registry, platform);
-        var evaluator = new WindowsRazerHidEvidenceEvaluator(hostIdentity, guard, native);
+        var evaluator = new WindowsRazerHidEvidenceEvaluator(
+            hostIdentity,
+            guard,
+            native,
+            exclusivityPolicy);
         using HidEvidenceEvaluation evaluation = evaluator.Evaluate();
         return evaluation.Result;
     }
@@ -96,17 +156,16 @@ public static class BatteryValidationFactory
         var opener = new WindowsRazerHidSessionOpener(
             hostIdentity,
             hardwareAccessGuard,
-            native);
+            native,
+            ControllerExclusivityPolicy.Strict);
         var actorFactory = new ValidationActorFactory(
-            opener.Open,
-            (handle, lease) => new WindowsRazerHidSession(
-                handle,
-                featureIo,
-                hardwareAccessGuard,
-                timeProvider,
-                lease,
-                BatteryFeatureReportSettleDelay),
-            exchangeTimeout);
+            opener,
+            featureIo,
+            hardwareAccessGuard,
+            timeProvider,
+            exchangeTimeout,
+            ControllerExclusivityPolicy.Strict,
+            BatteryFeatureReportSettleDelay);
 
         return new BatteryValidationRunFactory(
             static () => new ValidationRunContext(),
@@ -124,7 +183,52 @@ public static class BatteryValidationFactory
         IHidFeatureIo featureIo,
         TimeProvider timeProvider,
         TimeSpan exchangeTimeout,
-        TimeSpan cleanupDrainTimeout)
+        TimeSpan cleanupDrainTimeout) =>
+        CreateWindowsQuerySequence(
+            registry,
+            platform,
+            processSource,
+            serviceSource,
+            native,
+            featureIo,
+            timeProvider,
+            exchangeTimeout,
+            cleanupDrainTimeout,
+            ControllerExclusivityPolicy.Strict);
+
+    internal static IBatteryQuerySequenceRunFactory CreateWindowsQuerySequenceForService(
+        IRegistryValueSource registry,
+        IWindowsPlatformEvidenceSource platform,
+        IRunningProcessSource processSource,
+        IWindowsServiceSource serviceSource,
+        IHidCandidateNative native,
+        IHidFeatureIo featureIo,
+        TimeProvider timeProvider,
+        TimeSpan exchangeTimeout,
+        TimeSpan cleanupDrainTimeout) =>
+        CreateWindowsQuerySequence(
+            registry,
+            platform,
+            processSource,
+            serviceSource,
+            native,
+            featureIo,
+            timeProvider,
+            exchangeTimeout,
+            cleanupDrainTimeout,
+            ControllerExclusivityPolicy.Advisory);
+
+    private static IBatteryQuerySequenceRunFactory CreateWindowsQuerySequence(
+        IRegistryValueSource registry,
+        IWindowsPlatformEvidenceSource platform,
+        IRunningProcessSource processSource,
+        IWindowsServiceSource serviceSource,
+        IHidCandidateNative native,
+        IHidFeatureIo featureIo,
+        TimeProvider timeProvider,
+        TimeSpan exchangeTimeout,
+        TimeSpan cleanupDrainTimeout,
+        ControllerExclusivityPolicy exclusivityPolicy)
     {
         ArgumentNullException.ThrowIfNull(registry);
         ArgumentNullException.ThrowIfNull(platform);
@@ -141,17 +245,16 @@ public static class BatteryValidationFactory
         var opener = new WindowsRazerHidSessionOpener(
             hostIdentity,
             hardwareAccessGuard,
-            native);
+            native,
+            exclusivityPolicy);
         var actorFactory = new ValidationActorFactory(
-            opener.Open,
-            (handle, lease) => new WindowsRazerHidSession(
-                handle,
-                featureIo,
-                hardwareAccessGuard,
-                timeProvider,
-                lease,
-                BatteryFeatureReportSettleDelay),
-            exchangeTimeout);
+            opener,
+            featureIo,
+            hardwareAccessGuard,
+            timeProvider,
+            exchangeTimeout,
+            exclusivityPolicy,
+            BatteryFeatureReportSettleDelay);
 
         return new BatteryQuerySequenceRunFactory(
             static () => new ValidationRunContext(),

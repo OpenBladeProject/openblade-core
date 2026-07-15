@@ -4,6 +4,18 @@ namespace OpenBlade.Protocol.Tests;
 
 public sealed class WindowsHardwareAccessGuardTests
 {
+    [Fact]
+    public void Check_MapsControllerPresenceObservationIntoStrictDecision()
+    {
+        var guard = new WindowsHardwareAccessGuard(
+            new ScriptedMonitor(new(["RazerAppEngine"], "source warning")));
+
+        HardwareAccessDecision result = guard.Check();
+
+        Assert.Equal(["RazerAppEngine"], result.Conflicts);
+        Assert.Equal("source warning", result.DetectionFailure);
+    }
+
     public static TheoryData<string> KnownProcessAliases => new()
     {
         "GameManagerService3",
@@ -222,5 +234,11 @@ public sealed class WindowsHardwareAccessGuardTests
     {
         public IReadOnlyList<WindowsServiceSnapshot> GetServices() =>
             throw new Exception("unstable detail");
+    }
+
+    private sealed class ScriptedMonitor(ControllerPresenceObservation observation)
+        : IControllerPresenceMonitor
+    {
+        public ControllerPresenceObservation Observe() => observation;
     }
 }
