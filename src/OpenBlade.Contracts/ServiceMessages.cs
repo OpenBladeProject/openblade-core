@@ -15,6 +15,7 @@ public sealed record ControlOperationResult(ControlOperationStatus Status, strin
 [JsonPolymorphic(TypeDiscriminatorPropertyName = "operation")]
 [JsonDerivedType(typeof(GetStatusRequest), "getStatus")]
 [JsonDerivedType(typeof(SubscribeStatusRequest), "subscribeStatus")]
+[JsonDerivedType(typeof(ExportDiagnosticsRequest), "exportDiagnostics")]
 [JsonDerivedType(typeof(UpdateProfilesRequest), "updateProfiles")]
 [JsonDerivedType(typeof(SetPerformanceOverrideRequest), "setPerformanceOverride")]
 [JsonDerivedType(typeof(SetFanOverrideRequest), "setFanOverride")]
@@ -27,6 +28,9 @@ public sealed record GetStatusRequest(int Version, Guid RequestId)
     : ServiceRequest(Version, RequestId);
 
 public sealed record SubscribeStatusRequest(int Version, Guid RequestId)
+    : ServiceRequest(Version, RequestId);
+
+public sealed record ExportDiagnosticsRequest(int Version, Guid RequestId)
     : ServiceRequest(Version, RequestId);
 
 public sealed record UpdateProfilesRequest(int Version, Guid RequestId, ProfileSet Profiles)
@@ -80,13 +84,16 @@ public sealed record ServiceStatusSnapshot(
 [JsonDerivedType(typeof(ServiceStatusEvent), "statusEvent")]
 public abstract record ServiceServerFrame(int Version);
 
+public sealed record DiagnosticArchive(string SuggestedFileName, byte[] ZipBytes);
+
 public sealed record ServiceResponse(
     int Version,
     Guid RequestId,
     bool Success,
     string? Error,
     ServiceStatusSnapshot? Status,
-    ControlOperationResult? Result)
+    ControlOperationResult? Result,
+    DiagnosticArchive? Archive = null)
     : ServiceServerFrame(Version);
 
 public sealed record ServiceStatusEvent(int Version, ServiceStatusSnapshot Status)

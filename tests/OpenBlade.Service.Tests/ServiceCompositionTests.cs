@@ -1,4 +1,6 @@
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
+using OpenBlade.Contracts;
 using OpenBlade.Service;
 
 namespace OpenBlade.Service.Tests;
@@ -73,6 +75,49 @@ public sealed class ServiceCompositionTests
         Assert.DoesNotContain(
             registrations,
             registration => registration is UnavailableBladeDeviceProvider);
+    }
+
+    [Fact]
+    public void AddDiagnostics_RegistersOneSharedBoundedHistoryAndArchiveProvider()
+    {
+        var services = new ServiceCollection();
+        services.AddSingleton<IServiceControlRuntime, StubRuntime>();
+
+        services.AddDiagnostics();
+
+        using ServiceProvider provider = services.BuildServiceProvider();
+        DiagnosticHistory history = provider.GetRequiredService<DiagnosticHistory>();
+        Assert.Same(history, Assert.IsType<DiagnosticHistory>(
+            provider.GetRequiredService<ILoggerProvider>()));
+        Assert.Contains(
+            services,
+            descriptor => descriptor.ServiceType == typeof(IDiagnosticArchiveProvider)
+                && descriptor.ImplementationType == typeof(DiagnosticArchiveProvider)
+                && descriptor.Lifetime == ServiceLifetime.Singleton);
+        Assert.Contains(
+            services,
+            descriptor => descriptor.ServiceType == typeof(IAuthorizedUserTokenSource)
+                && descriptor.ImplementationType == typeof(WindowsAuthorizedUserTokenSource)
+                && descriptor.Lifetime == ServiceLifetime.Singleton);
+        Assert.Contains(
+            services,
+            descriptor => descriptor.ServiceType == typeof(IDiagnosticMetadataSource)
+                && descriptor.ImplementationType == typeof(WindowsDiagnosticMetadataSource)
+                && descriptor.Lifetime == ServiceLifetime.Singleton);
+        Assert.IsType<DiagnosticArchiveProvider>(
+            provider.GetRequiredService<IDiagnosticArchiveProvider>());
+    }
+
+    private sealed class StubRuntime : IServiceControlRuntime
+    {
+        public ServiceStatusSnapshot GetStatus() => throw new NotSupportedException();
+        public Task<ControlOperationResult> UpdateProfilesAsync(ProfileSet profiles, CancellationToken token) => throw new NotSupportedException();
+        public Task<ControlOperationResult> SetPerformanceOverrideAsync(ManualOverride<PerformancePreset>? value, CancellationToken token) => throw new NotSupportedException();
+        public Task<ControlOperationResult> SetFanOverrideAsync(ManualOverride<FanMode>? value, CancellationToken token) => throw new NotSupportedException();
+        public Task<ControlOperationResult> SetLightingOverrideAsync(ManualOverride<LightingSettings>? value, CancellationToken token) => throw new NotSupportedException();
+        public Task<ControlOperationResult> SetBatteryPolicyAsync(BatteryPolicy value, CancellationToken token) => throw new NotSupportedException();
+        public Task<ControlOperationResult> SetFullChargeOverrideAsync(bool enabled, CancellationToken token) => throw new NotSupportedException();
+        public Task RefreshAsync(CancellationToken token) => throw new NotSupportedException();
     }
 
     private sealed class CountingNvmlApi(bool available) : INvmlApi

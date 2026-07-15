@@ -21,7 +21,7 @@ public sealed class DiagnosticBundleExporterTests
                 "SetBalanced",
                 "Succeeded",
                 secret)],
-            [$"Service started with token {secret}"],
+            [$"Service started with token {secret.ToUpperInvariant()}"],
             [secret]);
 
         await using MemoryStream destination = new();
@@ -84,10 +84,113 @@ public sealed class DiagnosticBundleExporterTests
         Assert.All(records, record => JsonDocument.Parse(record).Dispose());
     }
 
+    [Theory]
+    [InlineData("x")]
+    [InlineData("xy")]
+    public async Task ExportAsync_RedactsOneOrTwoCharacterSensitiveToken(string token)
+    {
+        DiagnosticBundle bundle = new(
+            new DiagnosticVersions("1.2.3", "Windows 11", "3.01"),
+            new DiagnosticDeviceIdentity("RZ09-0581", "1532", "02E0", null),
+            new Dictionary<string, bool>(),
+            new Dictionary<string, string>(),
+            [],
+            [$"User {token}."],
+            [token]);
+
+        await using MemoryStream destination = new();
+        await DiagnosticBundleExporter.ExportAsync(destination, bundle, CancellationToken.None);
+
+        destination.Position = 0;
+        using ZipArchive archive = new(destination, ZipArchiveMode.Read, leaveOpen: true);
+        string logs = await ReadEntryAsync(archive, "logs.jsonl");
+        Assert.DoesNotContain(token, logs, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("[REDACTED]", logs, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("t")]
+    [InlineData("tr")]
+    [InlineData("n")]
+    [InlineData("nu")]
+    public async Task ExportAsync_SyntaxCollidingShortTokenPreservesValidJson(
+        string token)
+    {
+        DiagnosticBundle bundle = new(
+            new DiagnosticVersions($"version-{token}", "Windows 11", "3.01"),
+            new DiagnosticDeviceIdentity("RZ09-0581", "1532", "02E0", null),
+            new Dictionary<string, bool> { [$"feature-{token}"] = true },
+            new Dictionary<string, string> { [$"setting-{token}"] = $"value-{token}" },
+            [new DiagnosticCommandResult(
+                DateTimeOffset.Parse("2026-07-15T12:00:00Z"),
+                $"subsystem-{token}",
+                "Reconcile",
+                "Blocked",
+                $"detail-{token}")],
+            [$"log-{token}"],
+            [token]);
+
+        await using MemoryStream destination = new();
+        await DiagnosticBundleExporter.ExportAsync(destination, bundle, CancellationToken.None);
+
+        destination.Position = 0;
+        using ZipArchive archive = new(destination, ZipArchiveMode.Read, leaveOpen: true);
+        foreach (string entryName in new[]
+        {
+            "versions.json",
+            "device.json",
+            "capabilities.json",
+            "configuration.json",
+            "command-results.json",
+        })
+        {
+            string content = await ReadEntryAsync(archive, entryName);
+            using JsonDocument document = JsonDocument.Parse(content);
+            AssertNoSensitiveJsonString(document.RootElement, token);
+        }
+
+        string[] logRecords = (await ReadEntryAsync(archive, "logs.jsonl"))
+            .Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        Assert.NotEmpty(logRecords);
+        foreach (string record in logRecords)
+        {
+            using JsonDocument document = JsonDocument.Parse(record);
+            AssertNoSensitiveJsonString(document.RootElement, token);
+        }
+    }
+
     private static async Task<string> ReadEntryAsync(ZipArchive archive, string name)
     {
         ZipArchiveEntry entry = Assert.Single(archive.Entries, candidate => candidate.FullName == name);
         using StreamReader reader = new(entry.Open(), Encoding.UTF8);
         return await reader.ReadToEndAsync(CancellationToken.None);
+    }
+
+    private static void AssertNoSensitiveJsonString(JsonElement element, string token)
+    {
+        switch (element.ValueKind)
+        {
+            case JsonValueKind.Object:
+                foreach (JsonProperty property in element.EnumerateObject())
+                {
+                    Assert.DoesNotContain(token, property.Name, StringComparison.OrdinalIgnoreCase);
+                    AssertNoSensitiveJsonString(property.Value, token);
+                }
+
+                break;
+            case JsonValueKind.Array:
+                foreach (JsonElement item in element.EnumerateArray())
+                {
+                    AssertNoSensitiveJsonString(item, token);
+                }
+
+                break;
+            case JsonValueKind.String:
+                Assert.DoesNotContain(
+                    token,
+                    element.GetString()!,
+                    StringComparison.OrdinalIgnoreCase);
+                break;
+        }
     }
 }

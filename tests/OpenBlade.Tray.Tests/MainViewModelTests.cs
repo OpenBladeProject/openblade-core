@@ -344,6 +344,124 @@ public sealed class MainViewModelTests
         Assert.Contains(ThemePreference.FollowWindows, viewModel.ThemeOptions);
     }
 
+    [Fact]
+    public async Task ExportDiagnosticsCommand_IsConnectedOnlyAndWorksDuringReadOnlyConflict()
+    {
+        var client = new FakeServiceClient();
+        var saver = new FakeDiagnosticArchiveSaver
+        {
+            NextResult = new DiagnosticArchiveSaveResult(
+                DiagnosticArchiveSaveStatus.Saved,
+                @"C:\Users\Test\Desktop\chosen-diagnostics.zip"),
+        };
+        await using var viewModel = new MainViewModel(
+            client,
+            new RecordingDispatcher(),
+            saver);
+        AsyncRelayCommand command = Assert.IsType<AsyncRelayCommand>(
+            viewModel.ExportDiagnosticsCommand);
+
+        Assert.False(command.CanExecute(null));
+        await viewModel.StartAsync();
+        client.Publish(CreateStatus(
+            verified: true,
+            blocked: true,
+            conflicts: ["RazerAppEngine"]));
+        await WaitUntilAsync(() => viewModel.IsConnected);
+
+        Assert.True(viewModel.IsReadOnly);
+        Assert.True(command.CanExecute(null));
+        await command.ExecuteAsync(null);
+
+        Assert.Equal(1, client.ExportCalls);
+        Assert.Equal(0, client.MutationCalls);
+        Assert.Equal(1, saver.Calls);
+        Assert.Equal(client.NextArchive, saver.Archive);
+        Assert.Equal(
+            @"Diagnostics exported to C:\Users\Test\Desktop\chosen-diagnostics.zip.",
+            viewModel.OperationStatusMessage);
+
+        client.PublishReconnecting();
+        await WaitUntilAsync(() => !viewModel.IsConnected);
+        Assert.False(command.CanExecute(null));
+    }
+
+    [Fact]
+    public async Task ExportDiagnosticsCommand_ReportsCancellationWithoutFailure()
+    {
+        var client = new FakeServiceClient();
+        var saver = new FakeDiagnosticArchiveSaver
+        {
+            NextResult = new DiagnosticArchiveSaveResult(
+                DiagnosticArchiveSaveStatus.Canceled,
+                null),
+        };
+        await using var viewModel = new MainViewModel(
+            client,
+            new RecordingDispatcher(),
+            saver);
+        await viewModel.StartAsync();
+        client.Publish(CreateStatus(verified: false, blocked: true));
+        await WaitUntilAsync(() => viewModel.IsConnected);
+
+        await Assert.IsType<AsyncRelayCommand>(viewModel.ExportDiagnosticsCommand)
+            .ExecuteAsync(null);
+
+        Assert.Equal("Diagnostic export canceled.", viewModel.OperationStatusMessage);
+    }
+
+    [Fact]
+    public async Task ExportDiagnosticsCommand_ReportsSaveFailure()
+    {
+        var client = new FakeServiceClient();
+        var saver = new FakeDiagnosticArchiveSaver
+        {
+            Failure = new IOException("disk full"),
+        };
+        await using var viewModel = new MainViewModel(
+            client,
+            new RecordingDispatcher(),
+            saver);
+        await viewModel.StartAsync();
+        client.Publish(CreateStatus(verified: false, blocked: true));
+        await WaitUntilAsync(() => viewModel.IsConnected);
+
+        await Assert.IsType<AsyncRelayCommand>(viewModel.ExportDiagnosticsCommand)
+            .ExecuteAsync(null);
+
+        Assert.Equal(
+            "Diagnostic export failed: disk full",
+            viewModel.OperationStatusMessage);
+    }
+
+    [Fact]
+    public async Task ExportDiagnosticsCommand_PreventsReentrancy()
+    {
+        var client = new FakeServiceClient { BlockExports = true };
+        var saver = new FakeDiagnosticArchiveSaver();
+        await using var viewModel = new MainViewModel(
+            client,
+            new RecordingDispatcher(),
+            saver);
+        await viewModel.StartAsync();
+        client.Publish(CreateStatus(verified: false, blocked: true));
+        await WaitUntilAsync(() => viewModel.IsConnected);
+        AsyncRelayCommand command = Assert.IsType<AsyncRelayCommand>(
+            viewModel.ExportDiagnosticsCommand);
+
+        Task first = command.ExecuteAsync(null);
+        await client.ExportStarted.Task;
+        Task second = command.ExecuteAsync(null);
+
+        Assert.False(command.CanExecute(null));
+        Assert.Equal(1, client.ExportCalls);
+        client.CompleteExport();
+        await Task.WhenAll(first, second);
+
+        Assert.Equal(1, saver.Calls);
+        Assert.True(command.CanExecute(null));
+    }
+
     private static ServiceStatusSnapshot CreateStatus(
         bool verified,
         bool blocked,
@@ -412,19 +530,27 @@ public sealed class MainViewModelTests
     {
         private readonly Channel<ServiceWatchUpdate> statuses = Channel.CreateUnbounded<ServiceWatchUpdate>();
         private readonly TaskCompletionSource mutationCompletion = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly TaskCompletionSource exportCompletion = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public int WatchCalls { get; private set; }
         public int MutationCalls { get; private set; }
+        public int ExportCalls { get; private set; }
         public bool BlockMutations { get; init; }
+        public bool BlockExports { get; init; }
         public bool WatchCanceled { get; private set; }
         public bool MutationCanceled { get; private set; }
         public ManualOverride<PerformancePreset>? PerformanceOverride { get; private set; }
         public bool? FullChargeEnabled { get; private set; }
         public TaskCompletionSource MutationStarted { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public TaskCompletionSource ExportStarted { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public ControlOperationResult NextResult { get; init; } = new(ControlOperationStatus.Applied, "Applied");
+        public DiagnosticArchive NextArchive { get; init; } = new(
+            "OpenBlade-diagnostics.zip",
+            [0x50, 0x4B, 0x03, 0x04]);
         public void Publish(ServiceStatusSnapshot status) => statuses.Writer.TryWrite(new ServiceWatchUpdate.Connected(status));
         public void PublishReconnecting() => statuses.Writer.TryWrite(new ServiceWatchUpdate.Reconnecting());
         public void CompleteWatch() => statuses.Writer.TryComplete();
         public void CompleteMutation() => mutationCompletion.TrySetResult();
+        public void CompleteExport() => exportCompletion.TrySetResult();
 
         public async IAsyncEnumerable<ServiceWatchUpdate> WatchStatusAsync(
             [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken token)
@@ -445,6 +571,17 @@ public sealed class MainViewModelTests
 
         public Task<ServiceStatusSnapshot> GetStatusAsync(CancellationToken token) =>
             throw new NotSupportedException();
+
+        public async Task<DiagnosticArchive> ExportDiagnosticsAsync(CancellationToken token)
+        {
+            ExportCalls++;
+            ExportStarted.TrySetResult();
+            if (BlockExports)
+            {
+                await exportCompletion.Task.WaitAsync(token);
+            }
+            return NextArchive;
+        }
 
         public Task<ControlOperationResult> UpdateProfilesAsync(ProfileSet profiles, CancellationToken token) =>
             MutateAsync(token);
@@ -494,6 +631,30 @@ public sealed class MainViewModelTests
                 }
             }
             return NextResult;
+        }
+    }
+
+    private sealed class FakeDiagnosticArchiveSaver : IDiagnosticArchiveSaver
+    {
+        public int Calls { get; private set; }
+        public DiagnosticArchive? Archive { get; private set; }
+        public Exception? Failure { get; init; }
+        public DiagnosticArchiveSaveResult NextResult { get; init; } = new(
+            DiagnosticArchiveSaveStatus.Saved,
+            @"C:\Users\Test\Desktop\OpenBlade-diagnostics.zip");
+
+        public Task<DiagnosticArchiveSaveResult> SaveAsync(
+            DiagnosticArchive archive,
+            CancellationToken token)
+        {
+            token.ThrowIfCancellationRequested();
+            Calls++;
+            Archive = archive;
+            if (Failure is not null)
+            {
+                throw Failure;
+            }
+            return Task.FromResult(NextResult);
         }
     }
 }

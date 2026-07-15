@@ -44,6 +44,17 @@ public sealed class ServiceClient : IServiceClient
             ?? throw new InvalidDataException("Service status response is missing its status body.");
     }
 
+    public async Task<DiagnosticArchive> ExportDiagnosticsAsync(CancellationToken token)
+    {
+        var request = new ExportDiagnosticsRequest(
+            OpenBladeIpc.ProtocolVersion,
+            Guid.NewGuid());
+        ServiceResponse response = await SendOnceAsync(request, token);
+        return response.Archive
+            ?? throw new InvalidDataException(
+                "Service diagnostic response is missing its archive body.");
+    }
+
     public Task<ControlOperationResult> UpdateProfilesAsync(
         ProfileSet profiles,
         CancellationToken token) => SendMutationAsync(

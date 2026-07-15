@@ -63,8 +63,12 @@ public static class DiagnosticBundleExporter
         IReadOnlyCollection<string> sensitiveTokens,
         CancellationToken cancellationToken)
     {
-        string json = JsonSerializer.Serialize(value, JsonOptions);
-        return WriteTextEntryAsync(archive, name, Redact(json, sensitiveTokens), cancellationToken);
+        string json = SerializeRedactedJson(
+            value,
+            sensitiveTokens,
+            writeIndented: true,
+            cancellationToken);
+        return WriteTextEntryAsync(archive, name, json, cancellationToken);
     }
 
     private static async Task WriteLogEntryAsync(
@@ -77,13 +81,17 @@ public static class DiagnosticBundleExporter
         foreach (string line in lines)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            content.AppendLine(JsonSerializer.Serialize(new { line }));
+            content.AppendLine(SerializeRedactedJson(
+                new { line },
+                sensitiveTokens,
+                writeIndented: false,
+                cancellationToken));
         }
 
         await WriteTextEntryAsync(
             archive,
             "logs.jsonl",
-            Redact(content.ToString(), sensitiveTokens),
+            content.ToString(),
             cancellationToken);
     }
 
@@ -99,14 +107,106 @@ public static class DiagnosticBundleExporter
         await writer.WriteAsync(content.AsMemory(), cancellationToken);
     }
 
-    private static string Redact(string text, IReadOnlyCollection<string> sensitiveTokens)
+    private static string SerializeRedactedJson<T>(
+        T value,
+        IReadOnlyCollection<string> sensitiveTokens,
+        bool writeIndented,
+        CancellationToken cancellationToken)
     {
-        foreach (string token in sensitiveTokens.Where(token => !string.IsNullOrEmpty(token)).OrderByDescending(token => token.Length))
-        {
-            text = text.Replace(token, "[REDACTED]", StringComparison.Ordinal);
+        byte[] serialized = JsonSerializer.SerializeToUtf8Bytes(value, JsonOptions);
+        using JsonDocument document = JsonDocument.Parse(serialized);
+        string[] tokens = sensitiveTokens
+            .Where(token => !string.IsNullOrWhiteSpace(token))
+            .OrderByDescending(token => token.Length)
+            .ToArray();
+        const string standardReplacement = "[REDACTED]";
+        string replacement = tokens.Any(token => standardReplacement.Contains(
+            token,
+            StringComparison.OrdinalIgnoreCase))
+            ? string.Empty
+            : standardReplacement;
 
-            string encodedToken = JsonSerializer.Serialize(token, JsonOptions)[1..^1];
-            text = text.Replace(encodedToken, "[REDACTED]", StringComparison.Ordinal);
+        using var destination = new MemoryStream();
+        using (var writer = new Utf8JsonWriter(
+            destination,
+            new JsonWriterOptions { Indented = writeIndented }))
+        {
+            WriteRedactedElement(
+                writer,
+                document.RootElement,
+                tokens,
+                replacement,
+                cancellationToken);
+        }
+
+        return Encoding.UTF8.GetString(destination.ToArray());
+    }
+
+    private static void WriteRedactedElement(
+        Utf8JsonWriter writer,
+        JsonElement element,
+        IReadOnlyList<string> sensitiveTokens,
+        string replacement,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        switch (element.ValueKind)
+        {
+            case JsonValueKind.Object:
+                writer.WriteStartObject();
+                foreach (JsonProperty property in element.EnumerateObject())
+                {
+                    writer.WritePropertyName(RedactString(
+                        property.Name,
+                        sensitiveTokens,
+                        replacement));
+                    WriteRedactedElement(
+                        writer,
+                        property.Value,
+                        sensitiveTokens,
+                        replacement,
+                        cancellationToken);
+                }
+
+                writer.WriteEndObject();
+                break;
+            case JsonValueKind.Array:
+                writer.WriteStartArray();
+                foreach (JsonElement item in element.EnumerateArray())
+                {
+                    WriteRedactedElement(
+                        writer,
+                        item,
+                        sensitiveTokens,
+                        replacement,
+                        cancellationToken);
+                }
+
+                writer.WriteEndArray();
+                break;
+            case JsonValueKind.String:
+                writer.WriteStringValue(RedactString(
+                    element.GetString() ?? string.Empty,
+                    sensitiveTokens,
+                    replacement));
+                break;
+            default:
+                element.WriteTo(writer);
+                break;
+        }
+    }
+
+    private static string RedactString(
+        string text,
+        IReadOnlyList<string> sensitiveTokens,
+        string replacement)
+    {
+        foreach (string token in sensitiveTokens)
+        {
+            text = text.Replace(
+                token,
+                replacement,
+                StringComparison.OrdinalIgnoreCase);
         }
 
         return text;

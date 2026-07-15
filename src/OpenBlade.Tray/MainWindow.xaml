@@ -242,8 +242,13 @@
                                 <TextBlock Text="OpenBlade Service" FontWeight="SemiBold" />
                                 <TextBlock Text="{Binding ConnectionStatus}" FontSize="11" Margin="0,3,0,8"
                                            Foreground="{DynamicResource DangerBrush}" TextWrapping="Wrap" />
-                                <Button Content="Export diagnostics (unavailable)"
-                                        HorizontalAlignment="Left" IsEnabled="False" />
+                                <Button Content="Export diagnostics"
+                                        HorizontalAlignment="Left"
+                                        Command="{Binding ExportDiagnosticsCommand}" />
+                                <TextBlock Text="{Binding OperationStatusMessage}"
+                                           FontSize="11" Margin="3,5,3,0"
+                                           Foreground="{DynamicResource MutedBrush}"
+                                           TextWrapping="Wrap" />
                             </StackPanel>
                         </Border>
                     </StackPanel>

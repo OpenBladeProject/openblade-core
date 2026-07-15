@@ -10,6 +10,7 @@ public sealed class IpcMessageCodecTests
     {
         new GetStatusRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid()),
         new SubscribeStatusRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid()),
+        new ExportDiagnosticsRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid()),
         new UpdateProfilesRequest(
             OpenBladeIpc.ProtocolVersion,
             Guid.NewGuid(),
@@ -100,6 +101,112 @@ public sealed class IpcMessageCodecTests
     }
 
     [Fact]
+    public async Task ServerFrameHelpers_RoundTripMaximumDiagnosticArchiveUnderSixtyFourKiBFrameLimit()
+    {
+        byte[] bytes = CreateZipBytes(OpenBladeIpc.MaximumDiagnosticArchiveBytes);
+        ServiceServerFrame expected = new ServiceResponse(
+            OpenBladeIpc.ProtocolVersion,
+            Guid.NewGuid(),
+            Success: true,
+            Error: null,
+            Status: null,
+            Result: null,
+            Archive: new DiagnosticArchive("OpenBlade-diagnostics.zip", bytes));
+        using MemoryStream stream = new();
+
+        await IpcMessageCodec.WriteServerFrameAsync(stream, expected, CancellationToken.None);
+
+        Assert.InRange(stream.Length, 1, OpenBladeIpc.MaximumMessageBytes + sizeof(int));
+        stream.Position = 0;
+        ServiceResponse actual = Assert.IsType<ServiceResponse>(
+            await IpcMessageCodec.ReadServerFrameAsync(stream, CancellationToken.None));
+        Assert.Equal("OpenBlade-diagnostics.zip", actual.Archive!.SuggestedFileName);
+        Assert.Equal(bytes, actual.Archive.ZipBytes);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("diagnostics")]
+    [InlineData("diagnostics.txt")]
+    [InlineData("../diagnostics.zip")]
+    [InlineData("folder/diagnostics.zip")]
+    [InlineData("folder\\diagnostics.zip")]
+    [InlineData("C:\\diagnostics.zip")]
+    public async Task WriteServerFrameAsync_RejectsUnsafeDiagnosticArchiveFileName(string fileName)
+    {
+        using MemoryStream stream = new();
+        ServiceServerFrame frame = CreateArchiveResponse(
+            new DiagnosticArchive(fileName, CreateZipBytes(4)));
+
+        await Assert.ThrowsAsync<InvalidDataException>(() =>
+            IpcMessageCodec.WriteServerFrameAsync(stream, frame, CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task WriteServerFrameAsync_RejectsEmptyDiagnosticArchive()
+    {
+        using MemoryStream stream = new();
+        ServiceServerFrame frame = CreateArchiveResponse(
+            new DiagnosticArchive("diagnostics.zip", []));
+
+        await Assert.ThrowsAsync<InvalidDataException>(() =>
+            IpcMessageCodec.WriteServerFrameAsync(stream, frame, CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task WriteServerFrameAsync_RejectsDiagnosticArchiveWithoutLocalFileSignature()
+    {
+        using MemoryStream stream = new();
+        ServiceServerFrame frame = CreateArchiveResponse(
+            new DiagnosticArchive("diagnostics.zip", [0x50, 0x4b, 0x05, 0x06]));
+
+        await Assert.ThrowsAsync<InvalidDataException>(() =>
+            IpcMessageCodec.WriteServerFrameAsync(stream, frame, CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task WriteServerFrameAsync_RejectsOversizedDiagnosticArchive()
+    {
+        using MemoryStream stream = new();
+        ServiceServerFrame frame = CreateArchiveResponse(
+            new DiagnosticArchive(
+                "diagnostics.zip",
+                CreateZipBytes(OpenBladeIpc.MaximumDiagnosticArchiveBytes + 1)));
+
+        await Assert.ThrowsAsync<InvalidDataException>(() =>
+            IpcMessageCodec.WriteServerFrameAsync(stream, frame, CancellationToken.None));
+    }
+
+    [Theory]
+    [InlineData(false, false, false)]
+    [InlineData(true, true, false)]
+    [InlineData(true, false, true)]
+    [InlineData(false, true, true)]
+    [InlineData(true, true, true)]
+    public async Task WriteServerFrameAsync_RejectsSuccessfulResponseWithoutExactlyOneBody(
+        bool includeStatus,
+        bool includeResult,
+        bool includeArchive)
+    {
+        using MemoryStream stream = new();
+        ServiceServerFrame frame = new ServiceResponse(
+            OpenBladeIpc.ProtocolVersion,
+            Guid.NewGuid(),
+            Success: true,
+            Error: null,
+            Status: includeStatus ? CreateStatus() : null,
+            Result: includeResult
+                ? new ControlOperationResult(ControlOperationStatus.Applied, "Applied")
+                : null,
+            Archive: includeArchive
+                ? new DiagnosticArchive("diagnostics.zip", CreateZipBytes(4))
+                : null);
+
+        await Assert.ThrowsAsync<InvalidDataException>(() =>
+            IpcMessageCodec.WriteServerFrameAsync(stream, frame, CancellationToken.None));
+    }
+
+    [Fact]
     public async Task ReadRequestAsync_RejectsUnknownDiscriminatorWithoutEchoingContent()
     {
         const string secret = "unknown-secret-operation";
@@ -177,6 +284,30 @@ public sealed class IpcMessageCodecTests
         BinaryPrimitives.WriteInt32LittleEndian(framed, payload.Length);
         payload.CopyTo(framed.AsSpan(sizeof(int)));
         return new MemoryStream(framed);
+    }
+
+    private static ServiceResponse CreateArchiveResponse(DiagnosticArchive archive) =>
+        new(
+            OpenBladeIpc.ProtocolVersion,
+            Guid.NewGuid(),
+            Success: true,
+            Error: null,
+            Status: null,
+            Result: null,
+            Archive: archive);
+
+    private static byte[] CreateZipBytes(int length)
+    {
+        byte[] bytes = new byte[length];
+        if (length >= 4)
+        {
+            bytes[0] = 0x50;
+            bytes[1] = 0x4b;
+            bytes[2] = 0x03;
+            bytes[3] = 0x04;
+        }
+
+        return bytes;
     }
 
     private static ServiceStatusSnapshot CreateStatus()

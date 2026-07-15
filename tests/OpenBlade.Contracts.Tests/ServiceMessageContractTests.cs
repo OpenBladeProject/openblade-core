@@ -12,6 +12,7 @@ public sealed class ServiceMessageContractTests
         Assert.Equal(2, OpenBladeIpc.ProtocolVersion);
         Assert.Equal("OpenBlade.Service.v2", OpenBladeIpc.PipeName);
         Assert.Equal(64 * 1024, OpenBladeIpc.MaximumMessageBytes);
+        Assert.Equal(32 * 1024, OpenBladeIpc.MaximumDiagnosticArchiveBytes);
     }
 
     [Fact]
@@ -21,6 +22,7 @@ public sealed class ServiceMessageContractTests
             typeof(ServiceRequest),
             (typeof(GetStatusRequest), "getStatus"),
             (typeof(SubscribeStatusRequest), "subscribeStatus"),
+            (typeof(ExportDiagnosticsRequest), "exportDiagnostics"),
             (typeof(UpdateProfilesRequest), "updateProfiles"),
             (typeof(SetPerformanceOverrideRequest), "setPerformanceOverride"),
             (typeof(SetFanOverrideRequest), "setFanOverride"),
@@ -51,10 +53,10 @@ public sealed class ServiceMessageContractTests
     }
 
     [Fact]
-    public void ServiceResponse_ExposesStatusOrControlResultAndStatusEventHasNoRequestId()
+    public void ServiceResponse_ExposesExactlyThreeTypedBodiesAndStatusEventHasNoRequestId()
     {
         Assert.Equal(
-            new[] { "Error", "RequestId", "Result", "Status", "Success", "Version" },
+            new[] { "Archive", "Error", "RequestId", "Result", "Status", "Success", "Version" },
             typeof(ServiceResponse).GetProperties().Select(property => property.Name).Order());
         Assert.DoesNotContain(
             typeof(ServiceStatusEvent).GetProperties(),
@@ -62,6 +64,9 @@ public sealed class ServiceMessageContractTests
         Assert.Equal(
             typeof(ControlOperationResult),
             typeof(ServiceResponse).GetProperty("Result")!.PropertyType);
+        Assert.Equal(
+            typeof(DiagnosticArchive),
+            typeof(ServiceResponse).GetProperty("Archive")!.PropertyType);
     }
 
     [Fact]
@@ -107,12 +112,19 @@ public sealed class ServiceMessageContractTests
         }
     }
 
-    private static void AssertSafeSurface(Type type, HashSet<Type> visited)
+    private static void AssertSafeSurface(
+        Type type,
+        HashSet<Type> visited,
+        bool allowDiagnosticArchiveBytes = false)
     {
         type = Nullable.GetUnderlyingType(type) ?? type;
         if (type.IsArray)
         {
-            Assert.NotEqual(typeof(byte), type.GetElementType());
+            if (type.GetElementType() == typeof(byte))
+            {
+                Assert.True(allowDiagnosticArchiveBytes);
+                return;
+            }
             AssertSafeSurface(type.GetElementType()!, visited);
             return;
         }
@@ -140,7 +152,12 @@ public sealed class ServiceMessageContractTests
                 property.Name,
                 ["transactionId", "commandClass", "commandId"],
                 StringComparer.OrdinalIgnoreCase);
-            AssertSafeSurface(property.PropertyType, visited);
+            AssertSafeSurface(
+                property.PropertyType,
+                visited,
+                allowDiagnosticArchiveBytes:
+                    type == typeof(DiagnosticArchive)
+                    && property.Name == nameof(DiagnosticArchive.ZipBytes));
         }
 
         foreach (JsonDerivedTypeAttribute derived in type.GetCustomAttributes<JsonDerivedTypeAttribute>())

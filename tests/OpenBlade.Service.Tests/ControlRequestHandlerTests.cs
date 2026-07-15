@@ -22,18 +22,20 @@ public sealed class ControlRequestHandlerTests
             new SetLightingOverrideRequest(2, Guid.NewGuid(), null),
             new SetBatteryPolicyRequest(2, Guid.NewGuid(), BatteryPolicy.Create(75)),
             new SetFullChargeOverrideRequest(2, Guid.NewGuid(), true),
+            new ExportDiagnosticsRequest(2, Guid.NewGuid()),
         ];
         string[] expectedCalls =
         [
             "GetStatus", "GetStatus", "UpdateProfiles", "SetPerformanceOverride",
             "SetFanOverride", "SetLightingOverride", "SetBatteryPolicy",
-            "SetFullChargeOverride",
+            "SetFullChargeOverride", "ExportDiagnostics",
         ];
 
         for (int index = 0; index < requests.Length; index++)
         {
             var runtime = new RecordingRuntime();
-            var handler = new ControlRequestHandler(runtime);
+            var archives = new RecordingArchiveProvider();
+            var handler = new ControlRequestHandler(runtime, archives);
 
             ServiceResponse response = await handler.HandleAsync(
                 requests[index],
@@ -42,16 +44,25 @@ public sealed class ControlRequestHandlerTests
             Assert.Equal(OpenBladeIpc.ProtocolVersion, response.Version);
             Assert.Equal(requests[index].RequestId, response.RequestId);
             Assert.True(response.Success);
-            Assert.Equal([expectedCalls[index]], runtime.Calls);
+            Assert.Equal(
+                [expectedCalls[index]],
+                runtime.Calls.Concat(archives.Calls));
             if (requests[index] is GetStatusRequest or SubscribeStatusRequest)
             {
                 Assert.NotNull(response.Status);
                 Assert.Null(response.Result);
             }
+            else if (requests[index] is ExportDiagnosticsRequest)
+            {
+                Assert.Null(response.Status);
+                Assert.Null(response.Result);
+                Assert.NotNull(response.Archive);
+            }
             else
             {
                 Assert.Null(response.Status);
                 Assert.NotNull(response.Result);
+                Assert.Null(response.Archive);
             }
         }
     }
@@ -64,7 +75,7 @@ public sealed class ControlRequestHandlerTests
         string requestId)
     {
         var runtime = new RecordingRuntime();
-        var handler = new ControlRequestHandler(runtime);
+        var handler = new ControlRequestHandler(runtime, new ThrowingArchiveProvider());
         var request = new GetStatusRequest(version, Guid.Parse(requestId));
 
         ServiceResponse response = await handler.HandleAsync(request, CancellationToken.None);
@@ -93,8 +104,9 @@ public sealed class ControlRequestHandlerTests
                 new FixedGuard(conflict ? ["RazerAppEngine"] : []),
                 new FixedTelemetry(),
                 new NullHub(),
-                provider);
-            var handler = new ControlRequestHandler(runtime);
+                provider,
+                new DiagnosticHistory());
+            var handler = new ControlRequestHandler(runtime, new ThrowingArchiveProvider());
 
             ServiceResponse response = await handler.HandleAsync(
                 new SetFullChargeOverrideRequest(2, Guid.NewGuid(), true),
@@ -109,6 +121,23 @@ public sealed class ControlRequestHandlerTests
         {
             File.Delete(path);
         }
+    }
+
+    [Fact]
+    public async Task HandleAsync_ArchiveFailureReturnsTypedFailureAfterExactlyOneAttempt()
+    {
+        var runtime = new RecordingRuntime();
+        var archives = new FailingArchiveProvider();
+        var handler = new ControlRequestHandler(runtime, archives);
+        var request = new ExportDiagnosticsRequest(2, Guid.NewGuid());
+
+        ServiceResponse response = await handler.HandleAsync(request, CancellationToken.None);
+
+        Assert.False(response.Success);
+        Assert.Contains("diagnostic", response.Error!, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(1, archives.Calls);
+        Assert.Empty(runtime.Calls);
+        Assert.Null(response.Archive);
     }
 
     private sealed class RecordingRuntime : IServiceControlRuntime
@@ -204,5 +233,35 @@ public sealed class ControlRequestHandlerTests
         public Task SetLightingAsync(LightingSettings value, CancellationToken cancellationToken) => Count();
         private Task<T> Count<T>(T value) { Calls++; return Task.FromResult(value); }
         private Task Count() { Calls++; return Task.CompletedTask; }
+    }
+
+    private sealed class ThrowingArchiveProvider : IDiagnosticArchiveProvider
+    {
+        public Task<DiagnosticArchive> CreateAsync(CancellationToken cancellationToken) =>
+            throw new InvalidOperationException("Archive export was not expected.");
+    }
+
+    private sealed class RecordingArchiveProvider : IDiagnosticArchiveProvider
+    {
+        public List<string> Calls { get; } = [];
+
+        public Task<DiagnosticArchive> CreateAsync(CancellationToken cancellationToken)
+        {
+            Calls.Add("ExportDiagnostics");
+            return Task.FromResult(new DiagnosticArchive(
+                "OpenBlade-diagnostics.zip",
+                [0x50, 0x4B, 0x03, 0x04]));
+        }
+    }
+
+    private sealed class FailingArchiveProvider : IDiagnosticArchiveProvider
+    {
+        public int Calls { get; private set; }
+
+        public Task<DiagnosticArchive> CreateAsync(CancellationToken cancellationToken)
+        {
+            Calls++;
+            throw new InvalidDataException("Diagnostic archive exceeds the 32 KiB limit.");
+        }
     }
 }

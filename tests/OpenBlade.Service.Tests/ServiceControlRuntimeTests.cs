@@ -369,6 +369,63 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         Assert.Contains("write rejected", result.Message, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public async Task Reconcile_RecordsEachCompletedSubsystemResultWithoutAdditionalDeviceCalls()
+    {
+        TestContext context = CreateContext(providerAvailable: true);
+        context.Device.Capabilities = DeviceCapabilities.Unavailable();
+        context.Device.ConfirmedState = new ConfirmedDeviceState(
+            null,
+            null,
+            BatteryPolicy.Create(80),
+            null);
+
+        await context.Runtime.RefreshAsync(CancellationToken.None);
+        int callsAfterReconcile = context.Device.TotalCalls;
+        DiagnosticHistorySnapshot snapshot = context.History.Snapshot();
+
+        Assert.Equal(callsAfterReconcile, context.Device.TotalCalls);
+        Assert.Equal(5, snapshot.CommandResults.Count);
+        Assert.Equal(
+            ["Performance", "Fans", "Battery", "Lighting"],
+            snapshot.CommandResults
+                .Where(result => result.Subsystem != "Service")
+                .Select(result => result.Subsystem));
+        Assert.All(snapshot.CommandResults, result => Assert.Equal("Blocked", result.Status));
+    }
+
+    [Fact]
+    public async Task BlockedAndFailedReconcile_RecordsBoundedServiceSummaries()
+    {
+        TestContext blocked = CreateContext(providerAvailable: false);
+        await blocked.Runtime.RefreshAsync(CancellationToken.None);
+
+        DiagnosticCommandResult blockedRecord = Assert.Single(
+            blocked.History.Snapshot().CommandResults);
+        Assert.Equal("Service", blockedRecord.Subsystem);
+        Assert.Equal("Blocked", blockedRecord.Status);
+        Assert.Equal(0, blocked.Device.TotalCalls);
+
+        TestContext failed = CreateContext(providerAvailable: true);
+        failed.Device.Capabilities = DeviceCapabilities.SafeTargetDefaults();
+        failed.Device.ConfirmedState = new ConfirmedDeviceState(
+            PerformancePreset.Silent,
+            FanMode.Automatic,
+            BatteryPolicy.Create(80),
+            ProfileDefaults.CreateSafeDefaults().PluggedIn.Lighting);
+        failed.Device.PerformanceFailure = new IOException("device disconnected");
+
+        _ = await failed.Runtime.SetPerformanceOverrideAsync(
+            new ManualOverride<PerformancePreset>(
+                PerformancePreset.Performance,
+                OverrideLifetime.Persistent),
+            CancellationToken.None);
+
+        Assert.Contains(
+            failed.History.Snapshot().CommandResults,
+            result => result.Subsystem == "Service" && result.Status == "Failed");
+    }
+
     private TestContext CreateContext(
         bool providerAvailable,
         IReadOnlyList<string>? conflicts = null,
@@ -382,14 +439,16 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         var device = new CountingBladeDevice();
         var provider = new CountingProvider(providerAvailable, device);
         var guard = new FakeGuard(conflicts ?? [], detectionFailure);
+        var history = new DiagnosticHistory();
         var runtime = new ServiceControlRuntime(
             store,
             profiles,
             guard,
             telemetry,
             hub,
-            provider);
-        return new TestContext(runtime, store, telemetry, hub, guard, provider, device);
+            provider,
+            history);
+        return new TestContext(runtime, store, telemetry, hub, guard, provider, device, history);
     }
 
     private static TelemetrySnapshot CreateTelemetry(
@@ -417,7 +476,8 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         FakeHub Hub,
         FakeGuard Guard,
         CountingProvider Provider,
-        CountingBladeDevice Device);
+        CountingBladeDevice Device,
+        DiagnosticHistory History);
 
     private sealed class FakeGuard : IHardwareAccessGuard
     {

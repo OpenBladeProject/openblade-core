@@ -15,6 +15,7 @@ builder.Services.AddSingleton<IWindowsServiceSource, WindowsServiceSource>();
 builder.Services.AddSingleton<IHardwareAccessGuard, WindowsHardwareAccessGuard>();
 builder.Services.AddWindowsTelemetry();
 builder.Services.AddVerifiedBladeDeviceProvider();
+builder.Services.AddDiagnostics();
 builder.Services.AddSingleton<IStatusSubscriptionHub>(
     _ => new StatusSubscriptionHub(TimeProvider.System));
 builder.Services.AddSingleton<IServiceLifecycleEventSource, WindowsServiceLifecycleEventSource>();

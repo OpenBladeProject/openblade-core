@@ -18,6 +18,7 @@ public sealed class CapabilityPresentationTests
         Assert.Contains("Command=\"{Binding ToggleFullChargeCommand}\"", xaml, StringComparison.Ordinal);
         Assert.Contains("Command=\"{Binding SetLightingCommand}\"", xaml, StringComparison.Ordinal);
         Assert.Contains("Command=\"{Binding SaveProfilesCommand}\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("Command=\"{Binding ExportDiagnosticsCommand}\"", xaml, StringComparison.Ordinal);
         Assert.Contains("ItemsSource=\"{Binding AvailablePerformancePresets}\"", xaml, StringComparison.Ordinal);
         Assert.Contains("ItemsSource=\"{Binding AvailableFanModes}\"", xaml, StringComparison.Ordinal);
         Assert.Contains("ItemsSource=\"{Binding AvailableLightingEffects}\"", xaml, StringComparison.Ordinal);
@@ -33,6 +34,10 @@ public sealed class CapabilityPresentationTests
             xaml,
             StringComparison.Ordinal);
         Assert.Contains("OpenBlade", xaml, StringComparison.Ordinal);
+        Assert.DoesNotContain("Export diagnostics (unavailable)", xaml, StringComparison.Ordinal);
+        Assert.True(
+            CountOccurrences(xaml, "Text=\"{Binding OperationStatusMessage}\"") >= 2,
+            "Operation status must be visible from both Dashboard and Settings.");
         Assert.DoesNotContain("Open" + "Synapse", xaml, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("Â", xaml, StringComparison.Ordinal);
     }
@@ -200,6 +205,10 @@ public sealed class CapabilityPresentationTests
         return File.ReadAllText(path);
     }
 
+    private static int CountOccurrences(string value, string fragment) =>
+        (value.Length - value.Replace(fragment, string.Empty, StringComparison.Ordinal).Length)
+        / fragment.Length;
+
     private static ServiceStatusSnapshot CreateStatus(
         bool verified,
         bool blocked,
@@ -255,6 +264,7 @@ public sealed class CapabilityPresentationTests
             return Result();
         }
         public Task<ServiceStatusSnapshot> GetStatusAsync(CancellationToken token) => throw new NotSupportedException();
+        public Task<DiagnosticArchive> ExportDiagnosticsAsync(CancellationToken token) => throw new NotSupportedException();
         public Task<ControlOperationResult> SetPerformanceOverrideAsync(ManualOverride<PerformancePreset>? value, CancellationToken token) => Result();
         public Task<ControlOperationResult> SetFanOverrideAsync(ManualOverride<FanMode>? value, CancellationToken token) => Result();
         public Task<ControlOperationResult> SetLightingOverrideAsync(ManualOverride<LightingSettings>? value, CancellationToken token) => Result();

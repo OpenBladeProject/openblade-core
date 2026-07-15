@@ -207,7 +207,7 @@ public sealed class NamedPipeControlServer
 
     private static ServiceResponse Failure(Guid requestId, string error) => new(
         OpenBladeIpc.ProtocolVersion,
-        requestId,
+        requestId == Guid.Empty ? Guid.NewGuid() : requestId,
         Success: false,
         Error: error,
         Status: null,

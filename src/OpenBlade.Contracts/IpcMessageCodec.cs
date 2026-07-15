@@ -8,6 +8,7 @@ public static class OpenBladeIpc
 {
     public const int ProtocolVersion = 2;
     public const int MaximumMessageBytes = 64 * 1024;
+    public const int MaximumDiagnosticArchiveBytes = 32 * 1024;
     public const string PipeName = "OpenBlade.Service.v2";
 }
 
@@ -134,6 +135,7 @@ public static class IpcMessageCodec
         {
             GetStatusRequest => true,
             SubscribeStatusRequest => true,
+            ExportDiagnosticsRequest => true,
             UpdateProfilesRequest update => update.Profiles is not null,
             SetPerformanceOverrideRequest set =>
                 set.Value is null
@@ -176,16 +178,37 @@ public static class IpcMessageCodec
 
     private static bool ValidateResponse(ServiceResponse response)
     {
-        if (response.Success && response.RequestId == Guid.Empty)
+        if (response.RequestId == Guid.Empty)
         {
             return false;
         }
 
-        int bodyCount = (response.Status is null ? 0 : 1) + (response.Result is null ? 0 : 1);
+        int bodyCount = (response.Status is null ? 0 : 1)
+            + (response.Result is null ? 0 : 1)
+            + (response.Archive is null ? 0 : 1);
         bool valid = response.Success
             ? response.Error is null && bodyCount == 1
             : !string.IsNullOrWhiteSpace(response.Error) && bodyCount == 0;
-        return valid && (response.Status is null || ValidateStatus(response.Status));
+        return valid
+            && (response.Status is null || ValidateStatus(response.Status))
+            && (response.Archive is null || ValidateArchive(response.Archive));
+    }
+
+    private static bool ValidateArchive(DiagnosticArchive archive)
+    {
+        string fileName = archive.SuggestedFileName;
+        byte[] bytes = archive.ZipBytes;
+        return !string.IsNullOrWhiteSpace(fileName)
+            && string.Equals(Path.GetFileName(fileName), fileName, StringComparison.Ordinal)
+            && !fileName.Contains('/')
+            && !fileName.Contains('\\')
+            && fileName.IndexOfAny(Path.GetInvalidFileNameChars()) < 0
+            && string.Equals(Path.GetExtension(fileName), ".zip", StringComparison.OrdinalIgnoreCase)
+            && bytes is { Length: >= 4 and <= OpenBladeIpc.MaximumDiagnosticArchiveBytes }
+            && bytes[0] == 0x50
+            && bytes[1] == 0x4b
+            && bytes[2] == 0x03
+            && bytes[3] == 0x04;
     }
 
     private static bool ValidateStatus(ServiceStatusSnapshot? status)

@@ -17,6 +17,8 @@ public interface IServiceClient
 {
     Task<ServiceStatusSnapshot> GetStatusAsync(CancellationToken token);
 
+    Task<DiagnosticArchive> ExportDiagnosticsAsync(CancellationToken token);
+
     Task<ControlOperationResult> UpdateProfilesAsync(
         ProfileSet profiles,
         CancellationToken token);

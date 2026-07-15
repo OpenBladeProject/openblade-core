@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using System.Globalization;
+using System.IO;
 using System.Runtime.CompilerServices;
 using System.Windows.Input;
 using System.Windows.Threading;
@@ -23,6 +24,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
 {
     private readonly IServiceClient serviceClient;
     private readonly IUiDispatcher dispatcher;
+    private readonly IDiagnosticArchiveSaver diagnosticArchiveSaver;
     private readonly CancellationTokenSource lifetime = new();
     private readonly object startSync = new();
     private readonly AsyncRelayCommand[] commands;
@@ -75,14 +77,27 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     private int disposed;
 
     public MainViewModel(IServiceClient serviceClient, Dispatcher dispatcher)
-        : this(serviceClient, new WpfUiDispatcher(dispatcher))
+        : this(
+            serviceClient,
+            new WpfUiDispatcher(dispatcher),
+            CreateDefaultDiagnosticArchiveSaver())
     {
     }
 
     public MainViewModel(IServiceClient serviceClient, IUiDispatcher dispatcher)
+        : this(serviceClient, dispatcher, CreateDefaultDiagnosticArchiveSaver())
+    {
+    }
+
+    public MainViewModel(
+        IServiceClient serviceClient,
+        IUiDispatcher dispatcher,
+        IDiagnosticArchiveSaver diagnosticArchiveSaver)
     {
         this.serviceClient = serviceClient ?? throw new ArgumentNullException(nameof(serviceClient));
         this.dispatcher = dispatcher ?? throw new ArgumentNullException(nameof(dispatcher));
+        this.diagnosticArchiveSaver = diagnosticArchiveSaver
+            ?? throw new ArgumentNullException(nameof(diagnosticArchiveSaver));
 
         SetPerformanceCommand = CreateCommand(
             SetPerformanceAsync,
@@ -108,6 +123,9 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         SaveProfilesCommand = CreateCommand(
             SaveProfilesAsync,
             CanSaveProfiles);
+        ExportDiagnosticsCommand = CreateCommand(
+            ExportDiagnosticsAsync,
+            _ => Volatile.Read(ref disposed) == 0 && IsConnected);
         commands =
         [
             (AsyncRelayCommand)SetPerformanceCommand,
@@ -116,6 +134,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             (AsyncRelayCommand)SetChargeLimitCommand,
             (AsyncRelayCommand)ToggleFullChargeCommand,
             (AsyncRelayCommand)SaveProfilesCommand,
+            (AsyncRelayCommand)ExportDiagnosticsCommand,
         ];
     }
 
@@ -409,6 +428,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     public ICommand SetChargeLimitCommand { get; }
     public ICommand ToggleFullChargeCommand { get; }
     public ICommand SaveProfilesCommand { get; }
+    public ICommand ExportDiagnosticsCommand { get; }
 
     private bool CanMutate =>
         Volatile.Read(ref disposed) == 0
@@ -748,6 +768,42 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         }
     }
 
+    private async Task ExportDiagnosticsAsync(object? parameter, CancellationToken token)
+    {
+        try
+        {
+            await dispatcher.InvokeAsync(
+                () => OperationStatusMessage = "Preparing diagnostic export...",
+                token);
+            DiagnosticArchive archive = await serviceClient.ExportDiagnosticsAsync(token);
+            DiagnosticArchiveSaveResult result = await diagnosticArchiveSaver.SaveAsync(
+                archive,
+                token);
+            await dispatcher.InvokeAsync(
+                () => OperationStatusMessage = result.Status switch
+                {
+                    DiagnosticArchiveSaveStatus.Canceled => "Diagnostic export canceled.",
+                    DiagnosticArchiveSaveStatus.Saved
+                        when !string.IsNullOrWhiteSpace(result.DestinationPath) =>
+                        $"Diagnostics exported to {result.DestinationPath}.",
+                    _ => throw new InvalidDataException(
+                        "The diagnostic saver returned an invalid result."),
+                },
+                token);
+        }
+        catch (OperationCanceledException) when (token.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception exception)
+        {
+            await dispatcher.InvokeAsync(
+                () => OperationStatusMessage =
+                    $"Diagnostic export failed: {exception.Message}",
+                token);
+        }
+    }
+
     private void LoadProfileEditors(ProfileSet value)
     {
         SetField(ref pluggedInPerformanceEditor, value.PluggedIn.Performance, nameof(PluggedInPerformanceEditor));
@@ -884,6 +940,9 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(LightingDraft)));
         NotifyCommands();
     }
+
+    private static IDiagnosticArchiveSaver CreateDefaultDiagnosticArchiveSaver() =>
+        new DiagnosticArchiveSaver(new WpfDiagnosticArchiveDestination());
 
     private sealed class WpfUiDispatcher(Dispatcher dispatcher) : IUiDispatcher
     {

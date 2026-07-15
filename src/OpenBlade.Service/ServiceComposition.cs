@@ -1,9 +1,23 @@
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 
 namespace OpenBlade.Service;
 
 internal static class ServiceComposition
 {
+    internal static IServiceCollection AddDiagnostics(this IServiceCollection services)
+    {
+        ArgumentNullException.ThrowIfNull(services);
+
+        services.AddSingleton<DiagnosticHistory>();
+        services.AddSingleton<ILoggerProvider>(provider =>
+            provider.GetRequiredService<DiagnosticHistory>());
+        services.AddSingleton<IAuthorizedUserTokenSource, WindowsAuthorizedUserTokenSource>();
+        services.AddSingleton<IDiagnosticMetadataSource, WindowsDiagnosticMetadataSource>();
+        services.AddSingleton<IDiagnosticArchiveProvider, DiagnosticArchiveProvider>();
+        return services;
+    }
+
     internal static IServiceCollection AddWindowsTelemetry(this IServiceCollection services) =>
         AddWindowsTelemetry(services, static () => new WindowsNvmlApi());
 

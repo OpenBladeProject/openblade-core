@@ -46,6 +46,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
     private readonly IPowerTelemetryProvider telemetryProvider;
     private readonly IStatusSubscriptionHub subscriptionHub;
     private readonly IVerifiedBladeDeviceProvider deviceProvider;
+    private readonly DiagnosticHistory history;
     private readonly SemaphoreSlim operationGate = new(1, 1);
     private readonly ProfileSetValidator validator =
         ProfileSetValidator.CreateUnverifiedSafeDefaults();
@@ -58,7 +59,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         IHardwareAccessGuard hardwareAccessGuard,
         IPowerTelemetryProvider telemetryProvider,
         IStatusSubscriptionHub subscriptionHub,
-        IVerifiedBladeDeviceProvider deviceProvider)
+        IVerifiedBladeDeviceProvider deviceProvider,
+        DiagnosticHistory history)
     {
         this.store = store ?? throw new ArgumentNullException(nameof(store));
         ArgumentNullException.ThrowIfNull(profiles);
@@ -70,6 +72,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             ?? throw new ArgumentNullException(nameof(subscriptionHub));
         this.deviceProvider = deviceProvider
             ?? throw new ArgumentNullException(nameof(deviceProvider));
+        this.history = history ?? throw new ArgumentNullException(nameof(history));
 
         TelemetrySnapshot telemetry = telemetryProvider.Capture();
         automation = new ProfileAutomationState(profiles, telemetry.PowerSource);
@@ -149,10 +152,12 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             if (enabled && telemetry.PowerSource == PowerSource.Battery)
             {
                 await ReconcileAsync(telemetry, intentStored: false, token);
-                return new ControlOperationResult(
+                var rejected = new ControlOperationResult(
                     ControlOperationStatus.Failed,
                     "The requested intent was rejected: Temporary full charge can only " +
                     "be enabled while plugged in.");
+                history.RecordSummary(rejected.Status, rejected.Message);
+                return rejected;
             }
 
             if (enabled)
@@ -207,9 +212,11 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             catch (Exception exception) when (exception is
                 ArgumentException or InvalidDataException or IOException)
             {
-                return new ControlOperationResult(
+                var rejected = new ControlOperationResult(
                     ControlOperationStatus.Failed,
                     $"The requested intent was rejected: {exception.Message}");
+                history.RecordSummary(rejected.Status, rejected.Message);
+                return rejected;
             }
 
             return await ReconcileAsync(GetStatus().Telemetry, intentStored: true, token);
@@ -234,6 +241,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 telemetry,
                 access);
             PublishIfChanged(blocked);
+            history.RecordSummary(ControlOperationStatus.Blocked, blocked.Message);
             return BlockedResult(blocked.Message, intentStored);
         }
 
@@ -245,6 +253,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 telemetry,
                 access);
             PublishIfChanged(blocked);
+            history.RecordSummary(ControlOperationStatus.Blocked, blocked.Message);
             return BlockedResult(blocked.Message, intentStored);
         }
 
@@ -255,6 +264,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 telemetry,
                 access);
             PublishIfChanged(unavailable);
+            history.RecordSummary(ControlOperationStatus.Blocked, unavailable.Message);
             return BlockedResult(unavailable.Message, intentStored);
         }
 
@@ -266,6 +276,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             var coordinator = new ControlCoordinator(device, hardwareAccessGuard);
             SubsystemApplyResults results =
                 await coordinator.ApplyDesiredStateAsync(desired, token);
+            history.RecordSubsystemResults(results);
             confirmed = await device.ReadStateAsync(token);
 
             bool writesBlocked = ResultsContainBlock(results);
@@ -286,6 +297,15 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 LightingOverride: automation.LightingOverride,
                 FullChargeOverride: automation.BatteryPolicy.TemporaryFullCharge);
             PublishIfChanged(next);
+            if (ResultsContainFailure(results))
+            {
+                history.RecordSummary(ControlOperationStatus.Failed, message);
+            }
+            else if (writesBlocked)
+            {
+                history.RecordSummary(ControlOperationStatus.Blocked, message);
+            }
+
             return new ControlOperationResult(
                 ResultsContainFailure(results)
                     ? ControlOperationStatus.Failed
@@ -306,6 +326,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 access,
                 $"Verified device access failed: {exception.Message}");
             PublishIfChanged(failed);
+            history.RecordSummary(ControlOperationStatus.Failed, failed.Message);
             return new ControlOperationResult(ControlOperationStatus.Failed, failed.Message);
         }
     }

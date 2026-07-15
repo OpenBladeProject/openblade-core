@@ -75,6 +75,57 @@ public sealed class ServiceClientTests
     }
 
     [Fact]
+    public async Task ExportDiagnosticsAsync_SendsTypedRequestAndReturnsArchiveBody()
+    {
+        string pipeName = NewPipeName();
+        using CancellationTokenSource timeout = new(TimeSpan.FromSeconds(5));
+        var expected = new DiagnosticArchive(
+            "OpenBlade-diagnostics.zip",
+            [0x50, 0x4B, 0x03, 0x04]);
+        Task server = RunServerAsync(
+            pipeName,
+            request =>
+            {
+                Assert.IsType<ExportDiagnosticsRequest>(request);
+                Assert.Equal(OpenBladeIpc.ProtocolVersion, request.Version);
+                Assert.NotEqual(Guid.Empty, request.RequestId);
+                return new ServiceResponse(
+                    OpenBladeIpc.ProtocolVersion,
+                    request.RequestId,
+                    true,
+                    null,
+                    null,
+                    null,
+                    expected);
+            },
+            timeout.Token);
+        IServiceClient client = new ServiceClient(pipeName);
+
+        DiagnosticArchive actual = await client.ExportDiagnosticsAsync(timeout.Token);
+        await server;
+
+        Assert.Equal(expected.SuggestedFileName, actual.SuggestedFileName);
+        Assert.Equal(expected.ZipBytes, actual.ZipBytes);
+    }
+
+    [Fact]
+    public async Task ExportDiagnosticsAsync_RejectsSuccessfulResponseWithoutArchiveBody()
+    {
+        string pipeName = NewPipeName();
+        using CancellationTokenSource timeout = new(TimeSpan.FromSeconds(5));
+        Task server = RunRawServerAsync(
+            pipeName,
+            request => Frame(Encoding.UTF8.GetBytes(
+                $"{{\"frame\":\"response\",\"version\":2,\"requestId\":\"{request.RequestId}\",\"success\":true,\"error\":null,\"status\":null,\"result\":null,\"archive\":null}}")),
+            timeout.Token);
+        IServiceClient client = new ServiceClient(pipeName);
+
+        await Assert.ThrowsAsync<InvalidDataException>(
+            () => client.ExportDiagnosticsAsync(timeout.Token));
+        await server;
+    }
+
+    [Fact]
     public async Task TypedMutations_SendEveryClosedMutationRequestOnFreshConnections()
     {
         string pipeName = NewPipeName();

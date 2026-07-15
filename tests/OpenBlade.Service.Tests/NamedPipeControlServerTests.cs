@@ -28,6 +28,28 @@ public sealed class NamedPipeControlServerTests
         Assert.NotNull(response.Status);
     }
 
+    [Fact]
+    public async Task ServeOnceAsync_RoundTripsBoundedDiagnosticArchiveOverAclProtectedPipe()
+    {
+        TestServer context = CreateServer();
+        using CancellationTokenSource timeout = new(TimeSpan.FromSeconds(5));
+        Task serverTask = context.Server.ServeOnceAsync(timeout.Token);
+        await using NamedPipeClientStream client = await ConnectAsync(context.PipeName, timeout.Token);
+        var request = new ExportDiagnosticsRequest(2, Guid.NewGuid());
+
+        await IpcMessageCodec.WriteRequestAsync(client, request, timeout.Token);
+        ServiceResponse response = Assert.IsType<ServiceResponse>(
+            await IpcMessageCodec.ReadServerFrameAsync(client, timeout.Token));
+        await serverTask;
+
+        Assert.True(response.Success);
+        Assert.Equal(request.RequestId, response.RequestId);
+        Assert.Null(response.Status);
+        Assert.Null(response.Result);
+        Assert.Equal("OpenBlade-diagnostics.zip", response.Archive!.SuggestedFileName);
+        Assert.Equal([0x50, 0x4B, 0x03, 0x04], response.Archive.ZipBytes);
+    }
+
     [Theory]
     [MemberData(nameof(InvalidMessages))]
     public async Task ServeOnceAsync_ReturnsFailureForMalformedFrame(byte[] message)
@@ -45,6 +67,7 @@ public sealed class NamedPipeControlServerTests
 
         Assert.False(response.Success);
         Assert.Equal(OpenBladeIpc.ProtocolVersion, response.Version);
+        Assert.NotEqual(Guid.Empty, response.RequestId);
     }
 
     [Fact]
@@ -197,7 +220,7 @@ public sealed class NamedPipeControlServerTests
             pipeName,
             WindowsIdentity.GetCurrent().User
                 ?? throw new InvalidOperationException("Current user has no SID."),
-            new ControlRequestHandler(runtime),
+            new ControlRequestHandler(runtime, new StubArchiveProvider()),
             hub,
             time);
         return new TestServer(pipeName, server, hub);
@@ -261,6 +284,14 @@ public sealed class NamedPipeControlServerTests
         public Task RefreshAsync(CancellationToken token) => Task.CompletedTask;
         private static Task<ControlOperationResult> Result() => Task.FromResult(
             new ControlOperationResult(ControlOperationStatus.Stored, "Stored"));
+    }
+
+    private sealed class StubArchiveProvider : IDiagnosticArchiveProvider
+    {
+        public Task<DiagnosticArchive> CreateAsync(CancellationToken cancellationToken) =>
+            Task.FromResult(new DiagnosticArchive(
+                "OpenBlade-diagnostics.zip",
+                [0x50, 0x4B, 0x03, 0x04]));
     }
 
     private sealed class BlockingWriteStream(byte[] input) : Stream
