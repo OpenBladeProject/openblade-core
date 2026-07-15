@@ -7,18 +7,20 @@ namespace OpenBlade.Capture.Tests;
 public sealed class BatteryQuerySequenceSessionTests
 {
     [Fact]
-    public async Task RunAsync_UsesOnePortAndFourOneSecondDelaysBetweenFiveSuccessfulQueries()
+    public async Task RunAsync_UsesOnePortAndFourEightSecondDelaysBetweenFiveSuccessfulQueries()
     {
         var events = new List<string>();
         using var caller = new CancellationTokenSource();
         var port = new FakePort(events, Enumerable.Repeat(Success(), 5).ToArray());
         var factory = new FakeFactory(events, new(port, null));
+        var delays = new List<TimeSpan>();
         var delayTokens = new List<CancellationToken>();
         var session = new BatteryQuerySequenceSession(
             factory,
             (delay, token) =>
             {
                 events.Add($"settle:{delay.TotalMilliseconds:0}");
+                delays.Add(delay);
                 delayTokens.Add(token);
                 return Task.CompletedTask;
             });
@@ -26,12 +28,13 @@ public sealed class BatteryQuerySequenceSessionTests
         BatteryQuerySequenceResult result = await session.RunAsync(caller.Token);
 
         Assert.Equal(
-            ["open", "query", "settle:1000", "query", "settle:1000", "query",
-             "settle:1000", "query", "settle:1000", "query", "dispose"],
+            ["open", "query", "settle:8000", "query", "settle:8000", "query",
+             "settle:8000", "query", "settle:8000", "query", "dispose"],
             events);
         Assert.Equal(5, result.CompletedCount);
         Assert.True(result.Success);
         Assert.Equal(4, delayTokens.Count);
+        Assert.Equal(Enumerable.Repeat(TimeSpan.FromSeconds(8), 4), delays);
         Assert.All(delayTokens, token => Assert.Equal(caller.Token, token));
         Assert.Equal([caller.Token], factory.Tokens);
         Assert.Equal(Enumerable.Repeat(caller.Token, 5), port.Tokens);
@@ -65,7 +68,7 @@ public sealed class BatteryQuerySequenceSessionTests
 
         BatteryQuerySequenceResult result = await session.RunAsync(default);
 
-        Assert.Equal(["open", "query", "settle:1000", "query", "dispose"], events);
+        Assert.Equal(["open", "query", "settle:8000", "query", "dispose"], events);
         Assert.Equal(2, result.CompletedCount);
         Assert.False(result.Success);
         Assert.Equal(BatteryQuerySequenceFailure.QueryFailed, result.Query2.Failure);
@@ -82,9 +85,9 @@ public sealed class BatteryQuerySequenceSessionTests
         var port = new FakePort(events, Success(), Success());
         var session = new BatteryQuerySequenceSession(
             new FakeFactory(events, new(port, null)),
-            (_, token) =>
+            (delay, token) =>
             {
-                events.Add("settle:1000");
+                events.Add($"settle:{delay.TotalMilliseconds:0}");
                 caller.Cancel();
                 return Task.FromCanceled(token);
             });
@@ -92,7 +95,7 @@ public sealed class BatteryQuerySequenceSessionTests
         await Assert.ThrowsAnyAsync<OperationCanceledException>(
             () => session.RunAsync(caller.Token));
 
-        Assert.Equal(["open", "query", "settle:1000", "dispose"], events);
+        Assert.Equal(["open", "query", "settle:8000", "dispose"], events);
         Assert.Equal(1, port.DisposeCount);
     }
 

@@ -46,7 +46,7 @@ public sealed record BatteryQuerySequenceResult(
 
 public sealed class BatteryQuerySequenceSession
 {
-    private static readonly TimeSpan InterQueryDelay = TimeSpan.FromSeconds(1);
+    private static readonly TimeSpan InterQueryDelay = TimeSpan.FromSeconds(8);
 
     private readonly IBatteryQuerySequenceRunFactory factory;
     private readonly Func<TimeSpan, CancellationToken, Task> delayAsync;

@@ -87,6 +87,14 @@
       "bytes": 235494,
       "firstEpoch": "1784084232.487321000",
       "lastEpoch": "1784084361.799563000"
+    },
+    {
+      "id": "battery-query-sequence-one-second-negative",
+      "fileName": "openblade-battery-query-sequence-20260714.pcap",
+      "sha256": "83D9C6BDFC6FA757FDF93E431C027F741C2F7172F1A6D3493B8BDA95CB0CCA3D",
+      "bytes": 3585,
+      "firstEpoch": "1784091240.288634000",
+      "lastEpoch": "1784091296.254691000"
     }
   ],
   "frameProvenance": {
@@ -454,6 +462,49 @@
       "performanceFanProductionAdmissionAllowed": false,
       "typedMutationHarnessAllowed": false,
       "reason": "No independent performance or fan-mode readback was observed in this capture, so it cannot establish baseline, post-apply readback, or restoration for production admission."
+    }
+  },
+  "batteryQuerySequenceEvidence": {
+    "capture": "battery-query-sequence-one-second-negative",
+    "scope": "capture-scoped-negative-diagnostic",
+    "transactions": [
+      {
+        "queryOrdinal": 1,
+        "transactionId": 1,
+        "setReportFrame": 29,
+        "getReportFrame": 31,
+        "responseFrame": 32,
+        "requestEpoch": "1784091269.902250000",
+        "responseEpoch": "1784091269.904590000",
+        "statusHex": "02",
+        "batterySettingHex": "50",
+        "decodedSetting": "ProtectionOff"
+      },
+      {
+        "queryOrdinal": 2,
+        "transactionId": 2,
+        "setReportFrame": 33,
+        "getReportFrame": 35,
+        "responseFrame": 36,
+        "requestEpoch": "1784091270.925382000",
+        "responseEpoch": "1784091270.926054000",
+        "statusHex": "01",
+        "semanticStatus": "Command Busy"
+      }
+    ],
+    "requestSpacingSeconds": 1.023132,
+    "setterReport07_12Count": 0,
+    "independentFinalQuery": {
+      "command": "query-battery",
+      "performedAfterCaptureStopped": true,
+      "setting": "ProtectionOff",
+      "failure": "None",
+      "success": true
+    },
+    "conclusion": {
+      "oneSecondSameSessionSpacingSufficientInCapture": false,
+      "nextBoundedReadOnlyIntervalSeconds": 8,
+      "reason": "One-second same-session spacing was insufficient in this capture; eight seconds is the next bounded read-only interval."
     }
   },
   "unsupportedObservations": [
