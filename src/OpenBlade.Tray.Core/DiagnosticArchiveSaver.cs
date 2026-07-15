@@ -5,7 +5,9 @@ namespace OpenBlade.Tray;
 
 public interface IDiagnosticArchiveDestination
 {
-    string? ChooseDestination(string suggestedFileName);
+    Task<string?> ChooseDestinationAsync(
+        string suggestedFileName,
+        CancellationToken token);
 }
 
 public enum DiagnosticArchiveSaveStatus
@@ -38,7 +40,10 @@ public sealed class DiagnosticArchiveSaver(IDiagnosticArchiveDestination destina
         ArgumentNullException.ThrowIfNull(archive);
         token.ThrowIfCancellationRequested();
 
-        string? selectedPath = destination.ChooseDestination(archive.SuggestedFileName);
+        string? selectedPath = await destination
+            .ChooseDestinationAsync(archive.SuggestedFileName, token)
+            .ConfigureAwait(false);
+        token.ThrowIfCancellationRequested();
         if (selectedPath is null)
         {
             return new DiagnosticArchiveSaveResult(

@@ -34,6 +34,20 @@ public sealed class DiagnosticArchiveSaverTests
     }
 
     [Fact]
+    public async Task SaveAsync_CancellationDuringDestinationSelection_WritesNothing()
+    {
+        using var source = new CancellationTokenSource();
+        var destination = new BlockingDestination();
+        var saver = new DiagnosticArchiveSaver(destination);
+        Task<DiagnosticArchiveSaveResult> saving = saver.SaveAsync(CreateArchive(), source.Token);
+
+        await destination.SelectionStarted.Task;
+        source.Cancel();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => saving);
+    }
+
+    [Fact]
     public async Task SaveAsync_ReplacesExistingDestinationAndLeavesNoTemporarySibling()
     {
         string directory = CreateTemporaryDirectory();
@@ -98,10 +112,29 @@ public sealed class DiagnosticArchiveSaverTests
     {
         public string? SuggestedFileName { get; private set; }
 
-        public string? ChooseDestination(string suggestedFileName)
+        public Task<string?> ChooseDestinationAsync(
+            string suggestedFileName,
+            CancellationToken token)
         {
+            token.ThrowIfCancellationRequested();
             SuggestedFileName = suggestedFileName;
-            return path;
+            return Task.FromResult(path);
+        }
+    }
+
+    private sealed class BlockingDestination : IDiagnosticArchiveDestination
+    {
+        public TaskCompletionSource SelectionStarted { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public async Task<string?> ChooseDestinationAsync(
+            string suggestedFileName,
+            CancellationToken token)
+        {
+            token.ThrowIfCancellationRequested();
+            SelectionStarted.SetResult();
+            await Task.Delay(Timeout.InfiniteTimeSpan, token);
+            return null;
         }
     }
 }

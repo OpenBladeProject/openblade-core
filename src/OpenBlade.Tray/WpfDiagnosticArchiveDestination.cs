@@ -2,8 +2,11 @@ namespace OpenBlade.Tray;
 
 public sealed class WpfDiagnosticArchiveDestination : IDiagnosticArchiveDestination
 {
-    public string? ChooseDestination(string suggestedFileName)
+    public Task<string?> ChooseDestinationAsync(
+        string suggestedFileName,
+        CancellationToken token)
     {
+        token.ThrowIfCancellationRequested();
         var dialog = new Microsoft.Win32.SaveFileDialog
         {
             AddExtension = true,
@@ -14,6 +17,6 @@ public sealed class WpfDiagnosticArchiveDestination : IDiagnosticArchiveDestinat
             OverwritePrompt = true,
             Title = "Export OpenBlade diagnostics",
         };
-        return dialog.ShowDialog() == true ? dialog.FileName : null;
+        return Task.FromResult(dialog.ShowDialog() == true ? dialog.FileName : null);
     }
 }
