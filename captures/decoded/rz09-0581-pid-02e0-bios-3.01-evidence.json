@@ -112,6 +112,33 @@
       "frameCount": 56,
       "firstEpoch": "1784094542.297520000",
       "lastEpoch": "1784094577.836499000"
+    },
+    {
+      "id": "battery-validation-same-candidate-zero-write",
+      "fileName": "openblade-battery-validate-off-final-20260715.pcap",
+      "sha256": "A4622641B5D5513472F14675897B8CADAB0561B1668854C99C9F3FF8A8E43303",
+      "bytes": 2798,
+      "frameCount": 56,
+      "firstEpoch": "1784100734.073152000",
+      "lastEpoch": "1784100762.110777000"
+    },
+    {
+      "id": "battery-validation-limit80-timing-negative",
+      "fileName": "openblade-battery-limit80-final-20260715.pcap",
+      "sha256": "D273D68F529641BDED9370846A11B599266A53B343FD5AB18613645B5B39ABD5",
+      "bytes": 4658,
+      "frameCount": 76,
+      "firstEpoch": "1784101018.217661000",
+      "lastEpoch": "1784101074.208114000"
+    },
+    {
+      "id": "battery-validation-limit80-strict-success",
+      "fileName": "openblade-battery-limit80-settle20-final-20260715.pcap",
+      "sha256": "BDDB65D1664FDC3331F25282F75229B38A2011E443F5670D58AE32CA6BD36B5B",
+      "bytes": 5732,
+      "frameCount": 98,
+      "firstEpoch": "1784101756.209719000",
+      "lastEpoch": "1784101801.217561000"
     }
   ],
   "frameProvenance": {
@@ -273,7 +300,7 @@
       "action": "battery-limit-80",
       "commands": [{ "class": "07", "id": "12", "payloadHex": "D0", "expectedStatus": "02", "expectedPayloadHex": "D0" }],
       "readbackCommand": { "class": "07", "id": "92", "payloadHex": "00", "responseEncoding": "enabled-bit OR percentage" },
-      "gates": { "captured": true, "decoded": true, "applied": false, "readBack": false, "restored": false }
+      "gates": { "captured": true, "decoded": true, "applied": true, "readBack": true, "restored": true }
     },
     {
       "action": "battery-protection-off",
@@ -695,6 +722,119 @@
       "reason": "For this exact capture/device, adequate SET-completion-to-GET settling resolves the prior same-session Busy behavior. This read-only evidence does not authorize battery writes or change production admission."
     }
   },
+  "batteryValidationEvidence": {
+    "sameCandidateZeroWrite": {
+      "capture": "battery-validation-same-candidate-zero-write",
+      "scope": "capture-scoped-zero-write-safety-success",
+      "cli": {
+        "candidate": "ProtectionOff",
+        "applyAttempted": false,
+        "primaryFailure": "SameCandidate",
+        "success": false,
+        "exitCode": 2
+      },
+      "transaction": {
+        "setReportFrame": 23,
+        "setCompletionFrame": 24,
+        "getReportFrame": 25,
+        "responseFrame": 26,
+        "setCompletionToGetMilliseconds": 24.824,
+        "transactionId": 1,
+        "command": "07/92",
+        "statusHex": "02",
+        "batterySettingHex": "50",
+        "decodedSetting": "ProtectionOff"
+      },
+      "setter07_12Count": 0,
+      "other90ByteFeatureCommandCount": 0,
+      "conclusion": {
+        "zeroWriteSafetyPassed": true,
+        "writeAdmissionEvidence": false
+      }
+    },
+    "limit80TimingNegative": {
+      "capture": "battery-validation-limit80-timing-negative",
+      "scope": "capture-scoped-functional-success-strict-timing-failure",
+      "requestTuples": [
+        "01/07/92/00",
+        "02/07/12/D0",
+        "03/07/92/00",
+        "04/07/12/50",
+        "05/07/92/00",
+        "01/07/92/00"
+      ],
+      "responseTuples": [
+        "02/01/07/92/50",
+        "02/02/07/12/D0",
+        "02/03/07/92/D0",
+        "02/04/07/12/50",
+        "02/05/07/92/50",
+        "02/01/07/92/50"
+      ],
+      "setCompletionToGetMilliseconds": [9.618, 21.558, 10.453, 10.213, 11.278, 16.146],
+      "minimumSettleMilliseconds": 9.618,
+      "functionalSequenceObserved": true,
+      "commandIsolationPassed": true,
+      "timingGatePassed": false,
+      "strictAcceptanceConditionsPassed": false,
+      "productionBatteryWriteAdmissionChanged": false
+    },
+    "limit80StrictSuccess": {
+      "capture": "battery-validation-limit80-strict-success",
+      "scope": "capture-scoped-strict-apply-readback-restore-success",
+      "installedExecutableHashes": {
+        "OpenBlade.Service.exe": "64C437562C73FE5A648712B500337959D73CF28E6551D144ECE96C0AF7FB7C7A",
+        "OpenBlade.Tray.exe": "114D199A0C39618F1D51C133B37594438638CE985E161394AAEFB8BC270781EF",
+        "OpenBlade.Capture.exe": "92974C6482D6BEEAE7E732A188DB38FCD1F4EFE1685FA820D04201ADD670201D"
+      },
+      "requestTuples": [
+        "01/07/92/00",
+        "02/07/12/D0",
+        "03/07/92/00",
+        "04/07/12/50",
+        "05/07/92/00",
+        "01/07/92/00"
+      ],
+      "responseTuples": [
+        "02/01/07/92/50",
+        "02/02/07/12/D0",
+        "02/03/07/92/D0",
+        "02/04/07/12/50",
+        "02/05/07/92/50",
+        "02/01/07/92/50"
+      ],
+      "setCompletionToGetMilliseconds": [24.372, 28.062, 24.870, 26.797, 22.265, 31.662],
+      "minimumSettleMilliseconds": 22.265,
+      "cli": {
+        "applyAttempted": true,
+        "applied": true,
+        "readBack": true,
+        "restored": true,
+        "primaryFailure": "None",
+        "restorationFailure": "None",
+        "success": true,
+        "exitCode": 0
+      },
+      "independentFinalQuery": {
+        "candidate": "ProtectionOff",
+        "primaryFailure": "SameCandidate",
+        "setting": "ProtectionOff",
+        "exitCode": 2
+      },
+      "other90ByteFeatureCommandCount": 0,
+      "functionalSequenceObserved": true,
+      "commandIsolationPassed": true,
+      "timingGatePassed": true,
+      "strictAcceptanceConditionsPassed": true
+    },
+    "admissionBoundary": {
+      "productionBatteryWriteAdmissionChanged": false,
+      "limit80WriteAuthorizedInProduction": false,
+      "otherBatteryLimitsAuthorizedInProduction": false,
+      "fullChargeOverrideAuthorizedInProduction": false,
+      "reason": "The exact Limit80 validation gates passed, but production capability and trusted-hash admission require a separate review. No other battery limit was validated by OpenBlade."
+    }
+  },
   "unsupportedObservations": [
     {
       "feature": "keyboard-effects-and-color",
@@ -711,6 +851,6 @@
   ],
   "admission": {
     "productionHashAdded": false,
-    "reason": "ACK echoes are not independent readback. No action has yet passed typed OpenBlade apply, independent query/readback, and OpenBlade restoration."
+    "reason": "Limit80 passed typed OpenBlade apply, independent query/readback, restoration, command-isolation, and timing gates. Production capability and trusted-hash admission remain unchanged pending a separate review; other battery limits, performance, fans, lighting, and full-charge override remain unvalidated."
   }
 }
