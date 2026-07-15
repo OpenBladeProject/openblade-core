@@ -95,6 +95,14 @@
       "bytes": 3585,
       "firstEpoch": "1784091240.288634000",
       "lastEpoch": "1784091296.254691000"
+    },
+    {
+      "id": "battery-query-sequence-eight-second-negative",
+      "fileName": "openblade-battery-query-sequence-8s-20260714.pcap",
+      "sha256": "23AA9BFD7636C000B7AE5043C7A00C8563025635B6B09D4173D7AEE9774149E8",
+      "bytes": 3177,
+      "firstEpoch": "1784092168.904587000",
+      "lastEpoch": "1784092212.263108000"
     }
   ],
   "frameProvenance": {
@@ -502,9 +510,58 @@
       "success": true
     },
     "conclusion": {
-      "oneSecondSameSessionSpacingSufficientInCapture": false,
-      "nextBoundedReadOnlyIntervalSeconds": 8,
-      "reason": "One-second same-session spacing was insufficient in this capture; eight seconds is the next bounded read-only interval."
+      "secondQueryReturnedBusyWithoutConfiguredSetToGetSettle": true,
+      "nextDiscriminatorSetToGetSettleMilliseconds": 10,
+      "reason": "The second query returned Busy in this capture without a configured SET-completion-to-GET settle; the next read-only discriminator is a 10 ms SET-completion-to-GET settle."
+    }
+  },
+  "batteryQuerySequenceEightSecondEvidence": {
+    "capture": "battery-query-sequence-eight-second-negative",
+    "scope": "capture-scoped-negative-diagnostic",
+    "transactions": [
+      {
+        "queryOrdinal": 1,
+        "transactionId": 1,
+        "setReportFrame": 23,
+        "getReportFrame": 25,
+        "responseFrame": 26,
+        "requestEpoch": "1784092198.585862",
+        "responseEpoch": "1784092198.587841",
+        "statusHex": "02",
+        "batterySettingHex": "50",
+        "decodedSetting": "ProtectionOff"
+      },
+      {
+        "queryOrdinal": 2,
+        "transactionId": 2,
+        "setReportFrame": 40,
+        "getReportFrame": 51,
+        "responseFrame": 52,
+        "requestEpoch": "1784092206.694461",
+        "responseEpoch": "1784092206.695602",
+        "statusHex": "01",
+        "semanticStatus": "Command Busy"
+      }
+    ],
+    "requestSpacingSeconds": 8.108599,
+    "completedCount": 2,
+    "success": false,
+    "queryOrdinalsNotAttempted": [3, 4, 5],
+    "setterReport07_12Count": 0,
+    "independentFinalQuery": {
+      "command": "query-battery",
+      "performedAfterCaptureStopped": true,
+      "setting": "ProtectionOff",
+      "failure": "None",
+      "success": true
+    },
+    "selectiveSuspendResumeConfound": {
+      "observed": true,
+      "effectOnResult": "unresolved"
+    },
+    "conclusion": {
+      "eightSecondsPreventedBusyInCapture": false,
+      "reason": "Eight seconds did not prevent Busy in this capture; selective-suspend/resume is an unresolved confound."
     }
   },
   "unsupportedObservations": [
