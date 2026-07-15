@@ -838,6 +838,135 @@ public sealed class WindowsRazerHidSessionTests
     }
 
     [Fact]
+    public async Task FeatureReportSettleDelaysGetUntilConfiguredDurationElapsed()
+    {
+        var time = new ManualTimeProvider();
+        var io = new ScriptedIo(SetSuccess(), GetSuccess(1, 1, 1, []));
+        await using WindowsRazerHidSession actor = CreateActor(
+            io,
+            time: time,
+            featureReportSettleDelay: TimeSpan.FromMilliseconds(10));
+
+        Task<HidSessionResult<ReadOnlyMemory<byte>>> command = actor.ExecuteAsync(
+            new(1, 1, [], 0),
+            () => TransactionIdAssignment.Valid(1),
+            Timeout,
+            default);
+        await io.WaitForCallsAsync(1);
+
+        time.Advance(TimeSpan.FromMilliseconds(9));
+        await Task.Yield();
+        Assert.Single(io.Calls);
+        Assert.False(command.IsCompleted);
+
+        time.Advance(TimeSpan.FromMilliseconds(1));
+        Assert.Null((await command).Failure);
+        Assert.Equal([SetCode, GetCode], io.Calls.Select(call => call.ControlCode));
+    }
+
+    [Fact]
+    public async Task ZeroFeatureReportSettleSubmitsGetImmediately()
+    {
+        var time = new ManualTimeProvider();
+        var io = new ScriptedIo(SetSuccess(), GetSuccess(1, 1, 1, []));
+        await using WindowsRazerHidSession actor = CreateActor(
+            io,
+            time: time,
+            featureReportSettleDelay: TimeSpan.Zero);
+
+        HidSessionResult<ReadOnlyMemory<byte>> result = await actor.ExecuteAsync(
+            new(1, 1, [], 0),
+            () => TransactionIdAssignment.Valid(1),
+            Timeout,
+            default);
+
+        Assert.Null(result.Failure);
+        Assert.Equal([SetCode, GetCode], io.Calls.Select(call => call.ControlCode));
+        Assert.Equal(DateTimeOffset.UnixEpoch, time.GetUtcNow());
+    }
+
+    [Fact]
+    public async Task CallerCancellationDuringFeatureReportSettlePoisonsAndSubmitsNoGet()
+    {
+        using var caller = new CancellationTokenSource();
+        using var releaseDisposal = new ManualResetEventSlim();
+        var time = new ManualTimeProvider();
+        var io = new ScriptedIo(SetSuccess());
+        WindowsRazerHidSession actor = CreateActor(
+            io,
+            time: time,
+            disposeBound: releaseDisposal.Wait,
+            featureReportSettleDelay: TimeSpan.FromMilliseconds(10));
+
+        Task<HidSessionResult<ReadOnlyMemory<byte>>> command = actor.ExecuteAsync(
+            new(1, 1, [], 0),
+            () => TransactionIdAssignment.Valid(1),
+            Timeout,
+            caller.Token);
+        await io.WaitForCallsAsync(1);
+        caller.Cancel();
+
+        try
+        {
+            Assert.Equal(HidSessionFailureKind.Canceled, (await command).Failure);
+            Assert.Single(io.Calls);
+            Assert.Equal(RazerCommandSessionDisposition.RecoveryRequired, actor.Disposition);
+            Assert.Equal(
+                HidSessionFailureKind.Poisoned,
+                (await actor.ExecuteAsync(
+                    new(1, 2, [], 0),
+                    () => TransactionIdAssignment.Valid(2),
+                    Timeout,
+                    default)).Failure);
+        }
+        finally
+        {
+            releaseDisposal.Set();
+            await actor.DisposeAsync();
+        }
+    }
+
+    [Fact]
+    public async Task DeadlineExpiryDuringFeatureReportSettlePoisonsAndSubmitsNoGet()
+    {
+        using var releaseDisposal = new ManualResetEventSlim();
+        var time = new ManualTimeProvider();
+        var io = new ScriptedIo(SetSuccess());
+        WindowsRazerHidSession actor = CreateActor(
+            io,
+            time: time,
+            disposeBound: releaseDisposal.Wait,
+            featureReportSettleDelay: TimeSpan.FromMilliseconds(20));
+
+        Task<HidSessionResult<ReadOnlyMemory<byte>>> command = actor.ExecuteAsync(
+            new(1, 1, [], 0),
+            () => TransactionIdAssignment.Valid(1),
+            TimeSpan.FromMilliseconds(10),
+            default);
+        await io.WaitForCallsAsync(1);
+        time.Advance(TimeSpan.FromMilliseconds(10));
+
+        try
+        {
+            Assert.Equal(HidSessionFailureKind.Timeout, (await command).Failure);
+            Assert.Single(io.Calls);
+            Assert.Equal(RazerCommandSessionDisposition.RecoveryRequired, actor.Disposition);
+            Assert.Equal(
+                HidSessionFailureKind.Poisoned,
+                (await actor.ExecuteAsync(
+                    new(1, 2, [], 0),
+                    () => TransactionIdAssignment.Valid(2),
+                    Timeout,
+                    default)).Failure);
+        }
+        finally
+        {
+            releaseDisposal.Set();
+            await actor.DisposeAsync();
+        }
+    }
+
+    [Fact]
     public async Task UnknownBatteryQueryValue_PoisonsBeforeQueuedSecondIo()
     {
         var getEntered = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -1026,6 +1155,13 @@ public sealed class WindowsRazerHidSessionTests
         var events = new List<string>();
         (OpenedHidHandle handle, ValidationRunContext.ActorLease lease) = Resources(events);
         Assert.Throws<ArgumentNullException>(() => new WindowsRazerHidSession(handle, null!, new ScriptedGuard(), TimeProvider.System, lease));
+        Assert.Throws<ArgumentOutOfRangeException>(() => new WindowsRazerHidSession(
+            handle,
+            new ScriptedIo(),
+            new ScriptedGuard(),
+            TimeProvider.System,
+            lease,
+            System.Threading.Timeout.InfiniteTimeSpan));
         Assert.Empty(events);
 
         await handle.DisposeAsync();
@@ -1036,10 +1172,22 @@ public sealed class WindowsRazerHidSessionTests
     private const uint SetCode = 0x000B0191;
     private const uint GetCode = 0x000B0192;
 
-    private static WindowsRazerHidSession CreateActor(ScriptedIo io, IHardwareAccessGuard? guard = null, TimeProvider? time = null, List<string>? events = null, Action? disposeBound = null)
+    private static WindowsRazerHidSession CreateActor(
+        ScriptedIo io,
+        IHardwareAccessGuard? guard = null,
+        TimeProvider? time = null,
+        List<string>? events = null,
+        Action? disposeBound = null,
+        TimeSpan featureReportSettleDelay = default)
     {
         (OpenedHidHandle handle, ValidationRunContext.ActorLease lease) = Resources(events, disposeBound);
-        return new WindowsRazerHidSession(handle, io, guard ?? new ScriptedGuard(), time ?? TimeProvider.System, lease);
+        return new WindowsRazerHidSession(
+            handle,
+            io,
+            guard ?? new ScriptedGuard(),
+            time ?? TimeProvider.System,
+            lease,
+            featureReportSettleDelay);
     }
 
     private static async Task<IBatteryValidationPort> OpenValidationPortAsync(params ScriptedIo[] io)

@@ -91,6 +91,7 @@ internal sealed class WindowsRazerHidSession : IRazerCommandSession
     private readonly IHardwareAccessGuard guard;
     private readonly TimeProvider timeProvider;
     private readonly ValidationRunContext.ActorLease actorLease;
+    private readonly TimeSpan featureReportSettleDelay;
     private readonly Task worker;
     private RazerCommandSessionDisposition state = RazerCommandSessionDisposition.Healthy;
 
@@ -99,19 +100,25 @@ internal sealed class WindowsRazerHidSession : IRazerCommandSession
         IHidFeatureIo io,
         IHardwareAccessGuard guard,
         TimeProvider timeProvider,
-        ValidationRunContext.ActorLease actorLease)
+        ValidationRunContext.ActorLease actorLease,
+        TimeSpan featureReportSettleDelay = default)
     {
         ArgumentNullException.ThrowIfNull(handle);
         ArgumentNullException.ThrowIfNull(io);
         ArgumentNullException.ThrowIfNull(guard);
         ArgumentNullException.ThrowIfNull(timeProvider);
         ArgumentNullException.ThrowIfNull(actorLease);
+        if (featureReportSettleDelay < TimeSpan.Zero)
+        {
+            throw new ArgumentOutOfRangeException(nameof(featureReportSettleDelay));
+        }
 
         this.handle = handle;
         this.io = io;
         this.guard = guard;
         this.timeProvider = timeProvider;
         this.actorLease = actorLease;
+        this.featureReportSettleDelay = featureReportSettleDelay;
         worker = RunAsync();
     }
 
@@ -389,6 +396,34 @@ internal sealed class WindowsRazerHidSession : IRazerCommandSession
         {
             Poison();
             return Failure(cancellation.Value);
+        }
+
+        if (featureReportSettleDelay > TimeSpan.Zero)
+        {
+            using var settleCancellation = CancellationTokenSource.CreateLinkedTokenSource(
+                item.CancellationToken,
+                deadline.Token);
+            try
+            {
+                await Task.Delay(
+                    featureReportSettleDelay,
+                    timeProvider,
+                    settleCancellation.Token).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (settleCancellation.IsCancellationRequested)
+            {
+                Poison();
+                return Failure(
+                    ClassifyCancellation(item.CancellationToken, deadline.Token)
+                    ?? HidSessionFailureKind.NativeIoFailure);
+            }
+
+            cancellation = ClassifyCancellation(item.CancellationToken, deadline.Token);
+            if (cancellation is not null)
+            {
+                Poison();
+                return Failure(cancellation.Value);
+            }
         }
 
         byte[] getBuffer = new byte[FeatureReportLength];

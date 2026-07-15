@@ -7,7 +7,7 @@ namespace OpenBlade.Capture.Tests;
 public sealed class BatteryQuerySequenceSessionTests
 {
     [Fact]
-    public async Task RunAsync_UsesOnePortAndFourEightSecondDelaysBetweenFiveSuccessfulQueries()
+    public async Task RunAsync_UsesOnePortAndFourOneSecondDelaysBetweenFiveSuccessfulQueries()
     {
         var events = new List<string>();
         using var caller = new CancellationTokenSource();
@@ -28,13 +28,13 @@ public sealed class BatteryQuerySequenceSessionTests
         BatteryQuerySequenceResult result = await session.RunAsync(caller.Token);
 
         Assert.Equal(
-            ["open", "query", "settle:8000", "query", "settle:8000", "query",
-             "settle:8000", "query", "settle:8000", "query", "dispose"],
+            ["open", "query", "settle:1000", "query", "settle:1000", "query",
+             "settle:1000", "query", "settle:1000", "query", "dispose"],
             events);
         Assert.Equal(5, result.CompletedCount);
         Assert.True(result.Success);
         Assert.Equal(4, delayTokens.Count);
-        Assert.Equal(Enumerable.Repeat(TimeSpan.FromSeconds(8), 4), delays);
+        Assert.Equal(Enumerable.Repeat(TimeSpan.FromSeconds(1), 4), delays);
         Assert.All(delayTokens, token => Assert.Equal(caller.Token, token));
         Assert.Equal([caller.Token], factory.Tokens);
         Assert.Equal(Enumerable.Repeat(caller.Token, 5), port.Tokens);
@@ -68,7 +68,7 @@ public sealed class BatteryQuerySequenceSessionTests
 
         BatteryQuerySequenceResult result = await session.RunAsync(default);
 
-        Assert.Equal(["open", "query", "settle:8000", "query", "dispose"], events);
+        Assert.Equal(["open", "query", "settle:1000", "query", "dispose"], events);
         Assert.Equal(2, result.CompletedCount);
         Assert.False(result.Success);
         Assert.Equal(BatteryQuerySequenceFailure.QueryFailed, result.Query2.Failure);
@@ -95,7 +95,7 @@ public sealed class BatteryQuerySequenceSessionTests
         await Assert.ThrowsAnyAsync<OperationCanceledException>(
             () => session.RunAsync(caller.Token));
 
-        Assert.Equal(["open", "query", "settle:8000", "dispose"], events);
+        Assert.Equal(["open", "query", "settle:1000", "dispose"], events);
         Assert.Equal(1, port.DisposeCount);
     }
 
