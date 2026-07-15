@@ -180,6 +180,49 @@ public sealed class WindowsVerifiedBladeDeviceProviderTests
         Assert.Equal(1, port.DisposeCount);
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ReadState_RedactsDirectTimeoutFromFactoryOrQueryPort(
+        bool throwFromFactory)
+    {
+        var raw = new TimeoutException("raw path and timeout detail");
+        var factory = throwFromFactory
+            ? new FakeQueryFactory(raw)
+            : new FakeQueryFactory(FakeQueryPort.Throwing(raw));
+        using var provider = ReadyProvider(factory);
+        provider.TryGetVerifiedDevice(out IBladeDevice device);
+
+        TimeoutException error = await Assert.ThrowsAsync<TimeoutException>(
+            () => device.ReadStateAsync(default));
+
+        Assert.Equal("Battery state query timed out.", error.Message);
+        Assert.Null(error.InnerException);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ReadState_RedactsDirectProtocolFailureAndPreservesOnlyCategory(
+        bool throwFromFactory)
+    {
+        var raw = new RazerProtocolException(
+            "raw report and payload detail",
+            HidProtocolValidationFailure.Checksum);
+        var factory = throwFromFactory
+            ? new FakeQueryFactory(raw)
+            : new FakeQueryFactory(FakeQueryPort.Throwing(raw));
+        using var provider = ReadyProvider(factory);
+        provider.TryGetVerifiedDevice(out IBladeDevice device);
+
+        RazerProtocolException error = await Assert.ThrowsAsync<RazerProtocolException>(
+            () => device.ReadStateAsync(default));
+
+        Assert.Equal("Battery state query failed protocol validation.", error.Message);
+        Assert.Equal(HidProtocolValidationFailure.Checksum, error.ValidationFailure);
+        Assert.Null(error.InnerException);
+    }
+
     [Fact]
     public async Task ReadState_CallerCancellationPropagatesAndDisposesPort()
     {
@@ -245,6 +288,38 @@ public sealed class WindowsVerifiedBladeDeviceProviderTests
     }
 
     [Fact]
+    public async Task Dispose_AllowsAdmittedReadsToDrainAndRejectsLateReadBeforeSemaphoreWait()
+    {
+        var firstPort = FakeQueryPort.Blocked(BatteryValidationSetting.Limit65);
+        var secondPort = FakeQueryPort.Success(BatteryValidationSetting.Limit70);
+        var factory = new FakeQueryFactory(firstPort, secondPort);
+        var provider = ReadyProvider(factory);
+        provider.TryGetVerifiedDevice(out IBladeDevice device);
+        Task<ConfirmedDeviceState> first = device.ReadStateAsync(default);
+        await firstPort.QueryStarted.Task;
+        Task<ConfirmedDeviceState> queued = device.ReadStateAsync(default);
+        await Task.Yield();
+
+        Task disposing = Task.Run(provider.Dispose);
+        Assert.True(SpinWait.SpinUntil(
+            () => !provider.TryGetVerifiedDevice(out _),
+            TimeSpan.FromSeconds(1)));
+        Task<ConfirmedDeviceState> late = device.ReadStateAsync(default);
+        bool lateRejectedBeforeRelease = late.IsCompleted;
+
+        firstPort.Release();
+        Assert.Equal(65, (await first).Battery!.ChargeLimitPercent);
+        Assert.Equal(70, (await queued).Battery!.ChargeLimitPercent);
+        await disposing;
+        ObjectDisposedException lateError =
+            await Assert.ThrowsAsync<ObjectDisposedException>(() => late);
+
+        Assert.True(lateRejectedBeforeRelease);
+        Assert.DoesNotContain("SemaphoreSlim", lateError.ObjectName ?? string.Empty);
+        Assert.Equal(2, factory.OpenCount);
+    }
+
+    [Fact]
     public async Task SettersRejectBeforeGateFactoryOrIo()
     {
         var factory = new FakeQueryFactory();
@@ -306,6 +381,7 @@ public sealed class WindowsVerifiedBladeDeviceProviderTests
     private sealed class FakeQueryFactory : IBatteryQuerySequenceRunFactory
     {
         private readonly Queue<HidSessionResult<IBatteryQuerySequencePort>> results = [];
+        private readonly Exception? openException;
 
         public FakeQueryFactory(params FakeQueryPort[] ports)
         {
@@ -320,6 +396,11 @@ public sealed class WindowsVerifiedBladeDeviceProviderTests
             results.Enqueue(new(null, failure));
         }
 
+        public FakeQueryFactory(Exception openException)
+        {
+            this.openException = openException;
+        }
+
         public int OpenCount { get; private set; }
 
         public Task<HidSessionResult<IBatteryQuerySequencePort>> OpenAsync(
@@ -327,6 +408,11 @@ public sealed class WindowsVerifiedBladeDeviceProviderTests
         {
             OpenCount++;
             cancellationToken.ThrowIfCancellationRequested();
+            if (openException is not null)
+            {
+                throw openException;
+            }
+
             return Task.FromResult(results.Count == 0
                 ? new HidSessionResult<IBatteryQuerySequencePort>(
                     null,
@@ -382,6 +468,9 @@ public sealed class WindowsVerifiedBladeDeviceProviderTests
 
         public static FakeQueryPort ThrowingIOException(string message) =>
             new(default, queryException: new IOException(message));
+
+        public static FakeQueryPort Throwing(Exception exception) =>
+            new(default, queryException: exception);
 
         public async Task<HidSessionResult<BatteryValidationSetting>> QueryAsync(
             CancellationToken cancellationToken)

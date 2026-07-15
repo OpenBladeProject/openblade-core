@@ -69,7 +69,9 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
             DeviceCapabilities.Unavailable();
 
         private readonly IBatteryQuerySequenceRunFactory queryFactory;
+        private readonly object lifecycleSync = new();
         private readonly SemaphoreSlim readGate = new(1, 1);
+        private int admittedReadCount;
         private int disposed;
 
         internal ReadOnlyBladeDevice(IBatteryQuerySequenceRunFactory queryFactory)
@@ -88,15 +90,22 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
         public async Task<ConfirmedDeviceState> ReadStateAsync(
             CancellationToken cancellationToken)
         {
-            await readGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+            AdmitRead();
             try
             {
-                ThrowIfDisposed();
-                return await QueryStateAsync(cancellationToken).ConfigureAwait(false);
+                await readGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+                try
+                {
+                    return await QueryStateAsync(cancellationToken).ConfigureAwait(false);
+                }
+                finally
+                {
+                    readGate.Release();
+                }
             }
             finally
             {
-                readGate.Release();
+                ReleaseReadAdmission();
             }
         }
 
@@ -118,13 +127,21 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
 
         public void Dispose()
         {
-            if (Interlocked.Exchange(ref disposed, 1) != 0)
+            lock (lifecycleSync)
             {
-                return;
-            }
+                if (disposed != 0)
+                {
+                    return;
+                }
 
-            readGate.Wait();
-            readGate.Dispose();
+                Volatile.Write(ref disposed, 1);
+                while (admittedReadCount != 0)
+                {
+                    Monitor.Wait(lifecycleSync);
+                }
+
+                readGate.Dispose();
+            }
         }
 
         private async Task<ConfirmedDeviceState> QueryStateAsync(
@@ -176,12 +193,21 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
             {
                 throw new OperationCanceledException(cancellationToken);
             }
+            catch (TimeoutException)
+            {
+                throw new TimeoutException("Battery state query timed out.");
+            }
+            catch (RazerProtocolException exception)
+            {
+                throw new RazerProtocolException(
+                    "Battery state query failed protocol validation.",
+                    exception.ValidationFailure);
+            }
             catch (FailClosedDeviceException exception)
             {
                 throw new IOException(exception.Message);
             }
-            catch (Exception exception) when (exception is not (
-                TimeoutException or RazerProtocolException))
+            catch (Exception)
             {
                 throw new IOException("Battery state query failed.");
             }
@@ -221,6 +247,27 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
         private static Task RejectWrite() => Task.FromException(
             new UnvalidatedCommandException(
                 "Hardware writes are not admitted for the verified read-only device."));
+
+        private void AdmitRead()
+        {
+            lock (lifecycleSync)
+            {
+                ThrowIfDisposed();
+                admittedReadCount++;
+            }
+        }
+
+        private void ReleaseReadAdmission()
+        {
+            lock (lifecycleSync)
+            {
+                admittedReadCount--;
+                if (disposed != 0 && admittedReadCount == 0)
+                {
+                    Monitor.PulseAll(lifecycleSync);
+                }
+            }
+        }
 
         private void ThrowIfDisposed() =>
             ObjectDisposedException.ThrowIf(Volatile.Read(ref disposed) != 0, this);
