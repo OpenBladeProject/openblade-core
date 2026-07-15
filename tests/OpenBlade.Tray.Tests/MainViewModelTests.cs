@@ -104,7 +104,9 @@ public sealed class MainViewModelTests
             FullChargeOverride = true,
         };
         client.Publish(status);
-        await WaitUntilAsync(() => viewModel.SelectedPerformance == PerformancePreset.Performance);
+        await WaitUntilAsync(() =>
+            viewModel.SelectedPerformance == PerformancePreset.Performance
+            && viewModel.TelemetryStatus.Contains("CPU unavailable", StringComparison.Ordinal));
 
         Assert.Contains("CPU unavailable", viewModel.TelemetryStatus, StringComparison.Ordinal);
         Assert.Contains("GPU unavailable", viewModel.TelemetryStatus, StringComparison.Ordinal);
