@@ -13,6 +13,15 @@ readback, and restoration. OpenBlade never exposes a raw-command IPC endpoint.
 If a Razer/Synapse controller process is running, the service reports the
 conflict and performs zero hardware writes.
 
+## Telemetry
+
+OpenBlade reads AC and battery state from Windows. On this target machine it
+also reads GPU temperature through NVIDIA NVML loaded only from the absolute
+`%SystemRoot%\System32\nvml.dll` path. Missing or unavailable NVML support
+degrades to `GPU unavailable`; OpenBlade does not launch `nvidia-smi` or install
+a sensor kernel driver. CPU temperature and fan RPM remain unavailable unless a
+safe, independently validated source is present.
+
 ## Build and test
 
 Requires Windows 11 and the .NET 10 SDK.
