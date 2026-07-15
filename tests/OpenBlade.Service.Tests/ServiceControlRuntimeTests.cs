@@ -316,6 +316,34 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     }
 
     [Fact]
+    public async Task VerifiedReadOnlyDevice_PreservesConfirmedBatteryAndBlocksEverySetter()
+    {
+        TestContext context = CreateContext(providerAvailable: true);
+        BatteryPolicy confirmedBattery = BatteryPolicy.Create(65);
+        context.Device.Capabilities = DeviceCapabilities.Unavailable();
+        context.Device.ConfirmedState = new ConfirmedDeviceState(
+            null,
+            null,
+            confirmedBattery,
+            null);
+
+        await context.Runtime.RefreshAsync(CancellationToken.None);
+
+        ServiceStatusSnapshot status = context.Runtime.GetStatus();
+        Assert.True(status.DeviceVerified);
+        Assert.Equal(confirmedBattery, status.ConfirmedState!.Battery);
+        Assert.True(status.WritesBlocked);
+        Assert.Contains("Performance value is not supported", status.Message, StringComparison.Ordinal);
+        Assert.Contains("Fans value is not supported", status.Message, StringComparison.Ordinal);
+        Assert.Contains("Battery value is not supported", status.Message, StringComparison.Ordinal);
+        Assert.Contains("Lighting value is not supported", status.Message, StringComparison.Ordinal);
+        Assert.Equal(0, context.Device.PerformanceSetCalls);
+        Assert.Equal(0, context.Device.FanSetCalls);
+        Assert.Equal(0, context.Device.BatterySetCalls);
+        Assert.Equal(0, context.Device.LightingSetCalls);
+    }
+
+    [Fact]
     public async Task MixedSubsystemFailureAndBlock_ReturnsFailed()
     {
         TestContext context = CreateContext(providerAvailable: true);
@@ -468,6 +496,14 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     {
         public int TotalCalls { get; private set; }
 
+        public int PerformanceSetCalls { get; private set; }
+
+        public int FanSetCalls { get; private set; }
+
+        public int BatterySetCalls { get; private set; }
+
+        public int LightingSetCalls { get; private set; }
+
         public DeviceCapabilities Capabilities { get; set; } =
             DeviceCapabilities.Unavailable();
 
@@ -491,6 +527,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         public Task SetPerformanceAsync(PerformancePreset value, CancellationToken cancellationToken)
         {
             TotalCalls++;
+            PerformanceSetCalls++;
             if (PerformanceFailure is not null)
             {
                 throw PerformanceFailure;
@@ -503,18 +540,21 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         public Task SetFanModeAsync(FanMode value, CancellationToken cancellationToken)
         {
             TotalCalls++;
+            FanSetCalls++;
             return Task.CompletedTask;
         }
 
         public Task SetBatteryPolicyAsync(BatteryPolicy value, CancellationToken cancellationToken)
         {
             TotalCalls++;
+            BatterySetCalls++;
             return Task.CompletedTask;
         }
 
         public Task SetLightingAsync(LightingSettings value, CancellationToken cancellationToken)
         {
             TotalCalls++;
+            LightingSetCalls++;
             return Task.CompletedTask;
         }
     }
