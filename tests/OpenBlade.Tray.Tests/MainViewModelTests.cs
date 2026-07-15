@@ -125,6 +125,98 @@ public sealed class MainViewModelTests
     }
 
     [Fact]
+    public async Task Status_FormatsSplitTelemetryAndNotifiesEveryTelemetryPresentationProperty()
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+
+        Assert.Equal("Unavailable", viewModel.PowerAndBatteryTelemetryLabel);
+        Assert.Equal("Unavailable", viewModel.CpuTelemetryLabel);
+        Assert.Equal("Unavailable", viewModel.GpuTelemetryLabel);
+        Assert.Equal("Unavailable", viewModel.FanTelemetryLabel);
+
+        var changed = new HashSet<string>();
+        viewModel.PropertyChanged += (_, args) => changed.Add(args.PropertyName!);
+        await viewModel.StartAsync();
+        client.Publish(CreateStatus(verified: true, blocked: false) with
+        {
+            Telemetry = new TelemetrySnapshot(
+                DateTimeOffset.UnixEpoch,
+                PowerSource.Battery,
+                61,
+                null,
+                71.25,
+                3210),
+        });
+        await WaitUntilAsync(() => viewModel.FanTelemetryLabel == "3210 RPM");
+
+        Assert.Equal("Battery · 61%", viewModel.PowerAndBatteryTelemetryLabel);
+        Assert.Equal("Unavailable", viewModel.CpuTelemetryLabel);
+        Assert.Equal("71.3 °C", viewModel.GpuTelemetryLabel);
+        Assert.Equal("3210 RPM", viewModel.FanTelemetryLabel);
+        Assert.Contains(nameof(viewModel.PowerAndBatteryTelemetryLabel), changed);
+        Assert.Contains(nameof(viewModel.CpuTelemetryLabel), changed);
+        Assert.Contains(nameof(viewModel.GpuTelemetryLabel), changed);
+        Assert.Contains(nameof(viewModel.FanTelemetryLabel), changed);
+
+        changed.Clear();
+        client.Publish(CreateStatus(verified: true, blocked: false) with
+        {
+            Revision = 2,
+            Telemetry = new TelemetrySnapshot(
+                DateTimeOffset.UnixEpoch.AddSeconds(1),
+                PowerSource.PluggedIn,
+                null,
+                65,
+                null,
+                null),
+        });
+        await WaitUntilAsync(() => viewModel.CpuTelemetryLabel == "65 °C");
+
+        Assert.Equal("Plugged in · Unavailable", viewModel.PowerAndBatteryTelemetryLabel);
+        Assert.Equal("65 °C", viewModel.CpuTelemetryLabel);
+        Assert.Equal("Unavailable", viewModel.GpuTelemetryLabel);
+        Assert.Equal("Unavailable", viewModel.FanTelemetryLabel);
+        Assert.Contains(nameof(viewModel.PowerAndBatteryTelemetryLabel), changed);
+        Assert.Contains(nameof(viewModel.CpuTelemetryLabel), changed);
+        Assert.Contains(nameof(viewModel.GpuTelemetryLabel), changed);
+        Assert.Contains(nameof(viewModel.FanTelemetryLabel), changed);
+    }
+
+    [Fact]
+    public async Task ControlAccessStatus_DistinguishesEveryFailClosedState()
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+
+        Assert.Equal("Service disconnected · hardware controls disabled", viewModel.ControlAccessStatus);
+
+        client.Publish(CreateStatus(verified: false, blocked: true));
+        await WaitUntilAsync(() =>
+            viewModel.ControlAccessStatus == "Target not verified · hardware controls disabled");
+
+        client.Publish(CreateStatus(
+            verified: true,
+            blocked: true,
+            conflicts: ["RazerAppEngine"]));
+        await WaitUntilAsync(() =>
+            viewModel.ControlAccessStatus == "Read-only · Razer software conflict detected");
+
+        client.Publish(CreateStatus(verified: true, blocked: true));
+        await WaitUntilAsync(() =>
+            viewModel.ControlAccessStatus == "Read-only · hardware writes blocked");
+
+        client.Publish(CreateStatus(verified: true, blocked: false));
+        await WaitUntilAsync(() =>
+            viewModel.ControlAccessStatus == "Target verified · hardware controls available");
+
+        client.PublishReconnecting();
+        await WaitUntilAsync(() =>
+            viewModel.ControlAccessStatus == "Service disconnected · hardware controls disabled");
+    }
+
+    [Fact]
     public async Task Command_SendsTypedTemporaryOverrideAndDisplaysOperationResult()
     {
         var client = new FakeServiceClient

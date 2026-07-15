@@ -30,6 +30,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     private string connectionStatus = "Service unavailable";
     private string operationStatusMessage = string.Empty;
     private string telemetryStatus = "Telemetry unavailable";
+    private string controlAccessStatus = "Service disconnected · hardware controls disabled";
     private string activePowerSourceLabel = "Power source unavailable";
     private string performanceSourceLabel = "Unavailable";
     private string fanSourceLabel = "Unavailable";
@@ -171,6 +172,22 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         private set => SetField(ref telemetryStatus, value);
     }
 
+    public string ControlAccessStatus
+    {
+        get => controlAccessStatus;
+        private set => SetField(ref controlAccessStatus, value);
+    }
+
+    public string PowerAndBatteryTelemetryLabel => FormatPowerAndBatteryTelemetry(Telemetry);
+
+    public string CpuTelemetryLabel => FormatTemperature(Telemetry?.CpuTemperatureCelsius);
+
+    public string GpuTelemetryLabel => FormatTemperature(Telemetry?.GpuTemperatureCelsius);
+
+    public string FanTelemetryLabel => Telemetry?.FanRpm is int value
+        ? $"{value.ToString(CultureInfo.InvariantCulture)} RPM"
+        : "Unavailable";
+
     public string ActivePowerSourceLabel
     {
         get => activePowerSourceLabel;
@@ -302,7 +319,28 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     public TelemetrySnapshot? Telemetry
     {
         get => telemetry;
-        private set => SetField(ref telemetry, value);
+        private set
+        {
+            if (EqualityComparer<TelemetrySnapshot?>.Default.Equals(telemetry, value))
+            {
+                return;
+            }
+
+            telemetry = value;
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Telemetry)));
+            PropertyChanged?.Invoke(
+                this,
+                new PropertyChangedEventArgs(nameof(PowerAndBatteryTelemetryLabel)));
+            PropertyChanged?.Invoke(
+                this,
+                new PropertyChangedEventArgs(nameof(CpuTelemetryLabel)));
+            PropertyChanged?.Invoke(
+                this,
+                new PropertyChangedEventArgs(nameof(GpuTelemetryLabel)));
+            PropertyChanged?.Invoke(
+                this,
+                new PropertyChangedEventArgs(nameof(FanTelemetryLabel)));
+        }
     }
 
     public ManualOverride<PerformancePreset>? PerformanceOverride
@@ -542,6 +580,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         IsReadOnly = !controllable;
         CanControlHardware = controllable;
         ConnectionStatus = status.Message;
+        ControlAccessStatus = FormatControlAccessStatus(status);
         ConflictNames = status.Conflicts.ToArray();
         Profiles = status.Profiles;
         if (!profileEditorsDirty)
@@ -592,6 +631,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         IsReadOnly = true;
         CanControlHardware = false;
         ConnectionStatus = message;
+        ControlAccessStatus = "Service disconnected · hardware controls disabled";
         NotifyCommands();
     }
 
@@ -892,6 +932,43 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             ? $"Battery {batteryValue.ToString(CultureInfo.InvariantCulture)}%"
             : "Battery unavailable";
         return string.Join(" · ", cpu, gpu, fans, battery);
+    }
+
+    private static string FormatPowerAndBatteryTelemetry(TelemetrySnapshot? telemetry)
+    {
+        if (telemetry is null)
+        {
+            return "Unavailable";
+        }
+
+        string source = telemetry.PowerSource == PowerSource.Battery
+            ? "Battery"
+            : "Plugged in";
+        string battery = telemetry.BatteryPercent is int value
+            ? $"{value.ToString(CultureInfo.InvariantCulture)}%"
+            : "Unavailable";
+        return $"{source} · {battery}";
+    }
+
+    private static string FormatTemperature(double? temperature) => temperature is double value
+        ? $"{value.ToString("0.#", CultureInfo.InvariantCulture)} °C"
+        : "Unavailable";
+
+    private static string FormatControlAccessStatus(ServiceStatusSnapshot status)
+    {
+        if (!status.DeviceVerified)
+        {
+            return "Target not verified · hardware controls disabled";
+        }
+
+        if (status.Conflicts.Count > 0)
+        {
+            return "Read-only · Razer software conflict detected";
+        }
+
+        return status.WritesBlocked
+            ? "Read-only · hardware writes blocked"
+            : "Target verified · hardware controls available";
     }
 
     private void SetField<T>(

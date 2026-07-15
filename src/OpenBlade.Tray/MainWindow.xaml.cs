@@ -1,6 +1,8 @@
 using Microsoft.UI.Windowing;
+using Microsoft.UI.Dispatching;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Data;
+using OpenBlade.Contracts;
 
 namespace OpenBlade.Tray;
 
@@ -10,16 +12,25 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
 
     public MainWindow()
     {
-        InitializeComponent();
+        DispatcherQueue dispatcherQueue = DispatcherQueue.GetForCurrentThread()
+            ?? throw new InvalidOperationException("The tray must start on a dispatcher thread.");
         ViewModel = new MainViewModel(
             new ServiceClient(),
-            new WinUiDispatcher(DispatcherQueue));
+            new WinUiDispatcher(dispatcherQueue));
+        InitializeComponent();
         Root.DataContext = ViewModel;
         Root.Loaded += OnLoaded;
         AppWindow.Closing += OnClosing;
     }
 
     public MainViewModel ViewModel { get; }
+
+    public PerformancePreset SilentPreset { get; } = PerformancePreset.Silent;
+
+    public PerformancePreset BalancedPreset { get; } = PerformancePreset.Balanced;
+
+    public PerformancePreset PerformancePreset { get; } =
+        OpenBlade.Contracts.PerformancePreset.Performance;
 
     public void ShowAndActivate() => AppWindow.Show(true);
 

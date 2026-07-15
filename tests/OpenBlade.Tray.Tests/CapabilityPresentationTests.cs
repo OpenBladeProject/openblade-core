@@ -12,34 +12,109 @@ public sealed class CapabilityPresentationTests
     {
         string xaml = ReadMainWindowXaml();
 
-        Assert.Contains("Command=\"{Binding SetPerformanceCommand}\"", xaml, StringComparison.Ordinal);
-        Assert.Contains("Command=\"{Binding SetFanModeCommand}\"", xaml, StringComparison.Ordinal);
-        Assert.Contains("Command=\"{Binding SetChargeLimitCommand}\"", xaml, StringComparison.Ordinal);
-        Assert.Contains("Command=\"{Binding ToggleFullChargeCommand}\"", xaml, StringComparison.Ordinal);
-        Assert.Contains("Command=\"{Binding SetLightingCommand}\"", xaml, StringComparison.Ordinal);
-        Assert.Contains("Command=\"{Binding SaveProfilesCommand}\"", xaml, StringComparison.Ordinal);
-        Assert.Contains("Command=\"{Binding ExportDiagnosticsCommand}\"", xaml, StringComparison.Ordinal);
-        Assert.Contains("ItemsSource=\"{Binding AvailablePerformancePresets}\"", xaml, StringComparison.Ordinal);
-        Assert.Contains("ItemsSource=\"{Binding AvailableFanModes}\"", xaml, StringComparison.Ordinal);
-        Assert.Contains("ItemsSource=\"{Binding AvailableLightingEffects}\"", xaml, StringComparison.Ordinal);
-        Assert.Contains("PluggedInPerformanceEditor", xaml, StringComparison.Ordinal);
-        Assert.Contains("BatteryPerformanceEditor", xaml, StringComparison.Ordinal);
-        Assert.Contains("ConflictNames", xaml, StringComparison.Ordinal);
-        Assert.Contains(
-            "CommandParameter=\"{Binding EnableFullChargeOverride}\"",
+        string[] required =
+        [
+            "Header=\"Dashboard\"",
+            "Header=\"Lighting\"",
+            "Header=\"Settings\"",
+            "ViewModel.SetPerformanceCommand",
+            "ViewModel.SetFanModeCommand",
+            "ViewModel.SetChargeLimitCommand",
+            "ViewModel.ToggleFullChargeCommand",
+            "ViewModel.SetLightingCommand",
+            "ViewModel.SaveProfilesCommand",
+            "ViewModel.ExportDiagnosticsCommand",
+            "ViewModel.ConflictNames",
+            "ViewModel.AvailablePerformancePresets",
+            "ViewModel.AvailableFanModes",
+            "ViewModel.AvailableLightingEffects",
+            "ViewModel.AvailableLightingSettings",
+            "ViewModel.PluggedInPerformanceEditor",
+            "ViewModel.PluggedInFanModeEditor",
+            "ViewModel.PluggedInLightingEditor",
+            "ViewModel.BatteryPerformanceEditor",
+            "ViewModel.BatteryFanModeEditor",
+            "ViewModel.BatteryLightingEditor",
+            "ViewModel.ProfileChargeLimitEditor",
+            "ViewModel.ThemeOptions",
+            "ViewModel.Theme",
+            "ViewModel.ActivePowerSourceLabel",
+            "ViewModel.PerformanceSourceLabel",
+            "ViewModel.FanSourceLabel",
+            "ViewModel.LightingSourceLabel",
+            "ViewModel.PowerAndBatteryTelemetryLabel",
+            "ViewModel.CpuTelemetryLabel",
+            "ViewModel.GpuTelemetryLabel",
+            "ViewModel.FanTelemetryLabel",
+            "ViewModel.ControlAccessStatus",
+            "ViewModel.FullChargeActionLabel",
+            "ViewModel.FullChargeOverride",
+            "Hardware controls are fail-closed",
+            "Razer Blade 16 · RZ09-0581",
+            "No verified lighting controls are available for this device.",
+        ];
+        foreach (string fragment in required)
+        {
+            Assert.Contains(fragment, xaml, StringComparison.Ordinal);
+        }
+
+        Assert.Contains("<MicaBackdrop", xaml, StringComparison.Ordinal);
+        Assert.Contains("<Grid.Resources>", xaml, StringComparison.Ordinal);
+        Assert.Contains("DashboardFanModeSelector.SelectedItem", xaml, StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            "CommandParameter=\"{x:Bind ViewModel.SelectedFanMode",
             xaml,
             StringComparison.Ordinal);
-        Assert.Contains(
-            "Visibility=\"{Binding IsLightingVisible, Converter={StaticResource BooleanNegationToVisibility}}\"",
-            xaml,
-            StringComparison.Ordinal);
-        Assert.Contains("OpenBlade", xaml, StringComparison.Ordinal);
-        Assert.DoesNotContain("Export diagnostics (unavailable)", xaml, StringComparison.Ordinal);
+        Assert.Contains("<TextBlock Text=\"{Binding}\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("BooleanNegationToVisibility", xaml, StringComparison.Ordinal);
         Assert.True(
-            CountOccurrences(xaml, "Text=\"{Binding OperationStatusMessage}\"") >= 2,
+            CountOccurrences(
+                xaml,
+                "Text=\"{x:Bind ViewModel.OperationStatusMessage, Mode=OneWay}\"") >= 2,
             "Operation status must be visible from both Dashboard and Settings.");
+        Assert.Equal(3, CountOccurrences(xaml, "<TabViewItem"));
+        Assert.DoesNotContain("TabControl", xaml, StringComparison.Ordinal);
+        Assert.DoesNotContain("x:Static", xaml, StringComparison.Ordinal);
+        Assert.DoesNotContain("DynamicResource", xaml, StringComparison.Ordinal);
+        Assert.DoesNotContain("<Window.Resources>", xaml, StringComparison.Ordinal);
+        Assert.DoesNotContain("Click=", xaml, StringComparison.Ordinal);
+        Assert.DoesNotContain("IsEnabled=", xaml, StringComparison.Ordinal);
+        Assert.DoesNotContain("Export diagnostics (unavailable)", xaml, StringComparison.Ordinal);
         Assert.DoesNotContain("Open" + "Synapse", xaml, StringComparison.OrdinalIgnoreCase);
-        Assert.DoesNotContain("Â", xaml, StringComparison.Ordinal);
+        Assert.DoesNotContain("\u00c2", xaml, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ApplicationLoadsNativeControlResources()
+    {
+        string xaml = ReadTraySource("App.xaml");
+
+        Assert.Contains("XamlControlsResources", xaml, StringComparison.Ordinal);
+        Assert.DoesNotContain("DynamicResource", xaml, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void NumericEditorConverterDelegatesToTheTestedCorePolicy()
+    {
+        string source = ReadTraySource("Int32DoubleConverter.cs");
+
+        Assert.Contains(": IValueConverter", source, StringComparison.Ordinal);
+        Assert.Contains("IntegerEditorValue.ToDouble", source, StringComparison.Ordinal);
+        Assert.Contains("IntegerEditorValue.ToInt32", source, StringComparison.Ordinal);
+        Assert.Contains("throw new ArgumentException", source, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void WindowExposesTypedPerformanceCommandParameters()
+    {
+        string source = ReadTraySource("MainWindow.xaml.cs");
+
+        Assert.Contains("PerformancePreset SilentPreset", source, StringComparison.Ordinal);
+        Assert.Contains("PerformancePreset BalancedPreset", source, StringComparison.Ordinal);
+        Assert.Contains("PerformancePreset PerformancePreset", source, StringComparison.Ordinal);
+        Assert.Contains("PerformancePreset.Silent", source, StringComparison.Ordinal);
+        Assert.Contains("PerformancePreset.Balanced", source, StringComparison.Ordinal);
+        Assert.Contains("PerformancePreset.Performance", source, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -192,18 +267,18 @@ public sealed class CapabilityPresentationTests
         Assert.False(viewModel.SetLightingCommand.CanExecute(viewModel.LightingDraft));
     }
 
-    private static string ReadMainWindowXaml([CallerFilePath] string testPath = "")
-    {
-        string projectDirectory = Path.GetDirectoryName(testPath)!;
-        string path = Path.GetFullPath(Path.Combine(
-            projectDirectory,
+    private static string ReadMainWindowXaml() => ReadTraySource("MainWindow.xaml");
+
+    private static string ReadTraySource(
+        string fileName,
+        [CallerFilePath] string testPath = "") =>
+        File.ReadAllText(Path.GetFullPath(Path.Combine(
+            Path.GetDirectoryName(testPath)!,
             "..",
             "..",
             "src",
             "OpenBlade.Tray",
-            "MainWindow.xaml"));
-        return File.ReadAllText(path);
-    }
+            fileName)));
 
     private static int CountOccurrences(string value, string fragment) =>
         (value.Length - value.Replace(fragment, string.Empty, StringComparison.Ordinal).Length)

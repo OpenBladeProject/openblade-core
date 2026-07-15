@@ -4,36 +4,395 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:local="using:OpenBlade.Tray"
     Title="OpenBlade">
-    <Grid x:Name="Root" Padding="20">
+    <Window.SystemBackdrop>
+        <MicaBackdrop Kind="Base" />
+    </Window.SystemBackdrop>
+
+    <Grid x:Name="Root" Padding="16" RowSpacing="10">
         <Grid.Resources>
+            <local:Int32DoubleConverter x:Key="Int32Double" />
             <local:BooleanNegationToVisibilityConverter x:Key="BooleanNegationToVisibility" />
+
+            <Style x:Key="SectionHeaderStyle" TargetType="TextBlock">
+                <Setter Property="FontSize" Value="12" />
+                <Setter Property="FontWeight" Value="SemiBold" />
+                <Setter Property="Foreground" Value="{ThemeResource TextFillColorSecondaryBrush}" />
+                <Setter Property="CharacterSpacing" Value="40" />
+                <Setter Property="Margin" Value="2,4,2,6" />
+            </Style>
+            <Style x:Key="CardStyle" TargetType="Border">
+                <Setter Property="Background" Value="{ThemeResource CardBackgroundFillColorDefaultBrush}" />
+                <Setter Property="BorderBrush" Value="{ThemeResource CardStrokeColorDefaultBrush}" />
+                <Setter Property="BorderThickness" Value="1" />
+                <Setter Property="CornerRadius" Value="8" />
+                <Setter Property="Padding" Value="14" />
+                <Setter Property="Margin" Value="0,0,0,10" />
+            </Style>
+            <Style x:Key="CardTitleStyle" TargetType="TextBlock">
+                <Setter Property="FontSize" Value="14" />
+                <Setter Property="FontWeight" Value="SemiBold" />
+            </Style>
+            <Style x:Key="SecondaryTextStyle" TargetType="TextBlock">
+                <Setter Property="FontSize" Value="12" />
+                <Setter Property="Foreground" Value="{ThemeResource TextFillColorSecondaryBrush}" />
+                <Setter Property="TextWrapping" Value="Wrap" />
+            </Style>
         </Grid.Resources>
-        <ScrollViewer>
-            <StackPanel Spacing="10">
-                <TextBlock Text="OpenBlade" FontSize="24" FontWeight="SemiBold" />
-                <TextBlock Text="Razer Blade controls" Opacity="0.7" />
-                <TextBlock Text="{Binding ConnectionStatus}" />
-                <TextBlock Text="{Binding OperationStatusMessage}" />
-                <Button Content="Silent" Command="{Binding SetPerformanceCommand}" />
-                <Button Content="Automatic fans" Command="{Binding SetFanModeCommand}" />
-                <Button Content="Apply charge limit" Command="{Binding SetChargeLimitCommand}" />
-                <Button Content="Charge to 100%"
-                        Command="{Binding ToggleFullChargeCommand}"
-                        CommandParameter="{Binding EnableFullChargeOverride}" />
-                <ComboBox ItemsSource="{Binding AvailablePerformancePresets}" />
-                <ComboBox ItemsSource="{Binding AvailableFanModes}" />
-                <StackPanel Visibility="{Binding IsLightingVisible, Converter={StaticResource BooleanNegationToVisibility}}">
-                    <TextBlock Text="Lighting controls unavailable" />
+
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <StackPanel Spacing="8">
+            <Grid ColumnSpacing="12">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <StackPanel Spacing="1">
+                    <TextBlock Text="OpenBlade" FontSize="22" FontWeight="SemiBold" />
+                    <TextBlock Text="Razer Blade 16 · RZ09-0581"
+                               Style="{StaticResource SecondaryTextStyle}" />
                 </StackPanel>
-                <ComboBox ItemsSource="{Binding AvailableLightingEffects}" />
-                <Button Content="Apply lighting" Command="{Binding SetLightingCommand}" />
-                <TextBlock Text="PluggedInPerformanceEditor" Visibility="Collapsed" />
-                <TextBlock Text="BatteryPerformanceEditor" Visibility="Collapsed" />
-                <ItemsControl ItemsSource="{Binding ConflictNames}" />
-                <Button Content="Save profiles" Command="{Binding SaveProfilesCommand}" />
-                <Button Content="Export diagnostics" Command="{Binding ExportDiagnosticsCommand}" />
-                <TextBlock Text="{Binding OperationStatusMessage}" />
-            </StackPanel>
-        </ScrollViewer>
+                <TextBlock Grid.Column="1"
+                           Text="Hardware controls are fail-closed"
+                           Style="{StaticResource SecondaryTextStyle}"
+                           VerticalAlignment="Center"
+                           TextAlignment="Right" />
+            </Grid>
+            <InfoBar Title="{x:Bind ViewModel.ConnectionStatus, Mode=OneWay}"
+                     Message="{x:Bind ViewModel.ControlAccessStatus, Mode=OneWay}"
+                     Severity="Informational"
+                     IsOpen="True"
+                     IsClosable="False" />
+        </StackPanel>
+
+        <TabView Grid.Row="1"
+                 IsAddTabButtonVisible="False"
+                 CanDragTabs="False"
+                 TabWidthMode="Equal">
+            <TabViewItem Header="Dashboard" IsClosable="False">
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <StackPanel Margin="4,12,12,16">
+                        <TextBlock Text="PERFORMANCE" Style="{StaticResource SectionHeaderStyle}" />
+                        <Border Style="{StaticResource CardStyle}"
+                                Visibility="{x:Bind ViewModel.IsPerformanceVisible, Mode=OneWay}">
+                            <StackPanel Spacing="10">
+                                <Grid ColumnSpacing="8">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <Button Content="Silent"
+                                            HorizontalAlignment="Stretch"
+                                            Command="{x:Bind ViewModel.SetPerformanceCommand}"
+                                            CommandParameter="{x:Bind SilentPreset}" />
+                                    <Button Grid.Column="1"
+                                            Content="Balanced"
+                                            HorizontalAlignment="Stretch"
+                                            Command="{x:Bind ViewModel.SetPerformanceCommand}"
+                                            CommandParameter="{x:Bind BalancedPreset}" />
+                                    <Button Grid.Column="2"
+                                            Content="Performance"
+                                            HorizontalAlignment="Stretch"
+                                            Command="{x:Bind ViewModel.SetPerformanceCommand}"
+                                            CommandParameter="{x:Bind PerformancePreset}" />
+                                </Grid>
+                                <StackPanel Orientation="Horizontal" Spacing="6">
+                                    <TextBlock Text="Current source:" Style="{StaticResource SecondaryTextStyle}" />
+                                    <TextBlock Text="{x:Bind ViewModel.PerformanceSourceLabel, Mode=OneWay}"
+                                               Style="{StaticResource SecondaryTextStyle}" />
+                                </StackPanel>
+                            </StackPanel>
+                        </Border>
+
+                        <TextBlock Text="POWER &amp; COOLING" Style="{StaticResource SectionHeaderStyle}" />
+                        <Border Style="{StaticResource CardStyle}"
+                                Visibility="{x:Bind ViewModel.IsFanControlVisible, Mode=OneWay}">
+                            <Grid ColumnSpacing="12">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <StackPanel Spacing="3" VerticalAlignment="Center">
+                                    <TextBlock Text="Fan mode" Style="{StaticResource CardTitleStyle}" />
+                                    <TextBlock Text="{x:Bind ViewModel.FanSourceLabel, Mode=OneWay}"
+                                               Style="{StaticResource SecondaryTextStyle}" />
+                                </StackPanel>
+                                <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">
+                                    <ComboBox x:Name="DashboardFanModeSelector"
+                                              MinWidth="130"
+                                              ItemsSource="{x:Bind ViewModel.AvailableFanModes, Mode=OneWay}"
+                                              SelectedItem="{x:Bind ViewModel.SelectedFanMode, Mode=OneWay}" />
+                                    <Button Content="Apply"
+                                            Command="{x:Bind ViewModel.SetFanModeCommand}"
+                                            CommandParameter="{x:Bind DashboardFanModeSelector.SelectedItem, Mode=OneWay}" />
+                                </StackPanel>
+                            </Grid>
+                        </Border>
+
+                        <TextBlock Text="BATTERY" Style="{StaticResource SectionHeaderStyle}" />
+                        <Border Style="{StaticResource CardStyle}">
+                            <StackPanel Spacing="10">
+                                <Grid>
+                                    <TextBlock Text="Charge limit" Style="{StaticResource CardTitleStyle}" />
+                                    <StackPanel HorizontalAlignment="Right" Orientation="Horizontal">
+                                        <TextBlock Text="{x:Bind ViewModel.ProfileChargeLimitEditor, Mode=OneWay}"
+                                                   FontWeight="SemiBold" />
+                                        <TextBlock Text="%" FontWeight="SemiBold" />
+                                    </StackPanel>
+                                </Grid>
+                                <Slider Minimum="50"
+                                        Maximum="80"
+                                        StepFrequency="5"
+                                        Value="{Binding ProfileChargeLimitEditor, Mode=TwoWay, Converter={StaticResource Int32Double}}" />
+                                <Grid ColumnSpacing="8">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <Button Content="Apply charge limit"
+                                            HorizontalAlignment="Stretch"
+                                            Command="{x:Bind ViewModel.SetChargeLimitCommand}"
+                                            CommandParameter="{x:Bind ViewModel.ProfileChargeLimitEditor, Mode=OneWay}" />
+                                    <Button Grid.Column="1"
+                                            Content="{x:Bind ViewModel.FullChargeActionLabel, Mode=OneWay}"
+                                            HorizontalAlignment="Stretch"
+                                            Command="{x:Bind ViewModel.ToggleFullChargeCommand}"
+                                            CommandParameter="{x:Bind ViewModel.EnableFullChargeOverride, Mode=OneWay}" />
+                                </Grid>
+                                <TextBlock Text="Temporary full charge is active until the next unplug."
+                                           Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}"
+                                           Visibility="{x:Bind ViewModel.FullChargeOverride, Mode=OneWay}" />
+                            </StackPanel>
+                        </Border>
+
+                        <TextBlock Text="TELEMETRY" Style="{StaticResource SectionHeaderStyle}" />
+                        <Grid ColumnSpacing="10" RowSpacing="10" Margin="0,0,0,10">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                            </Grid.RowDefinitions>
+                            <Border Style="{StaticResource CardStyle}" Margin="0">
+                                <StackPanel Spacing="3">
+                                    <TextBlock Text="Power &amp; battery" Style="{StaticResource SecondaryTextStyle}" />
+                                    <TextBlock Text="{x:Bind ViewModel.PowerAndBatteryTelemetryLabel, Mode=OneWay}"
+                                               Style="{StaticResource CardTitleStyle}" />
+                                </StackPanel>
+                            </Border>
+                            <Border Grid.Column="1" Style="{StaticResource CardStyle}" Margin="0">
+                                <StackPanel Spacing="3">
+                                    <TextBlock Text="CPU" Style="{StaticResource SecondaryTextStyle}" />
+                                    <TextBlock Text="{x:Bind ViewModel.CpuTelemetryLabel, Mode=OneWay}"
+                                               Style="{StaticResource CardTitleStyle}" />
+                                </StackPanel>
+                            </Border>
+                            <Border Grid.Row="1" Style="{StaticResource CardStyle}" Margin="0">
+                                <StackPanel Spacing="3">
+                                    <TextBlock Text="GPU" Style="{StaticResource SecondaryTextStyle}" />
+                                    <TextBlock Text="{x:Bind ViewModel.GpuTelemetryLabel, Mode=OneWay}"
+                                               Style="{StaticResource CardTitleStyle}" />
+                                </StackPanel>
+                            </Border>
+                            <Border Grid.Row="1" Grid.Column="1" Style="{StaticResource CardStyle}" Margin="0">
+                                <StackPanel Spacing="3">
+                                    <TextBlock Text="Fans" Style="{StaticResource SecondaryTextStyle}" />
+                                    <TextBlock Text="{x:Bind ViewModel.FanTelemetryLabel, Mode=OneWay}"
+                                               Style="{StaticResource CardTitleStyle}" />
+                                </StackPanel>
+                            </Border>
+                        </Grid>
+
+                        <TextBlock Text="STATUS" Style="{StaticResource SectionHeaderStyle}" />
+                        <Border Style="{StaticResource CardStyle}">
+                            <StackPanel Spacing="6">
+                                <TextBlock Text="{x:Bind ViewModel.ActivePowerSourceLabel, Mode=OneWay}"
+                                           Style="{StaticResource CardTitleStyle}" />
+                                <TextBlock Text="{x:Bind ViewModel.OperationStatusMessage, Mode=OneWay}"
+                                           Style="{StaticResource SecondaryTextStyle}" />
+                                <ItemsControl ItemsSource="{x:Bind ViewModel.ConflictNames, Mode=OneWay}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <TextBlock Text="{Binding}"
+                                                       Foreground="{ThemeResource SystemFillColorCriticalBrush}"
+                                                       TextWrapping="Wrap" />
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+                </ScrollViewer>
+            </TabViewItem>
+
+            <TabViewItem Header="Lighting" IsClosable="False">
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <StackPanel Margin="4,12,12,16">
+                        <TextBlock Text="KEYBOARD LIGHTING" Style="{StaticResource SectionHeaderStyle}" />
+                        <Border Style="{StaticResource CardStyle}"
+                                Visibility="{x:Bind ViewModel.IsLightingVisible, Mode=OneWay}">
+                            <StackPanel Spacing="12">
+                                <ComboBox Header="Effect"
+                                          ItemsSource="{x:Bind ViewModel.AvailableLightingEffects, Mode=OneWay}"
+                                          SelectedItem="{x:Bind ViewModel.LightingEffectEditor, Mode=TwoWay}" />
+                                <Grid>
+                                    <TextBlock Text="Brightness" Style="{StaticResource CardTitleStyle}" />
+                                    <StackPanel HorizontalAlignment="Right" Orientation="Horizontal">
+                                        <TextBlock Text="{x:Bind ViewModel.LightingBrightnessEditor, Mode=OneWay}" />
+                                        <TextBlock Text="%" />
+                                    </StackPanel>
+                                </Grid>
+                                <Slider Minimum="0"
+                                        Maximum="100"
+                                        StepFrequency="5"
+                                        Value="{Binding LightingBrightnessEditor, Mode=TwoWay, Converter={StaticResource Int32Double}}" />
+                                <TextBlock Text="Color (RGB)" Style="{StaticResource CardTitleStyle}" />
+                                <Grid ColumnSpacing="10">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <NumberBox Header="Red"
+                                               Minimum="0"
+                                               Maximum="255"
+                                               SpinButtonPlacementMode="Compact"
+                                               Value="{Binding LightingRedEditor, Mode=TwoWay, Converter={StaticResource Int32Double}}" />
+                                    <NumberBox Grid.Column="1"
+                                               Header="Green"
+                                               Minimum="0"
+                                               Maximum="255"
+                                               SpinButtonPlacementMode="Compact"
+                                               Value="{Binding LightingGreenEditor, Mode=TwoWay, Converter={StaticResource Int32Double}}" />
+                                    <NumberBox Grid.Column="2"
+                                               Header="Blue"
+                                               Minimum="0"
+                                               Maximum="255"
+                                               SpinButtonPlacementMode="Compact"
+                                               Value="{Binding LightingBlueEditor, Mode=TwoWay, Converter={StaticResource Int32Double}}" />
+                                </Grid>
+                                <Button Content="Apply lighting"
+                                        HorizontalAlignment="Left"
+                                        Style="{StaticResource AccentButtonStyle}"
+                                        Command="{x:Bind ViewModel.SetLightingCommand}"
+                                        CommandParameter="{x:Bind ViewModel.LightingDraft, Mode=OneWay}" />
+                                <StackPanel Orientation="Horizontal" Spacing="6">
+                                    <TextBlock Text="Confirmed source:" Style="{StaticResource SecondaryTextStyle}" />
+                                    <TextBlock Text="{x:Bind ViewModel.LightingSourceLabel, Mode=OneWay}"
+                                               Style="{StaticResource SecondaryTextStyle}" />
+                                </StackPanel>
+                            </StackPanel>
+                        </Border>
+                        <Border Style="{StaticResource CardStyle}"
+                                Visibility="{Binding IsLightingVisible, Converter={StaticResource BooleanNegationToVisibility}}">
+                            <StackPanel Spacing="4">
+                                <TextBlock Text="Lighting unavailable" Style="{StaticResource CardTitleStyle}" />
+                                <TextBlock Text="No verified lighting controls are available for this device."
+                                           Style="{StaticResource SecondaryTextStyle}" />
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+                </ScrollViewer>
+            </TabViewItem>
+
+            <TabViewItem Header="Settings" IsClosable="False">
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <StackPanel Margin="4,12,12,16">
+                        <TextBlock Text="POWER PROFILES" Style="{StaticResource SectionHeaderStyle}" />
+                        <Border Style="{StaticResource CardStyle}">
+                            <StackPanel Spacing="10">
+                                <TextBlock Text="Plugged In" Style="{StaticResource CardTitleStyle}" />
+                                <ComboBox Header="Performance"
+                                          ItemsSource="{x:Bind ViewModel.AvailablePerformancePresets, Mode=OneWay}"
+                                          SelectedItem="{x:Bind ViewModel.PluggedInPerformanceEditor, Mode=TwoWay}" />
+                                <ComboBox Header="Fans"
+                                          ItemsSource="{x:Bind ViewModel.AvailableFanModes, Mode=OneWay}"
+                                          SelectedItem="{x:Bind ViewModel.PluggedInFanModeEditor, Mode=TwoWay}" />
+                                <ComboBox Header="Lighting"
+                                          DisplayMemberPath="Effect"
+                                          ItemsSource="{x:Bind ViewModel.AvailableLightingSettings, Mode=OneWay}"
+                                          SelectedItem="{x:Bind ViewModel.PluggedInLightingEditor, Mode=TwoWay}" />
+                            </StackPanel>
+                        </Border>
+                        <Border Style="{StaticResource CardStyle}">
+                            <StackPanel Spacing="10">
+                                <TextBlock Text="Battery" Style="{StaticResource CardTitleStyle}" />
+                                <ComboBox Header="Performance"
+                                          ItemsSource="{x:Bind ViewModel.AvailablePerformancePresets, Mode=OneWay}"
+                                          SelectedItem="{x:Bind ViewModel.BatteryPerformanceEditor, Mode=TwoWay}" />
+                                <ComboBox Header="Fans"
+                                          ItemsSource="{x:Bind ViewModel.AvailableFanModes, Mode=OneWay}"
+                                          SelectedItem="{x:Bind ViewModel.BatteryFanModeEditor, Mode=TwoWay}" />
+                                <ComboBox Header="Lighting"
+                                          DisplayMemberPath="Effect"
+                                          ItemsSource="{x:Bind ViewModel.AvailableLightingSettings, Mode=OneWay}"
+                                          SelectedItem="{x:Bind ViewModel.BatteryLightingEditor, Mode=TwoWay}" />
+                            </StackPanel>
+                        </Border>
+                        <Border Style="{StaticResource CardStyle}">
+                            <StackPanel Spacing="10">
+                                <Grid>
+                                    <TextBlock Text="Profile charge limit" Style="{StaticResource CardTitleStyle}" />
+                                    <StackPanel HorizontalAlignment="Right" Orientation="Horizontal">
+                                        <TextBlock Text="{x:Bind ViewModel.ProfileChargeLimitEditor, Mode=OneWay}" />
+                                        <TextBlock Text="%" />
+                                    </StackPanel>
+                                </Grid>
+                                <Slider Minimum="50"
+                                        Maximum="80"
+                                        StepFrequency="5"
+                                        Value="{Binding ProfileChargeLimitEditor, Mode=TwoWay, Converter={StaticResource Int32Double}}" />
+                                <Button Content="Save profiles"
+                                        HorizontalAlignment="Left"
+                                        Style="{StaticResource AccentButtonStyle}"
+                                        Command="{x:Bind ViewModel.SaveProfilesCommand}" />
+                            </StackPanel>
+                        </Border>
+
+                        <TextBlock Text="APPEARANCE" Style="{StaticResource SectionHeaderStyle}" />
+                        <Border Style="{StaticResource CardStyle}">
+                            <ComboBox Header="Theme"
+                                      ItemsSource="{x:Bind ViewModel.ThemeOptions, Mode=OneWay}"
+                                      SelectedItem="{x:Bind ViewModel.Theme, Mode=TwoWay}" />
+                        </Border>
+
+                        <TextBlock Text="SERVICE" Style="{StaticResource SectionHeaderStyle}" />
+                        <Border Style="{StaticResource CardStyle}">
+                            <StackPanel Spacing="8">
+                                <TextBlock Text="OpenBlade Service" Style="{StaticResource CardTitleStyle}" />
+                                <TextBlock Text="{x:Bind ViewModel.ConnectionStatus, Mode=OneWay}"
+                                           Style="{StaticResource SecondaryTextStyle}" />
+                                <TextBlock Text="{x:Bind ViewModel.ControlAccessStatus, Mode=OneWay}"
+                                           Style="{StaticResource SecondaryTextStyle}" />
+                                <TextBlock Text="{x:Bind ViewModel.OperationStatusMessage, Mode=OneWay}"
+                                           Style="{StaticResource SecondaryTextStyle}" />
+                                <Button Content="Export diagnostics"
+                                        HorizontalAlignment="Left"
+                                        Command="{x:Bind ViewModel.ExportDiagnosticsCommand}" />
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+                </ScrollViewer>
+            </TabViewItem>
+        </TabView>
+
+        <Border Grid.Row="2"
+                Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                BorderThickness="1"
+                CornerRadius="6"
+                Padding="10,7">
+            <TextBlock Text="{x:Bind ViewModel.TelemetryStatus, Mode=OneWay}"
+                       Style="{StaticResource SecondaryTextStyle}"
+                       TextTrimming="CharacterEllipsis"
+                       TextWrapping="NoWrap" />
+        </Border>
     </Grid>
 </Window>
