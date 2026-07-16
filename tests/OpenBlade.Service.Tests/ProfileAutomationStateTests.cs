@@ -51,4 +51,40 @@ public sealed class ProfileAutomationStateTests
         Assert.False(state.BatteryPolicy.TemporaryFullCharge);
         Assert.Equal(80, state.BatteryPolicy.ChargeLimitPercent);
     }
+
+    [Fact]
+    public void ChangePowerSource_SameSourceReturnsFalseWithoutClearingTemporaryState()
+    {
+        ProfileAutomationState state = new(
+            ProfileDefaults.CreateSafeDefaults(),
+            PowerSource.PluggedIn);
+        state.SetPerformanceOverride(new ManualOverride<PerformancePreset>(
+            PerformancePreset.Performance,
+            OverrideLifetime.UntilPowerSourceChange));
+        state.EnableTemporaryFullCharge();
+
+        bool changed = state.ChangePowerSource(PowerSource.PluggedIn);
+
+        Assert.False(changed);
+        Assert.NotNull(state.PerformanceOverride);
+        Assert.True(state.BatteryPolicy.TemporaryFullCharge);
+    }
+
+    [Fact]
+    public void ChangePowerSource_TransitionReturnsTrueAfterClearingTemporaryState()
+    {
+        ProfileAutomationState state = new(
+            ProfileDefaults.CreateSafeDefaults(),
+            PowerSource.PluggedIn);
+        state.SetPerformanceOverride(new ManualOverride<PerformancePreset>(
+            PerformancePreset.Performance,
+            OverrideLifetime.UntilPowerSourceChange));
+        state.EnableTemporaryFullCharge();
+
+        bool changed = state.ChangePowerSource(PowerSource.Battery);
+
+        Assert.True(changed);
+        Assert.Null(state.PerformanceOverride);
+        Assert.False(state.BatteryPolicy.TemporaryFullCharge);
+    }
 }

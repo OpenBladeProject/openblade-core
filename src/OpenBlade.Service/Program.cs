@@ -12,7 +12,10 @@ builder.Services.AddSingleton(ProfileDefaults.CreateSafeDefaults());
 builder.Services.AddSingleton<MachineProfileBootstrapper>();
 builder.Services.AddSingleton<IRunningProcessSource, RunningProcessSource>();
 builder.Services.AddSingleton<IWindowsServiceSource, WindowsServiceSource>();
-builder.Services.AddSingleton<IHardwareAccessGuard, WindowsHardwareAccessGuard>();
+builder.Services.AddSingleton<IControllerPresenceMonitor, WindowsControllerPresenceMonitor>();
+builder.Services.AddSingleton<IHardwareAccessGuard>(provider =>
+    new WindowsHardwareAccessGuard(
+        provider.GetRequiredService<IControllerPresenceMonitor>()));
 builder.Services.AddWindowsTelemetry();
 builder.Services.AddVerifiedBladeDeviceProvider();
 builder.Services.AddDiagnostics();

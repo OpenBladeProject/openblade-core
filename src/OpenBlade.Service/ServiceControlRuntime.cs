@@ -34,6 +34,12 @@ public interface IServiceControlRuntime
     Task RefreshAsync(CancellationToken token);
 
     Task RefreshConflictsAsync(CancellationToken token);
+
+    Task ObserveAsync(CancellationToken cancellationToken);
+
+    Task HandlePowerSourceChangedAsync(CancellationToken cancellationToken);
+
+    Task RefreshControllerPresenceAsync(CancellationToken cancellationToken);
 }
 
 public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
@@ -48,12 +54,13 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
     private readonly IPowerTelemetryProvider telemetryProvider;
     private readonly IStatusSubscriptionHub subscriptionHub;
     private readonly IVerifiedBladeDeviceProvider deviceProvider;
+    private readonly IControllerPresenceMonitor controllerPresenceMonitor;
     private readonly DiagnosticHistory history;
     private readonly SemaphoreSlim operationGate = new(1, 1);
     private readonly ProfileSetValidator validator =
         ProfileSetValidator.CreateUnverifiedSafeDefaults();
     private readonly ProfileAutomationState automation;
-    private bool conflictBlocked;
+    private readonly ConfirmedStateDriftTracker driftTracker = new();
     private ServiceStatusSnapshot status;
 
     public ServiceControlRuntime(
@@ -63,7 +70,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         IPowerTelemetryProvider telemetryProvider,
         IStatusSubscriptionHub subscriptionHub,
         IVerifiedBladeDeviceProvider deviceProvider,
-        DiagnosticHistory history)
+        DiagnosticHistory history,
+        IControllerPresenceMonitor controllerPresenceMonitor)
     {
         this.store = store ?? throw new ArgumentNullException(nameof(store));
         ArgumentNullException.ThrowIfNull(profiles);
@@ -76,11 +84,12 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         this.deviceProvider = deviceProvider
             ?? throw new ArgumentNullException(nameof(deviceProvider));
         this.history = history ?? throw new ArgumentNullException(nameof(history));
+        this.controllerPresenceMonitor = controllerPresenceMonitor
+            ?? throw new ArgumentNullException(nameof(controllerPresenceMonitor));
 
         TelemetrySnapshot telemetry = telemetryProvider.Capture();
         automation = new ProfileAutomationState(profiles, telemetry.PowerSource);
         HardwareAccessDecision access = hardwareAccessGuard.Check();
-        conflictBlocked = !access.Safe;
         status = CreateBlockedSnapshot(0, telemetry, access);
     }
 
@@ -151,7 +160,6 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         try
         {
             TelemetrySnapshot telemetry = telemetryProvider.Capture();
-            automation.ChangePowerSource(telemetry.PowerSource);
 
             if (enabled && telemetry.PowerSource == PowerSource.Battery)
             {
@@ -181,14 +189,19 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         }
     }
 
-    public async Task RefreshAsync(CancellationToken token)
+    public Task RefreshAsync(CancellationToken token) => ObserveAsync(token);
+
+    public Task RefreshConflictsAsync(CancellationToken token) =>
+        RefreshControllerPresenceAsync(token);
+
+    public async Task ObserveAsync(CancellationToken cancellationToken)
     {
-        await operationGate.WaitAsync(token);
+        await operationGate.WaitAsync(cancellationToken);
         try
         {
+            cancellationToken.ThrowIfCancellationRequested();
             TelemetrySnapshot telemetry = telemetryProvider.Capture();
-            automation.ChangePowerSource(telemetry.PowerSource);
-            await ReconcileAsync(telemetry, intentStored: false, token);
+            await ObserveCoreAsync(telemetry, cancellationToken);
         }
         finally
         {
@@ -196,37 +209,47 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         }
     }
 
-    public async Task RefreshConflictsAsync(CancellationToken token)
+    public async Task HandlePowerSourceChangedAsync(CancellationToken cancellationToken)
     {
-        await operationGate.WaitAsync(token);
+        await operationGate.WaitAsync(cancellationToken);
         try
         {
-            HardwareAccessDecision access = hardwareAccessGuard.Check();
-            if (!access.Safe)
-            {
-                conflictBlocked = true;
-                long previousRevision = GetStatus().Revision;
-                ServiceStatusSnapshot blocked = CreateBlockedSnapshot(
-                    previousRevision,
-                    GetStatus().Telemetry,
-                    access);
-                PublishIfChanged(blocked);
-                if (GetStatus().Revision != previousRevision)
-                {
-                    history.RecordSummary(ControlOperationStatus.Blocked, blocked.Message);
-                }
-
-                return;
-            }
-
-            if (!conflictBlocked)
-            {
-                return;
-            }
-
             TelemetrySnapshot telemetry = telemetryProvider.Capture();
-            automation.ChangePowerSource(telemetry.PowerSource);
-            await ReconcileAsync(telemetry, intentStored: false, token);
+            cancellationToken.ThrowIfCancellationRequested();
+            if (automation.ChangePowerSource(telemetry.PowerSource))
+            {
+                await ReconcileAsync(telemetry, intentStored: false, cancellationToken);
+            }
+            else
+            {
+                await ObserveCoreAsync(telemetry, cancellationToken);
+            }
+        }
+        finally
+        {
+            operationGate.Release();
+        }
+    }
+
+    public async Task RefreshControllerPresenceAsync(CancellationToken cancellationToken)
+    {
+        await operationGate.WaitAsync(cancellationToken);
+        try
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            ControllerPresenceObservation observation = controllerPresenceMonitor.Observe();
+            cancellationToken.ThrowIfCancellationRequested();
+            string[] potentialControllers = observation.PotentialControllers
+                .GroupBy(name => name, StringComparer.OrdinalIgnoreCase)
+                .Select(group => group.OrderBy(name => name, StringComparer.Ordinal).First())
+                .OrderBy(name => name, StringComparer.Ordinal)
+                .Take(16)
+                .ToArray();
+            PublishIfChanged(GetStatus() with
+            {
+                PotentialControllers = potentialControllers,
+                ControllerDetectionWarning = observation.DetectionWarning,
+            });
         }
         finally
         {
@@ -278,7 +301,6 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         HardwareAccessDecision access = hardwareAccessGuard.Check();
         if (!access.Safe)
         {
-            conflictBlocked = true;
             ServiceStatusSnapshot blocked = CreateBlockedSnapshot(
                 GetStatus().Revision,
                 telemetry,
@@ -291,7 +313,6 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         access = hardwareAccessGuard.Check();
         if (!access.Safe)
         {
-            conflictBlocked = true;
             ServiceStatusSnapshot blocked = CreateBlockedSnapshot(
                 GetStatus().Revision,
                 telemetry,
@@ -301,9 +322,9 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             return BlockedResult(blocked.Message, intentStored);
         }
 
-        conflictBlocked = false;
-
-        if (!deviceProvider.TryGetVerifiedDevice(out IBladeDevice device))
+        bool deviceAvailable = deviceProvider.TryGetVerifiedDevice(out IBladeDevice device);
+        token.ThrowIfCancellationRequested();
+        if (!deviceAvailable)
         {
             ServiceStatusSnapshot unavailable = CreateBlockedSnapshot(
                 GetStatus().Revision,
@@ -322,8 +343,11 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             var coordinator = new ControlCoordinator(device, hardwareAccessGuard);
             SubsystemApplyResults results =
                 await coordinator.ApplyDesiredStateAsync(desired, token);
-            history.RecordSubsystemResults(results);
             confirmed = await device.ReadStateAsync(token);
+            token.ThrowIfCancellationRequested();
+            driftTracker.Observe(confirmed);
+            ConfirmIntentionalResults(desired, confirmed, results);
+            history.RecordSubsystemResults(results);
 
             bool writesBlocked = ResultsContainBlock(results);
             string message = Summarize(results);
@@ -335,7 +359,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                     .OrderBy(name => name, StringComparer.Ordinal)
                     .ToArray(),
                 ControllerDetectionWarning: access.DetectionFailure,
-                ExternalChanges: [],
+                ExternalChanges: driftTracker.ExternalChanges,
                 Message: message,
                 Capabilities: capabilities,
                 ConfirmedState: confirmed,
@@ -380,6 +404,102 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             return new ControlOperationResult(ControlOperationStatus.Failed, failed.Message);
         }
     }
+
+    private async Task ObserveCoreAsync(
+        TelemetrySnapshot telemetry,
+        CancellationToken cancellationToken)
+    {
+        bool deviceAvailable = deviceProvider.TryGetVerifiedDevice(out IBladeDevice device);
+        cancellationToken.ThrowIfCancellationRequested();
+        if (!deviceAvailable)
+        {
+            PublishObservationUnavailable(
+                telemetry,
+                "No verified PID 02E0 device is available.");
+            return;
+        }
+
+        try
+        {
+            DeviceCapabilities capabilities =
+                await device.ReadCapabilitiesAsync(cancellationToken);
+            ConfirmedDeviceState confirmed = await device.ReadStateAsync(cancellationToken);
+            cancellationToken.ThrowIfCancellationRequested();
+            driftTracker.Observe(confirmed);
+            PublishIfChanged(GetStatus() with
+            {
+                DeviceVerified = true,
+                WritesBlocked = false,
+                ExternalChanges = driftTracker.ExternalChanges,
+                Message = "Verified device state observed.",
+                Capabilities = capabilities,
+                ConfirmedState = confirmed,
+                Profiles = automation.Profiles,
+                DesiredState = automation.Resolve(confirmed),
+                Telemetry = telemetry,
+                PerformanceOverride = automation.PerformanceOverride,
+                FanOverride = automation.FanOverride,
+                LightingOverride = automation.LightingOverride,
+                FullChargeOverride = automation.BatteryPolicy.TemporaryFullCharge,
+            });
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception exception)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            PublishObservationUnavailable(
+                telemetry,
+                $"Verified device access failed: {exception.Message}");
+            history.RecordSummary(
+                ControlOperationStatus.Failed,
+                GetStatus().Message);
+        }
+    }
+
+    private void PublishObservationUnavailable(TelemetrySnapshot telemetry, string message)
+    {
+        ServiceStatusSnapshot current = GetStatus();
+        ConfirmedDeviceState confirmed = current.ConfirmedState ?? UnknownConfirmedState;
+        PublishIfChanged(current with
+        {
+            DeviceVerified = false,
+            WritesBlocked = true,
+            ExternalChanges = driftTracker.ExternalChanges,
+            Message = message,
+            Profiles = automation.Profiles,
+            DesiredState = automation.Resolve(confirmed),
+            Telemetry = telemetry,
+            PerformanceOverride = automation.PerformanceOverride,
+            FanOverride = automation.FanOverride,
+            LightingOverride = automation.LightingOverride,
+            FullChargeOverride = automation.BatteryPolicy.TemporaryFullCharge,
+        });
+    }
+
+    private void ConfirmIntentionalResults(
+        DesiredDeviceState desired,
+        ConfirmedDeviceState confirmed,
+        SubsystemApplyResults results)
+    {
+        driftTracker.ConfirmIntentional(
+            DeviceSubsystem.Performance,
+            IsSuccessful(results.Performance) && confirmed.Performance == desired.Performance.Value);
+        driftTracker.ConfirmIntentional(
+            DeviceSubsystem.Fans,
+            IsSuccessful(results.Fans) && confirmed.Fans == desired.Fans.Value);
+        driftTracker.ConfirmIntentional(
+            DeviceSubsystem.Battery,
+            IsSuccessful(results.Battery) && confirmed.Battery == desired.Battery);
+        driftTracker.ConfirmIntentional(
+            DeviceSubsystem.Lighting,
+            IsSuccessful(results.Lighting) && confirmed.Lighting == desired.Lighting.Value);
+    }
+
+    private static bool IsSuccessful(ControlResult result) =>
+        result.Status is ControlResultStatus.Applied or ControlResultStatus.Unchanged;
 
     private ServiceStatusSnapshot CreateBlockedSnapshot(
         long revision,

@@ -108,7 +108,8 @@ public sealed class ControlRequestHandlerTests
                 new FixedTelemetry(),
                 new NullHub(),
                 provider,
-                new DiagnosticHistory());
+                new DiagnosticHistory(),
+                new FixedControllerPresenceMonitor(conflict ? ["RazerAppEngine"] : []));
             var handler = new ControlRequestHandler(runtime, new ThrowingArchiveProvider());
 
             ServiceResponse response = await handler.HandleAsync(
@@ -188,6 +189,9 @@ public sealed class ControlRequestHandlerTests
         public Task RefreshAsync(CancellationToken token) => Task.CompletedTask;
 
         public Task RefreshConflictsAsync(CancellationToken token) => Task.CompletedTask;
+        public Task ObserveAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+        public Task HandlePowerSourceChangedAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+        public Task RefreshControllerPresenceAsync(CancellationToken cancellationToken) => Task.CompletedTask;
 
         private Task<ControlOperationResult> Record(string name)
         {
@@ -199,6 +203,12 @@ public sealed class ControlRequestHandlerTests
     private sealed class FixedGuard(IReadOnlyList<string> conflicts) : IHardwareAccessGuard
     {
         public HardwareAccessDecision Check() => new(conflicts, null);
+    }
+
+    private sealed class FixedControllerPresenceMonitor(IReadOnlyList<string> controllers)
+        : IControllerPresenceMonitor
+    {
+        public ControllerPresenceObservation Observe() => new(controllers, null);
     }
 
     private sealed class FixedTelemetry : IPowerTelemetryProvider

@@ -119,6 +119,9 @@ public sealed class ServiceCompositionTests
         public Task<ControlOperationResult> SetFullChargeOverrideAsync(bool enabled, CancellationToken token) => throw new NotSupportedException();
         public Task RefreshAsync(CancellationToken token) => throw new NotSupportedException();
         public Task RefreshConflictsAsync(CancellationToken token) => throw new NotSupportedException();
+        public Task ObserveAsync(CancellationToken cancellationToken) => throw new NotSupportedException();
+        public Task HandlePowerSourceChangedAsync(CancellationToken cancellationToken) => throw new NotSupportedException();
+        public Task RefreshControllerPresenceAsync(CancellationToken cancellationToken) => throw new NotSupportedException();
     }
 
     private sealed class CountingNvmlApi(bool available) : INvmlApi

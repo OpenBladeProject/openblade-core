@@ -185,6 +185,15 @@ public sealed class ServiceLifecycleRefreshLoopTests
             await RecordRefreshAsync(isConflictRefresh: true);
         }
 
+        public Task ObserveAsync(CancellationToken cancellationToken) =>
+            RefreshAsync(cancellationToken);
+
+        public Task HandlePowerSourceChangedAsync(CancellationToken cancellationToken) =>
+            RefreshAsync(cancellationToken);
+
+        public Task RefreshControllerPresenceAsync(CancellationToken cancellationToken) =>
+            RefreshConflictsAsync(cancellationToken);
+
         private async Task RecordRefreshAsync(bool isConflictRefresh)
         {
             int concurrent = Interlocked.Increment(ref concurrentRefreshes);

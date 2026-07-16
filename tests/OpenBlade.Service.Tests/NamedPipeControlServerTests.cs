@@ -284,6 +284,9 @@ public sealed class NamedPipeControlServerTests
         public Task<ControlOperationResult> SetFullChargeOverrideAsync(bool enabled, CancellationToken token) => Result();
         public Task RefreshAsync(CancellationToken token) => Task.CompletedTask;
         public Task RefreshConflictsAsync(CancellationToken token) => Task.CompletedTask;
+        public Task ObserveAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+        public Task HandlePowerSourceChangedAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+        public Task RefreshControllerPresenceAsync(CancellationToken cancellationToken) => Task.CompletedTask;
         private static Task<ControlOperationResult> Result() => Task.FromResult(
             new ControlOperationResult(ControlOperationStatus.Stored, "Stored"));
     }

@@ -59,11 +59,11 @@ public sealed class ProfileAutomationState
             BatteryPolicy.TemporaryFullCharge);
     }
 
-    public void ChangePowerSource(PowerSource powerSource)
+    public bool ChangePowerSource(PowerSource powerSource)
     {
         if (PowerSource == powerSource)
         {
-            return;
+            return false;
         }
 
         PowerSource = powerSource;
@@ -74,6 +74,8 @@ public sealed class ProfileAutomationState
         {
             BatteryPolicy = BatteryPolicy.Create(BatteryPolicy.ChargeLimitPercent);
         }
+
+        return true;
     }
 
     public void SetPerformanceOverride(ManualOverride<PerformancePreset>? value) =>

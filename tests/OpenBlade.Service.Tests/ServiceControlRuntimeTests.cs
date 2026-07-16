@@ -13,6 +13,255 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         Guid.NewGuid().ToString("N"));
 
     [Fact]
+    public async Task Observe_ReadsCapabilitiesAndStateOnceWithoutSetters()
+    {
+        TestContext context = CreateContext(providerAvailable: true);
+        context.Device.Capabilities = DeviceCapabilities.SafeTargetDefaults();
+        context.Device.ConfirmedState = new ConfirmedDeviceState(
+            PerformancePreset.Performance,
+            FanMode.Maximum,
+            BatteryPolicy.Create(75),
+            ProfileDefaults.CreateSafeDefaults().PluggedIn.Lighting with { Brightness = 25 });
+
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+
+        Assert.Equal(1, context.Device.CapabilitiesReadCalls);
+        Assert.Equal(1, context.Device.StateReadCalls);
+        Assert.Equal(0, context.Device.TotalSetterCalls);
+        Assert.Equal(context.Device.Capabilities, context.Runtime.GetStatus().Capabilities);
+        Assert.Equal(context.Device.ConfirmedState, context.Runtime.GetStatus().ConfirmedState);
+    }
+
+    [Fact]
+    public async Task FirstObservation_ProfileMismatchEstablishesBaselineWithoutWarning()
+    {
+        TestContext context = CreateContext(providerAvailable: true);
+        context.Device.ConfirmedState = new ConfirmedDeviceState(
+            PerformancePreset.Performance,
+            FanMode.Maximum,
+            BatteryPolicy.Create(65),
+            ProfileDefaults.CreateSafeDefaults().PluggedIn.Lighting with { Brightness = 15 });
+
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+
+        Assert.Empty(context.Runtime.GetStatus().ExternalChanges);
+        Assert.Equal(0, context.Device.TotalSetterCalls);
+    }
+
+    [Fact]
+    public async Task LaterExternalChanges_UpdateConfirmedStateAndLatchChangedSubsystems()
+    {
+        TestContext context = CreateContext(providerAvailable: true);
+        LightingSettings lighting = ProfileDefaults.CreateSafeDefaults().PluggedIn.Lighting;
+        context.Device.ConfirmedState = new ConfirmedDeviceState(
+            PerformancePreset.Balanced,
+            FanMode.Automatic,
+            BatteryPolicy.Create(80),
+            lighting);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+
+        context.Device.ConfirmedState = new ConfirmedDeviceState(
+            PerformancePreset.Performance,
+            FanMode.Maximum,
+            BatteryPolicy.Create(75),
+            lighting with { Brightness = 30 });
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+
+        ServiceStatusSnapshot status = context.Runtime.GetStatus();
+        Assert.Equal(context.Device.ConfirmedState, status.ConfirmedState);
+        Assert.Equal(
+            [
+                DeviceSubsystem.Performance,
+                DeviceSubsystem.Fans,
+                DeviceSubsystem.Battery,
+                DeviceSubsystem.Lighting,
+            ],
+            status.ExternalChanges);
+        Assert.Equal(0, context.Device.TotalSetterCalls);
+    }
+
+    [Fact]
+    public async Task CancellationAfterReads_DoesNotPublishOrAdvanceDriftBaseline()
+    {
+        TestContext context = CreateContext(providerAvailable: true);
+        context.Device.ConfirmedState = new ConfirmedDeviceState(
+            null,
+            FanMode.Automatic,
+            null,
+            null);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        ServiceStatusSnapshot baseline = context.Runtime.GetStatus();
+        using var cancellation = new CancellationTokenSource();
+        context.Device.ConfirmedState = context.Device.ConfirmedState with
+        {
+            Fans = FanMode.Maximum,
+        };
+        context.Device.AfterReadState = cancellation.Cancel;
+
+        await Assert.ThrowsAsync<OperationCanceledException>(
+            () => context.Runtime.ObserveAsync(cancellation.Token));
+
+        Assert.Same(baseline, context.Runtime.GetStatus());
+        context.Device.AfterReadState = null;
+        context.Device.ConfirmedState = context.Device.ConfirmedState with
+        {
+            Fans = FanMode.Automatic,
+        };
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        Assert.Empty(context.Runtime.GetStatus().ExternalChanges);
+    }
+
+    [Fact]
+    public async Task CancellationDuringProviderProbe_DoesNotPublishUnavailableState()
+    {
+        TestContext context = CreateContext(providerAvailable: false);
+        ServiceStatusSnapshot before = context.Runtime.GetStatus();
+        using var cancellation = new CancellationTokenSource();
+        context.Provider.AfterTryGet = cancellation.Cancel;
+
+        await Assert.ThrowsAsync<OperationCanceledException>(
+            () => context.Runtime.ObserveAsync(cancellation.Token));
+
+        Assert.Same(before, context.Runtime.GetStatus());
+        Assert.Empty(context.Hub.Published);
+    }
+
+    [Fact]
+    public async Task FailedAndUnavailableObservation_PreserveConfirmedStateAndCapabilities()
+    {
+        TestContext context = CreateContext(providerAvailable: true);
+        context.Device.Capabilities = DeviceCapabilities.SafeTargetDefaults();
+        context.Device.ConfirmedState = new ConfirmedDeviceState(
+            PerformancePreset.Balanced,
+            FanMode.Automatic,
+            BatteryPolicy.Create(80),
+            ProfileDefaults.CreateSafeDefaults().PluggedIn.Lighting);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        DeviceCapabilities capabilities = context.Runtime.GetStatus().Capabilities!;
+        ConfirmedDeviceState confirmed = context.Runtime.GetStatus().ConfirmedState!;
+
+        context.Device.ReadStateFailure = new IOException("device vanished");
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        Assert.False(context.Runtime.GetStatus().DeviceVerified);
+        Assert.True(context.Runtime.GetStatus().WritesBlocked);
+        Assert.Same(capabilities, context.Runtime.GetStatus().Capabilities);
+        Assert.Same(confirmed, context.Runtime.GetStatus().ConfirmedState);
+
+        context.Device.ReadStateFailure = null;
+        context.Provider.Available = false;
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        Assert.Same(capabilities, context.Runtime.GetStatus().Capabilities);
+        Assert.Same(confirmed, context.Runtime.GetStatus().ConfirmedState);
+    }
+
+    [Fact]
+    public async Task SuccessfulObservationWithEmptyCapabilities_DoesNotBlockWrites()
+    {
+        TestContext context = CreateContext(providerAvailable: true);
+        context.Device.Capabilities = DeviceCapabilities.Unavailable();
+
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+
+        Assert.True(context.Runtime.GetStatus().DeviceVerified);
+        Assert.False(context.Runtime.GetStatus().WritesBlocked);
+    }
+
+    [Fact]
+    public async Task ControllerPresenceRefresh_IsAdvisoryBoundedAndDoesNotTouchHidOrTelemetry()
+    {
+        TestContext context = CreateContext(providerAvailable: true);
+        context.Device.Capabilities = DeviceCapabilities.SafeTargetDefaults();
+        context.Device.ConfirmedState = new ConfirmedDeviceState(
+            PerformancePreset.Balanced,
+            FanMode.Automatic,
+            BatteryPolicy.Create(80),
+            ProfileDefaults.CreateSafeDefaults().PluggedIn.Lighting);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        ServiceStatusSnapshot before = context.Runtime.GetStatus();
+        int telemetryCaptures = context.Telemetry.CaptureCount;
+        int providerCalls = context.Provider.TryGetCount;
+        int deviceCalls = context.Device.TotalCalls;
+        context.Monitor.Current = new ControllerPresenceObservation(
+            [
+                "razerappengine",
+                "RazerAppEngine",
+                .. Enumerable.Range(0, 17).Select(index => $"ZController{index:D2}"),
+            ],
+            "enumeration warning");
+
+        await context.Runtime.RefreshControllerPresenceAsync(CancellationToken.None);
+
+        ServiceStatusSnapshot after = context.Runtime.GetStatus();
+        Assert.Equal(16, after.PotentialControllers.Count);
+        Assert.Equal(
+            after.PotentialControllers.OrderBy(name => name, StringComparer.Ordinal),
+            after.PotentialControllers);
+        Assert.Equal(
+            after.PotentialControllers.Distinct(StringComparer.OrdinalIgnoreCase).Count(),
+            after.PotentialControllers.Count);
+        Assert.Contains("RazerAppEngine", after.PotentialControllers);
+        Assert.Equal("enumeration warning", after.ControllerDetectionWarning);
+        Assert.Equal(before.WritesBlocked, after.WritesBlocked);
+        Assert.Equal(before.DeviceVerified, after.DeviceVerified);
+        Assert.Same(before.Capabilities, after.Capabilities);
+        Assert.Same(before.ConfirmedState, after.ConfirmedState);
+        Assert.Same(before.Telemetry, after.Telemetry);
+        Assert.Same(before.DesiredState, after.DesiredState);
+        Assert.Equal(before.Message, after.Message);
+        Assert.Equal(before.ExternalChanges, after.ExternalChanges);
+        Assert.Equal(telemetryCaptures, context.Telemetry.CaptureCount);
+        Assert.Equal(providerCalls, context.Provider.TryGetCount);
+        Assert.Equal(deviceCalls, context.Device.TotalCalls);
+        Assert.Equal(1, context.Monitor.ObserveCount);
+    }
+
+    [Fact]
+    public async Task DuplicatePowerNotification_ObservesWithoutSettersOrConsumingLaterTransition()
+    {
+        TestContext context = CreateContext(providerAvailable: true);
+        context.Device.Capabilities = DeviceCapabilities.SafeTargetDefaults();
+        context.Device.ConfirmedState = new ConfirmedDeviceState(
+            PerformancePreset.Balanced,
+            FanMode.Automatic,
+            BatteryPolicy.Create(80),
+            ProfileDefaults.CreateSafeDefaults().PluggedIn.Lighting);
+
+        await context.Runtime.HandlePowerSourceChangedAsync(CancellationToken.None);
+
+        Assert.Equal(1, context.Device.CapabilitiesReadCalls);
+        Assert.Equal(1, context.Device.StateReadCalls);
+        Assert.Equal(0, context.Device.TotalSetterCalls);
+
+        context.Telemetry.Current = CreateTelemetry(PowerSource.Battery);
+        await context.Runtime.HandlePowerSourceChangedAsync(CancellationToken.None);
+
+        Assert.Equal(2, context.Provider.TryGetCount);
+        Assert.Equal(1, context.Device.PerformanceSetCalls);
+    }
+
+    [Fact]
+    public async Task TransitionalRefreshMethods_RouteToZeroWriteReplacements()
+    {
+        TestContext context = CreateContext(providerAvailable: true);
+        context.Device.ConfirmedState = new ConfirmedDeviceState(
+            PerformancePreset.Performance,
+            FanMode.Maximum,
+            BatteryPolicy.Create(70),
+            ProfileDefaults.CreateSafeDefaults().PluggedIn.Lighting with { Brightness = 10 });
+
+        await context.Runtime.RefreshAsync(CancellationToken.None);
+        Assert.Equal(2, context.Device.TotalCalls);
+        Assert.Equal(0, context.Device.TotalSetterCalls);
+
+        int telemetryCaptures = context.Telemetry.CaptureCount;
+        context.Monitor.Current = new ControllerPresenceObservation(["RazerAppEngine"], null);
+        await context.Runtime.RefreshConflictsAsync(CancellationToken.None);
+        Assert.Equal(1, context.Monitor.ObserveCount);
+        Assert.Equal(telemetryCaptures, context.Telemetry.CaptureCount);
+        Assert.Equal(2, context.Device.TotalCalls);
+    }
+
+    [Fact]
     public async Task UnavailableProvider_BlocksEveryOperationWithoutDeviceCalls()
     {
         TestContext context = CreateContext(providerAvailable: false);
@@ -46,7 +295,8 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
-    public async Task ConflictOrDetectionFailure_BlocksBeforeProviderAndDevice(bool detectionFailure)
+    public async Task ConflictOrDetectionFailure_BlocksIntentionalWriteButNotObservation(
+        bool detectionFailure)
     {
         TestContext context = CreateContext(
             providerAvailable: true,
@@ -58,12 +308,16 @@ public sealed class ServiceControlRuntimeTests : IDisposable
                 PerformancePreset.Performance,
                 OverrideLifetime.Persistent),
             CancellationToken.None);
-        await context.Runtime.RefreshAsync(CancellationToken.None);
 
         Assert.Equal(ControlOperationStatus.Blocked, result.Status);
         Assert.Equal(0, context.Provider.TryGetCount);
         Assert.Equal(0, context.Device.TotalCalls);
-        Assert.True(context.Runtime.GetStatus().WritesBlocked);
+
+        await context.Runtime.RefreshAsync(CancellationToken.None);
+
+        Assert.Equal(1, context.Provider.TryGetCount);
+        Assert.Equal(2, context.Device.TotalCalls);
+        Assert.False(context.Runtime.GetStatus().WritesBlocked);
     }
 
     [Fact]
@@ -86,7 +340,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     }
 
     [Fact]
-    public async Task Refresh_TracksConflictAppearanceAndRecoveryWithoutRestart()
+    public async Task Refresh_ObservesVerifiedDeviceDespiteStrictGuardConflict()
     {
         TestContext context = CreateContext(providerAvailable: true);
         context.Device.Capabilities = DeviceCapabilities.SafeTargetDefaults();
@@ -99,20 +353,11 @@ public sealed class ServiceControlRuntimeTests : IDisposable
 
         await context.Runtime.RefreshAsync(CancellationToken.None);
 
-        ServiceStatusSnapshot blocked = context.Runtime.GetStatus();
-        Assert.True(blocked.WritesBlocked);
-        Assert.Equal(["RazerAppEngine"], blocked.PotentialControllers);
-        Assert.Equal(0, context.Provider.TryGetCount);
-        Assert.Equal(0, context.Device.TotalCalls);
-
-        context.Guard.SetScript(new HardwareAccessDecision([], null));
-        await context.Runtime.RefreshAsync(CancellationToken.None);
-
-        ServiceStatusSnapshot recovered = context.Runtime.GetStatus();
-        Assert.True(recovered.DeviceVerified);
-        Assert.False(recovered.WritesBlocked);
-        Assert.Empty(recovered.PotentialControllers);
-        Assert.Equal(blocked.Revision + 1, recovered.Revision);
+        ServiceStatusSnapshot observed = context.Runtime.GetStatus();
+        Assert.True(observed.DeviceVerified);
+        Assert.False(observed.WritesBlocked);
+        Assert.Equal(1, context.Provider.TryGetCount);
+        Assert.Equal(2, context.Device.TotalCalls);
         Assert.Equal(0, context.Device.PerformanceSetCalls);
         Assert.Equal(0, context.Device.FanSetCalls);
         Assert.Equal(0, context.Device.BatterySetCalls);
@@ -141,34 +386,32 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         TestContext context = CreateContext(providerAvailable: true);
         int telemetryCaptures = context.Telemetry.CaptureCount;
 
-        context.Guard.SetScript(new HardwareAccessDecision(["RazerAppEngine"], null));
+        context.Monitor.Current = new ControllerPresenceObservation(["RazerAppEngine"], null);
         await context.Runtime.RefreshConflictsAsync(CancellationToken.None);
         ServiceStatusSnapshot conflict = context.Runtime.GetStatus();
 
-        context.Guard.SetScript(new HardwareAccessDecision(
+        context.Monitor.Current = new ControllerPresenceObservation(
             ["RazerAppEngine"],
-            "process enumeration failed"));
+            "process enumeration failed");
         await context.Runtime.RefreshConflictsAsync(CancellationToken.None);
         ServiceStatusSnapshot detectionFailure = context.Runtime.GetStatus();
 
         Assert.Equal(["RazerAppEngine"], conflict.PotentialControllers);
         Assert.Null(conflict.ControllerDetectionWarning);
         Assert.Empty(conflict.ExternalChanges);
-        Assert.Equal(
-            "Razer controller conflicts detected: RazerAppEngine.",
-            conflict.Message);
+        Assert.Equal("No verified PID 02E0 device is available.", conflict.Message);
         Assert.Equal(conflict.Revision + 1, detectionFailure.Revision);
         Assert.Equal(
             "process enumeration failed",
             detectionFailure.ControllerDetectionWarning);
-        Assert.Contains("Controller conflict detection failed", detectionFailure.Message);
+        Assert.Equal(conflict.Message, detectionFailure.Message);
         Assert.Equal(telemetryCaptures, context.Telemetry.CaptureCount);
         Assert.Equal(0, context.Provider.TryGetCount);
         Assert.Equal(0, context.Device.TotalCalls);
     }
 
     [Fact]
-    public async Task ConflictRefresh_WhenConflictClears_ReconcilesExactlyOnce()
+    public async Task ConflictRefresh_WhenControllerClears_NeverReconciles()
     {
         TestContext context = CreateContext(providerAvailable: true);
         context.Device.Capabilities = DeviceCapabilities.SafeTargetDefaults();
@@ -179,21 +422,21 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             ProfileDefaults.CreateSafeDefaults().PluggedIn.Lighting);
         await context.Runtime.RefreshAsync(CancellationToken.None);
 
-        context.Guard.SetScript(new HardwareAccessDecision(["RazerAppEngine"], null));
+        context.Monitor.Current = new ControllerPresenceObservation(["RazerAppEngine"], null);
         await context.Runtime.RefreshConflictsAsync(CancellationToken.None);
         int telemetryCapturesWhileBlocked = context.Telemetry.CaptureCount;
         int providerCallsWhileBlocked = context.Provider.TryGetCount;
         int deviceCallsWhileBlocked = context.Device.TotalCalls;
 
-        context.Guard.SetScript(new HardwareAccessDecision([], null));
+        context.Monitor.Current = new ControllerPresenceObservation([], null);
         await context.Runtime.RefreshConflictsAsync(CancellationToken.None);
         await context.Runtime.RefreshConflictsAsync(CancellationToken.None);
 
         Assert.True(context.Runtime.GetStatus().DeviceVerified);
         Assert.False(context.Runtime.GetStatus().WritesBlocked);
-        Assert.Equal(telemetryCapturesWhileBlocked + 1, context.Telemetry.CaptureCount);
-        Assert.Equal(providerCallsWhileBlocked + 1, context.Provider.TryGetCount);
-        Assert.Equal(deviceCallsWhileBlocked + 5, context.Device.TotalCalls);
+        Assert.Equal(telemetryCapturesWhileBlocked, context.Telemetry.CaptureCount);
+        Assert.Equal(providerCallsWhileBlocked, context.Provider.TryGetCount);
+        Assert.Equal(deviceCallsWhileBlocked, context.Device.TotalCalls);
         Assert.Equal(0, context.Device.PerformanceSetCalls);
         Assert.Equal(0, context.Device.FanSetCalls);
         Assert.Equal(0, context.Device.BatterySetCalls);
@@ -201,7 +444,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     }
 
     [Fact]
-    public async Task LifecycleRefresh_WithUnsafeGuard_BlocksBeforeProviderAndDevice()
+    public async Task LifecycleRefresh_WithUnsafeGuard_UsesReadOnlyObservation()
     {
         TestContext context = CreateContext(
             providerAvailable: true,
@@ -213,9 +456,11 @@ public sealed class ServiceControlRuntimeTests : IDisposable
 
         await loop.RunAsync(CancellationToken.None);
 
-        Assert.Equal(0, context.Provider.TryGetCount);
-        Assert.Equal(0, context.Device.TotalCalls);
-        Assert.True(context.Runtime.GetStatus().WritesBlocked);
+        Assert.Equal(1, context.Provider.TryGetCount);
+        Assert.Equal(2, context.Device.TotalCalls);
+        Assert.True(context.Runtime.GetStatus().DeviceVerified);
+        Assert.False(context.Runtime.GetStatus().WritesBlocked);
+        Assert.Equal(0, context.Device.TotalSetterCalls);
     }
 
     [Fact]
@@ -296,7 +541,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         await context.Runtime.SetFullChargeOverrideAsync(true, CancellationToken.None);
         context.Telemetry.Current = CreateTelemetry(PowerSource.Battery);
 
-        await context.Runtime.RefreshAsync(CancellationToken.None);
+        await context.Runtime.HandlePowerSourceChangedAsync(CancellationToken.None);
         ServiceStatusSnapshot status = context.Runtime.GetStatus();
 
         Assert.Null(status.PerformanceOverride);
@@ -435,7 +680,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     }
 
     [Fact]
-    public async Task VerifiedReadOnlyDevice_PreservesConfirmedBatteryAndBlocksEverySetter()
+    public async Task VerifiedReadOnlyDevice_PreservesConfirmedBatteryWithoutBlockingObservation()
     {
         TestContext context = CreateContext(providerAvailable: true);
         BatteryPolicy confirmedBattery = BatteryPolicy.Create(65);
@@ -451,11 +696,8 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         ServiceStatusSnapshot status = context.Runtime.GetStatus();
         Assert.True(status.DeviceVerified);
         Assert.Equal(confirmedBattery, status.ConfirmedState!.Battery);
-        Assert.True(status.WritesBlocked);
-        Assert.Contains("Performance value is not supported", status.Message, StringComparison.Ordinal);
-        Assert.Contains("Fans value is not supported", status.Message, StringComparison.Ordinal);
-        Assert.Contains("Battery value is not supported", status.Message, StringComparison.Ordinal);
-        Assert.Contains("Lighting value is not supported", status.Message, StringComparison.Ordinal);
+        Assert.False(status.WritesBlocked);
+        Assert.Equal("Verified device state observed.", status.Message);
         Assert.Equal(0, context.Device.PerformanceSetCalls);
         Assert.Equal(0, context.Device.FanSetCalls);
         Assert.Equal(0, context.Device.BatterySetCalls);
@@ -499,7 +741,8 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             BatteryPolicy.Create(80),
             null);
 
-        await context.Runtime.RefreshAsync(CancellationToken.None);
+        context.Telemetry.Current = CreateTelemetry(PowerSource.Battery);
+        await context.Runtime.HandlePowerSourceChangedAsync(CancellationToken.None);
         int callsAfterReconcile = context.Device.TotalCalls;
         DiagnosticHistorySnapshot snapshot = context.History.Snapshot();
 
@@ -517,7 +760,8 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     public async Task BlockedAndFailedReconcile_RecordsBoundedServiceSummaries()
     {
         TestContext blocked = CreateContext(providerAvailable: false);
-        await blocked.Runtime.RefreshAsync(CancellationToken.None);
+        blocked.Telemetry.Current = CreateTelemetry(PowerSource.Battery);
+        await blocked.Runtime.HandlePowerSourceChangedAsync(CancellationToken.None);
 
         DiagnosticCommandResult blockedRecord = Assert.Single(
             blocked.History.Snapshot().CommandResults);
@@ -558,6 +802,8 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         var device = new CountingBladeDevice();
         var provider = new CountingProvider(providerAvailable, device);
         var guard = new FakeGuard(conflicts ?? [], detectionFailure);
+        var monitor = new FakeControllerPresenceMonitor(
+            new ControllerPresenceObservation(conflicts ?? [], detectionFailure));
         var history = new DiagnosticHistory();
         var runtime = new ServiceControlRuntime(
             store,
@@ -566,8 +812,18 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             telemetry,
             hub,
             provider,
+            history,
+            monitor);
+        return new TestContext(
+            runtime,
+            store,
+            telemetry,
+            hub,
+            guard,
+            monitor,
+            provider,
+            device,
             history);
-        return new TestContext(runtime, store, telemetry, hub, guard, provider, device, history);
     }
 
     private static TelemetrySnapshot CreateTelemetry(
@@ -594,9 +850,24 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         FakeTelemetryProvider Telemetry,
         FakeHub Hub,
         FakeGuard Guard,
+        FakeControllerPresenceMonitor Monitor,
         CountingProvider Provider,
         CountingBladeDevice Device,
         DiagnosticHistory History);
+
+    private sealed class FakeControllerPresenceMonitor(ControllerPresenceObservation current)
+        : IControllerPresenceMonitor
+    {
+        public ControllerPresenceObservation Current { get; set; } = current;
+
+        public int ObserveCount { get; private set; }
+
+        public ControllerPresenceObservation Observe()
+        {
+            ObserveCount++;
+            return Current;
+        }
+    }
 
     private sealed class FakeGuard : IHardwareAccessGuard
     {
@@ -667,13 +938,18 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     private sealed class CountingProvider(bool available, IBladeDevice device)
         : IVerifiedBladeDeviceProvider
     {
+        public bool Available { get; set; } = available;
+
         public int TryGetCount { get; private set; }
+
+        public Action? AfterTryGet { get; set; }
 
         public bool TryGetVerifiedDevice(out IBladeDevice verifiedDevice)
         {
             TryGetCount++;
             verifiedDevice = device;
-            return available;
+            AfterTryGet?.Invoke();
+            return Available;
         }
     }
 
@@ -689,6 +965,15 @@ public sealed class ServiceControlRuntimeTests : IDisposable
 
         public int LightingSetCalls { get; private set; }
 
+        public int CapabilitiesReadCalls { get; private set; }
+
+        public int StateReadCalls { get; private set; }
+
+        public int TotalSetterCalls => PerformanceSetCalls
+            + FanSetCalls
+            + BatterySetCalls
+            + LightingSetCalls;
+
         public DeviceCapabilities Capabilities { get; set; } =
             DeviceCapabilities.Unavailable();
 
@@ -697,15 +982,27 @@ public sealed class ServiceControlRuntimeTests : IDisposable
 
         public Exception? PerformanceFailure { get; set; }
 
+        public Exception? ReadStateFailure { get; set; }
+
+        public Action? AfterReadState { get; set; }
+
         public Task<DeviceCapabilities> ReadCapabilitiesAsync(CancellationToken cancellationToken)
         {
             TotalCalls++;
+            CapabilitiesReadCalls++;
             return Task.FromResult(Capabilities);
         }
 
         public Task<ConfirmedDeviceState> ReadStateAsync(CancellationToken cancellationToken)
         {
             TotalCalls++;
+            StateReadCalls++;
+            if (ReadStateFailure is not null)
+            {
+                throw ReadStateFailure;
+            }
+
+            AfterReadState?.Invoke();
             return Task.FromResult(ConfirmedState);
         }
 

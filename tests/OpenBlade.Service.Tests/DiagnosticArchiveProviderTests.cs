@@ -189,6 +189,14 @@ public sealed class DiagnosticArchiveProviderTests
             throw new InvalidOperationException("Export must not refresh conflicts.");
         }
 
+        public Task ObserveAsync(CancellationToken cancellationToken) => RefreshAsync(cancellationToken);
+
+        public Task HandlePowerSourceChangedAsync(CancellationToken cancellationToken) =>
+            RefreshAsync(cancellationToken);
+
+        public Task RefreshControllerPresenceAsync(CancellationToken cancellationToken) =>
+            RefreshConflictsAsync(cancellationToken);
+
         private Task<ControlOperationResult> Unexpected()
         {
             HardwareOrMutationCalls++;
