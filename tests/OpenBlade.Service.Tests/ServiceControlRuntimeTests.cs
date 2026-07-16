@@ -81,6 +81,50 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     }
 
     [Fact]
+    public async Task Observation_BatteryLimitToProtectionOff_UpdatesConfirmedAndWarnsWithoutSetters()
+    {
+        TestContext context = CreateContext(providerAvailable: true);
+        context.Device.ConfirmedState = new ConfirmedDeviceState(
+            null,
+            null,
+            BatteryPolicy.Create(80),
+            null);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+
+        context.Device.ConfirmedState = context.Device.ConfirmedState with
+        {
+            Battery = null,
+        };
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+
+        Assert.Null(context.Runtime.GetStatus().ConfirmedState!.Battery);
+        Assert.Equal([DeviceSubsystem.Battery], context.Runtime.GetStatus().ExternalChanges);
+        Assert.Equal(0, context.Device.TotalSetterCalls);
+    }
+
+    [Fact]
+    public async Task Observation_ProtectionOffToBatteryLimit_UpdatesConfirmedAndWarnsWithoutSetters()
+    {
+        TestContext context = CreateContext(providerAvailable: true);
+        context.Device.ConfirmedState = new ConfirmedDeviceState(
+            null,
+            null,
+            null,
+            null);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+
+        context.Device.ConfirmedState = context.Device.ConfirmedState with
+        {
+            Battery = BatteryPolicy.Create(80),
+        };
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+
+        Assert.Equal(BatteryPolicy.Create(80), context.Runtime.GetStatus().ConfirmedState!.Battery);
+        Assert.Equal([DeviceSubsystem.Battery], context.Runtime.GetStatus().ExternalChanges);
+        Assert.Equal(0, context.Device.TotalSetterCalls);
+    }
+
+    [Fact]
     public async Task CancellationAfterReads_DoesNotPublishOrAdvanceDriftBaseline()
     {
         TestContext context = CreateContext(providerAvailable: true);

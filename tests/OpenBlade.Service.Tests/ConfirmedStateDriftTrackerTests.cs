@@ -106,6 +106,32 @@ public sealed class ConfirmedStateDriftTrackerTests
     }
 
     [Fact]
+    public void BatteryLimitThenProtectionOff_LatchesBatteryChange()
+    {
+        var tracker = new ConfirmedStateDriftTracker();
+        tracker.Observe(State(battery: BatteryPolicy.Create(80)));
+
+        tracker.Observe(State(battery: null));
+
+        Assert.Equal([DeviceSubsystem.Battery], tracker.ExternalChanges);
+
+        tracker.ConfirmIntentional(DeviceSubsystem.Battery, matched: true);
+
+        Assert.Empty(tracker.ExternalChanges);
+    }
+
+    [Fact]
+    public void InitialProtectionOffThenBatteryLimit_LatchesBatteryChange()
+    {
+        var tracker = new ConfirmedStateDriftTracker();
+        tracker.Observe(State(battery: null));
+
+        tracker.Observe(State(battery: BatteryPolicy.Create(80)));
+
+        Assert.Equal([DeviceSubsystem.Battery], tracker.ExternalChanges);
+    }
+
+    [Fact]
     public void ExternalChanges_ReturnsDefensiveImmutableSnapshots()
     {
         var tracker = new ConfirmedStateDriftTracker();

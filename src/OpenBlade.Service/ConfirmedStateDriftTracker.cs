@@ -9,6 +9,7 @@ public sealed class ConfirmedStateDriftTracker
     private PerformancePreset? performance;
     private FanMode? fans;
     private BatteryPolicy? battery;
+    private bool batteryObserved;
     private LightingSettings? lighting;
 
     public IReadOnlyList<DeviceSubsystem> ExternalChanges =>
@@ -20,7 +21,7 @@ public sealed class ConfirmedStateDriftTracker
         ArgumentNullException.ThrowIfNull(state);
         ObserveValue(state.Performance, ref performance, DeviceSubsystem.Performance);
         ObserveValue(state.Fans, ref fans, DeviceSubsystem.Fans);
-        ObserveValue(state.Battery, ref battery, DeviceSubsystem.Battery);
+        ObserveBattery(state.Battery);
         ObserveValue(state.Lighting, ref lighting, DeviceSubsystem.Lighting);
     }
 
@@ -74,5 +75,18 @@ public sealed class ConfirmedStateDriftTracker
         }
 
         baseline = observed;
+    }
+
+    private void ObserveBattery(BatteryPolicy? observed)
+    {
+        if (batteryObserved && !EqualityComparer<BatteryPolicy?>.Default.Equals(
+                battery,
+                observed))
+        {
+            externalChanges.Add(DeviceSubsystem.Battery);
+        }
+
+        battery = observed;
+        batteryObserved = true;
     }
 }
