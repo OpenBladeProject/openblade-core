@@ -11,27 +11,26 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
     internal static Func<BatteryValidationProbeResult> ProductionProbeFactory { get; } =
         BatteryValidationFactory.ProbeWindowsForService;
 
-    internal static Func<IBatteryQuerySequenceRunFactory> ProductionQuerySequenceFactory { get; } =
-        BatteryValidationFactory.CreateWindowsQuerySequenceForService;
+    internal static Func<IProductionBatteryPortFactory> ProductionPortFactory { get; } =
+        ServiceComposition.CreateProductionBatteryFactory;
 
     private readonly Func<BatteryValidationProbeResult> probe;
-    private readonly ReadOnlyBladeDevice device;
+    private readonly SerializedBladeDevice device;
+    private readonly object providerLifecycleSync = new();
     private int disposed;
 
     public WindowsVerifiedBladeDeviceProvider()
-        : this(
-            ProductionProbeFactory,
-            ProductionQuerySequenceFactory())
+        : this(ProductionProbeFactory, ProductionPortFactory())
     {
     }
 
     internal WindowsVerifiedBladeDeviceProvider(
         Func<BatteryValidationProbeResult> probe,
-        IBatteryQuerySequenceRunFactory queryFactory)
+        IProductionBatteryPortFactory batteryFactory)
     {
         this.probe = probe ?? throw new ArgumentNullException(nameof(probe));
-        device = new ReadOnlyBladeDevice(
-            queryFactory ?? throw new ArgumentNullException(nameof(queryFactory)));
+        device = new SerializedBladeDevice(
+            batteryFactory ?? throw new ArgumentNullException(nameof(batteryFactory)));
     }
 
     public bool TryGetVerifiedDevice(out IBladeDevice verifiedDevice)
@@ -52,8 +51,16 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
                 return false;
             }
 
-            verifiedDevice = device;
-            return true;
+            lock (providerLifecycleSync)
+            {
+                if (disposed != 0)
+                {
+                    return false;
+                }
+
+                verifiedDevice = device;
+                return true;
+            }
         }
         catch
         {
@@ -63,142 +70,109 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
 
     public void Dispose()
     {
-        if (Interlocked.Exchange(ref disposed, 1) == 0)
+        lock (providerLifecycleSync)
         {
+            if (disposed != 0)
+            {
+                return;
+            }
+
+            Volatile.Write(ref disposed, 1);
             device.Dispose();
         }
     }
 
-    private sealed class ReadOnlyBladeDevice : IBladeDevice, IDisposable
+    private sealed class SerializedBladeDevice : IBladeDevice, IDisposable
     {
-        private static readonly DeviceCapabilities UnavailableCapabilities =
-            DeviceCapabilities.Unavailable();
-
-        private readonly IBatteryQuerySequenceRunFactory queryFactory;
+        private readonly IProductionBatteryPortFactory batteryFactory;
         private readonly object lifecycleSync = new();
-        private readonly SemaphoreSlim readGate = new(1, 1);
-        private int admittedReadCount;
-        private int disposed;
+        private readonly SemaphoreSlim hardwareOperationGate = new(1, 1);
+        private bool closing;
+        private bool disposed;
 
-        internal ReadOnlyBladeDevice(IBatteryQuerySequenceRunFactory queryFactory)
+        internal SerializedBladeDevice(IProductionBatteryPortFactory batteryFactory)
         {
-            this.queryFactory = queryFactory;
+            this.batteryFactory = batteryFactory;
         }
 
-        public Task<DeviceCapabilities> ReadCapabilitiesAsync(
+        public async Task<DeviceCapabilities> ReadCapabilitiesAsync(
             CancellationToken cancellationToken)
         {
-            cancellationToken.ThrowIfCancellationRequested();
-            ThrowIfDisposed();
-            return Task.FromResult(UnavailableCapabilities);
+            await EnterHardwareOperationAsync(cancellationToken).ConfigureAwait(false);
+            try
+            {
+                HidSessionResult<IProductionBatteryPort> opened;
+                try
+                {
+                    opened = await batteryFactory.OpenAsync(cancellationToken)
+                        .ConfigureAwait(false);
+                }
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                {
+                    throw new OperationCanceledException(cancellationToken);
+                }
+                catch
+                {
+                    return DeviceCapabilities.Unavailable();
+                }
+
+                if (opened.Value is not { } port)
+                {
+                    if (opened.Failure is (
+                            HidSessionFailureKind.Canceled
+                            or HidSessionFailureKind.QueuedCanceled)
+                        && cancellationToken.IsCancellationRequested)
+                    {
+                        throw new OperationCanceledException(cancellationToken);
+                    }
+
+                    return DeviceCapabilities.Unavailable();
+                }
+
+                await using (port.ConfigureAwait(false))
+                {
+                    return opened.Failure is null
+                        ? port.Capabilities
+                        : DeviceCapabilities.Unavailable();
+                }
+            }
+            finally
+            {
+                hardwareOperationGate.Release();
+            }
         }
 
         public async Task<ConfirmedDeviceState> ReadStateAsync(
             CancellationToken cancellationToken)
         {
-            AdmitRead();
+            await EnterHardwareOperationAsync(cancellationToken).ConfigureAwait(false);
             try
             {
-                await readGate.WaitAsync(cancellationToken).ConfigureAwait(false);
-                try
-                {
-                    return await QueryStateAsync(cancellationToken).ConfigureAwait(false);
-                }
-                finally
-                {
-                    readGate.Release();
-                }
-            }
-            finally
-            {
-                ReleaseReadAdmission();
-            }
-        }
-
-        public Task SetPerformanceAsync(
-            PerformancePreset value,
-            CancellationToken cancellationToken) => RejectUnvalidatedWrite();
-
-        public Task SetFanModeAsync(
-            FanMode value,
-            CancellationToken cancellationToken) => RejectUnvalidatedWrite();
-
-        public Task SetChargeLimitAsync(
-            BatteryPolicy value,
-            CancellationToken cancellationToken) => RejectBatteryWrite();
-
-        public Task SetBatteryProtectionOffAsync(
-            CancellationToken cancellationToken) => RejectBatteryWrite();
-
-        public Task SetTemporaryFullChargeAsync(
-            bool enabled,
-            CancellationToken cancellationToken) => RejectBatteryWrite();
-
-        public Task SetLightingAsync(
-            LightingSettings value,
-            CancellationToken cancellationToken) => RejectUnvalidatedWrite();
-
-        public void Dispose()
-        {
-            lock (lifecycleSync)
-            {
-                if (disposed != 0)
-                {
-                    return;
-                }
-
-                Volatile.Write(ref disposed, 1);
-                while (admittedReadCount != 0)
-                {
-                    Monitor.Wait(lifecycleSync);
-                }
-
-                readGate.Dispose();
-            }
-        }
-
-        private async Task<ConfirmedDeviceState> QueryStateAsync(
-            CancellationToken cancellationToken)
-        {
-            try
-            {
-                HidSessionResult<IBatteryQuerySequencePort> opened =
-                    await queryFactory.OpenAsync(cancellationToken).ConfigureAwait(false);
+                HidSessionResult<IProductionBatteryPort> opened =
+                    await batteryFactory.OpenAsync(cancellationToken).ConfigureAwait(false);
                 if (opened.Value is not { } port)
                 {
-                    ThrowFailure(opened.Failure, opened.Diagnostic, cancellationToken);
-                    throw new IOException("Battery state query did not provide a session.");
+                    ThrowReadOpenFailure(opened.Failure, cancellationToken);
+                    throw new IOException("Battery state query did not provide a verified session.");
                 }
 
                 await using (port.ConfigureAwait(false))
                 {
                     if (opened.Failure is not null)
                     {
-                        ThrowFailure(opened.Failure, opened.Diagnostic, cancellationToken);
+                        ThrowReadOpenFailure(opened.Failure, cancellationToken);
                     }
 
-                    HidSessionResult<BatteryValidationSetting> queried =
-                        await port.QueryAsync(cancellationToken).ConfigureAwait(false);
-                    if (queried.Failure is not null)
-                    {
-                        ThrowFailure(queried.Failure, queried.Diagnostic, cancellationToken);
-                    }
-
-                    ConfirmedBatteryState battery = queried.Value switch
-                    {
-                        BatteryValidationSetting.ProtectionOff => new(false, null, false),
-                        BatteryValidationSetting.Limit50 => new(true, 50, false),
-                        BatteryValidationSetting.Limit55 => new(true, 55, false),
-                        BatteryValidationSetting.Limit60 => new(true, 60, false),
-                        BatteryValidationSetting.Limit65 => new(true, 65, false),
-                        BatteryValidationSetting.Limit70 => new(true, 70, false),
-                        BatteryValidationSetting.Limit75 => new(true, 75, false),
-                        BatteryValidationSetting.Limit80 => new(true, 80, false),
-                        _ => throw new RazerProtocolException(
-                            "Battery state query returned an undefined setting.",
-                            HidProtocolValidationFailure.PayloadValidator),
-                    };
-
+                    ConfirmedBatteryState protection =
+                        await port.QueryProtectionAsync(cancellationToken).ConfigureAwait(false);
+                    bool? temporary = port.SupportsTemporaryFullChargeQuery
+                        ? await port.QueryTemporaryFullChargeAsync(cancellationToken)
+                            .ConfigureAwait(false)
+                        : null;
+                    ConfirmedBatteryState battery = new(
+                        protection.ProtectionEnabled,
+                        protection.ChargeLimitPercent,
+                        temporary);
                     return new ConfirmedDeviceState(null, null, battery, null);
                 }
             }
@@ -216,19 +190,189 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
                     "Battery state query failed protocol validation.",
                     exception.ValidationFailure);
             }
+            catch (ObjectDisposedException)
+            {
+                throw;
+            }
             catch (FailClosedDeviceException exception)
             {
                 throw new IOException(exception.Message);
             }
-            catch (Exception)
+            catch
             {
                 throw new IOException("Battery state query failed.");
             }
+            finally
+            {
+                hardwareOperationGate.Release();
+            }
         }
 
-        private static void ThrowFailure(
+        public Task SetPerformanceAsync(
+            PerformancePreset value,
+            CancellationToken cancellationToken) => RejectUnvalidatedWrite();
+
+        public Task SetFanModeAsync(
+            FanMode value,
+            CancellationToken cancellationToken) => RejectUnvalidatedWrite();
+
+        public Task SetChargeLimitAsync(
+            BatteryPolicy value,
+            CancellationToken cancellationToken)
+        {
+            ArgumentNullException.ThrowIfNull(value);
+            if (!batteryFactory.Capabilities.ChargeLimits.Contains(value.ChargeLimitPercent))
+            {
+                return RejectBatteryWrite("The requested charge limit is not admitted.");
+            }
+
+            return ExecuteBatteryWriteAsync(
+                port => port.SetChargeLimitAsync(value.ChargeLimitPercent, cancellationToken),
+                cancellationToken);
+        }
+
+        public Task SetBatteryProtectionOffAsync(CancellationToken cancellationToken) =>
+            batteryFactory.Capabilities.SupportsBatteryProtectionOff
+                ? ExecuteBatteryWriteAsync(
+                    port => port.SetProtectionOffAsync(cancellationToken),
+                    cancellationToken)
+                : RejectBatteryWrite("Battery protection-off is not admitted.");
+
+        public Task SetTemporaryFullChargeAsync(
+            bool enabled,
+            CancellationToken cancellationToken) =>
+            batteryFactory.Capabilities.SupportsTemporaryFullCharge
+                ? ExecuteBatteryWriteAsync(
+                    port => port.SetTemporaryFullChargeAsync(enabled, cancellationToken),
+                    cancellationToken)
+                : RejectBatteryWrite("Temporary full charge is not admitted.");
+
+        public Task SetLightingAsync(
+            LightingSettings value,
+            CancellationToken cancellationToken) => RejectUnvalidatedWrite();
+
+        public void Dispose()
+        {
+            lock (lifecycleSync)
+            {
+                if (closing)
+                {
+                    return;
+                }
+
+                closing = true;
+            }
+
+            hardwareOperationGate.Wait();
+            try
+            {
+                lock (lifecycleSync)
+                {
+                    disposed = true;
+                }
+            }
+            finally
+            {
+                hardwareOperationGate.Release();
+            }
+        }
+
+        private async Task ExecuteBatteryWriteAsync(
+            Func<IProductionBatteryPort, Task> write,
+            CancellationToken cancellationToken)
+        {
+            ArgumentNullException.ThrowIfNull(write);
+            try
+            {
+                await EnterHardwareOperationAsync(cancellationToken).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                throw new BladeWriteException(
+                    WriteSubmissionState.KnownNotApplied,
+                    "The battery write was canceled before a verified session opened.");
+            }
+            catch (ObjectDisposedException exception)
+            {
+                throw new BladeWriteException(
+                    WriteSubmissionState.KnownNotApplied,
+                    "The battery write was blocked because the device provider is closing.",
+                    exception);
+            }
+
+            try
+            {
+                HidSessionResult<IProductionBatteryPort> opened =
+                    await batteryFactory.OpenAsync(cancellationToken).ConfigureAwait(false);
+                if (opened.Value is not { } port)
+                {
+                    throw MapWriteOpenFailure(opened.Failure);
+                }
+
+                await using (port.ConfigureAwait(false))
+                {
+                    if (opened.Failure is not null)
+                    {
+                        throw MapWriteOpenFailure(opened.Failure);
+                    }
+
+                    await write(port).ConfigureAwait(false);
+                }
+            }
+            catch (BladeWriteException)
+            {
+                throw;
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw new BladeWriteException(
+                    WriteSubmissionState.Indeterminate,
+                    "The battery write was canceled after a verified session opened.");
+            }
+            catch (Exception exception)
+            {
+                throw new BladeWriteException(
+                    WriteSubmissionState.Indeterminate,
+                    "The battery write outcome is indeterminate.",
+                    exception);
+            }
+            finally
+            {
+                hardwareOperationGate.Release();
+            }
+        }
+
+        private async Task EnterHardwareOperationAsync(CancellationToken cancellationToken)
+        {
+            Task waitForHardware;
+            lock (lifecycleSync)
+            {
+                ObjectDisposedException.ThrowIf(closing || disposed, this);
+                waitForHardware = hardwareOperationGate.WaitAsync(cancellationToken);
+            }
+
+            await waitForHardware.ConfigureAwait(false);
+            try
+            {
+                ThrowIfClosingOrDisposed();
+            }
+            catch
+            {
+                hardwareOperationGate.Release();
+                throw;
+            }
+        }
+
+        private void ThrowIfClosingOrDisposed()
+        {
+            lock (lifecycleSync)
+            {
+                ObjectDisposedException.ThrowIf(closing || disposed, this);
+            }
+        }
+
+        private static void ThrowReadOpenFailure(
             HidSessionFailureKind? failure,
-            HidSessionFailureDiagnostic? diagnostic,
             CancellationToken cancellationToken)
         {
             switch (failure)
@@ -238,57 +382,37 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
                     throw new OperationCanceledException(cancellationToken);
                 case HidSessionFailureKind.Timeout:
                     throw new TimeoutException("Battery state query timed out.");
-                case HidSessionFailureKind.ProtocolFailure:
-                    throw new RazerProtocolException(
-                        "Battery state query failed protocol validation.",
-                        diagnostic?.ProtocolValidationFailure
-                            ?? HidProtocolValidationFailure.PayloadValidator);
                 case HidSessionFailureKind.IdentityBlocked:
                     throw new FailClosedDeviceException(
                         "Battery state query was blocked by exact device identity verification.");
-                case HidSessionFailureKind.ConflictBlocked:
-                    throw new FailClosedDeviceException(
-                        "Battery state query was blocked by controller conflict verification.");
-                case HidSessionFailureKind.ConflictDetectionFailed:
-                    throw new FailClosedDeviceException(
-                        "Battery state query was blocked because conflict verification failed.");
                 default:
-                    throw new FailClosedDeviceException("Battery state query failed closed.");
+                    throw new IOException("Battery state query failed closed.");
             }
         }
 
-        private static Task RejectBatteryWrite() => Task.FromException(
-            new BladeWriteException(
-                WriteSubmissionState.KnownNotApplied,
-                "Hardware writes are not admitted for the verified read-only device."));
+        private static BladeWriteException MapWriteOpenFailure(
+            HidSessionFailureKind? failure)
+        {
+            WriteSubmissionState submissionState = failure is
+                HidSessionFailureKind.IdentityBlocked
+                or HidSessionFailureKind.Timeout
+                or HidSessionFailureKind.Poisoned
+                or HidSessionFailureKind.Disposed
+                ? WriteSubmissionState.Indeterminate
+                : WriteSubmissionState.KnownNotApplied;
+            return new BladeWriteException(
+                submissionState,
+                submissionState == WriteSubmissionState.KnownNotApplied
+                    ? "The battery write was blocked before submission."
+                    : "The battery write could not establish an unambiguous verified session.");
+        }
 
         private static Task RejectUnvalidatedWrite() => Task.FromException(
             new UnvalidatedCommandException(
-                "Hardware writes are not admitted for the verified read-only device."));
+                "Hardware writes are not admitted for this subsystem."));
 
-        private void AdmitRead()
-        {
-            lock (lifecycleSync)
-            {
-                ThrowIfDisposed();
-                admittedReadCount++;
-            }
-        }
-
-        private void ReleaseReadAdmission()
-        {
-            lock (lifecycleSync)
-            {
-                admittedReadCount--;
-                if (disposed != 0 && admittedReadCount == 0)
-                {
-                    Monitor.PulseAll(lifecycleSync);
-                }
-            }
-        }
-
-        private void ThrowIfDisposed() =>
-            ObjectDisposedException.ThrowIf(Volatile.Read(ref disposed) != 0, this);
+        private static Task RejectBatteryWrite(string message) => Task.FromException(
+            new BladeWriteException(WriteSubmissionState.KnownNotApplied, message));
 
         private sealed class FailClosedDeviceException(string message) : Exception(message);
     }

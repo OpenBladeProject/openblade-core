@@ -13,8 +13,8 @@ public sealed class WindowsVerifiedBladeDeviceProviderTests
             nameof(BatteryValidationFactory.ProbeWindowsForService),
             WindowsVerifiedBladeDeviceProvider.ProductionProbeFactory.Method.Name);
         Assert.Equal(
-            nameof(BatteryValidationFactory.CreateWindowsQuerySequenceForService),
-            WindowsVerifiedBladeDeviceProvider.ProductionQuerySequenceFactory.Method.Name);
+            nameof(ServiceComposition.CreateProductionBatteryFactory),
+            WindowsVerifiedBladeDeviceProvider.ProductionPortFactory.Method.Name);
     }
 
     [Theory]
@@ -26,7 +26,7 @@ public sealed class WindowsVerifiedBladeDeviceProviderTests
         var factory = new FakeQueryFactory();
         using var provider = new WindowsVerifiedBladeDeviceProvider(
             () => Probe(classification),
-            factory);
+            Adapt(factory));
 
         Assert.True(provider.TryGetVerifiedDevice(out IBladeDevice first));
         Assert.True(provider.TryGetVerifiedDevice(out IBladeDevice second));
@@ -49,7 +49,7 @@ public sealed class WindowsVerifiedBladeDeviceProviderTests
         var factory = new FakeQueryFactory();
         using var provider = new WindowsVerifiedBladeDeviceProvider(
             () => Probe(classification),
-            factory);
+            Adapt(factory));
 
         Assert.False(provider.TryGetVerifiedDevice(out IBladeDevice device));
         Assert.Null(device);
@@ -62,7 +62,7 @@ public sealed class WindowsVerifiedBladeDeviceProviderTests
         var factory = new FakeQueryFactory();
         using var provider = new WindowsVerifiedBladeDeviceProvider(
             () => throw new InvalidOperationException("private probe detail"),
-            factory);
+            Adapt(factory));
 
         Assert.False(provider.TryGetVerifiedDevice(out IBladeDevice device));
         Assert.Null(device);
@@ -70,7 +70,7 @@ public sealed class WindowsVerifiedBladeDeviceProviderTests
     }
 
     [Fact]
-    public async Task ReadCapabilities_ReturnsExactlyUnavailableWithoutOpeningQuery()
+    public async Task ReadCapabilities_OpenFailureReturnsExactlyUnavailableAfterFreshOpen()
     {
         var factory = new FakeQueryFactory();
         using var provider = ReadyProvider(factory);
@@ -84,6 +84,37 @@ public sealed class WindowsVerifiedBladeDeviceProviderTests
         Assert.Empty(capabilities.ChargeLimits);
         Assert.False(capabilities.SupportsBatteryProtectionOff);
         Assert.False(capabilities.SupportsTemporaryFullCharge);
+        Assert.Equal(1, factory.OpenCount);
+    }
+
+    [Fact]
+    public async Task DisposeWhileProbeIsBlocked_PreventsStaleDevicePublication()
+    {
+        using var probeStarted = new ManualResetEventSlim();
+        using var releaseProbe = new ManualResetEventSlim();
+        var factory = new FakeQueryFactory();
+        var provider = new WindowsVerifiedBladeDeviceProvider(
+            () =>
+            {
+                probeStarted.Set();
+                releaseProbe.Wait();
+                return Probe(BatteryValidationProbeClassification.Ready);
+            },
+            Adapt(factory));
+
+        Task<(bool Available, IBladeDevice Device)> probing = Task.Run(() =>
+        {
+            bool available = provider.TryGetVerifiedDevice(out IBladeDevice device);
+            return (available, device);
+        });
+        Assert.True(probeStarted.Wait(TimeSpan.FromSeconds(1)));
+
+        provider.Dispose();
+        releaseProbe.Set();
+        (bool available, IBladeDevice device) = await probing;
+
+        Assert.False(available);
+        Assert.Null(device);
         Assert.Equal(0, factory.OpenCount);
     }
 
@@ -108,7 +139,7 @@ public sealed class WindowsVerifiedBladeDeviceProviderTests
 
         Assert.Null(state.Performance);
         Assert.Null(state.Fans);
-        Assert.Equal(new ConfirmedBatteryState(true, expectedLimit, false), state.Battery);
+        Assert.Equal(new ConfirmedBatteryState(true, expectedLimit, null), state.Battery);
         Assert.Null(state.Lighting);
         Assert.Equal(1, factory.OpenCount);
         Assert.Equal(1, port.QueryCount);
@@ -129,7 +160,7 @@ public sealed class WindowsVerifiedBladeDeviceProviderTests
             new ConfirmedDeviceState(
                 null,
                 null,
-                new ConfirmedBatteryState(false, null, false),
+                new ConfirmedBatteryState(false, null, null),
                 null),
             state);
         Assert.Equal(1, port.DisposeCount);
@@ -305,7 +336,7 @@ public sealed class WindowsVerifiedBladeDeviceProviderTests
     }
 
     [Fact]
-    public async Task Dispose_AllowsAdmittedReadsToDrainAndRejectsLateReadBeforeSemaphoreWait()
+    public async Task Dispose_DrainsActiveReadAndRejectsQueuedOrLateReadBeforePortOpen()
     {
         var firstPort = FakeQueryPort.Blocked(BatteryValidationSetting.Limit65);
         var secondPort = FakeQueryPort.Success(BatteryValidationSetting.Limit70);
@@ -326,14 +357,14 @@ public sealed class WindowsVerifiedBladeDeviceProviderTests
 
         firstPort.Release();
         Assert.Equal(65, (await first).Battery!.ChargeLimitPercent);
-        Assert.Equal(70, (await queued).Battery!.ChargeLimitPercent);
         await disposing;
+        await Assert.ThrowsAsync<ObjectDisposedException>(() => queued);
         ObjectDisposedException lateError =
             await Assert.ThrowsAsync<ObjectDisposedException>(() => late);
 
         Assert.True(lateRejectedBeforeRelease);
         Assert.DoesNotContain("SemaphoreSlim", lateError.ObjectName ?? string.Empty);
-        Assert.Equal(2, factory.OpenCount);
+        Assert.Equal(1, factory.OpenCount);
     }
 
     [Fact]
@@ -383,7 +414,10 @@ public sealed class WindowsVerifiedBladeDeviceProviderTests
     private static WindowsVerifiedBladeDeviceProvider ReadyProvider(
         IBatteryQuerySequenceRunFactory factory) => new(
             () => Probe(BatteryValidationProbeClassification.Ready),
-            factory);
+            Adapt(factory));
+
+    private static IProductionBatteryPortFactory Adapt(
+        IBatteryQuerySequenceRunFactory factory) => new QueryFactoryAdapter(factory);
 
     private static BatteryValidationProbeResult Probe(
         BatteryValidationProbeClassification classification) => new(
@@ -403,6 +437,93 @@ public sealed class WindowsVerifiedBladeDeviceProviderTests
             UsageMatchCount: 1,
             FeatureLengthMatchCount: 1,
             ExactMatchCount: 1);
+
+    private sealed class QueryFactoryAdapter(IBatteryQuerySequenceRunFactory inner)
+        : IProductionBatteryPortFactory
+    {
+        public DeviceCapabilities Capabilities { get; } = DeviceCapabilities.Unavailable();
+
+        public bool SupportsTemporaryFullChargeQuery => false;
+
+        public async Task<HidSessionResult<IProductionBatteryPort>> OpenAsync(
+            CancellationToken cancellationToken)
+        {
+            HidSessionResult<IBatteryQuerySequencePort> opened =
+                await inner.OpenAsync(cancellationToken);
+            return opened.Value is null
+                ? new(null, opened.Failure) { Diagnostic = opened.Diagnostic }
+                : new(new QueryPortAdapter(opened.Value), opened.Failure)
+                {
+                    Diagnostic = opened.Diagnostic,
+                };
+        }
+    }
+
+    private sealed class QueryPortAdapter(IBatteryQuerySequencePort inner)
+        : IProductionBatteryPort
+    {
+        public DeviceCapabilities Capabilities { get; } = DeviceCapabilities.Unavailable();
+
+        public bool SupportsTemporaryFullChargeQuery => false;
+
+        public async Task<ConfirmedBatteryState> QueryProtectionAsync(
+            CancellationToken cancellationToken)
+        {
+            HidSessionResult<BatteryValidationSetting> result =
+                await inner.QueryAsync(cancellationToken);
+            if (result.Failure is null)
+            {
+                return result.Value switch
+                {
+                    BatteryValidationSetting.ProtectionOff => new(false, null, null),
+                    BatteryValidationSetting.Limit50 => new(true, 50, null),
+                    BatteryValidationSetting.Limit55 => new(true, 55, null),
+                    BatteryValidationSetting.Limit60 => new(true, 60, null),
+                    BatteryValidationSetting.Limit65 => new(true, 65, null),
+                    BatteryValidationSetting.Limit70 => new(true, 70, null),
+                    BatteryValidationSetting.Limit75 => new(true, 75, null),
+                    BatteryValidationSetting.Limit80 => new(true, 80, null),
+                    _ => throw new InvalidOperationException(),
+                };
+            }
+
+            switch (result.Failure)
+            {
+                case HidSessionFailureKind.Canceled when cancellationToken.IsCancellationRequested:
+                case HidSessionFailureKind.QueuedCanceled when cancellationToken.IsCancellationRequested:
+                    throw new OperationCanceledException(cancellationToken);
+                case HidSessionFailureKind.Timeout:
+                    throw new TimeoutException("Battery state query timed out.");
+                case HidSessionFailureKind.ProtocolFailure:
+                    throw new RazerProtocolException(
+                        "Battery query protocol failure.",
+                        result.Diagnostic?.ProtocolValidationFailure
+                            ?? HidProtocolValidationFailure.PayloadValidator);
+                case HidSessionFailureKind.IdentityBlocked:
+                    throw new IOException("Battery query identity verification failed.");
+                default:
+                    throw new IOException("Battery query failed closed.");
+            }
+        }
+
+        public Task<bool?> QueryTemporaryFullChargeAsync(CancellationToken cancellationToken) =>
+            Task.FromResult<bool?>(null);
+
+        public Task SetChargeLimitAsync(int percent, CancellationToken cancellationToken) =>
+            Reject();
+
+        public Task SetProtectionOffAsync(CancellationToken cancellationToken) => Reject();
+
+        public Task SetTemporaryFullChargeAsync(bool enabled, CancellationToken cancellationToken) =>
+            Reject();
+
+        public ValueTask DisposeAsync() => inner.DisposeAsync();
+
+        private static Task Reject() => Task.FromException(
+            new BladeWriteException(
+                WriteSubmissionState.KnownNotApplied,
+                "Write unavailable in query adapter."));
+    }
 
     private sealed class FakeQueryFactory : IBatteryQuerySequenceRunFactory
     {

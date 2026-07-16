@@ -91,14 +91,19 @@ public sealed class WindowsHidNativeContractTests
         Assert.DoesNotContain(
             sources.Where(pair =>
                 !pair.Key.EndsWith("WindowsHidEnumerator.cs")
-                && !pair.Key.EndsWith("BatteryValidationFactory.cs")),
+                && !pair.Key.EndsWith("BatteryValidationFactory.cs")
+                && !pair.Key.EndsWith("ProductionBatteryFactory.cs")),
             pair => pair.Value.Contains("new WindowsHidNative("));
-        KeyValuePair<string, string> composition = Assert.Single(
-            sources,
-            pair => pair.Value.Contains("OverlappedFeatureOperation") &&
+        string[] composition = sources
+            .Where(pair => pair.Value.Contains("OverlappedFeatureOperation") &&
                 pair.Value.Contains("WindowsHidNative") &&
-                !pair.Key.EndsWith("WindowsHidNative.cs"));
-        Assert.EndsWith("BatteryValidationFactory.cs", composition.Key);
+                !pair.Key.EndsWith("WindowsHidNative.cs"))
+            .Select(pair => Path.GetFileName(pair.Key))
+            .OrderBy(name => name, StringComparer.Ordinal)
+            .ToArray();
+        Assert.Equal(
+            ["BatteryValidationFactory.cs", "ProductionBatteryFactory.cs"],
+            composition);
     }
 
     [Theory]

@@ -42,7 +42,15 @@ public static class CapturedFixtureFile
     {
         ArgumentNullException.ThrowIfNull(trustedHashes);
         byte[] fixtureBytes = await File.ReadAllBytesAsync(path, cancellationToken);
-        byte[] hash = SHA256.HashData(fixtureBytes);
+        return LoadCatalog(fixtureBytes, trustedHashes);
+    }
+
+    internal static DeviceCommandCatalog LoadCatalog(
+        ReadOnlyMemory<byte> fixtureBytes,
+        TrustedFixtureHashRegistry trustedHashes)
+    {
+        ArgumentNullException.ThrowIfNull(trustedHashes);
+        byte[] hash = SHA256.HashData(fixtureBytes.Span);
         if (!trustedHashes.Contains(hash))
         {
             throw new UnvalidatedCommandException(
@@ -52,11 +60,17 @@ public static class CapturedFixtureFile
         RejectDuplicateJsonMembers(fixtureBytes);
 
         CapturedCommandFixture[]? fixtures =
-            JsonSerializer.Deserialize<CapturedCommandFixture[]>(fixtureBytes, SerializerOptions);
+            JsonSerializer.Deserialize<CapturedCommandFixture[]>(fixtureBytes.Span, SerializerOptions);
 
         if (fixtures is null || fixtures.Length == 0)
         {
             throw new UnvalidatedCommandException("The fixture file contains no validated commands.");
+        }
+
+        if (Array.Exists(fixtures, static fixture => fixture is null))
+        {
+            throw new UnvalidatedCommandException(
+                "The fixture file contains a null command entry.");
         }
 
         return DeviceCommandCatalog.Create(TargetDevice, fixtures);

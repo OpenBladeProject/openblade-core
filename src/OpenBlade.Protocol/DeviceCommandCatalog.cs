@@ -67,6 +67,12 @@ internal sealed class DeviceCommandCatalog
 
         foreach (CapturedCommandFixture fixture in fixtures)
         {
+            if (fixture is null)
+            {
+                throw new UnvalidatedCommandException(
+                    "The captured command set contains a null entry.");
+            }
+
             if (string.IsNullOrWhiteSpace(fixture.Action))
             {
                 throw new UnvalidatedCommandException(

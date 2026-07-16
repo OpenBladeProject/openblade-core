@@ -1,12 +1,35 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using OpenBlade.Contracts;
+using OpenBlade.Protocol;
 using OpenBlade.Service;
 
 namespace OpenBlade.Service.Tests;
 
 public sealed class ServiceCompositionTests
 {
+    [Fact]
+    public void ProductionBatteryFactoryFallbackCatchesAdmissionFailureOnlyAndReturnsEmptyCatalogFactory()
+    {
+        var fallback = new StubProductionBatteryFactory(DeviceCapabilities.Unavailable());
+
+        IProductionBatteryPortFactory selected = ServiceComposition.CreateProductionBatteryFactory(
+            () => throw new UnvalidatedCommandException("untrusted fixture"),
+            () => fallback);
+
+        Assert.Same(fallback, selected);
+        Assert.Empty(selected.Capabilities.ChargeLimits);
+    }
+
+    [Fact]
+    public void ProductionBatteryFactoryFallbackDoesNotHideUnexpectedCompositionFailure()
+    {
+        Assert.Throws<InvalidOperationException>(() =>
+            ServiceComposition.CreateProductionBatteryFactory(
+                () => throw new InvalidOperationException("programming defect"),
+                () => new StubProductionBatteryFactory(DeviceCapabilities.Unavailable())));
+    }
+
     [Fact]
     public void AddWindowsTelemetry_RegistersNativeNvmlAndPowerProvider()
     {
@@ -151,5 +174,19 @@ public sealed class ServiceCompositionTests
         {
             DisposeCount++;
         }
+    }
+
+    private sealed class StubProductionBatteryFactory(DeviceCapabilities capabilities)
+        : IProductionBatteryPortFactory
+    {
+        public DeviceCapabilities Capabilities { get; } = capabilities;
+
+        public bool SupportsTemporaryFullChargeQuery => false;
+
+        public Task<HidSessionResult<IProductionBatteryPort>> OpenAsync(
+            CancellationToken cancellationToken) => Task.FromResult(
+                new HidSessionResult<IProductionBatteryPort>(
+                    null,
+                    HidSessionFailureKind.NativeIoFailure));
     }
 }

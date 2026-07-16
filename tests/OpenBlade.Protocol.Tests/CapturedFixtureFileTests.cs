@@ -102,6 +102,59 @@ public sealed class CapturedFixtureFileTests : IDisposable
             CapturedFixtureFile.LoadCatalogAsync(_path, registry, CancellationToken.None));
     }
 
+    [Fact]
+    public async Task ByteMemoryOverloadUsesTheSameHashAndDuplicateMemberGatesAsFileLoading()
+    {
+        await WriteValidatedFixtureAsync();
+        byte[] bytes = await File.ReadAllBytesAsync(_path);
+        TrustedFixtureHashRegistry registry = RegistryForCurrentFile();
+
+        DeviceCommandCatalog catalog = CapturedFixtureFile.LoadCatalog(bytes, registry);
+
+        Assert.True(catalog.TryGet("performance.balanced", out _));
+
+        string duplicate = (await File.ReadAllTextAsync(_path)).Replace(
+            "\"Captured\":true",
+            "\"captured\":false,\"Captured\":true",
+            StringComparison.Ordinal);
+        Assert.Throws<JsonException>(() => CapturedFixtureFile.LoadCatalog(
+            System.Text.Encoding.UTF8.GetBytes(duplicate),
+            TrustedFixtureHashRegistry.FromSha256Hex(
+                [Convert.ToHexString(SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(duplicate)))])));
+    }
+
+    [Theory]
+    [InlineData("[null]")]
+    [InlineData("[null,null]")]
+    [InlineData("null")]
+    [InlineData("{}")]
+    [InlineData("[{\"device\":null,\"action\":\"battery-limit-80\",\"commandClass\":7,\"commandId\":18,\"payload\":[208],\"captured\":true,\"decoded\":true,\"applied\":true,\"readBack\":true,\"restored\":true}]")]
+    public async Task TrustedMalformedFixtureFailsClosedWithStableValidationExceptionForFileAndMemory(
+        string json)
+    {
+        byte[] bytes = System.Text.Encoding.UTF8.GetBytes(json);
+        await File.WriteAllBytesAsync(_path, bytes);
+        TrustedFixtureHashRegistry registry = TrustedFixtureHashRegistry.FromSha256Hex(
+            [Convert.ToHexString(SHA256.HashData(bytes))]);
+
+        Exception? fileFailure = await Record.ExceptionAsync(() =>
+            CapturedFixtureFile.LoadCatalogAsync(_path, registry, CancellationToken.None));
+        Exception? memoryFailure = Record.Exception(() =>
+            CapturedFixtureFile.LoadCatalog(bytes, registry));
+
+        AssertStableValidationFailure(fileFailure);
+        AssertStableValidationFailure(memoryFailure);
+        Assert.Equal(fileFailure!.GetType(), memoryFailure!.GetType());
+    }
+
+    private static void AssertStableValidationFailure(Exception? failure)
+    {
+        Assert.NotNull(failure);
+        Assert.True(
+            failure is UnvalidatedCommandException or JsonException,
+            $"Expected a stable fixture-validation exception, but received {failure.GetType().FullName}.");
+    }
+
     private async Task WriteValidatedFixtureAsync()
     {
         CapturedCommandFixture fixture = new(

@@ -1,5 +1,7 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using OpenBlade.Protocol;
+using System.Text.Json;
 
 namespace OpenBlade.Service;
 
@@ -41,7 +43,37 @@ internal static class ServiceComposition
     {
         ArgumentNullException.ThrowIfNull(services);
 
-        services.AddSingleton<IVerifiedBladeDeviceProvider, WindowsVerifiedBladeDeviceProvider>();
+        services.AddSingleton<IProductionBatteryPortFactory>(_ =>
+            CreateProductionBatteryFactory());
+        services.AddSingleton<IVerifiedBladeDeviceProvider>(provider =>
+            new WindowsVerifiedBladeDeviceProvider(
+                WindowsVerifiedBladeDeviceProvider.ProductionProbeFactory,
+                provider.GetRequiredService<IProductionBatteryPortFactory>()));
         return services;
+    }
+
+    internal static IProductionBatteryPortFactory CreateProductionBatteryFactory() =>
+        CreateProductionBatteryFactory(
+            ProductionBatteryFactory.CreateWindows,
+            ProductionBatteryFactory.CreateWindowsReadOnly);
+
+    internal static IProductionBatteryPortFactory CreateProductionBatteryFactory(
+        Func<IProductionBatteryPortFactory> createAdmitted,
+        Func<IProductionBatteryPortFactory> createReadOnly)
+    {
+        ArgumentNullException.ThrowIfNull(createAdmitted);
+        ArgumentNullException.ThrowIfNull(createReadOnly);
+        try
+        {
+            return createAdmitted();
+        }
+        catch (UnvalidatedCommandException)
+        {
+            return createReadOnly();
+        }
+        catch (JsonException)
+        {
+            return createReadOnly();
+        }
     }
 }

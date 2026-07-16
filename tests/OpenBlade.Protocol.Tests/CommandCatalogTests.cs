@@ -75,6 +75,13 @@ public sealed class CommandCatalogTests
     }
 
     [Fact]
+    public void Create_RejectsNullFixtureEntryWithValidationException()
+    {
+        Assert.Throws<UnvalidatedCommandException>(() =>
+            DeviceCommandCatalog.Create(Target, [null!]));
+    }
+
+    [Fact]
     public void Create_RejectsDuplicateActionsWithValidationException()
     {
         CapturedCommandFixture fixture = CreateFixture();
