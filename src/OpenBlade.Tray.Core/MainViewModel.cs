@@ -708,7 +708,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             externalChanges);
         BatterySourceLabel = confirmed is not null && confirmed.Battery is null
             ? externalChanges.Contains(DeviceSubsystem.Battery)
-                ? "Changed outside OpenBlade"
+                ? "Changed outside OpenBlade · protection off / full charge"
                 : "Confirmed device state · protection off / full charge"
             : SourceLabel(
                 DeviceSubsystem.Battery,

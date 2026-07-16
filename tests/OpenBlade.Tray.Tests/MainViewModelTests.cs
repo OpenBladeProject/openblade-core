@@ -84,6 +84,31 @@ public sealed class MainViewModelTests
     }
 
     [Fact]
+    public async Task ExternallyChangedNullBatteryStillReportsProtectionOff()
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        client.Publish(CreateStatus(verified: true, blocked: false) with
+        {
+            ConfirmedState = new ConfirmedDeviceState(null, null, null, null),
+            ExternalChanges = [DeviceSubsystem.Battery],
+            DesiredState = CreateStatus(true, false).DesiredState with
+            {
+                Battery = BatteryPolicy.Create(65),
+            },
+        });
+        await WaitUntilAsync(() => viewModel.BatterySourceLabel.Contains(
+            "protection off",
+            StringComparison.OrdinalIgnoreCase));
+
+        Assert.Equal(65, viewModel.ChargeLimitPercent);
+        Assert.Contains("Changed outside OpenBlade", viewModel.BatterySourceLabel, StringComparison.Ordinal);
+        Assert.Contains("protection off", viewModel.BatterySourceLabel, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("full charge", viewModel.BatterySourceLabel, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public async Task OlderDirectObservationCannotRegressNewerSubscriptionRevision()
     {
         var client = new FakeServiceClient();
