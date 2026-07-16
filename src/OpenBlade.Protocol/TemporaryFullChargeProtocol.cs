@@ -5,6 +5,11 @@ internal static class TemporaryFullChargeProtocol
     public static RazerReport CreateQuery(byte transactionId) =>
         RazerReport.Create(transactionId, 0x07, 0x8F, [0x00]);
 
+    public static RazerReport CreateSet(byte transactionId, bool enabled) =>
+        RazerReport.Create(transactionId, 0x07, 0x0F, [Encode(enabled)]);
+
+    internal static byte Encode(bool enabled) => enabled ? (byte)0x04 : (byte)0x00;
+
     public static bool TryDecodeQuery(ReadOnlySpan<byte> payload, out bool active)
     {
         active = false;

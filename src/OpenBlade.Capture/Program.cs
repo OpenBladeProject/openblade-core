@@ -98,6 +98,17 @@ if (args.Length > 0 && args[0].Equals("validate-protection-off", StringCompariso
     return await command.RunAsync(args[1..], CancellationToken.None);
 }
 
+if (args.Length > 0 && args[0].Equals("validate-temporary-full-charge", StringComparison.OrdinalIgnoreCase))
+{
+    var approval = new ConsoleTemporaryFullChargeApproval(Console.In, Console.Out);
+    var session = new TemporaryFullChargeValidationSession(
+        BatteryValidationFactory.CreateWindowsTemporaryFullChargeValidation(),
+        approval,
+        TimeSpan.FromSeconds(5));
+    var command = new TemporaryFullChargeValidationCommand(session.RunAsync, Console.Out);
+    return await command.RunAsync(args[1..], CancellationToken.None);
+}
+
 Console.WriteLine("OpenBlade capture utility (no raw hardware command support)");
 Console.WriteLine("  OpenBlade.Capture target");
 Console.WriteLine("  OpenBlade.Capture scan");
@@ -109,5 +120,6 @@ Console.WriteLine("  OpenBlade.Capture query-fan-rpm");
 Console.WriteLine("  OpenBlade.Capture probe-battery-sequence");
 Console.WriteLine("  OpenBlade.Capture validate-battery <off|50|55|60|65|70|75|80>");
 Console.WriteLine("  OpenBlade.Capture validate-protection-off");
+Console.WriteLine("  OpenBlade.Capture validate-temporary-full-charge");
 Console.WriteLine("See captures/README.md for the gated USBPcap workflow.");
 return args.Length == 0 ? 0 : 1;

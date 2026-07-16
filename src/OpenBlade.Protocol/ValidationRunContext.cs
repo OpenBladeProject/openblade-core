@@ -30,11 +30,35 @@ internal readonly record struct ProtectionOffValidationTransactionIds(
         ];
 }
 
+internal readonly record struct TemporaryFullChargeValidationTransactionIds(
+    byte BaselineProtectionQuery,
+    byte BaselineTemporaryQuery,
+    byte EnableSet,
+    byte CandidateProtectionQuery,
+    byte CandidateTemporaryQuery,
+    byte CancelSet,
+    byte RestorationProtectionQuery,
+    byte RestorationTemporaryQuery)
+{
+    internal byte[] ToArray() =>
+        [
+            BaselineProtectionQuery,
+            BaselineTemporaryQuery,
+            EnableSet,
+            CandidateProtectionQuery,
+            CandidateTemporaryQuery,
+            CancelSet,
+            RestorationProtectionQuery,
+            RestorationTemporaryQuery,
+        ];
+}
+
 internal sealed class ValidationRunContext
 {
     private const int MaximumTransactionId = byte.MaxValue;
     private const int BatteryValidationTransactionCount = 5;
     private const int ProtectionOffValidationTransactionCount = 8;
+    private const int TemporaryFullChargeValidationTransactionCount = 8;
 
     private readonly object _sync = new();
     private int _nextTransactionId = 1;
@@ -120,6 +144,33 @@ internal sealed class ValidationRunContext
                 (byte)(first + 6),
                 (byte)(first + 7));
             _nextTransactionId += ProtectionOffValidationTransactionCount;
+            return true;
+        }
+    }
+
+    public bool TryReserveTemporaryFullChargeValidation(
+        out TemporaryFullChargeValidationTransactionIds ids)
+    {
+        lock (_sync)
+        {
+            if (_nextTransactionId > MaximumTransactionId
+                - TemporaryFullChargeValidationTransactionCount + 1)
+            {
+                ids = default;
+                return false;
+            }
+
+            byte first = (byte)_nextTransactionId;
+            ids = new TemporaryFullChargeValidationTransactionIds(
+                first,
+                (byte)(first + 1),
+                (byte)(first + 2),
+                (byte)(first + 3),
+                (byte)(first + 4),
+                (byte)(first + 5),
+                (byte)(first + 6),
+                (byte)(first + 7));
+            _nextTransactionId += TemporaryFullChargeValidationTransactionCount;
             return true;
         }
     }

@@ -5,6 +5,11 @@ internal interface ITemporaryFullChargeCommandClient
     Task<HidSessionResult<bool>> QueryAsync(
         byte transactionId,
         CancellationToken cancellationToken);
+
+    Task<HidSessionResult<HidUnit>> SetAsync(
+        byte transactionId,
+        bool enabled,
+        CancellationToken cancellationToken);
 }
 
 internal sealed class TemporaryFullChargeCommandClient : ITemporaryFullChargeCommandClient
@@ -47,6 +52,45 @@ internal sealed class TemporaryFullChargeCommandClient : ITemporaryFullChargeCom
 
         return TemporaryFullChargeProtocol.TryDecodeQuery(response.Value.Span, out bool active)
             ? new(active, null)
+            : new(default, HidSessionFailureKind.ProtocolFailure)
+            {
+                Diagnostic = new HidSessionFailureDiagnostic(
+                    HidSessionFailurePhase.ProtocolValidation,
+                    HidSessionFailureKind.ProtocolFailure,
+                    NativeWin32Error: null,
+                    TransferredByteCount: null)
+                {
+                    ProtocolValidationFailure = HidProtocolValidationFailure.PayloadValidator,
+                },
+            };
+    }
+
+    public async Task<HidSessionResult<HidUnit>> SetAsync(
+        byte transactionId,
+        bool enabled,
+        CancellationToken cancellationToken)
+    {
+        byte payload = TemporaryFullChargeProtocol.Encode(enabled);
+        TransactionIdAssignment assignment = TransactionIdAssignment.Valid(transactionId);
+        HidSessionResult<ReadOnlyMemory<byte>> response = await session.ExecuteAsync(
+            new RazerCommandSpec(
+                0x07,
+                0x0F,
+                [payload],
+                1,
+                acknowledgement =>
+                    acknowledgement.Length == 1 && acknowledgement.Span[0] == payload),
+            () => assignment,
+            exchangeTimeout,
+            cancellationToken).ConfigureAwait(false);
+
+        if (response.Failure is not null)
+        {
+            return new(default, response.Failure) { Diagnostic = response.Diagnostic };
+        }
+
+        return response.Value.Length == 1 && response.Value.Span[0] == payload
+            ? new(new HidUnit(), null)
             : new(default, HidSessionFailureKind.ProtocolFailure)
             {
                 Diagnostic = new HidSessionFailureDiagnostic(

@@ -337,6 +337,11 @@ public sealed class ProtectionOffValidationRunTests
             TransactionIds.Add(id);
             return Task.FromResult(results.Dequeue());
         }
+
+        public Task<HidSessionResult<HidUnit>> SetAsync(
+            byte id,
+            bool enabled,
+            CancellationToken token) => throw new NotSupportedException();
     }
 
     private sealed class Session : IRazerCommandSession

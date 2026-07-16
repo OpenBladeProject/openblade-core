@@ -132,5 +132,10 @@ public sealed class FanRpmQueryRunFactoryTests
         public Task<HidSessionResult<bool>> QueryAsync(
             byte transactionId,
             CancellationToken cancellationToken) => throw new NotSupportedException();
+
+        public Task<HidSessionResult<HidUnit>> SetAsync(
+            byte transactionId,
+            bool enabled,
+            CancellationToken cancellationToken) => throw new NotSupportedException();
     }
 }

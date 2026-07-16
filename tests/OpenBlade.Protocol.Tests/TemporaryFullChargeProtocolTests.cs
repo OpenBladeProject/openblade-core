@@ -18,6 +18,20 @@ public sealed class TemporaryFullChargeProtocolTests
     }
 
     [Theory]
+    [InlineData(false, 0x00)]
+    [InlineData(true, 0x04)]
+    public void CreateSet_UsesExactClosedWriteCommand(bool enabled, byte payload)
+    {
+        byte[] encoded = TemporaryFullChargeProtocol.CreateSet(0x32, enabled).Encode();
+
+        Assert.Equal(0x32, encoded[1]);
+        Assert.Equal(1, encoded[5]);
+        Assert.Equal(0x07, encoded[6]);
+        Assert.Equal(0x0F, encoded[7]);
+        Assert.Equal(payload, encoded[8]);
+    }
+
+    [Theory]
     [InlineData(0x00, false)]
     [InlineData(0x04, true)]
     public void TryDecodeQuery_AcceptsOnlyClosedStatusBytes(byte payload, bool expected)

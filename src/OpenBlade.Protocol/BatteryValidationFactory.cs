@@ -87,6 +87,23 @@ public static class BatteryValidationFactory
             DefaultCleanupDrainTimeout);
     }
 
+    public static ITemporaryFullChargeValidationRunFactory
+        CreateWindowsTemporaryFullChargeValidation()
+    {
+        var native = new WindowsHidNative();
+        var registry = new WindowsRegistryValueSource();
+        return CreateWindowsTemporaryFullChargeValidation(
+            registry,
+            new RuntimeWindowsPlatformEvidenceSource(registry),
+            new RunningProcessSource(),
+            new WindowsServiceSource(),
+            native,
+            new OverlappedFeatureOperation(native),
+            TimeProvider.System,
+            DefaultExchangeTimeout,
+            DefaultCleanupDrainTimeout);
+    }
+
     public static IBatteryQuerySequenceRunFactory CreateWindowsQuerySequenceForService()
     {
         var native = new WindowsHidNative();
@@ -323,6 +340,35 @@ public static class BatteryValidationFactory
             exchangeTimeout,
             ControllerExclusivityPolicy.Strict);
         return new ProtectionOffValidationRunFactory(
+            static () => new ValidationRunContext(),
+            actorFactory,
+            timeProvider,
+            cleanupDrainTimeout);
+    }
+
+    internal static ITemporaryFullChargeValidationRunFactory
+        CreateWindowsTemporaryFullChargeValidation(
+            IRegistryValueSource registry,
+            IWindowsPlatformEvidenceSource platform,
+            IRunningProcessSource processSource,
+            IWindowsServiceSource serviceSource,
+            IHidCandidateNative native,
+            IHidFeatureIo featureIo,
+            TimeProvider timeProvider,
+            TimeSpan exchangeTimeout,
+            TimeSpan cleanupDrainTimeout)
+    {
+        ValidationActorFactory actorFactory = CreateActorFactory(
+            registry,
+            platform,
+            processSource,
+            serviceSource,
+            native,
+            featureIo,
+            timeProvider,
+            exchangeTimeout,
+            ControllerExclusivityPolicy.Strict);
+        return new TemporaryFullChargeValidationRunFactory(
             static () => new ValidationRunContext(),
             actorFactory,
             timeProvider,

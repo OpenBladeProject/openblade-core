@@ -7,13 +7,12 @@ public sealed class TemporaryFullChargeCommandClientTests
     private static readonly TimeSpan ExchangeTimeout = TimeSpan.FromSeconds(3);
 
     [Fact]
-    public void TypedClientContract_HasOneQueryAndNoSetterShapedMember()
+    public void TypedClientContract_ExposesOnlyClosedQueryAndSetter()
     {
-        Assert.Equal(["QueryAsync"], typeof(ITemporaryFullChargeCommandClient)
-            .GetMethods().Select(method => method.Name).ToArray());
+        Assert.Equal(["QueryAsync", "SetAsync"], typeof(ITemporaryFullChargeCommandClient)
+            .GetMethods().Select(method => method.Name).Order().ToArray());
         Assert.DoesNotContain(typeof(ITemporaryFullChargeCommandClient).GetMembers(), member =>
-            member.Name.Contains("Set", StringComparison.OrdinalIgnoreCase)
-            || member.Name.Contains("Apply", StringComparison.OrdinalIgnoreCase)
+            member.Name.Contains("Apply", StringComparison.OrdinalIgnoreCase)
             || member.Name.Contains("Payload", StringComparison.OrdinalIgnoreCase)
             || member.Name.Contains("Catalog", StringComparison.OrdinalIgnoreCase));
     }
@@ -55,6 +54,43 @@ public sealed class TemporaryFullChargeCommandClientTests
 
         Assert.Equal(HidSessionFailureKind.ProtocolFailure, result.Failure);
         Assert.Equal(HidProtocolValidationFailure.PayloadValidator,
+            result.Diagnostic?.ProtocolValidationFailure);
+    }
+
+    [Theory]
+    [InlineData(false, 0x00)]
+    [InlineData(true, 0x04)]
+    public async Task SetAsync_UsesExactClosedCommandAndEcho(bool enabled, byte payload)
+    {
+        var session = new ScriptedSession(
+            new HidSessionResult<ReadOnlyMemory<byte>>(new byte[] { payload }, null));
+        var client = new TemporaryFullChargeCommandClient(session, ExchangeTimeout);
+
+        HidSessionResult<HidUnit> result = await client.SetAsync(0x42, enabled, default);
+
+        Assert.Null(result.Failure);
+        Call call = Assert.Single(session.Calls);
+        Assert.Equal(0x07, call.Command.ClassId);
+        Assert.Equal(0x0F, call.Command.CommandId);
+        Assert.Equal([payload], call.Command.Arguments.ToArray());
+        Assert.Equal(1, call.Command.ExpectedPayloadLength);
+        Assert.Equal(0x42, call.AssignTransactionId().TransactionId);
+        Assert.Equal(ExchangeTimeout, call.ExchangeTimeout);
+    }
+
+    [Fact]
+    public async Task SetAsync_RejectsNonEchoedAcknowledgement()
+    {
+        var client = new TemporaryFullChargeCommandClient(
+            new ScriptedSession(
+                new HidSessionResult<ReadOnlyMemory<byte>>(new byte[] { 0x00 }, null)),
+            ExchangeTimeout);
+
+        HidSessionResult<HidUnit> result = await client.SetAsync(1, enabled: true, default);
+
+        Assert.Equal(HidSessionFailureKind.ProtocolFailure, result.Failure);
+        Assert.Equal(
+            HidProtocolValidationFailure.PayloadValidator,
             result.Diagnostic?.ProtocolValidationFailure);
     }
 

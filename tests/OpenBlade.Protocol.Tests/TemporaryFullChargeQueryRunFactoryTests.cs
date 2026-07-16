@@ -63,6 +63,11 @@ public sealed class TemporaryFullChargeQueryRunFactoryTests
             TransactionIds.Add(transactionId);
             return Task.FromResult(result);
         }
+
+        public Task<HidSessionResult<HidUnit>> SetAsync(
+            byte transactionId,
+            bool enabled,
+            CancellationToken token) => throw new NotSupportedException();
     }
 
     private sealed class BatteryCommands : IBatteryCommandClient

@@ -482,6 +482,28 @@ public sealed class BatteryValidationFactoryTests
     }
 
     [Fact]
+    public async Task CreateWindowsTemporaryFullChargeValidation_RemainsStrictWhenControllerIsPresent()
+    {
+        ITemporaryFullChargeValidationRunFactory factory =
+            BatteryValidationFactory.CreateWindowsTemporaryFullChargeValidation(
+                new ExactRegistryValueSource(),
+                new ExactPlatformEvidenceSource(),
+                new ControllerProcessSource(),
+                new EmptyServiceSource(),
+                new ExactHidCandidateNative(),
+                new ThrowingHidFeatureIo(),
+                TimeProvider.System,
+                TimeSpan.FromSeconds(3),
+                TimeSpan.FromSeconds(5));
+
+        HidSessionResult<ITemporaryFullChargeValidationPort> opened =
+            await factory.OpenAsync(default);
+
+        Assert.Equal(HidSessionFailureKind.ConflictBlocked, opened.Failure);
+        Assert.Null(opened.Value);
+    }
+
+    [Fact]
     public void ProbeWindowsForService_IsAdvisoryAndReportsConflictCheckNotPerformed()
     {
         BatteryValidationProbeResult result = BatteryValidationFactory.ProbeWindowsForService(
