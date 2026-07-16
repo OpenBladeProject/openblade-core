@@ -86,6 +86,160 @@ public sealed class ProtectionOffValidationSessionTests
         Assert.True(result.Restored);
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task RunAsync_CandidateSetterFailureOrThrow_RestoresExactlyOnce(bool throws)
+    {
+        var port = SetterFailurePort();
+        port.ApplySteps.Enqueue(throws
+            ? _ => Task.FromException<HidSessionResult<HidUnit>>(
+                new IOException("candidate setter failed"))
+            : _ => Task.FromResult(new HidSessionResult<HidUnit>(
+                default,
+                HidSessionFailureKind.NativeIoFailure)));
+        var session = new ProtectionOffValidationSession(
+            new Factory(new(port, null)), new Approval(true), TimeSpan.FromSeconds(1));
+
+        ProtectionOffValidationResult result = await session.RunAsync(default);
+
+        Assert.Equal(ProtectionOffValidationPrimaryFailure.ApplyFailed, result.PrimaryFailure);
+        Assert.False(result.Applied);
+        Assert.True(result.Restored);
+        Assert.Equal(1, port.ApplyOffCount);
+        Assert.Equal(1, port.RestoreCount);
+        Assert.Equal(
+            ["query-protection", "query-temporary", "apply-off", "restore-80",
+             "query-protection", "query-temporary", "dispose"],
+            port.Events);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task RunAsync_CandidateSetterCancellation_RestoresOnceThenRethrowsOriginal(
+        bool throws)
+    {
+        using var caller = new CancellationTokenSource();
+        var port = SetterFailurePort();
+        var original = new OperationCanceledException("candidate canceled", caller.Token);
+        port.ApplySteps.Enqueue(token =>
+        {
+            Assert.Equal(caller.Token, token);
+            caller.Cancel();
+            return throws
+                ? Task.FromException<HidSessionResult<HidUnit>>(original)
+                : Task.FromResult(new HidSessionResult<HidUnit>(
+                    default,
+                    HidSessionFailureKind.Canceled));
+        });
+        var session = new ProtectionOffValidationSession(
+            new Factory(new(port, null)), new Approval(true), TimeSpan.FromSeconds(1));
+
+        OperationCanceledException cancellation = await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => session.RunAsync(caller.Token));
+
+        if (throws)
+        {
+            Assert.Same(original, cancellation);
+        }
+        Assert.Equal(1, port.ApplyOffCount);
+        Assert.Equal(1, port.RestoreCount);
+        Assert.True(port.RestoreTokens.Single().CanBeCanceled);
+        Assert.False(port.RestoreTokens.Single().IsCancellationRequested);
+        Assert.Equal(
+            ["query-protection", "query-temporary", "apply-off", "restore-80",
+             "query-protection", "query-temporary", "dispose"],
+            port.Events);
+    }
+
+    [Fact]
+    public async Task RunAsync_CandidateTemporaryReadFailure_StillRestoresExactlyOnce()
+    {
+        var port = HappyPort();
+        port.Temporary.Clear();
+        port.Temporary.Enqueue(new(false, null));
+        port.Temporary.Enqueue(new(default, HidSessionFailureKind.ProtocolFailure));
+        port.Temporary.Enqueue(new(false, null));
+        var session = new ProtectionOffValidationSession(
+            new Factory(new(port, null)), new Approval(true), TimeSpan.FromSeconds(1));
+
+        ProtectionOffValidationResult result = await session.RunAsync(default);
+
+        Assert.Equal(
+            ProtectionOffValidationPrimaryFailure.CandidateTemporaryQueryFailed,
+            result.PrimaryFailure);
+        Assert.True(result.Restored);
+        Assert.Equal(1, port.ApplyOffCount);
+        Assert.Equal(1, port.RestoreCount);
+        Assert.Equal("dispose", port.Events[^1]);
+    }
+
+    [Fact]
+    public async Task RunAsync_RestoreSetterFailure_IsAttemptedOnceWithoutReadback()
+    {
+        var port = HappyPort();
+        port.RestoreSteps.Enqueue(_ => Task.FromResult(new HidSessionResult<HidUnit>(
+            default,
+            HidSessionFailureKind.NativeIoFailure)));
+        var session = new ProtectionOffValidationSession(
+            new Factory(new(port, null)), new Approval(true), TimeSpan.FromSeconds(1));
+
+        ProtectionOffValidationResult result = await session.RunAsync(default);
+
+        Assert.Equal(
+            ProtectionOffValidationRestorationFailure.RestoreApplyFailed,
+            result.RestorationFailure);
+        Assert.Equal(1, port.RestoreCount);
+        Assert.Equal(
+            ["query-protection", "query-temporary", "apply-off", "query-protection",
+             "query-temporary", "restore-80", "dispose"],
+            port.Events);
+    }
+
+    [Fact]
+    public async Task RunAsync_RestoreProtectionReadFailure_StillReadsTemporaryWithoutExtraRestore()
+    {
+        var port = HappyPort();
+        port.Protection.Clear();
+        port.Protection.Enqueue(new(BatteryValidationSetting.Limit80, null));
+        port.Protection.Enqueue(new(BatteryValidationSetting.ProtectionOff, null));
+        port.Protection.Enqueue(new(default, HidSessionFailureKind.ProtocolFailure));
+        var session = new ProtectionOffValidationSession(
+            new Factory(new(port, null)), new Approval(true), TimeSpan.FromSeconds(1));
+
+        ProtectionOffValidationResult result = await session.RunAsync(default);
+
+        Assert.Equal(
+            ProtectionOffValidationRestorationFailure.RestoreProtectionQueryFailed,
+            result.RestorationFailure);
+        Assert.Equal(1, port.RestoreCount);
+        Assert.Equal(3, port.TemporaryQueryCount);
+        Assert.Equal("query-temporary", port.Events[^2]);
+        Assert.Equal("dispose", port.Events[^1]);
+    }
+
+    [Fact]
+    public async Task RunAsync_RestoreTemporaryReadFailure_IsClassifiedWithoutExtraRestore()
+    {
+        var port = HappyPort();
+        port.Temporary.Clear();
+        port.Temporary.Enqueue(new(false, null));
+        port.Temporary.Enqueue(new(false, null));
+        port.Temporary.Enqueue(new(default, HidSessionFailureKind.ProtocolFailure));
+        var session = new ProtectionOffValidationSession(
+            new Factory(new(port, null)), new Approval(true), TimeSpan.FromSeconds(1));
+
+        ProtectionOffValidationResult result = await session.RunAsync(default);
+
+        Assert.Equal(
+            ProtectionOffValidationRestorationFailure.RestoreTemporaryQueryFailed,
+            result.RestorationFailure);
+        Assert.Equal(1, port.RestoreCount);
+        Assert.Equal("query-temporary", port.Events[^2]);
+        Assert.Equal("dispose", port.Events[^1]);
+    }
+
     private static Port HappyPort()
     {
         var port = new Port();
@@ -93,6 +247,16 @@ public sealed class ProtectionOffValidationSessionTests
         port.Protection.Enqueue(new(BatteryValidationSetting.ProtectionOff, null));
         port.Protection.Enqueue(new(BatteryValidationSetting.Limit80, null));
         port.Temporary.Enqueue(new(false, null));
+        port.Temporary.Enqueue(new(false, null));
+        port.Temporary.Enqueue(new(false, null));
+        return port;
+    }
+
+    private static Port SetterFailurePort()
+    {
+        var port = new Port();
+        port.Protection.Enqueue(new(BatteryValidationSetting.Limit80, null));
+        port.Protection.Enqueue(new(BatteryValidationSetting.Limit80, null));
         port.Temporary.Enqueue(new(false, null));
         port.Temporary.Enqueue(new(false, null));
         return port;
@@ -120,9 +284,13 @@ public sealed class ProtectionOffValidationSessionTests
     {
         internal Queue<HidSessionResult<BatteryValidationSetting>> Protection { get; } = [];
         internal Queue<HidSessionResult<bool>> Temporary { get; } = [];
+        internal Queue<Func<CancellationToken, Task<HidSessionResult<HidUnit>>>> ApplySteps { get; } = [];
+        internal Queue<Func<CancellationToken, Task<HidSessionResult<HidUnit>>>> RestoreSteps { get; } = [];
         internal List<string> Events { get; } = [];
+        internal List<CancellationToken> RestoreTokens { get; } = [];
         internal int ApplyOffCount { get; private set; }
         internal int RestoreCount { get; private set; }
+        internal int TemporaryQueryCount { get; private set; }
         public Task<HidSessionResult<BatteryValidationSetting>> QueryProtectionAsync(CancellationToken token)
         {
             Events.Add("query-protection");
@@ -131,18 +299,28 @@ public sealed class ProtectionOffValidationSessionTests
         public Task<HidSessionResult<bool>> QueryTemporaryFullChargeAsync(CancellationToken token)
         {
             Events.Add("query-temporary");
+            TemporaryQueryCount++;
             return Task.FromResult(Temporary.Dequeue());
         }
         public Task<HidSessionResult<HidUnit>> ApplyProtectionOffAsync(CancellationToken token)
         {
             Events.Add("apply-off");
             ApplyOffCount++;
+            if (ApplySteps.Count != 0)
+            {
+                return ApplySteps.Dequeue()(token);
+            }
             return Task.FromResult(new HidSessionResult<HidUnit>(new HidUnit(), null));
         }
         public Task<HidSessionResult<HidUnit>> RestoreLimit80Async(CancellationToken token)
         {
             Events.Add("restore-80");
             RestoreCount++;
+            RestoreTokens.Add(token);
+            if (RestoreSteps.Count != 0)
+            {
+                return RestoreSteps.Dequeue()(token);
+            }
             return Task.FromResult(new HidSessionResult<HidUnit>(new HidUnit(), null));
         }
         public ValueTask DisposeAsync() { Events.Add("dispose"); return ValueTask.CompletedTask; }
