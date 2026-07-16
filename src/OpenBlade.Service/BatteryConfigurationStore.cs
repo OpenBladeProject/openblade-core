@@ -10,6 +10,7 @@ public sealed class BatteryConfigurationStore
     private readonly string preferencesPath;
     private readonly string markerPath;
     private readonly ProfileSetValidator validator;
+    private readonly Func<CancellationToken, Task>? postCommitBoundary;
     private readonly SemaphoreSlim gate = new(1, 1);
 
     public BatteryConfigurationStore(
@@ -17,12 +18,23 @@ public sealed class BatteryConfigurationStore
         string preferencesPath,
         string markerPath,
         ProfileSetValidator? validator = null)
+        : this(profilePath, preferencesPath, markerPath, validator, null)
+    {
+    }
+
+    internal BatteryConfigurationStore(
+        string profilePath,
+        string preferencesPath,
+        string markerPath,
+        ProfileSetValidator? validator,
+        Func<CancellationToken, Task>? postCommitBoundary)
     {
         this.validator = validator ?? ProfileSetValidator.CreateUnverifiedSafeDefaults();
         profileStore = new ProfileStore(profilePath, this.validator);
         this.preferencesPath = preferencesPath
             ?? throw new ArgumentNullException(nameof(preferencesPath));
         this.markerPath = markerPath ?? throw new ArgumentNullException(nameof(markerPath));
+        this.postCommitBoundary = postCommitBoundary;
     }
 
     public async Task<BatteryConfiguration> LoadAsync(CancellationToken cancellationToken)
@@ -61,8 +73,7 @@ public sealed class BatteryConfigurationStore
                 configuration = SafeConfiguration(recovered: anyConfigurationFile);
             }
 
-            await CommitAsync(configuration.Profiles, configuration.Preferences, cancellationToken);
-            return configuration;
+            return await CommitAndVerifyAsync(configuration, cancellationToken);
         }
         finally
         {
@@ -208,6 +219,41 @@ public sealed class BatteryConfigurationStore
         await AtomicFile.WriteAsync(profileStore.Path, profileJson, cancellationToken);
         await AtomicFile.WriteAsync(preferencesPath, preferenceJson, cancellationToken);
         await WriteMarkerAsync(profileJson, preferenceJson, cancellationToken);
+    }
+
+    private async Task<BatteryConfiguration> CommitAndVerifyAsync(
+        BatteryConfiguration intended,
+        CancellationToken cancellationToken)
+    {
+        await CommitAsync(intended.Profiles, intended.Preferences, cancellationToken);
+        if (postCommitBoundary is not null)
+        {
+            await postCommitBoundary(cancellationToken);
+        }
+
+        try
+        {
+            CommittedSnapshot verified =
+                await ReadCommittedSnapshotAsync(cancellationToken);
+            return verified.Configuration with { Recovered = intended.Recovered };
+        }
+        catch (Exception exception)
+            when (IsRecoverable(exception) && !intended.Recovered)
+        {
+            BatteryConfiguration recovered = SafeConfiguration(recovered: true);
+            await CommitAsync(
+                recovered.Profiles,
+                recovered.Preferences,
+                cancellationToken);
+            if (postCommitBoundary is not null)
+            {
+                await postCommitBoundary(cancellationToken);
+            }
+
+            CommittedSnapshot verified =
+                await ReadCommittedSnapshotAsync(cancellationToken);
+            return verified.Configuration with { Recovered = true };
+        }
     }
 
     private async Task WriteMarkerAsync(

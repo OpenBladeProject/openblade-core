@@ -6,9 +6,42 @@ namespace OpenBlade.Service.Tests;
 public sealed class ProfileAutomationStateTests
 {
     [Fact]
+    public void DisabledProtectionPreferenceSurvivesProfileUpdate()
+    {
+        ProfileSet profiles = ProfileDefaults.CreateSafeDefaults();
+        ProfileAutomationState state = new(
+            profiles,
+            new BatteryAutomationPreferences(ProtectionEnabled: false),
+            PowerSource.PluggedIn);
+        ProfileSet updated = profiles with
+        {
+            BatteryPolicy = BatteryPolicy.Create(75),
+        };
+
+        state.UpdateProfiles(updated);
+
+        Assert.False(state.DesiredBattery.ProtectionEnabled);
+        Assert.Equal(BatteryPolicy.Create(75), state.DesiredBattery.ConfiguredPolicy);
+    }
+
+    [Fact]
+    public void DisabledProtectionCannotEnableTemporaryFullCharge()
+    {
+        ProfileAutomationState state = new(
+            ProfileDefaults.CreateSafeDefaults(),
+            new BatteryAutomationPreferences(ProtectionEnabled: false),
+            PowerSource.PluggedIn);
+
+        state.EnableTemporaryFullCharge();
+
+        Assert.False(state.DesiredBattery.TemporaryFullCharge);
+        Assert.False(state.DesiredBattery.ProtectionEnabled);
+    }
+
+    [Fact]
     public void PowerTransition_ClearsTemporaryOverrideButKeepsPersistentOverride()
     {
-        ProfileAutomationState state = new(ProfileDefaults.CreateSafeDefaults(), PowerSource.PluggedIn);
+        ProfileAutomationState state = CreateState(PowerSource.PluggedIn);
         state.SetPerformanceOverride(new ManualOverride<PerformancePreset>(
             PerformancePreset.Performance,
             OverrideLifetime.UntilPowerSourceChange));
@@ -28,7 +61,7 @@ public sealed class ProfileAutomationStateTests
     [Fact]
     public void ChargeToFull_IsAutomaticallyCancelledOnUnplug()
     {
-        ProfileAutomationState state = new(ProfileDefaults.CreateSafeDefaults(), PowerSource.PluggedIn);
+        ProfileAutomationState state = CreateState(PowerSource.PluggedIn);
         state.EnableTemporaryFullCharge();
 
         Assert.True(state.DesiredBattery.TemporaryFullCharge);
@@ -42,9 +75,7 @@ public sealed class ProfileAutomationStateTests
     [Fact]
     public void ChargeToFull_CannotBeEnabledWhileAlreadyOnBattery()
     {
-        ProfileAutomationState state = new(
-            ProfileDefaults.CreateSafeDefaults(),
-            PowerSource.Battery);
+        ProfileAutomationState state = CreateState(PowerSource.Battery);
 
         state.EnableTemporaryFullCharge();
 
@@ -55,9 +86,7 @@ public sealed class ProfileAutomationStateTests
     [Fact]
     public void ChangePowerSource_SameSourceReturnsFalseWithoutClearingTemporaryState()
     {
-        ProfileAutomationState state = new(
-            ProfileDefaults.CreateSafeDefaults(),
-            PowerSource.PluggedIn);
+        ProfileAutomationState state = CreateState(PowerSource.PluggedIn);
         state.SetPerformanceOverride(new ManualOverride<PerformancePreset>(
             PerformancePreset.Performance,
             OverrideLifetime.UntilPowerSourceChange));
@@ -73,9 +102,7 @@ public sealed class ProfileAutomationStateTests
     [Fact]
     public void ChangePowerSource_TransitionReturnsTrueAfterClearingTemporaryState()
     {
-        ProfileAutomationState state = new(
-            ProfileDefaults.CreateSafeDefaults(),
-            PowerSource.PluggedIn);
+        ProfileAutomationState state = CreateState(PowerSource.PluggedIn);
         state.SetPerformanceOverride(new ManualOverride<PerformancePreset>(
             PerformancePreset.Performance,
             OverrideLifetime.UntilPowerSourceChange));
@@ -87,4 +114,9 @@ public sealed class ProfileAutomationStateTests
         Assert.Null(state.PerformanceOverride);
         Assert.False(state.DesiredBattery.TemporaryFullCharge);
     }
+
+    private static ProfileAutomationState CreateState(PowerSource powerSource) => new(
+        ProfileDefaults.CreateSafeDefaults(),
+        new BatteryAutomationPreferences(ProtectionEnabled: true),
+        powerSource);
 }

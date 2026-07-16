@@ -102,6 +102,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
 
             var initializedAutomation = new ProfileAutomationState(
                 configuration.Profiles,
+                configuration.Preferences,
                 powerSource);
             TelemetrySnapshot telemetry = telemetryProvider.Capture() with
             {
@@ -238,6 +239,17 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                     ControlOperationStatus.Failed,
                     "The requested intent was rejected: Temporary full charge can only " +
                     "be enabled while plugged in.");
+                history.RecordSummary(rejected.Status, rejected.Message);
+                PublishIfChanged(GetStatus() with { Telemetry = telemetry });
+                return rejected;
+            }
+
+            if (enabled && !Automation.DesiredBattery.ProtectionEnabled)
+            {
+                var rejected = new ControlOperationResult(
+                    ControlOperationStatus.Failed,
+                    "The requested intent was rejected: Temporary full charge requires " +
+                    "battery protection to be enabled.");
                 history.RecordSummary(rejected.Status, rejected.Message);
                 PublishIfChanged(GetStatus() with { Telemetry = telemetry });
                 return rejected;

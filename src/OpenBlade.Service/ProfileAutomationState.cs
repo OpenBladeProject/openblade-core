@@ -12,10 +12,16 @@ public sealed class ProfileAutomationState
     private ManualOverride<LightingSettings>? temporaryLighting;
     private ManualOverride<LightingSettings>? persistentLighting;
     private bool temporaryFullCharge;
+    private readonly bool protectionEnabled;
 
-    public ProfileAutomationState(ProfileSet profiles, PowerSource powerSource)
+    public ProfileAutomationState(
+        ProfileSet profiles,
+        BatteryAutomationPreferences preferences,
+        PowerSource powerSource)
     {
         this.profiles = profiles ?? throw new ArgumentNullException(nameof(profiles));
+        ArgumentNullException.ThrowIfNull(preferences);
+        protectionEnabled = preferences.ProtectionEnabled;
         PowerSource = powerSource;
         BatteryPolicy = profiles.BatteryPolicy;
     }
@@ -26,7 +32,7 @@ public sealed class ProfileAutomationState
 
     public DesiredBatteryState DesiredBattery => new(
         BatteryPolicy,
-        protectionEnabled: true,
+        protectionEnabled,
         temporaryFullCharge);
 
     public ProfileSet Profiles => profiles;
@@ -83,7 +89,7 @@ public sealed class ProfileAutomationState
 
     public void EnableTemporaryFullCharge()
     {
-        if (PowerSource == PowerSource.Battery)
+        if (PowerSource == PowerSource.Battery || !protectionEnabled)
         {
             return;
         }

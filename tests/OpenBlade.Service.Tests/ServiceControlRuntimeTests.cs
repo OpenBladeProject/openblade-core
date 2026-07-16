@@ -1,3 +1,5 @@
+using System.Security.Cryptography;
+using System.Text.Json;
 using Microsoft.Extensions.Logging.Abstractions;
 using OpenBlade.Contracts;
 using OpenBlade.Protocol;
@@ -41,6 +43,54 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             context.Runtime.Initialize(configuration, PowerSource.PluggedIn));
         Assert.Equal(0, context.Provider.TryGetCount);
         Assert.Equal(0, context.Device.TotalCalls);
+    }
+
+    [Fact]
+    public async Task Initialize_DisabledProtectionSurvivesObservationAndProfileSaveWithoutSetters()
+    {
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            protectionEnabled: false);
+
+        Assert.False(context.Runtime.GetStatus().DesiredState!.Battery.ProtectionEnabled);
+        Assert.Equal(0, context.Device.TotalCalls);
+        context.Device.ConfirmedState = new ConfirmedDeviceState(
+            null,
+            null,
+            ProtectionOff(),
+            null);
+
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        ProfileSet updated = ProfileDefaults.CreateSafeDefaults() with
+        {
+            BatteryPolicy = BatteryPolicy.Create(75),
+        };
+        ControlOperationResult result = await context.Runtime.UpdateProfilesAsync(
+            updated,
+            CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Stored, result.Status);
+        Assert.False(context.Runtime.GetStatus().DesiredState!.Battery.ProtectionEnabled);
+        Assert.False((await context.Store.LoadAsync(CancellationToken.None))
+            .Preferences.ProtectionEnabled);
+        Assert.Equal(0, context.Device.TotalSetterCalls);
+    }
+
+    [Fact]
+    public async Task DisabledProtectionRejectsTemporaryFullChargeWithoutSetters()
+    {
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            protectionEnabled: false);
+
+        ControlOperationResult result = await context.Runtime.SetFullChargeOverrideAsync(
+            enabled: true,
+            CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Failed, result.Status);
+        Assert.Contains("protection", result.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.False(context.Runtime.GetStatus().DesiredState!.Battery.TemporaryFullCharge);
+        Assert.Equal(0, context.Device.TotalSetterCalls);
     }
 
     [Fact]
@@ -1435,15 +1485,34 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         IReadOnlyList<string>? conflicts = null,
         string? detectionFailure = null,
         PowerSource initialPowerSource = PowerSource.PluggedIn,
-        bool initialize = true)
+        bool initialize = true,
+        bool protectionEnabled = true)
     {
+        string profilePath = Path.Combine(directory, "profiles.json");
+        string preferencesPath = Path.Combine(directory, "battery-preferences.json");
+        string markerPath = Path.Combine(directory, "battery-configuration.commit.json");
         var store = new BatteryConfigurationStore(
-            Path.Combine(directory, "profiles.json"),
-            Path.Combine(directory, "battery-preferences.json"),
-            Path.Combine(directory, "battery-configuration.commit.json"));
+            profilePath,
+            preferencesPath,
+            markerPath);
         BatteryConfiguration configuration = store.LoadAsync(CancellationToken.None)
             .GetAwaiter()
             .GetResult();
+        if (!protectionEnabled)
+        {
+            configuration = configuration with
+            {
+                Preferences = new BatteryAutomationPreferences(ProtectionEnabled: false),
+            };
+            SeedConfiguration(
+                profilePath,
+                preferencesPath,
+                markerPath,
+                configuration);
+            configuration = store.LoadAsync(CancellationToken.None)
+                .GetAwaiter()
+                .GetResult();
+        }
         var telemetry = new FakeTelemetryProvider { Current = CreateTelemetry(initialPowerSource) };
         var hub = new FakeHub();
         var device = new CountingBladeDevice();
@@ -1473,6 +1542,33 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             provider,
             device,
             history);
+    }
+
+    private static void SeedConfiguration(
+        string profilePath,
+        string preferencesPath,
+        string markerPath,
+        BatteryConfiguration configuration)
+    {
+        var options = new JsonSerializerOptions(JsonSerializerDefaults.Web)
+        {
+            WriteIndented = true,
+        };
+        byte[] profiles = JsonSerializer.SerializeToUtf8Bytes(
+            new ProfileDocument(1, configuration.Profiles),
+            options);
+        byte[] preferences = JsonSerializer.SerializeToUtf8Bytes(
+            new BatteryPreferencesDocument(1, configuration.Preferences),
+            options);
+        byte[] marker = JsonSerializer.SerializeToUtf8Bytes(
+            new BatteryConfigurationCommit(
+                1,
+                Convert.ToHexString(SHA256.HashData(profiles)),
+                Convert.ToHexString(SHA256.HashData(preferences))),
+            options);
+        File.WriteAllBytes(profilePath, profiles);
+        File.WriteAllBytes(preferencesPath, preferences);
+        File.WriteAllBytes(markerPath, marker);
     }
 
     private static async Task LatchFanDriftAsync(TestContext context)

@@ -149,6 +149,51 @@ public sealed class BatteryConfigurationStoreTests : IDisposable
         Assert.False(loaded.Preferences.ProtectionEnabled);
     }
 
+    [Fact]
+    public async Task LoadAsync_PostCommitReplacementIsVerifiedBeforeAutomationReceivesConfiguration()
+    {
+        Paths paths = CreatePaths();
+        Directory.CreateDirectory(directory);
+        await File.WriteAllTextAsync(paths.Profiles, LegacyJson);
+        bool replaced = false;
+        var store = new BatteryConfigurationStore(
+            paths.Profiles,
+            paths.Preferences,
+            paths.Marker,
+            validator: null,
+            async cancellationToken =>
+            {
+                if (replaced)
+                {
+                    return;
+                }
+
+                replaced = true;
+                byte[] replacement = JsonSerializer.SerializeToUtf8Bytes(
+                    new BatteryPreferencesDocument(
+                        1,
+                        new BatteryAutomationPreferences(ProtectionEnabled: false)),
+                    new JsonSerializerOptions(JsonSerializerDefaults.Web)
+                    {
+                        WriteIndented = true,
+                    });
+                await File.WriteAllBytesAsync(
+                    paths.Preferences,
+                    replacement,
+                    cancellationToken);
+            });
+
+        BatteryConfiguration configuration = await store.LoadAsync(CancellationToken.None);
+
+        Assert.True(replaced);
+        Assert.True(configuration.Recovered);
+        Assert.True(configuration.Preferences.ProtectionEnabled);
+        BatteryConfiguration verified = await store.LoadAsync(CancellationToken.None);
+        Assert.False(verified.Recovered);
+        Assert.Equal(configuration.Profiles, verified.Profiles);
+        Assert.Equal(configuration.Preferences, verified.Preferences);
+    }
+
     public static TheoryData<string> InvalidLegacyDocuments() => new()
     {
         LegacyJson.Replace("false", "true", StringComparison.Ordinal),
