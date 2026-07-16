@@ -1,6 +1,7 @@
 using System.Buffers.Binary;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using OpenBlade.Contracts;
 
 namespace OpenBlade.Contracts.Tests;
@@ -72,6 +73,45 @@ public sealed class IpcMessageCodecTests
         Assert.Equal(3, OpenBladeIpc.ProtocolVersion);
         Assert.Equal(request, await RoundTripRequestAsync(request));
         AssertStatusEqual(status, await RoundTripStatusAsync(status));
+    }
+
+    [Theory]
+    [InlineData("PerformancePresets")]
+    [InlineData("FanModes")]
+    [InlineData("LightingEffects")]
+    public async Task ReadServerFrameAsync_RejectsNullNestedCapabilityCollection(
+        string propertyName)
+    {
+        ServiceServerFrame frame = new ServiceStatusEvent(
+            OpenBladeIpc.ProtocolVersion,
+            CreateStatus() with
+            {
+                Capabilities = DeviceCapabilities.SafeTargetDefaults(),
+            });
+        JsonObject root = Assert.IsType<JsonObject>(
+            JsonNode.Parse(JsonSerializer.Serialize<ServiceServerFrame>(frame)));
+        JsonObject status = Assert.IsType<JsonObject>(root[nameof(ServiceStatusEvent.Status)]);
+        JsonObject capabilities = Assert.IsType<JsonObject>(
+            status[nameof(ServiceStatusSnapshot.Capabilities)]);
+        capabilities[propertyName] = null;
+        using MemoryStream stream = FrameJson(root.ToJsonString());
+
+        await Assert.ThrowsAsync<InvalidDataException>(() =>
+            IpcMessageCodec.ReadServerFrameAsync(stream, CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task VersionThreeStatus_AcceptsCompleteCapabilityCollections()
+    {
+        ServiceStatusSnapshot expected = CreateStatus() with
+        {
+            Capabilities = DeviceCapabilities.SafeTargetDefaults(),
+        };
+
+        ServiceStatusSnapshot actual = await RoundTripStatusAsync(expected);
+
+        Assert.Equal(3, OpenBladeIpc.ProtocolVersion);
+        AssertStatusEqual(expected, actual);
     }
 
     [Fact]

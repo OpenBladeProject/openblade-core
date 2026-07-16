@@ -221,7 +221,11 @@ public static class IpcMessageCodec
             || status.Message is null
             || status.Profiles is null
             || status.DesiredState is null
-            || status.Telemetry is null)
+            || status.Telemetry is null
+            || status.Capabilities is { } capabilities
+                && (capabilities.PerformancePresets is null
+                    || capabilities.FanModes is null
+                    || capabilities.LightingEffects is null))
         {
             return false;
         }
