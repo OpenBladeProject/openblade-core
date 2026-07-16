@@ -417,6 +417,51 @@ public sealed class BatteryValidationFactoryTests
     }
 
     [Fact]
+    public async Task CreateWindowsTemporaryFullChargeQuery_IsAdvisoryWhenControllerIsPresent()
+    {
+        ITemporaryFullChargeQueryRunFactory factory =
+            BatteryValidationFactory.CreateWindowsTemporaryFullChargeQuery(
+                new ExactRegistryValueSource(),
+                new ExactPlatformEvidenceSource(),
+                new ControllerProcessSource(),
+                new EmptyServiceSource(),
+                new ExactHidCandidateNative(),
+                new ThrowingHidFeatureIo(),
+                TimeProvider.System,
+                TimeSpan.FromSeconds(3),
+                TimeSpan.FromSeconds(5));
+
+        HidSessionResult<ITemporaryFullChargeQueryPort> opened =
+            await factory.OpenAsync(default);
+
+        Assert.Null(opened.Failure);
+        await Assert.IsAssignableFrom<ITemporaryFullChargeQueryPort>(opened.Value)
+            .DisposeAsync();
+    }
+
+    [Fact]
+    public async Task CreateWindowsProtectionOffValidation_RemainsStrictWhenControllerIsPresent()
+    {
+        IProtectionOffValidationRunFactory factory =
+            BatteryValidationFactory.CreateWindowsProtectionOffValidation(
+                new ExactRegistryValueSource(),
+                new ExactPlatformEvidenceSource(),
+                new ControllerProcessSource(),
+                new EmptyServiceSource(),
+                new ExactHidCandidateNative(),
+                new ThrowingHidFeatureIo(),
+                TimeProvider.System,
+                TimeSpan.FromSeconds(3),
+                TimeSpan.FromSeconds(5));
+
+        HidSessionResult<IProtectionOffValidationPort> opened =
+            await factory.OpenAsync(default);
+
+        Assert.Equal(HidSessionFailureKind.ConflictBlocked, opened.Failure);
+        Assert.Null(opened.Value);
+    }
+
+    [Fact]
     public void ProbeWindowsForService_IsAdvisoryAndReportsConflictCheckNotPerformed()
     {
         BatteryValidationProbeResult result = BatteryValidationFactory.ProbeWindowsForService(

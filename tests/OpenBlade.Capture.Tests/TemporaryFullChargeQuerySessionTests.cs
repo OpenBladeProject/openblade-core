@@ -9,12 +9,14 @@ public sealed class TemporaryFullChargeQuerySessionTests
     public async Task RunAsync_PerformsExactlyOneTypedQueryAndDisposes()
     {
         var port = new Port(new(false, null));
-        var session = new TemporaryFullChargeQuerySession(new Factory(new(port, null)));
+        var factory = new Factory(new(port, null));
+        var session = new TemporaryFullChargeQuerySession(factory);
 
         TemporaryFullChargeQueryResult result = await session.RunAsync(default);
 
         Assert.True(result.Success);
         Assert.False(result.Active);
+        Assert.Equal(1, factory.OpenCount);
         Assert.Equal(1, port.QueryCount);
         Assert.Equal(1, port.DisposeCount);
     }
@@ -34,7 +36,14 @@ public sealed class TemporaryFullChargeQuerySessionTests
     private sealed class Factory(HidSessionResult<ITemporaryFullChargeQueryPort> result)
         : ITemporaryFullChargeQueryRunFactory
     {
-        public Task<HidSessionResult<ITemporaryFullChargeQueryPort>> OpenAsync(CancellationToken token) => Task.FromResult(result);
+        internal int OpenCount { get; private set; }
+
+        public Task<HidSessionResult<ITemporaryFullChargeQueryPort>> OpenAsync(
+            CancellationToken token)
+        {
+            OpenCount++;
+            return Task.FromResult(result);
+        }
     }
 
     private sealed class Port(HidSessionResult<bool> result) : ITemporaryFullChargeQueryPort

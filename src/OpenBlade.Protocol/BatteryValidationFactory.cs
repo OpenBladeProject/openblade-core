@@ -248,7 +248,7 @@ public static class BatteryValidationFactory
             featureIo,
             timeProvider,
             exchangeTimeout,
-            ControllerExclusivityPolicy.Strict);
+            ControllerExclusivityPolicy.Advisory);
         return new TemporaryFullChargeQueryRunFactory(
             static () => new ValidationRunContext(),
             actorFactory,
