@@ -440,6 +440,26 @@ public sealed class BatteryValidationFactoryTests
     }
 
     [Fact]
+    public async Task CreateWindowsFanRpmQuery_IsAdvisoryWhenControllerIsPresent()
+    {
+        IFanRpmQueryRunFactory factory = BatteryValidationFactory.CreateWindowsFanRpmQuery(
+            new ExactRegistryValueSource(),
+            new ExactPlatformEvidenceSource(),
+            new ControllerProcessSource(),
+            new EmptyServiceSource(),
+            new ExactHidCandidateNative(),
+            new ThrowingHidFeatureIo(),
+            TimeProvider.System,
+            TimeSpan.FromSeconds(3),
+            TimeSpan.FromSeconds(5));
+
+        HidSessionResult<IFanRpmQueryPort> opened = await factory.OpenAsync(default);
+
+        Assert.Null(opened.Failure);
+        await Assert.IsAssignableFrom<IFanRpmQueryPort>(opened.Value).DisposeAsync();
+    }
+
+    [Fact]
     public async Task CreateWindowsProtectionOffValidation_RemainsStrictWhenControllerIsPresent()
     {
         IProtectionOffValidationRunFactory factory =

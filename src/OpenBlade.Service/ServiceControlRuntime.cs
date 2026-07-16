@@ -261,7 +261,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         await operationGate.WaitAsync(token);
         try
         {
-            TelemetrySnapshot telemetry = telemetryProvider.Capture();
+            TelemetrySnapshot telemetry = CaptureTelemetryPreservingFanRpm();
 
             if (enabled && telemetry.PowerSource == PowerSource.Battery)
             {
@@ -342,7 +342,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         await operationGate.WaitAsync(cancellationToken);
         try
         {
-            TelemetrySnapshot telemetry = telemetryProvider.Capture();
+            TelemetrySnapshot telemetry = CaptureTelemetryPreservingFanRpm();
             cancellationToken.ThrowIfCancellationRequested();
             if (Automation.ChangePowerSource(telemetry.PowerSource))
             {
@@ -728,7 +728,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         if (!deviceAvailable)
         {
             PublishObservationUnavailable(
-                telemetry,
+                telemetry with { FanRpm = null },
                 "No verified PID 02E0 device is available.");
             return;
         }
@@ -738,6 +738,19 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             DeviceCapabilities capabilities =
                 await device.ReadCapabilitiesAsync(cancellationToken);
             ConfirmedDeviceState confirmed = await device.ReadStateAsync(cancellationToken);
+            int? fanRpm;
+            try
+            {
+                fanRpm = await device.ReadFanRpmAsync(cancellationToken);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch
+            {
+                fanRpm = null;
+            }
             cancellationToken.ThrowIfCancellationRequested();
             driftTracker.Observe(confirmed);
             PublishIfChanged(GetStatus() with
@@ -750,7 +763,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 ConfirmedState = confirmed,
                 Profiles = Automation.Profiles,
                 DesiredState = Automation.Resolve(confirmed),
-                Telemetry = telemetry,
+                Telemetry = telemetry with { FanRpm = fanRpm },
                 PerformanceOverride = Automation.PerformanceOverride,
                 FanOverride = Automation.FanOverride,
                 LightingOverride = Automation.LightingOverride,
@@ -765,7 +778,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         {
             cancellationToken.ThrowIfCancellationRequested();
             PublishObservationUnavailable(
-                telemetry,
+                telemetry with { FanRpm = null },
                 $"Verified device access failed: {exception.Message}");
             history.RecordSummary(
                 ControlOperationStatus.Failed,
@@ -792,6 +805,9 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             FullChargeOverride = Automation.DesiredBattery.TemporaryFullCharge,
         });
     }
+
+    private TelemetrySnapshot CaptureTelemetryPreservingFanRpm() =>
+        telemetryProvider.Capture() with { FanRpm = GetStatus().Telemetry.FanRpm };
 
     private ServiceStatusSnapshot CreateInitialSnapshot(TelemetrySnapshot telemetry) => new(
             Revision: 0,

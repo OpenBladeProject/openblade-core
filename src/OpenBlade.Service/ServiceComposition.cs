@@ -45,10 +45,13 @@ internal static class ServiceComposition
 
         services.AddSingleton<IProductionBatteryPortFactory>(_ =>
             CreateProductionBatteryFactory());
+        services.AddSingleton<IFanRpmQueryRunFactory>(_ =>
+            BatteryValidationFactory.CreateWindowsFanRpmQuery());
         services.AddSingleton<IVerifiedBladeDeviceProvider>(provider =>
             new WindowsVerifiedBladeDeviceProvider(
                 WindowsVerifiedBladeDeviceProvider.ProductionProbeFactory,
-                provider.GetRequiredService<IProductionBatteryPortFactory>()));
+                provider.GetRequiredService<IProductionBatteryPortFactory>(),
+                provider.GetRequiredService<IFanRpmQueryRunFactory>()));
         return services;
     }
 

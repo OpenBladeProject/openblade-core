@@ -273,6 +273,7 @@ public sealed class ControlRequestHandlerTests
         public int Calls { get; private set; }
         public Task<DeviceCapabilities> ReadCapabilitiesAsync(CancellationToken cancellationToken) => Count(DeviceCapabilities.Unavailable());
         public Task<ConfirmedDeviceState> ReadStateAsync(CancellationToken cancellationToken) => Count(new ConfirmedDeviceState(null, null, null, null));
+        public Task<int?> ReadFanRpmAsync(CancellationToken cancellationToken) => Count<int?>(null);
         public Task SetPerformanceAsync(PerformancePreset value, CancellationToken cancellationToken) => Count();
         public Task SetFanModeAsync(FanMode value, CancellationToken cancellationToken) => Count();
         public Task SetChargeLimitAsync(BatteryPolicy value, CancellationToken cancellationToken) => Count();

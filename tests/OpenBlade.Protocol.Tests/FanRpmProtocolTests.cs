@@ -81,7 +81,7 @@ public sealed class FanRpmProtocolTests
         Assert.Equal("02E0", root.GetProperty("device").GetProperty("productId").GetString());
         Assert.Equal("3.01", root.GetProperty("device").GetProperty("biosVersion").GetString());
         Assert.True(root.GetProperty("readOnly").GetBoolean());
-        Assert.False(root.GetProperty("productionWired").GetBoolean());
+        Assert.True(root.GetProperty("productionWired").GetBoolean());
 
         JsonElement[] exchanges = root.GetProperty("exchanges").EnumerateArray().ToArray();
         Assert.Equal(4, exchanges.Length);

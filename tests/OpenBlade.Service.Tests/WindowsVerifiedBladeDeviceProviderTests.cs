@@ -15,6 +15,71 @@ public sealed class WindowsVerifiedBladeDeviceProviderTests
         Assert.Equal(
             nameof(ServiceComposition.CreateProductionBatteryFactory),
             WindowsVerifiedBladeDeviceProvider.ProductionPortFactory.Method.Name);
+        Assert.Equal(
+            nameof(BatteryValidationFactory.CreateWindowsFanRpmQuery),
+            WindowsVerifiedBladeDeviceProvider.ProductionFanRpmFactory.Method.Name);
+    }
+
+    [Fact]
+    public async Task ReadFanRpm_ReturnsMaximumAndDisposesTypedPort()
+    {
+        var fanPort = new FakeFanRpmPort(new(new FanRpmReadings(2700, 2600), null));
+        var fanFactory = new FakeFanRpmFactory(new(fanPort, null));
+        using var provider = new WindowsVerifiedBladeDeviceProvider(
+            () => Probe(BatteryValidationProbeClassification.Ready),
+            Adapt(new FakeQueryFactory()),
+            fanFactory);
+        provider.TryGetVerifiedDevice(out IBladeDevice device);
+
+        int? rpm = await device.ReadFanRpmAsync(default);
+
+        Assert.Equal(2700, rpm);
+        Assert.Equal(1, fanFactory.OpenCount);
+        Assert.Equal(1, fanPort.QueryCount);
+        Assert.Equal(1, fanPort.DisposeCount);
+    }
+
+    [Fact]
+    public async Task ReadFanRpm_QueryFailureDegradesToNullAndDisposes()
+    {
+        var fanPort = new FakeFanRpmPort(
+            new(null, HidSessionFailureKind.ProtocolFailure));
+        var fanFactory = new FakeFanRpmFactory(new(fanPort, null));
+        using var provider = new WindowsVerifiedBladeDeviceProvider(
+            () => Probe(BatteryValidationProbeClassification.Ready),
+            Adapt(new FakeQueryFactory()),
+            fanFactory);
+        provider.TryGetVerifiedDevice(out IBladeDevice device);
+
+        int? rpm = await device.ReadFanRpmAsync(default);
+
+        Assert.Null(rpm);
+        Assert.Equal(1, fanPort.DisposeCount);
+    }
+
+    [Fact]
+    public async Task ReadFanRpm_SharesExistingSerializedHardwareGateWithBatteryRead()
+    {
+        var batteryPort = FakeQueryPort.Blocked(BatteryValidationSetting.Limit80);
+        var batteryFactory = new FakeQueryFactory(batteryPort);
+        var fanPort = new FakeFanRpmPort(new(new FanRpmReadings(2700, 2600), null));
+        var fanFactory = new FakeFanRpmFactory(new(fanPort, null));
+        using var provider = new WindowsVerifiedBladeDeviceProvider(
+            () => Probe(BatteryValidationProbeClassification.Ready),
+            Adapt(batteryFactory),
+            fanFactory);
+        provider.TryGetVerifiedDevice(out IBladeDevice device);
+
+        Task<ConfirmedDeviceState> batteryRead = device.ReadStateAsync(default);
+        await batteryPort.QueryStarted.Task;
+        Task<int?> fanRead = device.ReadFanRpmAsync(default);
+        await Task.Yield();
+
+        Assert.Equal(0, fanFactory.OpenCount);
+        batteryPort.Release();
+        await batteryRead;
+        Assert.Equal(2700, await fanRead);
+        Assert.Equal(1, fanFactory.OpenCount);
     }
 
     [Theory]
@@ -26,7 +91,8 @@ public sealed class WindowsVerifiedBladeDeviceProviderTests
         var factory = new FakeQueryFactory();
         using var provider = new WindowsVerifiedBladeDeviceProvider(
             () => Probe(classification),
-            Adapt(factory));
+            Adapt(factory),
+            UnavailableFanRpmFactory());
 
         Assert.True(provider.TryGetVerifiedDevice(out IBladeDevice first));
         Assert.True(provider.TryGetVerifiedDevice(out IBladeDevice second));
@@ -49,7 +115,8 @@ public sealed class WindowsVerifiedBladeDeviceProviderTests
         var factory = new FakeQueryFactory();
         using var provider = new WindowsVerifiedBladeDeviceProvider(
             () => Probe(classification),
-            Adapt(factory));
+            Adapt(factory),
+            UnavailableFanRpmFactory());
 
         Assert.False(provider.TryGetVerifiedDevice(out IBladeDevice device));
         Assert.Null(device);
@@ -62,7 +129,8 @@ public sealed class WindowsVerifiedBladeDeviceProviderTests
         var factory = new FakeQueryFactory();
         using var provider = new WindowsVerifiedBladeDeviceProvider(
             () => throw new InvalidOperationException("private probe detail"),
-            Adapt(factory));
+            Adapt(factory),
+            UnavailableFanRpmFactory());
 
         Assert.False(provider.TryGetVerifiedDevice(out IBladeDevice device));
         Assert.Null(device);
@@ -100,7 +168,8 @@ public sealed class WindowsVerifiedBladeDeviceProviderTests
                 releaseProbe.Wait();
                 return Probe(BatteryValidationProbeClassification.Ready);
             },
-            Adapt(factory));
+            Adapt(factory),
+            UnavailableFanRpmFactory());
 
         Task<(bool Available, IBladeDevice Device)> probing = Task.Run(() =>
         {
@@ -414,7 +483,11 @@ public sealed class WindowsVerifiedBladeDeviceProviderTests
     private static WindowsVerifiedBladeDeviceProvider ReadyProvider(
         IBatteryQuerySequenceRunFactory factory) => new(
             () => Probe(BatteryValidationProbeClassification.Ready),
-            Adapt(factory));
+            Adapt(factory),
+            UnavailableFanRpmFactory());
+
+    private static IFanRpmQueryRunFactory UnavailableFanRpmFactory() =>
+        new FakeFanRpmFactory(new(null, HidSessionFailureKind.NativeIoFailure));
 
     private static IProductionBatteryPortFactory Adapt(
         IBatteryQuerySequenceRunFactory factory) => new QueryFactoryAdapter(factory);
@@ -563,6 +636,41 @@ public sealed class WindowsVerifiedBladeDeviceProviderTests
                     null,
                     HidSessionFailureKind.NativeIoFailure)
                 : results.Dequeue());
+        }
+    }
+
+    private sealed class FakeFanRpmFactory(
+        HidSessionResult<IFanRpmQueryPort> result) : IFanRpmQueryRunFactory
+    {
+        public int OpenCount { get; private set; }
+
+        public Task<HidSessionResult<IFanRpmQueryPort>> OpenAsync(
+            CancellationToken cancellationToken)
+        {
+            OpenCount++;
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.FromResult(result);
+        }
+    }
+
+    private sealed class FakeFanRpmPort(
+        HidSessionResult<FanRpmReadings> result) : IFanRpmQueryPort
+    {
+        public int QueryCount { get; private set; }
+        public int DisposeCount { get; private set; }
+
+        public Task<HidSessionResult<FanRpmReadings>> QueryAsync(
+            CancellationToken cancellationToken)
+        {
+            QueryCount++;
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.FromResult(result);
+        }
+
+        public ValueTask DisposeAsync()
+        {
+            DisposeCount++;
+            return ValueTask.CompletedTask;
         }
     }
 

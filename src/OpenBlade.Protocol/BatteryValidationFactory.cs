@@ -55,6 +55,22 @@ public static class BatteryValidationFactory
             DefaultCleanupDrainTimeout);
     }
 
+    public static IFanRpmQueryRunFactory CreateWindowsFanRpmQuery()
+    {
+        var native = new WindowsHidNative();
+        var registry = new WindowsRegistryValueSource();
+        return CreateWindowsFanRpmQuery(
+            registry,
+            new RuntimeWindowsPlatformEvidenceSource(registry),
+            new RunningProcessSource(),
+            new WindowsServiceSource(),
+            native,
+            new OverlappedFeatureOperation(native),
+            TimeProvider.System,
+            DefaultExchangeTimeout,
+            DefaultCleanupDrainTimeout);
+    }
+
     public static IProtectionOffValidationRunFactory CreateWindowsProtectionOffValidation()
     {
         var native = new WindowsHidNative();
@@ -253,6 +269,35 @@ public static class BatteryValidationFactory
             static () => new ValidationRunContext(),
             actorFactory,
             timeProvider,
+            cleanupDrainTimeout);
+    }
+
+    internal static IFanRpmQueryRunFactory CreateWindowsFanRpmQuery(
+        IRegistryValueSource registry,
+        IWindowsPlatformEvidenceSource platform,
+        IRunningProcessSource processSource,
+        IWindowsServiceSource serviceSource,
+        IHidCandidateNative native,
+        IHidFeatureIo featureIo,
+        TimeProvider timeProvider,
+        TimeSpan exchangeTimeout,
+        TimeSpan cleanupDrainTimeout)
+    {
+        ValidationActorFactory actorFactory = CreateActorFactory(
+            registry,
+            platform,
+            processSource,
+            serviceSource,
+            native,
+            featureIo,
+            timeProvider,
+            exchangeTimeout,
+            ControllerExclusivityPolicy.Advisory);
+        return new FanRpmQueryRunFactory(
+            static () => new ValidationRunContext(),
+            actorFactory,
+            timeProvider,
+            exchangeTimeout,
             cleanupDrainTimeout);
     }
 

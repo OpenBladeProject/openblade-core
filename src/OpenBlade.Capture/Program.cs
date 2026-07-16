@@ -61,6 +61,13 @@ if (args.Length > 0 && args[0].Equals("query-temporary-full-charge", StringCompa
     return await command.RunAsync(args[1..], CancellationToken.None);
 }
 
+if (args.Length > 0 && args[0].Equals("query-fan-rpm", StringComparison.OrdinalIgnoreCase))
+{
+    var session = new FanRpmQuerySession(BatteryValidationFactory.CreateWindowsFanRpmQuery());
+    var command = new FanRpmQueryCommand(session.RunAsync, Console.Out);
+    return await command.RunAsync(args[1..], CancellationToken.None);
+}
+
 if (args.Length > 0 && args[0].Equals("probe-battery-sequence", StringComparison.OrdinalIgnoreCase))
 {
     var session = new BatteryQuerySequenceSession(
@@ -98,6 +105,7 @@ Console.WriteLine("  OpenBlade.Capture validate <fixtures.json>");
 Console.WriteLine("  OpenBlade.Capture probe-battery");
 Console.WriteLine("  OpenBlade.Capture query-battery");
 Console.WriteLine("  OpenBlade.Capture query-temporary-full-charge");
+Console.WriteLine("  OpenBlade.Capture query-fan-rpm");
 Console.WriteLine("  OpenBlade.Capture probe-battery-sequence");
 Console.WriteLine("  OpenBlade.Capture validate-battery <off|50|55|60|65|70|75|80>");
 Console.WriteLine("  OpenBlade.Capture validate-protection-off");

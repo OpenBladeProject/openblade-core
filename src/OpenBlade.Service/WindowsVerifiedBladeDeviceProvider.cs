@@ -14,23 +14,28 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
     internal static Func<IProductionBatteryPortFactory> ProductionPortFactory { get; } =
         ServiceComposition.CreateProductionBatteryFactory;
 
+    internal static Func<IFanRpmQueryRunFactory> ProductionFanRpmFactory { get; } =
+        BatteryValidationFactory.CreateWindowsFanRpmQuery;
+
     private readonly Func<BatteryValidationProbeResult> probe;
     private readonly SerializedBladeDevice device;
     private readonly object providerLifecycleSync = new();
     private int disposed;
 
     public WindowsVerifiedBladeDeviceProvider()
-        : this(ProductionProbeFactory, ProductionPortFactory())
+        : this(ProductionProbeFactory, ProductionPortFactory(), ProductionFanRpmFactory())
     {
     }
 
     internal WindowsVerifiedBladeDeviceProvider(
         Func<BatteryValidationProbeResult> probe,
-        IProductionBatteryPortFactory batteryFactory)
+        IProductionBatteryPortFactory batteryFactory,
+        IFanRpmQueryRunFactory fanRpmFactory)
     {
         this.probe = probe ?? throw new ArgumentNullException(nameof(probe));
         device = new SerializedBladeDevice(
-            batteryFactory ?? throw new ArgumentNullException(nameof(batteryFactory)));
+            batteryFactory ?? throw new ArgumentNullException(nameof(batteryFactory)),
+            fanRpmFactory ?? throw new ArgumentNullException(nameof(fanRpmFactory)));
     }
 
     public bool TryGetVerifiedDevice(out IBladeDevice verifiedDevice)
@@ -85,14 +90,18 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
     private sealed class SerializedBladeDevice : IBladeDevice, IDisposable
     {
         private readonly IProductionBatteryPortFactory batteryFactory;
+        private readonly IFanRpmQueryRunFactory fanRpmFactory;
         private readonly object lifecycleSync = new();
         private readonly SemaphoreSlim hardwareOperationGate = new(1, 1);
         private bool closing;
         private bool disposed;
 
-        internal SerializedBladeDevice(IProductionBatteryPortFactory batteryFactory)
+        internal SerializedBladeDevice(
+            IProductionBatteryPortFactory batteryFactory,
+            IFanRpmQueryRunFactory fanRpmFactory)
         {
             this.batteryFactory = batteryFactory;
+            this.fanRpmFactory = fanRpmFactory;
         }
 
         public async Task<DeviceCapabilities> ReadCapabilitiesAsync(
@@ -201,6 +210,84 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
             catch
             {
                 throw new IOException("Battery state query failed.");
+            }
+            finally
+            {
+                hardwareOperationGate.Release();
+            }
+        }
+
+        public async Task<int?> ReadFanRpmAsync(CancellationToken cancellationToken)
+        {
+            await EnterHardwareOperationAsync(cancellationToken).ConfigureAwait(false);
+            try
+            {
+                HidSessionResult<IFanRpmQueryPort> opened;
+                try
+                {
+                    opened = await fanRpmFactory.OpenAsync(cancellationToken)
+                        .ConfigureAwait(false);
+                }
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                {
+                    throw new OperationCanceledException(cancellationToken);
+                }
+                catch
+                {
+                    return null;
+                }
+
+                if (opened.Value is not { } port)
+                {
+                    if (opened.Failure is (
+                            HidSessionFailureKind.Canceled
+                            or HidSessionFailureKind.QueuedCanceled)
+                        && cancellationToken.IsCancellationRequested)
+                    {
+                        throw new OperationCanceledException(cancellationToken);
+                    }
+
+                    return null;
+                }
+
+                await using (port.ConfigureAwait(false))
+                {
+                    if (opened.Failure is not null)
+                    {
+                        return null;
+                    }
+
+                    HidSessionResult<FanRpmReadings> query;
+                    try
+                    {
+                        query = await port.QueryAsync(cancellationToken).ConfigureAwait(false);
+                    }
+                    catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                    {
+                        throw new OperationCanceledException(cancellationToken);
+                    }
+                    catch
+                    {
+                        return null;
+                    }
+
+                    cancellationToken.ThrowIfCancellationRequested();
+                    return query.Failure is null && query.Value is not null
+                        ? query.Value.MaxRpm
+                        : null;
+                }
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw new OperationCanceledException(cancellationToken);
+            }
+            catch (ObjectDisposedException)
+            {
+                throw;
+            }
+            catch
+            {
+                return null;
             }
             finally
             {

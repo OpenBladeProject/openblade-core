@@ -87,7 +87,15 @@ public sealed class ServiceCompositionTests
 
         services.AddVerifiedBladeDeviceProvider();
 
+        Assert.Contains(
+            services,
+            descriptor => descriptor.ServiceType == typeof(IFanRpmQueryRunFactory)
+                && descriptor.ImplementationFactory is not null
+                && descriptor.Lifetime == ServiceLifetime.Singleton);
+
         using ServiceProvider provider = services.BuildServiceProvider();
+        Assert.IsAssignableFrom<IFanRpmQueryRunFactory>(
+            provider.GetRequiredService<IFanRpmQueryRunFactory>());
         IVerifiedBladeDeviceProvider[] registrations =
             provider.GetServices<IVerifiedBladeDeviceProvider>().ToArray();
         Assert.Collection(

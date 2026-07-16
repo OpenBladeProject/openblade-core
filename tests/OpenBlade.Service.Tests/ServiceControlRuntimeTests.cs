@@ -526,7 +526,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             ProfileDefaults.CreateSafeDefaults().PluggedIn.Lighting with { Brightness = 10 });
 
         await context.Runtime.ObserveAsync(CancellationToken.None);
-        Assert.Equal(2, context.Device.TotalCalls);
+        Assert.Equal(3, context.Device.TotalCalls);
         Assert.Equal(0, context.Device.TotalSetterCalls);
 
         int telemetryCaptures = context.Telemetry.CaptureCount;
@@ -534,7 +534,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         await context.Runtime.RefreshControllerPresenceAsync(CancellationToken.None);
         Assert.Equal(1, context.Monitor.ObserveCount);
         Assert.Equal(telemetryCaptures, context.Telemetry.CaptureCount);
-        Assert.Equal(2, context.Device.TotalCalls);
+        Assert.Equal(3, context.Device.TotalCalls);
     }
 
     [Fact]
@@ -662,7 +662,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         await loop.RunAsync(CancellationToken.None);
 
         Assert.Equal(1, context.Provider.TryGetCount);
-        Assert.Equal(2, context.Device.TotalCalls);
+        Assert.Equal(3, context.Device.TotalCalls);
         Assert.True(context.Runtime.GetStatus().DeviceVerified);
         Assert.False(context.Runtime.GetStatus().WritesBlocked);
         Assert.Equal(0, context.Device.TotalSetterCalls);
@@ -1617,6 +1617,51 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     }
 
     [Fact]
+    public async Task Observe_RefreshesFanRpmAndFanFailureDegradesWithoutLosingDevice()
+    {
+        TestContext context = CreateContext(providerAvailable: true);
+        context.Device.FanRpm = 2700;
+
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+
+        Assert.Equal(2700, context.Runtime.GetStatus().Telemetry.FanRpm);
+        Assert.True(context.Runtime.GetStatus().DeviceVerified);
+        Assert.Equal(1, context.Device.FanRpmReadCalls);
+
+        context.Device.FanRpmFailure = new IOException("fan telemetry unavailable");
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+
+        Assert.Null(context.Runtime.GetStatus().Telemetry.FanRpm);
+        Assert.True(context.Runtime.GetStatus().DeviceVerified);
+        Assert.False(context.Runtime.GetStatus().WritesBlocked);
+        Assert.Equal("Verified device state observed.", context.Runtime.GetStatus().Message);
+        Assert.Equal(2, context.Device.FanRpmReadCalls);
+    }
+
+    [Fact]
+    public async Task FanRpm_PersistsAcrossScopedAndPowerUpdatesUntilUnavailableObservation()
+    {
+        TestContext context = CreateContext(providerAvailable: true);
+        context.Device.FanRpm = 2700;
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        context.Provider.Available = false;
+
+        await context.Runtime.SetPerformanceOverrideAsync(
+            new ManualOverride<PerformancePreset>(
+                PerformancePreset.Performance,
+                OverrideLifetime.Persistent),
+            CancellationToken.None);
+        Assert.Equal(2700, context.Runtime.GetStatus().Telemetry.FanRpm);
+
+        context.Telemetry.Current = CreateTelemetry(PowerSource.Battery) with { FanRpm = 9999 };
+        await context.Runtime.HandlePowerSourceChangedAsync(CancellationToken.None);
+        Assert.Equal(2700, context.Runtime.GetStatus().Telemetry.FanRpm);
+
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        Assert.Null(context.Runtime.GetStatus().Telemetry.FanRpm);
+    }
+
+    [Fact]
     public async Task MixedSubsystemFailureAndBlock_ReturnsFailed()
     {
         TestContext context = CreateContext(providerAvailable: true);
@@ -1969,6 +2014,8 @@ public sealed class ServiceControlRuntimeTests : IDisposable
 
         public int StateReadCalls { get; private set; }
 
+        public int FanRpmReadCalls { get; private set; }
+
         public int TotalSetterCalls => PerformanceSetCalls
             + FanSetCalls
             + BatterySetCalls
@@ -1979,6 +2026,10 @@ public sealed class ServiceControlRuntimeTests : IDisposable
 
         public ConfirmedDeviceState ConfirmedState { get; set; } =
             new(null, null, null, null);
+
+        public int? FanRpm { get; set; }
+
+        public Exception? FanRpmFailure { get; set; }
 
         public Exception? PerformanceFailure { get; set; }
 
@@ -2016,6 +2067,15 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             AfterReadState?.Invoke();
             AfterReadStateCall?.Invoke(StateReadCalls);
             return Task.FromResult(ConfirmedState);
+        }
+
+        public Task<int?> ReadFanRpmAsync(CancellationToken cancellationToken)
+        {
+            TotalCalls++;
+            FanRpmReadCalls++;
+            return FanRpmFailure is null
+                ? Task.FromResult(FanRpm)
+                : Task.FromException<int?>(FanRpmFailure);
         }
 
         public Task SetPerformanceAsync(PerformancePreset value, CancellationToken cancellationToken)

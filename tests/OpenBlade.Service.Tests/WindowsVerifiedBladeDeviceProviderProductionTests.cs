@@ -337,7 +337,8 @@ public sealed class WindowsVerifiedBladeDeviceProviderProductionTests
     private static WindowsVerifiedBladeDeviceProvider ReadyProvider(
         IProductionBatteryPortFactory factory) => new(
             () => Probe(BatteryValidationProbeClassification.Ready),
-            factory);
+            factory,
+            new UnavailableFanRpmFactory());
 
     private static DeviceCapabilities BatteryCapabilities(
         IReadOnlySet<int> limits,
@@ -367,6 +368,15 @@ public sealed class WindowsVerifiedBladeDeviceProviderProductionTests
             UsageMatchCount: 1,
             FeatureLengthMatchCount: 1,
             ExactMatchCount: 1);
+
+    private sealed class UnavailableFanRpmFactory : IFanRpmQueryRunFactory
+    {
+        public Task<HidSessionResult<IFanRpmQueryPort>> OpenAsync(
+            CancellationToken cancellationToken) => Task.FromResult(
+                new HidSessionResult<IFanRpmQueryPort>(
+                    null,
+                    HidSessionFailureKind.NativeIoFailure));
+    }
 
     private sealed class FakeProductionFactory(
         DeviceCapabilities capabilities,

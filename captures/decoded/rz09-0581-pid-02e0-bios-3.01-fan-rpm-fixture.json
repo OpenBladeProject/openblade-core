@@ -13,7 +13,7 @@
   },
   "action": "fan-rpm-query",
   "readOnly": true,
-  "productionWired": false,
+  "productionWired": true,
   "command": {
     "classHex": "0D",
     "idHex": "88",

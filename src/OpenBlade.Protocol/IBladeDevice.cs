@@ -8,6 +8,8 @@ public interface IBladeDevice
 
     Task<ConfirmedDeviceState> ReadStateAsync(CancellationToken cancellationToken);
 
+    Task<int?> ReadFanRpmAsync(CancellationToken cancellationToken);
+
     Task SetPerformanceAsync(PerformancePreset value, CancellationToken cancellationToken);
 
     Task SetFanModeAsync(FanMode value, CancellationToken cancellationToken);
