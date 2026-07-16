@@ -28,6 +28,9 @@ public sealed class ControlRequestHandler(
         return request switch
         {
             GetStatusRequest or SubscribeStatusRequest => Status(request.RequestId),
+            ObserveStateRequest => await ObserveStatusAsync(
+                request.RequestId,
+                cancellationToken),
             UpdateProfilesRequest update => Result(
                 request.RequestId,
                 await runtime.UpdateProfilesAsync(update.Profiles, cancellationToken)),
@@ -51,6 +54,14 @@ public sealed class ControlRequestHandler(
                 cancellationToken),
             _ => Failure(request.RequestId, "IPC request operation is unsupported."),
         };
+    }
+
+    private async Task<ServiceResponse> ObserveStatusAsync(
+        Guid requestId,
+        CancellationToken cancellationToken)
+    {
+        await runtime.ObserveAsync(cancellationToken);
+        return Status(requestId);
     }
 
     private ServiceResponse Status(Guid requestId) => new(

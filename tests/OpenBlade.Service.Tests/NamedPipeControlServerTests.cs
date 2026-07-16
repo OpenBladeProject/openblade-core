@@ -94,12 +94,11 @@ public sealed class NamedPipeControlServerTests
     }
 
     [Fact]
-    public async Task Subscribe_WhenFourLeasesAreActive_ReturnsFailureWithoutLeakingSlot()
+    public async Task Subscribe_WhenThreeLeasesAreActive_ReturnsFailureWithoutLeakingSlot()
     {
         TestServer context = CreateServer();
         StatusSubscriptionLease[] leases =
         [
-            context.Hub.Subscribe(CancellationToken.None),
             context.Hub.Subscribe(CancellationToken.None),
             context.Hub.Subscribe(CancellationToken.None),
             context.Hub.Subscribe(CancellationToken.None),
@@ -163,7 +162,6 @@ public sealed class NamedPipeControlServerTests
 
         StatusSubscriptionLease[] leases =
         [
-            context.Hub.Subscribe(CancellationToken.None),
             context.Hub.Subscribe(CancellationToken.None),
             context.Hub.Subscribe(CancellationToken.None),
             context.Hub.Subscribe(CancellationToken.None),
@@ -282,8 +280,6 @@ public sealed class NamedPipeControlServerTests
         public Task<ControlOperationResult> SetLightingOverrideAsync(ManualOverride<LightingSettings>? value, CancellationToken token) => Result();
         public Task<ControlOperationResult> SetBatteryPolicyAsync(BatteryPolicy value, CancellationToken token) => Result();
         public Task<ControlOperationResult> SetFullChargeOverrideAsync(bool enabled, CancellationToken token) => Result();
-        public Task RefreshAsync(CancellationToken token) => Task.CompletedTask;
-        public Task RefreshConflictsAsync(CancellationToken token) => Task.CompletedTask;
         public Task ObserveAsync(CancellationToken cancellationToken) => Task.CompletedTask;
         public Task HandlePowerSourceChangedAsync(CancellationToken cancellationToken) => Task.CompletedTask;
         public Task RefreshControllerPresenceAsync(CancellationToken cancellationToken) => Task.CompletedTask;

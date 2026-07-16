@@ -118,49 +118,130 @@ public sealed class WindowsLifecycleRegistrationCleanup(
     }
 }
 
-public sealed class WindowsServiceLifecycleEventSource(
-    IWindowsLifecycleNotificationBackend backend) : IServiceLifecycleEventSource
+public sealed class WindowsServiceLifecycleEventSource
+    : IServiceLifecycleEventSource, IDisposable
 {
+    private const int PowerChangedBit = 1 << 0;
+    private const int ResumedBit = 1 << 1;
+    private const int DeviceArrivedBit = 1 << 2;
     private static readonly ConcurrentBag<IDisposable> FailedSubscriptions = [];
+    private readonly object disposeSync = new();
+    private readonly Channel<bool> signal;
+    private readonly IDisposable subscription;
+    private Exception? disposalFailure;
+    private int acceptingCallbacks = 1;
+    private int disposed;
+    private int pendingTriggers;
+    private int watcherStarted;
 
     public WindowsServiceLifecycleEventSource()
         : this(new NativeWindowsLifecycleNotificationBackend())
     {
     }
 
+    public WindowsServiceLifecycleEventSource(IWindowsLifecycleNotificationBackend backend)
+    {
+        ArgumentNullException.ThrowIfNull(backend);
+        signal = Channel.CreateBounded<bool>(new BoundedChannelOptions(1)
+        {
+            FullMode = BoundedChannelFullMode.DropWrite,
+            SingleReader = true,
+            SingleWriter = false,
+        });
+        subscription = backend.Subscribe(Publish);
+    }
+
     public async IAsyncEnumerable<ServiceLifecycleTrigger> WatchAsync(
         [System.Runtime.CompilerServices.EnumeratorCancellation]
         CancellationToken cancellationToken)
     {
-        var notifications = Channel.CreateBounded<ServiceLifecycleTrigger>(
-            new BoundedChannelOptions(1)
-            {
-                FullMode = BoundedChannelFullMode.DropOldest,
-                SingleReader = true,
-                SingleWriter = false,
-            });
-        IDisposable subscription = backend.Subscribe(
-            trigger => notifications.Writer.TryWrite(trigger));
-        try
+        if (Interlocked.Exchange(ref watcherStarted, 1) != 0)
         {
-            await foreach (ServiceLifecycleTrigger trigger in
-                notifications.Reader.ReadAllAsync(cancellationToken))
+            throw new InvalidOperationException(
+                "Only one Windows lifecycle watcher may be active.");
+        }
+
+        while (await signal.Reader.WaitToReadAsync(cancellationToken))
+        {
+            while (signal.Reader.TryRead(out _))
             {
-                yield return trigger;
+            }
+
+            while (true)
+            {
+                int drained = Interlocked.Exchange(ref pendingTriggers, 0);
+                if (drained == 0)
+                {
+                    break;
+                }
+
+                if ((drained & PowerChangedBit) != 0)
+                {
+                    yield return ServiceLifecycleTrigger.PowerChanged;
+                }
+
+                if ((drained & ResumedBit) != 0)
+                {
+                    yield return ServiceLifecycleTrigger.Resumed;
+                }
+
+                if ((drained & DeviceArrivedBit) != 0)
+                {
+                    yield return ServiceLifecycleTrigger.DeviceArrived;
+                }
             }
         }
-        finally
+    }
+
+    public void Dispose()
+    {
+        lock (disposeSync)
         {
+            if (disposed != 0)
+            {
+                if (disposalFailure is not null)
+                {
+                    throw disposalFailure;
+                }
+
+                return;
+            }
+
+            disposed = 1;
+            Volatile.Write(ref acceptingCallbacks, 0);
             try
             {
                 subscription.Dispose();
             }
-            catch
+            catch (Exception exception)
             {
+                disposalFailure = exception;
                 FailedSubscriptions.Add(subscription);
                 throw;
             }
+            finally
+            {
+                signal.Writer.TryComplete();
+            }
         }
+    }
+
+    private void Publish(ServiceLifecycleTrigger trigger)
+    {
+        if (Volatile.Read(ref acceptingCallbacks) == 0)
+        {
+            return;
+        }
+
+        int bit = trigger switch
+        {
+            ServiceLifecycleTrigger.PowerChanged => PowerChangedBit,
+            ServiceLifecycleTrigger.Resumed => ResumedBit,
+            ServiceLifecycleTrigger.DeviceArrived => DeviceArrivedBit,
+            _ => throw new ArgumentOutOfRangeException(nameof(trigger)),
+        };
+        Interlocked.Or(ref pendingTriggers, bit);
+        signal.Writer.TryWrite(true);
     }
 }
 

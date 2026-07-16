@@ -31,10 +31,6 @@ public interface IServiceControlRuntime
         bool enabled,
         CancellationToken token);
 
-    Task RefreshAsync(CancellationToken token);
-
-    Task RefreshConflictsAsync(CancellationToken token);
-
     Task ObserveAsync(CancellationToken cancellationToken);
 
     Task HandlePowerSourceChangedAsync(CancellationToken cancellationToken);
@@ -239,11 +235,6 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             operationGate.Release();
         }
     }
-
-    public Task RefreshAsync(CancellationToken token) => ObserveAsync(token);
-
-    public Task RefreshConflictsAsync(CancellationToken token) =>
-        RefreshControllerPresenceAsync(token);
 
     public async Task ObserveAsync(CancellationToken cancellationToken)
     {

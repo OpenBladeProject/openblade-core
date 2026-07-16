@@ -12,7 +12,7 @@ public interface IStatusSubscriptionHub
 
 public sealed class StatusSubscriptionHub : IStatusSubscriptionHub
 {
-    private const int MaximumSubscribers = 4;
+    private const int MaximumSubscribers = 3;
     private static readonly TimeSpan MaximumConnectionLifetime = TimeSpan.FromMinutes(15);
     private readonly object sync = new();
     private readonly Dictionary<long, SubscriptionState> subscriptions = [];

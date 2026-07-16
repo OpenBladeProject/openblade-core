@@ -146,8 +146,27 @@ public sealed class ControlRequestHandlerTests
         Assert.Null(response.Archive);
     }
 
+    [Fact]
+    public async Task HandleAsync_ObserveStateObservesOnceThenReturnsUpdatedStatus()
+    {
+        var runtime = new RecordingRuntime();
+        var handler = new ControlRequestHandler(runtime, new ThrowingArchiveProvider());
+        var request = new ObserveStateRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid());
+
+        ServiceResponse response = await handler.HandleAsync(
+            request,
+            CancellationToken.None);
+
+        Assert.True(response.Success);
+        Assert.Equal(["Observe", "GetStatus"], runtime.Calls);
+        Assert.Equal(1, response.Status!.Revision);
+        Assert.Null(response.Result);
+    }
+
     private sealed class RecordingRuntime : IServiceControlRuntime
     {
+        private long revision;
+
         public List<string> Calls { get; } = [];
 
         public ServiceStatusSnapshot GetStatus()
@@ -155,7 +174,7 @@ public sealed class ControlRequestHandlerTests
             Calls.Add("GetStatus");
             ProfileSet profiles = ProfileDefaults.CreateSafeDefaults();
             return new ServiceStatusSnapshot(
-                0, false, true, [], null, [], "Unavailable",
+                revision, false, true, [], null, [], "Unavailable",
                 DeviceCapabilities.Unavailable(), null,
                 profiles,
                 new DesiredDeviceState(
@@ -185,10 +204,12 @@ public sealed class ControlRequestHandlerTests
         public Task<ControlOperationResult> SetFullChargeOverrideAsync(bool enabled, CancellationToken token) =>
             Record("SetFullChargeOverride");
 
-        public Task RefreshAsync(CancellationToken token) => Task.CompletedTask;
-
-        public Task RefreshConflictsAsync(CancellationToken token) => Task.CompletedTask;
-        public Task ObserveAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+        public Task ObserveAsync(CancellationToken cancellationToken)
+        {
+            Calls.Add("Observe");
+            revision++;
+            return Task.CompletedTask;
+        }
         public Task HandlePowerSourceChangedAsync(CancellationToken cancellationToken) => Task.CompletedTask;
         public Task RefreshControllerPresenceAsync(CancellationToken cancellationToken) => Task.CompletedTask;
 

@@ -65,12 +65,11 @@ public sealed class StatusSubscriptionHubTests
     }
 
     [Fact]
-    public async Task Subscribe_RejectsFifthActiveLease()
+    public async Task Subscribe_RejectsFourthActiveLeaseToReserveOnePipeSlot()
     {
         var hub = new StatusSubscriptionHub(CreateStatus(0), new FakeTimeProvider());
         StatusSubscriptionLease[] leases =
         [
-            hub.Subscribe(CancellationToken.None),
             hub.Subscribe(CancellationToken.None),
             hub.Subscribe(CancellationToken.None),
             hub.Subscribe(CancellationToken.None),
@@ -90,7 +89,6 @@ public sealed class StatusSubscriptionHubTests
         var hub = new StatusSubscriptionHub(CreateStatus(0), new FakeTimeProvider());
         StatusSubscriptionLease[] leases =
         [
-            hub.Subscribe(CancellationToken.None),
             hub.Subscribe(CancellationToken.None),
             hub.Subscribe(CancellationToken.None),
             hub.Subscribe(CancellationToken.None),

@@ -666,6 +666,10 @@ public sealed class MainViewModelTests
         public Task<ServiceStatusSnapshot> GetStatusAsync(CancellationToken token) =>
             throw new NotSupportedException();
 
+        public Task<ServiceStatusSnapshot> ObserveStateAsync(
+            CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
+
         public async Task<DiagnosticArchive> ExportDiagnosticsAsync(CancellationToken token)
         {
             ExportCalls++;

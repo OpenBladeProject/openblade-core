@@ -68,7 +68,16 @@ public sealed class ServiceLifecycleRefreshLoop(
             {
                 try
                 {
-                    await runtime.RefreshAsync(stoppingToken);
+                    switch (trigger)
+                    {
+                        case ServiceLifecycleTrigger.PowerChanged:
+                            await runtime.HandlePowerSourceChangedAsync(stoppingToken);
+                            break;
+                        case ServiceLifecycleTrigger.Resumed:
+                        case ServiceLifecycleTrigger.DeviceArrived:
+                            await runtime.ObserveAsync(stoppingToken);
+                            break;
+                    }
                 }
                 catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
                 {
@@ -94,7 +103,7 @@ public sealed class ServiceLifecycleRefreshLoop(
     }
 }
 
-public sealed class ServiceConflictRefreshLoop(
+public sealed class ServiceControllerPresenceRefreshLoop(
     IServiceControlRuntime runtime,
     TimeProvider timeProvider,
     ILogger logger)
@@ -110,7 +119,7 @@ public sealed class ServiceConflictRefreshLoop(
                 await Task.Delay(RefreshInterval, timeProvider, stoppingToken);
                 try
                 {
-                    await runtime.RefreshConflictsAsync(stoppingToken);
+                    await runtime.RefreshControllerPresenceAsync(stoppingToken);
                 }
                 catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
                 {
@@ -118,7 +127,7 @@ public sealed class ServiceConflictRefreshLoop(
                 }
                 catch (Exception exception)
                 {
-                    logger.LogError(exception, "Periodic controller conflict refresh failed.");
+                    logger.LogError(exception, "Periodic controller presence refresh failed.");
                 }
             }
         }

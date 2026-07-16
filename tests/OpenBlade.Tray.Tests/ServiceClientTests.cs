@@ -93,6 +93,85 @@ public sealed class ServiceClientTests
     }
 
     [Fact]
+    public async Task ObserveStateAsync_SendsOneTypedV3RequestAndReturnsStatus()
+    {
+        string pipeName = NewPipeName();
+        ServiceStatusSnapshot expected = CreateStatus(7);
+        int requests = 0;
+        using CancellationTokenSource timeout = new(TimeSpan.FromSeconds(5));
+        Task server = RunServerAsync(
+            pipeName,
+            request =>
+            {
+                requests++;
+                Assert.IsType<ObserveStateRequest>(request);
+                Assert.Equal(OpenBladeIpc.ProtocolVersion, request.Version);
+                Assert.NotEqual(Guid.Empty, request.RequestId);
+                return new ServiceResponse(
+                    OpenBladeIpc.ProtocolVersion,
+                    request.RequestId,
+                    true,
+                    null,
+                    expected,
+                    null);
+            },
+            timeout.Token);
+        IServiceClient client = new ServiceClient(pipeName);
+
+        ServiceStatusSnapshot actual = await client.ObserveStateAsync(timeout.Token);
+        await server;
+
+        Assert.Equal(7, actual.Revision);
+        Assert.Equal(1, requests);
+    }
+
+    [Fact]
+    public async Task ObserveStateAsync_RejectsSuccessfulResponseWithoutStatusBody()
+    {
+        string pipeName = NewPipeName();
+        using CancellationTokenSource timeout = new(TimeSpan.FromSeconds(5));
+        Task server = RunRawServerAsync(
+            pipeName,
+            request => Frame(Encoding.UTF8.GetBytes(
+                $"{{\"frame\":\"response\",\"version\":{OpenBladeIpc.ProtocolVersion},\"requestId\":\"{request.RequestId}\",\"success\":true,\"error\":null,\"status\":null,\"result\":null,\"archive\":null}}")),
+            timeout.Token);
+        IServiceClient client = new ServiceClient(pipeName);
+
+        await Assert.ThrowsAsync<InvalidDataException>(
+            () => client.ObserveStateAsync(timeout.Token));
+        await server;
+    }
+
+    [Fact]
+    public async Task ObserveStateAsync_RejectsMismatchedResponseId()
+    {
+        await AssertInvalidObserveResponseAsync(request => new ServiceResponse(
+            OpenBladeIpc.ProtocolVersion,
+            Guid.NewGuid(),
+            true,
+            null,
+            CreateStatus(0),
+            null));
+    }
+
+    [Fact]
+    public async Task ObserveStateAsync_RejectsVersionMismatch()
+    {
+        string pipeName = NewPipeName();
+        using CancellationTokenSource timeout = new(TimeSpan.FromSeconds(5));
+        Task server = RunRawServerAsync(
+            pipeName,
+            request => Frame(Encoding.UTF8.GetBytes(
+                $"{{\"frame\":\"response\",\"version\":{OpenBladeIpc.ProtocolVersion - 1},\"requestId\":\"{request.RequestId}\",\"success\":false,\"error\":\"bad version\",\"status\":null,\"result\":null,\"archive\":null}}")),
+            timeout.Token);
+        IServiceClient client = new ServiceClient(pipeName);
+
+        await Assert.ThrowsAsync<InvalidDataException>(
+            () => client.ObserveStateAsync(timeout.Token));
+        await server;
+    }
+
+    [Fact]
     public async Task ExportDiagnosticsAsync_SendsTypedRequestAndReturnsArchiveBody()
     {
         string pipeName = NewPipeName();
@@ -134,7 +213,7 @@ public sealed class ServiceClientTests
         Task server = RunRawServerAsync(
             pipeName,
             request => Frame(Encoding.UTF8.GetBytes(
-                $"{{\"frame\":\"response\",\"version\":2,\"requestId\":\"{request.RequestId}\",\"success\":true,\"error\":null,\"status\":null,\"result\":null,\"archive\":null}}")),
+                $"{{\"frame\":\"response\",\"version\":{OpenBladeIpc.ProtocolVersion},\"requestId\":\"{request.RequestId}\",\"success\":true,\"error\":null,\"status\":null,\"result\":null,\"archive\":null}}")),
             timeout.Token);
         IServiceClient client = new ServiceClient(pipeName);
 
@@ -469,6 +548,18 @@ public sealed class ServiceClientTests
         IServiceClient client = new ServiceClient(pipeName);
         await Assert.ThrowsAsync<InvalidDataException>(
             () => client.GetStatusAsync(timeout.Token));
+        await server;
+    }
+
+    private static async Task AssertInvalidObserveResponseAsync(
+        Func<ServiceRequest, ServiceServerFrame> response)
+    {
+        string pipeName = NewPipeName();
+        using CancellationTokenSource timeout = new(TimeSpan.FromSeconds(5));
+        Task server = RunServerAsync(pipeName, response, timeout.Token);
+        IServiceClient client = new ServiceClient(pipeName);
+        await Assert.ThrowsAsync<InvalidDataException>(
+            () => client.ObserveStateAsync(timeout.Token));
         await server;
     }
 

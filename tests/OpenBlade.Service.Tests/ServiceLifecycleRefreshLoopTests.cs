@@ -8,14 +8,14 @@ namespace OpenBlade.Service.Tests;
 public sealed class ServiceLifecycleRefreshLoopTests
 {
     [Fact]
-    public async Task ConflictRefresh_WaitsForThreeSecondInterval()
+    public async Task ControllerPresenceRefresh_WaitsForThreeSecondInterval()
     {
         var time = new ManualTimeProvider();
         var runtime = new RecordingRuntime(failFirstRefresh: false);
-        var loop = new ServiceConflictRefreshLoop(
+        var loop = new ServiceControllerPresenceRefreshLoop(
             runtime,
             time,
-            NullLogger<ServiceConflictRefreshLoop>.Instance);
+            NullLogger<ServiceControllerPresenceRefreshLoop>.Instance);
         using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(5));
 
         Task running = loop.RunAsync(cancellation.Token);
@@ -23,26 +23,27 @@ public sealed class ServiceLifecycleRefreshLoopTests
 
         time.Advance(TimeSpan.FromMilliseconds(2_999));
         await Task.Yield();
-        Assert.Equal(0, runtime.ConflictRefreshCount);
+        Assert.Equal(0, runtime.ControllerPresenceRefreshCount);
 
         time.Advance(TimeSpan.FromMilliseconds(1));
         await runtime.FirstRefresh.Task.WaitAsync(cancellation.Token);
         await cancellation.CancelAsync();
         await running;
 
-        Assert.Equal(1, runtime.ConflictRefreshCount);
-        Assert.Equal(0, runtime.RefreshCount);
+        Assert.Equal(1, runtime.ControllerPresenceRefreshCount);
+        Assert.Equal(0, runtime.ObserveCount);
+        Assert.Equal(0, runtime.PowerSourceChangeCount);
     }
 
     [Fact]
-    public async Task ConflictRefresh_ContinuesAfterTransientRefreshFailure()
+    public async Task ControllerPresenceRefresh_ContinuesAfterTransientRefreshFailure()
     {
         var time = new ManualTimeProvider();
         var runtime = new RecordingRuntime(failFirstRefresh: true);
-        var loop = new ServiceConflictRefreshLoop(
+        var loop = new ServiceControllerPresenceRefreshLoop(
             runtime,
             time,
-            NullLogger<ServiceConflictRefreshLoop>.Instance);
+            NullLogger<ServiceControllerPresenceRefreshLoop>.Instance);
         using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(5));
 
         Task running = loop.RunAsync(cancellation.Token);
@@ -56,8 +57,9 @@ public sealed class ServiceLifecycleRefreshLoopTests
         await cancellation.CancelAsync();
         await running;
 
-        Assert.Equal(2, runtime.ConflictRefreshCount);
-        Assert.Equal(0, runtime.RefreshCount);
+        Assert.Equal(2, runtime.ControllerPresenceRefreshCount);
+        Assert.Equal(0, runtime.ObserveCount);
+        Assert.Equal(0, runtime.PowerSourceChangeCount);
         Assert.Equal(1, runtime.MaximumConcurrentRefreshes);
     }
 
@@ -105,11 +107,41 @@ public sealed class ServiceLifecycleRefreshLoopTests
             () => loop.RunAsync(CancellationToken.None));
 
         Assert.Same(expected, actual);
-        Assert.Equal(0, runtime.RefreshCount);
+        Assert.Equal(0, runtime.TotalOperationCount);
+    }
+
+    [Theory]
+    [InlineData(ServiceLifecycleTrigger.PowerChanged, 1, 0)]
+    [InlineData(ServiceLifecycleTrigger.Resumed, 0, 1)]
+    [InlineData(ServiceLifecycleTrigger.DeviceArrived, 0, 1)]
+    public async Task Notification_RoutesToExactlyOneTypedRuntimeOperation(
+        ServiceLifecycleTrigger trigger,
+        int expectedPowerChanges,
+        int expectedObservations)
+    {
+        var source = new FakeLifecycleEventSource();
+        var runtime = new RecordingRuntime(failFirstRefresh: false);
+        var loop = new ServiceLifecycleRefreshLoop(
+            runtime,
+            source,
+            NullLogger<ServiceLifecycleRefreshLoop>.Instance);
+        using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+
+        Task running = loop.RunAsync(cancellation.Token);
+        source.Publish(trigger);
+
+        await runtime.FirstRefresh.Task.WaitAsync(cancellation.Token);
+        await cancellation.CancelAsync();
+        await running;
+
+        Assert.Equal(expectedPowerChanges, runtime.PowerSourceChangeCount);
+        Assert.Equal(expectedObservations, runtime.ObserveCount);
+        Assert.Equal(0, runtime.ControllerPresenceRefreshCount);
+        Assert.Equal(1, runtime.TotalOperationCount);
     }
 
     [Fact]
-    public async Task Notifications_RefreshSequentiallyAndContinueAfterFailure()
+    public async Task Notifications_ProcessSequentiallyAndContinueAfterFailure()
     {
         var source = new FakeLifecycleEventSource();
         var runtime = new RecordingRuntime(failFirstRefresh: true);
@@ -127,7 +159,9 @@ public sealed class ServiceLifecycleRefreshLoopTests
         await cancellation.CancelAsync();
         await running;
 
-        Assert.Equal(2, runtime.RefreshCount);
+        Assert.Equal(1, runtime.PowerSourceChangeCount);
+        Assert.Equal(1, runtime.ObserveCount);
+        Assert.Equal(0, runtime.ControllerPresenceRefreshCount);
         Assert.Equal(1, runtime.MaximumConcurrentRefreshes);
     }
 
@@ -160,12 +194,19 @@ public sealed class ServiceLifecycleRefreshLoopTests
     private sealed class RecordingRuntime(bool failFirstRefresh) : IServiceControlRuntime
     {
         private int concurrentRefreshes;
-        private int conflictRefreshCount;
-        private int refreshCount;
+        private int controllerPresenceRefreshCount;
+        private int observeCount;
+        private int powerSourceChangeCount;
+        private int totalOperationCount;
 
-        public int ConflictRefreshCount => Volatile.Read(ref conflictRefreshCount);
+        public int ControllerPresenceRefreshCount =>
+            Volatile.Read(ref controllerPresenceRefreshCount);
 
-        public int RefreshCount => Volatile.Read(ref refreshCount);
+        public int ObserveCount => Volatile.Read(ref observeCount);
+
+        public int PowerSourceChangeCount => Volatile.Read(ref powerSourceChangeCount);
+
+        public int TotalOperationCount => Volatile.Read(ref totalOperationCount);
 
         public int MaximumConcurrentRefreshes { get; private set; }
 
@@ -175,32 +216,33 @@ public sealed class ServiceLifecycleRefreshLoopTests
         public TaskCompletionSource FirstRefresh { get; } =
             new(TaskCreationOptions.RunContinuationsAsynchronously);
 
-        public async Task RefreshAsync(CancellationToken token)
-        {
-            await RecordRefreshAsync(isConflictRefresh: false);
-        }
-
-        public async Task RefreshConflictsAsync(CancellationToken token)
-        {
-            await RecordRefreshAsync(isConflictRefresh: true);
-        }
-
         public Task ObserveAsync(CancellationToken cancellationToken) =>
-            RefreshAsync(cancellationToken);
+            RecordRefreshAsync(Operation.Observe);
 
         public Task HandlePowerSourceChangedAsync(CancellationToken cancellationToken) =>
-            RefreshAsync(cancellationToken);
+            RecordRefreshAsync(Operation.PowerSourceChange);
 
         public Task RefreshControllerPresenceAsync(CancellationToken cancellationToken) =>
-            RefreshConflictsAsync(cancellationToken);
+            RecordRefreshAsync(Operation.ControllerPresence);
 
-        private async Task RecordRefreshAsync(bool isConflictRefresh)
+        private async Task RecordRefreshAsync(Operation operation)
         {
             int concurrent = Interlocked.Increment(ref concurrentRefreshes);
             MaximumConcurrentRefreshes = Math.Max(MaximumConcurrentRefreshes, concurrent);
-            int current = isConflictRefresh
-                ? Interlocked.Increment(ref conflictRefreshCount)
-                : Interlocked.Increment(ref refreshCount);
+            switch (operation)
+            {
+                case Operation.Observe:
+                    Interlocked.Increment(ref observeCount);
+                    break;
+                case Operation.PowerSourceChange:
+                    Interlocked.Increment(ref powerSourceChangeCount);
+                    break;
+                case Operation.ControllerPresence:
+                    Interlocked.Increment(ref controllerPresenceRefreshCount);
+                    break;
+            }
+
+            int current = Interlocked.Increment(ref totalOperationCount);
             if (current == 1)
             {
                 FirstRefresh.TrySetResult();
@@ -223,6 +265,13 @@ public sealed class ServiceLifecycleRefreshLoopTests
             {
                 Interlocked.Decrement(ref concurrentRefreshes);
             }
+        }
+
+        private enum Operation
+        {
+            Observe,
+            PowerSourceChange,
+            ControllerPresence,
         }
 
         public ServiceStatusSnapshot GetStatus() => throw new NotSupportedException();

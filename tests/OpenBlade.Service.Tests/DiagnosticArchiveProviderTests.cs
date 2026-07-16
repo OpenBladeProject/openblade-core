@@ -177,25 +177,20 @@ public sealed class DiagnosticArchiveProviderTests
         public Task<ControlOperationResult> SetLightingOverrideAsync(ManualOverride<LightingSettings>? value, CancellationToken token) => Unexpected();
         public Task<ControlOperationResult> SetBatteryPolicyAsync(BatteryPolicy value, CancellationToken token) => Unexpected();
         public Task<ControlOperationResult> SetFullChargeOverrideAsync(bool enabled, CancellationToken token) => Unexpected();
-        public Task RefreshAsync(CancellationToken token)
+        public Task ObserveAsync(CancellationToken cancellationToken)
         {
             HardwareOrMutationCalls++;
             throw new InvalidOperationException("Export must not refresh hardware.");
         }
 
-        public Task RefreshConflictsAsync(CancellationToken token)
+        public Task RefreshControllerPresenceAsync(CancellationToken cancellationToken)
         {
             HardwareOrMutationCalls++;
             throw new InvalidOperationException("Export must not refresh conflicts.");
         }
 
-        public Task ObserveAsync(CancellationToken cancellationToken) => RefreshAsync(cancellationToken);
-
         public Task HandlePowerSourceChangedAsync(CancellationToken cancellationToken) =>
-            RefreshAsync(cancellationToken);
-
-        public Task RefreshControllerPresenceAsync(CancellationToken cancellationToken) =>
-            RefreshConflictsAsync(cancellationToken);
+            ObserveAsync(cancellationToken);
 
         private Task<ControlOperationResult> Unexpected()
         {

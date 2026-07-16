@@ -5,7 +5,7 @@ namespace OpenBlade.Service.Tests;
 public sealed class WindowsServiceLifecycleEventSourceTests
 {
     [Fact]
-    public async Task WatchAsync_CleanupFailurePropagatesAndRetainsSubscription()
+    public void Dispose_CleanupFailurePropagatesAndRetainsSubscription()
     {
         var backend = new FakeWindowsLifecycleNotificationBackend
         {
@@ -13,19 +13,118 @@ public sealed class WindowsServiceLifecycleEventSourceTests
         };
         var source = new WindowsServiceLifecycleEventSource(backend);
 
-        InvalidOperationException exception = await Assert.ThrowsAsync<InvalidOperationException>(
-            async () =>
-            {
-                await using IAsyncEnumerator<ServiceLifecycleTrigger> notifications =
-                    source.WatchAsync(CancellationToken.None).GetAsyncEnumerator();
-                Task<bool> pending = notifications.MoveNextAsync().AsTask();
-                backend.Publish(ServiceLifecycleTrigger.Resumed);
-                Assert.True(await pending);
-            });
+        InvalidOperationException exception = Assert.Throws<InvalidOperationException>(
+            source.Dispose);
 
         Assert.Equal("unregister failed", exception.Message);
         ForceGarbageCollection();
         Assert.True(backend.SubscriptionReference!.IsAlive);
+    }
+
+    [Fact]
+    public async Task Dispose_ConcurrentCleanupFailureIsReplayedToEveryCaller()
+    {
+        var expected = new InvalidOperationException("unregister failed");
+        using var disposeEntered = new ManualResetEventSlim();
+        using var releaseDispose = new ManualResetEventSlim();
+        var backend = new FakeWindowsLifecycleNotificationBackend
+        {
+            DisposeFailure = expected,
+            DisposeEntered = disposeEntered,
+            ReleaseDispose = releaseDispose,
+        };
+        var source = new WindowsServiceLifecycleEventSource(backend);
+        Task<Exception?> first = Record.ExceptionAsync(() => Task.Run(source.Dispose));
+        Assert.True(disposeEntered.Wait(TimeSpan.FromSeconds(5)));
+        Task<Exception?> second = Record.ExceptionAsync(() => Task.Run(source.Dispose));
+
+        try
+        {
+            Task timeout = Task.Delay(TimeSpan.FromMilliseconds(100));
+            Assert.Same(timeout, await Task.WhenAny(second, timeout));
+        }
+        finally
+        {
+            releaseDispose.Set();
+        }
+
+        Assert.Same(expected, await first);
+        Assert.Same(expected, await second);
+    }
+
+    [Fact]
+    public void Constructor_SubscribesBeforeWatchBegins()
+    {
+        var backend = new FakeWindowsLifecycleNotificationBackend();
+        using var source = new WindowsServiceLifecycleEventSource(backend);
+
+        Assert.Equal(1, backend.SubscribeCount);
+    }
+
+    [Fact]
+    public async Task WatchAsync_DrainsDifferentPendingTriggersInPriorityOrder()
+    {
+        var backend = new FakeWindowsLifecycleNotificationBackend();
+        using var source = new WindowsServiceLifecycleEventSource(backend);
+        backend.Publish(ServiceLifecycleTrigger.DeviceArrived);
+        backend.Publish(ServiceLifecycleTrigger.Resumed);
+        backend.Publish(ServiceLifecycleTrigger.PowerChanged);
+        await using IAsyncEnumerator<ServiceLifecycleTrigger> notifications =
+            source.WatchAsync(CancellationToken.None).GetAsyncEnumerator();
+
+        var actual = new List<ServiceLifecycleTrigger>();
+        for (int index = 0; index < 3; index++)
+        {
+            Assert.True(await notifications.MoveNextAsync());
+            actual.Add(notifications.Current);
+        }
+
+        Assert.Equal(
+            [
+                ServiceLifecycleTrigger.PowerChanged,
+                ServiceLifecycleTrigger.Resumed,
+                ServiceLifecycleTrigger.DeviceArrived,
+            ],
+            actual);
+    }
+
+    [Fact]
+    public async Task WatchAsync_CoalescesDuplicatePendingTriggersWithoutDisplacingPower()
+    {
+        var backend = new FakeWindowsLifecycleNotificationBackend();
+        using var source = new WindowsServiceLifecycleEventSource(backend);
+        backend.Publish(ServiceLifecycleTrigger.PowerChanged);
+        backend.Publish(ServiceLifecycleTrigger.Resumed);
+        backend.Publish(ServiceLifecycleTrigger.DeviceArrived);
+        backend.Publish(ServiceLifecycleTrigger.PowerChanged);
+        backend.Publish(ServiceLifecycleTrigger.Resumed);
+        await using IAsyncEnumerator<ServiceLifecycleTrigger> notifications =
+            source.WatchAsync(CancellationToken.None).GetAsyncEnumerator();
+
+        Assert.True(await notifications.MoveNextAsync());
+        Assert.Equal(ServiceLifecycleTrigger.PowerChanged, notifications.Current);
+        Assert.True(await notifications.MoveNextAsync());
+        Assert.Equal(ServiceLifecycleTrigger.Resumed, notifications.Current);
+        Assert.True(await notifications.MoveNextAsync());
+        Assert.Equal(ServiceLifecycleTrigger.DeviceArrived, notifications.Current);
+    }
+
+    [Fact]
+    public async Task WatchAsync_SecondWatcherFailsExplicitly()
+    {
+        var backend = new FakeWindowsLifecycleNotificationBackend();
+        using var source = new WindowsServiceLifecycleEventSource(backend);
+        backend.Publish(ServiceLifecycleTrigger.Resumed);
+        await using IAsyncEnumerator<ServiceLifecycleTrigger> first =
+            source.WatchAsync(CancellationToken.None).GetAsyncEnumerator();
+        Assert.True(await first.MoveNextAsync());
+        await using IAsyncEnumerator<ServiceLifecycleTrigger> second =
+            source.WatchAsync(CancellationToken.None).GetAsyncEnumerator();
+
+        InvalidOperationException exception = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => second.MoveNextAsync().AsTask());
+
+        Assert.Contains("watcher", exception.Message, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -83,7 +182,7 @@ public sealed class WindowsServiceLifecycleEventSourceTests
     }
 
     [Fact]
-    public async Task WatchAsync_ForwardsNotificationsAndDisposesSubscription()
+    public async Task Dispose_StopsPublishingCompletesWatcherAndUnregisters()
     {
         var backend = new FakeWindowsLifecycleNotificationBackend();
         var source = new WindowsServiceLifecycleEventSource(backend);
@@ -97,8 +196,11 @@ public sealed class WindowsServiceLifecycleEventSourceTests
         Assert.True(await pending.WaitAsync(cancellation.Token));
         Assert.Equal(ServiceLifecycleTrigger.Resumed, notifications.Current);
 
-        await notifications.DisposeAsync();
+        Task<bool> completion = notifications.MoveNextAsync().AsTask();
+        source.Dispose();
+        Assert.False(await completion.WaitAsync(cancellation.Token));
         Assert.True(backend.SubscriptionDisposed);
+        backend.Publish(ServiceLifecycleTrigger.PowerChanged);
     }
 
     private sealed class FakeWindowsLifecycleNotificationBackend
@@ -110,13 +212,22 @@ public sealed class WindowsServiceLifecycleEventSourceTests
 
         public Exception? DisposeFailure { get; init; }
 
+        public ManualResetEventSlim? DisposeEntered { get; init; }
+
+        public ManualResetEventSlim? ReleaseDispose { get; init; }
+
         public WeakReference? SubscriptionReference { get; private set; }
+
+        public int SubscribeCount { get; private set; }
 
         public IDisposable Subscribe(Action<ServiceLifecycleTrigger> publish)
         {
+            SubscribeCount++;
             this.publish = publish;
             var subscription = new Subscription(() =>
             {
+                DisposeEntered?.Set();
+                ReleaseDispose?.Wait();
                 SubscriptionDisposed = true;
                 if (DisposeFailure is not null)
                 {

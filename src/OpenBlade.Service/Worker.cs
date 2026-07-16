@@ -14,16 +14,33 @@ public sealed class Worker(
 {
     private const int MaximumPipeClients = 4;
 
-    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    protected override Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        ProfileLoadResult profiles = await profileBootstrapper.InitializeAsync(stoppingToken);
-        if (profiles.RecoveredFromInvalidFile)
+        var startupCoordinator = new ServiceStartupCoordinator(
+            profileBootstrapper,
+            runtime,
+            logger);
+        return RunAfterSuccessfulStartupAsync(
+            startupCoordinator.InitializeAsync,
+            RunBackgroundAsync,
+            stoppingToken);
+    }
+
+    internal static async Task RunAfterSuccessfulStartupAsync(
+        Func<CancellationToken, Task<bool>> initializeAsync,
+        Func<CancellationToken, Task> runBackgroundAsync,
+        CancellationToken stoppingToken)
+    {
+        if (!await initializeAsync(stoppingToken))
         {
-            logger.LogWarning("Invalid machine profiles were replaced with safe defaults.");
+            return;
         }
 
-        await runtime.UpdateProfilesAsync(profiles.Profiles, stoppingToken);
+        await runBackgroundAsync(stoppingToken);
+    }
 
+    private async Task RunBackgroundAsync(CancellationToken stoppingToken)
+    {
         SecurityIdentifier? authorizedUser = ReadAuthorizedUser();
         if (authorizedUser is null)
         {
@@ -40,7 +57,7 @@ public sealed class Worker(
         [
             token => new ServiceLifecycleRefreshLoop(runtime, lifecycleEventSource, logger)
                 .RunAsync(token),
-            token => new ServiceConflictRefreshLoop(runtime, timeProvider, logger)
+            token => new ServiceControllerPresenceRefreshLoop(runtime, timeProvider, logger)
                 .RunAsync(token),
             .. Enumerable.Range(0, MaximumPipeClients)
                 .Select(_ => new Func<CancellationToken, Task>(

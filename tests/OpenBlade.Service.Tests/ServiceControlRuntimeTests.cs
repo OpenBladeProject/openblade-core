@@ -301,13 +301,13 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             BatteryPolicy.Create(70),
             ProfileDefaults.CreateSafeDefaults().PluggedIn.Lighting with { Brightness = 10 });
 
-        await context.Runtime.RefreshAsync(CancellationToken.None);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
         Assert.Equal(2, context.Device.TotalCalls);
         Assert.Equal(0, context.Device.TotalSetterCalls);
 
         int telemetryCaptures = context.Telemetry.CaptureCount;
         context.Monitor.Current = new ControllerPresenceObservation(["RazerAppEngine"], null);
-        await context.Runtime.RefreshConflictsAsync(CancellationToken.None);
+        await context.Runtime.RefreshControllerPresenceAsync(CancellationToken.None);
         Assert.Equal(1, context.Monitor.ObserveCount);
         Assert.Equal(telemetryCaptures, context.Telemetry.CaptureCount);
         Assert.Equal(2, context.Device.TotalCalls);
@@ -335,7 +335,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             await context.Runtime.SetBatteryPolicyAsync(BatteryPolicy.Create(70), CancellationToken.None),
             await context.Runtime.SetFullChargeOverrideAsync(true, CancellationToken.None),
         ];
-        await context.Runtime.RefreshAsync(CancellationToken.None);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
 
         Assert.Equal(ControlOperationStatus.Stored, results[0].Status);
         Assert.All(results[1..], result => Assert.Equal(ControlOperationStatus.Blocked, result.Status));
@@ -365,7 +365,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         Assert.Equal(1, context.Provider.TryGetCount);
         Assert.Equal(4, context.Device.TotalCalls);
 
-        await context.Runtime.RefreshAsync(CancellationToken.None);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
 
         Assert.Equal(2, context.Provider.TryGetCount);
         Assert.Equal(6, context.Device.TotalCalls);
@@ -403,7 +403,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             ProfileDefaults.CreateSafeDefaults().PluggedIn.Lighting);
         context.Guard.SetScript(new HardwareAccessDecision(["RazerAppEngine"], null));
 
-        await context.Runtime.RefreshAsync(CancellationToken.None);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
 
         ServiceStatusSnapshot observed = context.Runtime.GetStatus();
         Assert.True(observed.DeviceVerified);
@@ -423,7 +423,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         int telemetryCaptures = context.Telemetry.CaptureCount;
         long revision = context.Runtime.GetStatus().Revision;
 
-        await context.Runtime.RefreshConflictsAsync(CancellationToken.None);
+        await context.Runtime.RefreshControllerPresenceAsync(CancellationToken.None);
 
         Assert.Equal(telemetryCaptures, context.Telemetry.CaptureCount);
         Assert.Equal(0, context.Provider.TryGetCount);
@@ -439,13 +439,13 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         int telemetryCaptures = context.Telemetry.CaptureCount;
 
         context.Monitor.Current = new ControllerPresenceObservation(["RazerAppEngine"], null);
-        await context.Runtime.RefreshConflictsAsync(CancellationToken.None);
+        await context.Runtime.RefreshControllerPresenceAsync(CancellationToken.None);
         ServiceStatusSnapshot conflict = context.Runtime.GetStatus();
 
         context.Monitor.Current = new ControllerPresenceObservation(
             ["RazerAppEngine"],
             "process enumeration failed");
-        await context.Runtime.RefreshConflictsAsync(CancellationToken.None);
+        await context.Runtime.RefreshControllerPresenceAsync(CancellationToken.None);
         ServiceStatusSnapshot detectionFailure = context.Runtime.GetStatus();
 
         Assert.Equal(["RazerAppEngine"], conflict.PotentialControllers);
@@ -472,17 +472,17 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             FanMode.Automatic,
             BatteryPolicy.Create(80),
             ProfileDefaults.CreateSafeDefaults().PluggedIn.Lighting);
-        await context.Runtime.RefreshAsync(CancellationToken.None);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
 
         context.Monitor.Current = new ControllerPresenceObservation(["RazerAppEngine"], null);
-        await context.Runtime.RefreshConflictsAsync(CancellationToken.None);
+        await context.Runtime.RefreshControllerPresenceAsync(CancellationToken.None);
         int telemetryCapturesWhileBlocked = context.Telemetry.CaptureCount;
         int providerCallsWhileBlocked = context.Provider.TryGetCount;
         int deviceCallsWhileBlocked = context.Device.TotalCalls;
 
         context.Monitor.Current = new ControllerPresenceObservation([], null);
-        await context.Runtime.RefreshConflictsAsync(CancellationToken.None);
-        await context.Runtime.RefreshConflictsAsync(CancellationToken.None);
+        await context.Runtime.RefreshControllerPresenceAsync(CancellationToken.None);
+        await context.Runtime.RefreshControllerPresenceAsync(CancellationToken.None);
 
         Assert.True(context.Runtime.GetStatus().DeviceVerified);
         Assert.False(context.Runtime.GetStatus().WritesBlocked);
@@ -959,7 +959,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             true,
             CancellationToken.None);
         context.Telemetry.Current = CreateTelemetry(PowerSource.PluggedIn);
-        await context.Runtime.RefreshAsync(CancellationToken.None);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
 
         ServiceStatusSnapshot status = context.Runtime.GetStatus();
         Assert.Equal(ControlOperationStatus.Failed, result.Status);
@@ -1044,11 +1044,11 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     {
         TestContext context = CreateContext(providerAvailable: false);
 
-        await context.Runtime.RefreshAsync(CancellationToken.None);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
         Assert.Empty(context.Hub.Published);
 
         context.Telemetry.Current = CreateTelemetry(PowerSource.PluggedIn, batteryPercent: 79);
-        await context.Runtime.RefreshAsync(CancellationToken.None);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
 
         Assert.Single(context.Hub.Published);
         Assert.Equal(1, context.Runtime.GetStatus().Revision);
@@ -1094,7 +1094,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             confirmedBattery,
             null);
 
-        await context.Runtime.RefreshAsync(CancellationToken.None);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
 
         ServiceStatusSnapshot status = context.Runtime.GetStatus();
         Assert.True(status.DeviceVerified);

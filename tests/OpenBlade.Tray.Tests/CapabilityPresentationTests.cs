@@ -342,6 +342,7 @@ public sealed class CapabilityPresentationTests
             return Result();
         }
         public Task<ServiceStatusSnapshot> GetStatusAsync(CancellationToken token) => throw new NotSupportedException();
+        public Task<ServiceStatusSnapshot> ObserveStateAsync(CancellationToken cancellationToken) => throw new NotSupportedException();
         public Task<DiagnosticArchive> ExportDiagnosticsAsync(CancellationToken token) => throw new NotSupportedException();
         public Task<ControlOperationResult> SetPerformanceOverrideAsync(ManualOverride<PerformancePreset>? value, CancellationToken token) => Result();
         public Task<ControlOperationResult> SetFanOverrideAsync(ManualOverride<FanMode>? value, CancellationToken token) => Result();
