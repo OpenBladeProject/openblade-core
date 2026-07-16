@@ -927,6 +927,70 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         Assert.Equal([DeviceSubsystem.Battery], context.Runtime.GetStatus().ExternalChanges);
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task PostReadbackPersistenceFailure_PreservesIntentAndLatchesBatteryDrift(
+        bool unauthorized)
+    {
+        Exception failure = unauthorized
+            ? new UnauthorizedAccessException("configuration is read-only")
+            : new IOException("configuration write failed");
+        TestContext context = CreateWritableContext(
+            transactionBoundary: (boundary, _) =>
+            {
+                if (boundary is BatteryConfigurationCommitBoundary.BeforeProfileReplacement)
+                {
+                    throw failure;
+                }
+
+                return Task.CompletedTask;
+            });
+
+        ControlOperationResult result = await context.Runtime.SetBatteryPolicyAsync(
+            BatteryPolicy.Create(75),
+            CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Failed, result.Status);
+        Assert.Equal(["SetChargeLimit"], context.Device.BatterySetterCalls);
+        BatteryConfiguration committed = await context.Store.LoadAsync(CancellationToken.None);
+        Assert.Equal(BatteryPolicy.Create(80), committed.Profiles.BatteryPolicy);
+        Assert.Equal(BatteryPolicy.Create(80), context.Runtime.GetStatus().Profiles.BatteryPolicy);
+        Assert.Equal(BatteryPolicy.Create(80),
+            context.Runtime.GetStatus().DesiredState.Battery.ConfiguredPolicy);
+        Assert.Equal([DeviceSubsystem.Battery], context.Runtime.GetStatus().ExternalChanges);
+    }
+
+    [Fact]
+    public async Task PostReadbackPersistenceCancellation_PreservesIntentAndLatchesBatteryDrift()
+    {
+        using var cancellation = new CancellationTokenSource();
+        TestContext context = CreateWritableContext(
+            transactionBoundary: (boundary, boundaryToken) =>
+            {
+                if (boundary is BatteryConfigurationCommitBoundary.BeforeProfileReplacement)
+                {
+                    cancellation.Cancel();
+                    boundaryToken.ThrowIfCancellationRequested();
+                }
+
+                return Task.CompletedTask;
+            });
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => context.Runtime.SetBatteryPolicyAsync(
+                BatteryPolicy.Create(75),
+                cancellation.Token));
+
+        Assert.Equal(["SetChargeLimit"], context.Device.BatterySetterCalls);
+        BatteryConfiguration committed = await context.Store.LoadAsync(CancellationToken.None);
+        Assert.Equal(BatteryPolicy.Create(80), committed.Profiles.BatteryPolicy);
+        Assert.Equal(BatteryPolicy.Create(80), context.Runtime.GetStatus().Profiles.BatteryPolicy);
+        Assert.Equal(BatteryPolicy.Create(80),
+            context.Runtime.GetStatus().DesiredState.Battery.ConfiguredPolicy);
+        Assert.Equal([DeviceSubsystem.Battery], context.Runtime.GetStatus().ExternalChanges);
+    }
+
     [Fact]
     public async Task QueuedBatteryIntent_StagesAfterPriorIntentCommits()
     {
@@ -1640,12 +1704,15 @@ public sealed class ServiceControlRuntimeTests : IDisposable
 
     private TestContext CreateWritableContext(
         IReadOnlyList<string>? conflicts = null,
-        string? detectionFailure = null)
+        string? detectionFailure = null,
+        Func<BatteryConfigurationCommitBoundary, CancellationToken, Task>?
+            transactionBoundary = null)
     {
         TestContext context = CreateContext(
             providerAvailable: true,
             conflicts,
-            detectionFailure);
+            detectionFailure,
+            transactionBoundary: transactionBoundary);
         context.Device.Capabilities = DeviceCapabilities.SafeTargetDefaults() with
         {
             ChargeLimits = new HashSet<int> { 50, 55, 60, 65, 70, 75, 80 },
@@ -1682,7 +1749,9 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         string? detectionFailure = null,
         PowerSource initialPowerSource = PowerSource.PluggedIn,
         bool initialize = true,
-        bool protectionEnabled = true)
+        bool protectionEnabled = true,
+        Func<BatteryConfigurationCommitBoundary, CancellationToken, Task>?
+            transactionBoundary = null)
     {
         string profilePath = Path.Combine(directory, "profiles.json");
         string preferencesPath = Path.Combine(directory, "battery-preferences.json");
@@ -1690,7 +1759,10 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         var store = new BatteryConfigurationStore(
             profilePath,
             preferencesPath,
-            markerPath);
+            markerPath,
+            validator: null,
+            postCommitBoundary: null,
+            transactionBoundary: transactionBoundary);
         BatteryConfiguration configuration = store.LoadAsync(CancellationToken.None)
             .GetAwaiter()
             .GetResult();

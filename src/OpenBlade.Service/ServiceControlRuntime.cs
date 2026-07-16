@@ -558,11 +558,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             confirmed = outcome.Readback;
         }
 
-        if (outcome.ReadbackMatched)
-        {
-            driftTracker.ConfirmIntentional(subsystem, matched: true);
-        }
-        else if (outcome.WriteAttempted)
+        if (!outcome.ReadbackMatched && outcome.WriteAttempted)
         {
             driftTracker.ConfirmIntentional(subsystem, matched: false);
         }
@@ -579,10 +575,23 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             }
             catch (OperationCanceledException) when (token.IsCancellationRequested)
             {
+                driftTracker.ConfirmIntentional(subsystem, matched: false);
+                var canceledCommit = new ControlResult(
+                    ControlResultStatus.Failed,
+                    $"{subsystem} hardware was confirmed, but persistence was canceled.");
+                history.RecordSubsystemResult(subsystem, canceledCommit);
+                PublishScopedStatus(
+                    telemetry,
+                    confirmed,
+                    outcome.Capabilities ?? current.Capabilities,
+                    canceledCommit.Message,
+                    deviceVerified: !outcome.DeviceAccessFailed,
+                    writesBlocked: outcome.DeviceAccessFailed);
                 throw;
             }
             catch (Exception exception) when (IsIntentFailure(exception))
             {
+                driftTracker.ConfirmIntentional(subsystem, matched: false);
                 var failedCommit = new ControlResult(
                     ControlResultStatus.Failed,
                     $"Confirmed hardware intent could not be committed: {exception.Message}");
@@ -596,6 +605,13 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                     writesBlocked: outcome.DeviceAccessFailed);
                 return ToOperationResult(failedCommit);
             }
+        }
+
+        if (outcome.ReadbackMatched)
+        {
+            // Matching hardware becomes the new drift baseline only after any durable
+            // intent commit and in-memory commit have both succeeded.
+            driftTracker.ConfirmIntentional(subsystem, matched: true);
         }
 
         history.RecordSubsystemResult(subsystem, outcome.Result);
@@ -877,7 +893,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         result.Message);
 
     private static bool IsIntentFailure(Exception exception) => exception is
-        ArgumentException or InvalidDataException or IOException;
+        ArgumentException or InvalidDataException or IOException or UnauthorizedAccessException;
 
     private ProfileAutomationState Automation => automation
         ?? throw new InvalidOperationException("The service runtime is not initialized.");

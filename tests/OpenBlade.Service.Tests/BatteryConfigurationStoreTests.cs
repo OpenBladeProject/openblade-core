@@ -175,6 +175,108 @@ public sealed class BatteryConfigurationStoreTests : IDisposable
             marker.RootElement.GetProperty("preferencesSha256").GetString());
     }
 
+    [Theory]
+    [MemberData(nameof(AllCommitBoundaries))]
+    public async Task SaveConfigurationAsync_FaultAtAnyBoundaryRestoresExactPriorAggregate(
+        string boundaryName)
+    {
+        BatteryConfigurationCommitBoundary faultBoundary = Enum.Parse<
+            BatteryConfigurationCommitBoundary>(boundaryName);
+        Paths paths = CreatePaths();
+        bool armed = false;
+        var store = CreateStore(
+            paths,
+            (boundary, _) =>
+            {
+                if (armed && boundary == faultBoundary)
+                {
+                    throw new IOException($"Injected failure at {boundary}.");
+                }
+
+                return Task.CompletedTask;
+            });
+        BatteryConfiguration priorConfiguration = await store.LoadAsync(CancellationToken.None);
+        FileSnapshot prior = await ReadSnapshotAsync(paths);
+        ProfileSet intendedProfiles = priorConfiguration.Profiles with
+        {
+            BatteryPolicy = BatteryPolicy.Create(75),
+        };
+        var intendedPreferences = new BatteryAutomationPreferences(ProtectionEnabled: false);
+        armed = true;
+
+        await Assert.ThrowsAsync<IOException>(
+            () => store.SaveConfigurationAsync(
+                intendedProfiles,
+                intendedPreferences,
+                CancellationToken.None));
+
+        AssertSnapshotEqual(prior, await ReadSnapshotAsync(paths));
+        BatteryConfiguration loaded = await store.LoadAsync(CancellationToken.None);
+        Assert.Equal(priorConfiguration.Profiles, loaded.Profiles);
+        Assert.Equal(priorConfiguration.Preferences, loaded.Preferences);
+        Assert.Empty(Directory.GetFiles(directory, "*.transaction-*"));
+    }
+
+    [Theory]
+    [MemberData(nameof(AllCommitBoundaries))]
+    public async Task SaveConfigurationAsync_CancellationHonorsMarkerCommitPoint(
+        string boundaryName)
+    {
+        BatteryConfigurationCommitBoundary cancellationBoundary = Enum.Parse<
+            BatteryConfigurationCommitBoundary>(boundaryName);
+        Paths paths = CreatePaths();
+        using var cancellation = new CancellationTokenSource();
+        bool armed = false;
+        var store = CreateStore(
+            paths,
+            (boundary, boundaryToken) =>
+            {
+                if (armed && boundary == cancellationBoundary)
+                {
+                    cancellation.Cancel();
+                    boundaryToken.ThrowIfCancellationRequested();
+                }
+
+                return Task.CompletedTask;
+            });
+        BatteryConfiguration priorConfiguration = await store.LoadAsync(CancellationToken.None);
+        FileSnapshot prior = await ReadSnapshotAsync(paths);
+        ProfileSet intendedProfiles = priorConfiguration.Profiles with
+        {
+            BatteryPolicy = BatteryPolicy.Create(75),
+        };
+        var intendedPreferences = new BatteryAutomationPreferences(ProtectionEnabled: false);
+        armed = true;
+
+        if (IsBeforeCommitPoint(cancellationBoundary))
+        {
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(
+                () => store.SaveConfigurationAsync(
+                    intendedProfiles,
+                    intendedPreferences,
+                    cancellation.Token));
+
+            AssertSnapshotEqual(prior, await ReadSnapshotAsync(paths));
+            BatteryConfiguration restored = await store.LoadAsync(CancellationToken.None);
+            Assert.Equal(priorConfiguration.Profiles, restored.Profiles);
+            Assert.Equal(priorConfiguration.Preferences, restored.Preferences);
+        }
+        else
+        {
+            await store.SaveConfigurationAsync(
+                intendedProfiles,
+                intendedPreferences,
+                cancellation.Token);
+
+            BatteryConfiguration committed = await store.LoadAsync(CancellationToken.None);
+            Assert.Equal(intendedProfiles, committed.Profiles);
+            Assert.Equal(intendedPreferences, committed.Preferences);
+            Assert.False(SnapshotEquals(prior, await ReadSnapshotAsync(paths)));
+        }
+
+        Assert.Empty(Directory.GetFiles(directory, "*.transaction-*"));
+    }
+
     [Fact]
     public async Task LoadAsync_PostCommitReplacementIsVerifiedBeforeAutomationReceivesConfiguration()
     {
@@ -232,8 +334,22 @@ public sealed class BatteryConfigurationStoreTests : IDisposable
         """,
     };
 
+    public static TheoryData<string> AllCommitBoundaries() => new(
+        Enum.GetNames<BatteryConfigurationCommitBoundary>());
+
     private BatteryConfigurationStore CreateStore(Paths paths) =>
         new(paths.Profiles, paths.Preferences, paths.Marker);
+
+    private BatteryConfigurationStore CreateStore(
+        Paths paths,
+        Func<BatteryConfigurationCommitBoundary, CancellationToken, Task> boundary) =>
+        new(
+            paths.Profiles,
+            paths.Preferences,
+            paths.Marker,
+            validator: null,
+            postCommitBoundary: null,
+            transactionBoundary: boundary);
 
     private Paths CreatePaths() => new(
         Path.Combine(directory, "profiles.json"),
@@ -241,6 +357,30 @@ public sealed class BatteryConfigurationStoreTests : IDisposable
         Path.Combine(directory, "battery-configuration.commit.json"));
 
     private static string Hash(byte[] bytes) => Convert.ToHexString(SHA256.HashData(bytes));
+
+    private static bool IsBeforeCommitPoint(BatteryConfigurationCommitBoundary boundary) =>
+        boundary is BatteryConfigurationCommitBoundary.BeforeProfileReplacement
+            or BatteryConfigurationCommitBoundary.AfterProfileReplacement
+            or BatteryConfigurationCommitBoundary.BeforePreferencesReplacement
+            or BatteryConfigurationCommitBoundary.AfterPreferencesReplacement
+            or BatteryConfigurationCommitBoundary.BeforeMarkerReplacement;
+
+    private static async Task<FileSnapshot> ReadSnapshotAsync(Paths paths) => new(
+        await File.ReadAllBytesAsync(paths.Profiles),
+        await File.ReadAllBytesAsync(paths.Preferences),
+        await File.ReadAllBytesAsync(paths.Marker));
+
+    private static void AssertSnapshotEqual(FileSnapshot expected, FileSnapshot actual)
+    {
+        Assert.Equal(expected.Profiles, actual.Profiles);
+        Assert.Equal(expected.Preferences, actual.Preferences);
+        Assert.Equal(expected.Marker, actual.Marker);
+    }
+
+    private static bool SnapshotEquals(FileSnapshot left, FileSnapshot right) =>
+        left.Profiles.AsSpan().SequenceEqual(right.Profiles)
+        && left.Preferences.AsSpan().SequenceEqual(right.Preferences)
+        && left.Marker.AsSpan().SequenceEqual(right.Marker);
 
     public void Dispose()
     {
@@ -254,4 +394,9 @@ public sealed class BatteryConfigurationStoreTests : IDisposable
     {
         public string[] All => [Profiles, Preferences, Marker];
     }
+
+    private sealed record FileSnapshot(
+        byte[] Profiles,
+        byte[] Preferences,
+        byte[] Marker);
 }

@@ -4,6 +4,18 @@ using OpenBlade.Contracts;
 
 namespace OpenBlade.Service;
 
+internal enum BatteryConfigurationCommitBoundary
+{
+    BeforeProfileReplacement,
+    AfterProfileReplacement,
+    BeforePreferencesReplacement,
+    AfterPreferencesReplacement,
+    BeforeMarkerReplacement,
+    AfterMarkerReplacement,
+    BeforeVerification,
+    AfterVerification,
+}
+
 public sealed class BatteryConfigurationStore
 {
     private readonly ProfileStore profileStore;
@@ -11,6 +23,8 @@ public sealed class BatteryConfigurationStore
     private readonly string markerPath;
     private readonly ProfileSetValidator validator;
     private readonly Func<CancellationToken, Task>? postCommitBoundary;
+    private readonly Func<BatteryConfigurationCommitBoundary, CancellationToken, Task>?
+        transactionBoundary;
     private readonly SemaphoreSlim gate = new(1, 1);
 
     public BatteryConfigurationStore(
@@ -28,6 +42,24 @@ public sealed class BatteryConfigurationStore
         string markerPath,
         ProfileSetValidator? validator,
         Func<CancellationToken, Task>? postCommitBoundary)
+        : this(
+            profilePath,
+            preferencesPath,
+            markerPath,
+            validator,
+            postCommitBoundary,
+            transactionBoundary: null)
+    {
+    }
+
+    internal BatteryConfigurationStore(
+        string profilePath,
+        string preferencesPath,
+        string markerPath,
+        ProfileSetValidator? validator,
+        Func<CancellationToken, Task>? postCommitBoundary,
+        Func<BatteryConfigurationCommitBoundary, CancellationToken, Task>?
+            transactionBoundary)
     {
         this.validator = validator ?? ProfileSetValidator.CreateUnverifiedSafeDefaults();
         profileStore = new ProfileStore(profilePath, this.validator);
@@ -35,6 +67,7 @@ public sealed class BatteryConfigurationStore
             ?? throw new ArgumentNullException(nameof(preferencesPath));
         this.markerPath = markerPath ?? throw new ArgumentNullException(nameof(markerPath));
         this.postCommitBoundary = postCommitBoundary;
+        this.transactionBoundary = transactionBoundary;
     }
 
     public async Task<BatteryConfiguration> LoadAsync(CancellationToken cancellationToken)
@@ -114,14 +147,10 @@ public sealed class BatteryConfigurationStore
         await gate.WaitAsync(cancellationToken);
         try
         {
-            await CommitAsync(profiles, preferences, cancellationToken);
-            CommittedSnapshot verified = await ReadCommittedSnapshotAsync(cancellationToken);
-            if (verified.Configuration.Profiles != profiles
-                || verified.Configuration.Preferences != preferences)
-            {
-                throw new InvalidDataException(
-                    "The committed battery configuration did not match the intended aggregate.");
-            }
+            await SaveConfigurationTransactionAsync(
+                profiles,
+                preferences,
+                cancellationToken);
         }
         finally
         {
@@ -155,7 +184,9 @@ public sealed class BatteryConfigurationStore
         BatteryAutomationPreferences preferences = ReadPreferences(preferenceJson);
         return new CommittedSnapshot(
             new BatteryConfiguration(profiles, preferences, Recovered: false),
-            preferenceJson);
+            profileJson,
+            preferenceJson,
+            markerJson);
     }
 
     private async Task<ProfileSet?> TryReadLegacyAsync(CancellationToken cancellationToken)
@@ -246,6 +277,268 @@ public sealed class BatteryConfigurationStore
         await WriteMarkerAsync(profileJson, preferenceJson, cancellationToken);
     }
 
+    private async Task SaveConfigurationTransactionAsync(
+        ProfileSet profiles,
+        BatteryAutomationPreferences preferences,
+        CancellationToken cancellationToken)
+    {
+        byte[] profileJson = SerializeProfiles(profiles);
+        byte[] preferenceJson = JsonSerializer.SerializeToUtf8Bytes(
+            new BatteryPreferencesDocument(ProfileStore.CurrentSchemaVersion, preferences),
+            ProfileStore.SerializerOptions);
+        byte[] markerJson = SerializeMarker(profileJson, preferenceJson);
+        TargetSnapshot profilePrior = await CaptureAsync(
+            profileStore.Path,
+            cancellationToken);
+        TargetSnapshot preferencePrior = await CaptureAsync(
+            preferencesPath,
+            cancellationToken);
+        TargetSnapshot markerPrior = await CaptureAsync(markerPath, cancellationToken);
+        string transactionId = Guid.NewGuid().ToString("N");
+        TransactionTarget profile = CreateTransactionTarget(
+            profilePrior,
+            profileJson,
+            transactionId);
+        TransactionTarget preference = CreateTransactionTarget(
+            preferencePrior,
+            preferenceJson,
+            transactionId);
+        TransactionTarget marker = CreateTransactionTarget(
+            markerPrior,
+            markerJson,
+            transactionId);
+        TransactionTarget[] targets = [profile, preference, marker];
+        bool replacementPhaseStarted = false;
+
+        try
+        {
+            foreach (TransactionTarget target in targets)
+            {
+                await WriteDurableFileAsync(
+                    target.StagePath,
+                    target.Intended,
+                    cancellationToken);
+                if (target.Prior.Exists)
+                {
+                    await WriteDurableFileAsync(
+                        target.BackupPath,
+                        target.Prior.Contents,
+                        cancellationToken);
+                }
+            }
+
+            await AtBoundaryAsync(
+                BatteryConfigurationCommitBoundary.BeforeProfileReplacement,
+                cancellationToken);
+            cancellationToken.ThrowIfCancellationRequested();
+            replacementPhaseStarted = true;
+            ReplaceStaged(profile);
+            await AtBoundaryAsync(
+                BatteryConfigurationCommitBoundary.AfterProfileReplacement,
+                cancellationToken);
+            cancellationToken.ThrowIfCancellationRequested();
+
+            await AtBoundaryAsync(
+                BatteryConfigurationCommitBoundary.BeforePreferencesReplacement,
+                cancellationToken);
+            cancellationToken.ThrowIfCancellationRequested();
+            ReplaceStaged(preference);
+            await AtBoundaryAsync(
+                BatteryConfigurationCommitBoundary.AfterPreferencesReplacement,
+                cancellationToken);
+            cancellationToken.ThrowIfCancellationRequested();
+
+            await AtBoundaryAsync(
+                BatteryConfigurationCommitBoundary.BeforeMarkerReplacement,
+                cancellationToken);
+            cancellationToken.ThrowIfCancellationRequested();
+            ReplaceStaged(marker);
+
+            // Marker replacement is the commit point. From here onward caller
+            // cancellation cannot turn an already committed intent into a reported
+            // failure; verification and boundary probes are deliberately non-cancelable.
+            await AtBoundaryAsync(
+                BatteryConfigurationCommitBoundary.AfterMarkerReplacement,
+                CancellationToken.None);
+            await AtBoundaryAsync(
+                BatteryConfigurationCommitBoundary.BeforeVerification,
+                CancellationToken.None);
+            await VerifyIntendedAggregateAsync(
+                profiles,
+                preferences,
+                profileJson,
+                preferenceJson,
+                markerJson);
+            await AtBoundaryAsync(
+                BatteryConfigurationCommitBoundary.AfterVerification,
+                CancellationToken.None);
+        }
+        catch (Exception commitFailure)
+        {
+            if (replacementPhaseStarted)
+            {
+                try
+                {
+                    await RestorePriorAggregateAsync(targets);
+                }
+                catch (Exception rollbackFailure)
+                {
+                    throw new IOException(
+                        "Battery configuration commit and rollback both failed.",
+                        new AggregateException(commitFailure, rollbackFailure));
+                }
+            }
+
+            throw;
+        }
+        finally
+        {
+            foreach (TransactionTarget target in targets)
+            {
+                DeleteBestEffort(target.StagePath);
+                DeleteBestEffort(target.BackupPath);
+                DeleteBestEffort(target.RestorePath);
+            }
+        }
+    }
+
+    private async Task VerifyIntendedAggregateAsync(
+        ProfileSet profiles,
+        BatteryAutomationPreferences preferences,
+        byte[] profileJson,
+        byte[] preferenceJson,
+        byte[] markerJson)
+    {
+        CommittedSnapshot verified = await ReadCommittedSnapshotAsync(CancellationToken.None);
+        if (verified.Configuration.Profiles != profiles
+            || verified.Configuration.Preferences != preferences
+            || !verified.ProfileJson.AsSpan().SequenceEqual(profileJson)
+            || !verified.PreferenceJson.AsSpan().SequenceEqual(preferenceJson)
+            || !verified.MarkerJson.AsSpan().SequenceEqual(markerJson))
+        {
+            throw new InvalidDataException(
+                "The committed battery configuration did not match the intended aggregate.");
+        }
+    }
+
+    private async Task RestorePriorAggregateAsync(TransactionTarget[] targets)
+    {
+        // Data files are restored first and the marker last, mirroring the forward
+        // commit order so the old aggregate becomes authoritative only when complete.
+        foreach (TransactionTarget target in targets)
+        {
+            if (target.Prior.Exists)
+            {
+                byte[] backup = await File.ReadAllBytesAsync(
+                    target.BackupPath,
+                    CancellationToken.None);
+                if (!backup.AsSpan().SequenceEqual(target.Prior.Contents))
+                {
+                    throw new InvalidDataException(
+                        $"Rollback backup for '{target.Prior.Path}' was not exact.");
+                }
+
+                await WriteDurableFileAsync(
+                    target.RestorePath,
+                    backup,
+                    CancellationToken.None);
+                File.Move(target.RestorePath, target.Prior.Path, overwrite: true);
+            }
+            else
+            {
+                File.Delete(target.Prior.Path);
+            }
+        }
+
+        foreach (TransactionTarget target in targets)
+        {
+            TargetSnapshot restored = await CaptureAsync(
+                target.Prior.Path,
+                CancellationToken.None);
+            if (restored.Exists != target.Prior.Exists
+                || !restored.Contents.AsSpan().SequenceEqual(target.Prior.Contents))
+            {
+                throw new InvalidDataException(
+                    $"Rollback did not restore '{target.Prior.Path}' exactly.");
+            }
+        }
+
+        if (targets.All(target => target.Prior.Exists))
+        {
+            _ = await ReadCommittedSnapshotAsync(CancellationToken.None);
+        }
+    }
+
+    private Task AtBoundaryAsync(
+        BatteryConfigurationCommitBoundary boundary,
+        CancellationToken cancellationToken) => transactionBoundary is null
+            ? Task.CompletedTask
+            : transactionBoundary(boundary, cancellationToken);
+
+    private static TransactionTarget CreateTransactionTarget(
+        TargetSnapshot prior,
+        byte[] intended,
+        string transactionId) => new(
+            prior,
+            intended,
+            $"{prior.Path}.transaction-{transactionId}.stage",
+            $"{prior.Path}.transaction-{transactionId}.backup",
+            $"{prior.Path}.transaction-{transactionId}.restore");
+
+    private static async Task<TargetSnapshot> CaptureAsync(
+        string path,
+        CancellationToken cancellationToken)
+    {
+        if (!File.Exists(path))
+        {
+            return new TargetSnapshot(path, Exists: false, []);
+        }
+
+        return new TargetSnapshot(
+            path,
+            Exists: true,
+            await File.ReadAllBytesAsync(path, cancellationToken));
+    }
+
+    private static async Task WriteDurableFileAsync(
+        string path,
+        ReadOnlyMemory<byte> contents,
+        CancellationToken cancellationToken)
+    {
+        string? directory = Path.GetDirectoryName(path);
+        if (!string.IsNullOrEmpty(directory))
+        {
+            Directory.CreateDirectory(directory);
+        }
+
+        await using var stream = new FileStream(
+            path,
+            FileMode.Create,
+            FileAccess.Write,
+            FileShare.None,
+            bufferSize: 4096,
+            FileOptions.Asynchronous | FileOptions.WriteThrough);
+        await stream.WriteAsync(contents, cancellationToken);
+        await stream.FlushAsync(cancellationToken);
+        stream.Flush(flushToDisk: true);
+    }
+
+    private static void ReplaceStaged(TransactionTarget target) =>
+        File.Move(target.StagePath, target.Prior.Path, overwrite: true);
+
+    private static void DeleteBestEffort(string path)
+    {
+        try
+        {
+            File.Delete(path);
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+            // Transaction artifacts are non-authoritative. Leaving one behind is safer
+            // than changing the success/failure result after commit or rollback.
+        }
+    }
+
     private async Task<BatteryConfiguration> CommitAndVerifyAsync(
         BatteryConfiguration intended,
         CancellationToken cancellationToken)
@@ -286,14 +579,17 @@ public sealed class BatteryConfigurationStore
         byte[] preferenceJson,
         CancellationToken cancellationToken)
     {
-        byte[] markerJson = JsonSerializer.SerializeToUtf8Bytes(
+        byte[] markerJson = SerializeMarker(profileJson, preferenceJson);
+        await AtomicFile.WriteAsync(markerPath, markerJson, cancellationToken);
+    }
+
+    private static byte[] SerializeMarker(byte[] profileJson, byte[] preferenceJson) =>
+        JsonSerializer.SerializeToUtf8Bytes(
             new BatteryConfigurationCommit(
                 ProfileStore.CurrentSchemaVersion,
                 Hash(profileJson),
                 Hash(preferenceJson)),
             ProfileStore.SerializerOptions);
-        await AtomicFile.WriteAsync(markerPath, markerJson, cancellationToken);
-    }
 
     private static byte[] SerializeProfiles(ProfileSet profiles) =>
         JsonSerializer.SerializeToUtf8Bytes(
@@ -418,7 +714,18 @@ public sealed class BatteryConfigurationStore
         InvalidDataException or
         OverflowException;
 
+    private sealed record TargetSnapshot(string Path, bool Exists, byte[] Contents);
+
+    private sealed record TransactionTarget(
+        TargetSnapshot Prior,
+        byte[] Intended,
+        string StagePath,
+        string BackupPath,
+        string RestorePath);
+
     private sealed record CommittedSnapshot(
         BatteryConfiguration Configuration,
-        byte[] PreferenceJson);
+        byte[] ProfileJson,
+        byte[] PreferenceJson,
+        byte[] MarkerJson);
 }
