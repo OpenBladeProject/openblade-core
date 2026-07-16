@@ -499,6 +499,73 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         Assert.Contains("paused", status.Message, StringComparison.OrdinalIgnoreCase);
     }
 
+    [Theory]
+    [InlineData(DeviceSubsystem.Performance)]
+    [InlineData(DeviceSubsystem.Fans)]
+    [InlineData(DeviceSubsystem.Battery)]
+    [InlineData(DeviceSubsystem.Lighting)]
+    public async Task GenuinePowerTransition_PreservesExternalChangeNotPreviouslyObserved(
+        DeviceSubsystem subsystem)
+    {
+        TestContext context = CreateWritableContext();
+        PowerProfile pluggedIn = context.Runtime.GetStatus().Profiles.PluggedIn;
+        context.Device.ConfirmedState = new ConfirmedDeviceState(
+            pluggedIn.Performance,
+            pluggedIn.Fans,
+            ConfirmedBattery(80),
+            pluggedIn.Lighting);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+
+        ConfirmedDeviceState externallyChanged = subsystem switch
+        {
+            DeviceSubsystem.Performance => context.Device.ConfirmedState with
+            {
+                Performance = PerformancePreset.Performance,
+            },
+            DeviceSubsystem.Fans => context.Device.ConfirmedState with
+            {
+                Fans = FanMode.Maximum,
+            },
+            DeviceSubsystem.Battery => context.Device.ConfirmedState with
+            {
+                Battery = ConfirmedBattery(75),
+            },
+            DeviceSubsystem.Lighting => context.Device.ConfirmedState with
+            {
+                Lighting = new LightingSettings(
+                    LightingEffect.Static,
+                    new RgbColor(4, 5, 6),
+                    30),
+            },
+            _ => throw new ArgumentOutOfRangeException(nameof(subsystem)),
+        };
+        context.Device.ConfirmedState = externallyChanged;
+
+        context.Telemetry.Current = CreateTelemetry(PowerSource.Battery);
+        await context.Runtime.HandlePowerSourceChangedAsync(CancellationToken.None);
+
+        ServiceStatusSnapshot status = context.Runtime.GetStatus();
+        Assert.Equal(0, SetterCount(context.Device, subsystem));
+        Assert.Contains(subsystem, status.ExternalChanges);
+        Assert.Contains("paused", status.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.NotNull(status.ConfirmedState);
+        switch (subsystem)
+        {
+            case DeviceSubsystem.Performance:
+                Assert.Equal(externallyChanged.Performance, status.ConfirmedState.Performance);
+                break;
+            case DeviceSubsystem.Fans:
+                Assert.Equal(externallyChanged.Fans, status.ConfirmedState.Fans);
+                break;
+            case DeviceSubsystem.Battery:
+                Assert.Equal(externallyChanged.Battery, status.ConfirmedState.Battery);
+                break;
+            case DeviceSubsystem.Lighting:
+                Assert.Equal(externallyChanged.Lighting, status.ConfirmedState.Lighting);
+                break;
+        }
+    }
+
     [Fact]
     public async Task ExplicitScopedCommand_ReclaimsLatchedExternalChangeAfterReadback()
     {
@@ -1303,12 +1370,12 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     public async Task RealPowerTransition_FinalExternalFanChangeRemainsLatchedAndIsNotUnchanged()
     {
         TestContext context = CreateWritableContext();
-        await context.Runtime.ObserveAsync(CancellationToken.None);
         context.Device.ConfirmedState = context.Device.ConfirmedState with
         {
             Performance = PerformancePreset.Performance,
             Lighting = ProfileDefaults.CreateSafeDefaults().Battery.Lighting,
         };
+        await context.Runtime.ObserveAsync(CancellationToken.None);
         context.Device.AfterSetter = subsystem =>
         {
             if (subsystem == DeviceSubsystem.Performance)
@@ -1337,12 +1404,12 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     public async Task RealPowerTransition_FinalBatteryProtectionOffRemainsLatchedWithoutBatteryWrite()
     {
         TestContext context = CreateWritableContext();
-        await context.Runtime.ObserveAsync(CancellationToken.None);
         context.Device.ConfirmedState = context.Device.ConfirmedState with
         {
             Performance = PerformancePreset.Performance,
             Lighting = ProfileDefaults.CreateSafeDefaults().Battery.Lighting,
         };
+        await context.Runtime.ObserveAsync(CancellationToken.None);
         context.Device.AfterSetter = subsystem =>
         {
             if (subsystem == DeviceSubsystem.Performance)
@@ -1784,6 +1851,17 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         device.BatterySetCalls,
         device.LightingSetCalls,
     ];
+
+    private static int SetterCount(
+        CountingBladeDevice device,
+        DeviceSubsystem subsystem) => subsystem switch
+        {
+            DeviceSubsystem.Performance => device.PerformanceSetCalls,
+            DeviceSubsystem.Fans => device.FanSetCalls,
+            DeviceSubsystem.Battery => device.BatterySetCalls,
+            DeviceSubsystem.Lighting => device.LightingSetCalls,
+            _ => throw new ArgumentOutOfRangeException(nameof(subsystem)),
+        };
 
     private static ConfirmedBatteryState ConfirmedBattery(int limit) =>
         new(true, limit, false);

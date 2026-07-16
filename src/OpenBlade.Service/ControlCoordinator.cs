@@ -187,7 +187,9 @@ public sealed class ControlCoordinator
     internal async Task<FullTransitionApplyOutcome> ApplyDesiredStateOutcomeAsync(
         DesiredDeviceState desired,
         CancellationToken cancellationToken,
-        IReadOnlySet<DeviceSubsystem>? automaticWriteExclusions = null)
+        IReadOnlySet<DeviceSubsystem>? automaticWriteExclusions = null,
+        Func<ConfirmedDeviceState, IReadOnlySet<DeviceSubsystem>>?
+            automaticWriteExclusionResolver = null)
     {
         ArgumentNullException.ThrowIfNull(desired);
         var attempted = new HashSet<DeviceSubsystem>();
@@ -200,6 +202,10 @@ public sealed class ControlCoordinator
             capabilities = await device.ReadCapabilitiesAsync(cancellationToken);
             initial = await device.ReadStateAsync(cancellationToken);
             cancellationToken.ThrowIfCancellationRequested();
+            if (automaticWriteExclusionResolver is not null)
+            {
+                automaticWriteExclusions = automaticWriteExclusionResolver(initial);
+            }
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
