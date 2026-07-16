@@ -102,7 +102,6 @@ public sealed class PerformanceFanRefreshEvidenceTests
         Assert.False(conclusion.TryGetProperty("independentReadbackAvailable", out _));
         Assert.Contains("this capture", conclusion.GetProperty("reason").GetString(), StringComparison.OrdinalIgnoreCase);
         Assert.False(TrustedFixtureHashRegistry.Production.Contains(Convert.FromHexString(CaptureHash)));
-        Assert.False(document.RootElement.GetProperty("admission").GetProperty("productionHashAdded").GetBoolean());
     }
 
     private static JsonDocument LoadEvidence() => JsonDocument.Parse(File.ReadAllText(EvidencePath()));

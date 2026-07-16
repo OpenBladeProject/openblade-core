@@ -103,6 +103,130 @@ public sealed class WindowsVerifiedBladeDeviceProviderProductionTests
     }
 
     [Fact]
+    public async Task TransactionMismatchRetriesReadOnceWithFreshVerifiedSession()
+    {
+        DeviceCapabilities capabilities = BatteryCapabilities(
+            new HashSet<int> { 80 },
+            protectionOff: true);
+        var collided = new FakeProductionPort(
+            capabilities,
+            BatteryValidationSetting.Limit80,
+            temporary: false)
+        {
+            ProtectionFailure = TransactionMismatch(),
+        };
+        var recovered = new FakeProductionPort(
+            capabilities,
+            BatteryValidationSetting.Limit80,
+            temporary: false);
+        var factory = new FakeProductionFactory(capabilities, collided, recovered);
+        using var provider = ReadyProvider(factory);
+        provider.TryGetVerifiedDevice(out IBladeDevice device);
+
+        ConfirmedDeviceState state = await device.ReadStateAsync(default);
+
+        Assert.Equal(new ConfirmedBatteryState(true, 80, false), state.Battery);
+        Assert.Equal(2, factory.OpenCount);
+        Assert.Equal(1, collided.DisposeCount);
+        Assert.Equal(1, recovered.DisposeCount);
+    }
+
+    [Fact]
+    public async Task TemporaryQueryTransactionMismatchRetriesBothQueriesOnFreshSession()
+    {
+        DeviceCapabilities capabilities = BatteryCapabilities(
+            new HashSet<int> { 80 },
+            protectionOff: true);
+        var collided = new FakeProductionPort(
+            capabilities,
+            BatteryValidationSetting.ProtectionOff,
+            temporary: false)
+        {
+            TemporaryFailure = TransactionMismatch(),
+        };
+        var recovered = new FakeProductionPort(
+            capabilities,
+            BatteryValidationSetting.Limit80,
+            temporary: false);
+        var factory = new FakeProductionFactory(capabilities, collided, recovered);
+        using var provider = ReadyProvider(factory);
+        provider.TryGetVerifiedDevice(out IBladeDevice device);
+
+        ConfirmedDeviceState state = await device.ReadStateAsync(default);
+
+        Assert.Equal(new ConfirmedBatteryState(true, 80, false), state.Battery);
+        Assert.Equal(1, collided.ProtectionQueryCount);
+        Assert.Equal(1, collided.TemporaryQueryCount);
+        Assert.Equal(1, recovered.ProtectionQueryCount);
+        Assert.Equal(1, recovered.TemporaryQueryCount);
+        Assert.Equal(2, factory.OpenCount);
+    }
+
+    [Fact]
+    public async Task RepeatedTransactionMismatchStopsAfterOneFreshSessionRetry()
+    {
+        DeviceCapabilities capabilities = BatteryCapabilities(new HashSet<int> { 80 });
+        var first = new FakeProductionPort(
+            capabilities,
+            BatteryValidationSetting.Limit80,
+            temporary: null)
+        {
+            ProtectionFailure = TransactionMismatch(),
+        };
+        var second = new FakeProductionPort(
+            capabilities,
+            BatteryValidationSetting.Limit80,
+            temporary: null)
+        {
+            ProtectionFailure = TransactionMismatch(),
+        };
+        var factory = new FakeProductionFactory(capabilities, first, second);
+        using var provider = ReadyProvider(factory);
+        provider.TryGetVerifiedDevice(out IBladeDevice device);
+
+        RazerProtocolException error = await Assert.ThrowsAsync<RazerProtocolException>(
+            () => device.ReadStateAsync(default));
+
+        Assert.Equal(HidProtocolValidationFailure.TransactionMismatch, error.ValidationFailure);
+        Assert.Equal("Battery state query failed protocol validation.", error.Message);
+        Assert.Equal(2, factory.OpenCount);
+        Assert.Equal(1, first.DisposeCount);
+        Assert.Equal(1, second.DisposeCount);
+    }
+
+    [Theory]
+    [InlineData(HidProtocolValidationFailure.Checksum)]
+    [InlineData(HidProtocolValidationFailure.CommandIdMismatch)]
+    [InlineData(HidProtocolValidationFailure.PayloadValidator)]
+    public async Task OtherProtocolFailuresRemainSingleAttemptAndFailClosed(
+        HidProtocolValidationFailure failure)
+    {
+        DeviceCapabilities capabilities = BatteryCapabilities(new HashSet<int> { 80 });
+        var rejected = new FakeProductionPort(
+            capabilities,
+            BatteryValidationSetting.Limit80,
+            temporary: null)
+        {
+            ProtectionFailure = new RazerProtocolException("rejected", failure),
+        };
+        var neverOpened = new FakeProductionPort(
+            capabilities,
+            BatteryValidationSetting.Limit80,
+            temporary: null);
+        var factory = new FakeProductionFactory(capabilities, rejected, neverOpened);
+        using var provider = ReadyProvider(factory);
+        provider.TryGetVerifiedDevice(out IBladeDevice device);
+
+        RazerProtocolException error = await Assert.ThrowsAsync<RazerProtocolException>(
+            () => device.ReadStateAsync(default));
+
+        Assert.Equal(failure, error.ValidationFailure);
+        Assert.Equal(1, factory.OpenCount);
+        Assert.Equal(1, rejected.DisposeCount);
+        Assert.Equal(0, neverOpened.ProtectionQueryCount);
+    }
+
+    [Fact]
     public async Task ProviderSerializesReadAndWriteAcrossOneHardwareOperationGate()
     {
         DeviceCapabilities capabilities = BatteryCapabilities(new HashSet<int> { 80 });
@@ -369,6 +493,10 @@ public sealed class WindowsVerifiedBladeDeviceProviderProductionTests
             FeatureLengthMatchCount: 1,
             ExactMatchCount: 1);
 
+    private static RazerProtocolException TransactionMismatch() => new(
+        "interleaved response",
+        HidProtocolValidationFailure.TransactionMismatch);
+
     private sealed class UnavailableFanRpmFactory : IFanRpmQueryRunFactory
     {
         public Task<HidSessionResult<IFanRpmQueryPort>> OpenAsync(
@@ -455,6 +583,8 @@ public sealed class WindowsVerifiedBladeDeviceProviderProductionTests
         public DeviceCapabilities Capabilities { get; } = capabilities;
         public bool SupportsTemporaryFullChargeQuery => temporary.HasValue;
         public BladeWriteException? WriteFailure { get; set; }
+        public Exception? ProtectionFailure { get; init; }
+        public Exception? TemporaryFailure { get; init; }
         public TaskCompletionSource ProtectionQueryStarted { get; } =
             new(TaskCreationOptions.RunContinuationsAsynchronously);
         public TaskCompletionSource WriteStarted { get; } =
@@ -475,6 +605,11 @@ public sealed class WindowsVerifiedBladeDeviceProviderProductionTests
                 await protectionRelease.Task.WaitAsync(cancellationToken);
             }
 
+            if (ProtectionFailure is not null)
+            {
+                throw ProtectionFailure;
+            }
+
             return protection switch
             {
                 BatteryValidationSetting.ProtectionOff => new(false, null, null),
@@ -486,7 +621,9 @@ public sealed class WindowsVerifiedBladeDeviceProviderProductionTests
         public Task<bool?> QueryTemporaryFullChargeAsync(CancellationToken cancellationToken)
         {
             TemporaryQueryCount++;
-            return Task.FromResult(temporary);
+            return TemporaryFailure is null
+                ? Task.FromResult(temporary)
+                : Task.FromException<bool?>(TemporaryFailure);
         }
 
         public async Task SetChargeLimitAsync(int percent, CancellationToken cancellationToken)

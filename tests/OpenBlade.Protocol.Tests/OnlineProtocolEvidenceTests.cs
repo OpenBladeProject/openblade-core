@@ -104,7 +104,6 @@ public sealed class OnlineProtocolEvidenceTests
     {
         using JsonDocument document = LoadEvidence();
 
-        Assert.False(document.RootElement.GetProperty("admission").GetProperty("productionHashAdded").GetBoolean());
         foreach (string hash in ExpectedCaptureHashes.Values)
         {
             Assert.False(TrustedFixtureHashRegistry.Production.Contains(Convert.FromHexString(hash)));

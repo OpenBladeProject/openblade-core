@@ -29,7 +29,6 @@ public sealed class LightingOnlineEvidenceTests
                 source => source.GetProperty("sha256").GetString()!);
 
         Assert.Equal(ExpectedCaptureHashes, actual);
-        Assert.False(document.RootElement.GetProperty("admission").GetProperty("productionHashAdded").GetBoolean());
         foreach (string hash in ExpectedCaptureHashes.Values)
         {
             Assert.False(TrustedFixtureHashRegistry.Production.Contains(Convert.FromHexString(hash)));

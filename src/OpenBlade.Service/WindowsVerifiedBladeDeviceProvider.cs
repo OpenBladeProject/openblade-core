@@ -157,32 +157,20 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
             await EnterHardwareOperationAsync(cancellationToken).ConfigureAwait(false);
             try
             {
-                HidSessionResult<IProductionBatteryPort> opened =
-                    await batteryFactory.OpenAsync(cancellationToken).ConfigureAwait(false);
-                if (opened.Value is not { } port)
+                for (int attempt = 0; ; attempt++)
                 {
-                    ThrowReadOpenFailure(opened.Failure, cancellationToken);
-                    throw new IOException("Battery state query did not provide a verified session.");
-                }
-
-                await using (port.ConfigureAwait(false))
-                {
-                    if (opened.Failure is not null)
+                    try
                     {
-                        ThrowReadOpenFailure(opened.Failure, cancellationToken);
+                        return await ReadBatteryStateOnceAsync(cancellationToken)
+                            .ConfigureAwait(false);
                     }
-
-                    ConfirmedBatteryState protection =
-                        await port.QueryProtectionAsync(cancellationToken).ConfigureAwait(false);
-                    bool? temporary = port.SupportsTemporaryFullChargeQuery
-                        ? await port.QueryTemporaryFullChargeAsync(cancellationToken)
-                            .ConfigureAwait(false)
-                        : null;
-                    ConfirmedBatteryState battery = new(
-                        protection.ProtectionEnabled,
-                        protection.ChargeLimitPercent,
-                        temporary);
-                    return new ConfirmedDeviceState(null, null, battery, null);
+                    catch (RazerProtocolException exception) when (
+                        attempt == 0 &&
+                        exception.ValidationFailure ==
+                            HidProtocolValidationFailure.TransactionMismatch)
+                    {
+                        cancellationToken.ThrowIfCancellationRequested();
+                    }
                 }
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -214,6 +202,38 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
             finally
             {
                 hardwareOperationGate.Release();
+            }
+        }
+
+        private async Task<ConfirmedDeviceState> ReadBatteryStateOnceAsync(
+            CancellationToken cancellationToken)
+        {
+            HidSessionResult<IProductionBatteryPort> opened =
+                await batteryFactory.OpenAsync(cancellationToken).ConfigureAwait(false);
+            if (opened.Value is not { } port)
+            {
+                ThrowReadOpenFailure(opened.Failure, cancellationToken);
+                throw new IOException("Battery state query did not provide a verified session.");
+            }
+
+            await using (port.ConfigureAwait(false))
+            {
+                if (opened.Failure is not null)
+                {
+                    ThrowReadOpenFailure(opened.Failure, cancellationToken);
+                }
+
+                ConfirmedBatteryState protection =
+                    await port.QueryProtectionAsync(cancellationToken).ConfigureAwait(false);
+                bool? temporary = port.SupportsTemporaryFullChargeQuery
+                    ? await port.QueryTemporaryFullChargeAsync(cancellationToken)
+                        .ConfigureAwait(false)
+                    : null;
+                ConfirmedBatteryState battery = new(
+                    protection.ProtectionEnabled,
+                    protection.ChargeLimitPercent,
+                    temporary);
+                return new ConfirmedDeviceState(null, null, battery, null);
             }
         }
 

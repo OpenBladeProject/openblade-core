@@ -97,7 +97,7 @@ public sealed class BatteryQuerySequenceEvidenceTests
     }
 
     [Fact]
-    public void Evidence_KeepsRawReportsAndProductionAdmissionClosed()
+    public void Evidence_KeepsRawReportsAndCaptureHashOutOfProductionRegistry()
     {
         using JsonDocument document = LoadEvidence();
         JsonElement root = document.RootElement;
@@ -106,7 +106,6 @@ public sealed class BatteryQuerySequenceEvidenceTests
         Assert.DoesNotContain("rawReport", evidence, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("reportBody", evidence, StringComparison.OrdinalIgnoreCase);
         Assert.False(TrustedFixtureHashRegistry.Production.Contains(Convert.FromHexString(CaptureHash)));
-        Assert.False(root.GetProperty("admission").GetProperty("productionHashAdded").GetBoolean());
     }
 
     [Fact]
@@ -194,7 +193,7 @@ public sealed class BatteryQuerySequenceEvidenceTests
     }
 
     [Fact]
-    public void EightSecondEvidence_KeepsRawReportsAndProductionAdmissionClosed()
+    public void EightSecondEvidence_KeepsRawReportsAndCaptureHashOutOfProductionRegistry()
     {
         using JsonDocument document = LoadEvidence();
         JsonElement root = document.RootElement;
@@ -205,7 +204,6 @@ public sealed class BatteryQuerySequenceEvidenceTests
         Assert.DoesNotContain("annotation", evidence, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("trustedFixtureHash", evidence, StringComparison.OrdinalIgnoreCase);
         Assert.False(TrustedFixtureHashRegistry.Production.Contains(Convert.FromHexString(EightSecondCaptureHash)));
-        Assert.False(root.GetProperty("admission").GetProperty("productionHashAdded").GetBoolean());
     }
 
     [Fact]
@@ -315,7 +313,7 @@ public sealed class BatteryQuerySequenceEvidenceTests
     }
 
     [Fact]
-    public void SettledEvidence_KeepsRawReportsAndProductionAdmissionClosed()
+    public void SettledEvidence_KeepsRawReportsAndCaptureHashOutOfProductionRegistry()
     {
         using JsonDocument document = LoadEvidence();
         JsonElement root = document.RootElement;
@@ -326,7 +324,6 @@ public sealed class BatteryQuerySequenceEvidenceTests
         Assert.DoesNotContain("annotation", evidence, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("trustedFixtureHash", evidence, StringComparison.OrdinalIgnoreCase);
         Assert.False(TrustedFixtureHashRegistry.Production.Contains(Convert.FromHexString(SettledCaptureHash)));
-        Assert.False(root.GetProperty("admission").GetProperty("productionHashAdded").GetBoolean());
     }
 
     private static JsonDocument LoadEvidence() => JsonDocument.Parse(File.ReadAllText(EvidencePath()));

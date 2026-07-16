@@ -114,12 +114,13 @@ public sealed class BatteryValidationEvidenceTests
     }
 
     [Fact]
-    public void Evidence_AdmitsNoProductionWritesOrTrustedHashes()
+    public void Evidence_PreservesHistoricalBoundaryAndRecordsCurrentNarrowAdmission()
     {
         using JsonDocument document = LoadEvidence();
         JsonElement root = document.RootElement;
         JsonElement boundary = root.GetProperty("batteryValidationEvidence")
-            .GetProperty("admissionBoundary");
+            .GetProperty("historicalAdmissionBoundaryAfterLimit80Validation");
+        JsonElement admission = root.GetProperty("admission");
         JsonElement limit80 = root.GetProperty("actions")
             .EnumerateArray()
             .Single(action => action.GetProperty("action").GetString() == "battery-limit-80")
@@ -134,7 +135,16 @@ public sealed class BatteryValidationEvidenceTests
         Assert.False(boundary.GetProperty("limit80WriteAuthorizedInProduction").GetBoolean());
         Assert.False(boundary.GetProperty("otherBatteryLimitsAuthorizedInProduction").GetBoolean());
         Assert.False(boundary.GetProperty("fullChargeOverrideAuthorizedInProduction").GetBoolean());
-        Assert.False(root.GetProperty("admission").GetProperty("productionHashAdded").GetBoolean());
+        Assert.True(admission.GetProperty("productionHashAdded").GetBoolean());
+        Assert.Equal(
+            ["battery-limit-80", "battery-protection-off", "temporary-full-charge-query"],
+            admission.GetProperty("authorizedActions").EnumerateArray().Select(value => value.GetString()));
+        Assert.Contains(
+            "temporary-full-charge-enable",
+            admission.GetProperty("unauthorizedActions").EnumerateArray().Select(value => value.GetString()));
+        Assert.Contains(
+            "other-battery-limits",
+            admission.GetProperty("unauthorizedActions").EnumerateArray().Select(value => value.GetString()));
         Assert.False(TrustedFixtureHashRegistry.Production.Contains(Convert.FromHexString(SameCandidateHash)));
         Assert.False(TrustedFixtureHashRegistry.Production.Contains(Convert.FromHexString(TimingNegativeHash)));
         Assert.False(TrustedFixtureHashRegistry.Production.Contains(Convert.FromHexString(StrictSuccessHash)));
