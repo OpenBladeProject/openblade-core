@@ -525,7 +525,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             WritesBlocked: true,
             PotentialControllers: conflicts,
             ControllerDetectionWarning: access.DetectionFailure,
-            ExternalChanges: [],
+            ExternalChanges: driftTracker.ExternalChanges,
             Message: message,
             Capabilities: UnavailableCapabilities,
             ConfirmedState: null,

@@ -155,6 +155,57 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     }
 
     [Fact]
+    public async Task BlockedIntentionalReconciliation_PreservesLatchedExternalChanges()
+    {
+        TestContext context = CreateContext(providerAvailable: true);
+        await LatchFanDriftAsync(context);
+        context.Guard.SetScript(new HardwareAccessDecision(["RazerAppEngine"], null));
+
+        ControlOperationResult result = await context.Runtime.SetPerformanceOverrideAsync(
+            new ManualOverride<PerformancePreset>(
+                PerformancePreset.Performance,
+                OverrideLifetime.Persistent),
+            CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Blocked, result.Status);
+        Assert.Equal([DeviceSubsystem.Fans], context.Runtime.GetStatus().ExternalChanges);
+    }
+
+    [Fact]
+    public async Task UnavailableIntentionalReconciliation_PreservesLatchedExternalChanges()
+    {
+        TestContext context = CreateContext(providerAvailable: true);
+        await LatchFanDriftAsync(context);
+        context.Provider.Available = false;
+
+        ControlOperationResult result = await context.Runtime.SetPerformanceOverrideAsync(
+            new ManualOverride<PerformancePreset>(
+                PerformancePreset.Performance,
+                OverrideLifetime.Persistent),
+            CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Blocked, result.Status);
+        Assert.Equal([DeviceSubsystem.Fans], context.Runtime.GetStatus().ExternalChanges);
+    }
+
+    [Fact]
+    public async Task ThrowingIntentionalReconciliation_PreservesLatchedExternalChanges()
+    {
+        TestContext context = CreateContext(providerAvailable: true);
+        await LatchFanDriftAsync(context);
+        context.Device.ReadStateFailure = new IOException("device vanished");
+
+        ControlOperationResult result = await context.Runtime.SetPerformanceOverrideAsync(
+            new ManualOverride<PerformancePreset>(
+                PerformancePreset.Performance,
+                OverrideLifetime.Persistent),
+            CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Failed, result.Status);
+        Assert.Equal([DeviceSubsystem.Fans], context.Runtime.GetStatus().ExternalChanges);
+    }
+
+    [Fact]
     public async Task SuccessfulObservationWithEmptyCapabilities_DoesNotBlockWrites()
     {
         TestContext context = CreateContext(providerAvailable: true);
@@ -824,6 +875,22 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             provider,
             device,
             history);
+    }
+
+    private static async Task LatchFanDriftAsync(TestContext context)
+    {
+        context.Device.ConfirmedState = new ConfirmedDeviceState(
+            null,
+            FanMode.Automatic,
+            null,
+            null);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        context.Device.ConfirmedState = context.Device.ConfirmedState with
+        {
+            Fans = FanMode.Maximum,
+        };
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        Assert.Equal([DeviceSubsystem.Fans], context.Runtime.GetStatus().ExternalChanges);
     }
 
     private static TelemetrySnapshot CreateTelemetry(
