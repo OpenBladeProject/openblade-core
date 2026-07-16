@@ -263,6 +263,7 @@ public static class IpcMessageCodec
     {
         var options = new JsonSerializerOptions(JsonSerializerDefaults.Web)
         {
+            RespectRequiredConstructorParameters = true,
             UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow,
         };
         options.Converters.Add(new BatteryPolicyJsonConverter());

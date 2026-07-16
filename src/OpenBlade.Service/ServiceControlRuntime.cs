@@ -212,15 +212,6 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 return rejected;
             }
 
-            if (enabled)
-            {
-                automation.EnableTemporaryFullCharge();
-            }
-            else
-            {
-                automation.CancelTemporaryFullCharge();
-            }
-
             return await ApplyScopedIntentAsync(
                 DeviceSubsystem.Battery,
                 telemetry,
@@ -228,7 +219,17 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                     coordinator.ApplyBatteryOutcomeAsync(
                         desired.Battery,
                         cancellationToken),
-                token);
+                token,
+                desired => desired with
+                {
+                    Battery = new DesiredBatteryState(
+                        desired.Battery.ConfiguredPolicy,
+                        desired.Battery.ProtectionEnabled,
+                        enabled),
+                },
+                enabled
+                    ? automation.EnableTemporaryFullCharge
+                    : automation.CancelTemporaryFullCharge);
         }
         finally
         {
@@ -339,11 +340,18 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         DeviceSubsystem subsystem,
         TelemetrySnapshot telemetry,
         Func<ControlCoordinator, DesiredDeviceState, CancellationToken, Task<ScopedApplyOutcome>> apply,
-        CancellationToken token)
+        CancellationToken token,
+        Func<DesiredDeviceState, DesiredDeviceState>? stageDesired = null,
+        Action? commitIntent = null)
     {
         ServiceStatusSnapshot current = GetStatus();
         ConfirmedDeviceState? cachedConfirmed = current.ConfirmedState;
         DesiredDeviceState desired = automation.Resolve(cachedConfirmed ?? UnknownConfirmedState);
+        if (stageDesired is not null)
+        {
+            desired = stageDesired(desired);
+        }
+
         IBladeDevice device;
         try
         {
@@ -415,6 +423,12 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         else if (outcome.WriteAttempted)
         {
             driftTracker.ConfirmIntentional(subsystem, matched: false);
+        }
+
+        if (outcome.Result.Status is ControlResultStatus.Applied
+            or ControlResultStatus.Unchanged)
+        {
+            commitIntent?.Invoke();
         }
 
         history.RecordSubsystemResult(subsystem, outcome.Result);

@@ -197,6 +197,17 @@ public sealed class IpcMessageCodecTests
     }
 
     [Fact]
+    public async Task ReadRequestAsync_RejectsBatteryProtectionRequestWithoutEnabled()
+    {
+        Guid requestId = Guid.NewGuid();
+        using MemoryStream stream = FrameJson(
+            $"{{\"operation\":\"setBatteryProtection\",\"version\":4,\"requestId\":\"{requestId}\"}}");
+
+        await Assert.ThrowsAsync<InvalidDataException>(() =>
+            IpcMessageCodec.ReadRequestAsync(stream, CancellationToken.None));
+    }
+
+    [Fact]
     public async Task ServerFrameHelpers_RoundTripResponseAndStatusEventThroughBaseType()
     {
         ServiceStatusSnapshot status = CreateStatus();

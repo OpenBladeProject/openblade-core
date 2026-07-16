@@ -841,7 +841,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     }
 
     [Fact]
-    public async Task FullCharge_StoresIntentWithoutBatteryWriteAndDoesNotConsumeNextPowerTransition()
+    public async Task BlockedFullCharge_PreservesPriorIntentAndDoesNotConsumeNextPowerTransition()
     {
         TestContext context = CreateWritableContext();
 
@@ -851,7 +851,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
 
         Assert.Equal(ControlOperationStatus.Blocked, fullCharge.Status);
         Assert.Equal([0, 0, 0, 0], SetterCounts(context.Device));
-        Assert.True(context.Runtime.GetStatus().FullChargeOverride);
+        Assert.False(context.Runtime.GetStatus().FullChargeOverride);
         Assert.Null(context.Runtime.GetStatus().ConfirmedState);
 
         context.Device.ConfirmedState = context.Device.ConfirmedState with
@@ -862,6 +862,87 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         await context.Runtime.HandlePowerSourceChangedAsync(CancellationToken.None);
 
         Assert.True(context.Device.PerformanceSetCalls > 0);
+    }
+
+    [Fact]
+    public async Task FailedFullCharge_PreservesPriorIntent()
+    {
+        TestContext context = CreateWritableContext();
+        context.Device.ConfirmedState = context.Device.ConfirmedState with
+        {
+            Battery = new ConfirmedBatteryState(true, 80, true),
+        };
+        context.Device.ReadStateFailure = new IOException("read failed");
+
+        ControlOperationResult result = await context.Runtime.SetFullChargeOverrideAsync(
+            false,
+            CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Failed, result.Status);
+        Assert.False(context.Runtime.GetStatus().FullChargeOverride);
+        Assert.Equal(0, context.Device.BatterySetCalls);
+    }
+
+    [Fact]
+    public async Task MismatchedFullCharge_PreservesPriorIntent()
+    {
+        TestContext context = CreateWritableContext();
+        context.Device.ConfirmedState = context.Device.ConfirmedState with
+        {
+            Battery = new ConfirmedBatteryState(true, 80, true),
+        };
+        context.Device.SuppressConfirmationFor = DeviceSubsystem.Battery;
+
+        ControlOperationResult result = await context.Runtime.SetFullChargeOverrideAsync(
+            false,
+            CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Failed, result.Status);
+        Assert.False(context.Runtime.GetStatus().FullChargeOverride);
+        Assert.Equal(1, context.Device.BatterySetCalls);
+    }
+
+    [Fact]
+    public async Task IndeterminateFullCharge_PreservesPriorIntent()
+    {
+        TestContext context = CreateWritableContext();
+        context.Device.ConfirmedState = context.Device.ConfirmedState with
+        {
+            Battery = new ConfirmedBatteryState(true, 80, true),
+        };
+        context.Device.ReadStateFailureOnCall = 2;
+
+        ControlOperationResult result = await context.Runtime.SetFullChargeOverrideAsync(
+            false,
+            CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Failed, result.Status);
+        Assert.False(context.Runtime.GetStatus().FullChargeOverride);
+        Assert.Equal(1, context.Device.BatterySetCalls);
+    }
+
+    [Fact]
+    public async Task CanceledFullCharge_PreservesPriorIntent()
+    {
+        TestContext context = CreateWritableContext();
+        context.Device.ConfirmedState = context.Device.ConfirmedState with
+        {
+            Battery = new ConfirmedBatteryState(true, 80, true),
+        };
+        using var cancellation = new CancellationTokenSource();
+        context.Device.AfterSetter = subsystem =>
+        {
+            if (subsystem == DeviceSubsystem.Battery)
+            {
+                cancellation.Cancel();
+            }
+        };
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => context.Runtime.SetFullChargeOverrideAsync(false, cancellation.Token));
+
+        Assert.False(context.Runtime.GetStatus().FullChargeOverride);
+        Assert.Equal(1, context.Device.BatterySetCalls);
     }
 
     [Fact]
