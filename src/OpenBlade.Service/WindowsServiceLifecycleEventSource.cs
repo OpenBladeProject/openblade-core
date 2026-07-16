@@ -126,6 +126,7 @@ public sealed class WindowsServiceLifecycleEventSource
     private const int DeviceArrivedBit = 1 << 2;
     private static readonly ConcurrentBag<IDisposable> FailedSubscriptions = [];
     private readonly object disposeSync = new();
+    private readonly Func<CancellationToken, ValueTask>? beforePendingDrainAsync;
     private readonly Channel<bool> signal;
     private readonly IDisposable subscription;
     private Exception? disposalFailure;
@@ -151,6 +152,15 @@ public sealed class WindowsServiceLifecycleEventSource
         subscription = backend.Subscribe(Publish);
     }
 
+    internal WindowsServiceLifecycleEventSource(
+        IWindowsLifecycleNotificationBackend backend,
+        Func<CancellationToken, ValueTask> beforePendingDrainAsync)
+        : this(backend)
+    {
+        this.beforePendingDrainAsync = beforePendingDrainAsync
+            ?? throw new ArgumentNullException(nameof(beforePendingDrainAsync));
+    }
+
     public async IAsyncEnumerable<ServiceLifecycleTrigger> WatchAsync(
         [System.Runtime.CompilerServices.EnumeratorCancellation]
         CancellationToken cancellationToken)
@@ -169,6 +179,11 @@ public sealed class WindowsServiceLifecycleEventSource
 
             while (true)
             {
+                if (beforePendingDrainAsync is not null)
+                {
+                    await beforePendingDrainAsync(cancellationToken);
+                }
+
                 int drained = Interlocked.Exchange(ref pendingTriggers, 0);
                 if (drained == 0)
                 {

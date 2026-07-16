@@ -110,6 +110,41 @@ public sealed class WindowsServiceLifecycleEventSourceTests
     }
 
     [Fact]
+    public async Task WatchAsync_PublishAfterSignalDrainBeforeBitExchangeIsNotLost()
+    {
+        var backend = new FakeWindowsLifecycleNotificationBackend();
+        var boundaryEntered = new TaskCompletionSource(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseBoundary = new TaskCompletionSource(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        int boundaryCalls = 0;
+        using var source = new WindowsServiceLifecycleEventSource(
+            backend,
+            async cancellationToken =>
+            {
+                if (Interlocked.Increment(ref boundaryCalls) == 1)
+                {
+                    boundaryEntered.TrySetResult();
+                    await releaseBoundary.Task.WaitAsync(cancellationToken);
+                }
+            });
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        backend.Publish(ServiceLifecycleTrigger.Resumed);
+        await using IAsyncEnumerator<ServiceLifecycleTrigger> notifications =
+            source.WatchAsync(timeout.Token).GetAsyncEnumerator(timeout.Token);
+        Task<bool> first = notifications.MoveNextAsync().AsTask();
+        await boundaryEntered.Task.WaitAsync(timeout.Token);
+
+        backend.Publish(ServiceLifecycleTrigger.PowerChanged);
+        releaseBoundary.TrySetResult();
+
+        Assert.True(await first.WaitAsync(timeout.Token));
+        Assert.Equal(ServiceLifecycleTrigger.PowerChanged, notifications.Current);
+        Assert.True(await notifications.MoveNextAsync().AsTask().WaitAsync(timeout.Token));
+        Assert.Equal(ServiceLifecycleTrigger.Resumed, notifications.Current);
+    }
+
+    [Fact]
     public async Task WatchAsync_SecondWatcherFailsExplicitly()
     {
         var backend = new FakeWindowsLifecycleNotificationBackend();
