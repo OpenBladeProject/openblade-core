@@ -2,7 +2,10 @@ namespace OpenBlade.Protocol;
 
 internal sealed class TrustedFixtureHashRegistry
 {
-    private static readonly string[] ProductionApprovedSha256Hashes = [];
+    private static readonly string[] ProductionApprovedSha256Hashes =
+    [
+        "A368D68B26E5FE8930605FBC987DDCF70AB7BB83AD8F49FE352DB4DE0495C1E9",
+    ];
     private readonly HashSet<string> _sha256Hashes;
 
     private TrustedFixtureHashRegistry(IEnumerable<string> sha256Hashes)

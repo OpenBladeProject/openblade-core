@@ -16,7 +16,10 @@ internal sealed class ProductionBatteryReadEvidence
     }
 
     public static ProductionBatteryReadEvidence Production { get; } = new(
-        new HashSet<ProductionBatteryQueryCapability>());
+        new HashSet<ProductionBatteryQueryCapability>
+        {
+            ProductionBatteryQueryCapability.TemporaryFullCharge,
+        });
 
     public bool SupportsTemporaryFullChargeQuery { get; }
 }

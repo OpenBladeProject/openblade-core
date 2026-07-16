@@ -156,7 +156,7 @@ public sealed class ProductionBatteryPortTests
         ProductionBatteryReadEvidence? evidence = null) => new(
             session,
             catalog,
-            evidence ?? ProductionBatteryReadEvidence.Production,
+            evidence ?? NoTemporaryReadEvidence(),
             new ValidationRunContext(),
             TimeSpan.FromSeconds(1));
 
@@ -168,6 +168,9 @@ public sealed class ProductionBatteryPortTests
         {
             ProductionBatteryQueryCapability.TemporaryFullCharge,
         });
+
+    private static ProductionBatteryReadEvidence NoTemporaryReadEvidence() => new(
+        new HashSet<ProductionBatteryQueryCapability>());
 
     private static CapturedCommandFixture Fixture(
         string action,

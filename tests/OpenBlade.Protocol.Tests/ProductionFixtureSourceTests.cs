@@ -5,20 +5,27 @@ namespace OpenBlade.Protocol.Tests;
 public sealed class ProductionFixtureSourceTests
 {
     [Fact]
-    public void PreAdmissionEmbeddedResourceIsAbsentAndReturnsNoBytes()
+    public void ProductionEmbeddedResourceIsTrustedAndExposesOnlyAdmittedBatteryActions()
     {
         ReadOnlyMemory<byte>? fixture = ProductionFixtureSource.Read();
 
-        Assert.Null(fixture);
-        Assert.DoesNotContain(
+        Assert.NotNull(fixture);
+        Assert.Contains(
             ProductionFixtureSource.ResourceName,
             typeof(ProductionFixtureSource).Assembly.GetManifestResourceNames());
+        DeviceCommandCatalog catalog = CapturedFixtureFile.LoadCatalog(
+            fixture.Value,
+            TrustedFixtureHashRegistry.Production);
+        Assert.True(catalog.TryGet(ProductionBatteryPort.Limit80Action, out _));
+        Assert.True(catalog.TryGet(ProductionBatteryPort.ProtectionOffAction, out _));
+        Assert.False(catalog.TryGet(ProductionBatteryPort.TemporaryEnableAction, out _));
+        Assert.False(catalog.TryGet(ProductionBatteryPort.TemporaryCancelAction, out _));
     }
 
     [Fact]
-    public void ProductionReadEvidenceStartsEmptyAndAcceptsNoRuntimeInput()
+    public void ProductionReadEvidenceIsCodeControlledAndAcceptsNoRuntimeInput()
     {
-        Assert.False(ProductionBatteryReadEvidence.Production.SupportsTemporaryFullChargeQuery);
+        Assert.True(ProductionBatteryReadEvidence.Production.SupportsTemporaryFullChargeQuery);
         Assert.Empty(typeof(ProductionBatteryReadEvidence).GetConstructors());
         Assert.DoesNotContain(
             typeof(ProductionBatteryReadEvidence).GetMethods(),

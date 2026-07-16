@@ -1,11 +1,16 @@
 # PID 02E0 capture workflow
 
-Production hardware writes remain disabled until every command has passed all five gates: captured, decoded, applied interactively, read back, and restored.
+Each production hardware write remains disabled until its exact command has
+passed all five gates: captured, decoded, applied interactively, read back, and
+restored.
 
 ## Prerequisites
 
 - Target: Razer Blade 16 `RZ09-0581`, `1532:02E0`, BIOS `3.01`.
-- Synapse `4.0.695` remains installed only for this capture phase.
+- Synapse `4.0.695` may remain installed for other devices and serves as a
+  protocol oracle during capture. Stop its controllers temporarily only for a
+  strict one-time write-validation cycle; released OpenBlade operation does not
+  require Synapse to be disabled.
 - Wireshark and USBPcap are installed. Reboot Windows before capture so the USB filter becomes active.
 
 ## Procedure

@@ -5,10 +5,11 @@ Razer Blade 16 RZ09-0581 with USB identity `1532:02E0` and BIOS `3.01`.
 
 ## Safety state
 
-The application is deliberately fail-closed. Device discovery is read-only and
-all hardware writes remain unavailable until each PID `02E0` operation has a
-sanitized capture fixture that passed decoding, interactive application,
-readback, and restoration. OpenBlade never exposes a raw-command IPC endpoint.
+The application is deliberately fail-closed. A PID `02E0` hardware write is
+available only when that exact operation has a sanitized capture fixture that
+passed decoding, interactive application, readback, and restoration and whose
+bytes are embedded and hash-trusted in the application. OpenBlade never exposes
+a raw-command IPC endpoint.
 
 If a Razer/Synapse controller process is running, the service reports an
 advisory warning. OpenBlade observes confirmed device state and does not

@@ -15,4 +15,10 @@
     <ProjectReference Include="..\OpenBlade.Contracts\OpenBlade.Contracts.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <EmbeddedResource
+      Include="Fixtures\Rz09_0581_02e0_3_01_BatteryProduction.json"
+      LogicalName="OpenBlade.Protocol.Fixtures.Rz09_0581_02e0_3_01_BatteryProduction.json" />
+  </ItemGroup>
+
 </Project>

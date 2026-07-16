@@ -1,0 +1,36 @@
+[
+  {
+    "device": {
+      "model": "RZ09-0581",
+      "vendorId": 5426,
+      "productId": 736,
+      "biosVersion": "3.01"
+    },
+    "action": "battery-limit-80",
+    "commandClass": 7,
+    "commandId": 18,
+    "payload": "0A==",
+    "captured": true,
+    "decoded": true,
+    "applied": true,
+    "readBack": true,
+    "restored": true
+  },
+  {
+    "device": {
+      "model": "RZ09-0581",
+      "vendorId": 5426,
+      "productId": 736,
+      "biosVersion": "3.01"
+    },
+    "action": "battery-protection-off",
+    "commandClass": 7,
+    "commandId": 18,
+    "payload": "UA==",
+    "captured": true,
+    "decoded": true,
+    "applied": true,
+    "readBack": true,
+    "restored": true
+  }
+]

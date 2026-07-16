@@ -306,7 +306,14 @@
       "action": "battery-protection-off",
       "commands": [{ "class": "07", "id": "12", "payloadHex": "50", "expectedStatus": "02", "expectedPayloadHex": "50" }],
       "readbackCommand": { "class": "07", "id": "92", "payloadHex": "00", "responseEncoding": "enabled-bit OR percentage" },
-      "gates": { "captured": true, "decoded": true, "applied": false, "readBack": false, "restored": false }
+      "onlineEvidence": {
+        "fixture": "rz09-0581-pid-02e0-bios-3.01-protection-off-validation-fixture.json",
+        "baseline": "Limit80",
+        "candidate": "ProtectionOff",
+        "temporaryFullChargeStayedInactive": true,
+        "restoredTo": "Limit80"
+      },
+      "gates": { "captured": true, "decoded": true, "applied": true, "readBack": true, "restored": true }
     },
     {
       "action": "charge-to-100-enable",
@@ -827,7 +834,7 @@
       "timingGatePassed": true,
       "strictAcceptanceConditionsPassed": true
     },
-    "admissionBoundary": {
+    "historicalAdmissionBoundaryAfterLimit80Validation": {
       "productionBatteryWriteAdmissionChanged": false,
       "limit80WriteAuthorizedInProduction": false,
       "otherBatteryLimitsAuthorizedInProduction": false,
@@ -850,7 +857,9 @@
     }
   ],
   "admission": {
-    "productionHashAdded": false,
-    "reason": "Limit80 passed typed OpenBlade apply, independent query/readback, restoration, command-isolation, and timing gates. Production capability and trusted-hash admission remain unchanged pending a separate review; other battery limits, performance, fans, lighting, and full-charge override remain unvalidated."
+    "productionHashAdded": true,
+    "authorizedActions": ["battery-limit-80", "battery-protection-off", "temporary-full-charge-query"],
+    "unauthorizedActions": ["other-battery-limits", "temporary-full-charge-enable", "temporary-full-charge-cancel", "performance", "fan-mode", "lighting"],
+    "reason": "Limit80 and ProtectionOff passed typed OpenBlade application, independent query/readback, restoration, command-isolation, and timing gates. Five setter-free temporary-full-charge queries also passed exact USBPcap validation. Only those reviewed bytes and the read-only query are admitted."
   }
 }
