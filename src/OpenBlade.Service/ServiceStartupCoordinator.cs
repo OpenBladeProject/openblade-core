@@ -4,6 +4,7 @@ namespace OpenBlade.Service;
 
 public sealed class ServiceStartupCoordinator(
     MachineProfileBootstrapper profileBootstrapper,
+    PersistentOverrideStore overrideStore,
     IServiceControlRuntime runtime,
     IPowerTelemetryProvider telemetryProvider,
     ILogger logger)
@@ -18,10 +19,18 @@ public sealed class ServiceStartupCoordinator(
                 "Invalid battery configuration was replaced with safe defaults.");
         }
 
+        PersistentOverrideLoadResult persistentOverrides =
+            await overrideStore.LoadAsync(cancellationToken);
+        if (persistentOverrides.Recovered)
+        {
+            logger.LogWarning(
+                "Invalid persistent overrides were cleared to safe defaults.");
+        }
+
         cancellationToken.ThrowIfCancellationRequested();
         PowerSource powerSource = telemetryProvider.Capture().PowerSource;
         cancellationToken.ThrowIfCancellationRequested();
-        runtime.Initialize(configuration, powerSource);
+        runtime.Initialize(configuration, powerSource, persistentOverrides.Overrides);
 
         try
         {

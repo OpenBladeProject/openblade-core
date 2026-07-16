@@ -17,6 +17,7 @@ public sealed class UiPreferenceStoreTests : IDisposable
         UiPreferences preferences = await store.LoadAsync();
 
         Assert.Equal(ThemePreference.FollowWindows, preferences.Theme);
+        Assert.False(preferences.KeepManualChangesUntilCleared);
     }
 
     [Fact]
@@ -25,12 +26,16 @@ public sealed class UiPreferenceStoreTests : IDisposable
         string path = Path.Combine(directory, "preferences.json");
         UiPreferenceStore store = new(path);
 
-        await store.SaveAsync(new UiPreferences(ThemePreference.Dark));
+        await store.SaveAsync(new UiPreferences(
+            ThemePreference.Dark,
+            KeepManualChangesUntilCleared: true));
 
         UiPreferences reloaded = await store.LoadAsync();
         using JsonDocument document = JsonDocument.Parse(await File.ReadAllTextAsync(path));
         Assert.Equal(ThemePreference.Dark, reloaded.Theme);
+        Assert.True(reloaded.KeepManualChangesUntilCleared);
         Assert.Equal("Dark", document.RootElement.GetProperty("theme").GetString());
+        Assert.True(document.RootElement.GetProperty("keepManualChangesUntilCleared").GetBoolean());
     }
 
     [Fact]

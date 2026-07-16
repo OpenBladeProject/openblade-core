@@ -66,6 +66,7 @@ public sealed class WindowsServiceLifecycleEventSourceTests
     {
         var backend = new FakeWindowsLifecycleNotificationBackend();
         using var source = new WindowsServiceLifecycleEventSource(backend);
+        backend.Publish(ServiceLifecycleTrigger.DeviceRemoved);
         backend.Publish(ServiceLifecycleTrigger.DeviceArrived);
         backend.Publish(ServiceLifecycleTrigger.Resumed);
         backend.Publish(ServiceLifecycleTrigger.PowerChanged);
@@ -73,7 +74,7 @@ public sealed class WindowsServiceLifecycleEventSourceTests
             source.WatchAsync(CancellationToken.None).GetAsyncEnumerator();
 
         var actual = new List<ServiceLifecycleTrigger>();
-        for (int index = 0; index < 3; index++)
+        for (int index = 0; index < 4; index++)
         {
             Assert.True(await notifications.MoveNextAsync());
             actual.Add(notifications.Current);
@@ -84,6 +85,7 @@ public sealed class WindowsServiceLifecycleEventSourceTests
                 ServiceLifecycleTrigger.PowerChanged,
                 ServiceLifecycleTrigger.Resumed,
                 ServiceLifecycleTrigger.DeviceArrived,
+                ServiceLifecycleTrigger.DeviceRemoved,
             ],
             actual);
     }
@@ -96,6 +98,7 @@ public sealed class WindowsServiceLifecycleEventSourceTests
         backend.Publish(ServiceLifecycleTrigger.PowerChanged);
         backend.Publish(ServiceLifecycleTrigger.Resumed);
         backend.Publish(ServiceLifecycleTrigger.DeviceArrived);
+        backend.Publish(ServiceLifecycleTrigger.DeviceRemoved);
         backend.Publish(ServiceLifecycleTrigger.PowerChanged);
         backend.Publish(ServiceLifecycleTrigger.Resumed);
         await using IAsyncEnumerator<ServiceLifecycleTrigger> notifications =
@@ -107,6 +110,8 @@ public sealed class WindowsServiceLifecycleEventSourceTests
         Assert.Equal(ServiceLifecycleTrigger.Resumed, notifications.Current);
         Assert.True(await notifications.MoveNextAsync());
         Assert.Equal(ServiceLifecycleTrigger.DeviceArrived, notifications.Current);
+        Assert.True(await notifications.MoveNextAsync());
+        Assert.Equal(ServiceLifecycleTrigger.DeviceRemoved, notifications.Current);
     }
 
     [Fact]

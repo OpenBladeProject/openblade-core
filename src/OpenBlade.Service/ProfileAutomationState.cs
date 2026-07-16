@@ -17,10 +17,29 @@ public sealed class ProfileAutomationState
         ProfileSet profiles,
         BatteryAutomationPreferences preferences,
         PowerSource powerSource)
+        : this(profiles, preferences, powerSource, PersistentOverrideState.Empty)
+    {
+    }
+
+    public ProfileAutomationState(
+        ProfileSet profiles,
+        BatteryAutomationPreferences preferences,
+        PowerSource powerSource,
+        PersistentOverrideState persistentOverrides)
     {
         this.profiles = profiles ?? throw new ArgumentNullException(nameof(profiles));
         ArgumentNullException.ThrowIfNull(preferences);
+        PersistentOverrideStore.Validate(persistentOverrides);
         PowerSource = powerSource;
+        persistentPerformance = persistentOverrides.Performance is { } performance
+            ? new ManualOverride<PerformancePreset>(performance, OverrideLifetime.Persistent)
+            : null;
+        persistentFans = persistentOverrides.Fans is { } fans
+            ? new ManualOverride<FanMode>(fans, OverrideLifetime.Persistent)
+            : null;
+        persistentLighting = persistentOverrides.Lighting is { } lighting
+            ? new ManualOverride<LightingSettings>(lighting, OverrideLifetime.Persistent)
+            : null;
         desiredBattery = new DesiredBatteryState(
             profiles.BatteryPolicy,
             preferences.ProtectionEnabled,
@@ -141,11 +160,13 @@ public sealed class ProfileAutomationState
         }
         else if (value.Lifetime == OverrideLifetime.Persistent)
         {
+            temporary = null;
             persistent = value;
         }
         else
         {
             temporary = value;
+            persistent = null;
         }
     }
 }

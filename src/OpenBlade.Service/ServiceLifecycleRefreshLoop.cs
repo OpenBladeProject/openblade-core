@@ -75,6 +75,7 @@ public sealed class ServiceLifecycleRefreshLoop(
                             break;
                         case ServiceLifecycleTrigger.Resumed:
                         case ServiceLifecycleTrigger.DeviceArrived:
+                        case ServiceLifecycleTrigger.DeviceRemoved:
                             await runtime.ObserveAsync(stoppingToken);
                             break;
                     }
@@ -99,40 +100,6 @@ public sealed class ServiceLifecycleRefreshLoop(
         {
             logger.LogError(exception, "Windows lifecycle notifications failed.");
             throw;
-        }
-    }
-}
-
-public sealed class ServiceControllerPresenceRefreshLoop(
-    IServiceControlRuntime runtime,
-    TimeProvider timeProvider,
-    ILogger logger)
-{
-    private static readonly TimeSpan RefreshInterval = TimeSpan.FromSeconds(3);
-
-    public async Task RunAsync(CancellationToken stoppingToken)
-    {
-        try
-        {
-            while (!stoppingToken.IsCancellationRequested)
-            {
-                await Task.Delay(RefreshInterval, timeProvider, stoppingToken);
-                try
-                {
-                    await runtime.RefreshControllerPresenceAsync(stoppingToken);
-                }
-                catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
-                {
-                    return;
-                }
-                catch (Exception exception)
-                {
-                    logger.LogError(exception, "Periodic controller presence refresh failed.");
-                }
-            }
-        }
-        catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
-        {
         }
     }
 }

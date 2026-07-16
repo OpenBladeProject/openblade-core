@@ -79,6 +79,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     private int lightingBlueEditor;
     private bool lightingEditorDirty;
     private ThemePreference theme = ThemePreference.FollowWindows;
+    private bool keepManualChangesUntilCleared;
     private bool startAtSignIn;
     private bool startupStateKnown;
     private string startupStatusMessage = string.Empty;
@@ -147,6 +148,9 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         ToggleFullChargeCommand = CreateCommand(
             ToggleFullChargeAsync,
             CanSetFullChargeOverride);
+        ClearManualOverridesCommand = CreateCommand(
+            ClearManualOverridesAsync,
+            _ => Volatile.Read(ref disposed) == 0 && IsConnected);
         SaveProfilesCommand = CreateCommand(
             SaveProfilesAsync,
             CanSaveProfiles);
@@ -167,6 +171,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             (AsyncRelayCommand)SetChargeLimitCommand,
             (AsyncRelayCommand)ToggleBatteryProtectionCommand,
             (AsyncRelayCommand)ToggleFullChargeCommand,
+            (AsyncRelayCommand)ClearManualOverridesCommand,
             (AsyncRelayCommand)SaveProfilesCommand,
             (AsyncRelayCommand)ExportDiagnosticsCommand,
             (AsyncRelayCommand)SetStartAtSignInCommand,
@@ -488,19 +493,33 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     public ManualOverride<PerformancePreset>? PerformanceOverride
     {
         get => performanceOverride;
-        private set => SetField(ref performanceOverride, value);
+        private set => SetOverrideField(ref performanceOverride, value);
     }
 
     public ManualOverride<FanMode>? FanOverride
     {
         get => fanOverride;
-        private set => SetField(ref fanOverride, value);
+        private set => SetOverrideField(ref fanOverride, value);
     }
 
     public ManualOverride<LightingSettings>? LightingOverride
     {
         get => lightingOverride;
-        private set => SetField(ref lightingOverride, value);
+        private set => SetOverrideField(ref lightingOverride, value);
+    }
+
+    public string ManualOverrideStatus
+    {
+        get
+        {
+            List<string> active = [];
+            AddOverrideStatus(active, "Performance", PerformanceOverride);
+            AddOverrideStatus(active, "Fans", FanOverride);
+            AddOverrideStatus(active, "Lighting", LightingOverride);
+            return active.Count == 0
+                ? "No manual overrides active."
+                : string.Join(" | ", active);
+        }
     }
 
     public ProfileSet Profiles
@@ -597,6 +616,16 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     public IReadOnlyList<ThemePreference> ThemeOptions { get; } =
         Enum.GetValues<ThemePreference>();
 
+    public bool KeepManualChangesUntilCleared
+    {
+        get => keepManualChangesUntilCleared;
+        set => SetField(ref keepManualChangesUntilCleared, value);
+    }
+
+    public OverrideLifetime SelectedOverrideLifetime => KeepManualChangesUntilCleared
+        ? OverrideLifetime.Persistent
+        : OverrideLifetime.UntilPowerSourceChange;
+
     public bool StartAtSignIn
     {
         get => startAtSignIn;
@@ -630,6 +659,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     public ICommand SetChargeLimitCommand { get; }
     public ICommand ToggleBatteryProtectionCommand { get; }
     public ICommand ToggleFullChargeCommand { get; }
+    public ICommand ClearManualOverridesCommand { get; }
     public ICommand SaveProfilesCommand { get; }
     public ICommand ExportDiagnosticsCommand { get; }
     public ICommand SetStartAtSignInCommand { get; }
@@ -1012,7 +1042,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             cancellationToken => serviceClient.SetPerformanceOverrideAsync(
                 new ManualOverride<PerformancePreset>(
                     (PerformancePreset)parameter!,
-                    OverrideLifetime.UntilPowerSourceChange),
+                    SelectedOverrideLifetime),
                 cancellationToken),
             token);
 
@@ -1021,7 +1051,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             cancellationToken => serviceClient.SetFanOverrideAsync(
                 new ManualOverride<FanMode>(
                     (FanMode)parameter!,
-                    OverrideLifetime.UntilPowerSourceChange),
+                    SelectedOverrideLifetime),
                 cancellationToken),
             token);
 
@@ -1030,7 +1060,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             cancellationToken => serviceClient.SetLightingOverrideAsync(
                 new ManualOverride<LightingSettings>(
                     (LightingSettings)parameter!,
-                    OverrideLifetime.UntilPowerSourceChange),
+                    SelectedOverrideLifetime),
                 cancellationToken),
             token);
 
@@ -1054,6 +1084,88 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
                 parameter is bool enabled ? enabled : !FullChargeOverride,
                 cancellationToken),
             token);
+
+    private async Task ClearManualOverridesAsync(object? parameter, CancellationToken token)
+    {
+        List<string> hardwareNotApplied = [];
+        await ClearOverrideAsync(
+            "performance",
+            cancellationToken => serviceClient.SetPerformanceOverrideAsync(null, cancellationToken),
+            hardwareNotApplied,
+            token).ConfigureAwait(false);
+        await ClearOverrideAsync(
+            "fans",
+            cancellationToken => serviceClient.SetFanOverrideAsync(null, cancellationToken),
+            hardwareNotApplied,
+            token).ConfigureAwait(false);
+        await ClearOverrideAsync(
+            "lighting",
+            cancellationToken => serviceClient.SetLightingOverrideAsync(null, cancellationToken),
+            hardwareNotApplied,
+            token).ConfigureAwait(false);
+
+        string message;
+        try
+        {
+            ServiceStatusSnapshot status = await serviceClient.GetStatusAsync(token)
+                .ConfigureAwait(false);
+            List<string> notCleared = [];
+            if (status.PerformanceOverride is not null)
+            {
+                notCleared.Add("performance");
+            }
+            if (status.FanOverride is not null)
+            {
+                notCleared.Add("fans");
+            }
+            if (status.LightingOverride is not null)
+            {
+                notCleared.Add("lighting");
+            }
+
+            message = notCleared.Count > 0
+                ? $"Could not clear {string.Join(", ", notCleared)} overrides."
+                : hardwareNotApplied.Count == 0
+                    ? "Manual overrides cleared."
+                    : $"Manual overrides cleared; hardware restoration was not applied for {string.Join(", ", hardwareNotApplied)}.";
+        }
+        catch (OperationCanceledException) when (token.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch
+        {
+            message = "Manual override clear requests completed; service confirmation is unavailable.";
+        }
+
+        await dispatcher.InvokeAsync(
+            () => OperationStatusMessage = message,
+            token).ConfigureAwait(false);
+    }
+
+    private static async Task ClearOverrideAsync(
+        string subsystem,
+        Func<CancellationToken, Task<ControlOperationResult>> operation,
+        ICollection<string> hardwareNotApplied,
+        CancellationToken token)
+    {
+        try
+        {
+            ControlOperationResult result = await operation(token).ConfigureAwait(false);
+            if (result.Status != ControlOperationStatus.Applied)
+            {
+                hardwareNotApplied.Add(subsystem);
+            }
+        }
+        catch (OperationCanceledException) when (token.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch
+        {
+            hardwareNotApplied.Add(subsystem);
+        }
+    }
 
     private async Task SetStartAtSignInAsync(object? parameter, CancellationToken token)
     {
@@ -1393,6 +1505,37 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
 
         field = value;
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
+    }
+
+    private void SetOverrideField<T>(
+        ref ManualOverride<T>? field,
+        ManualOverride<T>? value,
+        [CallerMemberName] string? propertyName = null)
+    {
+        if (EqualityComparer<ManualOverride<T>?>.Default.Equals(field, value))
+        {
+            return;
+        }
+
+        field = value;
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ManualOverrideStatus)));
+    }
+
+    private static void AddOverrideStatus<T>(
+        ICollection<string> status,
+        string subsystem,
+        ManualOverride<T>? value)
+    {
+        if (value is null)
+        {
+            return;
+        }
+
+        string lifetime = value.Lifetime == OverrideLifetime.Persistent
+            ? "until cleared"
+            : "until power source changes";
+        status.Add($"{subsystem}: {value.Value} ({lifetime})");
     }
 
     private void SetEditorField<T>(

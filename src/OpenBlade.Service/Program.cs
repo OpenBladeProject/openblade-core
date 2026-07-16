@@ -11,6 +11,8 @@ builder.Services.AddSingleton(new BatteryConfigurationStore(
     Path.Combine(machineDataDirectory, "profiles.json"),
     Path.Combine(machineDataDirectory, "battery-preferences.json"),
     Path.Combine(machineDataDirectory, "battery-configuration.commit.json")));
+builder.Services.AddSingleton(new PersistentOverrideStore(
+    Path.Combine(machineDataDirectory, "manual-overrides.json")));
 builder.Services.AddSingleton<MachineProfileBootstrapper>();
 builder.Services.AddSingleton<IRunningProcessSource, RunningProcessSource>();
 builder.Services.AddSingleton<IWindowsServiceSource, WindowsServiceSource>();
@@ -21,7 +23,6 @@ builder.Services.AddSingleton<IHardwareAccessGuard>(provider =>
 builder.Services.AddWindowsTelemetry();
 builder.Services.AddVerifiedBladeDeviceProvider();
 builder.Services.AddDiagnostics();
-builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddSingleton<IStatusSubscriptionHub>(
     _ => new StatusSubscriptionHub(TimeProvider.System));
 builder.Services.AddSingleton<IServiceLifecycleEventSource, WindowsServiceLifecycleEventSource>();

@@ -4,9 +4,13 @@ using System.Text.Json.Serialization;
 
 namespace OpenBlade.Tray;
 
-public sealed record UiPreferences(ThemePreference Theme)
+public sealed record UiPreferences(
+    ThemePreference Theme,
+    bool KeepManualChangesUntilCleared = false)
 {
-    public static UiPreferences Default { get; } = new(ThemePreference.FollowWindows);
+    public static UiPreferences Default { get; } = new(
+        ThemePreference.FollowWindows,
+        KeepManualChangesUntilCleared: false);
 }
 
 public sealed class UiPreferenceStore

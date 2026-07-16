@@ -26,6 +26,7 @@ public sealed record TrayInstanceEndpoint(string InstanceEventName)
 
 public sealed class TrayInstanceCoordinator : IAsyncDisposable
 {
+    private static readonly TimeSpan UnregistrationTimeout = TimeSpan.FromSeconds(2);
     private readonly EventWaitHandle instanceEvent;
     private readonly RegisteredWaitHandle activationRegistration;
     private int disposed;
@@ -87,14 +88,20 @@ public sealed class TrayInstanceCoordinator : IAsyncDisposable
         }
     }
 
-    public ValueTask DisposeAsync()
+    public async ValueTask DisposeAsync()
     {
         if (Interlocked.Exchange(ref disposed, 1) == 0)
         {
-            activationRegistration.Unregister(null);
+            using var callbacksCompleted = new EventWaitHandle(
+                false,
+                EventResetMode.ManualReset);
+            if (activationRegistration.Unregister(callbacksCompleted))
+            {
+                await Task.Run(
+                    () => callbacksCompleted.WaitOne(UnregistrationTimeout))
+                    .ConfigureAwait(false);
+            }
             instanceEvent.Dispose();
         }
-
-        return ValueTask.CompletedTask;
     }
 }

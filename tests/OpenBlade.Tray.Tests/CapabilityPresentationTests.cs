@@ -22,6 +22,9 @@ public sealed class CapabilityPresentationTests
             "ViewModel.SetChargeLimitCommand",
             "ViewModel.ToggleBatteryProtectionCommand",
             "ViewModel.ToggleFullChargeCommand",
+            "ViewModel.ClearManualOverridesCommand",
+            "ViewModel.KeepManualChangesUntilCleared",
+            "ViewModel.ManualOverrideStatus",
             "ViewModel.SetLightingCommand",
             "ViewModel.SaveProfilesCommand",
             "ViewModel.ExportDiagnosticsCommand",
@@ -64,6 +67,8 @@ public sealed class CapabilityPresentationTests
             "Razer Blade 16 · RZ09-0581",
             "No verified lighting controls are available for this device.",
             "Start OpenBlade when I sign in",
+            "Keep manual changes until cleared",
+            "Clear manual overrides",
         ];
         foreach (string fragment in required)
         {

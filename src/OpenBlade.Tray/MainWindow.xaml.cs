@@ -112,11 +112,13 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
     private async Task InitializeCoreAsync()
     {
         ThemePreference initialTheme = ThemePreference.FollowWindows;
+        bool keepManualChangesUntilCleared = false;
         try
         {
             UiPreferences preferences = await preferenceStore.LoadAsync();
             ThemeSelectionPolicy.Resolve(preferences.Theme);
             initialTheme = preferences.Theme;
+            keepManualChangesUntilCleared = preferences.KeepManualChangesUntilCleared;
         }
         catch (Exception exception)
         {
@@ -131,6 +133,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
         }
 
         ViewModel.Theme = initialTheme;
+        ViewModel.KeepManualChangesUntilCleared = keepManualChangesUntilCleared;
         try
         {
             ThemeManager.Apply(Root, ViewModel.Theme);
@@ -174,20 +177,28 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
 
     private void OnViewModelPropertyChanged(object? sender, PropertyChangedEventArgs args)
     {
-        if (args.PropertyName != nameof(MainViewModel.Theme)
-            || Volatile.Read(ref disposed) != 0)
+        if (Volatile.Read(ref disposed) != 0)
         {
             return;
         }
 
-        ThemePreference selectedTheme = ViewModel.Theme;
-        if (dispatcherQueue.HasThreadAccess)
+        if (args.PropertyName == nameof(MainViewModel.Theme))
         {
-            ApplyThemeAndQueueSave(selectedTheme);
+            ThemePreference selectedTheme = ViewModel.Theme;
+            if (dispatcherQueue.HasThreadAccess)
+            {
+                ApplyThemeAndQueueSave(selectedTheme);
+                return;
+            }
+
+            dispatcherQueue.TryEnqueue(() => ApplyThemeAndQueueSave(selectedTheme));
             return;
         }
 
-        dispatcherQueue.TryEnqueue(() => ApplyThemeAndQueueSave(selectedTheme));
+        if (args.PropertyName == nameof(MainViewModel.KeepManualChangesUntilCleared))
+        {
+            QueuePreferenceSave();
+        }
     }
 
     private void ApplyThemeAndQueueSave(ThemePreference selectedTheme)
@@ -207,9 +218,16 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
             return;
         }
 
+        QueuePreferenceSave();
+    }
+
+    private void QueuePreferenceSave()
+    {
         try
         {
-            preferenceSaveQueue.Enqueue(new UiPreferences(selectedTheme));
+            preferenceSaveQueue.Enqueue(new UiPreferences(
+                ViewModel.Theme,
+                ViewModel.KeepManualChangesUntilCleared));
         }
         catch (ObjectDisposedException)
         {

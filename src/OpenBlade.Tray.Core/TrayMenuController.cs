@@ -8,6 +8,7 @@ public enum TrayMenuGroup
     Performance,
     Fans,
     Battery,
+    Overrides,
     Application,
 }
 
@@ -70,6 +71,7 @@ public sealed class TrayMenuController
                 ?? throw new ArgumentNullException(nameof(viewModel)),
             viewModel.SetFanModeCommand,
             viewModel.ToggleFullChargeCommand,
+            viewModel.ClearManualOverridesCommand,
             openTray,
             exitTray)
     {
@@ -79,12 +81,14 @@ public sealed class TrayMenuController
         ICommand setPerformance,
         ICommand setFans,
         ICommand toggleFullCharge,
+        ICommand clearManualOverrides,
         Action openTray,
         Action exitTray)
     {
         ArgumentNullException.ThrowIfNull(setPerformance);
         ArgumentNullException.ThrowIfNull(setFans);
         ArgumentNullException.ThrowIfNull(toggleFullCharge);
+        ArgumentNullException.ThrowIfNull(clearManualOverrides);
         ArgumentNullException.ThrowIfNull(openTray);
         ArgumentNullException.ThrowIfNull(exitTray);
 
@@ -96,6 +100,7 @@ public sealed class TrayMenuController
             Mutation("Automatic", TrayMenuGroup.Fans, setFans, FanMode.Automatic),
             Mutation("Maximum", TrayMenuGroup.Fans, setFans, FanMode.Maximum),
             Mutation("Toggle charge to 100%", TrayMenuGroup.Battery, toggleFullCharge, null),
+            Mutation("Clear manual overrides", TrayMenuGroup.Overrides, clearManualOverrides, null),
             new TrayMenuItem("Open", TrayMenuGroup.Application, false, action: openTray),
             new TrayMenuItem("Exit", TrayMenuGroup.Application, false, action: exitTray),
         ];

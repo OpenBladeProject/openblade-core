@@ -8,6 +8,12 @@ public interface IServiceControlRuntime
     void Initialize(BatteryConfiguration configuration, PowerSource powerSource) =>
         throw new NotSupportedException();
 
+    void Initialize(
+        BatteryConfiguration configuration,
+        PowerSource powerSource,
+        PersistentOverrideState persistentOverrides) =>
+        Initialize(configuration, powerSource);
+
     ServiceStatusSnapshot GetStatus();
 
     Task<ControlOperationResult> UpdateProfilesAsync(
@@ -53,6 +59,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         DeviceCapabilities.Unavailable();
 
     private readonly BatteryConfigurationStore store;
+    private readonly PersistentOverrideStore overrideStore;
     private readonly IPowerTelemetryProvider telemetryProvider;
     private readonly IStatusSubscriptionHub subscriptionHub;
     private readonly IVerifiedBladeDeviceProvider deviceProvider;
@@ -63,11 +70,13 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         ProfileSetValidator.CreateUnverifiedSafeDefaults();
     private readonly object initializationGate = new();
     private ProfileAutomationState? automation;
+    private PersistentOverrideState persistentOverrides = PersistentOverrideState.Empty;
     private readonly ConfirmedStateDriftTracker driftTracker = new();
     private ServiceStatusSnapshot? status;
 
     public ServiceControlRuntime(
         BatteryConfigurationStore store,
+        PersistentOverrideStore overrideStore,
         IPowerTelemetryProvider telemetryProvider,
         IStatusSubscriptionHub subscriptionHub,
         IVerifiedBladeDeviceProvider deviceProvider,
@@ -75,6 +84,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         IControllerPresenceMonitor controllerPresenceMonitor)
     {
         this.store = store ?? throw new ArgumentNullException(nameof(store));
+        this.overrideStore = overrideStore
+            ?? throw new ArgumentNullException(nameof(overrideStore));
         this.telemetryProvider = telemetryProvider
             ?? throw new ArgumentNullException(nameof(telemetryProvider));
         this.subscriptionHub = subscriptionHub
@@ -87,11 +98,18 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
 
     }
 
-    public void Initialize(BatteryConfiguration configuration, PowerSource powerSource)
+    public void Initialize(BatteryConfiguration configuration, PowerSource powerSource) =>
+        Initialize(configuration, powerSource, PersistentOverrideState.Empty);
+
+    public void Initialize(
+        BatteryConfiguration configuration,
+        PowerSource powerSource,
+        PersistentOverrideState persistentOverrides)
     {
         ArgumentNullException.ThrowIfNull(configuration);
         validator.Validate(configuration.Profiles);
         validator.ValidatePreferences(configuration.Preferences);
+        PersistentOverrideStore.Validate(persistentOverrides);
         if (!Enum.IsDefined(powerSource))
         {
             throw new ArgumentOutOfRangeException(nameof(powerSource));
@@ -107,12 +125,14 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             var initializedAutomation = new ProfileAutomationState(
                 configuration.Profiles,
                 configuration.Preferences,
-                powerSource);
+                powerSource,
+                persistentOverrides);
             TelemetrySnapshot telemetry = telemetryProvider.Capture() with
             {
                 PowerSource = powerSource,
             };
             automation = initializedAutomation;
+            this.persistentOverrides = persistentOverrides;
             Volatile.Write(ref status, CreateInitialSnapshot(telemetry));
         }
     }
@@ -169,47 +189,41 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         ManualOverride<PerformancePreset>? value,
         CancellationToken token) => ExecuteScopedMutationAsync(
             DeviceSubsystem.Performance,
-            _ =>
-            {
-                ValidateOverride(value, nameof(value));
-                Automation.SetPerformanceOverride(value);
-                return Task.CompletedTask;
-            },
+            cancellationToken => SetPerformanceOverrideCoreAsync(value, cancellationToken),
             (coordinator, desired, cancellationToken) =>
                 coordinator.ApplyPerformanceOutcomeAsync(
                     desired.Performance.Value,
                     cancellationToken),
-            token);
+            token,
+            value is null
+                ? "Performance override was cleared."
+                : "Performance override intent was stored.");
 
     public Task<ControlOperationResult> SetFanOverrideAsync(
         ManualOverride<FanMode>? value,
         CancellationToken token) => ExecuteScopedMutationAsync(
             DeviceSubsystem.Fans,
-            _ =>
-            {
-                ValidateOverride(value, nameof(value));
-                Automation.SetFanOverride(value);
-                return Task.CompletedTask;
-            },
+            cancellationToken => SetFanOverrideCoreAsync(value, cancellationToken),
             (coordinator, desired, cancellationToken) =>
                 coordinator.ApplyFanOutcomeAsync(desired.Fans.Value, cancellationToken),
-            token);
+            token,
+            value is null
+                ? "Fan override was cleared."
+                : "Fan override intent was stored.");
 
     public Task<ControlOperationResult> SetLightingOverrideAsync(
         ManualOverride<LightingSettings>? value,
         CancellationToken token) => ExecuteScopedMutationAsync(
             DeviceSubsystem.Lighting,
-            _ =>
-            {
-                ValidateLightingOverride(value);
-                Automation.SetLightingOverride(value);
-                return Task.CompletedTask;
-            },
+            cancellationToken => SetLightingOverrideCoreAsync(value, cancellationToken),
             (coordinator, desired, cancellationToken) =>
                 coordinator.ApplyLightingOutcomeAsync(
                     desired.Lighting.Value,
                     cancellationToken),
-            token);
+            token,
+            value is null
+                ? "Lighting override was cleared."
+                : "Lighting override intent was stored.");
 
     public Task<ControlOperationResult> SetBatteryPolicyAsync(
         BatteryPolicy value,
@@ -327,6 +341,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         try
         {
             cancellationToken.ThrowIfCancellationRequested();
+            RefreshControllerPresenceCore(cancellationToken);
             TelemetrySnapshot telemetry = telemetryProvider.Capture();
             await ObserveCoreAsync(telemetry, cancellationToken);
         }
@@ -344,6 +359,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         {
             TelemetrySnapshot telemetry = CaptureTelemetryPreservingFanRpm();
             cancellationToken.ThrowIfCancellationRequested();
+            RefreshControllerPresenceCore(cancellationToken);
             if (Automation.ChangePowerSource(telemetry.PowerSource))
             {
                 await ApplyFullTransitionAsync(telemetry, cancellationToken);
@@ -365,20 +381,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         await operationGate.WaitAsync(cancellationToken);
         try
         {
-            cancellationToken.ThrowIfCancellationRequested();
-            ControllerPresenceObservation observation = controllerPresenceMonitor.Observe();
-            cancellationToken.ThrowIfCancellationRequested();
-            string[] potentialControllers = observation.PotentialControllers
-                .GroupBy(name => name, StringComparer.OrdinalIgnoreCase)
-                .Select(group => group.OrderBy(name => name, StringComparer.Ordinal).First())
-                .OrderBy(name => name, StringComparer.Ordinal)
-                .Take(16)
-                .ToArray();
-            PublishIfChanged(GetStatus() with
-            {
-                PotentialControllers = potentialControllers,
-                ControllerDetectionWarning = observation.DetectionWarning,
-            });
+            RefreshControllerPresenceCore(cancellationToken);
         }
         finally
         {
@@ -388,11 +391,67 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
 
     public void Dispose() => operationGate.Dispose();
 
+    private async Task SetPerformanceOverrideCoreAsync(
+        ManualOverride<PerformancePreset>? value,
+        CancellationToken cancellationToken)
+    {
+        ValidateOverride(value, nameof(value));
+        PersistentOverrideState staged = persistentOverrides with
+        {
+            Performance = value?.Lifetime == OverrideLifetime.Persistent
+                ? value.Value
+                : null,
+        };
+        await PersistOverridesIfChangedAsync(staged, cancellationToken);
+        Automation.SetPerformanceOverride(value);
+        persistentOverrides = staged;
+    }
+
+    private async Task SetFanOverrideCoreAsync(
+        ManualOverride<FanMode>? value,
+        CancellationToken cancellationToken)
+    {
+        ValidateOverride(value, nameof(value));
+        PersistentOverrideState staged = persistentOverrides with
+        {
+            Fans = value?.Lifetime == OverrideLifetime.Persistent
+                ? value.Value
+                : null,
+        };
+        await PersistOverridesIfChangedAsync(staged, cancellationToken);
+        Automation.SetFanOverride(value);
+        persistentOverrides = staged;
+    }
+
+    private async Task SetLightingOverrideCoreAsync(
+        ManualOverride<LightingSettings>? value,
+        CancellationToken cancellationToken)
+    {
+        ValidateLightingOverride(value);
+        PersistentOverrideState staged = persistentOverrides with
+        {
+            Lighting = value?.Lifetime == OverrideLifetime.Persistent
+                ? value.Value
+                : null,
+        };
+        await PersistOverridesIfChangedAsync(staged, cancellationToken);
+        Automation.SetLightingOverride(value);
+        persistentOverrides = staged;
+    }
+
+    private Task PersistOverridesIfChangedAsync(
+        PersistentOverrideState staged,
+        CancellationToken cancellationToken) =>
+        staged == persistentOverrides
+            ? Task.CompletedTask
+            : overrideStore.SaveAsync(staged, cancellationToken);
+
     private async Task<ControlOperationResult> ExecuteScopedMutationAsync(
         DeviceSubsystem subsystem,
         Func<CancellationToken, Task> mutation,
         Func<ControlCoordinator, DesiredDeviceState, CancellationToken, Task<ScopedApplyOutcome>> apply,
-        CancellationToken token)
+        CancellationToken token,
+        string committedMessage)
     {
         EnsureInitialized();
         await operationGate.WaitAsync(token);
@@ -411,11 +470,14 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 return RecordRejectedIntent(exception);
             }
 
-            return await ApplyScopedIntentAsync(
+            ControlOperationResult result = await ApplyScopedIntentAsync(
                 subsystem,
                 GetStatus().Telemetry,
                 apply,
                 token);
+            return result.Status == ControlOperationStatus.Applied
+                ? result
+                : result with { Message = $"{committedMessage} Hardware result: {result.Message}" };
         }
         finally
         {
@@ -486,6 +548,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         Func<DesiredDeviceState, DesiredDeviceState>? stageDesired = null,
         Func<CancellationToken, Task>? commitIntent = null)
     {
+        RefreshControllerPresenceCore(token);
         ServiceStatusSnapshot current = GetStatus();
         ConfirmedDeviceState? cachedConfirmed = current.ConfirmedState;
         DesiredDeviceState desired = Automation.Resolve(cachedConfirmed ?? UnknownConfirmedState);
@@ -623,6 +686,24 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             deviceVerified: !outcome.DeviceAccessFailed,
             writesBlocked: outcome.DeviceAccessFailed);
         return ToOperationResult(outcome.Result);
+    }
+
+    private void RefreshControllerPresenceCore(CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        ControllerPresenceObservation observation = controllerPresenceMonitor.Observe();
+        cancellationToken.ThrowIfCancellationRequested();
+        string[] potentialControllers = observation.PotentialControllers
+            .GroupBy(name => name, StringComparer.OrdinalIgnoreCase)
+            .Select(group => group.OrderBy(name => name, StringComparer.Ordinal).First())
+            .OrderBy(name => name, StringComparer.Ordinal)
+            .Take(16)
+            .ToArray();
+        PublishIfChanged(GetStatus() with
+        {
+            PotentialControllers = potentialControllers,
+            ControllerDetectionWarning = observation.DetectionWarning,
+        });
     }
 
     private async Task ApplyFullTransitionAsync(
@@ -993,7 +1074,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
     private static void ValidateOverride<T>(ManualOverride<T>? value, string parameterName)
         where T : struct, Enum
     {
-        if (value is not null && !Enum.IsDefined(value.Value))
+        if (value is not null
+            && (!Enum.IsDefined(value.Value) || !Enum.IsDefined(value.Lifetime)))
         {
             throw new ArgumentOutOfRangeException(parameterName);
         }
@@ -1007,7 +1089,9 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         }
 
         LightingSettings lighting = value.Value;
-        if (!Enum.IsDefined(lighting.Effect) || lighting.Brightness > 100)
+        if (!Enum.IsDefined(value.Lifetime)
+            || !Enum.IsDefined(lighting.Effect)
+            || lighting.Brightness > 100)
         {
             throw new ArgumentOutOfRangeException(nameof(value));
         }

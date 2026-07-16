@@ -90,6 +90,23 @@
             <TabViewItem Header="Dashboard" IsClosable="False">
                 <ScrollViewer VerticalScrollBarVisibility="Auto">
                     <StackPanel Margin="4,12,12,16">
+                        <TextBlock Text="MANUAL CHANGES" Style="{StaticResource SectionHeaderStyle}" />
+                        <Border Style="{StaticResource CardStyle}">
+                            <StackPanel Spacing="8">
+                                <ToggleSwitch Header="Keep manual changes until cleared"
+                                              IsOn="{x:Bind ViewModel.KeepManualChangesUntilCleared, Mode=TwoWay}" />
+                                <TextBlock Text="Off: manual performance, fan, and lighting changes end at the next power-source transition."
+                                           TextWrapping="Wrap"
+                                           Style="{StaticResource SecondaryTextStyle}" />
+                                <TextBlock Text="{x:Bind ViewModel.ManualOverrideStatus, Mode=OneWay}"
+                                           TextWrapping="Wrap"
+                                           Style="{StaticResource SecondaryTextStyle}" />
+                                <Button Content="Clear manual overrides"
+                                        HorizontalAlignment="Left"
+                                        Command="{x:Bind ViewModel.ClearManualOverridesCommand}" />
+                            </StackPanel>
+                        </Border>
+
                         <TextBlock Text="PERFORMANCE" Style="{StaticResource SectionHeaderStyle}" />
                         <Border Style="{StaticResource CardStyle}"
                                 Visibility="{x:Bind ViewModel.IsPerformanceVisible, Mode=OneWay}">

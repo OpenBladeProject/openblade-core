@@ -82,6 +82,24 @@ public sealed class ServiceStartupCoordinatorTests : IDisposable
         Assert.Contains(logger.Entries, entry => entry.Level == LogLevel.Warning);
     }
 
+    [Fact]
+    public async Task InitializeAsync_LoadsPersistentOverridesIntoRuntime()
+    {
+        string path = Path.Combine(directory, "profiles.json");
+        var expected = new PersistentOverrideState(
+            PerformancePreset.Performance,
+            FanMode.Maximum,
+            null);
+        await new PersistentOverrideStore(Path.Combine(directory, "manual-overrides.json"))
+            .SaveAsync(expected, CancellationToken.None);
+        var runtime = new RecordingRuntime(path);
+        var coordinator = CreateCoordinator(path, runtime, new RecordingLogger());
+
+        Assert.True(await coordinator.InitializeAsync(CancellationToken.None));
+
+        Assert.Equal(expected, runtime.PersistentOverrides);
+    }
+
     public void Dispose()
     {
         if (Directory.Exists(directory))
@@ -102,6 +120,7 @@ public sealed class ServiceStartupCoordinatorTests : IDisposable
             Path.Combine(directory, "battery-configuration.commit.json"));
         return new ServiceStartupCoordinator(
             new MachineProfileBootstrapper(store),
+            new PersistentOverrideStore(Path.Combine(directory, "manual-overrides.json")),
             runtime,
             new FixedTelemetryProvider(),
             logger);
@@ -115,6 +134,7 @@ public sealed class ServiceStartupCoordinatorTests : IDisposable
         public int ObserveCount { get; private set; }
         public bool ProfileFileExistedDuringInitialize { get; private set; }
         public PowerSource? InitialPowerSource { get; private set; }
+        public PersistentOverrideState? PersistentOverrides { get; private set; }
 
         public void Initialize(BatteryConfiguration configuration, PowerSource powerSource)
         {
@@ -122,6 +142,15 @@ public sealed class ServiceStartupCoordinatorTests : IDisposable
             ProfileFileExistedDuringInitialize = File.Exists(profilePath);
             InitialPowerSource = powerSource;
             Initialized?.Invoke();
+        }
+
+        public void Initialize(
+            BatteryConfiguration configuration,
+            PowerSource powerSource,
+            PersistentOverrideState persistentOverrides)
+        {
+            PersistentOverrides = persistentOverrides;
+            Initialize(configuration, powerSource);
         }
 
         public Task ObserveAsync(CancellationToken cancellationToken)

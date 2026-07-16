@@ -12,12 +12,14 @@ public sealed class TrayMenuControllerTests
         var performance = new RecordingCommand();
         var fans = new RecordingCommand();
         var fullCharge = new RecordingCommand();
+        var clearOverrides = new RecordingCommand();
         int opens = 0;
         int exits = 0;
         var controller = new TrayMenuController(
             performance,
             fans,
             fullCharge,
+            clearOverrides,
             () => opens++,
             () => exits++);
 
@@ -27,13 +29,14 @@ public sealed class TrayMenuControllerTests
         }
 
         Assert.Equal(
-            ["Silent", "Balanced", "Performance", "Automatic", "Maximum", "Toggle charge to 100%", "Open", "Exit"],
+            ["Silent", "Balanced", "Performance", "Automatic", "Maximum", "Toggle charge to 100%", "Clear manual overrides", "Open", "Exit"],
             controller.Items.Select(item => item.Label));
         Assert.Equal(
             [PerformancePreset.Silent, PerformancePreset.Balanced, PerformancePreset.Performance],
             performance.Parameters);
         Assert.Equal([FanMode.Automatic, FanMode.Maximum], fans.Parameters);
         Assert.Equal([null], fullCharge.Parameters);
+        Assert.Equal([null], clearOverrides.Parameters);
         Assert.Equal(1, opens);
         Assert.Equal(1, exits);
     }
@@ -43,6 +46,7 @@ public sealed class TrayMenuControllerTests
     {
         var disabled = new RecordingCommand(_ => false);
         var controller = new TrayMenuController(
+            disabled,
             disabled,
             disabled,
             disabled,
@@ -63,6 +67,7 @@ public sealed class TrayMenuControllerTests
         int opens = 0;
         int exits = 0;
         var controller = new TrayMenuController(
+            mutations,
             mutations,
             mutations,
             mutations,

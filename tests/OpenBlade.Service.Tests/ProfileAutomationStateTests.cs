@@ -74,6 +74,61 @@ public sealed class ProfileAutomationStateTests
     }
 
     [Fact]
+    public void NewTemporaryOverride_ReplacesPersistentSlotInsteadOfBeingMasked()
+    {
+        ProfileAutomationState state = CreateState(PowerSource.PluggedIn);
+        state.SetPerformanceOverride(new ManualOverride<PerformancePreset>(
+            PerformancePreset.Performance,
+            OverrideLifetime.Persistent));
+
+        state.SetPerformanceOverride(new ManualOverride<PerformancePreset>(
+            PerformancePreset.Silent,
+            OverrideLifetime.UntilPowerSourceChange));
+
+        Assert.Equal(OverrideLifetime.UntilPowerSourceChange, state.PerformanceOverride!.Lifetime);
+        Assert.Equal(
+            SettingValueSource.TemporaryOverride,
+            state.Resolve(new ConfirmedDeviceState(null, null, null, null)).Performance.Source);
+
+        state.ChangePowerSource(PowerSource.Battery);
+        Assert.Null(state.PerformanceOverride);
+    }
+
+    [Fact]
+    public void NewPersistentOverride_ReplacesTemporarySlotAndSurvivesTransition()
+    {
+        ProfileAutomationState state = CreateState(PowerSource.PluggedIn);
+        state.SetFanOverride(new ManualOverride<FanMode>(
+            FanMode.Maximum,
+            OverrideLifetime.UntilPowerSourceChange));
+
+        state.SetFanOverride(new ManualOverride<FanMode>(
+            FanMode.Automatic,
+            OverrideLifetime.Persistent));
+        state.ChangePowerSource(PowerSource.Battery);
+
+        Assert.Equal(OverrideLifetime.Persistent, state.FanOverride!.Lifetime);
+        Assert.Equal(FanMode.Automatic, state.FanOverride.Value);
+    }
+
+    [Fact]
+    public void Constructor_RestoresOnlyDurablePersistentOverrides()
+    {
+        ProfileAutomationState state = new(
+            ProfileDefaults.CreateSafeDefaults(),
+            new BatteryAutomationPreferences(ProtectionEnabled: true),
+            PowerSource.PluggedIn,
+            new PersistentOverrideState(
+                PerformancePreset.Performance,
+                FanMode.Maximum,
+                null));
+
+        Assert.Equal(OverrideLifetime.Persistent, state.PerformanceOverride!.Lifetime);
+        Assert.Equal(OverrideLifetime.Persistent, state.FanOverride!.Lifetime);
+        Assert.Null(state.LightingOverride);
+    }
+
+    [Fact]
     public void ChargeToFull_IsAutomaticallyCancelledOnUnplug()
     {
         ProfileAutomationState state = CreateState(PowerSource.PluggedIn);

@@ -8,9 +8,9 @@ public sealed class Worker(
     IServiceControlRuntime runtime,
     IStatusSubscriptionHub subscriptionHub,
     MachineProfileBootstrapper profileBootstrapper,
+    PersistentOverrideStore overrideStore,
     IPowerTelemetryProvider telemetryProvider,
     IServiceLifecycleEventSource lifecycleEventSource,
-    TimeProvider timeProvider,
     ILogger<Worker> logger) : BackgroundService
 {
     private const int MaximumPipeClients = 4;
@@ -19,6 +19,7 @@ public sealed class Worker(
     {
         var startupCoordinator = new ServiceStartupCoordinator(
             profileBootstrapper,
+            overrideStore,
             runtime,
             telemetryProvider,
             logger);
@@ -58,8 +59,6 @@ public sealed class Worker(
         List<Func<CancellationToken, Task>> operations =
         [
             token => new ServiceLifecycleRefreshLoop(runtime, lifecycleEventSource, logger)
-                .RunAsync(token),
-            token => new ServiceControllerPresenceRefreshLoop(runtime, timeProvider, logger)
                 .RunAsync(token),
             .. Enumerable.Range(0, MaximumPipeClients)
                 .Select(_ => new Func<CancellationToken, Task>(

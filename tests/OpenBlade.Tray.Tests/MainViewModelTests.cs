@@ -547,6 +547,14 @@ public sealed class MainViewModelTests
         Assert.Equal(status.PerformanceOverride, viewModel.PerformanceOverride);
         Assert.Equal(status.FanOverride, viewModel.FanOverride);
         Assert.Equal(status.LightingOverride, viewModel.LightingOverride);
+        Assert.Contains(
+            "Performance: Performance (until cleared)",
+            viewModel.ManualOverrideStatus,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "Fans: Maximum (until power source changes)",
+            viewModel.ManualOverrideStatus,
+            StringComparison.Ordinal);
         Assert.True(viewModel.FullChargeOverride);
     }
 
@@ -663,6 +671,44 @@ public sealed class MainViewModelTests
         Assert.Equal(PerformancePreset.Performance, client.PerformanceOverride!.Value);
         Assert.Equal(OverrideLifetime.UntilPowerSourceChange, client.PerformanceOverride.Lifetime);
         Assert.Equal("Intent stored without hardware application.", viewModel.OperationStatusMessage);
+    }
+
+    [Fact]
+    public async Task Command_UsesSelectedPersistentOverrideLifetime()
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher())
+        {
+            KeepManualChangesUntilCleared = true,
+        };
+        await viewModel.StartAsync();
+        client.Publish(CreateStatus(verified: true, blocked: false));
+        await WaitUntilAsync(() => viewModel.CanControlHardware);
+
+        await Assert.IsType<AsyncRelayCommand>(viewModel.SetPerformanceCommand)
+            .ExecuteAsync(PerformancePreset.Performance);
+
+        Assert.Equal(OverrideLifetime.Persistent, client.PerformanceOverride!.Lifetime);
+    }
+
+    [Fact]
+    public async Task ClearManualOverrides_ClearsEverySubsystemWhileHardwareIsUnavailable()
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        client.Publish(CreateStatus(verified: false, blocked: true));
+        await WaitUntilAsync(() => viewModel.IsConnected);
+
+        Assert.True(viewModel.ClearManualOverridesCommand.CanExecute(null));
+        await Assert.IsType<AsyncRelayCommand>(viewModel.ClearManualOverridesCommand)
+            .ExecuteAsync(null);
+
+        Assert.Equal(3, client.MutationCalls);
+        Assert.Null(client.PerformanceOverride);
+        Assert.Null(client.FanOverride);
+        Assert.Null(client.LightingOverride);
+        Assert.Equal("Manual overrides cleared.", viewModel.OperationStatusMessage);
     }
 
     [Fact]
@@ -1085,15 +1131,22 @@ public sealed class MainViewModelTests
         public bool WatchCanceled { get; private set; }
         public bool MutationCanceled { get; private set; }
         public ManualOverride<PerformancePreset>? PerformanceOverride { get; private set; }
+        public ManualOverride<FanMode>? FanOverride { get; private set; }
+        public ManualOverride<LightingSettings>? LightingOverride { get; private set; }
         public bool? BatteryProtectionEnabled { get; private set; }
         public bool? FullChargeEnabled { get; private set; }
         public TaskCompletionSource MutationStarted { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public TaskCompletionSource ExportStarted { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public ControlOperationResult NextResult { get; init; } = new(ControlOperationStatus.Applied, "Applied");
+        public ServiceStatusSnapshot? CurrentStatus { get; private set; }
         public DiagnosticArchive NextArchive { get; init; } = new(
             "OpenBlade-diagnostics.zip",
             [0x50, 0x4B, 0x03, 0x04]);
-        public void Publish(ServiceStatusSnapshot status) => statuses.Writer.TryWrite(new ServiceWatchUpdate.Connected(status));
+        public void Publish(ServiceStatusSnapshot status)
+        {
+            CurrentStatus = status;
+            statuses.Writer.TryWrite(new ServiceWatchUpdate.Connected(status));
+        }
         public void PublishReconnecting() => statuses.Writer.TryWrite(new ServiceWatchUpdate.Reconnecting());
         public void CompleteWatch() => statuses.Writer.TryComplete();
         public void CompleteMutation() => mutationCompletion.TrySetResult();
@@ -1116,8 +1169,12 @@ public sealed class MainViewModelTests
             }
         }
 
-        public Task<ServiceStatusSnapshot> GetStatusAsync(CancellationToken token) =>
-            throw new NotSupportedException();
+        public Task<ServiceStatusSnapshot> GetStatusAsync(CancellationToken token)
+        {
+            token.ThrowIfCancellationRequested();
+            return Task.FromResult(CurrentStatus ?? throw new InvalidOperationException(
+                "No status has been published."));
+        }
 
         public Task<ServiceStatusSnapshot> ObserveStateAsync(CancellationToken cancellationToken)
         {
@@ -1152,11 +1209,19 @@ public sealed class MainViewModelTests
 
         public Task<ControlOperationResult> SetFanOverrideAsync(
             ManualOverride<FanMode>? value,
-            CancellationToken token) => MutateAsync(token);
+            CancellationToken token)
+        {
+            FanOverride = value;
+            return MutateAsync(token);
+        }
 
         public Task<ControlOperationResult> SetLightingOverrideAsync(
             ManualOverride<LightingSettings>? value,
-            CancellationToken token) => MutateAsync(token);
+            CancellationToken token)
+        {
+            LightingOverride = value;
+            return MutateAsync(token);
+        }
 
         public Task<ControlOperationResult> SetBatteryPolicyAsync(
             BatteryPolicy value,

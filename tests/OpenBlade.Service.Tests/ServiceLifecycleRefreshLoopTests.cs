@@ -8,62 +8,6 @@ namespace OpenBlade.Service.Tests;
 public sealed class ServiceLifecycleRefreshLoopTests
 {
     [Fact]
-    public async Task ControllerPresenceRefresh_WaitsForThreeSecondInterval()
-    {
-        var time = new ManualTimeProvider();
-        var runtime = new RecordingRuntime(failFirstRefresh: false);
-        var loop = new ServiceControllerPresenceRefreshLoop(
-            runtime,
-            time,
-            NullLogger<ServiceControllerPresenceRefreshLoop>.Instance);
-        using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(5));
-
-        Task running = loop.RunAsync(cancellation.Token);
-        await WaitUntilAsync(() => time.CreatedTimerCount == 1, cancellation.Token);
-
-        time.Advance(TimeSpan.FromMilliseconds(2_999));
-        await Task.Yield();
-        Assert.Equal(0, runtime.ControllerPresenceRefreshCount);
-
-        time.Advance(TimeSpan.FromMilliseconds(1));
-        await runtime.FirstRefresh.Task.WaitAsync(cancellation.Token);
-        await cancellation.CancelAsync();
-        await running;
-
-        Assert.Equal(1, runtime.ControllerPresenceRefreshCount);
-        Assert.Equal(0, runtime.ObserveCount);
-        Assert.Equal(0, runtime.PowerSourceChangeCount);
-    }
-
-    [Fact]
-    public async Task ControllerPresenceRefresh_ContinuesAfterTransientRefreshFailure()
-    {
-        var time = new ManualTimeProvider();
-        var runtime = new RecordingRuntime(failFirstRefresh: true);
-        var loop = new ServiceControllerPresenceRefreshLoop(
-            runtime,
-            time,
-            NullLogger<ServiceControllerPresenceRefreshLoop>.Instance);
-        using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(5));
-
-        Task running = loop.RunAsync(cancellation.Token);
-        await WaitUntilAsync(() => time.CreatedTimerCount == 1, cancellation.Token);
-        time.Advance(TimeSpan.FromSeconds(3));
-        await runtime.FirstRefresh.Task.WaitAsync(cancellation.Token);
-        await WaitUntilAsync(() => time.CreatedTimerCount == 2, cancellation.Token);
-
-        time.Advance(TimeSpan.FromSeconds(3));
-        await runtime.TwoRefreshes.Task.WaitAsync(cancellation.Token);
-        await cancellation.CancelAsync();
-        await running;
-
-        Assert.Equal(2, runtime.ControllerPresenceRefreshCount);
-        Assert.Equal(0, runtime.ObserveCount);
-        Assert.Equal(0, runtime.PowerSourceChangeCount);
-        Assert.Equal(1, runtime.MaximumConcurrentRefreshes);
-    }
-
-    [Fact]
     public async Task BackgroundTaskGroup_PropagatesFailureAndCancelsPeers()
     {
         var expected = new InvalidOperationException("lifecycle failed");
@@ -114,6 +58,7 @@ public sealed class ServiceLifecycleRefreshLoopTests
     [InlineData(ServiceLifecycleTrigger.PowerChanged, 1, 0)]
     [InlineData(ServiceLifecycleTrigger.Resumed, 0, 1)]
     [InlineData(ServiceLifecycleTrigger.DeviceArrived, 0, 1)]
+    [InlineData(ServiceLifecycleTrigger.DeviceRemoved, 0, 1)]
     public async Task Notification_RoutesToExactlyOneTypedRuntimeOperation(
         ServiceLifecycleTrigger trigger,
         int expectedPowerChanges,
@@ -301,97 +246,4 @@ public sealed class ServiceLifecycleRefreshLoopTests
             CancellationToken token) => throw new NotSupportedException();
     }
 
-    private static async Task WaitUntilAsync(
-        Func<bool> condition,
-        CancellationToken cancellationToken)
-    {
-        while (!condition())
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            await Task.Yield();
-        }
-    }
-
-    private sealed class ManualTimeProvider : TimeProvider
-    {
-        private readonly object sync = new();
-        private readonly List<ManualTimer> timers = [];
-        private DateTimeOffset now = DateTimeOffset.UnixEpoch;
-        private int createdTimerCount;
-
-        public int CreatedTimerCount => Volatile.Read(ref createdTimerCount);
-
-        public override DateTimeOffset GetUtcNow() => now;
-
-        public override ITimer CreateTimer(
-            TimerCallback callback,
-            object? state,
-            TimeSpan dueTime,
-            TimeSpan period)
-        {
-            ManualTimer timer;
-            lock (sync)
-            {
-                timer = new ManualTimer(callback, state, now + dueTime, period);
-                timers.Add(timer);
-                Interlocked.Increment(ref createdTimerCount);
-            }
-
-            return timer;
-        }
-
-        public void Advance(TimeSpan amount)
-        {
-            ManualTimer[] snapshot;
-            lock (sync)
-            {
-                now += amount;
-                snapshot = timers.ToArray();
-            }
-
-            foreach (ManualTimer timer in snapshot)
-            {
-                timer.FireIfDue(now);
-            }
-        }
-
-        private sealed class ManualTimer(
-            TimerCallback callback,
-            object? state,
-            DateTimeOffset due,
-            TimeSpan period) : ITimer
-        {
-            private bool disposed;
-            private DateTimeOffset next = due;
-
-            public void FireIfDue(DateTimeOffset now)
-            {
-                if (disposed || now < next)
-                {
-                    return;
-                }
-
-                callback(state);
-                if (period == Timeout.InfiniteTimeSpan)
-                {
-                    disposed = true;
-                }
-                else
-                {
-                    next = now + period;
-                }
-            }
-
-            public bool Change(TimeSpan dueTime, TimeSpan period) =>
-                throw new NotSupportedException();
-
-            public void Dispose() => disposed = true;
-
-            public ValueTask DisposeAsync()
-            {
-                Dispose();
-                return ValueTask.CompletedTask;
-            }
-        }
-    }
 }

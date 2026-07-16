@@ -10,6 +10,7 @@ public enum ServiceLifecycleTrigger
     PowerChanged,
     Resumed,
     DeviceArrived,
+    DeviceRemoved,
 }
 
 public interface IServiceLifecycleEventSource
@@ -124,6 +125,7 @@ public sealed class WindowsServiceLifecycleEventSource
     private const int PowerChangedBit = 1 << 0;
     private const int ResumedBit = 1 << 1;
     private const int DeviceArrivedBit = 1 << 2;
+    private const int DeviceRemovedBit = 1 << 3;
     private static readonly ConcurrentBag<IDisposable> FailedSubscriptions = [];
     private readonly object disposeSync = new();
     private readonly Func<CancellationToken, ValueTask>? beforePendingDrainAsync;
@@ -204,6 +206,11 @@ public sealed class WindowsServiceLifecycleEventSource
                 {
                     yield return ServiceLifecycleTrigger.DeviceArrived;
                 }
+
+                if ((drained & DeviceRemovedBit) != 0)
+                {
+                    yield return ServiceLifecycleTrigger.DeviceRemoved;
+                }
             }
         }
     }
@@ -253,6 +260,7 @@ public sealed class WindowsServiceLifecycleEventSource
             ServiceLifecycleTrigger.PowerChanged => PowerChangedBit,
             ServiceLifecycleTrigger.Resumed => ResumedBit,
             ServiceLifecycleTrigger.DeviceArrived => DeviceArrivedBit,
+            ServiceLifecycleTrigger.DeviceRemoved => DeviceRemovedBit,
             _ => throw new ArgumentOutOfRangeException(nameof(trigger)),
         };
         Interlocked.Or(ref pendingTriggers, bit);
@@ -281,6 +289,7 @@ internal sealed class NativeWindowsLifecycleNotificationBackend
         private const uint PowerResumeAutomatic = 0x0012;
         private const uint PowerResumeSuspend = 0x0007;
         private const uint DeviceInterfaceArrival = 0;
+        private const uint DeviceInterfaceRemoval = 1;
         private const uint CrSuccess = 0;
 
         private static readonly Guid AcDcPowerSource =
@@ -404,9 +413,18 @@ internal sealed class NativeWindowsLifecycleNotificationBackend
             IntPtr eventData,
             uint eventDataSize)
         {
-            if (action == DeviceInterfaceArrival && Volatile.Read(ref disposed) == 0)
+            if (Volatile.Read(ref disposed) != 0)
+            {
+                return 0;
+            }
+
+            if (action == DeviceInterfaceArrival)
             {
                 publish(ServiceLifecycleTrigger.DeviceArrived);
+            }
+            else if (action == DeviceInterfaceRemoval)
+            {
+                publish(ServiceLifecycleTrigger.DeviceRemoved);
             }
 
             return 0;

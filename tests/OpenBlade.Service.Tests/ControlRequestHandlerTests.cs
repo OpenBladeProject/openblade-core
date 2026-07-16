@@ -107,9 +107,11 @@ public sealed class ControlRequestHandlerTests
             string preferencesPath = path + ".preferences";
             string markerPath = path + ".commit";
             var store = new BatteryConfigurationStore(path, preferencesPath, markerPath);
+            var overrideStore = new PersistentOverrideStore(path + ".overrides");
             BatteryConfiguration configuration = await store.LoadAsync(CancellationToken.None);
             using var runtime = new ServiceControlRuntime(
                 store,
+                overrideStore,
                 new FixedTelemetry(),
                 new NullHub(),
                 provider,

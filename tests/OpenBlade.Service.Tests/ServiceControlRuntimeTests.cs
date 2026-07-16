@@ -327,6 +327,8 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             CancellationToken.None);
 
         Assert.Equal(ControlOperationStatus.Failed, result.Status);
+        Assert.Contains("override intent was stored", result.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("device vanished", result.Message, StringComparison.OrdinalIgnoreCase);
         Assert.Equal([DeviceSubsystem.Fans], context.Runtime.GetStatus().ExternalChanges);
     }
 
@@ -388,7 +390,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         Assert.Equal(telemetryCaptures, context.Telemetry.CaptureCount);
         Assert.Equal(providerCalls, context.Provider.TryGetCount);
         Assert.Equal(deviceCalls, context.Device.TotalCalls);
-        Assert.Equal(1, context.Monitor.ObserveCount);
+        Assert.Equal(2, context.Monitor.ObserveCount);
     }
 
     [Fact]
@@ -599,7 +601,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         int telemetryCaptures = context.Telemetry.CaptureCount;
         context.Monitor.Current = new ControllerPresenceObservation(["RazerAppEngine"], null);
         await context.Runtime.RefreshControllerPresenceAsync(CancellationToken.None);
-        Assert.Equal(1, context.Monitor.ObserveCount);
+        Assert.Equal(2, context.Monitor.ObserveCount);
         Assert.Equal(telemetryCaptures, context.Telemetry.CaptureCount);
         Assert.Equal(3, context.Device.TotalCalls);
     }
@@ -845,6 +847,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
 
         Assert.Equal(ControlOperationStatus.Applied, result.Status);
         Assert.Equal(1, context.Device.PerformanceSetCalls);
+        Assert.Equal(2, context.Monitor.ObserveCount);
         Assert.Equal(["RazerAppEngine"], context.Runtime.GetStatus().PotentialControllers);
         Assert.Equal("enumeration warning", context.Runtime.GetStatus().ControllerDetectionWarning);
     }
@@ -1525,6 +1528,105 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     }
 
     [Fact]
+    public async Task PersistentOverride_SurvivesServiceRuntimeRecreation()
+    {
+        string overridePath = Path.Combine(directory, "restart-overrides.json");
+        TestContext first = CreateContext(
+            providerAvailable: false,
+            persistentOverridePath: overridePath,
+            loadPersistentOverrides: true);
+
+        ControlOperationResult result = await first.Runtime.SetPerformanceOverrideAsync(
+            new ManualOverride<PerformancePreset>(
+                PerformancePreset.Performance,
+                OverrideLifetime.Persistent),
+            CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Blocked, result.Status);
+        TestContext restarted = CreateContext(
+            providerAvailable: false,
+            persistentOverridePath: overridePath,
+            loadPersistentOverrides: true);
+        Assert.Equal(
+            new ManualOverride<PerformancePreset>(
+                PerformancePreset.Performance,
+                OverrideLifetime.Persistent),
+            restarted.Runtime.GetStatus().PerformanceOverride);
+    }
+
+    [Fact]
+    public async Task SwitchingPersistentOverrideToTemporary_RemovesDurableValue()
+    {
+        string overridePath = Path.Combine(directory, "replacement-overrides.json");
+        TestContext first = CreateContext(
+            providerAvailable: false,
+            persistentOverridePath: overridePath,
+            loadPersistentOverrides: true);
+        await first.Runtime.SetPerformanceOverrideAsync(
+            new ManualOverride<PerformancePreset>(
+                PerformancePreset.Performance,
+                OverrideLifetime.Persistent),
+            CancellationToken.None);
+
+        await first.Runtime.SetPerformanceOverrideAsync(
+            new ManualOverride<PerformancePreset>(
+                PerformancePreset.Silent,
+                OverrideLifetime.UntilPowerSourceChange),
+            CancellationToken.None);
+
+        Assert.Equal(
+            OverrideLifetime.UntilPowerSourceChange,
+            first.Runtime.GetStatus().PerformanceOverride!.Lifetime);
+        TestContext restarted = CreateContext(
+            providerAvailable: false,
+            persistentOverridePath: overridePath,
+            loadPersistentOverrides: true);
+        Assert.Null(restarted.Runtime.GetStatus().PerformanceOverride);
+    }
+
+    [Fact]
+    public async Task ClearingPersistentOverride_RemovesDurableValueWhileDeviceUnavailable()
+    {
+        string overridePath = Path.Combine(directory, "cleared-overrides.json");
+        TestContext first = CreateContext(
+            providerAvailable: false,
+            persistentOverridePath: overridePath,
+            loadPersistentOverrides: true);
+        await first.Runtime.SetFanOverrideAsync(
+            new ManualOverride<FanMode>(FanMode.Maximum, OverrideLifetime.Persistent),
+            CancellationToken.None);
+
+        ControlOperationResult result = await first.Runtime.SetFanOverrideAsync(
+            null,
+            CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Blocked, result.Status);
+        TestContext restarted = CreateContext(
+            providerAvailable: false,
+            persistentOverridePath: overridePath,
+            loadPersistentOverrides: true);
+        Assert.Null(restarted.Runtime.GetStatus().FanOverride);
+    }
+
+    [Fact]
+    public async Task PersistentOverrideWriteFailure_LeavesIntentUnchangedAndSkipsDevice()
+    {
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            overrideWriteBoundary: _ =>
+                Task.FromException(new IOException("disk unavailable")));
+
+        ControlOperationResult result = await context.Runtime.SetFanOverrideAsync(
+            new ManualOverride<FanMode>(FanMode.Maximum, OverrideLifetime.Persistent),
+            CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Failed, result.Status);
+        Assert.Null(context.Runtime.GetStatus().FanOverride);
+        Assert.Equal(0, context.Provider.TryGetCount);
+        Assert.Equal(0, context.Device.TotalCalls);
+    }
+
+    [Fact]
     public async Task EnableFullChargeWhileOnBattery_DoesNotRemainLatentAfterAcTransition()
     {
         TestContext context = CreateContext(
@@ -1876,7 +1978,10 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         bool initialize = true,
         bool protectionEnabled = true,
         Func<BatteryConfigurationCommitBoundary, CancellationToken, Task>?
-            transactionBoundary = null)
+            transactionBoundary = null,
+        string? persistentOverridePath = null,
+        Func<CancellationToken, Task>? overrideWriteBoundary = null,
+        bool loadPersistentOverrides = false)
     {
         string profilePath = Path.Combine(directory, "profiles.json");
         string preferencesPath = Path.Combine(directory, "battery-preferences.json");
@@ -1913,8 +2018,14 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         var monitor = new FakeControllerPresenceMonitor(
             new ControllerPresenceObservation(conflicts ?? [], detectionFailure));
         var history = new DiagnosticHistory();
+        var overrideStore = new PersistentOverrideStore(
+            persistentOverridePath ?? Path.Combine(
+                directory,
+                $"manual-overrides-{Guid.NewGuid():N}.json"),
+            overrideWriteBoundary);
         var runtime = new ServiceControlRuntime(
             store,
+            overrideStore,
             telemetry,
             hub,
             provider,
@@ -1922,7 +2033,10 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             monitor);
         if (initialize)
         {
-            runtime.Initialize(configuration, initialPowerSource);
+            PersistentOverrideState overrides = loadPersistentOverrides
+                ? overrideStore.LoadAsync(CancellationToken.None).GetAwaiter().GetResult().Overrides
+                : PersistentOverrideState.Empty;
+            runtime.Initialize(configuration, initialPowerSource, overrides);
         }
         return new TestContext(
             runtime,
