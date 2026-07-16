@@ -84,15 +84,13 @@ public sealed class MainViewModelTests
     }
 
     [Fact]
-    public async Task OlderDirectObservationCannotRegressSubscriptionAndReconnectResetsRevision()
+    public async Task OlderDirectObservationCannotRegressNewerSubscriptionRevision()
     {
         var client = new FakeServiceClient();
         var observation = new TaskCompletionSource<ServiceStatusSnapshot>(TaskCreationOptions.RunContinuationsAsynchronously);
         client.PendingObservation = observation;
         await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
         await viewModel.StartAsync();
-
-        Task direct = viewModel.ObserveStateAsync(CancellationToken.None);
         client.Publish(CreateStatus(true, false) with
         {
             Revision = 9,
@@ -100,6 +98,9 @@ public sealed class MainViewModelTests
             ConfirmedState = new ConfirmedDeviceState(PerformancePreset.Performance, null, null, null),
         });
         await WaitUntilAsync(() => viewModel.ConnectionStatus == "newer subscription");
+
+        Task direct = viewModel.ObserveStateAsync(CancellationToken.None);
+        await client.ObservationStarted.Task.WaitAsync(TimeSpan.FromSeconds(2));
         observation.TrySetResult(CreateStatus(true, false) with
         {
             Revision = 8,
@@ -110,6 +111,54 @@ public sealed class MainViewModelTests
 
         Assert.Equal("newer subscription", viewModel.ConnectionStatus);
         Assert.Equal(PerformancePreset.Performance, viewModel.SelectedPerformance);
+    }
+
+    [Fact]
+    public async Task DirectRequestBegunDisconnectedCannotEstablishEpochOrBlockRevisionZero()
+    {
+        var client = new FakeServiceClient();
+        var observation = new TaskCompletionSource<ServiceStatusSnapshot>(TaskCreationOptions.RunContinuationsAsynchronously);
+        client.PendingObservation = observation;
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+
+        Task direct = viewModel.ObserveStateAsync(CancellationToken.None);
+        await client.ObservationStarted.Task.WaitAsync(TimeSpan.FromSeconds(2));
+        observation.TrySetResult(CreateStatus(true, false) with
+        {
+            Revision = 8,
+            Message = "disconnected direct",
+        });
+        await direct;
+
+        Assert.False(viewModel.IsConnected);
+        client.Publish(CreateStatus(true, false) with
+        {
+            Revision = 0,
+            Message = "subscription revision zero",
+        });
+        await WaitUntilAsync(() => viewModel.ConnectionStatus == "subscription revision zero");
+
+        Assert.True(viewModel.IsConnected);
+    }
+
+    [Fact]
+    public async Task DirectResponseFromPreviousGenerationCannotOverrideRestartedRevisionZero()
+    {
+        var client = new FakeServiceClient();
+        var observation = new TaskCompletionSource<ServiceStatusSnapshot>(TaskCreationOptions.RunContinuationsAsynchronously);
+        client.PendingObservation = observation;
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        client.Publish(CreateStatus(true, false) with
+        {
+            Revision = 7,
+            Message = "original service",
+        });
+        await WaitUntilAsync(() => viewModel.ConnectionStatus == "original service");
+
+        Task direct = viewModel.ObserveStateAsync(CancellationToken.None);
+        await client.ObservationStarted.Task.WaitAsync(TimeSpan.FromSeconds(2));
 
         client.PublishReconnecting();
         await WaitUntilAsync(() => !viewModel.IsConnected);
@@ -122,7 +171,50 @@ public sealed class MainViewModelTests
         await WaitUntilAsync(() =>
             viewModel.ConnectionStatus == "restarted service"
             && viewModel.SelectedPerformance == PerformancePreset.Silent);
+
+        observation.TrySetResult(CreateStatus(true, false) with
+        {
+            Revision = 8,
+            Message = "stale direct",
+            ConfirmedState = new ConfirmedDeviceState(PerformancePreset.Performance, null, null, null),
+        });
+        await direct;
+
+        Assert.Equal("restarted service", viewModel.ConnectionStatus);
         Assert.Equal(PerformancePreset.Silent, viewModel.SelectedPerformance);
+    }
+
+    [Fact]
+    public async Task DirectErrorFromPreviousGenerationCannotDisconnectRestartedSubscription()
+    {
+        var client = new FakeServiceClient();
+        var observation = new TaskCompletionSource<ServiceStatusSnapshot>(TaskCreationOptions.RunContinuationsAsynchronously);
+        client.PendingObservation = observation;
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        client.Publish(CreateStatus(true, false) with
+        {
+            Revision = 7,
+            Message = "original service",
+        });
+        await WaitUntilAsync(() => viewModel.ConnectionStatus == "original service");
+
+        Task direct = viewModel.ObserveStateAsync(CancellationToken.None);
+        await client.ObservationStarted.Task.WaitAsync(TimeSpan.FromSeconds(2));
+        client.PublishReconnecting();
+        await WaitUntilAsync(() => !viewModel.IsConnected);
+        client.Publish(CreateStatus(true, false) with
+        {
+            Revision = 0,
+            Message = "restarted service",
+        });
+        await WaitUntilAsync(() => viewModel.ConnectionStatus == "restarted service");
+
+        observation.TrySetException(new IOException("stale direct failure"));
+        await direct;
+
+        Assert.True(viewModel.IsConnected);
+        Assert.Equal("restarted service", viewModel.ConnectionStatus);
     }
 
     [Fact]
@@ -747,6 +839,7 @@ public sealed class MainViewModelTests
         public int MutationCalls { get; private set; }
         public int ExportCalls { get; private set; }
         public TaskCompletionSource<ServiceStatusSnapshot>? PendingObservation { get; set; }
+        public TaskCompletionSource ObservationStarted { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public bool BlockMutations { get; init; }
         public bool BlockExports { get; init; }
         public bool WatchCanceled { get; private set; }
@@ -785,10 +878,13 @@ public sealed class MainViewModelTests
         public Task<ServiceStatusSnapshot> GetStatusAsync(CancellationToken token) =>
             throw new NotSupportedException();
 
-        public Task<ServiceStatusSnapshot> ObserveStateAsync(
-            CancellationToken cancellationToken) => PendingObservation is not null
+        public Task<ServiceStatusSnapshot> ObserveStateAsync(CancellationToken cancellationToken)
+        {
+            ObservationStarted.TrySetResult();
+            return PendingObservation is not null
                 ? PendingObservation.Task.WaitAsync(cancellationToken)
                 : throw new NotSupportedException();
+        }
 
         public async Task<DiagnosticArchive> ExportDiagnosticsAsync(CancellationToken token)
         {

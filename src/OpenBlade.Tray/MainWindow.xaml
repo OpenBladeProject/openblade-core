@@ -288,7 +288,7 @@
                                         Command="{x:Bind ViewModel.SetLightingCommand}"
                                         CommandParameter="{x:Bind ViewModel.LightingDraft, Mode=OneWay}" />
                                 <StackPanel Orientation="Horizontal" Spacing="6">
-                                    <TextBlock Text="Confirmed source:" Style="{StaticResource SecondaryTextStyle}" />
+                                    <TextBlock Text="Current source:" Style="{StaticResource SecondaryTextStyle}" />
                                     <TextBlock Text="{x:Bind ViewModel.LightingSourceLabel, Mode=OneWay}"
                                                Style="{StaticResource SecondaryTextStyle}" />
                                 </StackPanel>

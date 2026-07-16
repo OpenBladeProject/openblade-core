@@ -90,6 +90,7 @@ public sealed class CapabilityPresentationTests
         Assert.DoesNotContain("Export diagnostics (unavailable)", xaml, StringComparison.Ordinal);
         Assert.DoesNotContain("ViewModel.ConflictNames", xaml, StringComparison.Ordinal);
         Assert.DoesNotContain("SystemFillColorCriticalBrush", xaml, StringComparison.Ordinal);
+        Assert.DoesNotContain("Confirmed source:", xaml, StringComparison.Ordinal);
         Assert.Contains(
             "Value=\"{Binding ChargeLimitPercent, Mode=TwoWay, Converter={StaticResource Int32Double}}\"",
             xaml,
@@ -254,6 +255,30 @@ public sealed class CapabilityPresentationTests
         await save.ExecuteAsync(null);
 
         Assert.Null(client.SavedProfiles);
+    }
+
+    [Fact]
+    public async Task UndefinedPerformanceAndFanCapabilitiesAreNotExposedOrExecutable()
+    {
+        var client = new PresentationClient();
+        await using var viewModel = new MainViewModel(client, new ImmediateDispatcher());
+        await viewModel.StartAsync();
+        var invalidPerformance = (PerformancePreset)999;
+        var invalidFan = (FanMode)999;
+        client.Publish(CreateStatus(
+            verified: true,
+            blocked: false,
+            capabilities: new DeviceCapabilities(
+                new HashSet<PerformancePreset> { PerformancePreset.Balanced, invalidPerformance },
+                new HashSet<FanMode> { FanMode.Automatic, invalidFan },
+                new HashSet<LightingEffect> { LightingEffect.Off },
+                50, 80, 5)));
+        await WaitUntilAsync(() => viewModel.AvailableFanModes.Count > 0);
+
+        Assert.Equal([PerformancePreset.Balanced], viewModel.AvailablePerformancePresets);
+        Assert.Equal([FanMode.Automatic], viewModel.AvailableFanModes);
+        Assert.False(viewModel.SetPerformanceCommand.CanExecute(invalidPerformance));
+        Assert.False(viewModel.SetFanModeCommand.CanExecute(invalidFan));
     }
 
     [Fact]

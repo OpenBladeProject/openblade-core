@@ -76,6 +76,8 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     private ThemePreference theme = ThemePreference.FollowWindows;
     private int disposed;
     private long latestAcceptedRevision = -1;
+    private long connectionGeneration;
+    private bool subscriptionConnected;
 
     public MainViewModel(IServiceClient serviceClient, IUiDispatcher dispatcher)
         : this(serviceClient, dispatcher, new UnavailableDiagnosticArchiveSaver())
@@ -95,11 +97,13 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         SetPerformanceCommand = CreateCommand(
             SetPerformanceAsync,
             parameter => parameter is PerformancePreset value
+                && Enum.IsDefined(value)
                 && CanMutate
                 && latestStatus!.Capabilities!.PerformancePresets.Contains(value));
         SetFanModeCommand = CreateCommand(
             SetFanModeAsync,
             parameter => parameter is FanMode value
+                && Enum.IsDefined(value)
                 && CanMutate
                 && latestStatus!.Capabilities!.FanModes.Contains(value));
         SetLightingCommand = CreateCommand(
@@ -546,11 +550,20 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
 
     public async Task ObserveStateAsync(CancellationToken cancellationToken)
     {
+        ObservationRequestStamp stamp = default;
+        await dispatcher.InvokeAsync(
+            () => stamp = new ObservationRequestStamp(
+                connectionGeneration,
+                subscriptionConnected),
+            cancellationToken);
+
         try
         {
             ServiceStatusSnapshot status = await serviceClient
                 .ObserveStateAsync(cancellationToken);
-            await dispatcher.InvokeAsync(() => ApplyStatus(status), cancellationToken);
+            await dispatcher.InvokeAsync(
+                () => ApplyObservedStatus(status, stamp),
+                cancellationToken);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -558,9 +571,15 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         }
         catch (Exception)
         {
-            await dispatcher.InvokeAsync(MarkDisconnected, cancellationToken);
+            await dispatcher.InvokeAsync(
+                () => ApplyObservationFailure(stamp),
+                cancellationToken);
         }
     }
+
+    private readonly record struct ObservationRequestStamp(
+        long Generation,
+        bool BeganWithConnectedSubscription);
 
     public async ValueTask DisposeAsync()
     {
@@ -606,6 +625,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
                         switch (update)
                         {
                             case ServiceWatchUpdate.Connected connected:
+                                subscriptionConnected = true;
                                 ApplyStatus(connected.Status);
                                 break;
                             case ServiceWatchUpdate.Reconnecting:
@@ -705,8 +725,14 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         DeviceCapabilities capabilities = status.Capabilities
             ?? DeviceCapabilities.Unavailable();
         Capabilities = capabilities;
-        AvailablePerformancePresets = capabilities.PerformancePresets.Order().ToArray();
-        AvailableFanModes = capabilities.FanModes.Order().ToArray();
+        AvailablePerformancePresets = capabilities.PerformancePresets
+            .Where(Enum.IsDefined)
+            .Order()
+            .ToArray();
+        AvailableFanModes = capabilities.FanModes
+            .Where(Enum.IsDefined)
+            .Order()
+            .ToArray();
         AvailableLightingEffects = capabilities.LightingEffects.Order().ToArray();
         AvailableLightingSettings = AvailableLightingEffects
             .Select(CreateLightingChoice)
@@ -721,6 +747,8 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
 
     private void MarkDisconnected(string message)
     {
+        connectionGeneration++;
+        subscriptionConnected = false;
         latestAcceptedRevision = -1;
         IsConnected = false;
         IsReadOnly = true;
@@ -728,6 +756,26 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         ConnectionStatus = message;
         ControlAccessStatus = "Service disconnected · hardware controls disabled";
         NotifyCommands();
+    }
+
+    private void ApplyObservedStatus(
+        ServiceStatusSnapshot status,
+        ObservationRequestStamp stamp)
+    {
+        if (stamp.BeganWithConnectedSubscription
+            && stamp.Generation == connectionGeneration)
+        {
+            ApplyStatus(status);
+        }
+    }
+
+    private void ApplyObservationFailure(ObservationRequestStamp stamp)
+    {
+        if (stamp.BeganWithConnectedSubscription
+            && stamp.Generation == connectionGeneration)
+        {
+            MarkDisconnected();
+        }
     }
 
     private bool CanSetChargeLimit(int value)
@@ -861,7 +909,9 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     private static bool ProfileSupported(
         PowerProfile profile,
         DeviceCapabilities capabilities) =>
-        capabilities.PerformancePresets.Contains(profile.Performance)
+        Enum.IsDefined(profile.Performance)
+        && capabilities.PerformancePresets.Contains(profile.Performance)
+        && Enum.IsDefined(profile.Fans)
         && capabilities.FanModes.Contains(profile.Fans)
         && LightingSupported(profile.Lighting, capabilities);
 
