@@ -280,11 +280,10 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     }
 
     [Fact]
-    public async Task BlockedIntentionalReconciliation_PreservesLatchedExternalChanges()
+    public async Task UnsupportedIntentionalReconciliation_PreservesLatchedExternalChanges()
     {
         TestContext context = CreateContext(providerAvailable: true);
         await LatchFanDriftAsync(context);
-        context.Guard.SetScript(new HardwareAccessDecision(["RazerAppEngine"], null));
 
         ControlOperationResult result = await context.Runtime.SetPerformanceOverrideAsync(
             new ManualOverride<PerformancePreset>(
@@ -442,6 +441,80 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         Assert.Equal(ProtectionOff(), context.Runtime.GetStatus().ConfirmedState!.Battery);
     }
 
+    [Theory]
+    [InlineData(DeviceSubsystem.Performance)]
+    [InlineData(DeviceSubsystem.Fans)]
+    [InlineData(DeviceSubsystem.Battery)]
+    [InlineData(DeviceSubsystem.Lighting)]
+    public async Task GenuinePowerTransition_PreservesLatchedExternalChangeWithoutSetter(
+        DeviceSubsystem subsystem)
+    {
+        TestContext context = CreateWritableContext();
+        PowerProfile batteryProfile = context.Runtime.GetStatus().Profiles.Battery;
+        context.Device.ConfirmedState = new ConfirmedDeviceState(
+            batteryProfile.Performance,
+            batteryProfile.Fans,
+            ConfirmedBattery(80),
+            batteryProfile.Lighting);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+
+        ConfirmedDeviceState externallyChanged = subsystem switch
+        {
+            DeviceSubsystem.Performance => context.Device.ConfirmedState with
+            {
+                Performance = PerformancePreset.Performance,
+            },
+            DeviceSubsystem.Fans => context.Device.ConfirmedState with
+            {
+                Fans = FanMode.Maximum,
+            },
+            DeviceSubsystem.Battery => context.Device.ConfirmedState with
+            {
+                Battery = ConfirmedBattery(75),
+            },
+            DeviceSubsystem.Lighting => context.Device.ConfirmedState with
+            {
+                Lighting = new LightingSettings(
+                    LightingEffect.Static,
+                    new RgbColor(1, 2, 3),
+                    25),
+            },
+            _ => throw new ArgumentOutOfRangeException(nameof(subsystem)),
+        };
+        context.Device.ConfirmedState = externallyChanged;
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        Assert.Equal([subsystem], context.Runtime.GetStatus().ExternalChanges);
+        int capabilityReads = context.Device.CapabilitiesReadCalls;
+        int stateReads = context.Device.StateReadCalls;
+
+        context.Telemetry.Current = CreateTelemetry(PowerSource.Battery);
+        await context.Runtime.HandlePowerSourceChangedAsync(CancellationToken.None);
+
+        ServiceStatusSnapshot status = context.Runtime.GetStatus();
+        Assert.Equal(capabilityReads + 1, context.Device.CapabilitiesReadCalls);
+        Assert.Equal(stateReads + 1, context.Device.StateReadCalls);
+        Assert.Equal(0, context.Device.TotalSetterCalls);
+        Assert.Equal(externallyChanged, status.ConfirmedState);
+        Assert.Equal([subsystem], status.ExternalChanges);
+        Assert.Contains("paused", status.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task ExplicitScopedCommand_ReclaimsLatchedExternalChangeAfterReadback()
+    {
+        TestContext context = CreateWritableContext();
+        await LatchFanDriftAsync(context);
+
+        ControlOperationResult result = await context.Runtime.SetFanOverrideAsync(
+            new ManualOverride<FanMode>(FanMode.Automatic, OverrideLifetime.Persistent),
+            CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Applied, result.Status);
+        Assert.Equal(1, context.Device.FanSetCalls);
+        Assert.Equal(FanMode.Automatic, context.Runtime.GetStatus().ConfirmedState!.Fans);
+        Assert.Empty(context.Runtime.GetStatus().ExternalChanges);
+    }
+
     [Fact]
     public async Task TransitionalRefreshMethods_RouteToZeroWriteReplacements()
     {
@@ -494,77 +567,6 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         Assert.Equal(0, context.Device.TotalCalls);
         Assert.False(context.Runtime.GetStatus().DeviceVerified);
         Assert.True(context.Runtime.GetStatus().WritesBlocked);
-    }
-
-    [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public async Task LegacyGuardConflictOrDetectionFailure_DoesNotBlockWriteOrObservation(
-        bool detectionFailure)
-    {
-        TestContext context = CreateWritableContext(
-            conflicts: detectionFailure ? [] : ["RazerAppEngine"],
-            detectionFailure: detectionFailure ? "enumeration failed" : null);
-
-        ControlOperationResult result = await context.Runtime.SetPerformanceOverrideAsync(
-            new ManualOverride<PerformancePreset>(
-                PerformancePreset.Performance,
-                OverrideLifetime.Persistent),
-            CancellationToken.None);
-
-        Assert.Equal(ControlOperationStatus.Applied, result.Status);
-        Assert.Equal(1, context.Provider.TryGetCount);
-        Assert.Equal(4, context.Device.TotalCalls);
-
-        await context.Runtime.ObserveAsync(CancellationToken.None);
-
-        Assert.Equal(2, context.Provider.TryGetCount);
-        Assert.Equal(6, context.Device.TotalCalls);
-        Assert.False(context.Runtime.GetStatus().WritesBlocked);
-    }
-
-    [Fact]
-    public async Task LegacyGuardConflictAppearingDuringAdmission_IsIgnored()
-    {
-        TestContext context = CreateWritableContext();
-        context.Guard.SetScript(
-            new HardwareAccessDecision([], null),
-            new HardwareAccessDecision(["RazerAppEngine"], null));
-
-        ControlOperationResult result = await context.Runtime.SetPerformanceOverrideAsync(
-            new ManualOverride<PerformancePreset>(
-                PerformancePreset.Performance,
-                OverrideLifetime.Persistent),
-            CancellationToken.None);
-
-        Assert.Equal(ControlOperationStatus.Applied, result.Status);
-        Assert.Equal(1, context.Provider.TryGetCount);
-        Assert.Equal(4, context.Device.TotalCalls);
-    }
-
-    [Fact]
-    public async Task Refresh_ObservesVerifiedDeviceDespiteStrictGuardConflict()
-    {
-        TestContext context = CreateContext(providerAvailable: true);
-        context.Device.Capabilities = DeviceCapabilities.SafeTargetDefaults();
-        context.Device.ConfirmedState = new ConfirmedDeviceState(
-            PerformancePreset.Balanced,
-            FanMode.Automatic,
-            ConfirmedBattery(80),
-            ProfileDefaults.CreateSafeDefaults().PluggedIn.Lighting);
-        context.Guard.SetScript(new HardwareAccessDecision(["RazerAppEngine"], null));
-
-        await context.Runtime.ObserveAsync(CancellationToken.None);
-
-        ServiceStatusSnapshot observed = context.Runtime.GetStatus();
-        Assert.True(observed.DeviceVerified);
-        Assert.False(observed.WritesBlocked);
-        Assert.Equal(1, context.Provider.TryGetCount);
-        Assert.Equal(2, context.Device.TotalCalls);
-        Assert.Equal(0, context.Device.PerformanceSetCalls);
-        Assert.Equal(0, context.Device.FanSetCalls);
-        Assert.Equal(0, context.Device.BatterySetCalls);
-        Assert.Equal(0, context.Device.LightingSetCalls);
     }
 
     [Fact]
@@ -647,7 +649,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     }
 
     [Fact]
-    public async Task LifecycleRefresh_WithUnsafeGuard_UsesReadOnlyObservation()
+    public async Task LifecycleRefresh_WithControllerAdvisory_UsesReadOnlyObservation()
     {
         TestContext context = CreateContext(
             providerAvailable: true,
@@ -1785,7 +1787,6 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         var hub = new FakeHub();
         var device = new CountingBladeDevice();
         var provider = new CountingProvider(providerAvailable, device);
-        var guard = new FakeGuard(conflicts ?? [], detectionFailure);
         var monitor = new FakeControllerPresenceMonitor(
             new ControllerPresenceObservation(conflicts ?? [], detectionFailure));
         var history = new DiagnosticHistory();
@@ -1805,7 +1806,6 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             store,
             telemetry,
             hub,
-            guard,
             monitor,
             provider,
             device,
@@ -1878,7 +1878,6 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         BatteryConfigurationStore Store,
         FakeTelemetryProvider Telemetry,
         FakeHub Hub,
-        FakeGuard Guard,
         FakeControllerPresenceMonitor Monitor,
         CountingProvider Provider,
         CountingBladeDevice Device,
@@ -1895,36 +1894,6 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         {
             ObserveCount++;
             return Current;
-        }
-    }
-
-    private sealed class FakeGuard : IHardwareAccessGuard
-    {
-        private readonly Queue<HardwareAccessDecision> script = [];
-        private HardwareAccessDecision current;
-
-        public FakeGuard(IReadOnlyList<string> conflicts, string? detectionFailure)
-        {
-            current = new HardwareAccessDecision(conflicts, detectionFailure);
-        }
-
-        public void SetScript(params HardwareAccessDecision[] decisions)
-        {
-            script.Clear();
-            foreach (HardwareAccessDecision decision in decisions)
-            {
-                script.Enqueue(decision);
-            }
-        }
-
-        public HardwareAccessDecision Check()
-        {
-            if (script.TryDequeue(out HardwareAccessDecision? decision))
-            {
-                current = decision;
-            }
-
-            return current;
         }
     }
 

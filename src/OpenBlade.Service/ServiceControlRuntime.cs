@@ -659,8 +659,13 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         FullTransitionApplyOutcome outcome;
         try
         {
+            IReadOnlySet<DeviceSubsystem> automaticWriteExclusions =
+                driftTracker.ExternalChanges.ToHashSet();
             outcome = await new ControlCoordinator(device)
-                .ApplyDesiredStateOutcomeAsync(desired, token);
+                .ApplyDesiredStateOutcomeAsync(
+                    desired,
+                    token,
+                    automaticWriteExclusions);
         }
         catch (IntentionalWriteCanceledException exception)
             when (token.IsCancellationRequested)

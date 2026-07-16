@@ -186,7 +186,8 @@ public sealed class ControlCoordinator
 
     internal async Task<FullTransitionApplyOutcome> ApplyDesiredStateOutcomeAsync(
         DesiredDeviceState desired,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        IReadOnlySet<DeviceSubsystem>? automaticWriteExclusions = null)
     {
         ArgumentNullException.ThrowIfNull(desired);
         var attempted = new HashSet<DeviceSubsystem>();
@@ -260,6 +261,12 @@ public sealed class ControlCoordinator
             foreach (DeviceSubsystem subsystem in OrderedSubsystems)
             {
                 PendingSubsystem pending = states[subsystem];
+                if (automaticWriteExclusions?.Contains(subsystem) == true)
+                {
+                    provisional[subsystem] = ExternalChangePreserved(pending.Name);
+                    continue;
+                }
+
                 if (!pending.Supported)
                 {
                     provisional[subsystem] = Unsupported(pending.Name);
@@ -896,6 +903,11 @@ public sealed class ControlCoordinator
     private static ControlResult Unchanged(string name) => new(
         ControlResultStatus.Unchanged,
         $"{name} is already confirmed.");
+
+    private static ControlResult ExternalChangePreserved(string name) => new(
+        ControlResultStatus.Blocked,
+        $"Automatic {name.ToLowerInvariant()} profile application is paused because " +
+        "the setting changed outside OpenBlade.");
 
     private static ControlResult Applied(string name) => new(
         ControlResultStatus.Applied,

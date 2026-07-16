@@ -25,7 +25,7 @@ public sealed class MainViewModelTests
         Assert.True(viewModel.SetFanModeCommand.CanExecute(FanMode.Automatic));
         Assert.True(viewModel.HasControllerAdvisory);
         Assert.Equal(
-            "Potential controller conflict detected: RazerAppEngine, Razer Synapse Service. OpenBlade will not overwrite settings changed elsewhere.",
+            "Another controller may change laptop settings: RazerAppEngine, Razer Synapse Service. Automatic profile changes pause for settings changed elsewhere; manual actions still apply.",
             viewModel.ControllerAdvisoryText);
         Assert.True(viewModel.HasControllerDetectionWarning);
         Assert.Equal("Controller detection was incomplete.", viewModel.ControllerDetectionWarningText);
@@ -65,7 +65,9 @@ public sealed class MainViewModelTests
             "Confirmed device state · Charge limit 65%",
             viewModel.BatterySourceLabel);
         Assert.True(viewModel.HasExternalChanges);
-        Assert.Equal("Settings changed outside OpenBlade: Fans, Lighting.", viewModel.ExternalChangesText);
+        Assert.Equal(
+            "Settings changed outside OpenBlade: Fans, Lighting. Automatic profile changes for these controls are paused; manual actions still apply.",
+            viewModel.ExternalChangesText);
     }
 
     [Fact]

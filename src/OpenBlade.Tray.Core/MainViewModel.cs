@@ -752,7 +752,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         ControlAccessStatus = FormatControlAccessStatus(status);
         HasControllerAdvisory = status.PotentialControllers.Count > 0;
         ControllerAdvisoryText = HasControllerAdvisory
-            ? $"Potential controller conflict detected: {string.Join(", ", status.PotentialControllers)}. OpenBlade will not overwrite settings changed elsewhere."
+            ? $"Another controller may change laptop settings: {string.Join(", ", status.PotentialControllers)}. Automatic profile changes pause for settings changed elsewhere; manual actions still apply."
             : string.Empty;
         HasControllerDetectionWarning = !string.IsNullOrWhiteSpace(
             status.ControllerDetectionWarning);
@@ -763,7 +763,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             .ToArray();
         HasExternalChanges = externalChanges.Length > 0;
         ExternalChangesText = HasExternalChanges
-            ? $"Settings changed outside OpenBlade: {string.Join(", ", externalChanges)}."
+            ? $"Settings changed outside OpenBlade: {string.Join(", ", externalChanges)}. Automatic profile changes for these controls are paused; manual actions still apply."
             : string.Empty;
         Profiles = status.Profiles;
         DeviceCapabilities capabilities = status.Capabilities
