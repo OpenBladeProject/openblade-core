@@ -10,8 +10,10 @@ all hardware writes remain unavailable until each PID `02E0` operation has a
 sanitized capture fixture that passed decoding, interactive application,
 readback, and restoration. OpenBlade never exposes a raw-command IPC endpoint.
 
-If a Razer/Synapse controller process is running, the service reports the
-conflict and performs zero hardware writes.
+If a Razer/Synapse controller process is running, the service reports an
+advisory warning. OpenBlade observes confirmed device state and does not
+automatically overwrite a control that another controller changed. An explicit
+manual OpenBlade action may reclaim that control after a fresh readback.
 
 ## Telemetry
 
@@ -19,8 +21,10 @@ OpenBlade reads AC and battery state from Windows. On this target machine it
 also reads GPU temperature through NVIDIA NVML loaded only from the absolute
 `%SystemRoot%\System32\nvml.dll` path. Missing or unavailable NVML support
 degrades to `GPU unavailable`; OpenBlade does not launch `nvidia-smi` or install
-a sensor kernel driver. CPU temperature and fan RPM remain unavailable unless a
-safe, independently validated source is present.
+a sensor kernel driver. Fan RPM comes from a validated, read-only HID query on
+this exact device and degrades to unavailable if either selector cannot be
+read. CPU temperature remains unavailable unless Windows or firmware exposes a
+safe source.
 
 ## Diagnostics
 
@@ -66,14 +70,19 @@ executable to exit before removing binaries.
 
 ## Capture workflow
 
-Keep Synapse installed only while gathering protocol captures. After the
-USBPcap filter is active, follow [captures/README.md](captures/README.md) and
-capture exactly one UI operation at a time. The capture CLI can perform only
-target display, read-only discovery, and fixture validation:
+Synapse may remain installed for other Razer devices and can be used as the
+protocol oracle while gathering captures. OpenBlade must not depend on it at
+runtime. After the USBPcap filter is active, follow
+[captures/README.md](captures/README.md) and capture exactly one UI operation at
+a time. The capture CLI exposes typed target checks, read-only queries, fixture
+validation, and explicitly named reversible validation commands; it has no raw
+command mode:
 
 ```powershell
 dotnet run --project src/OpenBlade.Capture -- target
 dotnet run --project src/OpenBlade.Capture -- scan
+dotnet run --project src/OpenBlade.Capture -- query-fan-rpm
+dotnet run --project src/OpenBlade.Capture -- query-temporary-full-charge
 dotnet run --project src/OpenBlade.Capture -- validate captures/fixtures.json
 ```
 
