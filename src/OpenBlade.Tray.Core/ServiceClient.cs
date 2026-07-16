@@ -100,6 +100,15 @@ public sealed class ServiceClient : IServiceClient
             new SetBatteryPolicyRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid(), value),
             token);
 
+    public Task<ControlOperationResult> SetBatteryProtectionAsync(
+        bool enabled,
+        CancellationToken token) => SendMutationAsync(
+            new SetBatteryProtectionRequest(
+                OpenBladeIpc.ProtocolVersion,
+                Guid.NewGuid(),
+                enabled),
+            token);
+
     public Task<ControlOperationResult> SetFullChargeOverrideAsync(
         bool enabled,
         CancellationToken token) => SendMutationAsync(

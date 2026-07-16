@@ -20,6 +20,7 @@ public sealed class CapabilityPresentationTests
             "ViewModel.SetPerformanceCommand",
             "ViewModel.SetFanModeCommand",
             "ViewModel.SetChargeLimitCommand",
+            "ViewModel.ToggleBatteryProtectionCommand",
             "ViewModel.ToggleFullChargeCommand",
             "ViewModel.SetLightingCommand",
             "ViewModel.SaveProfilesCommand",
@@ -34,6 +35,7 @@ public sealed class CapabilityPresentationTests
             "ViewModel.AvailableFanModes",
             "ViewModel.AvailableLightingEffects",
             "ViewModel.AvailableLightingSettings",
+            "ViewModel.ChargeLimitOptions",
             "ViewModel.PluggedInPerformanceEditor",
             "ViewModel.PluggedInFanModeEditor",
             "ViewModel.PluggedInLightingEditor",
@@ -54,6 +56,7 @@ public sealed class CapabilityPresentationTests
             "ViewModel.FanTelemetryLabel",
             "ViewModel.ControlAccessStatus",
             "ViewModel.FullChargeActionLabel",
+            "ViewModel.BatteryProtectionActionLabel",
             "ViewModel.FullChargeOverride",
             "Hardware controls are fail-closed",
             "Razer Blade 16 · RZ09-0581",
@@ -92,7 +95,7 @@ public sealed class CapabilityPresentationTests
         Assert.DoesNotContain("SystemFillColorCriticalBrush", xaml, StringComparison.Ordinal);
         Assert.DoesNotContain("Confirmed source:", xaml, StringComparison.Ordinal);
         Assert.Contains(
-            "Value=\"{Binding ChargeLimitPercent, Mode=TwoWay, Converter={StaticResource Int32Double}}\"",
+            "SelectedItem=\"{x:Bind ViewModel.ChargeLimitPercent, Mode=TwoWay}\"",
             xaml,
             StringComparison.Ordinal);
         Assert.Contains(
@@ -102,6 +105,7 @@ public sealed class CapabilityPresentationTests
         Assert.Equal(
             1,
             CountOccurrences(xaml, "ViewModel.ProfileChargeLimitEditor"));
+        Assert.DoesNotContain("Minimum=\"50\"", xaml, StringComparison.Ordinal);
         Assert.DoesNotContain("Open" + "Synapse", xaml, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("\u00c2", xaml, StringComparison.Ordinal);
     }
@@ -326,12 +330,14 @@ public sealed class CapabilityPresentationTests
         await WaitUntilAsync(() => viewModel.IsConnected);
 
         Assert.True(viewModel.SetFanModeCommand.CanExecute(FanMode.Automatic));
+        Assert.Empty(viewModel.ChargeLimitOptions);
         Assert.False(viewModel.SetChargeLimitCommand.CanExecute(75));
+        Assert.False(viewModel.ToggleBatteryProtectionCommand.CanExecute(null));
         Assert.False(viewModel.ToggleFullChargeCommand.CanExecute(true));
     }
 
     [Fact]
-    public async Task InvalidBatteryCapabilitySetDisablesFullChargeOnly()
+    public async Task InvalidBatteryCapabilitySetFailsClosedWithoutPartialOptions()
     {
         var client = new PresentationClient();
         await using var viewModel = new MainViewModel(client, new ImmediateDispatcher());
@@ -347,7 +353,65 @@ public sealed class CapabilityPresentationTests
         await WaitUntilAsync(() => viewModel.Capabilities.ChargeLimits.Contains(79));
 
         Assert.True(viewModel.SetFanModeCommand.CanExecute(FanMode.Automatic));
+        Assert.Empty(viewModel.ChargeLimitOptions);
+        Assert.False(viewModel.SetChargeLimitCommand.CanExecute(50));
+        Assert.False(viewModel.ToggleBatteryProtectionCommand.CanExecute(null));
         Assert.False(viewModel.ToggleFullChargeCommand.CanExecute(true));
+    }
+
+    [Fact]
+    public async Task SparseBatteryCapabilitiesExposeOnlyAdmittedIndependentActions()
+    {
+        var client = new PresentationClient();
+        await using var viewModel = new MainViewModel(client, new ImmediateDispatcher());
+        await viewModel.StartAsync();
+        client.Publish(CreateStatus(
+            verified: true,
+            blocked: false,
+            capabilities: new DeviceCapabilities(
+                new HashSet<PerformancePreset> { PerformancePreset.Balanced },
+                new HashSet<FanMode> { FanMode.Automatic },
+                new HashSet<LightingEffect> { LightingEffect.Off },
+                new HashSet<int> { 80 },
+                SupportsBatteryProtectionOff: true,
+                SupportsTemporaryFullCharge: false)));
+        await WaitUntilAsync(() => viewModel.ChargeLimitOptions.Count > 0);
+
+        Assert.Equal([80], viewModel.ChargeLimitOptions);
+        Assert.True(viewModel.SetChargeLimitCommand.CanExecute(80));
+        Assert.False(viewModel.SetChargeLimitCommand.CanExecute(75));
+        Assert.True(viewModel.ToggleBatteryProtectionCommand.CanExecute(null));
+        Assert.False(viewModel.ToggleFullChargeCommand.CanExecute(true));
+        Assert.Equal("Unavailable", viewModel.FullChargeActionLabel);
+
+        await Assert.IsType<AsyncRelayCommand>(viewModel.ToggleBatteryProtectionCommand)
+            .ExecuteAsync(null);
+        Assert.False(client.SavedBatteryProtection);
+    }
+
+    [Fact]
+    public async Task UnknownTemporaryStateDisablesEveryBatteryMutation()
+    {
+        var client = new PresentationClient();
+        await using var viewModel = new MainViewModel(client, new ImmediateDispatcher());
+        await viewModel.StartAsync();
+        client.Publish(CreateStatus(
+            verified: true,
+            blocked: false,
+            capabilities: new DeviceCapabilities(
+                new HashSet<PerformancePreset> { PerformancePreset.Balanced },
+                new HashSet<FanMode> { FanMode.Automatic },
+                new HashSet<LightingEffect> { LightingEffect.Off },
+                new HashSet<int> { 80 },
+                SupportsBatteryProtectionOff: true,
+                SupportsTemporaryFullCharge: true),
+            confirmedBattery: new ConfirmedBatteryState(true, 80, null)));
+        await WaitUntilAsync(() => viewModel.ChargeLimitOptions.Count > 0);
+
+        Assert.False(viewModel.SetChargeLimitCommand.CanExecute(80));
+        Assert.False(viewModel.ToggleBatteryProtectionCommand.CanExecute(null));
+        Assert.False(viewModel.ToggleFullChargeCommand.CanExecute(true));
+        Assert.Contains("state unavailable", viewModel.BatterySourceLabel);
     }
 
     [Fact]
@@ -427,12 +491,22 @@ public sealed class CapabilityPresentationTests
         bool verified,
         bool blocked,
         DeviceCapabilities capabilities,
-        IReadOnlyList<string>? conflicts = null)
+        IReadOnlyList<string>? conflicts = null,
+        bool includeConfirmedBattery = true,
+        ConfirmedBatteryState? confirmedBattery = null)
     {
         ProfileSet profiles = ProfileDefaults.CreateSafeDefaults();
         return new ServiceStatusSnapshot(
             1, verified, blocked, conflicts ?? [], null, [], blocked ? "Blocked" : "Ready",
-            capabilities, null, profiles,
+            capabilities,
+            verified && includeConfirmedBattery
+                ? new ConfirmedDeviceState(
+                    null,
+                    null,
+                    confirmedBattery ?? new ConfirmedBatteryState(true, 80, false),
+                    null)
+                : null,
+            profiles,
             new DesiredDeviceState(
                 new ResolvedSetting<PerformancePreset>(profiles.PluggedIn.Performance, SettingValueSource.PowerProfile),
                 new ResolvedSetting<FanMode>(profiles.PluggedIn.Fans, SettingValueSource.PowerProfile),
@@ -468,6 +542,7 @@ public sealed class CapabilityPresentationTests
         private readonly Channel<ServiceWatchUpdate> statuses = Channel.CreateUnbounded<ServiceWatchUpdate>();
         public ProfileSet? SavedProfiles { get; private set; }
         public BatteryPolicy? SavedBatteryPolicy { get; private set; }
+        public bool? SavedBatteryProtection { get; private set; }
         public void Publish(ServiceStatusSnapshot status) =>
             statuses.Writer.TryWrite(new ServiceWatchUpdate.Connected(status));
         public async IAsyncEnumerable<ServiceWatchUpdate> WatchStatusAsync(
@@ -489,6 +564,11 @@ public sealed class CapabilityPresentationTests
         public Task<ControlOperationResult> SetBatteryPolicyAsync(BatteryPolicy value, CancellationToken token)
         {
             SavedBatteryPolicy = value;
+            return Result();
+        }
+        public Task<ControlOperationResult> SetBatteryProtectionAsync(bool enabled, CancellationToken token)
+        {
+            SavedBatteryProtection = enabled;
             return Result();
         }
         public Task<ControlOperationResult> SetFullChargeOverrideAsync(bool enabled, CancellationToken token) => Result();

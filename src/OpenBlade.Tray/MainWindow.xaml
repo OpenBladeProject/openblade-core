@@ -148,28 +148,28 @@
                         <TextBlock Text="BATTERY" Style="{StaticResource SectionHeaderStyle}" />
                         <Border Style="{StaticResource CardStyle}">
                             <StackPanel Spacing="10">
-                                <Grid>
-                                    <TextBlock Text="Charge limit" Style="{StaticResource CardTitleStyle}" />
-                                    <StackPanel HorizontalAlignment="Right" Orientation="Horizontal">
-                                        <TextBlock Text="{x:Bind ViewModel.ChargeLimitPercent, Mode=OneWay}"
-                                                   FontWeight="SemiBold" />
-                                        <TextBlock Text="%" FontWeight="SemiBold" />
-                                    </StackPanel>
-                                </Grid>
-                                <Slider Minimum="50"
-                                        Maximum="80"
-                                        StepFrequency="5"
-                                        Value="{Binding ChargeLimitPercent, Mode=TwoWay, Converter={StaticResource Int32Double}}" />
-                                <Grid ColumnSpacing="8">
+                                <ComboBox Header="Charge limit"
+                                          ItemsSource="{x:Bind ViewModel.ChargeLimitOptions, Mode=OneWay}"
+                                          SelectedItem="{x:Bind ViewModel.ChargeLimitPercent, Mode=TwoWay}" />
+                                <Grid ColumnSpacing="8" RowSpacing="8">
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="*" />
                                         <ColumnDefinition Width="*" />
                                     </Grid.ColumnDefinitions>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="Auto" />
+                                    </Grid.RowDefinitions>
                                     <Button Content="Apply charge limit"
                                             HorizontalAlignment="Stretch"
                                             Command="{x:Bind ViewModel.SetChargeLimitCommand}"
                                             CommandParameter="{x:Bind ViewModel.ChargeLimitPercent, Mode=OneWay}" />
                                     <Button Grid.Column="1"
+                                            Content="{x:Bind ViewModel.BatteryProtectionActionLabel, Mode=OneWay}"
+                                            HorizontalAlignment="Stretch"
+                                            Command="{x:Bind ViewModel.ToggleBatteryProtectionCommand}" />
+                                    <Button Grid.Row="1"
+                                            Grid.ColumnSpan="2"
                                             Content="{x:Bind ViewModel.FullChargeActionLabel, Mode=OneWay}"
                                             HorizontalAlignment="Stretch"
                                             Command="{x:Bind ViewModel.ToggleFullChargeCommand}"
@@ -342,17 +342,9 @@
                         </Border>
                         <Border Style="{StaticResource CardStyle}">
                             <StackPanel Spacing="10">
-                                <Grid>
-                                    <TextBlock Text="Profile charge limit" Style="{StaticResource CardTitleStyle}" />
-                                    <StackPanel HorizontalAlignment="Right" Orientation="Horizontal">
-                                        <TextBlock Text="{x:Bind ViewModel.ProfileChargeLimitEditor, Mode=OneWay}" />
-                                        <TextBlock Text="%" />
-                                    </StackPanel>
-                                </Grid>
-                                <Slider Minimum="50"
-                                        Maximum="80"
-                                        StepFrequency="5"
-                                        Value="{Binding ProfileChargeLimitEditor, Mode=TwoWay, Converter={StaticResource Int32Double}}" />
+                                <ComboBox Header="Profile charge limit"
+                                          ItemsSource="{x:Bind ViewModel.ChargeLimitOptions, Mode=OneWay}"
+                                          SelectedItem="{x:Bind ViewModel.ProfileChargeLimitEditor, Mode=TwoWay}" />
                                 <Button Content="Save profiles"
                                         HorizontalAlignment="Left"
                                         Style="{StaticResource AccentButtonStyle}"

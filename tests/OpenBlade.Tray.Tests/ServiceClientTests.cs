@@ -243,6 +243,7 @@ public sealed class ServiceClientTests
                 timeout.Token),
             await client.SetLightingOverrideAsync(null, timeout.Token),
             await client.SetBatteryPolicyAsync(BatteryPolicy.Create(75), timeout.Token),
+            await client.SetBatteryProtectionAsync(false, timeout.Token),
             await client.SetFullChargeOverrideAsync(true, timeout.Token),
         ];
         await server;
@@ -255,9 +256,11 @@ public sealed class ServiceClientTests
             request => Assert.IsType<SetFanOverrideRequest>(request),
             request => Assert.IsType<SetLightingOverrideRequest>(request),
             request => Assert.IsType<SetBatteryPolicyRequest>(request),
+            request => Assert.False(
+                Assert.IsType<SetBatteryProtectionRequest>(request).Enabled),
             request => Assert.IsType<SetFullChargeOverrideRequest>(request));
         Assert.All(observed, request => Assert.NotEqual(Guid.Empty, request.RequestId));
-        Assert.Equal(6, observed.Select(request => request.RequestId).Distinct().Count());
+        Assert.Equal(7, observed.Select(request => request.RequestId).Distinct().Count());
     }
 
     [Fact]
@@ -568,7 +571,7 @@ public sealed class ServiceClientTests
         List<ServiceRequest> observed,
         CancellationToken token)
     {
-        for (int index = 0; index < 6; index++)
+        for (int index = 0; index < 7; index++)
         {
             await using NamedPipeServerStream server = CreateServer(pipeName);
             await server.WaitForConnectionAsync(token);

@@ -61,7 +61,9 @@ public sealed class MainViewModelTests
         Assert.Equal("Confirmed device state", viewModel.PerformanceSourceLabel);
         Assert.Equal("Changed outside OpenBlade", viewModel.FanSourceLabel);
         Assert.Equal("Changed outside OpenBlade", viewModel.LightingSourceLabel);
-        Assert.Equal("Confirmed device state", viewModel.BatterySourceLabel);
+        Assert.Equal(
+            "Confirmed device state · Charge limit 65%",
+            viewModel.BatterySourceLabel);
         Assert.True(viewModel.HasExternalChanges);
         Assert.Equal("Settings changed outside OpenBlade: Fans, Lighting.", viewModel.ExternalChangesText);
     }
@@ -427,6 +429,11 @@ public sealed class MainViewModelTests
             LightingOverride = new ManualOverride<LightingSettings>(
                 ProfileDefaults.CreateSafeDefaults().Battery.Lighting,
                 OverrideLifetime.Persistent),
+            ConfirmedState = new ConfirmedDeviceState(
+                null,
+                null,
+                new ConfirmedBatteryState(true, 80, true),
+                null),
             FullChargeOverride = true,
         };
         client.Publish(status);
@@ -573,6 +580,11 @@ public sealed class MainViewModelTests
         await viewModel.StartAsync();
         client.Publish(CreateStatus(verified: true, blocked: false) with
         {
+            ConfirmedState = new ConfirmedDeviceState(
+                null,
+                null,
+                new ConfirmedBatteryState(true, 80, true),
+                null),
             FullChargeOverride = true,
         });
         await WaitUntilAsync(() => viewModel.FullChargeOverride);
@@ -610,6 +622,11 @@ public sealed class MainViewModelTests
         await viewModel.StartAsync();
         client.Publish(CreateStatus(verified: true, blocked: true) with
         {
+            ConfirmedState = new ConfirmedDeviceState(
+                null,
+                null,
+                new ConfirmedBatteryState(true, 80, true),
+                null),
             FullChargeOverride = true,
         });
         await WaitUntilAsync(() => viewModel.FullChargeOverride);
@@ -904,7 +921,13 @@ public sealed class MainViewModelTests
                     SupportsTemporaryFullCharge = true,
                 }
                 : DeviceCapabilities.Unavailable()),
-            null,
+            verified
+                ? new ConfirmedDeviceState(
+                    null,
+                    null,
+                    new ConfirmedBatteryState(true, 80, false),
+                    null)
+                : null,
             profiles,
             new DesiredDeviceState(
                 new ResolvedSetting<PerformancePreset>(
@@ -969,6 +992,7 @@ public sealed class MainViewModelTests
         public bool WatchCanceled { get; private set; }
         public bool MutationCanceled { get; private set; }
         public ManualOverride<PerformancePreset>? PerformanceOverride { get; private set; }
+        public bool? BatteryProtectionEnabled { get; private set; }
         public bool? FullChargeEnabled { get; private set; }
         public TaskCompletionSource MutationStarted { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public TaskCompletionSource ExportStarted { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -1044,6 +1068,14 @@ public sealed class MainViewModelTests
         public Task<ControlOperationResult> SetBatteryPolicyAsync(
             BatteryPolicy value,
             CancellationToken token) => MutateAsync(token);
+
+        public Task<ControlOperationResult> SetBatteryProtectionAsync(
+            bool enabled,
+            CancellationToken token)
+        {
+            BatteryProtectionEnabled = enabled;
+            return MutateAsync(token);
+        }
 
         public Task<ControlOperationResult> SetFullChargeOverrideAsync(
             bool enabled,

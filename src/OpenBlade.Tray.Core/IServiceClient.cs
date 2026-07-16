@@ -41,6 +41,10 @@ public interface IServiceClient
         BatteryPolicy value,
         CancellationToken token);
 
+    Task<ControlOperationResult> SetBatteryProtectionAsync(
+        bool enabled,
+        CancellationToken token);
+
     Task<ControlOperationResult> SetFullChargeOverrideAsync(
         bool enabled,
         CancellationToken token);

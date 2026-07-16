@@ -53,7 +53,10 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     private FanMode selectedFanMode = FanMode.Automatic;
     private LightingSettings selectedLighting = ProfileDefaults.CreateSafeDefaults().PluggedIn.Lighting;
     private int chargeLimitPercent = 80;
+    private IReadOnlyList<int> chargeLimitOptions = [];
+    private bool batteryProtectionEnabled = true;
     private bool fullChargeOverride;
+    private bool temporaryFullChargeStateKnown;
     private DeviceCapabilities capabilities = DeviceCapabilities.Unavailable();
     private TelemetrySnapshot? telemetry;
     private ManualOverride<PerformancePreset>? performanceOverride;
@@ -114,6 +117,9 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         SetChargeLimitCommand = CreateCommand(
             SetChargeLimitAsync,
             parameter => parameter is int value && CanSetChargeLimit(value));
+        ToggleBatteryProtectionCommand = CreateCommand(
+            ToggleBatteryProtectionAsync,
+            CanToggleBatteryProtection);
         ToggleFullChargeCommand = CreateCommand(
             ToggleFullChargeAsync,
             CanSetFullChargeOverride);
@@ -129,6 +135,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             (AsyncRelayCommand)SetFanModeCommand,
             (AsyncRelayCommand)SetLightingCommand,
             (AsyncRelayCommand)SetChargeLimitCommand,
+            (AsyncRelayCommand)ToggleBatteryProtectionCommand,
             (AsyncRelayCommand)ToggleFullChargeCommand,
             (AsyncRelayCommand)SaveProfilesCommand,
             (AsyncRelayCommand)ExportDiagnosticsCommand,
@@ -334,6 +341,33 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         }
     }
 
+    public IReadOnlyList<int> ChargeLimitOptions
+    {
+        get => chargeLimitOptions;
+        private set => SetField(ref chargeLimitOptions, value);
+    }
+
+    public bool BatteryProtectionEnabled
+    {
+        get => batteryProtectionEnabled;
+        private set
+        {
+            if (batteryProtectionEnabled == value)
+            {
+                return;
+            }
+
+            SetField(ref batteryProtectionEnabled, value);
+            PropertyChanged?.Invoke(
+                this,
+                new PropertyChangedEventArgs(nameof(BatteryProtectionActionLabel)));
+        }
+    }
+
+    public string BatteryProtectionActionLabel => BatteryProtectionEnabled
+        ? "Turn off battery protection"
+        : "Restore charge limit";
+
     public bool FullChargeOverride
     {
         get => fullChargeOverride;
@@ -356,14 +390,28 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
 
     public bool EnableFullChargeOverride => !FullChargeOverride;
 
-    public string FullChargeActionLabel => FullChargeOverride
-        ? "Cancel charge to 100%"
-        : "Charge to 100% until unplugged";
+    public string FullChargeActionLabel => !temporaryFullChargeStateKnown
+        || !Capabilities.SupportsTemporaryFullCharge
+            ? "Unavailable"
+            : FullChargeOverride
+                ? "Cancel charge to 100%"
+                : "Charge to 100% until unplugged";
 
     public DeviceCapabilities Capabilities
     {
         get => capabilities;
-        private set => SetField(ref capabilities, value);
+        private set
+        {
+            if (EqualityComparer<DeviceCapabilities>.Default.Equals(capabilities, value))
+            {
+                return;
+            }
+
+            SetField(ref capabilities, value);
+            PropertyChanged?.Invoke(
+                this,
+                new PropertyChangedEventArgs(nameof(FullChargeActionLabel)));
+        }
     }
 
     public TelemetrySnapshot? Telemetry
@@ -509,6 +557,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     public ICommand SetFanModeCommand { get; }
     public ICommand SetLightingCommand { get; }
     public ICommand SetChargeLimitCommand { get; }
+    public ICommand ToggleBatteryProtectionCommand { get; }
     public ICommand ToggleFullChargeCommand { get; }
     public ICommand SaveProfilesCommand { get; }
     public ICommand ExportDiagnosticsCommand { get; }
@@ -530,13 +579,53 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             return false;
         }
 
+        if (!CanMutate
+            || latestStatus?.Capabilities is not { } capabilities
+            || !HasBatteryCapability(capabilities)
+            || !capabilities.SupportsTemporaryFullCharge
+            || latestStatus.ConfirmedState?.Battery is not
+            {
+                ProtectionEnabled: true,
+                ChargeLimitPercent: int currentLimit,
+                TemporaryFullCharge: bool temporaryFullCharge,
+            }
+            || !capabilities.ChargeLimits.Contains(currentLimit))
+        {
+            return false;
+        }
+
         bool enable = parameter is bool requested
             ? requested
-            : !FullChargeOverride;
-        return CanMutate
-            && HasBatteryCapability(latestStatus?.Capabilities)
-            && latestStatus!.Capabilities!.SupportsTemporaryFullCharge
+            : !temporaryFullCharge;
+        return enable != temporaryFullCharge
             && (!enable || Telemetry?.PowerSource == PowerSource.PluggedIn);
+    }
+
+    private bool CanToggleBatteryProtection(object? parameter)
+    {
+        if (parameter is not null
+            || !CanMutate
+            || latestStatus?.Capabilities is not { } capabilities
+            || !HasBatteryCapability(capabilities)
+            || latestStatus.ConfirmedState?.Battery is not
+            {
+                TemporaryFullCharge: false,
+            } confirmed)
+        {
+            return false;
+        }
+
+        int storedLimit = latestStatus.DesiredState.Battery.ConfiguredPolicy
+            .ChargeLimitPercent;
+        if (!capabilities.ChargeLimits.Contains(storedLimit))
+        {
+            return false;
+        }
+
+        return confirmed.ProtectionEnabled
+            ? capabilities.SupportsBatteryProtectionOff
+                && confirmed.ChargeLimitPercent == storedLimit
+            : confirmed.ChargeLimitPercent is null;
     }
 
     public Task StartAsync()
@@ -677,6 +766,12 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             ? $"Settings changed outside OpenBlade: {string.Join(", ", externalChanges)}."
             : string.Empty;
         Profiles = status.Profiles;
+        DeviceCapabilities capabilities = status.Capabilities
+            ?? DeviceCapabilities.Unavailable();
+        Capabilities = capabilities;
+        ChargeLimitOptions = HasBatteryCapability(capabilities)
+            ? capabilities.ChargeLimits.Order().ToArray()
+            : [];
         ConfirmedDeviceState? confirmed = status.ConfirmedState;
         SelectedPerformance = confirmed?.Performance ?? status.DesiredState.Performance.Value;
         SelectedFanMode = confirmed?.Fans ?? status.DesiredState.Fans.Value;
@@ -687,7 +782,9 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         }
         ChargeLimitPercent = confirmed?.Battery?.ChargeLimitPercent
             ?? status.DesiredState.Battery.ConfiguredPolicy.ChargeLimitPercent;
-        FullChargeOverride = status.FullChargeOverride;
+        BatteryProtectionEnabled = confirmed?.Battery?.ProtectionEnabled
+            ?? status.DesiredState.Battery.ProtectionEnabled;
+        SetTemporaryFullChargeState(confirmed?.Battery?.TemporaryFullCharge);
         Telemetry = status.Telemetry;
         PerformanceOverride = status.PerformanceOverride;
         FanOverride = status.FanOverride;
@@ -707,19 +804,11 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             DeviceSubsystem.Lighting,
             confirmed?.Lighting is not null,
             externalChanges);
-        BatterySourceLabel = confirmed?.Battery is { ProtectionEnabled: false }
-            ? externalChanges.Contains(DeviceSubsystem.Battery)
-                ? "Changed outside OpenBlade · protection off"
-                : "Confirmed device state · protection off"
-            : SourceLabel(
-                DeviceSubsystem.Battery,
-                confirmed?.Battery is not null,
-                externalChanges);
+        BatterySourceLabel = FormatBatterySource(
+            confirmed?.Battery,
+            externalChanges.Contains(DeviceSubsystem.Battery));
         TelemetryStatus = FormatTelemetry(status.Telemetry);
 
-        DeviceCapabilities capabilities = status.Capabilities
-            ?? DeviceCapabilities.Unavailable();
-        Capabilities = capabilities;
         AvailablePerformancePresets = capabilities.PerformancePresets
             .Where(Enum.IsDefined)
             .Order()
@@ -769,12 +858,20 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
 
     private bool CanSetChargeLimit(int value)
     {
-        if (!CanMutate || latestStatus!.Capabilities is not { } capabilities)
+        if (!CanMutate
+            || latestStatus!.Capabilities is not { } capabilities
+            || latestStatus.ConfirmedState?.Battery is not
+            {
+                ProtectionEnabled: true,
+                ChargeLimitPercent: int currentLimit,
+                TemporaryFullCharge: false,
+            })
         {
             return false;
         }
 
         return HasBatteryCapability(capabilities)
+            && capabilities.ChargeLimits.Contains(currentLimit)
             && capabilities.ChargeLimits.Contains(value);
     }
 
@@ -783,6 +880,24 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         && capabilities.ChargeLimits.Count is > 0 and <= 7
         && capabilities.ChargeLimits.All(
             value => value is >= 50 and <= 80 && value % 5 == 0);
+
+    private void SetTemporaryFullChargeState(bool? value)
+    {
+        bool known = value.HasValue;
+        bool active = value is true;
+        if (temporaryFullChargeStateKnown != known)
+        {
+            temporaryFullChargeStateKnown = known;
+            PropertyChanged?.Invoke(
+                this,
+                new PropertyChangedEventArgs(nameof(EnableFullChargeOverride)));
+            PropertyChanged?.Invoke(
+                this,
+                new PropertyChangedEventArgs(nameof(FullChargeActionLabel)));
+        }
+
+        FullChargeOverride = active;
+    }
 
     private Task SetPerformanceAsync(object? parameter, CancellationToken token) =>
         RunOperationAsync(
@@ -815,6 +930,13 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         RunOperationAsync(
             cancellationToken => serviceClient.SetBatteryPolicyAsync(
                 BatteryPolicy.Create((int)parameter!),
+                cancellationToken),
+            token);
+
+    private Task ToggleBatteryProtectionAsync(object? parameter, CancellationToken token) =>
+        RunOperationAsync(
+            cancellationToken => serviceClient.SetBatteryProtectionAsync(
+                !BatteryProtectionEnabled,
                 cancellationToken),
             token);
 
@@ -1040,6 +1162,28 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             : confirmed
                 ? "Confirmed device state"
                 : "Desired intent (not confirmed)";
+
+    private static string FormatBatterySource(
+        ConfirmedBatteryState? battery,
+        bool changedOutside)
+    {
+        if (battery is null)
+        {
+            return "Desired intent (not confirmed)";
+        }
+
+        string state = battery.TemporaryFullCharge switch
+        {
+            null => "Temporary full charge state unavailable",
+            true => "Temporary full charge active",
+            false when !battery.ProtectionEnabled => "Battery protection off",
+            _ => $"Charge limit {battery.ChargeLimitPercent}%",
+        };
+        string source = changedOutside
+            ? "Changed outside OpenBlade"
+            : "Confirmed device state";
+        return $"{source} · {state}";
+    }
 
     private static string FormatTelemetry(TelemetrySnapshot telemetry)
     {
