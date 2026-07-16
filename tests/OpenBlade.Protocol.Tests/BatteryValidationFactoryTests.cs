@@ -113,6 +113,38 @@ public sealed class BatteryValidationFactoryTests
     }
 
     [Fact]
+    public async Task CreateWindowsTemporaryFullChargeQuery_ConfiguresTwentyMillisecondFeatureReportSettle()
+    {
+        var time = new ManualTimeProvider();
+        var io = new SuccessfulQueryIo();
+        ITemporaryFullChargeQueryRunFactory factory =
+            BatteryValidationFactory.CreateWindowsTemporaryFullChargeQuery(
+                new ExactRegistryValueSource(),
+                new ExactPlatformEvidenceSource(),
+                new EmptyProcessSource(),
+                new EmptyServiceSource(),
+                new ExactHidCandidateNative(),
+                io,
+                time,
+                TimeSpan.FromSeconds(3),
+                TimeSpan.FromSeconds(5));
+        HidSessionResult<ITemporaryFullChargeQueryPort> opened = await factory.OpenAsync(default);
+        await using ITemporaryFullChargeQueryPort port = opened.Value!;
+
+        Task<HidSessionResult<bool>> query = port.QueryAsync(default);
+        await io.WaitForCallsAsync(1);
+        await time.WaitForTimerCountAsync(2);
+        time.Advance(TimeSpan.FromMilliseconds(19));
+        await Task.Yield();
+        Assert.Equal(1, io.CallCount);
+        Assert.False(query.IsCompleted);
+
+        time.Advance(TimeSpan.FromMilliseconds(1));
+        Assert.False((await query).Value);
+        Assert.Equal(2, io.CallCount);
+    }
+
+    [Fact]
     public async Task CreateWindows_ConfiguresTwentyMillisecondFeatureReportSettleForQuery()
     {
         var time = new ManualTimeProvider();
@@ -565,7 +597,12 @@ public sealed class BatteryValidationFactoryTests
                         source[1],
                         source[6],
                         source[7],
-                        source[7] == 0x92 ? [0x50] : [source[8]]).Encode();
+                        source[7] switch
+                        {
+                            0x92 => [0x50],
+                            0x8F => [0x00],
+                            _ => [source[8]],
+                        }).Encode();
                 }
 
                 report[0] = busyCandidateSet && report[1] == 2

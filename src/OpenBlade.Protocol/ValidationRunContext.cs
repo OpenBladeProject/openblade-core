@@ -7,10 +7,34 @@ internal readonly record struct BatteryValidationTransactionIds(
     byte RestoreSet,
     byte RestoreQuery);
 
+internal readonly record struct ProtectionOffValidationTransactionIds(
+    byte BaselineProtectionQuery,
+    byte BaselineTemporaryQuery,
+    byte CandidateSet,
+    byte CandidateProtectionQuery,
+    byte CandidateTemporaryQuery,
+    byte RestoreSet,
+    byte RestorationProtectionQuery,
+    byte RestorationTemporaryQuery)
+{
+    internal byte[] ToArray() =>
+        [
+            BaselineProtectionQuery,
+            BaselineTemporaryQuery,
+            CandidateSet,
+            CandidateProtectionQuery,
+            CandidateTemporaryQuery,
+            RestoreSet,
+            RestorationProtectionQuery,
+            RestorationTemporaryQuery,
+        ];
+}
+
 internal sealed class ValidationRunContext
 {
     private const int MaximumTransactionId = byte.MaxValue;
     private const int BatteryValidationTransactionCount = 5;
+    private const int ProtectionOffValidationTransactionCount = 8;
 
     private readonly object _sync = new();
     private int _nextTransactionId = 1;
@@ -71,6 +95,31 @@ internal sealed class ValidationRunContext
             }
 
             _nextTransactionId += BatteryValidationTransactionCount;
+            return true;
+        }
+    }
+
+    public bool TryReserveProtectionOffValidation(out ProtectionOffValidationTransactionIds ids)
+    {
+        lock (_sync)
+        {
+            if (_nextTransactionId > MaximumTransactionId - ProtectionOffValidationTransactionCount + 1)
+            {
+                ids = default;
+                return false;
+            }
+
+            byte first = (byte)_nextTransactionId;
+            ids = new ProtectionOffValidationTransactionIds(
+                first,
+                (byte)(first + 1),
+                (byte)(first + 2),
+                (byte)(first + 3),
+                (byte)(first + 4),
+                (byte)(first + 5),
+                (byte)(first + 6),
+                (byte)(first + 7));
+            _nextTransactionId += ProtectionOffValidationTransactionCount;
             return true;
         }
     }

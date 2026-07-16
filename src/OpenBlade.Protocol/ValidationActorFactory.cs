@@ -5,16 +5,31 @@ internal sealed class ValidationActor : IAsyncDisposable
     internal ValidationActor(
         IRazerCommandSession session,
         IBatteryCommandClient batteryCommands)
+        : this(
+            session,
+            batteryCommands,
+            new TemporaryFullChargeCommandClient(session, TimeSpan.FromSeconds(3)))
+    {
+    }
+
+    internal ValidationActor(
+        IRazerCommandSession session,
+        IBatteryCommandClient batteryCommands,
+        ITemporaryFullChargeCommandClient temporaryFullChargeCommands)
     {
         ArgumentNullException.ThrowIfNull(session);
         ArgumentNullException.ThrowIfNull(batteryCommands);
+        ArgumentNullException.ThrowIfNull(temporaryFullChargeCommands);
         Session = session;
         BatteryCommands = batteryCommands;
+        TemporaryFullChargeCommands = temporaryFullChargeCommands;
     }
 
     internal IRazerCommandSession Session { get; }
 
     internal IBatteryCommandClient BatteryCommands { get; }
+
+    internal ITemporaryFullChargeCommandClient TemporaryFullChargeCommands { get; }
 
     public ValueTask DisposeAsync() => Session.DisposeAsync();
 }
@@ -109,8 +124,14 @@ internal sealed class ValidationActorFactory : IValidationActorFactory
         try
         {
             session = createSession(handle, lease);
-            var commands = new BatteryCommandClient(session, exchangeTimeout);
-            return new(new ValidationActor(session, commands), null);
+            var batteryCommands = new BatteryCommandClient(session, exchangeTimeout);
+            var temporaryFullChargeCommands = new TemporaryFullChargeCommandClient(
+                session,
+                exchangeTimeout);
+            return new(new ValidationActor(
+                session,
+                batteryCommands,
+                temporaryFullChargeCommands), null);
         }
         catch
         {

@@ -63,6 +63,7 @@ public sealed class ValidationActorFactoryTests
         ValidationActor actor = Assert.IsType<ValidationActor>(result.Value);
         Assert.Same(session, actor.Session);
         Assert.IsAssignableFrom<IBatteryCommandClient>(actor.BatteryCommands);
+        Assert.IsAssignableFrom<ITemporaryFullChargeCommandClient>(actor.TemporaryFullChargeCommands);
         await actor.DisposeAsync();
         Assert.Equal(RazerCommandSessionDisposition.FullyDisposed, session.Disposition);
     }
