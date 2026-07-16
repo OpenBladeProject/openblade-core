@@ -35,7 +35,13 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     private string performanceSourceLabel = "Unavailable";
     private string fanSourceLabel = "Unavailable";
     private string lightingSourceLabel = "Unavailable";
-    private IReadOnlyList<string> conflictNames = [];
+    private string batterySourceLabel = "Unavailable";
+    private bool hasControllerAdvisory;
+    private string controllerAdvisoryText = string.Empty;
+    private bool hasControllerDetectionWarning;
+    private string controllerDetectionWarningText = string.Empty;
+    private bool hasExternalChanges;
+    private string externalChangesText = string.Empty;
     private IReadOnlyList<PerformancePreset> availablePerformancePresets = [];
     private IReadOnlyList<FanMode> availableFanModes = [];
     private IReadOnlyList<LightingEffect> availableLightingEffects = [];
@@ -61,7 +67,6 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     private FanMode batteryFanModeEditor = FanMode.Automatic;
     private LightingSettings batteryLightingEditor = ProfileDefaults.CreateSafeDefaults().Battery.Lighting;
     private int profileChargeLimitEditor = 80;
-    private bool profileEditorsDirty;
     private LightingEffect lightingEffectEditor = LightingEffect.Off;
     private int lightingBrightnessEditor;
     private int lightingRedEditor;
@@ -70,6 +75,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     private bool lightingEditorDirty;
     private ThemePreference theme = ThemePreference.FollowWindows;
     private int disposed;
+    private long latestAcceptedRevision = -1;
 
     public MainViewModel(IServiceClient serviceClient, IUiDispatcher dispatcher)
         : this(serviceClient, dispatcher, new UnavailableDiagnosticArchiveSaver())
@@ -212,10 +218,46 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         private set => SetField(ref lightingSourceLabel, value);
     }
 
-    public IReadOnlyList<string> ConflictNames
+    public string BatterySourceLabel
     {
-        get => conflictNames;
-        private set => SetField(ref conflictNames, value);
+        get => batterySourceLabel;
+        private set => SetField(ref batterySourceLabel, value);
+    }
+
+    public bool HasControllerAdvisory
+    {
+        get => hasControllerAdvisory;
+        private set => SetField(ref hasControllerAdvisory, value);
+    }
+
+    public string ControllerAdvisoryText
+    {
+        get => controllerAdvisoryText;
+        private set => SetField(ref controllerAdvisoryText, value);
+    }
+
+    public bool HasControllerDetectionWarning
+    {
+        get => hasControllerDetectionWarning;
+        private set => SetField(ref hasControllerDetectionWarning, value);
+    }
+
+    public string ControllerDetectionWarningText
+    {
+        get => controllerDetectionWarningText;
+        private set => SetField(ref controllerDetectionWarningText, value);
+    }
+
+    public bool HasExternalChanges
+    {
+        get => hasExternalChanges;
+        private set => SetField(ref hasExternalChanges, value);
+    }
+
+    public string ExternalChangesText
+    {
+        get => externalChangesText;
+        private set => SetField(ref externalChangesText, value);
     }
 
     public IReadOnlyList<PerformancePreset> AvailablePerformancePresets
@@ -281,7 +323,11 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     public int ChargeLimitPercent
     {
         get => chargeLimitPercent;
-        private set => SetField(ref chargeLimitPercent, value);
+        set
+        {
+            SetField(ref chargeLimitPercent, value);
+            NotifyCommands();
+        }
     }
 
     public bool FullChargeOverride
@@ -470,7 +516,6 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         {
             DeviceVerified: true,
             WritesBlocked: false,
-            PotentialControllers.Count: 0,
             Capabilities: not null,
         };
 
@@ -484,12 +529,9 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         bool enable = parameter is bool requested
             ? requested
             : !FullChargeOverride;
-        if (!enable)
-        {
-            return Volatile.Read(ref disposed) == 0 && IsConnected;
-        }
-
-        return CanMutate && Telemetry?.PowerSource == PowerSource.PluggedIn;
+        return CanMutate
+            && HasBatteryCapability(latestStatus?.Capabilities)
+            && (!enable || Telemetry?.PowerSource == PowerSource.PluggedIn);
     }
 
     public Task StartAsync()
@@ -500,6 +542,24 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             watchTask ??= WatchStatusAsync(lifetime.Token);
         }
         return Task.CompletedTask;
+    }
+
+    public async Task ObserveStateAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            ServiceStatusSnapshot status = await serviceClient
+                .ObserveStateAsync(cancellationToken);
+            await dispatcher.InvokeAsync(() => ApplyStatus(status), cancellationToken);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception)
+        {
+            await dispatcher.InvokeAsync(MarkDisconnected, cancellationToken);
+        }
     }
 
     public async ValueTask DisposeAsync()
@@ -572,29 +632,46 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
 
     private void ApplyStatus(ServiceStatusSnapshot status)
     {
+        if (status.Revision < latestAcceptedRevision)
+        {
+            return;
+        }
+
+        latestAcceptedRevision = status.Revision;
         latestStatus = status;
         IsConnected = true;
         bool controllable = status.DeviceVerified
-            && !status.WritesBlocked
-            && status.PotentialControllers.Count == 0;
+            && !status.WritesBlocked;
         IsReadOnly = !controllable;
         CanControlHardware = controllable;
         ConnectionStatus = status.Message;
         ControlAccessStatus = FormatControlAccessStatus(status);
-        ConflictNames = status.PotentialControllers.ToArray();
+        HasControllerAdvisory = status.PotentialControllers.Count > 0;
+        ControllerAdvisoryText = HasControllerAdvisory
+            ? $"Potential controller conflict detected: {string.Join(", ", status.PotentialControllers)}. OpenBlade will not overwrite settings changed elsewhere."
+            : string.Empty;
+        HasControllerDetectionWarning = !string.IsNullOrWhiteSpace(
+            status.ControllerDetectionWarning);
+        ControllerDetectionWarningText = status.ControllerDetectionWarning ?? string.Empty;
+        DeviceSubsystem[] externalChanges = status.ExternalChanges
+            .Distinct()
+            .OrderBy(value => value.ToString(), StringComparer.Ordinal)
+            .ToArray();
+        HasExternalChanges = externalChanges.Length > 0;
+        ExternalChangesText = HasExternalChanges
+            ? $"Settings changed outside OpenBlade: {string.Join(", ", externalChanges)}."
+            : string.Empty;
         Profiles = status.Profiles;
-        if (!profileEditorsDirty)
-        {
-            LoadProfileEditors(status.Profiles);
-        }
-        SelectedPerformance = status.DesiredState.Performance.Value;
-        SelectedFanMode = status.DesiredState.Fans.Value;
-        SelectedLighting = status.DesiredState.Lighting.Value;
+        ConfirmedDeviceState? confirmed = status.ConfirmedState;
+        SelectedPerformance = confirmed?.Performance ?? status.DesiredState.Performance.Value;
+        SelectedFanMode = confirmed?.Fans ?? status.DesiredState.Fans.Value;
+        SelectedLighting = confirmed?.Lighting ?? status.DesiredState.Lighting.Value;
         if (!lightingEditorDirty)
         {
             LoadLightingEditor(SelectedLighting);
         }
-        ChargeLimitPercent = status.DesiredState.Battery.ChargeLimitPercent;
+        ChargeLimitPercent = confirmed?.Battery?.ChargeLimitPercent
+            ?? status.DesiredState.Battery.ChargeLimitPercent;
         FullChargeOverride = status.FullChargeOverride;
         Telemetry = status.Telemetry;
         PerformanceOverride = status.PerformanceOverride;
@@ -603,9 +680,26 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         ActivePowerSourceLabel = status.Telemetry.PowerSource == PowerSource.Battery
             ? "Battery profile"
             : "Plugged-in profile";
-        PerformanceSourceLabel = SourceLabel(status.DesiredState.Performance.Source);
-        FanSourceLabel = SourceLabel(status.DesiredState.Fans.Source);
-        LightingSourceLabel = SourceLabel(status.DesiredState.Lighting.Source);
+        PerformanceSourceLabel = SourceLabel(
+            DeviceSubsystem.Performance,
+            confirmed?.Performance is not null,
+            externalChanges);
+        FanSourceLabel = SourceLabel(
+            DeviceSubsystem.Fans,
+            confirmed?.Fans is not null,
+            externalChanges);
+        LightingSourceLabel = SourceLabel(
+            DeviceSubsystem.Lighting,
+            confirmed?.Lighting is not null,
+            externalChanges);
+        BatterySourceLabel = confirmed is not null && confirmed.Battery is null
+            ? externalChanges.Contains(DeviceSubsystem.Battery)
+                ? "Changed outside OpenBlade"
+                : "Confirmed device state · protection off / full charge"
+            : SourceLabel(
+                DeviceSubsystem.Battery,
+                confirmed?.Battery is not null,
+                externalChanges);
         TelemetryStatus = FormatTelemetry(status.Telemetry);
 
         DeviceCapabilities capabilities = status.Capabilities
@@ -627,6 +721,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
 
     private void MarkDisconnected(string message)
     {
+        latestAcceptedRevision = -1;
         IsConnected = false;
         IsReadOnly = true;
         CanControlHardware = false;
@@ -642,11 +737,25 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             return false;
         }
 
-        return capabilities.ChargeLimitStep > 0
+        return HasBatteryCapability(capabilities)
             && value >= capabilities.MinimumChargeLimit
             && value <= capabilities.MaximumChargeLimit
-            && (value - capabilities.MinimumChargeLimit) % capabilities.ChargeLimitStep == 0;
+            && (value - capabilities.MinimumChargeLimit) % capabilities.ChargeLimitStep == 0
+            && value is >= 50 and <= 80
+            && value % 5 == 0;
     }
+
+    private static bool HasBatteryCapability(DeviceCapabilities? capabilities) =>
+        capabilities is not null
+        && capabilities.ChargeLimitStep > 0
+        && capabilities.ChargeLimitStep % 5 == 0
+        && capabilities.MinimumChargeLimit is >= 50 and <= 80
+        && capabilities.MaximumChargeLimit is >= 50 and <= 80
+        && capabilities.MinimumChargeLimit <= capabilities.MaximumChargeLimit
+        && capabilities.MinimumChargeLimit % 5 == 0
+        && capabilities.MaximumChargeLimit % 5 == 0
+        && (capabilities.MaximumChargeLimit - capabilities.MinimumChargeLimit)
+            % capabilities.ChargeLimitStep == 0;
 
     private Task SetPerformanceAsync(object? parameter, CancellationToken token) =>
         RunOperationAsync(
@@ -702,7 +811,6 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         if (accepted)
         {
             Profiles = draft;
-            profileEditorsDirty = false;
         }
     }
 
@@ -742,7 +850,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
 
         return ProfileSupported(draft.PluggedIn, capabilities)
             && ProfileSupported(draft.Battery, capabilities)
-            && capabilities.ChargeLimitStep > 0
+            && HasBatteryCapability(capabilities)
             && draft.BatteryPolicy.ChargeLimitPercent >= capabilities.MinimumChargeLimit
             && draft.BatteryPolicy.ChargeLimitPercent <= capabilities.MaximumChargeLimit
             && (draft.BatteryPolicy.ChargeLimitPercent - capabilities.MinimumChargeLimit)
@@ -839,17 +947,6 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         }
     }
 
-    private void LoadProfileEditors(ProfileSet value)
-    {
-        SetField(ref pluggedInPerformanceEditor, value.PluggedIn.Performance, nameof(PluggedInPerformanceEditor));
-        SetField(ref pluggedInFanModeEditor, value.PluggedIn.Fans, nameof(PluggedInFanModeEditor));
-        SetField(ref pluggedInLightingEditor, value.PluggedIn.Lighting, nameof(PluggedInLightingEditor));
-        SetField(ref batteryPerformanceEditor, value.Battery.Performance, nameof(BatteryPerformanceEditor));
-        SetField(ref batteryFanModeEditor, value.Battery.Fans, nameof(BatteryFanModeEditor));
-        SetField(ref batteryLightingEditor, value.Battery.Lighting, nameof(BatteryLightingEditor));
-        SetField(ref profileChargeLimitEditor, value.BatteryPolicy.ChargeLimitPercent, nameof(ProfileChargeLimitEditor));
-    }
-
     private void LoadLightingEditor(LightingSettings value)
     {
         SetField(ref lightingEffectEditor, value.Effect, nameof(LightingEffectEditor));
@@ -908,14 +1005,15 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         }
     }
 
-    private static string SourceLabel(SettingValueSource source) => source switch
-    {
-        SettingValueSource.PersistentOverride => "Persistent override",
-        SettingValueSource.TemporaryOverride => "Until power change",
-        SettingValueSource.PowerProfile => "Power profile",
-        SettingValueSource.ConfirmedFirmwareState => "Confirmed firmware state",
-        _ => "Unavailable",
-    };
+    private static string SourceLabel(
+        DeviceSubsystem subsystem,
+        bool confirmed,
+        IReadOnlyCollection<DeviceSubsystem> externalChanges) =>
+        externalChanges.Contains(subsystem)
+            ? "Changed outside OpenBlade"
+            : confirmed
+                ? "Confirmed device state"
+                : "Desired intent (not confirmed)";
 
     private static string FormatTelemetry(TelemetrySnapshot telemetry)
     {
@@ -961,11 +1059,6 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             return "Target not verified · hardware controls disabled";
         }
 
-        if (status.PotentialControllers.Count > 0)
-        {
-            return "Read-only · Razer software conflict detected";
-        }
-
         return status.WritesBlocked
             ? "Read-only · hardware writes blocked"
             : "Target verified · hardware controls available";
@@ -990,7 +1083,6 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         T value,
         [CallerMemberName] string? propertyName = null)
     {
-        profileEditorsDirty = true;
         SetField(ref field, value, propertyName);
         NotifyCommands();
     }

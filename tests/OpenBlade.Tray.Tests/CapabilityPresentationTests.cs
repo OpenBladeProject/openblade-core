@@ -24,7 +24,12 @@ public sealed class CapabilityPresentationTests
             "ViewModel.SetLightingCommand",
             "ViewModel.SaveProfilesCommand",
             "ViewModel.ExportDiagnosticsCommand",
-            "ViewModel.ConflictNames",
+            "ViewModel.HasControllerAdvisory",
+            "ViewModel.ControllerAdvisoryText",
+            "ViewModel.HasControllerDetectionWarning",
+            "ViewModel.ControllerDetectionWarningText",
+            "ViewModel.HasExternalChanges",
+            "ViewModel.ExternalChangesText",
             "ViewModel.AvailablePerformancePresets",
             "ViewModel.AvailableFanModes",
             "ViewModel.AvailableLightingEffects",
@@ -42,6 +47,7 @@ public sealed class CapabilityPresentationTests
             "ViewModel.PerformanceSourceLabel",
             "ViewModel.FanSourceLabel",
             "ViewModel.LightingSourceLabel",
+            "ViewModel.BatterySourceLabel",
             "ViewModel.PowerAndBatteryTelemetryLabel",
             "ViewModel.CpuTelemetryLabel",
             "ViewModel.GpuTelemetryLabel",
@@ -68,7 +74,6 @@ public sealed class CapabilityPresentationTests
             "CommandParameter=\"{x:Bind ViewModel.SelectedFanMode",
             xaml,
             StringComparison.Ordinal);
-        Assert.Contains("<TextBlock Text=\"{Binding}\"", xaml, StringComparison.Ordinal);
         Assert.Contains("BooleanNegationToVisibility", xaml, StringComparison.Ordinal);
         Assert.True(
             CountOccurrences(
@@ -83,6 +88,19 @@ public sealed class CapabilityPresentationTests
         Assert.DoesNotContain("Click=", xaml, StringComparison.Ordinal);
         Assert.DoesNotContain("IsEnabled=", xaml, StringComparison.Ordinal);
         Assert.DoesNotContain("Export diagnostics (unavailable)", xaml, StringComparison.Ordinal);
+        Assert.DoesNotContain("ViewModel.ConflictNames", xaml, StringComparison.Ordinal);
+        Assert.DoesNotContain("SystemFillColorCriticalBrush", xaml, StringComparison.Ordinal);
+        Assert.Contains(
+            "Value=\"{Binding ChargeLimitPercent, Mode=TwoWay, Converter={StaticResource Int32Double}}\"",
+            xaml,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "CommandParameter=\"{x:Bind ViewModel.ChargeLimitPercent, Mode=OneWay}\"",
+            xaml,
+            StringComparison.Ordinal);
+        Assert.Equal(
+            1,
+            CountOccurrences(xaml, "ViewModel.ProfileChargeLimitEditor"));
         Assert.DoesNotContain("Open" + "Synapse", xaml, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("\u00c2", xaml, StringComparison.Ordinal);
     }
@@ -165,25 +183,24 @@ public sealed class CapabilityPresentationTests
     }
 
     [Fact]
-    public async Task ConflictDisablesEveryMutationButNotOpenOrExit()
+    public async Task ControllerAdvisoryDoesNotDisableAdmittedMutationOrOpenAndExit()
     {
         var client = new PresentationClient();
         await using var viewModel = new MainViewModel(client, new ImmediateDispatcher());
         await viewModel.StartAsync();
         client.Publish(CreateStatus(
             verified: true,
-            blocked: true,
+            blocked: false,
             conflicts: ["RazerAppEngine"],
             capabilities: DeviceCapabilities.SafeTargetDefaults()));
         await WaitUntilAsync(() => viewModel.IsConnected);
         var controller = new TrayMenuController(viewModel, () => { }, () => { });
 
-        Assert.All(
-            controller.Items.Where(item => item.IsMutation),
-            item => Assert.False(item.IsEnabled));
+        Assert.True(controller.Find("Automatic").IsEnabled);
         Assert.True(controller.Find("Open").IsEnabled);
         Assert.True(controller.Find("Exit").IsEnabled);
-        Assert.Equal(["RazerAppEngine"], viewModel.ConflictNames);
+        Assert.True(viewModel.HasControllerAdvisory);
+        Assert.Contains("RazerAppEngine", viewModel.ControllerAdvisoryText, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -237,6 +254,68 @@ public sealed class CapabilityPresentationTests
         await save.ExecuteAsync(null);
 
         Assert.Null(client.SavedProfiles);
+    }
+
+    [Fact]
+    public async Task MissingBatteryCapabilityDisablesOnlyBatteryCommands()
+    {
+        var client = new PresentationClient();
+        await using var viewModel = new MainViewModel(client, new ImmediateDispatcher());
+        await viewModel.StartAsync();
+        client.Publish(CreateStatus(
+            verified: true,
+            blocked: false,
+            capabilities: new DeviceCapabilities(
+                new HashSet<PerformancePreset> { PerformancePreset.Balanced },
+                new HashSet<FanMode> { FanMode.Automatic },
+                new HashSet<LightingEffect> { LightingEffect.Off },
+                0, 0, 0)));
+        await WaitUntilAsync(() => viewModel.IsConnected);
+
+        Assert.True(viewModel.SetFanModeCommand.CanExecute(FanMode.Automatic));
+        Assert.False(viewModel.SetChargeLimitCommand.CanExecute(75));
+        Assert.False(viewModel.ToggleFullChargeCommand.CanExecute(true));
+    }
+
+    [Fact]
+    public async Task InvalidBatteryCapabilityBoundsDisableFullChargeOnly()
+    {
+        var client = new PresentationClient();
+        await using var viewModel = new MainViewModel(client, new ImmediateDispatcher());
+        await viewModel.StartAsync();
+        client.Publish(CreateStatus(
+            verified: true,
+            blocked: false,
+            capabilities: new DeviceCapabilities(
+                new HashSet<PerformancePreset> { PerformancePreset.Balanced },
+                new HashSet<FanMode> { FanMode.Automatic },
+                new HashSet<LightingEffect> { LightingEffect.Off },
+                50, 79, 5)));
+        await WaitUntilAsync(() => viewModel.Capabilities.MaximumChargeLimit == 79);
+
+        Assert.True(viewModel.SetFanModeCommand.CanExecute(FanMode.Automatic));
+        Assert.False(viewModel.ToggleFullChargeCommand.CanExecute(true));
+    }
+
+    [Fact]
+    public async Task DashboardChargeLimitDoesNotMutateSettingsDraftAndSendsDashboardValue()
+    {
+        var client = new PresentationClient();
+        await using var viewModel = new MainViewModel(client, new ImmediateDispatcher());
+        viewModel.ProfileChargeLimitEditor = 70;
+        await viewModel.StartAsync();
+        client.Publish(CreateStatus(
+            verified: true,
+            blocked: false,
+            capabilities: DeviceCapabilities.SafeTargetDefaults()));
+        await WaitUntilAsync(() => viewModel.IsConnected);
+
+        viewModel.ChargeLimitPercent = 75;
+        await Assert.IsType<AsyncRelayCommand>(viewModel.SetChargeLimitCommand)
+            .ExecuteAsync(viewModel.ChargeLimitPercent);
+
+        Assert.Equal(70, viewModel.ProfileChargeLimitEditor);
+        Assert.Equal(75, client.SavedBatteryPolicy?.ChargeLimitPercent);
     }
 
     [Fact]
@@ -329,6 +408,7 @@ public sealed class CapabilityPresentationTests
     {
         private readonly Channel<ServiceWatchUpdate> statuses = Channel.CreateUnbounded<ServiceWatchUpdate>();
         public ProfileSet? SavedProfiles { get; private set; }
+        public BatteryPolicy? SavedBatteryPolicy { get; private set; }
         public void Publish(ServiceStatusSnapshot status) =>
             statuses.Writer.TryWrite(new ServiceWatchUpdate.Connected(status));
         public async IAsyncEnumerable<ServiceWatchUpdate> WatchStatusAsync(
@@ -347,7 +427,11 @@ public sealed class CapabilityPresentationTests
         public Task<ControlOperationResult> SetPerformanceOverrideAsync(ManualOverride<PerformancePreset>? value, CancellationToken token) => Result();
         public Task<ControlOperationResult> SetFanOverrideAsync(ManualOverride<FanMode>? value, CancellationToken token) => Result();
         public Task<ControlOperationResult> SetLightingOverrideAsync(ManualOverride<LightingSettings>? value, CancellationToken token) => Result();
-        public Task<ControlOperationResult> SetBatteryPolicyAsync(BatteryPolicy value, CancellationToken token) => Result();
+        public Task<ControlOperationResult> SetBatteryPolicyAsync(BatteryPolicy value, CancellationToken token)
+        {
+            SavedBatteryPolicy = value;
+            return Result();
+        }
         public Task<ControlOperationResult> SetFullChargeOverrideAsync(bool enabled, CancellationToken token) => Result();
         private static Task<ControlOperationResult> Result() => Task.FromResult(
             new ControlOperationResult(ControlOperationStatus.Applied, "Applied"));

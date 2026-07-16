@@ -20,6 +20,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
     private readonly MicaBackdropHost micaBackdropHost;
     private readonly UiPreferenceStore preferenceStore;
     private readonly UiPreferenceSaveQueue preferenceSaveQueue;
+    private readonly VisibleObservationLoop visibleObservationLoop;
     private readonly object initializationSync = new();
     private Task? initializationTask;
     private bool initialPlacementAttempted;
@@ -34,6 +35,10 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
             new ServiceClient(),
             new WinUiDispatcher(dispatcherQueue),
             new DiagnosticArchiveSaver(new WinUiDiagnosticArchiveDestination(AppWindow.Id)));
+        visibleObservationLoop = new VisibleObservationLoop(ViewModel.ObserveStateAsync,
+            errorHandler: exception => Trace.TraceError(
+                "OpenBlade visible observation failed: {0}",
+                exception));
         InitializeComponent();
         micaBackdropHost = new MicaBackdropHost(this, Root);
         Root.DataContext = ViewModel;
@@ -70,7 +75,11 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
         }
     }
 
-    public void ShowAndActivate() => AppWindow.Show(true);
+    public void ShowAndActivate()
+    {
+        visibleObservationLoop.StartOrWake();
+        AppWindow.Show(true);
+    }
 
     public async ValueTask DisposeAsync()
     {
@@ -93,6 +102,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
         ViewModel.PropertyChanged -= OnViewModelPropertyChanged;
         AppWindow.Closing -= OnClosing;
         micaBackdropHost.Dispose();
+        await visibleObservationLoop.DisposeAsync();
         await preferenceSaveQueue.DisposeAsync();
         await ViewModel.DisposeAsync();
     }
@@ -257,6 +267,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
         if (WindowLifecyclePolicy.Decide(exitRequested) == WindowCloseDecision.Hide)
         {
             args.Cancel = true;
+            visibleObservationLoop.Stop();
             AppWindow.Hide();
         }
     }

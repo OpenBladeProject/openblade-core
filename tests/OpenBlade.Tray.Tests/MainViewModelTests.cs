@@ -7,6 +7,125 @@ namespace OpenBlade.Tray.Tests;
 public sealed class MainViewModelTests
 {
     [Fact]
+    public async Task AdvisoriesAreVisibleWithoutDisablingAdmittedFanControl()
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        client.Publish(CreateStatus(
+            verified: true,
+            blocked: false,
+            conflicts: ["RazerAppEngine", "Razer Synapse Service"]) with
+        {
+            ControllerDetectionWarning = "Controller detection was incomplete.",
+        });
+        await WaitUntilAsync(() => viewModel.IsConnected);
+
+        Assert.True(viewModel.CanControlHardware);
+        Assert.True(viewModel.SetFanModeCommand.CanExecute(FanMode.Automatic));
+        Assert.True(viewModel.HasControllerAdvisory);
+        Assert.Equal(
+            "Potential controller conflict detected: RazerAppEngine, Razer Synapse Service. OpenBlade will not overwrite settings changed elsewhere.",
+            viewModel.ControllerAdvisoryText);
+        Assert.True(viewModel.HasControllerDetectionWarning);
+        Assert.Equal("Controller detection was incomplete.", viewModel.ControllerDetectionWarningText);
+    }
+
+    [Fact]
+    public async Task ConfirmedValuesOverrideDesiredWithoutResettingSettingsDrafts()
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        viewModel.ProfileChargeLimitEditor = 75;
+        await viewModel.StartAsync();
+        LightingSettings confirmedLighting = new(
+            LightingEffect.Static,
+            new RgbColor(10, 20, 30),
+            40);
+        client.Publish(CreateStatus(verified: true, blocked: false) with
+        {
+            ConfirmedState = new ConfirmedDeviceState(
+                PerformancePreset.Performance,
+                FanMode.Maximum,
+                BatteryPolicy.Create(65),
+                confirmedLighting),
+            ExternalChanges = [DeviceSubsystem.Lighting, DeviceSubsystem.Fans],
+        });
+        await WaitUntilAsync(() => viewModel.SelectedFanMode == FanMode.Maximum);
+
+        Assert.Equal(PerformancePreset.Performance, viewModel.SelectedPerformance);
+        Assert.Equal(FanMode.Maximum, viewModel.SelectedFanMode);
+        Assert.Equal(confirmedLighting, viewModel.SelectedLighting);
+        Assert.Equal(65, viewModel.ChargeLimitPercent);
+        Assert.Equal(75, viewModel.ProfileChargeLimitEditor);
+        Assert.Equal("Confirmed device state", viewModel.PerformanceSourceLabel);
+        Assert.Equal("Changed outside OpenBlade", viewModel.FanSourceLabel);
+        Assert.Equal("Changed outside OpenBlade", viewModel.LightingSourceLabel);
+        Assert.Equal("Confirmed device state", viewModel.BatterySourceLabel);
+        Assert.True(viewModel.HasExternalChanges);
+        Assert.Equal("Settings changed outside OpenBlade: Fans, Lighting.", viewModel.ExternalChangesText);
+    }
+
+    [Fact]
+    public async Task ConfirmedNullBatteryKeepsDesiredFallbackAndReportsProtectionOff()
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        client.Publish(CreateStatus(verified: true, blocked: false) with
+        {
+            ConfirmedState = new ConfirmedDeviceState(null, null, null, null),
+        });
+        await WaitUntilAsync(() => viewModel.IsConnected);
+
+        Assert.Equal(80, viewModel.ChargeLimitPercent);
+        Assert.Contains("protection off", viewModel.BatterySourceLabel, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("full charge", viewModel.BatterySourceLabel, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task OlderDirectObservationCannotRegressSubscriptionAndReconnectResetsRevision()
+    {
+        var client = new FakeServiceClient();
+        var observation = new TaskCompletionSource<ServiceStatusSnapshot>(TaskCreationOptions.RunContinuationsAsynchronously);
+        client.PendingObservation = observation;
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+
+        Task direct = viewModel.ObserveStateAsync(CancellationToken.None);
+        client.Publish(CreateStatus(true, false) with
+        {
+            Revision = 9,
+            Message = "newer subscription",
+            ConfirmedState = new ConfirmedDeviceState(PerformancePreset.Performance, null, null, null),
+        });
+        await WaitUntilAsync(() => viewModel.ConnectionStatus == "newer subscription");
+        observation.TrySetResult(CreateStatus(true, false) with
+        {
+            Revision = 8,
+            Message = "older direct",
+            ConfirmedState = new ConfirmedDeviceState(PerformancePreset.Silent, null, null, null),
+        });
+        await direct;
+
+        Assert.Equal("newer subscription", viewModel.ConnectionStatus);
+        Assert.Equal(PerformancePreset.Performance, viewModel.SelectedPerformance);
+
+        client.PublishReconnecting();
+        await WaitUntilAsync(() => !viewModel.IsConnected);
+        client.Publish(CreateStatus(true, false) with
+        {
+            Revision = 0,
+            Message = "restarted service",
+            ConfirmedState = new ConfirmedDeviceState(PerformancePreset.Silent, null, null, null),
+        });
+        await WaitUntilAsync(() =>
+            viewModel.ConnectionStatus == "restarted service"
+            && viewModel.SelectedPerformance == PerformancePreset.Silent);
+        Assert.Equal(PerformancePreset.Silent, viewModel.SelectedPerformance);
+    }
+
+    [Fact]
     public async Task StartAsync_ConsumesWatchOnceAndMarshalsExactConflictStatus()
     {
         var client = new FakeServiceClient();
@@ -26,9 +145,8 @@ public sealed class MainViewModelTests
         Assert.True(dispatcher.Calls > 0);
         Assert.True(viewModel.IsConnected);
         Assert.True(viewModel.IsReadOnly);
-        Assert.Equal(
-            ["Razer Central Service", "Razer Synapse Service"],
-            viewModel.ConflictNames);
+        Assert.Contains("Razer Central Service", viewModel.ControllerAdvisoryText, StringComparison.Ordinal);
+        Assert.Contains("Razer Synapse Service", viewModel.ControllerAdvisoryText, StringComparison.Ordinal);
         Assert.Equal(
             "Razer controller conflicts detected: Razer Central Service, Razer Synapse Service.",
             viewModel.ConnectionStatus);
@@ -113,9 +231,9 @@ public sealed class MainViewModelTests
         Assert.Contains("Fans unavailable", viewModel.TelemetryStatus, StringComparison.Ordinal);
         Assert.Contains("Battery 61%", viewModel.TelemetryStatus, StringComparison.Ordinal);
         Assert.Equal("Battery profile", viewModel.ActivePowerSourceLabel);
-        Assert.Equal("Persistent override", viewModel.PerformanceSourceLabel);
-        Assert.Equal("Until power change", viewModel.FanSourceLabel);
-        Assert.Equal("Power profile", viewModel.LightingSourceLabel);
+        Assert.Equal("Desired intent (not confirmed)", viewModel.PerformanceSourceLabel);
+        Assert.Equal("Desired intent (not confirmed)", viewModel.FanSourceLabel);
+        Assert.Equal("Desired intent (not confirmed)", viewModel.LightingSourceLabel);
         Assert.Equal(status.Capabilities, viewModel.Capabilities);
         Assert.Equal(status.Telemetry, viewModel.Telemetry);
         Assert.Equal(status.PerformanceOverride, viewModel.PerformanceOverride);
@@ -201,7 +319,7 @@ public sealed class MainViewModelTests
             blocked: true,
             conflicts: ["RazerAppEngine"]));
         await WaitUntilAsync(() =>
-            viewModel.ControlAccessStatus == "Read-only · Razer software conflict detected");
+            viewModel.ControlAccessStatus == "Read-only · hardware writes blocked");
 
         client.Publish(CreateStatus(verified: true, blocked: true));
         await WaitUntilAsync(() =>
@@ -277,7 +395,7 @@ public sealed class MainViewModelTests
     }
 
     [Fact]
-    public async Task FullChargeCommand_AllowsCancellationWhenHardwareWritesAreBlocked()
+    public async Task FullChargeCommand_DisallowsCancellationWhenHardwareWritesAreBlocked()
     {
         var client = new FakeServiceClient();
         await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
@@ -288,11 +406,11 @@ public sealed class MainViewModelTests
         });
         await WaitUntilAsync(() => viewModel.FullChargeOverride);
 
-        Assert.True(viewModel.ToggleFullChargeCommand.CanExecute(null));
+        Assert.False(viewModel.ToggleFullChargeCommand.CanExecute(null));
         await Assert.IsType<AsyncRelayCommand>(viewModel.ToggleFullChargeCommand)
             .ExecuteAsync(null);
 
-        Assert.False(client.FullChargeEnabled);
+        Assert.Null(client.FullChargeEnabled);
     }
 
     [Theory]
@@ -628,6 +746,7 @@ public sealed class MainViewModelTests
         public int WatchCalls { get; private set; }
         public int MutationCalls { get; private set; }
         public int ExportCalls { get; private set; }
+        public TaskCompletionSource<ServiceStatusSnapshot>? PendingObservation { get; set; }
         public bool BlockMutations { get; init; }
         public bool BlockExports { get; init; }
         public bool WatchCanceled { get; private set; }
@@ -667,8 +786,9 @@ public sealed class MainViewModelTests
             throw new NotSupportedException();
 
         public Task<ServiceStatusSnapshot> ObserveStateAsync(
-            CancellationToken cancellationToken) =>
-            throw new NotSupportedException();
+            CancellationToken cancellationToken) => PendingObservation is not null
+                ? PendingObservation.Task.WaitAsync(cancellationToken)
+                : throw new NotSupportedException();
 
         public async Task<DiagnosticArchive> ExportDiagnosticsAsync(CancellationToken token)
         {

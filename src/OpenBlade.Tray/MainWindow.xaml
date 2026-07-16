@@ -63,6 +63,21 @@
                      Severity="Informational"
                      IsOpen="True"
                      IsClosable="False" />
+            <InfoBar Title="Potential controller conflict"
+                     Message="{x:Bind ViewModel.ControllerAdvisoryText, Mode=OneWay}"
+                     Severity="Warning"
+                     IsOpen="{x:Bind ViewModel.HasControllerAdvisory, Mode=OneWay}"
+                     IsClosable="False" />
+            <InfoBar Title="Controller detection warning"
+                     Message="{x:Bind ViewModel.ControllerDetectionWarningText, Mode=OneWay}"
+                     Severity="Warning"
+                     IsOpen="{x:Bind ViewModel.HasControllerDetectionWarning, Mode=OneWay}"
+                     IsClosable="False" />
+            <InfoBar Title="External changes detected"
+                     Message="{x:Bind ViewModel.ExternalChangesText, Mode=OneWay}"
+                     Severity="Warning"
+                     IsOpen="{x:Bind ViewModel.HasExternalChanges, Mode=OneWay}"
+                     IsClosable="False" />
         </StackPanel>
 
         <TabView Grid.Row="1"
@@ -136,7 +151,7 @@
                                 <Grid>
                                     <TextBlock Text="Charge limit" Style="{StaticResource CardTitleStyle}" />
                                     <StackPanel HorizontalAlignment="Right" Orientation="Horizontal">
-                                        <TextBlock Text="{x:Bind ViewModel.ProfileChargeLimitEditor, Mode=OneWay}"
+                                        <TextBlock Text="{x:Bind ViewModel.ChargeLimitPercent, Mode=OneWay}"
                                                    FontWeight="SemiBold" />
                                         <TextBlock Text="%" FontWeight="SemiBold" />
                                     </StackPanel>
@@ -144,7 +159,7 @@
                                 <Slider Minimum="50"
                                         Maximum="80"
                                         StepFrequency="5"
-                                        Value="{Binding ProfileChargeLimitEditor, Mode=TwoWay, Converter={StaticResource Int32Double}}" />
+                                        Value="{Binding ChargeLimitPercent, Mode=TwoWay, Converter={StaticResource Int32Double}}" />
                                 <Grid ColumnSpacing="8">
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="*" />
@@ -153,7 +168,7 @@
                                     <Button Content="Apply charge limit"
                                             HorizontalAlignment="Stretch"
                                             Command="{x:Bind ViewModel.SetChargeLimitCommand}"
-                                            CommandParameter="{x:Bind ViewModel.ProfileChargeLimitEditor, Mode=OneWay}" />
+                                            CommandParameter="{x:Bind ViewModel.ChargeLimitPercent, Mode=OneWay}" />
                                     <Button Grid.Column="1"
                                             Content="{x:Bind ViewModel.FullChargeActionLabel, Mode=OneWay}"
                                             HorizontalAlignment="Stretch"
@@ -163,6 +178,8 @@
                                 <TextBlock Text="Temporary full charge is active until the next unplug."
                                            Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}"
                                            Visibility="{x:Bind ViewModel.FullChargeOverride, Mode=OneWay}" />
+                                <TextBlock Text="{x:Bind ViewModel.BatterySourceLabel, Mode=OneWay}"
+                                           Style="{StaticResource SecondaryTextStyle}" />
                             </StackPanel>
                         </Border>
 
@@ -213,15 +230,6 @@
                                            Style="{StaticResource CardTitleStyle}" />
                                 <TextBlock Text="{x:Bind ViewModel.OperationStatusMessage, Mode=OneWay}"
                                            Style="{StaticResource SecondaryTextStyle}" />
-                                <ItemsControl ItemsSource="{x:Bind ViewModel.ConflictNames, Mode=OneWay}">
-                                    <ItemsControl.ItemTemplate>
-                                        <DataTemplate>
-                                            <TextBlock Text="{Binding}"
-                                                       Foreground="{ThemeResource SystemFillColorCriticalBrush}"
-                                                       TextWrapping="Wrap" />
-                                        </DataTemplate>
-                                    </ItemsControl.ItemTemplate>
-                                </ItemsControl>
                             </StackPanel>
                         </Border>
                     </StackPanel>
