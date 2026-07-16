@@ -488,6 +488,74 @@ public sealed class MainViewModelTests
     }
 
     [Fact]
+    public async Task EditedChargeLimitSurvivesPeriodicConfirmedStatusUntilApply()
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        ServiceStatusSnapshot initial = CreateStatus(verified: true, blocked: false);
+        client.Publish(initial);
+        await WaitUntilAsync(() => viewModel.IsConnected);
+
+        viewModel.ChargeLimitPercent = 75;
+        client.Publish(initial with
+        {
+            Revision = initial.Revision + 1,
+            Message = "Periodic observation",
+        });
+        await WaitUntilAsync(() => viewModel.ConnectionStatus == "Periodic observation");
+
+        Assert.Equal(75, viewModel.ChargeLimitPercent);
+    }
+
+    [Fact]
+    public async Task AppliedChargeLimitReleasesEditGuardToConfirmedReadback()
+    {
+        var client = new FakeServiceClient { BlockMutations = true };
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        ServiceStatusSnapshot initial = CreateStatus(verified: true, blocked: false);
+        client.Publish(initial);
+        await WaitUntilAsync(() => viewModel.IsConnected);
+
+        viewModel.ChargeLimitPercent = 75;
+        Task apply = Assert.IsType<AsyncRelayCommand>(viewModel.SetChargeLimitCommand)
+            .ExecuteAsync(viewModel.ChargeLimitPercent);
+        await client.MutationStarted.Task.WaitAsync(TimeSpan.FromSeconds(2));
+        client.Publish(initial with
+        {
+            Revision = initial.Revision + 1,
+            Message = "Applied with readback",
+            ConfirmedState = initial.ConfirmedState! with
+            {
+                Battery = new ConfirmedBatteryState(true, 70, false),
+            },
+        });
+        await WaitUntilAsync(() => viewModel.ConnectionStatus == "Applied with readback");
+        Assert.Equal(75, viewModel.ChargeLimitPercent);
+
+        client.CompleteMutation();
+        await apply;
+
+        Assert.Equal(70, viewModel.ChargeLimitPercent);
+
+        client.Publish(initial with
+        {
+            Revision = initial.Revision + 2,
+            Message = "Later confirmed change",
+            ConfirmedState = initial.ConfirmedState! with
+            {
+                Battery = new ConfirmedBatteryState(true, 65, false),
+            },
+        });
+        await WaitUntilAsync(() =>
+            viewModel.ConnectionStatus == "Later confirmed change"
+            && viewModel.ChargeLimitPercent == 65);
+
+        Assert.Equal(65, viewModel.ChargeLimitPercent);
+    }
+
+    [Fact]
     public async Task Status_RendersUnavailableSensorsAndActiveOverrideSources()
     {
         var client = new FakeServiceClient();

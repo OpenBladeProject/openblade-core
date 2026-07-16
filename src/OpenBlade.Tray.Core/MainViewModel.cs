@@ -55,6 +55,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     private FanMode selectedFanMode = FanMode.Automatic;
     private LightingSettings selectedLighting = ProfileDefaults.CreateSafeDefaults().PluggedIn.Lighting;
     private int chargeLimitPercent = 80;
+    private bool chargeLimitEditorDirty;
     private IReadOnlyList<int> chargeLimitOptions = [];
     private bool batteryProtectionEnabled = true;
     private bool fullChargeOverride;
@@ -385,6 +386,12 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         get => chargeLimitPercent;
         set
         {
+            if (chargeLimitPercent == value)
+            {
+                return;
+            }
+
+            chargeLimitEditorDirty = true;
             SetField(ref chargeLimitPercent, value);
             NotifyCommands();
         }
@@ -918,8 +925,10 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         {
             LoadLightingEditor(SelectedLighting);
         }
-        ChargeLimitPercent = confirmed?.Battery?.ChargeLimitPercent
-            ?? status.DesiredState.Battery.ConfiguredPolicy.ChargeLimitPercent;
+        if (!chargeLimitEditorDirty)
+        {
+            LoadChargeLimitEditor(status);
+        }
         BatteryProtectionEnabled = confirmed?.Battery?.ProtectionEnabled
             ?? status.DesiredState.Battery.ProtectionEnabled;
         SetTemporaryFullChargeState(confirmed?.Battery?.TemporaryFullCharge);
@@ -1064,12 +1073,33 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
                 cancellationToken),
             token);
 
-    private Task SetChargeLimitAsync(object? parameter, CancellationToken token) =>
-        RunOperationAsync(
+    private async Task SetChargeLimitAsync(object? parameter, CancellationToken token)
+    {
+        int requestedLimit = (int)parameter!;
+        long revisionAtStart = latestAcceptedRevision;
+        ControlOperationStatus? resultStatus = null;
+        await RunOperationAsync(
             cancellationToken => serviceClient.SetBatteryPolicyAsync(
-                BatteryPolicy.Create((int)parameter!),
+                BatteryPolicy.Create(requestedLimit),
                 cancellationToken),
-            token);
+            token,
+            result => resultStatus = result.Status);
+
+        if (resultStatus == ControlOperationStatus.Applied)
+        {
+            await dispatcher.InvokeAsync(
+                () =>
+                {
+                    chargeLimitEditorDirty = false;
+                    if (latestStatus is not null
+                        && latestAcceptedRevision > revisionAtStart)
+                    {
+                        LoadChargeLimitEditor(latestStatus);
+                    }
+                },
+                token);
+        }
+    }
 
     private Task ToggleBatteryProtectionAsync(object? parameter, CancellationToken token) =>
         RunOperationAsync(
@@ -1295,13 +1325,18 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
 
     private async Task<bool> RunOperationAsync(
         Func<CancellationToken, Task<ControlOperationResult>> operation,
-        CancellationToken token)
+        CancellationToken token,
+        Action<ControlOperationResult>? onCompleted = null)
     {
         try
         {
             ControlOperationResult result = await operation(token);
             await dispatcher.InvokeAsync(
-                () => OperationStatusMessage = result.Message,
+                () =>
+                {
+                    OperationStatusMessage = result.Message;
+                    onCompleted?.Invoke(result);
+                },
                 token);
             return result.Status != ControlOperationStatus.Failed;
         }
@@ -1362,6 +1397,14 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         SetField(ref lightingGreenEditor, (int)value.Color.Green, nameof(LightingGreenEditor));
         SetField(ref lightingBlueEditor, (int)value.Color.Blue, nameof(LightingBlueEditor));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(LightingDraft)));
+    }
+
+    private void LoadChargeLimitEditor(ServiceStatusSnapshot status)
+    {
+        int value = status.ConfirmedState?.Battery?.ChargeLimitPercent
+            ?? status.DesiredState.Battery.ConfiguredPolicy.ChargeLimitPercent;
+        SetField(ref chargeLimitPercent, value, nameof(ChargeLimitPercent));
+        NotifyCommands();
     }
 
     private LightingSettings CreateLightingDraft()
