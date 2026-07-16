@@ -7,6 +7,7 @@ param(
 $ErrorActionPreference = 'Stop'
 $repository = Split-Path -Parent $PSScriptRoot
 $artifacts = [IO.Path]::GetFullPath((Join-Path $repository 'artifacts'))
+. (Join-Path $PSScriptRoot 'PublishPayloadValidation.ps1')
 
 & (Join-Path $PSScriptRoot 'Verify-Branding.ps1') -Repository $repository
 if ($LASTEXITCODE -ne 0) {
@@ -59,12 +60,7 @@ try {
     Invoke-CheckedPublish (Join-Path $repository 'src\OpenBlade.Capture\OpenBlade.Capture.csproj') $payload
     Invoke-CheckedPublish (Join-Path $repository 'src\OpenBlade.Setup\OpenBlade.Setup.csproj') $stagingBundle
 
-    if (Test-Path -LiteralPath $bundle) {
-        Remove-Item -LiteralPath $bundle -Recurse -Force
-    }
-
-    New-Item -ItemType Directory -Path (Split-Path -Parent $bundle) -Force | Out-Null
-    Move-Item -LiteralPath $stagingBundle -Destination $bundle
+    Complete-ValidatedBundleReplacement -StagingBundle $stagingBundle -Bundle $bundle
 }
 finally {
     if (Test-Path -LiteralPath $stagingRoot) {
