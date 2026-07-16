@@ -84,6 +84,12 @@ public sealed class DiagnosticHistory : ILoggerProvider
         RecordSubsystem("Lighting", results.Lighting);
     }
 
+    public void RecordSubsystemResult(DeviceSubsystem subsystem, ControlResult result)
+    {
+        ArgumentNullException.ThrowIfNull(result);
+        RecordSubsystem(subsystem.ToString(), result);
+    }
+
     public void RecordSummary(ControlOperationStatus status, string summary)
     {
         ArgumentNullException.ThrowIfNull(summary);

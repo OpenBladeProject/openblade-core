@@ -126,6 +126,24 @@ public sealed class DiagnosticHistoryTests
         Assert.Equal(["Unchanged", "Blocked", "Applied", "Failed"], records.Select(record => record.Status));
     }
 
+    [Fact]
+    public void RecordSubsystemResult_CapturesOnlyTheNamedScopedResult()
+    {
+        var time = new FixedTimeProvider(DateTimeOffset.Parse("2026-07-15T12:34:56Z"));
+        var history = new DiagnosticHistory(timeProvider: time);
+
+        history.RecordSubsystemResult(
+            DeviceSubsystem.Fans,
+            new ControlResult(ControlResultStatus.Applied, "fan confirmed"));
+
+        DiagnosticCommandResult record = Assert.Single(history.Snapshot().CommandResults);
+        Assert.Equal("Fans", record.Subsystem);
+        Assert.Equal("Reconcile", record.Action);
+        Assert.Equal("Applied", record.Status);
+        Assert.Equal("fan confirmed", record.Detail);
+        Assert.Equal(time.GetUtcNow(), record.Timestamp);
+    }
+
     private sealed class FixedTimeProvider(DateTimeOffset now) : TimeProvider
     {
         public override DateTimeOffset GetUtcNow() => now;

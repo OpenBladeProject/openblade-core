@@ -3,137 +3,133 @@ using OpenBlade.Protocol;
 
 namespace OpenBlade.Service;
 
-public sealed class ControlCoordinator(
-    IBladeDevice device,
-    IHardwareAccessGuard hardwareAccessGuard)
+internal sealed record ScopedApplyOutcome(
+    ControlResult Result,
+    ConfirmedDeviceState? Readback,
+    bool WriteAttempted,
+    bool ReadbackMatched,
+    DeviceCapabilities? Capabilities,
+    bool DeviceAccessFailed);
+
+internal sealed record FullTransitionApplyOutcome(
+    SubsystemApplyResults Results,
+    ConfirmedDeviceState? Readback,
+    IReadOnlySet<DeviceSubsystem> WriteAttempted,
+    IReadOnlySet<DeviceSubsystem> ReadbackMatched,
+    DeviceCapabilities? Capabilities,
+    bool DeviceAccessFailed);
+
+internal sealed class IntentionalWriteCanceledException(
+    IReadOnlySet<DeviceSubsystem> writeAttempted,
+    CancellationToken cancellationToken,
+    OperationCanceledException innerException)
+    : OperationCanceledException(
+        "An intentional hardware write was canceled before it could be confirmed.",
+        innerException,
+        cancellationToken)
 {
+    public IReadOnlySet<DeviceSubsystem> WriteAttempted { get; } = writeAttempted;
+}
+
+public sealed class ControlCoordinator
+{
+    private readonly IBladeDevice device;
+
+    public ControlCoordinator(IBladeDevice device)
+    {
+        this.device = device ?? throw new ArgumentNullException(nameof(device));
+    }
+
+    // Kept for source compatibility with existing Service tests and callers. Controller
+    // presence is advisory and the guard is intentionally never consulted.
+    public ControlCoordinator(IBladeDevice device, IHardwareAccessGuard _)
+        : this(device)
+    {
+    }
+
     public async Task<SubsystemApplyResults> ApplyDesiredStateAsync(
+        DesiredDeviceState desired,
+        CancellationToken cancellationToken) =>
+        (await ApplyDesiredStateOutcomeAsync(desired, cancellationToken)).Results;
+
+    public async Task<ControlResult> ApplyPerformanceAsync(
+        PerformancePreset value,
+        CancellationToken cancellationToken) =>
+        (await ApplyPerformanceOutcomeAsync(value, cancellationToken)).Result;
+
+    public async Task<ControlResult> ApplyFanAsync(
+        FanMode value,
+        CancellationToken cancellationToken) =>
+        (await ApplyFanOutcomeAsync(value, cancellationToken)).Result;
+
+    public async Task<ControlResult> ApplyBatteryAsync(
+        BatteryPolicy value,
+        CancellationToken cancellationToken) =>
+        (await ApplyBatteryOutcomeAsync(value, cancellationToken)).Result;
+
+    public async Task<ControlResult> ApplyLightingAsync(
+        LightingSettings value,
+        CancellationToken cancellationToken) =>
+        (await ApplyLightingOutcomeAsync(value, cancellationToken)).Result;
+
+    internal Task<ScopedApplyOutcome> ApplyPerformanceOutcomeAsync(
+        PerformancePreset value,
+        CancellationToken cancellationToken) => ApplyScopedAsync(
+            DeviceSubsystem.Performance,
+            "Performance",
+            IsDefined(value),
+            capabilities => capabilities.PerformancePresets.Contains(value),
+            state => state.Performance == value,
+            token => device.SetPerformanceAsync(value, token),
+            cancellationToken);
+
+    internal Task<ScopedApplyOutcome> ApplyFanOutcomeAsync(
+        FanMode value,
+        CancellationToken cancellationToken) => ApplyScopedAsync(
+            DeviceSubsystem.Fans,
+            "Fans",
+            IsDefined(value),
+            capabilities => capabilities.FanModes.Contains(value),
+            state => state.Fans == value,
+            token => device.SetFanModeAsync(value, token),
+            cancellationToken);
+
+    internal Task<ScopedApplyOutcome> ApplyBatteryOutcomeAsync(
+        BatteryPolicy value,
+        CancellationToken cancellationToken) => ApplyScopedAsync(
+            DeviceSubsystem.Battery,
+            "Battery",
+            value is not null,
+            capabilities => IsBatterySupported(value!, capabilities),
+            state => BatteryMatches(value!, state.Battery),
+            token => device.SetBatteryPolicyAsync(value!, token),
+            cancellationToken);
+
+    internal Task<ScopedApplyOutcome> ApplyLightingOutcomeAsync(
+        LightingSettings value,
+        CancellationToken cancellationToken) => ApplyScopedAsync(
+            DeviceSubsystem.Lighting,
+            "Lighting",
+            IsLightingValid(value),
+            capabilities => capabilities.LightingEffects.Contains(value.Effect),
+            state => state.Lighting == value,
+            token => device.SetLightingAsync(value, token),
+            cancellationToken);
+
+    internal async Task<FullTransitionApplyOutcome> ApplyDesiredStateOutcomeAsync(
         DesiredDeviceState desired,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(desired);
-        ControlResult? initialBlock = GetConflictBlock();
-        if (initialBlock is not null)
-        {
-            return All(initialBlock);
-        }
-
+        var attempted = new HashSet<DeviceSubsystem>();
+        var matched = new HashSet<DeviceSubsystem>();
         DeviceCapabilities capabilities;
-        ConfirmedDeviceState confirmed;
+        ConfirmedDeviceState initial;
         try
         {
             capabilities = await device.ReadCapabilitiesAsync(cancellationToken);
-            confirmed = await device.ReadStateAsync(cancellationToken);
-        }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-        {
-            throw;
-        }
-        catch (Exception exception) when (IsTerminalDeviceFailure(exception))
-        {
-            ControlResult failed = new(
-                ControlResultStatus.Failed,
-                $"Device state could not be read: {exception.Message}");
-            return All(failed);
-        }
-
-        ApplyOutcome performance = await ApplySubsystemAsync(
-            "Performance",
-            IsDefined(desired.Performance.Value)
-                && capabilities.PerformancePresets.Contains(desired.Performance.Value),
-            confirmed.Performance == desired.Performance.Value,
-            token => device.SetPerformanceAsync(desired.Performance.Value, token),
-            cancellationToken);
-        if (performance.StopFurtherWrites)
-        {
-            return WithBlockedRemainder(performance.Result);
-        }
-
-        ApplyOutcome fans = await ApplySubsystemAsync(
-            "Fans",
-            IsDefined(desired.Fans.Value)
-                && capabilities.FanModes.Contains(desired.Fans.Value),
-            confirmed.Fans == desired.Fans.Value,
-            token => device.SetFanModeAsync(desired.Fans.Value, token),
-            cancellationToken);
-        if (fans.StopFurtherWrites)
-        {
-            ControlResult blocked = SubsequentWritesBlocked(fans.Result.Message);
-            return new SubsystemApplyResults(performance.Result, fans.Result, blocked, blocked);
-        }
-
-        bool batterySupported = capabilities.ChargeLimitStep > 0
-            && desired.Battery.ChargeLimitPercent >= capabilities.MinimumChargeLimit
-            && desired.Battery.ChargeLimitPercent <= capabilities.MaximumChargeLimit
-            && (desired.Battery.ChargeLimitPercent - capabilities.MinimumChargeLimit)
-                % capabilities.ChargeLimitStep == 0;
-        ApplyOutcome battery = await ApplySubsystemAsync(
-            "Battery",
-            batterySupported,
-            confirmed.Battery == desired.Battery,
-            token => device.SetBatteryPolicyAsync(desired.Battery, token),
-            cancellationToken);
-        if (battery.StopFurtherWrites)
-        {
-            return new SubsystemApplyResults(
-                performance.Result,
-                fans.Result,
-                battery.Result,
-                SubsequentWritesBlocked(battery.Result.Message));
-        }
-
-        ApplyOutcome lighting = await ApplySubsystemAsync(
-            "Lighting",
-            IsDefined(desired.Lighting.Value.Effect)
-                && capabilities.LightingEffects.Contains(desired.Lighting.Value.Effect),
-            confirmed.Lighting == desired.Lighting.Value,
-            token => device.SetLightingAsync(desired.Lighting.Value, token),
-            cancellationToken);
-
-        return new SubsystemApplyResults(
-            performance.Result,
-            fans.Result,
-            battery.Result,
-            lighting.Result);
-    }
-
-    public async Task<ControlResult> ApplyPerformanceAsync(
-        PerformancePreset value,
-        CancellationToken cancellationToken)
-    {
-        ControlResult? initialBlock = GetConflictBlock();
-        if (initialBlock is not null)
-        {
-            return initialBlock;
-        }
-
-        if (!IsDefined(value))
-        {
-            return Unsupported("Performance");
-        }
-
-        try
-        {
-            DeviceCapabilities capabilities = await device.ReadCapabilitiesAsync(cancellationToken);
-            if (!capabilities.PerformancePresets.Contains(value))
-            {
-                return Unsupported("Performance");
-            }
-
-            ConfirmedDeviceState state = await device.ReadStateAsync(cancellationToken);
-            if (state.Performance == value)
-            {
-                return new ControlResult(ControlResultStatus.Unchanged, "Performance is already confirmed.");
-            }
-
-            ControlResult? writeBlock = GetConflictBlock();
-            if (writeBlock is not null)
-            {
-                return writeBlock;
-            }
-
-            await device.SetPerformanceAsync(value, cancellationToken);
-            return new ControlResult(ControlResultStatus.Applied, "Performance setting applied.");
+            initial = await device.ReadStateAsync(cancellationToken);
+            cancellationToken.ThrowIfCancellationRequested();
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -141,43 +137,250 @@ public sealed class ControlCoordinator(
         }
         catch (Exception exception)
         {
-            return new ControlResult(
-                ControlResultStatus.Failed,
-                $"Performance failed: {exception.Message}");
+            ControlResult failed = ReadFailure("Device state", exception);
+            return new FullTransitionApplyOutcome(
+                new SubsystemApplyResults(failed, failed, failed, failed),
+                null,
+                attempted,
+                matched,
+                null,
+                DeviceAccessFailed: true);
+        }
+
+        var states = new Dictionary<DeviceSubsystem, PendingSubsystem>
+        {
+            [DeviceSubsystem.Performance] = new(
+                "Performance",
+                IsDefined(desired.Performance.Value)
+                    && capabilities.PerformancePresets.Contains(desired.Performance.Value),
+                initial.Performance == desired.Performance.Value,
+                token => device.SetPerformanceAsync(desired.Performance.Value, token),
+                state => state.Performance == desired.Performance.Value),
+            [DeviceSubsystem.Fans] = new(
+                "Fans",
+                IsDefined(desired.Fans.Value)
+                    && capabilities.FanModes.Contains(desired.Fans.Value),
+                initial.Fans == desired.Fans.Value,
+                token => device.SetFanModeAsync(desired.Fans.Value, token),
+                state => state.Fans == desired.Fans.Value),
+            [DeviceSubsystem.Battery] = new(
+                "Battery",
+                IsBatterySupported(desired.Battery, capabilities),
+                BatteryMatches(desired.Battery, initial.Battery),
+                token => device.SetBatteryPolicyAsync(desired.Battery, token),
+                state => BatteryMatches(desired.Battery, state.Battery)),
+            [DeviceSubsystem.Lighting] = new(
+                "Lighting",
+                IsLightingValid(desired.Lighting.Value)
+                    && capabilities.LightingEffects.Contains(desired.Lighting.Value.Effect),
+                initial.Lighting == desired.Lighting.Value,
+                token => device.SetLightingAsync(desired.Lighting.Value, token),
+                state => state.Lighting == desired.Lighting.Value),
+        };
+        var provisional = new Dictionary<DeviceSubsystem, ControlResult>();
+        bool stopFurtherWrites = false;
+        string? stopReason = null;
+
+        try
+        {
+            foreach (DeviceSubsystem subsystem in OrderedSubsystems)
+            {
+                PendingSubsystem pending = states[subsystem];
+                if (!pending.Supported)
+                {
+                    provisional[subsystem] = Unsupported(pending.Name);
+                    continue;
+                }
+
+                if (pending.InitiallyMatching)
+                {
+                    provisional[subsystem] = Unchanged(pending.Name);
+                    matched.Add(subsystem);
+                    continue;
+                }
+
+                if (stopFurtherWrites)
+                {
+                    provisional[subsystem] = SubsequentWritesBlocked(stopReason!);
+                    continue;
+                }
+
+                cancellationToken.ThrowIfCancellationRequested();
+                attempted.Add(subsystem);
+                try
+                {
+                    await pending.Setter(cancellationToken);
+                    provisional[subsystem] = Indeterminate(pending.Name, null);
+                }
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                {
+                    throw;
+                }
+                catch (Exception exception)
+                {
+                    provisional[subsystem] = Indeterminate(pending.Name, exception);
+                    if (IsTerminalDeviceFailure(exception))
+                    {
+                        stopFurtherWrites = true;
+                        stopReason = provisional[subsystem].Message;
+                    }
+                }
+            }
+
+            if (attempted.Count == 0)
+            {
+                return CreateFullOutcome(
+                    provisional,
+                    initial,
+                    attempted,
+                    matched,
+                    capabilities,
+                    DeviceAccessFailed: false);
+            }
+
+            cancellationToken.ThrowIfCancellationRequested();
+            ConfirmedDeviceState final;
+            try
+            {
+                final = await device.ReadStateAsync(cancellationToken);
+                cancellationToken.ThrowIfCancellationRequested();
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception exception)
+            {
+                foreach (DeviceSubsystem subsystem in attempted)
+                {
+                    provisional[subsystem] = Indeterminate(states[subsystem].Name, exception);
+                }
+
+                return CreateFullOutcome(
+                    provisional,
+                    null,
+                    attempted,
+                    matched,
+                    capabilities,
+                    DeviceAccessFailed: true);
+            }
+
+            foreach (DeviceSubsystem subsystem in attempted)
+            {
+                PendingSubsystem pending = states[subsystem];
+                if (pending.Matches(final))
+                {
+                    provisional[subsystem] = Applied(pending.Name);
+                    matched.Add(subsystem);
+                }
+                else
+                {
+                    provisional[subsystem] = Indeterminate(pending.Name, null);
+                }
+            }
+
+            return CreateFullOutcome(
+                provisional,
+                final,
+                attempted,
+                matched,
+                capabilities,
+                DeviceAccessFailed: stopFurtherWrites);
+        }
+        catch (OperationCanceledException exception)
+            when (cancellationToken.IsCancellationRequested && attempted.Count > 0)
+        {
+            throw new IntentionalWriteCanceledException(
+                new HashSet<DeviceSubsystem>(attempted),
+                cancellationToken,
+                exception);
         }
     }
 
-    private async Task<ApplyOutcome> ApplySubsystemAsync(
+    private async Task<ScopedApplyOutcome> ApplyScopedAsync(
+        DeviceSubsystem subsystem,
         string name,
-        bool supported,
-        bool unchanged,
+        bool valid,
+        Func<DeviceCapabilities, bool> supported,
+        Func<ConfirmedDeviceState, bool> matches,
         Func<CancellationToken, Task> setter,
         CancellationToken cancellationToken)
     {
-        if (!supported)
+        if (!valid)
         {
-            return new ApplyOutcome(Unsupported(name), StopFurtherWrites: false);
+            return new ScopedApplyOutcome(
+                Unsupported(name),
+                null,
+                WriteAttempted: false,
+                ReadbackMatched: false,
+                null,
+                DeviceAccessFailed: false);
         }
 
-        if (unchanged)
-        {
-            return new ApplyOutcome(
-                new ControlResult(ControlResultStatus.Unchanged, $"{name} is already confirmed."),
-                StopFurtherWrites: false);
-        }
-
-        ControlResult? conflictBlock = GetConflictBlock();
-        if (conflictBlock is not null)
-        {
-            return new ApplyOutcome(conflictBlock, StopFurtherWrites: true);
-        }
-
+        bool writeAttempted = false;
+        bool setterCompleted = false;
+        DeviceCapabilities? capabilities = null;
         try
         {
+            capabilities = await device.ReadCapabilitiesAsync(cancellationToken);
+            cancellationToken.ThrowIfCancellationRequested();
+            if (!supported(capabilities))
+            {
+                return new ScopedApplyOutcome(
+                    Unsupported(name),
+                    null,
+                    WriteAttempted: false,
+                    ReadbackMatched: false,
+                    capabilities,
+                    DeviceAccessFailed: false);
+            }
+
+            ConfirmedDeviceState initial = await device.ReadStateAsync(cancellationToken);
+            cancellationToken.ThrowIfCancellationRequested();
+            if (matches(initial))
+            {
+                return new ScopedApplyOutcome(
+                    Unchanged(name),
+                    initial,
+                    WriteAttempted: false,
+                    ReadbackMatched: true,
+                    capabilities,
+                    DeviceAccessFailed: false);
+            }
+
+            cancellationToken.ThrowIfCancellationRequested();
+            writeAttempted = true;
             await setter(cancellationToken);
-            return new ApplyOutcome(
-                new ControlResult(ControlResultStatus.Applied, $"{name} setting applied."),
-                StopFurtherWrites: false);
+            setterCompleted = true;
+            cancellationToken.ThrowIfCancellationRequested();
+            ConfirmedDeviceState final = await device.ReadStateAsync(cancellationToken);
+            cancellationToken.ThrowIfCancellationRequested();
+            if (matches(final))
+            {
+                return new ScopedApplyOutcome(
+                    Applied(name),
+                    final,
+                    WriteAttempted: true,
+                    ReadbackMatched: true,
+                    capabilities,
+                    DeviceAccessFailed: false);
+            }
+
+            return new ScopedApplyOutcome(
+                Indeterminate(name, null),
+                null,
+                WriteAttempted: true,
+                ReadbackMatched: false,
+                capabilities,
+                DeviceAccessFailed: false);
+        }
+        catch (OperationCanceledException exception)
+            when (cancellationToken.IsCancellationRequested && writeAttempted)
+        {
+            throw new IntentionalWriteCanceledException(
+                new HashSet<DeviceSubsystem> { subsystem },
+                cancellationToken,
+                exception);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -185,26 +388,66 @@ public sealed class ControlCoordinator(
         }
         catch (Exception exception)
         {
-            return new ApplyOutcome(
-                new ControlResult(ControlResultStatus.Failed, $"{name} failed: {exception.Message}"),
-                StopFurtherWrites: IsTerminalDeviceFailure(exception));
+            return new ScopedApplyOutcome(
+                writeAttempted
+                    ? Indeterminate(name, exception)
+                    : ReadFailure(name, exception),
+                null,
+                writeAttempted,
+                ReadbackMatched: false,
+                capabilities,
+                DeviceAccessFailed: !writeAttempted
+                    || setterCompleted
+                    || IsTerminalDeviceFailure(exception));
         }
     }
 
-    private ControlResult? GetConflictBlock()
+    private static FullTransitionApplyOutcome CreateFullOutcome(
+        IReadOnlyDictionary<DeviceSubsystem, ControlResult> results,
+        ConfirmedDeviceState? readback,
+        IReadOnlySet<DeviceSubsystem> attempted,
+        IReadOnlySet<DeviceSubsystem> matched,
+        DeviceCapabilities capabilities,
+        bool DeviceAccessFailed) => new(
+            new SubsystemApplyResults(
+                results[DeviceSubsystem.Performance],
+                results[DeviceSubsystem.Fans],
+                results[DeviceSubsystem.Battery],
+                results[DeviceSubsystem.Lighting]),
+            readback,
+            new HashSet<DeviceSubsystem>(attempted),
+            new HashSet<DeviceSubsystem>(matched),
+            capabilities,
+            DeviceAccessFailed);
+
+    private static bool IsBatterySupported(
+        BatteryPolicy value,
+        DeviceCapabilities capabilities) => value is not null
+        && capabilities.ChargeLimitStep > 0
+        && value.ChargeLimitPercent >= capabilities.MinimumChargeLimit
+        && value.ChargeLimitPercent <= capabilities.MaximumChargeLimit
+        && (value.ChargeLimitPercent - capabilities.MinimumChargeLimit)
+            % capabilities.ChargeLimitStep == 0;
+
+    private static bool BatteryMatches(BatteryPolicy desired, BatteryPolicy? confirmed) =>
+        desired.TemporaryFullCharge ? confirmed is null : confirmed == desired;
+
+    private static bool IsLightingValid(LightingSettings value)
     {
-        HardwareAccessDecision check = hardwareAccessGuard.Check();
-        if (check.Safe && check.Conflicts.Count == 0 && check.DetectionFailure is null)
+        if (value is null || !IsDefined(value.Effect) || value.Brightness > 100)
         {
-            return null;
+            return false;
         }
 
-        string message = check.DetectionFailure is not null
-            ? $"Hardware writes are blocked because controller conflict detection failed: {check.DetectionFailure}"
-            : $"Hardware writes are blocked while these controllers are running: {string.Join(", ", check.Conflicts)}";
-        return new ControlResult(
-                ControlResultStatus.Blocked,
-                message);
+        if (value.Effect == LightingEffect.Off && value.Brightness != 0)
+        {
+            return false;
+        }
+
+        bool consumesColor = value.Effect is LightingEffect.Static
+            or LightingEffect.Breathing
+            or LightingEffect.Reactive;
+        return consumesColor || value.Color == default;
     }
 
     private static bool IsTerminalDeviceFailure(Exception exception) =>
@@ -220,18 +463,40 @@ public sealed class ControlCoordinator(
         ControlResultStatus.Blocked,
         $"{name} value is not supported by the verified capability table.");
 
+    private static ControlResult Unchanged(string name) => new(
+        ControlResultStatus.Unchanged,
+        $"{name} is already confirmed.");
+
+    private static ControlResult Applied(string name) => new(
+        ControlResultStatus.Applied,
+        $"{name} setting applied and confirmed by readback.");
+
+    private static ControlResult Indeterminate(string name, Exception? exception) => new(
+        ControlResultStatus.Failed,
+        exception is null
+            ? $"{name} write is indeterminate because readback did not match."
+            : $"{name} write is indeterminate: {exception.Message}");
+
+    private static ControlResult ReadFailure(string name, Exception exception) => new(
+        ControlResultStatus.Failed,
+        $"{name} could not be read before writing: {exception.Message}");
+
     private static ControlResult SubsequentWritesBlocked(string reason) => new(
         ControlResultStatus.Blocked,
         $"No further hardware writes were attempted: {reason}");
 
-    private static SubsystemApplyResults All(ControlResult result) =>
-        new(result, result, result, result);
+    private static IReadOnlyList<DeviceSubsystem> OrderedSubsystems { get; } =
+    [
+        DeviceSubsystem.Performance,
+        DeviceSubsystem.Fans,
+        DeviceSubsystem.Battery,
+        DeviceSubsystem.Lighting,
+    ];
 
-    private static SubsystemApplyResults WithBlockedRemainder(ControlResult performance)
-    {
-        ControlResult blocked = SubsequentWritesBlocked(performance.Message);
-        return new SubsystemApplyResults(performance, blocked, blocked, blocked);
-    }
-
-    private sealed record ApplyOutcome(ControlResult Result, bool StopFurtherWrites);
+    private sealed record PendingSubsystem(
+        string Name,
+        bool Supported,
+        bool InitiallyMatching,
+        Func<CancellationToken, Task> Setter,
+        Func<ConfirmedDeviceState, bool> Matches);
 }

@@ -91,7 +91,7 @@ public sealed class ControlRequestHandlerTests
     [Theory]
     [InlineData(false, false)]
     [InlineData(true, true)]
-    public async Task HandleAsync_UnavailableOrConflictedRuntime_PerformsNoDeviceCalls(
+    public async Task HandleAsync_UnavailableOrAdvisoryControllerRuntime_UsesVerifiedProviderOnly(
         bool providerAvailable,
         bool conflict)
     {
@@ -104,7 +104,6 @@ public sealed class ControlRequestHandlerTests
             using var runtime = new ServiceControlRuntime(
                 new ProfileStore(path),
                 profiles,
-                new FixedGuard(conflict ? ["RazerAppEngine"] : []),
                 new FixedTelemetry(),
                 new NullHub(),
                 provider,
@@ -121,8 +120,8 @@ public sealed class ControlRequestHandlerTests
 
             Assert.True(response.Success);
             Assert.Equal(ControlOperationStatus.Blocked, response.Result!.Status);
-            Assert.Equal(0, device.Calls);
-            Assert.Equal(conflict ? 0 : 1, provider.Calls);
+            Assert.Equal(providerAvailable ? 1 : 0, device.Calls);
+            Assert.Equal(1, provider.Calls);
         }
         finally
         {
@@ -198,11 +197,6 @@ public sealed class ControlRequestHandlerTests
             Calls.Add(name);
             return Task.FromResult(new ControlOperationResult(ControlOperationStatus.Stored, "Stored"));
         }
-    }
-
-    private sealed class FixedGuard(IReadOnlyList<string> conflicts) : IHardwareAccessGuard
-    {
-        public HardwareAccessDecision Check() => new(conflicts, null);
     }
 
     private sealed class FixedControllerPresenceMonitor(IReadOnlyList<string> controllers)

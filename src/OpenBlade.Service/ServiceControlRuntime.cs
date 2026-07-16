@@ -50,7 +50,6 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         DeviceCapabilities.Unavailable();
 
     private readonly ProfileStore store;
-    private readonly IHardwareAccessGuard hardwareAccessGuard;
     private readonly IPowerTelemetryProvider telemetryProvider;
     private readonly IStatusSubscriptionHub subscriptionHub;
     private readonly IVerifiedBladeDeviceProvider deviceProvider;
@@ -66,7 +65,6 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
     public ServiceControlRuntime(
         ProfileStore store,
         ProfileSet profiles,
-        IHardwareAccessGuard hardwareAccessGuard,
         IPowerTelemetryProvider telemetryProvider,
         IStatusSubscriptionHub subscriptionHub,
         IVerifiedBladeDeviceProvider deviceProvider,
@@ -75,8 +73,6 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
     {
         this.store = store ?? throw new ArgumentNullException(nameof(store));
         ArgumentNullException.ThrowIfNull(profiles);
-        this.hardwareAccessGuard = hardwareAccessGuard
-            ?? throw new ArgumentNullException(nameof(hardwareAccessGuard));
         this.telemetryProvider = telemetryProvider
             ?? throw new ArgumentNullException(nameof(telemetryProvider));
         this.subscriptionHub = subscriptionHub
@@ -89,59 +85,105 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
 
         TelemetrySnapshot telemetry = telemetryProvider.Capture();
         automation = new ProfileAutomationState(profiles, telemetry.PowerSource);
-        HardwareAccessDecision access = hardwareAccessGuard.Check();
-        status = CreateBlockedSnapshot(0, telemetry, access);
+        status = CreateInitialSnapshot(telemetry);
     }
 
     public ServiceStatusSnapshot GetStatus() => Volatile.Read(ref status);
 
-    public Task<ControlOperationResult> UpdateProfilesAsync(
+    public async Task<ControlOperationResult> UpdateProfilesAsync(
         ProfileSet profiles,
-        CancellationToken token) => ExecuteMutationAsync(
-            async cancellationToken =>
+        CancellationToken token)
+    {
+        await operationGate.WaitAsync(token);
+        try
+        {
+            try
             {
                 validator.Validate(profiles);
-                await store.SaveAsync(profiles, cancellationToken);
+                await store.SaveAsync(profiles, token);
                 automation.UpdateProfiles(profiles);
-            },
-            token);
+            }
+            catch (OperationCanceledException) when (token.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception exception) when (IsIntentFailure(exception))
+            {
+                return RecordRejectedIntent(exception);
+            }
+
+            ServiceStatusSnapshot current = GetStatus();
+            ConfirmedDeviceState confirmed = current.ConfirmedState ?? UnknownConfirmedState;
+            const string message = "Profiles stored without automatic hardware application.";
+            PublishIfChanged(current with
+            {
+                Message = message,
+                Profiles = automation.Profiles,
+                DesiredState = automation.Resolve(confirmed),
+                PerformanceOverride = automation.PerformanceOverride,
+                FanOverride = automation.FanOverride,
+                LightingOverride = automation.LightingOverride,
+                FullChargeOverride = automation.BatteryPolicy.TemporaryFullCharge,
+            });
+            history.RecordSummary(ControlOperationStatus.Stored, message);
+            return new ControlOperationResult(ControlOperationStatus.Stored, message);
+        }
+        finally
+        {
+            operationGate.Release();
+        }
+    }
 
     public Task<ControlOperationResult> SetPerformanceOverrideAsync(
         ManualOverride<PerformancePreset>? value,
-        CancellationToken token) => ExecuteMutationAsync(
+        CancellationToken token) => ExecuteScopedMutationAsync(
+            DeviceSubsystem.Performance,
             _ =>
             {
                 ValidateOverride(value, nameof(value));
                 automation.SetPerformanceOverride(value);
                 return Task.CompletedTask;
             },
+            (coordinator, desired, cancellationToken) =>
+                coordinator.ApplyPerformanceOutcomeAsync(
+                    desired.Performance.Value,
+                    cancellationToken),
             token);
 
     public Task<ControlOperationResult> SetFanOverrideAsync(
         ManualOverride<FanMode>? value,
-        CancellationToken token) => ExecuteMutationAsync(
+        CancellationToken token) => ExecuteScopedMutationAsync(
+            DeviceSubsystem.Fans,
             _ =>
             {
                 ValidateOverride(value, nameof(value));
                 automation.SetFanOverride(value);
                 return Task.CompletedTask;
             },
+            (coordinator, desired, cancellationToken) =>
+                coordinator.ApplyFanOutcomeAsync(desired.Fans.Value, cancellationToken),
             token);
 
     public Task<ControlOperationResult> SetLightingOverrideAsync(
         ManualOverride<LightingSettings>? value,
-        CancellationToken token) => ExecuteMutationAsync(
+        CancellationToken token) => ExecuteScopedMutationAsync(
+            DeviceSubsystem.Lighting,
             _ =>
             {
                 ValidateLightingOverride(value);
                 automation.SetLightingOverride(value);
                 return Task.CompletedTask;
             },
+            (coordinator, desired, cancellationToken) =>
+                coordinator.ApplyLightingOutcomeAsync(
+                    desired.Lighting.Value,
+                    cancellationToken),
             token);
 
     public Task<ControlOperationResult> SetBatteryPolicyAsync(
         BatteryPolicy value,
-        CancellationToken token) => ExecuteMutationAsync(
+        CancellationToken token) => ExecuteScopedMutationAsync(
+            DeviceSubsystem.Battery,
             async cancellationToken =>
             {
                 ArgumentNullException.ThrowIfNull(value);
@@ -150,6 +192,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 await store.SaveAsync(updated, cancellationToken);
                 automation.SetBatteryPolicy(value);
             },
+            (coordinator, desired, cancellationToken) =>
+                coordinator.ApplyBatteryOutcomeAsync(desired.Battery, cancellationToken),
             token);
 
     public async Task<ControlOperationResult> SetFullChargeOverrideAsync(
@@ -163,12 +207,12 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
 
             if (enabled && telemetry.PowerSource == PowerSource.Battery)
             {
-                await ReconcileAsync(telemetry, intentStored: false, token);
                 var rejected = new ControlOperationResult(
                     ControlOperationStatus.Failed,
                     "The requested intent was rejected: Temporary full charge can only " +
                     "be enabled while plugged in.");
                 history.RecordSummary(rejected.Status, rejected.Message);
+                PublishIfChanged(GetStatus() with { Telemetry = telemetry });
                 return rejected;
             }
 
@@ -181,7 +225,14 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 automation.CancelTemporaryFullCharge();
             }
 
-            return await ReconcileAsync(telemetry, intentStored: true, token);
+            return await ApplyScopedIntentAsync(
+                DeviceSubsystem.Battery,
+                telemetry,
+                (coordinator, desired, cancellationToken) =>
+                    coordinator.ApplyBatteryOutcomeAsync(
+                        desired.Battery,
+                        cancellationToken),
+                token);
         }
         finally
         {
@@ -218,7 +269,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             cancellationToken.ThrowIfCancellationRequested();
             if (automation.ChangePowerSource(telemetry.PowerSource))
             {
-                await ReconcileAsync(telemetry, intentStored: false, cancellationToken);
+                await ApplyFullTransitionAsync(telemetry, cancellationToken);
             }
             else
             {
@@ -259,8 +310,10 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
 
     public void Dispose() => operationGate.Dispose();
 
-    private async Task<ControlOperationResult> ExecuteMutationAsync(
+    private async Task<ControlOperationResult> ExecuteScopedMutationAsync(
+        DeviceSubsystem subsystem,
         Func<CancellationToken, Task> mutation,
+        Func<ControlCoordinator, DesiredDeviceState, CancellationToken, Task<ScopedApplyOutcome>> apply,
         CancellationToken token)
     {
         await operationGate.WaitAsync(token);
@@ -274,17 +327,16 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             {
                 throw;
             }
-            catch (Exception exception) when (exception is
-                ArgumentException or InvalidDataException or IOException)
+            catch (Exception exception) when (IsIntentFailure(exception))
             {
-                var rejected = new ControlOperationResult(
-                    ControlOperationStatus.Failed,
-                    $"The requested intent was rejected: {exception.Message}");
-                history.RecordSummary(rejected.Status, rejected.Message);
-                return rejected;
+                return RecordRejectedIntent(exception);
             }
 
-            return await ReconcileAsync(GetStatus().Telemetry, intentStored: true, token);
+            return await ApplyScopedIntentAsync(
+                subsystem,
+                GetStatus().Telemetry,
+                apply,
+                token);
         }
         finally
         {
@@ -292,101 +344,27 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         }
     }
 
-    private async Task<ControlOperationResult> ReconcileAsync(
+    private async Task<ControlOperationResult> ApplyScopedIntentAsync(
+        DeviceSubsystem subsystem,
         TelemetrySnapshot telemetry,
-        bool intentStored,
+        Func<ControlCoordinator, DesiredDeviceState, CancellationToken, Task<ScopedApplyOutcome>> apply,
         CancellationToken token)
     {
-        // This guard deliberately precedes even asking for a verified device.
-        HardwareAccessDecision access = hardwareAccessGuard.Check();
-        if (!access.Safe)
-        {
-            ServiceStatusSnapshot blocked = CreateBlockedSnapshot(
-                GetStatus().Revision,
-                telemetry,
-                access);
-            PublishIfChanged(blocked);
-            history.RecordSummary(ControlOperationStatus.Blocked, blocked.Message);
-            return BlockedResult(blocked.Message, intentStored);
-        }
-
-        access = hardwareAccessGuard.Check();
-        if (!access.Safe)
-        {
-            ServiceStatusSnapshot blocked = CreateBlockedSnapshot(
-                GetStatus().Revision,
-                telemetry,
-                access);
-            PublishIfChanged(blocked);
-            history.RecordSummary(ControlOperationStatus.Blocked, blocked.Message);
-            return BlockedResult(blocked.Message, intentStored);
-        }
-
-        bool deviceAvailable = deviceProvider.TryGetVerifiedDevice(out IBladeDevice device);
-        token.ThrowIfCancellationRequested();
-        if (!deviceAvailable)
-        {
-            ServiceStatusSnapshot unavailable = CreateBlockedSnapshot(
-                GetStatus().Revision,
-                telemetry,
-                access);
-            PublishIfChanged(unavailable);
-            history.RecordSummary(ControlOperationStatus.Blocked, unavailable.Message);
-            return BlockedResult(unavailable.Message, intentStored);
-        }
-
+        ServiceStatusSnapshot current = GetStatus();
+        ConfirmedDeviceState? cachedConfirmed = current.ConfirmedState;
+        DesiredDeviceState desired = automation.Resolve(cachedConfirmed ?? UnknownConfirmedState);
+        IBladeDevice device;
         try
         {
-            DeviceCapabilities capabilities = await device.ReadCapabilitiesAsync(token);
-            ConfirmedDeviceState confirmed = await device.ReadStateAsync(token);
-            DesiredDeviceState desired = automation.Resolve(confirmed);
-            var coordinator = new ControlCoordinator(device, hardwareAccessGuard);
-            SubsystemApplyResults results =
-                await coordinator.ApplyDesiredStateAsync(desired, token);
-            confirmed = await device.ReadStateAsync(token);
+            bool available = deviceProvider.TryGetVerifiedDevice(out device);
             token.ThrowIfCancellationRequested();
-            driftTracker.Observe(confirmed);
-            ConfirmIntentionalResults(desired, confirmed, results);
-            history.RecordSubsystemResults(results);
-
-            bool writesBlocked = ResultsContainBlock(results);
-            string message = Summarize(results);
-            ServiceStatusSnapshot next = new(
-                GetStatus().Revision,
-                DeviceVerified: true,
-                WritesBlocked: writesBlocked,
-                PotentialControllers: access.Conflicts
-                    .OrderBy(name => name, StringComparer.Ordinal)
-                    .ToArray(),
-                ControllerDetectionWarning: access.DetectionFailure,
-                ExternalChanges: driftTracker.ExternalChanges,
-                Message: message,
-                Capabilities: capabilities,
-                ConfirmedState: confirmed,
-                Profiles: automation.Profiles,
-                DesiredState: automation.Resolve(confirmed),
-                Telemetry: telemetry,
-                PerformanceOverride: automation.PerformanceOverride,
-                FanOverride: automation.FanOverride,
-                LightingOverride: automation.LightingOverride,
-                FullChargeOverride: automation.BatteryPolicy.TemporaryFullCharge);
-            PublishIfChanged(next);
-            if (ResultsContainFailure(results))
+            if (!available)
             {
-                history.RecordSummary(ControlOperationStatus.Failed, message);
+                return PublishScopedUnavailable(
+                    subsystem,
+                    telemetry,
+                    "No verified PID 02E0 device is available.");
             }
-            else if (writesBlocked)
-            {
-                history.RecordSummary(ControlOperationStatus.Blocked, message);
-            }
-
-            return new ControlOperationResult(
-                ResultsContainFailure(results)
-                    ? ControlOperationStatus.Failed
-                    : writesBlocked
-                        ? ControlOperationStatus.Blocked
-                        : ControlOperationStatus.Applied,
-                message);
         }
         catch (OperationCanceledException) when (token.IsCancellationRequested)
         {
@@ -394,15 +372,150 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         }
         catch (Exception exception)
         {
-            ServiceStatusSnapshot failed = CreateBlockedSnapshot(
-                GetStatus().Revision,
+            return PublishScopedUnavailable(
+                subsystem,
                 telemetry,
-                access,
-                $"Verified device access failed: {exception.Message}");
-            PublishIfChanged(failed);
-            history.RecordSummary(ControlOperationStatus.Failed, failed.Message);
-            return new ControlOperationResult(ControlOperationStatus.Failed, failed.Message);
+                $"Verified device admission failed: {exception.Message}",
+                failed: true);
         }
+
+        ScopedApplyOutcome outcome;
+        try
+        {
+            outcome = await apply(new ControlCoordinator(device), desired, token);
+        }
+        catch (IntentionalWriteCanceledException exception)
+            when (token.IsCancellationRequested)
+        {
+            foreach (DeviceSubsystem attempted in exception.WriteAttempted)
+            {
+                driftTracker.ConfirmIntentional(attempted, matched: false);
+            }
+
+            var failed = new ControlResult(
+                ControlResultStatus.Failed,
+                $"{subsystem} write is indeterminate because confirmation was canceled.");
+            history.RecordSubsystemResult(subsystem, failed);
+            PublishScopedStatus(
+                telemetry,
+                cachedConfirmed,
+                current.Capabilities,
+                failed.Message,
+                deviceVerified: true,
+                writesBlocked: false);
+            throw;
+        }
+        catch (OperationCanceledException) when (token.IsCancellationRequested)
+        {
+            throw;
+        }
+
+        ConfirmedDeviceState? confirmed = cachedConfirmed;
+        if (outcome.ReadbackMatched && outcome.Readback is not null)
+        {
+            driftTracker.Observe(outcome.Readback);
+            driftTracker.ConfirmIntentional(subsystem, matched: true);
+            confirmed = outcome.Readback;
+        }
+        else if (outcome.WriteAttempted)
+        {
+            driftTracker.ConfirmIntentional(subsystem, matched: false);
+        }
+
+        history.RecordSubsystemResult(subsystem, outcome.Result);
+        PublishScopedStatus(
+            telemetry,
+            confirmed,
+            outcome.Capabilities ?? current.Capabilities,
+            outcome.Result.Message,
+            deviceVerified: !outcome.DeviceAccessFailed,
+            writesBlocked: outcome.DeviceAccessFailed);
+        return ToOperationResult(outcome.Result);
+    }
+
+    private async Task ApplyFullTransitionAsync(
+        TelemetrySnapshot telemetry,
+        CancellationToken token)
+    {
+        ServiceStatusSnapshot current = GetStatus();
+        ConfirmedDeviceState? cachedConfirmed = current.ConfirmedState;
+        IBladeDevice device;
+        try
+        {
+            bool available = deviceProvider.TryGetVerifiedDevice(out device);
+            token.ThrowIfCancellationRequested();
+            if (!available)
+            {
+                PublishFullUnavailable(telemetry, "No verified PID 02E0 device is available.");
+                return;
+            }
+        }
+        catch (OperationCanceledException) when (token.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception exception)
+        {
+            PublishFullUnavailable(
+                telemetry,
+                $"Verified device admission failed: {exception.Message}",
+                failed: true);
+            return;
+        }
+
+        DesiredDeviceState desired = automation.Resolve(cachedConfirmed ?? UnknownConfirmedState);
+        FullTransitionApplyOutcome outcome;
+        try
+        {
+            outcome = await new ControlCoordinator(device)
+                .ApplyDesiredStateOutcomeAsync(desired, token);
+        }
+        catch (IntentionalWriteCanceledException exception)
+            when (token.IsCancellationRequested)
+        {
+            foreach (DeviceSubsystem attempted in exception.WriteAttempted)
+            {
+                driftTracker.ConfirmIntentional(attempted, matched: false);
+            }
+
+            PublishScopedStatus(
+                telemetry,
+                cachedConfirmed,
+                current.Capabilities,
+                "Power-source transition writes are indeterminate because confirmation was canceled.",
+                deviceVerified: true,
+                writesBlocked: false);
+            throw;
+        }
+
+        ConfirmedDeviceState? confirmed = cachedConfirmed;
+        if (outcome.Readback is not null)
+        {
+            driftTracker.Observe(outcome.Readback);
+            confirmed = outcome.Readback;
+        }
+
+        foreach (DeviceSubsystem subsystem in OrderedSubsystems)
+        {
+            if (outcome.ReadbackMatched.Contains(subsystem))
+            {
+                driftTracker.ConfirmIntentional(subsystem, matched: true);
+            }
+            else if (outcome.WriteAttempted.Contains(subsystem))
+            {
+                driftTracker.ConfirmIntentional(subsystem, matched: false);
+            }
+        }
+
+        history.RecordSubsystemResults(outcome.Results);
+        string message = Summarize(outcome.Results);
+        PublishScopedStatus(
+            telemetry,
+            confirmed,
+            outcome.Capabilities ?? current.Capabilities,
+            message,
+            deviceVerified: !outcome.DeviceAccessFailed,
+            writesBlocked: outcome.DeviceAccessFailed);
     }
 
     private async Task ObserveCoreAsync(
@@ -479,54 +592,14 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         });
     }
 
-    private void ConfirmIntentionalResults(
-        DesiredDeviceState desired,
-        ConfirmedDeviceState confirmed,
-        SubsystemApplyResults results)
-    {
-        driftTracker.ConfirmIntentional(
-            DeviceSubsystem.Performance,
-            IsSuccessful(results.Performance) && confirmed.Performance == desired.Performance.Value);
-        driftTracker.ConfirmIntentional(
-            DeviceSubsystem.Fans,
-            IsSuccessful(results.Fans) && confirmed.Fans == desired.Fans.Value);
-        driftTracker.ConfirmIntentional(
-            DeviceSubsystem.Battery,
-            IsSuccessful(results.Battery) && confirmed.Battery == desired.Battery);
-        driftTracker.ConfirmIntentional(
-            DeviceSubsystem.Lighting,
-            IsSuccessful(results.Lighting) && confirmed.Lighting == desired.Lighting.Value);
-    }
-
-    private static bool IsSuccessful(ControlResult result) =>
-        result.Status is ControlResultStatus.Applied or ControlResultStatus.Unchanged;
-
-    private ServiceStatusSnapshot CreateBlockedSnapshot(
-        long revision,
-        TelemetrySnapshot telemetry,
-        HardwareAccessDecision access,
-        string? failure = null)
-    {
-        string[] conflicts = access.Conflicts
-            .OrderBy(name => name, StringComparer.Ordinal)
-            .ToArray();
-        string message = failure ?? (access.DetectionFailure is not null
-            ? conflicts.Length == 0
-                ? $"Controller conflict detection failed: {access.DetectionFailure}"
-                : $"Controller conflict detection failed: {access.DetectionFailure} " +
-                    $"Detected conflicts: {string.Join(", ", conflicts)}."
-            : conflicts.Length > 0
-                ? $"Razer controller conflicts detected: {string.Join(", ", conflicts)}."
-                : "No verified PID 02E0 device is available.");
-
-        return new ServiceStatusSnapshot(
-            revision,
+    private ServiceStatusSnapshot CreateInitialSnapshot(TelemetrySnapshot telemetry) => new(
+            Revision: 0,
             DeviceVerified: false,
             WritesBlocked: true,
-            PotentialControllers: conflicts,
-            ControllerDetectionWarning: access.DetectionFailure,
+            PotentialControllers: [],
+            ControllerDetectionWarning: null,
             ExternalChanges: driftTracker.ExternalChanges,
-            Message: message,
+            Message: "No verified PID 02E0 device is available.",
             Capabilities: UnavailableCapabilities,
             ConfirmedState: null,
             Profiles: automation.Profiles,
@@ -536,7 +609,95 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             FanOverride: automation.FanOverride,
             LightingOverride: automation.LightingOverride,
             FullChargeOverride: automation.BatteryPolicy.TemporaryFullCharge);
+
+    private ControlOperationResult PublishScopedUnavailable(
+        DeviceSubsystem subsystem,
+        TelemetrySnapshot telemetry,
+        string reason,
+        bool failed = false)
+    {
+        ControlResultStatus resultStatus = failed
+            ? ControlResultStatus.Failed
+            : ControlResultStatus.Blocked;
+        var result = new ControlResult(
+            resultStatus,
+            $"Intent was stored without hardware application. {reason}");
+        history.RecordSubsystemResult(subsystem, result);
+        PublishScopedStatus(
+            telemetry,
+            GetStatus().ConfirmedState,
+            GetStatus().Capabilities,
+            result.Message,
+            deviceVerified: false,
+            writesBlocked: true);
+        return ToOperationResult(result);
     }
+
+    private void PublishFullUnavailable(
+        TelemetrySnapshot telemetry,
+        string reason,
+        bool failed = false)
+    {
+        ControlOperationStatus status = failed
+            ? ControlOperationStatus.Failed
+            : ControlOperationStatus.Blocked;
+        PublishScopedStatus(
+            telemetry,
+            GetStatus().ConfirmedState,
+            GetStatus().Capabilities,
+            reason,
+            deviceVerified: false,
+            writesBlocked: true);
+        history.RecordSummary(status, reason);
+    }
+
+    private void PublishScopedStatus(
+        TelemetrySnapshot telemetry,
+        ConfirmedDeviceState? confirmed,
+        DeviceCapabilities? capabilities,
+        string message,
+        bool deviceVerified,
+        bool writesBlocked)
+    {
+        ServiceStatusSnapshot current = GetStatus();
+        PublishIfChanged(current with
+        {
+            DeviceVerified = deviceVerified,
+            WritesBlocked = writesBlocked,
+            ExternalChanges = driftTracker.ExternalChanges,
+            Message = message,
+            Capabilities = capabilities ?? UnavailableCapabilities,
+            ConfirmedState = confirmed,
+            Profiles = automation.Profiles,
+            DesiredState = automation.Resolve(confirmed ?? UnknownConfirmedState),
+            Telemetry = telemetry,
+            PerformanceOverride = automation.PerformanceOverride,
+            FanOverride = automation.FanOverride,
+            LightingOverride = automation.LightingOverride,
+            FullChargeOverride = automation.BatteryPolicy.TemporaryFullCharge,
+        });
+    }
+
+    private ControlOperationResult RecordRejectedIntent(Exception exception)
+    {
+        var rejected = new ControlOperationResult(
+            ControlOperationStatus.Failed,
+            $"The requested intent was rejected: {exception.Message}");
+        history.RecordSummary(rejected.Status, rejected.Message);
+        return rejected;
+    }
+
+    private static ControlOperationResult ToOperationResult(ControlResult result) => new(
+        result.Status switch
+        {
+            ControlResultStatus.Blocked => ControlOperationStatus.Blocked,
+            ControlResultStatus.Failed => ControlOperationStatus.Failed,
+            _ => ControlOperationStatus.Applied,
+        },
+        result.Message);
+
+    private static bool IsIntentFailure(Exception exception) => exception is
+        ArgumentException or InvalidDataException or IOException;
 
     private void PublishIfChanged(ServiceStatusSnapshot candidate)
     {
@@ -585,24 +746,6 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             && left.MaximumChargeLimit == right.MaximumChargeLimit
             && left.ChargeLimitStep == right.ChargeLimitStep);
 
-    private static ControlOperationResult BlockedResult(string reason, bool intentStored) => new(
-        ControlOperationStatus.Blocked,
-        intentStored
-            ? $"Intent was stored without hardware application. {reason}"
-            : reason);
-
-    private static bool ResultsContainBlock(SubsystemApplyResults results) =>
-        results.Performance.Status == ControlResultStatus.Blocked
-        || results.Fans.Status == ControlResultStatus.Blocked
-        || results.Battery.Status == ControlResultStatus.Blocked
-        || results.Lighting.Status == ControlResultStatus.Blocked;
-
-    private static bool ResultsContainFailure(SubsystemApplyResults results) =>
-        results.Performance.Status == ControlResultStatus.Failed
-        || results.Fans.Status == ControlResultStatus.Failed
-        || results.Battery.Status == ControlResultStatus.Failed
-        || results.Lighting.Status == ControlResultStatus.Failed;
-
     private static string Summarize(SubsystemApplyResults results) =>
         string.Join(
             " ",
@@ -610,6 +753,14 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             results.Fans.Message,
             results.Battery.Message,
             results.Lighting.Message);
+
+    private static IReadOnlyList<DeviceSubsystem> OrderedSubsystems { get; } =
+    [
+        DeviceSubsystem.Performance,
+        DeviceSubsystem.Fans,
+        DeviceSubsystem.Battery,
+        DeviceSubsystem.Lighting,
+    ];
 
     private static void ValidateOverride<T>(ManualOverride<T>? value, string parameterName)
         where T : struct, Enum
