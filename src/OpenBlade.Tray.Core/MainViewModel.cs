@@ -364,6 +364,9 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         private set => SetField(ref isLightingVisible, value);
     }
 
+    public bool IsProfileControlVisible =>
+        IsPerformanceVisible || IsFanControlVisible || IsLightingVisible;
+
     public PerformancePreset SelectedPerformance
     {
         get => selectedPerformance;
@@ -979,6 +982,9 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         IsPerformanceVisible = AvailablePerformancePresets.Count > 0;
         IsFanControlVisible = AvailableFanModes.Count > 0;
         IsLightingVisible = AvailableLightingEffects.Count > 0;
+        PropertyChanged?.Invoke(
+            this,
+            new PropertyChangedEventArgs(nameof(IsProfileControlVisible)));
         NotifyCommands();
     }
 
@@ -1293,21 +1299,31 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             return false;
         }
 
-        return ProfileSupported(draft.PluggedIn, capabilities)
-            && ProfileSupported(draft.Battery, capabilities)
+        return ProfileSupportedOrUnchanged(
+                draft.PluggedIn,
+                Profiles.PluggedIn,
+                capabilities)
+            && ProfileSupportedOrUnchanged(
+                draft.Battery,
+                Profiles.Battery,
+                capabilities)
             && HasBatteryCapability(capabilities)
             && capabilities.ChargeLimits.Contains(
                 draft.BatteryPolicy.ChargeLimitPercent);
     }
 
-    private static bool ProfileSupported(
-        PowerProfile profile,
+    private static bool ProfileSupportedOrUnchanged(
+        PowerProfile draft,
+        PowerProfile current,
         DeviceCapabilities capabilities) =>
-        Enum.IsDefined(profile.Performance)
-        && capabilities.PerformancePresets.Contains(profile.Performance)
-        && Enum.IsDefined(profile.Fans)
-        && capabilities.FanModes.Contains(profile.Fans)
-        && LightingSupported(profile.Lighting, capabilities);
+        Enum.IsDefined(draft.Performance)
+        && (capabilities.PerformancePresets.Contains(draft.Performance)
+            || draft.Performance == current.Performance)
+        && Enum.IsDefined(draft.Fans)
+        && (capabilities.FanModes.Contains(draft.Fans)
+            || draft.Fans == current.Fans)
+        && (LightingSupported(draft.Lighting, capabilities)
+            || draft.Lighting == current.Lighting);
 
     private static bool LightingSupported(
         LightingSettings lighting,

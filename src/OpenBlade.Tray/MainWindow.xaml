@@ -347,31 +347,39 @@
                 <ScrollViewer VerticalScrollBarVisibility="Auto">
                     <StackPanel Margin="4,12,12,16">
                         <TextBlock Text="POWER PROFILES" Style="{StaticResource SectionHeaderStyle}" />
-                        <Border Style="{StaticResource CardStyle}">
+                        <Border Style="{StaticResource CardStyle}"
+                                Visibility="{x:Bind ViewModel.IsProfileControlVisible, Mode=OneWay}">
                             <StackPanel Spacing="10">
                                 <TextBlock Text="Plugged In" Style="{StaticResource CardTitleStyle}" />
                                 <ComboBox Header="Performance"
+                                          Visibility="{x:Bind ViewModel.IsPerformanceVisible, Mode=OneWay}"
                                           ItemsSource="{x:Bind ViewModel.AvailablePerformancePresets, Mode=OneWay}"
                                           SelectedItem="{x:Bind ViewModel.PluggedInPerformanceEditor, Mode=TwoWay}" />
                                 <ComboBox Header="Fans"
+                                          Visibility="{x:Bind ViewModel.IsFanControlVisible, Mode=OneWay}"
                                           ItemsSource="{x:Bind ViewModel.AvailableFanModes, Mode=OneWay}"
                                           SelectedItem="{x:Bind ViewModel.PluggedInFanModeEditor, Mode=TwoWay}" />
                                 <ComboBox Header="Lighting"
+                                          Visibility="{x:Bind ViewModel.IsLightingVisible, Mode=OneWay}"
                                           DisplayMemberPath="Effect"
                                           ItemsSource="{x:Bind ViewModel.AvailableLightingSettings, Mode=OneWay}"
                                           SelectedItem="{x:Bind ViewModel.PluggedInLightingEditor, Mode=TwoWay}" />
                             </StackPanel>
                         </Border>
-                        <Border Style="{StaticResource CardStyle}">
+                        <Border Style="{StaticResource CardStyle}"
+                                Visibility="{x:Bind ViewModel.IsProfileControlVisible, Mode=OneWay}">
                             <StackPanel Spacing="10">
                                 <TextBlock Text="Battery" Style="{StaticResource CardTitleStyle}" />
                                 <ComboBox Header="Performance"
+                                          Visibility="{x:Bind ViewModel.IsPerformanceVisible, Mode=OneWay}"
                                           ItemsSource="{x:Bind ViewModel.AvailablePerformancePresets, Mode=OneWay}"
                                           SelectedItem="{x:Bind ViewModel.BatteryPerformanceEditor, Mode=TwoWay}" />
                                 <ComboBox Header="Fans"
+                                          Visibility="{x:Bind ViewModel.IsFanControlVisible, Mode=OneWay}"
                                           ItemsSource="{x:Bind ViewModel.AvailableFanModes, Mode=OneWay}"
                                           SelectedItem="{x:Bind ViewModel.BatteryFanModeEditor, Mode=TwoWay}" />
                                 <ComboBox Header="Lighting"
+                                          Visibility="{x:Bind ViewModel.IsLightingVisible, Mode=OneWay}"
                                           DisplayMemberPath="Effect"
                                           ItemsSource="{x:Bind ViewModel.AvailableLightingSettings, Mode=OneWay}"
                                           SelectedItem="{x:Bind ViewModel.BatteryLightingEditor, Mode=TwoWay}" />

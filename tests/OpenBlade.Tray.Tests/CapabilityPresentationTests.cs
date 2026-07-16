@@ -45,6 +45,7 @@ public sealed class CapabilityPresentationTests
             "ViewModel.BatteryFanModeEditor",
             "ViewModel.BatteryLightingEditor",
             "ViewModel.ProfileChargeLimitEditor",
+            "ViewModel.IsProfileControlVisible",
             "ViewModel.ThemeOptions",
             "ViewModel.Theme",
             "ViewModel.StartAtSignIn",
@@ -133,15 +134,20 @@ public sealed class CapabilityPresentationTests
             xaml,
             StringComparison.Ordinal);
         Assert.Equal(
-            2,
+            4,
             CountOccurrences(
                 xaml,
                 "Visibility=\"{x:Bind ViewModel.IsPerformanceVisible, Mode=OneWay}\""));
         Assert.Equal(
-            2,
+            4,
             CountOccurrences(
                 xaml,
                 "Visibility=\"{x:Bind ViewModel.IsFanControlVisible, Mode=OneWay}\""));
+        Assert.Equal(
+            2,
+            CountOccurrences(
+                xaml,
+                "Visibility=\"{x:Bind ViewModel.IsProfileControlVisible, Mode=OneWay}\""));
         Assert.Contains("Minimum=\"50\"", xaml, StringComparison.Ordinal);
         Assert.Contains("Maximum=\"80\"", xaml, StringComparison.Ordinal);
         Assert.True(CountOccurrences(xaml, "StepFrequency=\"5\"") >= 2);
@@ -410,6 +416,38 @@ public sealed class CapabilityPresentationTests
         await save.ExecuteAsync(null);
 
         Assert.Null(client.SavedProfiles);
+    }
+
+    [Fact]
+    public async Task SaveProfiles_AllowsBatteryChangeWhenUnavailableFieldsAreUnchanged()
+    {
+        var client = new PresentationClient();
+        await using var viewModel = new MainViewModel(client, new ImmediateDispatcher());
+        await viewModel.StartAsync();
+        client.Publish(CreateStatus(
+            verified: true,
+            blocked: false,
+            capabilities: new DeviceCapabilities(
+                new HashSet<PerformancePreset>(),
+                new HashSet<FanMode>(),
+                new HashSet<LightingEffect>(),
+                ChargeLimits(), true, true)));
+        await WaitUntilAsync(() => viewModel.CanControlHardware);
+        viewModel.ProfileChargeLimitEditor = 75;
+        AsyncRelayCommand save = Assert.IsType<AsyncRelayCommand>(viewModel.SaveProfilesCommand);
+
+        Assert.False(viewModel.IsProfileControlVisible);
+        Assert.True(save.CanExecute(null));
+        await save.ExecuteAsync(null);
+
+        Assert.NotNull(client.SavedProfiles);
+        Assert.Equal(75, client.SavedProfiles.BatteryPolicy.ChargeLimitPercent);
+        Assert.Equal(
+            ProfileDefaults.CreateSafeDefaults().PluggedIn,
+            client.SavedProfiles.PluggedIn);
+        Assert.Equal(
+            ProfileDefaults.CreateSafeDefaults().Battery,
+            client.SavedProfiles.Battery);
     }
 
     [Fact]
