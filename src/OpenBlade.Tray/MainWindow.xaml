@@ -4,7 +4,10 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:local="using:OpenBlade.Tray"
     Title="OpenBlade">
-    <Grid x:Name="Root" Padding="16" RowSpacing="10">
+    <Grid x:Name="Root"
+          Background="{ThemeResource ApplicationPageBackgroundThemeBrush}"
+          Padding="16"
+          RowSpacing="10">
         <Grid.Resources>
             <local:Int32DoubleConverter x:Key="Int32Double" />
             <local:BooleanNegationToVisibilityConverter x:Key="BooleanNegationToVisibility" />

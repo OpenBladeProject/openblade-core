@@ -102,6 +102,12 @@ public sealed class WinUiShellContractTests
         Assert.Contains("ThemeSelectionPolicy.Resolve", themeManager, StringComparison.Ordinal);
         Assert.Contains("root.RequestedTheme", themeManager, StringComparison.Ordinal);
 
+        string windowXaml = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml");
+        Assert.Contains(
+            "Background=\"{ThemeResource ApplicationPageBackgroundThemeBrush}\"",
+            windowXaml,
+            StringComparison.Ordinal);
+
         string appXaml = ReadRepositoryFile("src", "OpenBlade.Tray", "App.xaml");
         Assert.DoesNotContain("RequestedTheme", appXaml, StringComparison.Ordinal);
 
