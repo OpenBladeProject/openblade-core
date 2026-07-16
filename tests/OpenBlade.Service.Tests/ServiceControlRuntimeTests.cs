@@ -791,6 +791,40 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     }
 
     [Fact]
+    public async Task RealPowerTransition_FinalExternalFanChangeRemainsLatchedAndIsNotUnchanged()
+    {
+        TestContext context = CreateWritableContext();
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        context.Device.ConfirmedState = context.Device.ConfirmedState with
+        {
+            Performance = PerformancePreset.Performance,
+            Lighting = ProfileDefaults.CreateSafeDefaults().Battery.Lighting,
+        };
+        context.Device.AfterSetter = subsystem =>
+        {
+            if (subsystem == DeviceSubsystem.Performance)
+            {
+                context.Device.ConfirmedState = context.Device.ConfirmedState with
+                {
+                    Fans = FanMode.Maximum,
+                };
+            }
+        };
+        context.Telemetry.Current = CreateTelemetry(PowerSource.Battery);
+
+        await context.Runtime.HandlePowerSourceChangedAsync(CancellationToken.None);
+
+        Assert.Equal(FanMode.Maximum, context.Runtime.GetStatus().ConfirmedState!.Fans);
+        Assert.Equal([DeviceSubsystem.Fans], context.Runtime.GetStatus().ExternalChanges);
+        Assert.Equal(0, context.Device.FanSetCalls);
+        DiagnosticCommandResult fanResult = Assert.Single(
+            context.History.Snapshot().CommandResults,
+            result => result.Subsystem == "Fans");
+        Assert.Equal("Failed", fanResult.Status);
+        Assert.Contains("final", fanResult.Detail, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public async Task ScopedAction_RecordsOneSubsystemHistoryEntry()
     {
         TestContext context = CreateWritableContext();

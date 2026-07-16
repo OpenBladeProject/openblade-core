@@ -256,6 +256,8 @@ public sealed class ControlCoordinator
                     provisional[subsystem] = Indeterminate(states[subsystem].Name, exception);
                 }
 
+                matched.Clear();
+
                 return CreateFullOutcome(
                     provisional,
                     null,
@@ -265,17 +267,32 @@ public sealed class ControlCoordinator
                     DeviceAccessFailed: true);
             }
 
-            foreach (DeviceSubsystem subsystem in attempted)
+            matched.Clear();
+            foreach (DeviceSubsystem subsystem in OrderedSubsystems)
             {
                 PendingSubsystem pending = states[subsystem];
-                if (pending.Matches(final))
+                if (attempted.Contains(subsystem))
                 {
-                    provisional[subsystem] = Applied(pending.Name);
-                    matched.Add(subsystem);
+                    if (pending.Matches(final))
+                    {
+                        provisional[subsystem] = Applied(pending.Name);
+                        matched.Add(subsystem);
+                    }
+                    else
+                    {
+                        provisional[subsystem] = Indeterminate(pending.Name, null);
+                    }
                 }
-                else
+                else if (provisional[subsystem].Status == ControlResultStatus.Unchanged)
                 {
-                    provisional[subsystem] = Indeterminate(pending.Name, null);
+                    if (pending.Matches(final))
+                    {
+                        matched.Add(subsystem);
+                    }
+                    else
+                    {
+                        provisional[subsystem] = FinalReadbackChanged(pending.Name);
+                    }
                 }
             }
 
@@ -480,6 +497,10 @@ public sealed class ControlCoordinator
     private static ControlResult ReadFailure(string name, Exception exception) => new(
         ControlResultStatus.Failed,
         $"{name} could not be read before writing: {exception.Message}");
+
+    private static ControlResult FinalReadbackChanged(string name) => new(
+        ControlResultStatus.Failed,
+        $"{name} changed before the final aggregate readback; no {name.ToLowerInvariant()} setter was attempted.");
 
     private static ControlResult SubsequentWritesBlocked(string reason) => new(
         ControlResultStatus.Blocked,

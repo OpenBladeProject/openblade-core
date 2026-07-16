@@ -229,6 +229,32 @@ public sealed class ControlCoordinatorTests
     }
 
     [Fact]
+    public async Task ApplyDesiredState_InitiallyMatchingSubsystemMustMatchFinalAggregateReadback()
+    {
+        RecordingBladeDevice device = CreateMismatchedDevice();
+        device.State = device.State with { Fans = FanMode.Maximum };
+        device.AfterSetter = subsystem =>
+        {
+            if (subsystem == DeviceSubsystem.Performance)
+            {
+                device.State = device.State with { Fans = FanMode.Automatic };
+            }
+        };
+        var coordinator = new ControlCoordinator(device, new FakeHardwareAccessGuard([]));
+
+        SubsystemApplyResults results = await coordinator.ApplyDesiredStateAsync(
+            CreateDesiredState(),
+            CancellationToken.None);
+
+        Assert.Equal(ControlResultStatus.Applied, results.Performance.Status);
+        Assert.Equal(ControlResultStatus.Failed, results.Fans.Status);
+        Assert.Contains("final", results.Fans.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(0, device.FanSetCalls);
+        Assert.Equal(FanMode.Automatic, device.State.Fans);
+        Assert.Equal(2, device.StateReadCalls);
+    }
+
+    [Fact]
     public async Task ApplyDesiredState_TerminalSetterFailureStopsLaterWritesButStillReadsBackOnce()
     {
         RecordingBladeDevice device = CreateMismatchedDevice();
