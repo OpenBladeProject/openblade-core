@@ -6,6 +6,8 @@ public static class BatteryValidationFactory
     private static readonly TimeSpan DefaultCleanupDrainTimeout = TimeSpan.FromSeconds(5);
     private static readonly TimeSpan BatteryFeatureReportSettleDelay =
         TimeSpan.FromMilliseconds(20);
+    private static readonly TimeSpan TemporaryFullChargeValidationFeatureReportSettleDelay =
+        TimeSpan.FromMilliseconds(30);
 
     public static IBatteryValidationRunFactory CreateWindows()
     {
@@ -367,7 +369,8 @@ public static class BatteryValidationFactory
             featureIo,
             timeProvider,
             exchangeTimeout,
-            ControllerExclusivityPolicy.Strict);
+            ControllerExclusivityPolicy.Strict,
+            featureReportSettleDelay: TemporaryFullChargeValidationFeatureReportSettleDelay);
         return new TemporaryFullChargeValidationRunFactory(
             static () => new ValidationRunContext(),
             actorFactory,
@@ -451,7 +454,8 @@ public static class BatteryValidationFactory
         IHidFeatureIo featureIo,
         TimeProvider timeProvider,
         TimeSpan exchangeTimeout,
-        ControllerExclusivityPolicy exclusivityPolicy)
+        ControllerExclusivityPolicy exclusivityPolicy,
+        TimeSpan? featureReportSettleDelay = null)
     {
         ArgumentNullException.ThrowIfNull(registry);
         ArgumentNullException.ThrowIfNull(platform);
@@ -476,6 +480,6 @@ public static class BatteryValidationFactory
             timeProvider,
             exchangeTimeout,
             exclusivityPolicy,
-            BatteryFeatureReportSettleDelay);
+            featureReportSettleDelay ?? BatteryFeatureReportSettleDelay);
     }
 }

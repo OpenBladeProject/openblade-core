@@ -196,6 +196,58 @@ public sealed class BatteryValidationFactoryTests
     }
 
     [Fact]
+    public async Task CreateWindowsTemporaryFullChargeValidation_UsesThirtyMillisecondSettleAcrossAllEightExchanges()
+    {
+        var time = new ManualTimeProvider();
+        var io = new SuccessfulQueryIo(temporaryFullChargeValidation: true);
+        ITemporaryFullChargeValidationRunFactory factory =
+            BatteryValidationFactory.CreateWindowsTemporaryFullChargeValidation(
+                new ExactRegistryValueSource(),
+                new ExactPlatformEvidenceSource(),
+                new EmptyProcessSource(),
+                new EmptyServiceSource(),
+                new ExactHidCandidateNative(),
+                io,
+                time,
+                TimeSpan.FromSeconds(3),
+                TimeSpan.FromSeconds(5));
+        HidSessionResult<ITemporaryFullChargeValidationPort> opened =
+            await factory.OpenAsync(default);
+        await using ITemporaryFullChargeValidationPort port = opened.Value!;
+
+        Assert.Equal(BatteryValidationSetting.Limit80, (await CompleteSettledExchangeAsync(
+            1, () => port.QueryProtectionAsync(default), io, time, 30)).Value);
+        Assert.False((await CompleteSettledExchangeAsync(
+            2, () => port.QueryTemporaryFullChargeAsync(default), io, time, 30)).Value);
+        Assert.Null((await CompleteSettledExchangeAsync(
+            3, () => port.ApplyTemporaryFullChargeAsync(default), io, time, 30)).Failure);
+        Assert.Equal(BatteryValidationSetting.Limit80, (await CompleteSettledExchangeAsync(
+            4, () => port.QueryProtectionAsync(default), io, time, 30)).Value);
+        Assert.True((await CompleteSettledExchangeAsync(
+            5, () => port.QueryTemporaryFullChargeAsync(default), io, time, 30)).Value);
+        Assert.Null((await CompleteSettledExchangeAsync(
+            6, () => port.CancelTemporaryFullChargeAsync(default), io, time, 30)).Failure);
+        Assert.Equal(BatteryValidationSetting.Limit80, (await CompleteSettledExchangeAsync(
+            7, () => port.QueryProtectionAsync(default), io, time, 30)).Value);
+        Assert.False((await CompleteSettledExchangeAsync(
+            8, () => port.QueryTemporaryFullChargeAsync(default), io, time, 30)).Value);
+
+        Assert.Equal(
+            [
+                "1:07/92/00",
+                "2:07/8F/00",
+                "3:07/0F/04",
+                "4:07/92/00",
+                "5:07/8F/00",
+                "6:07/0F/00",
+                "7:07/92/00",
+                "8:07/8F/00",
+            ],
+            io.SetReports.Select(report =>
+                $"{report[1]}:{report[6]:X2}/{report[7]:X2}/{report[8]:X2}").ToArray());
+    }
+
+    [Fact]
     public async Task CreateWindows_ConfiguresTwentyMillisecondFeatureReportSettleForQuery()
     {
         var time = new ManualTimeProvider();
@@ -694,6 +746,7 @@ public sealed class BatteryValidationFactoryTests
             TaskCreationOptions.RunContinuationsAsynchronously);
         private readonly bool busyCandidateSet;
         private readonly bool protectionOffValidation;
+        private readonly bool temporaryFullChargeValidation;
         private readonly object sync = new();
         private byte[]? request;
 
@@ -701,10 +754,12 @@ public sealed class BatteryValidationFactoryTests
 
         public SuccessfulQueryIo(
             bool busyCandidateSet = false,
-            bool protectionOffValidation = false)
+            bool protectionOffValidation = false,
+            bool temporaryFullChargeValidation = false)
         {
             this.busyCandidateSet = busyCandidateSet;
             this.protectionOffValidation = protectionOffValidation;
+            this.temporaryFullChargeValidation = temporaryFullChargeValidation;
         }
 
         public int CallCount => Volatile.Read(ref callCount);
@@ -741,9 +796,11 @@ public sealed class BatteryValidationFactoryTests
                         source[7],
                         source[7] switch
                         {
+                            0x92 when temporaryFullChargeValidation => [0xD0],
                             0x92 when protectionOffValidation =>
                                 source[1] is 1 or 7 ? [0xD0] : [0x50],
                             0x92 => [0x50],
+                            0x8F when temporaryFullChargeValidation && source[1] == 5 => [0x04],
                             0x8F => [0x00],
                             _ => [source[8]],
                         }).Encode();
@@ -786,14 +843,15 @@ public sealed class BatteryValidationFactoryTests
         int exchangeNumber,
         Func<Task<HidSessionResult<T>>> start,
         SuccessfulQueryIo io,
-        ManualTimeProvider time)
+        ManualTimeProvider time,
+        int settleMilliseconds = 20)
     {
         Task<HidSessionResult<T>> exchange = start();
         int setCallCount = (exchangeNumber * 2) - 1;
         await io.WaitForCallsAsync(setCallCount);
         await time.WaitForTimerCountAsync(exchangeNumber * 2);
 
-        time.Advance(TimeSpan.FromMilliseconds(19));
+        time.Advance(TimeSpan.FromMilliseconds(settleMilliseconds - 1));
         await Task.Yield();
         Assert.Equal(setCallCount, io.CallCount);
         Assert.False(exchange.IsCompleted);

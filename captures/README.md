@@ -32,7 +32,7 @@ $pcap = 'C:\tmp\openblade-validation.pcap'
 $session = 'C:\tmp\openblade-validation.usbpcap.json'
 $capture = & .\captures\tools\Start-UsbPcapCapture.ps1 `
     -ExecutablePath 'C:\Program Files\USBPcap\USBPcapCMD.exe' `
-    -ArgumentList @('-d', '\\.\USBPcap3', '-A', '2', '-s', '65535', '-o', $pcap) `
+    -ArgumentList @('-d', '\\.\USBPcap3', '--devices', '2', '--inject-descriptors', '-s', '65535', '-o', $pcap) `
     -OutputPath $pcap `
     -SessionPath $session
 
