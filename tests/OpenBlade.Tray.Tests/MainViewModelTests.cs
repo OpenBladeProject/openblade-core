@@ -397,6 +397,34 @@ public sealed class MainViewModelTests
     }
 
     [Fact]
+    public async Task UnchangedChargeLimitCapabilities_PreserveItemsSourceAcrossStatusEvents()
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        ServiceStatusSnapshot initial = CreateStatus(
+            verified: true,
+            blocked: false,
+            capabilities: DeviceCapabilities.SafeTargetDefaults() with
+            {
+                ChargeLimits = ChargeLimits(),
+            });
+        client.Publish(initial);
+        await WaitUntilAsync(() => viewModel.IsConnected);
+        IReadOnlyList<int> originalOptions = viewModel.ChargeLimitOptions;
+
+        client.Publish(initial with
+        {
+            Revision = initial.Revision + 1,
+            Message = "Charge limit is already confirmed.",
+        });
+        await WaitUntilAsync(() =>
+            viewModel.ConnectionStatus == "Charge limit is already confirmed.");
+
+        Assert.Same(originalOptions, viewModel.ChargeLimitOptions);
+    }
+
+    [Fact]
     public async Task Status_RendersUnavailableSensorsAndActiveOverrideSources()
     {
         var client = new FakeServiceClient();

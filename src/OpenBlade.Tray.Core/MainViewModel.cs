@@ -769,9 +769,13 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         DeviceCapabilities capabilities = status.Capabilities
             ?? DeviceCapabilities.Unavailable();
         Capabilities = capabilities;
-        ChargeLimitOptions = HasBatteryCapability(capabilities)
+        int[] chargeLimits = HasBatteryCapability(capabilities)
             ? capabilities.ChargeLimits.Order().ToArray()
             : [];
+        if (!ChargeLimitOptions.SequenceEqual(chargeLimits))
+        {
+            ChargeLimitOptions = chargeLimits;
+        }
         ConfirmedDeviceState? confirmed = status.ConfirmedState;
         SelectedPerformance = confirmed?.Performance ?? status.DesiredState.Performance.Value;
         SelectedFanMode = confirmed?.Fans ?? status.DesiredState.Fans.Value;
