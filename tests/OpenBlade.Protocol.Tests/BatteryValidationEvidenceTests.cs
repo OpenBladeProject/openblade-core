@@ -114,35 +114,51 @@ public sealed class BatteryValidationEvidenceTests
     }
 
     [Fact]
-    public void Evidence_PreservesHistoricalBoundaryAndRecordsCurrentNarrowAdmission()
+    public void Evidence_PreservesHistoricalBoundaryAndRecordsCurrentBatteryAdmission()
     {
         using JsonDocument document = LoadEvidence();
         JsonElement root = document.RootElement;
         JsonElement boundary = root.GetProperty("batteryValidationEvidence")
             .GetProperty("historicalAdmissionBoundaryAfterLimit80Validation");
         JsonElement admission = root.GetProperty("admission");
-        JsonElement limit80 = root.GetProperty("actions")
+        JsonElement[] limits = root.GetProperty("actions")
             .EnumerateArray()
-            .Single(action => action.GetProperty("action").GetString() == "battery-limit-80")
-            .GetProperty("gates");
+            .Where(action => action.GetProperty("action").GetString() is string name
+                && name.StartsWith("battery-limit-", StringComparison.Ordinal))
+            .ToArray();
 
-        Assert.True(limit80.GetProperty("captured").GetBoolean());
-        Assert.True(limit80.GetProperty("decoded").GetBoolean());
-        Assert.True(limit80.GetProperty("applied").GetBoolean());
-        Assert.True(limit80.GetProperty("readBack").GetBoolean());
-        Assert.True(limit80.GetProperty("restored").GetBoolean());
+        Assert.Equal(7, limits.Length);
+        foreach (JsonElement limit in limits)
+        {
+            JsonElement gates = limit.GetProperty("gates");
+            Assert.True(gates.GetProperty("captured").GetBoolean());
+            Assert.True(gates.GetProperty("decoded").GetBoolean());
+            Assert.True(gates.GetProperty("applied").GetBoolean());
+            Assert.True(gates.GetProperty("readBack").GetBoolean());
+            Assert.True(gates.GetProperty("restored").GetBoolean());
+        }
         Assert.False(boundary.GetProperty("productionBatteryWriteAdmissionChanged").GetBoolean());
         Assert.False(boundary.GetProperty("limit80WriteAuthorizedInProduction").GetBoolean());
         Assert.False(boundary.GetProperty("otherBatteryLimitsAuthorizedInProduction").GetBoolean());
         Assert.False(boundary.GetProperty("fullChargeOverrideAuthorizedInProduction").GetBoolean());
         Assert.True(admission.GetProperty("productionHashAdded").GetBoolean());
         Assert.Equal(
-            ["battery-limit-80", "battery-protection-off", "temporary-full-charge-query"],
+            [
+                "battery-limit-50",
+                "battery-limit-55",
+                "battery-limit-60",
+                "battery-limit-65",
+                "battery-limit-70",
+                "battery-limit-75",
+                "battery-limit-80",
+                "battery-protection-off",
+                "temporary-full-charge-query",
+            ],
             admission.GetProperty("authorizedActions").EnumerateArray().Select(value => value.GetString()));
         Assert.Contains(
             "temporary-full-charge-enable",
             admission.GetProperty("unauthorizedActions").EnumerateArray().Select(value => value.GetString()));
-        Assert.Contains(
+        Assert.DoesNotContain(
             "other-battery-limits",
             admission.GetProperty("unauthorizedActions").EnumerateArray().Select(value => value.GetString()));
         Assert.False(TrustedFixtureHashRegistry.Production.Contains(Convert.FromHexString(SameCandidateHash)));

@@ -16,8 +16,25 @@ public sealed class ProductionFixtureSourceTests
         DeviceCommandCatalog catalog = CapturedFixtureFile.LoadCatalog(
             fixture.Value,
             TrustedFixtureHashRegistry.Production);
-        Assert.True(catalog.TryGet(ProductionBatteryPort.Limit80Action, out _));
-        Assert.True(catalog.TryGet(ProductionBatteryPort.ProtectionOffAction, out _));
+        var expected = new Dictionary<string, byte>
+        {
+            [ProductionBatteryPort.Limit50Action] = 0xB2,
+            [ProductionBatteryPort.Limit55Action] = 0xB7,
+            [ProductionBatteryPort.Limit60Action] = 0xBC,
+            [ProductionBatteryPort.Limit65Action] = 0xC1,
+            [ProductionBatteryPort.Limit70Action] = 0xC6,
+            [ProductionBatteryPort.Limit75Action] = 0xCB,
+            [ProductionBatteryPort.Limit80Action] = 0xD0,
+            [ProductionBatteryPort.ProtectionOffAction] = 0x50,
+        };
+        foreach ((string action, byte payload) in expected)
+        {
+            Assert.True(catalog.TryGet(action, out RazerCommandDefinition? command));
+            Assert.NotNull(command);
+            Assert.Equal((0x07, 0x12), (command.CommandClass, command.CommandId));
+            Assert.Equal([payload], command.Payload.ToArray());
+        }
+
         Assert.False(catalog.TryGet(ProductionBatteryPort.TemporaryEnableAction, out _));
         Assert.False(catalog.TryGet(ProductionBatteryPort.TemporaryCancelAction, out _));
     }

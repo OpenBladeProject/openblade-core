@@ -59,6 +59,90 @@ public sealed class ProductionBatteryEvidenceFixtureTests
         }
     }
 
+    [Fact]
+    public void BatteryLimitEvidence_ValidatesEveryApplyReadbackAndLimit80Restoration()
+    {
+        using JsonDocument document = ReadFixture(
+            "rz09-0581-pid-02e0-bios-3.01-battery-limits-validation-fixture.json");
+        JsonElement root = document.RootElement;
+
+        AssertTarget(root);
+        Assert.True(root.GetProperty("productionWired").GetBoolean());
+        JsonElement validation = root.GetProperty("validation");
+        Assert.Equal(30, validation.GetProperty("requestCount").GetInt32());
+        Assert.Equal(30, validation.GetProperty("responseCount").GetInt32());
+        Assert.Equal(18, validation.GetProperty("protectionQueryCount").GetInt32());
+        Assert.Equal(12, validation.GetProperty("batterySetterCount").GetInt32());
+        Assert.Equal(0, validation.GetProperty("unexpected90ByteCommandCount").GetInt32());
+        Assert.Equal(21.689m, validation.GetProperty("minimumSetCompletionToQueryMilliseconds").GetDecimal());
+        Assert.True(validation.GetProperty("allEnvelopeLengths90").GetBoolean());
+        Assert.True(validation.GetProperty("allTransactionsMatched").GetBoolean());
+        Assert.True(validation.GetProperty("allStatusesSuccessful").GetBoolean());
+        Assert.True(validation.GetProperty("allChecksumsValid").GetBoolean());
+        Assert.Equal(
+            ["Limit75", "Limit70", "Limit65", "Limit60", "Limit55", "Limit50"],
+            validation.GetProperty("candidateOrder").EnumerateArray()
+                .Select(value => value.GetString()));
+
+        JsonElement[] cycles = root.GetProperty("cycles").EnumerateArray().ToArray();
+        Assert.Equal(6, cycles.Length);
+        Assert.Equal(30, cycles.Sum(cycle => cycle.GetProperty("exchanges").GetArrayLength()));
+        int queryCount = 0;
+        int setterCount = 0;
+        foreach (JsonElement cycle in cycles)
+        {
+            Assert.Equal("Limit80", cycle.GetProperty("baseline").GetString());
+            Assert.Equal(cycle.GetProperty("candidate").GetString(), cycle.GetProperty("readBack").GetString());
+            Assert.Equal("Limit80", cycle.GetProperty("restoredTo").GetString());
+            Assert.True(cycle.GetProperty("applied").GetBoolean());
+            Assert.True(cycle.GetProperty("restored").GetBoolean());
+            Assert.True(cycle.GetProperty("success").GetBoolean());
+
+            string candidatePayload = Convert.ToHexString(
+                [BatteryValidationProtocol.Encode(Enum.Parse<BatteryValidationSetting>(
+                    cycle.GetProperty("candidate").GetString()!))]);
+            JsonElement[] exchanges = cycle.GetProperty("exchanges").EnumerateArray().ToArray();
+            Assert.Equal(
+                [
+                    "baseline-protection-query",
+                    $"apply-limit-{cycle.GetProperty("candidatePercent").GetInt32()}",
+                    "candidate-protection-query",
+                    "restore-limit-80",
+                    "restoration-protection-query",
+                ],
+                exchanges.Select(exchange => exchange.GetProperty("phase").GetString()));
+            Assert.Equal(
+                ["07/92", "07/12", "07/92", "07/12", "07/92"],
+                exchanges.Select(exchange => exchange.GetProperty("command").GetString()));
+            Assert.Equal(
+                ["D0", candidatePayload, candidatePayload, "D0", "D0"],
+                exchanges.Select(exchange => exchange.GetProperty("expectedResponsePayloadHex").GetString()));
+
+            foreach (JsonElement exchange in exchanges)
+            {
+                switch (exchange.GetProperty("command").GetString())
+                {
+                    case "07/92":
+                        queryCount++;
+                        break;
+                    case "07/12":
+                        setterCount++;
+                        break;
+                    default:
+                        Assert.Fail("The battery validation fixture contains an unexpected command.");
+                        break;
+                }
+
+                byte[] expected = Convert.FromHexString(
+                    exchange.GetProperty("expectedResponsePayloadHex").GetString()!);
+                AssertExchange(exchange, expected);
+            }
+        }
+
+        Assert.Equal(validation.GetProperty("protectionQueryCount").GetInt32(), queryCount);
+        Assert.Equal(validation.GetProperty("batterySetterCount").GetInt32(), setterCount);
+    }
+
     private static void AssertExchange(JsonElement exchange, byte[] expectedPayload)
     {
         byte[] requestEnvelope = Convert.FromHexString(

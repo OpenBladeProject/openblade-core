@@ -32,21 +32,31 @@ public sealed class ProductionBatteryPortTests
         Assert.Equal((0x07, 0x92), (session.Commands[0].ClassId, session.Commands[0].CommandId));
     }
 
-    [Fact]
-    public async Task Limit80Catalog_ExposesOnly80AndResolvesExactTrustedAction()
+    [Theory]
+    [InlineData(50, "battery-limit-50", 0xB2)]
+    [InlineData(55, "battery-limit-55", 0xB7)]
+    [InlineData(60, "battery-limit-60", 0xBC)]
+    [InlineData(65, "battery-limit-65", 0xC1)]
+    [InlineData(70, "battery-limit-70", 0xC6)]
+    [InlineData(75, "battery-limit-75", 0xCB)]
+    [InlineData(80, "battery-limit-80", 0xD0)]
+    public async Task AdmittedLimitCatalog_ExposesAndResolvesExactTrustedAction(
+        int limit,
+        string action,
+        int payload)
     {
         DeviceCommandCatalog catalog = Catalog(
-            Fixture(ProductionBatteryPort.Limit80Action, 0x07, 0x12, [0xD0]));
-        var session = new ScriptedSession(Success([0xD0]));
+            Fixture(action, 0x07, 0x12, [(byte)payload]));
+        var session = new ScriptedSession(Success([(byte)payload]));
         await using var port = CreatePort(session, catalog);
 
-        Assert.Equal([80], port.Capabilities.ChargeLimits);
+        Assert.Equal([limit], port.Capabilities.ChargeLimits);
 
-        await port.SetChargeLimitAsync(80, default);
+        await port.SetChargeLimitAsync(limit, default);
 
         RazerCommandSpec command = Assert.Single(session.Commands);
         Assert.Equal((0x07, 0x12), (command.ClassId, command.CommandId));
-        Assert.Equal([0xD0], command.Arguments.ToArray());
+        Assert.Equal([(byte)payload], command.Arguments.ToArray());
     }
 
     [Fact]
@@ -84,7 +94,24 @@ public sealed class ProductionBatteryPortTests
     [InlineData(65)]
     [InlineData(70)]
     [InlineData(75)]
-    public async Task UnadmittedLimitsAlwaysRejectWithoutSubmission(int limit)
+    [InlineData(80)]
+    public async Task MissingAdmittedLimitActionRejectsWithoutSubmission(int limit)
+    {
+        var session = new ScriptedSession();
+        await using var port = CreatePort(session, DeviceCommandCatalog.Empty);
+
+        BladeWriteException error = await Assert.ThrowsAsync<BladeWriteException>(
+            () => port.SetChargeLimitAsync(limit, default));
+
+        Assert.Equal(WriteSubmissionState.KnownNotApplied, error.SubmissionState);
+        Assert.Empty(session.Commands);
+        Assert.Empty(port.Capabilities.ChargeLimits);
+    }
+
+    [Theory]
+    [InlineData(45)]
+    [InlineData(85)]
+    public async Task InvalidLimitRejectsWithoutSubmissionEvenIfNamedActionIsInjected(int limit)
     {
         var session = new ScriptedSession();
         await using var port = CreatePort(

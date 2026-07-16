@@ -139,6 +139,14 @@
       "frameCount": 98,
       "firstEpoch": "1784101756.209719000",
       "lastEpoch": "1784101801.217561000"
+    },
+    {
+      "id": "battery-limits-reversible-validation",
+      "fileName": "openblade-battery-limits-validation-20260716.pcap",
+      "sha256": "78021A61ED560F82F5C6C20D53799A1689AF28B8C4867728BB9D90ED379F422A",
+      "bytes": 24968,
+      "frameCount": 420,
+      "minimumSetCompletionToQueryMilliseconds": 21.689
     }
   ],
   "frameProvenance": {
@@ -264,37 +272,43 @@
       "action": "battery-limit-50",
       "commands": [{ "class": "07", "id": "12", "payloadHex": "B2", "expectedStatus": "02", "expectedPayloadHex": "B2" }],
       "readbackCommand": { "class": "07", "id": "92", "payloadHex": "00", "responseEncoding": "enabled-bit OR percentage" },
-      "gates": { "captured": true, "decoded": true, "applied": false, "readBack": false, "restored": false }
+      "onlineEvidence": { "fixture": "rz09-0581-pid-02e0-bios-3.01-battery-limits-validation-fixture.json", "baseline": "Limit80", "candidate": "Limit50", "restoredTo": "Limit80" },
+      "gates": { "captured": true, "decoded": true, "applied": true, "readBack": true, "restored": true }
     },
     {
       "action": "battery-limit-55",
       "commands": [{ "class": "07", "id": "12", "payloadHex": "B7", "expectedStatus": "02", "expectedPayloadHex": "B7" }],
       "readbackCommand": { "class": "07", "id": "92", "payloadHex": "00", "responseEncoding": "enabled-bit OR percentage" },
-      "gates": { "captured": true, "decoded": true, "applied": false, "readBack": false, "restored": false }
+      "onlineEvidence": { "fixture": "rz09-0581-pid-02e0-bios-3.01-battery-limits-validation-fixture.json", "baseline": "Limit80", "candidate": "Limit55", "restoredTo": "Limit80" },
+      "gates": { "captured": true, "decoded": true, "applied": true, "readBack": true, "restored": true }
     },
     {
       "action": "battery-limit-60",
       "commands": [{ "class": "07", "id": "12", "payloadHex": "BC", "expectedStatus": "02", "expectedPayloadHex": "BC" }],
       "readbackCommand": { "class": "07", "id": "92", "payloadHex": "00", "responseEncoding": "enabled-bit OR percentage" },
-      "gates": { "captured": true, "decoded": true, "applied": false, "readBack": false, "restored": false }
+      "onlineEvidence": { "fixture": "rz09-0581-pid-02e0-bios-3.01-battery-limits-validation-fixture.json", "baseline": "Limit80", "candidate": "Limit60", "restoredTo": "Limit80" },
+      "gates": { "captured": true, "decoded": true, "applied": true, "readBack": true, "restored": true }
     },
     {
       "action": "battery-limit-65",
       "commands": [{ "class": "07", "id": "12", "payloadHex": "C1", "expectedStatus": "02", "expectedPayloadHex": "C1" }],
       "readbackCommand": { "class": "07", "id": "92", "payloadHex": "00", "responseEncoding": "enabled-bit OR percentage" },
-      "gates": { "captured": true, "decoded": true, "applied": false, "readBack": false, "restored": false }
+      "onlineEvidence": { "fixture": "rz09-0581-pid-02e0-bios-3.01-battery-limits-validation-fixture.json", "baseline": "Limit80", "candidate": "Limit65", "restoredTo": "Limit80" },
+      "gates": { "captured": true, "decoded": true, "applied": true, "readBack": true, "restored": true }
     },
     {
       "action": "battery-limit-70",
       "commands": [{ "class": "07", "id": "12", "payloadHex": "C6", "expectedStatus": "02", "expectedPayloadHex": "C6" }],
       "readbackCommand": { "class": "07", "id": "92", "payloadHex": "00", "responseEncoding": "enabled-bit OR percentage" },
-      "gates": { "captured": true, "decoded": true, "applied": false, "readBack": false, "restored": false }
+      "onlineEvidence": { "fixture": "rz09-0581-pid-02e0-bios-3.01-battery-limits-validation-fixture.json", "baseline": "Limit80", "candidate": "Limit70", "restoredTo": "Limit80" },
+      "gates": { "captured": true, "decoded": true, "applied": true, "readBack": true, "restored": true }
     },
     {
       "action": "battery-limit-75",
       "commands": [{ "class": "07", "id": "12", "payloadHex": "CB", "expectedStatus": "02", "expectedPayloadHex": "CB" }],
       "readbackCommand": { "class": "07", "id": "92", "payloadHex": "00", "responseEncoding": "enabled-bit OR percentage" },
-      "gates": { "captured": true, "decoded": true, "applied": false, "readBack": false, "restored": false }
+      "onlineEvidence": { "fixture": "rz09-0581-pid-02e0-bios-3.01-battery-limits-validation-fixture.json", "baseline": "Limit80", "candidate": "Limit75", "restoredTo": "Limit80" },
+      "gates": { "captured": true, "decoded": true, "applied": true, "readBack": true, "restored": true }
     },
     {
       "action": "battery-limit-80",
@@ -858,8 +872,8 @@
   ],
   "admission": {
     "productionHashAdded": true,
-    "authorizedActions": ["battery-limit-80", "battery-protection-off", "temporary-full-charge-query"],
-    "unauthorizedActions": ["other-battery-limits", "temporary-full-charge-enable", "temporary-full-charge-cancel", "performance", "fan-mode", "lighting"],
-    "reason": "Limit80 and ProtectionOff passed typed OpenBlade application, independent query/readback, restoration, command-isolation, and timing gates. Five setter-free temporary-full-charge queries also passed exact USBPcap validation. Only those reviewed bytes and the read-only query are admitted."
+    "authorizedActions": ["battery-limit-50", "battery-limit-55", "battery-limit-60", "battery-limit-65", "battery-limit-70", "battery-limit-75", "battery-limit-80", "battery-protection-off", "temporary-full-charge-query"],
+    "unauthorizedActions": ["temporary-full-charge-enable", "temporary-full-charge-cancel", "performance", "fan-mode", "lighting"],
+    "reason": "Every 50-80% limit and ProtectionOff passed typed OpenBlade application, independent query/readback, restoration, command-isolation, and timing gates. Five setter-free temporary-full-charge queries also passed exact USBPcap validation. Only those reviewed bytes and the read-only query are admitted."
   }
 }

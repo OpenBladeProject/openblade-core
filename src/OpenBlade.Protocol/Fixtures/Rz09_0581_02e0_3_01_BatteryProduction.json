@@ -6,6 +6,108 @@
       "productId": 736,
       "biosVersion": "3.01"
     },
+    "action": "battery-limit-50",
+    "commandClass": 7,
+    "commandId": 18,
+    "payload": "sg==",
+    "captured": true,
+    "decoded": true,
+    "applied": true,
+    "readBack": true,
+    "restored": true
+  },
+  {
+    "device": {
+      "model": "RZ09-0581",
+      "vendorId": 5426,
+      "productId": 736,
+      "biosVersion": "3.01"
+    },
+    "action": "battery-limit-55",
+    "commandClass": 7,
+    "commandId": 18,
+    "payload": "tw==",
+    "captured": true,
+    "decoded": true,
+    "applied": true,
+    "readBack": true,
+    "restored": true
+  },
+  {
+    "device": {
+      "model": "RZ09-0581",
+      "vendorId": 5426,
+      "productId": 736,
+      "biosVersion": "3.01"
+    },
+    "action": "battery-limit-60",
+    "commandClass": 7,
+    "commandId": 18,
+    "payload": "vA==",
+    "captured": true,
+    "decoded": true,
+    "applied": true,
+    "readBack": true,
+    "restored": true
+  },
+  {
+    "device": {
+      "model": "RZ09-0581",
+      "vendorId": 5426,
+      "productId": 736,
+      "biosVersion": "3.01"
+    },
+    "action": "battery-limit-65",
+    "commandClass": 7,
+    "commandId": 18,
+    "payload": "wQ==",
+    "captured": true,
+    "decoded": true,
+    "applied": true,
+    "readBack": true,
+    "restored": true
+  },
+  {
+    "device": {
+      "model": "RZ09-0581",
+      "vendorId": 5426,
+      "productId": 736,
+      "biosVersion": "3.01"
+    },
+    "action": "battery-limit-70",
+    "commandClass": 7,
+    "commandId": 18,
+    "payload": "xg==",
+    "captured": true,
+    "decoded": true,
+    "applied": true,
+    "readBack": true,
+    "restored": true
+  },
+  {
+    "device": {
+      "model": "RZ09-0581",
+      "vendorId": 5426,
+      "productId": 736,
+      "biosVersion": "3.01"
+    },
+    "action": "battery-limit-75",
+    "commandClass": 7,
+    "commandId": 18,
+    "payload": "yw==",
+    "captured": true,
+    "decoded": true,
+    "applied": true,
+    "readBack": true,
+    "restored": true
+  },
+  {
+    "device": {
+      "model": "RZ09-0581",
+      "vendorId": 5426,
+      "productId": 736,
+      "biosVersion": "3.01"
+    },
     "action": "battery-limit-80",
     "commandClass": 7,
     "commandId": 18,

@@ -4,6 +4,12 @@ namespace OpenBlade.Protocol;
 
 internal sealed class ProductionBatteryPort : IProductionBatteryPort
 {
+    internal const string Limit50Action = "battery-limit-50";
+    internal const string Limit55Action = "battery-limit-55";
+    internal const string Limit60Action = "battery-limit-60";
+    internal const string Limit65Action = "battery-limit-65";
+    internal const string Limit70Action = "battery-limit-70";
+    internal const string Limit75Action = "battery-limit-75";
     internal const string Limit80Action = "battery-limit-80";
     internal const string ProtectionOffAction = "battery-protection-off";
     internal const string TemporaryEnableAction = "charge-to-100-enable";
@@ -126,13 +132,14 @@ internal sealed class ProductionBatteryPort : IProductionBatteryPort
 
     public Task SetChargeLimitAsync(int percent, CancellationToken cancellationToken)
     {
-        if (percent != 80)
+        string? action = ChargeLimitAction(percent);
+        if (action is null)
         {
             return Task.FromException(KnownNotApplied(
                 $"Charge limit {percent}% is not admitted for production use."));
         }
 
-        return ExecuteSetterAsync(Limit80Action, cancellationToken);
+        return ExecuteSetterAsync(action, cancellationToken);
     }
 
     public Task SetProtectionOffAsync(CancellationToken cancellationToken)
@@ -188,9 +195,12 @@ internal sealed class ProductionBatteryPort : IProductionBatteryPort
         ProductionBatteryReadEvidence readEvidence)
     {
         var limits = new HashSet<int>();
-        if (catalog.TryGet(Limit80Action, out _))
+        foreach ((int percent, string action) in ChargeLimitActions)
         {
-            limits.Add(80);
+            if (catalog.TryGet(action, out _))
+            {
+                limits.Add(percent);
+            }
         }
 
         bool protectionOff = readEvidence.SupportsTemporaryFullChargeQuery
@@ -202,6 +212,30 @@ internal sealed class ProductionBatteryPort : IProductionBatteryPort
             limits,
             protectionOff,
             SupportsTemporaryFullCharge: false);
+    }
+
+    private static readonly (int Percent, string Action)[] ChargeLimitActions =
+    [
+        (50, Limit50Action),
+        (55, Limit55Action),
+        (60, Limit60Action),
+        (65, Limit65Action),
+        (70, Limit70Action),
+        (75, Limit75Action),
+        (80, Limit80Action),
+    ];
+
+    private static string? ChargeLimitAction(int percent)
+    {
+        foreach ((int admittedPercent, string action) in ChargeLimitActions)
+        {
+            if (admittedPercent == percent)
+            {
+                return action;
+            }
+        }
+
+        return null;
     }
 
     private async Task ExecuteSetterAsync(
