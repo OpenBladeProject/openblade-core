@@ -569,10 +569,6 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         {
             throw;
         }
-        catch (Exception)
-        {
-            // The permanent subscription exclusively owns connection state.
-        }
     }
 
     private readonly record struct ObservationRequestStamp(

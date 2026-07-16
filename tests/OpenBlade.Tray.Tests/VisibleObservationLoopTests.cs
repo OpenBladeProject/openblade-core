@@ -119,6 +119,7 @@ public sealed class VisibleObservationLoopTests
     {
         var delay = new ManualDelay();
         var disposalRelease = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var errors = new List<Exception>();
         int calls = 0;
         await using var loop = new VisibleObservationLoop(
             async token =>
@@ -141,12 +142,15 @@ public sealed class VisibleObservationLoopTests
                     }
                 }
             },
-            delay.WaitAsync);
+            delay.WaitAsync,
+            errors.Add);
 
         loop.StartOrWake();
         await WaitUntilAsync(() => calls == 1 && delay.WaitingCount == 1);
         delay.CompleteNext();
         await WaitUntilAsync(() => calls == 2);
+        IOException error = Assert.IsType<IOException>(Assert.Single(errors));
+        Assert.Equal("transient", error.Message);
 
         ValueTask disposal = loop.DisposeAsync();
         ValueTask concurrentDisposal = loop.DisposeAsync();

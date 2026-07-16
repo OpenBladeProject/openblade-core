@@ -211,8 +211,9 @@ public sealed class MainViewModelTests
         await WaitUntilAsync(() => viewModel.ConnectionStatus == "restarted service");
 
         observation.TrySetException(new IOException("stale direct failure"));
-        await direct;
+        IOException error = await Assert.ThrowsAsync<IOException>(() => direct);
 
+        Assert.Equal("stale direct failure", error.Message);
         Assert.True(viewModel.IsConnected);
         Assert.Equal("restarted service", viewModel.ConnectionStatus);
     }
@@ -245,8 +246,9 @@ public sealed class MainViewModelTests
             && viewModel.SelectedPerformance == PerformancePreset.Performance);
 
         observation.TrySetException(new IOException("direct observation failed"));
-        await direct;
+        IOException error = await Assert.ThrowsAsync<IOException>(() => direct);
 
+        Assert.Equal("direct observation failed", error.Message);
         Assert.True(viewModel.IsConnected);
         Assert.Equal("subscription revision eight", viewModel.ConnectionStatus);
         Assert.Equal(PerformancePreset.Performance, viewModel.SelectedPerformance);
@@ -270,7 +272,8 @@ public sealed class MainViewModelTests
         Task failedDirect = viewModel.ObserveStateAsync(CancellationToken.None);
         await client.ObservationStarted.Task.WaitAsync(TimeSpan.FromSeconds(2));
         failure.TrySetException(new IOException("temporary observation failure"));
-        await failedDirect;
+        IOException error = await Assert.ThrowsAsync<IOException>(() => failedDirect);
+        Assert.Equal("temporary observation failure", error.Message);
 
         var recovery = new TaskCompletionSource<ServiceStatusSnapshot>(TaskCreationOptions.RunContinuationsAsynchronously);
         client.PendingObservation = recovery;
