@@ -7,7 +7,7 @@ public sealed class ProductionBatteryFactory : IProductionBatteryPortFactory
     private static readonly TimeSpan DefaultExchangeTimeout = TimeSpan.FromSeconds(3);
     private static readonly TimeSpan DefaultCleanupDrainTimeout = TimeSpan.FromSeconds(5);
     private static readonly TimeSpan BatteryFeatureReportSettleDelay =
-        TimeSpan.FromMilliseconds(20);
+        TimeSpan.FromMilliseconds(30);
 
     private readonly DeviceCommandCatalog catalog;
     private readonly ProductionBatteryReadEvidence readEvidence;

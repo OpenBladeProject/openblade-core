@@ -127,24 +127,71 @@ public sealed class ProductionBatteryPortTests
     }
 
     [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public async Task TemporarySetterAlwaysRejectsEvenIfNamedActionsAreInjected(bool enabled)
+    [InlineData(false, 0x00)]
+    [InlineData(true, 0x04)]
+    public async Task AdmittedTemporarySetterResolvesExactTrustedAction(
+        bool enabled,
+        byte payload)
     {
         DeviceCommandCatalog catalog = Catalog(
             Fixture(ProductionBatteryPort.TemporaryEnableAction, 0x07, 0x0F, [0x04]),
             Fixture(ProductionBatteryPort.TemporaryCancelAction, 0x07, 0x0F, [0x00]));
-        var session = new ScriptedSession();
+        var session = new ScriptedSession(Success([payload]));
         await using var port = CreatePort(
             session,
             catalog,
             AcceptedTemporaryReadEvidence());
 
-        BladeWriteException error = await Assert.ThrowsAsync<BladeWriteException>(
-            () => port.SetTemporaryFullChargeAsync(enabled, default));
+        Assert.True(port.Capabilities.SupportsTemporaryFullCharge);
+        await port.SetTemporaryFullChargeAsync(enabled, default);
 
-        Assert.Equal(WriteSubmissionState.KnownNotApplied, error.SubmissionState);
+        RazerCommandSpec command = Assert.Single(session.Commands);
+        Assert.Equal((0x07, 0x0F), (command.ClassId, command.CommandId));
+        Assert.Equal([payload], command.Arguments.ToArray());
+    }
+
+    [Theory]
+    [InlineData(false, true, true)]
+    [InlineData(true, false, true)]
+    [InlineData(true, true, false)]
+    public async Task TemporarySetterRequiresReadEvidenceAndBothDirections(
+        bool hasReadEvidence,
+        bool hasEnable,
+        bool hasCancel)
+    {
+        var fixtures = new List<CapturedCommandFixture>();
+        if (hasEnable)
+        {
+            fixtures.Add(Fixture(
+                ProductionBatteryPort.TemporaryEnableAction,
+                0x07,
+                0x0F,
+                [0x04]));
+        }
+
+        if (hasCancel)
+        {
+            fixtures.Add(Fixture(
+                ProductionBatteryPort.TemporaryCancelAction,
+                0x07,
+                0x0F,
+                [0x00]));
+        }
+
+        var session = new ScriptedSession();
+        await using var port = CreatePort(
+            session,
+            Catalog(fixtures.ToArray()),
+            hasReadEvidence ? AcceptedTemporaryReadEvidence() : NoTemporaryReadEvidence());
+
         Assert.False(port.Capabilities.SupportsTemporaryFullCharge);
+        foreach (bool enabled in new[] { false, true })
+        {
+            BladeWriteException error = await Assert.ThrowsAsync<BladeWriteException>(
+                () => port.SetTemporaryFullChargeAsync(enabled, default));
+            Assert.Equal(WriteSubmissionState.KnownNotApplied, error.SubmissionState);
+        }
+
         Assert.Empty(session.Commands);
     }
 

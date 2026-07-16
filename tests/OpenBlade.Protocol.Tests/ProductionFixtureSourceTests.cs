@@ -16,27 +16,26 @@ public sealed class ProductionFixtureSourceTests
         DeviceCommandCatalog catalog = CapturedFixtureFile.LoadCatalog(
             fixture.Value,
             TrustedFixtureHashRegistry.Production);
-        var expected = new Dictionary<string, byte>
+        var expected = new Dictionary<string, (byte CommandId, byte Payload)>
         {
-            [ProductionBatteryPort.Limit50Action] = 0xB2,
-            [ProductionBatteryPort.Limit55Action] = 0xB7,
-            [ProductionBatteryPort.Limit60Action] = 0xBC,
-            [ProductionBatteryPort.Limit65Action] = 0xC1,
-            [ProductionBatteryPort.Limit70Action] = 0xC6,
-            [ProductionBatteryPort.Limit75Action] = 0xCB,
-            [ProductionBatteryPort.Limit80Action] = 0xD0,
-            [ProductionBatteryPort.ProtectionOffAction] = 0x50,
+            [ProductionBatteryPort.Limit50Action] = (0x12, 0xB2),
+            [ProductionBatteryPort.Limit55Action] = (0x12, 0xB7),
+            [ProductionBatteryPort.Limit60Action] = (0x12, 0xBC),
+            [ProductionBatteryPort.Limit65Action] = (0x12, 0xC1),
+            [ProductionBatteryPort.Limit70Action] = (0x12, 0xC6),
+            [ProductionBatteryPort.Limit75Action] = (0x12, 0xCB),
+            [ProductionBatteryPort.Limit80Action] = (0x12, 0xD0),
+            [ProductionBatteryPort.ProtectionOffAction] = (0x12, 0x50),
+            [ProductionBatteryPort.TemporaryEnableAction] = (0x0F, 0x04),
+            [ProductionBatteryPort.TemporaryCancelAction] = (0x0F, 0x00),
         };
-        foreach ((string action, byte payload) in expected)
+        foreach ((string action, (byte commandId, byte payload)) in expected)
         {
             Assert.True(catalog.TryGet(action, out RazerCommandDefinition? command));
             Assert.NotNull(command);
-            Assert.Equal((0x07, 0x12), (command.CommandClass, command.CommandId));
+            Assert.Equal((0x07, commandId), (command.CommandClass, command.CommandId));
             Assert.Equal([payload], command.Payload.ToArray());
         }
-
-        Assert.False(catalog.TryGet(ProductionBatteryPort.TemporaryEnableAction, out _));
-        Assert.False(catalog.TryGet(ProductionBatteryPort.TemporaryCancelAction, out _));
     }
 
     [Fact]

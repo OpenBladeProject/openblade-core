@@ -147,6 +147,16 @@
       "bytes": 24968,
       "frameCount": 420,
       "minimumSetCompletionToQueryMilliseconds": 21.689
+    },
+    {
+      "id": "temporary-full-charge-validation-strict-success",
+      "fileName": "openblade-temporary-full-charge-validation-20260716-193219.pcap",
+      "sha256": "AF7EBDCBCB1189150F4FC8E7229E6E007035DC69C30749FF9342B455D75B58D9",
+      "bytes": 3415,
+      "frameCount": 38,
+      "firstEpoch": "1784230342.046093000",
+      "lastEpoch": "1784230344.027286000",
+      "minimumSetCompletionToQueryMilliseconds": 25.315
     }
   ],
   "frameProvenance": {
@@ -176,8 +186,8 @@
     "battery-limit-75": { "capture": "main", "setFrames": [5827], "getResponseFrames": [5830] },
     "battery-limit-80": { "capture": "main", "setFrames": [6211, 6885], "getResponseFrames": [6214, 6888], "independentQueryFrames": [3173, 3176] },
     "battery-protection-off": { "capture": "main", "setFrames": [6673], "getResponseFrames": [6676] },
-    "charge-to-100-enable": { "capture": "main", "setFrames": [6335], "getResponseFrames": [6340], "independentQueryFrames": [6497, 6500] },
-    "charge-to-100-cancel": { "capture": "main", "setFrames": [6501], "getResponseFrames": [6504], "independentQueryFrames": [6677, 6680] },
+    "charge-to-100-enable": { "capture": "temporary-full-charge-validation-strict-success", "setFrames": [15], "getResponseFrames": [18], "independentQueryFrames": [23, 26] },
+    "charge-to-100-cancel": { "capture": "temporary-full-charge-validation-strict-success", "setFrames": [27], "getResponseFrames": [30], "independentQueryFrames": [35, 38] },
     "lighting-brightness-49": { "capture": "main", "setFrames": [11265], "getResponseFrames": [11268] },
     "lighting-brightness-100": { "capture": "main", "setFrames": [11635, 11871], "getResponseFrames": [11638, 11874] },
     "lighting-off": { "capture": "main", "setFrames": [11747], "getResponseFrames": [11750] },
@@ -333,13 +343,15 @@
       "action": "charge-to-100-enable",
       "commands": [{ "class": "07", "id": "0F", "payloadHex": "04", "expectedStatus": "02", "expectedPayloadHex": "04" }],
       "readbackCommand": { "class": "07", "id": "8F", "payloadHex": "00", "expectedPayloadHex": "04" },
-      "gates": { "captured": true, "decoded": true, "applied": false, "readBack": false, "restored": false }
+      "onlineEvidence": { "fixture": "rz09-0581-pid-02e0-bios-3.01-temporary-full-charge-validation-fixture.json", "baseline": false, "candidate": true, "restoredTo": false },
+      "gates": { "captured": true, "decoded": true, "applied": true, "readBack": true, "restored": true }
     },
     {
       "action": "charge-to-100-cancel",
       "commands": [{ "class": "07", "id": "0F", "payloadHex": "00", "expectedStatus": "02", "expectedPayloadHex": "00" }],
       "readbackCommand": { "class": "07", "id": "8F", "payloadHex": "00", "expectedPayloadHex": "00" },
-      "gates": { "captured": true, "decoded": true, "applied": false, "readBack": false, "restored": false }
+      "onlineEvidence": { "fixture": "rz09-0581-pid-02e0-bios-3.01-temporary-full-charge-validation-fixture.json", "baseline": true, "candidate": false, "restoredTo": false },
+      "gates": { "captured": true, "decoded": true, "applied": true, "readBack": true, "restored": true }
     },
     {
       "action": "lighting-brightness-49",
@@ -848,6 +860,59 @@
       "timingGatePassed": true,
       "strictAcceptanceConditionsPassed": true
     },
+    "temporaryFullChargeStrictSuccess": {
+      "capture": "temporary-full-charge-validation-strict-success",
+      "scope": "capture-scoped-strict-enable-readback-cancel-restore-success",
+      "requestTuples": [
+        "01/07/92/00",
+        "02/07/8F/00",
+        "03/07/0F/04",
+        "04/07/92/00",
+        "05/07/8F/00",
+        "06/07/0F/00",
+        "07/07/92/00",
+        "08/07/8F/00"
+      ],
+      "responseTuples": [
+        "02/01/07/92/D0",
+        "02/02/07/8F/00",
+        "02/03/07/0F/04",
+        "02/04/07/92/D0",
+        "02/05/07/8F/04",
+        "02/06/07/0F/00",
+        "02/07/07/92/D0",
+        "02/08/07/8F/00"
+      ],
+      "setCompletionToGetMilliseconds": [28.196, 39.513, 36.113, 40.809, 41.959, 25.315, 41.960, 42.056],
+      "minimumSettleMilliseconds": 25.315,
+      "cli": {
+        "enableAttempted": true,
+        "enableAcknowledged": true,
+        "candidateProtection": "Limit80",
+        "candidateTemporaryFullCharge": true,
+        "readBack": true,
+        "cancelAttempted": true,
+        "cancelAcknowledged": true,
+        "restorationProtection": "Limit80",
+        "restorationTemporaryFullCharge": false,
+        "restored": true,
+        "primaryFailure": "None",
+        "restorationFailure": "None",
+        "success": true,
+        "exitCode": 0
+      },
+      "independentFinalQuery": {
+        "protection": "Limit80",
+        "temporaryFullCharge": false,
+        "protectionSuccess": true,
+        "temporaryFullChargeSuccess": true
+      },
+      "other90ByteFeatureCommandCount": 0,
+      "functionalSequenceObserved": true,
+      "commandIsolationPassed": true,
+      "timingGatePassed": true,
+      "strictAcceptanceConditionsPassed": true
+    },
     "historicalAdmissionBoundaryAfterLimit80Validation": {
       "productionBatteryWriteAdmissionChanged": false,
       "limit80WriteAuthorizedInProduction": false,
@@ -872,8 +937,8 @@
   ],
   "admission": {
     "productionHashAdded": true,
-    "authorizedActions": ["battery-limit-50", "battery-limit-55", "battery-limit-60", "battery-limit-65", "battery-limit-70", "battery-limit-75", "battery-limit-80", "battery-protection-off", "temporary-full-charge-query"],
-    "unauthorizedActions": ["temporary-full-charge-enable", "temporary-full-charge-cancel", "performance", "fan-mode", "lighting"],
-    "reason": "Every 50-80% limit and ProtectionOff passed typed OpenBlade application, independent query/readback, restoration, command-isolation, and timing gates. Five setter-free temporary-full-charge queries also passed exact USBPcap validation. Only those reviewed bytes and the read-only query are admitted."
+    "authorizedActions": ["battery-limit-50", "battery-limit-55", "battery-limit-60", "battery-limit-65", "battery-limit-70", "battery-limit-75", "battery-limit-80", "battery-protection-off", "temporary-full-charge-query", "charge-to-100-enable", "charge-to-100-cancel"],
+    "unauthorizedActions": ["performance", "fan-mode", "lighting"],
+    "reason": "Every admitted battery write passed typed OpenBlade application, independent query/readback, restoration, command-isolation, and timing gates on this exact device. The paired temporary-full-charge enable and cancel commands are admitted together so enabling cannot be exposed without trusted cancellation."
   }
 }

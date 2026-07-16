@@ -4,6 +4,12 @@ Each production hardware write remains disabled until its exact command has
 passed all five gates: captured, decoded, applied interactively, read back, and
 restored.
 
+Current production admission for this exact device includes battery limits
+50–80%, protection off, temporary-full-charge readback, and the paired
+Charge-to-100 enable/cancel commands. The temporary override is exposed only
+when both setter directions and readback are trusted; performance, fan-mode,
+and lighting writes remain unadmitted.
+
 ## Prerequisites
 
 - Target: Razer Blade 16 `RZ09-0581`, `1532:02E0`, BIOS `3.01`.
@@ -46,7 +52,13 @@ uses `Stop-Process -Force`, which may lose buffered capture data and leave the
 PCAP incomplete. Never use the former helper implementation or any direct
 `GenerateConsoleCtrlEvent` call with a zero process-group ID.
 
-Decoded but unadmitted PID `02E0` evidence lives under `captures/decoded`. It intentionally uses an evidence schema rather than the production fixture schema so incomplete gates, multi-command operations, expected ACKs, and readback candidates remain explicit. Files under `captures/annotations` contain only sanitized UI action timestamps used for correlation. Neither directory authorizes a hardware write.
+Decoded PID `02E0` evidence lives under `captures/decoded`. It intentionally
+uses an evidence schema rather than the production fixture schema so incomplete
+gates, admitted validation cycles, multi-command operations, expected ACKs, and
+readback candidates remain explicit. Files under `captures/annotations` contain
+only sanitized UI action timestamps used for correlation. Neither directory by
+itself authorizes a hardware write; admission additionally requires an exact
+embedded production-fixture hash in the code-controlled registry.
 
 There is intentionally no command for sending arbitrary reports. Hardware validation is implemented through typed, gated operations only.
 

@@ -8,7 +8,7 @@ public sealed class ProductionBatteryFactoryIntegrationTests
     private static readonly TimeSpan DrainTimeout = TimeSpan.FromSeconds(1);
 
     [Fact]
-    public async Task ProductionCompositionPassesTwentyMillisecondSettleToOpenedActorFactory()
+    public async Task ProductionCompositionPassesThirtyMillisecondSettleToOpenedActorFactory()
     {
         TimeSpan? configuredSettle = null;
         var session = new ControlledSession(Immediate(QueryLimit80()));
@@ -23,7 +23,7 @@ public sealed class ProductionBatteryFactoryIntegrationTests
             (await factory.OpenAsync(default)).Value);
         Assert.Equal(80, (await port.QueryProtectionAsync(default)).ChargeLimitPercent);
 
-        Assert.Equal(TimeSpan.FromMilliseconds(20), configuredSettle);
+        Assert.Equal(TimeSpan.FromMilliseconds(30), configuredSettle);
         Assert.Equal(1, actors.OpenCount);
     }
 

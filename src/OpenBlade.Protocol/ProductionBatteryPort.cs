@@ -155,8 +155,18 @@ internal sealed class ProductionBatteryPort : IProductionBatteryPort
 
     public Task SetTemporaryFullChargeAsync(
         bool enabled,
-        CancellationToken cancellationToken) => Task.FromException(KnownNotApplied(
-            "Temporary full-charge setters are not admitted for production use."));
+        CancellationToken cancellationToken)
+    {
+        if (!Capabilities.SupportsTemporaryFullCharge)
+        {
+            return Task.FromException(KnownNotApplied(
+                "Temporary full charge requires admitted enable, cancel, and readback commands."));
+        }
+
+        return ExecuteSetterAsync(
+            enabled ? TemporaryEnableAction : TemporaryCancelAction,
+            cancellationToken);
+    }
 
     public ValueTask DisposeAsync()
     {
@@ -205,13 +215,16 @@ internal sealed class ProductionBatteryPort : IProductionBatteryPort
 
         bool protectionOff = readEvidence.SupportsTemporaryFullChargeQuery
             && catalog.TryGet(ProtectionOffAction, out _);
+        bool temporaryFullCharge = readEvidence.SupportsTemporaryFullChargeQuery
+            && catalog.TryGet(TemporaryEnableAction, out _)
+            && catalog.TryGet(TemporaryCancelAction, out _);
         return new DeviceCapabilities(
             new HashSet<PerformancePreset>(),
             new HashSet<FanMode>(),
             new HashSet<LightingEffect>(),
             limits,
             protectionOff,
-            SupportsTemporaryFullCharge: false);
+            SupportsTemporaryFullCharge: temporaryFullCharge);
     }
 
     private static readonly (int Percent, string Action)[] ChargeLimitActions =

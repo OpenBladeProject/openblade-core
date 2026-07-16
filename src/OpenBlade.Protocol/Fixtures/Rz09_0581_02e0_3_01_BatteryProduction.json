@@ -134,5 +134,39 @@
     "applied": true,
     "readBack": true,
     "restored": true
+  },
+  {
+    "device": {
+      "model": "RZ09-0581",
+      "vendorId": 5426,
+      "productId": 736,
+      "biosVersion": "3.01"
+    },
+    "action": "charge-to-100-enable",
+    "commandClass": 7,
+    "commandId": 15,
+    "payload": "BA==",
+    "captured": true,
+    "decoded": true,
+    "applied": true,
+    "readBack": true,
+    "restored": true
+  },
+  {
+    "device": {
+      "model": "RZ09-0581",
+      "vendorId": 5426,
+      "productId": 736,
+      "biosVersion": "3.01"
+    },
+    "action": "charge-to-100-cancel",
+    "commandClass": 7,
+    "commandId": 15,
+    "payload": "AA==",
+    "captured": true,
+    "decoded": true,
+    "applied": true,
+    "readBack": true,
+    "restored": true
   }
 ]

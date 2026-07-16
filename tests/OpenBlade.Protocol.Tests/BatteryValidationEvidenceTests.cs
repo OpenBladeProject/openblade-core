@@ -14,6 +14,10 @@ public sealed class BatteryValidationEvidenceTests
     private const string StrictSuccessId = "battery-validation-limit80-strict-success";
     private const string StrictSuccessHash =
         "BDDB65D1664FDC3331F25282F75229B38A2011E443F5670D58AE32CA6BD36B5B";
+    private const string TemporaryFullChargeId =
+        "temporary-full-charge-validation-strict-success";
+    private const string TemporaryFullChargeHash =
+        "AF7EBDCBCB1189150F4FC8E7229E6E007035DC69C30749FF9342B455D75B58D9";
 
     [Fact]
     public void Evidence_RecordsExactCaptureProvenance()
@@ -44,6 +48,13 @@ public sealed class BatteryValidationEvidenceTests
             StrictSuccessHash,
             5732,
             98);
+        AssertCapture(
+            sources,
+            TemporaryFullChargeId,
+            "openblade-temporary-full-charge-validation-20260716-193219.pcap",
+            TemporaryFullChargeHash,
+            3415,
+            38);
     }
 
     [Fact]
@@ -114,6 +125,43 @@ public sealed class BatteryValidationEvidenceTests
     }
 
     [Fact]
+    public void TemporaryFullChargeEvidence_RecordsExactPairedAdmissionAndFinalState()
+    {
+        using JsonDocument document = LoadEvidence();
+        JsonElement evidence = document.RootElement
+            .GetProperty("batteryValidationEvidence")
+            .GetProperty("temporaryFullChargeStrictSuccess");
+
+        Assert.Equal(TemporaryFullChargeId, evidence.GetProperty("capture").GetString());
+        Assert.Equal(
+            ["01/07/92/00", "02/07/8F/00", "03/07/0F/04", "04/07/92/00", "05/07/8F/00", "06/07/0F/00", "07/07/92/00", "08/07/8F/00"],
+            evidence.GetProperty("requestTuples").EnumerateArray().Select(value => value.GetString()));
+        Assert.Equal(
+            ["02/01/07/92/D0", "02/02/07/8F/00", "02/03/07/0F/04", "02/04/07/92/D0", "02/05/07/8F/04", "02/06/07/0F/00", "02/07/07/92/D0", "02/08/07/8F/00"],
+            evidence.GetProperty("responseTuples").EnumerateArray().Select(value => value.GetString()));
+        Assert.All(
+            evidence.GetProperty("setCompletionToGetMilliseconds").EnumerateArray(),
+            gap => Assert.True(gap.GetDecimal() >= 20m));
+        Assert.Equal(25.315m, evidence.GetProperty("minimumSettleMilliseconds").GetDecimal());
+        JsonElement cli = evidence.GetProperty("cli");
+        Assert.True(cli.GetProperty("enableAcknowledged").GetBoolean());
+        Assert.True(cli.GetProperty("candidateTemporaryFullCharge").GetBoolean());
+        Assert.True(cli.GetProperty("readBack").GetBoolean());
+        Assert.True(cli.GetProperty("cancelAcknowledged").GetBoolean());
+        Assert.Equal("Limit80", cli.GetProperty("restorationProtection").GetString());
+        Assert.False(cli.GetProperty("restorationTemporaryFullCharge").GetBoolean());
+        Assert.True(cli.GetProperty("restored").GetBoolean());
+        Assert.True(cli.GetProperty("success").GetBoolean());
+        JsonElement finalState = evidence.GetProperty("independentFinalQuery");
+        Assert.Equal("Limit80", finalState.GetProperty("protection").GetString());
+        Assert.False(finalState.GetProperty("temporaryFullCharge").GetBoolean());
+        Assert.Equal(0, evidence.GetProperty("other90ByteFeatureCommandCount").GetInt32());
+        Assert.True(evidence.GetProperty("strictAcceptanceConditionsPassed").GetBoolean());
+        Assert.False(TrustedFixtureHashRegistry.Production.Contains(
+            Convert.FromHexString(TemporaryFullChargeHash)));
+    }
+
+    [Fact]
     public void Evidence_PreservesHistoricalBoundaryAndRecordsCurrentBatteryAdmission()
     {
         using JsonDocument document = LoadEvidence();
@@ -153,10 +201,15 @@ public sealed class BatteryValidationEvidenceTests
                 "battery-limit-80",
                 "battery-protection-off",
                 "temporary-full-charge-query",
+                "charge-to-100-enable",
+                "charge-to-100-cancel",
             ],
             admission.GetProperty("authorizedActions").EnumerateArray().Select(value => value.GetString()));
-        Assert.Contains(
-            "temporary-full-charge-enable",
+        Assert.DoesNotContain(
+            "charge-to-100-enable",
+            admission.GetProperty("unauthorizedActions").EnumerateArray().Select(value => value.GetString()));
+        Assert.DoesNotContain(
+            "charge-to-100-cancel",
             admission.GetProperty("unauthorizedActions").EnumerateArray().Select(value => value.GetString()));
         Assert.DoesNotContain(
             "other-battery-limits",

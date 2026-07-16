@@ -60,6 +60,90 @@ public sealed class ProductionBatteryEvidenceFixtureTests
     }
 
     [Fact]
+    public void TemporaryFullChargeEvidence_ValidatesEnableReadbackCancelAndRestoration()
+    {
+        using JsonDocument document = ReadFixture(
+            "rz09-0581-pid-02e0-bios-3.01-temporary-full-charge-validation-fixture.json");
+        JsonElement root = document.RootElement;
+
+        AssertTarget(root);
+        Assert.False(root.GetProperty("readOnly").GetBoolean());
+        Assert.True(root.GetProperty("productionWired").GetBoolean());
+        JsonElement source = root.GetProperty("source");
+        Assert.Equal(
+            "AF7EBDCBCB1189150F4FC8E7229E6E007035DC69C30749FF9342B455D75B58D9",
+            source.GetProperty("sha256").GetString());
+        Assert.Equal(3415, source.GetProperty("bytes").GetInt32());
+        Assert.Equal(38, source.GetProperty("frameCount").GetInt32());
+        Assert.Equal(0, root.GetProperty("cliResultSource").GetProperty("exitCode").GetInt32());
+
+        JsonElement validation = root.GetProperty("validation");
+        Assert.Equal(8, validation.GetProperty("requestCount").GetInt32());
+        Assert.Equal(8, validation.GetProperty("responseCount").GetInt32());
+        Assert.Equal(2, validation.GetProperty("temporarySetterCount").GetInt32());
+        Assert.Equal(0, validation.GetProperty("unexpected90ByteCommandCount").GetInt32());
+        Assert.All(
+            validation.GetProperty("setCompletionToGetMilliseconds").EnumerateArray(),
+            gap => Assert.True(gap.GetDecimal() >= 20m));
+        Assert.Equal(
+            25.315m,
+            validation.GetProperty("minimumSetCompletionToQueryMilliseconds").GetDecimal());
+        Assert.True(validation.GetProperty("allEnvelopeLengths90").GetBoolean());
+        Assert.True(validation.GetProperty("allTransactionsMatched").GetBoolean());
+        Assert.True(validation.GetProperty("allStatusesSuccessful").GetBoolean());
+        Assert.True(validation.GetProperty("allChecksumsValid").GetBoolean());
+        Assert.Equal("Limit80", validation.GetProperty("baselineProtection").GetString());
+        Assert.False(validation.GetProperty("baselineTemporaryFullCharge").GetBoolean());
+        Assert.Equal("Limit80", validation.GetProperty("candidateProtection").GetString());
+        Assert.True(validation.GetProperty("candidateTemporaryFullCharge").GetBoolean());
+        Assert.Equal("Limit80", validation.GetProperty("restorationProtection").GetString());
+        Assert.False(validation.GetProperty("restorationTemporaryFullCharge").GetBoolean());
+        Assert.True(validation.GetProperty("enableAcknowledged").GetBoolean());
+        Assert.True(validation.GetProperty("readBack").GetBoolean());
+        Assert.True(validation.GetProperty("cancelAcknowledged").GetBoolean());
+        Assert.True(validation.GetProperty("restored").GetBoolean());
+        Assert.True(validation.GetProperty("strictAcceptanceConditionsPassed").GetBoolean());
+
+        JsonElement[] exchanges = root.GetProperty("exchanges").EnumerateArray().ToArray();
+        Assert.Equal(
+            [
+                "baseline-protection-query",
+                "baseline-temporary-query",
+                "enable-temporary-full-charge",
+                "candidate-protection-query",
+                "candidate-temporary-query",
+                "cancel-temporary-full-charge",
+                "restoration-protection-query",
+                "restoration-temporary-query",
+            ],
+            exchanges.Select(exchange => exchange.GetProperty("phase").GetString()));
+        Assert.Equal(
+            ["07/92", "07/8F", "07/0F", "07/92", "07/8F", "07/0F", "07/92", "07/8F"],
+            exchanges.Select(exchange =>
+            {
+                byte[] request = Convert.FromHexString(
+                    exchange.GetProperty("requestEnvelopeHex").GetString()!);
+                return $"{request[6]:X2}/{request[7]:X2}";
+            }));
+        Assert.Equal(
+            ["D0", "00", "04", "D0", "04", "00", "D0", "00"],
+            exchanges.Select(exchange => exchange.GetProperty("expectedResponsePayloadHex").GetString()));
+
+        foreach (JsonElement exchange in exchanges)
+        {
+            byte[] expected = Convert.FromHexString(
+                exchange.GetProperty("expectedResponsePayloadHex").GetString()!);
+            AssertExchange(exchange, expected);
+        }
+
+        JsonElement finalState = root.GetProperty("independentFinalQuery");
+        Assert.Equal("Limit80", finalState.GetProperty("protection").GetString());
+        Assert.False(finalState.GetProperty("temporaryFullCharge").GetBoolean());
+        Assert.True(finalState.GetProperty("protectionSuccess").GetBoolean());
+        Assert.True(finalState.GetProperty("temporaryFullChargeSuccess").GetBoolean());
+    }
+
+    [Fact]
     public void BatteryLimitEvidence_ValidatesEveryApplyReadbackAndLimit80Restoration()
     {
         using JsonDocument document = ReadFixture(
