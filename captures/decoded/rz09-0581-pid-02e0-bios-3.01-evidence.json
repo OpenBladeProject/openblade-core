@@ -527,6 +527,73 @@
       "performanceOrFanModeReadback": false,
       "observation": "The paired selector responses report live fan RPM only; continuous polling was observed across both navigation windows and does not encode performance or fan mode."
     },
+    "stateBearingQueryCandidates": [
+      {
+        "command": "0D/8E",
+        "requestFrames": [557],
+        "responseFrames": [560],
+        "requestArgumentLength": 1,
+        "requestPayloadHex": "00",
+        "responseStatusHex": "02",
+        "responsePayloadHex": "00",
+        "semantic": "unassigned-single-state-query-candidate"
+      },
+      {
+        "command": "0D/8F",
+        "requestFrames": [561],
+        "responseFrames": [564],
+        "requestArgumentLength": 1,
+        "requestPayloadHex": "00",
+        "responseStatusHex": "02",
+        "responsePayloadHex": "01",
+        "semantic": "unassigned-single-state-query-candidate"
+      },
+      {
+        "command": "0D/80",
+        "requestFrames": [565],
+        "responseFrames": [568],
+        "requestArgumentLength": 80,
+        "requestPayloadAllZero": true,
+        "responseStatusHex": "02",
+        "responsePayloadPrefixHex": "020102",
+        "semantic": "unassigned-single-state-query-candidate"
+      },
+      {
+        "command": "0D/89",
+        "requestFrames": [569, 751],
+        "responseFrames": [572, 754],
+        "requestArgumentLength": 2,
+        "requestPayloadHex": "0000",
+        "responseStatusHex": "02",
+        "responsePayloadHex": "0202",
+        "semantic": "unassigned-single-state-query-candidate"
+      },
+      {
+        "command": "0D/8B",
+        "requestFrames": [573],
+        "responseFrames": [576],
+        "requestArgumentLength": 2,
+        "requestPayloadHex": "0000",
+        "responseStatusHex": "02",
+        "responsePayloadHex": "0201",
+        "semantic": "unassigned-single-state-query-candidate"
+      },
+      {
+        "command": "0D/8A",
+        "requestFrames": [577],
+        "responseFrames": [580],
+        "requestArgumentLength": 2,
+        "requestPayloadHex": "0000",
+        "responseStatusHex": "02",
+        "responsePayloadHex": "0206",
+        "semantic": "unassigned-single-state-query-candidate"
+      }
+    ],
+    "candidateDiscriminator": {
+      "requiredKnownStates": ["Balanced+Auto", "Silent+Auto", "Performance+Auto", "Balanced+Maximum"],
+      "method": "Capture Performance-page hydration without changing a setting, then diff successful device response payloads for the candidate commands.",
+      "admissionBoundary": "A candidate remains untrusted until one field tracks only the independently established preset or fan mode and survives typed apply, fresh query/readback, and restoration."
+    },
     "unresolved07_8C": {
       "command": "07/8C",
       "responsePayloadHex": "1111",
@@ -535,10 +602,11 @@
       "observation": "The command remains semantically unresolved and was not temporally associated with the captured Performance-page refresh."
     },
     "conclusion": {
-      "independentReadbackObservedInCapture": false,
+      "queryShapedStateResponsesObservedInCapture": true,
+      "independentPerformanceOrFanModeReadbackEstablished": false,
       "performanceFanProductionAdmissionAllowed": false,
       "typedMutationHarnessAllowed": false,
-      "reason": "No independent performance or fan-mode readback was observed in this capture, so it cannot establish baseline, post-apply readback, or restoration for production admission."
+      "reason": "Fresh state-bearing high-bit 0D responses were observed in this capture with a single Balanced+Auto state, but no comparative known-state capture assigns any field to performance or fan mode. They cannot yet establish baseline, post-apply readback, or restoration for production admission."
     }
   },
   "batteryQuerySequenceEvidence": {

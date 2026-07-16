@@ -77,3 +77,38 @@ usbhid.setup.ReportID == 0 &&
 Correlate the request and completion using `usb.irp_id` (`usb.urb_id` on captures that expose it) or Wireshark's `request_in`/`response_in` links. For a SET_REPORT request, `usb.data_len` can appear as 98 because USBPcap counts the 8-byte setup packet plus the 90-byte report envelope. The setup record still declares `wLength: 90`. A GET_REPORT completion contains the 90-byte response envelope. Windows reports `FeatureReportByteLength` as 91 because its HID API buffer also contains the leading report-ID byte; do not copy the USB setup bytes into a fixture.
 
 USB device addresses are session-local and can change after reconnect or reboot. Re-enumerate the root topology and verify the target VID/PID before replacing `<verified-session-address>` for every capture.
+
+## Performance and fan readback discriminator
+
+The existing no-mutation Performance-page capture contains successful,
+query-shaped responses for `0D/80`, `0D/89`, `0D/8A`, `0D/8B`, `0D/8E`, and
+`0D/8F`. They are evidence candidates only: the capture contains one known UI
+state (`Balanced` plus `Auto`), so no response field can yet be assigned to a
+performance preset or fan mode.
+
+Collect four isolated hydration captures with Synapse as the state oracle:
+
+1. `Balanced` plus `Auto`.
+2. `Silent` plus `Auto`.
+3. `Performance` plus `Auto`.
+4. `Balanced` plus `Maximum`.
+
+For each capture, establish the state in Synapse before starting USBPcap,
+navigate away from the Performance page, start capture, enter the Performance
+page without changing a control, wait at least 10 seconds, navigate away and
+back once, wait another 10 seconds, then stop capture with the owned-session
+helper. Restore `Balanced` plus `Auto` after the fourth capture.
+
+Compare only successful device response payloads for identical requests to the
+candidate commands. A field that changes only across the first three captures
+is a performance-readback candidate. A field that changes only between the
+first and fourth captures is a fan-mode-readback candidate. Cross-capture
+variation identifies a candidate; production admission still requires typed
+OpenBlade apply, a fresh independent query, matching readback, and restoration.
+
+For lighting, perform the same no-mutation page-hydration comparison with two
+pre-established brightness values. Existing setter responses are same-
+transaction acknowledgements, and interface 3 is a host-rendered 374-byte
+matrix stream without GET reports. If reopening the Lighting page exposes no
+successful query whose response tracks the pre-existing brightness, brightness,
+Off, effects, and color remain unadmitted.

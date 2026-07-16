@@ -89,6 +89,44 @@ public sealed class PerformanceFanRefreshEvidenceTests
     }
 
     [Fact]
+    public void Evidence_RecordsUnassignedStateBearingQueryCandidates()
+    {
+        using JsonDocument document = LoadEvidence();
+        JsonElement evidence = document.RootElement.GetProperty("performanceFanRefreshEvidence");
+        JsonElement[] candidates = evidence.GetProperty("stateBearingQueryCandidates")
+            .EnumerateArray()
+            .ToArray();
+
+        Assert.Equal(["0D/8E", "0D/8F", "0D/80", "0D/89", "0D/8B", "0D/8A"],
+            candidates.Select(candidate => candidate.GetProperty("command").GetString()!).ToArray());
+        Assert.Equal([557], Frames(candidates[0], "requestFrames"));
+        Assert.Equal([560], Frames(candidates[0], "responseFrames"));
+        Assert.Equal("00", candidates[0].GetProperty("responsePayloadHex").GetString());
+        Assert.Equal("01", candidates[1].GetProperty("responsePayloadHex").GetString());
+        Assert.Equal("020102", candidates[2].GetProperty("responsePayloadPrefixHex").GetString());
+        Assert.Equal([569, 751], Frames(candidates[3], "requestFrames"));
+        Assert.Equal([572, 754], Frames(candidates[3], "responseFrames"));
+        Assert.Equal("0202", candidates[3].GetProperty("responsePayloadHex").GetString());
+        Assert.Equal("0201", candidates[4].GetProperty("responsePayloadHex").GetString());
+        Assert.Equal("0206", candidates[5].GetProperty("responsePayloadHex").GetString());
+        Assert.All(candidates, candidate =>
+        {
+            Assert.Equal("02", candidate.GetProperty("responseStatusHex").GetString());
+            Assert.Equal(
+                "unassigned-single-state-query-candidate",
+                candidate.GetProperty("semantic").GetString());
+        });
+
+        JsonElement discriminator = evidence.GetProperty("candidateDiscriminator");
+        Assert.Equal(
+            ["Balanced+Auto", "Silent+Auto", "Performance+Auto", "Balanced+Maximum"],
+            discriminator.GetProperty("requiredKnownStates")
+                .EnumerateArray()
+                .Select(value => value.GetString()!)
+                .ToArray());
+    }
+
+    [Fact]
     public void Evidence_ScopesReadbackConclusionToCaptureAndKeepsProductionClosed()
     {
         using JsonDocument document = LoadEvidence();
@@ -96,7 +134,8 @@ public sealed class PerformanceFanRefreshEvidenceTests
             .GetProperty("performanceFanRefreshEvidence")
             .GetProperty("conclusion");
 
-        Assert.False(conclusion.GetProperty("independentReadbackObservedInCapture").GetBoolean());
+        Assert.True(conclusion.GetProperty("queryShapedStateResponsesObservedInCapture").GetBoolean());
+        Assert.False(conclusion.GetProperty("independentPerformanceOrFanModeReadbackEstablished").GetBoolean());
         Assert.False(conclusion.GetProperty("performanceFanProductionAdmissionAllowed").GetBoolean());
         Assert.False(conclusion.GetProperty("typedMutationHarnessAllowed").GetBoolean());
         Assert.False(conclusion.TryGetProperty("independentReadbackAvailable", out _));
