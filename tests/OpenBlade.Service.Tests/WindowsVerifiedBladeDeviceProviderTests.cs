@@ -443,8 +443,6 @@ public sealed class WindowsVerifiedBladeDeviceProviderTests
     {
         public DeviceCapabilities Capabilities { get; } = DeviceCapabilities.Unavailable();
 
-        public bool SupportsTemporaryFullChargeQuery => false;
-
         public async Task<HidSessionResult<IProductionBatteryPort>> OpenAsync(
             CancellationToken cancellationToken)
         {

@@ -45,12 +45,6 @@ public sealed class ProductionBatteryFactory : IProductionBatteryPortFactory
 
     public DeviceCapabilities Capabilities { get; }
 
-    public bool SupportsTemporaryFullChargeQuery =>
-        readEvidence.SupportsTemporaryFullChargeQuery;
-
-    internal static TimeSpan FeatureReportSettleDelay =>
-        BatteryFeatureReportSettleDelay;
-
     public static IProductionBatteryPortFactory CreateWindows()
     {
         ReadOnlyMemory<byte>? fixtureBytes = ProductionFixtureSource.Read();

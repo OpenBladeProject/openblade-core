@@ -376,9 +376,6 @@ public sealed class WindowsVerifiedBladeDeviceProviderProductionTests
 
         public DeviceCapabilities Capabilities { get; } = capabilities;
 
-        public bool SupportsTemporaryFullChargeQuery =>
-            ports.Any(port => port.SupportsTemporaryFullChargeQuery);
-
         public int OpenCount { get; private set; }
 
         public Task<HidSessionResult<IProductionBatteryPort>> OpenAsync(
@@ -399,7 +396,6 @@ public sealed class WindowsVerifiedBladeDeviceProviderProductionTests
         IProductionBatteryPort freshPort) : IProductionBatteryPortFactory
     {
         public DeviceCapabilities Capabilities { get; } = capabilities;
-        public bool SupportsTemporaryFullChargeQuery => false;
         public int OpenCount { get; private set; }
 
         public Task<HidSessionResult<IProductionBatteryPort>> OpenAsync(
@@ -420,7 +416,6 @@ public sealed class WindowsVerifiedBladeDeviceProviderProductionTests
         HidSessionFailureKind failure) : IProductionBatteryPortFactory
     {
         public DeviceCapabilities Capabilities { get; } = capabilities;
-        public bool SupportsTemporaryFullChargeQuery => false;
         public int OpenCount { get; private set; }
 
         public Task<HidSessionResult<IProductionBatteryPort>> OpenAsync(

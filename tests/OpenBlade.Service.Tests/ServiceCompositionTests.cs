@@ -181,8 +181,6 @@ public sealed class ServiceCompositionTests
     {
         public DeviceCapabilities Capabilities { get; } = capabilities;
 
-        public bool SupportsTemporaryFullChargeQuery => false;
-
         public Task<HidSessionResult<IProductionBatteryPort>> OpenAsync(
             CancellationToken cancellationToken) => Task.FromResult(
                 new HidSessionResult<IProductionBatteryPort>(

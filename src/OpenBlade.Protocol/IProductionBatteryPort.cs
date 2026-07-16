@@ -23,8 +23,6 @@ public interface IProductionBatteryPortFactory
 {
     DeviceCapabilities Capabilities { get; }
 
-    bool SupportsTemporaryFullChargeQuery { get; }
-
     Task<HidSessionResult<IProductionBatteryPort>> OpenAsync(
         CancellationToken cancellationToken);
 }
