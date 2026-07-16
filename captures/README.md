@@ -16,13 +16,35 @@ restored.
 ## Procedure
 
 1. Close unrelated Chroma applications and set keyboard lighting Off to reduce traffic.
-2. Start USBPcap on the root hub containing `VID_1532&PID_02E0`, restricted to that device address and capturing full packets with descriptors. Never force-kill the capture process.
+2. Start USBPcap on the root hub containing `VID_1532&PID_02E0`, restricted to that device address and capturing full packets with descriptors. Always use `captures/tools/Start-UsbPcapCapture.ps1`; it creates an isolated Windows process group and an ownership session used for safe shutdown. Do not substitute `Start-Process`, which cannot request `CREATE_NEW_PROCESS_GROUP`.
 3. Change exactly one Synapse setting, wait for its response, and annotate the timestamp and action.
 4. Restore the previous value before moving to the next action.
-5. Stop USBPcap with Ctrl+C so the PCAP is flushed and the root handle is released. The helper in `captures/tools/Stop-UsbPcapCapture.ps1` sends that signal only after confirming the target process is `USBPcapCMD`.
+5. Stop USBPcap with `captures/tools/Stop-UsbPcapCapture.ps1 -SessionPath <session.json>` so the PCAP is flushed and the root handle is released. The helper attaches a disposable worker to the owned capture console and sends `CTRL_BREAK_EVENT` only to the nonzero USBPcap process-group ID. It never broadcasts `CTRL_C_EVENT` and never detaches the calling PowerShell or Codex process.
 6. Export only the matching feature-report request and response bytes. Do not commit raw PCAP files, serial numbers, or unrelated USB traffic.
 7. Create a sanitized fixture entry with the exact device identity and all validation flags initially false except `captured` and `decoded`.
 8. Run `OpenBlade.Capture validate fixtures.json`. It must fail until interactive application, readback, and restoration have each been confirmed. After review, add the exact fixture-file SHA-256 to the code-controlled production registry; fixture metadata alone cannot authorize commands.
+
+For example, prepare the existing USBPcap arguments and keep the returned
+ownership session next to the temporary capture metadata:
+
+```powershell
+$pcap = 'C:\tmp\openblade-validation.pcap'
+$session = 'C:\tmp\openblade-validation.usbpcap.json'
+$capture = & .\captures\tools\Start-UsbPcapCapture.ps1 `
+    -ExecutablePath 'C:\Program Files\USBPcap\USBPcapCMD.exe' `
+    -ArgumentList @('-d', '\\.\USBPcap3', '-A', '2', '-s', '65535', '-o', $pcap) `
+    -OutputPath $pcap `
+    -SessionPath $session
+
+& .\captures\tools\Stop-UsbPcapCapture.ps1 -SessionPath $capture.SessionPath
+```
+
+Graceful shutdown is the default and must be tried first. If targeted
+`CTRL_BREAK_EVENT` cannot stop the owned process, the helper fails without
+killing it. `-ForceFallback` is an explicit last resort; it emits a warning and
+uses `Stop-Process -Force`, which may lose buffered capture data and leave the
+PCAP incomplete. Never use the former helper implementation or any direct
+`GenerateConsoleCtrlEvent` call with a zero process-group ID.
 
 Decoded but unadmitted PID `02E0` evidence lives under `captures/decoded`. It intentionally uses an evidence schema rather than the production fixture schema so incomplete gates, multi-command operations, expected ACKs, and readback candidates remain explicit. Files under `captures/annotations` contain only sanitized UI action timestamps used for correlation. Neither directory authorizes a hardware write.
 
