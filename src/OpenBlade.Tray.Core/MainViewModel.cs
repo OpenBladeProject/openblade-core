@@ -19,11 +19,13 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     private readonly IServiceClient serviceClient;
     private readonly IUiDispatcher dispatcher;
     private readonly IDiagnosticArchiveSaver diagnosticArchiveSaver;
+    private readonly IStartupRegistration startupRegistration;
     private readonly CancellationTokenSource lifetime = new();
     private readonly object startSync = new();
     private readonly AsyncRelayCommand[] commands;
     private ServiceStatusSnapshot? latestStatus;
     private Task? watchTask;
+    private Task? startupInitializationTask;
     private bool isConnected;
     private bool isReadOnly = true;
     private bool canControlHardware;
@@ -77,13 +79,20 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     private int lightingBlueEditor;
     private bool lightingEditorDirty;
     private ThemePreference theme = ThemePreference.FollowWindows;
+    private bool startAtSignIn;
+    private bool startupStateKnown;
+    private string startupStatusMessage = string.Empty;
     private int disposed;
     private long latestAcceptedRevision = -1;
     private long connectionGeneration;
     private bool subscriptionConnected;
 
     public MainViewModel(IServiceClient serviceClient, IUiDispatcher dispatcher)
-        : this(serviceClient, dispatcher, new UnavailableDiagnosticArchiveSaver())
+        : this(
+            serviceClient,
+            dispatcher,
+            new UnavailableDiagnosticArchiveSaver(),
+            new UnavailableStartupRegistration())
     {
     }
 
@@ -91,11 +100,26 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         IServiceClient serviceClient,
         IUiDispatcher dispatcher,
         IDiagnosticArchiveSaver diagnosticArchiveSaver)
+        : this(
+            serviceClient,
+            dispatcher,
+            diagnosticArchiveSaver,
+            new UnavailableStartupRegistration())
+    {
+    }
+
+    public MainViewModel(
+        IServiceClient serviceClient,
+        IUiDispatcher dispatcher,
+        IDiagnosticArchiveSaver diagnosticArchiveSaver,
+        IStartupRegistration startupRegistration)
     {
         this.serviceClient = serviceClient ?? throw new ArgumentNullException(nameof(serviceClient));
         this.dispatcher = dispatcher ?? throw new ArgumentNullException(nameof(dispatcher));
         this.diagnosticArchiveSaver = diagnosticArchiveSaver
             ?? throw new ArgumentNullException(nameof(diagnosticArchiveSaver));
+        this.startupRegistration = startupRegistration
+            ?? throw new ArgumentNullException(nameof(startupRegistration));
 
         SetPerformanceCommand = CreateCommand(
             SetPerformanceAsync,
@@ -129,6 +153,12 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         ExportDiagnosticsCommand = CreateCommand(
             ExportDiagnosticsAsync,
             _ => Volatile.Read(ref disposed) == 0 && IsConnected);
+        SetStartAtSignInCommand = CreateCommand(
+            SetStartAtSignInAsync,
+            parameter => parameter is bool requested
+                && Volatile.Read(ref disposed) == 0
+                && StartupStateKnown
+                && requested != StartAtSignIn);
         commands =
         [
             (AsyncRelayCommand)SetPerformanceCommand,
@@ -139,6 +169,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             (AsyncRelayCommand)ToggleFullChargeCommand,
             (AsyncRelayCommand)SaveProfilesCommand,
             (AsyncRelayCommand)ExportDiagnosticsCommand,
+            (AsyncRelayCommand)SetStartAtSignInCommand,
         ];
     }
 
@@ -149,6 +180,19 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             CancellationToken token) =>
             Task.FromException<DiagnosticArchiveSaveResult>(
                 new InvalidOperationException("A diagnostic archive saver was not configured."));
+    }
+
+    private sealed class UnavailableStartupRegistration : IStartupRegistration
+    {
+        public Task<bool> IsEnabledAsync(CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.FromResult(false);
+        }
+
+        public Task SetEnabledAsync(bool enabled, CancellationToken cancellationToken) =>
+            Task.FromException(new InvalidOperationException(
+                "Startup registration is unavailable."));
     }
 
     public event PropertyChangedEventHandler? PropertyChanged;
@@ -553,6 +597,33 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     public IReadOnlyList<ThemePreference> ThemeOptions { get; } =
         Enum.GetValues<ThemePreference>();
 
+    public bool StartAtSignIn
+    {
+        get => startAtSignIn;
+        private set => SetField(ref startAtSignIn, value);
+    }
+
+    public bool StartupStateKnown
+    {
+        get => startupStateKnown;
+        private set
+        {
+            if (startupStateKnown == value)
+            {
+                return;
+            }
+
+            SetField(ref startupStateKnown, value);
+            NotifyCommands();
+        }
+    }
+
+    public string StartupStatusMessage
+    {
+        get => startupStatusMessage;
+        private set => SetField(ref startupStatusMessage, value);
+    }
+
     public ICommand SetPerformanceCommand { get; }
     public ICommand SetFanModeCommand { get; }
     public ICommand SetLightingCommand { get; }
@@ -561,6 +632,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     public ICommand ToggleFullChargeCommand { get; }
     public ICommand SaveProfilesCommand { get; }
     public ICommand ExportDiagnosticsCommand { get; }
+    public ICommand SetStartAtSignInCommand { get; }
 
     private bool CanMutate =>
         Volatile.Read(ref disposed) == 0
@@ -634,8 +706,40 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         {
             ObjectDisposedException.ThrowIf(Volatile.Read(ref disposed) != 0, this);
             watchTask ??= WatchStatusAsync(lifetime.Token);
+            startupInitializationTask ??= InitializeStartupRegistrationAsync(lifetime.Token);
+            return startupInitializationTask;
         }
-        return Task.CompletedTask;
+    }
+
+    private async Task InitializeStartupRegistrationAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            bool enabled = await startupRegistration.IsEnabledAsync(cancellationToken)
+                .ConfigureAwait(false);
+            await dispatcher.InvokeAsync(
+                () =>
+                {
+                    StartAtSignIn = enabled;
+                    StartupStateKnown = true;
+                },
+                cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception exception)
+        {
+            await dispatcher.InvokeAsync(
+                () =>
+                {
+                    StartupStatusMessage =
+                        $"Start at sign-in is unavailable: {exception.Message}";
+                    StartupStateKnown = false;
+                },
+                cancellationToken).ConfigureAwait(false);
+        }
     }
 
     public async Task ObserveStateAsync(CancellationToken cancellationToken)
@@ -950,6 +1054,45 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
                 parameter is bool enabled ? enabled : !FullChargeOverride,
                 cancellationToken),
             token);
+
+    private async Task SetStartAtSignInAsync(object? parameter, CancellationToken token)
+    {
+        bool requested = (bool)parameter!;
+        try
+        {
+            await startupRegistration.SetEnabledAsync(requested, token)
+                .ConfigureAwait(false);
+            bool confirmed = await startupRegistration.IsEnabledAsync(token)
+                .ConfigureAwait(false);
+            await dispatcher.InvokeAsync(
+                () =>
+                {
+                    StartAtSignIn = confirmed;
+                    StartupStatusMessage = confirmed == requested
+                        ? requested
+                            ? "OpenBlade will start when you sign in."
+                            : "OpenBlade will not start when you sign in."
+                        : "Windows did not confirm the requested start-at-sign-in setting.";
+                    NotifyCommands();
+                },
+                token).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (token.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception exception)
+        {
+            await dispatcher.InvokeAsync(
+                () =>
+                {
+                    StartupStatusMessage =
+                        $"Could not change start at sign-in: {exception.Message}";
+                    NotifyCommands();
+                },
+                token).ConfigureAwait(false);
+        }
+    }
 
     private async Task SaveProfilesAsync(object? parameter, CancellationToken token)
     {

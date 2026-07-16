@@ -4,6 +4,7 @@ using System.Runtime.InteropServices;
 using Microsoft.UI.Dispatching;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Data;
 using OpenBlade.Contracts;
 using Windows.Graphics;
@@ -34,7 +35,8 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
         ViewModel = new MainViewModel(
             new ServiceClient(),
             new WinUiDispatcher(dispatcherQueue),
-            new DiagnosticArchiveSaver(new WinUiDiagnosticArchiveDestination(AppWindow.Id)));
+            new DiagnosticArchiveSaver(new WinUiDiagnosticArchiveDestination(AppWindow.Id)),
+            new WindowsStartupRegistration());
         visibleObservationLoop = new VisibleObservationLoop(ViewModel.ObserveStateAsync,
             errorHandler: exception => Trace.TraceError(
                 "OpenBlade visible observation failed: {0}",
@@ -269,6 +271,35 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
             args.Cancel = true;
             visibleObservationLoop.Stop();
             AppWindow.Hide();
+        }
+    }
+
+    private async void OnStartAtSignInToggled(object sender, RoutedEventArgs args)
+    {
+        if (sender is not ToggleSwitch toggle
+            || Volatile.Read(ref disposed) != 0
+            || toggle.IsOn == ViewModel.StartAtSignIn)
+        {
+            return;
+        }
+
+        bool requested = toggle.IsOn;
+        if (ViewModel.SetStartAtSignInCommand is not AsyncRelayCommand command
+            || !command.CanExecute(requested))
+        {
+            toggle.IsOn = ViewModel.StartAtSignIn;
+            return;
+        }
+
+        toggle.IsEnabled = false;
+        try
+        {
+            await command.ExecuteAsync(requested);
+        }
+        finally
+        {
+            toggle.IsOn = ViewModel.StartAtSignIn;
+            toggle.IsEnabled = true;
         }
     }
 

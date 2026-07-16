@@ -39,6 +39,41 @@ public sealed class SetupCommandRunnerTests
     }
 
     [Fact]
+    public async Task Install_UpdateWithDisabledStartup_PreservesMissingShortcut()
+    {
+        RecordingSetupPlatform platform = new()
+        {
+            ServiceExists = true,
+            ShortcutExisted = false,
+            Transaction = new RecordingPayloadTransaction(hadExistingInstall: true),
+        };
+
+        int exitCode = await new SetupCommandRunner(platform).RunAsync(["install"], CancellationToken.None);
+
+        Assert.Equal(0, exitCode);
+        Assert.False(platform.ShortcutPresent);
+        Assert.DoesNotContain("shortcut-install", platform.Operations);
+        Assert.Equal("payload-commit", platform.Operations[^1]);
+    }
+
+    [Fact]
+    public async Task Install_FreshInstallWithNoPriorShortcut_DefaultsStartupOn()
+    {
+        RecordingSetupPlatform platform = new()
+        {
+            ShortcutExisted = false,
+            Transaction = new RecordingPayloadTransaction(hadExistingInstall: false),
+        };
+
+        int exitCode = await new SetupCommandRunner(platform).RunAsync(["install"], CancellationToken.None);
+
+        Assert.Equal(0, exitCode);
+        Assert.True(platform.ShortcutPresent);
+        Assert.Contains("shortcut-install", platform.Operations);
+        Assert.Equal("payload-commit", platform.Operations[^1]);
+    }
+
+    [Fact]
     public async Task Install_LifecycleCaptureFailure_RollsBackStagingWithoutMutatingInstalledLifecycle()
     {
         RecordingSetupPlatform platform = new()

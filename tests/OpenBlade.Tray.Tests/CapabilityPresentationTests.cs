@@ -45,6 +45,8 @@ public sealed class CapabilityPresentationTests
             "ViewModel.ProfileChargeLimitEditor",
             "ViewModel.ThemeOptions",
             "ViewModel.Theme",
+            "ViewModel.StartAtSignIn",
+            "ViewModel.StartupStatusMessage",
             "ViewModel.ActivePowerSourceLabel",
             "ViewModel.PerformanceSourceLabel",
             "ViewModel.FanSourceLabel",
@@ -61,6 +63,7 @@ public sealed class CapabilityPresentationTests
             "Hardware controls are fail-closed",
             "Razer Blade 16 · RZ09-0581",
             "No verified lighting controls are available for this device.",
+            "Start OpenBlade when I sign in",
         ];
         foreach (string fragment in required)
         {
@@ -91,6 +94,15 @@ public sealed class CapabilityPresentationTests
         Assert.DoesNotContain("<Window.Resources>", xaml, StringComparison.Ordinal);
         Assert.DoesNotContain("Click=", xaml, StringComparison.Ordinal);
         Assert.DoesNotContain("IsEnabled=", xaml, StringComparison.Ordinal);
+        Assert.Contains("Toggled=\"OnStartAtSignInToggled\"", xaml, StringComparison.Ordinal);
+        Assert.Contains(
+            "SetStartAtSignInCommand",
+            ReadTraySource("MainWindow.xaml.cs"),
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "File.Exists(legacyShortcutPath)",
+            ReadTraySource("WindowsStartupRegistration.cs"),
+            StringComparison.Ordinal);
         Assert.DoesNotContain("Export diagnostics (unavailable)", xaml, StringComparison.Ordinal);
         Assert.DoesNotContain("ViewModel.ConflictNames", xaml, StringComparison.Ordinal);
         Assert.DoesNotContain("SystemFillColorCriticalBrush", xaml, StringComparison.Ordinal);

@@ -25,6 +25,10 @@
     <ProjectReference Include="..\OpenBlade.Contracts\OpenBlade.Contracts.csproj" />
     <ProjectReference Include="..\OpenBlade.Tray.Core\OpenBlade.Tray.Core.csproj" />
   </ItemGroup>
+  <ItemGroup>
+    <Compile Include="..\OpenBlade.Setup\StartupShortcutWriter.cs"
+             Link="StartupShortcutWriter.cs" />
+  </ItemGroup>
   <Target Name="PublishApplicationResourceIndex" AfterTargets="Publish">
     <Error
       Condition="!Exists('$(TargetDir)$(AssemblyName).pri')"

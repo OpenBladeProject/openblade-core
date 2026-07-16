@@ -6,6 +6,69 @@ namespace OpenBlade.Tray.Tests;
 
 public sealed class MainViewModelTests
 {
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task StartAtSignInReflectsCurrentShortcutState(bool enabled)
+    {
+        var registration = new FakeStartupRegistration(enabled);
+        await using var viewModel = new MainViewModel(
+            new FakeServiceClient(),
+            new RecordingDispatcher(),
+            new FakeDiagnosticArchiveSaver(),
+            registration);
+
+        await viewModel.StartAsync();
+
+        Assert.True(viewModel.StartupStateKnown);
+        Assert.Equal(enabled, viewModel.StartAtSignIn);
+        Assert.True(viewModel.SetStartAtSignInCommand.CanExecute(!enabled));
+        Assert.False(viewModel.SetStartAtSignInCommand.CanExecute(enabled));
+    }
+
+    [Fact]
+    public async Task StartAtSignInCanChangeWhileServiceIsDisconnected()
+    {
+        var registration = new FakeStartupRegistration(false);
+        await using var viewModel = new MainViewModel(
+            new FakeServiceClient(),
+            new RecordingDispatcher(),
+            new FakeDiagnosticArchiveSaver(),
+            registration);
+        await viewModel.StartAsync();
+
+        await ((AsyncRelayCommand)viewModel.SetStartAtSignInCommand).ExecuteAsync(true);
+
+        Assert.True(viewModel.StartAtSignIn);
+        Assert.Equal([true], registration.Requests);
+        Assert.Equal("OpenBlade will start when you sign in.", viewModel.StartupStatusMessage);
+        Assert.False(viewModel.IsConnected);
+    }
+
+    [Fact]
+    public async Task StartAtSignInFailureKeepsConfirmedStateAndReportsError()
+    {
+        var registration = new FakeStartupRegistration(true)
+        {
+            Failure = new IOException("startup folder unavailable"),
+        };
+        await using var viewModel = new MainViewModel(
+            new FakeServiceClient(),
+            new RecordingDispatcher(),
+            new FakeDiagnosticArchiveSaver(),
+            registration);
+        await viewModel.StartAsync();
+
+        await ((AsyncRelayCommand)viewModel.SetStartAtSignInCommand).ExecuteAsync(false);
+
+        Assert.True(viewModel.StartAtSignIn);
+        Assert.Equal([false], registration.Requests);
+        Assert.Contains(
+            "startup folder unavailable",
+            viewModel.StartupStatusMessage,
+            StringComparison.Ordinal);
+    }
+
     [Fact]
     public async Task AdvisoriesAreVisibleWithoutDisablingAdmittedFanControl()
     {
@@ -1156,6 +1219,32 @@ public sealed class MainViewModelTests
                 throw Failure;
             }
             return Task.FromResult(NextResult);
+        }
+    }
+
+    private sealed class FakeStartupRegistration(bool enabled) : IStartupRegistration
+    {
+        public bool Enabled { get; private set; } = enabled;
+        public Exception? Failure { get; init; }
+        public List<bool> Requests { get; } = [];
+
+        public Task<bool> IsEnabledAsync(CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.FromResult(Enabled);
+        }
+
+        public Task SetEnabledAsync(bool enabled, CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            Requests.Add(enabled);
+            if (Failure is not null)
+            {
+                throw Failure;
+            }
+
+            Enabled = enabled;
+            return Task.CompletedTask;
         }
     }
 }

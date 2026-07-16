@@ -367,9 +367,16 @@
 
                         <TextBlock Text="APPEARANCE" Style="{StaticResource SectionHeaderStyle}" />
                         <Border Style="{StaticResource CardStyle}">
-                            <ComboBox Header="Theme"
-                                      ItemsSource="{x:Bind ViewModel.ThemeOptions, Mode=OneWay}"
-                                      SelectedItem="{x:Bind ViewModel.Theme, Mode=TwoWay}" />
+                            <StackPanel Spacing="12">
+                                <ComboBox Header="Theme"
+                                          ItemsSource="{x:Bind ViewModel.ThemeOptions, Mode=OneWay}"
+                                          SelectedItem="{x:Bind ViewModel.Theme, Mode=TwoWay}" />
+                                <ToggleSwitch Header="Start OpenBlade when I sign in"
+                                              IsOn="{x:Bind ViewModel.StartAtSignIn, Mode=OneWay}"
+                                              Toggled="OnStartAtSignInToggled" />
+                                <TextBlock Text="{x:Bind ViewModel.StartupStatusMessage, Mode=OneWay}"
+                                           Style="{StaticResource SecondaryTextStyle}" />
+                            </StackPanel>
                         </Border>
 
                         <TextBlock Text="SERVICE" Style="{StaticResource SectionHeaderStyle}" />

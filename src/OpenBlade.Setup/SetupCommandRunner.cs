@@ -74,7 +74,10 @@ public sealed class SetupCommandRunner(ISetupPlatform platform)
                 await platform.WriteAuthorizedUserSidAsync(platform.CurrentUserSid, cancellationToken);
                 await platform.InstallServiceAsync(cancellationToken);
                 await platform.VerifyServiceHealthAsync(cancellationToken);
-                await platform.InstallStartupShortcutAsync(cancellationToken);
+                if (!transaction.HadExistingInstall || priorLifecycle.Startup.ShortcutExisted)
+                {
+                    await platform.InstallStartupShortcutAsync(cancellationToken);
+                }
                 await transaction.CommitAsync(cancellationToken);
                 WriteCommitWarningNoThrow(transaction.CommitWarning);
                 return 0;
