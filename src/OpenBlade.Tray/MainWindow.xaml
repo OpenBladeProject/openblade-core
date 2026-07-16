@@ -183,6 +183,9 @@
                                         Minimum="50"
                                         Maximum="80"
                                         StepFrequency="5"
+                                        SmallChange="5"
+                                        LargeChange="5"
+                                        SnapsTo="StepValues"
                                         IsThumbToolTipEnabled="True"
                                         Value="{Binding ChargeLimitPercent, Mode=TwoWay, Converter={StaticResource Int32Double}}" />
                                 <Grid ColumnSpacing="8" RowSpacing="8">
@@ -376,9 +379,24 @@
                         </Border>
                         <Border Style="{StaticResource CardStyle}">
                             <StackPanel Spacing="10">
-                                <ComboBox Header="Profile charge limit"
-                                          ItemsSource="{x:Bind ViewModel.ChargeLimitOptions, Mode=OneWay}"
-                                          SelectedItem="{x:Bind ViewModel.ProfileChargeLimitEditor, Mode=TwoWay}" />
+                                <Grid>
+                                    <TextBlock Text="Profile charge limit"
+                                               Style="{StaticResource CardTitleStyle}" />
+                                    <StackPanel HorizontalAlignment="Right"
+                                                Orientation="Horizontal">
+                                        <TextBlock Text="{x:Bind ViewModel.ProfileChargeLimitEditor, Mode=OneWay}" />
+                                        <TextBlock Text="%" />
+                                    </StackPanel>
+                                </Grid>
+                                <Slider x:Name="ProfileChargeLimitSlider"
+                                        Minimum="50"
+                                        Maximum="80"
+                                        StepFrequency="5"
+                                        SmallChange="5"
+                                        LargeChange="5"
+                                        SnapsTo="StepValues"
+                                        IsThumbToolTipEnabled="True"
+                                        Value="{Binding ProfileChargeLimitEditor, Mode=TwoWay, Converter={StaticResource Int32Double}}" />
                                 <Button Content="Save profiles"
                                         HorizontalAlignment="Left"
                                         Style="{StaticResource AccentButtonStyle}"

@@ -38,7 +38,6 @@ public sealed class CapabilityPresentationTests
             "ViewModel.AvailableFanModes",
             "ViewModel.AvailableLightingEffects",
             "ViewModel.AvailableLightingSettings",
-            "ViewModel.ChargeLimitOptions",
             "ViewModel.PluggedInPerformanceEditor",
             "ViewModel.PluggedInFanModeEditor",
             "ViewModel.PluggedInLightingEditor",
@@ -82,6 +81,8 @@ public sealed class CapabilityPresentationTests
         Assert.Contains("<Grid.Resources>", xaml, StringComparison.Ordinal);
         Assert.Contains("DashboardFanModeSelector.SelectedItem", xaml, StringComparison.Ordinal);
         Assert.Contains("x:Name=\"DashboardChargeLimitSlider\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("x:Name=\"ProfileChargeLimitSlider\"", xaml, StringComparison.Ordinal);
+        Assert.DoesNotContain("Header=\"Profile charge limit\"", xaml, StringComparison.Ordinal);
         Assert.DoesNotContain(
             "CommandParameter=\"{x:Bind ViewModel.SelectedFanMode",
             xaml,
@@ -127,6 +128,10 @@ public sealed class CapabilityPresentationTests
         Assert.Equal(
             1,
             CountOccurrences(xaml, "ViewModel.ProfileChargeLimitEditor"));
+        Assert.Contains(
+            "Value=\"{Binding ProfileChargeLimitEditor, Mode=TwoWay, Converter={StaticResource Int32Double}}\"",
+            xaml,
+            StringComparison.Ordinal);
         Assert.Equal(
             2,
             CountOccurrences(
@@ -139,7 +144,10 @@ public sealed class CapabilityPresentationTests
                 "Visibility=\"{x:Bind ViewModel.IsFanControlVisible, Mode=OneWay}\""));
         Assert.Contains("Minimum=\"50\"", xaml, StringComparison.Ordinal);
         Assert.Contains("Maximum=\"80\"", xaml, StringComparison.Ordinal);
-        Assert.Contains("StepFrequency=\"5\"", xaml, StringComparison.Ordinal);
+        Assert.True(CountOccurrences(xaml, "StepFrequency=\"5\"") >= 2);
+        Assert.Equal(2, CountOccurrences(xaml, "SmallChange=\"5\""));
+        Assert.Equal(2, CountOccurrences(xaml, "LargeChange=\"5\""));
+        Assert.Equal(2, CountOccurrences(xaml, "SnapsTo=\"StepValues\""));
         Assert.DoesNotContain("Open" + "Synapse", xaml, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("\u00c2", xaml, StringComparison.Ordinal);
     }
