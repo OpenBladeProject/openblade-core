@@ -127,6 +127,16 @@ public sealed class CapabilityPresentationTests
         Assert.Equal(
             1,
             CountOccurrences(xaml, "ViewModel.ProfileChargeLimitEditor"));
+        Assert.Equal(
+            2,
+            CountOccurrences(
+                xaml,
+                "Visibility=\"{x:Bind ViewModel.IsPerformanceVisible, Mode=OneWay}\""));
+        Assert.Equal(
+            2,
+            CountOccurrences(
+                xaml,
+                "Visibility=\"{x:Bind ViewModel.IsFanControlVisible, Mode=OneWay}\""));
         Assert.Contains("Minimum=\"50\"", xaml, StringComparison.Ordinal);
         Assert.Contains("Maximum=\"80\"", xaml, StringComparison.Ordinal);
         Assert.Contains("StepFrequency=\"5\"", xaml, StringComparison.Ordinal);
@@ -261,6 +271,112 @@ public sealed class CapabilityPresentationTests
         Assert.Equal(FanMode.Maximum, client.SavedProfiles.PluggedIn.Fans);
         Assert.Equal(PerformancePreset.Silent, client.SavedProfiles.Battery.Performance);
         Assert.Equal(75, client.SavedProfiles.BatteryPolicy.ChargeLimitPercent);
+    }
+
+    [Fact]
+    public async Task ProfileEditorsHydrateFromServiceAndPreserveUnsavedEdits()
+    {
+        var client = new PresentationClient();
+        await using var viewModel = new MainViewModel(client, new ImmediateDispatcher());
+        await viewModel.StartAsync();
+        ProfileSet initialProfiles = ProfileDefaults.CreateSafeDefaults() with
+        {
+            PluggedIn = ProfileDefaults.CreateSafeDefaults().PluggedIn with
+            {
+                Performance = PerformancePreset.Performance,
+                Fans = FanMode.Maximum,
+            },
+            BatteryPolicy = BatteryPolicy.Create(75),
+        };
+        ServiceStatusSnapshot initial = CreateStatus(
+            verified: true,
+            blocked: false,
+            capabilities: DeviceCapabilities.SafeTargetDefaults() with
+            {
+                ChargeLimits = ChargeLimits(),
+            }) with
+        {
+            Profiles = initialProfiles,
+        };
+
+        client.Publish(initial);
+        await WaitUntilAsync(() => viewModel.ProfileChargeLimitEditor == 75);
+
+        Assert.Equal(PerformancePreset.Performance, viewModel.PluggedInPerformanceEditor);
+        Assert.Equal(FanMode.Maximum, viewModel.PluggedInFanModeEditor);
+        viewModel.BatteryFanModeEditor = FanMode.Maximum;
+
+        ProfileSet refreshedProfiles = ProfileDefaults.CreateSafeDefaults() with
+        {
+            PluggedIn = ProfileDefaults.CreateSafeDefaults().PluggedIn with
+            {
+                Performance = PerformancePreset.Silent,
+            },
+            BatteryPolicy = BatteryPolicy.Create(70),
+        };
+        client.Publish(initial with
+        {
+            Revision = initial.Revision + 1,
+            Message = "Profiles refreshed",
+            Profiles = refreshedProfiles,
+        });
+        await WaitUntilAsync(() => viewModel.ConnectionStatus == "Profiles refreshed");
+
+        Assert.Equal(refreshedProfiles, viewModel.Profiles);
+        Assert.Equal(PerformancePreset.Performance, viewModel.PluggedInPerformanceEditor);
+        Assert.Equal(FanMode.Maximum, viewModel.PluggedInFanModeEditor);
+        Assert.Equal(FanMode.Maximum, viewModel.BatteryFanModeEditor);
+        Assert.Equal(75, viewModel.ProfileChargeLimitEditor);
+    }
+
+    [Fact]
+    public async Task SuccessfulProfileSaveReleasesDraftGuardForLaterServiceProfiles()
+    {
+        var client = new PresentationClient();
+        await using var viewModel = new MainViewModel(client, new ImmediateDispatcher());
+        await viewModel.StartAsync();
+        ServiceStatusSnapshot initial = CreateStatus(
+            verified: true,
+            blocked: false,
+            capabilities: DeviceCapabilities.SafeTargetDefaults() with
+            {
+                ChargeLimits = ChargeLimits(),
+            });
+        client.Publish(initial);
+        await WaitUntilAsync(() => viewModel.CanControlHardware);
+
+        viewModel.PluggedInPerformanceEditor = PerformancePreset.Performance;
+        viewModel.PluggedInFanModeEditor = FanMode.Maximum;
+        viewModel.ProfileChargeLimitEditor = 75;
+        await Assert.IsType<AsyncRelayCommand>(viewModel.SaveProfilesCommand)
+            .ExecuteAsync(null);
+
+        Assert.Equal(client.SavedProfiles, viewModel.Profiles);
+        Assert.Equal(PerformancePreset.Performance, viewModel.PluggedInPerformanceEditor);
+        Assert.Equal(FanMode.Maximum, viewModel.PluggedInFanModeEditor);
+        Assert.Equal(75, viewModel.ProfileChargeLimitEditor);
+
+        ProfileSet laterProfiles = ProfileDefaults.CreateSafeDefaults() with
+        {
+            Battery = ProfileDefaults.CreateSafeDefaults().Battery with
+            {
+                Fans = FanMode.Maximum,
+            },
+            BatteryPolicy = BatteryPolicy.Create(70),
+        };
+        client.Publish(initial with
+        {
+            Revision = initial.Revision + 1,
+            Message = "Later profiles",
+            Profiles = laterProfiles,
+        });
+        await WaitUntilAsync(() => viewModel.ConnectionStatus == "Later profiles");
+
+        Assert.Equal(laterProfiles, viewModel.Profiles);
+        Assert.Equal(PerformancePreset.Balanced, viewModel.PluggedInPerformanceEditor);
+        Assert.Equal(FanMode.Automatic, viewModel.PluggedInFanModeEditor);
+        Assert.Equal(FanMode.Maximum, viewModel.BatteryFanModeEditor);
+        Assert.Equal(70, viewModel.ProfileChargeLimitEditor);
     }
 
     [Fact]

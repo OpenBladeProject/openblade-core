@@ -29,6 +29,7 @@ public sealed class WindowsSetupPlatform : ISetupPlatform
     private readonly ISetupServiceHealthProbe healthProbe;
     private readonly ISetupFileOperations fileOperations;
     private readonly ISetupProcessOperations processOperations;
+    private readonly IMachineDataDirectorySecurity machineDataDirectorySecurity;
 
     public WindowsSetupPlatform(
         ISetupServiceControl? serviceControl = null,
@@ -39,7 +40,8 @@ public sealed class WindowsSetupPlatform : ISetupPlatform
         ISetupProcessOperations? processOperations = null,
         SetupPaths? paths = null,
         string? payloadDirectory = null,
-        ISetupPayloadFileSystem? payloadFileSystem = null)
+        ISetupPayloadFileSystem? payloadFileSystem = null,
+        IMachineDataDirectorySecurity? machineDataDirectorySecurity = null)
     {
         this.paths = paths ?? SetupPaths.Create(
             Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles),
@@ -54,6 +56,8 @@ public sealed class WindowsSetupPlatform : ISetupPlatform
         this.healthProbe = healthProbe ?? new SetupServiceHealthProbe();
         this.fileOperations = fileOperations ?? new WindowsSetupFileOperations();
         this.processOperations = processOperations ?? new WindowsSetupProcessOperations();
+        this.machineDataDirectorySecurity = machineDataDirectorySecurity
+            ?? new WindowsMachineDataDirectorySecurity();
     }
 
     public string CurrentUserSid => WindowsIdentity.GetCurrent().User?.Value
@@ -150,6 +154,17 @@ public sealed class WindowsSetupPlatform : ISetupPlatform
             throw new ArgumentException("A valid Windows account SID is required.", nameof(sid));
         }
 
+        if (!SetupPaths.IsExactOpenBladeDirectory(
+            paths.MachineDataDirectory,
+            paths.MachineDataRoot))
+        {
+            throw new InvalidOperationException(
+                $"Refusing to secure unexpected machine data path '{paths.MachineDataDirectory}'.");
+        }
+
+        await machineDataDirectorySecurity.ProtectAsync(
+            paths.MachineDataDirectory,
+            cancellationToken);
         await sidWriter.WriteAsync(
             new AuthorizedSidWriteRequest(
                 Path.Combine(paths.MachineDataDirectory, "authorized-user.sid"),

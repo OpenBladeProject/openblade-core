@@ -107,7 +107,9 @@
                             </StackPanel>
                         </Border>
 
-                        <TextBlock Text="PERFORMANCE" Style="{StaticResource SectionHeaderStyle}" />
+                        <TextBlock Text="PERFORMANCE"
+                                   Style="{StaticResource SectionHeaderStyle}"
+                                   Visibility="{x:Bind ViewModel.IsPerformanceVisible, Mode=OneWay}" />
                         <Border Style="{StaticResource CardStyle}"
                                 Visibility="{x:Bind ViewModel.IsPerformanceVisible, Mode=OneWay}">
                             <StackPanel Spacing="10">
@@ -140,7 +142,9 @@
                             </StackPanel>
                         </Border>
 
-                        <TextBlock Text="POWER &amp; COOLING" Style="{StaticResource SectionHeaderStyle}" />
+                        <TextBlock Text="POWER &amp; COOLING"
+                                   Style="{StaticResource SectionHeaderStyle}"
+                                   Visibility="{x:Bind ViewModel.IsFanControlVisible, Mode=OneWay}" />
                         <Border Style="{StaticResource CardStyle}"
                                 Visibility="{x:Bind ViewModel.IsFanControlVisible, Mode=OneWay}">
                             <Grid ColumnSpacing="12">

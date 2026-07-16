@@ -73,6 +73,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     private FanMode batteryFanModeEditor = FanMode.Automatic;
     private LightingSettings batteryLightingEditor = ProfileDefaults.CreateSafeDefaults().Battery.Lighting;
     private int profileChargeLimitEditor = 80;
+    private bool profileEditorsDirty;
     private LightingEffect lightingEffectEditor = LightingEffect.Off;
     private int lightingBrightnessEditor;
     private int lightingRedEditor;
@@ -907,6 +908,10 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             ? $"Settings changed outside OpenBlade: {string.Join(", ", externalChanges)}. Automatic profile changes for these controls are paused; manual actions still apply."
             : string.Empty;
         Profiles = status.Profiles;
+        if (!profileEditorsDirty)
+        {
+            LoadProfileEditors(status.Profiles);
+        }
         DeviceCapabilities capabilities = status.Capabilities
             ?? DeviceCapabilities.Unavailable();
         Capabilities = capabilities;
@@ -1249,6 +1254,8 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         if (accepted)
         {
             Profiles = draft;
+            profileEditorsDirty = false;
+            LoadProfileEditors(draft);
         }
     }
 
@@ -1404,6 +1411,39 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         int value = status.ConfirmedState?.Battery?.ChargeLimitPercent
             ?? status.DesiredState.Battery.ConfiguredPolicy.ChargeLimitPercent;
         SetField(ref chargeLimitPercent, value, nameof(ChargeLimitPercent));
+        NotifyCommands();
+    }
+
+    private void LoadProfileEditors(ProfileSet value)
+    {
+        SetField(
+            ref pluggedInPerformanceEditor,
+            value.PluggedIn.Performance,
+            nameof(PluggedInPerformanceEditor));
+        SetField(
+            ref pluggedInFanModeEditor,
+            value.PluggedIn.Fans,
+            nameof(PluggedInFanModeEditor));
+        SetField(
+            ref pluggedInLightingEditor,
+            value.PluggedIn.Lighting,
+            nameof(PluggedInLightingEditor));
+        SetField(
+            ref batteryPerformanceEditor,
+            value.Battery.Performance,
+            nameof(BatteryPerformanceEditor));
+        SetField(
+            ref batteryFanModeEditor,
+            value.Battery.Fans,
+            nameof(BatteryFanModeEditor));
+        SetField(
+            ref batteryLightingEditor,
+            value.Battery.Lighting,
+            nameof(BatteryLightingEditor));
+        SetField(
+            ref profileChargeLimitEditor,
+            value.BatteryPolicy.ChargeLimitPercent,
+            nameof(ProfileChargeLimitEditor));
         NotifyCommands();
     }
 
@@ -1586,6 +1626,12 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         T value,
         [CallerMemberName] string? propertyName = null)
     {
+        if (EqualityComparer<T>.Default.Equals(field, value))
+        {
+            return;
+        }
+
+        profileEditorsDirty = true;
         SetField(ref field, value, propertyName);
         NotifyCommands();
     }

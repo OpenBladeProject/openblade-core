@@ -89,6 +89,7 @@ public sealed class SetupCommandRunnerTests
     }
 
     [Theory]
+    [InlineData("sid")]
     [InlineData("service-health")]
     [InlineData("shortcut-install")]
     public async Task Install_UpdatePostActivationFailure_RestoresOldTreeServiceAndShortcut(string failurePoint)
@@ -465,6 +466,12 @@ public sealed class SetupCommandRunnerTests
         public Task WriteAuthorizedUserSidAsync(string sid, CancellationToken cancellationToken)
         {
             Operations.Add($"sid:{sid}");
+            if (FailurePoint == "sid")
+            {
+                FailurePoint = null;
+                return Task.FromException(new InvalidOperationException("sid failed"));
+            }
+
             if (FailurePoint == "sid-cancel")
             {
                 Cancellation!.Cancel();

@@ -124,12 +124,11 @@ public sealed class BatteryConfigurationStore
         {
             CommittedSnapshot committed =
                 await ReadCommittedSnapshotAsync(cancellationToken);
-            byte[] profileJson = SerializeProfiles(profiles);
-            await AtomicFile.WriteAsync(profileStore.Path, profileJson, cancellationToken);
-            await WriteMarkerAsync(
-                profileJson,
-                committed.PreferenceJson,
-                cancellationToken);
+            await SaveConfigurationTransactionAsync(
+                profiles,
+                committed.Configuration.Preferences,
+                cancellationToken,
+                committed.PreferenceJson);
         }
         finally
         {
@@ -280,12 +279,14 @@ public sealed class BatteryConfigurationStore
     private async Task SaveConfigurationTransactionAsync(
         ProfileSet profiles,
         BatteryAutomationPreferences preferences,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        byte[]? committedPreferenceJson = null)
     {
         byte[] profileJson = SerializeProfiles(profiles);
-        byte[] preferenceJson = JsonSerializer.SerializeToUtf8Bytes(
-            new BatteryPreferencesDocument(ProfileStore.CurrentSchemaVersion, preferences),
-            ProfileStore.SerializerOptions);
+        byte[] preferenceJson = committedPreferenceJson ??
+            JsonSerializer.SerializeToUtf8Bytes(
+                new BatteryPreferencesDocument(ProfileStore.CurrentSchemaVersion, preferences),
+                ProfileStore.SerializerOptions);
         byte[] markerJson = SerializeMarker(profileJson, preferenceJson);
         TargetSnapshot profilePrior = await CaptureAsync(
             profileStore.Path,

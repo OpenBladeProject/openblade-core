@@ -149,6 +149,97 @@ public sealed class BatteryConfigurationStoreTests : IDisposable
         Assert.False(loaded.Preferences.ProtectionEnabled);
     }
 
+    [Theory]
+    [MemberData(nameof(AllCommitBoundaries))]
+    public async Task SaveProfilesAsync_FaultAtAnyBoundaryRestoresExactPriorAggregate(
+        string boundaryName)
+    {
+        BatteryConfigurationCommitBoundary faultBoundary = Enum.Parse<
+            BatteryConfigurationCommitBoundary>(boundaryName);
+        Paths paths = CreatePaths();
+        bool armed = false;
+        var store = CreateStore(
+            paths,
+            (boundary, _) =>
+            {
+                if (armed && boundary == faultBoundary)
+                {
+                    throw new IOException($"Injected failure at {boundary}.");
+                }
+
+                return Task.CompletedTask;
+            });
+        BatteryConfiguration priorConfiguration = await store.LoadAsync(CancellationToken.None);
+        FileSnapshot prior = await ReadSnapshotAsync(paths);
+        ProfileSet intendedProfiles = priorConfiguration.Profiles with
+        {
+            BatteryPolicy = BatteryPolicy.Create(75),
+        };
+        armed = true;
+
+        await Assert.ThrowsAsync<IOException>(
+            () => store.SaveProfilesAsync(intendedProfiles, CancellationToken.None));
+
+        AssertSnapshotEqual(prior, await ReadSnapshotAsync(paths));
+        BatteryConfiguration loaded = await store.LoadAsync(CancellationToken.None);
+        Assert.Equal(priorConfiguration.Profiles, loaded.Profiles);
+        Assert.Equal(priorConfiguration.Preferences, loaded.Preferences);
+        Assert.Empty(Directory.GetFiles(directory, "*.transaction-*"));
+    }
+
+    [Theory]
+    [MemberData(nameof(AllCommitBoundaries))]
+    public async Task SaveProfilesAsync_CancellationHonorsMarkerCommitPoint(
+        string boundaryName)
+    {
+        BatteryConfigurationCommitBoundary cancellationBoundary = Enum.Parse<
+            BatteryConfigurationCommitBoundary>(boundaryName);
+        Paths paths = CreatePaths();
+        using var cancellation = new CancellationTokenSource();
+        bool armed = false;
+        var store = CreateStore(
+            paths,
+            (boundary, boundaryToken) =>
+            {
+                if (armed && boundary == cancellationBoundary)
+                {
+                    cancellation.Cancel();
+                    boundaryToken.ThrowIfCancellationRequested();
+                }
+
+                return Task.CompletedTask;
+            });
+        BatteryConfiguration priorConfiguration = await store.LoadAsync(CancellationToken.None);
+        FileSnapshot prior = await ReadSnapshotAsync(paths);
+        ProfileSet intendedProfiles = priorConfiguration.Profiles with
+        {
+            BatteryPolicy = BatteryPolicy.Create(75),
+        };
+        armed = true;
+
+        if (IsBeforeCommitPoint(cancellationBoundary))
+        {
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(
+                () => store.SaveProfilesAsync(intendedProfiles, cancellation.Token));
+
+            AssertSnapshotEqual(prior, await ReadSnapshotAsync(paths));
+            BatteryConfiguration restored = await store.LoadAsync(CancellationToken.None);
+            Assert.Equal(priorConfiguration.Profiles, restored.Profiles);
+            Assert.Equal(priorConfiguration.Preferences, restored.Preferences);
+        }
+        else
+        {
+            await store.SaveProfilesAsync(intendedProfiles, cancellation.Token);
+
+            BatteryConfiguration committed = await store.LoadAsync(CancellationToken.None);
+            Assert.Equal(intendedProfiles, committed.Profiles);
+            Assert.Equal(priorConfiguration.Preferences, committed.Preferences);
+            Assert.False(SnapshotEquals(prior, await ReadSnapshotAsync(paths)));
+        }
+
+        Assert.Empty(Directory.GetFiles(directory, "*.transaction-*"));
+    }
+
     [Fact]
     public async Task SaveConfigurationAsync_CommitsProfilesAndPreferenceAsOneVerifiedAggregate()
     {

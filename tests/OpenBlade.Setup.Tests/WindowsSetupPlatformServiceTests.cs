@@ -269,10 +269,12 @@ public sealed class WindowsSetupPlatformServiceTests
     public async Task WriteAuthorizedUserSid_ValidSid_UsesCanonicalValueAndMachineDataPath()
     {
         RecordingAuthorizedSidWriter sidWriter = new();
+        RecordingMachineDataDirectorySecurity machineDataSecurity = new();
         WindowsSetupPlatform platform = new(
             new RecordingServiceControl(),
             new RecordingShortcutWriter(),
-            sidWriter);
+            sidWriter,
+            machineDataDirectorySecurity: machineDataSecurity);
 
         await platform.WriteAuthorizedUserSidAsync(
             " S-1-5-21-1-2-3-1001 ",
@@ -284,6 +286,33 @@ public sealed class WindowsSetupPlatformServiceTests
             Path.Combine("OpenBlade", "authorized-user.sid"),
             request.Path,
             StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(
+            Path.GetDirectoryName(request.Path),
+            Assert.Single(machineDataSecurity.ProtectedDirectories));
+    }
+
+    [Fact]
+    public async Task WriteAuthorizedUserSid_MachineDataSecurityFailure_DoesNotWriteSid()
+    {
+        RecordingAuthorizedSidWriter sidWriter = new();
+        RecordingMachineDataDirectorySecurity machineDataSecurity = new()
+        {
+            Failure = new UnauthorizedAccessException("ACL write denied."),
+        };
+        WindowsSetupPlatform platform = new(
+            new RecordingServiceControl(),
+            new RecordingShortcutWriter(),
+            sidWriter,
+            machineDataDirectorySecurity: machineDataSecurity);
+
+        UnauthorizedAccessException failure = await Assert.ThrowsAsync<UnauthorizedAccessException>(
+            () => platform.WriteAuthorizedUserSidAsync(
+                "S-1-5-21-1-2-3-1001",
+                CancellationToken.None));
+
+        Assert.Equal("ACL write denied.", failure.Message);
+        Assert.Single(machineDataSecurity.ProtectedDirectories);
+        Assert.Empty(sidWriter.Requests);
     }
 
     [Fact]
@@ -365,6 +394,21 @@ public sealed class WindowsSetupPlatformServiceTests
         {
             Requests.Add(request);
             return Task.CompletedTask;
+        }
+    }
+
+    private sealed class RecordingMachineDataDirectorySecurity
+        : IMachineDataDirectorySecurity
+    {
+        public List<string> ProtectedDirectories { get; } = [];
+        public Exception? Failure { get; init; }
+
+        public Task ProtectAsync(string directory, CancellationToken cancellationToken)
+        {
+            ProtectedDirectories.Add(directory);
+            return Failure is null
+                ? Task.CompletedTask
+                : Task.FromException(Failure);
         }
     }
 

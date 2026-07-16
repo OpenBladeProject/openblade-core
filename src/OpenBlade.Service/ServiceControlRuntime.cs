@@ -72,6 +72,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
     private ProfileAutomationState? automation;
     private PersistentOverrideState persistentOverrides = PersistentOverrideState.Empty;
     private readonly ConfirmedStateDriftTracker driftTracker = new();
+    private readonly HashSet<DeviceSubsystem> initialAutomaticComparisons = [];
     private ServiceStatusSnapshot? status;
 
     public ServiceControlRuntime(
@@ -174,7 +175,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 PerformanceOverride = Automation.PerformanceOverride,
                 FanOverride = Automation.FanOverride,
                 LightingOverride = Automation.LightingOverride,
-                FullChargeOverride = Automation.DesiredBattery.TemporaryFullCharge,
+                FullChargeOverride = ResolveFullChargeOverride(current.ConfirmedState),
             });
             history.RecordSummary(ControlOperationStatus.Stored, message);
             return new ControlOperationResult(ControlOperationStatus.Stored, message);
@@ -712,6 +713,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
     {
         ServiceStatusSnapshot current = GetStatus();
         ConfirmedDeviceState? cachedConfirmed = current.ConfirmedState;
+        DesiredDeviceState? priorDesired = current.DesiredState;
         IBladeDevice device;
         try
         {
@@ -746,7 +748,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                     token,
                     automaticWriteExclusionResolver: confirmed =>
                     {
-                        driftTracker.Observe(confirmed);
+                        ObserveAutomaticState(confirmed, priorDesired);
                         return driftTracker.ExternalChanges.ToHashSet();
                     });
         }
@@ -835,7 +837,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 fanRpm = null;
             }
             cancellationToken.ThrowIfCancellationRequested();
-            driftTracker.Observe(confirmed);
+            ObserveAutomaticState(confirmed);
             PublishIfChanged(GetStatus() with
             {
                 DeviceVerified = true,
@@ -850,7 +852,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 PerformanceOverride = Automation.PerformanceOverride,
                 FanOverride = Automation.FanOverride,
                 LightingOverride = Automation.LightingOverride,
-                FullChargeOverride = Automation.DesiredBattery.TemporaryFullCharge,
+                FullChargeOverride = ResolveFullChargeOverride(confirmed),
             });
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -869,6 +871,75 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         }
     }
 
+    private void ObserveAutomaticState(
+        ConfirmedDeviceState confirmed,
+        DesiredDeviceState? expected = null)
+    {
+        ArgumentNullException.ThrowIfNull(confirmed);
+        DesiredDeviceState desired = expected ?? Automation.Resolve(confirmed);
+        driftTracker.Observe(confirmed);
+
+        CompareInitialAutomaticValue(
+            DeviceSubsystem.Performance,
+            confirmed.Performance,
+            desired.Performance.Value);
+        CompareInitialAutomaticValue(
+            DeviceSubsystem.Fans,
+            confirmed.Fans,
+            desired.Fans.Value);
+        CompareInitialAutomaticValue(
+            DeviceSubsystem.Lighting,
+            confirmed.Lighting,
+            desired.Lighting.Value);
+
+        if (confirmed.Battery is { } battery
+            && initialAutomaticComparisons.Add(DeviceSubsystem.Battery))
+        {
+            bool matches = battery.TemporaryFullCharge is true
+                || BatteryMatchesDesired(battery, desired.Battery);
+            driftTracker.ConfirmIntentional(DeviceSubsystem.Battery, matches);
+        }
+    }
+
+    private void CompareInitialAutomaticValue<T>(
+        DeviceSubsystem subsystem,
+        T? confirmed,
+        T desired)
+        where T : struct
+    {
+        if (confirmed is null || !initialAutomaticComparisons.Add(subsystem))
+        {
+            return;
+        }
+
+        driftTracker.ConfirmIntentional(
+            subsystem,
+            EqualityComparer<T>.Default.Equals(confirmed.Value, desired));
+    }
+
+    private void CompareInitialAutomaticValue<T>(
+        DeviceSubsystem subsystem,
+        T? confirmed,
+        T desired)
+        where T : class
+    {
+        if (confirmed is null || !initialAutomaticComparisons.Add(subsystem))
+        {
+            return;
+        }
+
+        driftTracker.ConfirmIntentional(
+            subsystem,
+            EqualityComparer<T>.Default.Equals(confirmed, desired));
+    }
+
+    private static bool BatteryMatchesDesired(
+        ConfirmedBatteryState confirmed,
+        DesiredBatteryState desired) =>
+        confirmed.ProtectionEnabled == desired.ProtectionEnabled
+        && (!desired.ProtectionEnabled
+            || confirmed.ChargeLimitPercent == desired.ConfiguredPolicy.ChargeLimitPercent);
+
     private void PublishObservationUnavailable(TelemetrySnapshot telemetry, string message)
     {
         ServiceStatusSnapshot current = GetStatus();
@@ -885,7 +956,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             PerformanceOverride = Automation.PerformanceOverride,
             FanOverride = Automation.FanOverride,
             LightingOverride = Automation.LightingOverride,
-            FullChargeOverride = Automation.DesiredBattery.TemporaryFullCharge,
+            FullChargeOverride = ResolveFullChargeOverride(current.ConfirmedState),
         });
     }
 
@@ -974,9 +1045,13 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             PerformanceOverride = Automation.PerformanceOverride,
             FanOverride = Automation.FanOverride,
             LightingOverride = Automation.LightingOverride,
-            FullChargeOverride = Automation.DesiredBattery.TemporaryFullCharge,
+            FullChargeOverride = ResolveFullChargeOverride(confirmed),
         });
     }
+
+    private bool ResolveFullChargeOverride(ConfirmedDeviceState? confirmed) =>
+        confirmed?.Battery?.TemporaryFullCharge
+        ?? Automation.DesiredBattery.TemporaryFullCharge;
 
     private ControlOperationResult RecordRejectedIntent(Exception exception)
     {

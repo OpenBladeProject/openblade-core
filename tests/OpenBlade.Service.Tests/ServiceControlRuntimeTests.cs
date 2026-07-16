@@ -114,7 +114,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     }
 
     [Fact]
-    public async Task FirstObservation_ProfileMismatchEstablishesBaselineWithoutWarning()
+    public async Task FirstObservation_ProfileMismatchIsLatchedWithoutSetters()
     {
         TestContext context = CreateContext(providerAvailable: true);
         context.Device.ConfirmedState = new ConfirmedDeviceState(
@@ -125,8 +125,42 @@ public sealed class ServiceControlRuntimeTests : IDisposable
 
         await context.Runtime.ObserveAsync(CancellationToken.None);
 
-        Assert.Empty(context.Runtime.GetStatus().ExternalChanges);
+        Assert.Equal(
+            [
+                DeviceSubsystem.Performance,
+                DeviceSubsystem.Fans,
+                DeviceSubsystem.Battery,
+                DeviceSubsystem.Lighting,
+            ],
+            context.Runtime.GetStatus().ExternalChanges);
         Assert.Equal(0, context.Device.TotalSetterCalls);
+    }
+
+    [Fact]
+    public async Task FirstObservation_BatteryMismatchIsPreservedOnPowerTransition()
+    {
+        TestContext context = CreateWritableContext();
+        PowerProfile pluggedIn = context.Runtime.GetStatus().Profiles.PluggedIn;
+        context.Device.ConfirmedState = new ConfirmedDeviceState(
+            pluggedIn.Performance,
+            pluggedIn.Fans,
+            ConfirmedBattery(75),
+            pluggedIn.Lighting);
+
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+
+        Assert.Equal(
+            [DeviceSubsystem.Battery],
+            context.Runtime.GetStatus().ExternalChanges);
+        context.Telemetry.Current = CreateTelemetry(PowerSource.Battery);
+
+        await context.Runtime.HandlePowerSourceChangedAsync(CancellationToken.None);
+
+        ServiceStatusSnapshot status = context.Runtime.GetStatus();
+        Assert.Equal(0, context.Device.BatterySetCalls);
+        Assert.Equal(75, status.ConfirmedState!.Battery!.ChargeLimitPercent);
+        Assert.Equal([DeviceSubsystem.Battery], status.ExternalChanges);
+        Assert.Contains("paused", status.Message, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -418,7 +452,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     }
 
     [Fact]
-    public async Task GenuinePowerTransition_AppliesStoredProtectionPreferenceOnce()
+    public async Task GenuinePowerTransition_PreservesStartupProtectionMismatch()
     {
         TestContext context = CreateContext(
             providerAvailable: true,
@@ -429,18 +463,21 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             SupportsBatteryProtectionOff = true,
         };
         context.Device.ConfirmedState = new ConfirmedDeviceState(
-            PerformancePreset.Silent,
+            PerformancePreset.Balanced,
             FanMode.Automatic,
             ConfirmedBattery(80),
-            ProfileDefaults.CreateSafeDefaults().Battery.Lighting);
+            ProfileDefaults.CreateSafeDefaults().PluggedIn.Lighting);
         context.Telemetry.Current = CreateTelemetry(PowerSource.Battery);
 
         await context.Runtime.HandlePowerSourceChangedAsync(CancellationToken.None);
         await context.Runtime.HandlePowerSourceChangedAsync(CancellationToken.None);
 
-        Assert.Equal(["SetProtectionOff"], context.Device.BatterySetterCalls);
-        Assert.Equal(1, context.Device.BatterySetCalls);
-        Assert.Equal(ProtectionOff(), context.Runtime.GetStatus().ConfirmedState!.Battery);
+        Assert.Empty(context.Device.BatterySetterCalls);
+        Assert.Equal(0, context.Device.BatterySetCalls);
+        Assert.Equal(ConfirmedBattery(80), context.Runtime.GetStatus().ConfirmedState!.Battery);
+        Assert.Equal(
+            [DeviceSubsystem.Battery],
+            context.Runtime.GetStatus().ExternalChanges);
     }
 
     [Theory]
@@ -452,12 +489,12 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         DeviceSubsystem subsystem)
     {
         TestContext context = CreateWritableContext();
-        PowerProfile batteryProfile = context.Runtime.GetStatus().Profiles.Battery;
+        PowerProfile pluggedIn = context.Runtime.GetStatus().Profiles.PluggedIn;
         context.Device.ConfirmedState = new ConfirmedDeviceState(
-            batteryProfile.Performance,
-            batteryProfile.Fans,
+            pluggedIn.Performance,
+            pluggedIn.Fans,
             ConfirmedBattery(80),
-            batteryProfile.Lighting);
+            pluggedIn.Lighting);
         await context.Runtime.ObserveAsync(CancellationToken.None);
 
         ConfirmedDeviceState externallyChanged = subsystem switch
@@ -494,9 +531,10 @@ public sealed class ServiceControlRuntimeTests : IDisposable
 
         ServiceStatusSnapshot status = context.Runtime.GetStatus();
         Assert.Equal(capabilityReads + 1, context.Device.CapabilitiesReadCalls);
-        Assert.Equal(stateReads + 1, context.Device.StateReadCalls);
-        Assert.Equal(0, context.Device.TotalSetterCalls);
-        Assert.Equal(externallyChanged, status.ConfirmedState);
+        Assert.Equal(
+            stateReads + (subsystem == DeviceSubsystem.Performance ? 1 : 2),
+            context.Device.StateReadCalls);
+        Assert.Equal(0, SetterCount(context.Device, subsystem));
         Assert.Equal([subsystem], status.ExternalChanges);
         Assert.Contains("paused", status.Message, StringComparison.OrdinalIgnoreCase);
     }
@@ -798,7 +836,15 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         Assert.Equal([0, 1, 0, 0], SetterCounts(fans.Device));
 
         TestContext lighting = CreateWritableContext();
-        LightingSettings target = ProfileDefaults.CreateSafeDefaults().PluggedIn.Lighting;
+        lighting.Device.ConfirmedState = lighting.Device.ConfirmedState with
+        {
+            Lighting = new LightingSettings(
+                LightingEffect.Static,
+                new RgbColor(1, 2, 3),
+                25),
+        };
+        LightingSettings target =
+            ProfileDefaults.CreateSafeDefaults().PluggedIn.Lighting;
         await lighting.Runtime.SetLightingOverrideAsync(
             new ManualOverride<LightingSettings>(target, OverrideLifetime.Persistent),
             CancellationToken.None);
@@ -1276,6 +1322,31 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     }
 
     [Fact]
+    public async Task RestartObservation_ReportsFirmwareFullChargeAndUnplugRestoresLimit()
+    {
+        TestContext context = CreateWritableContext();
+        context.Device.ConfirmedState = context.Device.ConfirmedState with
+        {
+            Battery = new ConfirmedBatteryState(true, 80, true),
+        };
+
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+
+        ServiceStatusSnapshot observed = context.Runtime.GetStatus();
+        Assert.True(observed.FullChargeOverride);
+        Assert.False(observed.DesiredState.Battery.TemporaryFullCharge);
+
+        context.Telemetry.Current = CreateTelemetry(PowerSource.Battery);
+        await context.Runtime.HandlePowerSourceChangedAsync(CancellationToken.None);
+
+        ServiceStatusSnapshot restored = context.Runtime.GetStatus();
+        Assert.False(restored.FullChargeOverride);
+        Assert.False(restored.ConfirmedState!.Battery!.TemporaryFullCharge);
+        Assert.Equal(80, restored.ConfirmedState.Battery.ChargeLimitPercent);
+        Assert.Equal(["SetTemporaryFullCharge"], context.Device.BatterySetterCalls);
+    }
+
+    [Fact]
     public async Task FailedFullCharge_PreservesPriorIntent()
     {
         TestContext context = CreateWritableContext();
@@ -1295,7 +1366,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     }
 
     [Fact]
-    public async Task MismatchedFullCharge_PreservesPriorIntent()
+    public async Task MismatchedFullCharge_ReportsConfirmedFirmwareState()
     {
         TestContext context = CreateWritableContext();
         context.Device.ConfirmedState = context.Device.ConfirmedState with
@@ -1309,7 +1380,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             CancellationToken.None);
 
         Assert.Equal(ControlOperationStatus.Failed, result.Status);
-        Assert.False(context.Runtime.GetStatus().FullChargeOverride);
+        Assert.True(context.Runtime.GetStatus().FullChargeOverride);
         Assert.Equal(1, context.Device.BatterySetCalls);
     }
 
@@ -1373,11 +1444,6 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     public async Task RealPowerTransition_FinalExternalFanChangeRemainsLatchedAndIsNotUnchanged()
     {
         TestContext context = CreateWritableContext();
-        context.Device.ConfirmedState = context.Device.ConfirmedState with
-        {
-            Performance = PerformancePreset.Performance,
-            Lighting = ProfileDefaults.CreateSafeDefaults().Battery.Lighting,
-        };
         await context.Runtime.ObserveAsync(CancellationToken.None);
         context.Device.AfterSetter = subsystem =>
         {
@@ -1407,11 +1473,6 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     public async Task RealPowerTransition_FinalBatteryProtectionOffRemainsLatchedWithoutBatteryWrite()
     {
         TestContext context = CreateWritableContext();
-        context.Device.ConfirmedState = context.Device.ConfirmedState with
-        {
-            Performance = PerformancePreset.Performance,
-            Lighting = ProfileDefaults.CreateSafeDefaults().Battery.Lighting,
-        };
         await context.Runtime.ObserveAsync(CancellationToken.None);
         context.Device.AfterSetter = subsystem =>
         {
@@ -1936,13 +1997,10 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             SupportsTemporaryFullCharge = true,
         };
         context.Device.ConfirmedState = new ConfirmedDeviceState(
-            PerformancePreset.Silent,
-            FanMode.Automatic,
+            ProfileDefaults.CreateSafeDefaults().PluggedIn.Performance,
+            ProfileDefaults.CreateSafeDefaults().PluggedIn.Fans,
             ConfirmedBattery(80),
-            new LightingSettings(
-                LightingEffect.Static,
-                new RgbColor(1, 2, 3),
-                25));
+            ProfileDefaults.CreateSafeDefaults().PluggedIn.Lighting);
         return context;
     }
 
