@@ -148,9 +148,10 @@
                         <TextBlock Text="BATTERY" Style="{StaticResource SectionHeaderStyle}" />
                         <Border Style="{StaticResource CardStyle}">
                             <StackPanel Spacing="10">
-                                <ComboBox Header="Charge limit"
+                                <ComboBox x:Name="DashboardChargeLimitSelector"
+                                          Header="Charge limit"
                                           ItemsSource="{x:Bind ViewModel.ChargeLimitOptions, Mode=OneWay}"
-                                          SelectedItem="{x:Bind ViewModel.ChargeLimitPercent, Mode=TwoWay}" />
+                                          SelectedItem="{x:Bind ViewModel.ChargeLimitPercent, Mode=OneWay}" />
                                 <Grid ColumnSpacing="8" RowSpacing="8">
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="*" />
@@ -163,7 +164,7 @@
                                     <Button Content="Apply charge limit"
                                             HorizontalAlignment="Stretch"
                                             Command="{x:Bind ViewModel.SetChargeLimitCommand}"
-                                            CommandParameter="{x:Bind ViewModel.ChargeLimitPercent, Mode=OneWay}" />
+                                            CommandParameter="{x:Bind DashboardChargeLimitSelector.SelectedItem, Mode=OneWay}" />
                                     <Button Grid.Column="1"
                                             Content="{x:Bind ViewModel.BatteryProtectionActionLabel, Mode=OneWay}"
                                             HorizontalAlignment="Stretch"

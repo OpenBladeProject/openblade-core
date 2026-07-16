@@ -73,6 +73,7 @@ public sealed class CapabilityPresentationTests
             StringComparison.Ordinal);
         Assert.Contains("<Grid.Resources>", xaml, StringComparison.Ordinal);
         Assert.Contains("DashboardFanModeSelector.SelectedItem", xaml, StringComparison.Ordinal);
+        Assert.Contains("DashboardChargeLimitSelector.SelectedItem", xaml, StringComparison.Ordinal);
         Assert.DoesNotContain(
             "CommandParameter=\"{x:Bind ViewModel.SelectedFanMode",
             xaml,
@@ -95,11 +96,11 @@ public sealed class CapabilityPresentationTests
         Assert.DoesNotContain("SystemFillColorCriticalBrush", xaml, StringComparison.Ordinal);
         Assert.DoesNotContain("Confirmed source:", xaml, StringComparison.Ordinal);
         Assert.Contains(
-            "SelectedItem=\"{x:Bind ViewModel.ChargeLimitPercent, Mode=TwoWay}\"",
+            "SelectedItem=\"{x:Bind ViewModel.ChargeLimitPercent, Mode=OneWay}\"",
             xaml,
             StringComparison.Ordinal);
-        Assert.Contains(
-            "CommandParameter=\"{x:Bind ViewModel.ChargeLimitPercent, Mode=OneWay}\"",
+        Assert.DoesNotContain(
+            "CommandParameter=\"{x:Bind ViewModel.ChargeLimitPercent",
             xaml,
             StringComparison.Ordinal);
         Assert.Equal(
