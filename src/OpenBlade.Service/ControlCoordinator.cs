@@ -16,6 +16,7 @@ internal sealed record FullTransitionApplyOutcome(
     ConfirmedDeviceState? Readback,
     IReadOnlySet<DeviceSubsystem> WriteAttempted,
     IReadOnlySet<DeviceSubsystem> ReadbackMatched,
+    IReadOnlySet<DeviceSubsystem> ReadbackContradicted,
     DeviceCapabilities? Capabilities,
     bool DeviceAccessFailed);
 
@@ -123,6 +124,7 @@ public sealed class ControlCoordinator
         ArgumentNullException.ThrowIfNull(desired);
         var attempted = new HashSet<DeviceSubsystem>();
         var matched = new HashSet<DeviceSubsystem>();
+        var contradicted = new HashSet<DeviceSubsystem>();
         DeviceCapabilities capabilities;
         ConfirmedDeviceState initial;
         try
@@ -143,6 +145,7 @@ public sealed class ControlCoordinator
                 null,
                 attempted,
                 matched,
+                contradicted,
                 null,
                 DeviceAccessFailed: true);
         }
@@ -234,6 +237,7 @@ public sealed class ControlCoordinator
                     initial,
                     attempted,
                     matched,
+                    contradicted,
                     capabilities,
                     DeviceAccessFailed: false);
             }
@@ -263,6 +267,7 @@ public sealed class ControlCoordinator
                     null,
                     attempted,
                     matched,
+                    contradicted,
                     capabilities,
                     DeviceAccessFailed: true);
             }
@@ -292,6 +297,12 @@ public sealed class ControlCoordinator
                     else
                     {
                         provisional[subsystem] = FinalReadbackChanged(pending.Name);
+                        if (subsystem == DeviceSubsystem.Battery
+                            && !desired.Battery.TemporaryFullCharge
+                            && final.Battery is null)
+                        {
+                            contradicted.Add(DeviceSubsystem.Battery);
+                        }
                     }
                 }
             }
@@ -301,6 +312,7 @@ public sealed class ControlCoordinator
                 final,
                 attempted,
                 matched,
+                contradicted,
                 capabilities,
                 DeviceAccessFailed: stopFurtherWrites);
         }
@@ -424,6 +436,7 @@ public sealed class ControlCoordinator
         ConfirmedDeviceState? readback,
         IReadOnlySet<DeviceSubsystem> attempted,
         IReadOnlySet<DeviceSubsystem> matched,
+        IReadOnlySet<DeviceSubsystem> contradicted,
         DeviceCapabilities capabilities,
         bool DeviceAccessFailed) => new(
             new SubsystemApplyResults(
@@ -434,6 +447,7 @@ public sealed class ControlCoordinator
             readback,
             new HashSet<DeviceSubsystem>(attempted),
             new HashSet<DeviceSubsystem>(matched),
+            new HashSet<DeviceSubsystem>(contradicted),
             capabilities,
             DeviceAccessFailed);
 

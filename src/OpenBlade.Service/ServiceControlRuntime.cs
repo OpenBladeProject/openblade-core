@@ -505,6 +505,10 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             {
                 driftTracker.ConfirmIntentional(subsystem, matched: false);
             }
+            else if (outcome.ReadbackContradicted.Contains(subsystem))
+            {
+                driftTracker.ConfirmIntentional(subsystem, matched: false);
+            }
         }
 
         history.RecordSubsystemResults(outcome.Results);

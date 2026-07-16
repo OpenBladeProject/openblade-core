@@ -825,6 +825,46 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     }
 
     [Fact]
+    public async Task RealPowerTransition_FinalBatteryProtectionOffRemainsLatchedWithoutBatteryWrite()
+    {
+        TestContext context = CreateWritableContext();
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        context.Device.ConfirmedState = context.Device.ConfirmedState with
+        {
+            Performance = PerformancePreset.Performance,
+            Lighting = ProfileDefaults.CreateSafeDefaults().Battery.Lighting,
+        };
+        context.Device.AfterSetter = subsystem =>
+        {
+            if (subsystem == DeviceSubsystem.Performance)
+            {
+                context.Device.ConfirmedState = context.Device.ConfirmedState with
+                {
+                    Battery = null,
+                };
+            }
+        };
+        context.Telemetry.Current = CreateTelemetry(PowerSource.Battery);
+
+        await context.Runtime.HandlePowerSourceChangedAsync(CancellationToken.None);
+
+        Assert.Null(context.Runtime.GetStatus().ConfirmedState!.Battery);
+        Assert.Equal([DeviceSubsystem.Battery], context.Runtime.GetStatus().ExternalChanges);
+        Assert.Equal(1, context.Device.PerformanceSetCalls);
+        Assert.Equal(0, context.Device.BatterySetCalls);
+        DiagnosticHistorySnapshot history = context.History.Snapshot();
+        DiagnosticCommandResult performanceResult = Assert.Single(
+            history.CommandResults,
+            result => result.Subsystem == "Performance");
+        Assert.Equal("Applied", performanceResult.Status);
+        DiagnosticCommandResult batteryResult = Assert.Single(
+            history.CommandResults,
+            result => result.Subsystem == "Battery");
+        Assert.Equal("Failed", batteryResult.Status);
+        Assert.Contains("final", batteryResult.Detail, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public async Task ScopedAction_RecordsOneSubsystemHistoryEntry()
     {
         TestContext context = CreateWritableContext();
