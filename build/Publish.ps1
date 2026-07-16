@@ -60,12 +60,14 @@ try {
     Invoke-CheckedPublish (Join-Path $repository 'src\OpenBlade.Capture\OpenBlade.Capture.csproj') $payload
     Invoke-CheckedPublish (Join-Path $repository 'src\OpenBlade.Setup\OpenBlade.Setup.csproj') $stagingBundle
 
-    Complete-ValidatedBundleReplacement -StagingBundle $stagingBundle -Bundle $bundle
+    Complete-ValidatedBundleReplacement `
+        -StagingBundle $stagingBundle `
+        -Bundle $bundle `
+        -PermittedRoot $artifacts
 }
 finally {
     if (Test-Path -LiteralPath $stagingRoot) {
-        Assert-SafeArtifactPath -Path $stagingRoot
-        Remove-Item -LiteralPath $stagingRoot -Recurse -Force
+        Remove-ValidatedPublishPath -Path $stagingRoot -PermittedRoot $artifacts
     }
 }
 
