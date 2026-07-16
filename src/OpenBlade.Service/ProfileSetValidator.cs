@@ -49,6 +49,11 @@ public sealed class ProfileSetValidator(ProfileValidationPolicy policy)
         ValidateBatteryPolicy(profiles.BatteryPolicy);
     }
 
+    public void ValidatePreferences(BatteryAutomationPreferences preferences)
+    {
+        ArgumentNullException.ThrowIfNull(preferences);
+    }
+
     private void ValidateProfile(PowerProfile? profile, string name)
     {
         if (profile is null)

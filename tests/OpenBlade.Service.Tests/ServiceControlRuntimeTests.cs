@@ -13,6 +13,37 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         Guid.NewGuid().ToString("N"));
 
     [Fact]
+    public async Task BeforeInitialize_StatusAndMutationAccessAreRejectedWithoutHardwareAccess()
+    {
+        TestContext context = CreateContext(providerAvailable: true, initialize: false);
+
+        Assert.Throws<InvalidOperationException>(() => context.Runtime.GetStatus());
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            context.Runtime.UpdateProfilesAsync(
+                ProfileDefaults.CreateSafeDefaults(),
+                CancellationToken.None));
+        Assert.Equal(0, context.Provider.TryGetCount);
+        Assert.Equal(0, context.Device.TotalCalls);
+    }
+
+    [Fact]
+    public void Initialize_IsAllowedExactlyOnce()
+    {
+        TestContext context = CreateContext(providerAvailable: true, initialize: false);
+        BatteryConfiguration configuration = new(
+            ProfileDefaults.CreateSafeDefaults(),
+            new BatteryAutomationPreferences(ProtectionEnabled: true),
+            Recovered: false);
+
+        context.Runtime.Initialize(configuration, PowerSource.PluggedIn);
+
+        Assert.Throws<InvalidOperationException>(() =>
+            context.Runtime.Initialize(configuration, PowerSource.PluggedIn));
+        Assert.Equal(0, context.Provider.TryGetCount);
+        Assert.Equal(0, context.Device.TotalCalls);
+    }
+
+    [Fact]
     public async Task Observe_ReadsCapabilitiesAndStateOnceWithoutSetters()
     {
         TestContext context = CreateContext(providerAvailable: true);
@@ -1403,10 +1434,16 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         bool providerAvailable,
         IReadOnlyList<string>? conflicts = null,
         string? detectionFailure = null,
-        PowerSource initialPowerSource = PowerSource.PluggedIn)
+        PowerSource initialPowerSource = PowerSource.PluggedIn,
+        bool initialize = true)
     {
-        ProfileSet profiles = ProfileDefaults.CreateSafeDefaults();
-        var store = new ProfileStore(Path.Combine(directory, "profiles.json"));
+        var store = new BatteryConfigurationStore(
+            Path.Combine(directory, "profiles.json"),
+            Path.Combine(directory, "battery-preferences.json"),
+            Path.Combine(directory, "battery-configuration.commit.json"));
+        BatteryConfiguration configuration = store.LoadAsync(CancellationToken.None)
+            .GetAwaiter()
+            .GetResult();
         var telemetry = new FakeTelemetryProvider { Current = CreateTelemetry(initialPowerSource) };
         var hub = new FakeHub();
         var device = new CountingBladeDevice();
@@ -1417,12 +1454,15 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         var history = new DiagnosticHistory();
         var runtime = new ServiceControlRuntime(
             store,
-            profiles,
             telemetry,
             hub,
             provider,
             history,
             monitor);
+        if (initialize)
+        {
+            runtime.Initialize(configuration, initialPowerSource);
+        }
         return new TestContext(
             runtime,
             store,
@@ -1471,7 +1511,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
 
     private sealed record TestContext(
         ServiceControlRuntime Runtime,
-        ProfileStore Store,
+        BatteryConfigurationStore Store,
         FakeTelemetryProvider Telemetry,
         FakeHub Hub,
         FakeGuard Guard,

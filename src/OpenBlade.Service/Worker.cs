@@ -8,6 +8,7 @@ public sealed class Worker(
     IServiceControlRuntime runtime,
     IStatusSubscriptionHub subscriptionHub,
     MachineProfileBootstrapper profileBootstrapper,
+    IPowerTelemetryProvider telemetryProvider,
     IServiceLifecycleEventSource lifecycleEventSource,
     TimeProvider timeProvider,
     ILogger<Worker> logger) : BackgroundService
@@ -19,6 +20,7 @@ public sealed class Worker(
         var startupCoordinator = new ServiceStartupCoordinator(
             profileBootstrapper,
             runtime,
+            telemetryProvider,
             logger);
         return RunAfterSuccessfulStartupAsync(
             startupCoordinator.InitializeAsync,

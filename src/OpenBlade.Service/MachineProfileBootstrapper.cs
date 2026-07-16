@@ -1,11 +1,7 @@
 namespace OpenBlade.Service;
 
-public sealed class MachineProfileBootstrapper(ProfileStore store)
+public sealed class MachineProfileBootstrapper(BatteryConfigurationStore store)
 {
-    public async Task<ProfileLoadResult> InitializeAsync(CancellationToken cancellationToken)
-    {
-        ProfileLoadResult result = await store.LoadAsync(cancellationToken);
-        await store.SaveAsync(result.Profiles, cancellationToken);
-        return result;
-    }
+    public Task<BatteryConfiguration> InitializeAsync(CancellationToken cancellationToken) =>
+        store.LoadAsync(cancellationToken);
 }

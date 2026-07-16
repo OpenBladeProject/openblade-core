@@ -5,6 +5,9 @@ namespace OpenBlade.Service;
 
 public interface IServiceControlRuntime
 {
+    void Initialize(BatteryConfiguration configuration, PowerSource powerSource) =>
+        throw new NotSupportedException();
+
     ServiceStatusSnapshot GetStatus();
 
     Task<ControlOperationResult> UpdateProfilesAsync(
@@ -45,7 +48,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
     private static readonly DeviceCapabilities UnavailableCapabilities =
         DeviceCapabilities.Unavailable();
 
-    private readonly ProfileStore store;
+    private readonly BatteryConfigurationStore store;
     private readonly IPowerTelemetryProvider telemetryProvider;
     private readonly IStatusSubscriptionHub subscriptionHub;
     private readonly IVerifiedBladeDeviceProvider deviceProvider;
@@ -54,13 +57,13 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
     private readonly SemaphoreSlim operationGate = new(1, 1);
     private readonly ProfileSetValidator validator =
         ProfileSetValidator.CreateUnverifiedSafeDefaults();
-    private readonly ProfileAutomationState automation;
+    private readonly object initializationGate = new();
+    private ProfileAutomationState? automation;
     private readonly ConfirmedStateDriftTracker driftTracker = new();
-    private ServiceStatusSnapshot status;
+    private ServiceStatusSnapshot? status;
 
     public ServiceControlRuntime(
-        ProfileStore store,
-        ProfileSet profiles,
+        BatteryConfigurationStore store,
         IPowerTelemetryProvider telemetryProvider,
         IStatusSubscriptionHub subscriptionHub,
         IVerifiedBladeDeviceProvider deviceProvider,
@@ -68,7 +71,6 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         IControllerPresenceMonitor controllerPresenceMonitor)
     {
         this.store = store ?? throw new ArgumentNullException(nameof(store));
-        ArgumentNullException.ThrowIfNull(profiles);
         this.telemetryProvider = telemetryProvider
             ?? throw new ArgumentNullException(nameof(telemetryProvider));
         this.subscriptionHub = subscriptionHub
@@ -79,25 +81,53 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         this.controllerPresenceMonitor = controllerPresenceMonitor
             ?? throw new ArgumentNullException(nameof(controllerPresenceMonitor));
 
-        TelemetrySnapshot telemetry = telemetryProvider.Capture();
-        automation = new ProfileAutomationState(profiles, telemetry.PowerSource);
-        status = CreateInitialSnapshot(telemetry);
     }
 
-    public ServiceStatusSnapshot GetStatus() => Volatile.Read(ref status);
+    public void Initialize(BatteryConfiguration configuration, PowerSource powerSource)
+    {
+        ArgumentNullException.ThrowIfNull(configuration);
+        validator.Validate(configuration.Profiles);
+        validator.ValidatePreferences(configuration.Preferences);
+        if (!Enum.IsDefined(powerSource))
+        {
+            throw new ArgumentOutOfRangeException(nameof(powerSource));
+        }
+
+        lock (initializationGate)
+        {
+            if (automation is not null)
+            {
+                throw new InvalidOperationException("The service runtime is already initialized.");
+            }
+
+            var initializedAutomation = new ProfileAutomationState(
+                configuration.Profiles,
+                powerSource);
+            TelemetrySnapshot telemetry = telemetryProvider.Capture() with
+            {
+                PowerSource = powerSource,
+            };
+            automation = initializedAutomation;
+            Volatile.Write(ref status, CreateInitialSnapshot(telemetry));
+        }
+    }
+
+    public ServiceStatusSnapshot GetStatus() => Volatile.Read(ref status)
+        ?? throw new InvalidOperationException("The service runtime is not initialized.");
 
     public async Task<ControlOperationResult> UpdateProfilesAsync(
         ProfileSet profiles,
         CancellationToken token)
     {
+        EnsureInitialized();
         await operationGate.WaitAsync(token);
         try
         {
             try
             {
                 validator.Validate(profiles);
-                await store.SaveAsync(profiles, token);
-                automation.UpdateProfiles(profiles);
+                await store.SaveProfilesAsync(profiles, token);
+                Automation.UpdateProfiles(profiles);
             }
             catch (OperationCanceledException) when (token.IsCancellationRequested)
             {
@@ -114,12 +144,12 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             PublishIfChanged(current with
             {
                 Message = message,
-                Profiles = automation.Profiles,
-                DesiredState = automation.Resolve(confirmed),
-                PerformanceOverride = automation.PerformanceOverride,
-                FanOverride = automation.FanOverride,
-                LightingOverride = automation.LightingOverride,
-                FullChargeOverride = automation.DesiredBattery.TemporaryFullCharge,
+                Profiles = Automation.Profiles,
+                DesiredState = Automation.Resolve(confirmed),
+                PerformanceOverride = Automation.PerformanceOverride,
+                FanOverride = Automation.FanOverride,
+                LightingOverride = Automation.LightingOverride,
+                FullChargeOverride = Automation.DesiredBattery.TemporaryFullCharge,
             });
             history.RecordSummary(ControlOperationStatus.Stored, message);
             return new ControlOperationResult(ControlOperationStatus.Stored, message);
@@ -137,7 +167,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             _ =>
             {
                 ValidateOverride(value, nameof(value));
-                automation.SetPerformanceOverride(value);
+                Automation.SetPerformanceOverride(value);
                 return Task.CompletedTask;
             },
             (coordinator, desired, cancellationToken) =>
@@ -153,7 +183,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             _ =>
             {
                 ValidateOverride(value, nameof(value));
-                automation.SetFanOverride(value);
+                Automation.SetFanOverride(value);
                 return Task.CompletedTask;
             },
             (coordinator, desired, cancellationToken) =>
@@ -167,7 +197,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             _ =>
             {
                 ValidateLightingOverride(value);
-                automation.SetLightingOverride(value);
+                Automation.SetLightingOverride(value);
                 return Task.CompletedTask;
             },
             (coordinator, desired, cancellationToken) =>
@@ -183,10 +213,10 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             async cancellationToken =>
             {
                 ArgumentNullException.ThrowIfNull(value);
-                ProfileSet updated = automation.Profiles with { BatteryPolicy = value };
+                ProfileSet updated = Automation.Profiles with { BatteryPolicy = value };
                 validator.Validate(updated);
-                await store.SaveAsync(updated, cancellationToken);
-                automation.SetBatteryPolicy(value);
+                await store.SaveProfilesAsync(updated, cancellationToken);
+                Automation.SetBatteryPolicy(value);
             },
             (coordinator, desired, cancellationToken) =>
                 coordinator.ApplyBatteryOutcomeAsync(desired.Battery, cancellationToken),
@@ -196,6 +226,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         bool enabled,
         CancellationToken token)
     {
+        EnsureInitialized();
         await operationGate.WaitAsync(token);
         try
         {
@@ -228,8 +259,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                         enabled),
                 },
                 enabled
-                    ? automation.EnableTemporaryFullCharge
-                    : automation.CancelTemporaryFullCharge);
+                    ? Automation.EnableTemporaryFullCharge
+                    : Automation.CancelTemporaryFullCharge);
         }
         finally
         {
@@ -239,6 +270,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
 
     public async Task ObserveAsync(CancellationToken cancellationToken)
     {
+        EnsureInitialized();
         await operationGate.WaitAsync(cancellationToken);
         try
         {
@@ -254,12 +286,13 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
 
     public async Task HandlePowerSourceChangedAsync(CancellationToken cancellationToken)
     {
+        EnsureInitialized();
         await operationGate.WaitAsync(cancellationToken);
         try
         {
             TelemetrySnapshot telemetry = telemetryProvider.Capture();
             cancellationToken.ThrowIfCancellationRequested();
-            if (automation.ChangePowerSource(telemetry.PowerSource))
+            if (Automation.ChangePowerSource(telemetry.PowerSource))
             {
                 await ApplyFullTransitionAsync(telemetry, cancellationToken);
             }
@@ -276,6 +309,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
 
     public async Task RefreshControllerPresenceAsync(CancellationToken cancellationToken)
     {
+        EnsureInitialized();
         await operationGate.WaitAsync(cancellationToken);
         try
         {
@@ -308,6 +342,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         Func<ControlCoordinator, DesiredDeviceState, CancellationToken, Task<ScopedApplyOutcome>> apply,
         CancellationToken token)
     {
+        EnsureInitialized();
         await operationGate.WaitAsync(token);
         try
         {
@@ -346,7 +381,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
     {
         ServiceStatusSnapshot current = GetStatus();
         ConfirmedDeviceState? cachedConfirmed = current.ConfirmedState;
-        DesiredDeviceState desired = automation.Resolve(cachedConfirmed ?? UnknownConfirmedState);
+        DesiredDeviceState desired = Automation.Resolve(cachedConfirmed ?? UnknownConfirmedState);
         if (stageDesired is not null)
         {
             desired = stageDesired(desired);
@@ -472,7 +507,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             return;
         }
 
-        DesiredDeviceState desired = automation.Resolve(cachedConfirmed ?? UnknownConfirmedState);
+        DesiredDeviceState desired = Automation.Resolve(cachedConfirmed ?? UnknownConfirmedState);
         FullTransitionApplyOutcome outcome;
         try
         {
@@ -560,13 +595,13 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 Message = "Verified device state observed.",
                 Capabilities = capabilities,
                 ConfirmedState = confirmed,
-                Profiles = automation.Profiles,
-                DesiredState = automation.Resolve(confirmed),
+                Profiles = Automation.Profiles,
+                DesiredState = Automation.Resolve(confirmed),
                 Telemetry = telemetry,
-                PerformanceOverride = automation.PerformanceOverride,
-                FanOverride = automation.FanOverride,
-                LightingOverride = automation.LightingOverride,
-                FullChargeOverride = automation.DesiredBattery.TemporaryFullCharge,
+                PerformanceOverride = Automation.PerformanceOverride,
+                FanOverride = Automation.FanOverride,
+                LightingOverride = Automation.LightingOverride,
+                FullChargeOverride = Automation.DesiredBattery.TemporaryFullCharge,
             });
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -595,13 +630,13 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             WritesBlocked = true,
             ExternalChanges = driftTracker.ExternalChanges,
             Message = message,
-            Profiles = automation.Profiles,
-            DesiredState = automation.Resolve(confirmed),
+            Profiles = Automation.Profiles,
+            DesiredState = Automation.Resolve(confirmed),
             Telemetry = telemetry,
-            PerformanceOverride = automation.PerformanceOverride,
-            FanOverride = automation.FanOverride,
-            LightingOverride = automation.LightingOverride,
-            FullChargeOverride = automation.DesiredBattery.TemporaryFullCharge,
+            PerformanceOverride = Automation.PerformanceOverride,
+            FanOverride = Automation.FanOverride,
+            LightingOverride = Automation.LightingOverride,
+            FullChargeOverride = Automation.DesiredBattery.TemporaryFullCharge,
         });
     }
 
@@ -615,13 +650,13 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             Message: "No verified PID 02E0 device is available.",
             Capabilities: UnavailableCapabilities,
             ConfirmedState: null,
-            Profiles: automation.Profiles,
-            DesiredState: automation.Resolve(UnknownConfirmedState),
+            Profiles: Automation.Profiles,
+            DesiredState: Automation.Resolve(UnknownConfirmedState),
             Telemetry: telemetry,
-            PerformanceOverride: automation.PerformanceOverride,
-            FanOverride: automation.FanOverride,
-            LightingOverride: automation.LightingOverride,
-            FullChargeOverride: automation.DesiredBattery.TemporaryFullCharge);
+            PerformanceOverride: Automation.PerformanceOverride,
+            FanOverride: Automation.FanOverride,
+            LightingOverride: Automation.LightingOverride,
+            FullChargeOverride: Automation.DesiredBattery.TemporaryFullCharge);
 
     private ControlOperationResult PublishScopedUnavailable(
         DeviceSubsystem subsystem,
@@ -681,13 +716,13 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             Message = message,
             Capabilities = capabilities ?? UnavailableCapabilities,
             ConfirmedState = confirmed,
-            Profiles = automation.Profiles,
-            DesiredState = automation.Resolve(confirmed ?? UnknownConfirmedState),
+            Profiles = Automation.Profiles,
+            DesiredState = Automation.Resolve(confirmed ?? UnknownConfirmedState),
             Telemetry = telemetry,
-            PerformanceOverride = automation.PerformanceOverride,
-            FanOverride = automation.FanOverride,
-            LightingOverride = automation.LightingOverride,
-            FullChargeOverride = automation.DesiredBattery.TemporaryFullCharge,
+            PerformanceOverride = Automation.PerformanceOverride,
+            FanOverride = Automation.FanOverride,
+            LightingOverride = Automation.LightingOverride,
+            FullChargeOverride = Automation.DesiredBattery.TemporaryFullCharge,
         });
     }
 
@@ -711,6 +746,15 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
 
     private static bool IsIntentFailure(Exception exception) => exception is
         ArgumentException or InvalidDataException or IOException;
+
+    private ProfileAutomationState Automation => automation
+        ?? throw new InvalidOperationException("The service runtime is not initialized.");
+
+    private void EnsureInitialized()
+    {
+        _ = GetStatus();
+        _ = Automation;
+    }
 
     private void PublishIfChanged(ServiceStatusSnapshot candidate)
     {

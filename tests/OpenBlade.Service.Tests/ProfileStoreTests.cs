@@ -95,6 +95,22 @@ public sealed class ProfileStoreTests : IDisposable
         Assert.False(File.Exists(path + ".tmp"));
     }
 
+    [Fact]
+    public async Task Load_CaseVariantSchemaMemberRecoversInsteadOfBindingLoosely()
+    {
+        string path = Path.Combine(_directory, "profiles.json");
+        ProfileStore store = new(path);
+        await store.SaveAsync(ProfileDefaults.CreateSafeDefaults(), CancellationToken.None);
+        string json = (await File.ReadAllTextAsync(path))
+            .Replace("\"schemaVersion\"", "\"SchemaVersion\"", StringComparison.Ordinal);
+        await File.WriteAllTextAsync(path, json);
+
+        ProfileLoadResult result = await store.LoadAsync(CancellationToken.None);
+
+        Assert.True(result.RecoveredFromInvalidFile);
+        Assert.Equal(ProfileDefaults.CreateSafeDefaults(), result.Profiles);
+    }
+
     public void Dispose()
     {
         if (Directory.Exists(_directory))

@@ -12,28 +12,41 @@ public sealed class MachineProfileBootstrapperTests : IDisposable
     [Fact]
     public async Task InitializeAsync_PersistsSafeDefaultsWhenProfileFileIsMissing()
     {
-        string path = Path.Combine(directory, "profiles.json");
-        MachineProfileBootstrapper bootstrapper = new(new ProfileStore(path));
+        Paths paths = CreatePaths();
+        MachineProfileBootstrapper bootstrapper = new(CreateStore(paths));
 
-        ProfileLoadResult result = await bootstrapper.InitializeAsync(CancellationToken.None);
+        BatteryConfiguration result = await bootstrapper.InitializeAsync(CancellationToken.None);
 
-        Assert.False(result.RecoveredFromInvalidFile);
-        Assert.True(File.Exists(path));
-        Assert.Equal(result.Profiles, (await new ProfileStore(path).LoadAsync(CancellationToken.None)).Profiles);
+        Assert.False(result.Recovered);
+        Assert.All(paths.All, path => Assert.True(File.Exists(path)));
+        Assert.Equal(result, await CreateStore(paths).LoadAsync(CancellationToken.None));
     }
 
     [Fact]
     public async Task InitializeAsync_ReplacesCorruptProfileWithSafeDefaults()
     {
         Directory.CreateDirectory(directory);
-        string path = Path.Combine(directory, "profiles.json");
-        await File.WriteAllTextAsync(path, "{bad json");
-        MachineProfileBootstrapper bootstrapper = new(new ProfileStore(path));
+        Paths paths = CreatePaths();
+        await File.WriteAllTextAsync(paths.Profiles, "{bad json");
+        MachineProfileBootstrapper bootstrapper = new(CreateStore(paths));
 
-        ProfileLoadResult result = await bootstrapper.InitializeAsync(CancellationToken.None);
+        BatteryConfiguration result = await bootstrapper.InitializeAsync(CancellationToken.None);
 
-        Assert.True(result.RecoveredFromInvalidFile);
-        Assert.False((await new ProfileStore(path).LoadAsync(CancellationToken.None)).RecoveredFromInvalidFile);
+        Assert.True(result.Recovered);
+        Assert.False((await CreateStore(paths).LoadAsync(CancellationToken.None)).Recovered);
+    }
+
+    private Paths CreatePaths() => new(
+        Path.Combine(directory, "profiles.json"),
+        Path.Combine(directory, "battery-preferences.json"),
+        Path.Combine(directory, "battery-configuration.commit.json"));
+
+    private static BatteryConfigurationStore CreateStore(Paths paths) =>
+        new(paths.Profiles, paths.Preferences, paths.Marker);
+
+    private sealed record Paths(string Profiles, string Preferences, string Marker)
+    {
+        public string[] All => [Profiles, Preferences, Marker];
     }
 
     public void Dispose()

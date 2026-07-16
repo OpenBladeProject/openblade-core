@@ -100,15 +100,18 @@ public sealed class ControlRequestHandlerTests
         {
             var device = new CountingDevice();
             var provider = new CountingProvider(providerAvailable, device);
-            ProfileSet profiles = ProfileDefaults.CreateSafeDefaults();
+            string preferencesPath = path + ".preferences";
+            string markerPath = path + ".commit";
+            var store = new BatteryConfigurationStore(path, preferencesPath, markerPath);
+            BatteryConfiguration configuration = await store.LoadAsync(CancellationToken.None);
             using var runtime = new ServiceControlRuntime(
-                new ProfileStore(path),
-                profiles,
+                store,
                 new FixedTelemetry(),
                 new NullHub(),
                 provider,
                 new DiagnosticHistory(),
                 new FixedControllerPresenceMonitor(conflict ? ["RazerAppEngine"] : []));
+            runtime.Initialize(configuration, PowerSource.PluggedIn);
             var handler = new ControlRequestHandler(runtime, new ThrowingArchiveProvider());
 
             ServiceResponse response = await handler.HandleAsync(
@@ -126,6 +129,8 @@ public sealed class ControlRequestHandlerTests
         finally
         {
             File.Delete(path);
+            File.Delete(path + ".preferences");
+            File.Delete(path + ".commit");
         }
     }
 

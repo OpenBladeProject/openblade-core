@@ -111,6 +111,13 @@ public sealed class ProfileSetValidatorTests
         validator.Validate(profiles);
     }
 
+    [Fact]
+    public void ValidatePreferences_RejectsMissingPreferences()
+    {
+        Assert.Throws<ArgumentNullException>(() =>
+            CreateValidator().ValidatePreferences(null!));
+    }
+
     private static ProfileSet WithPluggedInLighting(LightingSettings lighting) =>
         ProfileDefaults.CreateSafeDefaults() with
         {
