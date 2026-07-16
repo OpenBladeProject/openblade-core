@@ -218,6 +218,83 @@ public sealed class MainViewModelTests
     }
 
     [Fact]
+    public async Task DirectFailureCannotDisconnectOrRegressHealthyNewerSubscriptionState()
+    {
+        var client = new FakeServiceClient();
+        var observation = new TaskCompletionSource<ServiceStatusSnapshot>(TaskCreationOptions.RunContinuationsAsynchronously);
+        client.PendingObservation = observation;
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        client.Publish(CreateStatus(true, false) with
+        {
+            Revision = 7,
+            Message = "subscription revision seven",
+        });
+        await WaitUntilAsync(() => viewModel.ConnectionStatus == "subscription revision seven");
+
+        Task direct = viewModel.ObserveStateAsync(CancellationToken.None);
+        await client.ObservationStarted.Task.WaitAsync(TimeSpan.FromSeconds(2));
+        client.Publish(CreateStatus(true, false) with
+        {
+            Revision = 8,
+            Message = "subscription revision eight",
+            ConfirmedState = new ConfirmedDeviceState(PerformancePreset.Performance, null, null, null),
+        });
+        await WaitUntilAsync(() =>
+            viewModel.ConnectionStatus == "subscription revision eight"
+            && viewModel.SelectedPerformance == PerformancePreset.Performance);
+
+        observation.TrySetException(new IOException("direct observation failed"));
+        await direct;
+
+        Assert.True(viewModel.IsConnected);
+        Assert.Equal("subscription revision eight", viewModel.ConnectionStatus);
+        Assert.Equal(PerformancePreset.Performance, viewModel.SelectedPerformance);
+    }
+
+    [Fact]
+    public async Task DirectSuccessAfterFailureAppliesNewerConfirmedStateAndWarning()
+    {
+        var client = new FakeServiceClient();
+        var failure = new TaskCompletionSource<ServiceStatusSnapshot>(TaskCreationOptions.RunContinuationsAsynchronously);
+        client.PendingObservation = failure;
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        client.Publish(CreateStatus(true, false) with
+        {
+            Revision = 7,
+            Message = "healthy subscription",
+        });
+        await WaitUntilAsync(() => viewModel.ConnectionStatus == "healthy subscription");
+
+        Task failedDirect = viewModel.ObserveStateAsync(CancellationToken.None);
+        await client.ObservationStarted.Task.WaitAsync(TimeSpan.FromSeconds(2));
+        failure.TrySetException(new IOException("temporary observation failure"));
+        await failedDirect;
+
+        var recovery = new TaskCompletionSource<ServiceStatusSnapshot>(TaskCreationOptions.RunContinuationsAsynchronously);
+        client.PendingObservation = recovery;
+        Task recoveredDirect = viewModel.ObserveStateAsync(CancellationToken.None);
+        await WaitUntilAsync(() => client.ObservationCalls == 2);
+        recovery.TrySetResult(CreateStatus(true, false) with
+        {
+            Revision = 9,
+            Message = "recovered observation",
+            ConfirmedState = new ConfirmedDeviceState(PerformancePreset.Performance, null, null, null),
+            ControllerDetectionWarning = "Observation recovered with advisory.",
+        });
+        await recoveredDirect;
+
+        Assert.True(viewModel.IsConnected);
+        Assert.Equal("recovered observation", viewModel.ConnectionStatus);
+        Assert.Equal(PerformancePreset.Performance, viewModel.SelectedPerformance);
+        Assert.True(viewModel.HasControllerDetectionWarning);
+        Assert.Equal(
+            "Observation recovered with advisory.",
+            viewModel.ControllerDetectionWarningText);
+    }
+
+    [Fact]
     public async Task StartAsync_ConsumesWatchOnceAndMarshalsExactConflictStatus()
     {
         var client = new FakeServiceClient();
@@ -838,6 +915,7 @@ public sealed class MainViewModelTests
         public int WatchCalls { get; private set; }
         public int MutationCalls { get; private set; }
         public int ExportCalls { get; private set; }
+        public int ObservationCalls { get; private set; }
         public TaskCompletionSource<ServiceStatusSnapshot>? PendingObservation { get; set; }
         public TaskCompletionSource ObservationStarted { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public bool BlockMutations { get; init; }
@@ -880,6 +958,7 @@ public sealed class MainViewModelTests
 
         public Task<ServiceStatusSnapshot> ObserveStateAsync(CancellationToken cancellationToken)
         {
+            ObservationCalls++;
             ObservationStarted.TrySetResult();
             return PendingObservation is not null
                 ? PendingObservation.Task.WaitAsync(cancellationToken)

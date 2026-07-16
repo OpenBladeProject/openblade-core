@@ -282,6 +282,31 @@ public sealed class CapabilityPresentationTests
     }
 
     [Fact]
+    public async Task UndefinedLightingCapabilityIsNotExposedOrExecutable()
+    {
+        var client = new PresentationClient();
+        await using var viewModel = new MainViewModel(client, new ImmediateDispatcher());
+        await viewModel.StartAsync();
+        var invalidEffect = (LightingEffect)999;
+        client.Publish(CreateStatus(
+            verified: true,
+            blocked: false,
+            capabilities: new DeviceCapabilities(
+                new HashSet<PerformancePreset> { PerformancePreset.Balanced },
+                new HashSet<FanMode> { FanMode.Automatic },
+                new HashSet<LightingEffect> { LightingEffect.Off, invalidEffect },
+                50, 80, 5)));
+        await WaitUntilAsync(() => viewModel.IsLightingVisible);
+
+        Assert.Equal([LightingEffect.Off], viewModel.AvailableLightingEffects);
+        Assert.All(
+            viewModel.AvailableLightingSettings,
+            setting => Assert.Equal(LightingEffect.Off, setting.Effect));
+        Assert.False(viewModel.SetLightingCommand.CanExecute(
+            new LightingSettings(invalidEffect, default, 0)));
+    }
+
+    [Fact]
     public async Task MissingBatteryCapabilityDisablesOnlyBatteryCommands()
     {
         var client = new PresentationClient();

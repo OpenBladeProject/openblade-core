@@ -571,9 +571,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         }
         catch (Exception)
         {
-            await dispatcher.InvokeAsync(
-                () => ApplyObservationFailure(stamp),
-                cancellationToken);
+            // The permanent subscription exclusively owns connection state.
         }
     }
 
@@ -733,7 +731,10 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             .Where(Enum.IsDefined)
             .Order()
             .ToArray();
-        AvailableLightingEffects = capabilities.LightingEffects.Order().ToArray();
+        AvailableLightingEffects = capabilities.LightingEffects
+            .Where(Enum.IsDefined)
+            .Order()
+            .ToArray();
         AvailableLightingSettings = AvailableLightingEffects
             .Select(CreateLightingChoice)
             .ToArray();
@@ -766,15 +767,6 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             && stamp.Generation == connectionGeneration)
         {
             ApplyStatus(status);
-        }
-    }
-
-    private void ApplyObservationFailure(ObservationRequestStamp stamp)
-    {
-        if (stamp.BeganWithConnectedSubscription
-            && stamp.Generation == connectionGeneration)
-        {
-            MarkDisconnected();
         }
     }
 
