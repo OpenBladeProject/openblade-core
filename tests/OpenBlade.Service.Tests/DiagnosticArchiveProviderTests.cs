@@ -11,7 +11,10 @@ public sealed class DiagnosticArchiveProviderTests
     public async Task CreateAsync_UsesOnlyCurrentSnapshotsAndWritesExactlySixRedactedEntries()
     {
         const string secret = "S-1-5-21-sensitive-token";
-        var runtime = new SnapshotOnlyRuntime(CreateStatus());
+        var runtime = new SnapshotOnlyRuntime(CreateStatus() with
+        {
+            ControllerDetectionWarning = $"Enumeration warning: {secret}",
+        });
         var history = new DiagnosticHistory();
         history.RecordSummary(ControlOperationStatus.Blocked, $"Blocked for {secret}");
         var provider = new DiagnosticArchiveProvider(
@@ -58,6 +61,16 @@ public sealed class DiagnosticArchiveProviderTests
         Assert.Equal(
             "0",
             configuration.RootElement.GetProperty("capability.minimumChargeLimit").GetString());
+        Assert.Equal(
+            "RazerAppEngine",
+            configuration.RootElement.GetProperty("status.potentialControllers").GetString());
+        Assert.Equal(
+            "Enumeration warning: [REDACTED]",
+            configuration.RootElement.GetProperty("status.controllerDetectionWarning").GetString());
+        Assert.Equal(
+            "Fans",
+            configuration.RootElement.GetProperty("status.externalChanges").GetString());
+        Assert.False(configuration.RootElement.TryGetProperty("status.conflicts", out _));
     }
 
     [Fact]
@@ -112,7 +125,9 @@ public sealed class DiagnosticArchiveProviderTests
             12,
             DeviceVerified: true,
             WritesBlocked: true,
-            Conflicts: [],
+            PotentialControllers: ["RazerAppEngine"],
+            ControllerDetectionWarning: null,
+            ExternalChanges: [DeviceSubsystem.Fans],
             Message: "Verified read-only state.",
             Capabilities: DeviceCapabilities.Unavailable(),
             ConfirmedState: new ConfirmedDeviceState(null, null, BatteryPolicy.Create(80), null),

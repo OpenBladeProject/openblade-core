@@ -101,7 +101,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
 
         ServiceStatusSnapshot blocked = context.Runtime.GetStatus();
         Assert.True(blocked.WritesBlocked);
-        Assert.Equal(["RazerAppEngine"], blocked.Conflicts);
+        Assert.Equal(["RazerAppEngine"], blocked.PotentialControllers);
         Assert.Equal(0, context.Provider.TryGetCount);
         Assert.Equal(0, context.Device.TotalCalls);
 
@@ -111,7 +111,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         ServiceStatusSnapshot recovered = context.Runtime.GetStatus();
         Assert.True(recovered.DeviceVerified);
         Assert.False(recovered.WritesBlocked);
-        Assert.Empty(recovered.Conflicts);
+        Assert.Empty(recovered.PotentialControllers);
         Assert.Equal(blocked.Revision + 1, recovered.Revision);
         Assert.Equal(0, context.Device.PerformanceSetCalls);
         Assert.Equal(0, context.Device.FanSetCalls);
@@ -151,11 +151,16 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         await context.Runtime.RefreshConflictsAsync(CancellationToken.None);
         ServiceStatusSnapshot detectionFailure = context.Runtime.GetStatus();
 
-        Assert.Equal(["RazerAppEngine"], conflict.Conflicts);
+        Assert.Equal(["RazerAppEngine"], conflict.PotentialControllers);
+        Assert.Null(conflict.ControllerDetectionWarning);
+        Assert.Empty(conflict.ExternalChanges);
         Assert.Equal(
             "Razer controller conflicts detected: RazerAppEngine.",
             conflict.Message);
         Assert.Equal(conflict.Revision + 1, detectionFailure.Revision);
+        Assert.Equal(
+            "process enumeration failed",
+            detectionFailure.ControllerDetectionWarning);
         Assert.Contains("Controller conflict detection failed", detectionFailure.Message);
         Assert.Equal(telemetryCaptures, context.Telemetry.CaptureCount);
         Assert.Equal(0, context.Provider.TryGetCount);
@@ -225,7 +230,11 @@ public sealed class ServiceControlRuntimeTests : IDisposable
 
         Assert.Equal(
             ["Razer Central Service", "Razer Synapse Service"],
-            status.Conflicts);
+            status.PotentialControllers);
+        Assert.Equal(
+            "Windows service enumeration failed.",
+            status.ControllerDetectionWarning);
+        Assert.Empty(status.ExternalChanges);
         Assert.Equal(
             "Controller conflict detection failed: Windows service enumeration failed. " +
             "Detected conflicts: Razer Central Service, Razer Synapse Service.",

@@ -331,7 +331,11 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 GetStatus().Revision,
                 DeviceVerified: true,
                 WritesBlocked: writesBlocked,
-                Conflicts: [],
+                PotentialControllers: access.Conflicts
+                    .OrderBy(name => name, StringComparer.Ordinal)
+                    .ToArray(),
+                ControllerDetectionWarning: access.DetectionFailure,
+                ExternalChanges: [],
                 Message: message,
                 Capabilities: capabilities,
                 ConfirmedState: confirmed,
@@ -399,7 +403,9 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             revision,
             DeviceVerified: false,
             WritesBlocked: true,
-            Conflicts: conflicts,
+            PotentialControllers: conflicts,
+            ControllerDetectionWarning: access.DetectionFailure,
+            ExternalChanges: [],
             Message: message,
             Capabilities: UnavailableCapabilities,
             ConfirmedState: null,
@@ -428,7 +434,14 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
     private static bool Equivalent(ServiceStatusSnapshot left, ServiceStatusSnapshot right) =>
         left.DeviceVerified == right.DeviceVerified
         && left.WritesBlocked == right.WritesBlocked
-        && left.Conflicts.SequenceEqual(right.Conflicts, StringComparer.Ordinal)
+        && left.PotentialControllers.SequenceEqual(
+            right.PotentialControllers,
+            StringComparer.Ordinal)
+        && string.Equals(
+            left.ControllerDetectionWarning,
+            right.ControllerDetectionWarning,
+            StringComparison.Ordinal)
+        && left.ExternalChanges.SequenceEqual(right.ExternalChanges)
         && left.Message == right.Message
         && CapabilitiesEqual(left.Capabilities, right.Capabilities)
         && left.ConfirmedState == right.ConfirmedState

@@ -148,6 +148,8 @@ public sealed class StatusSubscriptionHubTests
             false,
             true,
             [],
+            null,
+            [],
             "Unavailable",
             DeviceCapabilities.Unavailable(),
             null,

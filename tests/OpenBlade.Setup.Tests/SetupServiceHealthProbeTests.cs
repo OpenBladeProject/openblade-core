@@ -63,6 +63,8 @@ public sealed class SetupServiceHealthProbeTests
             true,
             false,
             [],
+            null,
+            [],
             "Ready",
             DeviceCapabilities.SafeTargetDefaults(),
             null,

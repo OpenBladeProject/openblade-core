@@ -12,17 +12,20 @@ public sealed class ControlRequestHandlerTests
         ProfileSet profiles = ProfileDefaults.CreateSafeDefaults();
         ServiceRequest[] requests =
         [
-            new GetStatusRequest(2, Guid.NewGuid()),
-            new SubscribeStatusRequest(2, Guid.NewGuid()),
-            new UpdateProfilesRequest(2, Guid.NewGuid(), profiles),
-            new SetPerformanceOverrideRequest(2, Guid.NewGuid(),
+            new GetStatusRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid()),
+            new SubscribeStatusRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid()),
+            new UpdateProfilesRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid(), profiles),
+            new SetPerformanceOverrideRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid(),
                 new ManualOverride<PerformancePreset>(PerformancePreset.Silent, OverrideLifetime.Persistent)),
-            new SetFanOverrideRequest(2, Guid.NewGuid(),
+            new SetFanOverrideRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid(),
                 new ManualOverride<FanMode>(FanMode.Maximum, OverrideLifetime.UntilPowerSourceChange)),
-            new SetLightingOverrideRequest(2, Guid.NewGuid(), null),
-            new SetBatteryPolicyRequest(2, Guid.NewGuid(), BatteryPolicy.Create(75)),
-            new SetFullChargeOverrideRequest(2, Guid.NewGuid(), true),
-            new ExportDiagnosticsRequest(2, Guid.NewGuid()),
+            new SetLightingOverrideRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid(), null),
+            new SetBatteryPolicyRequest(
+                OpenBladeIpc.ProtocolVersion,
+                Guid.NewGuid(),
+                BatteryPolicy.Create(75)),
+            new SetFullChargeOverrideRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid(), true),
+            new ExportDiagnosticsRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid()),
         ];
         string[] expectedCalls =
         [
@@ -69,7 +72,7 @@ public sealed class ControlRequestHandlerTests
 
     [Theory]
     [InlineData(1, "23c09fe2-cbb8-4b74-a175-78dfb7831cf1")]
-    [InlineData(2, "00000000-0000-0000-0000-000000000000")]
+    [InlineData(3, "00000000-0000-0000-0000-000000000000")]
     public async Task HandleAsync_RejectsInvalidEnvelopeWithoutRuntimeDispatch(
         int version,
         string requestId)
@@ -109,7 +112,10 @@ public sealed class ControlRequestHandlerTests
             var handler = new ControlRequestHandler(runtime, new ThrowingArchiveProvider());
 
             ServiceResponse response = await handler.HandleAsync(
-                new SetFullChargeOverrideRequest(2, Guid.NewGuid(), true),
+                new SetFullChargeOverrideRequest(
+                    OpenBladeIpc.ProtocolVersion,
+                    Guid.NewGuid(),
+                    true),
                 CancellationToken.None);
 
             Assert.True(response.Success);
@@ -129,7 +135,7 @@ public sealed class ControlRequestHandlerTests
         var runtime = new RecordingRuntime();
         var archives = new FailingArchiveProvider();
         var handler = new ControlRequestHandler(runtime, archives);
-        var request = new ExportDiagnosticsRequest(2, Guid.NewGuid());
+        var request = new ExportDiagnosticsRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid());
 
         ServiceResponse response = await handler.HandleAsync(request, CancellationToken.None);
 
@@ -149,7 +155,8 @@ public sealed class ControlRequestHandlerTests
             Calls.Add("GetStatus");
             ProfileSet profiles = ProfileDefaults.CreateSafeDefaults();
             return new ServiceStatusSnapshot(
-                0, false, true, [], "Unavailable", DeviceCapabilities.Unavailable(), null,
+                0, false, true, [], null, [], "Unavailable",
+                DeviceCapabilities.Unavailable(), null,
                 profiles,
                 new DesiredDeviceState(
                     new ResolvedSetting<PerformancePreset>(PerformancePreset.Balanced, SettingValueSource.PowerProfile),

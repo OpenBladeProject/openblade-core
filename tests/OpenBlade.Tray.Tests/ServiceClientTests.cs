@@ -21,7 +21,13 @@ public sealed class ServiceClientTests
                 Assert.IsType<GetStatusRequest>(request);
                 Assert.Equal(OpenBladeIpc.ProtocolVersion, request.Version);
                 Assert.NotEqual(Guid.Empty, request.RequestId);
-                return new ServiceResponse(2, request.RequestId, true, null, expected, null);
+                return new ServiceResponse(
+                    OpenBladeIpc.ProtocolVersion,
+                    request.RequestId,
+                    true,
+                    null,
+                    expected,
+                    null);
             },
             timeout.Token);
         IServiceClient client = new ServiceClient(pipeName);
@@ -32,7 +38,9 @@ public sealed class ServiceClientTests
         Assert.Equal(expected.Revision, actual.Revision);
         Assert.Equal(expected.DeviceVerified, actual.DeviceVerified);
         Assert.Equal(expected.WritesBlocked, actual.WritesBlocked);
-        Assert.Equal(expected.Conflicts, actual.Conflicts);
+        Assert.Equal(expected.PotentialControllers, actual.PotentialControllers);
+        Assert.Equal(expected.ControllerDetectionWarning, actual.ControllerDetectionWarning);
+        Assert.Equal(expected.ExternalChanges, actual.ExternalChanges);
         Assert.Equal(expected.Message, actual.Message);
     }
 
@@ -40,21 +48,31 @@ public sealed class ServiceClientTests
     public async Task GetStatusAsync_RejectsMismatchedResponseId()
     {
         await AssertInvalidStatusResponseAsync(request => new ServiceResponse(
-            2, Guid.NewGuid(), true, null, CreateStatus(0), null));
+            OpenBladeIpc.ProtocolVersion,
+            Guid.NewGuid(),
+            true,
+            null,
+            CreateStatus(0),
+            null));
     }
 
     [Fact]
     public async Task GetStatusAsync_RejectsWrongServerFrameSubtype()
     {
         await AssertInvalidStatusResponseAsync(_ =>
-            new ServiceStatusEvent(2, CreateStatus(1)));
+            new ServiceStatusEvent(OpenBladeIpc.ProtocolVersion, CreateStatus(1)));
     }
 
     [Fact]
     public async Task GetStatusAsync_RejectsNonSuccessResponse()
     {
         await AssertInvalidStatusResponseAsync(request => new ServiceResponse(
-            2, request.RequestId, false, "Unavailable", null, null));
+            OpenBladeIpc.ProtocolVersion,
+            request.RequestId,
+            false,
+            "Unavailable",
+            null,
+            null));
     }
 
     [Fact]
@@ -468,7 +486,7 @@ public sealed class ServiceClientTests
             await IpcMessageCodec.WriteServerFrameAsync(
                 server,
                 new ServiceResponse(
-                    2,
+                    OpenBladeIpc.ProtocolVersion,
                     request.RequestId,
                     true,
                     null,
@@ -513,13 +531,19 @@ public sealed class ServiceClientTests
             await IpcMessageCodec.ReadRequestAsync(server, token));
         await IpcMessageCodec.WriteServerFrameAsync(
             server,
-            new ServiceResponse(2, request.RequestId, true, null, initial, null),
+            new ServiceResponse(
+                OpenBladeIpc.ProtocolVersion,
+                request.RequestId,
+                true,
+                null,
+                initial,
+                null),
             token);
         foreach (ServiceStatusSnapshot status in events)
         {
             await IpcMessageCodec.WriteServerFrameAsync(
                 server,
-                new ServiceStatusEvent(2, status),
+                new ServiceStatusEvent(OpenBladeIpc.ProtocolVersion, status),
                 token);
         }
     }
@@ -559,6 +583,8 @@ public sealed class ServiceClientTests
             false,
             true,
             ["RazerAppEngine"],
+            null,
+            [],
             "Blocked",
             DeviceCapabilities.Unavailable(),
             null,

@@ -295,7 +295,7 @@ public sealed class CapabilityPresentationTests
     {
         ProfileSet profiles = ProfileDefaults.CreateSafeDefaults();
         return new ServiceStatusSnapshot(
-            1, verified, blocked, conflicts ?? [], blocked ? "Blocked" : "Ready",
+            1, verified, blocked, conflicts ?? [], null, [], blocked ? "Blocked" : "Ready",
             capabilities, null, profiles,
             new DesiredDeviceState(
                 new ResolvedSetting<PerformancePreset>(profiles.PluggedIn.Performance, SettingValueSource.PowerProfile),

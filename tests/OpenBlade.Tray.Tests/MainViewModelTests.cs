@@ -567,6 +567,8 @@ public sealed class MainViewModelTests
             verified,
             blocked,
             conflicts ?? [],
+            null,
+            [],
             message,
             capabilities ?? (verified
                 ? DeviceCapabilities.SafeTargetDefaults()

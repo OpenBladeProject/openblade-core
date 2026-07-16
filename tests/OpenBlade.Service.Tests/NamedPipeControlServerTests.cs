@@ -16,7 +16,7 @@ public sealed class NamedPipeControlServerTests
         using CancellationTokenSource timeout = new(TimeSpan.FromSeconds(5));
         Task serverTask = context.Server.ServeOnceAsync(timeout.Token);
         await using NamedPipeClientStream client = await ConnectAsync(context.PipeName, timeout.Token);
-        var request = new GetStatusRequest(2, Guid.NewGuid());
+        var request = new GetStatusRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid());
 
         await IpcMessageCodec.WriteRequestAsync(client, request, timeout.Token);
         ServiceResponse response = Assert.IsType<ServiceResponse>(
@@ -35,7 +35,7 @@ public sealed class NamedPipeControlServerTests
         using CancellationTokenSource timeout = new(TimeSpan.FromSeconds(5));
         Task serverTask = context.Server.ServeOnceAsync(timeout.Token);
         await using NamedPipeClientStream client = await ConnectAsync(context.PipeName, timeout.Token);
-        var request = new ExportDiagnosticsRequest(2, Guid.NewGuid());
+        var request = new ExportDiagnosticsRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid());
 
         await IpcMessageCodec.WriteRequestAsync(client, request, timeout.Token);
         ServiceResponse response = Assert.IsType<ServiceResponse>(
@@ -77,7 +77,7 @@ public sealed class NamedPipeControlServerTests
         using CancellationTokenSource timeout = new(TimeSpan.FromSeconds(5));
         Task serverTask = context.Server.ServeOnceAsync(timeout.Token);
         await using NamedPipeClientStream client = await ConnectAsync(context.PipeName, timeout.Token);
-        var request = new SubscribeStatusRequest(2, Guid.NewGuid());
+        var request = new SubscribeStatusRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid());
         await IpcMessageCodec.WriteRequestAsync(client, request, timeout.Token);
 
         ServiceResponse initial = Assert.IsType<ServiceResponse>(
@@ -111,7 +111,7 @@ public sealed class NamedPipeControlServerTests
             await using NamedPipeClientStream client = await ConnectAsync(context.PipeName, timeout.Token);
             await IpcMessageCodec.WriteRequestAsync(
                 client,
-                new SubscribeStatusRequest(2, Guid.NewGuid()),
+                new SubscribeStatusRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid()),
                 timeout.Token);
 
             ServiceResponse response = Assert.IsType<ServiceResponse>(
@@ -136,7 +136,7 @@ public sealed class NamedPipeControlServerTests
         var time = new ManualTimeProvider();
         TestServer context = CreateServer(time);
         await using var stream = new BlockingWriteStream(
-            await EncodeAsync(new GetStatusRequest(2, Guid.NewGuid())));
+            await EncodeAsync(new GetStatusRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid())));
 
         Task serving = context.Server.ServeConnectionAsync(stream, CancellationToken.None);
         await stream.WriteStarted.Task.WaitAsync(TimeSpan.FromSeconds(2));
@@ -155,7 +155,7 @@ public sealed class NamedPipeControlServerTests
         NamedPipeClientStream client = await ConnectAsync(context.PipeName, timeout.Token);
         await IpcMessageCodec.WriteRequestAsync(
             client,
-            new SubscribeStatusRequest(2, Guid.NewGuid()),
+            new SubscribeStatusRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid()),
             timeout.Token);
         _ = await IpcMessageCodec.ReadServerFrameAsync(client, timeout.Token);
         await client.DisposeAsync();
@@ -185,7 +185,7 @@ public sealed class NamedPipeControlServerTests
         await using NamedPipeClientStream client = await ConnectAsync(context.PipeName, timeout.Token);
         await IpcMessageCodec.WriteRequestAsync(
             client,
-            new SubscribeStatusRequest(2, Guid.NewGuid()),
+            new SubscribeStatusRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid()),
             timeout.Token);
         _ = await IpcMessageCodec.ReadServerFrameAsync(client, timeout.Token);
 
@@ -199,11 +199,11 @@ public sealed class NamedPipeControlServerTests
         TheoryData<byte[]> data = [];
         data.Add(Frame(Encoding.UTF8.GetBytes("null")));
         data.Add(Frame(Encoding.UTF8.GetBytes(
-            "{\"version\":2,\"requestId\":\"23c09fe2-cbb8-4b74-a175-78dfb7831cf1\",\"operation\":\"unknown\"}")));
+            "{\"version\":3,\"requestId\":\"23c09fe2-cbb8-4b74-a175-78dfb7831cf1\",\"operation\":\"unknown\"}")));
         data.Add(Frame(Encoding.UTF8.GetBytes(
             "{\"version\":1,\"requestId\":\"23c09fe2-cbb8-4b74-a175-78dfb7831cf1\",\"operation\":\"getStatus\"}")));
         data.Add(Frame(Encoding.UTF8.GetBytes(
-            "{\"version\":2,\"requestId\":\"00000000-0000-0000-0000-000000000000\",\"operation\":\"getStatus\"}")));
+            "{\"version\":3,\"requestId\":\"00000000-0000-0000-0000-000000000000\",\"operation\":\"getStatus\"}")));
         byte[] oversized = new byte[sizeof(int)];
         BinaryPrimitives.WriteInt32LittleEndian(oversized, OpenBladeIpc.MaximumMessageBytes + 1);
         data.Add(oversized);
@@ -255,7 +255,8 @@ public sealed class NamedPipeControlServerTests
     {
         ProfileSet profiles = ProfileDefaults.CreateSafeDefaults();
         return new ServiceStatusSnapshot(
-            revision, false, true, [], "Unavailable", DeviceCapabilities.Unavailable(), null,
+            revision, false, true, [], null, [], "Unavailable",
+            DeviceCapabilities.Unavailable(), null,
             profiles,
             new DesiredDeviceState(
                 new ResolvedSetting<PerformancePreset>(PerformancePreset.Balanced, SettingValueSource.PowerProfile),

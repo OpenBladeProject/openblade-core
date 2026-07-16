@@ -329,7 +329,10 @@ public sealed class DiagnosticArchiveProvider : IDiagnosticArchiveProvider
             ["status.revision"] = status.Revision.ToString(System.Globalization.CultureInfo.InvariantCulture),
             ["status.deviceVerified"] = status.DeviceVerified.ToString(),
             ["status.writesBlocked"] = status.WritesBlocked.ToString(),
-            ["status.conflicts"] = string.Join(", ", status.Conflicts),
+            ["status.potentialControllers"] = string.Join(", ", status.PotentialControllers),
+            ["status.controllerDetectionWarning"] =
+                status.ControllerDetectionWarning ?? "Unavailable",
+            ["status.externalChanges"] = string.Join(", ", status.ExternalChanges),
             ["status.message"] = status.Message,
             ["power.source"] = status.Telemetry.PowerSource.ToString(),
             ["profile.pluggedIn.performance"] = status.Profiles.PluggedIn.Performance.ToString(),

@@ -470,7 +470,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         {
             DeviceVerified: true,
             WritesBlocked: false,
-            Conflicts.Count: 0,
+            PotentialControllers.Count: 0,
             Capabilities: not null,
         };
 
@@ -576,12 +576,12 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         IsConnected = true;
         bool controllable = status.DeviceVerified
             && !status.WritesBlocked
-            && status.Conflicts.Count == 0;
+            && status.PotentialControllers.Count == 0;
         IsReadOnly = !controllable;
         CanControlHardware = controllable;
         ConnectionStatus = status.Message;
         ControlAccessStatus = FormatControlAccessStatus(status);
-        ConflictNames = status.Conflicts.ToArray();
+        ConflictNames = status.PotentialControllers.ToArray();
         Profiles = status.Profiles;
         if (!profileEditorsDirty)
         {
@@ -961,7 +961,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             return "Target not verified · hardware controls disabled";
         }
 
-        if (status.Conflicts.Count > 0)
+        if (status.PotentialControllers.Count > 0)
         {
             return "Read-only · Razer software conflict detected";
         }
