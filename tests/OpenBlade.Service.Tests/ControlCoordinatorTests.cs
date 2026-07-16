@@ -30,6 +30,31 @@ public sealed class ControlCoordinatorTests
             device.BatterySetterCalls);
     }
 
+    [Fact]
+    public async Task CancelTemporaryFullCharge_ReportsCancellationInsteadOfActivation()
+    {
+        RecordingBladeDevice device = CreateMismatchedDevice();
+        device.State = device.State with
+        {
+            Battery = new ConfirmedBatteryState(true, 80, true),
+        };
+        device.Capabilities = device.Capabilities with
+        {
+            SupportsTemporaryFullCharge = true,
+        };
+        var coordinator = new ControlCoordinator(device);
+
+        ControlResult result = await coordinator.ApplyTemporaryFullChargeAsync(
+            enabled: false,
+            CancellationToken.None);
+
+        Assert.Equal(ControlResultStatus.Applied, result.Status);
+        Assert.Equal(
+            "Temporary full charge cancellation setting applied and confirmed by readback.",
+            result.Message);
+        Assert.Equal(["SetTemporaryFullCharge"], device.BatterySetterCalls);
+    }
+
     [Theory]
     [MemberData(nameof(InvalidProtectionDisableStates))]
     public async Task DisableProtection_RejectsInvalidConfirmedStateBeforeSetter(

@@ -820,9 +820,13 @@ public sealed class ControlCoordinator
         DeviceCapabilities capabilities,
         ConfirmedBatteryState? confirmed)
     {
+        string operationName = enabled
+            ? "Temporary full charge"
+            : "Temporary full charge cancellation";
+
         if (confirmed?.TemporaryFullCharge == enabled)
         {
-            return MatchingBatteryPlan("Temporary full charge", confirmed);
+            return MatchingBatteryPlan(operationName, confirmed);
         }
 
         if (!capabilities.SupportsTemporaryFullCharge
@@ -834,7 +838,7 @@ public sealed class ControlCoordinator
             }
             || !capabilities.ChargeLimits.Contains(currentLimit))
         {
-            return BlockedBatteryPlan("Temporary full charge");
+            return BlockedBatteryPlan(operationName);
         }
 
         bool Matches(ConfirmedBatteryState? state) => state is
@@ -844,7 +848,7 @@ public sealed class ControlCoordinator
             TemporaryFullCharge: var temporary,
         } && limit == currentLimit && temporary == enabled;
         return new BatteryOperationPlan(
-            "Temporary full charge",
+            operationName,
             Supported: true,
             InitiallyMatching: false,
             token => device.SetTemporaryFullChargeAsync(enabled, token),
