@@ -151,10 +151,19 @@
                         <TextBlock Text="BATTERY" Style="{StaticResource SectionHeaderStyle}" />
                         <Border Style="{StaticResource CardStyle}">
                             <StackPanel Spacing="10">
-                                <ComboBox x:Name="DashboardChargeLimitSelector"
-                                          Header="Charge limit"
-                                          ItemsSource="{x:Bind ViewModel.ChargeLimitOptions, Mode=OneWay}"
-                                          SelectedItem="{x:Bind ViewModel.ChargeLimitPercent, Mode=OneWay}" />
+                                <Grid>
+                                    <TextBlock Text="Charge limit" Style="{StaticResource CardTitleStyle}" />
+                                    <StackPanel HorizontalAlignment="Right" Orientation="Horizontal">
+                                        <TextBlock Text="{x:Bind ViewModel.ChargeLimitPercent, Mode=OneWay}" />
+                                        <TextBlock Text="%" />
+                                    </StackPanel>
+                                </Grid>
+                                <Slider x:Name="DashboardChargeLimitSlider"
+                                        Minimum="50"
+                                        Maximum="80"
+                                        StepFrequency="5"
+                                        IsThumbToolTipEnabled="True"
+                                        Value="{Binding ChargeLimitPercent, Mode=TwoWay, Converter={StaticResource Int32Double}}" />
                                 <Grid ColumnSpacing="8" RowSpacing="8">
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="*" />
@@ -167,7 +176,7 @@
                                     <Button Content="Apply charge limit"
                                             HorizontalAlignment="Stretch"
                                             Command="{x:Bind ViewModel.SetChargeLimitCommand}"
-                                            CommandParameter="{x:Bind DashboardChargeLimitSelector.SelectedItem, Mode=OneWay}" />
+                                            CommandParameter="{x:Bind ViewModel.ChargeLimitPercent, Mode=OneWay}" />
                                     <Button Grid.Column="1"
                                             Content="{x:Bind ViewModel.BatteryProtectionActionLabel, Mode=OneWay}"
                                             HorizontalAlignment="Stretch"

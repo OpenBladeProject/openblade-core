@@ -73,7 +73,7 @@ public sealed class CapabilityPresentationTests
             StringComparison.Ordinal);
         Assert.Contains("<Grid.Resources>", xaml, StringComparison.Ordinal);
         Assert.Contains("DashboardFanModeSelector.SelectedItem", xaml, StringComparison.Ordinal);
-        Assert.Contains("DashboardChargeLimitSelector.SelectedItem", xaml, StringComparison.Ordinal);
+        Assert.Contains("x:Name=\"DashboardChargeLimitSlider\"", xaml, StringComparison.Ordinal);
         Assert.DoesNotContain(
             "CommandParameter=\"{x:Bind ViewModel.SelectedFanMode",
             xaml,
@@ -96,17 +96,23 @@ public sealed class CapabilityPresentationTests
         Assert.DoesNotContain("SystemFillColorCriticalBrush", xaml, StringComparison.Ordinal);
         Assert.DoesNotContain("Confirmed source:", xaml, StringComparison.Ordinal);
         Assert.Contains(
-            "SelectedItem=\"{x:Bind ViewModel.ChargeLimitPercent, Mode=OneWay}\"",
+            "Value=\"{Binding ChargeLimitPercent, Mode=TwoWay, Converter={StaticResource Int32Double}}\"",
             xaml,
             StringComparison.Ordinal);
-        Assert.DoesNotContain(
-            "CommandParameter=\"{x:Bind ViewModel.ChargeLimitPercent",
+        Assert.Contains(
+            "CommandParameter=\"{x:Bind ViewModel.ChargeLimitPercent, Mode=OneWay}\"",
+            xaml,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "Text=\"{x:Bind ViewModel.ChargeLimitPercent, Mode=OneWay}\"",
             xaml,
             StringComparison.Ordinal);
         Assert.Equal(
             1,
             CountOccurrences(xaml, "ViewModel.ProfileChargeLimitEditor"));
-        Assert.DoesNotContain("Minimum=\"50\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("Minimum=\"50\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("Maximum=\"80\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("StepFrequency=\"5\"", xaml, StringComparison.Ordinal);
         Assert.DoesNotContain("Open" + "Synapse", xaml, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("\u00c2", xaml, StringComparison.Ordinal);
     }
