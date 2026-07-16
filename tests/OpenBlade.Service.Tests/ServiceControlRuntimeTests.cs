@@ -674,7 +674,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     }
 
     [Fact]
-    public async Task ScopedMismatch_PreservesConfirmedSnapshotAndLatchesOnlyNamedDrift()
+    public async Task ScopedPerformanceMismatch_PublishesFinalSnapshotAndLatchesOnlyNamedDrift()
     {
         TestContext context = CreateWritableContext();
         await context.Runtime.ObserveAsync(CancellationToken.None);
@@ -685,6 +685,17 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         await context.Runtime.ObserveAsync(CancellationToken.None);
         ConfirmedDeviceState before = context.Runtime.GetStatus().ConfirmedState!;
         context.Device.SuppressConfirmationFor = DeviceSubsystem.Performance;
+        context.Device.AfterSetter = subsystem =>
+        {
+            if (subsystem == DeviceSubsystem.Performance)
+            {
+                context.Device.ConfirmedState = context.Device.ConfirmedState with
+                {
+                    Performance = PerformancePreset.Silent,
+                };
+            }
+        };
+        int readsBeforeAction = context.Device.StateReadCalls;
 
         ControlOperationResult result = await context.Runtime.SetPerformanceOverrideAsync(
             new ManualOverride<PerformancePreset>(
@@ -693,11 +704,42 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             CancellationToken.None);
 
         Assert.Equal(ControlOperationStatus.Failed, result.Status);
-        Assert.Same(before, context.Runtime.GetStatus().ConfirmedState);
+        Assert.NotSame(before, context.Runtime.GetStatus().ConfirmedState);
+        Assert.Equal(context.Device.ConfirmedState, context.Runtime.GetStatus().ConfirmedState);
         Assert.Equal(
             [DeviceSubsystem.Performance, DeviceSubsystem.Fans],
             context.Runtime.GetStatus().ExternalChanges);
         Assert.Equal(1, context.Device.PerformanceSetCalls);
+        Assert.Equal(readsBeforeAction + 2, context.Device.StateReadCalls);
+    }
+
+    [Fact]
+    public async Task ScopedBatteryMismatch_PublishesProtectionOffAndLatchesBatteryDriftWithoutRetry()
+    {
+        TestContext context = CreateWritableContext();
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        context.Device.SuppressConfirmationFor = DeviceSubsystem.Battery;
+        context.Device.AfterSetter = subsystem =>
+        {
+            if (subsystem == DeviceSubsystem.Battery)
+            {
+                context.Device.ConfirmedState = context.Device.ConfirmedState with
+                {
+                    Battery = null,
+                };
+            }
+        };
+        int readsBeforeAction = context.Device.StateReadCalls;
+
+        ControlOperationResult result = await context.Runtime.SetBatteryPolicyAsync(
+            BatteryPolicy.Create(75),
+            CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Failed, result.Status);
+        Assert.Null(context.Runtime.GetStatus().ConfirmedState!.Battery);
+        Assert.Equal([DeviceSubsystem.Battery], context.Runtime.GetStatus().ExternalChanges);
+        Assert.Equal(1, context.Device.BatterySetCalls);
+        Assert.Equal(readsBeforeAction + 2, context.Device.StateReadCalls);
     }
 
     [Fact]

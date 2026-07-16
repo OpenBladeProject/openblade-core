@@ -402,11 +402,15 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         }
 
         ConfirmedDeviceState? confirmed = cachedConfirmed;
-        if (outcome.ReadbackMatched && outcome.Readback is not null)
+        if (outcome.Readback is not null)
         {
             driftTracker.Observe(outcome.Readback);
-            driftTracker.ConfirmIntentional(subsystem, matched: true);
             confirmed = outcome.Readback;
+        }
+
+        if (outcome.ReadbackMatched)
+        {
+            driftTracker.ConfirmIntentional(subsystem, matched: true);
         }
         else if (outcome.WriteAttempted)
         {

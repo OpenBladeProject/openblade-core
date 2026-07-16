@@ -83,12 +83,14 @@ public sealed class ControlCoordinatorTests
         device.AutoConfirmWrites = false;
         var coordinator = new ControlCoordinator(device, new FakeHardwareAccessGuard([]));
 
-        ControlResult result = await coordinator.ApplyPerformanceAsync(
+        ScopedApplyOutcome outcome = await coordinator.ApplyPerformanceOutcomeAsync(
             PerformancePreset.Balanced,
             CancellationToken.None);
 
-        Assert.Equal(ControlResultStatus.Failed, result.Status);
-        Assert.Contains("indeterminate", result.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(ControlResultStatus.Failed, outcome.Result.Status);
+        Assert.Contains("indeterminate", outcome.Result.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Same(device.State, outcome.Readback);
+        Assert.False(outcome.ReadbackMatched);
         Assert.Equal(["Capabilities", "State", "SetPerformance", "State"], device.Calls);
         Assert.Equal(1, device.PerformanceSetCalls);
     }

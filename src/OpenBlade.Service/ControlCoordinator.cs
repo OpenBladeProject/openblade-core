@@ -397,7 +397,7 @@ public sealed class ControlCoordinator
 
             return new ScopedApplyOutcome(
                 Indeterminate(name, null),
-                null,
+                final,
                 WriteAttempted: true,
                 ReadbackMatched: false,
                 capabilities,
