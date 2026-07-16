@@ -7,9 +7,9 @@ namespace OpenBlade.Contracts.Tests;
 public sealed class ServiceMessageContractTests
 {
     [Fact]
-    public void ProtocolConstants_AreClosedVersionThreeAndRetainExactSizeLimit()
+    public void ProtocolConstants_AreClosedVersionFourAndRetainExactSizeLimit()
     {
-        Assert.Equal(3, OpenBladeIpc.ProtocolVersion);
+        Assert.Equal(4, OpenBladeIpc.ProtocolVersion);
         Assert.Equal("OpenBlade.Service.v2", OpenBladeIpc.PipeName);
         Assert.Equal(64 * 1024, OpenBladeIpc.MaximumMessageBytes);
         Assert.Equal(32 * 1024, OpenBladeIpc.MaximumDiagnosticArchiveBytes);
@@ -29,6 +29,7 @@ public sealed class ServiceMessageContractTests
             (typeof(SetFanOverrideRequest), "setFanOverride"),
             (typeof(SetLightingOverrideRequest), "setLightingOverride"),
             (typeof(SetBatteryPolicyRequest), "setBatteryPolicy"),
+            (typeof(SetBatteryProtectionRequest), "setBatteryProtection"),
             (typeof(SetFullChargeOverrideRequest), "setFullChargeOverride"));
         AssertDerivedTypes(
             typeof(ServiceServerFrame),
@@ -87,9 +88,9 @@ public sealed class ServiceMessageContractTests
         Assert.Empty(capabilities.PerformancePresets);
         Assert.Empty(capabilities.FanModes);
         Assert.Empty(capabilities.LightingEffects);
-        Assert.Equal(0, capabilities.MinimumChargeLimit);
-        Assert.Equal(0, capabilities.MaximumChargeLimit);
-        Assert.Equal(0, capabilities.ChargeLimitStep);
+        Assert.Empty(capabilities.ChargeLimits);
+        Assert.False(capabilities.SupportsBatteryProtectionOff);
+        Assert.False(capabilities.SupportsTemporaryFullCharge);
     }
 
     [Fact]

@@ -10,7 +10,7 @@ public sealed record DesiredDeviceState(
     ResolvedSetting<PerformancePreset> Performance,
     ResolvedSetting<FanMode> Fans,
     ResolvedSetting<LightingSettings> Lighting,
-    BatteryPolicy Battery);
+    DesiredBatteryState Battery);
 
 public sealed record TelemetrySnapshot(
     DateTimeOffset CapturedAt,

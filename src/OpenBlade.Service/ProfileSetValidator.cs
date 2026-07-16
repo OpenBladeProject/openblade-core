@@ -122,11 +122,6 @@ public sealed class ProfileSetValidator(ProfileValidationPolicy policy)
         {
             throw Invalid("The battery charge limit must be from 50 to 80 percent in 5 percent steps.");
         }
-
-        if (batteryPolicy.TemporaryFullCharge)
-        {
-            throw Invalid("Temporary full-charge state cannot be persisted in machine profiles.");
-        }
     }
 
     private static InvalidDataException Invalid(string message) => new(message);

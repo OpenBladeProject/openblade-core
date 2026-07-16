@@ -169,19 +169,22 @@ public sealed class ControlCoordinatorTests
     }
 
     [Fact]
-    public async Task TemporaryFullCharge_MatchesNullBatteryReadback()
+    public async Task TemporaryFullCharge_IsBlockedWithoutBatterySetter()
     {
         RecordingBladeDevice device = CreateMismatchedDevice();
         var coordinator = new ControlCoordinator(device, new FakeHardwareAccessGuard([]));
-        BatteryPolicy temporary = BatteryPolicy.Create(80, temporaryFullCharge: true);
+        var temporary = new DesiredBatteryState(
+            BatteryPolicy.Create(80),
+            protectionEnabled: true,
+            temporaryFullCharge: true);
 
-        ControlResult result = await coordinator.ApplyBatteryAsync(
+        ScopedApplyOutcome outcome = await coordinator.ApplyBatteryOutcomeAsync(
             temporary,
             CancellationToken.None);
 
-        Assert.Equal(ControlResultStatus.Applied, result.Status);
-        Assert.Null(device.State.Battery);
-        Assert.Equal(["Capabilities", "State", "SetBattery", "State"], device.Calls);
+        Assert.Equal(ControlResultStatus.Blocked, outcome.Result.Status);
+        Assert.Equal(["Capabilities"], device.Calls);
+        Assert.Equal(0, device.BatterySetCalls);
     }
 
     [Fact]
@@ -302,7 +305,7 @@ public sealed class ControlCoordinatorTests
         State = new ConfirmedDeviceState(
             PerformancePreset.Silent,
             FanMode.Automatic,
-            BatteryPolicy.Create(80),
+            new ConfirmedBatteryState(true, 80, false),
             new LightingSettings(LightingEffect.Off, default, 0)),
     };
 
@@ -311,7 +314,7 @@ public sealed class ControlCoordinatorTests
         State = new ConfirmedDeviceState(
             PerformancePreset.Balanced,
             FanMode.Maximum,
-            BatteryPolicy.Create(75),
+            new ConfirmedBatteryState(true, 75, false),
             TargetLighting),
     };
 
@@ -323,7 +326,7 @@ public sealed class ControlCoordinatorTests
         new ResolvedSetting<LightingSettings>(
             TargetLighting,
             SettingValueSource.PowerProfile),
-        BatteryPolicy.Create(75));
+        new DesiredBatteryState(BatteryPolicy.Create(75), true, false));
 
     private static LightingSettings TargetLighting { get; } = new(
         LightingEffect.Static,
@@ -344,6 +347,7 @@ public sealed class ControlCoordinatorTests
         public DeviceCapabilities Capabilities { get; set; } =
             DeviceCapabilities.SafeTargetDefaults() with
             {
+                ChargeLimits = new HashSet<int> { 50, 55, 60, 65, 70, 75, 80 },
                 LightingEffects = new HashSet<LightingEffect>
                 {
                     LightingEffect.Off,
@@ -447,7 +451,10 @@ public sealed class ControlCoordinatorTests
             {
                 State = State with
                 {
-                    Battery = value.TemporaryFullCharge ? null : value,
+                    Battery = new ConfirmedBatteryState(
+                        protectionEnabled: true,
+                        chargeLimitPercent: value.ChargeLimitPercent,
+                        temporaryFullCharge: false),
                 };
             }
 

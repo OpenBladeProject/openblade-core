@@ -171,7 +171,7 @@ public sealed class CapabilityPresentationTests
                 new HashSet<PerformancePreset> { PerformancePreset.Balanced },
                 new HashSet<FanMode> { FanMode.Automatic },
                 new HashSet<LightingEffect> { LightingEffect.Off },
-                50, 80, 5)));
+                ChargeLimits(), true, true)));
         await WaitUntilAsync(() =>
             viewModel.CanControlHardware && viewModel.AvailableLightingSettings.Count > 0);
         var controller = new TrayMenuController(viewModel, () => { }, () => { });
@@ -213,7 +213,10 @@ public sealed class CapabilityPresentationTests
         client.Publish(CreateStatus(
             verified: true,
             blocked: false,
-            capabilities: DeviceCapabilities.SafeTargetDefaults()));
+            capabilities: DeviceCapabilities.SafeTargetDefaults() with
+            {
+                ChargeLimits = ChargeLimits(),
+            }));
         await WaitUntilAsync(() =>
             viewModel.CanControlHardware && viewModel.AvailableLightingSettings.Count > 0);
         viewModel.PluggedInPerformanceEditor = PerformancePreset.Performance;
@@ -245,7 +248,7 @@ public sealed class CapabilityPresentationTests
                 new HashSet<PerformancePreset> { PerformancePreset.Balanced, PerformancePreset.Silent },
                 new HashSet<FanMode> { FanMode.Automatic },
                 new HashSet<LightingEffect> { LightingEffect.Off },
-                50, 80, 5)));
+                ChargeLimits(), true, true)));
         await WaitUntilAsync(() =>
             viewModel.CanControlHardware && viewModel.AvailableLightingSettings.Count > 0);
         viewModel.PluggedInPerformanceEditor = PerformancePreset.Performance;
@@ -272,7 +275,7 @@ public sealed class CapabilityPresentationTests
                 new HashSet<PerformancePreset> { PerformancePreset.Balanced, invalidPerformance },
                 new HashSet<FanMode> { FanMode.Automatic, invalidFan },
                 new HashSet<LightingEffect> { LightingEffect.Off },
-                50, 80, 5)));
+                ChargeLimits(), true, true)));
         await WaitUntilAsync(() => viewModel.AvailableFanModes.Count > 0);
 
         Assert.Equal([PerformancePreset.Balanced], viewModel.AvailablePerformancePresets);
@@ -295,7 +298,7 @@ public sealed class CapabilityPresentationTests
                 new HashSet<PerformancePreset> { PerformancePreset.Balanced },
                 new HashSet<FanMode> { FanMode.Automatic },
                 new HashSet<LightingEffect> { LightingEffect.Off, invalidEffect },
-                50, 80, 5)));
+                ChargeLimits(), true, true)));
         await WaitUntilAsync(() => viewModel.IsLightingVisible);
 
         Assert.Equal([LightingEffect.Off], viewModel.AvailableLightingEffects);
@@ -319,7 +322,7 @@ public sealed class CapabilityPresentationTests
                 new HashSet<PerformancePreset> { PerformancePreset.Balanced },
                 new HashSet<FanMode> { FanMode.Automatic },
                 new HashSet<LightingEffect> { LightingEffect.Off },
-                0, 0, 0)));
+                new HashSet<int>(), false, false)));
         await WaitUntilAsync(() => viewModel.IsConnected);
 
         Assert.True(viewModel.SetFanModeCommand.CanExecute(FanMode.Automatic));
@@ -328,7 +331,7 @@ public sealed class CapabilityPresentationTests
     }
 
     [Fact]
-    public async Task InvalidBatteryCapabilityBoundsDisableFullChargeOnly()
+    public async Task InvalidBatteryCapabilitySetDisablesFullChargeOnly()
     {
         var client = new PresentationClient();
         await using var viewModel = new MainViewModel(client, new ImmediateDispatcher());
@@ -340,8 +343,8 @@ public sealed class CapabilityPresentationTests
                 new HashSet<PerformancePreset> { PerformancePreset.Balanced },
                 new HashSet<FanMode> { FanMode.Automatic },
                 new HashSet<LightingEffect> { LightingEffect.Off },
-                50, 79, 5)));
-        await WaitUntilAsync(() => viewModel.Capabilities.MaximumChargeLimit == 79);
+                new HashSet<int> { 50, 79 }, true, true)));
+        await WaitUntilAsync(() => viewModel.Capabilities.ChargeLimits.Contains(79));
 
         Assert.True(viewModel.SetFanModeCommand.CanExecute(FanMode.Automatic));
         Assert.False(viewModel.ToggleFullChargeCommand.CanExecute(true));
@@ -357,7 +360,11 @@ public sealed class CapabilityPresentationTests
         client.Publish(CreateStatus(
             verified: true,
             blocked: false,
-            capabilities: DeviceCapabilities.SafeTargetDefaults()));
+            capabilities: DeviceCapabilities.SafeTargetDefaults() with
+            {
+                ChargeLimits = ChargeLimits(),
+                SupportsTemporaryFullCharge = true,
+            }));
         await WaitUntilAsync(() => viewModel.IsConnected);
 
         viewModel.ChargeLimitPercent = 75;
@@ -381,7 +388,7 @@ public sealed class CapabilityPresentationTests
                 new HashSet<PerformancePreset> { PerformancePreset.Balanced },
                 new HashSet<FanMode> { FanMode.Automatic },
                 new HashSet<LightingEffect> { LightingEffect.Static },
-                50, 80, 5)));
+                ChargeLimits(), true, true)));
         await WaitUntilAsync(() => viewModel.CanControlHardware);
 
         viewModel.LightingEffectEditor = LightingEffect.Static;
@@ -430,7 +437,7 @@ public sealed class CapabilityPresentationTests
                 new ResolvedSetting<PerformancePreset>(profiles.PluggedIn.Performance, SettingValueSource.PowerProfile),
                 new ResolvedSetting<FanMode>(profiles.PluggedIn.Fans, SettingValueSource.PowerProfile),
                 new ResolvedSetting<LightingSettings>(profiles.PluggedIn.Lighting, SettingValueSource.PowerProfile),
-                profiles.BatteryPolicy),
+                new DesiredBatteryState(profiles.BatteryPolicy, true, false)),
             new TelemetrySnapshot(DateTimeOffset.UnixEpoch, PowerSource.PluggedIn, 80, null, null, null),
             null, null, null, false);
     }
@@ -443,6 +450,8 @@ public sealed class CapabilityPresentationTests
         }
         Assert.True(predicate());
     }
+
+    private static HashSet<int> ChargeLimits() => [50, 55, 60, 65, 70, 75, 80];
 
     private sealed class ImmediateDispatcher : IUiDispatcher
     {

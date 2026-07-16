@@ -1,4 +1,5 @@
 using System.Buffers.Binary;
+using System.Collections.Frozen;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
@@ -6,7 +7,7 @@ namespace OpenBlade.Contracts;
 
 public static class OpenBladeIpc
 {
-    public const int ProtocolVersion = 3;
+    public const int ProtocolVersion = 4;
     public const int MaximumMessageBytes = 64 * 1024;
     public const int MaximumDiagnosticArchiveBytes = 32 * 1024;
     public const string PipeName = "OpenBlade.Service.v2";
@@ -148,6 +149,7 @@ public static class IpcMessageCodec
                 set.Value is null
                 || set.Value.Value is not null && Enum.IsDefined(set.Value.Lifetime),
             SetBatteryPolicyRequest set => set.Value is not null,
+            SetBatteryProtectionRequest => true,
             SetFullChargeOverrideRequest => true,
             _ => false,
         };
@@ -225,7 +227,9 @@ public static class IpcMessageCodec
             || status.Capabilities is { } capabilities
                 && (capabilities.PerformancePresets is null
                     || capabilities.FanModes is null
-                    || capabilities.LightingEffects is null))
+                    || capabilities.LightingEffects is null
+                    || capabilities.ChargeLimits is null
+                    || !ValidChargeLimits(capabilities.ChargeLimits)))
         {
             return false;
         }
@@ -257,9 +261,82 @@ public static class IpcMessageCodec
 
     private static JsonSerializerOptions CreateSerializerOptions()
     {
-        var options = new JsonSerializerOptions(JsonSerializerDefaults.Web);
+        var options = new JsonSerializerOptions(JsonSerializerDefaults.Web)
+        {
+            UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow,
+        };
+        options.Converters.Add(new BatteryPolicyJsonConverter());
         options.Converters.Add(new ReadOnlySetJsonConverterFactory());
         return options;
+    }
+
+    private static bool ValidChargeLimits(IEnumerable<int> limits)
+    {
+        int[] values = limits.ToArray();
+        return values.Length <= 7
+            && values.Distinct().Count() == values.Length
+            && values.All(value => value is >= 50 and <= 80 && value % 5 == 0);
+    }
+
+    private sealed class BatteryPolicyJsonConverter : JsonConverter<BatteryPolicy>
+    {
+        public override BatteryPolicy Read(
+            ref Utf8JsonReader reader,
+            Type typeToConvert,
+            JsonSerializerOptions options)
+        {
+            using JsonDocument document = JsonDocument.ParseValue(ref reader);
+            JsonElement root = document.RootElement;
+            if (root.ValueKind != JsonValueKind.Object)
+            {
+                throw new JsonException("Battery policy must be an object.");
+            }
+
+            int? chargeLimitPercent = null;
+            foreach (JsonProperty property in root.EnumerateObject())
+            {
+                if (!string.Equals(
+                    property.Name,
+                    "chargeLimitPercent",
+                    StringComparison.Ordinal))
+                {
+                    throw new JsonException("Battery policy contains an unknown member.");
+                }
+
+                if (chargeLimitPercent.HasValue
+                    || property.Value.ValueKind != JsonValueKind.Number
+                    || !property.Value.TryGetInt32(out int value))
+                {
+                    throw new JsonException("Battery policy charge limit is invalid.");
+                }
+
+                chargeLimitPercent = value;
+            }
+
+            if (!chargeLimitPercent.HasValue)
+            {
+                throw new JsonException("Battery policy charge limit is missing.");
+            }
+
+            try
+            {
+                return BatteryPolicy.Create(chargeLimitPercent.Value);
+            }
+            catch (ArgumentOutOfRangeException exception)
+            {
+                throw new JsonException("Battery policy charge limit is invalid.", exception);
+            }
+        }
+
+        public override void Write(
+            Utf8JsonWriter writer,
+            BatteryPolicy value,
+            JsonSerializerOptions options)
+        {
+            writer.WriteStartObject();
+            writer.WriteNumber("chargeLimitPercent", value.ChargeLimitPercent);
+            writer.WriteEndObject();
+        }
     }
 
     private sealed class ReadOnlySetJsonConverterFactory : JsonConverterFactory
@@ -273,8 +350,74 @@ public static class IpcMessageCodec
             JsonSerializerOptions options)
         {
             Type elementType = typeToConvert.GetGenericArguments()[0];
+            if (elementType == typeof(int))
+            {
+                return new ChargeLimitSetJsonConverter();
+            }
+
             return (JsonConverter)Activator.CreateInstance(
                 typeof(ReadOnlySetJsonConverter<>).MakeGenericType(elementType))!;
+        }
+    }
+
+    private sealed class ChargeLimitSetJsonConverter : JsonConverter<IReadOnlySet<int>>
+    {
+        public override IReadOnlySet<int> Read(
+            ref Utf8JsonReader reader,
+            Type typeToConvert,
+            JsonSerializerOptions options)
+        {
+            if (reader.TokenType != JsonTokenType.StartArray)
+            {
+                throw new JsonException("Charge limits must be an array.");
+            }
+
+            List<int> values = [];
+            int? previous = null;
+            while (reader.Read() && reader.TokenType != JsonTokenType.EndArray)
+            {
+                if (reader.TokenType != JsonTokenType.Number
+                    || !reader.TryGetInt32(out int value)
+                    || value is < 50 or > 80
+                    || value % 5 != 0
+                    || previous.HasValue && value <= previous.Value)
+                {
+                    throw new JsonException("Charge limits are invalid.");
+                }
+
+                values.Add(value);
+                if (values.Count > 7)
+                {
+                    throw new JsonException("Too many charge limits were supplied.");
+                }
+
+                previous = value;
+            }
+
+            if (reader.TokenType != JsonTokenType.EndArray)
+            {
+                throw new JsonException("Charge limits array is incomplete.");
+            }
+
+            return values.ToFrozenSet();
+        }
+
+        public override void Write(
+            Utf8JsonWriter writer,
+            IReadOnlySet<int> value,
+            JsonSerializerOptions options)
+        {
+            if (!ValidChargeLimits(value))
+            {
+                throw new JsonException("Charge limits are invalid.");
+            }
+
+            writer.WriteStartArray();
+            foreach (int limit in value.Order())
+            {
+                writer.WriteNumberValue(limit);
+            }
+            writer.WriteEndArray();
         }
     }
 

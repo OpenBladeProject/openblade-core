@@ -31,11 +31,11 @@ public sealed class ProfileAutomationStateTests
         ProfileAutomationState state = new(ProfileDefaults.CreateSafeDefaults(), PowerSource.PluggedIn);
         state.EnableTemporaryFullCharge();
 
-        Assert.True(state.BatteryPolicy.TemporaryFullCharge);
+        Assert.True(state.DesiredBattery.TemporaryFullCharge);
 
         state.ChangePowerSource(PowerSource.Battery);
 
-        Assert.False(state.BatteryPolicy.TemporaryFullCharge);
+        Assert.False(state.DesiredBattery.TemporaryFullCharge);
         Assert.Equal(80, state.BatteryPolicy.ChargeLimitPercent);
     }
 
@@ -48,7 +48,7 @@ public sealed class ProfileAutomationStateTests
 
         state.EnableTemporaryFullCharge();
 
-        Assert.False(state.BatteryPolicy.TemporaryFullCharge);
+        Assert.False(state.DesiredBattery.TemporaryFullCharge);
         Assert.Equal(80, state.BatteryPolicy.ChargeLimitPercent);
     }
 
@@ -67,7 +67,7 @@ public sealed class ProfileAutomationStateTests
 
         Assert.False(changed);
         Assert.NotNull(state.PerformanceOverride);
-        Assert.True(state.BatteryPolicy.TemporaryFullCharge);
+        Assert.True(state.DesiredBattery.TemporaryFullCharge);
     }
 
     [Fact]
@@ -85,6 +85,6 @@ public sealed class ProfileAutomationStateTests
 
         Assert.True(changed);
         Assert.Null(state.PerformanceOverride);
-        Assert.False(state.BatteryPolicy.TemporaryFullCharge);
+        Assert.False(state.DesiredBattery.TemporaryFullCharge);
     }
 }

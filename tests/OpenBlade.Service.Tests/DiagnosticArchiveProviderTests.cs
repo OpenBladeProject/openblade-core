@@ -59,8 +59,8 @@ public sealed class DiagnosticArchiveProviderTests
             "80",
             configuration.RootElement.GetProperty("confirmed.battery.chargeLimitPercent").GetString());
         Assert.Equal(
-            "0",
-            configuration.RootElement.GetProperty("capability.minimumChargeLimit").GetString());
+            string.Empty,
+            configuration.RootElement.GetProperty("capability.chargeLimits").GetString());
         Assert.Equal(
             "RazerAppEngine",
             configuration.RootElement.GetProperty("status.potentialControllers").GetString());
@@ -130,13 +130,17 @@ public sealed class DiagnosticArchiveProviderTests
             ExternalChanges: [DeviceSubsystem.Fans],
             Message: "Verified read-only state.",
             Capabilities: DeviceCapabilities.Unavailable(),
-            ConfirmedState: new ConfirmedDeviceState(null, null, BatteryPolicy.Create(80), null),
+            ConfirmedState: new ConfirmedDeviceState(
+                null,
+                null,
+                new ConfirmedBatteryState(true, 80, false),
+                null),
             Profiles: profiles,
             DesiredState: new DesiredDeviceState(
                 new ResolvedSetting<PerformancePreset>(PerformancePreset.Balanced, SettingValueSource.PowerProfile),
                 new ResolvedSetting<FanMode>(FanMode.Automatic, SettingValueSource.PowerProfile),
                 new ResolvedSetting<LightingSettings>(profiles.PluggedIn.Lighting, SettingValueSource.PowerProfile),
-                profiles.BatteryPolicy),
+                new DesiredBatteryState(profiles.BatteryPolicy, true, false)),
             Telemetry: new TelemetrySnapshot(
                 DateTimeOffset.Parse("2026-07-15T12:00:00Z"),
                 PowerSource.PluggedIn,

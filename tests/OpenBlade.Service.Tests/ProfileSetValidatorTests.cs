@@ -66,14 +66,14 @@ public sealed class ProfileSetValidatorTests
     }
 
     [Fact]
-    public void Validate_RejectsTemporaryFullChargeAsPersistedProfileState()
+    public void Validate_AcceptsBatteryPolicyWithoutTransientState()
     {
         ProfileSet profiles = ProfileDefaults.CreateSafeDefaults() with
         {
-            BatteryPolicy = BatteryPolicy.Create(80, temporaryFullCharge: true),
+            BatteryPolicy = BatteryPolicy.Create(75),
         };
 
-        Assert.Throws<InvalidDataException>(() => CreateValidator().Validate(profiles));
+        CreateValidator().Validate(profiles);
     }
 
     [Fact]

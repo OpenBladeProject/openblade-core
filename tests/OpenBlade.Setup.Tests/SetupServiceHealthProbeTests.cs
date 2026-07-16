@@ -73,7 +73,7 @@ public sealed class SetupServiceHealthProbeTests
                 new ResolvedSetting<PerformancePreset>(profiles.PluggedIn.Performance, SettingValueSource.PowerProfile),
                 new ResolvedSetting<FanMode>(profiles.PluggedIn.Fans, SettingValueSource.PowerProfile),
                 new ResolvedSetting<LightingSettings>(profiles.PluggedIn.Lighting, SettingValueSource.PowerProfile),
-                profiles.BatteryPolicy),
+                new DesiredBatteryState(profiles.BatteryPolicy, true, false)),
             new TelemetrySnapshot(DateTimeOffset.UnixEpoch, PowerSource.PluggedIn, 80, null, null, null),
             null,
             null,

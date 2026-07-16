@@ -97,13 +97,22 @@ public sealed class ControlCoordinator
 
     internal Task<ScopedApplyOutcome> ApplyBatteryOutcomeAsync(
         BatteryPolicy value,
+        CancellationToken cancellationToken) => ApplyBatteryOutcomeAsync(
+            new DesiredBatteryState(
+                value,
+                protectionEnabled: true,
+                temporaryFullCharge: false),
+            cancellationToken);
+
+    internal Task<ScopedApplyOutcome> ApplyBatteryOutcomeAsync(
+        DesiredBatteryState value,
         CancellationToken cancellationToken) => ApplyScopedAsync(
             DeviceSubsystem.Battery,
             "Battery",
             value is not null,
             capabilities => IsBatterySupported(value!, capabilities),
             state => BatteryMatches(value!, state.Battery),
-            token => device.SetBatteryPolicyAsync(value!, token),
+            token => device.SetBatteryPolicyAsync(value!.ConfiguredPolicy, token),
             cancellationToken);
 
     internal Task<ScopedApplyOutcome> ApplyLightingOutcomeAsync(
@@ -170,7 +179,9 @@ public sealed class ControlCoordinator
                 "Battery",
                 IsBatterySupported(desired.Battery, capabilities),
                 BatteryMatches(desired.Battery, initial.Battery),
-                token => device.SetBatteryPolicyAsync(desired.Battery, token),
+                token => device.SetBatteryPolicyAsync(
+                    desired.Battery.ConfiguredPolicy,
+                    token),
                 state => BatteryMatches(desired.Battery, state.Battery)),
             [DeviceSubsystem.Lighting] = new(
                 "Lighting",
@@ -299,7 +310,7 @@ public sealed class ControlCoordinator
                         provisional[subsystem] = FinalReadbackChanged(pending.Name);
                         if (subsystem == DeviceSubsystem.Battery
                             && !desired.Battery.TemporaryFullCharge
-                            && final.Battery is null)
+                            && final.Battery is { ProtectionEnabled: false })
                         {
                             contradicted.Add(DeviceSubsystem.Battery);
                         }
@@ -452,16 +463,19 @@ public sealed class ControlCoordinator
             DeviceAccessFailed);
 
     private static bool IsBatterySupported(
-        BatteryPolicy value,
+        DesiredBatteryState value,
         DeviceCapabilities capabilities) => value is not null
-        && capabilities.ChargeLimitStep > 0
-        && value.ChargeLimitPercent >= capabilities.MinimumChargeLimit
-        && value.ChargeLimitPercent <= capabilities.MaximumChargeLimit
-        && (value.ChargeLimitPercent - capabilities.MinimumChargeLimit)
-            % capabilities.ChargeLimitStep == 0;
+        && value.ProtectionEnabled
+        && !value.TemporaryFullCharge
+        && capabilities.ChargeLimits.Contains(value.ConfiguredPolicy.ChargeLimitPercent);
 
-    private static bool BatteryMatches(BatteryPolicy desired, BatteryPolicy? confirmed) =>
-        desired.TemporaryFullCharge ? confirmed is null : confirmed == desired;
+    private static bool BatteryMatches(
+        DesiredBatteryState desired,
+        ConfirmedBatteryState? confirmed) => confirmed is not null
+        && desired.ProtectionEnabled == confirmed.ProtectionEnabled
+        && (!desired.ProtectionEnabled
+            || desired.ConfiguredPolicy.ChargeLimitPercent == confirmed.ChargeLimitPercent)
+        && desired.TemporaryFullCharge == confirmed.TemporaryFullCharge;
 
     private static bool IsLightingValid(LightingSettings value)
     {

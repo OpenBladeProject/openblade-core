@@ -535,6 +535,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             : !FullChargeOverride;
         return CanMutate
             && HasBatteryCapability(latestStatus?.Capabilities)
+            && latestStatus!.Capabilities!.SupportsTemporaryFullCharge
             && (!enable || Telemetry?.PowerSource == PowerSource.PluggedIn);
     }
 
@@ -685,7 +686,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             LoadLightingEditor(SelectedLighting);
         }
         ChargeLimitPercent = confirmed?.Battery?.ChargeLimitPercent
-            ?? status.DesiredState.Battery.ChargeLimitPercent;
+            ?? status.DesiredState.Battery.ConfiguredPolicy.ChargeLimitPercent;
         FullChargeOverride = status.FullChargeOverride;
         Telemetry = status.Telemetry;
         PerformanceOverride = status.PerformanceOverride;
@@ -706,10 +707,10 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             DeviceSubsystem.Lighting,
             confirmed?.Lighting is not null,
             externalChanges);
-        BatterySourceLabel = confirmed is not null && confirmed.Battery is null
+        BatterySourceLabel = confirmed?.Battery is { ProtectionEnabled: false }
             ? externalChanges.Contains(DeviceSubsystem.Battery)
-                ? "Changed outside OpenBlade · protection off / full charge"
-                : "Confirmed device state · protection off / full charge"
+                ? "Changed outside OpenBlade · protection off"
+                : "Confirmed device state · protection off"
             : SourceLabel(
                 DeviceSubsystem.Battery,
                 confirmed?.Battery is not null,
@@ -774,24 +775,14 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         }
 
         return HasBatteryCapability(capabilities)
-            && value >= capabilities.MinimumChargeLimit
-            && value <= capabilities.MaximumChargeLimit
-            && (value - capabilities.MinimumChargeLimit) % capabilities.ChargeLimitStep == 0
-            && value is >= 50 and <= 80
-            && value % 5 == 0;
+            && capabilities.ChargeLimits.Contains(value);
     }
 
     private static bool HasBatteryCapability(DeviceCapabilities? capabilities) =>
         capabilities is not null
-        && capabilities.ChargeLimitStep > 0
-        && capabilities.ChargeLimitStep % 5 == 0
-        && capabilities.MinimumChargeLimit is >= 50 and <= 80
-        && capabilities.MaximumChargeLimit is >= 50 and <= 80
-        && capabilities.MinimumChargeLimit <= capabilities.MaximumChargeLimit
-        && capabilities.MinimumChargeLimit % 5 == 0
-        && capabilities.MaximumChargeLimit % 5 == 0
-        && (capabilities.MaximumChargeLimit - capabilities.MinimumChargeLimit)
-            % capabilities.ChargeLimitStep == 0;
+        && capabilities.ChargeLimits.Count is > 0 and <= 7
+        && capabilities.ChargeLimits.All(
+            value => value is >= 50 and <= 80 && value % 5 == 0);
 
     private Task SetPerformanceAsync(object? parameter, CancellationToken token) =>
         RunOperationAsync(
@@ -887,11 +878,8 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         return ProfileSupported(draft.PluggedIn, capabilities)
             && ProfileSupported(draft.Battery, capabilities)
             && HasBatteryCapability(capabilities)
-            && draft.BatteryPolicy.ChargeLimitPercent >= capabilities.MinimumChargeLimit
-            && draft.BatteryPolicy.ChargeLimitPercent <= capabilities.MaximumChargeLimit
-            && (draft.BatteryPolicy.ChargeLimitPercent - capabilities.MinimumChargeLimit)
-                % capabilities.ChargeLimitStep == 0
-            && !draft.BatteryPolicy.TemporaryFullCharge;
+            && capabilities.ChargeLimits.Contains(
+                draft.BatteryPolicy.ChargeLimitPercent);
     }
 
     private static bool ProfileSupported(

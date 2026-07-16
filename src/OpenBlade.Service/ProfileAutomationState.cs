@@ -11,6 +11,7 @@ public sealed class ProfileAutomationState
     private ManualOverride<FanMode>? persistentFans;
     private ManualOverride<LightingSettings>? temporaryLighting;
     private ManualOverride<LightingSettings>? persistentLighting;
+    private bool temporaryFullCharge;
 
     public ProfileAutomationState(ProfileSet profiles, PowerSource powerSource)
     {
@@ -22,6 +23,11 @@ public sealed class ProfileAutomationState
     public PowerSource PowerSource { get; private set; }
 
     public BatteryPolicy BatteryPolicy { get; private set; }
+
+    public DesiredBatteryState DesiredBattery => new(
+        BatteryPolicy,
+        protectionEnabled: true,
+        temporaryFullCharge);
 
     public ProfileSet Profiles => profiles;
 
@@ -36,27 +42,15 @@ public sealed class ProfileAutomationState
     public void UpdateProfiles(ProfileSet value)
     {
         ArgumentNullException.ThrowIfNull(value);
-        bool temporaryFullCharge = BatteryPolicy.TemporaryFullCharge;
         profiles = value;
-        BatteryPolicy = BatteryPolicy.Create(
-            value.BatteryPolicy.ChargeLimitPercent,
-            temporaryFullCharge);
+        BatteryPolicy = value.BatteryPolicy;
     }
 
     public void SetBatteryPolicy(BatteryPolicy value)
     {
         ArgumentNullException.ThrowIfNull(value);
-        if (value.TemporaryFullCharge)
-        {
-            throw new ArgumentException(
-                "Temporary full-charge state cannot be persisted.",
-                nameof(value));
-        }
-
         profiles = profiles with { BatteryPolicy = value };
-        BatteryPolicy = BatteryPolicy.Create(
-            value.ChargeLimitPercent,
-            BatteryPolicy.TemporaryFullCharge);
+        BatteryPolicy = value;
     }
 
     public bool ChangePowerSource(PowerSource powerSource)
@@ -70,9 +64,9 @@ public sealed class ProfileAutomationState
         temporaryPerformance = null;
         temporaryFans = null;
         temporaryLighting = null;
-        if (powerSource == PowerSource.Battery && BatteryPolicy.TemporaryFullCharge)
+        if (powerSource == PowerSource.Battery && temporaryFullCharge)
         {
-            BatteryPolicy = BatteryPolicy.Create(BatteryPolicy.ChargeLimitPercent);
+            temporaryFullCharge = false;
         }
 
         return true;
@@ -94,13 +88,10 @@ public sealed class ProfileAutomationState
             return;
         }
 
-        BatteryPolicy = BatteryPolicy.Create(
-            BatteryPolicy.ChargeLimitPercent,
-            temporaryFullCharge: true);
+        temporaryFullCharge = true;
     }
 
-    public void CancelTemporaryFullCharge() =>
-        BatteryPolicy = BatteryPolicy.Create(BatteryPolicy.ChargeLimitPercent);
+    public void CancelTemporaryFullCharge() => temporaryFullCharge = false;
 
     public DesiredDeviceState Resolve(ConfirmedDeviceState confirmed)
     {
@@ -113,7 +104,7 @@ public sealed class ProfileAutomationState
             OverrideResolver.Resolve<PerformancePreset>(profile.Performance, confirmed.Performance.GetValueOrDefault(), temporaryPerformance, persistentPerformance),
             OverrideResolver.Resolve<FanMode>(profile.Fans, confirmed.Fans.GetValueOrDefault(), temporaryFans, persistentFans),
             OverrideResolver.Resolve<LightingSettings>(profile.Lighting, confirmed.Lighting ?? profile.Lighting, temporaryLighting, persistentLighting),
-            BatteryPolicy);
+            DesiredBattery);
     }
 
     private static void SetOverride<T>(

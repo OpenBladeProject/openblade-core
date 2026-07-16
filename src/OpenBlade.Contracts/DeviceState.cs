@@ -12,31 +12,31 @@ public sealed record DeviceCapabilities(
     IReadOnlySet<PerformancePreset> PerformancePresets,
     IReadOnlySet<FanMode> FanModes,
     IReadOnlySet<LightingEffect> LightingEffects,
-    int MinimumChargeLimit,
-    int MaximumChargeLimit,
-    int ChargeLimitStep)
+    IReadOnlySet<int> ChargeLimits,
+    bool SupportsBatteryProtectionOff,
+    bool SupportsTemporaryFullCharge)
 {
     public static DeviceCapabilities Unavailable() => new(
         new HashSet<PerformancePreset>(),
         new HashSet<FanMode>(),
         new HashSet<LightingEffect>(),
-        MinimumChargeLimit: 0,
-        MaximumChargeLimit: 0,
-        ChargeLimitStep: 0);
+        new HashSet<int>(),
+        SupportsBatteryProtectionOff: false,
+        SupportsTemporaryFullCharge: false);
 
     public static DeviceCapabilities SafeTargetDefaults() => new(
         new HashSet<PerformancePreset>(Enum.GetValues<PerformancePreset>()),
         new HashSet<FanMode>(Enum.GetValues<FanMode>()),
         new HashSet<LightingEffect> { LightingEffect.Off },
-        MinimumChargeLimit: 50,
-        MaximumChargeLimit: 80,
-        ChargeLimitStep: 5);
+        new HashSet<int>(),
+        SupportsBatteryProtectionOff: false,
+        SupportsTemporaryFullCharge: false);
 }
 
 public sealed record ConfirmedDeviceState(
     PerformancePreset? Performance,
     FanMode? Fans,
-    BatteryPolicy? Battery,
+    ConfirmedBatteryState? Battery,
     LightingSettings? Lighting);
 
 public enum ControlResultStatus

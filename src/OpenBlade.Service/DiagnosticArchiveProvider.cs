@@ -315,7 +315,9 @@ public sealed class DiagnosticArchiveProvider : IDiagnosticArchiveProvider
             result[$"lighting.{value}"] = capabilities.LightingEffects.Contains(value);
         }
 
-        result["battery.chargeLimit"] = capabilities.ChargeLimitStep > 0;
+        result["battery.chargeLimit"] = capabilities.ChargeLimits.Count > 0;
+        result["battery.protectionOff"] = capabilities.SupportsBatteryProtectionOff;
+        result["battery.temporaryFullCharge"] = capabilities.SupportsTemporaryFullCharge;
         return result;
     }
 
@@ -366,12 +368,13 @@ public sealed class DiagnosticArchiveProvider : IDiagnosticArchiveProvider
             ["telemetry.gpuTemperatureCelsius"] = NumberOrUnavailable(
                 status.Telemetry.GpuTemperatureCelsius),
             ["telemetry.fanRpm"] = NumberOrUnavailable(status.Telemetry.FanRpm),
-            ["capability.minimumChargeLimit"] = capabilities.MinimumChargeLimit
-                .ToString(System.Globalization.CultureInfo.InvariantCulture),
-            ["capability.maximumChargeLimit"] = capabilities.MaximumChargeLimit
-                .ToString(System.Globalization.CultureInfo.InvariantCulture),
-            ["capability.chargeLimitStep"] = capabilities.ChargeLimitStep
-                .ToString(System.Globalization.CultureInfo.InvariantCulture),
+            ["capability.chargeLimits"] = string.Join(
+                ", ",
+                capabilities.ChargeLimits.Order()),
+            ["capability.supportsBatteryProtectionOff"] =
+                capabilities.SupportsBatteryProtectionOff.ToString(),
+            ["capability.supportsTemporaryFullCharge"] =
+                capabilities.SupportsTemporaryFullCharge.ToString(),
             ["override.performance"] = status.PerformanceOverride is null
                 ? "None"
                 : $"{status.PerformanceOverride.Value} ({status.PerformanceOverride.Lifetime})",

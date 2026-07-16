@@ -36,7 +36,7 @@ public sealed record PowerProfile(
 
 public sealed record BatteryPolicy
 {
-    public BatteryPolicy(int chargeLimitPercent, bool temporaryFullCharge)
+    public BatteryPolicy(int chargeLimitPercent)
     {
         if (chargeLimitPercent is < 50 or > 80 || chargeLimitPercent % 5 != 0)
         {
@@ -47,17 +47,73 @@ public sealed record BatteryPolicy
         }
 
         ChargeLimitPercent = chargeLimitPercent;
-        TemporaryFullCharge = temporaryFullCharge;
     }
 
     public int ChargeLimitPercent { get; }
 
-    public bool TemporaryFullCharge { get; }
+    public static BatteryPolicy Create(int chargeLimitPercent) => new(chargeLimitPercent);
+}
 
-    public static BatteryPolicy Create(int chargeLimitPercent, bool temporaryFullCharge = false)
+public sealed record DesiredBatteryState
+{
+    public DesiredBatteryState(
+        BatteryPolicy configuredPolicy,
+        bool protectionEnabled,
+        bool temporaryFullCharge)
     {
-        return new BatteryPolicy(chargeLimitPercent, temporaryFullCharge);
+        ConfiguredPolicy = configuredPolicy
+            ?? throw new ArgumentNullException(nameof(configuredPolicy));
+        if (!protectionEnabled && temporaryFullCharge)
+        {
+            throw new ArgumentException(
+                "Protection off and temporary full charge cannot both be active.");
+        }
+
+        ProtectionEnabled = protectionEnabled;
+        TemporaryFullCharge = temporaryFullCharge;
     }
+
+    public BatteryPolicy ConfiguredPolicy { get; }
+
+    public bool ProtectionEnabled { get; }
+
+    public bool TemporaryFullCharge { get; }
+}
+
+public sealed record ConfirmedBatteryState
+{
+    public ConfirmedBatteryState(
+        bool protectionEnabled,
+        int? chargeLimitPercent,
+        bool? temporaryFullCharge)
+    {
+        if (protectionEnabled != chargeLimitPercent.HasValue)
+        {
+            throw new ArgumentException(
+                "Enabled protection requires one exact limit; disabled protection requires none.");
+        }
+
+        if (chargeLimitPercent.HasValue)
+        {
+            _ = BatteryPolicy.Create(chargeLimitPercent.Value);
+        }
+
+        if (!protectionEnabled && temporaryFullCharge is true)
+        {
+            throw new ArgumentException(
+                "Protection off is distinct from temporary full charge.");
+        }
+
+        ProtectionEnabled = protectionEnabled;
+        ChargeLimitPercent = chargeLimitPercent;
+        TemporaryFullCharge = temporaryFullCharge;
+    }
+
+    public bool ProtectionEnabled { get; }
+
+    public int? ChargeLimitPercent { get; }
+
+    public bool? TemporaryFullCharge { get; }
 }
 
 public sealed record ProfileSet(

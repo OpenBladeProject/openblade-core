@@ -16,7 +16,7 @@ public sealed class ConfirmedStateDriftTrackerTests
         tracker.Observe(State(
             PerformancePreset.Balanced,
             FanMode.Automatic,
-            BatteryPolicy.Create(80),
+            Battery(80),
             DefaultLighting));
 
         Assert.Empty(tracker.ExternalChanges);
@@ -29,13 +29,13 @@ public sealed class ConfirmedStateDriftTrackerTests
         tracker.Observe(State(
             PerformancePreset.Balanced,
             FanMode.Automatic,
-            BatteryPolicy.Create(80),
+            Battery(80),
             DefaultLighting));
 
         tracker.Observe(State(
             PerformancePreset.Performance,
             FanMode.Maximum,
-            BatteryPolicy.Create(75),
+            Battery(75),
             DefaultLighting with { Brightness = 20 }));
 
         Assert.Equal(
@@ -64,8 +64,8 @@ public sealed class ConfirmedStateDriftTrackerTests
     public void MatchingConfirmation_ClearsOnlyRequestedSubsystem()
     {
         var tracker = new ConfirmedStateDriftTracker();
-        tracker.Observe(State(fans: FanMode.Automatic, battery: BatteryPolicy.Create(80)));
-        tracker.Observe(State(fans: FanMode.Maximum, battery: BatteryPolicy.Create(75)));
+        tracker.Observe(State(fans: FanMode.Automatic, battery: Battery(80)));
+        tracker.Observe(State(fans: FanMode.Maximum, battery: Battery(75)));
 
         tracker.ConfirmIntentional(DeviceSubsystem.Fans, matched: true);
 
@@ -109,9 +109,9 @@ public sealed class ConfirmedStateDriftTrackerTests
     public void BatteryLimitThenProtectionOff_LatchesBatteryChange()
     {
         var tracker = new ConfirmedStateDriftTracker();
-        tracker.Observe(State(battery: BatteryPolicy.Create(80)));
+        tracker.Observe(State(battery: Battery(80)));
 
-        tracker.Observe(State(battery: null));
+        tracker.Observe(State(battery: ProtectionOff()));
 
         Assert.Equal([DeviceSubsystem.Battery], tracker.ExternalChanges);
 
@@ -124,9 +124,9 @@ public sealed class ConfirmedStateDriftTrackerTests
     public void InitialProtectionOffThenBatteryLimit_LatchesBatteryChange()
     {
         var tracker = new ConfirmedStateDriftTracker();
-        tracker.Observe(State(battery: null));
+        tracker.Observe(State(battery: ProtectionOff()));
 
-        tracker.Observe(State(battery: BatteryPolicy.Create(80)));
+        tracker.Observe(State(battery: Battery(80)));
 
         Assert.Equal([DeviceSubsystem.Battery], tracker.ExternalChanges);
     }
@@ -150,7 +150,11 @@ public sealed class ConfirmedStateDriftTrackerTests
     private static ConfirmedDeviceState State(
         PerformancePreset? performance = null,
         FanMode? fans = null,
-        BatteryPolicy? battery = null,
+        ConfirmedBatteryState? battery = null,
         LightingSettings? lighting = null) =>
         new(performance, fans, battery, lighting);
+
+    private static ConfirmedBatteryState Battery(int limit) => new(true, limit, false);
+
+    private static ConfirmedBatteryState ProtectionOff() => new(false, null, false);
 }

@@ -16,7 +16,6 @@ public sealed class ProfileDefaultsTests
         Assert.Equal(LightingEffect.Off, profiles.PluggedIn.Lighting.Effect);
         Assert.Equal(LightingEffect.Off, profiles.Battery.Lighting.Effect);
         Assert.Equal(80, profiles.BatteryPolicy.ChargeLimitPercent);
-        Assert.False(profiles.BatteryPolicy.TemporaryFullCharge);
     }
 
     [Theory]

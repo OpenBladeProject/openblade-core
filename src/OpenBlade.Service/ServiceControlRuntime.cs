@@ -119,7 +119,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 PerformanceOverride = automation.PerformanceOverride,
                 FanOverride = automation.FanOverride,
                 LightingOverride = automation.LightingOverride,
-                FullChargeOverride = automation.BatteryPolicy.TemporaryFullCharge,
+                FullChargeOverride = automation.DesiredBattery.TemporaryFullCharge,
             });
             history.RecordSummary(ControlOperationStatus.Stored, message);
             return new ControlOperationResult(ControlOperationStatus.Stored, message);
@@ -552,7 +552,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 PerformanceOverride = automation.PerformanceOverride,
                 FanOverride = automation.FanOverride,
                 LightingOverride = automation.LightingOverride,
-                FullChargeOverride = automation.BatteryPolicy.TemporaryFullCharge,
+                FullChargeOverride = automation.DesiredBattery.TemporaryFullCharge,
             });
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -587,7 +587,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             PerformanceOverride = automation.PerformanceOverride,
             FanOverride = automation.FanOverride,
             LightingOverride = automation.LightingOverride,
-            FullChargeOverride = automation.BatteryPolicy.TemporaryFullCharge,
+            FullChargeOverride = automation.DesiredBattery.TemporaryFullCharge,
         });
     }
 
@@ -607,7 +607,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             PerformanceOverride: automation.PerformanceOverride,
             FanOverride: automation.FanOverride,
             LightingOverride: automation.LightingOverride,
-            FullChargeOverride: automation.BatteryPolicy.TemporaryFullCharge);
+            FullChargeOverride: automation.DesiredBattery.TemporaryFullCharge);
 
     private ControlOperationResult PublishScopedUnavailable(
         DeviceSubsystem subsystem,
@@ -673,7 +673,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             PerformanceOverride = automation.PerformanceOverride,
             FanOverride = automation.FanOverride,
             LightingOverride = automation.LightingOverride,
-            FullChargeOverride = automation.BatteryPolicy.TemporaryFullCharge,
+            FullChargeOverride = automation.DesiredBattery.TemporaryFullCharge,
         });
     }
 
@@ -741,9 +741,9 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             && left.PerformancePresets.SetEquals(right.PerformancePresets)
             && left.FanModes.SetEquals(right.FanModes)
             && left.LightingEffects.SetEquals(right.LightingEffects)
-            && left.MinimumChargeLimit == right.MinimumChargeLimit
-            && left.MaximumChargeLimit == right.MaximumChargeLimit
-            && left.ChargeLimitStep == right.ChargeLimitStep);
+            && left.ChargeLimits.SetEquals(right.ChargeLimits)
+            && left.SupportsBatteryProtectionOff == right.SupportsBatteryProtectionOff
+            && left.SupportsTemporaryFullCharge == right.SupportsTemporaryFullCharge);
 
     private static string Summarize(SubsystemApplyResults results) =>
         string.Join(

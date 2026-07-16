@@ -38,6 +38,10 @@ public sealed class IpcMessageCodecTests
             OpenBladeIpc.ProtocolVersion,
             Guid.NewGuid(),
             BatteryPolicy.Create(75)),
+        new SetBatteryProtectionRequest(
+            OpenBladeIpc.ProtocolVersion,
+            Guid.NewGuid(),
+            Enabled: false),
         new SetFullChargeOverrideRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid(), true),
         new SetFullChargeOverrideRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid(), false),
     };
@@ -60,19 +64,34 @@ public sealed class IpcMessageCodecTests
     }
 
     [Fact]
-    public async Task VersionThreeAdvisoryAndObserveRequest_RoundTripExactShape()
+    public async Task VersionFourBatteryContracts_RoundTripExactShape()
     {
+        var capabilities = new DeviceCapabilities(
+            new HashSet<PerformancePreset>(),
+            new HashSet<FanMode>(),
+            new HashSet<LightingEffect>(),
+            new HashSet<int> { 80 },
+            SupportsBatteryProtectionOff: true,
+            SupportsTemporaryFullCharge: false);
+        var desired = new DesiredBatteryState(BatteryPolicy.Create(80), true, false);
+        var confirmed = new ConfirmedBatteryState(true, 80, false);
+        ServiceRequest request = new SetBatteryProtectionRequest(4, Guid.NewGuid(), false);
         ServiceStatusSnapshot status = CreateStatus() with
         {
             PotentialControllers = ["RazerAppEngine"],
             ControllerDetectionWarning = null,
             ExternalChanges = [DeviceSubsystem.Fans, DeviceSubsystem.Lighting],
+            Capabilities = capabilities,
+            ConfirmedState = new ConfirmedDeviceState(null, null, confirmed, null),
+            DesiredState = CreateStatus().DesiredState with { Battery = desired },
         };
-        ServiceRequest request = new ObserveStateRequest(3, Guid.NewGuid());
 
-        Assert.Equal(3, OpenBladeIpc.ProtocolVersion);
+        Assert.Equal(4, OpenBladeIpc.ProtocolVersion);
         Assert.Equal(request, await RoundTripRequestAsync(request));
-        AssertStatusEqual(status, await RoundTripStatusAsync(status));
+        ServiceStatusSnapshot roundTrip = await RoundTripStatusAsync(status);
+        Assert.Equal([80], roundTrip.Capabilities!.ChargeLimits);
+        Assert.Equal(desired, roundTrip.DesiredState.Battery);
+        Assert.Equal(confirmed, roundTrip.ConfirmedState!.Battery);
     }
 
     [Theory]
@@ -101,7 +120,7 @@ public sealed class IpcMessageCodecTests
     }
 
     [Fact]
-    public async Task VersionThreeStatus_AcceptsCompleteCapabilityCollections()
+    public async Task VersionFourStatus_AcceptsCompleteCapabilityCollections()
     {
         ServiceStatusSnapshot expected = CreateStatus() with
         {
@@ -110,8 +129,71 @@ public sealed class IpcMessageCodecTests
 
         ServiceStatusSnapshot actual = await RoundTripStatusAsync(expected);
 
-        Assert.Equal(3, OpenBladeIpc.ProtocolVersion);
+        Assert.Equal(4, OpenBladeIpc.ProtocolVersion);
         AssertStatusEqual(expected, actual);
+    }
+
+    [Fact]
+    public async Task WriteRequestAsync_RejectsEmptyRequestId()
+    {
+        using MemoryStream stream = new();
+
+        await Assert.ThrowsAsync<InvalidDataException>(() =>
+            IpcMessageCodec.WriteRequestAsync(
+                stream,
+                new GetStatusRequest(OpenBladeIpc.ProtocolVersion, Guid.Empty),
+                CancellationToken.None));
+    }
+
+    [Theory]
+    [InlineData("[80,80]")]
+    [InlineData("[80,75]")]
+    [InlineData("[45]")]
+    [InlineData("[85]")]
+    [InlineData("[52]")]
+    [InlineData("[50,55,60,65,70,75,80,80]")]
+    public async Task ReadServerFrameAsync_RejectsInvalidRawChargeLimits(string chargeLimitsJson)
+    {
+        ServiceServerFrame frame = new ServiceStatusEvent(
+            OpenBladeIpc.ProtocolVersion,
+            CreateStatus() with { Capabilities = DeviceCapabilities.Unavailable() });
+        JsonObject root = Assert.IsType<JsonObject>(
+            JsonNode.Parse(JsonSerializer.Serialize<ServiceServerFrame>(frame)));
+        JsonObject status = Assert.IsType<JsonObject>(root[nameof(ServiceStatusEvent.Status)]);
+        JsonObject capabilities = Assert.IsType<JsonObject>(
+            status[nameof(ServiceStatusSnapshot.Capabilities)]);
+        capabilities[nameof(DeviceCapabilities.ChargeLimits)] = JsonNode.Parse(chargeLimitsJson);
+
+        await Assert.ThrowsAsync<InvalidDataException>(() =>
+            IpcMessageCodec.ReadServerFrameAsync(
+                FrameJson(root.ToJsonString()),
+                CancellationToken.None));
+    }
+
+    [Theory]
+    [InlineData("\"temporaryFullCharge\":true")]
+    [InlineData("\"protectionEnabled\":true")]
+    [InlineData("\"arbitraryMember\":true")]
+    public async Task ReadRequestAsync_RejectsLegacyOrUnknownBatteryPolicyMember(
+        string extraMember)
+    {
+        Guid requestId = Guid.NewGuid();
+        using MemoryStream stream = FrameJson(
+            $"{{\"operation\":\"setBatteryPolicy\",\"version\":4,\"requestId\":\"{requestId}\",\"value\":{{\"chargeLimitPercent\":80,{extraMember}}}}}");
+
+        await Assert.ThrowsAsync<InvalidDataException>(() =>
+            IpcMessageCodec.ReadRequestAsync(stream, CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task ReadRequestAsync_RejectsDuplicateChargeLimitPercentMember()
+    {
+        Guid requestId = Guid.NewGuid();
+        using MemoryStream stream = FrameJson(
+            $"{{\"operation\":\"setBatteryPolicy\",\"version\":4,\"requestId\":\"{requestId}\",\"value\":{{\"chargeLimitPercent\":80,\"chargeLimitPercent\":75}}}}");
+
+        await Assert.ThrowsAsync<InvalidDataException>(() =>
+            IpcMessageCodec.ReadRequestAsync(stream, CancellationToken.None));
     }
 
     [Fact]
@@ -269,7 +351,7 @@ public sealed class IpcMessageCodecTests
     {
         const string secret = "unknown-secret-operation";
         using MemoryStream stream = FrameJson(
-            $$"""{"operation":"{{secret}}","version":3,"requestId":"{{Guid.NewGuid()}}"}""");
+            $$"""{"operation":"{{secret}}","version":4,"requestId":"{{Guid.NewGuid()}}"}""");
 
         InvalidDataException exception = await Assert.ThrowsAsync<InvalidDataException>(() =>
             IpcMessageCodec.ReadRequestAsync(stream, CancellationToken.None));
@@ -517,7 +599,10 @@ public sealed class IpcMessageCodecTests
             new ResolvedSetting<LightingSettings>(
                 profiles.PluggedIn.Lighting,
                 SettingValueSource.PowerProfile),
-            profiles.BatteryPolicy);
+            new DesiredBatteryState(
+                profiles.BatteryPolicy,
+                protectionEnabled: true,
+                temporaryFullCharge: false));
         return new ServiceStatusSnapshot(
             Revision: 1,
             DeviceVerified: false,
@@ -553,9 +638,9 @@ public sealed class IpcMessageCodecTests
         Assert.True(expected.Capabilities.PerformancePresets.SetEquals(actual.Capabilities.PerformancePresets));
         Assert.True(expected.Capabilities.FanModes.SetEquals(actual.Capabilities.FanModes));
         Assert.True(expected.Capabilities.LightingEffects.SetEquals(actual.Capabilities.LightingEffects));
-        Assert.Equal(expected.Capabilities.MinimumChargeLimit, actual.Capabilities.MinimumChargeLimit);
-        Assert.Equal(expected.Capabilities.MaximumChargeLimit, actual.Capabilities.MaximumChargeLimit);
-        Assert.Equal(expected.Capabilities.ChargeLimitStep, actual.Capabilities.ChargeLimitStep);
+        Assert.True(expected.Capabilities.ChargeLimits.SetEquals(actual.Capabilities.ChargeLimits));
+        Assert.Equal(expected.Capabilities.SupportsBatteryProtectionOff, actual.Capabilities.SupportsBatteryProtectionOff);
+        Assert.Equal(expected.Capabilities.SupportsTemporaryFullCharge, actual.Capabilities.SupportsTemporaryFullCharge);
         Assert.Equal(expected.ConfirmedState, actual.ConfirmedState);
         Assert.Equal(expected.Profiles, actual.Profiles);
         Assert.Equal(expected.DesiredState, actual.DesiredState);

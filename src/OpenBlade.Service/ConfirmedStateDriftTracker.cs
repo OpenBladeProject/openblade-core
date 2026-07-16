@@ -8,7 +8,7 @@ public sealed class ConfirmedStateDriftTracker
     private readonly HashSet<DeviceSubsystem> externalChanges = [];
     private PerformancePreset? performance;
     private FanMode? fans;
-    private BatteryPolicy? battery;
+    private ConfirmedBatteryState? battery;
     private bool batteryObserved;
     private LightingSettings? lighting;
 
@@ -77,9 +77,9 @@ public sealed class ConfirmedStateDriftTracker
         baseline = observed;
     }
 
-    private void ObserveBattery(BatteryPolicy? observed)
+    private void ObserveBattery(ConfirmedBatteryState? observed)
     {
-        if (batteryObserved && !EqualityComparer<BatteryPolicy?>.Default.Equals(
+        if (batteryObserved && !EqualityComparer<ConfirmedBatteryState?>.Default.Equals(
                 battery,
                 observed))
         {

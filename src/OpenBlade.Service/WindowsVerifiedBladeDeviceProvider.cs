@@ -177,16 +177,16 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
                         ThrowFailure(queried.Failure, queried.Diagnostic, cancellationToken);
                     }
 
-                    BatteryPolicy? battery = queried.Value switch
+                    ConfirmedBatteryState battery = queried.Value switch
                     {
-                        BatteryValidationSetting.ProtectionOff => null,
-                        BatteryValidationSetting.Limit50 => BatteryPolicy.Create(50),
-                        BatteryValidationSetting.Limit55 => BatteryPolicy.Create(55),
-                        BatteryValidationSetting.Limit60 => BatteryPolicy.Create(60),
-                        BatteryValidationSetting.Limit65 => BatteryPolicy.Create(65),
-                        BatteryValidationSetting.Limit70 => BatteryPolicy.Create(70),
-                        BatteryValidationSetting.Limit75 => BatteryPolicy.Create(75),
-                        BatteryValidationSetting.Limit80 => BatteryPolicy.Create(80),
+                        BatteryValidationSetting.ProtectionOff => new(false, null, false),
+                        BatteryValidationSetting.Limit50 => new(true, 50, false),
+                        BatteryValidationSetting.Limit55 => new(true, 55, false),
+                        BatteryValidationSetting.Limit60 => new(true, 60, false),
+                        BatteryValidationSetting.Limit65 => new(true, 65, false),
+                        BatteryValidationSetting.Limit70 => new(true, 70, false),
+                        BatteryValidationSetting.Limit75 => new(true, 75, false),
+                        BatteryValidationSetting.Limit80 => new(true, 80, false),
                         _ => throw new RazerProtocolException(
                             "Battery state query returned an undefined setting.",
                             HidProtocolValidationFailure.PayloadValidator),

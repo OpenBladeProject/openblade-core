@@ -684,7 +684,7 @@ public sealed class ServiceClientTests
                 new ResolvedSetting<PerformancePreset>(PerformancePreset.Balanced, SettingValueSource.PowerProfile),
                 new ResolvedSetting<FanMode>(FanMode.Automatic, SettingValueSource.PowerProfile),
                 new ResolvedSetting<LightingSettings>(profiles.PluggedIn.Lighting, SettingValueSource.PowerProfile),
-                profiles.BatteryPolicy),
+                new DesiredBatteryState(profiles.BatteryPolicy, true, false)),
             new TelemetrySnapshot(DateTimeOffset.UnixEpoch, PowerSource.PluggedIn, null, null, null, null),
             null,
             null,

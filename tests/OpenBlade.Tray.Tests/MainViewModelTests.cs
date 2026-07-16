@@ -47,7 +47,7 @@ public sealed class MainViewModelTests
             ConfirmedState = new ConfirmedDeviceState(
                 PerformancePreset.Performance,
                 FanMode.Maximum,
-                BatteryPolicy.Create(65),
+                new ConfirmedBatteryState(true, 65, false),
                 confirmedLighting),
             ExternalChanges = [DeviceSubsystem.Lighting, DeviceSubsystem.Fans],
         });
@@ -67,35 +67,46 @@ public sealed class MainViewModelTests
     }
 
     [Fact]
-    public async Task ConfirmedNullBatteryKeepsDesiredFallbackAndReportsProtectionOff()
+    public async Task ConfirmedProtectionOffKeepsDesiredFallbackAndReportsProtectionOff()
     {
         var client = new FakeServiceClient();
         await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
         await viewModel.StartAsync();
         client.Publish(CreateStatus(verified: true, blocked: false) with
         {
-            ConfirmedState = new ConfirmedDeviceState(null, null, null, null),
+            ConfirmedState = new ConfirmedDeviceState(
+                null,
+                null,
+                new ConfirmedBatteryState(false, null, false),
+                null),
         });
         await WaitUntilAsync(() => viewModel.IsConnected);
 
         Assert.Equal(80, viewModel.ChargeLimitPercent);
         Assert.Contains("protection off", viewModel.BatterySourceLabel, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("full charge", viewModel.BatterySourceLabel, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("full charge", viewModel.BatterySourceLabel, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
-    public async Task ExternallyChangedNullBatteryStillReportsProtectionOff()
+    public async Task ExternallyChangedProtectionOffStillReportsProtectionOff()
     {
         var client = new FakeServiceClient();
         await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
         await viewModel.StartAsync();
         client.Publish(CreateStatus(verified: true, blocked: false) with
         {
-            ConfirmedState = new ConfirmedDeviceState(null, null, null, null),
+            ConfirmedState = new ConfirmedDeviceState(
+                null,
+                null,
+                new ConfirmedBatteryState(false, null, false),
+                null),
             ExternalChanges = [DeviceSubsystem.Battery],
             DesiredState = CreateStatus(true, false).DesiredState with
             {
-                Battery = BatteryPolicy.Create(65),
+                Battery = new DesiredBatteryState(
+                    BatteryPolicy.Create(65),
+                    protectionEnabled: true,
+                    temporaryFullCharge: false),
             },
         });
         await WaitUntilAsync(() => viewModel.BatterySourceLabel.Contains(
@@ -105,7 +116,7 @@ public sealed class MainViewModelTests
         Assert.Equal(65, viewModel.ChargeLimitPercent);
         Assert.Contains("Changed outside OpenBlade", viewModel.BatterySourceLabel, StringComparison.Ordinal);
         Assert.Contains("protection off", viewModel.BatterySourceLabel, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("full charge", viewModel.BatterySourceLabel, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("full charge", viewModel.BatterySourceLabel, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -362,9 +373,9 @@ public sealed class MainViewModelTests
                 new HashSet<PerformancePreset> { PerformancePreset.Balanced },
                 new HashSet<FanMode> { FanMode.Automatic },
                 new HashSet<LightingEffect> { LightingEffect.Off },
-                50,
-                80,
-                5)));
+                ChargeLimits(),
+                SupportsBatteryProtectionOff: true,
+                SupportsTemporaryFullCharge: true)));
         await WaitUntilAsync(() => viewModel.IsConnected);
 
         Assert.True(viewModel.IsPerformanceVisible);
@@ -399,7 +410,7 @@ public sealed class MainViewModelTests
                 new ResolvedSetting<LightingSettings>(
                     ProfileDefaults.CreateSafeDefaults().Battery.Lighting,
                     SettingValueSource.PowerProfile),
-                BatteryPolicy.Create(80)),
+                new DesiredBatteryState(BatteryPolicy.Create(80), true, false)),
             Telemetry = new TelemetrySnapshot(
                 DateTimeOffset.UnixEpoch,
                 PowerSource.Battery,
@@ -628,7 +639,7 @@ public sealed class MainViewModelTests
                 new HashSet<PerformancePreset> { PerformancePreset.Balanced },
                 new HashSet<FanMode> { FanMode.Automatic },
                 new HashSet<LightingEffect> { LightingEffect.Off },
-                50, 80, 5);
+                ChargeLimits(), true, true);
         client.Publish(CreateStatus(
             verified,
             writesBlocked,
@@ -886,7 +897,12 @@ public sealed class MainViewModelTests
             [],
             message,
             capabilities ?? (verified
-                ? DeviceCapabilities.SafeTargetDefaults()
+                ? DeviceCapabilities.SafeTargetDefaults() with
+                {
+                    ChargeLimits = ChargeLimits(),
+                    SupportsBatteryProtectionOff = true,
+                    SupportsTemporaryFullCharge = true,
+                }
                 : DeviceCapabilities.Unavailable()),
             null,
             profiles,
@@ -900,7 +916,7 @@ public sealed class MainViewModelTests
                 new ResolvedSetting<LightingSettings>(
                     profiles.PluggedIn.Lighting,
                     SettingValueSource.PowerProfile),
-                profiles.BatteryPolicy),
+                new DesiredBatteryState(profiles.BatteryPolicy, true, false)),
             new TelemetrySnapshot(
                 DateTimeOffset.UnixEpoch,
                 PowerSource.PluggedIn,
@@ -922,6 +938,8 @@ public sealed class MainViewModelTests
         }
         Assert.True(predicate(), "The asynchronous condition was not reached.");
     }
+
+    private static HashSet<int> ChargeLimits() => [50, 55, 60, 65, 70, 75, 80];
 
     private sealed class RecordingDispatcher : IUiDispatcher
     {

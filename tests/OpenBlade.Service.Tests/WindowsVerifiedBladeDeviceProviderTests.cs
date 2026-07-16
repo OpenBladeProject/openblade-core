@@ -81,9 +81,9 @@ public sealed class WindowsVerifiedBladeDeviceProviderTests
         Assert.Empty(capabilities.PerformancePresets);
         Assert.Empty(capabilities.FanModes);
         Assert.Empty(capabilities.LightingEffects);
-        Assert.Equal(0, capabilities.MinimumChargeLimit);
-        Assert.Equal(0, capabilities.MaximumChargeLimit);
-        Assert.Equal(0, capabilities.ChargeLimitStep);
+        Assert.Empty(capabilities.ChargeLimits);
+        Assert.False(capabilities.SupportsBatteryProtectionOff);
+        Assert.False(capabilities.SupportsTemporaryFullCharge);
         Assert.Equal(0, factory.OpenCount);
     }
 
@@ -108,7 +108,7 @@ public sealed class WindowsVerifiedBladeDeviceProviderTests
 
         Assert.Null(state.Performance);
         Assert.Null(state.Fans);
-        Assert.Equal(BatteryPolicy.Create(expectedLimit), state.Battery);
+        Assert.Equal(new ConfirmedBatteryState(true, expectedLimit, false), state.Battery);
         Assert.Null(state.Lighting);
         Assert.Equal(1, factory.OpenCount);
         Assert.Equal(1, port.QueryCount);
@@ -116,7 +116,7 @@ public sealed class WindowsVerifiedBladeDeviceProviderTests
     }
 
     [Fact]
-    public async Task ReadState_MapsProtectionOffToNullWithoutInventingLimit()
+    public async Task ReadState_MapsProtectionOffWithoutInventingLimit()
     {
         var port = FakeQueryPort.Success(BatteryValidationSetting.ProtectionOff);
         var factory = new FakeQueryFactory(port);
@@ -125,7 +125,13 @@ public sealed class WindowsVerifiedBladeDeviceProviderTests
 
         ConfirmedDeviceState state = await device.ReadStateAsync(default);
 
-        Assert.Equal(new ConfirmedDeviceState(null, null, null, null), state);
+        Assert.Equal(
+            new ConfirmedDeviceState(
+                null,
+                null,
+                new ConfirmedBatteryState(false, null, false),
+                null),
+            state);
         Assert.Equal(1, port.DisposeCount);
     }
 
