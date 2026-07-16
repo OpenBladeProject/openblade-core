@@ -104,6 +104,31 @@ public sealed class BatteryConfigurationStore
         }
     }
 
+    public async Task SaveConfigurationAsync(
+        ProfileSet profiles,
+        BatteryAutomationPreferences preferences,
+        CancellationToken cancellationToken)
+    {
+        validator.Validate(profiles);
+        validator.ValidatePreferences(preferences);
+        await gate.WaitAsync(cancellationToken);
+        try
+        {
+            await CommitAsync(profiles, preferences, cancellationToken);
+            CommittedSnapshot verified = await ReadCommittedSnapshotAsync(cancellationToken);
+            if (verified.Configuration.Profiles != profiles
+                || verified.Configuration.Preferences != preferences)
+            {
+                throw new InvalidDataException(
+                    "The committed battery configuration did not match the intended aggregate.");
+            }
+        }
+        finally
+        {
+            gate.Release();
+        }
+    }
+
     private async Task<CommittedSnapshot> ReadCommittedSnapshotAsync(
         CancellationToken cancellationToken)
     {

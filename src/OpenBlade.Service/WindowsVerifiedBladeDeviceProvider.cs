@@ -117,19 +117,26 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
 
         public Task SetPerformanceAsync(
             PerformancePreset value,
-            CancellationToken cancellationToken) => RejectWrite();
+            CancellationToken cancellationToken) => RejectUnvalidatedWrite();
 
         public Task SetFanModeAsync(
             FanMode value,
-            CancellationToken cancellationToken) => RejectWrite();
+            CancellationToken cancellationToken) => RejectUnvalidatedWrite();
 
-        public Task SetBatteryPolicyAsync(
+        public Task SetChargeLimitAsync(
             BatteryPolicy value,
-            CancellationToken cancellationToken) => RejectWrite();
+            CancellationToken cancellationToken) => RejectBatteryWrite();
+
+        public Task SetBatteryProtectionOffAsync(
+            CancellationToken cancellationToken) => RejectBatteryWrite();
+
+        public Task SetTemporaryFullChargeAsync(
+            bool enabled,
+            CancellationToken cancellationToken) => RejectBatteryWrite();
 
         public Task SetLightingAsync(
             LightingSettings value,
-            CancellationToken cancellationToken) => RejectWrite();
+            CancellationToken cancellationToken) => RejectUnvalidatedWrite();
 
         public void Dispose()
         {
@@ -250,7 +257,12 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
             }
         }
 
-        private static Task RejectWrite() => Task.FromException(
+        private static Task RejectBatteryWrite() => Task.FromException(
+            new BladeWriteException(
+                WriteSubmissionState.KnownNotApplied,
+                "Hardware writes are not admitted for the verified read-only device."));
+
+        private static Task RejectUnvalidatedWrite() => Task.FromException(
             new UnvalidatedCommandException(
                 "Hardware writes are not admitted for the verified read-only device."));
 

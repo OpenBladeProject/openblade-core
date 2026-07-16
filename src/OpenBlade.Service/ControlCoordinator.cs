@@ -66,7 +66,26 @@ public sealed class ControlCoordinator
     public async Task<ControlResult> ApplyBatteryAsync(
         BatteryPolicy value,
         CancellationToken cancellationToken) =>
-        (await ApplyBatteryOutcomeAsync(value, cancellationToken)).Result;
+        (await ApplyChargeLimitOutcomeAsync(value, cancellationToken)).Result;
+
+    public async Task<ControlResult> ApplyChargeLimitAsync(
+        BatteryPolicy value,
+        CancellationToken cancellationToken) =>
+        (await ApplyChargeLimitOutcomeAsync(value, cancellationToken)).Result;
+
+    public async Task<ControlResult> ApplyBatteryProtectionAsync(
+        bool enabled,
+        BatteryPolicy storedPolicy,
+        CancellationToken cancellationToken) =>
+        (await ApplyBatteryProtectionOutcomeAsync(
+            enabled,
+            storedPolicy,
+            cancellationToken)).Result;
+
+    public async Task<ControlResult> ApplyTemporaryFullChargeAsync(
+        bool enabled,
+        CancellationToken cancellationToken) =>
+        (await ApplyTemporaryFullChargeOutcomeAsync(enabled, cancellationToken)).Result;
 
     public async Task<ControlResult> ApplyLightingAsync(
         LightingSettings value,
@@ -97,22 +116,61 @@ public sealed class ControlCoordinator
 
     internal Task<ScopedApplyOutcome> ApplyBatteryOutcomeAsync(
         BatteryPolicy value,
-        CancellationToken cancellationToken) => ApplyBatteryOutcomeAsync(
-            new DesiredBatteryState(
-                value,
-                protectionEnabled: true,
-                temporaryFullCharge: false),
-            cancellationToken);
+        CancellationToken cancellationToken) =>
+        ApplyChargeLimitOutcomeAsync(value, cancellationToken);
 
     internal Task<ScopedApplyOutcome> ApplyBatteryOutcomeAsync(
         DesiredBatteryState value,
-        CancellationToken cancellationToken) => ApplyScopedAsync(
-            DeviceSubsystem.Battery,
-            "Battery",
-            value is not null,
-            capabilities => IsBatterySupported(value!, capabilities),
-            state => BatteryMatches(value!, state.Battery),
-            token => device.SetBatteryPolicyAsync(value!.ConfiguredPolicy, token),
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(value);
+        return ApplyBatteryDesiredOutcomeAsync(value, cancellationToken);
+    }
+
+    internal Task<ScopedApplyOutcome> ApplyChargeLimitOutcomeAsync(
+        BatteryPolicy value,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(value);
+        return ApplyBatteryOperationAsync(
+            (capabilities, confirmed) => CreateChargeLimitPlan(
+                value,
+                capabilities,
+                confirmed),
+            cancellationToken);
+    }
+
+    internal Task<ScopedApplyOutcome> ApplyBatteryProtectionOutcomeAsync(
+        bool enabled,
+        BatteryPolicy storedPolicy,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(storedPolicy);
+        return ApplyBatteryOperationAsync(
+            (capabilities, confirmed) => CreateProtectionPlan(
+                enabled,
+                storedPolicy,
+                capabilities,
+                confirmed),
+            cancellationToken);
+    }
+
+    internal Task<ScopedApplyOutcome> ApplyTemporaryFullChargeOutcomeAsync(
+        bool enabled,
+        CancellationToken cancellationToken) => ApplyBatteryOperationAsync(
+            (capabilities, confirmed) => CreateTemporaryFullChargePlan(
+                enabled,
+                capabilities,
+                confirmed),
+            cancellationToken);
+
+    private Task<ScopedApplyOutcome> ApplyBatteryDesiredOutcomeAsync(
+        DesiredBatteryState desired,
+        CancellationToken cancellationToken) => ApplyBatteryOperationAsync(
+            (capabilities, confirmed) => CreateBatteryPlan(
+                desired,
+                capabilities,
+                confirmed),
             cancellationToken);
 
     internal Task<ScopedApplyOutcome> ApplyLightingOutcomeAsync(
@@ -159,6 +217,10 @@ public sealed class ControlCoordinator
                 DeviceAccessFailed: true);
         }
 
+        BatteryOperationPlan batteryPlan = CreateBatteryPlan(
+            desired.Battery,
+            capabilities,
+            initial.Battery);
         var states = new Dictionary<DeviceSubsystem, PendingSubsystem>
         {
             [DeviceSubsystem.Performance] = new(
@@ -176,13 +238,11 @@ public sealed class ControlCoordinator
                 token => device.SetFanModeAsync(desired.Fans.Value, token),
                 state => state.Fans == desired.Fans.Value),
             [DeviceSubsystem.Battery] = new(
-                "Battery",
-                IsBatterySupported(desired.Battery, capabilities),
-                BatteryMatches(desired.Battery, initial.Battery),
-                token => device.SetBatteryPolicyAsync(
-                    desired.Battery.ConfiguredPolicy,
-                    token),
-                state => BatteryMatches(desired.Battery, state.Battery)),
+                batteryPlan.Name,
+                batteryPlan.Supported,
+                batteryPlan.InitiallyMatching,
+                batteryPlan.Setter,
+                state => batteryPlan.Matches(state.Battery)),
             [DeviceSubsystem.Lighting] = new(
                 "Lighting",
                 IsLightingValid(desired.Lighting.Value)
@@ -225,6 +285,19 @@ public sealed class ControlCoordinator
                 {
                     await pending.Setter(cancellationToken);
                     provisional[subsystem] = Indeterminate(pending.Name, null);
+                }
+                catch (BladeWriteException exception)
+                    when (exception.SubmissionState is WriteSubmissionState.KnownNotApplied)
+                {
+                    attempted.Remove(subsystem);
+                    provisional[subsystem] = WriteRejected(pending.Name, exception);
+                }
+                catch (BladeWriteException exception)
+                    when (exception.SubmissionState is WriteSubmissionState.Indeterminate)
+                {
+                    provisional[subsystem] = Indeterminate(pending.Name, exception);
+                    stopFurtherWrites = true;
+                    stopReason = provisional[subsystem].Message;
                 }
                 catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
                 {
@@ -334,6 +407,119 @@ public sealed class ControlCoordinator
                 new HashSet<DeviceSubsystem>(attempted),
                 cancellationToken,
                 exception);
+        }
+    }
+
+    private async Task<ScopedApplyOutcome> ApplyBatteryOperationAsync(
+        Func<DeviceCapabilities, ConfirmedBatteryState?, BatteryOperationPlan> createPlan,
+        CancellationToken cancellationToken)
+    {
+        DeviceCapabilities? capabilities = null;
+        bool submissionIndeterminate = false;
+        try
+        {
+            capabilities = await device.ReadCapabilitiesAsync(cancellationToken);
+            cancellationToken.ThrowIfCancellationRequested();
+            ConfirmedDeviceState initial = await device.ReadStateAsync(cancellationToken);
+            cancellationToken.ThrowIfCancellationRequested();
+            BatteryOperationPlan plan = createPlan(capabilities, initial.Battery);
+            if (!plan.Supported)
+            {
+                return new ScopedApplyOutcome(
+                    Unsupported(plan.Name),
+                    initial,
+                    WriteAttempted: false,
+                    ReadbackMatched: false,
+                    capabilities,
+                    DeviceAccessFailed: false);
+            }
+
+            if (plan.InitiallyMatching)
+            {
+                return new ScopedApplyOutcome(
+                    Unchanged(plan.Name),
+                    initial,
+                    WriteAttempted: false,
+                    ReadbackMatched: true,
+                    capabilities,
+                    DeviceAccessFailed: false);
+            }
+
+            cancellationToken.ThrowIfCancellationRequested();
+            try
+            {
+                await plan.Setter(cancellationToken);
+                submissionIndeterminate = true;
+            }
+            catch (BladeWriteException exception)
+                when (exception.SubmissionState is WriteSubmissionState.KnownNotApplied)
+            {
+                return new ScopedApplyOutcome(
+                    WriteRejected(plan.Name, exception),
+                    initial,
+                    WriteAttempted: false,
+                    ReadbackMatched: false,
+                    capabilities,
+                    DeviceAccessFailed: false);
+            }
+            catch (BladeWriteException exception)
+                when (exception.SubmissionState is WriteSubmissionState.Indeterminate)
+            {
+                submissionIndeterminate = true;
+                return new ScopedApplyOutcome(
+                    Indeterminate(plan.Name, exception),
+                    null,
+                    WriteAttempted: true,
+                    ReadbackMatched: false,
+                    capabilities,
+                    DeviceAccessFailed: true);
+            }
+
+            cancellationToken.ThrowIfCancellationRequested();
+            ConfirmedDeviceState final = await device.ReadStateAsync(cancellationToken);
+            cancellationToken.ThrowIfCancellationRequested();
+            if (plan.Matches(final.Battery))
+            {
+                return new ScopedApplyOutcome(
+                    Applied(plan.Name),
+                    final,
+                    WriteAttempted: true,
+                    ReadbackMatched: true,
+                    capabilities,
+                    DeviceAccessFailed: false);
+            }
+
+            return new ScopedApplyOutcome(
+                Indeterminate(plan.Name, null),
+                final,
+                WriteAttempted: true,
+                ReadbackMatched: false,
+                capabilities,
+                DeviceAccessFailed: false);
+        }
+        catch (OperationCanceledException exception)
+            when (cancellationToken.IsCancellationRequested && submissionIndeterminate)
+        {
+            throw new IntentionalWriteCanceledException(
+                new HashSet<DeviceSubsystem> { DeviceSubsystem.Battery },
+                cancellationToken,
+                exception);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception exception)
+        {
+            return new ScopedApplyOutcome(
+                submissionIndeterminate
+                    ? Indeterminate("Battery", exception)
+                    : ReadFailure("Battery", exception),
+                null,
+                WriteAttempted: submissionIndeterminate,
+                ReadbackMatched: false,
+                capabilities,
+                DeviceAccessFailed: true);
         }
     }
 
@@ -462,12 +648,211 @@ public sealed class ControlCoordinator
             capabilities,
             DeviceAccessFailed);
 
-    private static bool IsBatterySupported(
-        DesiredBatteryState value,
-        DeviceCapabilities capabilities) => value is not null
-        && value.ProtectionEnabled
-        && !value.TemporaryFullCharge
-        && capabilities.ChargeLimits.Contains(value.ConfiguredPolicy.ChargeLimitPercent);
+    private BatteryOperationPlan CreateBatteryPlan(
+        DesiredBatteryState desired,
+        DeviceCapabilities capabilities,
+        ConfirmedBatteryState? confirmed)
+    {
+        if (confirmed?.TemporaryFullCharge is null)
+        {
+            return BlockedBatteryPlan("Battery");
+        }
+
+        if (desired.TemporaryFullCharge != confirmed.TemporaryFullCharge.Value)
+        {
+            return CreateTemporaryFullChargePlan(
+                desired.TemporaryFullCharge,
+                capabilities,
+                confirmed);
+        }
+
+        if (confirmed.TemporaryFullCharge.Value)
+        {
+            return BatteryMatches(desired, confirmed)
+                ? MatchingBatteryPlan("Battery", confirmed)
+                : BlockedBatteryPlan("Battery");
+        }
+
+        if (desired.ProtectionEnabled != confirmed.ProtectionEnabled)
+        {
+            return CreateProtectionPlan(
+                desired.ProtectionEnabled,
+                desired.ConfiguredPolicy,
+                capabilities,
+                confirmed);
+        }
+
+        if (desired.ProtectionEnabled
+            && desired.ConfiguredPolicy.ChargeLimitPercent != confirmed.ChargeLimitPercent)
+        {
+            return CreateChargeLimitPlan(
+                desired.ConfiguredPolicy,
+                capabilities,
+                confirmed);
+        }
+
+        return BatteryMatches(desired, confirmed)
+            ? MatchingBatteryPlan("Battery", confirmed)
+            : BlockedBatteryPlan("Battery");
+    }
+
+    private BatteryOperationPlan CreateChargeLimitPlan(
+        BatteryPolicy value,
+        DeviceCapabilities capabilities,
+        ConfirmedBatteryState? confirmed)
+    {
+        bool admitted = capabilities.ChargeLimits.Contains(value.ChargeLimitPercent);
+        bool exactPrecondition = confirmed is
+        {
+            ProtectionEnabled: true,
+            TemporaryFullCharge: false,
+            ChargeLimitPercent: int currentLimit,
+        } && capabilities.ChargeLimits.Contains(currentLimit);
+        if (!admitted || !exactPrecondition)
+        {
+            return BlockedBatteryPlan("Charge limit");
+        }
+
+        bool Matches(ConfirmedBatteryState? state) => state is
+        {
+            ProtectionEnabled: true,
+            TemporaryFullCharge: false,
+            ChargeLimitPercent: var limit,
+        } && limit == value.ChargeLimitPercent;
+        return new BatteryOperationPlan(
+            "Charge limit",
+            Supported: true,
+            InitiallyMatching: Matches(confirmed),
+            token => device.SetChargeLimitAsync(value, token),
+            Matches);
+    }
+
+    private BatteryOperationPlan CreateProtectionPlan(
+        bool enabled,
+        BatteryPolicy storedPolicy,
+        DeviceCapabilities capabilities,
+        ConfirmedBatteryState? confirmed)
+    {
+        if (confirmed is { ProtectionEnabled: false, TemporaryFullCharge: false }
+            && !enabled)
+        {
+            return MatchingBatteryPlan("Battery protection", confirmed);
+        }
+
+        bool storedLimitAdmitted = capabilities.ChargeLimits.Contains(
+            storedPolicy.ChargeLimitPercent);
+        if (!storedLimitAdmitted || confirmed?.TemporaryFullCharge is not false)
+        {
+            return BlockedBatteryPlan("Battery protection");
+        }
+
+        if (!enabled)
+        {
+            if (!capabilities.SupportsBatteryProtectionOff
+                || confirmed is not
+                {
+                    ProtectionEnabled: true,
+                    ChargeLimitPercent: var currentLimit,
+                }
+                || currentLimit != storedPolicy.ChargeLimitPercent)
+            {
+                return BlockedBatteryPlan("Battery protection");
+            }
+
+            bool MatchesOff(ConfirmedBatteryState? state) => state is
+            {
+                ProtectionEnabled: false,
+                ChargeLimitPercent: null,
+                TemporaryFullCharge: false,
+            };
+            return new BatteryOperationPlan(
+                "Battery protection",
+                Supported: true,
+                InitiallyMatching: false,
+                device.SetBatteryProtectionOffAsync,
+                MatchesOff);
+        }
+
+        bool MatchesOn(ConfirmedBatteryState? state) => state is
+        {
+            ProtectionEnabled: true,
+            TemporaryFullCharge: false,
+            ChargeLimitPercent: var limit,
+        } && limit == storedPolicy.ChargeLimitPercent;
+        if (MatchesOn(confirmed))
+        {
+            return MatchingBatteryPlan("Battery protection", confirmed);
+        }
+
+        if (confirmed is not
+            {
+                ProtectionEnabled: false,
+                ChargeLimitPercent: null,
+                TemporaryFullCharge: false,
+            })
+        {
+            return BlockedBatteryPlan("Battery protection");
+        }
+
+        return new BatteryOperationPlan(
+            "Battery protection",
+            Supported: true,
+            InitiallyMatching: false,
+            token => device.SetChargeLimitAsync(storedPolicy, token),
+            MatchesOn);
+    }
+
+    private BatteryOperationPlan CreateTemporaryFullChargePlan(
+        bool enabled,
+        DeviceCapabilities capabilities,
+        ConfirmedBatteryState? confirmed)
+    {
+        if (confirmed?.TemporaryFullCharge == enabled)
+        {
+            return MatchingBatteryPlan("Temporary full charge", confirmed);
+        }
+
+        if (!capabilities.SupportsTemporaryFullCharge
+            || confirmed is not
+            {
+                ProtectionEnabled: true,
+                ChargeLimitPercent: int currentLimit,
+                TemporaryFullCharge: not null,
+            }
+            || !capabilities.ChargeLimits.Contains(currentLimit))
+        {
+            return BlockedBatteryPlan("Temporary full charge");
+        }
+
+        bool Matches(ConfirmedBatteryState? state) => state is
+        {
+            ProtectionEnabled: true,
+            ChargeLimitPercent: var limit,
+            TemporaryFullCharge: var temporary,
+        } && limit == currentLimit && temporary == enabled;
+        return new BatteryOperationPlan(
+            "Temporary full charge",
+            Supported: true,
+            InitiallyMatching: false,
+            token => device.SetTemporaryFullChargeAsync(enabled, token),
+            Matches);
+    }
+
+    private static BatteryOperationPlan MatchingBatteryPlan(
+        string name,
+        ConfirmedBatteryState confirmed) => new(
+            name,
+            Supported: true,
+            InitiallyMatching: true,
+            _ => Task.CompletedTask,
+            state => state == confirmed);
+
+    private static BatteryOperationPlan BlockedBatteryPlan(string name) => new(
+        name,
+        Supported: false,
+        InitiallyMatching: false,
+        _ => Task.CompletedTask,
+        _ => false);
 
     private static bool BatteryMatches(
         DesiredBatteryState desired,
@@ -522,6 +907,10 @@ public sealed class ControlCoordinator
             ? $"{name} write is indeterminate because readback did not match."
             : $"{name} write is indeterminate: {exception.Message}");
 
+    private static ControlResult WriteRejected(string name, Exception exception) => new(
+        ControlResultStatus.Failed,
+        $"{name} write was not applied: {exception.Message}");
+
     private static ControlResult ReadFailure(string name, Exception exception) => new(
         ControlResultStatus.Failed,
         $"{name} could not be read before writing: {exception.Message}");
@@ -548,4 +937,11 @@ public sealed class ControlCoordinator
         bool InitiallyMatching,
         Func<CancellationToken, Task> Setter,
         Func<ConfirmedDeviceState, bool> Matches);
+
+    private sealed record BatteryOperationPlan(
+        string Name,
+        bool Supported,
+        bool InitiallyMatching,
+        Func<CancellationToken, Task> Setter,
+        Func<ConfirmedBatteryState?, bool> Matches);
 }

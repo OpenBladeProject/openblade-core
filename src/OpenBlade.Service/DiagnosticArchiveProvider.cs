@@ -345,6 +345,7 @@ public sealed class DiagnosticArchiveProvider : IDiagnosticArchiveProvider
             ["profile.battery.lighting"] = status.Profiles.Battery.Lighting.Effect.ToString(),
             ["battery.chargeLimitPercent"] = status.Profiles.BatteryPolicy.ChargeLimitPercent
                 .ToString(System.Globalization.CultureInfo.InvariantCulture),
+            ["battery.protectionEnabled"] = status.DesiredState.Battery.ProtectionEnabled.ToString(),
             ["battery.temporaryFullCharge"] = status.FullChargeOverride.ToString(),
             ["desired.performance"] = status.DesiredState.Performance.Value.ToString(),
             ["desired.performance.source"] = status.DesiredState.Performance.Source.ToString(),
@@ -356,6 +357,8 @@ public sealed class DiagnosticArchiveProvider : IDiagnosticArchiveProvider
             ["confirmed.fans"] = EnumOrUnavailable(confirmed?.Fans),
             ["confirmed.battery.chargeLimitPercent"] = NumberOrUnavailable(
                 confirmed?.Battery?.ChargeLimitPercent),
+            ["confirmed.battery.protectionEnabled"] = BoolOrUnavailable(
+                confirmed?.Battery?.ProtectionEnabled),
             ["confirmed.battery.temporaryFullCharge"] = BoolOrUnavailable(
                 confirmed?.Battery?.TemporaryFullCharge),
             ["confirmed.lighting.effect"] = EnumOrUnavailable(confirmed?.Lighting?.Effect),

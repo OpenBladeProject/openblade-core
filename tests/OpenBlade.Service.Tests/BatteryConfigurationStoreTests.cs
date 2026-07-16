@@ -150,6 +150,32 @@ public sealed class BatteryConfigurationStoreTests : IDisposable
     }
 
     [Fact]
+    public async Task SaveConfigurationAsync_CommitsProfilesAndPreferenceAsOneVerifiedAggregate()
+    {
+        Paths paths = CreatePaths();
+        BatteryConfigurationStore store = CreateStore(paths);
+        await store.LoadAsync(CancellationToken.None);
+        ProfileSet profiles = ProfileDefaults.CreateSafeDefaults() with
+        {
+            BatteryPolicy = BatteryPolicy.Create(75),
+        };
+        var preferences = new BatteryAutomationPreferences(ProtectionEnabled: false);
+
+        await store.SaveConfigurationAsync(profiles, preferences, CancellationToken.None);
+
+        BatteryConfiguration loaded = await store.LoadAsync(CancellationToken.None);
+        Assert.Equal(profiles, loaded.Profiles);
+        Assert.Equal(preferences, loaded.Preferences);
+        using JsonDocument marker = JsonDocument.Parse(await File.ReadAllTextAsync(paths.Marker));
+        Assert.Equal(
+            Hash(await File.ReadAllBytesAsync(paths.Profiles)),
+            marker.RootElement.GetProperty("profileSha256").GetString());
+        Assert.Equal(
+            Hash(await File.ReadAllBytesAsync(paths.Preferences)),
+            marker.RootElement.GetProperty("preferencesSha256").GetString());
+    }
+
+    [Fact]
     public async Task LoadAsync_PostCommitReplacementIsVerifiedBeforeAutomationReceivesConfiguration()
     {
         Paths paths = CreatePaths();

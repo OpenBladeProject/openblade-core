@@ -46,6 +46,9 @@ public sealed class ControlRequestHandler(
             SetBatteryPolicyRequest set => Result(
                 request.RequestId,
                 await runtime.SetBatteryPolicyAsync(set.Value, cancellationToken)),
+            SetBatteryProtectionRequest set => Result(
+                request.RequestId,
+                await runtime.SetBatteryProtectionAsync(set.Enabled, cancellationToken)),
             SetFullChargeOverrideRequest set => Result(
                 request.RequestId,
                 await runtime.SetFullChargeOverrideAsync(set.Enabled, cancellationToken)),

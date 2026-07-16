@@ -39,6 +39,21 @@ public sealed class ProfileAutomationStateTests
     }
 
     [Fact]
+    public void DesiredBatteryState_CommitsProtectionAndConfiguredLimitTogether()
+    {
+        ProfileAutomationState state = CreateState(PowerSource.PluggedIn);
+        var desired = new DesiredBatteryState(
+            BatteryPolicy.Create(75),
+            protectionEnabled: false,
+            temporaryFullCharge: false);
+
+        state.CommitBatteryState(desired);
+
+        Assert.Same(desired, state.DesiredBattery);
+        Assert.Equal(BatteryPolicy.Create(75), state.Profiles.BatteryPolicy);
+    }
+
+    [Fact]
     public void PowerTransition_ClearsTemporaryOverrideButKeepsPersistentOverride()
     {
         ProfileAutomationState state = CreateState(PowerSource.PluggedIn);

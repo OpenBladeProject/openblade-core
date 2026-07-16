@@ -24,6 +24,10 @@ public sealed class ControlRequestHandlerTests
                 OpenBladeIpc.ProtocolVersion,
                 Guid.NewGuid(),
                 BatteryPolicy.Create(75)),
+            new SetBatteryProtectionRequest(
+                OpenBladeIpc.ProtocolVersion,
+                Guid.NewGuid(),
+                Enabled: false),
             new SetFullChargeOverrideRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid(), true),
             new ExportDiagnosticsRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid()),
         ];
@@ -31,7 +35,7 @@ public sealed class ControlRequestHandlerTests
         [
             "GetStatus", "GetStatus", "UpdateProfiles", "SetPerformanceOverride",
             "SetFanOverride", "SetLightingOverride", "SetBatteryPolicy",
-            "SetFullChargeOverride", "ExportDiagnostics",
+            "SetBatteryProtection", "SetFullChargeOverride", "ExportDiagnostics",
         ];
 
         for (int index = 0; index < requests.Length; index++)
@@ -123,7 +127,7 @@ public sealed class ControlRequestHandlerTests
 
             Assert.True(response.Success);
             Assert.Equal(ControlOperationStatus.Blocked, response.Result!.Status);
-            Assert.Equal(providerAvailable ? 1 : 0, device.Calls);
+            Assert.Equal(providerAvailable ? 2 : 0, device.Calls);
             Assert.Equal(1, provider.Calls);
         }
         finally
@@ -206,6 +210,9 @@ public sealed class ControlRequestHandlerTests
         public Task<ControlOperationResult> SetBatteryPolicyAsync(BatteryPolicy value, CancellationToken token) =>
             Record("SetBatteryPolicy");
 
+        public Task<ControlOperationResult> SetBatteryProtectionAsync(bool enabled, CancellationToken token) =>
+            Record("SetBatteryProtection");
+
         public Task<ControlOperationResult> SetFullChargeOverrideAsync(bool enabled, CancellationToken token) =>
             Record("SetFullChargeOverride");
 
@@ -268,7 +275,9 @@ public sealed class ControlRequestHandlerTests
         public Task<ConfirmedDeviceState> ReadStateAsync(CancellationToken cancellationToken) => Count(new ConfirmedDeviceState(null, null, null, null));
         public Task SetPerformanceAsync(PerformancePreset value, CancellationToken cancellationToken) => Count();
         public Task SetFanModeAsync(FanMode value, CancellationToken cancellationToken) => Count();
-        public Task SetBatteryPolicyAsync(BatteryPolicy value, CancellationToken cancellationToken) => Count();
+        public Task SetChargeLimitAsync(BatteryPolicy value, CancellationToken cancellationToken) => Count();
+        public Task SetBatteryProtectionOffAsync(CancellationToken cancellationToken) => Count();
+        public Task SetTemporaryFullChargeAsync(bool enabled, CancellationToken cancellationToken) => Count();
         public Task SetLightingAsync(LightingSettings value, CancellationToken cancellationToken) => Count();
         private Task<T> Count<T>(T value) { Calls++; return Task.FromResult(value); }
         private Task Count() { Calls++; return Task.CompletedTask; }

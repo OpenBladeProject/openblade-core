@@ -6,10 +6,212 @@ namespace OpenBlade.Service.Tests;
 
 public sealed class ControlCoordinatorTests
 {
+    [Fact]
+    public async Task BatteryOperations_UseDistinctTypedSetters()
+    {
+        RecordingBladeDevice device = CreateMismatchedDevice();
+        device.Capabilities = device.Capabilities with
+        {
+            SupportsBatteryProtectionOff = true,
+            SupportsTemporaryFullCharge = true,
+        };
+        var coordinator = new ControlCoordinator(device);
+
+        await coordinator.ApplyChargeLimitAsync(BatteryPolicy.Create(75), CancellationToken.None);
+        await coordinator.ApplyBatteryProtectionAsync(
+            enabled: false,
+            BatteryPolicy.Create(75),
+            CancellationToken.None);
+        device.State = device.State with { Battery = new ConfirmedBatteryState(true, 75, false) };
+        await coordinator.ApplyTemporaryFullChargeAsync(enabled: true, CancellationToken.None);
+
+        Assert.Equal(
+            ["SetChargeLimit", "SetProtectionOff", "SetTemporaryFullCharge"],
+            device.BatterySetterCalls);
+    }
+
+    [Theory]
+    [MemberData(nameof(InvalidProtectionDisableStates))]
+    public async Task DisableProtection_RejectsInvalidConfirmedStateBeforeSetter(
+        ConfirmedBatteryState? confirmed)
+    {
+        RecordingBladeDevice device = CreateMismatchedDevice();
+        device.State = device.State with { Battery = confirmed };
+        device.Capabilities = device.Capabilities with
+        {
+            SupportsBatteryProtectionOff = true,
+        };
+        var coordinator = new ControlCoordinator(device);
+
+        ControlResult result = await coordinator.ApplyBatteryProtectionAsync(
+            enabled: false,
+            BatteryPolicy.Create(75),
+            CancellationToken.None);
+
+        Assert.Equal(ControlResultStatus.Blocked, result.Status);
+        Assert.Empty(device.BatterySetterCalls);
+    }
+
+    [Fact]
+    public async Task DisableProtection_WhenAlreadyOff_IsUnchangedWithoutSetter()
+    {
+        RecordingBladeDevice device = CreateMismatchedDevice();
+        device.State = device.State with { Battery = new ConfirmedBatteryState(false, null, false) };
+        var coordinator = new ControlCoordinator(device);
+
+        ControlResult result = await coordinator.ApplyBatteryProtectionAsync(
+            enabled: false,
+            BatteryPolicy.Create(75),
+            CancellationToken.None);
+
+        Assert.Equal(ControlResultStatus.Unchanged, result.Status);
+        Assert.Empty(device.BatterySetterCalls);
+    }
+
+    [Fact]
+    public async Task ActiveTemporaryFullCharge_BlocksLimitAndProtectionBeforeSetters()
+    {
+        RecordingBladeDevice device = CreateMismatchedDevice();
+        device.State = device.State with
+        {
+            Battery = new ConfirmedBatteryState(true, 80, true),
+        };
+        var coordinator = new ControlCoordinator(device);
+
+        ControlResult limit = await coordinator.ApplyChargeLimitAsync(
+            BatteryPolicy.Create(75),
+            CancellationToken.None);
+        ControlResult protection = await coordinator.ApplyBatteryProtectionAsync(
+            enabled: false,
+            BatteryPolicy.Create(80),
+            CancellationToken.None);
+
+        Assert.Equal(ControlResultStatus.Blocked, limit.Status);
+        Assert.Equal(ControlResultStatus.Blocked, protection.Status);
+        Assert.Empty(device.BatterySetterCalls);
+    }
+
+    [Fact]
+    public async Task ChargeLimit_ValidAckWithMismatchedReadback_IsIndeterminate()
+    {
+        RecordingBladeDevice device = CreateMismatchedDevice();
+        device.AutoConfirmWrites = false;
+        var coordinator = new ControlCoordinator(device);
+
+        ScopedApplyOutcome outcome = await coordinator.ApplyChargeLimitOutcomeAsync(
+            BatteryPolicy.Create(75),
+            CancellationToken.None);
+
+        Assert.Equal(ControlResultStatus.Failed, outcome.Result.Status);
+        Assert.True(outcome.WriteAttempted);
+        Assert.False(outcome.ReadbackMatched);
+        Assert.Equal(["SetChargeLimit"], device.BatterySetterCalls);
+        Assert.Equal(2, device.StateReadCalls);
+    }
+
+    [Fact]
+    public async Task ChargeLimit_KnownNotApplied_IsFailedWithoutIndeterminateWrite()
+    {
+        RecordingBladeDevice device = CreateMismatchedDevice();
+        device.BatteryWriteFailure = new BladeWriteException(
+            WriteSubmissionState.KnownNotApplied,
+            "firmware rejected setter");
+        var coordinator = new ControlCoordinator(device);
+
+        ScopedApplyOutcome outcome = await coordinator.ApplyChargeLimitOutcomeAsync(
+            BatteryPolicy.Create(75),
+            CancellationToken.None);
+
+        Assert.Equal(ControlResultStatus.Failed, outcome.Result.Status);
+        Assert.False(outcome.WriteAttempted);
+        Assert.False(outcome.ReadbackMatched);
+        Assert.Equal(1, device.StateReadCalls);
+    }
+
+    [Fact]
+    public async Task EnableProtection_UnadmittedStoredLimit_BlocksBeforeSetter()
+    {
+        RecordingBladeDevice device = CreateMismatchedDevice();
+        device.State = device.State with { Battery = new ConfirmedBatteryState(false, null, false) };
+        device.Capabilities = device.Capabilities with
+        {
+            ChargeLimits = new HashSet<int> { 80 },
+        };
+        var coordinator = new ControlCoordinator(device);
+
+        ControlResult result = await coordinator.ApplyBatteryProtectionAsync(
+            enabled: true,
+            BatteryPolicy.Create(75),
+            CancellationToken.None);
+
+        Assert.Equal(ControlResultStatus.Blocked, result.Status);
+        Assert.Empty(device.BatterySetterCalls);
+    }
+
+    [Fact]
+    public async Task ChargeLimit_PostAckReadbackFailure_IsIndeterminate()
+    {
+        RecordingBladeDevice device = CreateMismatchedDevice();
+        device.ReadStateFailureOnCall = 2;
+        var coordinator = new ControlCoordinator(device);
+
+        ScopedApplyOutcome outcome = await coordinator.ApplyChargeLimitOutcomeAsync(
+            BatteryPolicy.Create(75),
+            CancellationToken.None);
+
+        Assert.Equal(ControlResultStatus.Failed, outcome.Result.Status);
+        Assert.True(outcome.WriteAttempted);
+        Assert.False(outcome.ReadbackMatched);
+        Assert.Equal(["SetChargeLimit"], device.BatterySetterCalls);
+    }
+
+    [Fact]
+    public async Task ChargeLimit_IndeterminateSubmission_DoesNotPerformSemanticReadback()
+    {
+        RecordingBladeDevice device = CreateMismatchedDevice();
+        device.BatteryWriteFailure = new BladeWriteException(
+            WriteSubmissionState.Indeterminate,
+            "session lost after submission");
+        var coordinator = new ControlCoordinator(device);
+
+        ScopedApplyOutcome outcome = await coordinator.ApplyChargeLimitOutcomeAsync(
+            BatteryPolicy.Create(75),
+            CancellationToken.None);
+
+        Assert.Equal(ControlResultStatus.Failed, outcome.Result.Status);
+        Assert.True(outcome.WriteAttempted);
+        Assert.Equal(1, device.StateReadCalls);
+    }
+
+    [Fact]
+    public async Task ChargeLimit_CanceledAfterAck_PropagatesIndeterminateCancellation()
+    {
+        RecordingBladeDevice device = CreateMismatchedDevice();
+        using var cancellation = new CancellationTokenSource();
+        device.AfterSetter = _ => cancellation.Cancel();
+        var coordinator = new ControlCoordinator(device);
+
+        await Assert.ThrowsAsync<IntentionalWriteCanceledException>(
+            () => coordinator.ApplyChargeLimitOutcomeAsync(
+                BatteryPolicy.Create(75),
+                cancellation.Token));
+
+        Assert.Equal(["SetChargeLimit"], device.BatterySetterCalls);
+        Assert.Equal(1, device.StateReadCalls);
+    }
+
+    public static TheoryData<ConfirmedBatteryState?> InvalidProtectionDisableStates() => new()
+    {
+        null,
+        new ConfirmedBatteryState(true, 80, false),
+        new ConfirmedBatteryState(true, 75, null),
+        new ConfirmedBatteryState(true, 75, true),
+    };
+
     [Theory]
     [InlineData(DeviceSubsystem.Performance, "SetPerformance")]
     [InlineData(DeviceSubsystem.Fans, "SetFans")]
-    [InlineData(DeviceSubsystem.Battery, "SetBattery")]
+    [InlineData(DeviceSubsystem.Battery, "SetChargeLimit")]
     [InlineData(DeviceSubsystem.Lighting, "SetLighting")]
     public async Task ScopedApply_UsesOneNamedSetterAndOneMatchingReadback(
         DeviceSubsystem subsystem,
@@ -183,7 +385,7 @@ public sealed class ControlCoordinatorTests
             CancellationToken.None);
 
         Assert.Equal(ControlResultStatus.Blocked, outcome.Result.Status);
-        Assert.Equal(["Capabilities"], device.Calls);
+        Assert.Equal(["Capabilities", "State"], device.Calls);
         Assert.Equal(0, device.BatterySetCalls);
     }
 
@@ -206,7 +408,7 @@ public sealed class ControlCoordinatorTests
                 "State",
                 "SetPerformance",
                 "SetFans",
-                "SetBattery",
+                "SetChargeLimit",
                 "SetLighting",
                 "State",
             ],
@@ -344,6 +546,8 @@ public sealed class ControlCoordinatorTests
     {
         public List<string> Calls { get; } = [];
 
+        public List<string> BatterySetterCalls { get; } = [];
+
         public DeviceCapabilities Capabilities { get; set; } =
             DeviceCapabilities.SafeTargetDefaults() with
             {
@@ -364,6 +568,8 @@ public sealed class ControlCoordinatorTests
         public int? ReadStateFailureOnCall { get; set; }
 
         public Exception? PerformanceFailure { get; set; }
+
+        public Exception? BatteryWriteFailure { get; set; }
 
         public Action<int>? AfterReadState { get; set; }
 
@@ -440,13 +646,19 @@ public sealed class ControlCoordinatorTests
             return Task.CompletedTask;
         }
 
-        public Task SetBatteryPolicyAsync(
+        public Task SetChargeLimitAsync(
             BatteryPolicy value,
             CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            Calls.Add("SetBattery");
+            Calls.Add("SetChargeLimit");
+            BatterySetterCalls.Add("SetChargeLimit");
             BatterySetCalls++;
+            if (BatteryWriteFailure is not null)
+            {
+                throw BatteryWriteFailure;
+            }
+
             if (ShouldConfirm(DeviceSubsystem.Battery))
             {
                 State = State with
@@ -455,6 +667,54 @@ public sealed class ControlCoordinatorTests
                         protectionEnabled: true,
                         chargeLimitPercent: value.ChargeLimitPercent,
                         temporaryFullCharge: false),
+                };
+            }
+
+            AfterSetter?.Invoke(DeviceSubsystem.Battery);
+            return Task.CompletedTask;
+        }
+
+        public Task SetBatteryProtectionOffAsync(CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            Calls.Add("SetProtectionOff");
+            BatterySetterCalls.Add("SetProtectionOff");
+            BatterySetCalls++;
+            if (BatteryWriteFailure is not null)
+            {
+                throw BatteryWriteFailure;
+            }
+
+            if (ShouldConfirm(DeviceSubsystem.Battery))
+            {
+                State = State with { Battery = new ConfirmedBatteryState(false, null, false) };
+            }
+
+            AfterSetter?.Invoke(DeviceSubsystem.Battery);
+            return Task.CompletedTask;
+        }
+
+        public Task SetTemporaryFullChargeAsync(
+            bool enabled,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            Calls.Add("SetTemporaryFullCharge");
+            BatterySetterCalls.Add("SetTemporaryFullCharge");
+            BatterySetCalls++;
+            if (BatteryWriteFailure is not null)
+            {
+                throw BatteryWriteFailure;
+            }
+
+            if (ShouldConfirm(DeviceSubsystem.Battery) && State.Battery is { } battery)
+            {
+                State = State with
+                {
+                    Battery = new ConfirmedBatteryState(
+                        battery.ProtectionEnabled,
+                        battery.ChargeLimitPercent,
+                        enabled),
                 };
             }
 

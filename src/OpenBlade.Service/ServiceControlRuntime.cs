@@ -30,6 +30,10 @@ public interface IServiceControlRuntime
         BatteryPolicy value,
         CancellationToken token);
 
+    Task<ControlOperationResult> SetBatteryProtectionAsync(
+        bool enabled,
+        CancellationToken token) => throw new NotSupportedException();
+
     Task<ControlOperationResult> SetFullChargeOverrideAsync(
         bool enabled,
         CancellationToken token);
@@ -209,19 +213,45 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
 
     public Task<ControlOperationResult> SetBatteryPolicyAsync(
         BatteryPolicy value,
-        CancellationToken token) => ExecuteScopedMutationAsync(
-            DeviceSubsystem.Battery,
-            async cancellationToken =>
-            {
-                ArgumentNullException.ThrowIfNull(value);
-                ProfileSet updated = Automation.Profiles with { BatteryPolicy = value };
-                validator.Validate(updated);
-                await store.SaveProfilesAsync(updated, cancellationToken);
-                Automation.SetBatteryPolicy(value);
-            },
-            (coordinator, desired, cancellationToken) =>
-                coordinator.ApplyBatteryOutcomeAsync(desired.Battery, cancellationToken),
-            token);
+        CancellationToken token)
+    {
+        EnsureInitialized();
+        ArgumentNullException.ThrowIfNull(value);
+        return ExecuteBatteryIntentAsync(
+            current => current.TemporaryFullCharge
+                ? null
+                : new DesiredBatteryState(
+                    value,
+                    current.ProtectionEnabled,
+                    temporaryFullCharge: false),
+            (coordinator, staged, cancellationToken) =>
+                coordinator.ApplyChargeLimitOutcomeAsync(
+                    staged.ConfiguredPolicy,
+                    cancellationToken),
+            token,
+            "Charge-limit changes are blocked while temporary full charge is active.");
+    }
+
+    public Task<ControlOperationResult> SetBatteryProtectionAsync(
+        bool enabled,
+        CancellationToken token)
+    {
+        EnsureInitialized();
+        return ExecuteBatteryIntentAsync(
+            current => current.TemporaryFullCharge
+                ? null
+                : new DesiredBatteryState(
+                    current.ConfiguredPolicy,
+                    enabled,
+                    temporaryFullCharge: false),
+            (coordinator, staged, cancellationToken) =>
+                coordinator.ApplyBatteryProtectionOutcomeAsync(
+                    enabled,
+                    staged.ConfiguredPolicy,
+                    cancellationToken),
+            token,
+            "Battery protection is blocked while temporary full charge is active.");
+    }
 
     public async Task<ControlOperationResult> SetFullChargeOverrideAsync(
         bool enabled,
@@ -259,8 +289,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 DeviceSubsystem.Battery,
                 telemetry,
                 (coordinator, desired, cancellationToken) =>
-                    coordinator.ApplyBatteryOutcomeAsync(
-                        desired.Battery,
+                    coordinator.ApplyTemporaryFullChargeOutcomeAsync(
+                        enabled,
                         cancellationToken),
                 token,
                 desired => desired with
@@ -270,9 +300,19 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                         desired.Battery.ProtectionEnabled,
                         enabled),
                 },
-                enabled
-                    ? Automation.EnableTemporaryFullCharge
-                    : Automation.CancelTemporaryFullCharge);
+                _ =>
+                {
+                    if (enabled)
+                    {
+                        Automation.EnableTemporaryFullCharge();
+                    }
+                    else
+                    {
+                        Automation.CancelTemporaryFullCharge();
+                    }
+
+                    return Task.CompletedTask;
+                });
         }
         finally
         {
@@ -383,13 +423,68 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         }
     }
 
+    private async Task<ControlOperationResult> ExecuteBatteryIntentAsync(
+        Func<DesiredBatteryState, DesiredBatteryState?> stageIntent,
+        Func<ControlCoordinator, DesiredBatteryState, CancellationToken, Task<ScopedApplyOutcome>> apply,
+        CancellationToken token,
+        string blockedMessage = "Battery intent is blocked by the confirmed battery state.")
+    {
+        EnsureInitialized();
+        await operationGate.WaitAsync(token);
+        try
+        {
+            DesiredBatteryState? staged = stageIntent(Automation.DesiredBattery);
+            if (staged is null)
+            {
+                var blocked = new ControlOperationResult(
+                    ControlOperationStatus.Blocked,
+                    blockedMessage);
+                history.RecordSummary(blocked.Status, blocked.Message);
+                return blocked;
+            }
+
+            ProfileSet stagedProfiles = Automation.Profiles with
+            {
+                BatteryPolicy = staged.ConfiguredPolicy,
+            };
+            try
+            {
+                validator.Validate(stagedProfiles);
+            }
+            catch (Exception exception) when (IsIntentFailure(exception))
+            {
+                return RecordRejectedIntent(exception);
+            }
+
+            return await ApplyScopedIntentAsync(
+                DeviceSubsystem.Battery,
+                GetStatus().Telemetry,
+                (coordinator, _, cancellationToken) =>
+                    apply(coordinator, staged, cancellationToken),
+                token,
+                desired => desired with { Battery = staged },
+                async cancellationToken =>
+                {
+                    await store.SaveConfigurationAsync(
+                        stagedProfiles,
+                        new BatteryAutomationPreferences(staged.ProtectionEnabled),
+                        cancellationToken);
+                    Automation.CommitBatteryState(staged);
+                });
+        }
+        finally
+        {
+            operationGate.Release();
+        }
+    }
+
     private async Task<ControlOperationResult> ApplyScopedIntentAsync(
         DeviceSubsystem subsystem,
         TelemetrySnapshot telemetry,
         Func<ControlCoordinator, DesiredDeviceState, CancellationToken, Task<ScopedApplyOutcome>> apply,
         CancellationToken token,
         Func<DesiredDeviceState, DesiredDeviceState>? stageDesired = null,
-        Action? commitIntent = null)
+        Func<CancellationToken, Task>? commitIntent = null)
     {
         ServiceStatusSnapshot current = GetStatus();
         ConfirmedDeviceState? cachedConfirmed = current.ConfirmedState;
@@ -475,7 +570,32 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         if (outcome.Result.Status is ControlResultStatus.Applied
             or ControlResultStatus.Unchanged)
         {
-            commitIntent?.Invoke();
+            try
+            {
+                if (commitIntent is not null)
+                {
+                    await commitIntent(token);
+                }
+            }
+            catch (OperationCanceledException) when (token.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception exception) when (IsIntentFailure(exception))
+            {
+                var failedCommit = new ControlResult(
+                    ControlResultStatus.Failed,
+                    $"Confirmed hardware intent could not be committed: {exception.Message}");
+                history.RecordSubsystemResult(subsystem, failedCommit);
+                PublishScopedStatus(
+                    telemetry,
+                    confirmed,
+                    outcome.Capabilities ?? current.Capabilities,
+                    failedCommit.Message,
+                    deviceVerified: !outcome.DeviceAccessFailed,
+                    writesBlocked: outcome.DeviceAccessFailed);
+                return ToOperationResult(failedCommit);
+            }
         }
 
         history.RecordSubsystemResult(subsystem, outcome.Result);
@@ -681,7 +801,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             : ControlResultStatus.Blocked;
         var result = new ControlResult(
             resultStatus,
-            $"Intent was stored without hardware application. {reason}");
+            $"Hardware application was not confirmed. {reason}");
         history.RecordSubsystemResult(subsystem, result);
         PublishScopedStatus(
             telemetry,

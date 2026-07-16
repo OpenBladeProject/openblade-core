@@ -348,8 +348,17 @@ public sealed class WindowsVerifiedBladeDeviceProviderTests
             () => device.SetPerformanceAsync(PerformancePreset.Silent, default));
         await Assert.ThrowsAsync<UnvalidatedCommandException>(
             () => device.SetFanModeAsync(FanMode.Automatic, default));
-        await Assert.ThrowsAsync<UnvalidatedCommandException>(
-            () => device.SetBatteryPolicyAsync(BatteryPolicy.Create(80), default));
+        BladeWriteException limit = await Assert.ThrowsAsync<BladeWriteException>(
+            () => device.SetChargeLimitAsync(BatteryPolicy.Create(80), default));
+        BladeWriteException protection = await Assert.ThrowsAsync<BladeWriteException>(
+            () => device.SetBatteryProtectionOffAsync(default));
+        BladeWriteException temporary = await Assert.ThrowsAsync<BladeWriteException>(
+            () => device.SetTemporaryFullChargeAsync(true, default));
+        Assert.All(
+            [limit, protection, temporary],
+            exception => Assert.Equal(
+                WriteSubmissionState.KnownNotApplied,
+                exception.SubmissionState));
         await Assert.ThrowsAsync<UnvalidatedCommandException>(
             () => device.SetLightingAsync(lighting, default));
 
