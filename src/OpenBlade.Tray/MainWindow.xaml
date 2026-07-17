@@ -288,13 +288,14 @@
                                     </StackPanel>
                                     <StackPanel Grid.Column="1"
                                                 Spacing="4"
-                                                HorizontalAlignment="Right">
+                                                HorizontalAlignment="Stretch">
                                         <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
                                             <TextBlock Text="{x:Bind ViewModel.ChargeLimitPercent, Mode=OneWay}"
                                                        Style="{StaticResource CardTitleStyle}" />
                                             <TextBlock Text="%" Style="{StaticResource CardTitleStyle}" />
                                         </StackPanel>
                                         <Slider x:Name="DashboardChargeLimitSlider"
+                                                HorizontalAlignment="Stretch"
                                                 Minimum="50"
                                                 Maximum="80"
                                                 StepFrequency="5"
@@ -598,39 +599,31 @@
                                                    Style="{StaticResource SecondaryTextStyle}" />
                                     </StackPanel>
                                     <Button Grid.Column="1"
-                                            Content="Export"
                                             HorizontalAlignment="Right"
                                             VerticalAlignment="Center"
-                                            Command="{x:Bind ViewModel.ExportDiagnosticsCommand}" />
+                                            Command="{x:Bind ViewModel.ExportDiagnosticsCommand}"
+                                            AutomationProperties.Name="Export diagnostics"
+                                            ToolTipService.ToolTip="Export diagnostics">
+                                        <FontIcon Glyph="&#xE896;" />
+                                    </Button>
                                 </Grid>
                             </Border>
                             <Border Style="{StaticResource SettingsLastRowStyle}">
-                                <Grid ColumnSpacing="20">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="*" />
-                                        <ColumnDefinition Width="Auto" />
-                                    </Grid.ColumnDefinitions>
-                                    <StackPanel Spacing="3">
-                                        <TextBlock Text="Troubleshooting" Style="{StaticResource CardTitleStyle}" />
-                                        <TextBlock Text="View service, device, and connection details."
-                                                   Style="{StaticResource SecondaryTextStyle}" />
-                                    </StackPanel>
-                                    <Button Grid.Column="1"
-                                            Content="View"
-                                            HorizontalAlignment="Right"
-                                            VerticalAlignment="Center"
-                                            AutomationProperties.Name="Open troubleshooting details">
-                                    <Button.Flyout>
-                                        <Flyout Placement="BottomEdgeAlignedLeft">
-                                            <StackPanel MaxWidth="460" Spacing="8">
-                                                <TextBlock Text="Troubleshooting" Style="{StaticResource CardTitleStyle}" />
-                                                <TextBlock Text="{x:Bind ViewModel.TroubleshootingDetails, Mode=OneWay}"
-                                                           Style="{StaticResource SecondaryTextStyle}" />
-                                            </StackPanel>
-                                        </Flyout>
-                                    </Button.Flyout>
-                                </Button>
-                                </Grid>
+                                <Expander HorizontalAlignment="Stretch"
+                                          HorizontalContentAlignment="Stretch"
+                                          AutomationProperties.Name="Troubleshooting details">
+                                    <Expander.Header>
+                                        <StackPanel Spacing="3">
+                                            <TextBlock Text="Troubleshooting" Style="{StaticResource CardTitleStyle}" />
+                                            <TextBlock Text="View service, device, and connection details."
+                                                       Style="{StaticResource SecondaryTextStyle}" />
+                                        </StackPanel>
+                                    </Expander.Header>
+                                    <TextBlock Text="{x:Bind ViewModel.TroubleshootingDetails, Mode=OneWay}"
+                                               Style="{StaticResource SecondaryTextStyle}"
+                                               IsTextSelectionEnabled="True"
+                                               Margin="0,10,28,4" />
+                                </Expander>
                             </Border>
                             </StackPanel>
                         </Border>

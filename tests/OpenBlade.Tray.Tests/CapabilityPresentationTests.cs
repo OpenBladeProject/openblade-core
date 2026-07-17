@@ -40,6 +40,7 @@ public sealed class CapabilityPresentationTests
         Assert.Equal("80", Attribute(chargeLimit, "Maximum"));
         Assert.Equal("5", Attribute(chargeLimit, "StepFrequency"));
         Assert.Equal("StepValues", Attribute(chargeLimit, "SnapsTo"));
+        Assert.Equal("Stretch", Attribute(chargeLimit, "HorizontalAlignment"));
 
         Assert.DoesNotContain(
             document.Descendants().Where(element => element.Name.LocalName == "Button"),
@@ -92,11 +93,7 @@ public sealed class CapabilityPresentationTests
 
         Assert.Contains(settings.Descendants(), element =>
             element.Name.LocalName == "Button"
-            && Attribute(element, "Content") == "Export"
-            && Attribute(element, "HorizontalAlignment") == "Right");
-        Assert.Contains(settings.Descendants(), element =>
-            element.Name.LocalName == "Button"
-            && Attribute(element, "Content") == "View"
+            && Attribute(element, "AutomationProperties.Name") == "Export diagnostics"
             && Attribute(element, "HorizontalAlignment") == "Right");
 
         Assert.Contains("ViewModel.ManualChangeDurationOptions", xaml, StringComparison.Ordinal);
@@ -111,16 +108,20 @@ public sealed class CapabilityPresentationTests
                 == "Start OpenBlade when I sign in");
         Assert.Equal("OnStartAtSignInToggled", Attribute(startAtSignIn, "Toggled"));
 
-        Assert.Equal(2, document.Descendants().Count(element => element.Name.LocalName == "Flyout"));
+        Assert.Single(document.Descendants(), element => element.Name.LocalName == "Flyout");
         Assert.Contains(document.Descendants(), element =>
             Attribute(element, "AutomationProperties.Name") == "Show warning details"
             && element.Descendants().Any(child => child.Name.LocalName == "Flyout"));
-        Assert.Contains(document.Descendants(), element =>
-            Attribute(element, "AutomationProperties.Name") == "Open troubleshooting details"
-            && element.Descendants().Any(child => child.Name.LocalName == "Flyout"));
-        Assert.DoesNotContain(
+        XElement troubleshooting = Assert.Single(
             document.Descendants(),
-            element => element.Name.LocalName == "Expander");
+            element => element.Name.LocalName == "Expander"
+                && Attribute(element, "AutomationProperties.Name") == "Troubleshooting details");
+        Assert.Contains(troubleshooting.Descendants(), element =>
+            element.Name.LocalName == "TextBlock"
+            && Attribute(element, "IsTextSelectionEnabled") == "True"
+            && Attribute(element, "Text")?.Contains(
+                "ViewModel.TroubleshootingDetails",
+                StringComparison.Ordinal) is true);
     }
 
     [Fact]
