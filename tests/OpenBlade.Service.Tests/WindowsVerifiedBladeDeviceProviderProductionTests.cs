@@ -102,8 +102,12 @@ public sealed class WindowsVerifiedBladeDeviceProviderProductionTests
         Assert.Equal(1, port.TemporaryQueryCount);
     }
 
-    [Fact]
-    public async Task TransactionMismatchRetriesReadWithFreshVerifiedSession()
+    [Theory]
+    [InlineData(HidProtocolValidationFailure.TransactionMismatch)]
+    [InlineData(HidProtocolValidationFailure.CommandClassMismatch)]
+    [InlineData(HidProtocolValidationFailure.CommandIdMismatch)]
+    public async Task ResponseIdentityMismatchRetriesReadWithFreshVerifiedSession(
+        HidProtocolValidationFailure failure)
     {
         DeviceCapabilities capabilities = BatteryCapabilities(
             new HashSet<int> { 80 },
@@ -113,7 +117,7 @@ public sealed class WindowsVerifiedBladeDeviceProviderProductionTests
             BatteryValidationSetting.Limit80,
             temporary: false)
         {
-            ProtectionFailure = TransactionMismatch(),
+            ProtectionFailure = new RazerProtocolException("interleaved response", failure),
         };
         var recovered = new FakeProductionPort(
             capabilities,
@@ -166,8 +170,12 @@ public sealed class WindowsVerifiedBladeDeviceProviderProductionTests
         Assert.Equal(1, recovered.DisposeCount);
     }
 
-    [Fact]
-    public async Task TemporaryQueryTransactionMismatchRetriesBothQueriesOnFreshSession()
+    [Theory]
+    [InlineData(HidProtocolValidationFailure.TransactionMismatch)]
+    [InlineData(HidProtocolValidationFailure.CommandClassMismatch)]
+    [InlineData(HidProtocolValidationFailure.CommandIdMismatch)]
+    public async Task TemporaryQueryResponseIdentityMismatchRetriesBothQueriesOnFreshSession(
+        HidProtocolValidationFailure failure)
     {
         DeviceCapabilities capabilities = BatteryCapabilities(
             new HashSet<int> { 80 },
@@ -177,7 +185,7 @@ public sealed class WindowsVerifiedBladeDeviceProviderProductionTests
             BatteryValidationSetting.ProtectionOff,
             temporary: false)
         {
-            TemporaryFailure = TransactionMismatch(),
+            TemporaryFailure = new RazerProtocolException("interleaved response", failure),
         };
         var recovered = new FakeProductionPort(
             capabilities,
@@ -241,7 +249,6 @@ public sealed class WindowsVerifiedBladeDeviceProviderProductionTests
 
     [Theory]
     [InlineData(HidProtocolValidationFailure.Checksum)]
-    [InlineData(HidProtocolValidationFailure.CommandIdMismatch)]
     [InlineData(HidProtocolValidationFailure.PayloadValidator)]
     public async Task OtherProtocolFailuresRemainSingleAttemptAndFailClosed(
         HidProtocolValidationFailure failure)

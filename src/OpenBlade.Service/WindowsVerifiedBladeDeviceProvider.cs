@@ -168,8 +168,10 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
                     }
                     catch (RazerProtocolException exception) when (
                         attempt < MaximumBatteryReadAttempts - 1 &&
-                        exception.ValidationFailure ==
-                            HidProtocolValidationFailure.TransactionMismatch)
+                        exception.ValidationFailure is
+                            HidProtocolValidationFailure.TransactionMismatch or
+                            HidProtocolValidationFailure.CommandClassMismatch or
+                            HidProtocolValidationFailure.CommandIdMismatch)
                     {
                         cancellationToken.ThrowIfCancellationRequested();
                         await Task.Delay(
