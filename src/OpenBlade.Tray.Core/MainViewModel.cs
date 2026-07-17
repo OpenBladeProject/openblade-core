@@ -256,7 +256,6 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
                 return;
             }
             SetField(ref connectionStatus, value);
-            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(TroubleshootingDetails)));
         }
     }
 
@@ -271,7 +270,9 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             }
             SetField(ref operationStatusMessage, value);
             OperationFeedbackMessage = FormatOperationFeedback(value);
-            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(TroubleshootingDetails)));
+            PropertyChanged?.Invoke(
+                this,
+                new PropertyChangedEventArgs(nameof(TroubleshootingLastOperationStatus)));
         }
     }
 
@@ -301,7 +302,6 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
                 return;
             }
             SetField(ref controlAccessStatus, value);
-            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(TroubleshootingDetails)));
         }
     }
 
@@ -482,30 +482,18 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         }
     }
 
-    public string TroubleshootingDetails
-    {
-        get
-        {
-            List<string> details =
-            [
-                $"Service: {ConnectionStatus}",
-                $"Controls: {ControlAccessStatus}",
-            ];
-            if (HasControllerAdvisory)
-            {
-                details.Add($"Detected controllers: {ControllerAdvisoryText}");
-            }
-            if (HasControllerDetectionWarning)
-            {
-                details.Add($"Controller detection: {ControllerDetectionWarningText}");
-            }
-            if (!string.IsNullOrWhiteSpace(OperationStatusMessage))
-            {
-                details.Add($"Last operation: {OperationStatusMessage}");
-            }
-            return string.Join("\n", details);
-        }
-    }
+    public string TroubleshootingControllerStatus => HasControllerAdvisory
+        ? ControllerAdvisoryText
+        : "No other Razer controllers detected.";
+
+    public string TroubleshootingDetectionStatus => HasControllerDetectionWarning
+        ? ControllerDetectionWarningText
+        : "Controller check completed.";
+
+    public string TroubleshootingLastOperationStatus => string.IsNullOrWhiteSpace(
+        OperationStatusMessage)
+            ? "No recent actions."
+            : OperationStatusMessage;
 
     public IReadOnlyList<PerformancePreset> AvailablePerformancePresets
     {
@@ -2133,7 +2121,12 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasAttention)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(AttentionSummary)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(AttentionDetails)));
-        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(TroubleshootingDetails)));
+        PropertyChanged?.Invoke(
+            this,
+            new PropertyChangedEventArgs(nameof(TroubleshootingControllerStatus)));
+        PropertyChanged?.Invoke(
+            this,
+            new PropertyChangedEventArgs(nameof(TroubleshootingDetectionStatus)));
     }
 
     private void NotifyTrayHoverLabel() => PropertyChanged?.Invoke(

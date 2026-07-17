@@ -52,12 +52,12 @@ public sealed class CapabilityPresentationTests
                 batteryProtection.Ancestors().First(element => element.Name.LocalName == "Border"),
                 "Style"));
         Assert.Equal(
-            "{StaticResource SubSettingRowStyle}",
+            "{StaticResource SettingsRowStyle}",
             Attribute(
                 chargeLimit.Ancestors().First(element => element.Name.LocalName == "Border"),
                 "Style"));
         Assert.Equal(
-            "{StaticResource SubSettingLastRowStyle}",
+            "{StaticResource SettingsLastRowStyle}",
             Attribute(
                 temporaryFullCharge.Ancestors().First(element => element.Name.LocalName == "Border"),
                 "Style"));
@@ -136,9 +136,17 @@ public sealed class CapabilityPresentationTests
         Assert.Contains("ViewModel.StartupDescription", xaml, StringComparison.Ordinal);
 
         Assert.Single(document.Descendants(), element => element.Name.LocalName == "Flyout");
-        Assert.Contains(document.Descendants(), element =>
-            Attribute(element, "AutomationProperties.Name") == "Show warning details"
-            && element.Descendants().Any(child => child.Name.LocalName == "Flyout"));
+        XElement warningIndicator = Assert.Single(document.Descendants(), element =>
+            Attribute(element, "AutomationProperties.Name") == "Show warning details");
+        Assert.Equal("28", Attribute(warningIndicator, "Width"));
+        Assert.Equal("28", Attribute(warningIndicator, "Height"));
+        Assert.Contains(
+            "ViewModel.AttentionSummary",
+            Attribute(warningIndicator, "ToolTipService.ToolTip") ?? string.Empty,
+            StringComparison.Ordinal);
+        Assert.Contains(warningIndicator.Ancestors(), element =>
+            element.Name.LocalName == "Grid" && Attribute(element, "Name") == "HeroLayout");
+        Assert.Contains(warningIndicator.Descendants(), element => element.Name.LocalName == "Flyout");
         XElement troubleshooting = Assert.Single(
             document.Descendants(),
             element => element.Name.LocalName == "Expander"
@@ -149,12 +157,24 @@ public sealed class CapabilityPresentationTests
             Attribute(
                 troubleshooting.Ancestors().First(element => element.Name.LocalName == "Border"),
                 "Style"));
-        Assert.Contains(troubleshooting.Descendants(), element =>
-            element.Name.LocalName == "TextBlock"
-            && Attribute(element, "IsTextSelectionEnabled") == "True"
-            && Attribute(element, "Text")?.Contains(
-                "ViewModel.TroubleshootingDetails",
-                StringComparison.Ordinal) is true);
+        foreach (string property in new[]
+                 {
+                     "ViewModel.ConnectionStatus",
+                     "ViewModel.ControlAccessStatus",
+                     "ViewModel.TroubleshootingControllerStatus",
+                     "ViewModel.TroubleshootingDetectionStatus",
+                     "ViewModel.TroubleshootingLastOperationStatus",
+                 })
+        {
+            Assert.Contains(troubleshooting.Descendants(), element =>
+                element.Name.LocalName == "TextBlock"
+                && Attribute(element, "IsTextSelectionEnabled") == "True"
+                && Attribute(element, "Text")?.Contains(property, StringComparison.Ordinal) is true);
+        }
+        Assert.Contains(
+            "Save logs and system details with sensitive information removed.",
+            xaml,
+            StringComparison.Ordinal);
     }
 
     [Fact]

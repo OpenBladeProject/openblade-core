@@ -203,6 +203,10 @@ public sealed class MainViewModelTests
             viewModel.ControllerAdvisoryText);
         Assert.True(viewModel.HasControllerDetectionWarning);
         Assert.Equal("Controller detection was incomplete.", viewModel.ControllerDetectionWarningText);
+        Assert.Equal(viewModel.ControllerAdvisoryText, viewModel.TroubleshootingControllerStatus);
+        Assert.Equal(
+            viewModel.ControllerDetectionWarningText,
+            viewModel.TroubleshootingDetectionStatus);
     }
 
     [Fact]

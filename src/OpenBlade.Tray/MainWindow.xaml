@@ -44,21 +44,16 @@
                    BasedOn="{StaticResource SettingsRowStyle}">
                 <Setter Property="BorderThickness" Value="0" />
             </Style>
-            <Style x:Key="SubSettingRowStyle"
-                   TargetType="Border"
-                   BasedOn="{StaticResource SettingsRowStyle}">
-                <Setter Property="Padding" Value="32,12,16,12" />
-            </Style>
-            <Style x:Key="SubSettingLastRowStyle"
-                   TargetType="Border"
-                   BasedOn="{StaticResource SubSettingRowStyle}">
-                <Setter Property="BorderThickness" Value="0" />
-            </Style>
             <Style x:Key="CardContentExpanderStyle" TargetType="Expander">
                 <Setter Property="HorizontalAlignment" Value="Stretch" />
                 <Setter Property="HorizontalContentAlignment" Value="Stretch" />
                 <Setter Property="Background" Value="Transparent" />
                 <Setter Property="BorderThickness" Value="0" />
+            </Style>
+            <Style x:Key="TroubleshootingSectionStyle" TargetType="Border">
+                <Setter Property="BorderBrush" Value="{ThemeResource CardStrokeColorDefaultBrush}" />
+                <Setter Property="BorderThickness" Value="0,1,0,0" />
+                <Setter Property="Padding" Value="16,12,44,12" />
             </Style>
             <Style x:Key="CardTitleStyle"
                    TargetType="TextBlock"
@@ -134,6 +129,30 @@
                                                        Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                                                        Style="{StaticResource CaptionTextBlockStyle}" />
                                         </Border>
+                                        <Button x:Name="AttentionIndicator"
+                                                Width="28"
+                                                Height="28"
+                                                Padding="0"
+                                                Background="Transparent"
+                                                BorderThickness="0"
+                                                Visibility="{x:Bind ViewModel.HasAttention, Mode=OneWay}"
+                                                AutomationProperties.Name="Show warning details"
+                                                ToolTipService.ToolTip="{x:Bind ViewModel.AttentionSummary, Mode=OneWay}">
+                                            <Button.Flyout>
+                                                <Flyout Placement="BottomEdgeAlignedLeft">
+                                                    <StackPanel MaxWidth="360" Spacing="6">
+                                                        <TextBlock Text="{x:Bind ViewModel.AttentionSummary, Mode=OneWay}"
+                                                                   Style="{StaticResource CardTitleStyle}" />
+                                                        <TextBlock Text="{x:Bind ViewModel.AttentionDetails, Mode=OneWay}"
+                                                                   Style="{StaticResource SecondaryTextStyle}"
+                                                                   TextWrapping="Wrap" />
+                                                    </StackPanel>
+                                                </Flyout>
+                                            </Button.Flyout>
+                                            <FontIcon Glyph="&#xE7BA;"
+                                                      FontSize="14"
+                                                      Foreground="{ThemeResource SystemFillColorCautionBrush}" />
+                                        </Button>
                                     </StackPanel>
                                     <TextBlock Text="{x:Bind ViewModel.ActivePerformanceLabel, Mode=OneWay}"
                                                Style="{StaticResource TitleLargeTextBlockStyle}" />
@@ -161,44 +180,6 @@
                                 </StackPanel>
                             </Grid>
                         </Border>
-
-                        <Button Visibility="{x:Bind ViewModel.HasAttention, Mode=OneWay}"
-                                HorizontalAlignment="Stretch"
-                                HorizontalContentAlignment="Stretch"
-                                Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
-                                BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
-                                BorderThickness="1"
-                                CornerRadius="8"
-                                Padding="14,12"
-                                Margin="0,0,0,12"
-                                AutomationProperties.Name="Show warning details">
-                            <Button.Flyout>
-                                <Flyout Placement="BottomEdgeAlignedLeft">
-                                    <StackPanel MaxWidth="420" Spacing="8">
-                                        <TextBlock Text="{x:Bind ViewModel.AttentionSummary, Mode=OneWay}"
-                                                   Style="{StaticResource CardTitleStyle}" />
-                                        <TextBlock Text="{x:Bind ViewModel.AttentionDetails, Mode=OneWay}"
-                                                   Style="{StaticResource SecondaryTextStyle}" />
-                                    </StackPanel>
-                                </Flyout>
-                            </Button.Flyout>
-                            <Grid ColumnSpacing="10">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="Auto" />
-                                    <ColumnDefinition Width="*" />
-                                    <ColumnDefinition Width="Auto" />
-                                </Grid.ColumnDefinitions>
-                                <FontIcon Glyph="&#xE7BA;"
-                                          Foreground="{ThemeResource SystemFillColorCautionBrush}"
-                                          VerticalAlignment="Center" />
-                                <TextBlock Grid.Column="1"
-                                           Text="{x:Bind ViewModel.AttentionSummary, Mode=OneWay}"
-                                           Style="{StaticResource CardTitleStyle}"
-                                           TextTrimming="CharacterEllipsis"
-                                           VerticalAlignment="Center" />
-                                <FontIcon Grid.Column="2" Glyph="&#xE70D;" FontSize="12" VerticalAlignment="Center" />
-                            </Grid>
-                        </Button>
 
                         <Border Style="{StaticResource CardStyle}"
                                 Visibility="{x:Bind ViewModel.HasActiveChanges, Mode=OneWay}">
@@ -314,7 +295,7 @@
                                                   Toggled="OnBatteryProtectionToggled" />
                                 </Grid>
                             </Border>
-                            <Border Style="{StaticResource SubSettingRowStyle}">
+                            <Border Style="{StaticResource SettingsRowStyle}">
                                 <Grid ColumnSpacing="20">
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="*" />
@@ -352,7 +333,7 @@
                                     </StackPanel>
                                 </Grid>
                             </Border>
-                            <Border Style="{StaticResource SubSettingLastRowStyle}">
+                            <Border Style="{StaticResource SettingsLastRowStyle}">
                                 <Grid ColumnSpacing="20">
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="*" />
@@ -611,7 +592,7 @@
                                 </Grid.ColumnDefinitions>
                                 <StackPanel Spacing="3">
                                     <TextBlock Text="Export diagnostics" Style="{StaticResource CardTitleStyle}" />
-                                    <TextBlock Text="Save a redacted support package to a location you choose."
+                                    <TextBlock Text="Save logs and system details with sensitive information removed."
                                                Style="{StaticResource SecondaryTextStyle}" />
                                 </StackPanel>
                                 <Button Grid.Column="1"
@@ -637,13 +618,53 @@
                                                    Style="{StaticResource SecondaryTextStyle}" />
                                     </StackPanel>
                                 </Expander.Header>
-                                <Border BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
-                                        BorderThickness="0,1,0,0"
-                                        Padding="16,14,44,16">
-                                    <TextBlock Text="{x:Bind ViewModel.TroubleshootingDetails, Mode=OneWay}"
-                                               Style="{StaticResource SecondaryTextStyle}"
-                                               IsTextSelectionEnabled="True" />
-                                </Border>
+                                <StackPanel>
+                                    <Border Style="{StaticResource TroubleshootingSectionStyle}">
+                                        <StackPanel Spacing="3">
+                                            <TextBlock Text="Service" Style="{StaticResource CardTitleStyle}" />
+                                            <TextBlock Text="{x:Bind ViewModel.ConnectionStatus, Mode=OneWay}"
+                                                       Style="{StaticResource SecondaryTextStyle}"
+                                                       TextWrapping="Wrap"
+                                                       IsTextSelectionEnabled="True" />
+                                        </StackPanel>
+                                    </Border>
+                                    <Border Style="{StaticResource TroubleshootingSectionStyle}">
+                                        <StackPanel Spacing="3">
+                                            <TextBlock Text="Controls" Style="{StaticResource CardTitleStyle}" />
+                                            <TextBlock Text="{x:Bind ViewModel.ControlAccessStatus, Mode=OneWay}"
+                                                       Style="{StaticResource SecondaryTextStyle}"
+                                                       TextWrapping="Wrap"
+                                                       IsTextSelectionEnabled="True" />
+                                        </StackPanel>
+                                    </Border>
+                                    <Border Style="{StaticResource TroubleshootingSectionStyle}">
+                                        <StackPanel Spacing="3">
+                                            <TextBlock Text="Detected controllers" Style="{StaticResource CardTitleStyle}" />
+                                            <TextBlock Text="{x:Bind ViewModel.TroubleshootingControllerStatus, Mode=OneWay}"
+                                                       Style="{StaticResource SecondaryTextStyle}"
+                                                       TextWrapping="Wrap"
+                                                       IsTextSelectionEnabled="True" />
+                                        </StackPanel>
+                                    </Border>
+                                    <Border Style="{StaticResource TroubleshootingSectionStyle}">
+                                        <StackPanel Spacing="3">
+                                            <TextBlock Text="Controller detection" Style="{StaticResource CardTitleStyle}" />
+                                            <TextBlock Text="{x:Bind ViewModel.TroubleshootingDetectionStatus, Mode=OneWay}"
+                                                       Style="{StaticResource SecondaryTextStyle}"
+                                                       TextWrapping="Wrap"
+                                                       IsTextSelectionEnabled="True" />
+                                        </StackPanel>
+                                    </Border>
+                                    <Border Style="{StaticResource TroubleshootingSectionStyle}">
+                                        <StackPanel Spacing="3">
+                                            <TextBlock Text="Last operation" Style="{StaticResource CardTitleStyle}" />
+                                            <TextBlock Text="{x:Bind ViewModel.TroubleshootingLastOperationStatus, Mode=OneWay}"
+                                                       Style="{StaticResource SecondaryTextStyle}"
+                                                       TextWrapping="Wrap"
+                                                       IsTextSelectionEnabled="True" />
+                                        </StackPanel>
+                                    </Border>
+                                </StackPanel>
                             </Expander>
                         </Border>
                     </StackPanel>
