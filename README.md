@@ -62,12 +62,18 @@ Create an untrimmed, self-contained `win-x64` bundle:
 .\build\Publish.ps1
 ```
 
-The bundle is written to `artifacts\win-x64\OpenBlade`. Run
+The production installer bundle is written to `artifacts\win-x64\OpenBlade`.
+It contains only the Service and Tray application payload. Run
 `OpenBlade.Setup.exe install` from an elevated terminal to install it. Use
 `OpenBlade.Setup.exe uninstall` to preserve profiles or
 `OpenBlade.Setup.exe uninstall --purge` to remove them. Uninstall requests a
 graceful shutdown from the installed tray process and waits for that exact
 executable to exit before removing binaries.
+
+The Capture CLI is published separately to
+`artifacts\win-x64\OpenBlade.DeveloperTools`. It is a developer-only protocol
+tool and is not copied into the production installer or installed under
+Program Files.
 
 ## Capture workflow
 

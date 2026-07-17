@@ -66,6 +66,13 @@ function Assert-ManagedAssemblyIdentity {
 function Assert-ServicePublishPayload {
     param([Parameter(Mandatory)][string]$Payload)
 
+    $forbiddenCaptureTool = Get-ChildItem -LiteralPath $Payload -File -Recurse -ErrorAction Stop |
+        Where-Object { $_.Name.StartsWith('OpenBlade.Capture', [StringComparison]::OrdinalIgnoreCase) } |
+        Select-Object -First 1
+    if ($null -ne $forbiddenCaptureTool) {
+        throw "OpenBlade production payload must not include developer tool '$($forbiddenCaptureTool.FullName)'."
+    }
+
     $manifestPath = Join-Path $Payload 'OpenBlade.Service.deps.json'
     if (-not (Test-Path -LiteralPath $manifestPath -PathType Leaf)) {
         throw "OpenBlade service dependency manifest is missing: $manifestPath"

@@ -54,12 +54,12 @@ public sealed class WindowsSetupPayloadFileSystem : ISetupPayloadFileSystem
 public sealed class SetupPayloadTransaction : ISetupPayloadTransaction
 {
     private const int AtomicMoveMaximumAttempts = 25;
+    private const string ForbiddenCaptureToolFileNamePrefix = "OpenBlade.Capture";
     private static readonly TimeSpan AtomicMoveRetryDelay = TimeSpan.FromMilliseconds(100);
 
     private static readonly string[] RequiredRelativePaths =
     [
         "OpenBlade.Service.exe",
-        "OpenBlade.Capture.exe",
         "OpenBlade.Tray.exe",
         "OpenBlade.Tray.dll",
         "OpenBlade.Tray.deps.json",
@@ -117,7 +117,7 @@ public sealed class SetupPayloadTransaction : ISetupPayloadTransaction
         string payloadRoot = NormalizeRoot(payloadDirectory);
         IReadOnlyDictionary<string, PayloadEntry> sourceManifest =
             BuildManifest(payloadRoot, files, cancellationToken);
-        ValidateRequiredPayload(sourceManifest);
+        ValidateProductionPayload(sourceManifest);
         cancellationToken.ThrowIfCancellationRequested();
 
         EnsureNoAmbiguousTransactionSiblings(paths, files);
@@ -475,8 +475,18 @@ public sealed class SetupPayloadTransaction : ISetupPayloadTransaction
         return new(relative, length, hash);
     }
 
-    private static void ValidateRequiredPayload(IReadOnlyDictionary<string, PayloadEntry> manifest)
+    private static void ValidateProductionPayload(IReadOnlyDictionary<string, PayloadEntry> manifest)
     {
+        string? forbiddenCaptureTool = manifest.Keys.FirstOrDefault(relativePath =>
+            Path.GetFileName(relativePath).StartsWith(
+                ForbiddenCaptureToolFileNamePrefix,
+                StringComparison.OrdinalIgnoreCase));
+        if (forbiddenCaptureTool is not null)
+        {
+            throw new InvalidOperationException(
+                $"The production setup payload must not include the developer tool '{forbiddenCaptureTool}'.");
+        }
+
         foreach (string required in RequiredRelativePaths)
         {
             string normalized = NormalizeRelativePath(required);

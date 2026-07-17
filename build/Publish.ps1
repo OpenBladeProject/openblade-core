@@ -15,8 +15,10 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 $bundle = [IO.Path]::GetFullPath((Join-Path $artifacts 'win-x64\OpenBlade'))
+$developerTools = [IO.Path]::GetFullPath((Join-Path $artifacts 'win-x64\OpenBlade.DeveloperTools'))
 $stagingRoot = [IO.Path]::GetFullPath((Join-Path $artifacts ('.staging\' + [Guid]::NewGuid().ToString('N'))))
 $stagingBundle = Join-Path $stagingRoot 'OpenBlade'
+$stagingDeveloperTools = Join-Path $stagingRoot 'OpenBlade.DeveloperTools'
 $payload = Join-Path $stagingBundle 'payload'
 
 function Assert-SafeArtifactPath {
@@ -43,6 +45,7 @@ function Invoke-CheckedPublish {
 }
 
 Assert-SafeArtifactPath -Path $bundle
+Assert-SafeArtifactPath -Path $developerTools
 Assert-SafeArtifactPath -Path $stagingRoot
 
 $publishArguments = @(
@@ -57,13 +60,24 @@ try {
 
     Invoke-CheckedPublish (Join-Path $repository 'src\OpenBlade.Service\OpenBlade.Service.csproj') $payload
     Invoke-CheckedPublish (Join-Path $repository 'src\OpenBlade.Tray\OpenBlade.Tray.csproj') $payload
-    Invoke-CheckedPublish (Join-Path $repository 'src\OpenBlade.Capture\OpenBlade.Capture.csproj') $payload
+    Invoke-CheckedPublish (Join-Path $repository 'src\OpenBlade.Capture\OpenBlade.Capture.csproj') $stagingDeveloperTools
     Invoke-CheckedPublish (Join-Path $repository 'src\OpenBlade.Setup\OpenBlade.Setup.csproj') $stagingBundle
+
+    $captureExecutable = Join-Path $stagingDeveloperTools 'OpenBlade.Capture.exe'
+    if (-not (Test-Path -LiteralPath $captureExecutable -PathType Leaf)) {
+        throw "OpenBlade developer-tools artifact is missing: $captureExecutable"
+    }
 
     Complete-ValidatedBundleReplacement `
         -StagingBundle $stagingBundle `
         -Bundle $bundle `
         -PermittedRoot $artifacts
+
+    if (Test-Path -LiteralPath $developerTools) {
+        Remove-ValidatedPublishPath -Path $developerTools -PermittedRoot $artifacts
+    }
+    New-Item -ItemType Directory -Path (Split-Path -Parent $developerTools) -Force | Out-Null
+    Move-Item -LiteralPath $stagingDeveloperTools -Destination $developerTools
 }
 finally {
     if (Test-Path -LiteralPath $stagingRoot) {
@@ -71,4 +85,5 @@ finally {
     }
 }
 
-Write-Host "Self-contained bundle created at $bundle"
+Write-Host "Self-contained production bundle created at $bundle"
+Write-Host "Self-contained developer tools created at $developerTools"

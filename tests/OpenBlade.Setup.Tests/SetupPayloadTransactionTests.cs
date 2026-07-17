@@ -9,7 +9,6 @@ public sealed class SetupPayloadTransactionTests
 {
     [Theory]
     [InlineData("OpenBlade.Service.exe")]
-    [InlineData("OpenBlade.Capture.exe")]
     [InlineData("OpenBlade.Tray.exe")]
     [InlineData("OpenBlade.Tray.dll")]
     [InlineData("OpenBlade.Tray.deps.json")]
@@ -35,6 +34,23 @@ public sealed class SetupPayloadTransactionTests
     }
 
     [Fact]
+    public async Task StagePayload_CaptureDeveloperToolPresent_FailsBeforeCreatingTransactionDirectories()
+    {
+        using TestTree tree = new();
+        tree.CreateCompletePayload();
+        string nestedTool = Path.Combine(tree.Payload, "tools", "openblade.capture-helper.exe");
+        Directory.CreateDirectory(Path.GetDirectoryName(nestedTool)!);
+        File.WriteAllBytes(nestedTool, [0x43, 0x41, 0x50]);
+
+        InvalidOperationException failure = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => tree.CreatePlatform().StagePayloadAsync(CancellationToken.None));
+
+        Assert.Contains("developer tool", failure.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("openblade.capture-helper.exe", failure.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Empty(Directory.GetDirectories(tree.ProgramFiles));
+    }
+
+    [Fact]
     public async Task Commit_InstallsExactBytePreservingPayloadTreeAndRemovesObsoleteWpfFiles()
     {
         using TestTree tree = new();
@@ -43,6 +59,8 @@ public sealed class SetupPayloadTransactionTests
         tree.WriteInstall("PresentationFramework.dll", [2]);
         tree.WriteInstall(@"Themes\Light.xaml", [3]);
         tree.WriteInstall("obsolete.txt", [4]);
+        tree.WriteInstall("OpenBlade.Capture.exe", [5]);
+        Assert.False(File.Exists(Path.Combine(tree.Payload, "OpenBlade.Capture.exe")));
         byte[] expectedAsset = File.ReadAllBytes(
             Path.Combine(tree.Payload, @"Microsoft.UI.Xaml\Assets\NoiseAsset_256x256_PNG.png"));
 
@@ -54,6 +72,7 @@ public sealed class SetupPayloadTransactionTests
         Assert.Equal(expectedAsset, File.ReadAllBytes(
             Path.Combine(tree.Install, @"Microsoft.UI.Xaml\Assets\NoiseAsset_256x256_PNG.png")));
         Assert.Equal(ReadManifest(tree.Payload), ReadManifest(tree.Install));
+        Assert.False(File.Exists(Path.Combine(tree.Install, "OpenBlade.Capture.exe")));
         Assert.False(File.Exists(Path.Combine(tree.Install, "PresentationCore.dll")));
         Assert.Empty(Directory.GetDirectories(tree.ProgramFiles, "OpenBlade.installing.*"));
         Assert.Empty(Directory.GetDirectories(tree.ProgramFiles, "OpenBlade.rollback.*"));
@@ -689,7 +708,6 @@ public sealed class SetupPayloadTransactionTests
         private static readonly string[] RequiredFiles =
         [
             "OpenBlade.Service.exe",
-            "OpenBlade.Capture.exe",
             "OpenBlade.Tray.exe",
             "OpenBlade.Tray.dll",
             "OpenBlade.Tray.deps.json",

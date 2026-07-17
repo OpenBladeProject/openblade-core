@@ -384,6 +384,14 @@ try {
     Assert-RejectedAndPreserved -PermittedRoot $permittedRoot -StagingBundle $missingDll.StagingBundle `
         -ExistingBundle $missingDll.ExistingBundle -ExpectedError 'missing required assembly' -CaseName 'A missing required assembly'
 
+    $captureTool = New-TestBundlePair -PermittedRoot $permittedRoot -CaseName 'capture-tool' -AssemblySources $assemblySources
+    $captureToolDirectory = Join-Path $captureTool.Payload 'tools'
+    New-Item -ItemType Directory -Path $captureToolDirectory -Force | Out-Null
+    Set-Content -LiteralPath (Join-Path $captureToolDirectory 'openblade.capture-helper.exe') -Value 'developer tool' -NoNewline
+    Assert-RejectedAndPreserved -PermittedRoot $permittedRoot -StagingBundle $captureTool.StagingBundle `
+        -ExistingBundle $captureTool.ExistingBundle -ExpectedError 'must not include developer tool' `
+        -CaseName 'A nested case-variant Capture developer tool'
+
     $valid = New-TestBundlePair -PermittedRoot $permittedRoot -CaseName 'valid' -AssemblySources $assemblySources
     New-Item -ItemType Directory -Path $valid.ExistingBundle -Force | Out-Null
     Set-Content -LiteralPath (Join-Path $valid.ExistingBundle 'sentinel.txt') -Value 'previous bundle' -NoNewline
