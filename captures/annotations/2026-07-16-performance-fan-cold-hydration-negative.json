@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "captureWindowUtc": {
+    "firstPacket": "2026-07-17T03:05:38.718577Z",
+    "lastPacket": "2026-07-17T03:10:25.907999Z"
+  },
+  "condition": {
+    "performance": "Balanced",
+    "fanMode": "Auto (Default)",
+    "acOnline": true,
+    "visuallyConfirmed": true,
+    "userInitiatedSettingMutation": false
+  },
+  "uiActions": [
+    "Confirmed the Synapse visible UI was closed before capture",
+    "Launched the Synapse visible UI during capture",
+    "Opened the Blade 16 Performance page",
+    "Waited more than ten seconds without changing a setting"
+  ]
+}

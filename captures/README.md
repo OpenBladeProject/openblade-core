@@ -88,11 +88,12 @@ Synapse visibly held `Balanced+Auto`, `Silent+Auto`, `Performance+Auto`, and
 commands are now disqualified as performance or fan-mode readback.
 
 Do not repeat ordinary page-navigation captures or assign semantics to these
-responses. The only remaining passive discovery experiment is a cold Synapse
-UI startup capture, which may reveal a different query used only during initial
-cache hydration. Any new command remains untrusted until comparative known-state
-captures and a typed apply/readback/restore cycle succeed. Until then,
-performance and fan-mode production capabilities remain empty.
+responses. The cold Synapse visible-UI startup capture found one additional
+query, `0F/98`, with response `00` in `Balanced+Auto`; the original six
+candidates were absent. Treat `0F/98` as an unresolved capture-only candidate
+until comparative known-state queries and a typed apply/readback/restore cycle
+succeed. Until then, performance and fan-mode production capabilities remain
+empty.
 
 For lighting, perform the same no-mutation page-hydration comparison with two
 pre-established brightness values. Existing setter responses are same-

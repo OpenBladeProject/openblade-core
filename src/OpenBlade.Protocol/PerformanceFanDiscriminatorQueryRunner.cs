@@ -19,12 +19,13 @@ internal sealed class PerformanceFanDiscriminatorQueryRunner
 {
     private static readonly QueryDefinition[] Queries =
     [
-        new("0D/8E", 0x8E, [0x00], 1),
-        new("0D/8F", 0x8F, [0x00], 1),
-        new("0D/80", 0x80, new byte[80], 80),
-        new("0D/89", 0x89, [0x00, 0x00], 2),
-        new("0D/8B", 0x8B, [0x00, 0x00], 2),
-        new("0D/8A", 0x8A, [0x00, 0x00], 2),
+        new("0D/8E", 0x0D, 0x8E, [0x00], 1),
+        new("0D/8F", 0x0D, 0x8F, [0x00], 1),
+        new("0D/80", 0x0D, 0x80, new byte[80], 80),
+        new("0D/89", 0x0D, 0x89, [0x00, 0x00], 2),
+        new("0D/8B", 0x0D, 0x8B, [0x00, 0x00], 2),
+        new("0D/8A", 0x0D, 0x8A, [0x00, 0x00], 2),
+        new("0F/98", 0x0F, 0x98, [0x00], 1),
     ];
 
     private readonly Func<ValidationRunContext> createContext;
@@ -151,12 +152,13 @@ internal sealed class PerformanceFanDiscriminatorQueryRunner
 
     private sealed record QueryDefinition(
         string Operation,
+        byte OperationClass,
         byte OperationId,
         byte[] Arguments,
         int ExpectedResponseLength)
     {
         internal RazerCommandSpec CreateCommand() => new(
-            0x0D,
+            OperationClass,
             OperationId,
             Arguments,
             ExpectedResponseLength);

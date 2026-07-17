@@ -5,7 +5,7 @@ namespace OpenBlade.Protocol.Tests;
 public sealed class PerformanceFanDiscriminatorQueryRunnerTests
 {
     [Fact]
-    public async Task RunAsync_SendsOnlySixFixedQueriesAndDisposesSession()
+    public async Task RunAsync_SendsOnlyObservedReadOnlyQueriesAndDisposesSession()
     {
         var session = new RecordingSession();
         var runner = Runner(session);
@@ -14,15 +14,16 @@ public sealed class PerformanceFanDiscriminatorQueryRunnerTests
             await runner.RunAsync(default);
 
         Assert.Null(result.Failure);
-        Assert.Equal([1, 2, 3, 4, 5, 6], session.TransactionIds);
-        Assert.Equal([0x8E, 0x8F, 0x80, 0x89, 0x8B, 0x8A],
+        Assert.Equal([1, 2, 3, 4, 5, 6, 7], session.TransactionIds);
+        Assert.Equal([0x8E, 0x8F, 0x80, 0x89, 0x8B, 0x8A, 0x98],
             session.Commands.Select(command => command.CommandId).ToArray());
-        Assert.All(session.Commands, command => Assert.Equal(0x0D, command.ClassId));
-        Assert.Equal([1, 1, 80, 2, 2, 2],
+        Assert.Equal([0x0D, 0x0D, 0x0D, 0x0D, 0x0D, 0x0D, 0x0F],
+            session.Commands.Select(command => command.ClassId).ToArray());
+        Assert.Equal([1, 1, 80, 2, 2, 2, 1],
             session.Commands.Select(command => command.Arguments.Length).ToArray());
         Assert.All(session.Commands.SelectMany(command => command.Arguments.ToArray()),
             value => Assert.Equal(0, value));
-        Assert.Equal(["0D/8E", "0D/8F", "0D/80", "0D/89", "0D/8B", "0D/8A"],
+        Assert.Equal(["0D/8E", "0D/8F", "0D/80", "0D/89", "0D/8B", "0D/8A", "0F/98"],
             result.Value!.Readings.Select(reading => reading.Operation).ToArray());
         Assert.Equal(160, result.Value.Readings[2].RequestPayloadHex.Length);
         Assert.Equal(160, result.Value.Readings[2].ResponseHex.Length);

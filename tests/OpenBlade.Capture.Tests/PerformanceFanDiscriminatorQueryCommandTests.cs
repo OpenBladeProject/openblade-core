@@ -17,6 +17,7 @@ public sealed class PerformanceFanDiscriminatorQueryCommandTests
             new("0D/89", "0000", "0202"),
             new("0D/8B", "0000", "0201"),
             new("0D/8A", "0000", "0206"),
+            new("0F/98", "00", "00"),
         ]);
         var output = new StringWriter();
         var command = new PerformanceFanDiscriminatorQueryCommand(
@@ -39,9 +40,9 @@ public sealed class PerformanceFanDiscriminatorQueryCommandTests
         Assert.False(root.GetProperty("productionAdmitted").GetBoolean());
         Assert.True(root.GetProperty("success").GetBoolean());
         JsonElement[] responses = root.GetProperty("responses").EnumerateArray().ToArray();
-        Assert.Equal(["0D/8E", "0D/8F", "0D/80", "0D/89", "0D/8B", "0D/8A"],
+        Assert.Equal(["0D/8E", "0D/8F", "0D/80", "0D/89", "0D/8B", "0D/8A", "0F/98"],
             responses.Select(response => response.GetProperty("operation").GetString()!).ToArray());
-        Assert.Equal(["00", "00", new string('0', 160), "0000", "0000", "0000"],
+        Assert.Equal(["00", "00", new string('0', 160), "0000", "0000", "0000", "00"],
             responses.Select(response =>
                 response.GetProperty("requestPayloadHex").GetString()!).ToArray());
         Assert.All(responses, response =>

@@ -98,6 +98,15 @@
       "lastEpoch": "1784254640.268310000"
     },
     {
+      "id": "performance-fan-cold-hydration-negative",
+      "fileName": "openblade-balanced-auto-cold-hydration-20260716-200509.pcap",
+      "sha256": "611336A8D54581C8FFD6565BD553320AF1A55540C2AF9D740762E1FE0597EFB4",
+      "bytes": 641695,
+      "frameCount": 4822,
+      "firstEpoch": "1784257538.718577000",
+      "lastEpoch": "1784257825.907999000"
+    },
+    {
       "id": "battery-query-sequence-one-second-negative",
       "fileName": "openblade-battery-query-sequence-20260714.pcap",
       "sha256": "83D9C6BDFC6FA757FDF93E431C027F741C2F7172F1A6D3493B8BDA95CB0CCA3D",
@@ -656,6 +665,54 @@
       "performanceFanProductionAdmissionAllowed": false,
       "typedMutationHarnessAllowed": false,
       "reason": "Every fixed read-only response was identical across the three performance presets and Auto versus Fixed 5400 fan mode."
+    }
+  },
+  "performanceFanColdHydrationEvidence": {
+    "capture": "performance-fan-cold-hydration-negative",
+    "condition": {
+      "performance": "Balanced",
+      "fanMode": "Auto (Default)",
+      "acOnline": true,
+      "synapseVisibleUiStartedDuringCapture": true,
+      "userInitiatedSettingMutationDuringCapture": false
+    },
+    "candidateCommands": ["0D/8E", "0D/8F", "0D/80", "0D/89", "0D/8B", "0D/8A"],
+    "candidateCommandOccurrences": 0,
+    "featureReports": {
+      "requestCount": 570,
+      "fullResponseCount": 569,
+      "validChecksumCount": 1139,
+      "invalidChecksumCount": 0
+    },
+    "observedHighBitQueries": [
+      { "command": "07/92", "requestCount": 60, "fullResponseCount": 59, "responsePayloadHex": "D0", "semantic": "battery-policy-readback" },
+      { "command": "07/8F", "requestCount": 57, "fullResponseCount": 56, "responsePayloadHex": "00", "semantic": "temporary-full-charge-readback" },
+      { "command": "0D/88", "requestCount": 445, "fullResponseCount": 446, "semantic": "fan-rpm-only" },
+      { "command": "07/8C", "requestCount": 2, "fullResponseCount": 2, "responsePayloadHex": "1111", "semantic": "unresolved" },
+      { "command": "0F/98", "requestCount": 2, "fullResponseCount": 2, "responsePayloadHex": "00", "semantic": "new-unresolved-cold-start-query-candidate" }
+    ],
+    "modeAckEchoes0D_02": {
+      "requestFrames": [2143, 2147, 2179, 2183],
+      "responseFrames": [2146, 2150, 2182, 2186],
+      "requestPayloadsHex": ["01010000", "01020000", "01010000", "01020000"],
+      "status02AckEchoesOnly": true,
+      "independentStateValues": false,
+      "observation": "Cold visible-UI startup emitted the Balanced selector pair twice without a user setting change; the replies are acknowledgements, not independent readback."
+    },
+    "newCandidate0F_98": {
+      "requestFrames": [2061, 2139],
+      "responseFrames": [2064, 2142],
+      "requestPayloadHex": "00",
+      "responseStatusHex": "02",
+      "responsePayloadHex": "00",
+      "productionAdmitted": false,
+      "reason": "A single Balanced+Auto observation cannot assign this response to performance preset or fan mode."
+    },
+    "conclusion": {
+      "independentPerformanceOrFanModeReadbackEstablished": false,
+      "performanceFanProductionAdmissionAllowed": false,
+      "typedMutationHarnessAllowed": false,
+      "reason": "Cold Synapse startup exposed 0F/98, but its constant single-state response does not establish performance or fan-mode readback. The original six candidates were absent."
     }
   },
   "batteryQuerySequenceEvidence": {

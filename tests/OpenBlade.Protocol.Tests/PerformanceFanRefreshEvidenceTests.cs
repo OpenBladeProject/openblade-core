@@ -9,6 +9,8 @@ public sealed class PerformanceFanRefreshEvidenceTests
     private const string CaptureHash = "8D323555E7CF173E41B0E7AFB3690D395815C4430378A4DD7B229183F836C499";
     private const string FixedHydrationCaptureId = "fan-fixed-hydration-negative";
     private const string FixedHydrationCaptureHash = "2CA5ED0700028006E6EEFADEC3DA8D447A6DD645DD1F1CCE358882550C4EDA7F";
+    private const string ColdHydrationCaptureId = "performance-fan-cold-hydration-negative";
+    private const string ColdHydrationCaptureHash = "611336A8D54581C8FFD6565BD553320AF1A55540C2AF9D740762E1FE0597EFB4";
 
     [Fact]
     public void Annotation_ContainsOnlySanitizedUiCorrelationTimestamps()
@@ -199,6 +201,34 @@ public sealed class PerformanceFanRefreshEvidenceTests
             .GetProperty("performanceFanProductionAdmissionAllowed").GetBoolean());
         Assert.False(evidence.GetProperty("conclusion")
             .GetProperty("typedMutationHarnessAllowed").GetBoolean());
+    }
+
+    [Fact]
+    public void Evidence_RecordsColdHydrationCandidateWithoutAdmission()
+    {
+        using JsonDocument document = LoadEvidence();
+        JsonElement root = document.RootElement;
+        JsonElement capture = root.GetProperty("captureSources")
+            .EnumerateArray()
+            .Single(source => source.GetProperty("id").GetString() == ColdHydrationCaptureId);
+        JsonElement evidence = root.GetProperty("performanceFanColdHydrationEvidence");
+        JsonElement candidate = evidence.GetProperty("newCandidate0F_98");
+
+        Assert.Equal(ColdHydrationCaptureHash, capture.GetProperty("sha256").GetString());
+        Assert.Equal(641695, capture.GetProperty("bytes").GetInt32());
+        Assert.Equal(4822, capture.GetProperty("frameCount").GetInt32());
+        Assert.Equal(ColdHydrationCaptureId, evidence.GetProperty("capture").GetString());
+        Assert.Equal(0, evidence.GetProperty("candidateCommandOccurrences").GetInt32());
+        Assert.Equal([2061, 2139], Frames(candidate, "requestFrames"));
+        Assert.Equal([2064, 2142], Frames(candidate, "responseFrames"));
+        Assert.Equal("00", candidate.GetProperty("responsePayloadHex").GetString());
+        Assert.False(candidate.GetProperty("productionAdmitted").GetBoolean());
+        Assert.False(evidence.GetProperty("conclusion")
+            .GetProperty("performanceFanProductionAdmissionAllowed").GetBoolean());
+        Assert.False(evidence.GetProperty("conclusion")
+            .GetProperty("typedMutationHarnessAllowed").GetBoolean());
+        Assert.False(TrustedFixtureHashRegistry.Production.Contains(
+            Convert.FromHexString(ColdHydrationCaptureHash)));
     }
 
     private static JsonDocument LoadEvidence() => JsonDocument.Parse(File.ReadAllText(EvidencePath()));
