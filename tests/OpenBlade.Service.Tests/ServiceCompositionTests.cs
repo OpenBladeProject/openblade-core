@@ -31,53 +31,29 @@ public sealed class ServiceCompositionTests
     }
 
     [Fact]
-    public void AddWindowsTelemetry_RegistersNativeNvmlAndPowerProvider()
+    public void AddWindowsPowerState_RegistersOnlyPowerProvider()
     {
         var services = new ServiceCollection();
 
-        services.AddWindowsTelemetry();
+        services.AddWindowsPowerState();
 
-        Assert.DoesNotContain(
-            services,
-            descriptor => descriptor.ServiceType == typeof(INvmlApi));
         Assert.Contains(
             services,
-            descriptor => descriptor.ServiceType == typeof(IGpuTemperatureSource)
-                && descriptor.ImplementationFactory is not null
-                && descriptor.Lifetime == ServiceLifetime.Singleton);
-        Assert.Contains(
-            services,
-            descriptor => descriptor.ServiceType == typeof(IPowerTelemetryProvider)
+            descriptor => descriptor.ServiceType == typeof(IPowerStateProvider)
                 && descriptor.ImplementationFactory is not null
                 && descriptor.Lifetime == ServiceLifetime.Singleton);
     }
 
     [Fact]
-    public void AddWindowsTelemetry_ResolvesPowerProviderWithInjectedNvmlApi()
+    public void AddWindowsPowerState_ResolvesPowerProvider()
     {
         var services = new ServiceCollection();
-        services.AddWindowsTelemetry(() => new CountingNvmlApi(available: false));
+        services.AddWindowsPowerState();
 
         using ServiceProvider provider = services.BuildServiceProvider();
 
-        Assert.IsType<WindowsPowerTelemetryProvider>(
-            provider.GetRequiredService<IPowerTelemetryProvider>());
-    }
-
-    [Fact]
-    public void AddWindowsTelemetry_ServiceProviderDisposesOwnedNvmlExactlyOnce()
-    {
-        var api = new CountingNvmlApi(available: true);
-        var services = new ServiceCollection();
-        services.AddWindowsTelemetry(() => api);
-        ServiceProvider provider = services.BuildServiceProvider();
-        IGpuTemperatureSource source = provider.GetRequiredService<IGpuTemperatureSource>();
-        Assert.Equal(47, source.CaptureCelsius());
-
-        provider.Dispose();
-
-        Assert.Equal(1, api.ShutdownCount);
-        Assert.Equal(1, api.DisposeCount);
+        Assert.IsType<WindowsPowerStateProvider>(
+            provider.GetRequiredService<IPowerStateProvider>());
     }
 
     [Fact]
@@ -148,40 +124,9 @@ public sealed class ServiceCompositionTests
         public Task<ControlOperationResult> SetLightingOverrideAsync(ManualOverride<LightingSettings>? value, CancellationToken token) => throw new NotSupportedException();
         public Task<ControlOperationResult> SetBatteryPolicyAsync(BatteryPolicy value, CancellationToken token) => throw new NotSupportedException();
         public Task<ControlOperationResult> SetFullChargeOverrideAsync(bool enabled, CancellationToken token) => throw new NotSupportedException();
-        public Task ObserveAsync(CancellationToken cancellationToken) => throw new NotSupportedException();
+        public Task ObserveAsync(bool includeLiveReadings, CancellationToken cancellationToken) => throw new NotSupportedException();
         public Task HandlePowerSourceChangedAsync(CancellationToken cancellationToken) => throw new NotSupportedException();
         public Task RefreshControllerPresenceAsync(CancellationToken cancellationToken) => throw new NotSupportedException();
-    }
-
-    private sealed class CountingNvmlApi(bool available) : INvmlApi
-    {
-        public bool IsAvailable => available;
-        public int ShutdownCount { get; private set; }
-        public int DisposeCount { get; private set; }
-
-        public bool TryInitialize() => available;
-
-        public bool TryGetDeviceHandleByIndex(uint index, out nint device)
-        {
-            device = available ? (nint)42 : 0;
-            return available;
-        }
-
-        public bool TryGetTemperature(nint device, uint sensorType, out uint temperatureCelsius)
-        {
-            temperatureCelsius = 47;
-            return available;
-        }
-
-        public void Shutdown()
-        {
-            ShutdownCount++;
-        }
-
-        public void Dispose()
-        {
-            DisposeCount++;
-        }
     }
 
     private sealed class StubProductionBatteryFactory(DeviceCapabilities capabilities)

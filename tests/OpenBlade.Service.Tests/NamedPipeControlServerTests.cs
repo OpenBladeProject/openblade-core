@@ -35,7 +35,10 @@ public sealed class NamedPipeControlServerTests
         using CancellationTokenSource timeout = new(TimeSpan.FromSeconds(5));
         Task serverTask = context.Server.ServeOnceAsync(timeout.Token);
         await using NamedPipeClientStream client = await ConnectAsync(context.PipeName, timeout.Token);
-        var request = new ExportDiagnosticsRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid());
+        var request = new ExportDiagnosticsRequest(
+            OpenBladeIpc.ProtocolVersion,
+            Guid.NewGuid(),
+            LiveReadingsEnabled: true);
 
         await IpcMessageCodec.WriteRequestAsync(client, request, timeout.Token);
         ServiceResponse response = Assert.IsType<ServiceResponse>(
@@ -261,7 +264,8 @@ public sealed class NamedPipeControlServerTests
                 new ResolvedSetting<FanMode>(FanMode.Automatic, SettingValueSource.PowerProfile),
                 new ResolvedSetting<LightingSettings>(profiles.PluggedIn.Lighting, SettingValueSource.PowerProfile),
                 new DesiredBatteryState(profiles.BatteryPolicy, true, false)),
-            new TelemetrySnapshot(DateTimeOffset.UnixEpoch, PowerSource.PluggedIn, null, null, null, null),
+            PowerSource.PluggedIn,
+            null,
             null, null, null, false);
     }
 
@@ -280,7 +284,8 @@ public sealed class NamedPipeControlServerTests
         public Task<ControlOperationResult> SetLightingOverrideAsync(ManualOverride<LightingSettings>? value, CancellationToken token) => Result();
         public Task<ControlOperationResult> SetBatteryPolicyAsync(BatteryPolicy value, CancellationToken token) => Result();
         public Task<ControlOperationResult> SetFullChargeOverrideAsync(bool enabled, CancellationToken token) => Result();
-        public Task ObserveAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+        public Task ObserveAsync(bool includeLiveReadings, CancellationToken cancellationToken) =>
+            Task.CompletedTask;
         public Task HandlePowerSourceChangedAsync(CancellationToken cancellationToken) => Task.CompletedTask;
         public Task RefreshControllerPresenceAsync(CancellationToken cancellationToken) => Task.CompletedTask;
         private static Task<ControlOperationResult> Result() => Task.FromResult(
@@ -289,7 +294,9 @@ public sealed class NamedPipeControlServerTests
 
     private sealed class StubArchiveProvider : IDiagnosticArchiveProvider
     {
-        public Task<DiagnosticArchive> CreateAsync(CancellationToken cancellationToken) =>
+        public Task<DiagnosticArchive> CreateAsync(
+            bool liveReadingsEnabled,
+            CancellationToken cancellationToken) =>
             Task.FromResult(new DiagnosticArchive(
                 "OpenBlade-diagnostics.zip",
                 [0x50, 0x4B, 0x03, 0x04]));

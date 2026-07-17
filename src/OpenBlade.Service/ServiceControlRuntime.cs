@@ -44,7 +44,7 @@ public interface IServiceControlRuntime
         bool enabled,
         CancellationToken token);
 
-    Task ObserveAsync(CancellationToken cancellationToken);
+    Task ObserveAsync(bool includeLiveReadings, CancellationToken cancellationToken);
 
     Task HandlePowerSourceChangedAsync(CancellationToken cancellationToken);
 
@@ -62,7 +62,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
 
     private readonly BatteryConfigurationStore store;
     private readonly PersistentOverrideStore overrideStore;
-    private readonly IPowerTelemetryProvider telemetryProvider;
+    private readonly IPowerStateProvider powerStateProvider;
     private readonly IStatusSubscriptionHub subscriptionHub;
     private readonly IVerifiedBladeDeviceProvider deviceProvider;
     private readonly IControllerPresenceMonitor controllerPresenceMonitor;
@@ -81,7 +81,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
     public ServiceControlRuntime(
         BatteryConfigurationStore store,
         PersistentOverrideStore overrideStore,
-        IPowerTelemetryProvider telemetryProvider,
+        IPowerStateProvider powerStateProvider,
         IStatusSubscriptionHub subscriptionHub,
         IVerifiedBladeDeviceProvider deviceProvider,
         DiagnosticHistory history,
@@ -89,7 +89,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         : this(
             store,
             overrideStore,
-            telemetryProvider,
+            powerStateProvider,
             subscriptionHub,
             deviceProvider,
             history,
@@ -101,7 +101,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
     internal ServiceControlRuntime(
         BatteryConfigurationStore store,
         PersistentOverrideStore overrideStore,
-        IPowerTelemetryProvider telemetryProvider,
+        IPowerStateProvider powerStateProvider,
         IStatusSubscriptionHub subscriptionHub,
         IVerifiedBladeDeviceProvider deviceProvider,
         DiagnosticHistory history,
@@ -111,8 +111,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         this.store = store ?? throw new ArgumentNullException(nameof(store));
         this.overrideStore = overrideStore
             ?? throw new ArgumentNullException(nameof(overrideStore));
-        this.telemetryProvider = telemetryProvider
-            ?? throw new ArgumentNullException(nameof(telemetryProvider));
+        this.powerStateProvider = powerStateProvider
+            ?? throw new ArgumentNullException(nameof(powerStateProvider));
         this.subscriptionHub = subscriptionHub
             ?? throw new ArgumentNullException(nameof(subscriptionHub));
         this.deviceProvider = deviceProvider
@@ -153,13 +153,9 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 configuration.Preferences,
                 powerSource,
                 persistentOverrides);
-            TelemetrySnapshot telemetry = telemetryProvider.Capture() with
-            {
-                PowerSource = powerSource,
-            };
             automation = initializedAutomation;
             this.persistentOverrides = persistentOverrides;
-            Volatile.Write(ref status, CreateInitialSnapshot(telemetry));
+            Volatile.Write(ref status, CreateInitialSnapshot(powerSource));
         }
     }
 
@@ -301,16 +297,16 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         await operationGate.WaitAsync(token);
         try
         {
-            TelemetrySnapshot telemetry = CaptureTelemetryPreservingFanRpm();
+            PowerSource powerSource = powerStateProvider.CapturePowerSource();
 
-            if (enabled && telemetry.PowerSource == PowerSource.Battery)
+            if (enabled && powerSource == PowerSource.Battery)
             {
                 var rejected = new ControlOperationResult(
                     ControlOperationStatus.Failed,
                     "The requested intent was rejected: Temporary full charge can only " +
                     "be enabled while plugged in.");
                 history.RecordSummary(rejected.Status, rejected.Message);
-                PublishIfChanged(GetStatus() with { Telemetry = telemetry });
+                PublishIfChanged(GetStatus() with { ActivePowerSource = powerSource });
                 return rejected;
             }
 
@@ -321,13 +317,13 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                     "The requested intent was rejected: Temporary full charge requires " +
                     "battery protection to be enabled.");
                 history.RecordSummary(rejected.Status, rejected.Message);
-                PublishIfChanged(GetStatus() with { Telemetry = telemetry });
+                PublishIfChanged(GetStatus() with { ActivePowerSource = powerSource });
                 return rejected;
             }
 
             return await ApplyScopedIntentAsync(
                 DeviceSubsystem.Battery,
-                telemetry,
+                powerSource,
                 (coordinator, desired, cancellationToken) =>
                     coordinator.ApplyTemporaryFullChargeOutcomeAsync(
                         enabled,
@@ -360,7 +356,9 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         }
     }
 
-    public async Task ObserveAsync(CancellationToken cancellationToken)
+    public async Task ObserveAsync(
+        bool includeLiveReadings,
+        CancellationToken cancellationToken)
     {
         EnsureInitialized();
         await operationGate.WaitAsync(cancellationToken);
@@ -368,8 +366,15 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         {
             cancellationToken.ThrowIfCancellationRequested();
             RefreshControllerPresenceCore(cancellationToken);
-            TelemetrySnapshot telemetry = telemetryProvider.Capture();
-            await ObserveCoreAsync(telemetry, cancellationToken);
+            PowerSource powerSource = Automation.PowerSource;
+            int? batteryPowerFlow = includeLiveReadings
+                ? powerStateProvider.CaptureBatteryPowerFlowMilliwatts()
+                : null;
+            await ObserveCoreAsync(
+                powerSource,
+                includeLiveReadings,
+                batteryPowerFlow,
+                cancellationToken);
         }
         finally
         {
@@ -377,22 +382,29 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         }
     }
 
+    internal Task ObserveAsync(CancellationToken cancellationToken) =>
+        ObserveAsync(includeLiveReadings: false, cancellationToken);
+
     public async Task HandlePowerSourceChangedAsync(CancellationToken cancellationToken)
     {
         EnsureInitialized();
         await operationGate.WaitAsync(cancellationToken);
         try
         {
-            TelemetrySnapshot telemetry = CaptureTelemetryPreservingFanRpm();
+            PowerSource powerSource = powerStateProvider.CapturePowerSource();
             cancellationToken.ThrowIfCancellationRequested();
             RefreshControllerPresenceCore(cancellationToken);
-            if (Automation.ChangePowerSource(telemetry.PowerSource))
+            if (Automation.ChangePowerSource(powerSource))
             {
-                await ApplyFullTransitionAsync(telemetry, cancellationToken);
+                await ApplyFullTransitionAsync(powerSource, cancellationToken);
             }
             else
             {
-                await ObserveCoreAsync(telemetry, cancellationToken);
+                await ObserveCoreAsync(
+                    powerSource,
+                    includeLiveReadings: false,
+                    batteryPowerFlowMilliwatts: null,
+                    cancellationToken);
             }
         }
         finally
@@ -500,7 +512,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
 
             ControlOperationResult result = await ApplyScopedIntentAsync(
                 subsystem,
-                GetStatus().Telemetry,
+                GetStatus().ActivePowerSource,
                 apply,
                 token);
             return result.Status == ControlOperationStatus.Applied
@@ -548,7 +560,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
 
             return await ApplyScopedIntentAsync(
                 DeviceSubsystem.Battery,
-                GetStatus().Telemetry,
+                GetStatus().ActivePowerSource,
                 (coordinator, _, cancellationToken) =>
                     apply(coordinator, staged, cancellationToken),
                 token,
@@ -570,7 +582,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
 
     private async Task<ControlOperationResult> ApplyScopedIntentAsync(
         DeviceSubsystem subsystem,
-        TelemetrySnapshot telemetry,
+        PowerSource powerSource,
         Func<ControlCoordinator, DesiredDeviceState, CancellationToken, Task<ScopedApplyOutcome>> apply,
         CancellationToken token,
         Func<DesiredDeviceState, DesiredDeviceState>? stageDesired = null,
@@ -594,7 +606,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             {
                 return PublishScopedUnavailable(
                     subsystem,
-                    telemetry,
+                    powerSource,
                     "No verified PID 02E0 device is available.");
             }
         }
@@ -606,7 +618,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         {
             return PublishScopedUnavailable(
                 subsystem,
-                telemetry,
+                powerSource,
                 $"Verified device admission failed: {exception.Message}",
                 failed: true);
         }
@@ -629,7 +641,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 $"{subsystem} write is indeterminate because confirmation was canceled.");
             history.RecordSubsystemResult(subsystem, failed);
             PublishScopedStatus(
-                telemetry,
+                powerSource,
                 cachedConfirmed,
                 current.Capabilities,
                 failed.Message,
@@ -672,7 +684,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                     $"{subsystem} hardware was confirmed, but persistence was canceled.");
                 history.RecordSubsystemResult(subsystem, canceledCommit);
                 PublishScopedStatus(
-                    telemetry,
+                    powerSource,
                     confirmed,
                     outcome.Capabilities ?? current.Capabilities,
                     canceledCommit.Message,
@@ -688,7 +700,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                     $"Confirmed hardware intent could not be committed: {exception.Message}");
                 history.RecordSubsystemResult(subsystem, failedCommit);
                 PublishScopedStatus(
-                    telemetry,
+                    powerSource,
                     confirmed,
                     outcome.Capabilities ?? current.Capabilities,
                     failedCommit.Message,
@@ -707,7 +719,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
 
         history.RecordSubsystemResult(subsystem, outcome.Result);
         PublishScopedStatus(
-            telemetry,
+            powerSource,
             confirmed,
             outcome.Capabilities ?? current.Capabilities,
             outcome.Result.Message,
@@ -735,7 +747,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
     }
 
     private async Task ApplyFullTransitionAsync(
-        TelemetrySnapshot telemetry,
+        PowerSource powerSource,
         CancellationToken token)
     {
         ServiceStatusSnapshot current = GetStatus();
@@ -748,7 +760,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             token.ThrowIfCancellationRequested();
             if (!available)
             {
-                PublishFullUnavailable(telemetry, "No verified PID 02E0 device is available.");
+                PublishFullUnavailable(powerSource, "No verified PID 02E0 device is available.");
                 return;
             }
         }
@@ -759,7 +771,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         catch (Exception exception)
         {
             PublishFullUnavailable(
-                telemetry,
+                powerSource,
                 $"Verified device admission failed: {exception.Message}",
                 failed: true);
             return;
@@ -802,7 +814,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             }
 
             PublishScopedStatus(
-                telemetry,
+                powerSource,
                 cachedConfirmed,
                 current.Capabilities,
                 "Power-source transition writes are indeterminate because confirmation was canceled.",
@@ -836,8 +848,9 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
 
         history.RecordSubsystemResults(outcome.Results);
         string message = Summarize(outcome.Results);
+        PublishIfChanged(GetStatus() with { LiveReadings = null });
         PublishScopedStatus(
-            telemetry,
+            powerSource,
             confirmed,
             outcome.Capabilities ?? current.Capabilities,
             message,
@@ -852,7 +865,9 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         && outcome.Readback is null;
 
     private async Task ObserveCoreAsync(
-        TelemetrySnapshot telemetry,
+        PowerSource powerSource,
+        bool includeLiveReadings,
+        int? batteryPowerFlowMilliwatts,
         CancellationToken cancellationToken)
     {
         bool deviceAvailable = deviceProvider.TryGetVerifiedDevice(out IBladeDevice device);
@@ -860,7 +875,10 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         if (!deviceAvailable)
         {
             PublishObservationUnavailable(
-                telemetry with { FanRpm = null },
+                powerSource,
+                includeLiveReadings
+                    ? new LiveReadings(batteryPowerFlowMilliwatts, null, null)
+                    : null,
                 "No verified PID 02E0 device is available.");
             return;
         }
@@ -870,18 +888,21 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             DeviceCapabilities capabilities =
                 await device.ReadCapabilitiesAsync(cancellationToken);
             ConfirmedDeviceState confirmed = await device.ReadStateAsync(cancellationToken);
-            int? fanRpm;
-            try
+            FanRpmReadings? fans = null;
+            if (includeLiveReadings)
             {
-                fanRpm = await device.ReadFanRpmAsync(cancellationToken);
-            }
-            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-            {
-                throw;
-            }
-            catch
-            {
-                fanRpm = null;
+                try
+                {
+                    fans = await device.ReadFanRpmAsync(cancellationToken);
+                }
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                {
+                    throw;
+                }
+                catch
+                {
+                    fans = null;
+                }
             }
             cancellationToken.ThrowIfCancellationRequested();
             ObserveAutomaticState(confirmed);
@@ -895,7 +916,13 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 ConfirmedState = confirmed,
                 Profiles = Automation.Profiles,
                 DesiredState = Automation.Resolve(confirmed),
-                Telemetry = telemetry with { FanRpm = fanRpm },
+                ActivePowerSource = powerSource,
+                LiveReadings = includeLiveReadings
+                    ? new LiveReadings(
+                        batteryPowerFlowMilliwatts,
+                        fans?.Selector1Rpm,
+                        fans?.Selector2Rpm)
+                    : null,
                 PerformanceOverride = Automation.PerformanceOverride,
                 FanOverride = Automation.FanOverride,
                 LightingOverride = Automation.LightingOverride,
@@ -910,7 +937,10 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         {
             cancellationToken.ThrowIfCancellationRequested();
             PublishObservationUnavailable(
-                telemetry with { FanRpm = null },
+                powerSource,
+                includeLiveReadings
+                    ? new LiveReadings(batteryPowerFlowMilliwatts, null, null)
+                    : null,
                 $"Verified device access failed: {exception.Message}");
             history.RecordSummary(
                 ControlOperationStatus.Failed,
@@ -1012,7 +1042,10 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         && (!desired.ProtectionEnabled
             || confirmed.ChargeLimitPercent == desired.ConfiguredPolicy.ChargeLimitPercent);
 
-    private void PublishObservationUnavailable(TelemetrySnapshot telemetry, string message)
+    private void PublishObservationUnavailable(
+        PowerSource powerSource,
+        LiveReadings? liveReadings,
+        string message)
     {
         ServiceStatusSnapshot current = GetStatus();
         ConfirmedDeviceState confirmed = current.ConfirmedState ?? UnknownConfirmedState;
@@ -1024,7 +1057,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             Message = message,
             Profiles = Automation.Profiles,
             DesiredState = Automation.Resolve(confirmed),
-            Telemetry = telemetry,
+            ActivePowerSource = powerSource,
+            LiveReadings = liveReadings,
             PerformanceOverride = Automation.PerformanceOverride,
             FanOverride = Automation.FanOverride,
             LightingOverride = Automation.LightingOverride,
@@ -1032,10 +1066,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         });
     }
 
-    private TelemetrySnapshot CaptureTelemetryPreservingFanRpm() =>
-        telemetryProvider.Capture() with { FanRpm = GetStatus().Telemetry.FanRpm };
-
-    private ServiceStatusSnapshot CreateInitialSnapshot(TelemetrySnapshot telemetry) => new(
+    private ServiceStatusSnapshot CreateInitialSnapshot(PowerSource powerSource) => new(
             Revision: 0,
             DeviceVerified: false,
             WritesBlocked: true,
@@ -1047,7 +1078,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             ConfirmedState: null,
             Profiles: Automation.Profiles,
             DesiredState: Automation.Resolve(UnknownConfirmedState),
-            Telemetry: telemetry,
+            ActivePowerSource: powerSource,
+            LiveReadings: null,
             PerformanceOverride: Automation.PerformanceOverride,
             FanOverride: Automation.FanOverride,
             LightingOverride: Automation.LightingOverride,
@@ -1055,7 +1087,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
 
     private ControlOperationResult PublishScopedUnavailable(
         DeviceSubsystem subsystem,
-        TelemetrySnapshot telemetry,
+        PowerSource powerSource,
         string reason,
         bool failed = false)
     {
@@ -1067,7 +1099,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             $"Hardware application was not confirmed. {reason}");
         history.RecordSubsystemResult(subsystem, result);
         PublishScopedStatus(
-            telemetry,
+            powerSource,
             GetStatus().ConfirmedState,
             GetStatus().Capabilities,
             result.Message,
@@ -1077,15 +1109,16 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
     }
 
     private void PublishFullUnavailable(
-        TelemetrySnapshot telemetry,
+        PowerSource powerSource,
         string reason,
         bool failed = false)
     {
+        PublishIfChanged(GetStatus() with { LiveReadings = null });
         ControlOperationStatus status = failed
             ? ControlOperationStatus.Failed
             : ControlOperationStatus.Blocked;
         PublishScopedStatus(
-            telemetry,
+            powerSource,
             GetStatus().ConfirmedState,
             GetStatus().Capabilities,
             reason,
@@ -1095,7 +1128,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
     }
 
     private void PublishScopedStatus(
-        TelemetrySnapshot telemetry,
+        PowerSource powerSource,
         ConfirmedDeviceState? confirmed,
         DeviceCapabilities? capabilities,
         string message,
@@ -1113,7 +1146,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             ConfirmedState = confirmed,
             Profiles = Automation.Profiles,
             DesiredState = Automation.Resolve(confirmed ?? UnknownConfirmedState),
-            Telemetry = telemetry,
+            ActivePowerSource = powerSource,
             PerformanceOverride = Automation.PerformanceOverride,
             FanOverride = Automation.FanOverride,
             LightingOverride = Automation.LightingOverride,
@@ -1184,7 +1217,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         && left.ConfirmedState == right.ConfirmedState
         && left.Profiles == right.Profiles
         && left.DesiredState == right.DesiredState
-        && left.Telemetry == right.Telemetry
+        && left.ActivePowerSource == right.ActivePowerSource
+        && left.LiveReadings == right.LiveReadings
         && left.PerformanceOverride == right.PerformanceOverride
         && left.FanOverride == right.FanOverride
         && left.LightingOverride == right.LightingOverride

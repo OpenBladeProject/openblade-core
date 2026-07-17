@@ -6,11 +6,13 @@ namespace OpenBlade.Tray;
 
 public sealed record UiPreferences(
     ThemePreference Theme,
-    bool KeepManualChangesUntilCleared = false)
+    bool KeepManualChangesUntilCleared = false,
+    bool LiveReadingsEnabled = true)
 {
     public static UiPreferences Default { get; } = new(
         ThemePreference.FollowWindows,
-        KeepManualChangesUntilCleared: false);
+        KeepManualChangesUntilCleared: false,
+        LiveReadingsEnabled: true);
 }
 
 public sealed class UiPreferenceStore

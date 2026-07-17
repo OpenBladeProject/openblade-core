@@ -22,7 +22,9 @@ public sealed class DiagnosticArchiveProviderTests
             history,
             new FixedMetadataSource(secret));
 
-        DiagnosticArchive result = await provider.CreateAsync(CancellationToken.None);
+        DiagnosticArchive result = await provider.CreateAsync(
+            liveReadingsEnabled: true,
+            CancellationToken.None);
 
         Assert.Equal(1, runtime.StatusReads);
         Assert.Equal(0, runtime.HardwareOrMutationCalls);
@@ -53,8 +55,14 @@ public sealed class DiagnosticArchiveProviderTests
         using JsonDocument configuration = JsonDocument.Parse(
             await ReadEntryAsync(archive, "configuration.json"));
         Assert.Equal(
-            "45",
-            configuration.RootElement.GetProperty("telemetry.gpuTemperatureCelsius").GetString());
+            PowerSource.PluggedIn.ToString(),
+            configuration.RootElement.GetProperty("power.source").GetString());
+        Assert.Equal(
+            bool.TrueString,
+            configuration.RootElement.GetProperty("liveReadings.enabled").GetString());
+        Assert.Equal(
+            bool.TrueString,
+            configuration.RootElement.GetProperty("liveReadings.available").GetString());
         Assert.Equal(
             "80",
             configuration.RootElement.GetProperty("confirmed.battery.chargeLimitPercent").GetString());
@@ -70,7 +78,69 @@ public sealed class DiagnosticArchiveProviderTests
         Assert.Equal(
             "Fans",
             configuration.RootElement.GetProperty("status.externalChanges").GetString());
+        Assert.DoesNotContain(
+            configuration.RootElement.EnumerateObject(),
+            property => property.Name.StartsWith("telemetry.", StringComparison.Ordinal));
+        string configurationJson = configuration.RootElement.GetRawText();
+        Assert.DoesNotContain(
+            "batteryPowerFlowMilliwatts",
+            configurationJson,
+            StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("fan1Rpm", configurationJson, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("fan2Rpm", configurationJson, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("12345", configurationJson, StringComparison.Ordinal);
+        Assert.DoesNotContain("23456", configurationJson, StringComparison.Ordinal);
+        Assert.DoesNotContain("34567", configurationJson, StringComparison.Ordinal);
         Assert.False(configuration.RootElement.TryGetProperty("status.conflicts", out _));
+    }
+
+    [Fact]
+    public async Task CreateAsync_ReportsDisabledLiveReadingsWithoutTransientValues()
+    {
+        var provider = new DiagnosticArchiveProvider(
+            new SnapshotOnlyRuntime(CreateStatus() with { LiveReadings = null }),
+            new DiagnosticHistory(),
+            new FixedMetadataSource());
+
+        DiagnosticArchive result = await provider.CreateAsync(
+            liveReadingsEnabled: false,
+            CancellationToken.None);
+
+        using var archive = new ZipArchive(new MemoryStream(result.ZipBytes), ZipArchiveMode.Read);
+        using JsonDocument configuration = JsonDocument.Parse(
+            await ReadEntryAsync(archive, "configuration.json"));
+        Assert.Equal(
+            bool.FalseString,
+            configuration.RootElement.GetProperty("liveReadings.enabled").GetString());
+        Assert.Equal(
+            bool.FalseString,
+            configuration.RootElement.GetProperty("liveReadings.available").GetString());
+    }
+
+    [Fact]
+    public async Task CreateAsync_DistinguishesEnabledButUnavailableLiveReadings()
+    {
+        var provider = new DiagnosticArchiveProvider(
+            new SnapshotOnlyRuntime(CreateStatus() with
+            {
+                LiveReadings = new LiveReadings(null, null, null),
+            }),
+            new DiagnosticHistory(),
+            new FixedMetadataSource());
+
+        DiagnosticArchive result = await provider.CreateAsync(
+            liveReadingsEnabled: true,
+            CancellationToken.None);
+
+        using var archive = new ZipArchive(new MemoryStream(result.ZipBytes), ZipArchiveMode.Read);
+        using JsonDocument configuration = JsonDocument.Parse(
+            await ReadEntryAsync(archive, "configuration.json"));
+        Assert.Equal(
+            bool.TrueString,
+            configuration.RootElement.GetProperty("liveReadings.enabled").GetString());
+        Assert.Equal(
+            bool.FalseString,
+            configuration.RootElement.GetProperty("liveReadings.available").GetString());
     }
 
     [Fact]
@@ -87,7 +157,9 @@ public sealed class DiagnosticArchiveProviderTests
             new DiagnosticHistory(),
             new FixedMetadataSource());
 
-        DiagnosticArchive result = await provider.CreateAsync(CancellationToken.None);
+        DiagnosticArchive result = await provider.CreateAsync(
+            liveReadingsEnabled: true,
+            CancellationToken.None);
 
         Assert.NotEmpty(result.ZipBytes);
         Assert.Equal(1, runtime.StatusReads);
@@ -106,7 +178,9 @@ public sealed class DiagnosticArchiveProviderTests
             new FixedMetadataSource(windowsVersion: incompressible));
 
         InvalidDataException exception = await Assert.ThrowsAsync<InvalidDataException>(
-            () => provider.CreateAsync(CancellationToken.None));
+            () => provider.CreateAsync(
+                liveReadingsEnabled: true,
+                CancellationToken.None));
 
         Assert.Contains("32 KiB", exception.Message, StringComparison.Ordinal);
     }
@@ -141,13 +215,11 @@ public sealed class DiagnosticArchiveProviderTests
                 new ResolvedSetting<FanMode>(FanMode.Automatic, SettingValueSource.PowerProfile),
                 new ResolvedSetting<LightingSettings>(profiles.PluggedIn.Lighting, SettingValueSource.PowerProfile),
                 new DesiredBatteryState(profiles.BatteryPolicy, true, false)),
-            Telemetry: new TelemetrySnapshot(
-                DateTimeOffset.Parse("2026-07-15T12:00:00Z"),
-                PowerSource.PluggedIn,
-                96,
-                null,
-                45,
-                null),
+            ActivePowerSource: PowerSource.PluggedIn,
+            LiveReadings: new LiveReadings(
+                BatteryPowerFlowMilliwatts: 12345,
+                Fan1Rpm: 23456,
+                Fan2Rpm: 34567),
             PerformanceOverride: null,
             FanOverride: null,
             LightingOverride: null,
@@ -181,7 +253,9 @@ public sealed class DiagnosticArchiveProviderTests
         public Task<ControlOperationResult> SetLightingOverrideAsync(ManualOverride<LightingSettings>? value, CancellationToken token) => Unexpected();
         public Task<ControlOperationResult> SetBatteryPolicyAsync(BatteryPolicy value, CancellationToken token) => Unexpected();
         public Task<ControlOperationResult> SetFullChargeOverrideAsync(bool enabled, CancellationToken token) => Unexpected();
-        public Task ObserveAsync(CancellationToken cancellationToken)
+        public Task ObserveAsync(
+            bool includeLiveReadings,
+            CancellationToken cancellationToken)
         {
             HardwareOrMutationCalls++;
             throw new InvalidOperationException("Export must not refresh hardware.");
@@ -194,7 +268,7 @@ public sealed class DiagnosticArchiveProviderTests
         }
 
         public Task HandlePowerSourceChangedAsync(CancellationToken cancellationToken) =>
-            ObserveAsync(cancellationToken);
+            ObserveAsync(includeLiveReadings: false, cancellationToken);
 
         private Task<ControlOperationResult> Unexpected()
         {

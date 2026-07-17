@@ -21,7 +21,7 @@ public sealed class WindowsVerifiedBladeDeviceProviderTests
     }
 
     [Fact]
-    public async Task ReadFanRpm_ReturnsMaximumAndDisposesTypedPort()
+    public async Task ReadFanRpm_ReturnsBothSelectorsAndDisposesTypedPort()
     {
         var fanPort = new FakeFanRpmPort(new(new FanRpmReadings(2700, 2600), null));
         var fanFactory = new FakeFanRpmFactory(new(fanPort, null));
@@ -31,9 +31,9 @@ public sealed class WindowsVerifiedBladeDeviceProviderTests
             fanFactory);
         provider.TryGetVerifiedDevice(out IBladeDevice device);
 
-        int? rpm = await device.ReadFanRpmAsync(default);
+        FanRpmReadings? rpm = await device.ReadFanRpmAsync(default);
 
-        Assert.Equal(2700, rpm);
+        Assert.Equal(new FanRpmReadings(2700, 2600), rpm);
         Assert.Equal(1, fanFactory.OpenCount);
         Assert.Equal(1, fanPort.QueryCount);
         Assert.Equal(1, fanPort.DisposeCount);
@@ -51,7 +51,7 @@ public sealed class WindowsVerifiedBladeDeviceProviderTests
             fanFactory);
         provider.TryGetVerifiedDevice(out IBladeDevice device);
 
-        int? rpm = await device.ReadFanRpmAsync(default);
+        FanRpmReadings? rpm = await device.ReadFanRpmAsync(default);
 
         Assert.Null(rpm);
         Assert.Equal(1, fanPort.DisposeCount);
@@ -72,13 +72,13 @@ public sealed class WindowsVerifiedBladeDeviceProviderTests
 
         Task<ConfirmedDeviceState> batteryRead = device.ReadStateAsync(default);
         await batteryPort.QueryStarted.Task;
-        Task<int?> fanRead = device.ReadFanRpmAsync(default);
+        Task<FanRpmReadings?> fanRead = device.ReadFanRpmAsync(default);
         await Task.Yield();
 
         Assert.Equal(0, fanFactory.OpenCount);
         batteryPort.Release();
         await batteryRead;
-        Assert.Equal(2700, await fanRead);
+        Assert.Equal(new FanRpmReadings(2700, 2600), await fanRead);
         Assert.Equal(1, fanFactory.OpenCount);
     }
 

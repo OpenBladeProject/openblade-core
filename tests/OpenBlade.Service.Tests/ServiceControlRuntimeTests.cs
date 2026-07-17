@@ -438,7 +438,8 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         Assert.Equal(before.DeviceVerified, after.DeviceVerified);
         Assert.Same(before.Capabilities, after.Capabilities);
         Assert.Same(before.ConfirmedState, after.ConfirmedState);
-        Assert.Same(before.Telemetry, after.Telemetry);
+        Assert.Equal(before.ActivePowerSource, after.ActivePowerSource);
+        Assert.Same(before.LiveReadings, after.LiveReadings);
         Assert.Same(before.DesiredState, after.DesiredState);
         Assert.Equal(before.Message, after.Message);
         Assert.Equal(before.ExternalChanges, after.ExternalChanges);
@@ -659,7 +660,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             ProfileDefaults.CreateSafeDefaults().PluggedIn.Lighting with { Brightness = 10 });
 
         await context.Runtime.ObserveAsync(CancellationToken.None);
-        Assert.Equal(3, context.Device.TotalCalls);
+        Assert.Equal(2, context.Device.TotalCalls);
         Assert.Equal(0, context.Device.TotalSetterCalls);
 
         int telemetryCaptures = context.Telemetry.CaptureCount;
@@ -667,7 +668,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         await context.Runtime.RefreshControllerPresenceAsync(CancellationToken.None);
         Assert.Equal(2, context.Monitor.ObserveCount);
         Assert.Equal(telemetryCaptures, context.Telemetry.CaptureCount);
-        Assert.Equal(3, context.Device.TotalCalls);
+        Assert.Equal(2, context.Device.TotalCalls);
     }
 
     [Fact]
@@ -795,9 +796,50 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         await loop.RunAsync(CancellationToken.None);
 
         Assert.Equal(1, context.Provider.TryGetCount);
-        Assert.Equal(3, context.Device.TotalCalls);
+        Assert.Equal(2, context.Device.TotalCalls);
         Assert.True(context.Runtime.GetStatus().DeviceVerified);
         Assert.False(context.Runtime.GetStatus().WritesBlocked);
+        Assert.Equal(0, context.Device.TotalSetterCalls);
+    }
+
+    [Fact]
+    public async Task Resume_AfterMissedPowerChangeAppliesNewPowerProfile()
+    {
+        TestContext context = CreateWritableContext();
+        context.Telemetry.Current = CreateTelemetry(PowerSource.Battery);
+        var loop = new ServiceLifecycleRefreshLoop(
+            context.Runtime,
+            new SingleLifecycleEventSource(ServiceLifecycleTrigger.Resumed),
+            NullLogger<ServiceLifecycleRefreshLoop>.Instance);
+
+        await loop.RunAsync(CancellationToken.None);
+
+        ServiceStatusSnapshot status = context.Runtime.GetStatus();
+        Assert.Equal(PowerSource.Battery, status.ActivePowerSource);
+        Assert.Equal(PerformancePreset.Silent, status.DesiredState.Performance.Value);
+        Assert.Equal(PerformancePreset.Silent, status.ConfirmedState!.Performance);
+        Assert.Equal(1, context.Device.PerformanceSetCalls);
+        Assert.Equal(0, context.Device.FanSetCalls);
+        Assert.Equal(0, context.Device.BatterySetCalls);
+        Assert.Equal(0, context.Device.LightingSetCalls);
+    }
+
+    [Fact]
+    public async Task Resume_WithoutPowerChangeObservesStateWithoutWrites()
+    {
+        TestContext context = CreateWritableContext();
+        var loop = new ServiceLifecycleRefreshLoop(
+            context.Runtime,
+            new SingleLifecycleEventSource(ServiceLifecycleTrigger.Resumed),
+            NullLogger<ServiceLifecycleRefreshLoop>.Instance);
+
+        await loop.RunAsync(CancellationToken.None);
+
+        ServiceStatusSnapshot status = context.Runtime.GetStatus();
+        Assert.Equal(PowerSource.PluggedIn, status.ActivePowerSource);
+        Assert.Equal(PerformancePreset.Balanced, status.ConfirmedState!.Performance);
+        Assert.Equal(1, context.Device.CapabilitiesReadCalls);
+        Assert.Equal(1, context.Device.StateReadCalls);
         Assert.Equal(0, context.Device.TotalSetterCalls);
     }
 
@@ -1491,7 +1533,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         Assert.Equal(4, context.History.Snapshot().CommandResults.Count);
         Assert.True(context.Runtime.GetStatus().DeviceVerified);
         Assert.False(context.Runtime.GetStatus().WritesBlocked);
-        Assert.Equal(PowerSource.Battery, context.Runtime.GetStatus().Telemetry.PowerSource);
+        Assert.Equal(PowerSource.Battery, context.Runtime.GetStatus().ActivePowerSource);
     }
 
     [Fact]
@@ -1877,8 +1919,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         Assert.Equal(ControlOperationStatus.Failed, result.Status);
         Assert.False(status.FullChargeOverride);
         Assert.False(status.DesiredState.Battery.TemporaryFullCharge);
-        Assert.Equal(PowerSource.Battery, status.Telemetry.PowerSource);
-        Assert.Equal(79, status.Telemetry.BatteryPercent);
+        Assert.Equal(PowerSource.Battery, status.ActivePowerSource);
     }
 
     [Fact]
@@ -1912,8 +1953,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         ServiceStatusSnapshot status = context.Runtime.GetStatus();
         Assert.Equal(ControlOperationStatus.Blocked, result.Status);
         Assert.False(status.FullChargeOverride);
-        Assert.Equal(PowerSource.Battery, status.Telemetry.PowerSource);
-        Assert.Equal(78, status.Telemetry.BatteryPercent);
+        Assert.Equal(PowerSource.Battery, status.ActivePowerSource);
     }
 
     [Fact]
@@ -1942,8 +1982,13 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         await context.Runtime.ObserveAsync(CancellationToken.None);
         Assert.Empty(context.Hub.Published);
 
-        context.Telemetry.Current = CreateTelemetry(PowerSource.PluggedIn, batteryPercent: 79);
-        await context.Runtime.ObserveAsync(CancellationToken.None);
+        context.Telemetry.Current = CreateTelemetry(PowerSource.PluggedIn) with
+        {
+            BatteryPowerFlowMilliwatts = -19_500,
+        };
+        await context.Runtime.ObserveAsync(
+            includeLiveReadings: true,
+            CancellationToken.None);
 
         Assert.Single(context.Hub.Published);
         Assert.Equal(1, context.Runtime.GetStatus().Revision);
@@ -2003,21 +2048,23 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     }
 
     [Fact]
-    public async Task Observe_RefreshesFanRpmAndFanFailureDegradesWithoutLosingDevice()
+    public async Task Observe_WithLiveReadingsRefreshesBothFansAndFailureDegradesWithoutLosingDevice()
     {
         TestContext context = CreateContext(providerAvailable: true);
         context.Device.FanRpm = 2700;
 
-        await context.Runtime.ObserveAsync(CancellationToken.None);
+        await context.Runtime.ObserveAsync(includeLiveReadings: true, CancellationToken.None);
 
-        Assert.Equal(2700, context.Runtime.GetStatus().Telemetry.FanRpm);
+        Assert.Equal(2700, context.Runtime.GetStatus().LiveReadings!.Fan1Rpm);
+        Assert.Equal(2700, context.Runtime.GetStatus().LiveReadings!.Fan2Rpm);
         Assert.True(context.Runtime.GetStatus().DeviceVerified);
         Assert.Equal(1, context.Device.FanRpmReadCalls);
 
         context.Device.FanRpmFailure = new IOException("fan telemetry unavailable");
-        await context.Runtime.ObserveAsync(CancellationToken.None);
+        await context.Runtime.ObserveAsync(includeLiveReadings: true, CancellationToken.None);
 
-        Assert.Null(context.Runtime.GetStatus().Telemetry.FanRpm);
+        Assert.Null(context.Runtime.GetStatus().LiveReadings!.Fan1Rpm);
+        Assert.Null(context.Runtime.GetStatus().LiveReadings!.Fan2Rpm);
         Assert.True(context.Runtime.GetStatus().DeviceVerified);
         Assert.False(context.Runtime.GetStatus().WritesBlocked);
         Assert.Equal("Verified device state observed.", context.Runtime.GetStatus().Message);
@@ -2025,11 +2072,48 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     }
 
     [Fact]
-    public async Task FanRpm_PersistsAcrossScopedAndPowerUpdatesUntilUnavailableObservation()
+    public async Task Observe_DisabledSkipsLiveProvidersAndClearsPriorReadings()
+    {
+        TestContext context = CreateContext(providerAvailable: true);
+        context.Device.FanReadings = new FanRpmReadings(2_300, 2_700);
+        context.Telemetry.Current = CreateTelemetry(PowerSource.PluggedIn) with
+        {
+            BatteryPowerFlowMilliwatts = 31_400,
+        };
+
+        await context.Runtime.ObserveAsync(
+            includeLiveReadings: false,
+            CancellationToken.None);
+
+        Assert.Equal(0, context.Device.FanRpmReadCalls);
+        Assert.Equal(0, context.Telemetry.BatteryPowerFlowCaptureCount);
+        Assert.Null(context.Runtime.GetStatus().LiveReadings);
+
+        await context.Runtime.ObserveAsync(
+            includeLiveReadings: true,
+            CancellationToken.None);
+
+        Assert.Equal(1, context.Device.FanRpmReadCalls);
+        Assert.Equal(1, context.Telemetry.BatteryPowerFlowCaptureCount);
+        Assert.Equal(
+            new LiveReadings(31_400, 2_300, 2_700),
+            context.Runtime.GetStatus().LiveReadings);
+
+        await context.Runtime.ObserveAsync(
+            includeLiveReadings: false,
+            CancellationToken.None);
+
+        Assert.Equal(1, context.Device.FanRpmReadCalls);
+        Assert.Equal(1, context.Telemetry.BatteryPowerFlowCaptureCount);
+        Assert.Null(context.Runtime.GetStatus().LiveReadings);
+    }
+
+    [Fact]
+    public async Task LiveReadings_PersistAcrossScopedUpdateAndClearOnPowerOrDisabledObservation()
     {
         TestContext context = CreateContext(providerAvailable: true);
         context.Device.FanRpm = 2700;
-        await context.Runtime.ObserveAsync(CancellationToken.None);
+        await context.Runtime.ObserveAsync(includeLiveReadings: true, CancellationToken.None);
         context.Provider.Available = false;
 
         await context.Runtime.SetPerformanceOverrideAsync(
@@ -2037,14 +2121,14 @@ public sealed class ServiceControlRuntimeTests : IDisposable
                 PerformancePreset.Performance,
                 OverrideLifetime.Persistent),
             CancellationToken.None);
-        Assert.Equal(2700, context.Runtime.GetStatus().Telemetry.FanRpm);
+        Assert.Equal(2700, context.Runtime.GetStatus().LiveReadings!.Fan1Rpm);
 
-        context.Telemetry.Current = CreateTelemetry(PowerSource.Battery) with { FanRpm = 9999 };
+        context.Telemetry.Current = CreateTelemetry(PowerSource.Battery);
         await context.Runtime.HandlePowerSourceChangedAsync(CancellationToken.None);
-        Assert.Equal(2700, context.Runtime.GetStatus().Telemetry.FanRpm);
+        Assert.Null(context.Runtime.GetStatus().LiveReadings);
 
         await context.Runtime.ObserveAsync(CancellationToken.None);
-        Assert.Null(context.Runtime.GetStatus().Telemetry.FanRpm);
+        Assert.Null(context.Runtime.GetStatus().LiveReadings);
     }
 
     [Fact]
@@ -2319,15 +2403,12 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         Assert.Equal([DeviceSubsystem.Fans], context.Runtime.GetStatus().ExternalChanges);
     }
 
-    private static TelemetrySnapshot CreateTelemetry(
+    private static TestPowerState CreateTelemetry(
         PowerSource source,
         int? batteryPercent = 80) => new(
-            DateTimeOffset.Parse("2026-07-14T12:00:00Z"),
             source,
             batteryPercent,
-            null,
-            null,
-            null);
+            BatteryPowerFlowMilliwatts: -18_000);
 
     public void Dispose()
     {
@@ -2361,16 +2442,28 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         }
     }
 
-    private sealed class FakeTelemetryProvider : IPowerTelemetryProvider
+    private sealed record TestPowerState(
+        PowerSource PowerSource,
+        int? BatteryPercent,
+        int? BatteryPowerFlowMilliwatts);
+
+    private sealed class FakeTelemetryProvider : IPowerStateProvider
     {
-        public required TelemetrySnapshot Current { get; set; }
+        public required TestPowerState Current { get; set; }
 
         public int CaptureCount { get; private set; }
+        public int BatteryPowerFlowCaptureCount { get; private set; }
 
-        public TelemetrySnapshot Capture()
+        public PowerSource CapturePowerSource()
         {
             CaptureCount++;
-            return Current;
+            return Current.PowerSource;
+        }
+
+        public int? CaptureBatteryPowerFlowMilliwatts()
+        {
+            BatteryPowerFlowCaptureCount++;
+            return Current.BatteryPowerFlowMilliwatts;
         }
     }
 
@@ -2447,6 +2540,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             new(null, null, null, null);
 
         public int? FanRpm { get; set; }
+        public FanRpmReadings? FanReadings { get; set; }
 
         public Exception? FanRpmFailure { get; set; }
 
@@ -2488,13 +2582,16 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             return Task.FromResult(ConfirmedState);
         }
 
-        public Task<int?> ReadFanRpmAsync(CancellationToken cancellationToken)
+        public Task<FanRpmReadings?> ReadFanRpmAsync(CancellationToken cancellationToken)
         {
             TotalCalls++;
             FanRpmReadCalls++;
             return FanRpmFailure is null
-                ? Task.FromResult(FanRpm)
-                : Task.FromException<int?>(FanRpmFailure);
+                ? Task.FromResult(
+                    FanReadings ?? (FanRpm.HasValue
+                        ? new FanRpmReadings(FanRpm.Value, FanRpm.Value)
+                        : null))
+                : Task.FromException<FanRpmReadings?>(FanRpmFailure);
         }
 
         public Task SetPerformanceAsync(PerformancePreset value, CancellationToken cancellationToken)

@@ -122,7 +122,7 @@ public sealed class ServiceStartupCoordinatorTests : IDisposable
             new MachineProfileBootstrapper(store),
             new PersistentOverrideStore(Path.Combine(directory, "manual-overrides.json")),
             runtime,
-            new FixedTelemetryProvider(),
+            new FixedPowerStateProvider(),
             logger);
     }
 
@@ -153,7 +153,7 @@ public sealed class ServiceStartupCoordinatorTests : IDisposable
             Initialize(configuration, powerSource);
         }
 
-        public Task ObserveAsync(CancellationToken cancellationToken)
+        public Task ObserveAsync(bool includeLiveReadings, CancellationToken cancellationToken)
         {
             Calls.Add("Observe");
             ObserveCount++;
@@ -173,15 +173,11 @@ public sealed class ServiceStartupCoordinatorTests : IDisposable
         public Task RefreshControllerPresenceAsync(CancellationToken cancellationToken) => throw new NotSupportedException();
     }
 
-    private sealed class FixedTelemetryProvider : IPowerTelemetryProvider
+    private sealed class FixedPowerStateProvider : IPowerStateProvider
     {
-        public TelemetrySnapshot Capture() => new(
-            DateTimeOffset.Parse("2026-07-15T12:00:00Z"),
-            PowerSource.PluggedIn,
-            80,
-            null,
-            null,
-            null);
+        public PowerSource CapturePowerSource() => PowerSource.PluggedIn;
+
+        public int? CaptureBatteryPowerFlowMilliwatts() => null;
     }
 
     private sealed class RecordingLogger : ILogger

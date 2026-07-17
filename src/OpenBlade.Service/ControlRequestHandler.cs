@@ -28,8 +28,9 @@ public sealed class ControlRequestHandler(
         return request switch
         {
             GetStatusRequest or SubscribeStatusRequest => Status(request.RequestId),
-            ObserveStateRequest => await ObserveStatusAsync(
-                request.RequestId,
+            ObserveStateRequest observe => await ObserveStatusAsync(
+                observe.RequestId,
+                observe.IncludeLiveReadings,
                 cancellationToken),
             UpdateProfilesRequest update => Result(
                 request.RequestId,
@@ -52,8 +53,9 @@ public sealed class ControlRequestHandler(
             SetFullChargeOverrideRequest set => Result(
                 request.RequestId,
                 await runtime.SetFullChargeOverrideAsync(set.Enabled, cancellationToken)),
-            ExportDiagnosticsRequest => await ExportDiagnosticsAsync(
-                request.RequestId,
+            ExportDiagnosticsRequest export => await ExportDiagnosticsAsync(
+                export.RequestId,
+                export.LiveReadingsEnabled,
                 cancellationToken),
             _ => Failure(request.RequestId, "IPC request operation is unsupported."),
         };
@@ -61,9 +63,10 @@ public sealed class ControlRequestHandler(
 
     private async Task<ServiceResponse> ObserveStatusAsync(
         Guid requestId,
+        bool includeLiveReadings,
         CancellationToken cancellationToken)
     {
-        await runtime.ObserveAsync(cancellationToken);
+        await runtime.ObserveAsync(includeLiveReadings, cancellationToken);
         return Status(requestId);
     }
 
@@ -96,12 +99,13 @@ public sealed class ControlRequestHandler(
 
     private async Task<ServiceResponse> ExportDiagnosticsAsync(
         Guid requestId,
+        bool liveReadingsEnabled,
         CancellationToken cancellationToken)
     {
         try
         {
             DiagnosticArchive archive = await diagnosticArchiveProvider
-                .CreateAsync(cancellationToken);
+                .CreateAsync(liveReadingsEnabled, cancellationToken);
             return Archive(requestId, archive);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)

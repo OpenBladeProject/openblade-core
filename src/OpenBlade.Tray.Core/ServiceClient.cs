@@ -45,22 +45,27 @@ public sealed class ServiceClient : IServiceClient
     }
 
     public async Task<ServiceStatusSnapshot> ObserveStateAsync(
+        bool includeLiveReadings,
         CancellationToken cancellationToken)
     {
         var request = new ObserveStateRequest(
             OpenBladeIpc.ProtocolVersion,
-            Guid.NewGuid());
+            Guid.NewGuid(),
+            includeLiveReadings);
         ServiceResponse response = await SendOnceAsync(request, cancellationToken);
         return response.Status
             ?? throw new InvalidDataException(
                 "Service observation response is missing its status body.");
     }
 
-    public async Task<DiagnosticArchive> ExportDiagnosticsAsync(CancellationToken token)
+    public async Task<DiagnosticArchive> ExportDiagnosticsAsync(
+        bool liveReadingsEnabled,
+        CancellationToken token)
     {
         var request = new ExportDiagnosticsRequest(
             OpenBladeIpc.ProtocolVersion,
-            Guid.NewGuid());
+            Guid.NewGuid(),
+            liveReadingsEnabled);
         ServiceResponse response = await SendOnceAsync(request, token);
         return response.Archive
             ?? throw new InvalidDataException(

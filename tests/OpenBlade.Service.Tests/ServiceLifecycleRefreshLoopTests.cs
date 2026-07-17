@@ -56,7 +56,7 @@ public sealed class ServiceLifecycleRefreshLoopTests
 
     [Theory]
     [InlineData(ServiceLifecycleTrigger.PowerChanged, 1, 0)]
-    [InlineData(ServiceLifecycleTrigger.Resumed, 0, 1)]
+    [InlineData(ServiceLifecycleTrigger.Resumed, 1, 0)]
     [InlineData(ServiceLifecycleTrigger.DeviceArrived, 0, 1)]
     [InlineData(ServiceLifecycleTrigger.DeviceRemoved, 0, 1)]
     public async Task Notification_RoutesToExactlyOneTypedRuntimeOperation(
@@ -161,7 +161,7 @@ public sealed class ServiceLifecycleRefreshLoopTests
         public TaskCompletionSource FirstRefresh { get; } =
             new(TaskCreationOptions.RunContinuationsAsynchronously);
 
-        public Task ObserveAsync(CancellationToken cancellationToken) =>
+        public Task ObserveAsync(bool includeLiveReadings, CancellationToken cancellationToken) =>
             RecordRefreshAsync(Operation.Observe);
 
         public Task HandlePowerSourceChangedAsync(CancellationToken cancellationToken) =>

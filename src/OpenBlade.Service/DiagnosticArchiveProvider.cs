@@ -7,7 +7,9 @@ namespace OpenBlade.Service;
 
 public interface IDiagnosticArchiveProvider
 {
-    Task<DiagnosticArchive> CreateAsync(CancellationToken cancellationToken);
+    Task<DiagnosticArchive> CreateAsync(
+        bool liveReadingsEnabled,
+        CancellationToken cancellationToken);
 }
 
 public sealed record DiagnosticHostMetadata(
@@ -268,7 +270,9 @@ public sealed class DiagnosticArchiveProvider : IDiagnosticArchiveProvider
             ?? throw new ArgumentNullException(nameof(metadataSource));
     }
 
-    public async Task<DiagnosticArchive> CreateAsync(CancellationToken cancellationToken)
+    public async Task<DiagnosticArchive> CreateAsync(
+        bool liveReadingsEnabled,
+        CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
         ServiceStatusSnapshot status = runtime.GetStatus();
@@ -278,7 +282,7 @@ public sealed class DiagnosticArchiveProvider : IDiagnosticArchiveProvider
             metadata.Versions,
             new DiagnosticDeviceIdentity("RZ09-0581", "1532", "02E0", SerialNumber: null),
             CreateCapabilities(status.Capabilities),
-            CreateConfiguration(status),
+            CreateConfiguration(status, liveReadingsEnabled),
             historySnapshot.CommandResults,
             historySnapshot.LogLines,
             metadata.SensitiveTokens);
@@ -322,7 +326,8 @@ public sealed class DiagnosticArchiveProvider : IDiagnosticArchiveProvider
     }
 
     private static IReadOnlyDictionary<string, string> CreateConfiguration(
-        ServiceStatusSnapshot status)
+        ServiceStatusSnapshot status,
+        bool liveReadingsEnabled)
     {
         DeviceCapabilities capabilities = status.Capabilities ?? DeviceCapabilities.Unavailable();
         ConfirmedDeviceState? confirmed = status.ConfirmedState;
@@ -336,7 +341,9 @@ public sealed class DiagnosticArchiveProvider : IDiagnosticArchiveProvider
                 status.ControllerDetectionWarning ?? "Unavailable",
             ["status.externalChanges"] = string.Join(", ", status.ExternalChanges),
             ["status.message"] = status.Message,
-            ["power.source"] = status.Telemetry.PowerSource.ToString(),
+            ["power.source"] = status.ActivePowerSource.ToString(),
+            ["liveReadings.enabled"] = liveReadingsEnabled.ToString(),
+            ["liveReadings.available"] = HasAnyLiveReading(status.LiveReadings).ToString(),
             ["profile.pluggedIn.performance"] = status.Profiles.PluggedIn.Performance.ToString(),
             ["profile.pluggedIn.fans"] = status.Profiles.PluggedIn.Fans.ToString(),
             ["profile.battery.performance"] = status.Profiles.Battery.Performance.ToString(),
@@ -364,13 +371,6 @@ public sealed class DiagnosticArchiveProvider : IDiagnosticArchiveProvider
             ["confirmed.lighting.effect"] = EnumOrUnavailable(confirmed?.Lighting?.Effect),
             ["confirmed.lighting.brightness"] = NumberOrUnavailable(
                 confirmed?.Lighting?.Brightness),
-            ["telemetry.capturedAt"] = status.Telemetry.CapturedAt.ToUniversalTime().ToString("O"),
-            ["telemetry.batteryPercent"] = NumberOrUnavailable(status.Telemetry.BatteryPercent),
-            ["telemetry.cpuTemperatureCelsius"] = NumberOrUnavailable(
-                status.Telemetry.CpuTemperatureCelsius),
-            ["telemetry.gpuTemperatureCelsius"] = NumberOrUnavailable(
-                status.Telemetry.GpuTemperatureCelsius),
-            ["telemetry.fanRpm"] = NumberOrUnavailable(status.Telemetry.FanRpm),
             ["capability.chargeLimits"] = string.Join(
                 ", ",
                 capabilities.ChargeLimits.Order()),
@@ -391,6 +391,12 @@ public sealed class DiagnosticArchiveProvider : IDiagnosticArchiveProvider
 
         return configuration;
     }
+
+    private static bool HasAnyLiveReading(LiveReadings? readings) =>
+        readings is not null
+        && (readings.BatteryPowerFlowMilliwatts is not null
+            || readings.Fan1Rpm is not null
+            || readings.Fan2Rpm is not null);
 
     private static string NumberOrUnavailable<T>(T? value)
         where T : struct, IFormattable => value?.ToString(null, System.Globalization.CultureInfo.InvariantCulture)

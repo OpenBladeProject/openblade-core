@@ -6,7 +6,7 @@ public sealed class ServiceStartupCoordinator(
     MachineProfileBootstrapper profileBootstrapper,
     PersistentOverrideStore overrideStore,
     IServiceControlRuntime runtime,
-    IPowerTelemetryProvider telemetryProvider,
+    IPowerStateProvider powerStateProvider,
     ILogger logger)
 {
     public async Task<bool> InitializeAsync(CancellationToken cancellationToken)
@@ -28,13 +28,13 @@ public sealed class ServiceStartupCoordinator(
         }
 
         cancellationToken.ThrowIfCancellationRequested();
-        PowerSource powerSource = telemetryProvider.Capture().PowerSource;
+        PowerSource powerSource = powerStateProvider.CapturePowerSource();
         cancellationToken.ThrowIfCancellationRequested();
         runtime.Initialize(configuration, powerSource, persistentOverrides.Overrides);
 
         try
         {
-            await runtime.ObserveAsync(cancellationToken);
+            await runtime.ObserveAsync(includeLiveReadings: false, cancellationToken);
         }
         catch (OperationCanceledException)
         {

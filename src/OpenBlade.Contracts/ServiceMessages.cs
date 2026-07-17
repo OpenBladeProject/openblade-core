@@ -29,13 +29,19 @@ public abstract record ServiceRequest(int Version, Guid RequestId);
 public sealed record GetStatusRequest(int Version, Guid RequestId)
     : ServiceRequest(Version, RequestId);
 
-public sealed record ObserveStateRequest(int Version, Guid RequestId)
+public sealed record ObserveStateRequest(
+    int Version,
+    Guid RequestId,
+    bool IncludeLiveReadings)
     : ServiceRequest(Version, RequestId);
 
 public sealed record SubscribeStatusRequest(int Version, Guid RequestId)
     : ServiceRequest(Version, RequestId);
 
-public sealed record ExportDiagnosticsRequest(int Version, Guid RequestId)
+public sealed record ExportDiagnosticsRequest(
+    int Version,
+    Guid RequestId,
+    bool LiveReadingsEnabled)
     : ServiceRequest(Version, RequestId);
 
 public sealed record UpdateProfilesRequest(int Version, Guid RequestId, ProfileSet Profiles)
@@ -83,7 +89,8 @@ public sealed record ServiceStatusSnapshot(
     ConfirmedDeviceState? ConfirmedState,
     ProfileSet Profiles,
     DesiredDeviceState DesiredState,
-    TelemetrySnapshot Telemetry,
+    PowerSource ActivePowerSource,
+    LiveReadings? LiveReadings,
     ManualOverride<PerformancePreset>? PerformanceOverride,
     ManualOverride<FanMode>? FanOverride,
     ManualOverride<LightingSettings>? LightingOverride,

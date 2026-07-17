@@ -9,7 +9,7 @@ public sealed class Worker(
     IStatusSubscriptionHub subscriptionHub,
     MachineProfileBootstrapper profileBootstrapper,
     PersistentOverrideStore overrideStore,
-    IPowerTelemetryProvider telemetryProvider,
+    IPowerStateProvider powerStateProvider,
     IServiceLifecycleEventSource lifecycleEventSource,
     ILogger<Worker> logger) : BackgroundService
 {
@@ -21,7 +21,7 @@ public sealed class Worker(
             profileBootstrapper,
             overrideStore,
             runtime,
-            telemetryProvider,
+            powerStateProvider,
             logger);
         return RunAfterSuccessfulStartupAsync(
             startupCoordinator.InitializeAsync,

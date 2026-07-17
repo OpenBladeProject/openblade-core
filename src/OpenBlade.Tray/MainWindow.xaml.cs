@@ -14,8 +14,8 @@ namespace OpenBlade.Tray;
 
 public sealed partial class MainWindow : Window, IAsyncDisposable
 {
-    private const double InitialWidthDip = 520;
-    private const double InitialHeightDip = 760;
+    private const double InitialWidthDip = 840;
+    private const double InitialHeightDip = 720;
 
     private readonly DispatcherQueue dispatcherQueue;
     private readonly MicaBackdropHost micaBackdropHost;
@@ -113,12 +113,14 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
     {
         ThemePreference initialTheme = ThemePreference.FollowWindows;
         bool keepManualChangesUntilCleared = false;
+        bool liveReadingsEnabled = true;
         try
         {
             UiPreferences preferences = await preferenceStore.LoadAsync();
             ThemeSelectionPolicy.Resolve(preferences.Theme);
             initialTheme = preferences.Theme;
             keepManualChangesUntilCleared = preferences.KeepManualChangesUntilCleared;
+            liveReadingsEnabled = preferences.LiveReadingsEnabled;
         }
         catch (Exception exception)
         {
@@ -134,6 +136,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
 
         ViewModel.Theme = initialTheme;
         ViewModel.KeepManualChangesUntilCleared = keepManualChangesUntilCleared;
+        ViewModel.LiveReadingsEnabled = liveReadingsEnabled;
         try
         {
             ThemeManager.Apply(Root, ViewModel.Theme);
@@ -195,9 +198,14 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
             return;
         }
 
-        if (args.PropertyName == nameof(MainViewModel.KeepManualChangesUntilCleared))
+        if (args.PropertyName is nameof(MainViewModel.KeepManualChangesUntilCleared)
+            or nameof(MainViewModel.LiveReadingsEnabled))
         {
             QueuePreferenceSave();
+            if (args.PropertyName == nameof(MainViewModel.LiveReadingsEnabled))
+            {
+                visibleObservationLoop.StartOrWake();
+            }
         }
     }
 
@@ -227,7 +235,8 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
         {
             preferenceSaveQueue.Enqueue(new UiPreferences(
                 ViewModel.Theme,
-                ViewModel.KeepManualChangesUntilCleared));
+                ViewModel.KeepManualChangesUntilCleared,
+                ViewModel.LiveReadingsEnabled));
         }
         catch (ObjectDisposedException)
         {
@@ -319,6 +328,23 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
             toggle.IsOn = ViewModel.StartAtSignIn;
             toggle.IsEnabled = true;
         }
+    }
+
+    private void OnNavigationSelectionChanged(
+        NavigationView sender,
+        NavigationViewSelectionChangedEventArgs args)
+    {
+        string destination = (args.SelectedItemContainer as NavigationViewItem)?.Tag as string
+            ?? "home";
+        HomePage.Visibility = destination == "home"
+            ? Visibility.Visible
+            : Visibility.Collapsed;
+        ProfilesPage.Visibility = destination == "profiles"
+            ? Visibility.Visible
+            : Visibility.Collapsed;
+        SettingsPage.Visibility = destination == "settings"
+            ? Visibility.Visible
+            : Visibility.Collapsed;
     }
 
     [DllImport("user32.dll")]

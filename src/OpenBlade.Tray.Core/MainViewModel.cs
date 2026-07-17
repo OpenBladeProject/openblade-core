@@ -31,8 +31,8 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     private bool canControlHardware;
     private string connectionStatus = "Service unavailable";
     private string operationStatusMessage = string.Empty;
-    private string telemetryStatus = "Telemetry unavailable";
-    private string controlAccessStatus = "Service disconnected · hardware controls disabled";
+    private string operationFeedbackMessage = string.Empty;
+    private string controlAccessStatus = "OpenBlade service isn’t running";
     private string activePowerSourceLabel = "Power source unavailable";
     private string performanceSourceLabel = "Unavailable";
     private string fanSourceLabel = "Unavailable";
@@ -55,13 +55,15 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     private FanMode selectedFanMode = FanMode.Automatic;
     private LightingSettings selectedLighting = ProfileDefaults.CreateSafeDefaults().PluggedIn.Lighting;
     private int chargeLimitPercent = 80;
+    private string currentBatterySettingLabel = "Battery setting unavailable";
     private bool chargeLimitEditorDirty;
     private IReadOnlyList<int> chargeLimitOptions = [];
     private bool batteryProtectionEnabled = true;
     private bool fullChargeOverride;
     private bool temporaryFullChargeStateKnown;
     private DeviceCapabilities capabilities = DeviceCapabilities.Unavailable();
-    private TelemetrySnapshot? telemetry;
+    private PowerSource activePowerSource = PowerSource.PluggedIn;
+    private LiveReadings? liveReadings;
     private ManualOverride<PerformancePreset>? performanceOverride;
     private ManualOverride<FanMode>? fanOverride;
     private ManualOverride<LightingSettings>? lightingOverride;
@@ -82,6 +84,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     private bool lightingEditorDirty;
     private ThemePreference theme = ThemePreference.FollowWindows;
     private bool keepManualChangesUntilCleared;
+    private bool liveReadingsEnabled = true;
     private bool startAtSignIn;
     private bool startupStateKnown;
     private string startupStatusMessage = string.Empty;
@@ -201,7 +204,15 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     public bool IsConnected
     {
         get => isConnected;
-        private set => SetField(ref isConnected, value);
+        private set
+        {
+            if (isConnected == value)
+            {
+                return;
+            }
+            SetField(ref isConnected, value);
+            NotifyPresentationState();
+        }
     }
 
     public bool IsReadOnly
@@ -213,48 +224,128 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     public bool CanControlHardware
     {
         get => canControlHardware;
-        private set => SetField(ref canControlHardware, value);
+        private set
+        {
+            if (canControlHardware == value)
+            {
+                return;
+            }
+            SetField(ref canControlHardware, value);
+            NotifyPresentationState();
+        }
     }
 
     public string ConnectionStatus
     {
         get => connectionStatus;
-        private set => SetField(ref connectionStatus, value);
+        private set
+        {
+            if (connectionStatus == value)
+            {
+                return;
+            }
+            SetField(ref connectionStatus, value);
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(TroubleshootingDetails)));
+        }
     }
 
     public string OperationStatusMessage
     {
         get => operationStatusMessage;
-        private set => SetField(ref operationStatusMessage, value);
+        private set
+        {
+            if (operationStatusMessage == value)
+            {
+                return;
+            }
+            SetField(ref operationStatusMessage, value);
+            OperationFeedbackMessage = FormatOperationFeedback(value);
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(TroubleshootingDetails)));
+        }
     }
 
-    public string TelemetryStatus
+    public string OperationFeedbackMessage
     {
-        get => telemetryStatus;
-        private set => SetField(ref telemetryStatus, value);
+        get => operationFeedbackMessage;
+        private set
+        {
+            if (operationFeedbackMessage == value)
+            {
+                return;
+            }
+            SetField(ref operationFeedbackMessage, value);
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasOperationFeedback)));
+        }
     }
+
+    public bool HasOperationFeedback => !string.IsNullOrWhiteSpace(OperationFeedbackMessage);
 
     public string ControlAccessStatus
     {
         get => controlAccessStatus;
-        private set => SetField(ref controlAccessStatus, value);
+        private set
+        {
+            if (controlAccessStatus == value)
+            {
+                return;
+            }
+            SetField(ref controlAccessStatus, value);
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(TroubleshootingDetails)));
+        }
     }
 
-    public string PowerAndBatteryTelemetryLabel => FormatPowerAndBatteryTelemetry(Telemetry);
+    public string BatteryPowerFlowLabel => FormatBatteryPowerFlow(
+        LiveReadings,
+        ActivePowerSource);
 
-    public string CpuTelemetryLabel => FormatTemperature(Telemetry?.CpuTemperatureCelsius);
+    public string Fan1RpmLabel => FormatFanRpm("Fan 1", LiveReadings?.Fan1Rpm);
 
-    public string GpuTelemetryLabel => FormatTemperature(Telemetry?.GpuTemperatureCelsius);
-
-    public string FanTelemetryLabel => Telemetry?.FanRpm is int value
-        ? $"{value.ToString(CultureInfo.InvariantCulture)} RPM"
-        : "Unavailable";
+    public string Fan2RpmLabel => FormatFanRpm("Fan 2", LiveReadings?.Fan2Rpm);
 
     public string ActivePowerSourceLabel
     {
         get => activePowerSourceLabel;
         private set => SetField(ref activePowerSourceLabel, value);
     }
+
+    public PowerSource ActivePowerSource
+    {
+        get => activePowerSource;
+        private set
+        {
+            if (activePowerSource == value)
+            {
+                return;
+            }
+
+            SetField(ref activePowerSource, value);
+            PropertyChanged?.Invoke(
+                this,
+                new PropertyChangedEventArgs(nameof(IsPluggedInProfileActive)));
+            PropertyChanged?.Invoke(
+                this,
+                new PropertyChangedEventArgs(nameof(BatteryPowerFlowLabel)));
+            NotifyCommands();
+        }
+    }
+
+    public bool IsPluggedInProfileActive => ActivePowerSource == PowerSource.PluggedIn;
+
+    public string ActivePerformanceLabel => SelectedPerformance.ToString();
+
+    public string ActiveFanModeLabel => $"{SelectedFanMode} fans";
+
+    public string ProfileStateLabel => !IsConnected
+        ? "Service unavailable"
+        : HasExternalChanges
+            ? "Changed by another app"
+            : FullChargeOverride
+                ? "Charging to 100%"
+            : HasActiveChanges
+                ? "Quick change"
+                : CanControlHardware
+                    ? "Ready"
+                    : "Waiting for the laptop";
 
     public string PerformanceSourceLabel
     {
@@ -307,13 +398,103 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     public bool HasExternalChanges
     {
         get => hasExternalChanges;
-        private set => SetField(ref hasExternalChanges, value);
+        private set
+        {
+            if (hasExternalChanges == value)
+            {
+                return;
+            }
+            SetField(ref hasExternalChanges, value);
+            NotifyPresentationState();
+        }
     }
 
     public string ExternalChangesText
     {
         get => externalChangesText;
         private set => SetField(ref externalChangesText, value);
+    }
+
+    public bool HasAttention => !IsConnected
+        || IsReadOnly
+        || HasControllerAdvisory
+        || HasControllerDetectionWarning
+        || HasExternalChanges;
+
+    public bool ShouldExpandAttention => !IsConnected || IsReadOnly;
+
+    public string AttentionSummary
+    {
+        get
+        {
+            if (!IsConnected)
+            {
+                return "OpenBlade service isn’t running";
+            }
+            if (IsReadOnly)
+            {
+                return "OpenBlade is waiting for the laptop";
+            }
+            if (HasExternalChanges)
+            {
+                return "Settings changed by another app";
+            }
+            if (HasControllerDetectionWarning)
+            {
+                return "Controller detection needs attention";
+            }
+            return "Another Razer app is running";
+        }
+    }
+
+    public string AttentionDetails
+    {
+        get
+        {
+            List<string> details = [];
+            if (!IsConnected || IsReadOnly)
+            {
+                details.Add(ControlAccessStatus);
+            }
+            if (HasExternalChanges)
+            {
+                details.Add(ExternalChangesText);
+            }
+            if (HasControllerAdvisory)
+            {
+                details.Add("Another Razer app can also change these settings. OpenBlade will show changes instead of changing them back.");
+            }
+            if (HasControllerDetectionWarning)
+            {
+                details.Add("OpenBlade could not check every Razer controller. Controls remain available only when the laptop is verified.");
+            }
+            return string.Join("\n", details);
+        }
+    }
+
+    public string TroubleshootingDetails
+    {
+        get
+        {
+            List<string> details =
+            [
+                $"Service: {ConnectionStatus}",
+                $"Controls: {ControlAccessStatus}",
+            ];
+            if (HasControllerAdvisory)
+            {
+                details.Add($"Detected controllers: {ControllerAdvisoryText}");
+            }
+            if (HasControllerDetectionWarning)
+            {
+                details.Add($"Controller detection: {ControllerDetectionWarningText}");
+            }
+            if (!string.IsNullOrWhiteSpace(OperationStatusMessage))
+            {
+                details.Add($"Last operation: {OperationStatusMessage}");
+            }
+            return string.Join("\n", details);
+        }
     }
 
     public IReadOnlyList<PerformancePreset> AvailablePerformancePresets
@@ -355,7 +536,16 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     public bool IsLightingVisible
     {
         get => isLightingVisible;
-        private set => SetField(ref isLightingVisible, value);
+        private set
+        {
+            if (isLightingVisible == value)
+            {
+                return;
+            }
+            SetField(ref isLightingVisible, value);
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasActiveChanges)));
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ActiveChangesText)));
+        }
     }
 
     public bool IsProfileControlVisible =>
@@ -364,13 +554,38 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     public PerformancePreset SelectedPerformance
     {
         get => selectedPerformance;
-        private set => SetField(ref selectedPerformance, value);
+        private set
+        {
+            if (selectedPerformance == value)
+            {
+                return;
+            }
+            SetField(ref selectedPerformance, value);
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ActivePerformanceLabel)));
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsSilentSelected)));
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsBalancedSelected)));
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsPerformanceSelected)));
+        }
     }
+
+    public bool IsSilentSelected => SelectedPerformance == PerformancePreset.Silent;
+
+    public bool IsBalancedSelected => SelectedPerformance == PerformancePreset.Balanced;
+
+    public bool IsPerformanceSelected => SelectedPerformance == PerformancePreset.Performance;
 
     public FanMode SelectedFanMode
     {
         get => selectedFanMode;
-        private set => SetField(ref selectedFanMode, value);
+        private set
+        {
+            if (selectedFanMode == value)
+            {
+                return;
+            }
+            SetField(ref selectedFanMode, value);
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ActiveFanModeLabel)));
+        }
     }
 
     public LightingSettings SelectedLighting
@@ -393,6 +608,12 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             SetField(ref chargeLimitPercent, value);
             NotifyCommands();
         }
+    }
+
+    public string CurrentBatterySettingLabel
+    {
+        get => currentBatterySettingLabel;
+        private set => SetField(ref currentBatterySettingLabel, value);
     }
 
     public IReadOnlyList<int> ChargeLimitOptions
@@ -439,6 +660,9 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             PropertyChanged?.Invoke(
                 this,
                 new PropertyChangedEventArgs(nameof(FullChargeActionLabel)));
+            PropertyChanged?.Invoke(
+                this,
+                new PropertyChangedEventArgs(nameof(ProfileStateLabel)));
         }
     }
 
@@ -468,30 +692,21 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         }
     }
 
-    public TelemetrySnapshot? Telemetry
+    public LiveReadings? LiveReadings
     {
-        get => telemetry;
+        get => liveReadings;
         private set
         {
-            if (EqualityComparer<TelemetrySnapshot?>.Default.Equals(telemetry, value))
+            if (EqualityComparer<LiveReadings?>.Default.Equals(liveReadings, value))
             {
                 return;
             }
 
-            telemetry = value;
-            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Telemetry)));
-            PropertyChanged?.Invoke(
-                this,
-                new PropertyChangedEventArgs(nameof(PowerAndBatteryTelemetryLabel)));
-            PropertyChanged?.Invoke(
-                this,
-                new PropertyChangedEventArgs(nameof(CpuTelemetryLabel)));
-            PropertyChanged?.Invoke(
-                this,
-                new PropertyChangedEventArgs(nameof(GpuTelemetryLabel)));
-            PropertyChanged?.Invoke(
-                this,
-                new PropertyChangedEventArgs(nameof(FanTelemetryLabel)));
+            liveReadings = value;
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(LiveReadings)));
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(BatteryPowerFlowLabel)));
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Fan1RpmLabel)));
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Fan2RpmLabel)));
         }
     }
 
@@ -524,6 +739,25 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             return active.Count == 0
                 ? "No manual overrides active."
                 : string.Join(" | ", active);
+        }
+    }
+
+    public bool HasActiveChanges => PerformanceOverride is not null
+        || FanOverride is not null
+        || (IsLightingVisible && LightingOverride is not null);
+
+    public string ActiveChangesText
+    {
+        get
+        {
+            List<string> active = [];
+            AddOverrideStatus(active, "Performance", PerformanceOverride);
+            AddOverrideStatus(active, "Fans", FanOverride);
+            if (IsLightingVisible)
+            {
+                AddOverrideStatus(active, "Keyboard lighting", LightingOverride);
+            }
+            return string.Join(" · ", active);
         }
     }
 
@@ -630,6 +864,23 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     public OverrideLifetime SelectedOverrideLifetime => KeepManualChangesUntilCleared
         ? OverrideLifetime.Persistent
         : OverrideLifetime.UntilPowerSourceChange;
+
+    public bool LiveReadingsEnabled
+    {
+        get => liveReadingsEnabled;
+        set
+        {
+            if (liveReadingsEnabled == value)
+            {
+                return;
+            }
+            SetField(ref liveReadingsEnabled, value);
+            if (!value)
+            {
+                LiveReadings = null;
+            }
+        }
+    }
 
     public bool StartAtSignIn
     {
@@ -740,7 +991,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             ? requested
             : !temporaryFullCharge;
         return enable != temporaryFullCharge
-            && (!enable || Telemetry?.PowerSource == PowerSource.PluggedIn);
+            && (!enable || ActivePowerSource == PowerSource.PluggedIn);
     }
 
     private bool CanToggleBatteryProtection(object? parameter)
@@ -824,7 +1075,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         try
         {
             ServiceStatusSnapshot status = await serviceClient
-                .ObserveStateAsync(cancellationToken);
+                .ObserveStateAsync(LiveReadingsEnabled, cancellationToken);
             await dispatcher.InvokeAsync(
                 () => ApplyObservedStatus(status, stamp),
                 cancellationToken);
@@ -968,12 +1219,14 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         }
         BatteryProtectionEnabled = confirmed?.Battery?.ProtectionEnabled
             ?? status.DesiredState.Battery.ProtectionEnabled;
+        CurrentBatterySettingLabel = FormatCurrentBatterySetting(confirmed?.Battery);
         SetTemporaryFullChargeState(confirmed?.Battery?.TemporaryFullCharge);
-        Telemetry = status.Telemetry;
+        ActivePowerSource = status.ActivePowerSource;
+        LiveReadings = LiveReadingsEnabled ? status.LiveReadings : null;
         PerformanceOverride = status.PerformanceOverride;
         FanOverride = status.FanOverride;
         LightingOverride = status.LightingOverride;
-        ActivePowerSourceLabel = status.Telemetry.PowerSource == PowerSource.Battery
+        ActivePowerSourceLabel = status.ActivePowerSource == PowerSource.Battery
             ? "Battery profile"
             : "Plugged-in profile";
         PerformanceSourceLabel = SourceLabel(
@@ -991,8 +1244,6 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         BatterySourceLabel = FormatBatterySource(
             confirmed?.Battery,
             externalChanges.Contains(DeviceSubsystem.Battery));
-        TelemetryStatus = FormatTelemetry(status.Telemetry);
-
         PerformancePreset[] performancePresets = capabilities.PerformancePresets
             .Where(Enum.IsDefined)
             .Order()
@@ -1041,6 +1292,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             this,
             new PropertyChangedEventArgs(nameof(IsProfileControlVisible)));
         NotifyCommands();
+        NotifyPresentationState();
     }
 
     private void MarkDisconnected() => MarkDisconnected("Service disconnected");
@@ -1054,8 +1306,9 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         IsReadOnly = true;
         CanControlHardware = false;
         ConnectionStatus = message;
-        ControlAccessStatus = "Service disconnected · hardware controls disabled";
+        ControlAccessStatus = "OpenBlade service isn’t running";
         NotifyCommands();
+        NotifyPresentationState();
     }
 
     private void ApplyObservedStatus(
@@ -1429,6 +1682,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
                 () =>
                 {
                     OperationStatusMessage = result.Message;
+                    OperationFeedbackMessage = FormatOperationResult(result);
                     onCompleted?.Invoke(result);
                 },
                 token);
@@ -1454,7 +1708,9 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             await dispatcher.InvokeAsync(
                 () => OperationStatusMessage = "Preparing diagnostic export...",
                 token);
-            DiagnosticArchive archive = await serviceClient.ExportDiagnosticsAsync(token);
+            DiagnosticArchive archive = await serviceClient.ExportDiagnosticsAsync(
+                LiveReadingsEnabled,
+                token);
             DiagnosticArchiveSaveResult result = await diagnosticArchiveSaver.SaveAsync(
                 archive,
                 token);
@@ -1587,10 +1843,10 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         bool confirmed,
         IReadOnlyCollection<DeviceSubsystem> externalChanges) =>
         externalChanges.Contains(subsystem)
-            ? "Changed outside OpenBlade"
+            ? "Changed by another app"
             : confirmed
-                ? "Confirmed device state"
-                : "Desired intent (not confirmed)";
+                ? "Current setting"
+                : "Waiting for the laptop";
 
     private static string FormatBatterySource(
         ConfirmedBatteryState? battery,
@@ -1598,7 +1854,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     {
         if (battery is null)
         {
-            return "Desired intent (not confirmed)";
+            return "Waiting for the laptop";
         }
 
         string state = battery.TemporaryFullCharge switch
@@ -1609,58 +1865,111 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             _ => $"Charge limit {battery.ChargeLimitPercent}%",
         };
         string source = changedOutside
-            ? "Changed outside OpenBlade"
-            : "Confirmed device state";
+            ? "Changed by another app"
+            : "Current setting";
         return $"{source} · {state}";
     }
 
-    private static string FormatTelemetry(TelemetrySnapshot telemetry)
-    {
-        string cpu = telemetry.CpuTemperatureCelsius is double cpuValue
-            ? $"CPU {cpuValue.ToString("0.#", CultureInfo.InvariantCulture)} °C"
-            : "CPU unavailable";
-        string gpu = telemetry.GpuTemperatureCelsius is double gpuValue
-            ? $"GPU {gpuValue.ToString("0.#", CultureInfo.InvariantCulture)} °C"
-            : "GPU unavailable";
-        string fans = telemetry.FanRpm is int fanValue
-            ? $"Fans {fanValue.ToString(CultureInfo.InvariantCulture)} RPM"
-            : "Fans unavailable";
-        string battery = telemetry.BatteryPercent is int batteryValue
-            ? $"Battery {batteryValue.ToString(CultureInfo.InvariantCulture)}%"
-            : "Battery unavailable";
-        return string.Join(" · ", cpu, gpu, fans, battery);
-    }
-
-    private static string FormatPowerAndBatteryTelemetry(TelemetrySnapshot? telemetry)
-    {
-        if (telemetry is null)
+    private static string FormatCurrentBatterySetting(ConfirmedBatteryState? battery) =>
+        battery switch
         {
-            return "Unavailable";
-        }
+            null => "Battery setting unavailable",
+            { TemporaryFullCharge: true } => "Charging to 100%",
+            { ProtectionEnabled: false } => "Battery protection off",
+            _ => $"Charge limit {battery.ChargeLimitPercent}%",
+        };
 
-        string source = telemetry.PowerSource == PowerSource.Battery
-            ? "Battery"
-            : "Plugged in";
-        string battery = telemetry.BatteryPercent is int value
-            ? $"{value.ToString(CultureInfo.InvariantCulture)}%"
-            : "Unavailable";
-        return $"{source} · {battery}";
+    private static string FormatBatteryPowerFlow(
+        LiveReadings? readings,
+        PowerSource powerSource)
+    {
+        if (readings?.BatteryPowerFlowMilliwatts is not int milliwatts)
+        {
+            return "Battery power unavailable";
+        }
+        if (milliwatts == 0)
+        {
+            return powerSource == PowerSource.PluggedIn
+                ? "Not charging"
+                : "Battery power unavailable";
+        }
+        double watts = Math.Abs((long)milliwatts) / 1000d;
+        string value = watts.ToString("0.0", CultureInfo.InvariantCulture);
+        return milliwatts > 0
+            ? $"Charging at {value} W"
+            : $"Using {value} W";
     }
 
-    private static string FormatTemperature(double? temperature) => temperature is double value
-        ? $"{value.ToString("0.#", CultureInfo.InvariantCulture)} °C"
-        : "Unavailable";
+    private static string FormatFanRpm(string label, int? rpm) => rpm is int value
+        ? $"{label}: {value.ToString("N0", CultureInfo.CurrentCulture)} RPM"
+        : $"{label}: unavailable";
 
     private static string FormatControlAccessStatus(ServiceStatusSnapshot status)
     {
         if (!status.DeviceVerified)
         {
-            return "Target not verified · hardware controls disabled";
+            return "This Blade isn’t supported";
         }
 
         return status.WritesBlocked
-            ? "Read-only · hardware writes blocked"
-            : "Target verified · hardware controls available";
+            ? "OpenBlade is waiting for the laptop"
+            : "Ready";
+    }
+
+    private static string FormatOperationFeedback(string message)
+    {
+        if (string.IsNullOrWhiteSpace(message))
+        {
+            return string.Empty;
+        }
+        if (message.Contains("Preparing diagnostic", StringComparison.OrdinalIgnoreCase)
+            || message.Contains("diagnostic", StringComparison.OrdinalIgnoreCase)
+                && message.Contains("saved", StringComparison.OrdinalIgnoreCase))
+        {
+            return message;
+        }
+        if (message.Contains("already", StringComparison.OrdinalIgnoreCase))
+        {
+            return "That setting is already active.";
+        }
+        if (message.Contains("overrides cleared", StringComparison.OrdinalIgnoreCase))
+        {
+            return "Profile settings restored.";
+        }
+        if (message.Contains("without hardware", StringComparison.OrdinalIgnoreCase)
+            || message.Contains("not applied", StringComparison.OrdinalIgnoreCase))
+        {
+            return "OpenBlade saved the change, but the laptop has not applied it.";
+        }
+        if (message.Contains("failed", StringComparison.OrdinalIgnoreCase)
+            || message.Contains("could not", StringComparison.OrdinalIgnoreCase)
+            || message.Contains("unavailable", StringComparison.OrdinalIgnoreCase))
+        {
+            return "OpenBlade couldn’t complete that action. Check Troubleshooting for details.";
+        }
+        return "Change applied.";
+    }
+
+    private static string FormatOperationResult(ControlOperationResult result) => result.Status switch
+    {
+        ControlOperationStatus.Applied => result.Message.Contains(
+            "already",
+            StringComparison.OrdinalIgnoreCase)
+                ? "That setting is already active."
+                : "Change applied.",
+        ControlOperationStatus.Stored => "Change saved. It will apply when the laptop is ready.",
+        ControlOperationStatus.Blocked => "OpenBlade saved the change, but the laptop has not applied it.",
+        _ => "OpenBlade couldn’t complete that action. Check Troubleshooting for details.",
+    };
+
+    private void NotifyPresentationState()
+    {
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ProfileStateLabel)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasAttention)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ShouldExpandAttention)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(AttentionSummary)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(AttentionDetails)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(TroubleshootingDetails)));
     }
 
     private void SetField<T>(
@@ -1690,6 +1999,9 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         field = value;
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ManualOverrideStatus)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasActiveChanges)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ActiveChangesText)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ProfileStateLabel)));
     }
 
     private static void AddOverrideStatus<T>(
@@ -1703,9 +2015,9 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         }
 
         string lifetime = value.Lifetime == OverrideLifetime.Persistent
-            ? "until cleared"
-            : "until power source changes";
-        status.Add($"{subsystem}: {value.Value} ({lifetime})");
+            ? "until reset"
+            : "until the power source changes";
+        status.Add($"{subsystem}: {value.Value} {lifetime}");
     }
 
     private void SetEditorField<T>(

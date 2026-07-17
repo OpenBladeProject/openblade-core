@@ -29,7 +29,10 @@ public sealed class ControlRequestHandlerTests
                 Guid.NewGuid(),
                 Enabled: false),
             new SetFullChargeOverrideRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid(), true),
-            new ExportDiagnosticsRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid()),
+            new ExportDiagnosticsRequest(
+                OpenBladeIpc.ProtocolVersion,
+                Guid.NewGuid(),
+                LiveReadingsEnabled: true),
         ];
         string[] expectedCalls =
         [
@@ -146,7 +149,10 @@ public sealed class ControlRequestHandlerTests
         var runtime = new RecordingRuntime();
         var archives = new FailingArchiveProvider();
         var handler = new ControlRequestHandler(runtime, archives);
-        var request = new ExportDiagnosticsRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid());
+        var request = new ExportDiagnosticsRequest(
+            OpenBladeIpc.ProtocolVersion,
+            Guid.NewGuid(),
+            LiveReadingsEnabled: false);
 
         ServiceResponse response = await handler.HandleAsync(request, CancellationToken.None);
 
@@ -162,7 +168,10 @@ public sealed class ControlRequestHandlerTests
     {
         var runtime = new RecordingRuntime();
         var handler = new ControlRequestHandler(runtime, new ThrowingArchiveProvider());
-        var request = new ObserveStateRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid());
+        var request = new ObserveStateRequest(
+            OpenBladeIpc.ProtocolVersion,
+            Guid.NewGuid(),
+            IncludeLiveReadings: true);
 
         ServiceResponse response = await handler.HandleAsync(
             request,
@@ -170,6 +179,7 @@ public sealed class ControlRequestHandlerTests
 
         Assert.True(response.Success);
         Assert.Equal(["Observe", "GetStatus"], runtime.Calls);
+        Assert.True(runtime.LastIncludeLiveReadings);
         Assert.Equal(1, response.Status!.Revision);
         Assert.Null(response.Result);
     }
@@ -193,7 +203,8 @@ public sealed class ControlRequestHandlerTests
                     new ResolvedSetting<FanMode>(FanMode.Automatic, SettingValueSource.PowerProfile),
                     new ResolvedSetting<LightingSettings>(profiles.PluggedIn.Lighting, SettingValueSource.PowerProfile),
                     new DesiredBatteryState(profiles.BatteryPolicy, true, false)),
-                new TelemetrySnapshot(DateTimeOffset.UnixEpoch, PowerSource.PluggedIn, null, null, null, null),
+                PowerSource.PluggedIn,
+                new LiveReadings(-18_000, 2_400, 2_500),
                 null, null, null, false);
         }
 
@@ -218,9 +229,14 @@ public sealed class ControlRequestHandlerTests
         public Task<ControlOperationResult> SetFullChargeOverrideAsync(bool enabled, CancellationToken token) =>
             Record("SetFullChargeOverride");
 
-        public Task ObserveAsync(CancellationToken cancellationToken)
+        public bool LastIncludeLiveReadings { get; private set; }
+
+        public Task ObserveAsync(
+            bool includeLiveReadings,
+            CancellationToken cancellationToken)
         {
             Calls.Add("Observe");
+            LastIncludeLiveReadings = includeLiveReadings;
             revision++;
             return Task.CompletedTask;
         }
@@ -240,15 +256,11 @@ public sealed class ControlRequestHandlerTests
         public ControllerPresenceObservation Observe() => new(controllers, null);
     }
 
-    private sealed class FixedTelemetry : IPowerTelemetryProvider
+    private sealed class FixedTelemetry : IPowerStateProvider
     {
-        public TelemetrySnapshot Capture() => new(
-            DateTimeOffset.UnixEpoch,
-            PowerSource.PluggedIn,
-            80,
-            null,
-            null,
-            null);
+        public PowerSource CapturePowerSource() => PowerSource.PluggedIn;
+
+        public int? CaptureBatteryPowerFlowMilliwatts() => null;
     }
 
     private sealed class NullHub : IStatusSubscriptionHub
@@ -275,7 +287,8 @@ public sealed class ControlRequestHandlerTests
         public int Calls { get; private set; }
         public Task<DeviceCapabilities> ReadCapabilitiesAsync(CancellationToken cancellationToken) => Count(DeviceCapabilities.Unavailable());
         public Task<ConfirmedDeviceState> ReadStateAsync(CancellationToken cancellationToken) => Count(new ConfirmedDeviceState(null, null, null, null));
-        public Task<int?> ReadFanRpmAsync(CancellationToken cancellationToken) => Count<int?>(null);
+        public Task<FanRpmReadings?> ReadFanRpmAsync(CancellationToken cancellationToken) =>
+            Count<FanRpmReadings?>(null);
         public Task SetPerformanceAsync(PerformancePreset value, CancellationToken cancellationToken) => Count();
         public Task SetFanModeAsync(FanMode value, CancellationToken cancellationToken) => Count();
         public Task SetChargeLimitAsync(BatteryPolicy value, CancellationToken cancellationToken) => Count();
@@ -288,7 +301,9 @@ public sealed class ControlRequestHandlerTests
 
     private sealed class ThrowingArchiveProvider : IDiagnosticArchiveProvider
     {
-        public Task<DiagnosticArchive> CreateAsync(CancellationToken cancellationToken) =>
+        public Task<DiagnosticArchive> CreateAsync(
+            bool liveReadingsEnabled,
+            CancellationToken cancellationToken) =>
             throw new InvalidOperationException("Archive export was not expected.");
     }
 
@@ -296,7 +311,9 @@ public sealed class ControlRequestHandlerTests
     {
         public List<string> Calls { get; } = [];
 
-        public Task<DiagnosticArchive> CreateAsync(CancellationToken cancellationToken)
+        public Task<DiagnosticArchive> CreateAsync(
+            bool liveReadingsEnabled,
+            CancellationToken cancellationToken)
         {
             Calls.Add("ExportDiagnostics");
             return Task.FromResult(new DiagnosticArchive(
@@ -309,7 +326,9 @@ public sealed class ControlRequestHandlerTests
     {
         public int Calls { get; private set; }
 
-        public Task<DiagnosticArchive> CreateAsync(CancellationToken cancellationToken)
+        public Task<DiagnosticArchive> CreateAsync(
+            bool liveReadingsEnabled,
+            CancellationToken cancellationToken)
         {
             Calls++;
             throw new InvalidDataException("Diagnostic archive exceeds the 32 KiB limit.");

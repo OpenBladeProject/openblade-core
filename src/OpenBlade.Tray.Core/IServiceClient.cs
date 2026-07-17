@@ -17,9 +17,13 @@ public interface IServiceClient
 {
     Task<ServiceStatusSnapshot> GetStatusAsync(CancellationToken token);
 
-    Task<ServiceStatusSnapshot> ObserveStateAsync(CancellationToken cancellationToken);
+    Task<ServiceStatusSnapshot> ObserveStateAsync(
+        bool includeLiveReadings,
+        CancellationToken cancellationToken);
 
-    Task<DiagnosticArchive> ExportDiagnosticsAsync(CancellationToken token);
+    Task<DiagnosticArchive> ExportDiagnosticsAsync(
+        bool liveReadingsEnabled,
+        CancellationToken token);
 
     Task<ControlOperationResult> UpdateProfilesAsync(
         ProfileSet profiles,

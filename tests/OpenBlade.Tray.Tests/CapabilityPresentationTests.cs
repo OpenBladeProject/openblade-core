@@ -14,9 +14,10 @@ public sealed class CapabilityPresentationTests
 
         string[] required =
         [
-            "Header=\"Dashboard\"",
-            "Header=\"Lighting\"",
-            "Header=\"Settings\"",
+            "<NavigationView",
+            "Content=\"Home\"",
+            "Content=\"Profiles\"",
+            "Content=\"Settings\"",
             "ViewModel.SetPerformanceCommand",
             "ViewModel.SetFanModeCommand",
             "ViewModel.SetChargeLimitCommand",
@@ -24,51 +25,40 @@ public sealed class CapabilityPresentationTests
             "ViewModel.ToggleFullChargeCommand",
             "ViewModel.ClearManualOverridesCommand",
             "ViewModel.KeepManualChangesUntilCleared",
-            "ViewModel.ManualOverrideStatus",
-            "ViewModel.SetLightingCommand",
+            "ViewModel.ActiveChangesText",
             "ViewModel.SaveProfilesCommand",
             "ViewModel.ExportDiagnosticsCommand",
-            "ViewModel.HasControllerAdvisory",
-            "ViewModel.ControllerAdvisoryText",
-            "ViewModel.HasControllerDetectionWarning",
-            "ViewModel.ControllerDetectionWarningText",
-            "ViewModel.HasExternalChanges",
-            "ViewModel.ExternalChangesText",
+            "ViewModel.HasAttention",
+            "ViewModel.AttentionSummary",
+            "ViewModel.AttentionDetails",
+            "ViewModel.HasOperationFeedback",
+            "ViewModel.OperationFeedbackMessage",
             "ViewModel.AvailablePerformancePresets",
             "ViewModel.AvailableFanModes",
-            "ViewModel.AvailableLightingEffects",
-            "ViewModel.AvailableLightingSettings",
             "ViewModel.PluggedInPerformanceEditor",
             "ViewModel.PluggedInFanModeEditor",
-            "ViewModel.PluggedInLightingEditor",
             "ViewModel.BatteryPerformanceEditor",
             "ViewModel.BatteryFanModeEditor",
-            "ViewModel.BatteryLightingEditor",
             "ViewModel.ProfileChargeLimitEditor",
-            "ViewModel.IsProfileControlVisible",
             "ViewModel.ThemeOptions",
             "ViewModel.Theme",
             "ViewModel.StartAtSignIn",
             "ViewModel.StartupStatusMessage",
             "ViewModel.ActivePowerSourceLabel",
-            "ViewModel.PerformanceSourceLabel",
-            "ViewModel.FanSourceLabel",
-            "ViewModel.LightingSourceLabel",
-            "ViewModel.BatterySourceLabel",
-            "ViewModel.PowerAndBatteryTelemetryLabel",
-            "ViewModel.CpuTelemetryLabel",
-            "ViewModel.GpuTelemetryLabel",
-            "ViewModel.FanTelemetryLabel",
-            "ViewModel.ControlAccessStatus",
+            "ViewModel.ActivePerformanceLabel",
+            "ViewModel.ActiveFanModeLabel",
+            "ViewModel.BatteryPowerFlowLabel",
+            "ViewModel.Fan1RpmLabel",
+            "ViewModel.Fan2RpmLabel",
+            "ViewModel.LiveReadingsEnabled",
             "ViewModel.FullChargeActionLabel",
             "ViewModel.BatteryProtectionActionLabel",
-            "ViewModel.FullChargeOverride",
-            "Hardware controls are fail-closed",
-            "Razer Blade 16 · RZ09-0581",
-            "No verified lighting controls are available for this device.",
             "Start OpenBlade when I sign in",
-            "Keep manual changes until cleared",
-            "Clear manual overrides",
+            "Live fan and battery readings",
+            "Until the power source changes",
+            "Until I reset them",
+            "Use profile settings",
+            "Troubleshooting",
         ];
         foreach (string fragment in required)
         {
@@ -81,20 +71,40 @@ public sealed class CapabilityPresentationTests
             StringComparison.Ordinal);
         Assert.Contains("<Grid.Resources>", xaml, StringComparison.Ordinal);
         Assert.Contains("DashboardFanModeSelector.SelectedItem", xaml, StringComparison.Ordinal);
-        Assert.Contains("x:Name=\"DashboardChargeLimitSlider\"", xaml, StringComparison.Ordinal);
-        Assert.Contains("x:Name=\"ProfileChargeLimitSlider\"", xaml, StringComparison.Ordinal);
-        Assert.DoesNotContain("Header=\"Profile charge limit\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("InitialWidthDip = 840", ReadTraySource("MainWindow.xaml.cs"), StringComparison.Ordinal);
+        Assert.Contains("InitialHeightDip = 720", ReadTraySource("MainWindow.xaml.cs"), StringComparison.Ordinal);
         Assert.DoesNotContain(
             "CommandParameter=\"{x:Bind ViewModel.SelectedFanMode",
             xaml,
             StringComparison.Ordinal);
         Assert.Contains("BooleanNegationToVisibility", xaml, StringComparison.Ordinal);
-        Assert.True(
-            CountOccurrences(
-                xaml,
-                "Text=\"{x:Bind ViewModel.OperationStatusMessage, Mode=OneWay}\"") >= 2,
-            "Operation status must be visible from both Dashboard and Settings.");
-        Assert.Equal(3, CountOccurrences(xaml, "<TabViewItem"));
+        Assert.Contains("AutomationProperties.Name=\"Fan mode\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("AutomationProperties.Name=\"Charge limit\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("AutomationProperties.Name=\"Profile charge limit\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("<VisualState x:Name=\"NarrowWindow\">", xaml, StringComparison.Ordinal);
+        Assert.Contains("<VisualState x:Name=\"WideWindow\">", xaml, StringComparison.Ordinal);
+        Assert.Contains("<AdaptiveTrigger MinWindowWidth=\"720\" />", xaml, StringComparison.Ordinal);
+        foreach (string responsiveTarget in new[]
+        {
+            "HeroReadings.(Grid.Column)",
+            "FanActions.(Grid.Column)",
+            "BalancedChoice.(Grid.Column)",
+            "PerformanceChoice.(Grid.Column)",
+            "BatteryProtectionAction.(Grid.Column)",
+            "FullChargeAction.(Grid.Column)",
+        })
+        {
+            Assert.Contains(responsiveTarget, xaml, StringComparison.Ordinal);
+        }
+        Assert.DoesNotContain("Telemetry", xaml, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("CPU", xaml, StringComparison.Ordinal);
+        Assert.DoesNotContain("GPU", xaml, StringComparison.Ordinal);
+        Assert.DoesNotContain("Lighting", xaml, StringComparison.Ordinal);
+        Assert.DoesNotContain("Manual Changes", xaml, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("fail-closed", xaml, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("Confirmed device state", xaml, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("Desired intent", xaml, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(0, CountOccurrences(xaml, "<TabViewItem"));
         Assert.DoesNotContain("TabControl", xaml, StringComparison.Ordinal);
         Assert.DoesNotContain("x:Static", xaml, StringComparison.Ordinal);
         Assert.DoesNotContain("DynamicResource", xaml, StringComparison.Ordinal);
@@ -134,20 +144,15 @@ public sealed class CapabilityPresentationTests
             xaml,
             StringComparison.Ordinal);
         Assert.Equal(
-            4,
+            1,
             CountOccurrences(
                 xaml,
                 "Visibility=\"{x:Bind ViewModel.IsPerformanceVisible, Mode=OneWay}\""));
         Assert.Equal(
-            4,
+            1,
             CountOccurrences(
                 xaml,
                 "Visibility=\"{x:Bind ViewModel.IsFanControlVisible, Mode=OneWay}\""));
-        Assert.Equal(
-            2,
-            CountOccurrences(
-                xaml,
-                "Visibility=\"{x:Bind ViewModel.IsProfileControlVisible, Mode=OneWay}\""));
         Assert.Contains("Minimum=\"50\"", xaml, StringComparison.Ordinal);
         Assert.Contains("Maximum=\"80\"", xaml, StringComparison.Ordinal);
         Assert.True(CountOccurrences(xaml, "StepFrequency=\"5\"") >= 2);
@@ -728,7 +733,8 @@ public sealed class CapabilityPresentationTests
                 new ResolvedSetting<FanMode>(profiles.PluggedIn.Fans, SettingValueSource.PowerProfile),
                 new ResolvedSetting<LightingSettings>(profiles.PluggedIn.Lighting, SettingValueSource.PowerProfile),
                 new DesiredBatteryState(profiles.BatteryPolicy, true, false)),
-            new TelemetrySnapshot(DateTimeOffset.UnixEpoch, PowerSource.PluggedIn, 80, null, null, null),
+            PowerSource.PluggedIn,
+            null,
             null, null, null, false);
     }
 
@@ -772,8 +778,12 @@ public sealed class CapabilityPresentationTests
             return Result();
         }
         public Task<ServiceStatusSnapshot> GetStatusAsync(CancellationToken token) => throw new NotSupportedException();
-        public Task<ServiceStatusSnapshot> ObserveStateAsync(CancellationToken cancellationToken) => throw new NotSupportedException();
-        public Task<DiagnosticArchive> ExportDiagnosticsAsync(CancellationToken token) => throw new NotSupportedException();
+        public Task<ServiceStatusSnapshot> ObserveStateAsync(
+            bool includeLiveReadings,
+            CancellationToken cancellationToken) => throw new NotSupportedException();
+        public Task<DiagnosticArchive> ExportDiagnosticsAsync(
+            bool liveReadingsEnabled,
+            CancellationToken token) => throw new NotSupportedException();
         public Task<ControlOperationResult> SetPerformanceOverrideAsync(ManualOverride<PerformancePreset>? value, CancellationToken token) => Result();
         public Task<ControlOperationResult> SetFanOverrideAsync(ManualOverride<FanMode>? value, CancellationToken token) => Result();
         public Task<ControlOperationResult> SetLightingOverrideAsync(ManualOverride<LightingSettings>? value, CancellationToken token) => Result();

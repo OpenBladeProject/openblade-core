@@ -20,7 +20,7 @@ builder.Services.AddSingleton<IControllerPresenceMonitor, WindowsControllerPrese
 builder.Services.AddSingleton<IHardwareAccessGuard>(provider =>
     new WindowsHardwareAccessGuard(
         provider.GetRequiredService<IControllerPresenceMonitor>()));
-builder.Services.AddWindowsTelemetry();
+builder.Services.AddWindowsPowerState();
 builder.Services.AddVerifiedBladeDeviceProvider();
 builder.Services.AddDiagnostics();
 builder.Services.AddSingleton<IStatusSubscriptionHub>(

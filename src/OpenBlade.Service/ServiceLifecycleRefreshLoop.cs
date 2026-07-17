@@ -71,12 +71,14 @@ public sealed class ServiceLifecycleRefreshLoop(
                     switch (trigger)
                     {
                         case ServiceLifecycleTrigger.PowerChanged:
+                        case ServiceLifecycleTrigger.Resumed:
                             await runtime.HandlePowerSourceChangedAsync(stoppingToken);
                             break;
-                        case ServiceLifecycleTrigger.Resumed:
                         case ServiceLifecycleTrigger.DeviceArrived:
                         case ServiceLifecycleTrigger.DeviceRemoved:
-                            await runtime.ObserveAsync(stoppingToken);
+                            await runtime.ObserveAsync(
+                                includeLiveReadings: false,
+                                stoppingToken);
                             break;
                     }
                 }

@@ -830,8 +830,8 @@ public sealed class ControlCoordinatorTests
             return Task.FromResult(State);
         }
 
-        public Task<int?> ReadFanRpmAsync(CancellationToken cancellationToken) =>
-            Task.FromResult<int?>(null);
+        public Task<FanRpmReadings?> ReadFanRpmAsync(CancellationToken cancellationToken) =>
+            Task.FromResult<FanRpmReadings?>(null);
 
         public Task SetPerformanceAsync(
             PerformancePreset value,

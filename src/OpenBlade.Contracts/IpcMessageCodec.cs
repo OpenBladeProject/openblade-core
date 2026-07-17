@@ -7,7 +7,7 @@ namespace OpenBlade.Contracts;
 
 public static class OpenBladeIpc
 {
-    public const int ProtocolVersion = 4;
+    public const int ProtocolVersion = 5;
     public const int MaximumMessageBytes = 64 * 1024;
     public const int MaximumDiagnosticArchiveBytes = 32 * 1024;
     public const string PipeName = "OpenBlade.Service.v2";
@@ -223,7 +223,7 @@ public static class IpcMessageCodec
             || status.Message is null
             || status.Profiles is null
             || status.DesiredState is null
-            || status.Telemetry is null
+            || !Enum.IsDefined(status.ActivePowerSource)
             || status.Capabilities is { } capabilities
                 && (capabilities.PerformancePresets is null
                     || capabilities.FanModes is null
@@ -245,8 +245,15 @@ public static class IpcMessageCodec
             && status.ExternalChanges.Count <= 4
             && status.ExternalChanges.All(Enum.IsDefined)
             && status.ExternalChanges.Distinct().Count() == status.ExternalChanges.Count
-            && status.ExternalChanges.SequenceEqual(status.ExternalChanges.Order());
+            && status.ExternalChanges.SequenceEqual(status.ExternalChanges.Order())
+            && (status.LiveReadings is null || ValidLiveReadings(status.LiveReadings));
     }
+
+    private static bool ValidLiveReadings(LiveReadings readings) =>
+        readings.BatteryPowerFlowMilliwatts is null
+            or >= -1_000_000 and <= 1_000_000
+        && readings.Fan1Rpm is null or >= 0 and <= 20_000
+        && readings.Fan2Rpm is null or >= 0 and <= 20_000;
 
     private static void ValidateVersion(int version)
     {

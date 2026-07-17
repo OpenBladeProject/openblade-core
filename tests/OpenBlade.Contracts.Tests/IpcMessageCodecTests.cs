@@ -11,9 +11,15 @@ public sealed class IpcMessageCodecTests
     public static TheoryData<ServiceRequest> Requests => new()
     {
         new GetStatusRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid()),
-        new ObserveStateRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid()),
+        new ObserveStateRequest(
+            OpenBladeIpc.ProtocolVersion,
+            Guid.NewGuid(),
+            IncludeLiveReadings: true),
         new SubscribeStatusRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid()),
-        new ExportDiagnosticsRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid()),
+        new ExportDiagnosticsRequest(
+            OpenBladeIpc.ProtocolVersion,
+            Guid.NewGuid(),
+            LiveReadingsEnabled: true),
         new UpdateProfilesRequest(
             OpenBladeIpc.ProtocolVersion,
             Guid.NewGuid(),
@@ -64,7 +70,7 @@ public sealed class IpcMessageCodecTests
     }
 
     [Fact]
-    public async Task VersionFourBatteryContracts_RoundTripExactShape()
+    public async Task VersionFiveBatteryContracts_RoundTripExactShape()
     {
         var capabilities = new DeviceCapabilities(
             new HashSet<PerformancePreset>(),
@@ -75,7 +81,7 @@ public sealed class IpcMessageCodecTests
             SupportsTemporaryFullCharge: false);
         var desired = new DesiredBatteryState(BatteryPolicy.Create(80), true, false);
         var confirmed = new ConfirmedBatteryState(true, 80, false);
-        ServiceRequest request = new SetBatteryProtectionRequest(4, Guid.NewGuid(), false);
+        ServiceRequest request = new SetBatteryProtectionRequest(5, Guid.NewGuid(), false);
         ServiceStatusSnapshot status = CreateStatus() with
         {
             PotentialControllers = ["RazerAppEngine"],
@@ -86,7 +92,7 @@ public sealed class IpcMessageCodecTests
             DesiredState = CreateStatus().DesiredState with { Battery = desired },
         };
 
-        Assert.Equal(4, OpenBladeIpc.ProtocolVersion);
+        Assert.Equal(5, OpenBladeIpc.ProtocolVersion);
         Assert.Equal(request, await RoundTripRequestAsync(request));
         ServiceStatusSnapshot roundTrip = await RoundTripStatusAsync(status);
         Assert.Equal([80], roundTrip.Capabilities!.ChargeLimits);
@@ -120,7 +126,7 @@ public sealed class IpcMessageCodecTests
     }
 
     [Fact]
-    public async Task VersionFourStatus_AcceptsCompleteCapabilityCollections()
+    public async Task VersionFiveStatus_AcceptsCompleteCapabilityCollections()
     {
         ServiceStatusSnapshot expected = CreateStatus() with
         {
@@ -129,7 +135,7 @@ public sealed class IpcMessageCodecTests
 
         ServiceStatusSnapshot actual = await RoundTripStatusAsync(expected);
 
-        Assert.Equal(4, OpenBladeIpc.ProtocolVersion);
+        Assert.Equal(5, OpenBladeIpc.ProtocolVersion);
         AssertStatusEqual(expected, actual);
     }
 
@@ -179,7 +185,7 @@ public sealed class IpcMessageCodecTests
     {
         Guid requestId = Guid.NewGuid();
         using MemoryStream stream = FrameJson(
-            $"{{\"operation\":\"setBatteryPolicy\",\"version\":4,\"requestId\":\"{requestId}\",\"value\":{{\"chargeLimitPercent\":80,{extraMember}}}}}");
+            $"{{\"operation\":\"setBatteryPolicy\",\"version\":5,\"requestId\":\"{requestId}\",\"value\":{{\"chargeLimitPercent\":80,{extraMember}}}}}");
 
         await Assert.ThrowsAsync<InvalidDataException>(() =>
             IpcMessageCodec.ReadRequestAsync(stream, CancellationToken.None));
@@ -190,7 +196,7 @@ public sealed class IpcMessageCodecTests
     {
         Guid requestId = Guid.NewGuid();
         using MemoryStream stream = FrameJson(
-            $"{{\"operation\":\"setBatteryPolicy\",\"version\":4,\"requestId\":\"{requestId}\",\"value\":{{\"chargeLimitPercent\":80,\"chargeLimitPercent\":75}}}}");
+            $"{{\"operation\":\"setBatteryPolicy\",\"version\":5,\"requestId\":\"{requestId}\",\"value\":{{\"chargeLimitPercent\":80,\"chargeLimitPercent\":75}}}}");
 
         await Assert.ThrowsAsync<InvalidDataException>(() =>
             IpcMessageCodec.ReadRequestAsync(stream, CancellationToken.None));
@@ -201,7 +207,7 @@ public sealed class IpcMessageCodecTests
     {
         Guid requestId = Guid.NewGuid();
         using MemoryStream stream = FrameJson(
-            $"{{\"operation\":\"setBatteryProtection\",\"version\":4,\"requestId\":\"{requestId}\"}}");
+            $"{{\"operation\":\"setBatteryProtection\",\"version\":5,\"requestId\":\"{requestId}\"}}");
 
         await Assert.ThrowsAsync<InvalidDataException>(() =>
             IpcMessageCodec.ReadRequestAsync(stream, CancellationToken.None));
@@ -362,7 +368,7 @@ public sealed class IpcMessageCodecTests
     {
         const string secret = "unknown-secret-operation";
         using MemoryStream stream = FrameJson(
-            $$"""{"operation":"{{secret}}","version":4,"requestId":"{{Guid.NewGuid()}}"}""");
+            $$"""{"operation":"{{secret}}","version":5,"requestId":"{{Guid.NewGuid()}}"}""");
 
         InvalidDataException exception = await Assert.ThrowsAsync<InvalidDataException>(() =>
             IpcMessageCodec.ReadRequestAsync(stream, CancellationToken.None));
@@ -509,6 +515,45 @@ public sealed class IpcMessageCodecTests
             IpcMessageCodec.ReadServerFrameAsync(stream, CancellationToken.None));
     }
 
+    [Theory]
+    [InlineData(-1_000_001, null, null)]
+    [InlineData(1_000_001, null, null)]
+    [InlineData(null, -1, null)]
+    [InlineData(null, 20_001, null)]
+    [InlineData(null, null, -1)]
+    [InlineData(null, null, 20_001)]
+    public async Task WriteServerFrameAsync_RejectsOutOfRangeLiveReadings(
+        int? batteryPowerFlowMilliwatts,
+        int? fan1Rpm,
+        int? fan2Rpm)
+    {
+        ServiceStatusSnapshot status = CreateStatus() with
+        {
+            LiveReadings = new LiveReadings(
+                batteryPowerFlowMilliwatts,
+                fan1Rpm,
+                fan2Rpm),
+        };
+
+        await AssertStatusWriteRejectedAsync(status);
+    }
+
+    [Fact]
+    public async Task LiveReadings_AcceptDocumentedBoundariesAndRoundTrip()
+    {
+        ServiceStatusSnapshot low = CreateStatus() with
+        {
+            LiveReadings = new LiveReadings(-1_000_000, 0, 0),
+        };
+        ServiceStatusSnapshot high = CreateStatus() with
+        {
+            LiveReadings = new LiveReadings(1_000_000, 20_000, 20_000),
+        };
+
+        Assert.Equal(low.LiveReadings, (await RoundTripStatusAsync(low)).LiveReadings);
+        Assert.Equal(high.LiveReadings, (await RoundTripStatusAsync(high)).LiveReadings);
+    }
+
     [Fact]
     public async Task WriteServerFrameAsync_RejectsOversizedAdvisoryAtSixtyFourKiBFrameLimit()
     {
@@ -595,13 +640,6 @@ public sealed class IpcMessageCodecTests
     private static ServiceStatusSnapshot CreateStatus()
     {
         ProfileSet profiles = ProfileDefaults.CreateSafeDefaults();
-        TelemetrySnapshot telemetry = new(
-            DateTimeOffset.Parse("2026-07-14T12:00:00Z"),
-            PowerSource.PluggedIn,
-            80,
-            null,
-            null,
-            null);
         DesiredDeviceState desired = new(
             new ResolvedSetting<PerformancePreset>(
                 PerformancePreset.Balanced,
@@ -626,7 +664,8 @@ public sealed class IpcMessageCodecTests
             ConfirmedState: null,
             Profiles: profiles,
             DesiredState: desired,
-            Telemetry: telemetry,
+            ActivePowerSource: PowerSource.PluggedIn,
+            LiveReadings: new LiveReadings(-18_400, 2_300, 2_500),
             PerformanceOverride: null,
             FanOverride: null,
             LightingOverride: null,
@@ -655,7 +694,8 @@ public sealed class IpcMessageCodecTests
         Assert.Equal(expected.ConfirmedState, actual.ConfirmedState);
         Assert.Equal(expected.Profiles, actual.Profiles);
         Assert.Equal(expected.DesiredState, actual.DesiredState);
-        Assert.Equal(expected.Telemetry, actual.Telemetry);
+        Assert.Equal(expected.ActivePowerSource, actual.ActivePowerSource);
+        Assert.Equal(expected.LiveReadings, actual.LiveReadings);
         Assert.Equal(expected.PerformanceOverride, actual.PerformanceOverride);
         Assert.Equal(expected.FanOverride, actual.FanOverride);
         Assert.Equal(expected.LightingOverride, actual.LightingOverride);

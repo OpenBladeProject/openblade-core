@@ -251,7 +251,8 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
             }
         }
 
-        public async Task<int?> ReadFanRpmAsync(CancellationToken cancellationToken)
+        public async Task<FanRpmReadings?> ReadFanRpmAsync(
+            CancellationToken cancellationToken)
         {
             await EnterHardwareOperationAsync(cancellationToken).ConfigureAwait(false);
             try
@@ -306,9 +307,7 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
                     }
 
                     cancellationToken.ThrowIfCancellationRequested();
-                    return query.Failure is null && query.Value is not null
-                        ? query.Value.MaxRpm
-                        : null;
+                    return query.Failure is null ? query.Value : null;
                 }
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)

@@ -12,10 +12,7 @@ public sealed record DesiredDeviceState(
     ResolvedSetting<LightingSettings> Lighting,
     DesiredBatteryState Battery);
 
-public sealed record TelemetrySnapshot(
-    DateTimeOffset CapturedAt,
-    PowerSource PowerSource,
-    int? BatteryPercent,
-    double? CpuTemperatureCelsius,
-    double? GpuTemperatureCelsius,
-    int? FanRpm);
+public sealed record LiveReadings(
+    int? BatteryPowerFlowMilliwatts,
+    int? Fan1Rpm,
+    int? Fan2Rpm);

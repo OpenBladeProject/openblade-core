@@ -121,11 +121,11 @@ public sealed class MainViewModelTests
         Assert.Equal(confirmedLighting, viewModel.SelectedLighting);
         Assert.Equal(65, viewModel.ChargeLimitPercent);
         Assert.Equal(75, viewModel.ProfileChargeLimitEditor);
-        Assert.Equal("Confirmed device state", viewModel.PerformanceSourceLabel);
-        Assert.Equal("Changed outside OpenBlade", viewModel.FanSourceLabel);
-        Assert.Equal("Changed outside OpenBlade", viewModel.LightingSourceLabel);
+        Assert.Equal("Current setting", viewModel.PerformanceSourceLabel);
+        Assert.Equal("Changed by another app", viewModel.FanSourceLabel);
+        Assert.Equal("Changed by another app", viewModel.LightingSourceLabel);
         Assert.Equal(
-            "Confirmed device state · Charge limit 65%",
+            "Current setting · Charge limit 65%",
             viewModel.BatterySourceLabel);
         Assert.True(viewModel.HasExternalChanges);
         Assert.Equal(
@@ -181,7 +181,7 @@ public sealed class MainViewModelTests
             StringComparison.OrdinalIgnoreCase));
 
         Assert.Equal(65, viewModel.ChargeLimitPercent);
-        Assert.Contains("Changed outside OpenBlade", viewModel.BatterySourceLabel, StringComparison.Ordinal);
+        Assert.Contains("Changed by another app", viewModel.BatterySourceLabel, StringComparison.Ordinal);
         Assert.Contains("protection off", viewModel.BatterySourceLabel, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("full charge", viewModel.BatterySourceLabel, StringComparison.OrdinalIgnoreCase);
     }
@@ -214,6 +214,33 @@ public sealed class MainViewModelTests
 
         Assert.Equal("newer subscription", viewModel.ConnectionStatus);
         Assert.Equal(PerformancePreset.Performance, viewModel.SelectedPerformance);
+    }
+
+    [Fact]
+    public async Task DirectObservationRequestsLiveReadingsOnlyWhenEnabled()
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+
+        client.PendingObservation = new TaskCompletionSource<ServiceStatusSnapshot>(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        Task enabledRequest = viewModel.ObserveStateAsync(CancellationToken.None);
+        client.PendingObservation.SetResult(CreateStatus(true, false));
+        await enabledRequest;
+
+        client.PendingObservation = new TaskCompletionSource<ServiceStatusSnapshot>(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        viewModel.LiveReadingsEnabled = false;
+        Task disabledRequest = viewModel.ObserveStateAsync(CancellationToken.None);
+        client.PendingObservation.SetResult(CreateStatus(true, false) with
+        {
+            LiveReadings = new LiveReadings(-15_000, 2500, 2600),
+        });
+        await disabledRequest;
+
+        Assert.Equal([true, false], client.IncludeLiveReadingsRequests);
+        Assert.Null(viewModel.LiveReadings);
     }
 
     [Fact]
@@ -660,7 +687,7 @@ public sealed class MainViewModelTests
     }
 
     [Fact]
-    public async Task Status_RendersUnavailableSensorsAndActiveOverrideSources()
+    public async Task Status_RendersLiveReadingsAndActiveQuickChanges()
     {
         var client = new FakeServiceClient();
         await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
@@ -678,13 +705,8 @@ public sealed class MainViewModelTests
                     ProfileDefaults.CreateSafeDefaults().Battery.Lighting,
                     SettingValueSource.PowerProfile),
                 new DesiredBatteryState(BatteryPolicy.Create(80), true, false)),
-            Telemetry = new TelemetrySnapshot(
-                DateTimeOffset.UnixEpoch,
-                PowerSource.Battery,
-                61,
-                null,
-                null,
-                null),
+            ActivePowerSource = PowerSource.Battery,
+            LiveReadings = new LiveReadings(-24_300, null, null),
             PerformanceOverride = new ManualOverride<PerformancePreset>(
                 PerformancePreset.Performance,
                 OverrideLifetime.Persistent),
@@ -704,89 +726,165 @@ public sealed class MainViewModelTests
         client.Publish(status);
         await WaitUntilAsync(() =>
             viewModel.SelectedPerformance == PerformancePreset.Performance
-            && viewModel.TelemetryStatus.Contains("CPU unavailable", StringComparison.Ordinal));
+            && viewModel.ActivePowerSource == PowerSource.Battery);
 
-        Assert.Contains("CPU unavailable", viewModel.TelemetryStatus, StringComparison.Ordinal);
-        Assert.Contains("GPU unavailable", viewModel.TelemetryStatus, StringComparison.Ordinal);
-        Assert.Contains("Fans unavailable", viewModel.TelemetryStatus, StringComparison.Ordinal);
-        Assert.Contains("Battery 61%", viewModel.TelemetryStatus, StringComparison.Ordinal);
+        Assert.Equal("Using 24.3 W", viewModel.BatteryPowerFlowLabel);
+        Assert.Equal("Fan 1: unavailable", viewModel.Fan1RpmLabel);
+        Assert.Equal("Fan 2: unavailable", viewModel.Fan2RpmLabel);
         Assert.Equal("Battery profile", viewModel.ActivePowerSourceLabel);
-        Assert.Equal("Desired intent (not confirmed)", viewModel.PerformanceSourceLabel);
-        Assert.Equal("Desired intent (not confirmed)", viewModel.FanSourceLabel);
-        Assert.Equal("Desired intent (not confirmed)", viewModel.LightingSourceLabel);
+        Assert.Equal("Waiting for the laptop", viewModel.PerformanceSourceLabel);
+        Assert.Equal("Waiting for the laptop", viewModel.FanSourceLabel);
+        Assert.Equal("Waiting for the laptop", viewModel.LightingSourceLabel);
         Assert.Equal(status.Capabilities, viewModel.Capabilities);
-        Assert.Equal(status.Telemetry, viewModel.Telemetry);
+        Assert.Equal(status.LiveReadings, viewModel.LiveReadings);
         Assert.Equal(status.PerformanceOverride, viewModel.PerformanceOverride);
         Assert.Equal(status.FanOverride, viewModel.FanOverride);
         Assert.Equal(status.LightingOverride, viewModel.LightingOverride);
         Assert.Contains(
-            "Performance: Performance (until cleared)",
+            "Performance: Performance until reset",
             viewModel.ManualOverrideStatus,
             StringComparison.Ordinal);
         Assert.Contains(
-            "Fans: Maximum (until power source changes)",
+            "Fans: Maximum until the power source changes",
             viewModel.ManualOverrideStatus,
             StringComparison.Ordinal);
         Assert.True(viewModel.FullChargeOverride);
     }
 
     [Fact]
-    public async Task Status_FormatsSplitTelemetryAndNotifiesEveryTelemetryPresentationProperty()
+    public async Task UnsupportedLightingOnlyOverrideDoesNotCreateBlankActiveChangesCard()
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        ServiceStatusSnapshot baseline = CreateStatus(verified: true, blocked: false);
+        client.Publish(baseline with
+        {
+            Capabilities = baseline.Capabilities! with
+            {
+                LightingEffects = new HashSet<LightingEffect>(),
+            },
+            LightingOverride = new ManualOverride<LightingSettings>(
+                ProfileDefaults.CreateSafeDefaults().PluggedIn.Lighting,
+                OverrideLifetime.Persistent),
+        });
+        await WaitUntilAsync(() => viewModel.IsConnected);
+
+        Assert.False(viewModel.IsLightingVisible);
+        Assert.False(viewModel.HasActiveChanges);
+        Assert.Equal(string.Empty, viewModel.ActiveChangesText);
+    }
+
+    [Fact]
+    public async Task Status_FormatsNetBatteryFlowAndIndependentFans()
     {
         var client = new FakeServiceClient();
         await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
 
-        Assert.Equal("Unavailable", viewModel.PowerAndBatteryTelemetryLabel);
-        Assert.Equal("Unavailable", viewModel.CpuTelemetryLabel);
-        Assert.Equal("Unavailable", viewModel.GpuTelemetryLabel);
-        Assert.Equal("Unavailable", viewModel.FanTelemetryLabel);
+        Assert.Equal("Battery power unavailable", viewModel.BatteryPowerFlowLabel);
+        Assert.Equal("Fan 1: unavailable", viewModel.Fan1RpmLabel);
+        Assert.Equal("Fan 2: unavailable", viewModel.Fan2RpmLabel);
 
         var changed = new HashSet<string>();
         viewModel.PropertyChanged += (_, args) => changed.Add(args.PropertyName!);
         await viewModel.StartAsync();
         client.Publish(CreateStatus(verified: true, blocked: false) with
         {
-            Telemetry = new TelemetrySnapshot(
-                DateTimeOffset.UnixEpoch,
-                PowerSource.Battery,
-                61,
-                null,
-                71.25,
-                3210),
+            ActivePowerSource = PowerSource.Battery,
+            LiveReadings = new LiveReadings(-24_340, 3210, 2875),
         });
-        await WaitUntilAsync(() => viewModel.FanTelemetryLabel == "3210 RPM");
+        await WaitUntilAsync(() => viewModel.Fan1RpmLabel.Contains("3", StringComparison.Ordinal));
 
-        Assert.Equal("Battery · 61%", viewModel.PowerAndBatteryTelemetryLabel);
-        Assert.Equal("Unavailable", viewModel.CpuTelemetryLabel);
-        Assert.Equal("71.3 °C", viewModel.GpuTelemetryLabel);
-        Assert.Equal("3210 RPM", viewModel.FanTelemetryLabel);
-        Assert.Contains(nameof(viewModel.PowerAndBatteryTelemetryLabel), changed);
-        Assert.Contains(nameof(viewModel.CpuTelemetryLabel), changed);
-        Assert.Contains(nameof(viewModel.GpuTelemetryLabel), changed);
-        Assert.Contains(nameof(viewModel.FanTelemetryLabel), changed);
+        Assert.Equal("Using 24.3 W", viewModel.BatteryPowerFlowLabel);
+        Assert.Contains("3,210 RPM", viewModel.Fan1RpmLabel, StringComparison.Ordinal);
+        Assert.Contains("2,875 RPM", viewModel.Fan2RpmLabel, StringComparison.Ordinal);
+        Assert.Contains(nameof(viewModel.BatteryPowerFlowLabel), changed);
+        Assert.Contains(nameof(viewModel.Fan1RpmLabel), changed);
+        Assert.Contains(nameof(viewModel.Fan2RpmLabel), changed);
 
         changed.Clear();
         client.Publish(CreateStatus(verified: true, blocked: false) with
         {
             Revision = 2,
-            Telemetry = new TelemetrySnapshot(
-                DateTimeOffset.UnixEpoch.AddSeconds(1),
-                PowerSource.PluggedIn,
-                null,
-                65,
-                null,
-                null),
+            ActivePowerSource = PowerSource.PluggedIn,
+            LiveReadings = new LiveReadings(31_840, null, 0),
         });
-        await WaitUntilAsync(() => viewModel.CpuTelemetryLabel == "65 °C");
+        await WaitUntilAsync(() => viewModel.BatteryPowerFlowLabel == "Charging at 31.8 W");
 
-        Assert.Equal("Plugged in · Unavailable", viewModel.PowerAndBatteryTelemetryLabel);
-        Assert.Equal("65 °C", viewModel.CpuTelemetryLabel);
-        Assert.Equal("Unavailable", viewModel.GpuTelemetryLabel);
-        Assert.Equal("Unavailable", viewModel.FanTelemetryLabel);
-        Assert.Contains(nameof(viewModel.PowerAndBatteryTelemetryLabel), changed);
-        Assert.Contains(nameof(viewModel.CpuTelemetryLabel), changed);
-        Assert.Contains(nameof(viewModel.GpuTelemetryLabel), changed);
-        Assert.Contains(nameof(viewModel.FanTelemetryLabel), changed);
+        Assert.Equal("Charging at 31.8 W", viewModel.BatteryPowerFlowLabel);
+        Assert.Equal("Fan 1: unavailable", viewModel.Fan1RpmLabel);
+        Assert.Contains("0 RPM", viewModel.Fan2RpmLabel, StringComparison.Ordinal);
+        Assert.Contains(nameof(viewModel.BatteryPowerFlowLabel), changed);
+        Assert.Contains(nameof(viewModel.Fan1RpmLabel), changed);
+        Assert.Contains(nameof(viewModel.Fan2RpmLabel), changed);
+    }
+
+    [Fact]
+    public async Task Status_FormatsZeroBatteryFlowForCurrentPowerSource()
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+
+        client.Publish(CreateStatus(verified: true, blocked: false) with
+        {
+            ActivePowerSource = PowerSource.PluggedIn,
+            LiveReadings = new LiveReadings(0, null, null),
+        });
+        await WaitUntilAsync(() => viewModel.IsConnected);
+        Assert.Equal("Not charging", viewModel.BatteryPowerFlowLabel);
+
+        client.Publish(CreateStatus(verified: true, blocked: false) with
+        {
+            Revision = 2,
+            ActivePowerSource = PowerSource.Battery,
+            LiveReadings = new LiveReadings(0, null, null),
+        });
+        await WaitUntilAsync(() => viewModel.ActivePowerSource == PowerSource.Battery);
+        Assert.Equal("Battery power unavailable", viewModel.BatteryPowerFlowLabel);
+    }
+
+    [Fact]
+    public async Task Status_UsesConfirmedBatterySettingInProminentSummary()
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+
+        Assert.Equal("Battery setting unavailable", viewModel.CurrentBatterySettingLabel);
+        await viewModel.StartAsync();
+        ServiceStatusSnapshot baseline = CreateStatus(verified: true, blocked: false);
+
+        client.Publish(baseline with
+        {
+            ConfirmedState = baseline.ConfirmedState! with
+            {
+                Battery = new ConfirmedBatteryState(false, null, false),
+            },
+        });
+        await WaitUntilAsync(() => viewModel.IsConnected);
+        Assert.Equal("Battery protection off", viewModel.CurrentBatterySettingLabel);
+
+        client.Publish(baseline with
+        {
+            Revision = 2,
+            ConfirmedState = baseline.ConfirmedState! with
+            {
+                Battery = new ConfirmedBatteryState(true, 80, true),
+            },
+            FullChargeOverride = true,
+        });
+        await WaitUntilAsync(() => viewModel.FullChargeOverride);
+        Assert.Equal("Charging to 100%", viewModel.CurrentBatterySettingLabel);
+        Assert.Equal("Charging to 100%", viewModel.ProfileStateLabel);
+
+        client.Publish(baseline with
+        {
+            Revision = 3,
+            ConfirmedState = baseline.ConfirmedState! with { Battery = null },
+            FullChargeOverride = false,
+        });
+        await WaitUntilAsync(() => !viewModel.FullChargeOverride);
+        Assert.Equal("Battery setting unavailable", viewModel.CurrentBatterySettingLabel);
     }
 
     [Fact]
@@ -796,30 +894,30 @@ public sealed class MainViewModelTests
         await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
         await viewModel.StartAsync();
 
-        Assert.Equal("Service disconnected · hardware controls disabled", viewModel.ControlAccessStatus);
+        Assert.Equal("OpenBlade service isn’t running", viewModel.ControlAccessStatus);
 
         client.Publish(CreateStatus(verified: false, blocked: true));
         await WaitUntilAsync(() =>
-            viewModel.ControlAccessStatus == "Target not verified · hardware controls disabled");
+            viewModel.ControlAccessStatus == "This Blade isn’t supported");
 
         client.Publish(CreateStatus(
             verified: true,
             blocked: true,
             conflicts: ["RazerAppEngine"]));
         await WaitUntilAsync(() =>
-            viewModel.ControlAccessStatus == "Read-only · hardware writes blocked");
+            viewModel.ControlAccessStatus == "OpenBlade is waiting for the laptop");
 
         client.Publish(CreateStatus(verified: true, blocked: true));
         await WaitUntilAsync(() =>
-            viewModel.ControlAccessStatus == "Read-only · hardware writes blocked");
+            viewModel.ControlAccessStatus == "OpenBlade is waiting for the laptop");
 
         client.Publish(CreateStatus(verified: true, blocked: false));
         await WaitUntilAsync(() =>
-            viewModel.ControlAccessStatus == "Target verified · hardware controls available");
+            viewModel.ControlAccessStatus == "Ready");
 
         client.PublishReconnecting();
         await WaitUntilAsync(() =>
-            viewModel.ControlAccessStatus == "Service disconnected · hardware controls disabled");
+            viewModel.ControlAccessStatus == "OpenBlade service isn’t running");
     }
 
     [Fact]
@@ -844,6 +942,10 @@ public sealed class MainViewModelTests
         Assert.Equal(PerformancePreset.Performance, client.PerformanceOverride!.Value);
         Assert.Equal(OverrideLifetime.UntilPowerSourceChange, client.PerformanceOverride.Lifetime);
         Assert.Equal("Intent stored without hardware application.", viewModel.OperationStatusMessage);
+        Assert.Equal(
+            "OpenBlade saved the change, but the laptop has not applied it.",
+            viewModel.OperationFeedbackMessage);
+        Assert.True(viewModel.HasOperationFeedback);
     }
 
     [Fact]
@@ -1072,10 +1174,7 @@ public sealed class MainViewModelTests
         await viewModel.StartAsync();
         client.Publish(CreateStatus(verified: true, blocked: false) with
         {
-            Telemetry = CreateStatus(true, false).Telemetry with
-            {
-                PowerSource = PowerSource.Battery,
-            },
+            ActivePowerSource = PowerSource.Battery,
         });
         await WaitUntilAsync(() => viewModel.IsConnected);
 
@@ -1282,9 +1381,11 @@ public sealed class MainViewModelTests
 
         Assert.True(viewModel.IsReadOnly);
         Assert.True(command.CanExecute(null));
+        viewModel.LiveReadingsEnabled = false;
         await command.ExecuteAsync(null);
 
         Assert.Equal(1, client.ExportCalls);
+        Assert.False(client.LastExportLiveReadingsEnabled);
         Assert.Equal(0, client.MutationCalls);
         Assert.Equal(1, saver.Calls);
         Assert.Equal(client.NextArchive, saver.Archive);
@@ -1416,13 +1517,8 @@ public sealed class MainViewModelTests
                     profiles.PluggedIn.Lighting,
                     SettingValueSource.PowerProfile),
                 new DesiredBatteryState(profiles.BatteryPolicy, true, false)),
-            new TelemetrySnapshot(
-                DateTimeOffset.UnixEpoch,
-                PowerSource.PluggedIn,
-                80,
-                null,
-                null,
-                null),
+            PowerSource.PluggedIn,
+            null,
             null,
             null,
             null,
@@ -1461,7 +1557,9 @@ public sealed class MainViewModelTests
         public int MutationCalls { get; private set; }
         public List<string> MutationOperations { get; } = [];
         public int ExportCalls { get; private set; }
+        public bool? LastExportLiveReadingsEnabled { get; private set; }
         public int ObservationCalls { get; private set; }
+        public List<bool> IncludeLiveReadingsRequests { get; } = [];
         public TaskCompletionSource<ServiceStatusSnapshot>? PendingObservation { get; set; }
         public TaskCompletionSource ObservationStarted { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public bool BlockMutations { get; init; }
@@ -1514,18 +1612,24 @@ public sealed class MainViewModelTests
                 "No status has been published."));
         }
 
-        public Task<ServiceStatusSnapshot> ObserveStateAsync(CancellationToken cancellationToken)
+        public Task<ServiceStatusSnapshot> ObserveStateAsync(
+            bool includeLiveReadings,
+            CancellationToken cancellationToken)
         {
             ObservationCalls++;
+            IncludeLiveReadingsRequests.Add(includeLiveReadings);
             ObservationStarted.TrySetResult();
             return PendingObservation is not null
                 ? PendingObservation.Task.WaitAsync(cancellationToken)
                 : throw new NotSupportedException();
         }
 
-        public async Task<DiagnosticArchive> ExportDiagnosticsAsync(CancellationToken token)
+        public async Task<DiagnosticArchive> ExportDiagnosticsAsync(
+            bool liveReadingsEnabled,
+            CancellationToken token)
         {
             ExportCalls++;
+            LastExportLiveReadingsEnabled = liveReadingsEnabled;
             ExportStarted.TrySetResult();
             if (BlockExports)
             {

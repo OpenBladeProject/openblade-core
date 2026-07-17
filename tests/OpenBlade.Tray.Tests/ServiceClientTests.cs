@@ -104,9 +104,10 @@ public sealed class ServiceClientTests
             request =>
             {
                 requests++;
-                Assert.IsType<ObserveStateRequest>(request);
+                ObserveStateRequest observe = Assert.IsType<ObserveStateRequest>(request);
                 Assert.Equal(OpenBladeIpc.ProtocolVersion, request.Version);
                 Assert.NotEqual(Guid.Empty, request.RequestId);
+                Assert.True(observe.IncludeLiveReadings);
                 return new ServiceResponse(
                     OpenBladeIpc.ProtocolVersion,
                     request.RequestId,
@@ -118,7 +119,7 @@ public sealed class ServiceClientTests
             timeout.Token);
         IServiceClient client = new ServiceClient(pipeName);
 
-        ServiceStatusSnapshot actual = await client.ObserveStateAsync(timeout.Token);
+        ServiceStatusSnapshot actual = await client.ObserveStateAsync(true, timeout.Token);
         await server;
 
         Assert.Equal(7, actual.Revision);
@@ -138,7 +139,7 @@ public sealed class ServiceClientTests
         IServiceClient client = new ServiceClient(pipeName);
 
         await Assert.ThrowsAsync<InvalidDataException>(
-            () => client.ObserveStateAsync(timeout.Token));
+            () => client.ObserveStateAsync(true, timeout.Token));
         await server;
     }
 
@@ -167,7 +168,7 @@ public sealed class ServiceClientTests
         IServiceClient client = new ServiceClient(pipeName);
 
         await Assert.ThrowsAsync<InvalidDataException>(
-            () => client.ObserveStateAsync(timeout.Token));
+            () => client.ObserveStateAsync(true, timeout.Token));
         await server;
     }
 
@@ -183,9 +184,11 @@ public sealed class ServiceClientTests
             pipeName,
             request =>
             {
-                Assert.IsType<ExportDiagnosticsRequest>(request);
+                ExportDiagnosticsRequest export =
+                    Assert.IsType<ExportDiagnosticsRequest>(request);
                 Assert.Equal(OpenBladeIpc.ProtocolVersion, request.Version);
                 Assert.NotEqual(Guid.Empty, request.RequestId);
+                Assert.True(export.LiveReadingsEnabled);
                 return new ServiceResponse(
                     OpenBladeIpc.ProtocolVersion,
                     request.RequestId,
@@ -198,7 +201,9 @@ public sealed class ServiceClientTests
             timeout.Token);
         IServiceClient client = new ServiceClient(pipeName);
 
-        DiagnosticArchive actual = await client.ExportDiagnosticsAsync(timeout.Token);
+        DiagnosticArchive actual = await client.ExportDiagnosticsAsync(
+            liveReadingsEnabled: true,
+            timeout.Token);
         await server;
 
         Assert.Equal(expected.SuggestedFileName, actual.SuggestedFileName);
@@ -218,7 +223,9 @@ public sealed class ServiceClientTests
         IServiceClient client = new ServiceClient(pipeName);
 
         await Assert.ThrowsAsync<InvalidDataException>(
-            () => client.ExportDiagnosticsAsync(timeout.Token));
+            () => client.ExportDiagnosticsAsync(
+                liveReadingsEnabled: false,
+                timeout.Token));
         await server;
     }
 
@@ -562,7 +569,7 @@ public sealed class ServiceClientTests
         Task server = RunServerAsync(pipeName, response, timeout.Token);
         IServiceClient client = new ServiceClient(pipeName);
         await Assert.ThrowsAsync<InvalidDataException>(
-            () => client.ObserveStateAsync(timeout.Token));
+            () => client.ObserveStateAsync(true, timeout.Token));
         await server;
     }
 
@@ -688,7 +695,8 @@ public sealed class ServiceClientTests
                 new ResolvedSetting<FanMode>(FanMode.Automatic, SettingValueSource.PowerProfile),
                 new ResolvedSetting<LightingSettings>(profiles.PluggedIn.Lighting, SettingValueSource.PowerProfile),
                 new DesiredBatteryState(profiles.BatteryPolicy, true, false)),
-            new TelemetrySnapshot(DateTimeOffset.UnixEpoch, PowerSource.PluggedIn, null, null, null, null),
+            PowerSource.PluggedIn,
+            null,
             null,
             null,
             null,
