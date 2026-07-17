@@ -40,6 +40,11 @@ public sealed class PerformanceFanSetterValidationCommandTests
         Assert.False(root.GetProperty("productionAdmitted").GetBoolean());
         Assert.Equal("RZ09-0581", root.GetProperty("device").GetProperty("model").GetString());
         Assert.True(root.GetProperty("result").GetProperty("success").GetBoolean());
+        Assert.Equal(
+            0,
+            root.GetProperty("result")
+                .GetProperty("candidateFanRpmSamples")
+                .GetArrayLength());
         Assert.DoesNotContain("transaction", output.ToString(), StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("devicePath", output.ToString(), StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("envelope", output.ToString(), StringComparison.OrdinalIgnoreCase);
@@ -88,6 +93,7 @@ public sealed class PerformanceFanSetterValidationCommandTests
         new("01010500", "01020500"),
         new("01010000", "01020000"),
         null,
+        [],
         new("01010500", "01020500"),
         ApplyAttempted: true,
         ApplyAcknowledged: true,

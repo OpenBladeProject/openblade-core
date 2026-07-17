@@ -70,6 +70,8 @@ public sealed class PerformanceFanSetterValidationRunnerTests
             Assert.Equal("01010001", result.Candidate!.Thermal1Hex);
             Assert.Equal("01020001", result.Candidate.Thermal2Hex);
             Assert.Equal(new FanRpmReadings(5300, 5300), result.CandidateFanRpm);
+            Assert.Equal(3, result.CandidateFanRpmSamples.Count);
+            Assert.Equal(6, session.Commands.Count(command => command.CommandId == 0x88));
             Assert.Equal([0x02, 0x02, 0x01, 0x01],
                 session.Commands
                     .Where(command => command.CommandId is 0x01 or 0x02)
@@ -80,6 +82,7 @@ public sealed class PerformanceFanSetterValidationRunnerTests
         else
         {
             Assert.Null(result.CandidateFanRpm);
+            Assert.Empty(result.CandidateFanRpmSamples);
             Assert.DoesNotContain(session.Commands, command => command.CommandId == 0x88);
         }
     }
@@ -104,10 +107,103 @@ public sealed class PerformanceFanSetterValidationRunnerTests
             PerformanceFanValidationFailure.FixedFanRpmOutOfRange,
             result.Failure);
         Assert.Equal(new FanRpmReadings(firstRpm, secondRpm), result.CandidateFanRpm);
+        Assert.Equal(3, result.CandidateFanRpmSamples.Count);
         Assert.True(result.CandidateConfirmed);
         Assert.True(result.RestoreAttempted);
         Assert.True(result.Restored);
         Assert.False(result.IndeterminatePartialWrite);
+        Assert.False(result.ManualRecoveryRequired);
+        Assert.Equal(6, session.Commands.Count(command => command.CommandId == 0x88));
+    }
+
+    [Fact]
+    public async Task RunAsync_FixedFanRequiresThreeConsecutiveHighSamples()
+    {
+        var session = new StatefulSession(
+            "01010000",
+            "01020000",
+            fanRpmSamples:
+            [
+                new(5100, 5200),
+                new(5200, 5300),
+                new(4900, 5300),
+                new(5100, 5100),
+                new(5200, 5200),
+                new(5300, 5300),
+            ]);
+
+        PerformanceFanSetterValidationResult result = await Runner(
+            session,
+            maximumSamples: 6,
+            stateCheckEverySamples: 5).RunAsync(
+                PerformanceFanValidationTarget.Fixed5400,
+                default);
+
+        Assert.True(result.Success);
+        Assert.Equal(new FanRpmReadings(5300, 5300), result.CandidateFanRpm);
+        Assert.Equal(
+            [
+                new(5100, 5200),
+                new(5200, 5300),
+                new(4900, 5300),
+                new(5100, 5100),
+                new(5200, 5200),
+                new(5300, 5300),
+            ],
+            result.CandidateFanRpmSamples);
+        Assert.Equal(12, session.Commands.Count(command => command.CommandId == 0x88));
+        Assert.True(result.Restored);
+    }
+
+    [Fact]
+    public async Task RunAsync_FixedFanStateLossDuringRampFailsAndRestores()
+    {
+        var session = new StatefulSession(
+            "01010000",
+            "01020000",
+            firstFanRpm: 3000,
+            secondFanRpm: 3000,
+            loseFixedStateAfterCompletedFanSamples: 1);
+
+        PerformanceFanSetterValidationResult result = await Runner(
+            session,
+            maximumSamples: 3,
+            stateCheckEverySamples: 1).RunAsync(
+                PerformanceFanValidationTarget.Fixed5400,
+                default);
+
+        Assert.Equal(
+            PerformanceFanValidationFailure.CandidateTargetMismatch,
+            result.Failure);
+        Assert.Equal(new FanRpmReadings(3000, 3000), result.CandidateFanRpm);
+        Assert.Equal(2, session.Commands.Count(command => command.CommandId == 0x88));
+        Assert.True(result.RestoreAttempted);
+        Assert.True(result.Restored);
+        Assert.False(result.ManualRecoveryRequired);
+    }
+
+    [Fact]
+    public async Task RunAsync_CancellationDuringFixedFanRampStillRestores()
+    {
+        using var cancellation = new CancellationTokenSource();
+        var session = new StatefulSession(
+            "01010000",
+            "01020000",
+            firstFanRpm: 3000,
+            secondFanRpm: 3000,
+            afterCompletedFanSample: cancellation.Cancel);
+
+        PerformanceFanSetterValidationResult result = await Runner(
+            session,
+            maximumSamples: 3,
+            stateCheckEverySamples: 3,
+            sampleInterval: TimeSpan.FromMilliseconds(1)).RunAsync(
+                PerformanceFanValidationTarget.Fixed5400,
+                cancellation.Token);
+
+        Assert.Equal(PerformanceFanValidationFailure.Canceled, result.Failure);
+        Assert.True(result.RestoreAttempted);
+        Assert.True(result.Restored);
         Assert.False(result.ManualRecoveryRequired);
     }
 
@@ -194,7 +290,10 @@ public sealed class PerformanceFanSetterValidationRunnerTests
     }
 
     private static PerformanceFanSetterValidationRunner Runner(
-        IRazerCommandSession session) => new(
+        IRazerCommandSession session,
+        int maximumSamples = 3,
+        int stateCheckEverySamples = 3,
+        TimeSpan? sampleInterval = null) => new(
         static () => new ValidationRunContext(),
         new ActorFactory(new ValidationActor(
             session,
@@ -204,7 +303,9 @@ public sealed class PerformanceFanSetterValidationRunnerTests
         TimeSpan.FromSeconds(3),
         TimeSpan.FromSeconds(5),
         new PendingDisposalRegistry(),
-        TimeSpan.Zero);
+        fixedFanSampleInterval: sampleInterval ?? TimeSpan.Zero,
+        fixedFanMaximumSamples: maximumSamples,
+        fixedFanStateCheckEverySamples: stateCheckEverySamples);
 
     private sealed class ActorFactory(ValidationActor actor) : IValidationActorFactory
     {
@@ -219,10 +320,16 @@ public sealed class PerformanceFanSetterValidationRunnerTests
         int? failWriteNumber = null,
         int firstFanRpm = 5300,
         int secondFanRpm = 5300,
-        int? failFanSelector = null) : IRazerCommandSession
+        int? failFanSelector = null,
+        IReadOnlyList<FanRpmReadings>? fanRpmSamples = null,
+        int? loseFixedStateAfterCompletedFanSamples = null,
+        Action? afterCompletedFanSample = null) : IRazerCommandSession
     {
+        private readonly byte[][] baseline =
+            [Convert.FromHexString(firstHex), Convert.FromHexString(secondHex)];
         private readonly byte[][] state =
             [Convert.FromHexString(firstHex), Convert.FromHexString(secondHex)];
+        private int completedFanSamples;
         private int writeCount;
 
         internal List<RazerCommandSpec> Commands { get; } = [];
@@ -259,8 +366,23 @@ public sealed class PerformanceFanSetterValidationRunnerTests
                     return Failure(HidSessionFailureKind.Timeout);
                 }
 
-                int rpm = selector == 1 ? firstFanRpm : secondFanRpm;
+                FanRpmReadings sample = fanRpmSamples is { Count: > 0 }
+                    ? fanRpmSamples[Math.Min(completedFanSamples, fanRpmSamples.Count - 1)]
+                    : new(firstFanRpm, secondFanRpm);
+                int rpm = selector == 1 ? sample.Selector1Rpm : sample.Selector2Rpm;
                 byte[] response = [0x01, (byte)selector, checked((byte)(rpm / 100))];
+                if (selector == 2)
+                {
+                    completedFanSamples++;
+                    if (completedFanSamples == loseFixedStateAfterCompletedFanSamples)
+                    {
+                        state[0] = baseline[0].ToArray();
+                        state[1] = baseline[1].ToArray();
+                    }
+
+                    afterCompletedFanSample?.Invoke();
+                }
+
                 return Success(response);
             }
 

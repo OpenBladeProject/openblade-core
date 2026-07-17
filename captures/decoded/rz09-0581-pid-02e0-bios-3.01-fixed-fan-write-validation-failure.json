@@ -1,0 +1,88 @@
+{
+  "schemaVersion": 1,
+  "device": {
+    "model": "RZ09-0581",
+    "vendorId": "1532",
+    "productId": "02E0",
+    "biosVersion": "3.01"
+  },
+  "evidenceKind": "fixed-fan-5400-openblade-write-validation-failure",
+  "observedUtcDate": "2026-07-17",
+  "readOnly": false,
+  "productionWriteAdmitted": false,
+  "candidateSequence": [
+    { "classHex": "0D", "idHex": "02", "payloadHex": "01010001", "expectedEchoHex": "01010001" },
+    { "classHex": "0D", "idHex": "02", "payloadHex": "01020001", "expectedEchoHex": "01020001" },
+    { "classHex": "0D", "idHex": "01", "payloadHex": "010136", "expectedEchoHex": "010136" },
+    { "classHex": "0D", "idHex": "01", "payloadHex": "010236", "expectedEchoHex": "010236" }
+  ],
+  "synapseReferenceRamp": {
+    "baselineFanRpm": { "selector1Rpm": 3500, "selector2Rpm": 3300 },
+    "selector1Samples": [
+      { "secondsAfterFinalWrite": 0.719, "rpm": 3600 },
+      { "secondsAfterFinalWrite": 2.717, "rpm": 3700 },
+      { "secondsAfterFinalWrite": 9.717, "rpm": 4000 },
+      { "secondsAfterFinalWrite": 11.750, "rpm": 4100 },
+      { "secondsAfterFinalWrite": 14.748, "rpm": 4200 },
+      { "secondsAfterFinalWrite": 21.741, "rpm": 4500 },
+      { "secondsAfterFinalWrite": 26.713, "rpm": 4700 },
+      { "secondsAfterFinalWrite": 27.726, "rpm": 4700 }
+    ],
+    "captureReached5000Rpm": false,
+    "laterIndependentReadbackRpm": 5300
+  },
+  "runs": [
+    {
+      "harness": "V2",
+      "settleMilliseconds": 3000,
+      "baseline": { "thermal1Hex": "01010000", "thermal2Hex": "01020000" },
+      "candidate": { "thermal1Hex": "01010001", "thermal2Hex": "01020001" },
+      "candidateFanRpm": { "selector1Rpm": 2300, "selector2Rpm": 2200, "maxRpm": 2300 },
+      "restoration": { "thermal1Hex": "01010000", "thermal2Hex": "01020000" },
+      "applyAcknowledged": true,
+      "candidateConfirmed": true,
+      "restoreAcknowledged": true,
+      "restored": true,
+      "failure": "fixedFanRpmOutOfRange",
+      "success": false
+    },
+    {
+      "harness": "V3",
+      "settleMilliseconds": 12000,
+      "baseline": { "thermal1Hex": "01010000", "thermal2Hex": "01020000" },
+      "candidate": { "thermal1Hex": "01010001", "thermal2Hex": "01020001" },
+      "candidateFanRpm": { "selector1Rpm": 2500, "selector2Rpm": 2400, "maxRpm": 2500 },
+      "restoration": { "thermal1Hex": "01010000", "thermal2Hex": "01020000" },
+      "applyAcknowledged": true,
+      "candidateConfirmed": true,
+      "restoreAcknowledged": true,
+      "restored": true,
+      "failure": "fixedFanRpmOutOfRange",
+      "success": false
+    },
+    {
+      "harness": "V4-timed",
+      "settleMilliseconds": 12000,
+      "interCommandDelaysMilliseconds": [10, 210, 65],
+      "baseline": { "thermal1Hex": "01010000", "thermal2Hex": "01020000" },
+      "candidate": { "thermal1Hex": "01010001", "thermal2Hex": "01020001" },
+      "candidateFanRpm": { "selector1Rpm": 2100, "selector2Rpm": 2100, "maxRpm": 2100 },
+      "restoration": { "thermal1Hex": "01010000", "thermal2Hex": "01020000" },
+      "applyAcknowledged": true,
+      "candidateConfirmed": true,
+      "restoreAcknowledged": true,
+      "restored": true,
+      "failure": "fixedFanRpmOutOfRange",
+      "success": false
+    }
+  ],
+  "safetyOutcome": {
+    "allRunsRestoredWithoutManualRecovery": true,
+    "typedFixedStateAloneProvesRequestedFanSpeed": false,
+    "twelveSecondObservationWasSufficientToJudgePhysicalEffect": false,
+    "candidateEffectEstablished": false,
+    "maximumFanProductionAdmitted": false,
+    "genericMaximumFanBitProductionAdmitted": false,
+    "reason": "Three guarded OpenBlade runs acknowledged the complete candidate sequence and confirmed the typed fixed state, but none reached the required 5000-6000 RPM range before restoration. The genuine Synapse capture was still below 5000 RPM after 27 seconds, so these short observations do not prove the setter is ineffective. Maximum remains unavailable pending a bounded long-ramp validation."
+  }
+}

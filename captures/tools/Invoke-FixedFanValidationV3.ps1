@@ -2,8 +2,8 @@ $ErrorActionPreference = 'Stop'
 
 $repositoryRoot = Split-Path (Split-Path $PSScriptRoot -Parent) -Parent
 $capture = Join-Path $repositoryRoot 'src\OpenBlade.Capture\bin\Release\net10.0-windows\OpenBlade.Capture.exe'
-$outputDirectory = 'C:\tmp\openblade-fixed-setter-validation-v4-timed-20260716'
-$stateFile = 'C:\tmp\openblade-fixed-setter-validation-v3-state.txt'
+$outputDirectory = 'C:\tmp\openblade-fixed-setter-validation-v5-long-ramp-20260716'
+$stateFile = 'C:\tmp\openblade-fixed-setter-validation-v5-state.txt'
 $restartService = $false
 $captureExitCode = $null
 $failure = $null

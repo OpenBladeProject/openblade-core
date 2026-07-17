@@ -41,6 +41,7 @@ public sealed record PerformanceFanSetterValidationResult(
     PerformanceFanThermalPair? Baseline,
     PerformanceFanThermalPair? Candidate,
     FanRpmReadings? CandidateFanRpm,
+    IReadOnlyList<FanRpmReadings> CandidateFanRpmSamples,
     PerformanceFanThermalPair? Restoration,
     bool ApplyAttempted,
     bool ApplyAcknowledged,
@@ -74,8 +75,11 @@ internal sealed class PerformanceFanSetterValidationRunner
     private const byte SetSpeedCommandId = 0x01;
     private const int FixedFanMinimumRpm = 5000;
     private const int FixedFanMaximumRpm = 6000;
-    private static readonly TimeSpan DefaultFixedFanSettleDelay =
-        TimeSpan.FromSeconds(12);
+    private const int FixedFanRequiredConsecutiveSamples = 3;
+    private const int DefaultFixedFanMaximumSamples = 75;
+    private const int DefaultFixedFanStateCheckEverySamples = 5;
+    private static readonly TimeSpan DefaultFixedFanSampleInterval =
+        TimeSpan.FromSeconds(1);
     // Rounded up from the Synapse PCAP: 9.56 ms between fixed-state channels,
     // 205.51 ms before the first speed write, and 61.53 ms between speed channels.
     private static readonly TimeSpan FixedStateChannelDelay = TimeSpan.FromMilliseconds(10);
@@ -87,7 +91,9 @@ internal sealed class PerformanceFanSetterValidationRunner
     private readonly TimeProvider timeProvider;
     private readonly TimeSpan exchangeTimeout;
     private readonly TimeSpan cleanupDrainTimeout;
-    private readonly TimeSpan fixedFanSettleDelay;
+    private readonly TimeSpan fixedFanSampleInterval;
+    private readonly int fixedFanMaximumSamples;
+    private readonly int fixedFanStateCheckEverySamples;
     private readonly PendingDisposalRegistry pendingDisposals;
     private int started;
 
@@ -98,7 +104,9 @@ internal sealed class PerformanceFanSetterValidationRunner
         TimeSpan exchangeTimeout,
         TimeSpan cleanupDrainTimeout,
         PendingDisposalRegistry? pendingDisposals = null,
-        TimeSpan? fixedFanSettleDelay = null)
+        TimeSpan? fixedFanSampleInterval = null,
+        int fixedFanMaximumSamples = DefaultFixedFanMaximumSamples,
+        int fixedFanStateCheckEverySamples = DefaultFixedFanStateCheckEverySamples)
     {
         this.createContext = createContext ?? throw new ArgumentNullException(nameof(createContext));
         this.actorFactory = actorFactory ?? throw new ArgumentNullException(nameof(actorFactory));
@@ -107,14 +115,28 @@ internal sealed class PerformanceFanSetterValidationRunner
         RazerCommandSessionTimeout.Validate(cleanupDrainTimeout);
         this.exchangeTimeout = exchangeTimeout;
         this.cleanupDrainTimeout = cleanupDrainTimeout;
-        this.fixedFanSettleDelay = fixedFanSettleDelay
-            ?? DefaultFixedFanSettleDelay;
-        if (this.fixedFanSettleDelay < TimeSpan.Zero
-            || this.fixedFanSettleDelay > TimeSpan.FromSeconds(30))
+        this.fixedFanSampleInterval = fixedFanSampleInterval
+            ?? DefaultFixedFanSampleInterval;
+        if (this.fixedFanSampleInterval < TimeSpan.Zero
+            || this.fixedFanSampleInterval > TimeSpan.FromSeconds(5))
         {
-            throw new ArgumentOutOfRangeException(nameof(fixedFanSettleDelay));
+            throw new ArgumentOutOfRangeException(nameof(fixedFanSampleInterval));
         }
 
+        if (fixedFanMaximumSamples < FixedFanRequiredConsecutiveSamples
+            || fixedFanMaximumSamples > DefaultFixedFanMaximumSamples)
+        {
+            throw new ArgumentOutOfRangeException(nameof(fixedFanMaximumSamples));
+        }
+
+        if (fixedFanStateCheckEverySamples <= 0
+            || fixedFanStateCheckEverySamples > fixedFanMaximumSamples)
+        {
+            throw new ArgumentOutOfRangeException(nameof(fixedFanStateCheckEverySamples));
+        }
+
+        this.fixedFanMaximumSamples = fixedFanMaximumSamples;
+        this.fixedFanStateCheckEverySamples = fixedFanStateCheckEverySamples;
         this.pendingDisposals = pendingDisposals ?? PendingDisposalRegistry.Shared;
     }
 
@@ -384,51 +406,57 @@ internal sealed class PerformanceFanSetterValidationRunner
     {
         try
         {
-            await Task.Delay(
-                fixedFanSettleDelay,
-                timeProvider,
-                cancellationToken).ConfigureAwait(false);
-
-            int[] readings = new int[2];
-            for (byte selectorValue = 1; selectorValue <= 2; selectorValue++)
+            int consecutiveHighSamples = 0;
+            for (int sampleNumber = 1;
+                 sampleNumber <= fixedFanMaximumSamples;
+                 sampleNumber++)
             {
-                FanRpmSelector selector = (FanRpmSelector)selectorValue;
-                var command = new RazerCommandSpec(
-                    CommandClass,
-                    0x88,
-                    [0x01, selectorValue, 0x00],
-                    3,
-                    payload => FanRpmProtocol.TryDecodeQuery(
-                        payload.Span,
-                        selector,
-                        out _));
-                HidSessionResult<ReadOnlyMemory<byte>> response = await ExecuteAsync(
+                await Task.Delay(
+                    fixedFanSampleInterval,
+                    timeProvider,
+                    cancellationToken).ConfigureAwait(false);
+
+                FanRpmReadings? sample = await ReadFanRpmSampleAsync(
                     context,
                     session,
-                    command,
                     cancellationToken).ConfigureAwait(false);
-                if (response.Failure is not null
-                    || !FanRpmProtocol.TryDecodeQuery(
-                        response.Value.Span,
-                        selector,
-                        out readings[selectorValue - 1]))
+                if (sample is null)
                 {
-                    return MapCancellation(
-                        response.Failure,
-                        cancellationToken,
-                        PerformanceFanValidationFailure.FixedFanRpmReadFailed);
+                    return cancellationToken.IsCancellationRequested
+                        ? PerformanceFanValidationFailure.Canceled
+                        : PerformanceFanValidationFailure.FixedFanRpmReadFailed;
+                }
+
+                state.CandidateFanRpm = sample;
+                state.CandidateFanRpmSamples.Add(sample);
+                consecutiveHighSamples = IsFixedTargetRpm(sample.Selector1Rpm)
+                    && IsFixedTargetRpm(sample.Selector2Rpm)
+                        ? consecutiveHighSamples + 1
+                        : 0;
+
+                bool successThresholdReached =
+                    consecutiveHighSamples >= FixedFanRequiredConsecutiveSamples;
+                if (sampleNumber % fixedFanStateCheckEverySamples == 0
+                    || successThresholdReached)
+                {
+                    PerformanceFanValidationFailure stateFailure =
+                        await ValidateFixedFanStateAsync(
+                            context,
+                            session,
+                            cancellationToken).ConfigureAwait(false);
+                    if (stateFailure != PerformanceFanValidationFailure.None)
+                    {
+                        return stateFailure;
+                    }
+                }
+
+                if (successThresholdReached)
+                {
+                    return PerformanceFanValidationFailure.None;
                 }
             }
 
-            state.CandidateFanRpm = new(readings[0], readings[1]);
-
-            // A 5400 RPM target has been observed settling near 5300 RPM. The
-            // 5000-6000 band accommodates physical settling and 100 RPM protocol
-            // units while still rejecting an unchanged low-speed fan response.
-            return readings.All(rpm =>
-                rpm >= FixedFanMinimumRpm && rpm <= FixedFanMaximumRpm)
-                ? PerformanceFanValidationFailure.None
-                : PerformanceFanValidationFailure.FixedFanRpmOutOfRange;
+            return PerformanceFanValidationFailure.FixedFanRpmOutOfRange;
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -439,6 +467,71 @@ internal sealed class PerformanceFanSetterValidationRunner
             return PerformanceFanValidationFailure.FixedFanRpmReadFailed;
         }
     }
+
+    private async Task<FanRpmReadings?> ReadFanRpmSampleAsync(
+        ValidationRunContext context,
+        IRazerCommandSession session,
+        CancellationToken cancellationToken)
+    {
+        int[] readings = new int[2];
+        for (byte selectorValue = 1; selectorValue <= 2; selectorValue++)
+        {
+            FanRpmSelector selector = (FanRpmSelector)selectorValue;
+            var command = new RazerCommandSpec(
+                CommandClass,
+                0x88,
+                [0x01, selectorValue, 0x00],
+                3,
+                payload => FanRpmProtocol.TryDecodeQuery(
+                    payload.Span,
+                    selector,
+                    out _));
+            HidSessionResult<ReadOnlyMemory<byte>> response = await ExecuteAsync(
+                context,
+                session,
+                command,
+                cancellationToken).ConfigureAwait(false);
+            if (response.Failure is not null
+                || !FanRpmProtocol.TryDecodeQuery(
+                    response.Value.Span,
+                    selector,
+                    out readings[selectorValue - 1]))
+            {
+                return null;
+            }
+        }
+
+        return new(readings[0], readings[1]);
+    }
+
+    private async Task<PerformanceFanValidationFailure> ValidateFixedFanStateAsync(
+        ValidationRunContext context,
+        IRazerCommandSession session,
+        CancellationToken cancellationToken)
+    {
+        PairRead state = await ReadPairAsync(
+            context,
+            session,
+            cancellationToken).ConfigureAwait(false);
+        if (!state.Success)
+        {
+            if (cancellationToken.IsCancellationRequested)
+            {
+                return PerformanceFanValidationFailure.Canceled;
+            }
+
+            return state.PairMismatch
+                ? PerformanceFanValidationFailure.CandidatePairMismatch
+                : PerformanceFanValidationFailure.CandidateReadFailed;
+        }
+
+        return state.State == ThermalModeState.FixedMaximum
+            ? PerformanceFanValidationFailure.None
+            : PerformanceFanValidationFailure.CandidateTargetMismatch;
+    }
+
+    private static bool IsFixedTargetRpm(int rpm) =>
+        rpm >= FixedFanMinimumRpm && rpm <= FixedFanMaximumRpm;
 
     private async Task<HidSessionResult<ReadOnlyMemory<byte>>> ExecuteAsync(
         ValidationRunContext context,
@@ -539,8 +632,8 @@ internal sealed class PerformanceFanSetterValidationRunner
     private static PerformanceFanSetterValidationResult Empty(
         PerformanceFanValidationTarget target,
         PerformanceFanValidationFailure failure) => new(
-        target, null, null, null, null, false, false, false, false, false, false,
-        false, false, failure);
+        target, null, null, null, [], null, false, false, false, false, false,
+        false, false, false, failure);
 
     private sealed record PairRead(
         byte[]? Thermal1,
@@ -558,6 +651,7 @@ internal sealed class PerformanceFanSetterValidationRunner
         internal PerformanceFanThermalPair? Baseline { get; set; }
         internal PerformanceFanThermalPair? Candidate { get; set; }
         internal FanRpmReadings? CandidateFanRpm { get; set; }
+        internal List<FanRpmReadings> CandidateFanRpmSamples { get; } = [];
         internal PerformanceFanThermalPair? Restoration { get; set; }
         internal bool ApplyAttempted { get; set; }
         internal bool ApplyAcknowledged { get; set; }
@@ -574,6 +668,7 @@ internal sealed class PerformanceFanSetterValidationRunner
             Baseline,
             Candidate,
             CandidateFanRpm,
+            CandidateFanRpmSamples.ToArray(),
             Restoration,
             ApplyAttempted,
             ApplyAcknowledged,
