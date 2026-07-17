@@ -103,7 +103,7 @@ public sealed class WindowsVerifiedBladeDeviceProviderProductionTests
     }
 
     [Fact]
-    public async Task TransactionMismatchRetriesReadOnceWithFreshVerifiedSession()
+    public async Task TransactionMismatchRetriesReadWithFreshVerifiedSession()
     {
         DeviceCapabilities capabilities = BatteryCapabilities(
             new HashSet<int> { 80 },
@@ -128,6 +128,41 @@ public sealed class WindowsVerifiedBladeDeviceProviderProductionTests
         Assert.Equal(new ConfirmedBatteryState(true, 80, false), state.Battery);
         Assert.Equal(2, factory.OpenCount);
         Assert.Equal(1, collided.DisposeCount);
+        Assert.Equal(1, recovered.DisposeCount);
+    }
+
+    [Fact]
+    public async Task TwoTransactionMismatchesRecoverOnThirdFreshSession()
+    {
+        DeviceCapabilities capabilities = BatteryCapabilities(new HashSet<int> { 80 });
+        var first = new FakeProductionPort(
+            capabilities,
+            BatteryValidationSetting.Limit80,
+            temporary: null)
+        {
+            ProtectionFailure = TransactionMismatch(),
+        };
+        var second = new FakeProductionPort(
+            capabilities,
+            BatteryValidationSetting.Limit80,
+            temporary: null)
+        {
+            ProtectionFailure = TransactionMismatch(),
+        };
+        var recovered = new FakeProductionPort(
+            capabilities,
+            BatteryValidationSetting.Limit80,
+            temporary: null);
+        var factory = new FakeProductionFactory(capabilities, first, second, recovered);
+        using var provider = ReadyProvider(factory);
+        provider.TryGetVerifiedDevice(out IBladeDevice device);
+
+        ConfirmedDeviceState state = await device.ReadStateAsync(default);
+
+        Assert.Equal(new ConfirmedBatteryState(true, 80, null), state.Battery);
+        Assert.Equal(3, factory.OpenCount);
+        Assert.Equal(1, first.DisposeCount);
+        Assert.Equal(1, second.DisposeCount);
         Assert.Equal(1, recovered.DisposeCount);
     }
 
@@ -163,7 +198,7 @@ public sealed class WindowsVerifiedBladeDeviceProviderProductionTests
     }
 
     [Fact]
-    public async Task RepeatedTransactionMismatchStopsAfterOneFreshSessionRetry()
+    public async Task RepeatedTransactionMismatchStopsAfterTwoFreshSessionRetries()
     {
         DeviceCapabilities capabilities = BatteryCapabilities(new HashSet<int> { 80 });
         var first = new FakeProductionPort(
@@ -180,7 +215,14 @@ public sealed class WindowsVerifiedBladeDeviceProviderProductionTests
         {
             ProtectionFailure = TransactionMismatch(),
         };
-        var factory = new FakeProductionFactory(capabilities, first, second);
+        var third = new FakeProductionPort(
+            capabilities,
+            BatteryValidationSetting.Limit80,
+            temporary: null)
+        {
+            ProtectionFailure = TransactionMismatch(),
+        };
+        var factory = new FakeProductionFactory(capabilities, first, second, third);
         using var provider = ReadyProvider(factory);
         provider.TryGetVerifiedDevice(out IBladeDevice device);
 
@@ -191,9 +233,10 @@ public sealed class WindowsVerifiedBladeDeviceProviderProductionTests
         Assert.Equal(
             "Battery state query failed protocol validation (TransactionMismatch).",
             error.Message);
-        Assert.Equal(2, factory.OpenCount);
+        Assert.Equal(3, factory.OpenCount);
         Assert.Equal(1, first.DisposeCount);
         Assert.Equal(1, second.DisposeCount);
+        Assert.Equal(1, third.DisposeCount);
     }
 
     [Theory]

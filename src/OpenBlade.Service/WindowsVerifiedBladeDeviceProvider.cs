@@ -89,6 +89,8 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
 
     private sealed class SerializedBladeDevice : IBladeDevice, IDisposable
     {
+        private const int MaximumBatteryReadAttempts = 3;
+
         private readonly IProductionBatteryPortFactory batteryFactory;
         private readonly IFanRpmQueryRunFactory fanRpmFactory;
         private readonly object lifecycleSync = new();
@@ -165,11 +167,14 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
                             .ConfigureAwait(false);
                     }
                     catch (RazerProtocolException exception) when (
-                        attempt == 0 &&
+                        attempt < MaximumBatteryReadAttempts - 1 &&
                         exception.ValidationFailure ==
                             HidProtocolValidationFailure.TransactionMismatch)
                     {
                         cancellationToken.ThrowIfCancellationRequested();
+                        await Task.Delay(
+                            TimeSpan.FromMilliseconds(25 * (attempt + 1)),
+                            cancellationToken).ConfigureAwait(false);
                     }
                 }
             }
