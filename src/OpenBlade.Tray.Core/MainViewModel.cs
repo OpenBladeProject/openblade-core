@@ -993,10 +993,20 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             externalChanges.Contains(DeviceSubsystem.Battery));
         TelemetryStatus = FormatTelemetry(status.Telemetry);
 
-        AvailablePerformancePresets = capabilities.PerformancePresets
+        PerformancePreset[] performancePresets = capabilities.PerformancePresets
             .Where(Enum.IsDefined)
             .Order()
             .ToArray();
+        if (!AvailablePerformancePresets.SequenceEqual(performancePresets))
+        {
+            AvailablePerformancePresets = performancePresets;
+            PropertyChanged?.Invoke(
+                this,
+                new PropertyChangedEventArgs(nameof(PluggedInPerformanceEditor)));
+            PropertyChanged?.Invoke(
+                this,
+                new PropertyChangedEventArgs(nameof(BatteryPerformanceEditor)));
+        }
         FanMode[] fanModes = capabilities.FanModes
             .Where(Enum.IsDefined)
             .Order()
@@ -1010,6 +1020,12 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             PropertyChanged?.Invoke(
                 this,
                 new PropertyChangedEventArgs(nameof(SelectedFanMode)));
+            PropertyChanged?.Invoke(
+                this,
+                new PropertyChangedEventArgs(nameof(PluggedInFanModeEditor)));
+            PropertyChanged?.Invoke(
+                this,
+                new PropertyChangedEventArgs(nameof(BatteryFanModeEditor)));
         }
         AvailableLightingEffects = capabilities.LightingEffects
             .Where(Enum.IsDefined)

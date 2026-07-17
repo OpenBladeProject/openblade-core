@@ -510,6 +510,29 @@ public sealed class MainViewModelTests
     }
 
     [Fact]
+    public async Task UnchangedPerformanceCapabilities_PreserveItemsSourceAcrossStatusEvents()
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        ServiceStatusSnapshot initial = CreateStatus(verified: true, blocked: false);
+        client.Publish(initial);
+        await WaitUntilAsync(() => viewModel.IsConnected);
+        IReadOnlyList<PerformancePreset> originalOptions =
+            viewModel.AvailablePerformancePresets;
+
+        client.Publish(initial with
+        {
+            Revision = initial.Revision + 1,
+            Message = "Performance mode is already confirmed.",
+        });
+        await WaitUntilAsync(() =>
+            viewModel.ConnectionStatus == "Performance mode is already confirmed.");
+
+        Assert.Same(originalOptions, viewModel.AvailablePerformancePresets);
+    }
+
+    [Fact]
     public async Task InitialFanCapabilityPopulation_ReappliesConfirmedSelectionAfterItemsSource()
     {
         var client = new FakeServiceClient();
@@ -529,9 +552,43 @@ public sealed class MainViewModelTests
 
         int itemsSourceChange = changed.IndexOf(nameof(MainViewModel.AvailableFanModes));
         int selectionReapply = changed.LastIndexOf(nameof(MainViewModel.SelectedFanMode));
+        int pluggedInReapply = changed.LastIndexOf(nameof(MainViewModel.PluggedInFanModeEditor));
+        int batteryReapply = changed.LastIndexOf(nameof(MainViewModel.BatteryFanModeEditor));
         Assert.True(itemsSourceChange >= 0);
         Assert.True(selectionReapply > itemsSourceChange);
+        Assert.True(pluggedInReapply > itemsSourceChange);
+        Assert.True(batteryReapply > itemsSourceChange);
         Assert.Equal(FanMode.Automatic, viewModel.SelectedFanMode);
+    }
+
+    [Fact]
+    public async Task InitialPerformanceCapabilityPopulation_ReappliesProfileSelections()
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        var changed = new List<string>();
+        viewModel.PropertyChanged += (_, args) =>
+        {
+            if (args.PropertyName is not null)
+            {
+                changed.Add(args.PropertyName);
+            }
+        };
+        await viewModel.StartAsync();
+
+        client.Publish(CreateStatus(verified: true, blocked: false));
+        await WaitUntilAsync(() => viewModel.IsConnected);
+
+        int itemsSourceChange = changed.IndexOf(nameof(MainViewModel.AvailablePerformancePresets));
+        int pluggedInReapply = changed.LastIndexOf(
+            nameof(MainViewModel.PluggedInPerformanceEditor));
+        int batteryReapply = changed.LastIndexOf(
+            nameof(MainViewModel.BatteryPerformanceEditor));
+        Assert.True(itemsSourceChange >= 0);
+        Assert.True(pluggedInReapply > itemsSourceChange);
+        Assert.True(batteryReapply > itemsSourceChange);
+        Assert.Equal(PerformancePreset.Balanced, viewModel.PluggedInPerformanceEditor);
+        Assert.Equal(PerformancePreset.Silent, viewModel.BatteryPerformanceEditor);
     }
 
     [Fact]
