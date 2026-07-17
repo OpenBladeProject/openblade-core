@@ -492,6 +492,37 @@
         "brightnessTransactionEmitted": false,
         "ambientMatrixScaled": false
       },
+      "steadyStateDwell": {
+        "capture": "main",
+        "setters": [
+          {
+            "uiPercent": 49,
+            "payloadHex": "01057D",
+            "requestFrames": [11265, 11505],
+            "responseFrames": [11268, 11508],
+            "responseStatusHex": "02",
+            "status02AckEchoesOnly": true
+          },
+          {
+            "uiPercent": 100,
+            "payloadHex": "0105FF",
+            "requestFrames": [11635, 11871],
+            "responseFrames": [11638, 11874],
+            "responseStatusHex": "02",
+            "status02AckEchoesOnly": true
+          }
+        ],
+        "dwellWindows": [
+          { "uiPercent": 49, "firstFrame": 11269, "lastFrame": 11504, "fanRpmPairCount": 56, "lightingQueryCount": 0 },
+          { "uiPercent": 49, "firstFrame": 11509, "lastFrame": 11634, "fanRpmPairCount": 30, "lightingQueryCount": 0 },
+          { "uiPercent": 100, "firstFrame": 11639, "lastFrame": 11746, "fanRpmPairCount": 26, "lightingQueryCount": 0 },
+          { "uiPercent": 100, "firstFrame": 11877, "lastFrame": 12218, "fanRpmPairCount": 80, "lightingQueryCount": 0 }
+        ],
+        "onlyDwellQueryOperation": "0D/88",
+        "independentBrightnessReadbackObserved": false,
+        "pageHydrationComparisonRequired": true,
+        "reason": "The 49% and 100% setters received status-02 acknowledgement echoes, while all four steady-state windows contained only fan-RPM queries and no lighting query. Separate no-mutation Lighting-page hydration captures at both brightness states remain required."
+      },
       "excludedSelector0018Reports": {
         "operations": ["03/01", "03/02", "03/00"],
         "selectorHex": "0018",

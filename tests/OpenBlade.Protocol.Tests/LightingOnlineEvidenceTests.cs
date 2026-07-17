@@ -141,6 +141,47 @@ public sealed class LightingOnlineEvidenceTests
     }
 
     [Fact]
+    public void Evidence_RecordsBrightnessDwellWithoutTreatingAcknowledgementsAsReadback()
+    {
+        using JsonDocument document = LoadEvidence();
+        JsonElement dwell = document.RootElement
+            .GetProperty("lightingOnlineEvidence")
+            .GetProperty("brightness")
+            .GetProperty("steadyStateDwell");
+        JsonElement[] setters = dwell.GetProperty("setters").EnumerateArray().ToArray();
+        JsonElement[] windows = dwell.GetProperty("dwellWindows").EnumerateArray().ToArray();
+
+        Assert.Equal("main", dwell.GetProperty("capture").GetString());
+        Assert.Equal([49, 100],
+            setters.Select(setter => setter.GetProperty("uiPercent").GetInt32()).ToArray());
+        Assert.Equal(["01057D", "0105FF"],
+            setters.Select(setter => setter.GetProperty("payloadHex").GetString()!).ToArray());
+        Assert.Equal([11265, 11505], Frames(setters[0], "requestFrames"));
+        Assert.Equal([11268, 11508], Frames(setters[0], "responseFrames"));
+        Assert.Equal([11635, 11871], Frames(setters[1], "requestFrames"));
+        Assert.Equal([11638, 11874], Frames(setters[1], "responseFrames"));
+        Assert.All(setters, setter =>
+        {
+            Assert.Equal("02", setter.GetProperty("responseStatusHex").GetString());
+            Assert.True(setter.GetProperty("status02AckEchoesOnly").GetBoolean());
+        });
+
+        Assert.Equal(
+            [(49, 11269, 11504, 56), (49, 11509, 11634, 30),
+             (100, 11639, 11746, 26), (100, 11877, 12218, 80)],
+            windows.Select(window => (
+                window.GetProperty("uiPercent").GetInt32(),
+                window.GetProperty("firstFrame").GetInt32(),
+                window.GetProperty("lastFrame").GetInt32(),
+                window.GetProperty("fanRpmPairCount").GetInt32())).ToArray());
+        Assert.All(windows, window =>
+            Assert.Equal(0, window.GetProperty("lightingQueryCount").GetInt32()));
+        Assert.Equal("0D/88", dwell.GetProperty("onlyDwellQueryOperation").GetString());
+        Assert.False(dwell.GetProperty("independentBrightnessReadbackObserved").GetBoolean());
+        Assert.True(dwell.GetProperty("pageHydrationComparisonRequired").GetBoolean());
+    }
+
+    [Fact]
     public void Annotation_IsSanitizedAndRecordsLightingActionOrderAndRestoration()
     {
         using JsonDocument document = JsonDocument.Parse(File.ReadAllText(AnnotationPath()));
