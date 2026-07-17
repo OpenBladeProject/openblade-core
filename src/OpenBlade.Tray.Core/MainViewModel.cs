@@ -1184,21 +1184,30 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     private async Task ClearManualOverridesAsync(object? parameter, CancellationToken token)
     {
         List<string> hardwareNotApplied = [];
-        await ClearOverrideAsync(
-            "fans",
-            cancellationToken => serviceClient.SetFanOverrideAsync(null, cancellationToken),
-            hardwareNotApplied,
-            token).ConfigureAwait(false);
-        await ClearOverrideAsync(
-            "performance",
-            cancellationToken => serviceClient.SetPerformanceOverrideAsync(null, cancellationToken),
-            hardwareNotApplied,
-            token).ConfigureAwait(false);
-        await ClearOverrideAsync(
-            "lighting",
-            cancellationToken => serviceClient.SetLightingOverrideAsync(null, cancellationToken),
-            hardwareNotApplied,
-            token).ConfigureAwait(false);
+        if (FanOverride is not null)
+        {
+            await ClearOverrideAsync(
+                "fans",
+                cancellationToken => serviceClient.SetFanOverrideAsync(null, cancellationToken),
+                hardwareNotApplied,
+                token).ConfigureAwait(false);
+        }
+        if (PerformanceOverride is not null)
+        {
+            await ClearOverrideAsync(
+                "performance",
+                cancellationToken => serviceClient.SetPerformanceOverrideAsync(null, cancellationToken),
+                hardwareNotApplied,
+                token).ConfigureAwait(false);
+        }
+        if (LightingOverride is not null)
+        {
+            await ClearOverrideAsync(
+                "lighting",
+                cancellationToken => serviceClient.SetLightingOverrideAsync(null, cancellationToken),
+                hardwareNotApplied,
+                token).ConfigureAwait(false);
+        }
 
         string message;
         try

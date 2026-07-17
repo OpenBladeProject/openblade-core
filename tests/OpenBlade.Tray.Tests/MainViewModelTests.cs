@@ -960,7 +960,7 @@ public sealed class MainViewModelTests
     }
 
     [Fact]
-    public async Task ClearManualOverrides_ClearsEverySubsystemWhileHardwareIsUnavailable()
+    public async Task ClearManualOverrides_WithNoOverrides_IsIdempotent()
     {
         var client = new FakeServiceClient();
         await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
@@ -972,14 +972,72 @@ public sealed class MainViewModelTests
         await Assert.IsType<AsyncRelayCommand>(viewModel.ClearManualOverridesCommand)
             .ExecuteAsync(null);
 
-        Assert.Equal(3, client.MutationCalls);
-        Assert.Equal(
-            ["fans:<clear>", "performance:<clear>"],
-            client.MutationOperations);
+        Assert.Equal(0, client.MutationCalls);
+        Assert.Empty(client.MutationOperations);
         Assert.Null(client.PerformanceOverride);
         Assert.Null(client.FanOverride);
         Assert.Null(client.LightingOverride);
         Assert.Equal("Manual overrides cleared.", viewModel.OperationStatusMessage);
+    }
+
+    [Fact]
+    public async Task ClearManualOverrides_ClearsOnlyActiveSubsystems()
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        client.Publish(CreateStatus(verified: true, blocked: false) with
+        {
+            PerformanceOverride = new ManualOverride<PerformancePreset>(
+                PerformancePreset.Performance,
+                OverrideLifetime.Persistent),
+            FanOverride = new ManualOverride<FanMode>(
+                FanMode.Maximum,
+                OverrideLifetime.UntilPowerSourceChange),
+        });
+        await WaitUntilAsync(() =>
+            viewModel.PerformanceOverride is not null
+            && viewModel.FanOverride is not null);
+
+        await Assert.IsType<AsyncRelayCommand>(viewModel.ClearManualOverridesCommand)
+            .ExecuteAsync(null);
+
+        Assert.Equal(2, client.MutationCalls);
+        Assert.Equal(["fans:<clear>", "performance:<clear>"], client.MutationOperations);
+        Assert.Null(client.PerformanceOverride);
+        Assert.Null(client.FanOverride);
+        Assert.Null(client.LightingOverride);
+        Assert.Equal("Manual overrides cleared.", viewModel.OperationStatusMessage);
+    }
+
+    [Fact]
+    public async Task ClearManualOverrides_ReportsUnavailableRestorationForActiveLighting()
+    {
+        var client = new FakeServiceClient
+        {
+            NextResult = new ControlOperationResult(
+                ControlOperationStatus.Blocked,
+                "Lighting unavailable."),
+        };
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        client.Publish(CreateStatus(verified: false, blocked: true) with
+        {
+            LightingOverride = new ManualOverride<LightingSettings>(
+                ProfileDefaults.CreateSafeDefaults().Battery.Lighting,
+                OverrideLifetime.Persistent),
+        });
+        await WaitUntilAsync(() => viewModel.LightingOverride is not null);
+
+        await Assert.IsType<AsyncRelayCommand>(viewModel.ClearManualOverridesCommand)
+            .ExecuteAsync(null);
+
+        Assert.Equal(1, client.MutationCalls);
+        Assert.Equal(["lighting:<clear>"], client.MutationOperations);
+        Assert.Null(client.LightingOverride);
+        Assert.Equal(
+            "Manual overrides cleared; hardware restoration was not applied for lighting.",
+            viewModel.OperationStatusMessage);
     }
 
     [Fact]
@@ -1484,6 +1542,10 @@ public sealed class MainViewModelTests
             CancellationToken token)
         {
             PerformanceOverride = value;
+            if (CurrentStatus is not null)
+            {
+                CurrentStatus = CurrentStatus with { PerformanceOverride = value };
+            }
             MutationOperations.Add(value is null
                 ? "performance:<clear>"
                 : $"performance:{value.Value}");
@@ -1495,6 +1557,10 @@ public sealed class MainViewModelTests
             CancellationToken token)
         {
             FanOverride = value;
+            if (CurrentStatus is not null)
+            {
+                CurrentStatus = CurrentStatus with { FanOverride = value };
+            }
             MutationOperations.Add(value is null
                 ? "fans:<clear>"
                 : $"fans:{value.Value}");
@@ -1506,6 +1572,13 @@ public sealed class MainViewModelTests
             CancellationToken token)
         {
             LightingOverride = value;
+            if (CurrentStatus is not null)
+            {
+                CurrentStatus = CurrentStatus with { LightingOverride = value };
+            }
+            MutationOperations.Add(value is null
+                ? "lighting:<clear>"
+                : $"lighting:{value.Value.Effect}");
             return MutateAsync(token);
         }
 
