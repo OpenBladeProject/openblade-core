@@ -42,6 +42,14 @@ public sealed class ProductionFixtureSourceTests
                 (0x0D, 0x02, [0x01, 0x01, 0x02, 0x00]),
             [ProductionBatteryPort.PerformanceBoostSecondAction] =
                 (0x0D, 0x02, [0x01, 0x02, 0x02, 0x00]),
+            [ProductionBatteryPort.PerformanceBatterySaverFirstAction] =
+                (0x0D, 0x02, [0x01, 0x01, 0x03, 0x00]),
+            [ProductionBatteryPort.PerformanceBatterySaverSecondAction] =
+                (0x0D, 0x02, [0x01, 0x02, 0x03, 0x00]),
+            [ProductionBatteryPort.PerformanceBatteryBalancedFirstAction] =
+                (0x0D, 0x02, [0x01, 0x01, 0x06, 0x00]),
+            [ProductionBatteryPort.PerformanceBatteryBalancedSecondAction] =
+                (0x0D, 0x02, [0x01, 0x02, 0x06, 0x00]),
             [ProductionBatteryPort.FanMaximumStateFirstAction] =
                 (0x0D, 0x02, [0x01, 0x01, 0x00, 0x01]),
             [ProductionBatteryPort.FanMaximumStateSecondAction] =
@@ -70,7 +78,13 @@ public sealed class ProductionFixtureSourceTests
             catalog,
             ProductionBatteryReadEvidence.Production);
         Assert.True(capabilities.PerformancePresets.SetEquals(
-            [PerformancePreset.Balanced, PerformancePreset.Silent, PerformancePreset.Performance]));
+            [
+                PerformancePreset.Balanced,
+                PerformancePreset.Silent,
+                PerformancePreset.Performance,
+                PerformancePreset.BatterySaver,
+                PerformancePreset.BatteryBalanced,
+            ]));
         Assert.True(capabilities.FanModes.SetEquals([FanMode.Automatic, FanMode.Maximum]));
         Assert.Empty(capabilities.LightingEffects);
     }

@@ -42,7 +42,11 @@ public sealed class ProfileStore(string path, ProfileSetValidator? validator = n
         try
         {
             byte[] json = await File.ReadAllBytesAsync(path, cancellationToken);
-            ProfileSet profiles = ReadDocument(json);
+            ProfileSet profiles = ReadDocument(json, out bool migrated);
+            if (migrated)
+            {
+                await SaveAsync(profiles, cancellationToken);
+            }
             return new ProfileLoadResult(profiles, false);
         }
         catch (Exception exception) when (BatteryConfigurationStore.IsRecoverable(exception))
@@ -51,7 +55,10 @@ public sealed class ProfileStore(string path, ProfileSetValidator? validator = n
         }
     }
 
-    internal ProfileSet ReadDocument(ReadOnlySpan<byte> json)
+    internal ProfileSet ReadDocument(ReadOnlySpan<byte> json) =>
+        ReadDocument(json, out _);
+
+    internal ProfileSet ReadDocument(ReadOnlySpan<byte> json, out bool migrated)
     {
         BatteryConfigurationStore.RejectDuplicateMembers(json);
         ProfileDocument? document = JsonSerializer.Deserialize<ProfileDocument>(
@@ -62,8 +69,28 @@ public sealed class ProfileStore(string path, ProfileSetValidator? validator = n
             throw new InvalidDataException("The profile schema version is unsupported.");
         }
 
-        validator.Validate(document.Profiles);
-        return document.Profiles;
+        ProfileSet profiles = NormalizeLegacyBatteryProfile(document.Profiles, out migrated);
+        validator.Validate(profiles);
+        return profiles;
+    }
+
+    internal static ProfileSet NormalizeLegacyBatteryProfile(
+        ProfileSet profiles,
+        out bool migrated)
+    {
+        PerformancePreset normalized = profiles.Battery.Performance switch
+        {
+            PerformancePreset.Silent => PerformancePreset.BatterySaver,
+            PerformancePreset.Balanced => PerformancePreset.BatteryBalanced,
+            _ => profiles.Battery.Performance,
+        };
+        migrated = normalized != profiles.Battery.Performance;
+        return migrated
+            ? profiles with
+            {
+                Battery = profiles.Battery with { Performance = normalized },
+            }
+            : profiles;
     }
 
     private async Task<ProfileLoadResult> RecoverSafeDefaultsAsync(

@@ -5,6 +5,8 @@ public enum PerformancePreset
     Silent,
     Balanced,
     Performance,
+    BatterySaver,
+    BatteryBalanced,
 }
 
 public enum FanMode
@@ -130,6 +132,6 @@ public static class ProfileDefaults
 
     public static ProfileSet CreateSafeDefaults() => new(
         new PowerProfile(PerformancePreset.Balanced, FanMode.Automatic, LightingOff),
-        new PowerProfile(PerformancePreset.Silent, FanMode.Automatic, LightingOff),
+        new PowerProfile(PerformancePreset.BatterySaver, FanMode.Automatic, LightingOff),
         BatteryPolicy.Create(80));
 }

@@ -5,13 +5,13 @@ namespace OpenBlade.Contracts.Tests;
 public sealed class ProfileDefaultsTests
 {
     [Fact]
-    public void CreateSafeDefaults_UsesBalancedOnAcAndSilentOnBattery()
+    public void CreateSafeDefaults_UsesBalancedOnAcAndBatterySaverOnBattery()
     {
         ProfileSet profiles = ProfileDefaults.CreateSafeDefaults();
 
         Assert.Equal(PerformancePreset.Balanced, profiles.PluggedIn.Performance);
         Assert.Equal(FanMode.Automatic, profiles.PluggedIn.Fans);
-        Assert.Equal(PerformancePreset.Silent, profiles.Battery.Performance);
+        Assert.Equal(PerformancePreset.BatterySaver, profiles.Battery.Performance);
         Assert.Equal(FanMode.Automatic, profiles.Battery.Fans);
         Assert.Equal(LightingEffect.Off, profiles.PluggedIn.Lighting.Effect);
         Assert.Equal(LightingEffect.Off, profiles.Battery.Lighting.Effect);

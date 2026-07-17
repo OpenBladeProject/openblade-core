@@ -28,6 +28,8 @@ public sealed class ThermalModeProtocolTests
     [InlineData(0x02, 0x00, 2)]
     [InlineData(0x00, 0x01, 3)]
     [InlineData(0x04, 0x01, 3)]
+    [InlineData(0x03, 0x00, 4)]
+    [InlineData(0x06, 0x00, 5)]
     public void TryDecodeQuery_AcceptsOnlyKnownClosedPairs(
         byte mode,
         byte fanValue,
@@ -62,7 +64,7 @@ public sealed class ThermalModeProtocolTests
     [InlineData(0x02, 0x01)]
     [InlineData(0x04, 0x00)]
     [InlineData(0x01, 0x00)]
-    [InlineData(0x03, 0x00)]
+    [InlineData(0x07, 0x00)]
     [InlineData(0xFF, 0xFF)]
     public void TryDecodeQuery_RejectsUnsupportedOrUnknownModeValuePairs(
         byte mode,
@@ -80,6 +82,8 @@ public sealed class ThermalModeProtocolTests
     [InlineData(0x02, 0x00, 2)]
     [InlineData(0x00, 0x01, 3)]
     [InlineData(0x04, 0x01, 3)]
+    [InlineData(0x03, 0x00, 4)]
+    [InlineData(0x06, 0x00, 5)]
     public void TryDecodeMatchingPair_ReturnsSharedState(
         byte mode,
         byte fanValue,

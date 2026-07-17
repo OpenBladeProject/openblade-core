@@ -34,6 +34,18 @@ public sealed class PerformanceFanSetterValidationRunnerTests
             "01020000",
             ["01010001", "01020001", "010136", "010236"]
         },
+        {
+            PerformanceFanValidationTarget.BatterySaver,
+            "01010600",
+            "01020600",
+            ["01010300", "01020300"]
+        },
+        {
+            PerformanceFanValidationTarget.BatteryBalanced,
+            "01010300",
+            "01020300",
+            ["01010600", "01020600"]
+        },
     };
 
     [Theory]
@@ -229,13 +241,19 @@ public sealed class PerformanceFanSetterValidationRunnerTests
         Assert.False(result.ManualRecoveryRequired);
     }
 
-    [Fact]
-    public async Task RunAsync_AbortsWithoutWritesWhenTargetIsAlreadyActive()
+    [Theory]
+    [InlineData(PerformanceFanValidationTarget.Balanced, "01010000", "01020000")]
+    [InlineData(PerformanceFanValidationTarget.BatterySaver, "01010300", "01020300")]
+    [InlineData(PerformanceFanValidationTarget.BatteryBalanced, "01010600", "01020600")]
+    public async Task RunAsync_AbortsWithoutWritesWhenTargetIsAlreadyActive(
+        PerformanceFanValidationTarget target,
+        string first,
+        string second)
     {
-        var session = new StatefulSession("01010000", "01020000");
+        var session = new StatefulSession(first, second);
 
         PerformanceFanSetterValidationResult result = await Runner(session)
-            .RunAsync(PerformanceFanValidationTarget.Balanced, default);
+            .RunAsync(target, default);
 
         Assert.Equal(PerformanceFanValidationFailure.TargetAlreadyActive, result.Failure);
         Assert.False(result.ApplyAttempted);
@@ -245,7 +263,6 @@ public sealed class PerformanceFanSetterValidationRunnerTests
     [Theory]
     [InlineData("01010001", "01020001")]
     [InlineData("01010401", "01020401")]
-    [InlineData("01010300", "01020300")]
     [InlineData("01010000", "01020200")]
     public async Task RunAsync_FailsClosedForFixedUnknownOrMismatchedBaseline(
         string baseline1,

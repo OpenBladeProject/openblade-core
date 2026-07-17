@@ -17,6 +17,7 @@ public sealed class TrayMenuItem
     private readonly ICommand? command;
     private readonly object? parameter;
     private readonly Action? action;
+    private readonly Func<bool>? isVisible;
 
     internal TrayMenuItem(
         string label,
@@ -24,7 +25,8 @@ public sealed class TrayMenuItem
         bool isMutation,
         ICommand? command = null,
         object? parameter = null,
-        Action? action = null)
+        Action? action = null,
+        Func<bool>? isVisible = null)
     {
         Label = label;
         Group = group;
@@ -32,6 +34,7 @@ public sealed class TrayMenuItem
         this.command = command;
         this.parameter = parameter;
         this.action = action;
+        this.isVisible = isVisible;
     }
 
     public string Label { get; }
@@ -40,7 +43,10 @@ public sealed class TrayMenuItem
 
     public bool IsMutation { get; }
 
-    public bool IsEnabled => action is not null || command?.CanExecute(parameter) == true;
+    public bool IsVisible => isVisible?.Invoke() ?? true;
+
+    public bool IsEnabled => IsVisible
+        && (action is not null || command?.CanExecute(parameter) == true);
 
     public void Invoke()
     {
@@ -73,7 +79,8 @@ public sealed class TrayMenuController
             viewModel.ToggleFullChargeCommand,
             viewModel.ClearManualOverridesCommand,
             openTray,
-            exitTray)
+            exitTray,
+            () => viewModel.ActivePowerSource)
     {
     }
 
@@ -83,7 +90,8 @@ public sealed class TrayMenuController
         ICommand toggleFullCharge,
         ICommand clearManualOverrides,
         Action openTray,
-        Action exitTray)
+        Action exitTray,
+        Func<PowerSource>? activePowerSource = null)
     {
         ArgumentNullException.ThrowIfNull(setPerformance);
         ArgumentNullException.ThrowIfNull(setFans);
@@ -91,12 +99,40 @@ public sealed class TrayMenuController
         ArgumentNullException.ThrowIfNull(clearManualOverrides);
         ArgumentNullException.ThrowIfNull(openTray);
         ArgumentNullException.ThrowIfNull(exitTray);
+        activePowerSource ??= static () => PowerSource.PluggedIn;
 
         Items =
         [
-            Mutation("Silent", TrayMenuGroup.Performance, setPerformance, PerformancePreset.Silent),
-            Mutation("Balanced", TrayMenuGroup.Performance, setPerformance, PerformancePreset.Balanced),
-            Mutation("Performance", TrayMenuGroup.Performance, setPerformance, PerformancePreset.Performance),
+            Mutation(
+                PerformancePresetPresentation.Label(PerformancePreset.Balanced),
+                TrayMenuGroup.Performance,
+                setPerformance,
+                PerformancePreset.Balanced,
+                () => activePowerSource() == PowerSource.PluggedIn),
+            Mutation(
+                PerformancePresetPresentation.Label(PerformancePreset.Silent),
+                TrayMenuGroup.Performance,
+                setPerformance,
+                PerformancePreset.Silent,
+                () => activePowerSource() == PowerSource.PluggedIn),
+            Mutation(
+                PerformancePresetPresentation.Label(PerformancePreset.Performance),
+                TrayMenuGroup.Performance,
+                setPerformance,
+                PerformancePreset.Performance,
+                () => activePowerSource() == PowerSource.PluggedIn),
+            Mutation(
+                PerformancePresetPresentation.Label(PerformancePreset.BatteryBalanced),
+                TrayMenuGroup.Performance,
+                setPerformance,
+                PerformancePreset.BatteryBalanced,
+                () => activePowerSource() == PowerSource.Battery),
+            Mutation(
+                PerformancePresetPresentation.Label(PerformancePreset.BatterySaver),
+                TrayMenuGroup.Performance,
+                setPerformance,
+                PerformancePreset.BatterySaver,
+                () => activePowerSource() == PowerSource.Battery),
             Mutation("Automatic", TrayMenuGroup.Fans, setFans, FanMode.Automatic),
             Mutation("Maximum", TrayMenuGroup.Fans, setFans, FanMode.Maximum),
             Mutation("Toggle charge to 100%", TrayMenuGroup.Battery, toggleFullCharge, null),
@@ -108,12 +144,14 @@ public sealed class TrayMenuController
 
     public IReadOnlyList<TrayMenuItem> Items { get; }
 
-    public TrayMenuItem Find(string label) => Items.Single(item => item.Label == label);
+    public TrayMenuItem Find(string label) =>
+        Items.Single(item => item.Label == label && item.IsVisible);
 
     private static TrayMenuItem Mutation(
         string label,
         TrayMenuGroup group,
         ICommand command,
-        object? parameter) =>
-        new(label, group, true, command, parameter);
+        object? parameter,
+        Func<bool>? isVisible = null) =>
+        new(label, group, true, command, parameter, isVisible: isVisible);
 }

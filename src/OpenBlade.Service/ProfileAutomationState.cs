@@ -140,13 +140,32 @@ public sealed class ProfileAutomationState
         PowerProfile profile = PowerSource == PowerSource.PluggedIn
             ? profiles.PluggedIn
             : profiles.Battery;
+        ManualOverride<PerformancePreset>? activePersistentPerformance =
+            persistentPerformance is { } persistent
+            && IsPerformanceCompatibleWithSource(persistent.Value, PowerSource)
+                ? persistent
+                : null;
 
         return new DesiredDeviceState(
-            OverrideResolver.Resolve<PerformancePreset>(profile.Performance, confirmed.Performance.GetValueOrDefault(), temporaryPerformance, persistentPerformance),
+            OverrideResolver.Resolve<PerformancePreset>(profile.Performance, confirmed.Performance.GetValueOrDefault(), temporaryPerformance, activePersistentPerformance),
             OverrideResolver.Resolve<FanMode>(profile.Fans, confirmed.Fans.GetValueOrDefault(), temporaryFans, persistentFans),
             OverrideResolver.Resolve<LightingSettings>(profile.Lighting, confirmed.Lighting ?? profile.Lighting, temporaryLighting, persistentLighting),
             DesiredBattery);
     }
+
+    private static bool IsPerformanceCompatibleWithSource(
+        PerformancePreset performance,
+        PowerSource source) => source switch
+        {
+            PowerSource.PluggedIn => performance is
+                PerformancePreset.Silent
+                or PerformancePreset.Balanced
+                or PerformancePreset.Performance,
+            PowerSource.Battery => performance is
+                PerformancePreset.BatterySaver
+                or PerformancePreset.BatteryBalanced,
+            _ => false,
+        };
 
     private static void SetOverride<T>(
         ManualOverride<T>? value,

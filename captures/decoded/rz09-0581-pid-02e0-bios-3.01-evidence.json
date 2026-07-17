@@ -1166,7 +1166,7 @@
     },
     {
       "feature": "battery-profile-ui-selection",
-      "reason": "The Battery Saver and Balanced profile-card clicks produced no distinct setter beyond recurring telemetry reads."
+      "reason": "Superseded by the focused 2026-07-17 battery-profile capture: Battery Saver repeatedly wrote 01010300/01020300, while battery Balanced repeatedly wrote 01010600/01020600. Independent 0D/82 reads tracked mode 03 and mode 06 respectively."
     },
     {
       "feature": "fan-rpm-telemetry",

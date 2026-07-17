@@ -363,17 +363,17 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
         if (changingPerformanceSelection
             || Volatile.Read(ref disposed) != 0
             || sender is not Microsoft.UI.Xaml.Controls.ComboBox selector
-            || selector.SelectedItem is not PerformancePreset selected
-            || selected == ViewModel.SelectedPerformance)
+            || selector.SelectedItem is not PerformancePresetOption selected
+            || selected.Value == ViewModel.SelectedPerformance)
         {
             return;
         }
 
         changingPerformanceSelection = true;
         if (ViewModel.SetPerformanceCommand is not AsyncRelayCommand command
-            || !command.CanExecute(selected))
+            || !command.CanExecute(selected.Value))
         {
-            selector.SelectedItem = ViewModel.SelectedPerformance;
+            selector.SelectedItem = ViewModel.SelectedPerformanceOption;
             changingPerformanceSelection = false;
             return;
         }
@@ -381,7 +381,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
         selector.IsEnabled = false;
         try
         {
-            await command.ExecuteAsync(selected);
+            await command.ExecuteAsync(selected.Value);
         }
         catch (Exception exception)
         {
@@ -389,7 +389,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
         }
         finally
         {
-            selector.SelectedItem = ViewModel.SelectedPerformance;
+            selector.SelectedItem = ViewModel.SelectedPerformanceOption;
             selector.IsEnabled = true;
             changingPerformanceSelection = false;
         }

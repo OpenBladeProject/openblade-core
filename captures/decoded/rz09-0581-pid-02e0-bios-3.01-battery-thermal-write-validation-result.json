@@ -1,0 +1,51 @@
+{
+  "schemaVersion": 1,
+  "capturedAtUtc": "2026-07-17T22:23:40.5493616Z",
+  "device": {
+    "model": "RZ09-0581",
+    "vendorId": "1532",
+    "productId": "02E0",
+    "biosVersion": "3.01"
+  },
+  "powerSource": "Battery",
+  "readOnly": false,
+  "productionAdmitted": false,
+  "result": {
+    "target": "batterySaver",
+    "baseline": {
+      "thermal1Hex": "01010600",
+      "thermal2Hex": "01020600"
+    },
+    "candidate": {
+      "thermal1Hex": "01010300",
+      "thermal2Hex": "01020300"
+    },
+    "candidateFanRpm": null,
+    "candidateFanRpmSamples": [],
+    "restoration": {
+      "thermal1Hex": "01010600",
+      "thermal2Hex": "01020600"
+    },
+    "applyAttempted": true,
+    "applyAcknowledged": true,
+    "candidateConfirmed": true,
+    "restoreAttempted": true,
+    "restoreAcknowledged": true,
+    "restored": true,
+    "indeterminatePartialWrite": false,
+    "manualRecoveryRequired": false,
+    "failure": "none",
+    "success": true
+  },
+  "postValidationRead": {
+    "thermal1Hex": "01010600",
+    "thermal2Hex": "01020600",
+    "powerLineStatus": "Offline",
+    "batteryLifePercent": 0.54
+  },
+  "notes": [
+    "The typed OpenBlade validator applied mode 03 to both thermal channels, read both channels back, and restored the exact mode 06 baseline.",
+    "A separate read-only query after the validator exited confirmed both channels remained at mode 06.",
+    "Razer user-mode processes remained present; no controller intervention was observed during the bounded validation."
+  ]
+}

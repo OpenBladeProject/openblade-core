@@ -106,6 +106,8 @@ public sealed class WindowsVerifiedBladeDeviceProviderProductionTests
     [InlineData(PerformancePreset.Balanced)]
     [InlineData(PerformancePreset.Silent)]
     [InlineData(PerformancePreset.Performance)]
+    [InlineData(PerformancePreset.BatterySaver)]
+    [InlineData(PerformancePreset.BatteryBalanced)]
     public async Task ReadState_PublishesMatchingAutomaticThermalStateWithBattery(
         PerformancePreset performance)
     {

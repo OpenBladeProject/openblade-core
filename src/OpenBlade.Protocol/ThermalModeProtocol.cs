@@ -15,6 +15,11 @@ internal enum ThermalModeState
     // This is a decoded firmware state, not production-write authorization.
     // Publishing the confirmed fan state does not admit a corresponding setter.
     FixedMaximum,
+
+    // These battery-profile states are read-only until their setters complete
+    // the production admission process.
+    BatterySaverAutomatic,
+    BatteryBalancedAutomatic,
 }
 
 internal readonly record struct ThermalModeReading(
@@ -92,6 +97,8 @@ internal static class ThermalModeProtocol
             (0x00, 0x00) => Assign(ThermalModeState.BalancedAutomatic, out state),
             (0x05, 0x00) => Assign(ThermalModeState.SilentAutomatic, out state),
             (0x02, 0x00) => Assign(ThermalModeState.PerformanceAutomatic, out state),
+            (0x03, 0x00) => Assign(ThermalModeState.BatterySaverAutomatic, out state),
+            (0x06, 0x00) => Assign(ThermalModeState.BatteryBalancedAutomatic, out state),
             // The direct, validated setter remains 00/01. Synapse's own path
             // can normalize the same fixed state to 04/01 on subsequent reads.
             (0x00, 0x01) => Assign(ThermalModeState.FixedMaximum, out state),

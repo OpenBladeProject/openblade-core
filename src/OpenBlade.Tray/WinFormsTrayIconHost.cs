@@ -77,6 +77,7 @@ public sealed class WinFormsTrayIconHost : ITrayIconHost
         {
             foreach ((TrayMenuItem model, ToolStripMenuItem view) in bindings)
             {
+                view.Visible = model.IsVisible;
                 view.Enabled = model.IsEnabled;
             }
         };

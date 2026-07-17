@@ -30,6 +30,8 @@ public sealed class ProfileValidationPolicy
             new(PerformancePreset.Silent, FanMode.Automatic),
             new(PerformancePreset.Performance, FanMode.Automatic),
             new(PerformancePreset.Balanced, FanMode.Maximum),
+            new(PerformancePreset.BatterySaver, FanMode.Automatic),
+            new(PerformancePreset.BatteryBalanced, FanMode.Automatic),
         },
         new HashSet<LightingEffect> { LightingEffect.Off });
 }
@@ -46,8 +48,8 @@ public sealed class ProfileSetValidator(ProfileValidationPolicy policy)
     public void Validate(ProfileSet profiles)
     {
         ArgumentNullException.ThrowIfNull(profiles);
-        ValidateProfile(profiles.PluggedIn, "plugged-in");
-        ValidateProfile(profiles.Battery, "battery");
+        ValidateProfile(profiles.PluggedIn, "plugged-in", PowerSource.PluggedIn);
+        ValidateProfile(profiles.Battery, "battery", PowerSource.Battery);
         ValidateBatteryPolicy(profiles.BatteryPolicy);
     }
 
@@ -78,7 +80,19 @@ public sealed class ProfileSetValidator(ProfileValidationPolicy policy)
         }
     }
 
-    private void ValidateProfile(PowerProfile? profile, string name)
+    public void ValidatePerformanceFanCombination(
+        PerformancePreset performance,
+        FanMode fans,
+        PowerSource source)
+    {
+        ValidatePerformanceSource(performance, source);
+        ValidatePerformanceFanCombination(performance, fans);
+    }
+
+    private void ValidateProfile(
+        PowerProfile? profile,
+        string name,
+        PowerSource source)
     {
         if (profile is null)
         {
@@ -87,7 +101,7 @@ public sealed class ProfileSetValidator(ProfileValidationPolicy policy)
 
         try
         {
-            ValidatePerformanceFanCombination(profile.Performance, profile.Fans);
+            ValidatePerformanceFanCombination(profile.Performance, profile.Fans, source);
         }
         catch (InvalidDataException exception)
         {
@@ -95,6 +109,27 @@ public sealed class ProfileSetValidator(ProfileValidationPolicy policy)
         }
 
         ValidateLighting(profile.Lighting, name);
+    }
+
+    private static void ValidatePerformanceSource(
+        PerformancePreset performance,
+        PowerSource source)
+    {
+        bool valid = source switch
+        {
+            PowerSource.PluggedIn => performance is
+                PerformancePreset.Silent
+                or PerformancePreset.Balanced
+                or PerformancePreset.Performance,
+            PowerSource.Battery => performance is
+                PerformancePreset.BatterySaver
+                or PerformancePreset.BatteryBalanced,
+            _ => false,
+        };
+        if (!valid)
+        {
+            throw Invalid("The performance preset is not valid for this power source.");
+        }
     }
 
     private void ValidateLighting(LightingSettings? lighting, string name)

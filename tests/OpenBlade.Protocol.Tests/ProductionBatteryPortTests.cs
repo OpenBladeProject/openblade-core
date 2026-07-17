@@ -52,6 +52,16 @@ public sealed class ProductionBatteryPortTests
         ProductionBatteryPort.PerformanceBoostFirstAction,
         ProductionBatteryPort.PerformanceBoostSecondAction,
         0x02)]
+    [InlineData(
+        PerformancePreset.BatterySaver,
+        ProductionBatteryPort.PerformanceBatterySaverFirstAction,
+        ProductionBatteryPort.PerformanceBatterySaverSecondAction,
+        0x03)]
+    [InlineData(
+        PerformancePreset.BatteryBalanced,
+        ProductionBatteryPort.PerformanceBatteryBalancedFirstAction,
+        ProductionBatteryPort.PerformanceBatteryBalancedSecondAction,
+        0x06)]
     public void CompletePerformancePairAloneAdmitsOnlyThatPreset(
         PerformancePreset preset,
         string firstAction,
@@ -380,6 +390,8 @@ public sealed class ProductionBatteryPortTests
     [InlineData(0x00, 0x00, PerformancePreset.Balanced, FanMode.Automatic)]
     [InlineData(0x05, 0x00, PerformancePreset.Silent, FanMode.Automatic)]
     [InlineData(0x02, 0x00, PerformancePreset.Performance, FanMode.Automatic)]
+    [InlineData(0x03, 0x00, PerformancePreset.BatterySaver, FanMode.Automatic)]
+    [InlineData(0x06, 0x00, PerformancePreset.BatteryBalanced, FanMode.Automatic)]
     public async Task ThermalPair_MapsRecognizedAutomaticStateWithoutAdmittingWrites(
         byte mode,
         byte fanValue,
@@ -403,6 +415,120 @@ public sealed class ProductionBatteryPortTests
                 command.ClassId,
                 command.CommandId,
                 Convert.ToHexString(command.Arguments.Span))).ToArray());
+    }
+
+    [Theory]
+    [InlineData(
+        PerformancePreset.BatterySaver,
+        ProductionBatteryPort.PerformanceBatterySaverFirstAction,
+        ProductionBatteryPort.PerformanceBatterySaverSecondAction,
+        0x03)]
+    [InlineData(
+        PerformancePreset.BatteryBalanced,
+        ProductionBatteryPort.PerformanceBatteryBalancedFirstAction,
+        ProductionBatteryPort.PerformanceBatteryBalancedSecondAction,
+        0x06)]
+    public async Task BatteryPerformanceSetter_ExactMatchPerformsNoWrite(
+        PerformancePreset preset,
+        string firstAction,
+        string secondAction,
+        byte mode)
+    {
+        byte[] first = [0x01, 0x01, mode, 0x00];
+        byte[] second = [0x01, 0x02, mode, 0x00];
+        var session = new ScriptedSession(Success(first), Success(second));
+        await using var port = CreatePort(
+            session,
+            Catalog(
+                Fixture(firstAction, 0x0D, 0x02, first),
+                Fixture(secondAction, 0x0D, 0x02, second)));
+
+        await port.SetPerformanceAsync(preset, default);
+
+        Assert.Equal(2, session.Commands.Count);
+        Assert.All(session.Commands, command => Assert.Equal(0x82, command.CommandId));
+    }
+
+    [Theory]
+    [InlineData(
+        PerformancePreset.BatterySaver,
+        ProductionBatteryPort.PerformanceBatterySaverFirstAction,
+        ProductionBatteryPort.PerformanceBatterySaverSecondAction,
+        0x06,
+        0x03)]
+    [InlineData(
+        PerformancePreset.BatteryBalanced,
+        ProductionBatteryPort.PerformanceBatteryBalancedFirstAction,
+        ProductionBatteryPort.PerformanceBatteryBalancedSecondAction,
+        0x03,
+        0x06)]
+    public async Task BatteryPerformanceSetter_OppositeBatteryStateWritesDistinctPairAndConfirms(
+        PerformancePreset preset,
+        string firstAction,
+        string secondAction,
+        byte initialMode,
+        byte targetMode)
+    {
+        byte[] targetFirst = [0x01, 0x01, targetMode, 0x00];
+        byte[] targetSecond = [0x01, 0x02, targetMode, 0x00];
+        var session = new ScriptedSession(
+            Success([0x01, 0x01, initialMode, 0x00]),
+            Success([0x01, 0x02, initialMode, 0x00]),
+            Success(targetFirst),
+            Success(targetSecond),
+            Success(targetFirst),
+            Success(targetSecond));
+        await using var port = CreatePort(
+            session,
+            Catalog(
+                Fixture(firstAction, 0x0D, 0x02, targetFirst),
+                Fixture(secondAction, 0x0D, 0x02, targetSecond)));
+
+        await port.SetPerformanceAsync(preset, default);
+
+        Assert.Equal(
+            [(0x82, "01010000"), (0x82, "01020000"),
+             (0x02, Convert.ToHexString(targetFirst)),
+             (0x02, Convert.ToHexString(targetSecond)),
+             (0x82, "01010000"), (0x82, "01020000")],
+            session.Commands.Select(command => (
+                command.CommandId,
+                Convert.ToHexString(command.Arguments.Span))).ToArray());
+    }
+
+    [Fact]
+    public async Task BatteryPerformanceSetter_FinalStateMismatchFailsIndeterminate()
+    {
+        byte[] targetFirst = [0x01, 0x01, 0x06, 0x00];
+        byte[] targetSecond = [0x01, 0x02, 0x06, 0x00];
+        var session = new ScriptedSession(
+            Success([0x01, 0x01, 0x03, 0x00]),
+            Success([0x01, 0x02, 0x03, 0x00]),
+            Success(targetFirst),
+            Success(targetSecond),
+            Success([0x01, 0x01, 0x03, 0x00]),
+            Success([0x01, 0x02, 0x03, 0x00]));
+        await using var port = CreatePort(
+            session,
+            Catalog(
+                Fixture(
+                    ProductionBatteryPort.PerformanceBatteryBalancedFirstAction,
+                    0x0D,
+                    0x02,
+                    targetFirst),
+                Fixture(
+                    ProductionBatteryPort.PerformanceBatteryBalancedSecondAction,
+                    0x0D,
+                    0x02,
+                    targetSecond)));
+
+        BladeWriteException error = await Assert.ThrowsAsync<BladeWriteException>(
+            () => port.SetPerformanceAsync(
+                PerformancePreset.BatteryBalanced,
+                default));
+
+        Assert.Equal(WriteSubmissionState.Indeterminate, error.SubmissionState);
+        Assert.Equal(6, session.Commands.Count);
     }
 
     [Theory]
@@ -443,6 +569,18 @@ public sealed class ProductionBatteryPortTests
         ProductionBatteryPort.PerformanceBoostSecondAction,
         0x02,
         false)]
+    [InlineData(
+        PerformancePreset.BatterySaver,
+        ProductionBatteryPort.PerformanceBatterySaverFirstAction,
+        ProductionBatteryPort.PerformanceBatterySaverSecondAction,
+        0x03,
+        false)]
+    [InlineData(
+        PerformancePreset.BatteryBalanced,
+        ProductionBatteryPort.PerformanceBatteryBalancedFirstAction,
+        ProductionBatteryPort.PerformanceBatteryBalancedSecondAction,
+        0x06,
+        false)]
     public async Task CompleteThermalPair_ExposesOnlyItsValidatedCapability(
         PerformancePreset preset,
         string firstAction,
@@ -476,6 +614,37 @@ public sealed class ProductionBatteryPortTests
 
         Assert.Empty(port.Capabilities.PerformancePresets);
         Assert.Empty(port.Capabilities.FanModes);
+    }
+
+    [Theory]
+    [InlineData(
+        PerformancePreset.BatterySaver,
+        ProductionBatteryPort.PerformanceBatterySaverFirstAction,
+        0x03)]
+    [InlineData(
+        PerformancePreset.BatteryBalanced,
+        ProductionBatteryPort.PerformanceBatteryBalancedFirstAction,
+        0x06)]
+    public async Task IncompleteBatteryPerformancePair_IsNotAdmittedAndCannotWrite(
+        PerformancePreset preset,
+        string firstAction,
+        byte mode)
+    {
+        var session = new ScriptedSession();
+        await using var port = CreatePort(
+            session,
+            Catalog(Fixture(
+                firstAction,
+                0x0D,
+                0x02,
+                [0x01, 0x01, mode, 0x00])));
+
+        BladeWriteException error = await Assert.ThrowsAsync<BladeWriteException>(
+            () => port.SetPerformanceAsync(preset, default));
+
+        Assert.DoesNotContain(preset, port.Capabilities.PerformancePresets);
+        Assert.Equal(WriteSubmissionState.KnownNotApplied, error.SubmissionState);
+        Assert.Empty(session.Commands);
     }
 
     [Fact]
@@ -522,7 +691,7 @@ public sealed class ProductionBatteryPortTests
     public async Task UnknownThermalPayload_FailsClosedWithoutSecondRead()
     {
         var session = new ScriptedSession(
-            Success([0x01, 0x01, 0x03, 0x00]),
+            Success([0x01, 0x01, 0x07, 0x00]),
             Success([0x01, 0x02, 0x00, 0x00]));
         await using var port = CreatePort(session, DeviceCommandCatalog.Empty);
 

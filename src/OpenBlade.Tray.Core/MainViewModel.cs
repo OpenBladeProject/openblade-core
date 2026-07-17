@@ -53,6 +53,8 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     private bool hasExternalChanges;
     private string externalChangesText = string.Empty;
     private IReadOnlyList<PerformancePreset> availablePerformancePresets = [];
+    private IReadOnlyList<PerformancePresetOption> availablePluggedInPerformanceOptions = [];
+    private IReadOnlyList<PerformancePresetOption> availableBatteryPerformanceOptions = [];
     private IReadOnlyList<FanMode> availableFanModes = [];
     private IReadOnlyList<LightingEffect> availableLightingEffects = [];
     private IReadOnlyList<LightingSettings> availableLightingSettings = [];
@@ -79,7 +81,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     private PerformancePreset pluggedInPerformanceEditor = PerformancePreset.Balanced;
     private FanMode pluggedInFanModeEditor = FanMode.Automatic;
     private LightingSettings pluggedInLightingEditor = ProfileDefaults.CreateSafeDefaults().PluggedIn.Lighting;
-    private PerformancePreset batteryPerformanceEditor = PerformancePreset.Silent;
+    private PerformancePreset batteryPerformanceEditor = PerformancePreset.BatterySaver;
     private FanMode batteryFanModeEditor = FanMode.Automatic;
     private LightingSettings batteryLightingEditor = ProfileDefaults.CreateSafeDefaults().Battery.Lighting;
     private int profileChargeLimitEditor = 80;
@@ -339,6 +341,12 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
                 new PropertyChangedEventArgs(nameof(IsPluggedInProfileActive)));
             PropertyChanged?.Invoke(
                 this,
+                new PropertyChangedEventArgs(nameof(AvailableActivePerformanceOptions)));
+            PropertyChanged?.Invoke(
+                this,
+                new PropertyChangedEventArgs(nameof(SelectedPerformanceOption)));
+            PropertyChanged?.Invoke(
+                this,
                 new PropertyChangedEventArgs(nameof(BatteryPowerFlowLabel)));
             NotifyTrayHoverLabel();
             NotifyCommands();
@@ -347,7 +355,8 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
 
     public bool IsPluggedInProfileActive => ActivePowerSource == PowerSource.PluggedIn;
 
-    public string ActivePerformanceLabel => SelectedPerformance.ToString();
+    public string ActivePerformanceLabel =>
+        PerformancePresetPresentation.Label(SelectedPerformance);
 
     public string ActiveFanModeLabel => $"{SelectedFanMode} fans";
 
@@ -361,7 +370,9 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
                 ? "Quick change"
                 : CanControlHardware
                     ? "Connected"
-                    : "Waiting for the laptop";
+                    : latestStatus?.DeviceVerified == false
+                        ? "Laptop not found"
+                        : "Controls unavailable";
 
     public string PerformanceSourceLabel
     {
@@ -447,7 +458,9 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             }
             if (IsReadOnly)
             {
-                return "OpenBlade is waiting for the laptop";
+                return latestStatus?.DeviceVerified == false
+                    ? "Laptop not found"
+                    : "Controls unavailable";
             }
             if (HasExternalChanges)
             {
@@ -504,6 +517,26 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         get => availablePerformancePresets;
         private set => SetField(ref availablePerformancePresets, value);
     }
+
+    public IReadOnlyList<PerformancePresetOption> AvailablePluggedInPerformanceOptions
+    {
+        get => availablePluggedInPerformanceOptions;
+        private set => SetField(ref availablePluggedInPerformanceOptions, value);
+    }
+
+    public IReadOnlyList<PerformancePresetOption> AvailableBatteryPerformanceOptions
+    {
+        get => availableBatteryPerformanceOptions;
+        private set => SetField(ref availableBatteryPerformanceOptions, value);
+    }
+
+    public IReadOnlyList<PerformancePresetOption> AvailableActivePerformanceOptions =>
+        ActivePowerSource == PowerSource.PluggedIn
+            ? AvailablePluggedInPerformanceOptions
+            : AvailableBatteryPerformanceOptions;
+
+    public PerformancePresetOption? SelectedPerformanceOption =>
+        FindPerformanceOption(AvailableActivePerformanceOptions, SelectedPerformance);
 
     public IReadOnlyList<FanMode> AvailableFanModes
     {
@@ -564,6 +597,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             }
             SetField(ref selectedPerformance, value);
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ActivePerformanceLabel)));
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(SelectedPerformanceOption)));
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsSilentSelected)));
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsBalancedSelected)));
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsPerformanceSelected)));
@@ -743,7 +777,11 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         get
         {
             List<string> active = [];
-            AddOverrideStatus(active, "Performance", PerformanceOverride);
+            AddOverrideStatus(
+                active,
+                "Performance",
+                PerformanceOverride,
+                PerformancePresetPresentation.Label);
             AddOverrideStatus(active, "Fans", FanOverride);
             AddOverrideStatus(active, "Lighting", LightingOverride);
             return active.Count == 0
@@ -761,7 +799,11 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         get
         {
             List<string> active = [];
-            AddOverrideStatus(active, "Performance", PerformanceOverride);
+            AddOverrideStatus(
+                active,
+                "Performance",
+                PerformanceOverride,
+                PerformancePresetPresentation.Label);
             AddOverrideStatus(active, "Fans", FanOverride);
             if (IsLightingVisible)
             {
@@ -780,7 +822,32 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     public PerformancePreset PluggedInPerformanceEditor
     {
         get => pluggedInPerformanceEditor;
-        set => SetEditorField(ref pluggedInPerformanceEditor, value);
+        set
+        {
+            if (pluggedInPerformanceEditor == value)
+            {
+                return;
+            }
+
+            SetEditorField(ref pluggedInPerformanceEditor, value);
+            PropertyChanged?.Invoke(
+                this,
+                new PropertyChangedEventArgs(nameof(PluggedInPerformanceOption)));
+        }
+    }
+
+    public PerformancePresetOption? PluggedInPerformanceOption
+    {
+        get => FindPerformanceOption(
+            AvailablePluggedInPerformanceOptions,
+            PluggedInPerformanceEditor);
+        set
+        {
+            if (value is not null)
+            {
+                PluggedInPerformanceEditor = value.Value;
+            }
+        }
     }
 
     public FanMode PluggedInFanModeEditor
@@ -798,7 +865,32 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     public PerformancePreset BatteryPerformanceEditor
     {
         get => batteryPerformanceEditor;
-        set => SetEditorField(ref batteryPerformanceEditor, value);
+        set
+        {
+            if (batteryPerformanceEditor == value)
+            {
+                return;
+            }
+
+            SetEditorField(ref batteryPerformanceEditor, value);
+            PropertyChanged?.Invoke(
+                this,
+                new PropertyChangedEventArgs(nameof(BatteryPerformanceOption)));
+        }
+    }
+
+    public PerformancePresetOption? BatteryPerformanceOption
+    {
+        get => FindPerformanceOption(
+            AvailableBatteryPerformanceOptions,
+            BatteryPerformanceEditor);
+        set
+        {
+            if (value is not null)
+            {
+                BatteryPerformanceEditor = value.Value;
+            }
+        }
     }
 
     public FanMode BatteryFanModeEditor
@@ -1080,6 +1172,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         && Enum.IsDefined(value)
         && CanMutate
         && latestStatus!.Capabilities!.PerformancePresets.Contains(value)
+        && PerformancePresetPresentation.IsAvailable(ActivePowerSource, value)
         && !MaximumFansAreEffectiveOrConfirmed();
 
     private bool CanSetFanMode(object? parameter)
@@ -1377,18 +1470,22 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         PerformanceSourceLabel = SourceLabel(
             DeviceSubsystem.Performance,
             confirmed?.Performance is not null,
+            status.DeviceVerified,
             externalChanges);
         FanSourceLabel = SourceLabel(
             DeviceSubsystem.Fans,
             confirmed?.Fans is not null,
+            status.DeviceVerified,
             externalChanges);
         LightingSourceLabel = SourceLabel(
             DeviceSubsystem.Lighting,
             confirmed?.Lighting is not null,
+            status.DeviceVerified,
             externalChanges);
         BatterySourceLabel = FormatBatterySource(
             confirmed?.Battery,
-            externalChanges.Contains(DeviceSubsystem.Battery));
+            externalChanges.Contains(DeviceSubsystem.Battery),
+            status.DeviceVerified);
         PerformancePreset[] performancePresets = capabilities.PerformancePresets
             .Where(Enum.IsDefined)
             .Order()
@@ -1406,6 +1503,41 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             PropertyChanged?.Invoke(
                 this,
                 new PropertyChangedEventArgs(nameof(BatteryPerformanceEditor)));
+        }
+        var admittedPerformancePresets = performancePresets.ToHashSet();
+        IReadOnlyList<PerformancePresetOption> pluggedInOptions =
+            PerformancePresetPresentation.CreateOptions(
+                PowerSource.PluggedIn,
+                admittedPerformancePresets);
+        IReadOnlyList<PerformancePresetOption> batteryOptions =
+            PerformancePresetPresentation.CreateOptions(
+                PowerSource.Battery,
+                admittedPerformancePresets);
+        bool performanceOptionsChanged = false;
+        if (!AvailablePluggedInPerformanceOptions.SequenceEqual(pluggedInOptions))
+        {
+            AvailablePluggedInPerformanceOptions = pluggedInOptions;
+            performanceOptionsChanged = true;
+        }
+        if (!AvailableBatteryPerformanceOptions.SequenceEqual(batteryOptions))
+        {
+            AvailableBatteryPerformanceOptions = batteryOptions;
+            performanceOptionsChanged = true;
+        }
+        if (performanceOptionsChanged)
+        {
+            PropertyChanged?.Invoke(
+                this,
+                new PropertyChangedEventArgs(nameof(AvailableActivePerformanceOptions)));
+            PropertyChanged?.Invoke(
+                this,
+                new PropertyChangedEventArgs(nameof(SelectedPerformanceOption)));
+            PropertyChanged?.Invoke(
+                this,
+                new PropertyChangedEventArgs(nameof(PluggedInPerformanceOption)));
+            PropertyChanged?.Invoke(
+                this,
+                new PropertyChangedEventArgs(nameof(BatteryPerformanceOption)));
         }
         FanMode[] fanModes = capabilities.FanModes
             .Where(Enum.IsDefined)
@@ -1770,11 +1902,13 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         return ProfileSupportedOrUnchanged(
                 draft.PluggedIn,
                 Profiles.PluggedIn,
-                capabilities)
+                capabilities,
+                PowerSource.PluggedIn)
             && ProfileSupportedOrUnchanged(
                 draft.Battery,
                 Profiles.Battery,
-                capabilities)
+                capabilities,
+                PowerSource.Battery)
             && HasBatteryCapability(capabilities)
             && capabilities.ChargeLimits.Contains(
                 draft.BatteryPolicy.ChargeLimitPercent);
@@ -1783,9 +1917,12 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     private static bool ProfileSupportedOrUnchanged(
         PowerProfile draft,
         PowerProfile current,
-        DeviceCapabilities capabilities) =>
+        DeviceCapabilities capabilities,
+        PowerSource powerSource) =>
         Enum.IsDefined(draft.Performance)
         && (capabilities.PerformancePresets.Contains(draft.Performance)
+            || draft.Performance == current.Performance)
+        && (PerformancePresetPresentation.IsAvailable(powerSource, draft.Performance)
             || draft.Performance == current.Performance)
         && Enum.IsDefined(draft.Fans)
         && (capabilities.FanModes.Contains(draft.Fans)
@@ -1926,6 +2063,12 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             ref batteryPerformanceEditor,
             value.Battery.Performance,
             nameof(BatteryPerformanceEditor));
+        PropertyChanged?.Invoke(
+            this,
+            new PropertyChangedEventArgs(nameof(PluggedInPerformanceOption)));
+        PropertyChanged?.Invoke(
+            this,
+            new PropertyChangedEventArgs(nameof(BatteryPerformanceOption)));
         SetField(
             ref batteryFanModeEditor,
             value.Battery.Fans,
@@ -2000,20 +2143,28 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     private static string SourceLabel(
         DeviceSubsystem subsystem,
         bool confirmed,
+        bool deviceVerified,
         IReadOnlyCollection<DeviceSubsystem> externalChanges) =>
-        externalChanges.Contains(subsystem)
+        !deviceVerified
+            ? "Laptop not found"
+            : externalChanges.Contains(subsystem)
             ? "Changed by another app"
             : confirmed
                 ? "Current setting"
-                : "Waiting for the laptop";
+                : "Controls unavailable";
 
     private static string FormatBatterySource(
         ConfirmedBatteryState? battery,
-        bool changedOutside)
+        bool changedOutside,
+        bool deviceVerified)
     {
+        if (!deviceVerified)
+        {
+            return "Laptop not found";
+        }
         if (battery is null)
         {
-            return "Waiting for the laptop";
+            return "Controls unavailable";
         }
 
         string state = battery.TemporaryFullCharge switch
@@ -2071,11 +2222,11 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     {
         if (!status.DeviceVerified)
         {
-            return "This Blade isn’t supported";
+            return "Laptop not found";
         }
 
         return status.WritesBlocked
-            ? "OpenBlade is waiting for the laptop"
+            ? "Controls unavailable"
             : "Ready";
     }
 
@@ -2159,7 +2310,8 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     private static void AddOverrideStatus<T>(
         ICollection<string> status,
         string subsystem,
-        ManualOverride<T>? value)
+        ManualOverride<T>? value,
+        Func<T, string>? formatValue = null)
     {
         if (value is null)
         {
@@ -2169,8 +2321,16 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         string lifetime = value.Lifetime == OverrideLifetime.Persistent
             ? "until reset"
             : "until the power source changes";
-        status.Add($"{subsystem}: {value.Value} {lifetime}");
+        string displayValue = formatValue?.Invoke(value.Value)
+            ?? (value.Value is null ? string.Empty : value.Value.ToString())
+            ?? string.Empty;
+        status.Add($"{subsystem}: {displayValue} {lifetime}");
     }
+
+    private static PerformancePresetOption? FindPerformanceOption(
+        IReadOnlyList<PerformancePresetOption> options,
+        PerformancePreset value) =>
+        options.FirstOrDefault(option => option.Value == value);
 
     private void SetEditorField<T>(
         ref T field,

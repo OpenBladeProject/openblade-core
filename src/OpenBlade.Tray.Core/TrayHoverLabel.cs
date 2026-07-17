@@ -52,5 +52,5 @@ public static class TrayHoverLabelFormatter
     private static string FormatProfile(
         PowerSource powerSource,
         PerformancePreset performance) =>
-        $"{(powerSource == PowerSource.Battery ? "Battery" : "Plugged in")} · {performance}";
+        $"{(powerSource == PowerSource.Battery ? "Battery" : "Plugged in")} · {PerformancePresetPresentation.Label(performance)}";
 }

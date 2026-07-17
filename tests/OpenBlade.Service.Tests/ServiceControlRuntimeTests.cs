@@ -301,7 +301,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
 
         context.Device.ReadStateFailure = new IOException("device vanished");
         await context.Runtime.ObserveAsync(CancellationToken.None);
-        Assert.False(context.Runtime.GetStatus().DeviceVerified);
+        Assert.True(context.Runtime.GetStatus().DeviceVerified);
         Assert.True(context.Runtime.GetStatus().WritesBlocked);
         Assert.Same(capabilities, context.Runtime.GetStatus().Capabilities);
         Assert.Same(confirmed, context.Runtime.GetStatus().ConfirmedState);
@@ -309,8 +309,51 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         context.Device.ReadStateFailure = null;
         context.Provider.Available = false;
         await context.Runtime.ObserveAsync(CancellationToken.None);
+        Assert.False(context.Runtime.GetStatus().DeviceVerified);
+        Assert.True(context.Runtime.GetStatus().WritesBlocked);
         Assert.Same(capabilities, context.Runtime.GetStatus().Capabilities);
         Assert.Same(confirmed, context.Runtime.GetStatus().ConfirmedState);
+    }
+
+    [Fact]
+    public async Task PayloadValidationObservationFailure_RetriesOneReadAndRecovers()
+    {
+        TestContext context = CreateContext(providerAvailable: true);
+        context.Device.Capabilities = DeviceCapabilities.SafeTargetDefaults();
+        context.Device.ConfirmedState = new ConfirmedDeviceState(
+            PerformancePreset.Balanced,
+            FanMode.Automatic,
+            ConfirmedBattery(80),
+            ProfileDefaults.CreateSafeDefaults().PluggedIn.Lighting);
+        context.Device.ReadStateFailureOnCall = 1;
+        context.Device.ReadStateFailureOnCallException = new RazerProtocolException(
+            "Battery state query failed protocol validation (PayloadValidator).",
+            HidProtocolValidationFailure.PayloadValidator);
+
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+
+        Assert.Equal(2, context.Device.StateReadCalls);
+        Assert.Equal(0, context.Device.TotalSetterCalls);
+        Assert.True(context.Runtime.GetStatus().DeviceVerified);
+        Assert.False(context.Runtime.GetStatus().WritesBlocked);
+        Assert.Equal("Verified device state observed.", context.Runtime.GetStatus().Message);
+    }
+
+    [Fact]
+    public async Task RepeatedPayloadValidationObservationFailure_BlocksWritesButPreservesVerification()
+    {
+        TestContext context = CreateContext(providerAvailable: true);
+        context.Device.ReadStateFailure = new RazerProtocolException(
+            "Battery state query failed protocol validation (PayloadValidator).",
+            HidProtocolValidationFailure.PayloadValidator);
+
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+
+        Assert.Equal(2, context.Device.StateReadCalls);
+        Assert.Equal(0, context.Device.TotalSetterCalls);
+        Assert.True(context.Runtime.GetStatus().DeviceVerified);
+        Assert.True(context.Runtime.GetStatus().WritesBlocked);
+        Assert.Contains("PayloadValidator", context.Runtime.GetStatus().Message);
     }
 
     [Fact]
@@ -326,6 +369,9 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         const string expected =
             "Verified device access failed: Battery state query failed protocol validation (Checksum).";
         Assert.Equal(expected, context.Runtime.GetStatus().Message);
+        Assert.Equal(1, context.Device.StateReadCalls);
+        Assert.True(context.Runtime.GetStatus().DeviceVerified);
+        Assert.True(context.Runtime.GetStatus().WritesBlocked);
         DiagnosticCommandResult record = Assert.Single(
             context.History.Snapshot().CommandResults);
         Assert.Equal("Service", record.Subsystem);
@@ -500,6 +546,103 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         Assert.Equal(
             [DeviceSubsystem.Battery],
             context.Runtime.GetStatus().ExternalChanges);
+    }
+
+    [Theory]
+    [InlineData(
+        PowerSource.PluggedIn,
+        PowerSource.Battery,
+        PerformancePreset.Balanced,
+        PerformancePreset.BatteryBalanced)]
+    [InlineData(
+        PowerSource.Battery,
+        PowerSource.PluggedIn,
+        PerformancePreset.BatteryBalanced,
+        PerformancePreset.Balanced)]
+    public async Task PowerTransition_PreReadAtPriorDesired_WritesNewDesiredWithoutWarning(
+        PowerSource initialSource,
+        PowerSource newSource,
+        PerformancePreset priorDesired,
+        PerformancePreset newDesired)
+    {
+        TestContext context = await CreateBatteryBalancedTransitionContextAsync(
+            initialSource,
+            priorDesired);
+        int setterCalls = context.Device.PerformanceSetCalls;
+        context.Telemetry.Current = CreateTelemetry(newSource);
+
+        await context.Runtime.HandlePowerSourceChangedAsync(CancellationToken.None);
+
+        Assert.Equal(setterCalls + 1, context.Device.PerformanceSetCalls);
+        Assert.Equal(newDesired, context.Runtime.GetStatus().ConfirmedState!.Performance);
+        Assert.DoesNotContain(
+            DeviceSubsystem.Performance,
+            context.Runtime.GetStatus().ExternalChanges);
+    }
+
+    [Theory]
+    [InlineData(
+        PowerSource.PluggedIn,
+        PowerSource.Battery,
+        PerformancePreset.BatteryBalanced)]
+    [InlineData(
+        PowerSource.Battery,
+        PowerSource.PluggedIn,
+        PerformancePreset.Balanced)]
+    public async Task PowerTransition_PreReadAtNewDesired_PerformsNoWriteOrWarning(
+        PowerSource initialSource,
+        PowerSource newSource,
+        PerformancePreset newDesired)
+    {
+        PerformancePreset priorDesired = initialSource == PowerSource.PluggedIn
+            ? PerformancePreset.Balanced
+            : PerformancePreset.BatteryBalanced;
+        TestContext context = await CreateBatteryBalancedTransitionContextAsync(
+            initialSource,
+            priorDesired);
+        context.Device.ConfirmedState = context.Device.ConfirmedState with
+        {
+            Performance = newDesired,
+        };
+        int setterCalls = context.Device.PerformanceSetCalls;
+        context.Telemetry.Current = CreateTelemetry(newSource);
+
+        await context.Runtime.HandlePowerSourceChangedAsync(CancellationToken.None);
+
+        Assert.Equal(setterCalls, context.Device.PerformanceSetCalls);
+        Assert.Equal(newDesired, context.Runtime.GetStatus().ConfirmedState!.Performance);
+        Assert.DoesNotContain(
+            DeviceSubsystem.Performance,
+            context.Runtime.GetStatus().ExternalChanges);
+    }
+
+    [Theory]
+    [InlineData(PowerSource.PluggedIn, PowerSource.Battery)]
+    [InlineData(PowerSource.Battery, PowerSource.PluggedIn)]
+    public async Task PowerTransition_PreReadMatchingNeitherEndpoint_PreservesAndWarns(
+        PowerSource initialSource,
+        PowerSource newSource)
+    {
+        PerformancePreset priorDesired = initialSource == PowerSource.PluggedIn
+            ? PerformancePreset.Balanced
+            : PerformancePreset.BatteryBalanced;
+        TestContext context = await CreateBatteryBalancedTransitionContextAsync(
+            initialSource,
+            priorDesired);
+        context.Device.ConfirmedState = context.Device.ConfirmedState with
+        {
+            Performance = PerformancePreset.BatterySaver,
+        };
+        int setterCalls = context.Device.PerformanceSetCalls;
+        context.Telemetry.Current = CreateTelemetry(newSource);
+
+        await context.Runtime.HandlePowerSourceChangedAsync(CancellationToken.None);
+
+        ServiceStatusSnapshot status = context.Runtime.GetStatus();
+        Assert.Equal(setterCalls, context.Device.PerformanceSetCalls);
+        Assert.Equal(PerformancePreset.BatterySaver, status.ConfirmedState!.Performance);
+        Assert.Contains(DeviceSubsystem.Performance, status.ExternalChanges);
+        Assert.Contains("paused", status.Message, StringComparison.OrdinalIgnoreCase);
     }
 
     [Theory]
@@ -816,8 +959,8 @@ public sealed class ServiceControlRuntimeTests : IDisposable
 
         ServiceStatusSnapshot status = context.Runtime.GetStatus();
         Assert.Equal(PowerSource.Battery, status.ActivePowerSource);
-        Assert.Equal(PerformancePreset.Silent, status.DesiredState.Performance.Value);
-        Assert.Equal(PerformancePreset.Silent, status.ConfirmedState!.Performance);
+        Assert.Equal(PerformancePreset.BatterySaver, status.DesiredState.Performance.Value);
+        Assert.Equal(PerformancePreset.BatterySaver, status.ConfirmedState!.Performance);
         Assert.Equal(1, context.Device.PerformanceSetCalls);
         Assert.Equal(0, context.Device.FanSetCalls);
         Assert.Equal(0, context.Device.BatterySetCalls);
@@ -1885,6 +2028,32 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         Assert.Equal(FanMode.Maximum, restarted.Runtime.GetStatus().FanOverride!.Value);
     }
 
+    [Theory]
+    [InlineData(PowerSource.PluggedIn, PerformancePreset.BatterySaver)]
+    [InlineData(PowerSource.PluggedIn, PerformancePreset.BatteryBalanced)]
+    [InlineData(PowerSource.Battery, PerformancePreset.Silent)]
+    [InlineData(PowerSource.Battery, PerformancePreset.Balanced)]
+    [InlineData(PowerSource.Battery, PerformancePreset.Performance)]
+    public async Task ManualPerformanceOverride_IncompatibleWithPowerSource_IsRejectedBeforeDeviceAccess(
+        PowerSource source,
+        PerformancePreset performance)
+    {
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            initialPowerSource: source);
+
+        ControlOperationResult result = await context.Runtime.SetPerformanceOverrideAsync(
+            new ManualOverride<PerformancePreset>(
+                performance,
+                OverrideLifetime.Persistent),
+            CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Failed, result.Status);
+        Assert.Null(context.Runtime.GetStatus().PerformanceOverride);
+        Assert.Equal(0, context.Provider.TryGetCount);
+        Assert.Equal(0, context.Device.TotalCalls);
+    }
+
     [Fact]
     public async Task EnableFullChargeWhileOnBattery_DoesNotRemainLatentAfterAcTransition()
     {
@@ -2246,6 +2415,41 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         return context;
     }
 
+    private async Task<TestContext> CreateBatteryBalancedTransitionContextAsync(
+        PowerSource initialSource,
+        PerformancePreset initialPerformance)
+    {
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            initialPowerSource: initialSource);
+        context.Device.Capabilities = DeviceCapabilities.SafeTargetDefaults() with
+        {
+            ChargeLimits = new HashSet<int> { 80 },
+            SupportsBatteryProtectionOff = true,
+            SupportsTemporaryFullCharge = true,
+        };
+        ProfileSet profiles = context.Runtime.GetStatus().Profiles;
+        profiles = profiles with
+        {
+            Battery = profiles.Battery with
+            {
+                Performance = PerformancePreset.BatteryBalanced,
+            },
+        };
+        await context.Runtime.UpdateProfilesAsync(profiles, CancellationToken.None);
+        PowerProfile active = initialSource == PowerSource.PluggedIn
+            ? profiles.PluggedIn
+            : profiles.Battery;
+        context.Device.ConfirmedState = new ConfirmedDeviceState(
+            initialPerformance,
+            active.Fans,
+            ConfirmedBattery(80),
+            active.Lighting);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        Assert.Empty(context.Runtime.GetStatus().ExternalChanges);
+        return context;
+    }
+
     private static int[] SetterCounts(CountingBladeDevice device) =>
     [
         device.PerformanceSetCalls,
@@ -2550,6 +2754,8 @@ public sealed class ServiceControlRuntimeTests : IDisposable
 
         public int? ReadStateFailureOnCall { get; set; }
 
+        public Exception? ReadStateFailureOnCallException { get; set; }
+
         public Action? AfterReadState { get; set; }
 
         public Action<int>? AfterReadStateCall { get; set; }
@@ -2574,7 +2780,9 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             if (ReadStateFailure is not null
                 || ReadStateFailureOnCall == StateReadCalls)
             {
-                throw ReadStateFailure ?? new IOException("readback failed");
+                throw ReadStateFailure
+                    ?? ReadStateFailureOnCallException
+                    ?? new IOException("readback failed");
             }
 
             AfterReadState?.Invoke();

@@ -10,6 +10,8 @@ public sealed class ProfileSetValidatorTests
     [InlineData(PerformancePreset.Balanced, FanMode.Automatic)]
     [InlineData(PerformancePreset.Performance, FanMode.Automatic)]
     [InlineData(PerformancePreset.Balanced, FanMode.Maximum)]
+    [InlineData(PerformancePreset.BatterySaver, FanMode.Automatic)]
+    [InlineData(PerformancePreset.BatteryBalanced, FanMode.Automatic)]
     public void DefaultPolicy_AllowsOnlyVerifiedThermalPairs(
         PerformancePreset performance,
         FanMode fans)
@@ -28,6 +30,41 @@ public sealed class ProfileSetValidatorTests
         Assert.Throws<InvalidDataException>(() =>
             ProfileSetValidator.CreateUnverifiedSafeDefaults()
                 .ValidatePerformanceFanCombination(performance, fans));
+    }
+
+    [Theory]
+    [InlineData(PerformancePreset.Silent, PowerSource.PluggedIn)]
+    [InlineData(PerformancePreset.Balanced, PowerSource.PluggedIn)]
+    [InlineData(PerformancePreset.Performance, PowerSource.PluggedIn)]
+    [InlineData(PerformancePreset.BatterySaver, PowerSource.Battery)]
+    [InlineData(PerformancePreset.BatteryBalanced, PowerSource.Battery)]
+    public void SourceAwareCombinationValidation_AcceptsCompatiblePreset(
+        PerformancePreset performance,
+        PowerSource source)
+    {
+        ProfileSetValidator.CreateUnverifiedSafeDefaults()
+            .ValidatePerformanceFanCombination(
+                performance,
+                FanMode.Automatic,
+                source);
+    }
+
+    [Theory]
+    [InlineData(PerformancePreset.BatterySaver, PowerSource.PluggedIn)]
+    [InlineData(PerformancePreset.BatteryBalanced, PowerSource.PluggedIn)]
+    [InlineData(PerformancePreset.Silent, PowerSource.Battery)]
+    [InlineData(PerformancePreset.Balanced, PowerSource.Battery)]
+    [InlineData(PerformancePreset.Performance, PowerSource.Battery)]
+    public void SourceAwareCombinationValidation_RejectsIncompatiblePreset(
+        PerformancePreset performance,
+        PowerSource source)
+    {
+        Assert.Throws<InvalidDataException>(() =>
+            ProfileSetValidator.CreateUnverifiedSafeDefaults()
+                .ValidatePerformanceFanCombination(
+                    performance,
+                    FanMode.Automatic,
+                    source));
     }
 
     [Fact]
@@ -56,6 +93,58 @@ public sealed class ProfileSetValidatorTests
         };
 
         Assert.Throws<InvalidDataException>(() => CreateValidator().Validate(profiles));
+    }
+
+    [Theory]
+    [InlineData(PerformancePreset.BatterySaver)]
+    [InlineData(PerformancePreset.BatteryBalanced)]
+    public void Validate_RejectsBatteryPresetForPluggedInProfile(
+        PerformancePreset performance)
+    {
+        ProfileSet profiles = ProfileDefaults.CreateSafeDefaults() with
+        {
+            PluggedIn = ProfileDefaults.CreateSafeDefaults().PluggedIn with
+            {
+                Performance = performance,
+            },
+        };
+
+        Assert.Throws<InvalidDataException>(() => CreateValidator().Validate(profiles));
+    }
+
+    [Theory]
+    [InlineData(PerformancePreset.Silent)]
+    [InlineData(PerformancePreset.Balanced)]
+    [InlineData(PerformancePreset.Performance)]
+    public void Validate_RejectsPluggedInPresetForBatteryProfile(
+        PerformancePreset performance)
+    {
+        ProfileSet profiles = ProfileDefaults.CreateSafeDefaults() with
+        {
+            Battery = ProfileDefaults.CreateSafeDefaults().Battery with
+            {
+                Performance = performance,
+            },
+        };
+
+        Assert.Throws<InvalidDataException>(() => CreateValidator().Validate(profiles));
+    }
+
+    [Theory]
+    [InlineData(PerformancePreset.BatterySaver)]
+    [InlineData(PerformancePreset.BatteryBalanced)]
+    public void Validate_AcceptsBatterySpecificPresetForBatteryProfile(
+        PerformancePreset performance)
+    {
+        ProfileSet profiles = ProfileDefaults.CreateSafeDefaults() with
+        {
+            Battery = ProfileDefaults.CreateSafeDefaults().Battery with
+            {
+                Performance = performance,
+            },
+        };
+
+        CreateValidator().Validate(profiles);
     }
 
     [Fact]
@@ -131,6 +220,8 @@ public sealed class ProfileSetValidatorTests
                 new(PerformancePreset.Balanced, FanMode.Automatic),
                 new(PerformancePreset.Silent, FanMode.Automatic),
                 new(PerformancePreset.Performance, FanMode.Maximum),
+                new(PerformancePreset.BatterySaver, FanMode.Automatic),
+                new(PerformancePreset.BatteryBalanced, FanMode.Automatic),
             });
 
         validator.Validate(profiles);
@@ -159,6 +250,8 @@ public sealed class ProfileSetValidatorTests
             {
                 new(PerformancePreset.Balanced, FanMode.Automatic),
                 new(PerformancePreset.Silent, FanMode.Automatic),
+                new(PerformancePreset.BatterySaver, FanMode.Automatic),
+                new(PerformancePreset.BatteryBalanced, FanMode.Automatic),
             },
             lightingEffects ?? new HashSet<LightingEffect> { LightingEffect.Off }));
 }

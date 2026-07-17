@@ -523,6 +523,39 @@ public sealed class ControlCoordinatorTests
         Assert.Equal(4, device.TotalSetterCalls);
     }
 
+    [Theory]
+    [InlineData(PerformancePreset.BatterySaver)]
+    [InlineData(PerformancePreset.BatteryBalanced)]
+    public async Task ApplyDesiredState_AcceptsBatteryThermalPairOnlyWithExplicitCapability(
+        PerformancePreset performance)
+    {
+        RecordingBladeDevice device = CreateMismatchedDevice();
+        device.State = device.State with
+        {
+            Performance = PerformancePreset.Balanced,
+            Fans = FanMode.Automatic,
+        };
+        device.Capabilities = device.Capabilities with
+        {
+            PerformancePresets = new HashSet<PerformancePreset> { performance },
+            FanModes = new HashSet<FanMode> { FanMode.Automatic },
+        };
+        var coordinator = new ControlCoordinator(device);
+        DesiredDeviceState desired = CreateThermalDesired(
+            device.State,
+            performance,
+            FanMode.Automatic);
+
+        SubsystemApplyResults results = await coordinator.ApplyDesiredStateAsync(
+            desired,
+            CancellationToken.None);
+
+        Assert.Equal(ControlResultStatus.Applied, results.Performance.Status);
+        Assert.Equal(ControlResultStatus.Unchanged, results.Fans.Status);
+        Assert.Equal(1, device.PerformanceSetCalls);
+        Assert.Equal(0, device.FanSetCalls);
+    }
+
     [Fact]
     public async Task ApplyDesiredState_MaximumToAutomatic_WritesFansBeforePerformance()
     {

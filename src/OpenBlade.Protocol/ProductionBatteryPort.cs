@@ -26,6 +26,14 @@ internal sealed class ProductionBatteryPort : IProductionBatteryPort
         "performance-performance-channel-1";
     internal const string PerformanceBoostSecondAction =
         "performance-performance-channel-2";
+    internal const string PerformanceBatterySaverFirstAction =
+        "performance-battery-saver-channel-1";
+    internal const string PerformanceBatterySaverSecondAction =
+        "performance-battery-saver-channel-2";
+    internal const string PerformanceBatteryBalancedFirstAction =
+        "performance-battery-balanced-channel-1";
+    internal const string PerformanceBatteryBalancedSecondAction =
+        "performance-battery-balanced-channel-2";
     internal const string FanMaximumStateFirstAction =
         "fan-maximum-5400-state-channel-1";
     internal const string FanMaximumStateSecondAction =
@@ -190,6 +198,10 @@ internal sealed class ProductionBatteryPort : IProductionBatteryPort
                 [PerformanceSilentFirstAction, PerformanceSilentSecondAction],
             PerformancePreset.Performance =>
                 [PerformanceBoostFirstAction, PerformanceBoostSecondAction],
+            PerformancePreset.BatterySaver =>
+                [PerformanceBatterySaverFirstAction, PerformanceBatterySaverSecondAction],
+            PerformancePreset.BatteryBalanced =>
+                [PerformanceBatteryBalancedFirstAction, PerformanceBatteryBalancedSecondAction],
             _ => null,
         };
         return actions is null
@@ -201,6 +213,8 @@ internal sealed class ProductionBatteryPort : IProductionBatteryPort
                 state => state.Performance is not null && state.Fans == FanMode.Automatic,
                 "Performance changes require a confirmed Automatic thermal state.",
                 applyMaximumTiming: false,
+                verifyFinalState: value is PerformancePreset.BatterySaver
+                    or PerformancePreset.BatteryBalanced,
                 cancellationToken);
     }
 
@@ -237,6 +251,7 @@ internal sealed class ProductionBatteryPort : IProductionBatteryPort
                     ? "Maximum fan mode requires confirmed Balanced performance and Automatic fans."
                     : "Automatic fan mode could not be safely applied.",
                 applyMaximumTiming: value == FanMode.Maximum,
+                verifyFinalState: false,
                 cancellationToken);
     }
 
@@ -331,6 +346,22 @@ internal sealed class ProductionBatteryPort : IProductionBatteryPort
         if (HasPair(catalog, PerformanceBoostFirstAction, PerformanceBoostSecondAction))
         {
             performance.Add(PerformancePreset.Performance);
+        }
+
+        if (HasPair(
+                catalog,
+                PerformanceBatterySaverFirstAction,
+                PerformanceBatterySaverSecondAction))
+        {
+            performance.Add(PerformancePreset.BatterySaver);
+        }
+
+        if (HasPair(
+                catalog,
+                PerformanceBatteryBalancedFirstAction,
+                PerformanceBatteryBalancedSecondAction))
+        {
+            performance.Add(PerformancePreset.BatteryBalanced);
         }
 
         var fans = new HashSet<FanMode>();
@@ -471,6 +502,7 @@ internal sealed class ProductionBatteryPort : IProductionBatteryPort
         Func<ProductionPerformanceFanState, bool> precondition,
         string preconditionFailure,
         bool applyMaximumTiming,
+        bool verifyFinalState,
         CancellationToken cancellationToken)
     {
         if (cancellationToken.IsCancellationRequested)
@@ -497,9 +529,9 @@ internal sealed class ProductionBatteryPort : IProductionBatteryPort
         try
         {
             EnsureUsableForWrite();
-            ProductionPerformanceFanState current =
-                await QueryPerformanceFanStateCoreAsync(cancellationToken)
-                    .ConfigureAwait(false);
+            ThermalModeState currentMode =
+                await QueryThermalModeStateCoreAsync(cancellationToken).ConfigureAwait(false);
+            ProductionPerformanceFanState current = MapThermalState(currentMode);
             if (alreadyMatches(current))
             {
                 return;
@@ -539,6 +571,19 @@ internal sealed class ProductionBatteryPort : IProductionBatteryPort
                     await Task.Delay(
                         ThermalWriteTiming.MaximumInterCommandDelay(index),
                         cancellationToken).ConfigureAwait(false);
+                }
+            }
+
+            if (verifyFinalState)
+            {
+                ProductionPerformanceFanState final =
+                    await QueryPerformanceFanStateCoreAsync(cancellationToken)
+                        .ConfigureAwait(false);
+                if (!alreadyMatches(final))
+                {
+                    poisoned = true;
+                    throw Indeterminate(
+                        "The final thermal state did not match the admitted target.");
                 }
             }
         }
@@ -589,6 +634,10 @@ internal sealed class ProductionBatteryPort : IProductionBatteryPort
     }
 
     private async Task<ProductionPerformanceFanState> QueryPerformanceFanStateCoreAsync(
+        CancellationToken cancellationToken) => MapThermalState(
+            await QueryThermalModeStateCoreAsync(cancellationToken).ConfigureAwait(false));
+
+    private async Task<ThermalModeState> QueryThermalModeStateCoreAsync(
         CancellationToken cancellationToken)
     {
         ReadOnlyMemory<byte> first = await QueryThermalChannelAsync(
@@ -609,7 +658,11 @@ internal sealed class ProductionBatteryPort : IProductionBatteryPort
                 HidProtocolValidationFailure.PayloadValidator);
         }
 
-        return state switch
+        return state;
+    }
+
+    private static ProductionPerformanceFanState MapThermalState(
+        ThermalModeState state) => state switch
         {
             ThermalModeState.BalancedAutomatic => new(
                 PerformancePreset.Balanced,
@@ -620,12 +673,17 @@ internal sealed class ProductionBatteryPort : IProductionBatteryPort
             ThermalModeState.PerformanceAutomatic => new(
                 PerformancePreset.Performance,
                 FanMode.Automatic),
+            ThermalModeState.BatterySaverAutomatic => new(
+                PerformancePreset.BatterySaver,
+                FanMode.Automatic),
+            ThermalModeState.BatteryBalancedAutomatic => new(
+                PerformancePreset.BatteryBalanced,
+                FanMode.Automatic),
             ThermalModeState.FixedMaximum => new(null, FanMode.Maximum),
             _ => throw new RazerProtocolException(
                 "Thermal query returned an undefined state.",
                 HidProtocolValidationFailure.PayloadValidator),
         };
-    }
 
     private async Task<ReadOnlyMemory<byte>> QueryThermalChannelAsync(
         ThermalChannel channel,

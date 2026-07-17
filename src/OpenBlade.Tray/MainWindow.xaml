@@ -250,8 +250,8 @@
                                               HorizontalAlignment="Right"
                                               AutomationProperties.Name="Performance mode"
                                               IsEnabled="{x:Bind ViewModel.CanControlHardware, Mode=OneWay}"
-                                              ItemsSource="{x:Bind ViewModel.AvailablePerformancePresets, Mode=OneWay}"
-                                              SelectedItem="{x:Bind ViewModel.SelectedPerformance, Mode=OneWay}"
+                                              ItemsSource="{x:Bind ViewModel.AvailableActivePerformanceOptions, Mode=OneWay}"
+                                              SelectedItem="{x:Bind ViewModel.SelectedPerformanceOption, Mode=OneWay}"
                                               SelectionChanged="OnDashboardPerformanceChanged" />
                                 </Grid>
                             </Border>
@@ -411,8 +411,8 @@
                                         </Border>
                                     </Grid>
                                     <ComboBox Header="Performance"
-                                              ItemsSource="{x:Bind ViewModel.AvailablePerformancePresets, Mode=OneWay}"
-                                              SelectedItem="{x:Bind ViewModel.PluggedInPerformanceEditor, Mode=TwoWay}" />
+                                              ItemsSource="{x:Bind ViewModel.AvailablePluggedInPerformanceOptions, Mode=OneWay}"
+                                              SelectedItem="{x:Bind ViewModel.PluggedInPerformanceOption, Mode=TwoWay}" />
                                     <ComboBox Header="Fans"
                                               ItemsSource="{x:Bind ViewModel.AvailableFanModes, Mode=OneWay}"
                                               SelectedItem="{x:Bind ViewModel.PluggedInFanModeEditor, Mode=TwoWay}" />
@@ -437,8 +437,8 @@
                                         </Border>
                                     </Grid>
                                     <ComboBox Header="Performance"
-                                              ItemsSource="{x:Bind ViewModel.AvailablePerformancePresets, Mode=OneWay}"
-                                              SelectedItem="{x:Bind ViewModel.BatteryPerformanceEditor, Mode=TwoWay}" />
+                                              ItemsSource="{x:Bind ViewModel.AvailableBatteryPerformanceOptions, Mode=OneWay}"
+                                              SelectedItem="{x:Bind ViewModel.BatteryPerformanceOption, Mode=TwoWay}" />
                                     <ComboBox Header="Fans"
                                               ItemsSource="{x:Bind ViewModel.AvailableFanModes, Mode=OneWay}"
                                               SelectedItem="{x:Bind ViewModel.BatteryFanModeEditor, Mode=TwoWay}" />

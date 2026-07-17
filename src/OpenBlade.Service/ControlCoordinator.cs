@@ -1035,7 +1035,9 @@ public sealed class ControlCoordinator
         (PerformancePreset.Silent, FanMode.Automatic)
         or (PerformancePreset.Balanced, FanMode.Automatic)
         or (PerformancePreset.Performance, FanMode.Automatic)
-        or (PerformancePreset.Balanced, FanMode.Maximum);
+        or (PerformancePreset.Balanced, FanMode.Maximum)
+        or (PerformancePreset.BatterySaver, FanMode.Automatic)
+        or (PerformancePreset.BatteryBalanced, FanMode.Automatic);
 
     private static bool IsThermalSubsystem(DeviceSubsystem subsystem) =>
         subsystem is DeviceSubsystem.Performance or DeviceSubsystem.Fans;

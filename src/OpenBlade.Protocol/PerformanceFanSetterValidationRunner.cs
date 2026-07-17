@@ -6,6 +6,8 @@ public enum PerformanceFanValidationTarget
     Silent,
     Performance,
     Fixed5400,
+    BatterySaver,
+    BatteryBalanced,
 }
 
 public enum PerformanceFanValidationFailure
@@ -381,7 +383,7 @@ internal sealed class PerformanceFanSetterValidationRunner
             responses[0],
             responses[1],
             out ThermalModeState state);
-        return pairMatches
+        return pairMatches && IsAdmittedValidationState(state)
             ? new(
                 responses[0],
                 responses[1],
@@ -391,6 +393,14 @@ internal sealed class PerformanceFanSetterValidationRunner
                 false)
             : new(responses[0], responses[1], null, null, null, true);
     }
+
+    private static bool IsAdmittedValidationState(ThermalModeState state) => state is
+        ThermalModeState.BalancedAutomatic
+        or ThermalModeState.SilentAutomatic
+        or ThermalModeState.PerformanceAutomatic
+        or ThermalModeState.FixedMaximum
+        or ThermalModeState.BatterySaverAutomatic
+        or ThermalModeState.BatteryBalancedAutomatic;
 
     private async Task<PerformanceFanValidationFailure> ValidateFixedFanRpmAsync(
         ValidationRunContext context,
@@ -561,6 +571,10 @@ internal sealed class PerformanceFanSetterValidationRunner
                 [[0x01, 0x01, 0x05, 0x00], [0x01, 0x02, 0x05, 0x00]],
             PerformanceFanValidationTarget.Performance =>
                 [[0x01, 0x01, 0x02, 0x00], [0x01, 0x02, 0x02, 0x00]],
+            PerformanceFanValidationTarget.BatterySaver =>
+                [[0x01, 0x01, 0x03, 0x00], [0x01, 0x02, 0x03, 0x00]],
+            PerformanceFanValidationTarget.BatteryBalanced =>
+                [[0x01, 0x01, 0x06, 0x00], [0x01, 0x02, 0x06, 0x00]],
             // Synapse writes mode 00 + fixed flag 01, then 54 (5400 RPM / 100).
             // The independent 0D/82 query normalizes this to mode 04 + flag 01.
             PerformanceFanValidationTarget.Fixed5400 =>
@@ -578,6 +592,10 @@ internal sealed class PerformanceFanSetterValidationRunner
                 [[0x01, 0x01, 0x05, 0x00], [0x01, 0x02, 0x05, 0x00]],
             ThermalModeState.PerformanceAutomatic =>
                 [[0x01, 0x01, 0x02, 0x00], [0x01, 0x02, 0x02, 0x00]],
+            ThermalModeState.BatterySaverAutomatic =>
+                [[0x01, 0x01, 0x03, 0x00], [0x01, 0x02, 0x03, 0x00]],
+            ThermalModeState.BatteryBalancedAutomatic =>
+                [[0x01, 0x01, 0x06, 0x00], [0x01, 0x02, 0x06, 0x00]],
             _ => throw new InvalidOperationException(
                 "Only a recognized automatic thermal state can be restored."),
         };
@@ -595,6 +613,10 @@ internal sealed class PerformanceFanSetterValidationRunner
             PerformanceFanValidationTarget.Silent => ThermalModeState.SilentAutomatic,
             PerformanceFanValidationTarget.Performance => ThermalModeState.PerformanceAutomatic,
             PerformanceFanValidationTarget.Fixed5400 => ThermalModeState.FixedMaximum,
+            PerformanceFanValidationTarget.BatterySaver =>
+                ThermalModeState.BatterySaverAutomatic,
+            PerformanceFanValidationTarget.BatteryBalanced =>
+                ThermalModeState.BatteryBalancedAutomatic,
             _ => throw new ArgumentOutOfRangeException(nameof(target)),
         };
 

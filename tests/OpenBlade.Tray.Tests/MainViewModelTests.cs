@@ -602,6 +602,63 @@ public sealed class MainViewModelTests
     }
 
     [Fact]
+    public async Task PerformanceOptionsAndCommands_FollowActivePowerSource()
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        ServiceStatusSnapshot pluggedIn = CreateStatus(verified: true, blocked: false);
+        client.Publish(pluggedIn);
+        await WaitUntilAsync(() => viewModel.IsConnected);
+
+        Assert.Equal(
+            [PerformancePreset.Balanced, PerformancePreset.Silent, PerformancePreset.Performance],
+            viewModel.AvailableActivePerformanceOptions.Select(option => option.Value));
+        Assert.True(viewModel.SetPerformanceCommand.CanExecute(PerformancePreset.Silent));
+        Assert.False(viewModel.SetPerformanceCommand.CanExecute(PerformancePreset.BatterySaver));
+
+        client.Publish(pluggedIn with
+        {
+            Revision = pluggedIn.Revision + 1,
+            ActivePowerSource = PowerSource.Battery,
+        });
+        await WaitUntilAsync(() => viewModel.ActivePowerSource == PowerSource.Battery);
+
+        Assert.Equal(
+            [PerformancePreset.BatteryBalanced, PerformancePreset.BatterySaver],
+            viewModel.AvailableActivePerformanceOptions.Select(option => option.Value));
+        Assert.True(viewModel.SetPerformanceCommand.CanExecute(PerformancePreset.BatterySaver));
+        Assert.False(viewModel.SetPerformanceCommand.CanExecute(PerformancePreset.Silent));
+        Assert.False(viewModel.SetPerformanceCommand.CanExecute(PerformancePreset.Performance));
+
+        viewModel.BatteryPerformanceOption = viewModel.AvailableBatteryPerformanceOptions
+            .Single(option => option.Value == PerformancePreset.BatteryBalanced);
+        Assert.Equal(PerformancePreset.BatteryBalanced, viewModel.BatteryPerformanceEditor);
+        Assert.True(viewModel.SaveProfilesCommand.CanExecute(null));
+
+        viewModel.BatteryPerformanceEditor = PerformancePreset.Silent;
+        Assert.False(viewModel.SaveProfilesCommand.CanExecute(null));
+    }
+
+    [Fact]
+    public async Task PerformanceOption_SameValueDoesNotNotifyTwoWayBindingAgain()
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        client.Publish(CreateStatus(verified: true, blocked: false));
+        await WaitUntilAsync(() => viewModel.IsConnected);
+        var changed = new List<string?>();
+        viewModel.PropertyChanged += (_, args) => changed.Add(args.PropertyName);
+
+        viewModel.PluggedInPerformanceOption = viewModel.PluggedInPerformanceOption;
+        viewModel.BatteryPerformanceOption = viewModel.BatteryPerformanceOption;
+
+        Assert.DoesNotContain(nameof(viewModel.PluggedInPerformanceOption), changed);
+        Assert.DoesNotContain(nameof(viewModel.BatteryPerformanceOption), changed);
+    }
+
+    [Fact]
     public async Task UnchangedChargeLimitCapabilities_PreserveItemsSourceAcrossStatusEvents()
     {
         var client = new FakeServiceClient();
@@ -730,7 +787,7 @@ public sealed class MainViewModelTests
         Assert.True(pluggedInReapply > itemsSourceChange);
         Assert.True(batteryReapply > itemsSourceChange);
         Assert.Equal(PerformancePreset.Balanced, viewModel.PluggedInPerformanceEditor);
-        Assert.Equal(PerformancePreset.Silent, viewModel.BatteryPerformanceEditor);
+        Assert.Equal(PerformancePreset.BatterySaver, viewModel.BatteryPerformanceEditor);
     }
 
     [Fact]
@@ -847,9 +904,9 @@ public sealed class MainViewModelTests
         Assert.Equal("Fan 1: unavailable", viewModel.Fan1RpmLabel);
         Assert.Equal("Fan 2: unavailable", viewModel.Fan2RpmLabel);
         Assert.Equal("Battery profile", viewModel.ActivePowerSourceLabel);
-        Assert.Equal("Waiting for the laptop", viewModel.PerformanceSourceLabel);
-        Assert.Equal("Waiting for the laptop", viewModel.FanSourceLabel);
-        Assert.Equal("Waiting for the laptop", viewModel.LightingSourceLabel);
+        Assert.Equal("Controls unavailable", viewModel.PerformanceSourceLabel);
+        Assert.Equal("Controls unavailable", viewModel.FanSourceLabel);
+        Assert.Equal("Controls unavailable", viewModel.LightingSourceLabel);
         Assert.Equal(status.Capabilities, viewModel.Capabilities);
         Assert.Equal(status.LiveReadings, viewModel.LiveReadings);
         Assert.Equal(status.PerformanceOverride, viewModel.PerformanceOverride);
@@ -1054,18 +1111,25 @@ public sealed class MainViewModelTests
 
         client.Publish(CreateStatus(verified: false, blocked: true));
         await WaitUntilAsync(() =>
-            viewModel.ControlAccessStatus == "This Blade isn’t supported");
+            viewModel.ControlAccessStatus == "Laptop not found");
+        Assert.Equal("Laptop not found", viewModel.ProfileStateLabel);
+        Assert.Equal("Laptop not found", viewModel.AttentionSummary);
+        Assert.Equal("Laptop not found", viewModel.PerformanceSourceLabel);
 
         client.Publish(CreateStatus(
             verified: true,
             blocked: true,
             conflicts: ["RazerAppEngine"]));
         await WaitUntilAsync(() =>
-            viewModel.ControlAccessStatus == "OpenBlade is waiting for the laptop");
+            viewModel.ControlAccessStatus == "Controls unavailable"
+            && viewModel.PerformanceSourceLabel == "Controls unavailable");
+        Assert.Equal("Controls unavailable", viewModel.ProfileStateLabel);
+        Assert.Equal("Controls unavailable", viewModel.AttentionSummary);
+        Assert.Equal("Controls unavailable", viewModel.PerformanceSourceLabel);
 
         client.Publish(CreateStatus(verified: true, blocked: true));
         await WaitUntilAsync(() =>
-            viewModel.ControlAccessStatus == "OpenBlade is waiting for the laptop");
+            viewModel.ControlAccessStatus == "Controls unavailable");
 
         client.Publish(CreateStatus(verified: true, blocked: false));
         await WaitUntilAsync(() =>

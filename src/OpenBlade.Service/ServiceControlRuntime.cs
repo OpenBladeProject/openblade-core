@@ -787,7 +787,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                     token,
                     automaticWriteExclusionResolver: confirmed =>
                     {
-                        ObserveAutomaticState(confirmed, priorDesired);
+                        ObserveAutomaticState(confirmed, priorDesired, desired);
                         return GetCoupledAutomaticWriteExclusions();
                     });
 
@@ -800,7 +800,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                         token,
                         automaticWriteExclusionResolver: confirmed =>
                         {
-                            ObserveAutomaticState(confirmed, priorDesired);
+                            ObserveAutomaticState(confirmed, priorDesired, desired);
                             return GetCoupledAutomaticWriteExclusions();
                         });
             }
@@ -887,7 +887,9 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         {
             DeviceCapabilities capabilities =
                 await device.ReadCapabilitiesAsync(cancellationToken);
-            ConfirmedDeviceState confirmed = await device.ReadStateAsync(cancellationToken);
+            ConfirmedDeviceState confirmed = await ReadObservedStateAsync(
+                device,
+                cancellationToken);
             FanRpmReadings? fans = null;
             if (includeLiveReadings)
             {
@@ -941,20 +943,69 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 includeLiveReadings
                     ? new LiveReadings(batteryPowerFlowMilliwatts, null, null)
                     : null,
-                $"Verified device access failed: {exception.Message}");
+                $"Verified device access failed: {exception.Message}",
+                deviceVerified: true);
             history.RecordSummary(
                 ControlOperationStatus.Failed,
                 GetStatus().Message);
         }
     }
 
+    private static async Task<ConfirmedDeviceState> ReadObservedStateAsync(
+        IBladeDevice device,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await device.ReadStateAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (RazerProtocolException exception) when (
+            exception.ValidationFailure == HidProtocolValidationFailure.PayloadValidator)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return await device.ReadStateAsync(cancellationToken).ConfigureAwait(false);
+        }
+    }
+
     private void ObserveAutomaticState(
         ConfirmedDeviceState confirmed,
-        DesiredDeviceState? expected = null)
+        DesiredDeviceState? expected = null,
+        DesiredDeviceState? alternateExpected = null)
     {
         ArgumentNullException.ThrowIfNull(confirmed);
         DesiredDeviceState desired = expected ?? Automation.Resolve(confirmed);
         driftTracker.Observe(confirmed);
+
+        if (alternateExpected is not null)
+        {
+            CompareTransitionAutomaticValue(
+                DeviceSubsystem.Performance,
+                confirmed.Performance,
+                desired.Performance.Value,
+                alternateExpected.Performance.Value);
+            CompareTransitionAutomaticValue(
+                DeviceSubsystem.Fans,
+                confirmed.Fans,
+                desired.Fans.Value,
+                alternateExpected.Fans.Value);
+            CompareTransitionAutomaticValue(
+                DeviceSubsystem.Lighting,
+                confirmed.Lighting,
+                desired.Lighting.Value,
+                alternateExpected.Lighting.Value);
+            if (confirmed.Battery is { } transitionBattery)
+            {
+                initialAutomaticComparisons.Add(DeviceSubsystem.Battery);
+                bool matches = transitionBattery.TemporaryFullCharge is true
+                    || BatteryMatchesDesired(transitionBattery, desired.Battery)
+                    || BatteryMatchesDesired(
+                        transitionBattery,
+                        alternateExpected.Battery);
+                driftTracker.ConfirmIntentional(DeviceSubsystem.Battery, matches);
+            }
+
+            return;
+        }
 
         CompareInitialAutomaticValue(
             DeviceSubsystem.Performance,
@@ -1000,7 +1051,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             : Automation.Profiles.Battery;
         validator.ValidatePerformanceFanCombination(
             performanceOverride?.Value ?? activeProfile.Performance,
-            fanOverride?.Value ?? activeProfile.Fans);
+            fanOverride?.Value ?? activeProfile.Fans,
+            Automation.PowerSource);
     }
 
     private void CompareInitialAutomaticValue<T>(
@@ -1035,6 +1087,44 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             EqualityComparer<T>.Default.Equals(confirmed, desired));
     }
 
+    private void CompareTransitionAutomaticValue<T>(
+        DeviceSubsystem subsystem,
+        T? confirmed,
+        T priorDesired,
+        T newDesired)
+        where T : struct
+    {
+        if (confirmed is null)
+        {
+            return;
+        }
+
+        initialAutomaticComparisons.Add(subsystem);
+        driftTracker.ConfirmIntentional(
+            subsystem,
+            EqualityComparer<T>.Default.Equals(confirmed.Value, priorDesired)
+            || EqualityComparer<T>.Default.Equals(confirmed.Value, newDesired));
+    }
+
+    private void CompareTransitionAutomaticValue<T>(
+        DeviceSubsystem subsystem,
+        T? confirmed,
+        T priorDesired,
+        T newDesired)
+        where T : class
+    {
+        if (confirmed is null)
+        {
+            return;
+        }
+
+        initialAutomaticComparisons.Add(subsystem);
+        driftTracker.ConfirmIntentional(
+            subsystem,
+            EqualityComparer<T>.Default.Equals(confirmed, priorDesired)
+            || EqualityComparer<T>.Default.Equals(confirmed, newDesired));
+    }
+
     private static bool BatteryMatchesDesired(
         ConfirmedBatteryState confirmed,
         DesiredBatteryState desired) =>
@@ -1045,13 +1135,14 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
     private void PublishObservationUnavailable(
         PowerSource powerSource,
         LiveReadings? liveReadings,
-        string message)
+        string message,
+        bool deviceVerified = false)
     {
         ServiceStatusSnapshot current = GetStatus();
         ConfirmedDeviceState confirmed = current.ConfirmedState ?? UnknownConfirmedState;
         PublishIfChanged(current with
         {
-            DeviceVerified = false,
+            DeviceVerified = deviceVerified,
             WritesBlocked = true,
             ExternalChanges = driftTracker.ExternalChanges,
             Message = message,

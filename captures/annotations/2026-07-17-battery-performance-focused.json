@@ -1,0 +1,86 @@
+{
+  "model": "Razer Blade 16 RZ09-0581",
+  "vid": "1532",
+  "pid": "02E0",
+  "bios": "3.01",
+  "synapseVersion": "4.0.695",
+  "powerSource": "battery",
+  "usbPcapRoot": 3,
+  "usbDeviceAddress": 2,
+  "rawCapture": "openblade-battery-profile-focused-20260717-215707.pcap",
+  "rawCaptureSha256": "86B810F5864192482E5163B99BC997A6FE75F0FB17EEDE4DDFAC6E318130AEFF",
+  "rawCaptureCommitted": false,
+  "shutdownMode": "Graceful",
+  "actions": [
+    {
+      "action": "battery-profile-battery-saver",
+      "inputAtUtc": "2026-07-17T21:58:05.642Z",
+      "visuallyConfirmed": true,
+      "setFrames": [347, 351],
+      "responseFrames": [350, 354],
+      "payloadsHex": ["01010300", "01020300"]
+    },
+    {
+      "action": "battery-profile-balanced",
+      "inputAtUtc": "2026-07-17T21:58:19.996Z",
+      "visuallyConfirmed": true,
+      "setFrames": [537, 543],
+      "responseFrames": [541, 546],
+      "payloadsHex": ["01010600", "01020600"]
+    },
+    {
+      "action": "battery-profile-battery-saver-repeat",
+      "inputAtUtc": "2026-07-17T21:58:48.066Z",
+      "visuallyConfirmed": true,
+      "setFrames": [749, 753],
+      "responseFrames": [752, 756],
+      "payloadsHex": ["01010300", "01020300"]
+    },
+    {
+      "action": "battery-profile-balanced-restore",
+      "inputAtUtc": "2026-07-17T21:59:09.610Z",
+      "visuallyConfirmed": true,
+      "setFrames": [991, 995],
+      "responseFrames": [994, 998],
+      "payloadsHex": ["01010600", "01020600"]
+    }
+  ],
+  "readbackEvidence": [
+    {
+      "condition": "battery-balanced-before-first-transition",
+      "responseFrame": 320,
+      "command": "0D/82",
+      "payloadHex": "01010600"
+    },
+    {
+      "condition": "battery-saver-after-first-transition",
+      "responseFrame": 450,
+      "command": "0D/82",
+      "payloadHex": "01010300"
+    },
+    {
+      "condition": "battery-balanced-after-first-restore",
+      "responseFrame": 596,
+      "command": "0D/82",
+      "payloadHex": "01010600"
+    },
+    {
+      "condition": "battery-saver-after-repeat",
+      "responseFrame": 852,
+      "command": "0D/82",
+      "payloadHex": "01010300"
+    },
+    {
+      "condition": "battery-balanced-after-final-restore",
+      "responseFrame": 1046,
+      "command": "0D/82",
+      "payloadHex": "01010600"
+    }
+  ],
+  "notes": [
+    "The focused capture supersedes the earlier broad-session conclusion that the two battery profile cards emitted no distinct setter.",
+    "Battery Saver uses thermal mode 03 while battery Balanced uses thermal mode 06; neither is the plugged-in Silent mode 05 or plugged-in Balanced mode 00.",
+    "The existing service queried only the first thermal channel because mode 03 and mode 06 were rejected by its closed decoder before the second-channel query.",
+    "Raw PCAP remains outside the repository and contains traffic only for USBPcap root 3 device address 2."
+  ]
+}

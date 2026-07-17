@@ -11,6 +11,8 @@ public sealed class PerformanceFanSetterValidationCommandTests
     [InlineData("silent", PerformanceFanValidationTarget.Silent)]
     [InlineData("performance", PerformanceFanValidationTarget.Performance)]
     [InlineData("fixed5400", PerformanceFanValidationTarget.Fixed5400)]
+    [InlineData("battery-saver", PerformanceFanValidationTarget.BatterySaver)]
+    [InlineData("battery-balanced", PerformanceFanValidationTarget.BatteryBalanced)]
     public async Task RunAsync_RequiresExactNonInteractiveTargetConfirmation(
         string argument,
         PerformanceFanValidationTarget expected)

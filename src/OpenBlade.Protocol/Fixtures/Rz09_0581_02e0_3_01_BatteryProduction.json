@@ -278,6 +278,74 @@
       "productId": 736,
       "biosVersion": "3.01"
     },
+    "action": "performance-battery-saver-channel-1",
+    "commandClass": 13,
+    "commandId": 2,
+    "payload": "AQEDAA==",
+    "captured": true,
+    "decoded": true,
+    "applied": true,
+    "readBack": true,
+    "restored": true
+  },
+  {
+    "device": {
+      "model": "RZ09-0581",
+      "vendorId": 5426,
+      "productId": 736,
+      "biosVersion": "3.01"
+    },
+    "action": "performance-battery-saver-channel-2",
+    "commandClass": 13,
+    "commandId": 2,
+    "payload": "AQIDAA==",
+    "captured": true,
+    "decoded": true,
+    "applied": true,
+    "readBack": true,
+    "restored": true
+  },
+  {
+    "device": {
+      "model": "RZ09-0581",
+      "vendorId": 5426,
+      "productId": 736,
+      "biosVersion": "3.01"
+    },
+    "action": "performance-battery-balanced-channel-1",
+    "commandClass": 13,
+    "commandId": 2,
+    "payload": "AQEGAA==",
+    "captured": true,
+    "decoded": true,
+    "applied": true,
+    "readBack": true,
+    "restored": true
+  },
+  {
+    "device": {
+      "model": "RZ09-0581",
+      "vendorId": 5426,
+      "productId": 736,
+      "biosVersion": "3.01"
+    },
+    "action": "performance-battery-balanced-channel-2",
+    "commandClass": 13,
+    "commandId": 2,
+    "payload": "AQIGAA==",
+    "captured": true,
+    "decoded": true,
+    "applied": true,
+    "readBack": true,
+    "restored": true
+  },
+  {
+    "device": {
+      "model": "RZ09-0581",
+      "vendorId": 5426,
+      "productId": 736,
+      "biosVersion": "3.01"
+    },
     "action": "fan-maximum-5400-state-channel-1",
     "commandClass": 13,
     "commandId": 2,

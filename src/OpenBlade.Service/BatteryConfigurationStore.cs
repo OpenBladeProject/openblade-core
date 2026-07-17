@@ -81,7 +81,13 @@ public sealed class BatteryConfigurationStore
             {
                 try
                 {
-                    return (await ReadCommittedSnapshotAsync(cancellationToken)).Configuration;
+                    CommittedSnapshot committed =
+                        await ReadCommittedSnapshotAsync(cancellationToken);
+                    return committed.ProfileMigrated
+                        ? await CommitAndVerifyAsync(
+                            committed.Configuration,
+                            cancellationToken)
+                        : committed.Configuration;
                 }
                 catch (Exception exception) when (IsRecoverable(exception))
                 {
@@ -179,13 +185,14 @@ public sealed class BatteryConfigurationStore
             throw new InvalidDataException("The battery configuration hashes do not match.");
         }
 
-        ProfileSet profiles = profileStore.ReadDocument(profileJson);
+        ProfileSet profiles = profileStore.ReadDocument(profileJson, out bool profileMigrated);
         BatteryAutomationPreferences preferences = ReadPreferences(preferenceJson);
         return new CommittedSnapshot(
             new BatteryConfiguration(profiles, preferences, Recovered: false),
             profileJson,
             preferenceJson,
-            markerJson);
+            markerJson,
+            profileMigrated);
     }
 
     private async Task<ProfileSet?> TryReadLegacyAsync(CancellationToken cancellationToken)
@@ -216,10 +223,11 @@ public sealed class BatteryConfigurationStore
             throw new InvalidDataException("Legacy temporary full charge must be false.");
         }
 
-        var profiles = new ProfileSet(
+        ProfileSet profiles = new(
             pluggedIn,
             battery,
             BatteryPolicy.Create(ReadInt32(policy, "chargeLimitPercent")));
+        profiles = ProfileStore.NormalizeLegacyBatteryProfile(profiles, out _);
         validator.Validate(profiles);
         return profiles;
     }
@@ -728,5 +736,6 @@ public sealed class BatteryConfigurationStore
         BatteryConfiguration Configuration,
         byte[] ProfileJson,
         byte[] PreferenceJson,
-        byte[] MarkerJson);
+        byte[] MarkerJson,
+        bool ProfileMigrated);
 }

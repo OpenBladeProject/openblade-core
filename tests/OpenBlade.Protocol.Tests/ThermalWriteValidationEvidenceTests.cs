@@ -10,6 +10,7 @@ public sealed class ThermalWriteValidationEvidenceTests
         "0EB7927E68ED6DAD6A16BC9779D71F34F7B55254EF4510B7DE311D806933E6BD",
         "ACD96854A6A85EB975238A5F4A1B2F8256B3B6B9FB8B93E56DE2593EEE3711ED",
         "49F54BD18C220586212E7FC774AC717FE64EB0CBA04DCBCE85C376E740B732BC",
+        "F6BBB560FCF0DB8E93DD3FCFAE2F2F060D00A89ECD41E79CBF67E46057507647",
     ];
 
     [Fact]
@@ -26,7 +27,7 @@ public sealed class ThermalWriteValidationEvidenceTests
         Assert.False(root.GetProperty("readOnly").GetBoolean());
         Assert.True(root.GetProperty("sanitized").GetBoolean());
         Assert.Equal(
-            ["silent", "performance", "balanced", "fixed5400"],
+            ["silent", "performance", "balanced", "fixed5400", "batterySaver"],
             root.GetProperty("sourceArtifacts").EnumerateArray()
                 .Select(source => source.GetProperty("target").GetString()!).ToArray());
         Assert.Equal(
@@ -43,13 +44,13 @@ public sealed class ThermalWriteValidationEvidenceTests
     }
 
     [Fact]
-    public void Fixture_RecordsAllFourRunsWithExactApplyAndRestorationCommands()
+    public void Fixture_RecordsAllFiveRunsWithExactApplyAndRestorationCommands()
     {
         using JsonDocument document = LoadFixture();
         JsonElement[] runs = document.RootElement.GetProperty("runs").EnumerateArray().ToArray();
 
         Assert.Equal(
-            ["silent", "performance", "balanced", "fixed5400"],
+            ["silent", "performance", "balanced", "fixed5400", "batterySaver"],
             runs.Select(run => run.GetProperty("target").GetString()!).ToArray());
         AssertRun(
             runs[0],
@@ -75,6 +76,20 @@ public sealed class ThermalWriteValidationEvidenceTests
             ["0D/02:01010001", "0D/02:01020001", "0D/01:010136", "0D/01:010236"],
             "01010001", "01020001",
             ["0D/02:01010000", "0D/02:01020000"]);
+        Assert.Equal("BatterySaver", runs[4].GetProperty("admittedAs").GetString());
+        Assert.Equal(
+            "BatteryBalanced",
+            runs[4].GetProperty("restorationAdmittedAs").GetString());
+        AssertRun(
+            runs[4],
+            "01010600", "01020600",
+            ["0D/02:01010300", "0D/02:01020300"],
+            "01010300", "01020300",
+            ["0D/02:01010600", "0D/02:01020600"]);
+        AssertPair(
+            runs[4].GetProperty("postValidationRead"),
+            "01010600",
+            "01020600");
     }
 
     [Fact]
@@ -150,7 +165,7 @@ public sealed class ThermalWriteValidationEvidenceTests
 
         Assert.True(admission.GetProperty("exactDeviceOnly").GetBoolean());
         Assert.Equal(
-            ["Silent", "Balanced", "Performance"],
+            ["Silent", "Balanced", "Performance", "BatterySaver", "BatteryBalanced"],
             admission.GetProperty("performancePresets").EnumerateArray()
                 .Select(value => value.GetString()!).ToArray());
         Assert.Equal(

@@ -14,7 +14,8 @@
     { "target": "silent", "sha256": "7031A2A9CEE1F63718BEE5856EC88CB054DA915FFBE3EF264E4ADD833B64AD67" },
     { "target": "performance", "sha256": "0EB7927E68ED6DAD6A16BC9779D71F34F7B55254EF4510B7DE311D806933E6BD" },
     { "target": "balanced", "sha256": "ACD96854A6A85EB975238A5F4A1B2F8256B3B6B9FB8B93E56DE2593EEE3711ED" },
-    { "target": "fixed5400", "sha256": "49F54BD18C220586212E7FC774AC717FE64EB0CBA04DCBCE85C376E740B732BC" }
+    { "target": "fixed5400", "sha256": "49F54BD18C220586212E7FC774AC717FE64EB0CBA04DCBCE85C376E740B732BC" },
+    { "target": "batterySaver", "sha256": "F6BBB560FCF0DB8E93DD3FCFAE2F2F060D00A89ECD41E79CBF67E46057507647" }
   ],
   "readbackCommands": {
     "thermalPair": [
@@ -154,11 +155,40 @@
         "failure": "none",
         "success": true
       }
+    },
+    {
+      "target": "batterySaver",
+      "admittedAs": "BatterySaver",
+      "restorationAdmittedAs": "BatteryBalanced",
+      "baseline": { "thermal1Hex": "01010600", "thermal2Hex": "01020600" },
+      "applyActions": [
+        { "classHex": "0D", "idHex": "02", "payloadHex": "01010300", "statusHex": "02", "echoHex": "01010300" },
+        { "classHex": "0D", "idHex": "02", "payloadHex": "01020300", "statusHex": "02", "echoHex": "01020300" }
+      ],
+      "candidate": { "thermal1Hex": "01010300", "thermal2Hex": "01020300" },
+      "restorationActions": [
+        { "classHex": "0D", "idHex": "02", "payloadHex": "01010600", "statusHex": "02", "echoHex": "01010600" },
+        { "classHex": "0D", "idHex": "02", "payloadHex": "01020600", "statusHex": "02", "echoHex": "01020600" }
+      ],
+      "restoration": { "thermal1Hex": "01010600", "thermal2Hex": "01020600" },
+      "postValidationRead": { "thermal1Hex": "01010600", "thermal2Hex": "01020600" },
+      "gates": {
+        "applyAttempted": true,
+        "applyAcknowledged": true,
+        "candidateConfirmed": true,
+        "restoreAttempted": true,
+        "restoreAcknowledged": true,
+        "restored": true,
+        "indeterminatePartialWrite": false,
+        "manualRecoveryRequired": false,
+        "failure": "none",
+        "success": true
+      }
     }
   ],
   "admission": {
     "exactDeviceOnly": true,
-    "performancePresets": ["Silent", "Balanced", "Performance"],
+    "performancePresets": ["Silent", "Balanced", "Performance", "BatterySaver", "BatteryBalanced"],
     "fanModes": ["Automatic", "Maximum"],
     "maximumImplementation": "fixed-5400-rpm-sequence",
     "allRunsRestoredWithoutManualRecovery": true

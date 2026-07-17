@@ -29,16 +29,45 @@ public sealed class TrayMenuControllerTests
         }
 
         Assert.Equal(
-            ["Silent", "Balanced", "Performance", "Automatic", "Maximum", "Toggle charge to 100%", "Clear manual overrides", "Open", "Exit"],
+            ["Balanced", "Silent", "Performance", "Balanced", "Battery Saver", "Automatic", "Maximum", "Toggle charge to 100%", "Clear manual overrides", "Open", "Exit"],
             controller.Items.Select(item => item.Label));
         Assert.Equal(
-            [PerformancePreset.Silent, PerformancePreset.Balanced, PerformancePreset.Performance],
+            [PerformancePreset.Balanced, PerformancePreset.Silent, PerformancePreset.Performance],
             performance.Parameters);
         Assert.Equal([FanMode.Automatic, FanMode.Maximum], fans.Parameters);
         Assert.Equal([null], fullCharge.Parameters);
         Assert.Equal([null], clearOverrides.Parameters);
         Assert.Equal(1, opens);
         Assert.Equal(1, exits);
+    }
+
+    [Fact]
+    public void PerformanceItems_TrackActivePowerSource()
+    {
+        PowerSource source = PowerSource.PluggedIn;
+        var enabled = new RecordingCommand();
+        var controller = new TrayMenuController(
+            enabled,
+            enabled,
+            enabled,
+            enabled,
+            () => { },
+            () => { },
+            () => source);
+
+        Assert.Equal(
+            ["Balanced", "Silent", "Performance"],
+            controller.Items
+                .Where(item => item.Group == TrayMenuGroup.Performance && item.IsVisible)
+                .Select(item => item.Label));
+
+        source = PowerSource.Battery;
+
+        Assert.Equal(
+            ["Balanced", "Battery Saver"],
+            controller.Items
+                .Where(item => item.Group == TrayMenuGroup.Performance && item.IsVisible)
+                .Select(item => item.Label));
     }
 
     [Fact]

@@ -32,6 +32,8 @@ public sealed class BatteryConfigurationStoreTests : IDisposable
 
         Assert.False(configuration.Recovered);
         Assert.Equal(BatteryPolicy.Create(80), configuration.Profiles.BatteryPolicy);
+        Assert.Equal(PerformancePreset.Balanced, configuration.Profiles.PluggedIn.Performance);
+        Assert.Equal(PerformancePreset.BatterySaver, configuration.Profiles.Battery.Performance);
         Assert.True(configuration.Preferences.ProtectionEnabled);
         Assert.All(paths.All, path => Assert.True(File.Exists(path)));
         Assert.All(paths.All, path => Assert.False(File.Exists(path + ".tmp")));
@@ -50,6 +52,88 @@ public sealed class BatteryConfigurationStoreTests : IDisposable
             marker.RootElement.GetProperty("preferencesSha256").GetString());
         Assert.True(File.GetLastWriteTimeUtc(paths.Marker) >= File.GetLastWriteTimeUtc(paths.Profiles));
         Assert.True(File.GetLastWriteTimeUtc(paths.Marker) >= File.GetLastWriteTimeUtc(paths.Preferences));
+    }
+
+    [Theory]
+    [InlineData(0, PerformancePreset.BatterySaver)]
+    [InlineData(1, PerformancePreset.BatteryBalanced)]
+    public async Task LoadAsync_NormalizesLegacyBatteryPresetWithoutChangingPluggedIn(
+        int legacyBatteryPerformance,
+        PerformancePreset expectedBatteryPerformance)
+    {
+        Paths paths = CreatePaths();
+        Directory.CreateDirectory(directory);
+        string legacy = LegacyJson.Replace(
+            "\"battery\": { \"performance\": 0",
+            $"\"battery\": {{ \"performance\": {legacyBatteryPerformance}",
+            StringComparison.Ordinal);
+        await File.WriteAllTextAsync(paths.Profiles, legacy);
+
+        BatteryConfiguration configuration =
+            await CreateStore(paths).LoadAsync(CancellationToken.None);
+
+        Assert.False(configuration.Recovered);
+        Assert.Equal(PerformancePreset.Balanced, configuration.Profiles.PluggedIn.Performance);
+        Assert.Equal(expectedBatteryPerformance, configuration.Profiles.Battery.Performance);
+    }
+
+    [Fact]
+    public async Task LoadAsync_MigratesCommittedLegacyBatteryPresetAndRehashesAggregate()
+    {
+        Paths paths = CreatePaths();
+        Directory.CreateDirectory(directory);
+        ProfileSet legacyProfiles = ProfileDefaults.CreateSafeDefaults() with
+        {
+            PluggedIn = ProfileDefaults.CreateSafeDefaults().PluggedIn with
+            {
+                Performance = PerformancePreset.Silent,
+            },
+            Battery = ProfileDefaults.CreateSafeDefaults().Battery with
+            {
+                Performance = PerformancePreset.Balanced,
+            },
+        };
+        var options = new JsonSerializerOptions(JsonSerializerDefaults.Web)
+        {
+            WriteIndented = true,
+        };
+        byte[] profiles = JsonSerializer.SerializeToUtf8Bytes(
+            new ProfileDocument(1, legacyProfiles),
+            options);
+        byte[] preferences = JsonSerializer.SerializeToUtf8Bytes(
+            new BatteryPreferencesDocument(
+                1,
+                new BatteryAutomationPreferences(ProtectionEnabled: true)),
+            options);
+        byte[] marker = JsonSerializer.SerializeToUtf8Bytes(
+            new BatteryConfigurationCommit(1, Hash(profiles), Hash(preferences)),
+            options);
+        await File.WriteAllBytesAsync(paths.Profiles, profiles);
+        await File.WriteAllBytesAsync(paths.Preferences, preferences);
+        await File.WriteAllBytesAsync(paths.Marker, marker);
+
+        BatteryConfiguration configuration =
+            await CreateStore(paths).LoadAsync(CancellationToken.None);
+
+        Assert.False(configuration.Recovered);
+        Assert.Equal(PerformancePreset.Silent, configuration.Profiles.PluggedIn.Performance);
+        Assert.Equal(
+            PerformancePreset.BatteryBalanced,
+            configuration.Profiles.Battery.Performance);
+        using JsonDocument persisted = JsonDocument.Parse(
+            await File.ReadAllBytesAsync(paths.Profiles));
+        Assert.Equal(
+            (int)PerformancePreset.BatteryBalanced,
+            persisted.RootElement
+                .GetProperty("profiles")
+                .GetProperty("battery")
+                .GetProperty("performance")
+                .GetInt32());
+        using JsonDocument persistedMarker = JsonDocument.Parse(
+            await File.ReadAllBytesAsync(paths.Marker));
+        Assert.Equal(
+            Hash(await File.ReadAllBytesAsync(paths.Profiles)),
+            persistedMarker.RootElement.GetProperty("profileSha256").GetString());
     }
 
     [Theory]

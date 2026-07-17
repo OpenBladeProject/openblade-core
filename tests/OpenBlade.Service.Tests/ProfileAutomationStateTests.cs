@@ -67,10 +67,60 @@ public sealed class ProfileAutomationStateTests
         state.ChangePowerSource(PowerSource.Battery);
         DesiredDeviceState desired = state.Resolve(new ConfirmedDeviceState(null, null, null, null));
 
-        Assert.Equal(PerformancePreset.Silent, desired.Performance.Value);
+        Assert.Equal(PerformancePreset.BatterySaver, desired.Performance.Value);
         Assert.Equal(SettingValueSource.PowerProfile, desired.Performance.Source);
         Assert.Equal(FanMode.Maximum, desired.Fans.Value);
         Assert.Equal(SettingValueSource.PersistentOverride, desired.Fans.Source);
+    }
+
+    [Fact]
+    public void PersistentPluggedInPerformanceOverride_PausesOnBatteryAndReturnsOnAc()
+    {
+        ProfileAutomationState state = CreateState(PowerSource.PluggedIn);
+        state.SetPerformanceOverride(new ManualOverride<PerformancePreset>(
+            PerformancePreset.Performance,
+            OverrideLifetime.Persistent));
+
+        state.ChangePowerSource(PowerSource.Battery);
+        DesiredDeviceState onBattery = state.Resolve(
+            new ConfirmedDeviceState(null, null, null, null));
+
+        Assert.Equal(PerformancePreset.BatterySaver, onBattery.Performance.Value);
+        Assert.Equal(SettingValueSource.PowerProfile, onBattery.Performance.Source);
+        Assert.Equal(PerformancePreset.Performance, state.PerformanceOverride!.Value);
+        Assert.Equal(OverrideLifetime.Persistent, state.PerformanceOverride.Lifetime);
+
+        state.ChangePowerSource(PowerSource.PluggedIn);
+        DesiredDeviceState onAc = state.Resolve(
+            new ConfirmedDeviceState(null, null, null, null));
+
+        Assert.Equal(PerformancePreset.Performance, onAc.Performance.Value);
+        Assert.Equal(SettingValueSource.PersistentOverride, onAc.Performance.Source);
+    }
+
+    [Fact]
+    public void PersistentBatteryPerformanceOverride_PausesOnAcAndReturnsOnBattery()
+    {
+        ProfileAutomationState state = CreateState(PowerSource.Battery);
+        state.SetPerformanceOverride(new ManualOverride<PerformancePreset>(
+            PerformancePreset.BatteryBalanced,
+            OverrideLifetime.Persistent));
+
+        state.ChangePowerSource(PowerSource.PluggedIn);
+        DesiredDeviceState onAc = state.Resolve(
+            new ConfirmedDeviceState(null, null, null, null));
+
+        Assert.Equal(PerformancePreset.Balanced, onAc.Performance.Value);
+        Assert.Equal(SettingValueSource.PowerProfile, onAc.Performance.Source);
+        Assert.Equal(PerformancePreset.BatteryBalanced, state.PerformanceOverride!.Value);
+        Assert.Equal(OverrideLifetime.Persistent, state.PerformanceOverride.Lifetime);
+
+        state.ChangePowerSource(PowerSource.Battery);
+        DesiredDeviceState onBattery = state.Resolve(
+            new ConfirmedDeviceState(null, null, null, null));
+
+        Assert.Equal(PerformancePreset.BatteryBalanced, onBattery.Performance.Value);
+        Assert.Equal(SettingValueSource.PersistentOverride, onBattery.Performance.Source);
     }
 
     [Fact]

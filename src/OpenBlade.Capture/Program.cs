@@ -140,7 +140,8 @@ Console.WriteLine("  OpenBlade.Capture query-fan-rpm");
 Console.WriteLine("  OpenBlade.Capture query-performance-fan-discriminator");
 Console.WriteLine(
     "  OpenBlade.Capture validate-performance-fan " +
-    "<balanced|silent|performance|fixed5400> --confirm-target " +
+    "<balanced|silent|performance|fixed5400|battery-saver|battery-balanced> " +
+    "--confirm-target " +
     PerformanceFanSetterValidationCommand.ExactTargetConfirmation);
 Console.WriteLine("  OpenBlade.Capture probe-battery-sequence");
 Console.WriteLine("  OpenBlade.Capture validate-battery <off|50|55|60|65|70|75|80>");

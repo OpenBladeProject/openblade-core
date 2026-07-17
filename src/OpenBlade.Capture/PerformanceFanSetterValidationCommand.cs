@@ -13,7 +13,8 @@ public sealed class PerformanceFanSetterValidationCommand
 
     private const string Usage =
         "Usage: OpenBlade.Capture validate-performance-fan " +
-        "<balanced|silent|performance|fixed5400> --confirm-target " +
+        "<balanced|silent|performance|fixed5400|battery-saver|battery-balanced> " +
+        "--confirm-target " +
         ExactTargetConfirmation;
 
     private static readonly JsonSerializerOptions JsonOptions = new()
@@ -100,6 +101,12 @@ public sealed class PerformanceFanSetterValidationCommand
             "silent" => Assign(PerformanceFanValidationTarget.Silent, out target),
             "performance" => Assign(PerformanceFanValidationTarget.Performance, out target),
             "fixed5400" => Assign(PerformanceFanValidationTarget.Fixed5400, out target),
+            "battery-saver" => Assign(
+                PerformanceFanValidationTarget.BatterySaver,
+                out target),
+            "battery-balanced" => Assign(
+                PerformanceFanValidationTarget.BatteryBalanced,
+                out target),
             _ => false,
         };
     }

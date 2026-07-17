@@ -31,6 +31,12 @@ public sealed class CapabilityPresentationTests
                 "ViewModel.FullChargeActionLabel",
                 StringComparison.Ordinal) is true);
         Assert.Equal("OnDashboardPerformanceChanged", Attribute(performance, "SelectionChanged"));
+        Assert.Equal(
+            "{x:Bind ViewModel.AvailableActivePerformanceOptions, Mode=OneWay}",
+            Attribute(performance, "ItemsSource"));
+        Assert.Equal(
+            "{x:Bind ViewModel.SelectedPerformanceOption, Mode=OneWay}",
+            Attribute(performance, "SelectedItem"));
         Assert.Equal("OnDashboardFanModeSelectionChanged", Attribute(fans, "SelectionChanged"));
         Assert.Equal(
             "OnDashboardChargeLimitPointerPressed",
@@ -393,7 +399,7 @@ public sealed class CapabilityPresentationTests
             viewModel.CanControlHardware && viewModel.AvailableLightingSettings.Count > 0);
         viewModel.PluggedInPerformanceEditor = PerformancePreset.Balanced;
         viewModel.PluggedInFanModeEditor = FanMode.Maximum;
-        viewModel.BatteryPerformanceEditor = PerformancePreset.Silent;
+        viewModel.BatteryPerformanceEditor = PerformancePreset.BatterySaver;
         viewModel.BatteryFanModeEditor = FanMode.Automatic;
         viewModel.ProfileChargeLimitEditor = 75;
 
@@ -403,7 +409,7 @@ public sealed class CapabilityPresentationTests
         Assert.NotNull(client.SavedProfiles);
         Assert.Equal(PerformancePreset.Balanced, client.SavedProfiles.PluggedIn.Performance);
         Assert.Equal(FanMode.Maximum, client.SavedProfiles.PluggedIn.Fans);
-        Assert.Equal(PerformancePreset.Silent, client.SavedProfiles.Battery.Performance);
+        Assert.Equal(PerformancePreset.BatterySaver, client.SavedProfiles.Battery.Performance);
         Assert.Equal(75, client.SavedProfiles.BatteryPolicy.ChargeLimitPercent);
     }
 
