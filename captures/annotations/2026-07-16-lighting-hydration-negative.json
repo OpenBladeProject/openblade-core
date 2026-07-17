@@ -1,0 +1,80 @@
+{
+  "schemaVersion": 1,
+  "device": {
+    "model": "RZ09-0581",
+    "vid": "1532",
+    "pid": "02E0",
+    "bios": "3.01"
+  },
+  "condition": {
+    "acOnline": true,
+    "synapseLightingEffect": "Ambient Awareness",
+    "userInitiatedSettingMutation": false
+  },
+  "rawCapturesCommitted": false,
+  "captures": [
+    {
+      "id": "lighting-hydration-100-negative",
+      "fileName": "openblade-lighting-hydration-100-20260716.pcap",
+      "sha256": "46D7F69422F9D182A8AF507A98C3970B91772C7D78304CD853AB4FBF28D0E4B9",
+      "bytes": 291667,
+      "frameCount": 2628,
+      "firstCapturedAtUtc": "2026-07-17T03:50:13.240289Z",
+      "lastCapturedAtUtc": "2026-07-17T03:52:42.464622Z",
+      "baselineBrightnessPercent": 100,
+      "lightingPageLeftAtUtc": "2026-07-17T03:51:53.504Z",
+      "lightingPageReopenedAtUtc": "2026-07-17T03:52:01.523Z",
+      "hydratedBrightnessObservedAtUtc": "2026-07-17T03:52:13.845Z"
+    },
+    {
+      "id": "lighting-hydration-49-negative",
+      "fileName": "openblade-lighting-hydration-49-20260716.pcap",
+      "sha256": "848FBE79F2D1587D75E1C0B0E13508B97E910B691667A2A34659873B0715BAF3",
+      "bytes": 130683,
+      "frameCount": 1186,
+      "firstCapturedAtUtc": "2026-07-17T03:53:54.394326Z",
+      "lastCapturedAtUtc": "2026-07-17T03:55:01.348385Z",
+      "baselineBrightnessPercent": 49,
+      "lightingPageLeftAtUtc": "2026-07-17T03:54:21.105Z",
+      "lightingPageReopenedAtUtc": "2026-07-17T03:54:28.986Z",
+      "hydratedBrightnessObservedAtUtc": "2026-07-17T03:54:38.600Z"
+    }
+  ],
+  "decodedComparison": {
+    "lightingCommand": "03/03",
+    "lightingCommandCount": {
+      "brightness100": 0,
+      "brightness49": 0
+    },
+    "lightingQueryCount": {
+      "brightness100": 0,
+      "brightness49": 0
+    },
+    "observedReadOperations": ["07/92", "07/8F", "0D/88"],
+    "batteryResponsesIdenticalAcrossStates": true,
+    "fanResponsesAreLiveRpmTelemetry": true,
+    "matrixReportsAreHostOriginatedWrites": true,
+    "independentBrightnessReadbackObserved": false,
+    "independentEffectReadbackObserved": false,
+    "independentColorReadbackObserved": false,
+    "productionAdmitted": false
+  },
+  "captureShutdown": {
+    "gracefulTargetedBreak": true,
+    "forceFallbackUsed": false,
+    "captureProcessesRemaining": 0,
+    "pcapsFinalizedAndDecoded": true,
+    "parentProcessesSurvived": true
+  },
+  "finalRestoration": {
+    "state": "Ambient Awareness + brightness 100",
+    "visuallyConfirmed": true
+  },
+  "notes": [
+    "Raw PCAP files remain outside the repository under C:\\tmp.",
+    "Both pages visually hydrated to their pre-existing brightness without a 03/03 setter or any lighting query.",
+    "Short successful USB reads were retried; complete 90-byte responses had valid checksums, zero reserved bytes, and status 02.",
+    "Concurrent polling produced isolated response misassociations; these are transport concurrency evidence, not lighting state.",
+    "Lighting remains outside the production capability table because no independent readback exists."
+  ]
+}

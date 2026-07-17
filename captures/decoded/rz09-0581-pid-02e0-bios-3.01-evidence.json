@@ -107,6 +107,24 @@
       "lastEpoch": "1784257825.907999000"
     },
     {
+      "id": "lighting-hydration-100-negative",
+      "fileName": "openblade-lighting-hydration-100-20260716.pcap",
+      "sha256": "46D7F69422F9D182A8AF507A98C3970B91772C7D78304CD853AB4FBF28D0E4B9",
+      "bytes": 291667,
+      "frameCount": 2628,
+      "firstCapturedAtUtc": "2026-07-17T03:50:13.240289Z",
+      "lastCapturedAtUtc": "2026-07-17T03:52:42.464622Z"
+    },
+    {
+      "id": "lighting-hydration-49-negative",
+      "fileName": "openblade-lighting-hydration-49-20260716.pcap",
+      "sha256": "848FBE79F2D1587D75E1C0B0E13508B97E910B691667A2A34659873B0715BAF3",
+      "bytes": 130683,
+      "frameCount": 1186,
+      "firstCapturedAtUtc": "2026-07-17T03:53:54.394326Z",
+      "lastCapturedAtUtc": "2026-07-17T03:55:01.348385Z"
+    },
+    {
       "id": "battery-query-sequence-one-second-negative",
       "fileName": "openblade-battery-query-sequence-20260714.pcap",
       "sha256": "83D9C6BDFC6FA757FDF93E431C027F741C2F7172F1A6D3493B8BDA95CB0CCA3D",
@@ -520,8 +538,23 @@
         ],
         "onlyDwellQueryOperation": "0D/88",
         "independentBrightnessReadbackObserved": false,
-        "pageHydrationComparisonRequired": true,
-        "reason": "The 49% and 100% setters received status-02 acknowledgement echoes, while all four steady-state windows contained only fan-RPM queries and no lighting query. Separate no-mutation Lighting-page hydration captures at both brightness states remain required."
+        "pageHydrationComparisonRequired": false,
+        "reason": "The 49% and 100% setters received status-02 acknowledgement echoes, while all four steady-state windows contained only fan-RPM queries and no lighting query. Controlled no-mutation page hydration at both states was subsequently captured and likewise exposed no lighting readback."
+      },
+      "controlledHydrationComparison": {
+        "captures": ["lighting-hydration-100-negative", "lighting-hydration-49-negative"],
+        "brightnessStatesPercent": [100, 49],
+        "pageHydratedToExistingState": true,
+        "brightnessCommandCount": [0, 0],
+        "lightingQueryCount": [0, 0],
+        "observedReadOperations": ["07/92", "07/8F", "0D/88"],
+        "batteryResponsesIdenticalAcrossStates": true,
+        "fanResponsesAreLiveRpmTelemetry": true,
+        "matrixReportsAreHostOriginatedWrites": true,
+        "independentBrightnessReadbackObserved": false,
+        "independentEffectReadbackObserved": false,
+        "independentColorReadbackObserved": false,
+        "productionAdmitted": false
       },
       "excludedSelector0018Reports": {
         "operations": ["03/01", "03/02", "03/00"],

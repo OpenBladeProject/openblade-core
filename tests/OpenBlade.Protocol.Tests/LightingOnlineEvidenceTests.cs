@@ -14,6 +14,8 @@ public sealed class LightingOnlineEvidenceTests
             ["lighting-reactive-online"] = "84545D9F5214B1650EF931F9CAD8A0A9ED8B914CBA06567FDA4064967A3828B6",
             ["lighting-off-online"] = "BB4F15926F7D896586109EC45C6E56EAB18550226B4E65C302E6329E81CE8870",
             ["lighting-brightness-50-online"] = "4ED4F52BDDC14C72758405F867F8DE533F11E9F68346E00CD12A7DD0EC77CC8A",
+            ["lighting-hydration-100-negative"] = "46D7F69422F9D182A8AF507A98C3970B91772C7D78304CD853AB4FBF28D0E4B9",
+            ["lighting-hydration-49-negative"] = "848FBE79F2D1587D75E1C0B0E13508B97E910B691667A2A34659873B0715BAF3",
         };
 
     [Fact]
@@ -178,7 +180,57 @@ public sealed class LightingOnlineEvidenceTests
             Assert.Equal(0, window.GetProperty("lightingQueryCount").GetInt32()));
         Assert.Equal("0D/88", dwell.GetProperty("onlyDwellQueryOperation").GetString());
         Assert.False(dwell.GetProperty("independentBrightnessReadbackObserved").GetBoolean());
-        Assert.True(dwell.GetProperty("pageHydrationComparisonRequired").GetBoolean());
+        Assert.False(dwell.GetProperty("pageHydrationComparisonRequired").GetBoolean());
+    }
+
+    [Fact]
+    public void Evidence_RecordsControlledHydrationAsNegativeForIndependentLightingReadback()
+    {
+        using JsonDocument document = LoadEvidence();
+        JsonElement comparison = document.RootElement
+            .GetProperty("lightingOnlineEvidence")
+            .GetProperty("brightness")
+            .GetProperty("controlledHydrationComparison");
+
+        Assert.Equal(["lighting-hydration-100-negative", "lighting-hydration-49-negative"],
+            Strings(comparison, "captures"));
+        Assert.Equal([100, 49], comparison.GetProperty("brightnessStatesPercent")
+            .EnumerateArray().Select(value => value.GetInt32()).ToArray());
+        Assert.True(comparison.GetProperty("pageHydratedToExistingState").GetBoolean());
+        Assert.Equal([0, 0], comparison.GetProperty("brightnessCommandCount")
+            .EnumerateArray().Select(value => value.GetInt32()).ToArray());
+        Assert.Equal([0, 0], comparison.GetProperty("lightingQueryCount")
+            .EnumerateArray().Select(value => value.GetInt32()).ToArray());
+        Assert.Equal(["07/92", "07/8F", "0D/88"], Strings(comparison, "observedReadOperations"));
+        Assert.True(comparison.GetProperty("batteryResponsesIdenticalAcrossStates").GetBoolean());
+        Assert.True(comparison.GetProperty("fanResponsesAreLiveRpmTelemetry").GetBoolean());
+        Assert.True(comparison.GetProperty("matrixReportsAreHostOriginatedWrites").GetBoolean());
+        Assert.False(comparison.GetProperty("independentBrightnessReadbackObserved").GetBoolean());
+        Assert.False(comparison.GetProperty("independentEffectReadbackObserved").GetBoolean());
+        Assert.False(comparison.GetProperty("independentColorReadbackObserved").GetBoolean());
+        Assert.False(comparison.GetProperty("productionAdmitted").GetBoolean());
+    }
+
+    [Fact]
+    public void HydrationAnnotation_IsSanitizedAndRecordsFinalRestoration()
+    {
+        string text = File.ReadAllText(HydrationAnnotationPath());
+        using JsonDocument document = JsonDocument.Parse(text);
+        JsonElement root = document.RootElement;
+
+        Assert.Equal("RZ09-0581", root.GetProperty("device").GetProperty("model").GetString());
+        Assert.False(root.GetProperty("rawCapturesCommitted").GetBoolean());
+        Assert.All(root.GetProperty("captures").EnumerateArray(), capture =>
+            Assert.Contains(capture.GetProperty("baselineBrightnessPercent").GetInt32(), new[] { 49, 100 }));
+        Assert.False(root.GetProperty("decodedComparison")
+            .GetProperty("independentBrightnessReadbackObserved").GetBoolean());
+        Assert.True(root.GetProperty("captureShutdown").GetProperty("gracefulTargetedBreak").GetBoolean());
+        Assert.False(root.GetProperty("captureShutdown").GetProperty("forceFallbackUsed").GetBoolean());
+        Assert.Equal("Ambient Awareness + brightness 100",
+            root.GetProperty("finalRestoration").GetProperty("state").GetString());
+        Assert.False(root.TryGetProperty("usbPcapRoot", out _));
+        Assert.False(root.TryGetProperty("usbDeviceAddress", out _));
+        Assert.DoesNotContain("serial", text, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -212,6 +264,9 @@ public sealed class LightingOnlineEvidenceTests
 
     private static string AnnotationPath() => RepositoryFile(
         "captures", "annotations", "2026-07-14-online-lighting-session.json");
+
+    private static string HydrationAnnotationPath() => RepositoryFile(
+        "captures", "annotations", "2026-07-16-lighting-hydration-negative.json");
 
     private static string RepositoryFile(params string[] relativeSegments)
     {
