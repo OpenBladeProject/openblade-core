@@ -40,7 +40,8 @@ public sealed class CapabilityPresentationTests
             "ViewModel.BatteryPerformanceEditor",
             "ViewModel.BatteryFanModeEditor",
             "ViewModel.ProfileChargeLimitEditor",
-            "ViewModel.ThemeOptions",
+            "ViewModel.ThemeSelectionOptions",
+            "ViewModel.SelectedThemeOption",
             "ViewModel.Theme",
             "ViewModel.StartAtSignIn",
             "ViewModel.StartupStatusMessage",
@@ -51,10 +52,14 @@ public sealed class CapabilityPresentationTests
             "ViewModel.Fan1RpmLabel",
             "ViewModel.Fan2RpmLabel",
             "ViewModel.LiveReadingsEnabled",
+            "ViewModel.TrayHoverLabelOptions",
+            "ViewModel.SelectedTrayHoverLabelOption",
             "ViewModel.FullChargeActionLabel",
             "ViewModel.BatteryProtectionActionLabel",
             "Start OpenBlade when I sign in",
             "Live fan and battery readings",
+            "Tray icon hover label",
+            "Battery power uses the live readings setting above.",
             "Until the power source changes",
             "Until I reset them",
             "Use profile settings",
@@ -70,6 +75,10 @@ public sealed class CapabilityPresentationTests
             ReadTraySource("MicaBackdropHost.cs"),
             StringComparison.Ordinal);
         Assert.Contains("<Grid.Resources>", xaml, StringComparison.Ordinal);
+        Assert.Contains("NavigationViewDefaultPaneBackground", xaml, StringComparison.Ordinal);
+        Assert.Contains("NavigationViewContentBackground", xaml, StringComparison.Ordinal);
+        Assert.Contains("HorizontalContentAlignment=\"Stretch\"", xaml, StringComparison.Ordinal);
+        Assert.DoesNotContain("MaxWidth=\"760\"", xaml, StringComparison.Ordinal);
         Assert.Contains("DashboardFanModeSelector.SelectedItem", xaml, StringComparison.Ordinal);
         Assert.Contains("InitialWidthDip = 840", ReadTraySource("MainWindow.xaml.cs"), StringComparison.Ordinal);
         Assert.Contains("InitialHeightDip = 720", ReadTraySource("MainWindow.xaml.cs"), StringComparison.Ordinal);

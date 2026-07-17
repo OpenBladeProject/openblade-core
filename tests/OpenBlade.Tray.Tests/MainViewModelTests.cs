@@ -820,6 +820,37 @@ public sealed class MainViewModelTests
     }
 
     [Fact]
+    public async Task TrayHoverLabel_TracksPreferenceProfileAndBatteryPower()
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        var changed = new HashSet<string>();
+        viewModel.PropertyChanged += (_, args) => changed.Add(args.PropertyName!);
+
+        Assert.Equal(
+            "OpenBlade · Service unavailable",
+            viewModel.TrayHoverLabelText);
+        await viewModel.StartAsync();
+        client.Publish(CreateStatus(verified: true, blocked: false) with
+        {
+            ActivePowerSource = PowerSource.Battery,
+            LiveReadings = new LiveReadings(-18_400, 2600, 2500),
+        });
+        await WaitUntilAsync(() => viewModel.IsConnected);
+
+        Assert.Equal(
+            "OpenBlade · Battery · Balanced · Using 18.4 W",
+            viewModel.TrayHoverLabelText);
+        Assert.Contains(nameof(viewModel.TrayHoverLabelText), changed);
+
+        viewModel.TrayHoverLabelMode = TrayHoverLabelMode.BatteryPowerFlow;
+        Assert.Equal("OpenBlade · Using 18.4 W", viewModel.TrayHoverLabelText);
+        Assert.Equal(
+            "Battery power flow",
+            viewModel.SelectedTrayHoverLabelOption.Label);
+    }
+
+    [Fact]
     public async Task Status_FormatsZeroBatteryFlowForCurrentPowerSource()
     {
         var client = new FakeServiceClient();
@@ -1352,6 +1383,10 @@ public sealed class MainViewModelTests
         Assert.Equal(ThemePreference.Dark, viewModel.Theme);
         Assert.Contains(ThemePreference.Light, viewModel.ThemeOptions);
         Assert.Contains(ThemePreference.FollowWindows, viewModel.ThemeOptions);
+        Assert.Equal("Dark", viewModel.SelectedThemeOption.Label);
+        Assert.Contains(
+            viewModel.ThemeSelectionOptions,
+            option => option.Label == "Follow Windows");
     }
 
     [Fact]

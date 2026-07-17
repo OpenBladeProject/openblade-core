@@ -100,7 +100,9 @@ public partial class App : Microsoft.UI.Xaml.Application
             mainWindow.ViewModel,
             () => Enqueue(ShowMainWindow),
             () => Enqueue(() => _ = ExitTrayAsync()));
-        trayIconHost = new WinFormsTrayIconHost(trayMenuController);
+        trayIconHost = new WinFormsTrayIconHost(
+            trayMenuController,
+            mainWindow.ViewModel);
         ShowMainWindow();
     }
 

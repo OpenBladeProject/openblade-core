@@ -14,6 +14,10 @@ public enum ThemePreference
     Dark,
 }
 
+public sealed record ThemePreferenceOption(
+    ThemePreference Preference,
+    string Label);
+
 public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
 {
     private readonly IServiceClient serviceClient;
@@ -85,6 +89,8 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     private ThemePreference theme = ThemePreference.FollowWindows;
     private bool keepManualChangesUntilCleared;
     private bool liveReadingsEnabled = true;
+    private TrayHoverLabelMode trayHoverLabelMode =
+        TrayHoverLabelMode.ProfileAndPowerFlow;
     private bool startAtSignIn;
     private bool startupStateKnown;
     private string startupStatusMessage = string.Empty;
@@ -212,6 +218,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             }
             SetField(ref isConnected, value);
             NotifyPresentationState();
+            NotifyTrayHoverLabel();
         }
     }
 
@@ -325,6 +332,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             PropertyChanged?.Invoke(
                 this,
                 new PropertyChangedEventArgs(nameof(BatteryPowerFlowLabel)));
+            NotifyTrayHoverLabel();
             NotifyCommands();
         }
     }
@@ -565,6 +573,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsSilentSelected)));
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsBalancedSelected)));
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsPerformanceSelected)));
+            NotifyTrayHoverLabel();
         }
     }
 
@@ -707,6 +716,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(BatteryPowerFlowLabel)));
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Fan1RpmLabel)));
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Fan2RpmLabel)));
+            NotifyTrayHoverLabel();
         }
     }
 
@@ -849,11 +859,43 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     public ThemePreference Theme
     {
         get => theme;
-        set => SetField(ref theme, value);
+        set
+        {
+            if (!Enum.IsDefined(value))
+            {
+                throw new ArgumentOutOfRangeException(nameof(value));
+            }
+            if (theme == value)
+            {
+                return;
+            }
+
+            SetField(ref theme, value);
+            PropertyChanged?.Invoke(
+                this,
+                new PropertyChangedEventArgs(nameof(SelectedThemeOption)));
+        }
     }
 
     public IReadOnlyList<ThemePreference> ThemeOptions { get; } =
         Enum.GetValues<ThemePreference>();
+
+    public IReadOnlyList<ThemePreferenceOption> ThemeSelectionOptions { get; } =
+    [
+        new(ThemePreference.FollowWindows, "Follow Windows"),
+        new(ThemePreference.Light, "Light"),
+        new(ThemePreference.Dark, "Dark"),
+    ];
+
+    public ThemePreferenceOption SelectedThemeOption
+    {
+        get => ThemeSelectionOptions.Single(option => option.Preference == Theme);
+        set
+        {
+            ArgumentNullException.ThrowIfNull(value);
+            Theme = value.Preference;
+        }
+    }
 
     public bool KeepManualChangesUntilCleared
     {
@@ -879,8 +921,56 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             {
                 LiveReadings = null;
             }
+            NotifyTrayHoverLabel();
         }
     }
+
+    public IReadOnlyList<TrayHoverLabelOption> TrayHoverLabelOptions { get; } =
+    [
+        new(TrayHoverLabelMode.OpenBlade, "OpenBlade only"),
+        new(TrayHoverLabelMode.ActiveProfile, "Active profile"),
+        new(TrayHoverLabelMode.BatteryPowerFlow, "Battery power flow"),
+        new(TrayHoverLabelMode.ProfileAndPowerFlow, "Profile and battery power"),
+    ];
+
+    public TrayHoverLabelMode TrayHoverLabelMode
+    {
+        get => trayHoverLabelMode;
+        set
+        {
+            if (!Enum.IsDefined(value))
+            {
+                throw new ArgumentOutOfRangeException(nameof(value));
+            }
+            if (trayHoverLabelMode == value)
+            {
+                return;
+            }
+
+            SetField(ref trayHoverLabelMode, value);
+            PropertyChanged?.Invoke(
+                this,
+                new PropertyChangedEventArgs(nameof(SelectedTrayHoverLabelOption)));
+            NotifyTrayHoverLabel();
+        }
+    }
+
+    public TrayHoverLabelOption SelectedTrayHoverLabelOption
+    {
+        get => TrayHoverLabelOptions.Single(option => option.Mode == TrayHoverLabelMode);
+        set
+        {
+            ArgumentNullException.ThrowIfNull(value);
+            TrayHoverLabelMode = value.Mode;
+        }
+    }
+
+    public string TrayHoverLabelText => TrayHoverLabelFormatter.Format(
+        TrayHoverLabelMode,
+        IsConnected,
+        ActivePowerSource,
+        SelectedPerformance,
+        BatteryPowerFlowLabel);
 
     public bool StartAtSignIn
     {
@@ -1971,6 +2061,10 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(AttentionDetails)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(TroubleshootingDetails)));
     }
+
+    private void NotifyTrayHoverLabel() => PropertyChanged?.Invoke(
+        this,
+        new PropertyChangedEventArgs(nameof(TrayHoverLabelText)));
 
     private void SetField<T>(
         ref T field,

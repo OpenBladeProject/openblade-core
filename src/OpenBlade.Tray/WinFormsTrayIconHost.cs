@@ -1,25 +1,32 @@
+using System.ComponentModel;
+
 namespace OpenBlade.Tray;
 
 public sealed class WinFormsTrayIconHost : ITrayIconHost
 {
     private readonly ContextMenuStrip menu;
     private readonly NotifyIcon trayIcon;
+    private readonly MainViewModel viewModel;
     private int disposed;
 
-    public WinFormsTrayIconHost(TrayMenuController controller)
+    public WinFormsTrayIconHost(
+        TrayMenuController controller,
+        MainViewModel viewModel)
     {
         ArgumentNullException.ThrowIfNull(controller);
+        this.viewModel = viewModel ?? throw new ArgumentNullException(nameof(viewModel));
 
         menu = BuildTrayMenu(controller);
         TrayMenuItem open = controller.Find("Open");
         trayIcon = new NotifyIcon
         {
-            Text = "OpenBlade",
+            Text = viewModel.TrayHoverLabelText,
             Icon = System.Drawing.SystemIcons.Application,
             ContextMenuStrip = menu,
             Visible = true,
         };
         trayIcon.DoubleClick += (_, _) => open.Invoke();
+        viewModel.PropertyChanged += OnViewModelPropertyChanged;
     }
 
     public void Dispose()
@@ -29,9 +36,21 @@ public sealed class WinFormsTrayIconHost : ITrayIconHost
             return;
         }
 
+        viewModel.PropertyChanged -= OnViewModelPropertyChanged;
         trayIcon.Visible = false;
         trayIcon.Dispose();
         menu.Dispose();
+    }
+
+    private void OnViewModelPropertyChanged(
+        object? sender,
+        PropertyChangedEventArgs args)
+    {
+        if (Volatile.Read(ref disposed) == 0
+            && args.PropertyName == nameof(MainViewModel.TrayHoverLabelText))
+        {
+            trayIcon.Text = viewModel.TrayHoverLabelText;
+        }
     }
 
     private static ContextMenuStrip BuildTrayMenu(TrayMenuController controller)

@@ -7,12 +7,14 @@ namespace OpenBlade.Tray;
 public sealed record UiPreferences(
     ThemePreference Theme,
     bool KeepManualChangesUntilCleared = false,
-    bool LiveReadingsEnabled = true)
+    bool LiveReadingsEnabled = true,
+    TrayHoverLabelMode TrayHoverLabelMode = TrayHoverLabelMode.ProfileAndPowerFlow)
 {
     public static UiPreferences Default { get; } = new(
         ThemePreference.FollowWindows,
         KeepManualChangesUntilCleared: false,
-        LiveReadingsEnabled: true);
+        LiveReadingsEnabled: true,
+        TrayHoverLabelMode: TrayHoverLabelMode.ProfileAndPowerFlow);
 }
 
 public sealed class UiPreferenceStore

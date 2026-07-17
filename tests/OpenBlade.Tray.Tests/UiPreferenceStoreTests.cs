@@ -19,6 +19,9 @@ public sealed class UiPreferenceStoreTests : IDisposable
         Assert.Equal(ThemePreference.FollowWindows, preferences.Theme);
         Assert.False(preferences.KeepManualChangesUntilCleared);
         Assert.True(preferences.LiveReadingsEnabled);
+        Assert.Equal(
+            TrayHoverLabelMode.ProfileAndPowerFlow,
+            preferences.TrayHoverLabelMode);
     }
 
     [Fact]
@@ -30,16 +33,21 @@ public sealed class UiPreferenceStoreTests : IDisposable
         await store.SaveAsync(new UiPreferences(
             ThemePreference.Dark,
             KeepManualChangesUntilCleared: true,
-            LiveReadingsEnabled: false));
+            LiveReadingsEnabled: false,
+            TrayHoverLabelMode: TrayHoverLabelMode.BatteryPowerFlow));
 
         UiPreferences reloaded = await store.LoadAsync();
         using JsonDocument document = JsonDocument.Parse(await File.ReadAllTextAsync(path));
         Assert.Equal(ThemePreference.Dark, reloaded.Theme);
         Assert.True(reloaded.KeepManualChangesUntilCleared);
         Assert.False(reloaded.LiveReadingsEnabled);
+        Assert.Equal(TrayHoverLabelMode.BatteryPowerFlow, reloaded.TrayHoverLabelMode);
         Assert.Equal("Dark", document.RootElement.GetProperty("theme").GetString());
         Assert.True(document.RootElement.GetProperty("keepManualChangesUntilCleared").GetBoolean());
         Assert.False(document.RootElement.GetProperty("liveReadingsEnabled").GetBoolean());
+        Assert.Equal(
+            "BatteryPowerFlow",
+            document.RootElement.GetProperty("trayHoverLabelMode").GetString());
     }
 
     [Fact]
@@ -69,6 +77,9 @@ public sealed class UiPreferenceStoreTests : IDisposable
         Assert.Equal(ThemePreference.Dark, preferences.Theme);
         Assert.True(preferences.KeepManualChangesUntilCleared);
         Assert.True(preferences.LiveReadingsEnabled);
+        Assert.Equal(
+            TrayHoverLabelMode.ProfileAndPowerFlow,
+            preferences.TrayHoverLabelMode);
     }
 
     [Fact]

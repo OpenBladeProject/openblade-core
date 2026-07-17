@@ -76,6 +76,9 @@ public sealed class WinUiShellContractTests
         Assert.Contains("menu.Opening +=", trayHost, StringComparison.Ordinal);
         Assert.Contains("view.Enabled = model.IsEnabled", trayHost, StringComparison.Ordinal);
         Assert.Contains("trayIcon.DoubleClick +=", trayHost, StringComparison.Ordinal);
+        Assert.Contains("viewModel.TrayHoverLabelText", trayHost, StringComparison.Ordinal);
+        Assert.Contains("viewModel.PropertyChanged +=", trayHost, StringComparison.Ordinal);
+        Assert.Contains("viewModel.PropertyChanged -=", trayHost, StringComparison.Ordinal);
         Assert.Contains("open.Invoke()", trayHost, StringComparison.Ordinal);
         Assert.Contains("Interlocked.Exchange(ref disposed, 1)", trayHost, StringComparison.Ordinal);
         Assert.Contains("trayIcon.Visible = false", trayHost, StringComparison.Ordinal);
@@ -104,7 +107,15 @@ public sealed class WinUiShellContractTests
 
         string windowXaml = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml");
         Assert.Contains(
-            "Background=\"{ThemeResource ApplicationPageBackgroundThemeBrush}\"",
+            "Background=\"Transparent\"",
+            windowXaml,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "x:Key=\"NavigationViewDefaultPaneBackground\" Color=\"Transparent\"",
+            windowXaml,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "x:Key=\"NavigationViewContentBackground\" Color=\"Transparent\"",
             windowXaml,
             StringComparison.Ordinal);
 

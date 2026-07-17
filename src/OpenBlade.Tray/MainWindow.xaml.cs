@@ -114,6 +114,8 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
         ThemePreference initialTheme = ThemePreference.FollowWindows;
         bool keepManualChangesUntilCleared = false;
         bool liveReadingsEnabled = true;
+        TrayHoverLabelMode trayHoverLabelMode =
+            TrayHoverLabelMode.ProfileAndPowerFlow;
         try
         {
             UiPreferences preferences = await preferenceStore.LoadAsync();
@@ -121,6 +123,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
             initialTheme = preferences.Theme;
             keepManualChangesUntilCleared = preferences.KeepManualChangesUntilCleared;
             liveReadingsEnabled = preferences.LiveReadingsEnabled;
+            trayHoverLabelMode = preferences.TrayHoverLabelMode;
         }
         catch (Exception exception)
         {
@@ -137,6 +140,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
         ViewModel.Theme = initialTheme;
         ViewModel.KeepManualChangesUntilCleared = keepManualChangesUntilCleared;
         ViewModel.LiveReadingsEnabled = liveReadingsEnabled;
+        ViewModel.TrayHoverLabelMode = trayHoverLabelMode;
         try
         {
             ThemeManager.Apply(Root, ViewModel.Theme);
@@ -199,7 +203,8 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
         }
 
         if (args.PropertyName is nameof(MainViewModel.KeepManualChangesUntilCleared)
-            or nameof(MainViewModel.LiveReadingsEnabled))
+            or nameof(MainViewModel.LiveReadingsEnabled)
+            or nameof(MainViewModel.TrayHoverLabelMode))
         {
             QueuePreferenceSave();
             if (args.PropertyName == nameof(MainViewModel.LiveReadingsEnabled))
@@ -236,7 +241,8 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
             preferenceSaveQueue.Enqueue(new UiPreferences(
                 ViewModel.Theme,
                 ViewModel.KeepManualChangesUntilCleared,
-                ViewModel.LiveReadingsEnabled));
+                ViewModel.LiveReadingsEnabled,
+                ViewModel.TrayHoverLabelMode));
         }
         catch (ObjectDisposedException)
         {
