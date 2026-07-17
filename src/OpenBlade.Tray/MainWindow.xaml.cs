@@ -653,7 +653,9 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
         if (Volatile.Read(ref disposed) != 0
             || Root.FindName("ProfilesLayout") is not Grid profilesLayout
             || Root.FindName("ProfilesSecondColumn") is not ColumnDefinition profilesSecondColumn
-            || Root.FindName("BatteryProfileCard") is not FrameworkElement batteryProfileCard)
+            || Root.FindName("ProfilesThirdColumn") is not ColumnDefinition profilesThirdColumn
+            || Root.FindName("BatteryProfileCard") is not FrameworkElement batteryProfileCard
+            || Root.FindName("UsbCProfileCard") is not FrameworkElement usbCProfileCard)
         {
             return;
         }
@@ -674,8 +676,13 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
         profilesSecondColumn.Width = stack
             ? new GridLength(0)
             : new GridLength(1, GridUnitType.Star);
+        profilesThirdColumn.Width = stack
+            ? new GridLength(0)
+            : new GridLength(1, GridUnitType.Star);
         Grid.SetRow(batteryProfileCard, stack ? 1 : 0);
         Grid.SetColumn(batteryProfileCard, stack ? 0 : 1);
+        Grid.SetRow(usbCProfileCard, stack ? 2 : 0);
+        Grid.SetColumn(usbCProfileCard, stack ? 0 : 2);
     }
 
     [DllImport("user32.dll")]

@@ -51,6 +51,15 @@ public static class TrayHoverLabelFormatter
 
     private static string FormatProfile(
         PowerSource powerSource,
-        PerformancePreset performance) =>
-        $"{(powerSource == PowerSource.Battery ? "Battery" : "Plugged in")} · {PerformancePresetPresentation.Label(performance)}";
+        PerformancePreset performance) => powerSource switch
+        {
+            PowerSource.PluggedIn =>
+                $"Plugged in · {PerformancePresetPresentation.Label(performance)}",
+            PowerSource.Battery =>
+                $"Battery · {PerformancePresetPresentation.Label(performance)}",
+            PowerSource.UsbC =>
+                $"USB-C · {PerformancePresetPresentation.Label(performance)}",
+            PowerSource.ExternalUnknown => "Checking power source",
+            _ => "Power source unavailable",
+        };
 }

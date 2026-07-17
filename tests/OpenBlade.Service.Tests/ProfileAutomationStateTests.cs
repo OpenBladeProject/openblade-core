@@ -124,6 +124,40 @@ public sealed class ProfileAutomationStateTests
     }
 
     [Fact]
+    public void UsbC_UsesDedicatedProfileAndPausesIncompatiblePersistentOverrides()
+    {
+        ProfileSet profiles = ProfileDefaults.CreateSafeDefaults() with
+        {
+            PluggedIn = ProfileDefaults.CreateSafeDefaults().PluggedIn with
+            {
+                Performance = PerformancePreset.Performance,
+                Fans = FanMode.Maximum,
+            },
+        };
+        ProfileAutomationState state = new(
+            profiles,
+            new BatteryAutomationPreferences(ProtectionEnabled: true),
+            PowerSource.PluggedIn);
+        state.SetPerformanceOverride(new ManualOverride<PerformancePreset>(
+            PerformancePreset.Performance,
+            OverrideLifetime.Persistent));
+        state.SetFanOverride(new ManualOverride<FanMode>(
+            FanMode.Maximum,
+            OverrideLifetime.Persistent));
+
+        state.ChangePowerSource(PowerSource.UsbC);
+        DesiredDeviceState desired = state.Resolve(
+            new ConfirmedDeviceState(null, null, null, null));
+
+        Assert.Equal(PerformancePreset.Balanced, desired.Performance.Value);
+        Assert.Equal(FanMode.Automatic, desired.Fans.Value);
+        Assert.Equal(SettingValueSource.PowerProfile, desired.Performance.Source);
+        Assert.Equal(SettingValueSource.PowerProfile, desired.Fans.Source);
+        Assert.Equal(PerformancePreset.Performance, state.PerformanceOverride!.Value);
+        Assert.Equal(FanMode.Maximum, state.FanOverride!.Value);
+    }
+
+    [Fact]
     public void NewTemporaryOverride_ReplacesPersistentSlotInsteadOfBeingMasked()
     {
         ProfileAutomationState state = CreateState(PowerSource.PluggedIn);

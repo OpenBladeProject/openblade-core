@@ -55,7 +55,9 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     private IReadOnlyList<PerformancePreset> availablePerformancePresets = [];
     private IReadOnlyList<PerformancePresetOption> availablePluggedInPerformanceOptions = [];
     private IReadOnlyList<PerformancePresetOption> availableBatteryPerformanceOptions = [];
+    private IReadOnlyList<PerformancePresetOption> availableUsbCPerformanceOptions = [];
     private IReadOnlyList<FanMode> availableFanModes = [];
+    private IReadOnlyList<FanMode> availableUsbCFanModes = [];
     private IReadOnlyList<LightingEffect> availableLightingEffects = [];
     private IReadOnlyList<LightingSettings> availableLightingSettings = [];
     private bool isPerformanceVisible;
@@ -84,6 +86,9 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     private PerformancePreset batteryPerformanceEditor = PerformancePreset.BatterySaver;
     private FanMode batteryFanModeEditor = FanMode.Automatic;
     private LightingSettings batteryLightingEditor = ProfileDefaults.CreateSafeDefaults().Battery.Lighting;
+    private PerformancePreset usbCPerformanceEditor = PerformancePreset.Balanced;
+    private FanMode usbCFanModeEditor = FanMode.Automatic;
+    private LightingSettings usbCLightingEditor = ProfileDefaults.CreateSafeDefaults().UsbC.Lighting;
     private int profileChargeLimitEditor = 80;
     private bool profileEditorsDirty;
     private LightingEffect lightingEffectEditor = LightingEffect.Off;
@@ -149,6 +154,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             SetLightingAsync,
             parameter => parameter is LightingSettings value
                 && CanMutate
+                && HasConfirmedPowerSource
                 && LightingSupported(value, latestStatus!.Capabilities!));
         SetChargeLimitCommand = CreateCommand(
             SetChargeLimitAsync,
@@ -161,7 +167,9 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             CanSetFullChargeOverride);
         ClearManualOverridesCommand = CreateCommand(
             ClearManualOverridesAsync,
-            _ => Volatile.Read(ref disposed) == 0 && IsConnected);
+            _ => Volatile.Read(ref disposed) == 0
+                && IsConnected
+                && HasConfirmedPowerSource);
         SaveProfilesCommand = CreateCommand(
             SaveProfilesAsync,
             CanSaveProfiles);
@@ -341,10 +349,19 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
                 new PropertyChangedEventArgs(nameof(IsPluggedInProfileActive)));
             PropertyChanged?.Invoke(
                 this,
+                new PropertyChangedEventArgs(nameof(IsBatteryProfileActive)));
+            PropertyChanged?.Invoke(
+                this,
+                new PropertyChangedEventArgs(nameof(IsUsbCProfileActive)));
+            PropertyChanged?.Invoke(
+                this,
                 new PropertyChangedEventArgs(nameof(AvailableActivePerformanceOptions)));
             PropertyChanged?.Invoke(
                 this,
                 new PropertyChangedEventArgs(nameof(SelectedPerformanceOption)));
+            PropertyChanged?.Invoke(
+                this,
+                new PropertyChangedEventArgs(nameof(AvailableActiveFanModes)));
             PropertyChanged?.Invoke(
                 this,
                 new PropertyChangedEventArgs(nameof(BatteryPowerFlowLabel)));
@@ -355,6 +372,10 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
 
     public bool IsPluggedInProfileActive => ActivePowerSource == PowerSource.PluggedIn;
 
+    public bool IsBatteryProfileActive => ActivePowerSource == PowerSource.Battery;
+
+    public bool IsUsbCProfileActive => ActivePowerSource == PowerSource.UsbC;
+
     public string ActivePerformanceLabel =>
         PerformancePresetPresentation.Label(SelectedPerformance);
 
@@ -362,6 +383,8 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
 
     public string ProfileStateLabel => !IsConnected
         ? "Service unavailable"
+        : ActivePowerSource == PowerSource.ExternalUnknown
+            ? "Checking power source"
         : HasExternalChanges
             ? "Changed by another app"
             : FullChargeOverride
@@ -530,10 +553,21 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         private set => SetField(ref availableBatteryPerformanceOptions, value);
     }
 
+    public IReadOnlyList<PerformancePresetOption> AvailableUsbCPerformanceOptions
+    {
+        get => availableUsbCPerformanceOptions;
+        private set => SetField(ref availableUsbCPerformanceOptions, value);
+    }
+
     public IReadOnlyList<PerformancePresetOption> AvailableActivePerformanceOptions =>
-        ActivePowerSource == PowerSource.PluggedIn
-            ? AvailablePluggedInPerformanceOptions
-            : AvailableBatteryPerformanceOptions;
+        ActivePowerSource switch
+        {
+            PowerSource.PluggedIn => AvailablePluggedInPerformanceOptions,
+            PowerSource.Battery => AvailableBatteryPerformanceOptions,
+            PowerSource.UsbC => AvailableUsbCPerformanceOptions,
+            PowerSource.ExternalUnknown => [],
+            _ => [],
+        };
 
     public PerformancePresetOption? SelectedPerformanceOption =>
         FindPerformanceOption(AvailableActivePerformanceOptions, SelectedPerformance);
@@ -543,6 +577,21 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         get => availableFanModes;
         private set => SetField(ref availableFanModes, value);
     }
+
+    public IReadOnlyList<FanMode> AvailableUsbCFanModes
+    {
+        get => availableUsbCFanModes;
+        private set => SetField(ref availableUsbCFanModes, value);
+    }
+
+    public IReadOnlyList<FanMode> AvailableActiveFanModes =>
+        ActivePowerSource switch
+        {
+            PowerSource.PluggedIn or PowerSource.Battery => AvailableFanModes,
+            PowerSource.UsbC => AvailableUsbCFanModes,
+            PowerSource.ExternalUnknown => [],
+            _ => [],
+        };
 
     public IReadOnlyList<LightingEffect> AvailableLightingEffects
     {
@@ -905,6 +954,49 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         set => SetEditorField(ref batteryLightingEditor, value);
     }
 
+    public PerformancePreset UsbCPerformanceEditor
+    {
+        get => usbCPerformanceEditor;
+        set
+        {
+            if (usbCPerformanceEditor == value)
+            {
+                return;
+            }
+
+            SetEditorField(ref usbCPerformanceEditor, value);
+            PropertyChanged?.Invoke(
+                this,
+                new PropertyChangedEventArgs(nameof(UsbCPerformanceOption)));
+        }
+    }
+
+    public PerformancePresetOption? UsbCPerformanceOption
+    {
+        get => FindPerformanceOption(
+            AvailableUsbCPerformanceOptions,
+            UsbCPerformanceEditor);
+        set
+        {
+            if (value is not null)
+            {
+                UsbCPerformanceEditor = value.Value;
+            }
+        }
+    }
+
+    public FanMode UsbCFanModeEditor
+    {
+        get => usbCFanModeEditor;
+        set => SetEditorField(ref usbCFanModeEditor, value);
+    }
+
+    public LightingSettings UsbCLightingEditor
+    {
+        get => usbCLightingEditor;
+        set => SetEditorField(ref usbCLightingEditor, value);
+    }
+
     public int ProfileChargeLimitEditor
     {
         get => profileChargeLimitEditor;
@@ -1167,10 +1259,14 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             Capabilities: not null,
         };
 
+    private bool HasConfirmedPowerSource => ActivePowerSource is
+        PowerSource.PluggedIn or PowerSource.Battery or PowerSource.UsbC;
+
     private bool CanSetPerformance(object? parameter) =>
         parameter is PerformancePreset value
         && Enum.IsDefined(value)
         && CanMutate
+        && HasConfirmedPowerSource
         && latestStatus!.Capabilities!.PerformancePresets.Contains(value)
         && PerformancePresetPresentation.IsAvailable(ActivePowerSource, value)
         && !MaximumFansAreEffectiveOrConfirmed();
@@ -1180,12 +1276,14 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         if (parameter is not FanMode value
             || !Enum.IsDefined(value)
             || !CanMutate
+            || !HasConfirmedPowerSource
             || !latestStatus!.Capabilities!.FanModes.Contains(value))
         {
             return false;
         }
 
-        return value == FanMode.Automatic || IsBalancedAutomaticThermalState();
+        return FanModeAvailable(ActivePowerSource, value)
+            && (value == FanMode.Automatic || IsBalancedAutomaticThermalState());
     }
 
     private bool MaximumFansAreEffectiveOrConfirmed() =>
@@ -1211,6 +1309,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         }
 
         if (!CanMutate
+            || !HasConfirmedPowerSource
             || latestStatus?.Capabilities is not { } capabilities
             || !HasBatteryCapability(capabilities)
             || !capabilities.SupportsTemporaryFullCharge
@@ -1229,13 +1328,14 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             ? requested
             : !temporaryFullCharge;
         return enable != temporaryFullCharge
-            && (!enable || ActivePowerSource == PowerSource.PluggedIn);
+            && (!enable || ActivePowerSource is PowerSource.PluggedIn or PowerSource.UsbC);
     }
 
     private bool CanToggleBatteryProtection(object? parameter)
     {
         if (parameter is not null
             || !CanMutate
+            || !HasConfirmedPowerSource
             || latestStatus?.Capabilities is not { } capabilities
             || !HasBatteryCapability(capabilities)
             || latestStatus.ConfirmedState?.Battery is not
@@ -1410,7 +1510,8 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         bool controllable = status.DeviceVerified
             && !status.WritesBlocked;
         IsReadOnly = !controllable;
-        CanControlHardware = controllable;
+        CanControlHardware = controllable
+            && status.ActivePowerSource != PowerSource.ExternalUnknown;
         ConnectionStatus = status.Message;
         ControlAccessStatus = FormatControlAccessStatus(status);
         HasControllerAdvisory = status.PotentialControllers.Count > 0;
@@ -1464,9 +1565,14 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         PerformanceOverride = status.PerformanceOverride;
         FanOverride = status.FanOverride;
         LightingOverride = status.LightingOverride;
-        ActivePowerSourceLabel = status.ActivePowerSource == PowerSource.Battery
-            ? "Battery profile"
-            : "Plugged-in profile";
+        ActivePowerSourceLabel = status.ActivePowerSource switch
+        {
+            PowerSource.PluggedIn => "Plugged-in profile",
+            PowerSource.Battery => "Battery profile",
+            PowerSource.UsbC => "USB-C profile",
+            PowerSource.ExternalUnknown => "Checking power source",
+            _ => "Power source unavailable",
+        };
         PerformanceSourceLabel = SourceLabel(
             DeviceSubsystem.Performance,
             confirmed?.Performance is not null,
@@ -1503,6 +1609,9 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             PropertyChanged?.Invoke(
                 this,
                 new PropertyChangedEventArgs(nameof(BatteryPerformanceEditor)));
+            PropertyChanged?.Invoke(
+                this,
+                new PropertyChangedEventArgs(nameof(UsbCPerformanceEditor)));
         }
         var admittedPerformancePresets = performancePresets.ToHashSet();
         IReadOnlyList<PerformancePresetOption> pluggedInOptions =
@@ -1513,6 +1622,10 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             PerformancePresetPresentation.CreateOptions(
                 PowerSource.Battery,
                 admittedPerformancePresets);
+        IReadOnlyList<PerformancePresetOption> usbCOptions =
+            PerformancePresetPresentation.CreateOptions(
+                PowerSource.UsbC,
+                admittedPerformancePresets);
         bool performanceOptionsChanged = false;
         if (!AvailablePluggedInPerformanceOptions.SequenceEqual(pluggedInOptions))
         {
@@ -1522,6 +1635,11 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         if (!AvailableBatteryPerformanceOptions.SequenceEqual(batteryOptions))
         {
             AvailableBatteryPerformanceOptions = batteryOptions;
+            performanceOptionsChanged = true;
+        }
+        if (!AvailableUsbCPerformanceOptions.SequenceEqual(usbCOptions))
+        {
+            AvailableUsbCPerformanceOptions = usbCOptions;
             performanceOptionsChanged = true;
         }
         if (performanceOptionsChanged)
@@ -1538,6 +1656,9 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             PropertyChanged?.Invoke(
                 this,
                 new PropertyChangedEventArgs(nameof(BatteryPerformanceOption)));
+            PropertyChanged?.Invoke(
+                this,
+                new PropertyChangedEventArgs(nameof(UsbCPerformanceOption)));
         }
         FanMode[] fanModes = capabilities.FanModes
             .Where(Enum.IsDefined)
@@ -1546,6 +1667,9 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         if (!AvailableFanModes.SequenceEqual(fanModes))
         {
             AvailableFanModes = fanModes;
+            AvailableUsbCFanModes = fanModes.Contains(FanMode.Automatic)
+                ? [FanMode.Automatic]
+                : [];
             // WinUI clears a ComboBox selection when ItemsSource is replaced.
             // Reapply the confirmed value only when the admitted set changes;
             // equivalent status refreshes must preserve a pending user choice.
@@ -1558,6 +1682,12 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             PropertyChanged?.Invoke(
                 this,
                 new PropertyChangedEventArgs(nameof(BatteryFanModeEditor)));
+            PropertyChanged?.Invoke(
+                this,
+                new PropertyChangedEventArgs(nameof(UsbCFanModeEditor)));
+            PropertyChanged?.Invoke(
+                this,
+                new PropertyChangedEventArgs(nameof(AvailableActiveFanModes)));
         }
         AvailableLightingEffects = capabilities.LightingEffects
             .Where(Enum.IsDefined)
@@ -1606,6 +1736,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     private bool CanSetChargeLimit(int value)
     {
         if (!CanMutate
+            || !HasConfirmedPowerSource
             || latestStatus!.Capabilities is not { } capabilities
             || latestStatus.ConfirmedState?.Battery is not
             {
@@ -1889,6 +2020,10 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
                     BatteryPerformanceEditor,
                     BatteryFanModeEditor,
                     BatteryLightingEditor),
+                new PowerProfile(
+                    UsbCPerformanceEditor,
+                    UsbCFanModeEditor,
+                    UsbCLightingEditor),
                 BatteryPolicy.Create(ProfileChargeLimitEditor));
         }
 
@@ -1909,6 +2044,11 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
                 Profiles.Battery,
                 capabilities,
                 PowerSource.Battery)
+            && ProfileSupportedOrUnchanged(
+                draft.UsbC,
+                Profiles.UsbC,
+                capabilities,
+                PowerSource.UsbC)
             && HasBatteryCapability(capabilities)
             && capabilities.ChargeLimits.Contains(
                 draft.BatteryPolicy.ChargeLimitPercent);
@@ -1923,10 +2063,14 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         && (capabilities.PerformancePresets.Contains(draft.Performance)
             || draft.Performance == current.Performance)
         && (PerformancePresetPresentation.IsAvailable(powerSource, draft.Performance)
-            || draft.Performance == current.Performance)
+            || (powerSource != PowerSource.UsbC
+                && draft.Performance == current.Performance))
         && Enum.IsDefined(draft.Fans)
         && (capabilities.FanModes.Contains(draft.Fans)
             || draft.Fans == current.Fans)
+        && (FanModeAvailable(powerSource, draft.Fans)
+            || (powerSource != PowerSource.UsbC
+                && draft.Fans == current.Fans))
         && ThermalCombinationSupported(draft.Performance, draft.Fans)
         && (LightingSupported(draft.Lighting, capabilities)
             || draft.Lighting == current.Lighting);
@@ -1936,6 +2080,16 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         FanMode fans) =>
         fans == FanMode.Automatic
         || (performance == PerformancePreset.Balanced && fans == FanMode.Maximum);
+
+    private static bool FanModeAvailable(PowerSource powerSource, FanMode fans) =>
+        powerSource switch
+        {
+            PowerSource.PluggedIn or PowerSource.Battery =>
+                fans is FanMode.Automatic or FanMode.Maximum,
+            PowerSource.UsbC => fans == FanMode.Automatic,
+            PowerSource.ExternalUnknown => false,
+            _ => false,
+        };
 
     private static bool LightingSupported(
         LightingSettings lighting,
@@ -2078,6 +2232,21 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             value.Battery.Lighting,
             nameof(BatteryLightingEditor));
         SetField(
+            ref usbCPerformanceEditor,
+            value.UsbC.Performance,
+            nameof(UsbCPerformanceEditor));
+        SetField(
+            ref usbCFanModeEditor,
+            value.UsbC.Fans,
+            nameof(UsbCFanModeEditor));
+        SetField(
+            ref usbCLightingEditor,
+            value.UsbC.Lighting,
+            nameof(UsbCLightingEditor));
+        PropertyChanged?.Invoke(
+            this,
+            new PropertyChangedEventArgs(nameof(UsbCPerformanceOption)));
+        SetField(
             ref profileChargeLimitEditor,
             value.BatteryPolicy.ChargeLimitPercent,
             nameof(ProfileChargeLimitEditor));
@@ -2199,9 +2368,13 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         }
         if (milliwatts == 0)
         {
-            return powerSource == PowerSource.PluggedIn
-                ? "Not charging"
-                : "Battery power unavailable";
+            return powerSource switch
+            {
+                PowerSource.PluggedIn or PowerSource.UsbC => "Not charging",
+                PowerSource.Battery or PowerSource.ExternalUnknown =>
+                    "Battery power unavailable",
+                _ => "Battery power unavailable",
+            };
         }
         double watts = Math.Abs((long)milliwatts) / 1000d;
         string value = watts.ToString("0.0", CultureInfo.InvariantCulture);
@@ -2223,6 +2396,11 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         if (!status.DeviceVerified)
         {
             return "Laptop not found";
+        }
+
+        if (status.ActivePowerSource == PowerSource.ExternalUnknown)
+        {
+            return "Checking power source";
         }
 
         return status.WritesBlocked

@@ -63,7 +63,18 @@ public sealed class MainViewModelTests
             }
         };
         await viewModel.StartAsync();
-        ServiceStatusSnapshot baseline = CreateStatus(verified: true, blocked: false);
+        LightingSettings usbCLighting = new(
+            LightingEffect.Static,
+            new RgbColor(10, 20, 30),
+            45);
+        ServiceStatusSnapshot original = CreateStatus(verified: true, blocked: false);
+        ServiceStatusSnapshot baseline = original with
+        {
+            Profiles = original.Profiles with
+            {
+                UsbC = original.Profiles.UsbC with { Lighting = usbCLighting },
+            },
+        };
         client.Publish(baseline);
         await WaitUntilAsync(() => viewModel.IsConnected);
 
@@ -93,6 +104,8 @@ public sealed class MainViewModelTests
         Assert.Equal(
             PerformancePreset.Performance,
             viewModel.Profiles.PluggedIn.Performance);
+        Assert.Equal(usbCLighting, viewModel.Profiles.UsbC.Lighting);
+        Assert.Equal(usbCLighting, client.LastProfiles?.UsbC.Lighting);
 
         ProfileSet reloaded = baseline.Profiles with
         {
@@ -631,6 +644,41 @@ public sealed class MainViewModelTests
         Assert.False(viewModel.SetPerformanceCommand.CanExecute(PerformancePreset.Silent));
         Assert.False(viewModel.SetPerformanceCommand.CanExecute(PerformancePreset.Performance));
 
+        client.Publish(pluggedIn with
+        {
+            Revision = pluggedIn.Revision + 2,
+            ActivePowerSource = PowerSource.UsbC,
+        });
+        await WaitUntilAsync(() => viewModel.ActivePowerSource == PowerSource.UsbC);
+
+        Assert.Equal(
+            [PerformancePreset.Balanced],
+            viewModel.AvailableActivePerformanceOptions.Select(option => option.Value));
+        Assert.Equal([FanMode.Automatic], viewModel.AvailableActiveFanModes);
+        Assert.True(viewModel.SetPerformanceCommand.CanExecute(PerformancePreset.Balanced));
+        Assert.False(viewModel.SetPerformanceCommand.CanExecute(PerformancePreset.Silent));
+        Assert.True(viewModel.SetFanModeCommand.CanExecute(FanMode.Automatic));
+        Assert.False(viewModel.SetFanModeCommand.CanExecute(FanMode.Maximum));
+        Assert.Equal("USB-C profile", viewModel.ActivePowerSourceLabel);
+
+        client.Publish(pluggedIn with
+        {
+            Revision = pluggedIn.Revision + 3,
+            ActivePowerSource = PowerSource.ExternalUnknown,
+        });
+        await WaitUntilAsync(() =>
+            viewModel.ActivePowerSource == PowerSource.ExternalUnknown);
+
+        Assert.Empty(viewModel.AvailableActivePerformanceOptions);
+        Assert.Empty(viewModel.AvailableActiveFanModes);
+        Assert.False(viewModel.CanControlHardware);
+        Assert.False(viewModel.SetPerformanceCommand.CanExecute(PerformancePreset.Balanced));
+        Assert.False(viewModel.SetFanModeCommand.CanExecute(FanMode.Automatic));
+        Assert.False(viewModel.SetLightingCommand.CanExecute(
+            ProfileDefaults.CreateSafeDefaults().UsbC.Lighting));
+        Assert.False(viewModel.ClearManualOverridesCommand.CanExecute(null));
+        Assert.Equal("Checking power source", viewModel.ActivePowerSourceLabel);
+
         viewModel.BatteryPerformanceOption = viewModel.AvailableBatteryPerformanceOptions
             .Single(option => option.Value == PerformancePreset.BatteryBalanced);
         Assert.Equal(PerformancePreset.BatteryBalanced, viewModel.BatteryPerformanceEditor);
@@ -653,9 +701,11 @@ public sealed class MainViewModelTests
 
         viewModel.PluggedInPerformanceOption = viewModel.PluggedInPerformanceOption;
         viewModel.BatteryPerformanceOption = viewModel.BatteryPerformanceOption;
+        viewModel.UsbCPerformanceOption = viewModel.UsbCPerformanceOption;
 
         Assert.DoesNotContain(nameof(viewModel.PluggedInPerformanceOption), changed);
         Assert.DoesNotContain(nameof(viewModel.BatteryPerformanceOption), changed);
+        Assert.DoesNotContain(nameof(viewModel.UsbCPerformanceOption), changed);
     }
 
     [Fact]
@@ -753,10 +803,12 @@ public sealed class MainViewModelTests
         int selectionReapply = changed.LastIndexOf(nameof(MainViewModel.SelectedFanMode));
         int pluggedInReapply = changed.LastIndexOf(nameof(MainViewModel.PluggedInFanModeEditor));
         int batteryReapply = changed.LastIndexOf(nameof(MainViewModel.BatteryFanModeEditor));
+        int usbCReapply = changed.LastIndexOf(nameof(MainViewModel.UsbCFanModeEditor));
         Assert.True(itemsSourceChange >= 0);
         Assert.True(selectionReapply > itemsSourceChange);
         Assert.True(pluggedInReapply > itemsSourceChange);
         Assert.True(batteryReapply > itemsSourceChange);
+        Assert.True(usbCReapply > itemsSourceChange);
         Assert.Equal(FanMode.Automatic, viewModel.SelectedFanMode);
     }
 
@@ -783,11 +835,15 @@ public sealed class MainViewModelTests
             nameof(MainViewModel.PluggedInPerformanceEditor));
         int batteryReapply = changed.LastIndexOf(
             nameof(MainViewModel.BatteryPerformanceEditor));
+        int usbCReapply = changed.LastIndexOf(
+            nameof(MainViewModel.UsbCPerformanceEditor));
         Assert.True(itemsSourceChange >= 0);
         Assert.True(pluggedInReapply > itemsSourceChange);
         Assert.True(batteryReapply > itemsSourceChange);
+        Assert.True(usbCReapply > itemsSourceChange);
         Assert.Equal(PerformancePreset.Balanced, viewModel.PluggedInPerformanceEditor);
         Assert.Equal(PerformancePreset.BatterySaver, viewModel.BatteryPerformanceEditor);
+        Assert.Equal(PerformancePreset.Balanced, viewModel.UsbCPerformanceEditor);
     }
 
     [Fact]
@@ -1135,6 +1191,17 @@ public sealed class MainViewModelTests
         await WaitUntilAsync(() =>
             viewModel.ControlAccessStatus == "Ready");
 
+        client.Publish(CreateStatus(verified: true, blocked: false) with
+        {
+            Revision = 2,
+            ActivePowerSource = PowerSource.ExternalUnknown,
+        });
+        await WaitUntilAsync(() =>
+            viewModel.ControlAccessStatus == "Checking power source"
+            && viewModel.ActivePowerSource == PowerSource.ExternalUnknown);
+        Assert.Equal("Checking power source", viewModel.ProfileStateLabel);
+        Assert.False(viewModel.CanControlHardware);
+
         client.PublishReconnecting();
         await WaitUntilAsync(() =>
             viewModel.ControlAccessStatus == "OpenBlade service isn’t running");
@@ -1401,6 +1468,27 @@ public sealed class MainViewModelTests
         await WaitUntilAsync(() => viewModel.IsConnected);
 
         Assert.False(viewModel.ToggleFullChargeCommand.CanExecute(null));
+    }
+
+    [Theory]
+    [InlineData(PowerSource.PluggedIn, true)]
+    [InlineData(PowerSource.UsbC, true)]
+    [InlineData(PowerSource.Battery, false)]
+    [InlineData(PowerSource.ExternalUnknown, false)]
+    public async Task FullChargeCommand_EnablesOnlyOnConfirmedExternalPower(
+        PowerSource source,
+        bool expected)
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        client.Publish(CreateStatus(verified: true, blocked: false) with
+        {
+            ActivePowerSource = source,
+        });
+        await WaitUntilAsync(() => viewModel.IsConnected);
+
+        Assert.Equal(expected, viewModel.ToggleFullChargeCommand.CanExecute(true));
     }
 
     [Fact]
@@ -1797,6 +1885,7 @@ public sealed class MainViewModelTests
         public ManualOverride<LightingSettings>? LightingOverride { get; private set; }
         public bool? BatteryProtectionEnabled { get; private set; }
         public bool? FullChargeEnabled { get; private set; }
+        public ProfileSet? LastProfiles { get; private set; }
         public TaskCompletionSource MutationStarted { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public TaskCompletionSource ExportStarted { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public ControlOperationResult NextResult { get; init; } = new(ControlOperationStatus.Applied, "Applied");
@@ -1864,8 +1953,11 @@ public sealed class MainViewModelTests
             return NextArchive;
         }
 
-        public Task<ControlOperationResult> UpdateProfilesAsync(ProfileSet profiles, CancellationToken token) =>
-            MutateAsync(token);
+        public Task<ControlOperationResult> UpdateProfilesAsync(ProfileSet profiles, CancellationToken token)
+        {
+            LastProfiles = profiles;
+            return MutateAsync(token);
+        }
 
         public Task<ControlOperationResult> SetPerformanceOverrideAsync(
             ManualOverride<PerformancePreset>? value,

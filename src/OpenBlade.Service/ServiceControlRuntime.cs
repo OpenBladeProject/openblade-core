@@ -48,6 +48,9 @@ public interface IServiceControlRuntime
 
     Task HandlePowerSourceChangedAsync(CancellationToken cancellationToken);
 
+    Task RefreshPowerSourceClassificationAsync(CancellationToken cancellationToken) =>
+        HandlePowerSourceChangedAsync(cancellationToken);
+
     Task RefreshControllerPresenceAsync(CancellationToken cancellationToken);
 }
 
@@ -297,7 +300,20 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         await operationGate.WaitAsync(token);
         try
         {
-            PowerSource powerSource = powerStateProvider.CapturePowerSource();
+            PowerSource powerSource = await ResolveCurrentPowerSourceAsync(token);
+
+            if (powerSource == PowerSource.ExternalUnknown)
+            {
+                return PublishScopedUnavailable(
+                    DeviceSubsystem.Battery,
+                    powerSource,
+                    "The external power adapter could not be classified; control writes are blocked.");
+            }
+
+            if (Automation.ChangePowerSource(powerSource))
+            {
+                await ApplyFullTransitionAsync(powerSource, token);
+            }
 
             if (enabled && powerSource == PowerSource.Battery)
             {
@@ -366,15 +382,24 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         {
             cancellationToken.ThrowIfCancellationRequested();
             RefreshControllerPresenceCore(cancellationToken);
-            PowerSource powerSource = Automation.PowerSource;
+            PowerSource powerSource = await ResolveCurrentPowerSourceAsync(cancellationToken);
             int? batteryPowerFlow = includeLiveReadings
                 ? powerStateProvider.CaptureBatteryPowerFlowMilliwatts()
                 : null;
-            await ObserveCoreAsync(
-                powerSource,
-                includeLiveReadings,
-                batteryPowerFlow,
-                cancellationToken);
+            bool changed = powerSource != PowerSource.ExternalUnknown
+                && Automation.ChangePowerSource(powerSource);
+            if (changed)
+            {
+                await ApplyFullTransitionAsync(powerSource, cancellationToken);
+            }
+            else
+            {
+                await ObserveCoreAsync(
+                    powerSource,
+                    includeLiveReadings,
+                    batteryPowerFlow,
+                    cancellationToken);
+            }
         }
         finally
         {
@@ -391,10 +416,11 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         await operationGate.WaitAsync(cancellationToken);
         try
         {
-            PowerSource powerSource = powerStateProvider.CapturePowerSource();
+            PowerSource powerSource = await ResolveCurrentPowerSourceAsync(cancellationToken);
             cancellationToken.ThrowIfCancellationRequested();
             RefreshControllerPresenceCore(cancellationToken);
-            if (Automation.ChangePowerSource(powerSource))
+            if (powerSource != PowerSource.ExternalUnknown
+                && Automation.ChangePowerSource(powerSource))
             {
                 await ApplyFullTransitionAsync(powerSource, cancellationToken);
             }
@@ -405,6 +431,54 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                     includeLiveReadings: false,
                     batteryPowerFlowMilliwatts: null,
                     cancellationToken);
+            }
+        }
+        finally
+        {
+            operationGate.Release();
+        }
+    }
+
+    public async Task RefreshPowerSourceClassificationAsync(
+        CancellationToken cancellationToken)
+    {
+        EnsureInitialized();
+        await operationGate.WaitAsync(cancellationToken);
+        try
+        {
+            PowerSource classified =
+                await ResolveCurrentPowerSourceAsync(cancellationToken);
+            ServiceStatusSnapshot current = GetStatus();
+            if (classified == PowerSource.ExternalUnknown)
+            {
+                PublishIfChanged(current with
+                {
+                    ActivePowerSource = PowerSource.ExternalUnknown,
+                    WritesBlocked = true,
+                    Message = "The external power adapter could not be classified; control writes are blocked.",
+                });
+                return;
+            }
+
+            if (Automation.ChangePowerSource(classified))
+            {
+                await ApplyFullTransitionAsync(
+                    classified,
+                    cancellationToken,
+                    preserveLiveReadings: true);
+                return;
+            }
+
+            if (current.ActivePowerSource != classified)
+            {
+                PublishIfChanged(current with
+                {
+                    ActivePowerSource = classified,
+                    WritesBlocked = false,
+                    Message = "Power adapter classification recovered.",
+                    DesiredState = Automation.Resolve(
+                        current.ConfirmedState ?? UnknownConfirmedState),
+                });
             }
         }
         finally
@@ -497,6 +571,19 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         await operationGate.WaitAsync(token);
         try
         {
+            PowerSource powerSource = await ResolveCurrentPowerSourceAsync(token);
+            if (powerSource == PowerSource.ExternalUnknown)
+            {
+                return PublishScopedUnavailable(
+                    subsystem,
+                    powerSource,
+                    "The external power adapter could not be classified; overrides and control writes are blocked.");
+            }
+
+            if (Automation.ChangePowerSource(powerSource))
+            {
+                await ApplyFullTransitionAsync(powerSource, token);
+            }
             try
             {
                 await mutation(token);
@@ -512,7 +599,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
 
             ControlOperationResult result = await ApplyScopedIntentAsync(
                 subsystem,
-                GetStatus().ActivePowerSource,
+                powerSource,
                 apply,
                 token);
             return result.Status == ControlOperationStatus.Applied
@@ -535,6 +622,19 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         await operationGate.WaitAsync(token);
         try
         {
+            PowerSource powerSource = await ResolveCurrentPowerSourceAsync(token);
+            if (powerSource == PowerSource.ExternalUnknown)
+            {
+                return PublishScopedUnavailable(
+                    DeviceSubsystem.Battery,
+                    powerSource,
+                    "The external power adapter could not be classified; control writes are blocked.");
+            }
+
+            if (Automation.ChangePowerSource(powerSource))
+            {
+                await ApplyFullTransitionAsync(powerSource, token);
+            }
             DesiredBatteryState? staged = stageIntent(Automation.DesiredBattery);
             if (staged is null)
             {
@@ -560,7 +660,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
 
             return await ApplyScopedIntentAsync(
                 DeviceSubsystem.Battery,
-                GetStatus().ActivePowerSource,
+                powerSource,
                 (coordinator, _, cancellationToken) =>
                     apply(coordinator, staged, cancellationToken),
                 token,
@@ -588,6 +688,14 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         Func<DesiredDeviceState, DesiredDeviceState>? stageDesired = null,
         Func<CancellationToken, Task>? commitIntent = null)
     {
+        if (powerSource == PowerSource.ExternalUnknown)
+        {
+            return PublishScopedUnavailable(
+                subsystem,
+                powerSource,
+                "The external power adapter could not be classified; control writes are blocked.");
+        }
+
         RefreshControllerPresenceCore(token);
         ServiceStatusSnapshot current = GetStatus();
         ConfirmedDeviceState? cachedConfirmed = current.ConfirmedState;
@@ -748,7 +856,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
 
     private async Task ApplyFullTransitionAsync(
         PowerSource powerSource,
-        CancellationToken token)
+        CancellationToken token,
+        bool preserveLiveReadings = false)
     {
         ServiceStatusSnapshot current = GetStatus();
         ConfirmedDeviceState? cachedConfirmed = current.ConfirmedState;
@@ -848,7 +957,10 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
 
         history.RecordSubsystemResults(outcome.Results);
         string message = Summarize(outcome.Results);
-        PublishIfChanged(GetStatus() with { LiveReadings = null });
+        if (!preserveLiveReadings)
+        {
+            PublishIfChanged(GetStatus() with { LiveReadings = null });
+        }
         PublishScopedStatus(
             powerSource,
             confirmed,
@@ -863,6 +975,56 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         outcome.DeviceAccessFailed
         && outcome.WriteAttempted.Count == 0
         && outcome.Readback is null;
+
+    private async Task<PowerSource> ResolveCurrentPowerSourceAsync(
+        CancellationToken cancellationToken)
+    {
+        PowerSource windowsSource = powerStateProvider.CapturePowerSource();
+        cancellationToken.ThrowIfCancellationRequested();
+        if (windowsSource == PowerSource.Battery)
+        {
+            return PowerSource.Battery;
+        }
+
+        if (windowsSource != PowerSource.ExternalUnknown)
+        {
+            // Test doubles and future providers may already have stronger evidence.
+            return windowsSource;
+        }
+
+        try
+        {
+            if (!deviceProvider.TryGetVerifiedDevice(out IBladeDevice device))
+            {
+                return PowerSource.ExternalUnknown;
+            }
+
+            AdapterPowerState first =
+                await device.ReadAdapterPowerStateAsync(cancellationToken);
+            AdapterPowerState second =
+                await device.ReadAdapterPowerStateAsync(cancellationToken);
+            cancellationToken.ThrowIfCancellationRequested();
+            if (first != second)
+            {
+                return PowerSource.ExternalUnknown;
+            }
+
+            return first switch
+            {
+                AdapterPowerState.FullPower280W => PowerSource.PluggedIn,
+                AdapterPowerState.UsbCPower100W => PowerSource.UsbC,
+                _ => PowerSource.ExternalUnknown,
+            };
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch
+        {
+            return PowerSource.ExternalUnknown;
+        }
+    }
 
     private async Task ObserveCoreAsync(
         PowerSource powerSource,
@@ -911,9 +1073,11 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             PublishIfChanged(GetStatus() with
             {
                 DeviceVerified = true,
-                WritesBlocked = false,
+                WritesBlocked = powerSource == PowerSource.ExternalUnknown,
                 ExternalChanges = driftTracker.ExternalChanges,
-                Message = "Verified device state observed.",
+                Message = powerSource == PowerSource.ExternalUnknown
+                    ? "Verified device state observed, but the external power adapter could not be classified; control writes are blocked."
+                    : "Verified device state observed.",
                 Capabilities = capabilities,
                 ConfirmedState = confirmed,
                 Profiles = Automation.Profiles,
@@ -1046,9 +1210,14 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         ManualOverride<PerformancePreset>? performanceOverride,
         ManualOverride<FanMode>? fanOverride)
     {
-        PowerProfile activeProfile = Automation.PowerSource == PowerSource.PluggedIn
-            ? Automation.Profiles.PluggedIn
-            : Automation.Profiles.Battery;
+        PowerProfile activeProfile = Automation.PowerSource switch
+        {
+            PowerSource.PluggedIn => Automation.Profiles.PluggedIn,
+            PowerSource.Battery => Automation.Profiles.Battery,
+            PowerSource.UsbC => Automation.Profiles.UsbC,
+            _ => throw new InvalidDataException(
+                "Overrides are blocked until the external power adapter is classified."),
+        };
         validator.ValidatePerformanceFanCombination(
             performanceOverride?.Value ?? activeProfile.Performance,
             fanOverride?.Value ?? activeProfile.Fans,

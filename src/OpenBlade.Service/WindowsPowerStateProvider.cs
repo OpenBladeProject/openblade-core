@@ -51,7 +51,10 @@ public sealed class WindowsPowerStateProvider : IPowerStateProvider
     internal static PowerSource MapPowerSource(byte acLineStatus) => acLineStatus switch
     {
         0 => PowerSource.Battery,
-        1 => PowerSource.PluggedIn,
+        // Windows only reports that some external supply is present. It cannot
+        // distinguish the 280 W barrel adapter from 100 W USB-C PD, so hardware
+        // control remains blocked until the Blade adapter query classifies it.
+        1 => PowerSource.ExternalUnknown,
         _ => throw new InvalidDataException("Windows reported an unknown AC line status."),
     };
 

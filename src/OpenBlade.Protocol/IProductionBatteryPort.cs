@@ -19,6 +19,9 @@ public interface IProductionBatteryPort : IAsyncDisposable
     Task<ProductionPerformanceFanState> QueryPerformanceFanStateAsync(
         CancellationToken cancellationToken);
 
+    Task<AdapterPowerState> QueryAdapterPowerStateAsync(
+        CancellationToken cancellationToken);
+
     Task SetPerformanceAsync(
         PerformancePreset value,
         CancellationToken cancellationToken);

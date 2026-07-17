@@ -24,6 +24,8 @@ public sealed class PerformancePresetPresentationTests
             PerformancePresetPresentation.CreateOptions(PowerSource.PluggedIn, admitted);
         IReadOnlyList<PerformancePresetOption> battery =
             PerformancePresetPresentation.CreateOptions(PowerSource.Battery, admitted);
+        IReadOnlyList<PerformancePresetOption> usbC =
+            PerformancePresetPresentation.CreateOptions(PowerSource.UsbC, admitted);
 
         Assert.Equal(
             [PerformancePreset.Balanced, PerformancePreset.Silent, PerformancePreset.Performance],
@@ -37,6 +39,12 @@ public sealed class PerformancePresetPresentationTests
         Assert.Equal(
             ["Balanced", "Battery Saver"],
             battery.Select(option => option.Label));
+        Assert.Equal(
+            [PerformancePreset.Balanced],
+            usbC.Select(option => option.Value));
+        Assert.Empty(PerformancePresetPresentation.CreateOptions(
+            PowerSource.ExternalUnknown,
+            admitted));
     }
 
     [Fact]
@@ -57,5 +65,20 @@ public sealed class PerformancePresetPresentationTests
             [PerformancePreset.BatteryBalanced, PerformancePreset.BatterySaver],
             PerformancePresetPresentation.CreateOptions(PowerSource.Battery, admitted)
                 .Select(option => option.Value));
+        Assert.Empty(PerformancePresetPresentation.CreateOptions(PowerSource.UsbC, admitted));
+    }
+
+    [Fact]
+    public void IsAvailable_UsesExplicitPowerSourceRules()
+    {
+        Assert.True(PerformancePresetPresentation.IsAvailable(
+            PowerSource.UsbC,
+            PerformancePreset.Balanced));
+        Assert.False(PerformancePresetPresentation.IsAvailable(
+            PowerSource.UsbC,
+            PerformancePreset.Silent));
+        Assert.False(PerformancePresetPresentation.IsAvailable(
+            PowerSource.ExternalUnknown,
+            PerformancePreset.Balanced));
     }
 }

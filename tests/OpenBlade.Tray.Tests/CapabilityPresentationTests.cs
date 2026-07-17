@@ -265,7 +265,9 @@ public sealed class CapabilityPresentationTests
 
         _ = NamedElement(document, "Grid", "ProfilesLayout");
         _ = NamedElement(document, "ColumnDefinition", "ProfilesSecondColumn");
+        _ = NamedElement(document, "ColumnDefinition", "ProfilesThirdColumn");
         _ = NamedElement(document, "Border", "BatteryProfileCard");
+        _ = NamedElement(document, "Border", "UsbCProfileCard");
         _ = NamedElement(document, "Grid", "Root");
         XElement profileStateBadge = NamedElement(document, "Border", "ProfileStateBadge");
         Assert.Equal("Center", Attribute(profileStateBadge, "VerticalAlignment"));
@@ -278,6 +280,10 @@ public sealed class CapabilityPresentationTests
             Assert.Equal("Center", Attribute(activeBadgeText.Parent, "VerticalAlignment"));
         }
         Assert.DoesNotContain("ProfileChargeLimitEditor", xaml, StringComparison.Ordinal);
+        Assert.Contains("ViewModel.IsBatteryProfileActive", xaml, StringComparison.Ordinal);
+        Assert.Contains("ViewModel.IsUsbCProfileActive", xaml, StringComparison.Ordinal);
+        Assert.Contains("ViewModel.AvailableUsbCPerformanceOptions", xaml, StringComparison.Ordinal);
+        Assert.Contains("ViewModel.AvailableUsbCFanModes", xaml, StringComparison.Ordinal);
 
         string window = ReadTraySource("MainWindow.xaml.cs");
         Assert.Contains("ProfilesStackThresholdDip", window, StringComparison.Ordinal);

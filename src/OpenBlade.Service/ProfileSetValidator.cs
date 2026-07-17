@@ -50,6 +50,7 @@ public sealed class ProfileSetValidator(ProfileValidationPolicy policy)
         ArgumentNullException.ThrowIfNull(profiles);
         ValidateProfile(profiles.PluggedIn, "plugged-in", PowerSource.PluggedIn);
         ValidateProfile(profiles.Battery, "battery", PowerSource.Battery);
+        ValidateProfile(profiles.UsbC, "USB-C", PowerSource.UsbC);
         ValidateBatteryPolicy(profiles.BatteryPolicy);
     }
 
@@ -86,6 +87,11 @@ public sealed class ProfileSetValidator(ProfileValidationPolicy policy)
         PowerSource source)
     {
         ValidatePerformanceSource(performance, source);
+        if (source == PowerSource.UsbC && fans != FanMode.Automatic)
+        {
+            throw Invalid("USB-C power supports automatic fans only.");
+        }
+
         ValidatePerformanceFanCombination(performance, fans);
     }
 
@@ -124,6 +130,7 @@ public sealed class ProfileSetValidator(ProfileValidationPolicy policy)
             PowerSource.Battery => performance is
                 PerformancePreset.BatterySaver
                 or PerformancePreset.BatteryBalanced,
+            PowerSource.UsbC => performance is PerformancePreset.Balanced,
             _ => false,
         };
         if (!valid)

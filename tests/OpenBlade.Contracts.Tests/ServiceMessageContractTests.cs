@@ -7,9 +7,9 @@ namespace OpenBlade.Contracts.Tests;
 public sealed class ServiceMessageContractTests
 {
     [Fact]
-    public void ProtocolConstants_AreClosedVersionFiveAndRetainExactSizeLimit()
+    public void ProtocolConstants_AreClosedVersionSixAndRetainExactSizeLimit()
     {
-        Assert.Equal(5, OpenBladeIpc.ProtocolVersion);
+        Assert.Equal(6, OpenBladeIpc.ProtocolVersion);
         Assert.Equal("OpenBlade.Service.v2", OpenBladeIpc.PipeName);
         Assert.Equal(64 * 1024, OpenBladeIpc.MaximumMessageBytes);
         Assert.Equal(32 * 1024, OpenBladeIpc.MaximumDiagnosticArchiveBytes);

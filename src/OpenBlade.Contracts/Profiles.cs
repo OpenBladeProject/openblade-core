@@ -121,6 +121,7 @@ public sealed record ConfirmedBatteryState
 public sealed record ProfileSet(
     PowerProfile PluggedIn,
     PowerProfile Battery,
+    PowerProfile UsbC,
     BatteryPolicy BatteryPolicy);
 
 public static class ProfileDefaults
@@ -133,5 +134,6 @@ public static class ProfileDefaults
     public static ProfileSet CreateSafeDefaults() => new(
         new PowerProfile(PerformancePreset.Balanced, FanMode.Automatic, LightingOff),
         new PowerProfile(PerformancePreset.BatterySaver, FanMode.Automatic, LightingOff),
+        new PowerProfile(PerformancePreset.Balanced, FanMode.Automatic, LightingOff),
         BatteryPolicy.Create(80));
 }

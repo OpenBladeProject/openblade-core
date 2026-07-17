@@ -64,7 +64,7 @@
     "Raw PCAP files remain outside the repository under C:\\tmp.",
     "All recorded USB transfers succeeded and protocol replies returned status 02 with echoed request bodies and checksums.",
     "ACK echoes are not independent readback.",
-    "The 07/8C prelude remains semantically unresolved and is not an admitted setter.",
+    "The 07/8C prelude is a read-only adapter wattage-level query and is not a setter.",
     "Continuous 0D/88 responses are live fan telemetry, not target setters or mode readback.",
     "Interactive OpenBlade application, independent readback, and OpenBlade restoration remain pending."
   ]

@@ -85,11 +85,11 @@ public sealed class PerformanceFanRefreshEvidenceTests
         Assert.Equal("fan-rpm-only", telemetry.GetProperty("semantic").GetString());
         Assert.False(telemetry.GetProperty("performanceOrFanModeReadback").GetBoolean());
 
-        JsonElement unresolved = evidence.GetProperty("unresolved07_8C");
-        Assert.Equal("07/8C", unresolved.GetProperty("command").GetString());
-        Assert.Equal("1111", unresolved.GetProperty("responsePayloadHex").GetString());
-        Assert.Equal("unresolved-not-associated-with-performance-page-refresh", unresolved.GetProperty("semantic").GetString());
-        Assert.False(unresolved.GetProperty("performanceOrFanModeReadback").GetBoolean());
+        JsonElement adapterPower = evidence.GetProperty("adapterWattage07_8C");
+        Assert.Equal("07/8C", adapterPower.GetProperty("command").GetString());
+        Assert.Equal("1111", adapterPower.GetProperty("responsePayloadHex").GetString());
+        Assert.Equal("full-oem-power-280w", adapterPower.GetProperty("semantic").GetString());
+        Assert.False(adapterPower.GetProperty("performanceOrFanModeReadback").GetBoolean());
     }
 
     [Fact]

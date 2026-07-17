@@ -41,9 +41,9 @@ public sealed class BatteryConfigurationStoreTests : IDisposable
         using JsonDocument profiles = JsonDocument.Parse(await File.ReadAllTextAsync(paths.Profiles));
         using JsonDocument preferences = JsonDocument.Parse(await File.ReadAllTextAsync(paths.Preferences));
         using JsonDocument marker = JsonDocument.Parse(await File.ReadAllTextAsync(paths.Marker));
-        Assert.Equal(1, profiles.RootElement.GetProperty("schemaVersion").GetInt32());
-        Assert.Equal(1, preferences.RootElement.GetProperty("schemaVersion").GetInt32());
-        Assert.Equal(1, marker.RootElement.GetProperty("schemaVersion").GetInt32());
+        Assert.Equal(2, profiles.RootElement.GetProperty("schemaVersion").GetInt32());
+        Assert.Equal(2, preferences.RootElement.GetProperty("schemaVersion").GetInt32());
+        Assert.Equal(2, marker.RootElement.GetProperty("schemaVersion").GetInt32());
         Assert.Equal(
             Hash(await File.ReadAllBytesAsync(paths.Profiles)),
             marker.RootElement.GetProperty("profileSha256").GetString());
@@ -98,7 +98,12 @@ public sealed class BatteryConfigurationStoreTests : IDisposable
             WriteIndented = true,
         };
         byte[] profiles = JsonSerializer.SerializeToUtf8Bytes(
-            new ProfileDocument(1, legacyProfiles),
+            new LegacyProfileDocument(
+                1,
+                new LegacyProfileSet(
+                    legacyProfiles.PluggedIn,
+                    legacyProfiles.Battery,
+                    legacyProfiles.BatteryPolicy)),
             options);
         byte[] preferences = JsonSerializer.SerializeToUtf8Bytes(
             new BatteryPreferencesDocument(
@@ -120,6 +125,7 @@ public sealed class BatteryConfigurationStoreTests : IDisposable
         Assert.Equal(
             PerformancePreset.BatteryBalanced,
             configuration.Profiles.Battery.Performance);
+        Assert.Equal(ProfileDefaults.CreateSafeDefaults().UsbC, configuration.Profiles.UsbC);
         using JsonDocument persisted = JsonDocument.Parse(
             await File.ReadAllBytesAsync(paths.Profiles));
         Assert.Equal(
@@ -206,15 +212,15 @@ public sealed class BatteryConfigurationStoreTests : IDisposable
             WriteIndented = true,
         };
         byte[] profiles = JsonSerializer.SerializeToUtf8Bytes(
-            new ProfileDocument(1, ProfileDefaults.CreateSafeDefaults()),
+            new ProfileDocument(2, ProfileDefaults.CreateSafeDefaults()),
             options);
         byte[] preferences = JsonSerializer.SerializeToUtf8Bytes(
             new BatteryPreferencesDocument(
-                1,
+                2,
                 new BatteryAutomationPreferences(ProtectionEnabled: false)),
             options);
         byte[] marker = JsonSerializer.SerializeToUtf8Bytes(
-            new BatteryConfigurationCommit(1, Hash(profiles), Hash(preferences)),
+            new BatteryConfigurationCommit(2, Hash(profiles), Hash(preferences)),
             options);
         await File.WriteAllBytesAsync(paths.Profiles, profiles);
         await File.WriteAllBytesAsync(paths.Preferences, preferences);

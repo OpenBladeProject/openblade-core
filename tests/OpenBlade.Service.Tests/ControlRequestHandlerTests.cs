@@ -289,6 +289,8 @@ public sealed class ControlRequestHandlerTests
         public Task<ConfirmedDeviceState> ReadStateAsync(CancellationToken cancellationToken) => Count(new ConfirmedDeviceState(null, null, null, null));
         public Task<FanRpmReadings?> ReadFanRpmAsync(CancellationToken cancellationToken) =>
             Count<FanRpmReadings?>(null);
+        public Task<AdapterPowerState> ReadAdapterPowerStateAsync(CancellationToken cancellationToken) =>
+            Count(AdapterPowerState.FullPower280W);
         public Task SetPerformanceAsync(PerformancePreset value, CancellationToken cancellationToken) => Count();
         public Task SetFanModeAsync(FanMode value, CancellationToken cancellationToken) => Count();
         public Task SetChargeLimitAsync(BatteryPolicy value, CancellationToken cancellationToken) => Count();

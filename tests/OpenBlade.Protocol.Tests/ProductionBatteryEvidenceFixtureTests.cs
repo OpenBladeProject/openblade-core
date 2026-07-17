@@ -6,6 +6,42 @@ namespace OpenBlade.Protocol.Tests;
 public sealed class ProductionBatteryEvidenceFixtureTests
 {
     [Fact]
+    public void AdapterPowerEvidence_MapsUsbCAndFullPowerWithSynapseCorroboration()
+    {
+        using JsonDocument document = ReadFixture(
+            "rz09-0581-pid-02e0-bios-3.01-adapter-power-readback-fixture.json");
+        JsonElement root = document.RootElement;
+
+        AssertTarget(root);
+        Assert.True(root.GetProperty("readOnly").GetBoolean());
+        Assert.True(root.GetProperty("productionWired").GetBoolean());
+        JsonElement query = root.GetProperty("query");
+        Assert.Equal("07", query.GetProperty("commandClass").GetString());
+        Assert.Equal("8C", query.GetProperty("commandId").GetString());
+        Assert.Equal("0000", query.GetProperty("requestPayloadHex").GetString());
+        Assert.Equal(2, query.GetProperty("expectedResponsePayloadLength").GetInt32());
+
+        JsonElement[] mappings = root.GetProperty("mappings").EnumerateArray().ToArray();
+        Assert.Equal(["0711", "1111"], mappings.Select(mapping =>
+            mapping.GetProperty("responsePayloadHex").GetString()));
+        Assert.Equal([100, 280], mappings.Select(mapping =>
+            mapping.GetProperty("adapterWattageLevel").GetInt32()));
+        Assert.Equal(["UsbCPower100W", "FullPower280W"], mappings.Select(mapping =>
+            mapping.GetProperty("classification").GetString()));
+
+        JsonElement corroboration = root.GetProperty("synapseCorroboration");
+        Assert.Equal(
+            DateTimeOffset.Parse("2026-07-17T16:05:53.296-07:00"),
+            DateTimeOffset.Parse(corroboration.GetProperty("observedAtLocal").GetString()!));
+        Assert.Equal(100, corroboration.GetProperty("currentAdapterWattageLevel").GetInt32());
+        Assert.Equal(280, corroboration.GetProperty("recommendedAdapterWattageLevel").GetInt32());
+        Assert.True(corroboration.GetProperty("lowPower").GetBoolean());
+        Assert.Equal("BALANCED_MODE_AC", corroboration.GetProperty("thermalFanMode").GetString());
+        Assert.Equal("Balanced", corroboration.GetProperty("visiblePerformance").GetString());
+        Assert.False(root.GetProperty("rawCapturesCommitted").GetBoolean());
+    }
+
+    [Fact]
     public void TemporaryFullChargeReadEvidence_ContainsFiveValidatedInactiveReplies()
     {
         using JsonDocument document = ReadFixture(

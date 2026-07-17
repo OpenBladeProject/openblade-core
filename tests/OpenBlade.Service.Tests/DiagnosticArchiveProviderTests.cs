@@ -78,6 +78,12 @@ public sealed class DiagnosticArchiveProviderTests
         Assert.Equal(
             "Fans",
             configuration.RootElement.GetProperty("status.externalChanges").GetString());
+        Assert.Equal(
+            PerformancePreset.Balanced.ToString(),
+            configuration.RootElement.GetProperty("profile.usbC.performance").GetString());
+        Assert.Equal(
+            FanMode.Automatic.ToString(),
+            configuration.RootElement.GetProperty("profile.usbC.fans").GetString());
         Assert.DoesNotContain(
             configuration.RootElement.EnumerateObject(),
             property => property.Name.StartsWith("telemetry.", StringComparison.Ordinal));

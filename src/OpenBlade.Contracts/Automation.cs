@@ -2,8 +2,17 @@ namespace OpenBlade.Contracts;
 
 public enum PowerSource
 {
-    PluggedIn,
-    Battery,
+    PluggedIn = 0,
+    Battery = 1,
+    UsbC = 2,
+    ExternalUnknown = 3,
+}
+
+public enum AdapterPowerState
+{
+    Unknown = 0,
+    UsbCPower100W = 1,
+    FullPower280W = 2,
 }
 
 public sealed record DesiredDeviceState(

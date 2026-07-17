@@ -93,6 +93,7 @@ public sealed class ProductionFixtureSourceTests
     public void ProductionReadEvidenceIsCodeControlledAndAcceptsNoRuntimeInput()
     {
         Assert.True(ProductionBatteryReadEvidence.Production.SupportsTemporaryFullChargeQuery);
+        Assert.True(ProductionBatteryReadEvidence.Production.SupportsAdapterPowerQuery);
         Assert.Empty(typeof(ProductionBatteryReadEvidence).GetConstructors());
         Assert.DoesNotContain(
             typeof(ProductionBatteryReadEvidence).GetMethods(),

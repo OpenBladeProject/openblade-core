@@ -273,7 +273,7 @@
                                               HorizontalAlignment="Right"
                                               AutomationProperties.Name="Fan mode"
                                               IsEnabled="{x:Bind ViewModel.CanControlHardware, Mode=OneWay}"
-                                              ItemsSource="{x:Bind ViewModel.AvailableFanModes, Mode=OneWay}"
+                                              ItemsSource="{x:Bind ViewModel.AvailableActiveFanModes, Mode=OneWay}"
                                               SelectedItem="{x:Bind ViewModel.SelectedFanMode, Mode=OneWay}"
                                               SelectionChanged="OnDashboardFanModeSelectionChanged" />
                                 </Grid>
@@ -389,8 +389,10 @@
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="*" />
                                 <ColumnDefinition x:Name="ProfilesSecondColumn" Width="0" />
+                                <ColumnDefinition x:Name="ProfilesThirdColumn" Width="0" />
                             </Grid.ColumnDefinitions>
                             <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
                                 <RowDefinition Height="Auto" />
                                 <RowDefinition Height="Auto" />
                             </Grid.RowDefinitions>
@@ -430,7 +432,7 @@
                                                 CornerRadius="10"
                                                 Padding="8,2"
                                                 Background="{ThemeResource AccentFillColorDefaultBrush}"
-                                                Visibility="{Binding IsPluggedInProfileActive, Converter={StaticResource BooleanNegationToVisibility}}">
+                                                Visibility="{x:Bind ViewModel.IsBatteryProfileActive, Mode=OneWay}">
                                             <TextBlock Text="Active"
                                                        Foreground="{ThemeResource TextOnAccentFillColorPrimaryBrush}"
                                                        Style="{StaticResource CaptionTextBlockStyle}" />
@@ -442,6 +444,32 @@
                                     <ComboBox Header="Fans"
                                               ItemsSource="{x:Bind ViewModel.AvailableFanModes, Mode=OneWay}"
                                               SelectedItem="{x:Bind ViewModel.BatteryFanModeEditor, Mode=TwoWay}" />
+                                </StackPanel>
+                            </Border>
+
+                            <Border x:Name="UsbCProfileCard"
+                                    Grid.Row="2"
+                                    Style="{StaticResource CardStyle}">
+                                <StackPanel Spacing="12">
+                                    <Grid>
+                                        <TextBlock Text="USB-C" Style="{StaticResource SectionHeaderStyle}" Margin="0" />
+                                        <Border HorizontalAlignment="Right"
+                                                VerticalAlignment="Center"
+                                                CornerRadius="10"
+                                                Padding="8,2"
+                                                Background="{ThemeResource AccentFillColorDefaultBrush}"
+                                                Visibility="{x:Bind ViewModel.IsUsbCProfileActive, Mode=OneWay}">
+                                            <TextBlock Text="Active"
+                                                       Foreground="{ThemeResource TextOnAccentFillColorPrimaryBrush}"
+                                                       Style="{StaticResource CaptionTextBlockStyle}" />
+                                        </Border>
+                                    </Grid>
+                                    <ComboBox Header="Performance"
+                                              ItemsSource="{x:Bind ViewModel.AvailableUsbCPerformanceOptions, Mode=OneWay}"
+                                              SelectedItem="{x:Bind ViewModel.UsbCPerformanceOption, Mode=TwoWay}" />
+                                    <ComboBox Header="Fans"
+                                              ItemsSource="{x:Bind ViewModel.AvailableUsbCFanModes, Mode=OneWay}"
+                                              SelectedItem="{x:Bind ViewModel.UsbCFanModeEditor, Mode=TwoWay}" />
                                 </StackPanel>
                             </Border>
                         </Grid>

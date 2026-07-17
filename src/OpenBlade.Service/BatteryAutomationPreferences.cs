@@ -11,6 +11,15 @@ public sealed record BatteryConfiguration(
 
 internal sealed record ProfileDocument(int SchemaVersion, ProfileSet Profiles);
 
+internal sealed record LegacyProfileDocument(
+    int SchemaVersion,
+    LegacyProfileSet Profiles);
+
+internal sealed record LegacyProfileSet(
+    PowerProfile PluggedIn,
+    PowerProfile Battery,
+    BatteryPolicy BatteryPolicy);
+
 internal sealed record BatteryPreferencesDocument(
     int SchemaVersion,
     BatteryAutomationPreferences Preferences);

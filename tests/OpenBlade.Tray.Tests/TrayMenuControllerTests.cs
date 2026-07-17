@@ -29,7 +29,7 @@ public sealed class TrayMenuControllerTests
         }
 
         Assert.Equal(
-            ["Balanced", "Silent", "Performance", "Balanced", "Battery Saver", "Automatic", "Maximum", "Toggle charge to 100%", "Clear manual overrides", "Open", "Exit"],
+            ["Balanced", "Silent", "Performance", "Balanced", "Battery Saver", "Balanced", "Automatic", "Maximum", "Automatic", "Maximum", "Automatic", "Toggle charge to 100%", "Clear manual overrides", "Open", "Exit"],
             controller.Items.Select(item => item.Label));
         Assert.Equal(
             [PerformancePreset.Balanced, PerformancePreset.Silent, PerformancePreset.Performance],
@@ -60,6 +60,11 @@ public sealed class TrayMenuControllerTests
             controller.Items
                 .Where(item => item.Group == TrayMenuGroup.Performance && item.IsVisible)
                 .Select(item => item.Label));
+        Assert.Equal(
+            ["Automatic", "Maximum"],
+            controller.Items
+                .Where(item => item.Group == TrayMenuGroup.Fans && item.IsVisible)
+                .Select(item => item.Label));
 
         source = PowerSource.Battery;
 
@@ -68,6 +73,30 @@ public sealed class TrayMenuControllerTests
             controller.Items
                 .Where(item => item.Group == TrayMenuGroup.Performance && item.IsVisible)
                 .Select(item => item.Label));
+        Assert.Equal(
+            ["Automatic", "Maximum"],
+            controller.Items
+                .Where(item => item.Group == TrayMenuGroup.Fans && item.IsVisible)
+                .Select(item => item.Label));
+
+        source = PowerSource.UsbC;
+
+        Assert.Equal(
+            ["Balanced"],
+            controller.Items
+                .Where(item => item.Group == TrayMenuGroup.Performance && item.IsVisible)
+                .Select(item => item.Label));
+        Assert.Equal(
+            ["Automatic"],
+            controller.Items
+                .Where(item => item.Group == TrayMenuGroup.Fans && item.IsVisible)
+                .Select(item => item.Label));
+
+        source = PowerSource.ExternalUnknown;
+
+        Assert.DoesNotContain(controller.Items, item =>
+            item.Group is TrayMenuGroup.Performance or TrayMenuGroup.Fans
+            && item.IsVisible);
     }
 
     [Fact]

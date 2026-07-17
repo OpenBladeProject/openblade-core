@@ -6,6 +6,41 @@ namespace OpenBlade.Protocol.Tests;
 public sealed class ProductionBatteryPortTests
 {
     [Fact]
+    public async Task AdapterPowerQuery_WithoutCodeControlledEvidenceReturnsUnknownWithoutIo()
+    {
+        var session = new ScriptedSession(Success([0x07, 0x11]));
+        await using var port = CreatePort(session, DeviceCommandCatalog.Empty);
+
+        Assert.Equal(
+            AdapterPowerState.Unknown,
+            await port.QueryAdapterPowerStateAsync(default));
+        Assert.Empty(session.Commands);
+    }
+
+    [Theory]
+    [InlineData("0711", AdapterPowerState.UsbCPower100W)]
+    [InlineData("1111", AdapterPowerState.FullPower280W)]
+    [InlineData("FFFF", AdapterPowerState.Unknown)]
+    public async Task AdapterPowerQuery_IsSerializedAndReadOnly(
+        string responseHex,
+        AdapterPowerState expected)
+    {
+        var session = new ScriptedSession(
+            Success(Convert.FromHexString(responseHex)));
+        await using var port = CreatePort(
+            session,
+            DeviceCommandCatalog.Empty,
+            AcceptedAdapterPowerReadEvidence());
+
+        Assert.Equal(expected, await port.QueryAdapterPowerStateAsync(default));
+
+        RazerCommandSpec command = Assert.Single(session.Commands);
+        Assert.Equal((0x07, 0x8C), (command.ClassId, command.CommandId));
+        Assert.Equal([0x00, 0x00], command.Arguments.ToArray());
+        Assert.Equal(2, command.ExpectedPayloadLength);
+    }
+
+    [Fact]
     public async Task EmptyCatalog_RemainsProtectionReadableAndRejectsEverySetter()
     {
         var session = new ScriptedSession(
@@ -911,6 +946,12 @@ public sealed class ProductionBatteryPortTests
         new HashSet<ProductionBatteryQueryCapability>
         {
             ProductionBatteryQueryCapability.TemporaryFullCharge,
+        });
+
+    private static ProductionBatteryReadEvidence AcceptedAdapterPowerReadEvidence() => new(
+        new HashSet<ProductionBatteryQueryCapability>
+        {
+            ProductionBatteryQueryCapability.AdapterPower,
         });
 
     private static ProductionBatteryReadEvidence NoTemporaryReadEvidence() => new(

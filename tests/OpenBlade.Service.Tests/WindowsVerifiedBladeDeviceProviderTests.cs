@@ -587,6 +587,10 @@ public sealed class WindowsVerifiedBladeDeviceProviderTests
             CancellationToken cancellationToken) => Task.FromResult(
                 new ProductionPerformanceFanState(null, null));
 
+        public Task<AdapterPowerState> QueryAdapterPowerStateAsync(
+            CancellationToken cancellationToken) =>
+            Task.FromResult(AdapterPowerState.FullPower280W);
+
         public Task SetPerformanceAsync(
             PerformancePreset value,
             CancellationToken cancellationToken) => Reject();

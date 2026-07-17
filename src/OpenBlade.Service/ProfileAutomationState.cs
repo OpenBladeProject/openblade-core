@@ -137,19 +137,40 @@ public sealed class ProfileAutomationState
     public DesiredDeviceState Resolve(ConfirmedDeviceState confirmed)
     {
         ArgumentNullException.ThrowIfNull(confirmed);
-        PowerProfile profile = PowerSource == PowerSource.PluggedIn
-            ? profiles.PluggedIn
-            : profiles.Battery;
+        PowerProfile profile = PowerSource switch
+        {
+            PowerSource.PluggedIn => profiles.PluggedIn,
+            PowerSource.Battery => profiles.Battery,
+            PowerSource.UsbC => profiles.UsbC,
+            PowerSource.ExternalUnknown => CreateObservedFallbackProfile(confirmed),
+            _ => throw new InvalidOperationException("The active power source is undefined."),
+        };
         ManualOverride<PerformancePreset>? activePersistentPerformance =
             persistentPerformance is { } persistent
             && IsPerformanceCompatibleWithSource(persistent.Value, PowerSource)
                 ? persistent
                 : null;
+        ManualOverride<PerformancePreset>? activeTemporaryPerformance =
+            temporaryPerformance is { } temporary
+            && IsPerformanceCompatibleWithSource(temporary.Value, PowerSource)
+                ? temporary
+                : null;
+        ManualOverride<FanMode>? activeTemporaryFans =
+            temporaryFans is { } temporaryFan
+            && IsFanCompatibleWithSource(temporaryFan.Value, PowerSource)
+                ? temporaryFan
+                : null;
+        ManualOverride<FanMode>? activePersistentFans =
+            persistentFans is { } persistentFan
+            && IsFanCompatibleWithSource(persistentFan.Value, PowerSource)
+                ? persistentFan
+                : null;
+        bool allowLightingOverride = PowerSource != PowerSource.ExternalUnknown;
 
         return new DesiredDeviceState(
-            OverrideResolver.Resolve<PerformancePreset>(profile.Performance, confirmed.Performance.GetValueOrDefault(), temporaryPerformance, activePersistentPerformance),
-            OverrideResolver.Resolve<FanMode>(profile.Fans, confirmed.Fans.GetValueOrDefault(), temporaryFans, persistentFans),
-            OverrideResolver.Resolve<LightingSettings>(profile.Lighting, confirmed.Lighting ?? profile.Lighting, temporaryLighting, persistentLighting),
+            OverrideResolver.Resolve<PerformancePreset>(profile.Performance, confirmed.Performance.GetValueOrDefault(), activeTemporaryPerformance, activePersistentPerformance),
+            OverrideResolver.Resolve<FanMode>(profile.Fans, confirmed.Fans.GetValueOrDefault(), activeTemporaryFans, activePersistentFans),
+            OverrideResolver.Resolve<LightingSettings>(profile.Lighting, confirmed.Lighting ?? profile.Lighting, allowLightingOverride ? temporaryLighting : null, allowLightingOverride ? persistentLighting : null),
             DesiredBattery);
     }
 
@@ -164,6 +185,21 @@ public sealed class ProfileAutomationState
             PowerSource.Battery => performance is
                 PerformancePreset.BatterySaver
                 or PerformancePreset.BatteryBalanced,
+            PowerSource.UsbC => performance is PerformancePreset.Balanced,
+            _ => false,
+        };
+
+    private PowerProfile CreateObservedFallbackProfile(ConfirmedDeviceState confirmed) => new(
+        confirmed.Performance ?? profiles.UsbC.Performance,
+        confirmed.Fans ?? profiles.UsbC.Fans,
+        confirmed.Lighting ?? profiles.UsbC.Lighting);
+
+    private static bool IsFanCompatibleWithSource(FanMode fans, PowerSource source) =>
+        source switch
+        {
+            PowerSource.PluggedIn => fans is FanMode.Automatic or FanMode.Maximum,
+            PowerSource.Battery => Enum.IsDefined(fans),
+            PowerSource.UsbC => fans is FanMode.Automatic,
             _ => false,
         };
 

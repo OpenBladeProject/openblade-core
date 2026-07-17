@@ -238,7 +238,7 @@
     {
       "action": "performance-silent",
       "commands": [
-        { "class": "07", "id": "8C", "payloadHex": "0000", "expectedStatus": "02", "expectedPayloadHex": "1111", "semanticStatus": "preflight-purpose-unresolved" },
+        { "class": "07", "id": "8C", "payloadHex": "0000", "expectedStatus": "02", "expectedPayloadHex": "1111", "semanticStatus": "adapter-wattage-level-full-power-280w" },
         { "class": "0D", "id": "02", "payloadHex": "01010500", "expectedStatus": "02", "expectedPayloadHex": "01010500" },
         { "class": "0D", "id": "02", "payloadHex": "01020500", "expectedStatus": "02", "expectedPayloadHex": "01020500" }
       ],
@@ -248,7 +248,7 @@
     {
       "action": "performance-balanced",
       "commands": [
-        { "class": "07", "id": "8C", "payloadHex": "0000", "expectedStatus": "02", "expectedPayloadHex": "1111", "semanticStatus": "preflight-purpose-unresolved" },
+        { "class": "07", "id": "8C", "payloadHex": "0000", "expectedStatus": "02", "expectedPayloadHex": "1111", "semanticStatus": "adapter-wattage-level-full-power-280w" },
         { "class": "0D", "id": "02", "payloadHex": "01010000", "expectedStatus": "02", "expectedPayloadHex": "01010000" },
         { "class": "0D", "id": "02", "payloadHex": "01020000", "expectedStatus": "02", "expectedPayloadHex": "01020000" }
       ],
@@ -258,7 +258,7 @@
     {
       "action": "performance-performance",
       "commands": [
-        { "class": "07", "id": "8C", "payloadHex": "0000", "expectedStatus": "02", "expectedPayloadHex": "1111", "semanticStatus": "preflight-purpose-unresolved" },
+        { "class": "07", "id": "8C", "payloadHex": "0000", "expectedStatus": "02", "expectedPayloadHex": "1111", "semanticStatus": "adapter-wattage-level-full-power-280w" },
         { "class": "0D", "id": "02", "payloadHex": "01010200", "expectedStatus": "02", "expectedPayloadHex": "01010200" },
         { "class": "0D", "id": "02", "payloadHex": "01020200", "expectedStatus": "02", "expectedPayloadHex": "01020200" }
       ],
@@ -287,7 +287,7 @@
         "visualDisplay": "5400 RPM / HIGH",
         "targetHundredsRpm": 54,
         "visuallyConfirmedRpm": 5400,
-        "stateQuery07_8C": "unresolved-not-an-admitted-setter",
+        "stateQuery07_8C": "adapter-wattage-level-readback",
         "fanTelemetry0D_88": "live-telemetry-not-target-setter-or-mode-readback",
         "independentModeReadBack": false,
         "allUsbTransfersSucceeded": true,
@@ -304,7 +304,7 @@
       "onlineEvidence": {
         "capture": "fan-auto-online",
         "visualSelection": "Auto",
-        "stateQuery07_8C": "unresolved-not-an-admitted-setter",
+        "stateQuery07_8C": "adapter-wattage-level-readback",
         "fanTelemetry0D_88": "live-telemetry-not-target-setter-or-mode-readback",
         "immediateTelemetryRpm": 5300,
         "targetSetter0D_01Observed": false,
@@ -676,12 +676,12 @@
       "method": "Capture Performance-page hydration without changing a setting, then diff successful device response payloads for the candidate commands.",
       "admissionBoundary": "A candidate remains untrusted until one field tracks only the independently established preset or fan mode and survives typed apply, fresh query/readback, and restoration."
     },
-    "unresolved07_8C": {
+    "adapterWattage07_8C": {
       "command": "07/8C",
       "responsePayloadHex": "1111",
-      "semantic": "unresolved-not-associated-with-performance-page-refresh",
+      "semantic": "full-oem-power-280w",
       "performanceOrFanModeReadback": false,
-      "observation": "The command remains semantically unresolved and was not temporally associated with the captured Performance-page refresh."
+      "observation": "This full-power response is independently distinguished from USB-C PD response 0711 and corroborated by Synapse reporting 100 W current versus 280 W recommended under USB-C PD."
     },
     "conclusion": {
       "queryShapedStateResponsesObservedInCapture": true,
@@ -752,7 +752,7 @@
       { "command": "07/92", "requestCount": 60, "fullResponseCount": 59, "responsePayloadHex": "D0", "semantic": "battery-policy-readback" },
       { "command": "07/8F", "requestCount": 57, "fullResponseCount": 56, "responsePayloadHex": "00", "semantic": "temporary-full-charge-readback" },
       { "command": "0D/88", "requestCount": 445, "fullResponseCount": 446, "semantic": "fan-rpm-only" },
-      { "command": "07/8C", "requestCount": 2, "fullResponseCount": 2, "responsePayloadHex": "1111", "semantic": "unresolved" },
+      { "command": "07/8C", "requestCount": 2, "fullResponseCount": 2, "responsePayloadHex": "1111", "semantic": "full-oem-power-280w" },
       { "command": "0F/98", "requestCount": 2, "fullResponseCount": 2, "responsePayloadHex": "00", "semantic": "new-unresolved-cold-start-query-candidate" }
     ],
     "modeAckEchoes0D_02": {
@@ -1157,6 +1157,25 @@
       "otherBatteryLimitsAuthorizedInProduction": false,
       "fullChargeOverrideAuthorizedInProduction": false,
       "reason": "The exact Limit80 validation gates passed, but production capability and trusted-hash admission require a separate review. No other battery limit was validated by OpenBlade."
+    }
+  },
+  "adapterPowerReadEvidence": {
+    "fixtureFile": "rz09-0581-pid-02e0-bios-3.01-adapter-power-readback-fixture.json",
+    "command": "07/8C",
+    "requestPayloadHex": "0000",
+    "readOnly": true,
+    "mappings": [
+      { "responsePayloadHex": "0711", "adapterWattageLevel": 100, "powerSource": "usb-c-pd" },
+      { "responsePayloadHex": "1111", "adapterWattageLevel": 280, "powerSource": "full-oem-adapter" }
+    ],
+    "unknownPayloadPolicy": "unknown-fail-closed",
+    "synapseCorroboration": {
+      "observedAtLocal": "2026-07-17T16:05:53.296-07:00",
+      "currentAdapterWattageLevel": 100,
+      "recommendedAdapterWattageLevel": 280,
+      "lowPower": true,
+      "selectedPerformance": "Balanced",
+      "automaticFanMode": true
     }
   },
   "unsupportedObservations": [

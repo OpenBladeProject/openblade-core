@@ -866,6 +866,10 @@ public sealed class ControlCoordinatorTests
         public Task<FanRpmReadings?> ReadFanRpmAsync(CancellationToken cancellationToken) =>
             Task.FromResult<FanRpmReadings?>(null);
 
+        public Task<AdapterPowerState> ReadAdapterPowerStateAsync(
+            CancellationToken cancellationToken) =>
+            Task.FromResult(AdapterPowerState.FullPower280W);
+
         public Task SetPerformanceAsync(
             PerformancePreset value,
             CancellationToken cancellationToken)

@@ -49,6 +49,27 @@ public sealed class ProfileSetValidatorTests
                 source);
     }
 
+    [Fact]
+    public void SourceAwareCombinationValidation_UsbCAllowsBalancedAutomaticOnly()
+    {
+        ProfileSetValidator validator = ProfileSetValidator.CreateUnverifiedSafeDefaults();
+
+        validator.ValidatePerformanceFanCombination(
+            PerformancePreset.Balanced,
+            FanMode.Automatic,
+            PowerSource.UsbC);
+        Assert.Throws<InvalidDataException>(() =>
+            validator.ValidatePerformanceFanCombination(
+                PerformancePreset.Balanced,
+                FanMode.Maximum,
+                PowerSource.UsbC));
+        Assert.Throws<InvalidDataException>(() =>
+            validator.ValidatePerformanceFanCombination(
+                PerformancePreset.Silent,
+                FanMode.Automatic,
+                PowerSource.UsbC));
+    }
+
     [Theory]
     [InlineData(PerformancePreset.BatterySaver, PowerSource.PluggedIn)]
     [InlineData(PerformancePreset.BatteryBalanced, PowerSource.PluggedIn)]

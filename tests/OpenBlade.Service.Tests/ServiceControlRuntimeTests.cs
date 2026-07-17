@@ -2388,6 +2388,172 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         Assert.Equal("Failed", failedRecord.Status);
     }
 
+    [Fact]
+    public async Task Observation_ClassifiesUsbCPdOnlyAfterTwoAgreeingAdapterReads()
+    {
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            initialPowerSource: PowerSource.ExternalUnknown);
+        context.Device.Capabilities = DeviceCapabilities.SafeTargetDefaults();
+        context.Device.AdapterPowerState = AdapterPowerState.UsbCPower100W;
+        context.Device.ConfirmedState = new ConfirmedDeviceState(
+            PerformancePreset.Balanced,
+            FanMode.Automatic,
+            ConfirmedBattery(80),
+            context.Runtime.GetStatus().Profiles.UsbC.Lighting);
+
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+
+        ServiceStatusSnapshot status = context.Runtime.GetStatus();
+        Assert.Equal(PowerSource.UsbC, status.ActivePowerSource);
+        Assert.Equal(2, context.Device.AdapterPowerReadCalls);
+        Assert.Equal(PerformancePreset.Balanced, status.DesiredState.Performance.Value);
+        Assert.Equal(FanMode.Automatic, status.DesiredState.Fans.Value);
+        Assert.False(status.WritesBlocked);
+        Assert.Equal(0, context.Device.TotalSetterCalls);
+    }
+
+    [Fact]
+    public async Task PeriodicObservation_ReclassifiesUsbCToBarrelWithoutPowerEvent()
+    {
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            initialPowerSource: PowerSource.ExternalUnknown);
+        context.Device.Capabilities = DeviceCapabilities.SafeTargetDefaults();
+        ProfileSet profiles = context.Runtime.GetStatus().Profiles with
+        {
+            PluggedIn = context.Runtime.GetStatus().Profiles.PluggedIn with
+            {
+                Performance = PerformancePreset.Silent,
+            },
+        };
+        _ = await context.Runtime.UpdateProfilesAsync(profiles, CancellationToken.None);
+        context.Device.AdapterPowerState = AdapterPowerState.UsbCPower100W;
+        context.Device.ConfirmedState = new ConfirmedDeviceState(
+            PerformancePreset.Balanced,
+            FanMode.Automatic,
+            ConfirmedBattery(80),
+            profiles.UsbC.Lighting);
+        await context.Runtime.RefreshPowerSourceClassificationAsync(CancellationToken.None);
+        Assert.Equal(PowerSource.UsbC, context.Runtime.GetStatus().ActivePowerSource);
+
+        context.Device.AdapterPowerState = AdapterPowerState.FullPower280W;
+        await context.Runtime.RefreshPowerSourceClassificationAsync(CancellationToken.None);
+
+        Assert.Equal(PowerSource.PluggedIn, context.Runtime.GetStatus().ActivePowerSource);
+        Assert.Equal(PerformancePreset.Silent, context.Device.ConfirmedState.Performance);
+        Assert.Equal(1, context.Device.PerformanceSetCalls);
+    }
+
+    [Fact]
+    public async Task SourceOnlyRefresh_PreservesLiveReadingsAcrossSameUnknownAndRecovery()
+    {
+        TestContext context = CreateWritableContext();
+        context.Device.FanReadings = new FanRpmReadings(2400, 2300);
+        await context.Runtime.ObserveAsync(
+            includeLiveReadings: true,
+            CancellationToken.None);
+        LiveReadings expected = Assert.IsType<LiveReadings>(
+            context.Runtime.GetStatus().LiveReadings);
+        int stateReads = context.Device.StateReadCalls;
+        int fanReads = context.Device.FanRpmReadCalls;
+
+        await context.Runtime.RefreshPowerSourceClassificationAsync(CancellationToken.None);
+
+        Assert.Equal(expected, context.Runtime.GetStatus().LiveReadings);
+        Assert.Equal(stateReads, context.Device.StateReadCalls);
+        Assert.Equal(fanReads, context.Device.FanRpmReadCalls);
+
+        context.Telemetry.Current = CreateTelemetry(PowerSource.ExternalUnknown);
+        context.Device.AdapterPowerState = AdapterPowerState.Unknown;
+        await context.Runtime.RefreshPowerSourceClassificationAsync(CancellationToken.None);
+
+        ServiceStatusSnapshot unknown = context.Runtime.GetStatus();
+        Assert.Equal(PowerSource.ExternalUnknown, unknown.ActivePowerSource);
+        Assert.True(unknown.WritesBlocked);
+        Assert.Equal(expected, unknown.LiveReadings);
+        Assert.Equal(stateReads, context.Device.StateReadCalls);
+        Assert.Equal(fanReads, context.Device.FanRpmReadCalls);
+
+        context.Device.AdapterPowerState = AdapterPowerState.FullPower280W;
+        await context.Runtime.RefreshPowerSourceClassificationAsync(CancellationToken.None);
+
+        ServiceStatusSnapshot recovered = context.Runtime.GetStatus();
+        Assert.Equal(PowerSource.PluggedIn, recovered.ActivePowerSource);
+        Assert.False(recovered.WritesBlocked);
+        Assert.Equal(expected, recovered.LiveReadings);
+        Assert.Equal(stateReads, context.Device.StateReadCalls);
+        Assert.Equal(fanReads, context.Device.FanRpmReadCalls);
+    }
+
+    [Fact]
+    public async Task UnstableAdapterClassification_BlocksWritesAndPreservesTemporaryOverride()
+    {
+        TestContext context = CreateWritableContext();
+        _ = await context.Runtime.SetPerformanceOverrideAsync(
+            new ManualOverride<PerformancePreset>(
+                PerformancePreset.Performance,
+                OverrideLifetime.UntilPowerSourceChange),
+            CancellationToken.None);
+        int settersBefore = context.Device.TotalSetterCalls;
+        context.Telemetry.Current = CreateTelemetry(PowerSource.ExternalUnknown);
+        context.Device.AdapterPowerStates.Enqueue(AdapterPowerState.FullPower280W);
+        context.Device.AdapterPowerStates.Enqueue(AdapterPowerState.UsbCPower100W);
+
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+
+        ServiceStatusSnapshot status = context.Runtime.GetStatus();
+        Assert.Equal(PowerSource.ExternalUnknown, status.ActivePowerSource);
+        Assert.True(status.WritesBlocked);
+        Assert.NotNull(context.Runtime.GetStatus().PerformanceOverride);
+        Assert.Equal(settersBefore, context.Device.TotalSetterCalls);
+    }
+
+    [Fact]
+    public async Task ExternalUnknown_RejectsOverrideBeforePersistenceOrHardwareWrite()
+    {
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            initialPowerSource: PowerSource.ExternalUnknown);
+        context.Device.AdapterPowerState = AdapterPowerState.Unknown;
+
+        ControlOperationResult result = await context.Runtime.SetPerformanceOverrideAsync(
+            new ManualOverride<PerformancePreset>(
+                PerformancePreset.Balanced,
+                OverrideLifetime.Persistent),
+            CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Blocked, result.Status);
+        Assert.Null(context.Runtime.GetStatus().PerformanceOverride);
+        Assert.Equal(0, context.Device.TotalSetterCalls);
+    }
+
+    [Fact]
+    public async Task UsbC_RejectsMaximumFanOverrideWithoutWriting()
+    {
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            initialPowerSource: PowerSource.ExternalUnknown);
+        context.Device.AdapterPowerState = AdapterPowerState.UsbCPower100W;
+        context.Device.Capabilities = DeviceCapabilities.SafeTargetDefaults();
+        PowerProfile usbC = context.Runtime.GetStatus().Profiles.UsbC;
+        context.Device.ConfirmedState = new ConfirmedDeviceState(
+            usbC.Performance,
+            usbC.Fans,
+            ConfirmedBattery(80),
+            usbC.Lighting);
+
+        ControlOperationResult result = await context.Runtime.SetFanOverrideAsync(
+            new ManualOverride<FanMode>(
+                FanMode.Maximum,
+                OverrideLifetime.Persistent),
+            CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Failed, result.Status);
+        Assert.Null(context.Runtime.GetStatus().FanOverride);
+        Assert.Equal(0, context.Device.TotalSetterCalls);
+    }
+
     private TestContext CreateWritableContext(
         IReadOnlyList<string>? conflicts = null,
         string? detectionFailure = null,
@@ -2575,14 +2741,14 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             WriteIndented = true,
         };
         byte[] profiles = JsonSerializer.SerializeToUtf8Bytes(
-            new ProfileDocument(1, configuration.Profiles),
+            new ProfileDocument(ProfileStore.CurrentSchemaVersion, configuration.Profiles),
             options);
         byte[] preferences = JsonSerializer.SerializeToUtf8Bytes(
-            new BatteryPreferencesDocument(1, configuration.Preferences),
+            new BatteryPreferencesDocument(ProfileStore.CurrentSchemaVersion, configuration.Preferences),
             options);
         byte[] marker = JsonSerializer.SerializeToUtf8Bytes(
             new BatteryConfigurationCommit(
-                1,
+                ProfileStore.CurrentSchemaVersion,
                 Convert.ToHexString(SHA256.HashData(profiles)),
                 Convert.ToHexString(SHA256.HashData(preferences))),
             options);
@@ -2732,6 +2898,15 @@ public sealed class ServiceControlRuntimeTests : IDisposable
 
         public int FanRpmReadCalls { get; private set; }
 
+        public int AdapterPowerReadCalls { get; private set; }
+
+        public AdapterPowerState AdapterPowerState { get; set; } =
+            AdapterPowerState.FullPower280W;
+
+        public Queue<AdapterPowerState> AdapterPowerStates { get; } = new();
+
+        public Exception? AdapterPowerFailure { get; set; }
+
         public int TotalSetterCalls => PerformanceSetCalls
             + FanSetCalls
             + BatterySetCalls
@@ -2800,6 +2975,22 @@ public sealed class ServiceControlRuntimeTests : IDisposable
                         ? new FanRpmReadings(FanRpm.Value, FanRpm.Value)
                         : null))
                 : Task.FromException<FanRpmReadings?>(FanRpmFailure);
+        }
+
+        public Task<AdapterPowerState> ReadAdapterPowerStateAsync(
+            CancellationToken cancellationToken)
+        {
+            TotalCalls++;
+            AdapterPowerReadCalls++;
+            if (AdapterPowerFailure is not null)
+            {
+                return Task.FromException<AdapterPowerState>(AdapterPowerFailure);
+            }
+
+            return Task.FromResult(
+                AdapterPowerStates.Count > 0
+                    ? AdapterPowerStates.Dequeue()
+                    : AdapterPowerState);
         }
 
         public Task SetPerformanceAsync(PerformancePreset value, CancellationToken cancellationToken)

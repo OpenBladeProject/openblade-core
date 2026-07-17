@@ -60,6 +60,7 @@ public sealed class Worker(
         [
             token => new ServiceLifecycleRefreshLoop(runtime, lifecycleEventSource, logger)
                 .RunAsync(token),
+            token => new ServicePeriodicObservationLoop(runtime, logger).RunAsync(token),
             .. Enumerable.Range(0, MaximumPipeClients)
                 .Select(_ => new Func<CancellationToken, Task>(
                     token => RunPipeListenerAsync(server, token))),

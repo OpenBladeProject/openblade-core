@@ -50,6 +50,7 @@ internal sealed class ProductionBatteryPort : IProductionBatteryPort
     private readonly TimeSpan exchangeTimeout;
     private readonly BatteryCommandClient batteryCommands;
     private readonly TemporaryFullChargeCommandClient temporaryCommands;
+    private readonly AdapterPowerCommandClient adapterPowerCommands;
     private readonly SemaphoreSlim operationGate = new(1, 1);
     private readonly object lifecycleSync = new();
     private readonly IAsyncDisposable ownedSession;
@@ -95,6 +96,7 @@ internal sealed class ProductionBatteryPort : IProductionBatteryPort
         this.exchangeTimeout = exchangeTimeout;
         batteryCommands = new BatteryCommandClient(session, exchangeTimeout);
         temporaryCommands = new TemporaryFullChargeCommandClient(session, exchangeTimeout);
+        adapterPowerCommands = new AdapterPowerCommandClient(session, exchangeTimeout);
         Capabilities = CreateCapabilities(catalog, readEvidence);
     }
 
@@ -167,6 +169,37 @@ internal sealed class ProductionBatteryPort : IProductionBatteryPort
             EnsureUsable();
             return await QueryPerformanceFanStateCoreAsync(cancellationToken)
                 .ConfigureAwait(false);
+        }
+        finally
+        {
+            operationGate.Release();
+        }
+    }
+
+    public async Task<AdapterPowerState> QueryAdapterPowerStateAsync(
+        CancellationToken cancellationToken)
+    {
+        if (!readEvidence.SupportsAdapterPowerQuery)
+        {
+            ThrowIfClosingOrDisposed();
+            cancellationToken.ThrowIfCancellationRequested();
+            return AdapterPowerState.Unknown;
+        }
+
+        await EnterAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            EnsureUsable();
+            byte transactionId = AllocateTransactionForRead();
+            HidSessionResult<AdapterPowerState> result =
+                await adapterPowerCommands.QueryAsync(transactionId, cancellationToken)
+                    .ConfigureAwait(false);
+            if (result.Failure is not null)
+            {
+                ThrowReadFailure(result.Failure.Value, result.Diagnostic, cancellationToken);
+            }
+
+            return result.Value;
         }
         finally
         {

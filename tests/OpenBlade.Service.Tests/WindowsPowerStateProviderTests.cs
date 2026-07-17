@@ -6,7 +6,7 @@ namespace OpenBlade.Service.Tests;
 public sealed class WindowsPowerStateProviderTests
 {
     [Theory]
-    [InlineData(1, PowerSource.PluggedIn)]
+    [InlineData(1, PowerSource.ExternalUnknown)]
     [InlineData(0, PowerSource.Battery)]
     public void MapPowerSource_ConvertsWindowsPowerStatus(
         byte acLineStatus,

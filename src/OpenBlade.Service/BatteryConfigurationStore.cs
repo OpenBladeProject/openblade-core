@@ -134,7 +134,7 @@ public sealed class BatteryConfigurationStore
                 profiles,
                 committed.Configuration.Preferences,
                 cancellationToken,
-                committed.PreferenceJson);
+                committed.ProfileMigrated ? null : committed.PreferenceJson);
         }
         finally
         {
@@ -174,7 +174,8 @@ public sealed class BatteryConfigurationStore
         BatteryConfigurationCommit? marker = JsonSerializer.Deserialize<BatteryConfigurationCommit>(
             markerJson,
             ProfileStore.SerializerOptions);
-        if (marker is null || marker.SchemaVersion != ProfileStore.CurrentSchemaVersion)
+        if (marker is null || marker.SchemaVersion is not (
+                ProfileStore.LegacySchemaVersion or ProfileStore.CurrentSchemaVersion))
         {
             throw new InvalidDataException("The battery configuration marker is unsupported.");
         }
@@ -185,8 +186,19 @@ public sealed class BatteryConfigurationStore
             throw new InvalidDataException("The battery configuration hashes do not match.");
         }
 
-        ProfileSet profiles = profileStore.ReadDocument(profileJson, out bool profileMigrated);
-        BatteryAutomationPreferences preferences = ReadPreferences(preferenceJson);
+        ProfileSet profiles = profileStore.ReadDocument(
+            profileJson,
+            out bool profileMigrated,
+            out int profileSchemaVersion);
+        if (profileSchemaVersion != marker.SchemaVersion)
+        {
+            throw new InvalidDataException(
+                "The profile and battery configuration marker schemas do not match.");
+        }
+
+        BatteryAutomationPreferences preferences = ReadPreferences(
+            preferenceJson,
+            marker.SchemaVersion);
         return new CommittedSnapshot(
             new BatteryConfiguration(profiles, preferences, Recovered: false),
             profileJson,
@@ -226,6 +238,7 @@ public sealed class BatteryConfigurationStore
         ProfileSet profiles = new(
             pluggedIn,
             battery,
+            ProfileDefaults.CreateSafeDefaults().UsbC,
             BatteryPolicy.Create(ReadInt32(policy, "chargeLimitPercent")));
         profiles = ProfileStore.NormalizeLegacyBatteryProfile(profiles, out _);
         validator.Validate(profiles);
@@ -251,14 +264,16 @@ public sealed class BatteryConfigurationStore
                 checked((byte)ReadInt32(lighting, "brightness"))));
     }
 
-    private BatteryAutomationPreferences ReadPreferences(ReadOnlySpan<byte> json)
+    private BatteryAutomationPreferences ReadPreferences(
+        ReadOnlySpan<byte> json,
+        int expectedSchemaVersion)
     {
         RejectDuplicateMembers(json);
         BatteryPreferencesDocument? document =
             JsonSerializer.Deserialize<BatteryPreferencesDocument>(
                 json,
                 ProfileStore.SerializerOptions);
-        if (document is null || document.SchemaVersion != ProfileStore.CurrentSchemaVersion)
+        if (document is null || document.SchemaVersion != expectedSchemaVersion)
         {
             throw new InvalidDataException("The battery preference schema is unsupported.");
         }

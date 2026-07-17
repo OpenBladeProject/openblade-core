@@ -8,7 +8,8 @@ public sealed record ProfileLoadResult(ProfileSet Profiles, bool RecoveredFromIn
 
 public sealed class ProfileStore(string path, ProfileSetValidator? validator = null)
 {
-    internal const int CurrentSchemaVersion = 1;
+    internal const int CurrentSchemaVersion = 2;
+    internal const int LegacySchemaVersion = 1;
 
     internal static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web)
     {
@@ -60,16 +61,58 @@ public sealed class ProfileStore(string path, ProfileSetValidator? validator = n
 
     internal ProfileSet ReadDocument(ReadOnlySpan<byte> json, out bool migrated)
     {
+        ProfileSet profiles = ReadDocument(json, out migrated, out _);
+        return profiles;
+    }
+
+    internal ProfileSet ReadDocument(
+        ReadOnlySpan<byte> json,
+        out bool migrated,
+        out int schemaVersion)
+    {
         BatteryConfigurationStore.RejectDuplicateMembers(json);
-        ProfileDocument? document = JsonSerializer.Deserialize<ProfileDocument>(
-            json,
-            SerializerOptions);
-        if (document is null || document.SchemaVersion != CurrentSchemaVersion)
+        using JsonDocument parsed = JsonDocument.Parse(json.ToArray());
+        if (!parsed.RootElement.TryGetProperty("schemaVersion", out JsonElement versionElement)
+            || !versionElement.TryGetInt32(out schemaVersion))
         {
             throw new InvalidDataException("The profile schema version is unsupported.");
         }
 
-        ProfileSet profiles = NormalizeLegacyBatteryProfile(document.Profiles, out migrated);
+        ProfileSet profiles;
+        if (schemaVersion == CurrentSchemaVersion)
+        {
+            ProfileDocument? document = JsonSerializer.Deserialize<ProfileDocument>(
+                json,
+                SerializerOptions);
+            if (document is null)
+            {
+                throw new InvalidDataException("The profile document is missing.");
+            }
+
+            profiles = NormalizeLegacyBatteryProfile(document.Profiles, out migrated);
+        }
+        else if (schemaVersion == LegacySchemaVersion)
+        {
+            LegacyProfileDocument? document =
+                JsonSerializer.Deserialize<LegacyProfileDocument>(json, SerializerOptions);
+            if (document is null)
+            {
+                throw new InvalidDataException("The legacy profile document is missing.");
+            }
+
+            ProfileSet migratedProfiles = new(
+                document.Profiles.PluggedIn,
+                document.Profiles.Battery,
+                ProfileDefaults.CreateSafeDefaults().UsbC,
+                document.Profiles.BatteryPolicy);
+            profiles = NormalizeLegacyBatteryProfile(migratedProfiles, out _);
+            migrated = true;
+        }
+        else
+        {
+            throw new InvalidDataException("The profile schema version is unsupported.");
+        }
+
         validator.Validate(profiles);
         return profiles;
     }

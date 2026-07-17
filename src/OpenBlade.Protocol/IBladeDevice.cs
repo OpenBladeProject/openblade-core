@@ -10,6 +10,9 @@ public interface IBladeDevice
 
     Task<FanRpmReadings?> ReadFanRpmAsync(CancellationToken cancellationToken);
 
+    Task<AdapterPowerState> ReadAdapterPowerStateAsync(
+        CancellationToken cancellationToken);
+
     Task SetPerformanceAsync(PerformancePreset value, CancellationToken cancellationToken);
 
     Task SetFanModeAsync(FanMode value, CancellationToken cancellationToken);

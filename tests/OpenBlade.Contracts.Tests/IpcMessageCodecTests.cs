@@ -70,7 +70,7 @@ public sealed class IpcMessageCodecTests
     }
 
     [Fact]
-    public async Task VersionFiveBatteryContracts_RoundTripExactShape()
+    public async Task VersionSixBatteryContracts_RoundTripExactShape()
     {
         var capabilities = new DeviceCapabilities(
             new HashSet<PerformancePreset>(),
@@ -81,7 +81,7 @@ public sealed class IpcMessageCodecTests
             SupportsTemporaryFullCharge: false);
         var desired = new DesiredBatteryState(BatteryPolicy.Create(80), true, false);
         var confirmed = new ConfirmedBatteryState(true, 80, false);
-        ServiceRequest request = new SetBatteryProtectionRequest(5, Guid.NewGuid(), false);
+        ServiceRequest request = new SetBatteryProtectionRequest(6, Guid.NewGuid(), false);
         ServiceStatusSnapshot status = CreateStatus() with
         {
             PotentialControllers = ["RazerAppEngine"],
@@ -92,7 +92,7 @@ public sealed class IpcMessageCodecTests
             DesiredState = CreateStatus().DesiredState with { Battery = desired },
         };
 
-        Assert.Equal(5, OpenBladeIpc.ProtocolVersion);
+        Assert.Equal(6, OpenBladeIpc.ProtocolVersion);
         Assert.Equal(request, await RoundTripRequestAsync(request));
         ServiceStatusSnapshot roundTrip = await RoundTripStatusAsync(status);
         Assert.Equal([80], roundTrip.Capabilities!.ChargeLimits);
@@ -126,7 +126,7 @@ public sealed class IpcMessageCodecTests
     }
 
     [Fact]
-    public async Task VersionFiveStatus_AcceptsCompleteCapabilityCollections()
+    public async Task VersionSixStatus_AcceptsCompleteCapabilityCollections()
     {
         ServiceStatusSnapshot expected = CreateStatus() with
         {
@@ -135,7 +135,7 @@ public sealed class IpcMessageCodecTests
 
         ServiceStatusSnapshot actual = await RoundTripStatusAsync(expected);
 
-        Assert.Equal(5, OpenBladeIpc.ProtocolVersion);
+        Assert.Equal(6, OpenBladeIpc.ProtocolVersion);
         AssertStatusEqual(expected, actual);
     }
 
@@ -185,7 +185,7 @@ public sealed class IpcMessageCodecTests
     {
         Guid requestId = Guid.NewGuid();
         using MemoryStream stream = FrameJson(
-            $"{{\"operation\":\"setBatteryPolicy\",\"version\":5,\"requestId\":\"{requestId}\",\"value\":{{\"chargeLimitPercent\":80,{extraMember}}}}}");
+            $"{{\"operation\":\"setBatteryPolicy\",\"version\":6,\"requestId\":\"{requestId}\",\"value\":{{\"chargeLimitPercent\":80,{extraMember}}}}}");
 
         await Assert.ThrowsAsync<InvalidDataException>(() =>
             IpcMessageCodec.ReadRequestAsync(stream, CancellationToken.None));
@@ -196,7 +196,7 @@ public sealed class IpcMessageCodecTests
     {
         Guid requestId = Guid.NewGuid();
         using MemoryStream stream = FrameJson(
-            $"{{\"operation\":\"setBatteryPolicy\",\"version\":5,\"requestId\":\"{requestId}\",\"value\":{{\"chargeLimitPercent\":80,\"chargeLimitPercent\":75}}}}");
+            $"{{\"operation\":\"setBatteryPolicy\",\"version\":6,\"requestId\":\"{requestId}\",\"value\":{{\"chargeLimitPercent\":80,\"chargeLimitPercent\":75}}}}");
 
         await Assert.ThrowsAsync<InvalidDataException>(() =>
             IpcMessageCodec.ReadRequestAsync(stream, CancellationToken.None));
@@ -207,7 +207,7 @@ public sealed class IpcMessageCodecTests
     {
         Guid requestId = Guid.NewGuid();
         using MemoryStream stream = FrameJson(
-            $"{{\"operation\":\"setBatteryProtection\",\"version\":5,\"requestId\":\"{requestId}\"}}");
+            $"{{\"operation\":\"setBatteryProtection\",\"version\":6,\"requestId\":\"{requestId}\"}}");
 
         await Assert.ThrowsAsync<InvalidDataException>(() =>
             IpcMessageCodec.ReadRequestAsync(stream, CancellationToken.None));
@@ -368,7 +368,7 @@ public sealed class IpcMessageCodecTests
     {
         const string secret = "unknown-secret-operation";
         using MemoryStream stream = FrameJson(
-            $$"""{"operation":"{{secret}}","version":5,"requestId":"{{Guid.NewGuid()}}"}""");
+            $$"""{"operation":"{{secret}}","version":6,"requestId":"{{Guid.NewGuid()}}"}""");
 
         InvalidDataException exception = await Assert.ThrowsAsync<InvalidDataException>(() =>
             IpcMessageCodec.ReadRequestAsync(stream, CancellationToken.None));

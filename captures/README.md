@@ -62,6 +62,16 @@ embedded production-fixture hash in the code-controlled registry.
 
 There is intentionally no command for sending arbitrary reports. Hardware validation is implemented through typed, gated operations only.
 
+## Adapter wattage readback
+
+On this exact device, the read-only `07/8C` query with payload `0000` reports
+the adapter wattage level. Captured response `0711` corresponds to 100 W USB-C
+PD operation and `1111` corresponds to the 280 W OEM full-power adapter.
+Synapse independently corroborates the low-power state by logging current level
+100, recommended level 280, and forcing its AC balanced thermal mode. Any other
+two-byte response is treated as unknown, and malformed responses fail protocol
+validation. This query never authorizes a write.
+
 ## Wireshark extraction notes
 
 Wireshark 4.6 decodes this device's control transfers reliably with the HID report fields even when `usb.setup.bRequest` and `usb.setup.wValue` are blank in `-T fields` output. Select request frames with:

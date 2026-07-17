@@ -348,8 +348,11 @@ public sealed class DiagnosticArchiveProvider : IDiagnosticArchiveProvider
             ["profile.pluggedIn.fans"] = status.Profiles.PluggedIn.Fans.ToString(),
             ["profile.battery.performance"] = status.Profiles.Battery.Performance.ToString(),
             ["profile.battery.fans"] = status.Profiles.Battery.Fans.ToString(),
+            ["profile.usbC.performance"] = status.Profiles.UsbC.Performance.ToString(),
+            ["profile.usbC.fans"] = status.Profiles.UsbC.Fans.ToString(),
             ["profile.pluggedIn.lighting"] = status.Profiles.PluggedIn.Lighting.Effect.ToString(),
             ["profile.battery.lighting"] = status.Profiles.Battery.Lighting.Effect.ToString(),
+            ["profile.usbC.lighting"] = status.Profiles.UsbC.Lighting.Effect.ToString(),
             ["battery.chargeLimitPercent"] = status.Profiles.BatteryPolicy.ChargeLimitPercent
                 .ToString(System.Globalization.CultureInfo.InvariantCulture),
             ["battery.protectionEnabled"] = status.DesiredState.Battery.ProtectionEnabled.ToString(),

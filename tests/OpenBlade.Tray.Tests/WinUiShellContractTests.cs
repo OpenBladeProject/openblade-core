@@ -275,9 +275,13 @@ public sealed class WinUiShellContractTests
         Assert.Contains("Root.SizeChanged -= OnRootSizeChanged", source, StringComparison.Ordinal);
         Assert.Contains("Root.FindName(\"ProfilesLayout\")", source, StringComparison.Ordinal);
         Assert.Contains("Root.FindName(\"ProfilesSecondColumn\")", source, StringComparison.Ordinal);
+        Assert.Contains("Root.FindName(\"ProfilesThirdColumn\")", source, StringComparison.Ordinal);
         Assert.Contains("Root.FindName(\"BatteryProfileCard\")", source, StringComparison.Ordinal);
+        Assert.Contains("Root.FindName(\"UsbCProfileCard\")", source, StringComparison.Ordinal);
         Assert.Contains("Grid.SetRow(batteryProfileCard, stack ? 1 : 0)", source, StringComparison.Ordinal);
         Assert.Contains("Grid.SetColumn(batteryProfileCard, stack ? 0 : 1)", source, StringComparison.Ordinal);
+        Assert.Contains("Grid.SetRow(usbCProfileCard, stack ? 2 : 0)", source, StringComparison.Ordinal);
+        Assert.Contains("Grid.SetColumn(usbCProfileCard, stack ? 0 : 2)", source, StringComparison.Ordinal);
 
         Assert.Contains("OnDashboardPerformanceChanged", source, StringComparison.Ordinal);
         Assert.Contains("OnDashboardFanModeSelectionChanged", source, StringComparison.Ordinal);

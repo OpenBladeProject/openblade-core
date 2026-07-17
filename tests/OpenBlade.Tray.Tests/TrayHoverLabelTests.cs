@@ -39,6 +39,24 @@ public sealed class TrayHoverLabelTests
                 "Not using battery"));
     }
 
+    [Theory]
+    [InlineData(PowerSource.UsbC, PerformancePreset.Balanced, "OpenBlade · USB-C · Balanced")]
+    [InlineData(PowerSource.ExternalUnknown, PerformancePreset.Balanced, "OpenBlade · Checking power source")]
+    public void Format_DistinguishesUsbCFromUnresolvedExternalPower(
+        PowerSource source,
+        PerformancePreset performance,
+        string expected)
+    {
+        Assert.Equal(
+            expected,
+            TrayHoverLabelFormatter.Format(
+                TrayHoverLabelMode.ActiveProfile,
+                isConnected: true,
+                source,
+                performance,
+                "Battery power unavailable"));
+    }
+
     [Fact]
     public void Format_DisconnectedAndLongValuesRemainUsefulAndNotifyIconSafe()
     {

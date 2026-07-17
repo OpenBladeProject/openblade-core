@@ -74,7 +74,7 @@ public sealed class OnlineProtocolEvidenceTests
         Assert.Equal(54, evidence.GetProperty("targetHundredsRpm").GetInt32());
         Assert.Equal(5400, evidence.GetProperty("visuallyConfirmedRpm").GetInt32());
         Assert.False(evidence.GetProperty("independentModeReadBack").GetBoolean());
-        Assert.Equal("unresolved-not-an-admitted-setter", evidence.GetProperty("stateQuery07_8C").GetString());
+        Assert.Equal("adapter-wattage-level-readback", evidence.GetProperty("stateQuery07_8C").GetString());
         Assert.Equal("live-telemetry-not-target-setter-or-mode-readback", evidence.GetProperty("fanTelemetry0D_88").GetString());
     }
 
@@ -94,7 +94,7 @@ public sealed class OnlineProtocolEvidenceTests
         Assert.Equal([87, 90, 91, 94], Frames(provenance, "telemetryFrames"));
         Assert.Equal(5300, evidence.GetProperty("immediateTelemetryRpm").GetInt32());
         Assert.False(evidence.GetProperty("independentModeReadBack").GetBoolean());
-        Assert.Equal("unresolved-not-an-admitted-setter", evidence.GetProperty("stateQuery07_8C").GetString());
+        Assert.Equal("adapter-wattage-level-readback", evidence.GetProperty("stateQuery07_8C").GetString());
         Assert.True(action.GetProperty("gates").GetProperty("decoded").GetBoolean());
         Assert.False(action.GetProperty("gates").GetProperty("readBack").GetBoolean());
     }

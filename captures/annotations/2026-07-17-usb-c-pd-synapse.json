@@ -1,0 +1,34 @@
+{
+  "schemaVersion": 1,
+  "device": {
+    "model": "RZ09-0581",
+    "vid": "1532",
+    "pid": "02E0",
+    "bios": "3.01"
+  },
+  "condition": {
+    "externalPower": true,
+    "usbCPowerDelivery": true
+  },
+  "observedAtLocal": "2026-07-17T16:05:53.296-07:00",
+  "visibleUi": {
+    "tab": "Plugged In",
+    "activePerformance": "Balanced",
+    "disabledPerformanceOptions": ["Silent", "Performance", "Custom"],
+    "activeFanMode": "Auto (Default)",
+    "warning": "The system is not receiving adequate power to perform optimally and battery may discharge at a faster rate or may not charge at all. Please use the accompanying power supply for full performance."
+  },
+  "productLog": {
+    "fileNameRedacted": true,
+    "lines": [
+      { "line": 4591, "message": "getAdapterWattageLevel adapterWattageLevel: 100 , recommendedAdapterWattageLevel: 280" },
+      { "line": 4592, "message": "xxx-isLowPower true" },
+      { "line": 4593, "message": "Low power mode detected: Setting thermal fan mode to BALANCED_MODE_AC" },
+      { "line": 4594, "message": "Low power mode detected: Setting thermal fan mode to BALANCED_MODE_AC" }
+    ]
+  },
+  "notes": [
+    "This annotation corroborates the existing read-only 07/8C capture evidence; it does not authorize any hardware write.",
+    "Synapse treats USB-C PD as externally powered low-power operation rather than battery operation."
+  ]
+}
