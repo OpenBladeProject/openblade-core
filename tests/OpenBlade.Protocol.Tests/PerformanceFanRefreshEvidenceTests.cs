@@ -184,6 +184,12 @@ public sealed class PerformanceFanRefreshEvidenceTests
         Assert.All(runs.Skip(1), run => Assert.Equal(
             baseline,
             run.GetProperty("responses").GetRawText()));
+        Assert.All(runs, run => Assert.Equal(
+            ["0D/8E", "0D/8F", "0D/80", "0D/89", "0D/8B", "0D/8A", "0F/98"],
+            run.GetProperty("responses")
+                .EnumerateArray()
+                .Select(response => response.GetProperty("operation").GetString()!)
+                .ToArray()));
         Assert.All(runs.SelectMany(run => run.GetProperty("responses").EnumerateArray()),
             response => Assert.Equal("02", response.GetProperty("expectedStatusHex").GetString()));
 
@@ -196,6 +202,12 @@ public sealed class PerformanceFanRefreshEvidenceTests
         using JsonDocument evidenceDocument = LoadEvidence();
         JsonElement evidence = evidenceDocument.RootElement
             .GetProperty("performanceFanDirectQueryEvidence");
+        Assert.Equal(
+            ["0D/8E", "0D/8F", "0D/80", "0D/89", "0D/8B", "0D/8A", "0F/98"],
+            evidence.GetProperty("commands")
+                .EnumerateArray()
+                .Select(command => command.GetString()!)
+                .ToArray());
         Assert.True(evidence.GetProperty("readOnly").GetBoolean());
         Assert.False(evidence.GetProperty("conclusion")
             .GetProperty("performanceFanProductionAdmissionAllowed").GetBoolean());

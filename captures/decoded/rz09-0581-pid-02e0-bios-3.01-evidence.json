@@ -657,14 +657,14 @@
     "reader": "OpenBlade.Capture query-performance-fan-discriminator",
     "readOnly": true,
     "states": ["Balanced+Auto", "Silent+Auto", "Performance+Auto", "Balanced+Fixed5400"],
-    "commands": ["0D/8E", "0D/8F", "0D/80", "0D/89", "0D/8B", "0D/8A"],
+    "commands": ["0D/8E", "0D/8F", "0D/80", "0D/89", "0D/8B", "0D/8A", "0F/98"],
     "allResponsesIdentical": true,
     "conclusion": {
       "performanceReadbackEstablished": false,
       "fanModeReadbackEstablished": false,
       "performanceFanProductionAdmissionAllowed": false,
       "typedMutationHarnessAllowed": false,
-      "reason": "Every fixed read-only response was identical across the three performance presets and Auto versus Fixed 5400 fan mode."
+      "reason": "Every fixed read-only response, including cold-start candidate 0F/98, was identical across the three performance presets and Auto versus Fixed 5400 fan mode."
     }
   },
   "performanceFanColdHydrationEvidence": {

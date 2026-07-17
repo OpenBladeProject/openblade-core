@@ -10,7 +10,7 @@
     "command": "OpenBlade.Capture query-performance-fan-discriminator",
     "readOnly": true,
     "productionAdmitted": false,
-    "observedUtcWindow": "2026-07-17T02:38:00Z/2026-07-17T02:42:05Z"
+    "observedUtcWindow": "2026-07-17T02:38:00Z/2026-07-17T03:20:56Z"
   },
   "runs": [
     {
@@ -22,7 +22,8 @@
         { "operation": "0D/80", "requestPayloadHex": "0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000", "expectedStatusHex": "02", "responsePayloadHex": "0201020000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000" },
         { "operation": "0D/89", "requestPayloadHex": "0000", "expectedStatusHex": "02", "responsePayloadHex": "0202" },
         { "operation": "0D/8B", "requestPayloadHex": "0000", "expectedStatusHex": "02", "responsePayloadHex": "0201" },
-        { "operation": "0D/8A", "requestPayloadHex": "0000", "expectedStatusHex": "02", "responsePayloadHex": "0206" }
+        { "operation": "0D/8A", "requestPayloadHex": "0000", "expectedStatusHex": "02", "responsePayloadHex": "0206" },
+        { "operation": "0F/98", "requestPayloadHex": "00", "expectedStatusHex": "02", "responsePayloadHex": "00" }
       ]
     },
     {
@@ -34,7 +35,8 @@
         { "operation": "0D/80", "requestPayloadHex": "0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000", "expectedStatusHex": "02", "responsePayloadHex": "0201020000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000" },
         { "operation": "0D/89", "requestPayloadHex": "0000", "expectedStatusHex": "02", "responsePayloadHex": "0202" },
         { "operation": "0D/8B", "requestPayloadHex": "0000", "expectedStatusHex": "02", "responsePayloadHex": "0201" },
-        { "operation": "0D/8A", "requestPayloadHex": "0000", "expectedStatusHex": "02", "responsePayloadHex": "0206" }
+        { "operation": "0D/8A", "requestPayloadHex": "0000", "expectedStatusHex": "02", "responsePayloadHex": "0206" },
+        { "operation": "0F/98", "requestPayloadHex": "00", "expectedStatusHex": "02", "responsePayloadHex": "00" }
       ]
     },
     {
@@ -46,7 +48,8 @@
         { "operation": "0D/80", "requestPayloadHex": "0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000", "expectedStatusHex": "02", "responsePayloadHex": "0201020000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000" },
         { "operation": "0D/89", "requestPayloadHex": "0000", "expectedStatusHex": "02", "responsePayloadHex": "0202" },
         { "operation": "0D/8B", "requestPayloadHex": "0000", "expectedStatusHex": "02", "responsePayloadHex": "0201" },
-        { "operation": "0D/8A", "requestPayloadHex": "0000", "expectedStatusHex": "02", "responsePayloadHex": "0206" }
+        { "operation": "0D/8A", "requestPayloadHex": "0000", "expectedStatusHex": "02", "responsePayloadHex": "0206" },
+        { "operation": "0F/98", "requestPayloadHex": "00", "expectedStatusHex": "02", "responsePayloadHex": "00" }
       ]
     },
     {
@@ -58,7 +61,8 @@
         { "operation": "0D/80", "requestPayloadHex": "0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000", "expectedStatusHex": "02", "responsePayloadHex": "0201020000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000" },
         { "operation": "0D/89", "requestPayloadHex": "0000", "expectedStatusHex": "02", "responsePayloadHex": "0202" },
         { "operation": "0D/8B", "requestPayloadHex": "0000", "expectedStatusHex": "02", "responsePayloadHex": "0201" },
-        { "operation": "0D/8A", "requestPayloadHex": "0000", "expectedStatusHex": "02", "responsePayloadHex": "0206" }
+        { "operation": "0D/8A", "requestPayloadHex": "0000", "expectedStatusHex": "02", "responsePayloadHex": "0206" },
+        { "operation": "0F/98", "requestPayloadHex": "00", "expectedStatusHex": "02", "responsePayloadHex": "00" }
       ]
     }
   ],
@@ -67,6 +71,6 @@
     "performanceReadbackEstablished": false,
     "fanModeReadbackEstablished": false,
     "performanceFanProductionAdmissionAllowed": false,
-    "reason": "All six fixed read-only candidates returned identical payloads across three performance presets and Auto versus Fixed 5400 fan mode."
+    "reason": "All seven fixed read-only candidates returned identical payloads across three performance presets and Auto versus Fixed 5400 fan mode."
   }
 }

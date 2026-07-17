@@ -90,10 +90,10 @@ commands are now disqualified as performance or fan-mode readback.
 Do not repeat ordinary page-navigation captures or assign semantics to these
 responses. The cold Synapse visible-UI startup capture found one additional
 query, `0F/98`, with response `00` in `Balanced+Auto`; the original six
-candidates were absent. Treat `0F/98` as an unresolved capture-only candidate
-until comparative known-state queries and a typed apply/readback/restore cycle
-succeed. Until then, performance and fan-mode production capabilities remain
-empty.
+candidates were absent. The fixed discriminator then returned the same `00`
+response for `0F/98` in `Silent+Auto`, `Performance+Auto`, and
+`Balanced+Fixed5400`, disqualifying all seven candidates as performance or
+fan-mode readback. Production capabilities remain empty.
 
 For lighting, perform the same no-mutation page-hydration comparison with two
 pre-established brightness values. Existing setter responses are same-
