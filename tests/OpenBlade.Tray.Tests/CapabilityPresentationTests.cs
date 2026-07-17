@@ -188,6 +188,70 @@ public sealed class CapabilityPresentationTests
     }
 
     [Fact]
+    public void Dashboard_HeroReadingsAreAFullWidthThreeColumnFooter()
+    {
+        string xaml = ReadMainWindowXaml();
+        XDocument document = XDocument.Parse(xaml);
+        XElement readings = NamedElement(document, "Border", "HeroReadings");
+        XElement hero = NamedElement(document, "Grid", "HeroLayout");
+
+        Assert.Equal("1", Attribute(readings, "Grid.Row"));
+        Assert.Null(Attribute(readings, "Grid.ColumnSpan"));
+        Assert.DoesNotContain(
+            hero.Elements(),
+            element => element.Name.LocalName == "Grid.ColumnDefinitions");
+        string? horizontalAlignment = Attribute(readings, "HorizontalAlignment");
+        Assert.True(
+            horizontalAlignment is null or "Stretch",
+            $"Hero readings must use the native Stretch default or set it explicitly; found '{horizontalAlignment}'.");
+        Assert.Equal(
+            3,
+            readings.Descendants().Count(element =>
+                element.Name.LocalName == "ColumnDefinition"));
+        Assert.DoesNotContain(readings.Descendants(), element =>
+            element.Name.LocalName == "TextBlock"
+            && Attribute(element, "Text") == "Live readings");
+        foreach (string property in new[]
+                 {
+                     "ViewModel.BatteryPowerFlowLabel",
+                     "ViewModel.Fan1RpmValue",
+                     "ViewModel.Fan2RpmValue",
+                 })
+        {
+            Assert.Contains(readings.Descendants(), element =>
+                element.Name.LocalName == "TextBlock"
+                && Attribute(element, "Text")?.Contains(property, StringComparison.Ordinal) is true);
+        }
+
+        string window = ReadTraySource("MainWindow.xaml.cs");
+        Assert.DoesNotContain("Grid.SetRow(HeroReadings", window, StringComparison.Ordinal);
+        Assert.DoesNotContain("Grid.SetColumn(HeroReadings", window, StringComparison.Ordinal);
+        Assert.DoesNotContain("HeroReadings.HorizontalAlignment", window, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void TroubleshootingExpander_LocallyRemovesHeaderLayers()
+    {
+        XDocument document = XDocument.Parse(ReadMainWindowXaml());
+        XElement troubleshooting = Assert.Single(
+            document.Descendants(),
+            element => element.Name.LocalName == "Expander"
+                && Attribute(element, "AutomationProperties.Name") == "Troubleshooting details");
+        XElement resources = Assert.Single(
+            troubleshooting.Elements(),
+            element => element.Name.LocalName == "Expander.Resources");
+        XElement background = Assert.Single(
+            resources.Descendants(),
+            element => Attribute(element, "Key") == "ExpanderHeaderBackground");
+        XElement borderThickness = Assert.Single(
+            resources.Descendants(),
+            element => Attribute(element, "Key") == "ExpanderHeaderBorderThickness");
+
+        Assert.Equal("Transparent", Attribute(background, "Color"));
+        Assert.Equal("0", borderThickness.Value.Trim());
+    }
+
+    [Fact]
     public void MainWindow_UsesResponsiveProfileNamesAndNativeTypography()
     {
         string xaml = ReadMainWindowXaml();

@@ -899,6 +899,8 @@ public sealed class MainViewModelTests
         Assert.Equal("Battery power unavailable", viewModel.BatteryPowerFlowLabel);
         Assert.Equal("Fan 1: unavailable", viewModel.Fan1RpmLabel);
         Assert.Equal("Fan 2: unavailable", viewModel.Fan2RpmLabel);
+        Assert.Equal("Unavailable", viewModel.Fan1RpmValue);
+        Assert.Equal("Unavailable", viewModel.Fan2RpmValue);
 
         var changed = new HashSet<string>();
         viewModel.PropertyChanged += (_, args) => changed.Add(args.PropertyName!);
@@ -913,9 +915,13 @@ public sealed class MainViewModelTests
         Assert.Equal("Using 24.3 W", viewModel.BatteryPowerFlowLabel);
         Assert.Contains("3,210 RPM", viewModel.Fan1RpmLabel, StringComparison.Ordinal);
         Assert.Contains("2,875 RPM", viewModel.Fan2RpmLabel, StringComparison.Ordinal);
+        Assert.Equal("3,210 RPM", viewModel.Fan1RpmValue);
+        Assert.Equal("2,875 RPM", viewModel.Fan2RpmValue);
         Assert.Contains(nameof(viewModel.BatteryPowerFlowLabel), changed);
         Assert.Contains(nameof(viewModel.Fan1RpmLabel), changed);
         Assert.Contains(nameof(viewModel.Fan2RpmLabel), changed);
+        Assert.Contains(nameof(viewModel.Fan1RpmValue), changed);
+        Assert.Contains(nameof(viewModel.Fan2RpmValue), changed);
 
         changed.Clear();
         client.Publish(CreateStatus(verified: true, blocked: false) with
@@ -929,9 +935,13 @@ public sealed class MainViewModelTests
         Assert.Equal("Charging at 31.8 W", viewModel.BatteryPowerFlowLabel);
         Assert.Equal("Fan 1: unavailable", viewModel.Fan1RpmLabel);
         Assert.Contains("0 RPM", viewModel.Fan2RpmLabel, StringComparison.Ordinal);
+        Assert.Equal("Unavailable", viewModel.Fan1RpmValue);
+        Assert.Equal("0 RPM", viewModel.Fan2RpmValue);
         Assert.Contains(nameof(viewModel.BatteryPowerFlowLabel), changed);
         Assert.Contains(nameof(viewModel.Fan1RpmLabel), changed);
         Assert.Contains(nameof(viewModel.Fan2RpmLabel), changed);
+        Assert.Contains(nameof(viewModel.Fan1RpmValue), changed);
+        Assert.Contains(nameof(viewModel.Fan2RpmValue), changed);
     }
 
     [Fact]

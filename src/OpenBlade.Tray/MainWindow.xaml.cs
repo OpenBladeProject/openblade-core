@@ -641,11 +641,6 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
         }
 
         dashboardIsStacked = stack;
-        Grid.SetRow(HeroReadings, stack ? 1 : 0);
-        Grid.SetColumn(HeroReadings, stack ? 0 : 1);
-        HeroReadings.HorizontalAlignment = stack
-            ? Microsoft.UI.Xaml.HorizontalAlignment.Left
-            : Microsoft.UI.Xaml.HorizontalAlignment.Right;
         Grid.SetRow(UseProfileSettingsButton, stack ? 1 : 0);
         Grid.SetColumn(UseProfileSettingsButton, stack ? 0 : 1);
         UseProfileSettingsButton.HorizontalAlignment = stack

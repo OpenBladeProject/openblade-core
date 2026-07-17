@@ -313,6 +313,10 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
 
     public string Fan2RpmLabel => FormatFanRpm("Fan 2", LiveReadings?.Fan2Rpm);
 
+    public string Fan1RpmValue => FormatFanRpmValue(LiveReadings?.Fan1Rpm);
+
+    public string Fan2RpmValue => FormatFanRpmValue(LiveReadings?.Fan2Rpm);
+
     public string ActivePowerSourceLabel
     {
         get => activePowerSourceLabel;
@@ -710,6 +714,8 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(BatteryPowerFlowLabel)));
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Fan1RpmLabel)));
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Fan2RpmLabel)));
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Fan1RpmValue)));
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Fan2RpmValue)));
             NotifyTrayHoverLabel();
         }
     }
@@ -2056,6 +2062,10 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     private static string FormatFanRpm(string label, int? rpm) => rpm is int value
         ? $"{label}: {value.ToString("N0", CultureInfo.CurrentCulture)} RPM"
         : $"{label}: unavailable";
+
+    private static string FormatFanRpmValue(int? rpm) => rpm is int value
+        ? $"{value.ToString("N0", CultureInfo.CurrentCulture)} RPM"
+        : "Unavailable";
 
     private static string FormatControlAccessStatus(ServiceStatusSnapshot status)
     {
