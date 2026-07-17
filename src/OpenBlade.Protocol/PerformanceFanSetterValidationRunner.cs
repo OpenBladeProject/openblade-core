@@ -76,7 +76,7 @@ internal sealed class PerformanceFanSetterValidationRunner
     private const int FixedFanMinimumRpm = 5000;
     private const int FixedFanMaximumRpm = 6000;
     private const int FixedFanRequiredConsecutiveSamples = 3;
-    private const int DefaultFixedFanMaximumSamples = 75;
+    private const int DefaultFixedFanMaximumSamples = 120;
     private const int DefaultFixedFanStateCheckEverySamples = 5;
     private static readonly TimeSpan DefaultFixedFanSampleInterval =
         TimeSpan.FromSeconds(1);

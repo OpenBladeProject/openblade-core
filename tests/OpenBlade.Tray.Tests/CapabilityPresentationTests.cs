@@ -335,7 +335,7 @@ public sealed class CapabilityPresentationTests
             Message = "Profiles refreshed",
             Profiles = refreshedProfiles,
         });
-        await WaitUntilAsync(() => viewModel.ConnectionStatus == "Profiles refreshed");
+        await WaitUntilAsync(() => viewModel.Profiles == refreshedProfiles);
 
         Assert.Equal(refreshedProfiles, viewModel.Profiles);
         Assert.Equal(PerformancePreset.Balanced, viewModel.PluggedInPerformanceEditor);
