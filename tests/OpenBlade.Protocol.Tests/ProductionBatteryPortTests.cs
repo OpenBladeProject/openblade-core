@@ -339,6 +339,75 @@ public sealed class ProductionBatteryPortTests
         Assert.Empty(port.Capabilities.FanModes);
     }
 
+    [Theory]
+    [InlineData(
+        PerformancePreset.Balanced,
+        ProductionBatteryPort.PerformanceBalancedFirstAction,
+        ProductionBatteryPort.PerformanceBalancedSecondAction,
+        0x00,
+        true)]
+    [InlineData(
+        PerformancePreset.Silent,
+        ProductionBatteryPort.PerformanceSilentFirstAction,
+        ProductionBatteryPort.PerformanceSilentSecondAction,
+        0x05,
+        false)]
+    [InlineData(
+        PerformancePreset.Performance,
+        ProductionBatteryPort.PerformanceBoostFirstAction,
+        ProductionBatteryPort.PerformanceBoostSecondAction,
+        0x02,
+        false)]
+    public async Task CompleteThermalPair_ExposesOnlyItsValidatedCapability(
+        PerformancePreset preset,
+        string firstAction,
+        string secondAction,
+        byte mode,
+        bool exposesAutomatic)
+    {
+        await using var port = CreatePort(
+            new ScriptedSession(),
+            Catalog(
+                Fixture(firstAction, 0x0D, 0x02, [0x01, 0x01, mode, 0x00]),
+                Fixture(secondAction, 0x0D, 0x02, [0x01, 0x02, mode, 0x00])));
+
+        Assert.Equal([preset], port.Capabilities.PerformancePresets);
+        Assert.Equal(
+            exposesAutomatic ? [FanMode.Automatic] : [],
+            port.Capabilities.FanModes);
+        Assert.DoesNotContain(FanMode.Maximum, port.Capabilities.FanModes);
+    }
+
+    [Fact]
+    public async Task IncompleteThermalPair_DoesNotExposePerformanceOrFanCapability()
+    {
+        await using var port = CreatePort(
+            new ScriptedSession(),
+            Catalog(Fixture(
+                ProductionBatteryPort.PerformanceBalancedFirstAction,
+                0x0D,
+                0x02,
+                [0x01, 0x01, 0x00, 0x00])));
+
+        Assert.Empty(port.Capabilities.PerformancePresets);
+        Assert.Empty(port.Capabilities.FanModes);
+    }
+
+    [Fact]
+    public async Task MaximumActionsAlone_NeverExposeMaximumCapability()
+    {
+        await using var port = CreatePort(
+            new ScriptedSession(),
+            Catalog(
+                Fixture(ProductionBatteryPort.FanMaximumStateFirstAction, 0x0D, 0x02, [0x01, 0x01, 0x00, 0x01]),
+                Fixture(ProductionBatteryPort.FanMaximumStateSecondAction, 0x0D, 0x02, [0x01, 0x02, 0x00, 0x01]),
+                Fixture(ProductionBatteryPort.FanMaximumSpeedFirstAction, 0x0D, 0x01, [0x01, 0x01, 0x36]),
+                Fixture(ProductionBatteryPort.FanMaximumSpeedSecondAction, 0x0D, 0x01, [0x01, 0x02, 0x36])));
+
+        Assert.Empty(port.Capabilities.PerformancePresets);
+        Assert.Empty(port.Capabilities.FanModes);
+    }
+
     [Fact]
     public async Task ThermalChannelMismatch_FailsClosedAfterTwoReads()
     {

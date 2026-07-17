@@ -314,14 +314,44 @@ internal sealed class ProductionBatteryPort : IProductionBatteryPort
         bool temporaryFullCharge = readEvidence.SupportsTemporaryFullChargeQuery
             && catalog.TryGet(TemporaryEnableAction, out _)
             && catalog.TryGet(TemporaryCancelAction, out _);
+
+        var performance = new HashSet<PerformancePreset>();
+        if (HasPair(catalog, PerformanceBalancedFirstAction, PerformanceBalancedSecondAction))
+        {
+            performance.Add(PerformancePreset.Balanced);
+        }
+
+        if (HasPair(catalog, PerformanceSilentFirstAction, PerformanceSilentSecondAction))
+        {
+            performance.Add(PerformancePreset.Silent);
+        }
+
+        if (HasPair(catalog, PerformanceBoostFirstAction, PerformanceBoostSecondAction))
+        {
+            performance.Add(PerformancePreset.Performance);
+        }
+
+        var fans = new HashSet<FanMode>();
+        if (performance.Contains(PerformancePreset.Balanced))
+        {
+            fans.Add(FanMode.Automatic);
+        }
+
         return new DeviceCapabilities(
-            new HashSet<PerformancePreset>(),
-            new HashSet<FanMode>(),
+            performance,
+            fans,
             new HashSet<LightingEffect>(),
             limits,
             protectionOff,
             SupportsTemporaryFullCharge: temporaryFullCharge);
     }
+
+    private static bool HasPair(
+        DeviceCommandCatalog catalog,
+        string firstAction,
+        string secondAction) =>
+        catalog.TryGet(firstAction, out _)
+        && catalog.TryGet(secondAction, out _);
 
     private static readonly (int Percent, string Action)[] ChargeLimitActions =
     [
