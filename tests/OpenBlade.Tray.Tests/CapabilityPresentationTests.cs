@@ -52,15 +52,21 @@ public sealed class CapabilityPresentationTests
                 batteryProtection.Ancestors().First(element => element.Name.LocalName == "Border"),
                 "Style"));
         Assert.Equal(
-            "{StaticResource SubSettingRowStyle}",
+            "{StaticResource SettingsRowStyle}",
             Attribute(
                 chargeLimit.Ancestors().First(element => element.Name.LocalName == "Border"),
                 "Style"));
         Assert.Equal(
-            "{StaticResource SubSettingLastRowStyle}",
+            "{StaticResource SettingsLastRowStyle}",
             Attribute(
                 temporaryFullCharge.Ancestors().First(element => element.Name.LocalName == "Border"),
                 "Style"));
+        XElement batteryExpander = NamedElement(document, "Expander", "BatteryProtectionExpander");
+        Assert.Equal("{StaticResource SettingsExpanderStyle}", Attribute(batteryExpander, "Style"));
+        Assert.Equal("True", Attribute(batteryExpander, "IsExpanded"));
+        Assert.Contains(batteryProtection, batteryExpander.Descendants());
+        Assert.Contains(chargeLimit, batteryExpander.Descendants());
+        Assert.Contains(temporaryFullCharge, batteryExpander.Descendants());
         List<XElement> dashboardElements = document.Descendants().ToList();
         Assert.True(
             dashboardElements.IndexOf(batteryProtection)
@@ -143,6 +149,7 @@ public sealed class CapabilityPresentationTests
             document.Descendants(),
             element => element.Name.LocalName == "Expander"
                 && Attribute(element, "AutomationProperties.Name") == "Troubleshooting details");
+        Assert.Equal("{StaticResource SettingsExpanderStyle}", Attribute(troubleshooting, "Style"));
         Assert.Contains(troubleshooting.Descendants(), element =>
             element.Name.LocalName == "TextBlock"
             && Attribute(element, "IsTextSelectionEnabled") == "True"

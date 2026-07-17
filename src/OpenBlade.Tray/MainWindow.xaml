@@ -44,15 +44,14 @@
                    BasedOn="{StaticResource SettingsRowStyle}">
                 <Setter Property="BorderThickness" Value="0" />
             </Style>
-            <Style x:Key="SubSettingRowStyle"
-                   TargetType="Border"
-                   BasedOn="{StaticResource SettingsRowStyle}">
-                <Setter Property="Padding" Value="32,12,16,12" />
-            </Style>
-            <Style x:Key="SubSettingLastRowStyle"
-                   TargetType="Border"
-                   BasedOn="{StaticResource SubSettingRowStyle}">
-                <Setter Property="BorderThickness" Value="0" />
+            <Style x:Key="SettingsExpanderStyle" TargetType="Expander">
+                <Setter Property="HorizontalAlignment" Value="Stretch" />
+                <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                <Setter Property="Background" Value="{ThemeResource CardBackgroundFillColorDefaultBrush}" />
+                <Setter Property="BorderBrush" Value="{ThemeResource CardStrokeColorDefaultBrush}" />
+                <Setter Property="BorderThickness" Value="1" />
+                <Setter Property="CornerRadius" Value="8" />
+                <Setter Property="Margin" Value="0,0,0,12" />
             </Style>
             <Style x:Key="CardTitleStyle"
                    TargetType="TextBlock"
@@ -283,8 +282,20 @@
                         </Grid>
 
                         <TextBlock Text="Battery" Style="{StaticResource SectionHeaderStyle}" />
-                        <Border Style="{StaticResource SettingsGroupStyle}">
-                            <StackPanel>
+                        <Expander x:Name="BatteryProtectionExpander"
+                                  Style="{StaticResource SettingsExpanderStyle}"
+                                  IsExpanded="True"
+                                  AutomationProperties.Name="Battery protection settings">
+                            <Expander.Header>
+                                <StackPanel Spacing="3" Margin="0,6,0,6">
+                                    <TextBlock Text="Battery protection" Style="{StaticResource CardTitleStyle}" />
+                                    <TextBlock Text="Help preserve battery health by limiting charging."
+                                               Style="{StaticResource SecondaryTextStyle}" />
+                                </StackPanel>
+                            </Expander.Header>
+                            <Border BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                                    BorderThickness="0,1,0,0">
+                                <StackPanel>
                             <Border Style="{StaticResource SettingsRowStyle}">
                                 <Grid ColumnSpacing="20">
                                     <Grid.ColumnDefinitions>
@@ -292,8 +303,8 @@
                                         <ColumnDefinition Width="Auto" />
                                     </Grid.ColumnDefinitions>
                                     <StackPanel Spacing="3" VerticalAlignment="Center">
-                                        <TextBlock Text="Battery protection" Style="{StaticResource CardTitleStyle}" />
-                                        <TextBlock Text="Limit charging to help preserve battery health."
+                                        <TextBlock Text="Use a charge limit" Style="{StaticResource CardTitleStyle}" />
+                                        <TextBlock Text="Turn the selected charge limit on or off."
                                                    Style="{StaticResource SecondaryTextStyle}" />
                                     </StackPanel>
                                     <ToggleSwitch x:Name="BatteryProtectionToggle"
@@ -308,7 +319,7 @@
                                                   Toggled="OnBatteryProtectionToggled" />
                                 </Grid>
                             </Border>
-                            <Border Style="{StaticResource SubSettingRowStyle}">
+                            <Border Style="{StaticResource SettingsRowStyle}">
                                 <Grid ColumnSpacing="20">
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="*" />
@@ -346,7 +357,7 @@
                                     </StackPanel>
                                 </Grid>
                             </Border>
-                            <Border Style="{StaticResource SubSettingLastRowStyle}">
+                            <Border Style="{StaticResource SettingsLastRowStyle}">
                                 <Grid ColumnSpacing="20">
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="*" />
@@ -365,8 +376,9 @@
                                             VerticalAlignment="Center" />
                                 </Grid>
                             </Border>
-                            </StackPanel>
-                        </Border>
+                                </StackPanel>
+                            </Border>
+                        </Expander>
                     </StackPanel>
                 </ScrollViewer>
 
@@ -621,21 +633,22 @@
                                 </Button>
                             </Grid>
                         </Border>
-                        <Expander HorizontalAlignment="Stretch"
-                                  HorizontalContentAlignment="Stretch"
-                                  Margin="0,0,0,12"
+                        <Expander Style="{StaticResource SettingsExpanderStyle}"
                                   AutomationProperties.Name="Troubleshooting details">
                             <Expander.Header>
-                                <StackPanel Spacing="3">
+                                <StackPanel Spacing="3" Margin="0,6,0,6">
                                     <TextBlock Text="Troubleshooting" Style="{StaticResource CardTitleStyle}" />
                                     <TextBlock Text="View service, device, and connection details."
                                                Style="{StaticResource SecondaryTextStyle}" />
                                 </StackPanel>
                             </Expander.Header>
-                            <TextBlock Text="{x:Bind ViewModel.TroubleshootingDetails, Mode=OneWay}"
-                                       Style="{StaticResource SecondaryTextStyle}"
-                                       IsTextSelectionEnabled="True"
-                                       Margin="16,10,44,16" />
+                            <Border BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                                    BorderThickness="0,1,0,0"
+                                    Padding="16,14,44,16">
+                                <TextBlock Text="{x:Bind ViewModel.TroubleshootingDetails, Mode=OneWay}"
+                                           Style="{StaticResource SecondaryTextStyle}"
+                                           IsTextSelectionEnabled="True" />
+                            </Border>
                         </Expander>
                     </StackPanel>
                 </ScrollViewer>
