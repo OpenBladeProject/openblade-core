@@ -122,9 +122,11 @@
                                         <TextBlock Text="{x:Bind ViewModel.ActivePowerSourceLabel, Mode=OneWay}"
                                                    Style="{StaticResource SecondaryTextStyle}"
                                                    VerticalAlignment="Center" />
-                                        <Border Background="{ThemeResource SubtleFillColorSecondaryBrush}"
+                                        <Border x:Name="ProfileStateBadge"
+                                                Background="{ThemeResource SubtleFillColorSecondaryBrush}"
                                                 CornerRadius="12"
-                                                Padding="10,3">
+                                                Padding="10,3"
+                                                VerticalAlignment="Center">
                                             <TextBlock Text="{x:Bind ViewModel.ProfileStateLabel, Mode=OneWay}"
                                                        Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                                                        Style="{StaticResource CaptionTextBlockStyle}" />
@@ -180,6 +182,14 @@
                                 </StackPanel>
                             </Grid>
                         </Border>
+
+                        <InfoBar x:Name="OperationErrorInfoBar"
+                                 IsOpen="{x:Bind ViewModel.HasOperationFeedback, Mode=OneWay}"
+                                 Message="{x:Bind ViewModel.OperationFeedbackMessage, Mode=OneWay}"
+                                 Severity="Error"
+                                 IsClosable="True"
+                                 Margin="0,0,0,12"
+                                 AutomationProperties.Name="Operation error" />
 
                         <Border Style="{StaticResource CardStyle}"
                                 Visibility="{x:Bind ViewModel.HasActiveChanges, Mode=OneWay}">
@@ -257,17 +267,6 @@
                             </Border>
                             </StackPanel>
                         </Border>
-
-                        <Grid MinHeight="28" Margin="4,0,4,2">
-                            <StackPanel Orientation="Horizontal"
-                                        Spacing="8"
-                                        Visibility="{x:Bind ViewModel.HasOperationFeedback, Mode=OneWay}">
-                                <SymbolIcon Symbol="Accept" />
-                                <TextBlock Text="{x:Bind ViewModel.OperationFeedbackMessage, Mode=OneWay}"
-                                           Style="{StaticResource SecondaryTextStyle}"
-                                           VerticalAlignment="Center" />
-                            </StackPanel>
-                        </Grid>
 
                         <TextBlock Text="Battery" Style="{StaticResource SectionHeaderStyle}" />
                         <Border Style="{StaticResource SettingsGroupStyle}">

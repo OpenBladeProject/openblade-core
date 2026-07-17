@@ -175,6 +175,16 @@ public sealed class CapabilityPresentationTests
             "Save logs and system details with sensitive information removed.",
             xaml,
             StringComparison.Ordinal);
+
+        XElement operationError = NamedElement(document, "InfoBar", "OperationErrorInfoBar");
+        Assert.Equal("Error", Attribute(operationError, "Severity"));
+        Assert.Equal("True", Attribute(operationError, "IsClosable"));
+        Assert.Contains(
+            "ViewModel.HasOperationFeedback",
+            Attribute(operationError, "IsOpen") ?? string.Empty,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain(document.Descendants(), element =>
+            element.Name.LocalName == "SymbolIcon" && Attribute(element, "Symbol") == "Accept");
     }
 
     [Fact]
@@ -187,6 +197,8 @@ public sealed class CapabilityPresentationTests
         _ = NamedElement(document, "ColumnDefinition", "ProfilesSecondColumn");
         _ = NamedElement(document, "Border", "BatteryProfileCard");
         _ = NamedElement(document, "Grid", "Root");
+        XElement profileStateBadge = NamedElement(document, "Border", "ProfileStateBadge");
+        Assert.Equal("Center", Attribute(profileStateBadge, "VerticalAlignment"));
         foreach (XElement activeBadgeText in document.Descendants().Where(element =>
                      element.Name.LocalName == "TextBlock"
                      && Attribute(element, "Text") == "Active"))

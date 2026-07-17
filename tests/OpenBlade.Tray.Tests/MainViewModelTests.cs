@@ -1110,6 +1110,8 @@ public sealed class MainViewModelTests
             .ExecuteAsync(PerformancePreset.Performance);
 
         Assert.Equal(OverrideLifetime.Persistent, client.PerformanceOverride!.Lifetime);
+        Assert.Empty(viewModel.OperationFeedbackMessage);
+        Assert.False(viewModel.HasOperationFeedback);
     }
 
     [Fact]

@@ -2075,20 +2075,6 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         {
             return string.Empty;
         }
-        if (message.Contains("Preparing diagnostic", StringComparison.OrdinalIgnoreCase)
-            || message.Contains("diagnostic", StringComparison.OrdinalIgnoreCase)
-                && message.Contains("saved", StringComparison.OrdinalIgnoreCase))
-        {
-            return message;
-        }
-        if (message.Contains("already", StringComparison.OrdinalIgnoreCase))
-        {
-            return "That setting is already active.";
-        }
-        if (message.Contains("overrides cleared", StringComparison.OrdinalIgnoreCase))
-        {
-            return "Profile settings restored.";
-        }
         if (message.Contains("without hardware", StringComparison.OrdinalIgnoreCase)
             || message.Contains("not applied", StringComparison.OrdinalIgnoreCase))
         {
@@ -2100,17 +2086,12 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         {
             return "OpenBlade couldn’t complete that action. Check Troubleshooting for details.";
         }
-        return "Change applied.";
+        return string.Empty;
     }
 
     private static string FormatOperationResult(ControlOperationResult result) => result.Status switch
     {
-        ControlOperationStatus.Applied => result.Message.Contains(
-            "already",
-            StringComparison.OrdinalIgnoreCase)
-                ? "That setting is already active."
-                : "Change applied.",
-        ControlOperationStatus.Stored => "Change saved. It will apply when the laptop is ready.",
+        ControlOperationStatus.Applied or ControlOperationStatus.Stored => string.Empty,
         ControlOperationStatus.Blocked => "OpenBlade saved the change, but the laptop has not applied it.",
         _ => "OpenBlade couldn’t complete that action. Check Troubleshooting for details.",
     };
