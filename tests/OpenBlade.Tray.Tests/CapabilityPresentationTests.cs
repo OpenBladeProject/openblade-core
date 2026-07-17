@@ -60,8 +60,10 @@ public sealed class CapabilityPresentationTests
             "Live fan and battery readings",
             "Tray icon hover label",
             "Battery power uses the live readings setting above.",
-            "Until the power source changes",
-            "Until I reset them",
+            "Performance and fans",
+            "Keep selected settings",
+            "Reset when the power source changes",
+            "Keep until I reset them",
             "Use profile settings",
             "Troubleshooting",
         ];
@@ -77,6 +79,13 @@ public sealed class CapabilityPresentationTests
         Assert.Contains("<Grid.Resources>", xaml, StringComparison.Ordinal);
         Assert.Contains("NavigationViewDefaultPaneBackground", xaml, StringComparison.Ordinal);
         Assert.Contains("NavigationViewContentBackground", xaml, StringComparison.Ordinal);
+        Assert.Contains(
+            "<Thickness x:Key=\"NavigationViewContentGridBorderThickness\">0</Thickness>",
+            xaml,
+            StringComparison.Ordinal);
+        Assert.Contains("<Button.Flyout>", xaml, StringComparison.Ordinal);
+        Assert.Contains("AutomationProperties.Name=\"Show warning details\"", xaml, StringComparison.Ordinal);
+        Assert.DoesNotContain("ViewModel.ShouldExpandAttention", xaml, StringComparison.Ordinal);
         Assert.Contains("HorizontalContentAlignment=\"Stretch\"", xaml, StringComparison.Ordinal);
         Assert.DoesNotContain("MaxWidth=\"760\"", xaml, StringComparison.Ordinal);
         Assert.Contains("DashboardFanModeSelector.SelectedItem", xaml, StringComparison.Ordinal);
@@ -93,9 +102,10 @@ public sealed class CapabilityPresentationTests
         Assert.Contains("<VisualState x:Name=\"NarrowWindow\">", xaml, StringComparison.Ordinal);
         Assert.Contains("<VisualState x:Name=\"WideWindow\">", xaml, StringComparison.Ordinal);
         Assert.Contains("<AdaptiveTrigger MinWindowWidth=\"720\" />", xaml, StringComparison.Ordinal);
+        Assert.Contains("x:Name=\"HeroReadings\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("Grid.Column=\"1\"", xaml, StringComparison.Ordinal);
         foreach (string responsiveTarget in new[]
         {
-            "HeroReadings.(Grid.Column)",
             "FanActions.(Grid.Column)",
             "BalancedChoice.(Grid.Column)",
             "PerformanceChoice.(Grid.Column)",

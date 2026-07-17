@@ -18,10 +18,6 @@
                         <AdaptiveTrigger MinWindowWidth="720" />
                     </VisualState.StateTriggers>
                     <VisualState.Setters>
-                        <Setter Target="HeroReadingsColumn.Width" Value="Auto" />
-                        <Setter Target="HeroReadings.(Grid.Row)" Value="0" />
-                        <Setter Target="HeroReadings.(Grid.Column)" Value="1" />
-                        <Setter Target="HeroReadings.HorizontalAlignment" Value="Right" />
                         <Setter Target="FanActionsColumn.Width" Value="Auto" />
                         <Setter Target="FanActions.(Grid.Row)" Value="0" />
                         <Setter Target="FanActions.(Grid.Column)" Value="1" />
@@ -45,6 +41,7 @@
             <SolidColorBrush x:Key="NavigationViewDefaultPaneBackground" Color="Transparent" />
             <SolidColorBrush x:Key="NavigationViewExpandedPaneBackground" Color="Transparent" />
             <SolidColorBrush x:Key="NavigationViewContentBackground" Color="Transparent" />
+            <Thickness x:Key="NavigationViewContentGridBorderThickness">0</Thickness>
             <local:Int32DoubleConverter x:Key="Int32Double" />
             <local:BooleanNegationToVisibilityConverter x:Key="BooleanNegationToVisibility" />
             <Style x:Key="PageTitleStyle" TargetType="TextBlock">
@@ -116,21 +113,13 @@
                             <Grid ColumnSpacing="20" RowSpacing="12">
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="*" />
-                                    <ColumnDefinition x:Name="HeroReadingsColumn" Width="0" />
+                                    <ColumnDefinition Width="Auto" />
                                 </Grid.ColumnDefinitions>
-                                <Grid.RowDefinitions>
-                                    <RowDefinition Height="Auto" />
-                                    <RowDefinition Height="Auto" />
-                                </Grid.RowDefinitions>
-                                <StackPanel Spacing="5">
-                                    <TextBlock Text="{x:Bind ViewModel.ActivePowerSourceLabel, Mode=OneWay}"
-                                               Style="{StaticResource SecondaryTextStyle}" />
-                                    <TextBlock Text="{x:Bind ViewModel.ActivePerformanceLabel, Mode=OneWay}"
-                                               FontSize="32"
-                                               FontWeight="SemiBold" />
-                                    <TextBlock Text="{x:Bind ViewModel.ActiveFanModeLabel, Mode=OneWay}"
-                                               FontSize="16" />
-                                    <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,10,0,0">
+                                <StackPanel Spacing="6">
+                                    <StackPanel Orientation="Horizontal" Spacing="8">
+                                        <TextBlock Text="{x:Bind ViewModel.ActivePowerSourceLabel, Mode=OneWay}"
+                                                   Style="{StaticResource SecondaryTextStyle}"
+                                                   VerticalAlignment="Center" />
                                         <Border Background="{ThemeResource AccentFillColorDefaultBrush}"
                                                 CornerRadius="12"
                                                 Padding="10,3">
@@ -138,44 +127,78 @@
                                                        Foreground="{ThemeResource TextOnAccentFillColorPrimaryBrush}"
                                                        FontSize="12" />
                                         </Border>
+                                    </StackPanel>
+                                    <TextBlock Text="{x:Bind ViewModel.ActivePerformanceLabel, Mode=OneWay}"
+                                               FontSize="32"
+                                               FontWeight="SemiBold" />
+                                    <StackPanel Orientation="Horizontal" Spacing="14">
+                                        <TextBlock Text="{x:Bind ViewModel.ActiveFanModeLabel, Mode=OneWay}"
+                                                   FontSize="16" />
                                         <TextBlock Text="{x:Bind ViewModel.CurrentBatterySettingLabel, Mode=OneWay}"
                                                    Style="{StaticResource SecondaryTextStyle}"
                                                    VerticalAlignment="Center" />
                                     </StackPanel>
                                 </StackPanel>
                                 <StackPanel x:Name="HeroReadings"
-                                            Grid.Row="1"
-                                            Spacing="5"
-                                            HorizontalAlignment="Left"
+                                            Grid.Column="1"
+                                            Spacing="7"
+                                            HorizontalAlignment="Right"
                                             VerticalAlignment="Center"
                                             Visibility="{x:Bind ViewModel.LiveReadingsEnabled, Mode=OneWay}">
+                                    <TextBlock Text="Live readings"
+                                               Style="{StaticResource SecondaryTextStyle}" />
                                     <TextBlock Text="{x:Bind ViewModel.BatteryPowerFlowLabel, Mode=OneWay}"
-                                               Style="{StaticResource CardTitleStyle}"
-                                               HorizontalAlignment="Right" />
-                                    <TextBlock Text="{x:Bind ViewModel.Fan1RpmLabel, Mode=OneWay}"
-                                               Style="{StaticResource SecondaryTextStyle}"
-                                               HorizontalAlignment="Right" />
-                                    <TextBlock Text="{x:Bind ViewModel.Fan2RpmLabel, Mode=OneWay}"
-                                               Style="{StaticResource SecondaryTextStyle}"
-                                               HorizontalAlignment="Right" />
+                                               Style="{StaticResource CardTitleStyle}" />
+                                    <StackPanel Orientation="Horizontal" Spacing="16">
+                                        <TextBlock Text="{x:Bind ViewModel.Fan1RpmLabel, Mode=OneWay}"
+                                                   Style="{StaticResource SecondaryTextStyle}" />
+                                        <TextBlock Text="{x:Bind ViewModel.Fan2RpmLabel, Mode=OneWay}"
+                                                   Style="{StaticResource SecondaryTextStyle}" />
+                                    </StackPanel>
                                 </StackPanel>
                             </Grid>
                         </Border>
 
-                        <Expander Visibility="{x:Bind ViewModel.HasAttention, Mode=OneWay}"
-                                  IsExpanded="{x:Bind ViewModel.ShouldExpandAttention, Mode=OneWay}"
-                                  Margin="0,0,0,12">
-                            <Expander.Header>
-                                <StackPanel Orientation="Horizontal" Spacing="10">
-                                    <FontIcon Glyph="&#xE7BA;" Foreground="{ThemeResource SystemFillColorCautionBrush}" />
-                                    <TextBlock Text="{x:Bind ViewModel.AttentionSummary, Mode=OneWay}"
-                                               FontWeight="SemiBold" />
-                                </StackPanel>
-                            </Expander.Header>
-                            <TextBlock Text="{x:Bind ViewModel.AttentionDetails, Mode=OneWay}"
-                                       Style="{StaticResource SecondaryTextStyle}"
-                                       Margin="8,4,8,12" />
-                        </Expander>
+                        <Button Visibility="{x:Bind ViewModel.HasAttention, Mode=OneWay}"
+                                HorizontalAlignment="Stretch"
+                                HorizontalContentAlignment="Stretch"
+                                Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                                BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                                BorderThickness="1"
+                                CornerRadius="6"
+                                Padding="12,10"
+                                Margin="0,0,0,12"
+                                AutomationProperties.Name="Show warning details">
+                            <Button.Flyout>
+                                <Flyout Placement="BottomEdgeAlignedLeft">
+                                    <StackPanel MaxWidth="420" Spacing="8">
+                                        <TextBlock Text="{x:Bind ViewModel.AttentionSummary, Mode=OneWay}"
+                                                   FontWeight="SemiBold" />
+                                        <TextBlock Text="{x:Bind ViewModel.AttentionDetails, Mode=OneWay}"
+                                                   Style="{StaticResource SecondaryTextStyle}" />
+                                    </StackPanel>
+                                </Flyout>
+                            </Button.Flyout>
+                            <Grid ColumnSpacing="10">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <FontIcon Glyph="&#xE7BA;"
+                                          Foreground="{ThemeResource SystemFillColorCautionBrush}"
+                                          VerticalAlignment="Center" />
+                                <TextBlock Grid.Column="1"
+                                           Text="{x:Bind ViewModel.AttentionSummary, Mode=OneWay}"
+                                           FontWeight="SemiBold"
+                                           TextTrimming="CharacterEllipsis"
+                                           VerticalAlignment="Center" />
+                                <FontIcon Grid.Column="2"
+                                          Glyph="&#xE70D;"
+                                          FontSize="12"
+                                          VerticalAlignment="Center" />
+                            </Grid>
+                        </Button>
 
                         <Border Background="{ThemeResource SubtleFillColorSecondaryBrush}"
                                 CornerRadius="6"
@@ -209,7 +232,7 @@
                             </Grid>
                         </Border>
 
-                        <TextBlock Text="Quick changes" Style="{StaticResource SectionHeaderStyle}" />
+                        <TextBlock Text="Performance and fans" Style="{StaticResource SectionHeaderStyle}" />
                         <Border Style="{StaticResource CardStyle}"
                                 Visibility="{x:Bind ViewModel.IsPerformanceVisible, Mode=OneWay}">
                             <StackPanel Spacing="12">
@@ -426,9 +449,9 @@
                         <TextBlock Text="Behavior" Style="{StaticResource SectionHeaderStyle}" />
                         <Border Style="{StaticResource CardStyle}">
                             <StackPanel Spacing="16">
-                                <ToggleSwitch Header="Quick changes"
-                                              OffContent="Until the power source changes"
-                                              OnContent="Until I reset them"
+                                <ToggleSwitch Header="Keep selected settings"
+                                              OffContent="Reset when the power source changes"
+                                              OnContent="Keep until I reset them"
                                               IsOn="{x:Bind ViewModel.KeepManualChangesUntilCleared, Mode=TwoWay}" />
                                 <ToggleSwitch Header="Live fan and battery readings"
                                               OffContent="Off"

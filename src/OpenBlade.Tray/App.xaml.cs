@@ -28,9 +28,7 @@ public partial class App : Microsoft.UI.Xaml.Application
             ?? throw new InvalidOperationException("Tray executable path is unavailable.");
         string userSid = WindowsIdentity.GetCurrent().User?.Value
             ?? throw new InvalidOperationException("Current user SID is unavailable.");
-        TrayInstanceEndpoint instanceEndpoint = TrayInstanceEndpoint.Create(
-            executablePath,
-            userSid);
+        TrayInstanceEndpoint instanceEndpoint = TrayInstanceEndpoint.Create(userSid);
         if (!TrayInstanceCoordinator.TryStart(
             instanceEndpoint,
             () => Enqueue(ShowMainWindow),

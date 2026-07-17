@@ -5,36 +5,25 @@ namespace OpenBlade.Tray.Tests;
 public sealed class TrayInstanceCoordinatorTests
 {
     [Fact]
-    public void Endpoint_IsStableForSameUserAndPathCasing()
+    public void Endpoint_IsStableForSameUserAcrossBuildLocations()
     {
-        TrayInstanceEndpoint first = TrayInstanceEndpoint.Create(
-            @"C:\Program Files\OpenBlade\OpenBlade.Tray.exe",
-            "S-1-5-21-1000");
-        TrayInstanceEndpoint second = TrayInstanceEndpoint.Create(
-            @"c:\program files\openblade\openblade.tray.exe",
-            "S-1-5-21-1000");
+        TrayInstanceEndpoint installed = TrayInstanceEndpoint.Create("S-1-5-21-1000");
+        TrayInstanceEndpoint development = TrayInstanceEndpoint.Create("S-1-5-21-1000");
 
-        Assert.Equal(first, second);
-        Assert.StartsWith(@"Local\OpenBlade.Tray.Instance.", first.InstanceEventName, StringComparison.Ordinal);
+        Assert.Equal(installed, development);
+        Assert.Equal(
+            @"Local\OpenBlade.Tray.Instance.S-1-5-21-1000",
+            installed.InstanceEventName);
     }
 
     [Fact]
-    public void Endpoint_DiffersAcrossUsersAndPortableCopies()
+    public void Endpoint_DiffersAcrossUsers()
     {
-        TrayInstanceEndpoint baseline = TrayInstanceEndpoint.Create(
-            @"C:\Program Files\OpenBlade\OpenBlade.Tray.exe",
-            "S-1-5-21-1000");
+        TrayInstanceEndpoint baseline = TrayInstanceEndpoint.Create("S-1-5-21-1000");
 
         Assert.NotEqual(
             baseline,
-            TrayInstanceEndpoint.Create(
-                @"C:\Program Files\OpenBlade\OpenBlade.Tray.exe",
-                "S-1-5-21-2000"));
-        Assert.NotEqual(
-            baseline,
-            TrayInstanceEndpoint.Create(
-                @"D:\Portable\OpenBlade.Tray.exe",
-                "S-1-5-21-1000"));
+            TrayInstanceEndpoint.Create("S-1-5-21-2000"));
     }
 
     [Fact]
@@ -63,7 +52,6 @@ public sealed class TrayInstanceCoordinatorTests
         await next!.DisposeAsync();
     }
 
-    private static TrayInstanceEndpoint UniqueEndpoint() => TrayInstanceEndpoint.Create(
-        $@"C:\OpenBlade.Tests\{Guid.NewGuid():N}\OpenBlade.Tray.exe",
-        "S-1-5-21-TEST");
+    private static TrayInstanceEndpoint UniqueEndpoint() =>
+        TrayInstanceEndpoint.Create($"S-1-5-21-TEST-{Guid.NewGuid():N}");
 }

@@ -429,8 +429,6 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         || HasControllerDetectionWarning
         || HasExternalChanges;
 
-    public bool ShouldExpandAttention => !IsConnected || IsReadOnly;
-
     public string AttentionSummary
     {
         get
@@ -2056,7 +2054,6 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     {
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ProfileStateLabel)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasAttention)));
-        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ShouldExpandAttention)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(AttentionSummary)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(AttentionDetails)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(TroubleshootingDetails)));

@@ -1,26 +1,12 @@
-using System.Security.Cryptography;
-using System.Text;
-using System.IO;
-
 namespace OpenBlade.Tray;
 
 public sealed record TrayInstanceEndpoint(string InstanceEventName)
 {
-    public static TrayInstanceEndpoint Create(string executablePath, string userSid)
+    public static TrayInstanceEndpoint Create(string userSid)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(executablePath);
         ArgumentException.ThrowIfNullOrWhiteSpace(userSid);
-        if (!Path.IsPathFullyQualified(executablePath))
-        {
-            throw new ArgumentException(
-                "Tray executable path must be fully qualified.",
-                nameof(executablePath));
-        }
-
-        string identity = $"{Path.GetFullPath(executablePath).ToUpperInvariant()}\n{userSid}";
-        byte[] hash = SHA256.HashData(Encoding.UTF8.GetBytes(identity));
         return new TrayInstanceEndpoint(
-            $@"Local\OpenBlade.Tray.Instance.{Convert.ToHexString(hash.AsSpan(0, 16))}");
+            $@"Local\OpenBlade.Tray.Instance.{userSid}");
     }
 }
 
