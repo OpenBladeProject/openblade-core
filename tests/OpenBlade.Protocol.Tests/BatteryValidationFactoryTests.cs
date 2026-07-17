@@ -512,6 +512,29 @@ public sealed class BatteryValidationFactoryTests
     }
 
     [Fact]
+    public async Task CreateWindowsPerformanceFanDiscriminatorQuery_IsAdvisoryWhenControllerIsPresent()
+    {
+        var io = new SuccessfulQueryIo();
+        IPerformanceFanDiscriminatorQueryRunner runner =
+            BatteryValidationFactory.CreateWindowsPerformanceFanDiscriminatorQuery(
+                new ExactRegistryValueSource(),
+                new ExactPlatformEvidenceSource(),
+                new ControllerProcessSource(),
+                new EmptyServiceSource(),
+                new ExactHidCandidateNative(),
+                io,
+                TimeProvider.System,
+                TimeSpan.FromSeconds(3),
+                TimeSpan.FromSeconds(5));
+
+        HidSessionResult<PerformanceFanDiscriminatorSnapshot> result =
+            await runner.RunAsync(default);
+
+        Assert.NotEqual(HidSessionFailureKind.ConflictBlocked, result.Failure);
+        Assert.True(io.CallCount > 0);
+    }
+
+    [Fact]
     public async Task CreateWindowsProtectionOffValidation_RemainsStrictWhenControllerIsPresent()
     {
         IProtectionOffValidationRunFactory factory =

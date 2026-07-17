@@ -7,6 +7,8 @@ public sealed class PerformanceFanRefreshEvidenceTests
 {
     private const string CaptureId = "performance-fan-state-refresh-negative";
     private const string CaptureHash = "8D323555E7CF173E41B0E7AFB3690D395815C4430378A4DD7B229183F836C499";
+    private const string FixedHydrationCaptureId = "fan-fixed-hydration-negative";
+    private const string FixedHydrationCaptureHash = "2CA5ED0700028006E6EEFADEC3DA8D447A6DD645DD1F1CCE358882550C4EDA7F";
 
     [Fact]
     public void Annotation_ContainsOnlySanitizedUiCorrelationTimestamps()
@@ -143,6 +145,62 @@ public sealed class PerformanceFanRefreshEvidenceTests
         Assert.False(TrustedFixtureHashRegistry.Production.Contains(Convert.FromHexString(CaptureHash)));
     }
 
+    [Fact]
+    public void Evidence_RecordsFixedHydrationCacheNegativeWithoutAdmission()
+    {
+        using JsonDocument document = LoadEvidence();
+        JsonElement root = document.RootElement;
+        JsonElement capture = root.GetProperty("captureSources")
+            .EnumerateArray()
+            .Single(source => source.GetProperty("id").GetString() == FixedHydrationCaptureId);
+        JsonElement evidence = root.GetProperty("fanFixedHydrationEvidence");
+
+        Assert.Equal(FixedHydrationCaptureHash, capture.GetProperty("sha256").GetString());
+        Assert.Equal(265407, capture.GetProperty("bytes").GetInt32());
+        Assert.Equal(2606, capture.GetProperty("frameCount").GetInt32());
+        Assert.Equal(FixedHydrationCaptureId, evidence.GetProperty("capture").GetString());
+        Assert.Equal(0, evidence.GetProperty("candidateCommandOccurrences").GetInt32());
+        Assert.False(evidence.GetProperty("conclusion")
+            .GetProperty("performanceFanProductionAdmissionAllowed").GetBoolean());
+        Assert.False(TrustedFixtureHashRegistry.Production.Contains(
+            Convert.FromHexString(FixedHydrationCaptureHash)));
+    }
+
+    [Fact]
+    public void DirectQueryFixture_DisqualifiesCandidatesAcrossFourKnownStates()
+    {
+        using JsonDocument fixture = JsonDocument.Parse(File.ReadAllText(DirectQueryFixturePath()));
+        JsonElement root = fixture.RootElement;
+        JsonElement[] runs = root.GetProperty("runs").EnumerateArray().ToArray();
+
+        Assert.Equal(
+            ["Balanced+Auto", "Silent+Auto", "Performance+Auto", "Balanced+Fixed5400"],
+            runs.Select(run => run.GetProperty("condition").GetString()!).ToArray());
+        Assert.All(runs, run => Assert.True(run.GetProperty("visuallyConfirmed").GetBoolean()));
+
+        string baseline = runs[0].GetProperty("responses").GetRawText();
+        Assert.All(runs.Skip(1), run => Assert.Equal(
+            baseline,
+            run.GetProperty("responses").GetRawText()));
+        Assert.All(runs.SelectMany(run => run.GetProperty("responses").EnumerateArray()),
+            response => Assert.Equal("02", response.GetProperty("expectedStatusHex").GetString()));
+
+        JsonElement conclusion = root.GetProperty("conclusion");
+        Assert.True(conclusion.GetProperty("allResponsesIdentical").GetBoolean());
+        Assert.False(conclusion.GetProperty("performanceReadbackEstablished").GetBoolean());
+        Assert.False(conclusion.GetProperty("fanModeReadbackEstablished").GetBoolean());
+        Assert.False(conclusion.GetProperty("performanceFanProductionAdmissionAllowed").GetBoolean());
+
+        using JsonDocument evidenceDocument = LoadEvidence();
+        JsonElement evidence = evidenceDocument.RootElement
+            .GetProperty("performanceFanDirectQueryEvidence");
+        Assert.True(evidence.GetProperty("readOnly").GetBoolean());
+        Assert.False(evidence.GetProperty("conclusion")
+            .GetProperty("performanceFanProductionAdmissionAllowed").GetBoolean());
+        Assert.False(evidence.GetProperty("conclusion")
+            .GetProperty("typedMutationHarnessAllowed").GetBoolean());
+    }
+
     private static JsonDocument LoadEvidence() => JsonDocument.Parse(File.ReadAllText(EvidencePath()));
 
     private static int[] Frames(JsonElement element, string propertyName) => element
@@ -156,6 +214,11 @@ public sealed class PerformanceFanRefreshEvidenceTests
 
     private static string AnnotationPath() => RepositoryFile(
         "captures", "annotations", "2026-07-14-performance-fan-state-refresh-negative.json");
+
+    private static string DirectQueryFixturePath() => RepositoryFile(
+        "captures",
+        "decoded",
+        "rz09-0581-pid-02e0-bios-3.01-performance-fan-discriminator-negative.json");
 
     private static string RepositoryFile(params string[] relativeSegments)
     {

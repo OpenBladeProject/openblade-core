@@ -80,31 +80,19 @@ USB device addresses are session-local and can change after reconnect or reboot.
 
 ## Performance and fan readback discriminator
 
-The existing no-mutation Performance-page capture contains successful,
-query-shaped responses for `0D/80`, `0D/89`, `0D/8A`, `0D/8B`, `0D/8E`, and
-`0D/8F`. They are evidence candidates only: the capture contains one known UI
-state (`Balanced` plus `Auto`), so no response field can yet be assigned to a
-performance preset or fan mode.
+The existing no-mutation Performance-page capture exposed query-shaped
+responses for `0D/80`, `0D/89`, `0D/8A`, `0D/8B`, `0D/8E`, and `0D/8F`.
+The fixed read-only discriminator subsequently queried all six commands while
+Synapse visibly held `Balanced+Auto`, `Silent+Auto`, `Performance+Auto`, and
+`Balanced+Fixed5400`. Every response was identical in all four states, so these
+commands are now disqualified as performance or fan-mode readback.
 
-Collect four isolated hydration captures with Synapse as the state oracle:
-
-1. `Balanced` plus `Auto`.
-2. `Silent` plus `Auto`.
-3. `Performance` plus `Auto`.
-4. `Balanced` plus `Maximum`.
-
-For each capture, establish the state in Synapse before starting USBPcap,
-navigate away from the Performance page, start capture, enter the Performance
-page without changing a control, wait at least 10 seconds, navigate away and
-back once, wait another 10 seconds, then stop capture with the owned-session
-helper. Restore `Balanced` plus `Auto` after the fourth capture.
-
-Compare only successful device response payloads for identical requests to the
-candidate commands. A field that changes only across the first three captures
-is a performance-readback candidate. A field that changes only between the
-first and fourth captures is a fan-mode-readback candidate. Cross-capture
-variation identifies a candidate; production admission still requires typed
-OpenBlade apply, a fresh independent query, matching readback, and restoration.
+Do not repeat ordinary page-navigation captures or assign semantics to these
+responses. The only remaining passive discovery experiment is a cold Synapse
+UI startup capture, which may reveal a different query used only during initial
+cache hydration. Any new command remains untrusted until comparative known-state
+captures and a typed apply/readback/restore cycle succeed. Until then,
+performance and fan-mode production capabilities remain empty.
 
 For lighting, perform the same no-mutation page-hydration comparison with two
 pre-established brightness values. Existing setter responses are same-

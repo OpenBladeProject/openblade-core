@@ -89,6 +89,15 @@
       "lastEpoch": "1784084361.799563000"
     },
     {
+      "id": "fan-fixed-hydration-negative",
+      "fileName": "openblade-fan-balanced-maximum-hydration-20260716-191400.pcap",
+      "sha256": "2CA5ED0700028006E6EEFADEC3DA8D447A6DD645DD1F1CCE358882550C4EDA7F",
+      "bytes": 265407,
+      "frameCount": 2606,
+      "firstEpoch": "1784254423.857195000",
+      "lastEpoch": "1784254640.268310000"
+    },
+    {
       "id": "battery-query-sequence-one-second-negative",
       "fileName": "openblade-battery-query-sequence-20260714.pcap",
       "sha256": "83D9C6BDFC6FA757FDF93E431C027F741C2F7172F1A6D3493B8BDA95CB0CCA3D",
@@ -607,6 +616,46 @@
       "performanceFanProductionAdmissionAllowed": false,
       "typedMutationHarnessAllowed": false,
       "reason": "Fresh state-bearing high-bit 0D responses were observed in this capture with a single Balanced+Auto state, but no comparative known-state capture assigns any field to performance or fan mode. They cannot yet establish baseline, post-apply readback, or restoration for production admission."
+    }
+  },
+  "fanFixedHydrationEvidence": {
+    "capture": "fan-fixed-hydration-negative",
+    "condition": {
+      "performance": "Balanced",
+      "fanMode": "Fixed Fan Speed",
+      "targetRpm": 5400,
+      "userInitiatedSettingMutationDuringCapture": false
+    },
+    "candidateCommands": ["0D/8E", "0D/8F", "0D/80", "0D/89", "0D/8B", "0D/8A"],
+    "candidateCommandOccurrences": 0,
+    "observedTraffic": {
+      "fanRpm0D_88": {
+        "requestCount": 299,
+        "responseCount": 300,
+        "observedRpmRange": "4700-5300",
+        "semantic": "fan-rpm-only"
+      },
+      "otherQueries": ["07/92", "07/8F"]
+    },
+    "conclusion": {
+      "fanModeReadbackEstablished": false,
+      "performanceFanProductionAdmissionAllowed": false,
+      "reason": "The fixed-5400 Performance-page hydration capture contained none of the six candidate state queries, so it cannot discriminate fan mode."
+    }
+  },
+  "performanceFanDirectQueryEvidence": {
+    "fixtureFile": "rz09-0581-pid-02e0-bios-3.01-performance-fan-discriminator-negative.json",
+    "reader": "OpenBlade.Capture query-performance-fan-discriminator",
+    "readOnly": true,
+    "states": ["Balanced+Auto", "Silent+Auto", "Performance+Auto", "Balanced+Fixed5400"],
+    "commands": ["0D/8E", "0D/8F", "0D/80", "0D/89", "0D/8B", "0D/8A"],
+    "allResponsesIdentical": true,
+    "conclusion": {
+      "performanceReadbackEstablished": false,
+      "fanModeReadbackEstablished": false,
+      "performanceFanProductionAdmissionAllowed": false,
+      "typedMutationHarnessAllowed": false,
+      "reason": "Every fixed read-only response was identical across the three performance presets and Auto versus Fixed 5400 fan mode."
     }
   },
   "batteryQuerySequenceEvidence": {

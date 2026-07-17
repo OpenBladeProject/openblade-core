@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "captureWindowUtc": {
+    "firstPacket": "2026-07-17T02:13:43.857195Z",
+    "lastPacket": "2026-07-17T02:17:20.268310Z"
+  },
+  "condition": {
+    "performance": "Balanced",
+    "fanMode": "Fixed Fan Speed",
+    "targetRpm": 5400,
+    "visuallyConfirmed": true
+  },
+  "uiActions": [
+    "Entered the Performance page without changing a setting",
+    "Waited more than ten seconds",
+    "Navigated away and returned once without changing a setting",
+    "Waited more than ten seconds before ending the capture"
+  ]
+}
