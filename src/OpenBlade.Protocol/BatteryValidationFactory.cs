@@ -90,6 +90,23 @@ public static class BatteryValidationFactory
             DefaultCleanupDrainTimeout);
     }
 
+    public static IPerformanceFanSetterValidationRunner
+        CreateWindowsPerformanceFanSetterValidation()
+    {
+        var native = new WindowsHidNative();
+        var registry = new WindowsRegistryValueSource();
+        return CreateWindowsPerformanceFanSetterValidation(
+            registry,
+            new RuntimeWindowsPlatformEvidenceSource(registry),
+            new RunningProcessSource(),
+            new WindowsServiceSource(),
+            native,
+            new OverlappedFeatureOperation(native),
+            TimeProvider.System,
+            DefaultExchangeTimeout,
+            DefaultCleanupDrainTimeout);
+    }
+
     public static IProtectionOffValidationRunFactory CreateWindowsProtectionOffValidation()
     {
         var native = new WindowsHidNative();
@@ -360,6 +377,36 @@ public static class BatteryValidationFactory
             exchangeTimeout,
             ControllerExclusivityPolicy.Advisory);
         return new PerformanceFanDiscriminatorQueryRunner(
+            static () => new ValidationRunContext(),
+            actorFactory,
+            timeProvider,
+            exchangeTimeout,
+            cleanupDrainTimeout);
+    }
+
+    internal static IPerformanceFanSetterValidationRunner
+        CreateWindowsPerformanceFanSetterValidation(
+            IRegistryValueSource registry,
+            IWindowsPlatformEvidenceSource platform,
+            IRunningProcessSource processSource,
+            IWindowsServiceSource serviceSource,
+            IHidCandidateNative native,
+            IHidFeatureIo featureIo,
+            TimeProvider timeProvider,
+            TimeSpan exchangeTimeout,
+            TimeSpan cleanupDrainTimeout)
+    {
+        ValidationActorFactory actorFactory = CreateActorFactory(
+            registry,
+            platform,
+            processSource,
+            serviceSource,
+            native,
+            featureIo,
+            timeProvider,
+            exchangeTimeout,
+            ControllerExclusivityPolicy.Advisory);
+        return new PerformanceFanSetterValidationRunner(
             static () => new ValidationRunContext(),
             actorFactory,
             timeProvider,

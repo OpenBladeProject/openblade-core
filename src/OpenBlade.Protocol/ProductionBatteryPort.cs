@@ -130,6 +130,54 @@ internal sealed class ProductionBatteryPort : IProductionBatteryPort
         }
     }
 
+    public async Task<ProductionPerformanceFanState> QueryPerformanceFanStateAsync(
+        CancellationToken cancellationToken)
+    {
+        await EnterAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            EnsureUsable();
+            ReadOnlyMemory<byte> first = await QueryThermalChannelAsync(
+                ThermalChannel.First,
+                cancellationToken).ConfigureAwait(false);
+            ReadOnlyMemory<byte> second = await QueryThermalChannelAsync(
+                ThermalChannel.Second,
+                cancellationToken).ConfigureAwait(false);
+
+            if (!ThermalModeProtocol.TryDecodeMatchingPair(
+                    first.Span,
+                    second.Span,
+                    out ThermalModeState state))
+            {
+                poisoned = true;
+                throw new RazerProtocolException(
+                    "Thermal channels did not report one recognized matching state.",
+                    HidProtocolValidationFailure.PayloadValidator);
+            }
+
+            return state switch
+            {
+                ThermalModeState.BalancedAutomatic => new(
+                    PerformancePreset.Balanced,
+                    FanMode.Automatic),
+                ThermalModeState.SilentAutomatic => new(
+                    PerformancePreset.Silent,
+                    FanMode.Automatic),
+                ThermalModeState.PerformanceAutomatic => new(
+                    PerformancePreset.Performance,
+                    FanMode.Automatic),
+                ThermalModeState.FixedMaximum => new(null, FanMode.Maximum),
+                _ => throw new RazerProtocolException(
+                    "Thermal query returned an undefined state.",
+                    HidProtocolValidationFailure.PayloadValidator),
+            };
+        }
+        finally
+        {
+            operationGate.Release();
+        }
+    }
+
     public Task SetChargeLimitAsync(int percent, CancellationToken cancellationToken)
     {
         string? action = ChargeLimitAction(percent);
@@ -321,6 +369,40 @@ internal sealed class ProductionBatteryPort : IProductionBatteryPort
         {
             operationGate.Release();
         }
+    }
+
+    private async Task<ReadOnlyMemory<byte>> QueryThermalChannelAsync(
+        ThermalChannel channel,
+        CancellationToken cancellationToken)
+    {
+        var command = new RazerCommandSpec(
+            ThermalModeProtocol.CommandClass,
+            ThermalModeProtocol.QueryCommandId,
+            ThermalModeProtocol.CreateQueryPayload(channel),
+            4,
+            payload => ThermalModeProtocol.TryDecodeQuery(
+                payload.Span,
+                channel,
+                out _));
+        HidSessionResult<ReadOnlyMemory<byte>> result = await session.ExecuteAsync(
+            command,
+            AllocateTransaction,
+            exchangeTimeout,
+            cancellationToken).ConfigureAwait(false);
+        if (result.Failure is not null)
+        {
+            ThrowReadFailure(result.Failure.Value, result.Diagnostic, cancellationToken);
+        }
+
+        if (!ThermalModeProtocol.TryDecodeQuery(result.Value.Span, channel, out _))
+        {
+            poisoned = true;
+            throw new RazerProtocolException(
+                "Thermal query failed payload validation.",
+                HidProtocolValidationFailure.PayloadValidator);
+        }
+
+        return result.Value;
     }
 
     private TransactionIdAssignment AllocateTransaction() =>

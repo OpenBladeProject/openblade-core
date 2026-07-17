@@ -103,6 +103,53 @@ public sealed class WindowsVerifiedBladeDeviceProviderProductionTests
     }
 
     [Theory]
+    [InlineData(PerformancePreset.Balanced)]
+    [InlineData(PerformancePreset.Silent)]
+    [InlineData(PerformancePreset.Performance)]
+    public async Task ReadState_PublishesMatchingAutomaticThermalStateWithBattery(
+        PerformancePreset performance)
+    {
+        DeviceCapabilities capabilities = BatteryCapabilities(new HashSet<int> { 80 });
+        var port = new FakeProductionPort(
+            capabilities,
+            BatteryValidationSetting.Limit80,
+            temporary: null,
+            performanceFan: new(performance, FanMode.Automatic));
+        var factory = new FakeProductionFactory(capabilities, port);
+        using var provider = ReadyProvider(factory);
+        provider.TryGetVerifiedDevice(out IBladeDevice device);
+
+        ConfirmedDeviceState state = await device.ReadStateAsync(default);
+
+        Assert.Equal(performance, state.Performance);
+        Assert.Equal(FanMode.Automatic, state.Fans);
+        Assert.Equal(new ConfirmedBatteryState(true, 80, null), state.Battery);
+        Assert.Equal(1, port.PerformanceFanQueryCount);
+        Assert.Equal(1, port.DisposeCount);
+    }
+
+    [Fact]
+    public async Task ReadState_FixedMaximumDoesNotInventPerformancePreset()
+    {
+        DeviceCapabilities capabilities = BatteryCapabilities(new HashSet<int> { 80 });
+        var port = new FakeProductionPort(
+            capabilities,
+            BatteryValidationSetting.Limit80,
+            temporary: null,
+            performanceFan: new(null, FanMode.Maximum));
+        var factory = new FakeProductionFactory(capabilities, port);
+        using var provider = ReadyProvider(factory);
+        provider.TryGetVerifiedDevice(out IBladeDevice device);
+
+        ConfirmedDeviceState state = await device.ReadStateAsync(default);
+
+        Assert.Null(state.Performance);
+        Assert.Equal(FanMode.Maximum, state.Fans);
+        Assert.Equal(new ConfirmedBatteryState(true, 80, null), state.Battery);
+        Assert.Equal(1, port.PerformanceFanQueryCount);
+    }
+
+    [Theory]
     [InlineData(HidProtocolValidationFailure.TransactionMismatch)]
     [InlineData(HidProtocolValidationFailure.CommandClassMismatch)]
     [InlineData(HidProtocolValidationFailure.CommandIdMismatch)]
@@ -626,7 +673,8 @@ public sealed class WindowsVerifiedBladeDeviceProviderProductionTests
         BatteryValidationSetting protection,
         bool? temporary,
         bool blockProtectionQuery = false,
-        bool blockWrite = false) : IProductionBatteryPort
+        bool blockWrite = false,
+        ProductionPerformanceFanState? performanceFan = null) : IProductionBatteryPort
     {
         private readonly TaskCompletionSource? protectionRelease = blockProtectionQuery
             ? new(TaskCreationOptions.RunContinuationsAsynchronously)
@@ -646,6 +694,7 @@ public sealed class WindowsVerifiedBladeDeviceProviderProductionTests
             new(TaskCreationOptions.RunContinuationsAsynchronously);
         public int ProtectionQueryCount { get; private set; }
         public int TemporaryQueryCount { get; private set; }
+        public int PerformanceFanQueryCount { get; private set; }
         public int SetLimitCount { get; private set; }
         public int SetProtectionOffCount { get; private set; }
         public int DisposeCount { get; private set; }
@@ -679,6 +728,15 @@ public sealed class WindowsVerifiedBladeDeviceProviderProductionTests
             return TemporaryFailure is null
                 ? Task.FromResult(temporary)
                 : Task.FromException<bool?>(TemporaryFailure);
+        }
+
+        public Task<ProductionPerformanceFanState> QueryPerformanceFanStateAsync(
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            PerformanceFanQueryCount++;
+            return Task.FromResult(
+                performanceFan ?? new ProductionPerformanceFanState(null, null));
         }
 
         public async Task SetChargeLimitAsync(int percent, CancellationToken cancellationToken)

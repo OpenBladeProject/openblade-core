@@ -33,6 +33,94 @@ public sealed class ProductionBatteryPortTests
     }
 
     [Theory]
+    [InlineData(0x00, 0x00, PerformancePreset.Balanced, FanMode.Automatic)]
+    [InlineData(0x05, 0x00, PerformancePreset.Silent, FanMode.Automatic)]
+    [InlineData(0x02, 0x00, PerformancePreset.Performance, FanMode.Automatic)]
+    public async Task ThermalPair_MapsRecognizedAutomaticStateWithoutAdmittingWrites(
+        byte mode,
+        byte fanValue,
+        PerformancePreset expectedPerformance,
+        FanMode expectedFans)
+    {
+        var session = new ScriptedSession(
+            Success([0x01, 0x01, mode, fanValue]),
+            Success([0x01, 0x02, mode, fanValue]));
+        await using var port = CreatePort(session, DeviceCommandCatalog.Empty);
+
+        ProductionPerformanceFanState state =
+            await port.QueryPerformanceFanStateAsync(default);
+
+        Assert.Equal(new(expectedPerformance, expectedFans), state);
+        Assert.Empty(port.Capabilities.PerformancePresets);
+        Assert.Empty(port.Capabilities.FanModes);
+        Assert.Equal(
+            [(0x0D, 0x82, "01010000"), (0x0D, 0x82, "01020000")],
+            session.Commands.Select(command => (
+                command.ClassId,
+                command.CommandId,
+                Convert.ToHexString(command.Arguments.Span))).ToArray());
+    }
+
+    [Theory]
+    [InlineData(0x00)]
+    [InlineData(0x04)]
+    public async Task FixedMaximumPair_PublishesOnlyFanState(byte mode)
+    {
+        var session = new ScriptedSession(
+            Success([0x01, 0x01, mode, 0x01]),
+            Success([0x01, 0x02, mode, 0x01]));
+        await using var port = CreatePort(session, DeviceCommandCatalog.Empty);
+
+        ProductionPerformanceFanState state =
+            await port.QueryPerformanceFanStateAsync(default);
+
+        Assert.Null(state.Performance);
+        Assert.Equal(FanMode.Maximum, state.Fans);
+        Assert.Empty(port.Capabilities.PerformancePresets);
+        Assert.Empty(port.Capabilities.FanModes);
+    }
+
+    [Fact]
+    public async Task ThermalChannelMismatch_FailsClosedAfterTwoReads()
+    {
+        var session = new ScriptedSession(
+            Success([0x01, 0x01, 0x00, 0x00]),
+            Success([0x01, 0x02, 0x05, 0x00]));
+        await using var port = CreatePort(
+            session,
+            Catalog(Fixture(
+                ProductionBatteryPort.Limit80Action,
+                0x07,
+                0x12,
+                [0xD0])));
+
+        RazerProtocolException error = await Assert.ThrowsAsync<RazerProtocolException>(
+            () => port.QueryPerformanceFanStateAsync(default));
+        BladeWriteException blockedWrite = await Assert.ThrowsAsync<BladeWriteException>(
+            () => port.SetChargeLimitAsync(80, default));
+
+        Assert.Equal(HidProtocolValidationFailure.PayloadValidator, error.ValidationFailure);
+        Assert.Equal(WriteSubmissionState.Indeterminate, blockedWrite.SubmissionState);
+        Assert.Equal(2, session.Commands.Count);
+        Assert.All(session.Commands, command => Assert.Equal(0x82, command.CommandId));
+    }
+
+    [Fact]
+    public async Task UnknownThermalPayload_FailsClosedWithoutSecondRead()
+    {
+        var session = new ScriptedSession(
+            Success([0x01, 0x01, 0x03, 0x00]),
+            Success([0x01, 0x02, 0x00, 0x00]));
+        await using var port = CreatePort(session, DeviceCommandCatalog.Empty);
+
+        RazerProtocolException error = await Assert.ThrowsAsync<RazerProtocolException>(
+            () => port.QueryPerformanceFanStateAsync(default));
+
+        Assert.Equal(HidProtocolValidationFailure.PayloadValidator, error.ValidationFailure);
+        Assert.Single(session.Commands);
+    }
+
+    [Theory]
     [InlineData(50, "battery-limit-50", 0xB2)]
     [InlineData(55, "battery-limit-55", 0xB7)]
     [InlineData(60, "battery-limit-60", 0xBC)]

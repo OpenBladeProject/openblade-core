@@ -240,7 +240,14 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
                     protection.ProtectionEnabled,
                     protection.ChargeLimitPercent,
                     temporary);
-                return new ConfirmedDeviceState(null, null, battery, null);
+                ProductionPerformanceFanState performanceFan =
+                    await port.QueryPerformanceFanStateAsync(cancellationToken)
+                        .ConfigureAwait(false);
+                return new ConfirmedDeviceState(
+                    performanceFan.Performance,
+                    performanceFan.Fans,
+                    battery,
+                    null);
             }
         }
 

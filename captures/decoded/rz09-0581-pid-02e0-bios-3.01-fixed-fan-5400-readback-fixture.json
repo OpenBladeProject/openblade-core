@@ -1,0 +1,81 @@
+{
+  "schemaVersion": 1,
+  "device": {
+    "model": "RZ09-0581",
+    "vendorId": "1532",
+    "productId": "02E0",
+    "biosVersion": "3.01"
+  },
+  "evidenceKind": "fixed-fan-5400-readback-and-restoration",
+  "observedUtcDate": "2026-07-17",
+  "readOnly": true,
+  "productionWriteAdmitted": false,
+  "fixedReadOnlyOperations": [
+    {
+      "operation": "07/8F power control",
+      "classHex": "07",
+      "idHex": "8F",
+      "requestPayloadHex": "00",
+      "responseLength": 1
+    },
+    {
+      "operation": "0D/82 class1 thermal1",
+      "classHex": "0D",
+      "idHex": "82",
+      "requestPayloadHex": "01010000",
+      "responseLength": 4
+    },
+    {
+      "operation": "0D/82 class1 thermal2",
+      "classHex": "0D",
+      "idHex": "82",
+      "requestPayloadHex": "01020000",
+      "responseLength": 4
+    }
+  ],
+  "runs": [
+    {
+      "condition": "Synapse Fixed Fan Speed 5400",
+      "samples": [
+        { "statusHex": "02", "powerControlHex": "00", "thermal1Hex": "01010401", "thermal2Hex": "01020401", "fan1Rpm": 5300, "fan2Rpm": 5300 },
+        { "statusHex": "02", "powerControlHex": "00", "thermal1Hex": "01010401", "thermal2Hex": "01020401", "fan1Rpm": 5300, "fan2Rpm": 5300 },
+        { "statusHex": "02", "powerControlHex": "00", "thermal1Hex": "01010401", "thermal2Hex": "01020401", "fan1Rpm": 5300, "fan2Rpm": 5300 }
+      ]
+    },
+    {
+      "condition": "Balanced+Auto restored",
+      "samples": [
+        { "statusHex": "02", "powerControlHex": "00", "thermal1Hex": "01010000", "thermal2Hex": "01020000", "fan1Rpm": 4000, "fan2Rpm": 4000 },
+        { "statusHex": "02", "powerControlHex": "00", "thermal1Hex": "01010000", "thermal2Hex": "01020000", "fan1Rpm": 4000, "fan2Rpm": 3900 },
+        { "statusHex": "02", "powerControlHex": "00", "thermal1Hex": "01010000", "thermal2Hex": "01020000", "fan1Rpm": 3900, "fan2Rpm": 3900 }
+      ]
+    }
+  ],
+  "decodedSemantics": {
+    "thermalPayloadLayout": "classId,thermalId,stateValue,fanModeValue",
+    "fixedFanModeValueHex": "01",
+    "autoFanModeValueHex": "00",
+    "fixedStateValueHex": "04",
+    "fixedStateValueMeaning": "Observed with Synapse Fixed Fan Speed 5400; no broader semantic name is assigned by this fixture.",
+    "restoredBalancedStateValueHex": "00",
+    "requestedFixedRpm": 5400,
+    "observedFixedRpm": 5300
+  },
+  "powerControlBoundary": {
+    "observedValueHex": "00",
+    "genericMaximumFanBitMaskHex": "02",
+    "genericMaximumFanBitObserved": false,
+    "genericMaximumFanBitSupportedForThisDevice": false,
+    "treatment": "reserved-and-unsupported"
+  },
+  "conclusion": {
+    "fixedFan5400LiveReadbackEstablished": true,
+    "balancedAutoRestorationEstablished": true,
+    "fixedAndAutoStatesAreDistinct": true,
+    "fanRpmResponseEstablished": true,
+    "productionWriteAdmitted": false,
+    "productionWriteAdmissionRequiresOpenBladeSetterHarness": true,
+    "genericMaximumFanBitProductionAdmitted": false,
+    "reason": "Three repeated read-only samples distinguished Synapse Fixed Fan Speed 5400 from restored Balanced plus Auto and confirmed fan response. This fixture does not validate an OpenBlade write or admit any production setter."
+  }
+}

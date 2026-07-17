@@ -2,6 +2,10 @@ using OpenBlade.Contracts;
 
 namespace OpenBlade.Protocol;
 
+public readonly record struct ProductionPerformanceFanState(
+    PerformancePreset? Performance,
+    FanMode? Fans);
+
 public interface IProductionBatteryPort : IAsyncDisposable
 {
     DeviceCapabilities Capabilities { get; }
@@ -11,6 +15,9 @@ public interface IProductionBatteryPort : IAsyncDisposable
     Task<ConfirmedBatteryState> QueryProtectionAsync(CancellationToken cancellationToken);
 
     Task<bool?> QueryTemporaryFullChargeAsync(CancellationToken cancellationToken);
+
+    Task<ProductionPerformanceFanState> QueryPerformanceFanStateAsync(
+        CancellationToken cancellationToken);
 
     Task SetChargeLimitAsync(int percent, CancellationToken cancellationToken);
 

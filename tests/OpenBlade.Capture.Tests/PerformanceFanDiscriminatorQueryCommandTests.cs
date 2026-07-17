@@ -11,13 +11,9 @@ public sealed class PerformanceFanDiscriminatorQueryCommandTests
     {
         var snapshot = new PerformanceFanDiscriminatorSnapshot(
         [
-            new("0D/8E", "00", "00"),
-            new("0D/8F", "00", "01"),
-            new("0D/80", new string('0', 160), new string('0', 160)),
-            new("0D/89", "0000", "0202"),
-            new("0D/8B", "0000", "0201"),
-            new("0D/8A", "0000", "0206"),
-            new("0F/98", "00", "00"),
+            new("07/8F power control", "00", "00"),
+            new("0D/82 class1 thermal1", "01010000", "01010000"),
+            new("0D/82 class1 thermal2", "01020000", "01020000"),
         ]);
         var output = new StringWriter();
         var command = new PerformanceFanDiscriminatorQueryCommand(
@@ -40,14 +36,16 @@ public sealed class PerformanceFanDiscriminatorQueryCommandTests
         Assert.False(root.GetProperty("productionAdmitted").GetBoolean());
         Assert.True(root.GetProperty("success").GetBoolean());
         JsonElement[] responses = root.GetProperty("responses").EnumerateArray().ToArray();
-        Assert.Equal(["0D/8E", "0D/8F", "0D/80", "0D/89", "0D/8B", "0D/8A", "0F/98"],
+        Assert.Equal(
+            ["07/8F power control", "0D/82 class1 thermal1", "0D/82 class1 thermal2"],
             responses.Select(response => response.GetProperty("operation").GetString()!).ToArray());
-        Assert.Equal(["00", "00", new string('0', 160), "0000", "0000", "0000", "00"],
+        Assert.Equal(
+            ["00", "01010000", "01020000"],
             responses.Select(response =>
                 response.GetProperty("requestPayloadHex").GetString()!).ToArray());
         Assert.All(responses, response =>
             Assert.Equal("02", response.GetProperty("expectedStatusHex").GetString()));
-        Assert.Equal(160, responses[2].GetProperty("responsePayloadHex").GetString()!.Length);
+        Assert.Equal(8, responses[1].GetProperty("responsePayloadHex").GetString()!.Length);
         Assert.DoesNotContain("transaction", output.ToString(), StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("devicePath", output.ToString(), StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("requestEnvelope", output.ToString(), StringComparison.OrdinalIgnoreCase);

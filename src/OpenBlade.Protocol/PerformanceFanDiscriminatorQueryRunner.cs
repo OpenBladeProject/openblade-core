@@ -19,13 +19,9 @@ internal sealed class PerformanceFanDiscriminatorQueryRunner
 {
     private static readonly QueryDefinition[] Queries =
     [
-        new("0D/8E", 0x0D, 0x8E, [0x00], 1),
-        new("0D/8F", 0x0D, 0x8F, [0x00], 1),
-        new("0D/80", 0x0D, 0x80, new byte[80], 80),
-        new("0D/89", 0x0D, 0x89, [0x00, 0x00], 2),
-        new("0D/8B", 0x0D, 0x8B, [0x00, 0x00], 2),
-        new("0D/8A", 0x0D, 0x8A, [0x00, 0x00], 2),
-        new("0F/98", 0x0F, 0x98, [0x00], 1),
+        new("07/8F power control", 0x07, 0x8F, [0x00], 1),
+        new("0D/82 class1 thermal1", 0x0D, 0x82, [0x01, 0x01, 0x00, 0x00], 4),
+        new("0D/82 class1 thermal2", 0x0D, 0x82, [0x01, 0x02, 0x00, 0x00], 4),
     ];
 
     private readonly Func<ValidationRunContext> createContext;

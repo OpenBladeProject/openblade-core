@@ -5,7 +5,7 @@ namespace OpenBlade.Protocol.Tests;
 public sealed class PerformanceFanDiscriminatorQueryRunnerTests
 {
     [Fact]
-    public async Task RunAsync_SendsOnlyObservedReadOnlyQueriesAndDisposesSession()
+    public async Task RunAsync_SendsOnlyCapturedOrProductSourceBackedReadOnlyQueriesAndDisposesSession()
     {
         var session = new RecordingSession();
         var runner = Runner(session);
@@ -14,19 +14,21 @@ public sealed class PerformanceFanDiscriminatorQueryRunnerTests
             await runner.RunAsync(default);
 
         Assert.Null(result.Failure);
-        Assert.Equal([1, 2, 3, 4, 5, 6, 7], session.TransactionIds);
-        Assert.Equal([0x8E, 0x8F, 0x80, 0x89, 0x8B, 0x8A, 0x98],
+        Assert.Equal([1, 2, 3], session.TransactionIds);
+        Assert.Equal([0x8F, 0x82, 0x82],
             session.Commands.Select(command => command.CommandId).ToArray());
-        Assert.Equal([0x0D, 0x0D, 0x0D, 0x0D, 0x0D, 0x0D, 0x0F],
+        Assert.Equal([0x07, 0x0D, 0x0D],
             session.Commands.Select(command => command.ClassId).ToArray());
-        Assert.Equal([1, 1, 80, 2, 2, 2, 1],
+        Assert.Equal([1, 4, 4],
             session.Commands.Select(command => command.Arguments.Length).ToArray());
-        Assert.All(session.Commands.SelectMany(command => command.Arguments.ToArray()),
-            value => Assert.Equal(0, value));
-        Assert.Equal(["0D/8E", "0D/8F", "0D/80", "0D/89", "0D/8B", "0D/8A", "0F/98"],
+        Assert.Equal([0x01, 0x01, 0x00, 0x00], session.Commands[1].Arguments.ToArray());
+        Assert.Equal([0x01, 0x02, 0x00, 0x00], session.Commands[2].Arguments.ToArray());
+        Assert.Equal([0x00], session.Commands[0].Arguments.ToArray());
+        Assert.Equal(
+            ["07/8F power control", "0D/82 class1 thermal1", "0D/82 class1 thermal2"],
             result.Value!.Readings.Select(reading => reading.Operation).ToArray());
-        Assert.Equal(160, result.Value.Readings[2].RequestPayloadHex.Length);
-        Assert.Equal(160, result.Value.Readings[2].ResponseHex.Length);
+        Assert.Equal(8, result.Value.Readings[1].RequestPayloadHex.Length);
+        Assert.Equal(8, result.Value.Readings[1].ResponseHex.Length);
         Assert.Equal(1, session.DisposeCount);
         Assert.Equal(
             HidSessionFailureKind.Disposed,
@@ -51,7 +53,7 @@ public sealed class PerformanceFanDiscriminatorQueryRunnerTests
 
         Assert.Equal(HidSessionFailureKind.ProtocolFailure, result.Failure);
         Assert.Equal(diagnostic, result.Diagnostic);
-        Assert.Equal([0x8E, 0x8F, 0x80],
+        Assert.Equal([0x8F, 0x82, 0x82],
             session.Commands.Select(command => command.CommandId).ToArray());
         Assert.Equal(1, session.DisposeCount);
     }

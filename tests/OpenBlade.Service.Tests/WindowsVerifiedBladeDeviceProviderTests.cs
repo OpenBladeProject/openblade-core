@@ -583,6 +583,10 @@ public sealed class WindowsVerifiedBladeDeviceProviderTests
         public Task<bool?> QueryTemporaryFullChargeAsync(CancellationToken cancellationToken) =>
             Task.FromResult<bool?>(null);
 
+        public Task<ProductionPerformanceFanState> QueryPerformanceFanStateAsync(
+            CancellationToken cancellationToken) => Task.FromResult(
+                new ProductionPerformanceFanState(null, null));
+
         public Task SetChargeLimitAsync(int percent, CancellationToken cancellationToken) =>
             Reject();
 
