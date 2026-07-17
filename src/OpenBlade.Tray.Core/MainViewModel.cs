@@ -997,10 +997,20 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             .Where(Enum.IsDefined)
             .Order()
             .ToArray();
-        AvailableFanModes = capabilities.FanModes
+        FanMode[] fanModes = capabilities.FanModes
             .Where(Enum.IsDefined)
             .Order()
             .ToArray();
+        if (!AvailableFanModes.SequenceEqual(fanModes))
+        {
+            AvailableFanModes = fanModes;
+            // WinUI clears a ComboBox selection when ItemsSource is replaced.
+            // Reapply the confirmed value only when the admitted set changes;
+            // equivalent status refreshes must preserve a pending user choice.
+            PropertyChanged?.Invoke(
+                this,
+                new PropertyChangedEventArgs(nameof(SelectedFanMode)));
+        }
         AvailableLightingEffects = capabilities.LightingEffects
             .Where(Enum.IsDefined)
             .Order()
