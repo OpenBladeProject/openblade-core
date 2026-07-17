@@ -80,12 +80,6 @@ internal sealed class PerformanceFanSetterValidationRunner
     private const int DefaultFixedFanStateCheckEverySamples = 5;
     private static readonly TimeSpan DefaultFixedFanSampleInterval =
         TimeSpan.FromSeconds(1);
-    // Rounded up from the Synapse PCAP: 9.56 ms between fixed-state channels,
-    // 205.51 ms before the first speed write, and 61.53 ms between speed channels.
-    private static readonly TimeSpan FixedStateChannelDelay = TimeSpan.FromMilliseconds(10);
-    private static readonly TimeSpan FixedStateToSpeedDelay = TimeSpan.FromMilliseconds(210);
-    private static readonly TimeSpan FixedSpeedChannelDelay = TimeSpan.FromMilliseconds(65);
-
     private readonly Func<ValidationRunContext> createContext;
     private readonly IValidationActorFactory actorFactory;
     private readonly TimeProvider timeProvider;
@@ -592,13 +586,7 @@ internal sealed class PerformanceFanSetterValidationRunner
         PerformanceFanValidationTarget target,
         int completedCommandIndex) => target != PerformanceFanValidationTarget.Fixed5400
             ? TimeSpan.Zero
-            : completedCommandIndex switch
-            {
-                0 => FixedStateChannelDelay,
-                1 => FixedStateToSpeedDelay,
-                2 => FixedSpeedChannelDelay,
-                _ => TimeSpan.Zero,
-            };
+            : ThermalWriteTiming.MaximumInterCommandDelay(completedCommandIndex);
 
     private static ThermalModeState ExpectedState(
         PerformanceFanValidationTarget target) => target switch

@@ -168,5 +168,175 @@
     "applied": true,
     "readBack": true,
     "restored": true
+  },
+  {
+    "device": {
+      "model": "RZ09-0581",
+      "vendorId": 5426,
+      "productId": 736,
+      "biosVersion": "3.01"
+    },
+    "action": "performance-balanced-channel-1",
+    "commandClass": 13,
+    "commandId": 2,
+    "payload": "AQEAAA==",
+    "captured": true,
+    "decoded": true,
+    "applied": true,
+    "readBack": true,
+    "restored": true
+  },
+  {
+    "device": {
+      "model": "RZ09-0581",
+      "vendorId": 5426,
+      "productId": 736,
+      "biosVersion": "3.01"
+    },
+    "action": "performance-balanced-channel-2",
+    "commandClass": 13,
+    "commandId": 2,
+    "payload": "AQIAAA==",
+    "captured": true,
+    "decoded": true,
+    "applied": true,
+    "readBack": true,
+    "restored": true
+  },
+  {
+    "device": {
+      "model": "RZ09-0581",
+      "vendorId": 5426,
+      "productId": 736,
+      "biosVersion": "3.01"
+    },
+    "action": "performance-silent-channel-1",
+    "commandClass": 13,
+    "commandId": 2,
+    "payload": "AQEFAA==",
+    "captured": true,
+    "decoded": true,
+    "applied": true,
+    "readBack": true,
+    "restored": true
+  },
+  {
+    "device": {
+      "model": "RZ09-0581",
+      "vendorId": 5426,
+      "productId": 736,
+      "biosVersion": "3.01"
+    },
+    "action": "performance-silent-channel-2",
+    "commandClass": 13,
+    "commandId": 2,
+    "payload": "AQIFAA==",
+    "captured": true,
+    "decoded": true,
+    "applied": true,
+    "readBack": true,
+    "restored": true
+  },
+  {
+    "device": {
+      "model": "RZ09-0581",
+      "vendorId": 5426,
+      "productId": 736,
+      "biosVersion": "3.01"
+    },
+    "action": "performance-performance-channel-1",
+    "commandClass": 13,
+    "commandId": 2,
+    "payload": "AQECAA==",
+    "captured": true,
+    "decoded": true,
+    "applied": true,
+    "readBack": true,
+    "restored": true
+  },
+  {
+    "device": {
+      "model": "RZ09-0581",
+      "vendorId": 5426,
+      "productId": 736,
+      "biosVersion": "3.01"
+    },
+    "action": "performance-performance-channel-2",
+    "commandClass": 13,
+    "commandId": 2,
+    "payload": "AQICAA==",
+    "captured": true,
+    "decoded": true,
+    "applied": true,
+    "readBack": true,
+    "restored": true
+  },
+  {
+    "device": {
+      "model": "RZ09-0581",
+      "vendorId": 5426,
+      "productId": 736,
+      "biosVersion": "3.01"
+    },
+    "action": "fan-maximum-5400-state-channel-1",
+    "commandClass": 13,
+    "commandId": 2,
+    "payload": "AQEAAQ==",
+    "captured": true,
+    "decoded": true,
+    "applied": true,
+    "readBack": true,
+    "restored": true
+  },
+  {
+    "device": {
+      "model": "RZ09-0581",
+      "vendorId": 5426,
+      "productId": 736,
+      "biosVersion": "3.01"
+    },
+    "action": "fan-maximum-5400-state-channel-2",
+    "commandClass": 13,
+    "commandId": 2,
+    "payload": "AQIAAQ==",
+    "captured": true,
+    "decoded": true,
+    "applied": true,
+    "readBack": true,
+    "restored": true
+  },
+  {
+    "device": {
+      "model": "RZ09-0581",
+      "vendorId": 5426,
+      "productId": 736,
+      "biosVersion": "3.01"
+    },
+    "action": "fan-maximum-5400-speed-channel-1",
+    "commandClass": 13,
+    "commandId": 1,
+    "payload": "AQE2",
+    "captured": true,
+    "decoded": true,
+    "applied": true,
+    "readBack": true,
+    "restored": true
+  },
+  {
+    "device": {
+      "model": "RZ09-0581",
+      "vendorId": 5426,
+      "productId": 736,
+      "biosVersion": "3.01"
+    },
+    "action": "fan-maximum-5400-speed-channel-2",
+    "commandClass": 13,
+    "commandId": 1,
+    "payload": "AQI2",
+    "captured": true,
+    "decoded": true,
+    "applied": true,
+    "readBack": true,
+    "restored": true
   }
 ]

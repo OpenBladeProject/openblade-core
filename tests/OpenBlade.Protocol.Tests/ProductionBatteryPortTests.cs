@@ -52,6 +52,91 @@ public sealed class ProductionBatteryPortTests
         ProductionBatteryPort.PerformanceBoostFirstAction,
         ProductionBatteryPort.PerformanceBoostSecondAction,
         0x02)]
+    public void CompletePerformancePairAloneAdmitsOnlyThatPreset(
+        PerformancePreset preset,
+        string firstAction,
+        string secondAction,
+        byte mode)
+    {
+        DeviceCapabilities capabilities = ProductionBatteryPort.CreateCapabilities(
+            Catalog(
+                Fixture(firstAction, 0x0D, 0x02, [0x01, 0x01, mode, 0x00]),
+                Fixture(secondAction, 0x0D, 0x02, [0x01, 0x02, mode, 0x00])),
+            NoTemporaryReadEvidence());
+
+        Assert.True(capabilities.PerformancePresets.SetEquals([preset]));
+        Assert.True(capabilities.FanModes.SetEquals(
+            preset == PerformancePreset.Balanced ? [FanMode.Automatic] : []));
+        Assert.Empty(capabilities.LightingEffects);
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1)]
+    [InlineData(2)]
+    [InlineData(3)]
+    [InlineData(4)]
+    [InlineData(5)]
+    public void MaximumCapabilityRequiresBalancedPairAndAllFourFixedActions(
+        int missingActionIndex)
+    {
+        CapturedCommandFixture[] fixtures = MaximumCapabilityFixtures()
+            .Where((_, index) => index != missingActionIndex)
+            .ToArray();
+
+        DeviceCapabilities capabilities = ProductionBatteryPort.CreateCapabilities(
+            Catalog(fixtures),
+            NoTemporaryReadEvidence());
+        FanMode[] expectedFans = missingActionIndex < 2
+            ? []
+            : [FanMode.Automatic];
+
+        Assert.DoesNotContain(FanMode.Maximum, capabilities.FanModes);
+        Assert.Equal(expectedFans, capabilities.FanModes.Order().ToArray());
+        Assert.Empty(capabilities.LightingEffects);
+    }
+
+    [Fact]
+    public void CompleteMaximumCommandSetAdmitsAutomaticAndMaximumOnly()
+    {
+        DeviceCapabilities capabilities = ProductionBatteryPort.CreateCapabilities(
+            Catalog(MaximumCapabilityFixtures()),
+            NoTemporaryReadEvidence());
+
+        Assert.True(capabilities.PerformancePresets.SetEquals([PerformancePreset.Balanced]));
+        Assert.True(capabilities.FanModes.SetEquals([FanMode.Automatic, FanMode.Maximum]));
+        Assert.Empty(capabilities.LightingEffects);
+    }
+
+    [Theory]
+    [InlineData(0, 10)]
+    [InlineData(1, 210)]
+    [InlineData(2, 65)]
+    public void MaximumSequenceUsesCapturedInterCommandTiming(
+        int completedCommandIndex,
+        int expectedMilliseconds)
+    {
+        Assert.Equal(
+            TimeSpan.FromMilliseconds(expectedMilliseconds),
+            ThermalWriteTiming.MaximumInterCommandDelay(completedCommandIndex));
+    }
+
+    [Theory]
+    [InlineData(
+        PerformancePreset.Balanced,
+        ProductionBatteryPort.PerformanceBalancedFirstAction,
+        ProductionBatteryPort.PerformanceBalancedSecondAction,
+        0x00)]
+    [InlineData(
+        PerformancePreset.Silent,
+        ProductionBatteryPort.PerformanceSilentFirstAction,
+        ProductionBatteryPort.PerformanceSilentSecondAction,
+        0x05)]
+    [InlineData(
+        PerformancePreset.Performance,
+        ProductionBatteryPort.PerformanceBoostFirstAction,
+        ProductionBatteryPort.PerformanceBoostSecondAction,
+        0x02)]
     public async Task AdmittedPerformanceSetterExecutesExactPairedAction(
         PerformancePreset preset,
         string firstAction,
@@ -677,6 +762,40 @@ public sealed class ProductionBatteryPortTests
             Applied: true,
             ReadBack: true,
             Restored: true);
+
+    private static CapturedCommandFixture[] MaximumCapabilityFixtures() =>
+    [
+        Fixture(
+            ProductionBatteryPort.PerformanceBalancedFirstAction,
+            0x0D,
+            0x02,
+            [0x01, 0x01, 0x00, 0x00]),
+        Fixture(
+            ProductionBatteryPort.PerformanceBalancedSecondAction,
+            0x0D,
+            0x02,
+            [0x01, 0x02, 0x00, 0x00]),
+        Fixture(
+            ProductionBatteryPort.FanMaximumStateFirstAction,
+            0x0D,
+            0x02,
+            [0x01, 0x01, 0x00, 0x01]),
+        Fixture(
+            ProductionBatteryPort.FanMaximumStateSecondAction,
+            0x0D,
+            0x02,
+            [0x01, 0x02, 0x00, 0x01]),
+        Fixture(
+            ProductionBatteryPort.FanMaximumSpeedFirstAction,
+            0x0D,
+            0x01,
+            [0x01, 0x01, 0x36]),
+        Fixture(
+            ProductionBatteryPort.FanMaximumSpeedSecondAction,
+            0x0D,
+            0x01,
+            [0x01, 0x02, 0x36]),
+    ];
 
     private static HidSessionResult<ReadOnlyMemory<byte>> Success(byte[] payload) =>
         new(payload, null);

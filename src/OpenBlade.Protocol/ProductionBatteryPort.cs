@@ -200,6 +200,7 @@ internal sealed class ProductionBatteryPort : IProductionBatteryPort
                 state => state.Performance == value && state.Fans == FanMode.Automatic,
                 state => state.Performance is not null && state.Fans == FanMode.Automatic,
                 "Performance changes require a confirmed Automatic thermal state.",
+                applyMaximumTiming: false,
                 cancellationToken);
     }
 
@@ -235,6 +236,7 @@ internal sealed class ProductionBatteryPort : IProductionBatteryPort
                 value == FanMode.Maximum
                     ? "Maximum fan mode requires confirmed Balanced performance and Automatic fans."
                     : "Automatic fan mode could not be safely applied.",
+                applyMaximumTiming: value == FanMode.Maximum,
                 cancellationToken);
     }
 
@@ -335,6 +337,15 @@ internal sealed class ProductionBatteryPort : IProductionBatteryPort
         if (performance.Contains(PerformancePreset.Balanced))
         {
             fans.Add(FanMode.Automatic);
+            if (HasAll(
+                    catalog,
+                    FanMaximumStateFirstAction,
+                    FanMaximumStateSecondAction,
+                    FanMaximumSpeedFirstAction,
+                    FanMaximumSpeedSecondAction))
+            {
+                fans.Add(FanMode.Maximum);
+            }
         }
 
         return new DeviceCapabilities(
@@ -352,6 +363,11 @@ internal sealed class ProductionBatteryPort : IProductionBatteryPort
         string secondAction) =>
         catalog.TryGet(firstAction, out _)
         && catalog.TryGet(secondAction, out _);
+
+    private static bool HasAll(
+        DeviceCommandCatalog catalog,
+        params string[] actions) =>
+        actions.All(action => catalog.TryGet(action, out _));
 
     private static readonly (int Percent, string Action)[] ChargeLimitActions =
     [
@@ -454,6 +470,7 @@ internal sealed class ProductionBatteryPort : IProductionBatteryPort
         Func<ProductionPerformanceFanState, bool> alreadyMatches,
         Func<ProductionPerformanceFanState, bool> precondition,
         string preconditionFailure,
+        bool applyMaximumTiming,
         CancellationToken cancellationToken)
     {
         if (cancellationToken.IsCancellationRequested)
@@ -493,8 +510,9 @@ internal sealed class ProductionBatteryPort : IProductionBatteryPort
                 throw KnownNotApplied(preconditionFailure);
             }
 
-            foreach (RazerCommandDefinition command in commands)
+            for (int index = 0; index < commands.Length; index++)
             {
+                RazerCommandDefinition command = commands[index];
                 cancellationToken.ThrowIfCancellationRequested();
                 submitted = true;
                 HidSessionResult<ReadOnlyMemory<byte>> result = await session.ExecuteAsync(
@@ -514,6 +532,13 @@ internal sealed class ProductionBatteryPort : IProductionBatteryPort
                     poisoned = true;
                     throw Indeterminate(
                         "The multi-command thermal write outcome is indeterminate.");
+                }
+
+                if (applyMaximumTiming && index < commands.Length - 1)
+                {
+                    await Task.Delay(
+                        ThermalWriteTiming.MaximumInterCommandDelay(index),
+                        cancellationToken).ConfigureAwait(false);
                 }
             }
         }
