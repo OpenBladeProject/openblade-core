@@ -271,7 +271,7 @@ public sealed class CapabilityPresentationTests
             }));
         await WaitUntilAsync(() =>
             viewModel.CanControlHardware && viewModel.AvailableLightingSettings.Count > 0);
-        viewModel.PluggedInPerformanceEditor = PerformancePreset.Performance;
+        viewModel.PluggedInPerformanceEditor = PerformancePreset.Balanced;
         viewModel.PluggedInFanModeEditor = FanMode.Maximum;
         viewModel.BatteryPerformanceEditor = PerformancePreset.Silent;
         viewModel.BatteryFanModeEditor = FanMode.Automatic;
@@ -281,7 +281,7 @@ public sealed class CapabilityPresentationTests
             .ExecuteAsync(null);
 
         Assert.NotNull(client.SavedProfiles);
-        Assert.Equal(PerformancePreset.Performance, client.SavedProfiles.PluggedIn.Performance);
+        Assert.Equal(PerformancePreset.Balanced, client.SavedProfiles.PluggedIn.Performance);
         Assert.Equal(FanMode.Maximum, client.SavedProfiles.PluggedIn.Fans);
         Assert.Equal(PerformancePreset.Silent, client.SavedProfiles.Battery.Performance);
         Assert.Equal(75, client.SavedProfiles.BatteryPolicy.ChargeLimitPercent);
@@ -297,7 +297,7 @@ public sealed class CapabilityPresentationTests
         {
             PluggedIn = ProfileDefaults.CreateSafeDefaults().PluggedIn with
             {
-                Performance = PerformancePreset.Performance,
+                Performance = PerformancePreset.Balanced,
                 Fans = FanMode.Maximum,
             },
             BatteryPolicy = BatteryPolicy.Create(75),
@@ -316,8 +316,9 @@ public sealed class CapabilityPresentationTests
         client.Publish(initial);
         await WaitUntilAsync(() => viewModel.ProfileChargeLimitEditor == 75);
 
-        Assert.Equal(PerformancePreset.Performance, viewModel.PluggedInPerformanceEditor);
+        Assert.Equal(PerformancePreset.Balanced, viewModel.PluggedInPerformanceEditor);
         Assert.Equal(FanMode.Maximum, viewModel.PluggedInFanModeEditor);
+        viewModel.BatteryPerformanceEditor = PerformancePreset.Balanced;
         viewModel.BatteryFanModeEditor = FanMode.Maximum;
 
         ProfileSet refreshedProfiles = ProfileDefaults.CreateSafeDefaults() with
@@ -337,7 +338,7 @@ public sealed class CapabilityPresentationTests
         await WaitUntilAsync(() => viewModel.ConnectionStatus == "Profiles refreshed");
 
         Assert.Equal(refreshedProfiles, viewModel.Profiles);
-        Assert.Equal(PerformancePreset.Performance, viewModel.PluggedInPerformanceEditor);
+        Assert.Equal(PerformancePreset.Balanced, viewModel.PluggedInPerformanceEditor);
         Assert.Equal(FanMode.Maximum, viewModel.PluggedInFanModeEditor);
         Assert.Equal(FanMode.Maximum, viewModel.BatteryFanModeEditor);
         Assert.Equal(75, viewModel.ProfileChargeLimitEditor);
@@ -359,14 +360,14 @@ public sealed class CapabilityPresentationTests
         client.Publish(initial);
         await WaitUntilAsync(() => viewModel.CanControlHardware);
 
-        viewModel.PluggedInPerformanceEditor = PerformancePreset.Performance;
+        viewModel.PluggedInPerformanceEditor = PerformancePreset.Balanced;
         viewModel.PluggedInFanModeEditor = FanMode.Maximum;
         viewModel.ProfileChargeLimitEditor = 75;
         await Assert.IsType<AsyncRelayCommand>(viewModel.SaveProfilesCommand)
             .ExecuteAsync(null);
 
         Assert.Equal(client.SavedProfiles, viewModel.Profiles);
-        Assert.Equal(PerformancePreset.Performance, viewModel.PluggedInPerformanceEditor);
+        Assert.Equal(PerformancePreset.Balanced, viewModel.PluggedInPerformanceEditor);
         Assert.Equal(FanMode.Maximum, viewModel.PluggedInFanModeEditor);
         Assert.Equal(75, viewModel.ProfileChargeLimitEditor);
 
@@ -374,6 +375,7 @@ public sealed class CapabilityPresentationTests
         {
             Battery = ProfileDefaults.CreateSafeDefaults().Battery with
             {
+                Performance = PerformancePreset.Balanced,
                 Fans = FanMode.Maximum,
             },
             BatteryPolicy = BatteryPolicy.Create(70),
@@ -391,6 +393,34 @@ public sealed class CapabilityPresentationTests
         Assert.Equal(FanMode.Automatic, viewModel.PluggedInFanModeEditor);
         Assert.Equal(FanMode.Maximum, viewModel.BatteryFanModeEditor);
         Assert.Equal(70, viewModel.ProfileChargeLimitEditor);
+    }
+
+    [Theory]
+    [InlineData(PerformancePreset.Silent)]
+    [InlineData(PerformancePreset.Performance)]
+    public async Task SaveProfiles_RejectsNonBalancedMaximumCombination(
+        PerformancePreset performance)
+    {
+        var client = new PresentationClient();
+        await using var viewModel = new MainViewModel(client, new ImmediateDispatcher());
+        await viewModel.StartAsync();
+        client.Publish(CreateStatus(
+            verified: true,
+            blocked: false,
+            capabilities: DeviceCapabilities.SafeTargetDefaults() with
+            {
+                ChargeLimits = ChargeLimits(),
+            }));
+        await WaitUntilAsync(() => viewModel.CanControlHardware);
+        viewModel.PluggedInPerformanceEditor = performance;
+        viewModel.PluggedInFanModeEditor = FanMode.Maximum;
+        AsyncRelayCommand save = Assert.IsType<AsyncRelayCommand>(
+            viewModel.SaveProfilesCommand);
+
+        Assert.False(save.CanExecute(null));
+        await save.ExecuteAsync(null);
+
+        Assert.Null(client.SavedProfiles);
     }
 
     [Fact]

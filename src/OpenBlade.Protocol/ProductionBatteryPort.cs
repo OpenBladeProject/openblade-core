@@ -14,6 +14,26 @@ internal sealed class ProductionBatteryPort : IProductionBatteryPort
     internal const string ProtectionOffAction = "battery-protection-off";
     internal const string TemporaryEnableAction = "charge-to-100-enable";
     internal const string TemporaryCancelAction = "charge-to-100-cancel";
+    internal const string PerformanceBalancedFirstAction =
+        "performance-balanced-channel-1";
+    internal const string PerformanceBalancedSecondAction =
+        "performance-balanced-channel-2";
+    internal const string PerformanceSilentFirstAction =
+        "performance-silent-channel-1";
+    internal const string PerformanceSilentSecondAction =
+        "performance-silent-channel-2";
+    internal const string PerformanceBoostFirstAction =
+        "performance-performance-channel-1";
+    internal const string PerformanceBoostSecondAction =
+        "performance-performance-channel-2";
+    internal const string FanMaximumStateFirstAction =
+        "fan-maximum-5400-state-channel-1";
+    internal const string FanMaximumStateSecondAction =
+        "fan-maximum-5400-state-channel-2";
+    internal const string FanMaximumSpeedFirstAction =
+        "fan-maximum-5400-speed-channel-1";
+    internal const string FanMaximumSpeedSecondAction =
+        "fan-maximum-5400-speed-channel-2";
 
     private readonly IRazerCommandSession session;
     private readonly DeviceCommandCatalog catalog;
@@ -137,40 +157,8 @@ internal sealed class ProductionBatteryPort : IProductionBatteryPort
         try
         {
             EnsureUsable();
-            ReadOnlyMemory<byte> first = await QueryThermalChannelAsync(
-                ThermalChannel.First,
-                cancellationToken).ConfigureAwait(false);
-            ReadOnlyMemory<byte> second = await QueryThermalChannelAsync(
-                ThermalChannel.Second,
-                cancellationToken).ConfigureAwait(false);
-
-            if (!ThermalModeProtocol.TryDecodeMatchingPair(
-                    first.Span,
-                    second.Span,
-                    out ThermalModeState state))
-            {
-                poisoned = true;
-                throw new RazerProtocolException(
-                    "Thermal channels did not report one recognized matching state.",
-                    HidProtocolValidationFailure.PayloadValidator);
-            }
-
-            return state switch
-            {
-                ThermalModeState.BalancedAutomatic => new(
-                    PerformancePreset.Balanced,
-                    FanMode.Automatic),
-                ThermalModeState.SilentAutomatic => new(
-                    PerformancePreset.Silent,
-                    FanMode.Automatic),
-                ThermalModeState.PerformanceAutomatic => new(
-                    PerformancePreset.Performance,
-                    FanMode.Automatic),
-                ThermalModeState.FixedMaximum => new(null, FanMode.Maximum),
-                _ => throw new RazerProtocolException(
-                    "Thermal query returned an undefined state.",
-                    HidProtocolValidationFailure.PayloadValidator),
-            };
+            return await QueryPerformanceFanStateCoreAsync(cancellationToken)
+                .ConfigureAwait(false);
         }
         finally
         {
@@ -188,6 +176,66 @@ internal sealed class ProductionBatteryPort : IProductionBatteryPort
         }
 
         return ExecuteSetterAsync(action, cancellationToken);
+    }
+
+    public Task SetPerformanceAsync(
+        PerformancePreset value,
+        CancellationToken cancellationToken)
+    {
+        IReadOnlyList<string>? actions = value switch
+        {
+            PerformancePreset.Balanced =>
+                [PerformanceBalancedFirstAction, PerformanceBalancedSecondAction],
+            PerformancePreset.Silent =>
+                [PerformanceSilentFirstAction, PerformanceSilentSecondAction],
+            PerformancePreset.Performance =>
+                [PerformanceBoostFirstAction, PerformanceBoostSecondAction],
+            _ => null,
+        };
+        return actions is null
+            ? Task.FromException(KnownNotApplied(
+                $"Performance preset '{value}' is not admitted for production use."))
+            : ExecuteThermalSettersAsync(
+                actions,
+                state => state.Performance == value && state.Fans == FanMode.Automatic,
+                state => state.Performance is not null && state.Fans == FanMode.Automatic,
+                "Performance changes require a confirmed Automatic thermal state.",
+                cancellationToken);
+    }
+
+    public Task SetFanModeAsync(
+        FanMode value,
+        CancellationToken cancellationToken)
+    {
+        IReadOnlyList<string>? actions = value switch
+        {
+            // The verified command that exits fixed maximum on this device is
+            // the balanced automatic thermal state.
+            FanMode.Automatic =>
+                [PerformanceBalancedFirstAction, PerformanceBalancedSecondAction],
+            FanMode.Maximum =>
+                [
+                    FanMaximumStateFirstAction,
+                    FanMaximumStateSecondAction,
+                    FanMaximumSpeedFirstAction,
+                    FanMaximumSpeedSecondAction,
+                ],
+            _ => null,
+        };
+        return actions is null
+            ? Task.FromException(KnownNotApplied(
+                $"Fan mode '{value}' is not admitted for production use."))
+            : ExecuteThermalSettersAsync(
+                actions,
+                state => state.Fans == value,
+                value == FanMode.Maximum
+                    ? state => state.Performance == PerformancePreset.Balanced
+                        && state.Fans == FanMode.Automatic
+                    : _ => true,
+                value == FanMode.Maximum
+                    ? "Maximum fan mode requires confirmed Balanced performance and Automatic fans."
+                    : "Automatic fan mode could not be safely applied.",
+                cancellationToken);
     }
 
     public Task SetProtectionOffAsync(CancellationToken cancellationToken)
@@ -369,6 +417,159 @@ internal sealed class ProductionBatteryPort : IProductionBatteryPort
         {
             operationGate.Release();
         }
+    }
+
+    private async Task ExecuteThermalSettersAsync(
+        IReadOnlyList<string> actions,
+        Func<ProductionPerformanceFanState, bool> alreadyMatches,
+        Func<ProductionPerformanceFanState, bool> precondition,
+        string preconditionFailure,
+        CancellationToken cancellationToken)
+    {
+        if (cancellationToken.IsCancellationRequested)
+        {
+            throw KnownNotApplied("The thermal write was canceled before submission.");
+        }
+
+        var commands = new RazerCommandDefinition[actions.Count];
+        for (int index = 0; index < actions.Count; index++)
+        {
+            string action = actions[index];
+            if (!catalog.TryGet(action, out RazerCommandDefinition? command)
+                || command is null)
+            {
+                throw KnownNotApplied(
+                    $"Thermal action '{action}' is not admitted for production use.");
+            }
+
+            commands[index] = command;
+        }
+
+        await EnterForWriteAsync(cancellationToken).ConfigureAwait(false);
+        bool submitted = false;
+        try
+        {
+            EnsureUsableForWrite();
+            ProductionPerformanceFanState current =
+                await QueryPerformanceFanStateCoreAsync(cancellationToken)
+                    .ConfigureAwait(false);
+            if (alreadyMatches(current))
+            {
+                return;
+            }
+
+            if (!precondition(current))
+            {
+                throw KnownNotApplied(preconditionFailure);
+            }
+
+            foreach (RazerCommandDefinition command in commands)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                submitted = true;
+                HidSessionResult<ReadOnlyMemory<byte>> result = await session.ExecuteAsync(
+                    new RazerCommandSpec(
+                        command.CommandClass,
+                        command.CommandId,
+                        command.Payload.ToArray(),
+                        command.Payload.Length,
+                        payload => payload.Span.SequenceEqual(command.Payload.AsSpan())),
+                    AllocateTransaction,
+                    exchangeTimeout,
+                    cancellationToken).ConfigureAwait(false);
+
+                if (result.Failure is not null
+                    || !result.Value.Span.SequenceEqual(command.Payload.AsSpan()))
+                {
+                    poisoned = true;
+                    throw Indeterminate(
+                        "The multi-command thermal write outcome is indeterminate.");
+                }
+            }
+        }
+        catch (BladeWriteException exception)
+        {
+            if (!submitted || exception.SubmissionState == WriteSubmissionState.Indeterminate)
+            {
+                throw;
+            }
+
+            poisoned = true;
+            throw new BladeWriteException(
+                WriteSubmissionState.Indeterminate,
+                "The multi-command thermal write outcome is indeterminate.",
+                exception);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            if (submitted)
+            {
+                poisoned = true;
+                throw Indeterminate(
+                    "The thermal write was canceled after submission became possible.");
+            }
+
+            throw KnownNotApplied("The thermal write was canceled before submission.");
+        }
+        catch (Exception exception)
+        {
+            if (submitted)
+            {
+                poisoned = true;
+            }
+
+            throw new BladeWriteException(
+                submitted
+                    ? WriteSubmissionState.Indeterminate
+                    : WriteSubmissionState.KnownNotApplied,
+                submitted
+                    ? "The multi-command thermal write outcome is indeterminate."
+                    : "The thermal write was not applied.",
+                exception);
+        }
+        finally
+        {
+            operationGate.Release();
+        }
+    }
+
+    private async Task<ProductionPerformanceFanState> QueryPerformanceFanStateCoreAsync(
+        CancellationToken cancellationToken)
+    {
+        ReadOnlyMemory<byte> first = await QueryThermalChannelAsync(
+            ThermalChannel.First,
+            cancellationToken).ConfigureAwait(false);
+        ReadOnlyMemory<byte> second = await QueryThermalChannelAsync(
+            ThermalChannel.Second,
+            cancellationToken).ConfigureAwait(false);
+
+        if (!ThermalModeProtocol.TryDecodeMatchingPair(
+                first.Span,
+                second.Span,
+                out ThermalModeState state))
+        {
+            poisoned = true;
+            throw new RazerProtocolException(
+                "Thermal channels did not report one recognized matching state.",
+                HidProtocolValidationFailure.PayloadValidator);
+        }
+
+        return state switch
+        {
+            ThermalModeState.BalancedAutomatic => new(
+                PerformancePreset.Balanced,
+                FanMode.Automatic),
+            ThermalModeState.SilentAutomatic => new(
+                PerformancePreset.Silent,
+                FanMode.Automatic),
+            ThermalModeState.PerformanceAutomatic => new(
+                PerformancePreset.Performance,
+                FanMode.Automatic),
+            ThermalModeState.FixedMaximum => new(null, FanMode.Maximum),
+            _ => throw new RazerProtocolException(
+                "Thermal query returned an undefined state.",
+                HidProtocolValidationFailure.PayloadValidator),
+        };
     }
 
     private async Task<ReadOnlyMemory<byte>> QueryThermalChannelAsync(

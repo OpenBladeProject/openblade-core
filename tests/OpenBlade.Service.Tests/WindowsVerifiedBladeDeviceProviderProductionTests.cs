@@ -150,6 +150,58 @@ public sealed class WindowsVerifiedBladeDeviceProviderProductionTests
     }
 
     [Theory]
+    [InlineData(PerformancePreset.Balanced)]
+    [InlineData(PerformancePreset.Silent)]
+    [InlineData(PerformancePreset.Performance)]
+    public async Task AdmittedPerformanceSetterDelegatesExactlyOnceToFreshPort(
+        PerformancePreset preset)
+    {
+        DeviceCapabilities capabilities = ThermalCapabilities(
+            new HashSet<PerformancePreset> { preset },
+            new HashSet<FanMode>());
+        var port = new FakeProductionPort(
+            capabilities,
+            BatteryValidationSetting.Limit80,
+            temporary: null);
+        var factory = new FakeProductionFactory(capabilities, port);
+        using var provider = ReadyProvider(factory);
+        provider.TryGetVerifiedDevice(out IBladeDevice device);
+
+        await device.SetPerformanceAsync(preset, default);
+
+        Assert.Equal(1, factory.OpenCount);
+        Assert.Equal(1, port.SetPerformanceCount);
+        Assert.Equal(preset, port.LastPerformance);
+        Assert.Equal(0, port.SetFanModeCount);
+        Assert.Equal(1, port.DisposeCount);
+    }
+
+    [Theory]
+    [InlineData(FanMode.Automatic)]
+    [InlineData(FanMode.Maximum)]
+    public async Task AdmittedFanSetterDelegatesExactlyOnceToFreshPort(FanMode mode)
+    {
+        DeviceCapabilities capabilities = ThermalCapabilities(
+            new HashSet<PerformancePreset>(),
+            new HashSet<FanMode> { mode });
+        var port = new FakeProductionPort(
+            capabilities,
+            BatteryValidationSetting.Limit80,
+            temporary: null);
+        var factory = new FakeProductionFactory(capabilities, port);
+        using var provider = ReadyProvider(factory);
+        provider.TryGetVerifiedDevice(out IBladeDevice device);
+
+        await device.SetFanModeAsync(mode, default);
+
+        Assert.Equal(1, factory.OpenCount);
+        Assert.Equal(1, port.SetFanModeCount);
+        Assert.Equal(mode, port.LastFanMode);
+        Assert.Equal(0, port.SetPerformanceCount);
+        Assert.Equal(1, port.DisposeCount);
+    }
+
+    [Theory]
     [InlineData(HidProtocolValidationFailure.TransactionMismatch)]
     [InlineData(HidProtocolValidationFailure.CommandClassMismatch)]
     [InlineData(HidProtocolValidationFailure.CommandIdMismatch)]
@@ -576,6 +628,16 @@ public sealed class WindowsVerifiedBladeDeviceProviderProductionTests
             protectionOff,
             SupportsTemporaryFullCharge: false);
 
+    private static DeviceCapabilities ThermalCapabilities(
+        IReadOnlySet<PerformancePreset> presets,
+        IReadOnlySet<FanMode> fanModes) => new(
+            presets,
+            fanModes,
+            new HashSet<LightingEffect>(),
+            new HashSet<int>(),
+            SupportsBatteryProtectionOff: false,
+            SupportsTemporaryFullCharge: false);
+
     private static BatteryValidationProbeResult Probe(
         BatteryValidationProbeClassification classification) => new(
             BatteryValidationProbeStage.Ready,
@@ -695,6 +757,10 @@ public sealed class WindowsVerifiedBladeDeviceProviderProductionTests
         public int ProtectionQueryCount { get; private set; }
         public int TemporaryQueryCount { get; private set; }
         public int PerformanceFanQueryCount { get; private set; }
+        public int SetPerformanceCount { get; private set; }
+        public int SetFanModeCount { get; private set; }
+        public PerformancePreset? LastPerformance { get; private set; }
+        public FanMode? LastFanMode { get; private set; }
         public int SetLimitCount { get; private set; }
         public int SetProtectionOffCount { get; private set; }
         public int DisposeCount { get; private set; }
@@ -737,6 +803,24 @@ public sealed class WindowsVerifiedBladeDeviceProviderProductionTests
             PerformanceFanQueryCount++;
             return Task.FromResult(
                 performanceFan ?? new ProductionPerformanceFanState(null, null));
+        }
+
+        public Task SetPerformanceAsync(
+            PerformancePreset value,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            SetPerformanceCount++;
+            LastPerformance = value;
+            return WriteFailure is null ? Task.CompletedTask : Task.FromException(WriteFailure);
+        }
+
+        public Task SetFanModeAsync(FanMode value, CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            SetFanModeCount++;
+            LastFanMode = value;
+            return WriteFailure is null ? Task.CompletedTask : Task.FromException(WriteFailure);
         }
 
         public async Task SetChargeLimitAsync(int percent, CancellationToken cancellationToken)

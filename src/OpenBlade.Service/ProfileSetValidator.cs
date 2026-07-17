@@ -28,6 +28,8 @@ public sealed class ProfileValidationPolicy
         {
             new(PerformancePreset.Balanced, FanMode.Automatic),
             new(PerformancePreset.Silent, FanMode.Automatic),
+            new(PerformancePreset.Performance, FanMode.Automatic),
+            new(PerformancePreset.Balanced, FanMode.Maximum),
         },
         new HashSet<LightingEffect> { LightingEffect.Off });
 }
@@ -54,6 +56,28 @@ public sealed class ProfileSetValidator(ProfileValidationPolicy policy)
         ArgumentNullException.ThrowIfNull(preferences);
     }
 
+    public void ValidatePerformanceFanCombination(
+        PerformancePreset performance,
+        FanMode fans)
+    {
+        if (!Enum.IsDefined(performance))
+        {
+            throw Invalid("The performance preset is undefined.");
+        }
+
+        if (!Enum.IsDefined(fans))
+        {
+            throw Invalid("The fan mode is undefined.");
+        }
+
+        if (!_policy.SupportedPerformanceFanCombinations.Contains(
+                new PerformanceFanCombination(performance, fans)))
+        {
+            throw Invalid(
+                "The performance and fan combination is not supported by the active validation policy.");
+        }
+    }
+
     private void ValidateProfile(PowerProfile? profile, string name)
     {
         if (profile is null)
@@ -61,20 +85,13 @@ public sealed class ProfileSetValidator(ProfileValidationPolicy policy)
             throw Invalid($"The {name} profile is missing.");
         }
 
-        if (!Enum.IsDefined(profile.Performance))
+        try
         {
-            throw Invalid($"The {name} performance preset is undefined.");
+            ValidatePerformanceFanCombination(profile.Performance, profile.Fans);
         }
-
-        if (!Enum.IsDefined(profile.Fans))
+        catch (InvalidDataException exception)
         {
-            throw Invalid($"The {name} fan mode is undefined.");
-        }
-
-        var combination = new PerformanceFanCombination(profile.Performance, profile.Fans);
-        if (!_policy.SupportedPerformanceFanCombinations.Contains(combination))
-        {
-            throw Invalid($"The {name} performance and fan combination is not supported by the active validation policy.");
+            throw Invalid($"The {name} profile is invalid: {exception.Message}");
         }
 
         ValidateLighting(profile.Lighting, name);

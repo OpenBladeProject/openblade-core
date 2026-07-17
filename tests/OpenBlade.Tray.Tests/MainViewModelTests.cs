@@ -736,6 +736,7 @@ public sealed class MainViewModelTests
             .ExecuteAsync(PerformancePreset.Performance);
 
         Assert.Equal(1, client.MutationCalls);
+        Assert.Equal(["performance:Performance"], client.MutationOperations);
         Assert.Equal(PerformancePreset.Performance, client.PerformanceOverride!.Value);
         Assert.Equal(OverrideLifetime.UntilPowerSourceChange, client.PerformanceOverride.Lifetime);
         Assert.Equal("Intent stored without hardware application.", viewModel.OperationStatusMessage);
@@ -760,6 +761,101 @@ public sealed class MainViewModelTests
     }
 
     [Fact]
+    public async Task ThermalCommands_BlockPerformanceDuringMaximumAndKeepAutomaticAvailable()
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        ServiceStatusSnapshot status = CreateStatus(verified: true, blocked: false) with
+        {
+            ConfirmedState = CreateStatus(true, false).ConfirmedState! with
+            {
+                Performance = PerformancePreset.Balanced,
+                Fans = FanMode.Maximum,
+            },
+        };
+        client.Publish(status);
+        await WaitUntilAsync(() => viewModel.SelectedFanMode == FanMode.Maximum);
+
+        Assert.False(viewModel.SetPerformanceCommand.CanExecute(PerformancePreset.Silent));
+        Assert.False(viewModel.SetPerformanceCommand.CanExecute(PerformancePreset.Balanced));
+        Assert.False(viewModel.SetPerformanceCommand.CanExecute(PerformancePreset.Performance));
+        Assert.False(viewModel.SetFanModeCommand.CanExecute(FanMode.Maximum));
+        Assert.True(viewModel.SetFanModeCommand.CanExecute(FanMode.Automatic));
+    }
+
+    [Fact]
+    public async Task ThermalCommands_BlockPerformanceWhenMaximumIsEffectiveButNotConfirmed()
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        ServiceStatusSnapshot status = CreateStatus(verified: true, blocked: false);
+        client.Publish(status with
+        {
+            DesiredState = status.DesiredState with
+            {
+                Fans = new ResolvedSetting<FanMode>(
+                    FanMode.Maximum,
+                    SettingValueSource.TemporaryOverride),
+            },
+        });
+        await WaitUntilAsync(() => viewModel.SelectedFanMode == FanMode.Maximum);
+
+        Assert.False(viewModel.SetPerformanceCommand.CanExecute(PerformancePreset.Performance));
+        Assert.True(viewModel.SetFanModeCommand.CanExecute(FanMode.Automatic));
+    }
+
+    [Fact]
+    public async Task MaximumFans_RequireBalancedAutomaticEffectiveAndConfirmedState()
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        ServiceStatusSnapshot status = CreateStatus(verified: true, blocked: false) with
+        {
+            ConfirmedState = CreateStatus(true, false).ConfirmedState! with
+            {
+                Performance = PerformancePreset.Balanced,
+                Fans = FanMode.Automatic,
+            },
+        };
+        client.Publish(status);
+        await WaitUntilAsync(() => viewModel.SetFanModeCommand.CanExecute(FanMode.Maximum));
+
+        Assert.True(viewModel.SetFanModeCommand.CanExecute(FanMode.Maximum));
+
+        client.Publish(status with
+        {
+            Revision = status.Revision + 1,
+            Message = "Performance active",
+            DesiredState = status.DesiredState with
+            {
+                Performance = new ResolvedSetting<PerformancePreset>(
+                    PerformancePreset.Performance,
+                    SettingValueSource.PowerProfile),
+            },
+        });
+        await WaitUntilAsync(() => viewModel.ConnectionStatus == "Performance active");
+
+        Assert.False(viewModel.SetFanModeCommand.CanExecute(FanMode.Maximum));
+    }
+
+    [Fact]
+    public async Task MaximumFans_AreDisabledWhenConfirmedThermalStateIsUnavailable()
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        ServiceStatusSnapshot status = CreateStatus(verified: true, blocked: false);
+        client.Publish(status with { ConfirmedState = null });
+        await WaitUntilAsync(() => viewModel.CanControlHardware);
+
+        Assert.False(viewModel.SetFanModeCommand.CanExecute(FanMode.Maximum));
+        Assert.True(viewModel.SetFanModeCommand.CanExecute(FanMode.Automatic));
+    }
+
+    [Fact]
     public async Task ClearManualOverrides_ClearsEverySubsystemWhileHardwareIsUnavailable()
     {
         var client = new FakeServiceClient();
@@ -773,6 +869,9 @@ public sealed class MainViewModelTests
             .ExecuteAsync(null);
 
         Assert.Equal(3, client.MutationCalls);
+        Assert.Equal(
+            ["fans:<clear>", "performance:<clear>"],
+            client.MutationOperations);
         Assert.Null(client.PerformanceOverride);
         Assert.Null(client.FanOverride);
         Assert.Null(client.LightingOverride);
@@ -885,7 +984,15 @@ public sealed class MainViewModelTests
         var client = new FakeServiceClient { BlockMutations = true };
         await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
         await viewModel.StartAsync();
-        client.Publish(CreateStatus(verified: true, blocked: false));
+        ServiceStatusSnapshot status = CreateStatus(verified: true, blocked: false);
+        client.Publish(status with
+        {
+            ConfirmedState = status.ConfirmedState! with
+            {
+                Performance = PerformancePreset.Balanced,
+                Fans = FanMode.Automatic,
+            },
+        });
         await WaitUntilAsync(() => viewModel.CanControlHardware);
         AsyncRelayCommand command = Assert.IsType<AsyncRelayCommand>(
             viewModel.SetFanModeCommand);
@@ -1190,6 +1297,7 @@ public sealed class MainViewModelTests
         private readonly TaskCompletionSource exportCompletion = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public int WatchCalls { get; private set; }
         public int MutationCalls { get; private set; }
+        public List<string> MutationOperations { get; } = [];
         public int ExportCalls { get; private set; }
         public int ObservationCalls { get; private set; }
         public TaskCompletionSource<ServiceStatusSnapshot>? PendingObservation { get; set; }
@@ -1272,6 +1380,9 @@ public sealed class MainViewModelTests
             CancellationToken token)
         {
             PerformanceOverride = value;
+            MutationOperations.Add(value is null
+                ? "performance:<clear>"
+                : $"performance:{value.Value}");
             return MutateAsync(token);
         }
 
@@ -1280,6 +1391,9 @@ public sealed class MainViewModelTests
             CancellationToken token)
         {
             FanOverride = value;
+            MutationOperations.Add(value is null
+                ? "fans:<clear>"
+                : $"fans:{value.Value}");
             return MutateAsync(token);
         }
 

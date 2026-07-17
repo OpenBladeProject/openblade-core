@@ -331,11 +331,21 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
 
         public Task SetPerformanceAsync(
             PerformancePreset value,
-            CancellationToken cancellationToken) => RejectUnvalidatedWrite();
+            CancellationToken cancellationToken) =>
+            batteryFactory.Capabilities.PerformancePresets.Contains(value)
+                ? ExecuteProductionWriteAsync(
+                    port => port.SetPerformanceAsync(value, cancellationToken),
+                    cancellationToken)
+                : RejectProductionWrite("The requested performance preset is not admitted.");
 
         public Task SetFanModeAsync(
             FanMode value,
-            CancellationToken cancellationToken) => RejectUnvalidatedWrite();
+            CancellationToken cancellationToken) =>
+            batteryFactory.Capabilities.FanModes.Contains(value)
+                ? ExecuteProductionWriteAsync(
+                    port => port.SetFanModeAsync(value, cancellationToken),
+                    cancellationToken)
+                : RejectProductionWrite("The requested fan mode is not admitted.");
 
         public Task SetChargeLimitAsync(
             BatteryPolicy value,
@@ -344,29 +354,29 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
             ArgumentNullException.ThrowIfNull(value);
             if (!batteryFactory.Capabilities.ChargeLimits.Contains(value.ChargeLimitPercent))
             {
-                return RejectBatteryWrite("The requested charge limit is not admitted.");
+                return RejectProductionWrite("The requested charge limit is not admitted.");
             }
 
-            return ExecuteBatteryWriteAsync(
+            return ExecuteProductionWriteAsync(
                 port => port.SetChargeLimitAsync(value.ChargeLimitPercent, cancellationToken),
                 cancellationToken);
         }
 
         public Task SetBatteryProtectionOffAsync(CancellationToken cancellationToken) =>
             batteryFactory.Capabilities.SupportsBatteryProtectionOff
-                ? ExecuteBatteryWriteAsync(
+                ? ExecuteProductionWriteAsync(
                     port => port.SetProtectionOffAsync(cancellationToken),
                     cancellationToken)
-                : RejectBatteryWrite("Battery protection-off is not admitted.");
+                : RejectProductionWrite("Battery protection-off is not admitted.");
 
         public Task SetTemporaryFullChargeAsync(
             bool enabled,
             CancellationToken cancellationToken) =>
             batteryFactory.Capabilities.SupportsTemporaryFullCharge
-                ? ExecuteBatteryWriteAsync(
+                ? ExecuteProductionWriteAsync(
                     port => port.SetTemporaryFullChargeAsync(enabled, cancellationToken),
                     cancellationToken)
-                : RejectBatteryWrite("Temporary full charge is not admitted.");
+                : RejectProductionWrite("Temporary full charge is not admitted.");
 
         public Task SetLightingAsync(
             LightingSettings value,
@@ -398,7 +408,7 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
             }
         }
 
-        private async Task ExecuteBatteryWriteAsync(
+        private async Task ExecuteProductionWriteAsync(
             Func<IProductionBatteryPort, Task> write,
             CancellationToken cancellationToken)
         {
@@ -411,13 +421,13 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
             {
                 throw new BladeWriteException(
                     WriteSubmissionState.KnownNotApplied,
-                    "The battery write was canceled before a verified session opened.");
+                    "The hardware write was canceled before a verified session opened.");
             }
             catch (ObjectDisposedException exception)
             {
                 throw new BladeWriteException(
                     WriteSubmissionState.KnownNotApplied,
-                    "The battery write was blocked because the device provider is closing.",
+                    "The hardware write was blocked because the device provider is closing.",
                     exception);
             }
 
@@ -448,13 +458,13 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
             {
                 throw new BladeWriteException(
                     WriteSubmissionState.Indeterminate,
-                    "The battery write was canceled after a verified session opened.");
+                    "The hardware write was canceled after a verified session opened.");
             }
             catch (Exception exception)
             {
                 throw new BladeWriteException(
                     WriteSubmissionState.Indeterminate,
-                    "The battery write outcome is indeterminate.",
+                    "The hardware write outcome is indeterminate.",
                     exception);
             }
             finally
@@ -524,15 +534,15 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
             return new BladeWriteException(
                 submissionState,
                 submissionState == WriteSubmissionState.KnownNotApplied
-                    ? "The battery write was blocked before submission."
-                    : "The battery write could not establish an unambiguous verified session.");
+                    ? "The hardware write was blocked before submission."
+                    : "The hardware write could not establish an unambiguous verified session.");
         }
 
         private static Task RejectUnvalidatedWrite() => Task.FromException(
             new UnvalidatedCommandException(
                 "Hardware writes are not admitted for this subsystem."));
 
-        private static Task RejectBatteryWrite(string message) => Task.FromException(
+        private static Task RejectProductionWrite(string message) => Task.FromException(
             new BladeWriteException(WriteSubmissionState.KnownNotApplied, message));
 
         private sealed class FailClosedDeviceException(string message) : Exception(message);

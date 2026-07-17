@@ -101,7 +101,10 @@ public sealed class ControlCoordinator
             capabilities => capabilities.PerformancePresets.Contains(value),
             state => state.Performance == value,
             token => device.SetPerformanceAsync(value, token),
-            cancellationToken);
+            cancellationToken,
+            state => state.Fans == FanMode.Maximum
+                ? "Performance changes require Automatic fan mode."
+                : null);
 
     internal Task<ScopedApplyOutcome> ApplyFanOutcomeAsync(
         FanMode value,
@@ -112,7 +115,13 @@ public sealed class ControlCoordinator
             capabilities => capabilities.FanModes.Contains(value),
             state => state.Fans == value,
             token => device.SetFanModeAsync(value, token),
-            cancellationToken);
+            cancellationToken,
+            value == FanMode.Maximum
+                ? state => state.Performance == PerformancePreset.Balanced
+                    && state.Fans == FanMode.Automatic
+                        ? null
+                        : "Maximum fan mode requires confirmed Balanced performance and Automatic fans."
+                : null);
 
     internal Task<ScopedApplyOutcome> ApplyBatteryOutcomeAsync(
         BatteryPolicy value,
@@ -228,18 +237,23 @@ public sealed class ControlCoordinator
             desired.Battery,
             capabilities,
             initial.Battery);
+        bool thermalCombinationSupported = IsVerifiedThermalCombination(
+            desired.Performance.Value,
+            desired.Fans.Value);
         var states = new Dictionary<DeviceSubsystem, PendingSubsystem>
         {
             [DeviceSubsystem.Performance] = new(
                 "Performance",
-                IsDefined(desired.Performance.Value)
+                thermalCombinationSupported
+                    && IsDefined(desired.Performance.Value)
                     && capabilities.PerformancePresets.Contains(desired.Performance.Value),
                 initial.Performance == desired.Performance.Value,
                 token => device.SetPerformanceAsync(desired.Performance.Value, token),
                 state => state.Performance == desired.Performance.Value),
             [DeviceSubsystem.Fans] = new(
                 "Fans",
-                IsDefined(desired.Fans.Value)
+                thermalCombinationSupported
+                    && IsDefined(desired.Fans.Value)
                     && capabilities.FanModes.Contains(desired.Fans.Value),
                 initial.Fans == desired.Fans.Value,
                 token => device.SetFanModeAsync(desired.Fans.Value, token),
@@ -261,10 +275,17 @@ public sealed class ControlCoordinator
         var provisional = new Dictionary<DeviceSubsystem, ControlResult>();
         bool stopFurtherWrites = false;
         string? stopReason = null;
+        bool stopThermalWrites = false;
+        string? thermalStopReason = null;
 
         try
         {
-            foreach (DeviceSubsystem subsystem in OrderedSubsystems)
+            IReadOnlyList<DeviceSubsystem> orderedSubsystems =
+                initial.Fans == FanMode.Maximum
+                    && desired.Fans.Value == FanMode.Automatic
+                    ? FansFirstOrderedSubsystems
+                    : OrderedSubsystems;
+            foreach (DeviceSubsystem subsystem in orderedSubsystems)
             {
                 PendingSubsystem pending = states[subsystem];
                 if (automaticWriteExclusions?.Contains(subsystem) == true)
@@ -276,6 +297,11 @@ public sealed class ControlCoordinator
                 if (!pending.Supported)
                 {
                     provisional[subsystem] = Unsupported(pending.Name);
+                    if (IsThermalSubsystem(subsystem) && !pending.InitiallyMatching)
+                    {
+                        stopThermalWrites = true;
+                        thermalStopReason = provisional[subsystem].Message;
+                    }
                     continue;
                 }
 
@@ -292,6 +318,12 @@ public sealed class ControlCoordinator
                     continue;
                 }
 
+                if (stopThermalWrites && IsThermalSubsystem(subsystem))
+                {
+                    provisional[subsystem] = SubsequentWritesBlocked(thermalStopReason!);
+                    continue;
+                }
+
                 cancellationToken.ThrowIfCancellationRequested();
                 attempted.Add(subsystem);
                 try
@@ -304,6 +336,11 @@ public sealed class ControlCoordinator
                 {
                     attempted.Remove(subsystem);
                     provisional[subsystem] = WriteRejected(pending.Name, exception);
+                    if (IsThermalSubsystem(subsystem))
+                    {
+                        stopThermalWrites = true;
+                        thermalStopReason = provisional[subsystem].Message;
+                    }
                 }
                 catch (BladeWriteException exception)
                     when (exception.SubmissionState is WriteSubmissionState.Indeterminate)
@@ -319,6 +356,11 @@ public sealed class ControlCoordinator
                 catch (Exception exception)
                 {
                     provisional[subsystem] = Indeterminate(pending.Name, exception);
+                    if (IsThermalSubsystem(subsystem))
+                    {
+                        stopThermalWrites = true;
+                        thermalStopReason = provisional[subsystem].Message;
+                    }
                     if (IsTerminalDeviceFailure(exception))
                     {
                         stopFurtherWrites = true;
@@ -543,7 +585,8 @@ public sealed class ControlCoordinator
         Func<DeviceCapabilities, bool> supported,
         Func<ConfirmedDeviceState, bool> matches,
         Func<CancellationToken, Task> setter,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        Func<ConfirmedDeviceState, string?>? initialStateBlockReason = null)
     {
         if (!valid)
         {
@@ -559,6 +602,7 @@ public sealed class ControlCoordinator
         bool writeAttempted = false;
         bool setterCompleted = false;
         DeviceCapabilities? capabilities = null;
+        ConfirmedDeviceState? initial = null;
         try
         {
             capabilities = await device.ReadCapabilitiesAsync(cancellationToken);
@@ -574,7 +618,7 @@ public sealed class ControlCoordinator
                     DeviceAccessFailed: false);
             }
 
-            ConfirmedDeviceState initial = await device.ReadStateAsync(cancellationToken);
+            initial = await device.ReadStateAsync(cancellationToken);
             cancellationToken.ThrowIfCancellationRequested();
             if (matches(initial))
             {
@@ -583,6 +627,18 @@ public sealed class ControlCoordinator
                     initial,
                     WriteAttempted: false,
                     ReadbackMatched: true,
+                    capabilities,
+                    DeviceAccessFailed: false);
+            }
+
+            string? blockReason = initialStateBlockReason?.Invoke(initial);
+            if (blockReason is not null)
+            {
+                return new ScopedApplyOutcome(
+                    new ControlResult(ControlResultStatus.Blocked, blockReason),
+                    initial,
+                    WriteAttempted: false,
+                    ReadbackMatched: false,
                     capabilities,
                     DeviceAccessFailed: false);
             }
@@ -609,6 +665,18 @@ public sealed class ControlCoordinator
                 Indeterminate(name, null),
                 final,
                 WriteAttempted: true,
+                ReadbackMatched: false,
+                capabilities,
+                DeviceAccessFailed: false);
+        }
+        catch (BladeWriteException exception)
+            when (writeAttempted
+                && exception.SubmissionState is WriteSubmissionState.KnownNotApplied)
+        {
+            return new ScopedApplyOutcome(
+                WriteRejected(name, exception),
+                initial,
+                WriteAttempted: false,
                 ReadbackMatched: false,
                 capabilities,
                 DeviceAccessFailed: false);
@@ -952,6 +1020,25 @@ public sealed class ControlCoordinator
         DeviceSubsystem.Battery,
         DeviceSubsystem.Lighting,
     ];
+
+    private static IReadOnlyList<DeviceSubsystem> FansFirstOrderedSubsystems { get; } =
+    [
+        DeviceSubsystem.Fans,
+        DeviceSubsystem.Performance,
+        DeviceSubsystem.Battery,
+        DeviceSubsystem.Lighting,
+    ];
+
+    private static bool IsVerifiedThermalCombination(
+        PerformancePreset performance,
+        FanMode fans) => (performance, fans) is
+        (PerformancePreset.Silent, FanMode.Automatic)
+        or (PerformancePreset.Balanced, FanMode.Automatic)
+        or (PerformancePreset.Performance, FanMode.Automatic)
+        or (PerformancePreset.Balanced, FanMode.Maximum);
+
+    private static bool IsThermalSubsystem(DeviceSubsystem subsystem) =>
+        subsystem is DeviceSubsystem.Performance or DeviceSubsystem.Fans;
 
     private sealed record PendingSubsystem(
         string Name,

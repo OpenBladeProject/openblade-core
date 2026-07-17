@@ -75,7 +75,12 @@ internal sealed class PerformanceFanSetterValidationRunner
     private const int FixedFanMinimumRpm = 5000;
     private const int FixedFanMaximumRpm = 6000;
     private static readonly TimeSpan DefaultFixedFanSettleDelay =
-        TimeSpan.FromSeconds(3);
+        TimeSpan.FromSeconds(12);
+    // Rounded up from the Synapse PCAP: 9.56 ms between fixed-state channels,
+    // 205.51 ms before the first speed write, and 61.53 ms between speed channels.
+    private static readonly TimeSpan FixedStateChannelDelay = TimeSpan.FromMilliseconds(10);
+    private static readonly TimeSpan FixedStateToSpeedDelay = TimeSpan.FromMilliseconds(210);
+    private static readonly TimeSpan FixedSpeedChannelDelay = TimeSpan.FromMilliseconds(65);
 
     private readonly Func<ValidationRunContext> createContext;
     private readonly IValidationActorFactory actorFactory;
@@ -178,8 +183,10 @@ internal sealed class PerformanceFanSetterValidationRunner
             }
 
             state.ApplyAttempted = true;
-            foreach (byte[] payload in CreateApplyPayloads(target))
+            IReadOnlyList<byte[]> applyPayloads = CreateApplyPayloads(target);
+            for (int index = 0; index < applyPayloads.Count; index++)
             {
+                byte[] payload = applyPayloads[index];
                 HidSessionResult<ReadOnlyMemory<byte>> write = await ExecuteAsync(
                     context,
                     actor.Session,
@@ -194,6 +201,15 @@ internal sealed class PerformanceFanSetterValidationRunner
                         cancellationToken,
                         PerformanceFanValidationFailure.ApplyWriteIndeterminate);
                     return state.ToResult();
+                }
+
+                TimeSpan interCommandDelay = FixedInterCommandDelay(target, index);
+                if (interCommandDelay > TimeSpan.Zero)
+                {
+                    await Task.Delay(
+                        interCommandDelay,
+                        timeProvider,
+                        cancellationToken).ConfigureAwait(false);
                 }
             }
 
@@ -478,6 +494,18 @@ internal sealed class PerformanceFanSetterValidationRunner
             _ => throw new InvalidOperationException(
                 "Only a recognized automatic thermal state can be restored."),
         };
+
+    private static TimeSpan FixedInterCommandDelay(
+        PerformanceFanValidationTarget target,
+        int completedCommandIndex) => target != PerformanceFanValidationTarget.Fixed5400
+            ? TimeSpan.Zero
+            : completedCommandIndex switch
+            {
+                0 => FixedStateChannelDelay,
+                1 => FixedStateToSpeedDelay,
+                2 => FixedSpeedChannelDelay,
+                _ => TimeSpan.Zero,
+            };
 
     private static ThermalModeState ExpectedState(
         PerformanceFanValidationTarget target) => target switch

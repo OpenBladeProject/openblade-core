@@ -126,16 +126,10 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
 
         SetPerformanceCommand = CreateCommand(
             SetPerformanceAsync,
-            parameter => parameter is PerformancePreset value
-                && Enum.IsDefined(value)
-                && CanMutate
-                && latestStatus!.Capabilities!.PerformancePresets.Contains(value));
+            CanSetPerformance);
         SetFanModeCommand = CreateCommand(
             SetFanModeAsync,
-            parameter => parameter is FanMode value
-                && Enum.IsDefined(value)
-                && CanMutate
-                && latestStatus!.Capabilities!.FanModes.Contains(value));
+            CanSetFanMode);
         SetLightingCommand = CreateCommand(
             SetLightingAsync,
             parameter => parameter is LightingSettings value
@@ -685,6 +679,41 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             Capabilities: not null,
         };
 
+    private bool CanSetPerformance(object? parameter) =>
+        parameter is PerformancePreset value
+        && Enum.IsDefined(value)
+        && CanMutate
+        && latestStatus!.Capabilities!.PerformancePresets.Contains(value)
+        && !MaximumFansAreEffectiveOrConfirmed();
+
+    private bool CanSetFanMode(object? parameter)
+    {
+        if (parameter is not FanMode value
+            || !Enum.IsDefined(value)
+            || !CanMutate
+            || !latestStatus!.Capabilities!.FanModes.Contains(value))
+        {
+            return false;
+        }
+
+        return value == FanMode.Automatic || IsBalancedAutomaticThermalState();
+    }
+
+    private bool MaximumFansAreEffectiveOrConfirmed() =>
+        latestStatus is { } status
+        && (status.DesiredState.Fans.Value == FanMode.Maximum
+            || status.ConfirmedState?.Fans == FanMode.Maximum);
+
+    private bool IsBalancedAutomaticThermalState() =>
+        latestStatus is { } status
+        && status.DesiredState.Performance.Value == PerformancePreset.Balanced
+        && status.DesiredState.Fans.Value == FanMode.Automatic
+        && status.ConfirmedState is
+        {
+            Performance: PerformancePreset.Balanced,
+            Fans: FanMode.Automatic,
+        };
+
     private bool CanSetFullChargeOverride(object? parameter)
     {
         if (parameter is not null and not bool)
@@ -1130,13 +1159,13 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     {
         List<string> hardwareNotApplied = [];
         await ClearOverrideAsync(
-            "performance",
-            cancellationToken => serviceClient.SetPerformanceOverrideAsync(null, cancellationToken),
+            "fans",
+            cancellationToken => serviceClient.SetFanOverrideAsync(null, cancellationToken),
             hardwareNotApplied,
             token).ConfigureAwait(false);
         await ClearOverrideAsync(
-            "fans",
-            cancellationToken => serviceClient.SetFanOverrideAsync(null, cancellationToken),
+            "performance",
+            cancellationToken => serviceClient.SetPerformanceOverrideAsync(null, cancellationToken),
             hardwareNotApplied,
             token).ConfigureAwait(false);
         await ClearOverrideAsync(
@@ -1322,8 +1351,15 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         && Enum.IsDefined(draft.Fans)
         && (capabilities.FanModes.Contains(draft.Fans)
             || draft.Fans == current.Fans)
+        && ThermalCombinationSupported(draft.Performance, draft.Fans)
         && (LightingSupported(draft.Lighting, capabilities)
             || draft.Lighting == current.Lighting);
+
+    private static bool ThermalCombinationSupported(
+        PerformancePreset performance,
+        FanMode fans) =>
+        fans == FanMode.Automatic
+        || (performance == PerformancePreset.Balanced && fans == FanMode.Maximum);
 
     private static bool LightingSupported(
         LightingSettings lighting,

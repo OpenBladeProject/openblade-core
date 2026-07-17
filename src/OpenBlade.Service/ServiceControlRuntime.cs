@@ -422,6 +422,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         CancellationToken cancellationToken)
     {
         ValidateOverride(value, nameof(value));
+        ValidateThermalOverrideCombination(value, Automation.FanOverride);
         PersistentOverrideState staged = persistentOverrides with
         {
             Performance = value?.Lifetime == OverrideLifetime.Persistent
@@ -438,6 +439,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         CancellationToken cancellationToken)
     {
         ValidateOverride(value, nameof(value));
+        ValidateThermalOverrideCombination(Automation.PerformanceOverride, value);
         PersistentOverrideState staged = persistentOverrides with
         {
             Fans = value?.Lifetime == OverrideLifetime.Persistent
@@ -774,7 +776,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                     automaticWriteExclusionResolver: confirmed =>
                     {
                         ObserveAutomaticState(confirmed, priorDesired);
-                        return driftTracker.ExternalChanges.ToHashSet();
+                        return GetCoupledAutomaticWriteExclusions();
                     });
 
             if (ShouldRetryPowerTransitionAccess(outcome))
@@ -787,7 +789,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                         automaticWriteExclusionResolver: confirmed =>
                         {
                             ObserveAutomaticState(confirmed, priorDesired);
-                            return driftTracker.ExternalChanges.ToHashSet();
+                            return GetCoupledAutomaticWriteExclusions();
                         });
             }
         }
@@ -944,6 +946,31 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 || BatteryMatchesDesired(battery, desired.Battery);
             driftTracker.ConfirmIntentional(DeviceSubsystem.Battery, matches);
         }
+    }
+
+    private IReadOnlySet<DeviceSubsystem> GetCoupledAutomaticWriteExclusions()
+    {
+        var exclusions = driftTracker.ExternalChanges.ToHashSet();
+        if (exclusions.Contains(DeviceSubsystem.Performance)
+            || exclusions.Contains(DeviceSubsystem.Fans))
+        {
+            exclusions.Add(DeviceSubsystem.Performance);
+            exclusions.Add(DeviceSubsystem.Fans);
+        }
+
+        return exclusions;
+    }
+
+    private void ValidateThermalOverrideCombination(
+        ManualOverride<PerformancePreset>? performanceOverride,
+        ManualOverride<FanMode>? fanOverride)
+    {
+        PowerProfile activeProfile = Automation.PowerSource == PowerSource.PluggedIn
+            ? Automation.Profiles.PluggedIn
+            : Automation.Profiles.Battery;
+        validator.ValidatePerformanceFanCombination(
+            performanceOverride?.Value ?? activeProfile.Performance,
+            fanOverride?.Value ?? activeProfile.Fans);
     }
 
     private void CompareInitialAutomaticValue<T>(

@@ -5,6 +5,31 @@ namespace OpenBlade.Service.Tests;
 
 public sealed class ProfileSetValidatorTests
 {
+    [Theory]
+    [InlineData(PerformancePreset.Silent, FanMode.Automatic)]
+    [InlineData(PerformancePreset.Balanced, FanMode.Automatic)]
+    [InlineData(PerformancePreset.Performance, FanMode.Automatic)]
+    [InlineData(PerformancePreset.Balanced, FanMode.Maximum)]
+    public void DefaultPolicy_AllowsOnlyVerifiedThermalPairs(
+        PerformancePreset performance,
+        FanMode fans)
+    {
+        ProfileSetValidator.CreateUnverifiedSafeDefaults()
+            .ValidatePerformanceFanCombination(performance, fans);
+    }
+
+    [Theory]
+    [InlineData(PerformancePreset.Silent, FanMode.Maximum)]
+    [InlineData(PerformancePreset.Performance, FanMode.Maximum)]
+    public void DefaultPolicy_RejectsUnverifiedMaximumFanPairs(
+        PerformancePreset performance,
+        FanMode fans)
+    {
+        Assert.Throws<InvalidDataException>(() =>
+            ProfileSetValidator.CreateUnverifiedSafeDefaults()
+                .ValidatePerformanceFanCombination(performance, fans));
+    }
+
     [Fact]
     public void Validate_RejectsUndefinedPerformancePreset()
     {

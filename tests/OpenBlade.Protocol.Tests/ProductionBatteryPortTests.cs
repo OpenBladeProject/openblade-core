@@ -24,12 +24,271 @@ public sealed class ProductionBatteryPortTests
             () => port.SetProtectionOffAsync(default));
         BladeWriteException temporary = await Assert.ThrowsAsync<BladeWriteException>(
             () => port.SetTemporaryFullChargeAsync(true, default));
+        BladeWriteException performance = await Assert.ThrowsAsync<BladeWriteException>(
+            () => port.SetPerformanceAsync(PerformancePreset.Balanced, default));
+        BladeWriteException fans = await Assert.ThrowsAsync<BladeWriteException>(
+            () => port.SetFanModeAsync(FanMode.Automatic, default));
 
         Assert.All(
-            [limit, protection, temporary],
+            [limit, protection, temporary, performance, fans],
             error => Assert.Equal(WriteSubmissionState.KnownNotApplied, error.SubmissionState));
         Assert.Single(session.Commands);
         Assert.Equal((0x07, 0x92), (session.Commands[0].ClassId, session.Commands[0].CommandId));
+    }
+
+    [Theory]
+    [InlineData(
+        PerformancePreset.Balanced,
+        ProductionBatteryPort.PerformanceBalancedFirstAction,
+        ProductionBatteryPort.PerformanceBalancedSecondAction,
+        0x00)]
+    [InlineData(
+        PerformancePreset.Silent,
+        ProductionBatteryPort.PerformanceSilentFirstAction,
+        ProductionBatteryPort.PerformanceSilentSecondAction,
+        0x05)]
+    [InlineData(
+        PerformancePreset.Performance,
+        ProductionBatteryPort.PerformanceBoostFirstAction,
+        ProductionBatteryPort.PerformanceBoostSecondAction,
+        0x02)]
+    public async Task AdmittedPerformanceSetterExecutesExactPairedAction(
+        PerformancePreset preset,
+        string firstAction,
+        string secondAction,
+        byte mode)
+    {
+        byte[] first = [0x01, 0x01, mode, 0x00];
+        byte[] second = [0x01, 0x02, mode, 0x00];
+        byte baselineMode = preset == PerformancePreset.Balanced ? (byte)0x05 : (byte)0x00;
+        var session = new ScriptedSession(
+            Success([0x01, 0x01, baselineMode, 0x00]),
+            Success([0x01, 0x02, baselineMode, 0x00]),
+            Success(first),
+            Success(second));
+        await using var port = CreatePort(
+            session,
+            Catalog(
+                Fixture(firstAction, 0x0D, 0x02, first),
+                Fixture(secondAction, 0x0D, 0x02, second)));
+
+        await port.SetPerformanceAsync(preset, default);
+
+        Assert.Equal(
+            [(0x0D, 0x82, "01010000"),
+             (0x0D, 0x82, "01020000"),
+             (0x0D, 0x02, Convert.ToHexString(first)),
+             (0x0D, 0x02, Convert.ToHexString(second))],
+            session.Commands.Select(command => (
+                command.ClassId,
+                command.CommandId,
+                Convert.ToHexString(command.Arguments.Span))).ToArray());
+    }
+
+    [Fact]
+    public async Task AdmittedMaximumFanSetterExecutesExactFourCommandAction()
+    {
+        byte[] state1 = [0x01, 0x01, 0x00, 0x01];
+        byte[] state2 = [0x01, 0x02, 0x00, 0x01];
+        byte[] speed1 = [0x01, 0x01, 0x36];
+        byte[] speed2 = [0x01, 0x02, 0x36];
+        byte[][] payloads = [state1, state2, speed1, speed2];
+        var session = new ScriptedSession(
+            [
+                Success([0x01, 0x01, 0x00, 0x00]),
+                Success([0x01, 0x02, 0x00, 0x00]),
+                .. payloads.Select(Success),
+            ]);
+        await using var port = CreatePort(
+            session,
+            Catalog(
+                Fixture(ProductionBatteryPort.FanMaximumStateFirstAction, 0x0D, 0x02, state1),
+                Fixture(ProductionBatteryPort.FanMaximumStateSecondAction, 0x0D, 0x02, state2),
+                Fixture(ProductionBatteryPort.FanMaximumSpeedFirstAction, 0x0D, 0x01, speed1),
+                Fixture(ProductionBatteryPort.FanMaximumSpeedSecondAction, 0x0D, 0x01, speed2)));
+
+        await port.SetFanModeAsync(FanMode.Maximum, default);
+
+        Assert.Equal(
+            [(0x0D, 0x82, "01010000"), (0x0D, 0x82, "01020000"),
+             (0x0D, 0x02, "01010001"), (0x0D, 0x02, "01020001"),
+             (0x0D, 0x01, "010136"), (0x0D, 0x01, "010236")],
+            session.Commands.Select(command => (
+                command.ClassId,
+                command.CommandId,
+                Convert.ToHexString(command.Arguments.Span))).ToArray());
+    }
+
+    [Fact]
+    public async Task AutomaticFanSetterUsesExactBalancedAutomaticPair()
+    {
+        byte[] first = [0x01, 0x01, 0x00, 0x00];
+        byte[] second = [0x01, 0x02, 0x00, 0x00];
+        var session = new ScriptedSession(
+            Success([0x01, 0x01, 0x00, 0x01]),
+            Success([0x01, 0x02, 0x00, 0x01]),
+            Success(first),
+            Success(second));
+        await using var port = CreatePort(
+            session,
+            Catalog(
+                Fixture(ProductionBatteryPort.PerformanceBalancedFirstAction, 0x0D, 0x02, first),
+                Fixture(ProductionBatteryPort.PerformanceBalancedSecondAction, 0x0D, 0x02, second)));
+
+        await port.SetFanModeAsync(FanMode.Automatic, default);
+
+        Assert.Equal(
+            ["01010000", "01020000", "01010000", "01020000"],
+            session.Commands.Select(command =>
+                Convert.ToHexString(command.Arguments.Span)).ToArray());
+    }
+
+    [Fact]
+    public async Task ThermalActionHoldsOperationGateAcrossWholeSequence()
+    {
+        byte[] first = [0x01, 0x01, 0x05, 0x00];
+        byte[] second = [0x01, 0x02, 0x05, 0x00];
+        var session = new BlockingFirstSession();
+        await using var port = CreatePort(
+            session,
+            Catalog(
+                Fixture(ProductionBatteryPort.PerformanceSilentFirstAction, 0x0D, 0x02, first),
+                Fixture(ProductionBatteryPort.PerformanceSilentSecondAction, 0x0D, 0x02, second),
+                Fixture(ProductionBatteryPort.Limit80Action, 0x07, 0x12, [0xD0])));
+
+        Task thermal = port.SetPerformanceAsync(PerformancePreset.Silent, default);
+        await session.FirstExecuteStarted.Task;
+        Task battery = port.SetChargeLimitAsync(80, default);
+        await Task.Yield();
+
+        Assert.Equal(1, session.ExecuteCount);
+
+        session.ReleaseFirst();
+        await Task.WhenAll(thermal, battery);
+        Assert.Equal(
+            [(0x0D, 0x82), (0x0D, 0x82),
+             (0x0D, 0x02), (0x0D, 0x02), (0x07, 0x12)],
+            session.Commands.Select(command =>
+                (command.ClassId, command.CommandId)).ToArray());
+    }
+
+    [Fact]
+    public async Task MissingThermalActionRejectsWholePairBeforeSubmission()
+    {
+        var session = new ScriptedSession();
+        await using var port = CreatePort(
+            session,
+            Catalog(Fixture(
+                ProductionBatteryPort.PerformanceSilentFirstAction,
+                0x0D,
+                0x02,
+                [0x01, 0x01, 0x05, 0x00])));
+
+        BladeWriteException error = await Assert.ThrowsAsync<BladeWriteException>(
+            () => port.SetPerformanceAsync(PerformancePreset.Silent, default));
+
+        Assert.Equal(WriteSubmissionState.KnownNotApplied, error.SubmissionState);
+        Assert.Empty(session.Commands);
+    }
+
+    [Fact]
+    public async Task ThermalFailureAfterFirstSubmissionIsIndeterminateAndPoisonsPort()
+    {
+        byte[] first = [0x01, 0x01, 0x00, 0x00];
+        byte[] second = [0x01, 0x02, 0x00, 0x00];
+        var session = new ScriptedSession(
+            Success([0x01, 0x01, 0x05, 0x00]),
+            Success([0x01, 0x02, 0x05, 0x00]),
+            Success(first),
+            new(default, HidSessionFailureKind.ConflictBlocked),
+            Success([0xD0]));
+        await using var port = CreatePort(
+            session,
+            Catalog(
+                Fixture(ProductionBatteryPort.PerformanceBalancedFirstAction, 0x0D, 0x02, first),
+                Fixture(ProductionBatteryPort.PerformanceBalancedSecondAction, 0x0D, 0x02, second),
+                Fixture(ProductionBatteryPort.Limit80Action, 0x07, 0x12, [0xD0])));
+
+        BladeWriteException failed = await Assert.ThrowsAsync<BladeWriteException>(
+            () => port.SetPerformanceAsync(PerformancePreset.Balanced, default));
+        BladeWriteException poisoned = await Assert.ThrowsAsync<BladeWriteException>(
+            () => port.SetChargeLimitAsync(80, default));
+
+        Assert.Equal(WriteSubmissionState.Indeterminate, failed.SubmissionState);
+        Assert.Equal(WriteSubmissionState.Indeterminate, poisoned.SubmissionState);
+        Assert.Equal(4, session.Commands.Count);
+    }
+
+    [Fact]
+    public async Task CancellationAfterFirstThermalSubmissionIsIndeterminateAndPoisonsPort()
+    {
+        byte[] first = [0x01, 0x01, 0x05, 0x00];
+        byte[] second = [0x01, 0x02, 0x05, 0x00];
+        using var cancellation = new CancellationTokenSource();
+        var session = new CancelAfterFirstWriteSession(cancellation);
+        await using var port = CreatePort(
+            session,
+            Catalog(
+                Fixture(ProductionBatteryPort.PerformanceSilentFirstAction, 0x0D, 0x02, first),
+                Fixture(ProductionBatteryPort.PerformanceSilentSecondAction, 0x0D, 0x02, second),
+                Fixture(ProductionBatteryPort.Limit80Action, 0x07, 0x12, [0xD0])));
+
+        BladeWriteException failed = await Assert.ThrowsAsync<BladeWriteException>(
+            () => port.SetPerformanceAsync(PerformancePreset.Silent, cancellation.Token));
+        BladeWriteException poisoned = await Assert.ThrowsAsync<BladeWriteException>(
+            () => port.SetChargeLimitAsync(80, default));
+
+        Assert.Equal(WriteSubmissionState.Indeterminate, failed.SubmissionState);
+        Assert.Equal(WriteSubmissionState.Indeterminate, poisoned.SubmissionState);
+        Assert.Equal(3, session.ExecuteCount);
+    }
+
+    [Fact]
+    public async Task PerformanceSetterRejectsMaximumBaselineBeforeAnyWrite()
+    {
+        byte[] first = [0x01, 0x01, 0x05, 0x00];
+        byte[] second = [0x01, 0x02, 0x05, 0x00];
+        var session = new ScriptedSession(
+            Success([0x01, 0x01, 0x00, 0x01]),
+            Success([0x01, 0x02, 0x00, 0x01]));
+        await using var port = CreatePort(
+            session,
+            Catalog(
+                Fixture(ProductionBatteryPort.PerformanceSilentFirstAction, 0x0D, 0x02, first),
+                Fixture(ProductionBatteryPort.PerformanceSilentSecondAction, 0x0D, 0x02, second)));
+
+        BladeWriteException error = await Assert.ThrowsAsync<BladeWriteException>(
+            () => port.SetPerformanceAsync(PerformancePreset.Silent, default));
+
+        Assert.Equal(WriteSubmissionState.KnownNotApplied, error.SubmissionState);
+        Assert.Equal(2, session.Commands.Count);
+        Assert.All(session.Commands, command => Assert.Equal(0x82, command.CommandId));
+    }
+
+    [Fact]
+    public async Task MaximumFanSetterRejectsNonBalancedAutomaticBaselineBeforeAnyWrite()
+    {
+        byte[] state1 = [0x01, 0x01, 0x00, 0x01];
+        byte[] state2 = [0x01, 0x02, 0x00, 0x01];
+        byte[] speed1 = [0x01, 0x01, 0x36];
+        byte[] speed2 = [0x01, 0x02, 0x36];
+        var session = new ScriptedSession(
+            Success([0x01, 0x01, 0x05, 0x00]),
+            Success([0x01, 0x02, 0x05, 0x00]));
+        await using var port = CreatePort(
+            session,
+            Catalog(
+                Fixture(ProductionBatteryPort.FanMaximumStateFirstAction, 0x0D, 0x02, state1),
+                Fixture(ProductionBatteryPort.FanMaximumStateSecondAction, 0x0D, 0x02, state2),
+                Fixture(ProductionBatteryPort.FanMaximumSpeedFirstAction, 0x0D, 0x01, speed1),
+                Fixture(ProductionBatteryPort.FanMaximumSpeedSecondAction, 0x0D, 0x01, speed2)));
+
+        BladeWriteException error = await Assert.ThrowsAsync<BladeWriteException>(
+            () => port.SetFanModeAsync(FanMode.Maximum, default));
+
+        Assert.Equal(WriteSubmissionState.KnownNotApplied, error.SubmissionState);
+        Assert.Equal(2, session.Commands.Count);
+        Assert.All(session.Commands, command => Assert.Equal(0x82, command.CommandId));
     }
 
     [Theory]
@@ -378,6 +637,95 @@ public sealed class ProductionBatteryPortTests
                     HidSessionFailureKind.NativeIoFailure)
                 : results.Dequeue());
         }
+
+        public ValueTask DisposeAsync()
+        {
+            Disposition = RazerCommandSessionDisposition.FullyDisposed;
+            return ValueTask.CompletedTask;
+        }
+    }
+
+    private sealed class CancelAfterFirstWriteSession(CancellationTokenSource cancellation)
+        : IRazerCommandSession
+    {
+        public RazerCommandSessionDisposition Disposition { get; private set; } =
+            RazerCommandSessionDisposition.Healthy;
+
+        public int ExecuteCount { get; private set; }
+
+        public Task<HidSessionResult<ReadOnlyMemory<byte>>> ExecuteAsync(
+            RazerCommandSpec command,
+            Func<TransactionIdAssignment> assignTransactionId,
+            TimeSpan exchangeTimeout,
+            CancellationToken cancellationToken)
+        {
+            _ = assignTransactionId();
+            ExecuteCount++;
+            if (ExecuteCount == 3)
+            {
+                cancellation.Cancel();
+            }
+            return Task.FromResult(new HidSessionResult<ReadOnlyMemory<byte>>(
+                command.Arguments,
+                null));
+        }
+
+        public ValueTask DisposeAsync()
+        {
+            Disposition = RazerCommandSessionDisposition.FullyDisposed;
+            return ValueTask.CompletedTask;
+        }
+    }
+
+    private sealed class BlockingFirstSession : IRazerCommandSession
+    {
+        private readonly TaskCompletionSource firstExecuteRelease =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly List<RazerCommandSpec> commands = [];
+        private int executeCount;
+
+        public RazerCommandSessionDisposition Disposition { get; private set; } =
+            RazerCommandSessionDisposition.Healthy;
+
+        public int ExecuteCount => Volatile.Read(ref executeCount);
+
+        public IReadOnlyList<RazerCommandSpec> Commands
+        {
+            get
+            {
+                lock (commands)
+                {
+                    return commands.ToArray();
+                }
+            }
+        }
+
+        public TaskCompletionSource FirstExecuteStarted { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public async Task<HidSessionResult<ReadOnlyMemory<byte>>> ExecuteAsync(
+            RazerCommandSpec command,
+            Func<TransactionIdAssignment> assignTransactionId,
+            TimeSpan exchangeTimeout,
+            CancellationToken cancellationToken)
+        {
+            _ = assignTransactionId();
+            int current = Interlocked.Increment(ref executeCount);
+            lock (commands)
+            {
+                commands.Add(command);
+            }
+
+            if (current == 1)
+            {
+                FirstExecuteStarted.TrySetResult();
+                await firstExecuteRelease.Task.WaitAsync(cancellationToken);
+            }
+
+            return new(command.Arguments, null);
+        }
+
+        public void ReleaseFirst() => firstExecuteRelease.TrySetResult();
 
         public ValueTask DisposeAsync()
         {

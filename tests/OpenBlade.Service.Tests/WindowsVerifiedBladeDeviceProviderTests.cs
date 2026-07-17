@@ -447,9 +447,9 @@ public sealed class WindowsVerifiedBladeDeviceProviderTests
         provider.TryGetVerifiedDevice(out IBladeDevice device);
         LightingSettings lighting = ProfileDefaults.CreateSafeDefaults().PluggedIn.Lighting;
 
-        await Assert.ThrowsAsync<UnvalidatedCommandException>(
+        BladeWriteException performance = await Assert.ThrowsAsync<BladeWriteException>(
             () => device.SetPerformanceAsync(PerformancePreset.Silent, default));
-        await Assert.ThrowsAsync<UnvalidatedCommandException>(
+        BladeWriteException fans = await Assert.ThrowsAsync<BladeWriteException>(
             () => device.SetFanModeAsync(FanMode.Automatic, default));
         BladeWriteException limit = await Assert.ThrowsAsync<BladeWriteException>(
             () => device.SetChargeLimitAsync(BatteryPolicy.Create(80), default));
@@ -458,7 +458,7 @@ public sealed class WindowsVerifiedBladeDeviceProviderTests
         BladeWriteException temporary = await Assert.ThrowsAsync<BladeWriteException>(
             () => device.SetTemporaryFullChargeAsync(true, default));
         Assert.All(
-            [limit, protection, temporary],
+            [performance, fans, limit, protection, temporary],
             exception => Assert.Equal(
                 WriteSubmissionState.KnownNotApplied,
                 exception.SubmissionState));
@@ -586,6 +586,14 @@ public sealed class WindowsVerifiedBladeDeviceProviderTests
         public Task<ProductionPerformanceFanState> QueryPerformanceFanStateAsync(
             CancellationToken cancellationToken) => Task.FromResult(
                 new ProductionPerformanceFanState(null, null));
+
+        public Task SetPerformanceAsync(
+            PerformancePreset value,
+            CancellationToken cancellationToken) => Reject();
+
+        public Task SetFanModeAsync(
+            FanMode value,
+            CancellationToken cancellationToken) => Reject();
 
         public Task SetChargeLimitAsync(int percent, CancellationToken cancellationToken) =>
             Reject();

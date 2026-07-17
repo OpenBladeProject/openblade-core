@@ -553,9 +553,14 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         ServiceStatusSnapshot status = context.Runtime.GetStatus();
         Assert.Equal(capabilityReads + 1, context.Device.CapabilitiesReadCalls);
         Assert.Equal(
-            stateReads + (subsystem == DeviceSubsystem.Performance ? 1 : 2),
+            stateReads + (subsystem is DeviceSubsystem.Performance or DeviceSubsystem.Fans ? 1 : 2),
             context.Device.StateReadCalls);
         Assert.Equal(0, SetterCount(context.Device, subsystem));
+        if (subsystem is DeviceSubsystem.Performance or DeviceSubsystem.Fans)
+        {
+            Assert.Equal(0, context.Device.PerformanceSetCalls);
+            Assert.Equal(0, context.Device.FanSetCalls);
+        }
         Assert.Equal([subsystem], status.ExternalChanges);
         Assert.Contains("paused", status.Message, StringComparison.OrdinalIgnoreCase);
     }
@@ -681,7 +686,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
                 new ManualOverride<PerformancePreset>(PerformancePreset.Performance, OverrideLifetime.Persistent),
                 CancellationToken.None),
             await context.Runtime.SetFanOverrideAsync(
-                new ManualOverride<FanMode>(FanMode.Maximum, OverrideLifetime.Persistent),
+                new ManualOverride<FanMode>(FanMode.Automatic, OverrideLifetime.Persistent),
                 CancellationToken.None),
             await context.Runtime.SetLightingOverrideAsync(null, CancellationToken.None),
             await context.Runtime.SetBatteryPolicyAsync(BatteryPolicy.Create(70), CancellationToken.None),
@@ -924,11 +929,6 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     {
         TestContext context = CreateWritableContext();
         await context.Runtime.ObserveAsync(CancellationToken.None);
-        context.Device.ConfirmedState = context.Device.ConfirmedState with
-        {
-            Fans = FanMode.Maximum,
-        };
-        await context.Runtime.ObserveAsync(CancellationToken.None);
         ConfirmedDeviceState before = context.Runtime.GetStatus().ConfirmedState!;
         context.Device.SuppressConfirmationFor = DeviceSubsystem.Performance;
         context.Device.AfterSetter = subsystem =>
@@ -953,7 +953,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         Assert.NotSame(before, context.Runtime.GetStatus().ConfirmedState);
         Assert.Equal(context.Device.ConfirmedState, context.Runtime.GetStatus().ConfirmedState);
         Assert.Equal(
-            [DeviceSubsystem.Performance, DeviceSubsystem.Fans],
+            [DeviceSubsystem.Performance],
             context.Runtime.GetStatus().ExternalChanges);
         Assert.Equal(1, context.Device.PerformanceSetCalls);
         Assert.Equal(readsBeforeAction + 2, context.Device.StateReadCalls);
@@ -1258,7 +1258,10 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         await context.Runtime.ObserveAsync(CancellationToken.None);
         context.Device.ConfirmedState = context.Device.ConfirmedState with
         {
-            Fans = FanMode.Maximum,
+            Lighting = new LightingSettings(
+                LightingEffect.Static,
+                new RgbColor(1, 2, 3),
+                25),
         };
 
         ControlOperationResult result = await context.Runtime.SetPerformanceOverrideAsync(
@@ -1269,7 +1272,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
 
         Assert.Equal(ControlOperationStatus.Applied, result.Status);
         Assert.Equal(context.Device.ConfirmedState, context.Runtime.GetStatus().ConfirmedState);
-        Assert.Equal([DeviceSubsystem.Fans], context.Runtime.GetStatus().ExternalChanges);
+        Assert.Equal([DeviceSubsystem.Lighting], context.Runtime.GetStatus().ExternalChanges);
     }
 
     [Fact]
@@ -1698,7 +1701,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
                 OverrideLifetime.UntilPowerSourceChange),
             CancellationToken.None);
         await context.Runtime.SetFanOverrideAsync(
-            new ManualOverride<FanMode>(FanMode.Maximum, OverrideLifetime.Persistent),
+            new ManualOverride<FanMode>(FanMode.Automatic, OverrideLifetime.Persistent),
             CancellationToken.None);
         await context.Runtime.SetFullChargeOverrideAsync(true, CancellationToken.None);
         context.Telemetry.Current = CreateTelemetry(PowerSource.Battery);
@@ -1707,7 +1710,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         ServiceStatusSnapshot status = context.Runtime.GetStatus();
 
         Assert.Null(status.PerformanceOverride);
-        Assert.Equal(FanMode.Maximum, status.FanOverride!.Value);
+        Assert.Equal(FanMode.Automatic, status.FanOverride!.Value);
         Assert.False(status.FullChargeOverride);
         Assert.False(status.DesiredState.Battery.TemporaryFullCharge);
     }
@@ -1812,6 +1815,35 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     }
 
     [Fact]
+    public async Task InvalidThermalOverrideCombination_IsRejectedBeforePersistence()
+    {
+        string overridePath = Path.Combine(directory, "thermal-safety-overrides.json");
+        TestContext context = CreateContext(
+            providerAvailable: false,
+            persistentOverridePath: overridePath,
+            loadPersistentOverrides: true);
+        await context.Runtime.SetFanOverrideAsync(
+            new ManualOverride<FanMode>(FanMode.Maximum, OverrideLifetime.Persistent),
+            CancellationToken.None);
+
+        ControlOperationResult result = await context.Runtime.SetPerformanceOverrideAsync(
+            new ManualOverride<PerformancePreset>(
+                PerformancePreset.Performance,
+                OverrideLifetime.Persistent),
+            CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Failed, result.Status);
+        Assert.Null(context.Runtime.GetStatus().PerformanceOverride);
+        Assert.Equal(FanMode.Maximum, context.Runtime.GetStatus().FanOverride!.Value);
+        TestContext restarted = CreateContext(
+            providerAvailable: false,
+            persistentOverridePath: overridePath,
+            loadPersistentOverrides: true);
+        Assert.Null(restarted.Runtime.GetStatus().PerformanceOverride);
+        Assert.Equal(FanMode.Maximum, restarted.Runtime.GetStatus().FanOverride!.Value);
+    }
+
+    [Fact]
     public async Task EnableFullChargeWhileOnBattery_DoesNotRemainLatentAfterAcTransition()
     {
         TestContext context = CreateContext(
@@ -1895,7 +1927,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
                 OverrideLifetime.Persistent),
             CancellationToken.None);
         await context.Runtime.SetFanOverrideAsync(
-            new ManualOverride<FanMode>(FanMode.Maximum, OverrideLifetime.Persistent),
+            new ManualOverride<FanMode>(FanMode.Automatic, OverrideLifetime.Persistent),
             CancellationToken.None);
 
         Assert.Equal([1L, 2L], context.Hub.Published.Select(status => status.Revision));

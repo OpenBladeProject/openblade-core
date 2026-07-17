@@ -19,6 +19,14 @@ public interface IProductionBatteryPort : IAsyncDisposable
     Task<ProductionPerformanceFanState> QueryPerformanceFanStateAsync(
         CancellationToken cancellationToken);
 
+    Task SetPerformanceAsync(
+        PerformancePreset value,
+        CancellationToken cancellationToken);
+
+    Task SetFanModeAsync(
+        FanMode value,
+        CancellationToken cancellationToken);
+
     Task SetChargeLimitAsync(int percent, CancellationToken cancellationToken);
 
     Task SetProtectionOffAsync(CancellationToken cancellationToken);
