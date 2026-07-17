@@ -4,54 +4,21 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:local="using:OpenBlade.Tray"
     Title="OpenBlade">
-    <Grid x:Name="Root"
-          Background="Transparent">
-        <VisualStateManager.VisualStateGroups>
-            <VisualStateGroup x:Name="WindowWidthStates">
-                <VisualState x:Name="NarrowWindow">
-                    <VisualState.StateTriggers>
-                        <AdaptiveTrigger MinWindowWidth="0" />
-                    </VisualState.StateTriggers>
-                </VisualState>
-                <VisualState x:Name="WideWindow">
-                    <VisualState.StateTriggers>
-                        <AdaptiveTrigger MinWindowWidth="720" />
-                    </VisualState.StateTriggers>
-                    <VisualState.Setters>
-                        <Setter Target="FanActionsColumn.Width" Value="Auto" />
-                        <Setter Target="FanActions.(Grid.Row)" Value="0" />
-                        <Setter Target="FanActions.(Grid.Column)" Value="1" />
-                        <Setter Target="PerformanceColumn2.Width" Value="*" />
-                        <Setter Target="PerformanceColumn3.Width" Value="*" />
-                        <Setter Target="BalancedChoice.(Grid.Row)" Value="0" />
-                        <Setter Target="BalancedChoice.(Grid.Column)" Value="1" />
-                        <Setter Target="PerformanceChoice.(Grid.Row)" Value="0" />
-                        <Setter Target="PerformanceChoice.(Grid.Column)" Value="2" />
-                        <Setter Target="BatteryActionColumn2.Width" Value="*" />
-                        <Setter Target="BatteryActionColumn3.Width" Value="*" />
-                        <Setter Target="BatteryProtectionAction.(Grid.Row)" Value="0" />
-                        <Setter Target="BatteryProtectionAction.(Grid.Column)" Value="1" />
-                        <Setter Target="FullChargeAction.(Grid.Row)" Value="0" />
-                        <Setter Target="FullChargeAction.(Grid.Column)" Value="2" />
-                    </VisualState.Setters>
-                </VisualState>
-            </VisualStateGroup>
-        </VisualStateManager.VisualStateGroups>
+    <Grid x:Name="Root" Background="Transparent">
         <Grid.Resources>
-            <SolidColorBrush x:Key="NavigationViewDefaultPaneBackground" Color="Transparent" />
-            <SolidColorBrush x:Key="NavigationViewExpandedPaneBackground" Color="Transparent" />
             <SolidColorBrush x:Key="NavigationViewContentBackground" Color="Transparent" />
             <Thickness x:Key="NavigationViewContentGridBorderThickness">0</Thickness>
             <local:Int32DoubleConverter x:Key="Int32Double" />
             <local:BooleanNegationToVisibilityConverter x:Key="BooleanNegationToVisibility" />
-            <Style x:Key="PageTitleStyle" TargetType="TextBlock">
-                <Setter Property="FontSize" Value="28" />
-                <Setter Property="FontWeight" Value="SemiBold" />
+
+            <Style x:Key="PageTitleStyle"
+                   TargetType="TextBlock"
+                   BasedOn="{StaticResource TitleTextBlockStyle}">
                 <Setter Property="Margin" Value="0,0,0,20" />
             </Style>
-            <Style x:Key="SectionHeaderStyle" TargetType="TextBlock">
-                <Setter Property="FontSize" Value="20" />
-                <Setter Property="FontWeight" Value="SemiBold" />
+            <Style x:Key="SectionHeaderStyle"
+                   TargetType="TextBlock"
+                   BasedOn="{StaticResource SubtitleTextBlockStyle}">
                 <Setter Property="Margin" Value="0,20,0,10" />
             </Style>
             <Style x:Key="CardStyle" TargetType="Border">
@@ -62,12 +29,27 @@
                 <Setter Property="Padding" Value="18" />
                 <Setter Property="Margin" Value="0,0,0,12" />
             </Style>
-            <Style x:Key="CardTitleStyle" TargetType="TextBlock">
-                <Setter Property="FontSize" Value="15" />
-                <Setter Property="FontWeight" Value="SemiBold" />
+            <Style x:Key="SettingsGroupStyle"
+                   TargetType="Border"
+                   BasedOn="{StaticResource CardStyle}">
+                <Setter Property="Padding" Value="0" />
             </Style>
-            <Style x:Key="SecondaryTextStyle" TargetType="TextBlock">
-                <Setter Property="FontSize" Value="13" />
+            <Style x:Key="SettingsRowStyle" TargetType="Border">
+                <Setter Property="BorderBrush" Value="{ThemeResource CardStrokeColorDefaultBrush}" />
+                <Setter Property="BorderThickness" Value="0,0,0,1" />
+                <Setter Property="Padding" Value="16,14" />
+            </Style>
+            <Style x:Key="SettingsLastRowStyle"
+                   TargetType="Border"
+                   BasedOn="{StaticResource SettingsRowStyle}">
+                <Setter Property="BorderThickness" Value="0" />
+            </Style>
+            <Style x:Key="CardTitleStyle"
+                   TargetType="TextBlock"
+                   BasedOn="{StaticResource BodyStrongTextBlockStyle}" />
+            <Style x:Key="SecondaryTextStyle"
+                   TargetType="TextBlock"
+                   BasedOn="{StaticResource BodyTextBlockStyle}">
                 <Setter Property="Foreground" Value="{ThemeResource TextFillColorSecondaryBrush}" />
                 <Setter Property="TextWrapping" Value="Wrap" />
             </Style>
@@ -82,7 +64,7 @@
                         SelectionChanged="OnNavigationSelectionChanged">
             <NavigationView.MenuItems>
                 <NavigationViewItem x:Name="HomeNavigationItem"
-                                    Content="Home"
+                                    Content="Dashboard"
                                     Tag="home"
                                     IsSelected="True">
                     <NavigationViewItem.Icon>
@@ -101,60 +83,65 @@
                 </NavigationViewItem>
             </NavigationView.MenuItems>
 
-            <Grid Padding="28,20,28,28"
-                  HorizontalAlignment="Stretch">
+            <Grid Padding="28,20,28,28" HorizontalAlignment="Stretch">
                 <ScrollViewer x:Name="HomePage"
                               HorizontalContentAlignment="Stretch"
                               VerticalScrollBarVisibility="Auto">
                     <StackPanel HorizontalAlignment="Stretch">
-                        <TextBlock Text="Home" Style="{StaticResource PageTitleStyle}" />
+                        <StackPanel.Transitions>
+                            <TransitionCollection>
+                                <EntranceThemeTransition FromHorizontalOffset="20" />
+                            </TransitionCollection>
+                        </StackPanel.Transitions>
+
+                        <TextBlock Text="Dashboard" Style="{StaticResource PageTitleStyle}" />
 
                         <Border Style="{StaticResource CardStyle}" Padding="22">
-                            <Grid ColumnSpacing="20" RowSpacing="12">
+                            <Grid x:Name="HeroLayout" ColumnSpacing="24" RowSpacing="12">
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="*" />
                                     <ColumnDefinition Width="Auto" />
                                 </Grid.ColumnDefinitions>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                </Grid.RowDefinitions>
                                 <StackPanel Spacing="6">
                                     <StackPanel Orientation="Horizontal" Spacing="8">
                                         <TextBlock Text="{x:Bind ViewModel.ActivePowerSourceLabel, Mode=OneWay}"
                                                    Style="{StaticResource SecondaryTextStyle}"
                                                    VerticalAlignment="Center" />
-                                        <Border Background="{ThemeResource AccentFillColorDefaultBrush}"
+                                        <Border Background="{ThemeResource SubtleFillColorSecondaryBrush}"
                                                 CornerRadius="12"
                                                 Padding="10,3">
                                             <TextBlock Text="{x:Bind ViewModel.ProfileStateLabel, Mode=OneWay}"
-                                                       Foreground="{ThemeResource TextOnAccentFillColorPrimaryBrush}"
-                                                       FontSize="12" />
+                                                       Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                                       Style="{StaticResource CaptionTextBlockStyle}" />
                                         </Border>
                                     </StackPanel>
                                     <TextBlock Text="{x:Bind ViewModel.ActivePerformanceLabel, Mode=OneWay}"
-                                               FontSize="32"
-                                               FontWeight="SemiBold" />
+                                               Style="{StaticResource TitleLargeTextBlockStyle}" />
                                     <StackPanel Orientation="Horizontal" Spacing="14">
                                         <TextBlock Text="{x:Bind ViewModel.ActiveFanModeLabel, Mode=OneWay}"
-                                                   FontSize="16" />
+                                                   Style="{StaticResource BodyTextBlockStyle}" />
                                         <TextBlock Text="{x:Bind ViewModel.CurrentBatterySettingLabel, Mode=OneWay}"
                                                    Style="{StaticResource SecondaryTextStyle}"
                                                    VerticalAlignment="Center" />
                                     </StackPanel>
                                 </StackPanel>
                                 <StackPanel x:Name="HeroReadings"
-                                            Grid.Column="1"
-                                            Spacing="7"
-                                            HorizontalAlignment="Right"
+                                            Grid.Row="1"
+                                            Spacing="6"
+                                            HorizontalAlignment="Left"
                                             VerticalAlignment="Center"
                                             Visibility="{x:Bind ViewModel.LiveReadingsEnabled, Mode=OneWay}">
-                                    <TextBlock Text="Live readings"
-                                               Style="{StaticResource SecondaryTextStyle}" />
+                                    <TextBlock Text="Live readings" Style="{StaticResource SecondaryTextStyle}" />
                                     <TextBlock Text="{x:Bind ViewModel.BatteryPowerFlowLabel, Mode=OneWay}"
                                                Style="{StaticResource CardTitleStyle}" />
-                                    <StackPanel Orientation="Horizontal" Spacing="16">
-                                        <TextBlock Text="{x:Bind ViewModel.Fan1RpmLabel, Mode=OneWay}"
-                                                   Style="{StaticResource SecondaryTextStyle}" />
-                                        <TextBlock Text="{x:Bind ViewModel.Fan2RpmLabel, Mode=OneWay}"
-                                                   Style="{StaticResource SecondaryTextStyle}" />
-                                    </StackPanel>
+                                    <TextBlock Text="{x:Bind ViewModel.Fan1RpmLabel, Mode=OneWay}"
+                                               Style="{StaticResource SecondaryTextStyle}" />
+                                    <TextBlock Text="{x:Bind ViewModel.Fan2RpmLabel, Mode=OneWay}"
+                                               Style="{StaticResource SecondaryTextStyle}" />
                                 </StackPanel>
                             </Grid>
                         </Border>
@@ -165,15 +152,15 @@
                                 Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
                                 BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
                                 BorderThickness="1"
-                                CornerRadius="6"
-                                Padding="12,10"
+                                CornerRadius="8"
+                                Padding="14,12"
                                 Margin="0,0,0,12"
                                 AutomationProperties.Name="Show warning details">
                             <Button.Flyout>
                                 <Flyout Placement="BottomEdgeAlignedLeft">
                                     <StackPanel MaxWidth="420" Spacing="8">
                                         <TextBlock Text="{x:Bind ViewModel.AttentionSummary, Mode=OneWay}"
-                                                   FontWeight="SemiBold" />
+                                                   Style="{StaticResource CardTitleStyle}" />
                                         <TextBlock Text="{x:Bind ViewModel.AttentionDetails, Mode=OneWay}"
                                                    Style="{StaticResource SecondaryTextStyle}" />
                                     </StackPanel>
@@ -190,167 +177,183 @@
                                           VerticalAlignment="Center" />
                                 <TextBlock Grid.Column="1"
                                            Text="{x:Bind ViewModel.AttentionSummary, Mode=OneWay}"
-                                           FontWeight="SemiBold"
+                                           Style="{StaticResource CardTitleStyle}"
                                            TextTrimming="CharacterEllipsis"
                                            VerticalAlignment="Center" />
-                                <FontIcon Grid.Column="2"
-                                          Glyph="&#xE70D;"
-                                          FontSize="12"
-                                          VerticalAlignment="Center" />
+                                <FontIcon Grid.Column="2" Glyph="&#xE70D;" FontSize="12" VerticalAlignment="Center" />
                             </Grid>
                         </Button>
 
-                        <Border Background="{ThemeResource SubtleFillColorSecondaryBrush}"
-                                CornerRadius="6"
-                                Padding="12,8"
-                                Margin="0,0,0,12"
-                                Visibility="{x:Bind ViewModel.HasOperationFeedback, Mode=OneWay}">
-                            <StackPanel Orientation="Horizontal" Spacing="10">
-                                <SymbolIcon Symbol="Accept" />
-                                <TextBlock Text="{x:Bind ViewModel.OperationFeedbackMessage, Mode=OneWay}"
-                                           Style="{StaticResource SecondaryTextStyle}"
-                                           VerticalAlignment="Center" />
-                            </StackPanel>
-                        </Border>
-
                         <Border Style="{StaticResource CardStyle}"
                                 Visibility="{x:Bind ViewModel.HasActiveChanges, Mode=OneWay}">
-                            <Grid ColumnSpacing="16">
+                            <Grid x:Name="ActiveChangesLayout" ColumnSpacing="16" RowSpacing="12">
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="*" />
                                     <ColumnDefinition Width="Auto" />
-                                </Grid.ColumnDefinitions>
-                                <StackPanel Spacing="3">
-                                    <TextBlock Text="Active changes" Style="{StaticResource CardTitleStyle}" />
-                                    <TextBlock Text="{x:Bind ViewModel.ActiveChangesText, Mode=OneWay}"
-                                               Style="{StaticResource SecondaryTextStyle}" />
-                                </StackPanel>
-                                <Button Grid.Column="1"
-                                        Content="Use profile settings"
-                                        Command="{x:Bind ViewModel.ClearManualOverridesCommand}"
-                                        VerticalAlignment="Center" />
-                            </Grid>
-                        </Border>
-
-                        <TextBlock Text="Performance and fans" Style="{StaticResource SectionHeaderStyle}" />
-                        <Border Style="{StaticResource CardStyle}"
-                                Visibility="{x:Bind ViewModel.IsPerformanceVisible, Mode=OneWay}">
-                            <StackPanel Spacing="12">
-                                <TextBlock Text="Performance" Style="{StaticResource CardTitleStyle}" />
-                                <TextBlock Text="Choose how the laptop balances noise and speed."
-                                           Style="{StaticResource SecondaryTextStyle}" />
-                                <Grid ColumnSpacing="8" RowSpacing="8">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="*" />
-                                        <ColumnDefinition x:Name="PerformanceColumn2" Width="0" />
-                                        <ColumnDefinition x:Name="PerformanceColumn3" Width="0" />
-                                    </Grid.ColumnDefinitions>
-                                    <Grid.RowDefinitions>
-                                        <RowDefinition Height="Auto" />
-                                        <RowDefinition Height="Auto" />
-                                        <RowDefinition Height="Auto" />
-                                    </Grid.RowDefinitions>
-                                    <RadioButton Content="Silent"
-                                                 HorizontalAlignment="Left"
-                                                 IsChecked="{x:Bind ViewModel.IsSilentSelected, Mode=OneWay}"
-                                                 Command="{x:Bind ViewModel.SetPerformanceCommand}"
-                                                 CommandParameter="{x:Bind SilentPreset}" />
-                                    <RadioButton x:Name="BalancedChoice"
-                                                 Grid.Row="1"
-                                                 Content="Balanced"
-                                                 HorizontalAlignment="Left"
-                                                 IsChecked="{x:Bind ViewModel.IsBalancedSelected, Mode=OneWay}"
-                                                 Command="{x:Bind ViewModel.SetPerformanceCommand}"
-                                                 CommandParameter="{x:Bind BalancedPreset}" />
-                                    <RadioButton x:Name="PerformanceChoice"
-                                                 Grid.Row="2"
-                                                 Content="Performance"
-                                                 HorizontalAlignment="Left"
-                                                 IsChecked="{x:Bind ViewModel.IsPerformanceSelected, Mode=OneWay}"
-                                                 Command="{x:Bind ViewModel.SetPerformanceCommand}"
-                                                 CommandParameter="{x:Bind PerformancePreset}" />
-                                </Grid>
-                            </StackPanel>
-                        </Border>
-
-                        <Border Style="{StaticResource CardStyle}"
-                                Visibility="{x:Bind ViewModel.IsFanControlVisible, Mode=OneWay}">
-                            <Grid ColumnSpacing="18" RowSpacing="12">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="*" />
-                                    <ColumnDefinition x:Name="FanActionsColumn" Width="0" />
                                 </Grid.ColumnDefinitions>
                                 <Grid.RowDefinitions>
                                     <RowDefinition Height="Auto" />
                                     <RowDefinition Height="Auto" />
                                 </Grid.RowDefinitions>
-                                <StackPanel Spacing="3" VerticalAlignment="Center">
-                                    <TextBlock Text="Fans" Style="{StaticResource CardTitleStyle}" />
-                                    <TextBlock Text="Automatic is recommended for everyday use."
+                                <StackPanel Spacing="3">
+                                    <TextBlock Text="Active changes" Style="{StaticResource CardTitleStyle}" />
+                                    <TextBlock Text="{x:Bind ViewModel.ActiveChangesText, Mode=OneWay}"
                                                Style="{StaticResource SecondaryTextStyle}" />
                                 </StackPanel>
-                                <StackPanel x:Name="FanActions"
-                                            Grid.Row="1"
-                                            Orientation="Horizontal"
-                                            Spacing="8">
-                                    <ComboBox x:Name="DashboardFanModeSelector"
-                                              AutomationProperties.Name="Fan mode"
-                                              MinWidth="140"
-                                              ItemsSource="{x:Bind ViewModel.AvailableFanModes, Mode=OneWay}"
-                                              SelectedItem="{x:Bind ViewModel.SelectedFanMode, Mode=OneWay}" />
-                                    <Button Content="Apply"
-                                            Command="{x:Bind ViewModel.SetFanModeCommand}"
-                                            CommandParameter="{x:Bind DashboardFanModeSelector.SelectedItem, Mode=OneWay}" />
-                                </StackPanel>
+                                <Button x:Name="UseProfileSettingsButton"
+                                        Grid.Row="1"
+                                        Content="Use profile settings"
+                                        Command="{x:Bind ViewModel.ClearManualOverridesCommand}"
+                                        HorizontalAlignment="Left"
+                                        VerticalAlignment="Center" />
                             </Grid>
                         </Border>
 
-                        <Border Style="{StaticResource CardStyle}">
-                            <StackPanel Spacing="12">
-                                <Grid>
-                                    <StackPanel Spacing="3">
-                                        <TextBlock Text="Battery protection" Style="{StaticResource CardTitleStyle}" />
+                        <TextBlock Text="Performance and fans" Style="{StaticResource SectionHeaderStyle}" />
+                        <Border Style="{StaticResource SettingsGroupStyle}">
+                            <StackPanel>
+                            <Border Style="{StaticResource SettingsRowStyle}"
+                                    Visibility="{x:Bind ViewModel.IsPerformanceVisible, Mode=OneWay}">
+                                <Grid ColumnSpacing="20">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel Spacing="3" VerticalAlignment="Center">
+                                        <TextBlock Text="Performance" Style="{StaticResource CardTitleStyle}" />
+                                        <TextBlock Text="Balance speed, power use, and noise."
+                                                   Style="{StaticResource SecondaryTextStyle}" />
+                                    </StackPanel>
+                                    <ComboBox x:Name="DashboardPerformanceSelector"
+                                              Grid.Column="1"
+                                              MinWidth="150"
+                                              HorizontalAlignment="Right"
+                                              AutomationProperties.Name="Performance mode"
+                                              IsEnabled="{x:Bind ViewModel.CanControlHardware, Mode=OneWay}"
+                                              ItemsSource="{x:Bind ViewModel.AvailablePerformancePresets, Mode=OneWay}"
+                                              SelectedItem="{x:Bind ViewModel.SelectedPerformance, Mode=OneWay}"
+                                              SelectionChanged="OnDashboardPerformanceChanged" />
+                                </Grid>
+                            </Border>
+                            <Border Style="{StaticResource SettingsLastRowStyle}"
+                                    Visibility="{x:Bind ViewModel.IsFanControlVisible, Mode=OneWay}">
+                                <Grid ColumnSpacing="20">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel Spacing="3" VerticalAlignment="Center">
+                                        <TextBlock Text="Fans" Style="{StaticResource CardTitleStyle}" />
+                                        <TextBlock Text="Automatic is recommended for everyday use."
+                                                   Style="{StaticResource SecondaryTextStyle}" />
+                                    </StackPanel>
+                                    <ComboBox x:Name="DashboardFanModeSelector"
+                                              Grid.Column="1"
+                                              MinWidth="150"
+                                              HorizontalAlignment="Right"
+                                              AutomationProperties.Name="Fan mode"
+                                              IsEnabled="{x:Bind ViewModel.CanControlHardware, Mode=OneWay}"
+                                              ItemsSource="{x:Bind ViewModel.AvailableFanModes, Mode=OneWay}"
+                                              SelectedItem="{x:Bind ViewModel.SelectedFanMode, Mode=OneWay}"
+                                              SelectionChanged="OnDashboardFanModeSelectionChanged" />
+                                </Grid>
+                            </Border>
+                            </StackPanel>
+                        </Border>
+
+                        <Grid MinHeight="28" Margin="4,0,4,2">
+                            <StackPanel Orientation="Horizontal"
+                                        Spacing="8"
+                                        Visibility="{x:Bind ViewModel.HasOperationFeedback, Mode=OneWay}">
+                                <SymbolIcon Symbol="Accept" />
+                                <TextBlock Text="{x:Bind ViewModel.OperationFeedbackMessage, Mode=OneWay}"
+                                           Style="{StaticResource SecondaryTextStyle}"
+                                           VerticalAlignment="Center" />
+                            </StackPanel>
+                        </Grid>
+
+                        <TextBlock Text="Battery" Style="{StaticResource SectionHeaderStyle}" />
+                        <Border Style="{StaticResource SettingsGroupStyle}">
+                            <StackPanel>
+                            <Border Style="{StaticResource SettingsRowStyle}">
+                                <Grid ColumnSpacing="20">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="260" />
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel Spacing="3" VerticalAlignment="Center">
+                                        <TextBlock Text="Charge limit" Style="{StaticResource CardTitleStyle}" />
                                         <TextBlock Text="Limit charging to help preserve battery health."
                                                    Style="{StaticResource SecondaryTextStyle}" />
                                     </StackPanel>
-                                    <StackPanel HorizontalAlignment="Right" Orientation="Horizontal" VerticalAlignment="Center">
-                                        <TextBlock Text="{x:Bind ViewModel.ChargeLimitPercent, Mode=OneWay}" FontWeight="SemiBold" />
-                                        <TextBlock Text="%" FontWeight="SemiBold" />
+                                    <StackPanel Grid.Column="1"
+                                                Spacing="4"
+                                                HorizontalAlignment="Right">
+                                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                                            <TextBlock Text="{x:Bind ViewModel.ChargeLimitPercent, Mode=OneWay}"
+                                                       Style="{StaticResource CardTitleStyle}" />
+                                            <TextBlock Text="%" Style="{StaticResource CardTitleStyle}" />
+                                        </StackPanel>
+                                        <Slider x:Name="DashboardChargeLimitSlider"
+                                                Minimum="50"
+                                                Maximum="80"
+                                                StepFrequency="5"
+                                                SmallChange="5"
+                                                LargeChange="5"
+                                                SnapsTo="StepValues"
+                                                IsThumbToolTipEnabled="True"
+                                                IsEnabled="{x:Bind ViewModel.CanAdjustChargeLimit, Mode=OneWay}"
+                                                AutomationProperties.Name="Charge limit"
+                                                Value="{Binding ChargeLimitPercent, Mode=TwoWay, Converter={StaticResource Int32Double}}"
+                                                PointerPressed="OnDashboardChargeLimitPointerPressed"
+                                                PointerReleased="OnDashboardChargeLimitPointerCaptureLost"
+                                                PointerCaptureLost="OnDashboardChargeLimitPointerCaptureLost"
+                                                KeyUp="OnDashboardChargeLimitKeyUp" />
                                     </StackPanel>
                                 </Grid>
-                                <Slider Minimum="50"
-                                        AutomationProperties.Name="Charge limit"
-                                        Maximum="80"
-                                        StepFrequency="5"
-                                        SmallChange="5"
-                                        LargeChange="5"
-                                        SnapsTo="StepValues"
-                                        IsThumbToolTipEnabled="True"
-                                        Value="{Binding ChargeLimitPercent, Mode=TwoWay, Converter={StaticResource Int32Double}}" />
-                                <Grid ColumnSpacing="8" RowSpacing="8">
+                            </Border>
+                            <Border Style="{StaticResource SettingsRowStyle}">
+                                <Grid ColumnSpacing="20">
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="*" />
-                                        <ColumnDefinition x:Name="BatteryActionColumn2" Width="0" />
-                                        <ColumnDefinition x:Name="BatteryActionColumn3" Width="0" />
+                                        <ColumnDefinition Width="Auto" />
                                     </Grid.ColumnDefinitions>
-                                    <Grid.RowDefinitions>
-                                        <RowDefinition Height="Auto" />
-                                        <RowDefinition Height="Auto" />
-                                        <RowDefinition Height="Auto" />
-                                    </Grid.RowDefinitions>
-                                    <Button Content="Apply limit"
-                                            Command="{x:Bind ViewModel.SetChargeLimitCommand}"
-                                            CommandParameter="{x:Bind ViewModel.ChargeLimitPercent, Mode=OneWay}" />
-                                    <Button x:Name="BatteryProtectionAction"
-                                            Grid.Row="1"
-                                            Content="{x:Bind ViewModel.BatteryProtectionActionLabel, Mode=OneWay}"
-                                            Command="{x:Bind ViewModel.ToggleBatteryProtectionCommand}" />
-                                    <Button x:Name="FullChargeAction"
-                                            Grid.Row="2"
+                                    <StackPanel Spacing="3" VerticalAlignment="Center">
+                                        <TextBlock Text="Battery protection" Style="{StaticResource CardTitleStyle}" />
+                                        <TextBlock Text="Turn the configured charge limit on or off."
+                                                   Style="{StaticResource SecondaryTextStyle}" />
+                                    </StackPanel>
+                                    <ToggleSwitch x:Name="BatteryProtectionToggle"
+                                                  Grid.Column="1"
+                                                  HorizontalAlignment="Right"
+                                                  MinWidth="0"
+                                                  AutomationProperties.Name="Battery protection"
+                                                  OffContent=""
+                                                  OnContent=""
+                                                  IsEnabled="{x:Bind ViewModel.CanChangeBatteryProtection, Mode=OneWay}"
+                                                  IsOn="{x:Bind ViewModel.BatteryProtectionEnabled, Mode=OneWay}"
+                                                  Toggled="OnBatteryProtectionToggled" />
+                                </Grid>
+                            </Border>
+                            <Border Style="{StaticResource SettingsLastRowStyle}">
+                                <Grid ColumnSpacing="20">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel Spacing="3" VerticalAlignment="Center">
+                                        <TextBlock Text="Temporary full charge" Style="{StaticResource CardTitleStyle}" />
+                                        <TextBlock Text="Charge to 100%, then restore the limit after unplugging."
+                                                   Style="{StaticResource SecondaryTextStyle}" />
+                                    </StackPanel>
+                                    <Button Grid.Column="1"
+                                            HorizontalAlignment="Right"
                                             Content="{x:Bind ViewModel.FullChargeActionLabel, Mode=OneWay}"
                                             Command="{x:Bind ViewModel.ToggleFullChargeCommand}"
-                                            CommandParameter="{x:Bind ViewModel.EnableFullChargeOverride, Mode=OneWay}" />
+                                            CommandParameter="{x:Bind ViewModel.EnableFullChargeOverride, Mode=OneWay}"
+                                            VerticalAlignment="Center" />
                                 </Grid>
+                            </Border>
                             </StackPanel>
                         </Border>
                     </StackPanel>
@@ -361,81 +364,95 @@
                               HorizontalContentAlignment="Stretch"
                               VerticalScrollBarVisibility="Auto">
                     <StackPanel HorizontalAlignment="Stretch">
+                        <StackPanel.Transitions>
+                            <TransitionCollection>
+                                <EntranceThemeTransition FromHorizontalOffset="20" />
+                            </TransitionCollection>
+                        </StackPanel.Transitions>
+
                         <TextBlock Text="Profiles" Style="{StaticResource PageTitleStyle}" />
                         <TextBlock Text="OpenBlade switches between these settings when the power source changes."
                                    Style="{StaticResource SecondaryTextStyle}"
                                    Margin="0,0,0,16" />
+
+                        <Grid x:Name="ProfilesLayout" ColumnSpacing="12">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition x:Name="ProfilesSecondColumn" Width="0" />
+                            </Grid.ColumnDefinitions>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                            </Grid.RowDefinitions>
+
+                            <Border Style="{StaticResource CardStyle}">
+                                <StackPanel Spacing="12">
+                                    <Grid>
+                                        <TextBlock Text="Plugged in" Style="{StaticResource SectionHeaderStyle}" Margin="0" />
+                                        <Border HorizontalAlignment="Right"
+                                                CornerRadius="10"
+                                                Padding="8,2"
+                                                Background="{ThemeResource AccentFillColorDefaultBrush}"
+                                                Visibility="{x:Bind ViewModel.IsPluggedInProfileActive, Mode=OneWay}">
+                                            <TextBlock Text="Active"
+                                                       Foreground="{ThemeResource TextOnAccentFillColorPrimaryBrush}"
+                                                       Style="{StaticResource CaptionTextBlockStyle}" />
+                                        </Border>
+                                    </Grid>
+                                    <ComboBox Header="Performance"
+                                              ItemsSource="{x:Bind ViewModel.AvailablePerformancePresets, Mode=OneWay}"
+                                              SelectedItem="{x:Bind ViewModel.PluggedInPerformanceEditor, Mode=TwoWay}" />
+                                    <ComboBox Header="Fans"
+                                              ItemsSource="{x:Bind ViewModel.AvailableFanModes, Mode=OneWay}"
+                                              SelectedItem="{x:Bind ViewModel.PluggedInFanModeEditor, Mode=TwoWay}" />
+                                </StackPanel>
+                            </Border>
+
+                            <Border x:Name="BatteryProfileCard"
+                                    Grid.Row="1"
+                                    Style="{StaticResource CardStyle}">
+                                <StackPanel Spacing="12">
+                                    <Grid>
+                                        <TextBlock Text="On battery" Style="{StaticResource SectionHeaderStyle}" Margin="0" />
+                                        <Border HorizontalAlignment="Right"
+                                                CornerRadius="10"
+                                                Padding="8,2"
+                                                Background="{ThemeResource AccentFillColorDefaultBrush}"
+                                                Visibility="{Binding IsPluggedInProfileActive, Converter={StaticResource BooleanNegationToVisibility}}">
+                                            <TextBlock Text="Active"
+                                                       Foreground="{ThemeResource TextOnAccentFillColorPrimaryBrush}"
+                                                       Style="{StaticResource CaptionTextBlockStyle}" />
+                                        </Border>
+                                    </Grid>
+                                    <ComboBox Header="Performance"
+                                              ItemsSource="{x:Bind ViewModel.AvailablePerformancePresets, Mode=OneWay}"
+                                              SelectedItem="{x:Bind ViewModel.BatteryPerformanceEditor, Mode=TwoWay}" />
+                                    <ComboBox Header="Fans"
+                                              ItemsSource="{x:Bind ViewModel.AvailableFanModes, Mode=OneWay}"
+                                              SelectedItem="{x:Bind ViewModel.BatteryFanModeEditor, Mode=TwoWay}" />
+                                </StackPanel>
+                            </Border>
+                        </Grid>
+
                         <Border Style="{StaticResource CardStyle}">
-                            <StackPanel Spacing="12">
-                                <Grid>
-                                    <TextBlock Text="Plugged in" FontSize="20" FontWeight="SemiBold" />
-                                    <Border HorizontalAlignment="Right"
-                                            CornerRadius="10"
-                                            Padding="8,2"
-                                            Background="{ThemeResource AccentFillColorDefaultBrush}"
-                                            Visibility="{x:Bind ViewModel.IsPluggedInProfileActive, Mode=OneWay}">
-                                        <TextBlock Text="Active"
-                                                   Foreground="{ThemeResource TextOnAccentFillColorPrimaryBrush}"
-                                                   FontSize="12" />
-                                    </Border>
-                                </Grid>
-                                <ComboBox Header="Performance"
-                                          ItemsSource="{x:Bind ViewModel.AvailablePerformancePresets, Mode=OneWay}"
-                                          SelectedItem="{x:Bind ViewModel.PluggedInPerformanceEditor, Mode=TwoWay}" />
-                                <ComboBox Header="Fans"
-                                          ItemsSource="{x:Bind ViewModel.AvailableFanModes, Mode=OneWay}"
-                                          SelectedItem="{x:Bind ViewModel.PluggedInFanModeEditor, Mode=TwoWay}" />
-                            </StackPanel>
-                        </Border>
-                        <Border Style="{StaticResource CardStyle}">
-                            <StackPanel Spacing="12">
-                                <Grid>
-                                    <TextBlock Text="On battery" FontSize="20" FontWeight="SemiBold" />
-                                    <Border HorizontalAlignment="Right"
-                                            CornerRadius="10"
-                                            Padding="8,2"
-                                            Background="{ThemeResource AccentFillColorDefaultBrush}"
-                                            Visibility="{Binding IsPluggedInProfileActive, Converter={StaticResource BooleanNegationToVisibility}}">
-                                        <TextBlock Text="Active"
-                                                   Foreground="{ThemeResource TextOnAccentFillColorPrimaryBrush}"
-                                                   FontSize="12" />
-                                    </Border>
-                                </Grid>
-                                <ComboBox Header="Performance"
-                                          ItemsSource="{x:Bind ViewModel.AvailablePerformancePresets, Mode=OneWay}"
-                                          SelectedItem="{x:Bind ViewModel.BatteryPerformanceEditor, Mode=TwoWay}" />
-                                <ComboBox Header="Fans"
-                                          ItemsSource="{x:Bind ViewModel.AvailableFanModes, Mode=OneWay}"
-                                          SelectedItem="{x:Bind ViewModel.BatteryFanModeEditor, Mode=TwoWay}" />
-                            </StackPanel>
-                        </Border>
-                        <Border Style="{StaticResource CardStyle}">
-                            <StackPanel Spacing="12">
-                                <Grid>
-                                    <StackPanel Spacing="3">
-                                        <TextBlock Text="Charge limit" Style="{StaticResource CardTitleStyle}" />
-                                        <TextBlock Text="Used by both power profiles."
-                                                   Style="{StaticResource SecondaryTextStyle}" />
-                                    </StackPanel>
-                                    <StackPanel HorizontalAlignment="Right" Orientation="Horizontal" VerticalAlignment="Center">
-                                        <TextBlock Text="{x:Bind ViewModel.ProfileChargeLimitEditor, Mode=OneWay}" FontWeight="SemiBold" />
-                                        <TextBlock Text="%" FontWeight="SemiBold" />
-                                    </StackPanel>
-                                </Grid>
-                                <Slider Minimum="50"
-                                        AutomationProperties.Name="Profile charge limit"
-                                        Maximum="80"
-                                        StepFrequency="5"
-                                        SmallChange="5"
-                                        LargeChange="5"
-                                        SnapsTo="StepValues"
-                                        IsThumbToolTipEnabled="True"
-                                        Value="{Binding ProfileChargeLimitEditor, Mode=TwoWay, Converter={StaticResource Int32Double}}" />
-                                <Button Content="Save profiles"
-                                        HorizontalAlignment="Left"
+                            <Grid ColumnSpacing="16">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <StackPanel Spacing="3" VerticalAlignment="Center">
+                                    <TextBlock Text="Profile changes" Style="{StaticResource CardTitleStyle}" />
+                                    <TextBlock Text="Unsaved changes"
+                                               Style="{StaticResource SecondaryTextStyle}"
+                                               Visibility="{x:Bind ViewModel.HasUnsavedProfileChanges, Mode=OneWay}" />
+                                </StackPanel>
+                                <Button Grid.Column="1"
+                                        HorizontalAlignment="Right"
+                                        Content="Save profiles"
                                         Style="{StaticResource AccentButtonStyle}"
-                                        Command="{x:Bind ViewModel.SaveProfilesCommand}" />
-                            </StackPanel>
+                                        Command="{x:Bind ViewModel.SaveProfilesCommand}"
+                                        VerticalAlignment="Center" />
+                            </Grid>
                         </Border>
                     </StackPanel>
                 </ScrollViewer>
@@ -445,53 +462,176 @@
                               HorizontalContentAlignment="Stretch"
                               VerticalScrollBarVisibility="Auto">
                     <StackPanel HorizontalAlignment="Stretch">
+                        <StackPanel.Transitions>
+                            <TransitionCollection>
+                                <EntranceThemeTransition FromHorizontalOffset="20" />
+                            </TransitionCollection>
+                        </StackPanel.Transitions>
+
                         <TextBlock Text="Settings" Style="{StaticResource PageTitleStyle}" />
-                        <TextBlock Text="Behavior" Style="{StaticResource SectionHeaderStyle}" />
-                        <Border Style="{StaticResource CardStyle}">
-                            <StackPanel Spacing="16">
-                                <ToggleSwitch Header="Keep selected settings"
-                                              OffContent="Reset when the power source changes"
-                                              OnContent="Keep until I reset them"
-                                              IsOn="{x:Bind ViewModel.KeepManualChangesUntilCleared, Mode=TwoWay}" />
-                                <ToggleSwitch Header="Live fan and battery readings"
-                                              OffContent="Off"
-                                              OnContent="On"
-                                              IsOn="{x:Bind ViewModel.LiveReadingsEnabled, Mode=TwoWay}" />
-                                <ToggleSwitch Header="Start OpenBlade when I sign in"
-                                              IsOn="{x:Bind ViewModel.StartAtSignIn, Mode=OneWay}"
-                                              Toggled="OnStartAtSignInToggled" />
-                                <TextBlock Text="{x:Bind ViewModel.StartupStatusMessage, Mode=OneWay}"
-                                           Style="{StaticResource SecondaryTextStyle}" />
+
+                        <TextBlock Text="Behavior" Style="{StaticResource SectionHeaderStyle}" Margin="0,0,0,10" />
+                        <Border Style="{StaticResource SettingsGroupStyle}">
+                            <StackPanel>
+                            <Border Style="{StaticResource SettingsRowStyle}">
+                                <Grid ColumnSpacing="20">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel Spacing="3" VerticalAlignment="Center">
+                                        <TextBlock Text="Manual changes" Style="{StaticResource CardTitleStyle}" />
+                                        <TextBlock Text="Choose when Dashboard changes return to the active profile."
+                                                   Style="{StaticResource SecondaryTextStyle}" />
+                                    </StackPanel>
+                                    <ComboBox Grid.Column="1"
+                                              MinWidth="230"
+                                              HorizontalAlignment="Right"
+                                              AutomationProperties.Name="Manual change duration"
+                                              ItemsSource="{x:Bind ViewModel.ManualChangeDurationOptions, Mode=OneWay}"
+                                              DisplayMemberPath="Label"
+                                              SelectedItem="{x:Bind ViewModel.SelectedManualChangeDurationOption, Mode=TwoWay}" />
+                                </Grid>
+                            </Border>
+                            <Border Style="{StaticResource SettingsRowStyle}">
+                                <Grid ColumnSpacing="20">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel Spacing="3" VerticalAlignment="Center">
+                                        <TextBlock Text="Live readings" Style="{StaticResource CardTitleStyle}" />
+                                        <TextBlock Text="Show fan speed and net battery power in OpenBlade."
+                                                   Style="{StaticResource SecondaryTextStyle}" />
+                                    </StackPanel>
+                                    <ToggleSwitch Grid.Column="1"
+                                                  HorizontalAlignment="Right"
+                                                  MinWidth="0"
+                                                  AutomationProperties.Name="Live readings"
+                                                  OffContent=""
+                                                  OnContent=""
+                                                  IsOn="{x:Bind ViewModel.LiveReadingsEnabled, Mode=TwoWay}" />
+                                </Grid>
+                            </Border>
+                            <Border Style="{StaticResource SettingsLastRowStyle}">
+                                <Grid ColumnSpacing="20">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel Spacing="3" VerticalAlignment="Center">
+                                        <TextBlock Text="Start at sign-in" Style="{StaticResource CardTitleStyle}" />
+                                        <TextBlock Text="{x:Bind ViewModel.StartupStatusMessage, Mode=OneWay}"
+                                                   Style="{StaticResource SecondaryTextStyle}" />
+                                    </StackPanel>
+                                    <ToggleSwitch Grid.Column="1"
+                                                  HorizontalAlignment="Right"
+                                                  MinWidth="0"
+                                                  AutomationProperties.Name="Start OpenBlade when I sign in"
+                                                  OffContent=""
+                                                  OnContent=""
+                                                  IsOn="{x:Bind ViewModel.StartAtSignIn, Mode=OneWay}"
+                                                  Toggled="OnStartAtSignInToggled" />
+                                </Grid>
+                            </Border>
                             </StackPanel>
                         </Border>
 
                         <TextBlock Text="Appearance" Style="{StaticResource SectionHeaderStyle}" />
-                        <Border Style="{StaticResource CardStyle}">
-                            <StackPanel Spacing="16">
-                                <ComboBox Header="Theme"
-                                          ItemsSource="{x:Bind ViewModel.ThemeSelectionOptions, Mode=OneWay}"
-                                          DisplayMemberPath="Label"
-                                          SelectedItem="{x:Bind ViewModel.SelectedThemeOption, Mode=TwoWay}" />
-                                <ComboBox Header="Tray icon hover label"
-                                          ItemsSource="{x:Bind ViewModel.TrayHoverLabelOptions, Mode=OneWay}"
-                                          DisplayMemberPath="Label"
-                                          SelectedItem="{x:Bind ViewModel.SelectedTrayHoverLabelOption, Mode=TwoWay}" />
-                                <TextBlock Text="Battery power uses the live readings setting above."
-                                           Style="{StaticResource SecondaryTextStyle}" />
+                        <Border Style="{StaticResource SettingsGroupStyle}">
+                            <StackPanel>
+                            <Border Style="{StaticResource SettingsRowStyle}">
+                                <Grid ColumnSpacing="20">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel Spacing="3" VerticalAlignment="Center">
+                                        <TextBlock Text="App theme" Style="{StaticResource CardTitleStyle}" />
+                                        <TextBlock Text="Follow Windows, or always use light or dark mode."
+                                                   Style="{StaticResource SecondaryTextStyle}" />
+                                    </StackPanel>
+                                    <ComboBox Grid.Column="1"
+                                              MinWidth="170"
+                                              HorizontalAlignment="Right"
+                                              AutomationProperties.Name="App theme"
+                                              ItemsSource="{x:Bind ViewModel.ThemeSelectionOptions, Mode=OneWay}"
+                                              DisplayMemberPath="Label"
+                                              SelectedItem="{x:Bind ViewModel.SelectedThemeOption, Mode=TwoWay}" />
+                                </Grid>
+                            </Border>
+                            <Border Style="{StaticResource SettingsLastRowStyle}">
+                                <Grid ColumnSpacing="20">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel Spacing="3" VerticalAlignment="Center">
+                                        <TextBlock Text="Taskbar hover label" Style="{StaticResource CardTitleStyle}" />
+                                        <TextBlock Text="Choose the profile and live details shown when you point at the tray icon."
+                                                   Style="{StaticResource SecondaryTextStyle}" />
+                                    </StackPanel>
+                                    <ComboBox Grid.Column="1"
+                                              MinWidth="190"
+                                              HorizontalAlignment="Right"
+                                              AutomationProperties.Name="Taskbar hover label"
+                                              ItemsSource="{x:Bind ViewModel.TrayHoverLabelOptions, Mode=OneWay}"
+                                              DisplayMemberPath="Label"
+                                              SelectedItem="{x:Bind ViewModel.SelectedTrayHoverLabelOption, Mode=TwoWay}" />
+                                </Grid>
+                            </Border>
                             </StackPanel>
                         </Border>
 
                         <TextBlock Text="Support" Style="{StaticResource SectionHeaderStyle}" />
-                        <Border Style="{StaticResource CardStyle}">
-                            <StackPanel Spacing="12">
-                                <Button Content="Export diagnostics"
-                                        HorizontalAlignment="Left"
-                                        Command="{x:Bind ViewModel.ExportDiagnosticsCommand}" />
-                                <Expander Header="Troubleshooting">
-                                    <TextBlock Text="{x:Bind ViewModel.TroubleshootingDetails, Mode=OneWay}"
-                                               Style="{StaticResource SecondaryTextStyle}"
-                                               Margin="8,4,8,12" />
-                                </Expander>
+                        <Border Style="{StaticResource SettingsGroupStyle}">
+                            <StackPanel>
+                            <Border Style="{StaticResource SettingsRowStyle}">
+                                <Grid ColumnSpacing="20">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel Spacing="3">
+                                        <TextBlock Text="Export diagnostics" Style="{StaticResource CardTitleStyle}" />
+                                        <TextBlock Text="Save a redacted support package to a location you choose."
+                                                   Style="{StaticResource SecondaryTextStyle}" />
+                                    </StackPanel>
+                                    <Button Grid.Column="1"
+                                            Content="Export"
+                                            HorizontalAlignment="Right"
+                                            VerticalAlignment="Center"
+                                            Command="{x:Bind ViewModel.ExportDiagnosticsCommand}" />
+                                </Grid>
+                            </Border>
+                            <Border Style="{StaticResource SettingsLastRowStyle}">
+                                <Grid ColumnSpacing="20">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel Spacing="3">
+                                        <TextBlock Text="Troubleshooting" Style="{StaticResource CardTitleStyle}" />
+                                        <TextBlock Text="View service, device, and connection details."
+                                                   Style="{StaticResource SecondaryTextStyle}" />
+                                    </StackPanel>
+                                    <Button Grid.Column="1"
+                                            Content="View"
+                                            HorizontalAlignment="Right"
+                                            VerticalAlignment="Center"
+                                            AutomationProperties.Name="Open troubleshooting details">
+                                    <Button.Flyout>
+                                        <Flyout Placement="BottomEdgeAlignedLeft">
+                                            <StackPanel MaxWidth="460" Spacing="8">
+                                                <TextBlock Text="Troubleshooting" Style="{StaticResource CardTitleStyle}" />
+                                                <TextBlock Text="{x:Bind ViewModel.TroubleshootingDetails, Mode=OneWay}"
+                                                           Style="{StaticResource SecondaryTextStyle}" />
+                                            </StackPanel>
+                                        </Flyout>
+                                    </Button.Flyout>
+                                </Button>
+                                </Grid>
+                            </Border>
                             </StackPanel>
                         </Border>
                     </StackPanel>

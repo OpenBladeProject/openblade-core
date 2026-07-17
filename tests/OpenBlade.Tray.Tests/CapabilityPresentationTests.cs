@@ -1,5 +1,6 @@
 using System.Threading.Channels;
 using System.Runtime.CompilerServices;
+using System.Xml.Linq;
 using OpenBlade.Contracts;
 using OpenBlade.Tray;
 
@@ -8,178 +9,148 @@ namespace OpenBlade.Tray.Tests;
 public sealed class CapabilityPresentationTests
 {
     [Fact]
-    public void MainWindow_BindsEveryFunctionalSurfaceAndContainsCleanVisibleText()
+    public void MainWindow_UsesDashboardNavigationAndImmediateControls()
     {
         string xaml = ReadMainWindowXaml();
+        XDocument document = XDocument.Parse(xaml);
 
-        string[] required =
-        [
-            "<NavigationView",
-            "Content=\"Home\"",
-            "Content=\"Profiles\"",
-            "Content=\"Settings\"",
-            "ViewModel.SetPerformanceCommand",
-            "ViewModel.SetFanModeCommand",
-            "ViewModel.SetChargeLimitCommand",
-            "ViewModel.ToggleBatteryProtectionCommand",
-            "ViewModel.ToggleFullChargeCommand",
-            "ViewModel.ClearManualOverridesCommand",
-            "ViewModel.KeepManualChangesUntilCleared",
-            "ViewModel.ActiveChangesText",
-            "ViewModel.SaveProfilesCommand",
-            "ViewModel.ExportDiagnosticsCommand",
-            "ViewModel.HasAttention",
-            "ViewModel.AttentionSummary",
-            "ViewModel.AttentionDetails",
-            "ViewModel.HasOperationFeedback",
-            "ViewModel.OperationFeedbackMessage",
-            "ViewModel.AvailablePerformancePresets",
-            "ViewModel.AvailableFanModes",
-            "ViewModel.PluggedInPerformanceEditor",
-            "ViewModel.PluggedInFanModeEditor",
-            "ViewModel.BatteryPerformanceEditor",
-            "ViewModel.BatteryFanModeEditor",
-            "ViewModel.ProfileChargeLimitEditor",
-            "ViewModel.ThemeSelectionOptions",
-            "ViewModel.SelectedThemeOption",
-            "ViewModel.Theme",
-            "ViewModel.StartAtSignIn",
-            "ViewModel.StartupStatusMessage",
-            "ViewModel.ActivePowerSourceLabel",
-            "ViewModel.ActivePerformanceLabel",
-            "ViewModel.ActiveFanModeLabel",
-            "ViewModel.BatteryPowerFlowLabel",
-            "ViewModel.Fan1RpmLabel",
-            "ViewModel.Fan2RpmLabel",
-            "ViewModel.LiveReadingsEnabled",
-            "ViewModel.TrayHoverLabelOptions",
-            "ViewModel.SelectedTrayHoverLabelOption",
-            "ViewModel.FullChargeActionLabel",
-            "ViewModel.BatteryProtectionActionLabel",
-            "Start OpenBlade when I sign in",
-            "Live fan and battery readings",
-            "Tray icon hover label",
-            "Battery power uses the live readings setting above.",
-            "Performance and fans",
-            "Keep selected settings",
-            "Reset when the power source changes",
-            "Keep until I reset them",
-            "Use profile settings",
-            "Troubleshooting",
-        ];
-        foreach (string fragment in required)
-        {
-            Assert.Contains(fragment, xaml, StringComparison.Ordinal);
-        }
+        Assert.Contains(document.Descendants(), element =>
+            element.Name.LocalName == "NavigationViewItem"
+            && Attribute(element, "Content") == "Dashboard");
+        Assert.DoesNotContain(document.Descendants(), element =>
+            element.Name.LocalName == "NavigationViewItem"
+            && Attribute(element, "Content") == "Home");
 
-        Assert.Contains(
-            "new MicaController",
-            ReadTraySource("MicaBackdropHost.cs"),
-            StringComparison.Ordinal);
-        Assert.Contains("<Grid.Resources>", xaml, StringComparison.Ordinal);
-        Assert.Contains("NavigationViewDefaultPaneBackground", xaml, StringComparison.Ordinal);
-        Assert.Contains("NavigationViewContentBackground", xaml, StringComparison.Ordinal);
-        Assert.Contains(
-            "<Thickness x:Key=\"NavigationViewContentGridBorderThickness\">0</Thickness>",
-            xaml,
-            StringComparison.Ordinal);
-        Assert.Contains("<Button.Flyout>", xaml, StringComparison.Ordinal);
-        Assert.Contains("AutomationProperties.Name=\"Show warning details\"", xaml, StringComparison.Ordinal);
-        Assert.DoesNotContain("ViewModel.ShouldExpandAttention", xaml, StringComparison.Ordinal);
-        Assert.Contains("HorizontalContentAlignment=\"Stretch\"", xaml, StringComparison.Ordinal);
-        Assert.DoesNotContain("MaxWidth=\"760\"", xaml, StringComparison.Ordinal);
-        Assert.Contains("DashboardFanModeSelector.SelectedItem", xaml, StringComparison.Ordinal);
-        Assert.Contains("InitialWidthDip = 840", ReadTraySource("MainWindow.xaml.cs"), StringComparison.Ordinal);
-        Assert.Contains("InitialHeightDip = 720", ReadTraySource("MainWindow.xaml.cs"), StringComparison.Ordinal);
+        XElement performance = NamedElement(document, "ComboBox", "DashboardPerformanceSelector");
+        XElement fans = NamedElement(document, "ComboBox", "DashboardFanModeSelector");
+        XElement chargeLimit = NamedElement(document, "Slider", "DashboardChargeLimitSlider");
+        XElement batteryProtection = NamedElement(document, "ToggleSwitch", "BatteryProtectionToggle");
+        Assert.Equal("OnDashboardPerformanceChanged", Attribute(performance, "SelectionChanged"));
+        Assert.Equal("OnDashboardFanModeSelectionChanged", Attribute(fans, "SelectionChanged"));
+        Assert.Equal(
+            "OnDashboardChargeLimitPointerPressed",
+            Attribute(chargeLimit, "PointerPressed"));
+        Assert.Equal(
+            "OnDashboardChargeLimitPointerCaptureLost",
+            Attribute(chargeLimit, "PointerCaptureLost"));
+        Assert.Equal("OnDashboardChargeLimitKeyUp", Attribute(chargeLimit, "KeyUp"));
+        Assert.Null(Attribute(chargeLimit, "ValueChanged"));
+        Assert.Equal("OnBatteryProtectionToggled", Attribute(batteryProtection, "Toggled"));
+        Assert.Equal("50", Attribute(chargeLimit, "Minimum"));
+        Assert.Equal("80", Attribute(chargeLimit, "Maximum"));
+        Assert.Equal("5", Attribute(chargeLimit, "StepFrequency"));
+        Assert.Equal("StepValues", Attribute(chargeLimit, "SnapsTo"));
+
         Assert.DoesNotContain(
-            "CommandParameter=\"{x:Bind ViewModel.SelectedFanMode",
-            xaml,
-            StringComparison.Ordinal);
-        Assert.Contains("BooleanNegationToVisibility", xaml, StringComparison.Ordinal);
-        Assert.Contains("AutomationProperties.Name=\"Fan mode\"", xaml, StringComparison.Ordinal);
-        Assert.Contains("AutomationProperties.Name=\"Charge limit\"", xaml, StringComparison.Ordinal);
-        Assert.Contains("AutomationProperties.Name=\"Profile charge limit\"", xaml, StringComparison.Ordinal);
-        Assert.Contains("<VisualState x:Name=\"NarrowWindow\">", xaml, StringComparison.Ordinal);
-        Assert.Contains("<VisualState x:Name=\"WideWindow\">", xaml, StringComparison.Ordinal);
-        Assert.Contains("<AdaptiveTrigger MinWindowWidth=\"720\" />", xaml, StringComparison.Ordinal);
-        Assert.Contains("x:Name=\"HeroReadings\"", xaml, StringComparison.Ordinal);
-        Assert.Contains("Grid.Column=\"1\"", xaml, StringComparison.Ordinal);
-        foreach (string responsiveTarget in new[]
-        {
-            "FanActions.(Grid.Column)",
-            "BalancedChoice.(Grid.Column)",
-            "PerformanceChoice.(Grid.Column)",
-            "BatteryProtectionAction.(Grid.Column)",
-            "FullChargeAction.(Grid.Column)",
-        })
-        {
-            Assert.Contains(responsiveTarget, xaml, StringComparison.Ordinal);
-        }
-        Assert.DoesNotContain("Telemetry", xaml, StringComparison.OrdinalIgnoreCase);
-        Assert.DoesNotContain("CPU", xaml, StringComparison.Ordinal);
-        Assert.DoesNotContain("GPU", xaml, StringComparison.Ordinal);
-        Assert.DoesNotContain("Lighting", xaml, StringComparison.Ordinal);
-        Assert.DoesNotContain("Manual Changes", xaml, StringComparison.OrdinalIgnoreCase);
-        Assert.DoesNotContain("fail-closed", xaml, StringComparison.OrdinalIgnoreCase);
-        Assert.DoesNotContain("Confirmed device state", xaml, StringComparison.OrdinalIgnoreCase);
-        Assert.DoesNotContain("Desired intent", xaml, StringComparison.OrdinalIgnoreCase);
-        Assert.Equal(0, CountOccurrences(xaml, "<TabViewItem"));
-        Assert.DoesNotContain("TabControl", xaml, StringComparison.Ordinal);
-        Assert.DoesNotContain("x:Static", xaml, StringComparison.Ordinal);
-        Assert.DoesNotContain("DynamicResource", xaml, StringComparison.Ordinal);
-        Assert.DoesNotContain("<Window.Resources>", xaml, StringComparison.Ordinal);
-        Assert.DoesNotContain("Click=", xaml, StringComparison.Ordinal);
-        Assert.DoesNotContain("IsEnabled=", xaml, StringComparison.Ordinal);
-        Assert.Contains("Toggled=\"OnStartAtSignInToggled\"", xaml, StringComparison.Ordinal);
-        Assert.Contains(
-            "SetStartAtSignInCommand",
-            ReadTraySource("MainWindow.xaml.cs"),
-            StringComparison.Ordinal);
-        Assert.Contains(
-            "File.Exists(legacyShortcutPath)",
-            ReadTraySource("WindowsStartupRegistration.cs"),
-            StringComparison.Ordinal);
-        Assert.DoesNotContain("Export diagnostics (unavailable)", xaml, StringComparison.Ordinal);
-        Assert.DoesNotContain("ViewModel.ConflictNames", xaml, StringComparison.Ordinal);
-        Assert.DoesNotContain("SystemFillColorCriticalBrush", xaml, StringComparison.Ordinal);
-        Assert.DoesNotContain("Confirmed source:", xaml, StringComparison.Ordinal);
-        Assert.Contains(
-            "Value=\"{Binding ChargeLimitPercent, Mode=TwoWay, Converter={StaticResource Int32Double}}\"",
-            xaml,
-            StringComparison.Ordinal);
-        Assert.Contains(
-            "CommandParameter=\"{x:Bind ViewModel.ChargeLimitPercent, Mode=OneWay}\"",
-            xaml,
-            StringComparison.Ordinal);
-        Assert.Contains(
-            "Text=\"{x:Bind ViewModel.ChargeLimitPercent, Mode=OneWay}\"",
-            xaml,
-            StringComparison.Ordinal);
-        Assert.Equal(
-            1,
-            CountOccurrences(xaml, "ViewModel.ProfileChargeLimitEditor"));
-        Assert.Contains(
-            "Value=\"{Binding ProfileChargeLimitEditor, Mode=TwoWay, Converter={StaticResource Int32Double}}\"",
-            xaml,
-            StringComparison.Ordinal);
-        Assert.Equal(
-            1,
-            CountOccurrences(
-                xaml,
-                "Visibility=\"{x:Bind ViewModel.IsPerformanceVisible, Mode=OneWay}\""));
-        Assert.Equal(
-            1,
-            CountOccurrences(
-                xaml,
-                "Visibility=\"{x:Bind ViewModel.IsFanControlVisible, Mode=OneWay}\""));
-        Assert.Contains("Minimum=\"50\"", xaml, StringComparison.Ordinal);
-        Assert.Contains("Maximum=\"80\"", xaml, StringComparison.Ordinal);
-        Assert.True(CountOccurrences(xaml, "StepFrequency=\"5\"") >= 2);
-        Assert.Equal(2, CountOccurrences(xaml, "SmallChange=\"5\""));
-        Assert.Equal(2, CountOccurrences(xaml, "LargeChange=\"5\""));
-        Assert.Equal(2, CountOccurrences(xaml, "SnapsTo=\"StepValues\""));
-        Assert.DoesNotContain("Open" + "Synapse", xaml, StringComparison.OrdinalIgnoreCase);
+            document.Descendants().Where(element => element.Name.LocalName == "Button"),
+            button =>
+            Attribute(button, "Content")?.StartsWith("Apply", StringComparison.Ordinal) is true);
+        Assert.DoesNotContain(xaml, "ViewModel.SetPerformanceCommand", StringComparison.Ordinal);
+        Assert.DoesNotContain(xaml, "ViewModel.SetFanModeCommand", StringComparison.Ordinal);
+        Assert.DoesNotContain(xaml, "ViewModel.SetChargeLimitCommand", StringComparison.Ordinal);
+        Assert.DoesNotContain(xaml, "ViewModel.KeepManualChangesUntilCleared", StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            document.Descendants(),
+            element => element.Name.LocalName == "VisualState");
+        Assert.DoesNotContain("BalancedChoice", xaml, StringComparison.Ordinal);
+        Assert.DoesNotContain("BatteryActionColumn", xaml, StringComparison.Ordinal);
+        Assert.DoesNotContain("ProfileChargeLimitEditor", xaml, StringComparison.Ordinal);
+        _ = Assert.Single(
+            document.Descendants(),
+            element => element.Name.LocalName == "Slider");
         Assert.DoesNotContain("\u00c2", xaml, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void MainWindow_UsesSettingsRowsDurationOptionsAndFlyoutDetails()
+    {
+        string xaml = ReadMainWindowXaml();
+        XDocument document = XDocument.Parse(xaml);
+        XElement settings = NamedElement(document, "ScrollViewer", "SettingsPage");
+
+        Assert.Equal(
+            3,
+            settings.Descendants().Count(element =>
+                Attribute(element, "Style") == "{StaticResource SettingsGroupStyle}"));
+        Assert.Equal(
+            4,
+            settings.Descendants().Count(element =>
+                Attribute(element, "Style") == "{StaticResource SettingsRowStyle}"));
+        Assert.Equal(
+            3,
+            settings.Descendants().Count(element =>
+                Attribute(element, "Style") == "{StaticResource SettingsLastRowStyle}"));
+
+        foreach (XElement toggle in settings.Descendants()
+                     .Where(element => element.Name.LocalName == "ToggleSwitch"))
+        {
+            Assert.Equal("Right", Attribute(toggle, "HorizontalAlignment"));
+            Assert.Equal("0", Attribute(toggle, "MinWidth"));
+            Assert.Equal(string.Empty, Attribute(toggle, "OffContent"));
+            Assert.Equal(string.Empty, Attribute(toggle, "OnContent"));
+        }
+
+        Assert.Contains(settings.Descendants(), element =>
+            element.Name.LocalName == "Button"
+            && Attribute(element, "Content") == "Export"
+            && Attribute(element, "HorizontalAlignment") == "Right");
+        Assert.Contains(settings.Descendants(), element =>
+            element.Name.LocalName == "Button"
+            && Attribute(element, "Content") == "View"
+            && Attribute(element, "HorizontalAlignment") == "Right");
+
+        Assert.Contains("ViewModel.ManualChangeDurationOptions", xaml, StringComparison.Ordinal);
+        Assert.Contains("ViewModel.SelectedManualChangeDurationOption", xaml, StringComparison.Ordinal);
+        string viewModel = ReadTrayCoreSource("MainViewModel.cs");
+        Assert.Contains("Until the power source changes", viewModel, StringComparison.Ordinal);
+        Assert.Contains("Until I reset them", viewModel, StringComparison.Ordinal);
+
+        XElement startAtSignIn = Assert.Single(settings.Descendants(), element =>
+            element.Name.LocalName == "ToggleSwitch"
+            && Attribute(element, "AutomationProperties.Name")
+                == "Start OpenBlade when I sign in");
+        Assert.Equal("OnStartAtSignInToggled", Attribute(startAtSignIn, "Toggled"));
+
+        Assert.Equal(2, document.Descendants().Count(element => element.Name.LocalName == "Flyout"));
+        Assert.Contains(document.Descendants(), element =>
+            Attribute(element, "AutomationProperties.Name") == "Show warning details"
+            && element.Descendants().Any(child => child.Name.LocalName == "Flyout"));
+        Assert.Contains(document.Descendants(), element =>
+            Attribute(element, "AutomationProperties.Name") == "Open troubleshooting details"
+            && element.Descendants().Any(child => child.Name.LocalName == "Flyout"));
+        Assert.DoesNotContain(
+            document.Descendants(),
+            element => element.Name.LocalName == "Expander");
+    }
+
+    [Fact]
+    public void MainWindow_UsesResponsiveProfileNamesAndNativeTypography()
+    {
+        string xaml = ReadMainWindowXaml();
+        XDocument document = XDocument.Parse(xaml);
+
+        _ = NamedElement(document, "Grid", "ProfilesLayout");
+        _ = NamedElement(document, "ColumnDefinition", "ProfilesSecondColumn");
+        _ = NamedElement(document, "Border", "BatteryProfileCard");
+        _ = NamedElement(document, "Grid", "Root");
+        Assert.DoesNotContain("ProfileChargeLimitEditor", xaml, StringComparison.Ordinal);
+
+        string window = ReadTraySource("MainWindow.xaml.cs");
+        Assert.Contains("ProfilesStackThresholdDip", window, StringComparison.Ordinal);
+        Assert.Contains("Root.SizeChanged += OnRootSizeChanged", window, StringComparison.Ordinal);
+        Assert.Contains("Root.SizeChanged -= OnRootSizeChanged", window, StringComparison.Ordinal);
+        Assert.Contains("UpdateProfilesLayout", window, StringComparison.Ordinal);
+
+        AssertStyleBasedOn(document, "PageTitleStyle", "{StaticResource TitleTextBlockStyle}");
+        AssertStyleBasedOn(document, "SectionHeaderStyle", "{StaticResource SubtitleTextBlockStyle}");
+        AssertStyleBasedOn(document, "CardTitleStyle", "{StaticResource BodyStrongTextBlockStyle}");
+        AssertStyleBasedOn(document, "SecondaryTextStyle", "{StaticResource BodyTextBlockStyle}");
+        Assert.Contains("{StaticResource TitleLargeTextBlockStyle}", xaml, StringComparison.Ordinal);
+        Assert.Contains("{StaticResource AccentButtonStyle}", xaml, StringComparison.Ordinal);
+        Assert.Equal(
+            3,
+            document.Descendants().Count(element =>
+                element.Name.LocalName == "EntranceThemeTransition"));
     }
 
     [Fact]
@@ -200,19 +171,6 @@ public sealed class CapabilityPresentationTests
         Assert.Contains("IntegerEditorValue.ToDouble", source, StringComparison.Ordinal);
         Assert.Contains("IntegerEditorValue.ToInt32", source, StringComparison.Ordinal);
         Assert.Contains("throw new ArgumentException", source, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public void WindowExposesTypedPerformanceCommandParameters()
-    {
-        string source = ReadTraySource("MainWindow.xaml.cs");
-
-        Assert.Contains("PerformancePreset SilentPreset", source, StringComparison.Ordinal);
-        Assert.Contains("PerformancePreset BalancedPreset", source, StringComparison.Ordinal);
-        Assert.Contains("PerformancePreset PerformancePreset", source, StringComparison.Ordinal);
-        Assert.Contains("PerformancePreset.Silent", source, StringComparison.Ordinal);
-        Assert.Contains("PerformancePreset.Balanced", source, StringComparison.Ordinal);
-        Assert.Contains("PerformancePreset.Performance", source, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -712,6 +670,29 @@ public sealed class CapabilityPresentationTests
 
     private static string ReadMainWindowXaml() => ReadTraySource("MainWindow.xaml");
 
+    private static string? Attribute(XElement element, string localName) =>
+        element.Attributes()
+            .SingleOrDefault(attribute => attribute.Name.LocalName == localName)
+            ?.Value;
+
+    private static XElement NamedElement(
+        XDocument document,
+        string elementName,
+        string name) => Assert.Single(document.Descendants(), element =>
+            element.Name.LocalName == elementName
+            && Attribute(element, "Name") == name);
+
+    private static void AssertStyleBasedOn(
+        XDocument document,
+        string key,
+        string basedOn)
+    {
+        XElement style = Assert.Single(document.Descendants(), element =>
+            element.Name.LocalName == "Style"
+            && Attribute(element, "Key") == key);
+        Assert.Equal(basedOn, Attribute(style, "BasedOn"));
+    }
+
     private static string ReadTraySource(
         string fileName,
         [CallerFilePath] string testPath = "") =>
@@ -723,9 +704,16 @@ public sealed class CapabilityPresentationTests
             "OpenBlade.Tray",
             fileName)));
 
-    private static int CountOccurrences(string value, string fragment) =>
-        (value.Length - value.Replace(fragment, string.Empty, StringComparison.Ordinal).Length)
-        / fragment.Length;
+    private static string ReadTrayCoreSource(
+        string fileName,
+        [CallerFilePath] string testPath = "") =>
+        File.ReadAllText(Path.GetFullPath(Path.Combine(
+            Path.GetDirectoryName(testPath)!,
+            "..",
+            "..",
+            "src",
+            "OpenBlade.Tray.Core",
+            fileName)));
 
     private static ServiceStatusSnapshot CreateStatus(
         bool verified,

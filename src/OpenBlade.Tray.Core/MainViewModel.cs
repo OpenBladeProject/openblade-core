@@ -18,6 +18,10 @@ public sealed record ThemePreferenceOption(
     ThemePreference Preference,
     string Label);
 
+public sealed record ManualChangeDurationOption(
+    OverrideLifetime Lifetime,
+    string Label);
+
 public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
 {
     private readonly IServiceClient serviceClient;
@@ -352,7 +356,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             : HasActiveChanges
                 ? "Quick change"
                 : CanControlHardware
-                    ? "Ready"
+                    ? "Connected"
                     : "Waiting for the laptop";
 
     public string PerformanceSourceLabel
@@ -617,6 +621,10 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         }
     }
 
+    public bool CanAdjustChargeLimit => CanSetChargeLimit(ChargeLimitPercent);
+
+    public bool CanChangeBatteryProtection => CanToggleBatteryProtection(null);
+
     public string CurrentBatterySettingLabel
     {
         get => currentBatterySettingLabel;
@@ -817,6 +825,8 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         set => SetEditorField(ref profileChargeLimitEditor, value);
     }
 
+    public bool HasUnsavedProfileChanges => profileEditorsDirty;
+
     public LightingEffect LightingEffectEditor
     {
         get => lightingEffectEditor;
@@ -898,7 +908,45 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     public bool KeepManualChangesUntilCleared
     {
         get => keepManualChangesUntilCleared;
-        set => SetField(ref keepManualChangesUntilCleared, value);
+        set
+        {
+            if (keepManualChangesUntilCleared == value)
+            {
+                return;
+            }
+
+            SetField(ref keepManualChangesUntilCleared, value);
+            PropertyChanged?.Invoke(
+                this,
+                new PropertyChangedEventArgs(nameof(SelectedManualChangeDurationOption)));
+            PropertyChanged?.Invoke(
+                this,
+                new PropertyChangedEventArgs(nameof(SelectedOverrideLifetime)));
+        }
+    }
+
+    public IReadOnlyList<ManualChangeDurationOption> ManualChangeDurationOptions { get; } =
+    [
+        new(
+            OverrideLifetime.UntilPowerSourceChange,
+            "Until the power source changes"),
+        new(OverrideLifetime.Persistent, "Until I reset them"),
+    ];
+
+    public ManualChangeDurationOption SelectedManualChangeDurationOption
+    {
+        get => ManualChangeDurationOptions.Single(
+            option => option.Lifetime == SelectedOverrideLifetime);
+        set
+        {
+            ArgumentNullException.ThrowIfNull(value);
+            KeepManualChangesUntilCleared = value.Lifetime switch
+            {
+                OverrideLifetime.UntilPowerSourceChange => false,
+                OverrideLifetime.Persistent => true,
+                _ => throw new ArgumentOutOfRangeException(nameof(value)),
+            };
+        }
     }
 
     public OverrideLifetime SelectedOverrideLifetime => KeepManualChangesUntilCleared
@@ -1339,6 +1387,10 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         if (!AvailablePerformancePresets.SequenceEqual(performancePresets))
         {
             AvailablePerformancePresets = performancePresets;
+            // WinUI clears a ComboBox selection when ItemsSource is replaced.
+            PropertyChanged?.Invoke(
+                this,
+                new PropertyChangedEventArgs(nameof(SelectedPerformance)));
             PropertyChanged?.Invoke(
                 this,
                 new PropertyChangedEventArgs(nameof(PluggedInPerformanceEditor)));
@@ -1665,13 +1717,15 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         if (accepted)
         {
             Profiles = draft;
-            profileEditorsDirty = false;
+            SetProfileEditorsDirty(false);
             LoadProfileEditors(draft);
         }
     }
 
     private bool CanSaveProfiles(object? parameter) =>
-        CanMutate && TryGetSupportedProfileDraft(parameter, out _);
+        profileEditorsDirty
+        && CanMutate
+        && TryGetSupportedProfileDraft(parameter, out _);
 
     private bool TryGetSupportedProfileDraft(object? parameter, out ProfileSet draft)
     {
@@ -1875,6 +1929,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             ref profileChargeLimitEditor,
             value.BatteryPolicy.ChargeLimitPercent,
             nameof(ProfileChargeLimitEditor));
+        SetProfileEditorsDirty(false);
         NotifyCommands();
     }
 
@@ -1924,6 +1979,13 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         {
             command.NotifyCanExecuteChanged();
         }
+
+        PropertyChanged?.Invoke(
+            this,
+            new PropertyChangedEventArgs(nameof(CanAdjustChargeLimit)));
+        PropertyChanged?.Invoke(
+            this,
+            new PropertyChangedEventArgs(nameof(CanChangeBatteryProtection)));
     }
 
     private static string SourceLabel(
@@ -2121,9 +2183,22 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             return;
         }
 
-        profileEditorsDirty = true;
+        SetProfileEditorsDirty(true);
         SetField(ref field, value, propertyName);
         NotifyCommands();
+    }
+
+    private void SetProfileEditorsDirty(bool value)
+    {
+        if (profileEditorsDirty == value)
+        {
+            return;
+        }
+
+        profileEditorsDirty = value;
+        PropertyChanged?.Invoke(
+            this,
+            new PropertyChangedEventArgs(nameof(HasUnsavedProfileChanges)));
     }
 
     private void SetLightingColorField(ref int field, int value)

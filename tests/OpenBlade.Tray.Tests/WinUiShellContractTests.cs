@@ -110,12 +110,16 @@ public sealed class WinUiShellContractTests
             "Background=\"Transparent\"",
             windowXaml,
             StringComparison.Ordinal);
-        Assert.Contains(
-            "x:Key=\"NavigationViewDefaultPaneBackground\" Color=\"Transparent\"",
+        Assert.DoesNotContain(
+            "x:Key=\"NavigationViewDefaultPaneBackground\"",
             windowXaml,
             StringComparison.Ordinal);
         Assert.Contains(
             "x:Key=\"NavigationViewContentBackground\" Color=\"Transparent\"",
+            windowXaml,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            "x:Key=\"NavigationViewExpandedPaneBackground\"",
             windowXaml,
             StringComparison.Ordinal);
 
@@ -259,6 +263,35 @@ public sealed class WinUiShellContractTests
         Assert.Contains("initialPlacementAttempted", source, StringComparison.Ordinal);
         Assert.DoesNotContain("Root.MinWidth", source, StringComparison.Ordinal);
         Assert.DoesNotContain("Root.MinHeight", source, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void WindowCodeBehindProvidesResponsiveProfilesAndImmediateDashboardHandlers()
+    {
+        string source = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml.cs");
+
+        Assert.Contains("ProfilesStackThresholdDip = 720", source, StringComparison.Ordinal);
+        Assert.Contains("Root.SizeChanged += OnRootSizeChanged", source, StringComparison.Ordinal);
+        Assert.Contains("Root.SizeChanged -= OnRootSizeChanged", source, StringComparison.Ordinal);
+        Assert.Contains("Root.FindName(\"ProfilesLayout\")", source, StringComparison.Ordinal);
+        Assert.Contains("Root.FindName(\"ProfilesSecondColumn\")", source, StringComparison.Ordinal);
+        Assert.Contains("Root.FindName(\"BatteryProfileCard\")", source, StringComparison.Ordinal);
+        Assert.Contains("Grid.SetRow(batteryProfileCard, stack ? 1 : 0)", source, StringComparison.Ordinal);
+        Assert.Contains("Grid.SetColumn(batteryProfileCard, stack ? 0 : 1)", source, StringComparison.Ordinal);
+
+        Assert.Contains("OnDashboardPerformanceChanged", source, StringComparison.Ordinal);
+        Assert.Contains("OnDashboardFanModeSelectionChanged", source, StringComparison.Ordinal);
+        Assert.Contains("OnDashboardChargeLimitPointerPressed", source, StringComparison.Ordinal);
+        Assert.Contains("OnDashboardChargeLimitPointerCaptureLost", source, StringComparison.Ordinal);
+        Assert.Contains("OnDashboardChargeLimitKeyUp", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("OnDashboardChargeLimitValueChanged", source, StringComparison.Ordinal);
+        Assert.Contains("OnBatteryProtectionToggled", source, StringComparison.Ordinal);
+        Assert.Contains("TimeSpan.FromMilliseconds(400)", source, StringComparison.Ordinal);
+        Assert.Contains("dispatcherQueue.CreateTimer()", source, StringComparison.Ordinal);
+        Assert.Contains("chargeLimitCommitTimer.IsRepeating = false", source, StringComparison.Ordinal);
+        Assert.Contains("pendingChargeLimitPercent = value", source, StringComparison.Ordinal);
+        Assert.Contains("command.ExecuteAsync(value)", source, StringComparison.Ordinal);
+        Assert.Contains("SynchronizeBatteryProtectionToggle(toggle)", source, StringComparison.Ordinal);
     }
 
     [Fact]

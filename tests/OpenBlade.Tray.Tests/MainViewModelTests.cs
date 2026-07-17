@@ -6,6 +6,114 @@ namespace OpenBlade.Tray.Tests;
 
 public sealed class MainViewModelTests
 {
+    [Fact]
+    public async Task ManualChangeDurationOptions_MapToExistingPersistencePreference()
+    {
+        await using var viewModel = new MainViewModel(
+            new FakeServiceClient(),
+            new RecordingDispatcher());
+        var changed = new List<string?>();
+        viewModel.PropertyChanged += (_, args) => changed.Add(args.PropertyName);
+
+        Assert.Collection(
+            viewModel.ManualChangeDurationOptions,
+            option =>
+            {
+                Assert.Equal(OverrideLifetime.UntilPowerSourceChange, option.Lifetime);
+                Assert.Equal("Until the power source changes", option.Label);
+            },
+            option =>
+            {
+                Assert.Equal(OverrideLifetime.Persistent, option.Lifetime);
+                Assert.Equal("Until I reset them", option.Label);
+            });
+        Assert.Equal(
+            OverrideLifetime.UntilPowerSourceChange,
+            viewModel.SelectedManualChangeDurationOption.Lifetime);
+
+        viewModel.SelectedManualChangeDurationOption =
+            viewModel.ManualChangeDurationOptions[1];
+
+        Assert.True(viewModel.KeepManualChangesUntilCleared);
+        Assert.Equal(
+            OverrideLifetime.Persistent,
+            viewModel.SelectedManualChangeDurationOption.Lifetime);
+        Assert.Contains(
+            nameof(MainViewModel.SelectedManualChangeDurationOption),
+            changed);
+
+        viewModel.KeepManualChangesUntilCleared = false;
+
+        Assert.Equal(
+            OverrideLifetime.UntilPowerSourceChange,
+            viewModel.SelectedManualChangeDurationOption.Lifetime);
+    }
+
+    [Fact]
+    public async Task ProfileEditors_ReportUnsavedChangesUntilSaveThenReloadCleanly()
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        var unsavedTransitions = new List<bool>();
+        viewModel.PropertyChanged += (_, args) =>
+        {
+            if (args.PropertyName == nameof(MainViewModel.HasUnsavedProfileChanges))
+            {
+                unsavedTransitions.Add(viewModel.HasUnsavedProfileChanges);
+            }
+        };
+        await viewModel.StartAsync();
+        ServiceStatusSnapshot baseline = CreateStatus(verified: true, blocked: false);
+        client.Publish(baseline);
+        await WaitUntilAsync(() => viewModel.IsConnected);
+
+        Assert.False(viewModel.HasUnsavedProfileChanges);
+        Assert.False(viewModel.SaveProfilesCommand.CanExecute(null));
+        Assert.Equal("Connected", viewModel.ProfileStateLabel);
+
+        viewModel.PluggedInPerformanceEditor = PerformancePreset.Performance;
+        client.Publish(baseline with
+        {
+            Revision = 2,
+            Message = "Periodic observation",
+        });
+        await WaitUntilAsync(() => viewModel.ConnectionStatus == "Periodic observation");
+
+        Assert.True(viewModel.HasUnsavedProfileChanges);
+        Assert.Equal(
+            PerformancePreset.Performance,
+            viewModel.PluggedInPerformanceEditor);
+        Assert.True(viewModel.SaveProfilesCommand.CanExecute(null));
+
+        await Assert.IsType<AsyncRelayCommand>(viewModel.SaveProfilesCommand)
+            .ExecuteAsync(null);
+
+        Assert.False(viewModel.HasUnsavedProfileChanges);
+        Assert.False(viewModel.SaveProfilesCommand.CanExecute(null));
+        Assert.Equal(
+            PerformancePreset.Performance,
+            viewModel.Profiles.PluggedIn.Performance);
+
+        ProfileSet reloaded = baseline.Profiles with
+        {
+            PluggedIn = baseline.Profiles.PluggedIn with
+            {
+                Performance = PerformancePreset.Silent,
+            },
+        };
+        client.Publish(baseline with
+        {
+            Revision = 3,
+            Message = "Profiles reloaded",
+            Profiles = reloaded,
+        });
+        await WaitUntilAsync(() =>
+            viewModel.PluggedInPerformanceEditor == PerformancePreset.Silent);
+
+        Assert.False(viewModel.HasUnsavedProfileChanges);
+        Assert.Equal([true, false], unsavedTransitions);
+    }
+
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
