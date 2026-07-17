@@ -53,6 +53,8 @@ public interface IServiceControlRuntime
 
 public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
 {
+    private static readonly TimeSpan PowerTransitionAccessRetryDelay =
+        TimeSpan.FromMilliseconds(750);
     private static readonly ConfirmedDeviceState UnknownConfirmedState =
         new(null, null, null, null);
     private static readonly DeviceCapabilities UnavailableCapabilities =
@@ -65,6 +67,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
     private readonly IVerifiedBladeDeviceProvider deviceProvider;
     private readonly IControllerPresenceMonitor controllerPresenceMonitor;
     private readonly DiagnosticHistory history;
+    private readonly Func<TimeSpan, CancellationToken, Task> transitionRetryDelay;
     private readonly SemaphoreSlim operationGate = new(1, 1);
     private readonly ProfileSetValidator validator =
         ProfileSetValidator.CreateUnverifiedSafeDefaults();
@@ -83,6 +86,27 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         IVerifiedBladeDeviceProvider deviceProvider,
         DiagnosticHistory history,
         IControllerPresenceMonitor controllerPresenceMonitor)
+        : this(
+            store,
+            overrideStore,
+            telemetryProvider,
+            subscriptionHub,
+            deviceProvider,
+            history,
+            controllerPresenceMonitor,
+            static (delay, token) => Task.Delay(delay, token))
+    {
+    }
+
+    internal ServiceControlRuntime(
+        BatteryConfigurationStore store,
+        PersistentOverrideStore overrideStore,
+        IPowerTelemetryProvider telemetryProvider,
+        IStatusSubscriptionHub subscriptionHub,
+        IVerifiedBladeDeviceProvider deviceProvider,
+        DiagnosticHistory history,
+        IControllerPresenceMonitor controllerPresenceMonitor,
+        Func<TimeSpan, CancellationToken, Task> transitionRetryDelay)
     {
         this.store = store ?? throw new ArgumentNullException(nameof(store));
         this.overrideStore = overrideStore
@@ -96,7 +120,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         this.history = history ?? throw new ArgumentNullException(nameof(history));
         this.controllerPresenceMonitor = controllerPresenceMonitor
             ?? throw new ArgumentNullException(nameof(controllerPresenceMonitor));
-
+        this.transitionRetryDelay = transitionRetryDelay
+            ?? throw new ArgumentNullException(nameof(transitionRetryDelay));
     }
 
     public void Initialize(BatteryConfiguration configuration, PowerSource powerSource) =>
@@ -751,6 +776,20 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                         ObserveAutomaticState(confirmed, priorDesired);
                         return driftTracker.ExternalChanges.ToHashSet();
                     });
+
+            if (ShouldRetryPowerTransitionAccess(outcome))
+            {
+                await transitionRetryDelay(PowerTransitionAccessRetryDelay, token);
+                outcome = await new ControlCoordinator(device)
+                    .ApplyDesiredStateOutcomeAsync(
+                        desired,
+                        token,
+                        automaticWriteExclusionResolver: confirmed =>
+                        {
+                            ObserveAutomaticState(confirmed, priorDesired);
+                            return driftTracker.ExternalChanges.ToHashSet();
+                        });
+            }
         }
         catch (IntentionalWriteCanceledException exception)
             when (token.IsCancellationRequested)
@@ -803,6 +842,12 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             deviceVerified: !outcome.DeviceAccessFailed,
             writesBlocked: outcome.DeviceAccessFailed);
     }
+
+    private static bool ShouldRetryPowerTransitionAccess(
+        FullTransitionApplyOutcome outcome) =>
+        outcome.DeviceAccessFailed
+        && outcome.WriteAttempted.Count == 0
+        && outcome.Readback is null;
 
     private async Task ObserveCoreAsync(
         TelemetrySnapshot telemetry,

@@ -1462,6 +1462,109 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     }
 
     [Fact]
+    public async Task PowerTransition_PreReadFailureRetriesBeforeAnyWriteAndRecovers()
+    {
+        var delays = new List<TimeSpan>();
+        CountingBladeDevice? deviceAtDelay = null;
+        TestContext context = CreateWritableContext(
+            transitionRetryDelay: (delay, _) =>
+            {
+                Assert.Equal(0, deviceAtDelay!.TotalSetterCalls);
+                delays.Add(delay);
+                return Task.CompletedTask;
+            });
+        deviceAtDelay = context.Device;
+        context.Device.ReadStateFailureOnCall = context.Device.StateReadCalls + 1;
+        context.Telemetry.Current = CreateTelemetry(PowerSource.Battery);
+
+        await context.Runtime.HandlePowerSourceChangedAsync(CancellationToken.None);
+
+        Assert.Equal([TimeSpan.FromMilliseconds(750)], delays);
+        Assert.Equal(2, context.Device.CapabilitiesReadCalls);
+        Assert.Equal(3, context.Device.StateReadCalls);
+        Assert.Equal(1, context.Provider.TryGetCount);
+        Assert.Equal(1, context.Device.PerformanceSetCalls);
+        Assert.All(SetterCounts(context.Device), count => Assert.InRange(count, 0, 1));
+        Assert.Equal(4, context.History.Snapshot().CommandResults.Count);
+        Assert.True(context.Runtime.GetStatus().DeviceVerified);
+        Assert.False(context.Runtime.GetStatus().WritesBlocked);
+        Assert.Equal(PowerSource.Battery, context.Runtime.GetStatus().Telemetry.PowerSource);
+    }
+
+    [Fact]
+    public async Task PowerTransition_RepeatedPreReadFailureStopsAfterOneRetryWithoutWrites()
+    {
+        var delays = new List<TimeSpan>();
+        TestContext context = CreateWritableContext(
+            transitionRetryDelay: (delay, _) =>
+            {
+                delays.Add(delay);
+                return Task.CompletedTask;
+            });
+        context.Device.ReadStateFailure = new IOException("persistent pre-read failure");
+        context.Telemetry.Current = CreateTelemetry(PowerSource.Battery);
+
+        await context.Runtime.HandlePowerSourceChangedAsync(CancellationToken.None);
+
+        Assert.Single(delays);
+        Assert.Equal(2, context.Device.CapabilitiesReadCalls);
+        Assert.Equal(2, context.Device.StateReadCalls);
+        Assert.Equal(0, context.Device.TotalSetterCalls);
+        Assert.Equal(1, context.Provider.TryGetCount);
+        Assert.Equal(4, context.History.Snapshot().CommandResults.Count);
+        Assert.False(context.Runtime.GetStatus().DeviceVerified);
+        Assert.True(context.Runtime.GetStatus().WritesBlocked);
+    }
+
+    [Fact]
+    public async Task PowerTransition_FinalReadFailureAfterWriteDoesNotRetry()
+    {
+        var delays = new List<TimeSpan>();
+        TestContext context = CreateWritableContext(
+            transitionRetryDelay: (delay, _) =>
+            {
+                delays.Add(delay);
+                return Task.CompletedTask;
+            });
+        context.Device.ReadStateFailureOnCall = context.Device.StateReadCalls + 2;
+        context.Telemetry.Current = CreateTelemetry(PowerSource.Battery);
+
+        await context.Runtime.HandlePowerSourceChangedAsync(CancellationToken.None);
+
+        Assert.Empty(delays);
+        Assert.Equal(1, context.Device.CapabilitiesReadCalls);
+        Assert.Equal(2, context.Device.StateReadCalls);
+        Assert.Equal(1, context.Provider.TryGetCount);
+        Assert.True(context.Device.TotalSetterCalls > 0);
+        Assert.All(SetterCounts(context.Device), count => Assert.InRange(count, 0, 1));
+        Assert.False(context.Runtime.GetStatus().DeviceVerified);
+        Assert.True(context.Runtime.GetStatus().WritesBlocked);
+    }
+
+    [Fact]
+    public async Task PowerTransition_CancellationDuringAccessRetryDoesNotWriteOrPublish()
+    {
+        using var cancellation = new CancellationTokenSource();
+        TestContext context = CreateWritableContext(
+            transitionRetryDelay: (_, token) =>
+            {
+                cancellation.Cancel();
+                return Task.Delay(Timeout.InfiniteTimeSpan, token);
+            });
+        context.Device.ReadStateFailureOnCall = context.Device.StateReadCalls + 1;
+        context.Telemetry.Current = CreateTelemetry(PowerSource.Battery);
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => context.Runtime.HandlePowerSourceChangedAsync(cancellation.Token));
+
+        Assert.Equal(1, context.Device.CapabilitiesReadCalls);
+        Assert.Equal(1, context.Device.StateReadCalls);
+        Assert.Equal(0, context.Device.TotalSetterCalls);
+        Assert.Empty(context.History.Snapshot().CommandResults);
+        Assert.Empty(context.Hub.Published);
+    }
+
+    [Fact]
     public async Task RealPowerTransition_FinalExternalFanChangeRemainsLatchedAndIsNotUnchanged()
     {
         TestContext context = CreateWritableContext();
@@ -2004,13 +2107,15 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         IReadOnlyList<string>? conflicts = null,
         string? detectionFailure = null,
         Func<BatteryConfigurationCommitBoundary, CancellationToken, Task>?
-            transactionBoundary = null)
+            transactionBoundary = null,
+        Func<TimeSpan, CancellationToken, Task>? transitionRetryDelay = null)
     {
         TestContext context = CreateContext(
             providerAvailable: true,
             conflicts,
             detectionFailure,
-            transactionBoundary: transactionBoundary);
+            transactionBoundary: transactionBoundary,
+            transitionRetryDelay: transitionRetryDelay);
         context.Device.Capabilities = DeviceCapabilities.SafeTargetDefaults() with
         {
             ChargeLimits = new HashSet<int> { 50, 55, 60, 65, 70, 75, 80 },
@@ -2060,7 +2165,8 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             transactionBoundary = null,
         string? persistentOverridePath = null,
         Func<CancellationToken, Task>? overrideWriteBoundary = null,
-        bool loadPersistentOverrides = false)
+        bool loadPersistentOverrides = false,
+        Func<TimeSpan, CancellationToken, Task>? transitionRetryDelay = null)
     {
         string profilePath = Path.Combine(directory, "profiles.json");
         string preferencesPath = Path.Combine(directory, "battery-preferences.json");
@@ -2102,14 +2208,24 @@ public sealed class ServiceControlRuntimeTests : IDisposable
                 directory,
                 $"manual-overrides-{Guid.NewGuid():N}.json"),
             overrideWriteBoundary);
-        var runtime = new ServiceControlRuntime(
-            store,
-            overrideStore,
-            telemetry,
-            hub,
-            provider,
-            history,
-            monitor);
+        var runtime = transitionRetryDelay is null
+            ? new ServiceControlRuntime(
+                store,
+                overrideStore,
+                telemetry,
+                hub,
+                provider,
+                history,
+                monitor)
+            : new ServiceControlRuntime(
+                store,
+                overrideStore,
+                telemetry,
+                hub,
+                provider,
+                history,
+                monitor,
+                transitionRetryDelay);
         if (initialize)
         {
             PersistentOverrideState overrides = loadPersistentOverrides
