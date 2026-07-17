@@ -188,7 +188,9 @@ public sealed class WindowsVerifiedBladeDeviceProviderProductionTests
             () => device.ReadStateAsync(default));
 
         Assert.Equal(HidProtocolValidationFailure.TransactionMismatch, error.ValidationFailure);
-        Assert.Equal("Battery state query failed protocol validation.", error.Message);
+        Assert.Equal(
+            "Battery state query failed protocol validation (TransactionMismatch).",
+            error.Message);
         Assert.Equal(2, factory.OpenCount);
         Assert.Equal(1, first.DisposeCount);
         Assert.Equal(1, second.DisposeCount);
@@ -221,6 +223,9 @@ public sealed class WindowsVerifiedBladeDeviceProviderProductionTests
             () => device.ReadStateAsync(default));
 
         Assert.Equal(failure, error.ValidationFailure);
+        Assert.Equal(
+            $"Battery state query failed protocol validation ({failure}).",
+            error.Message);
         Assert.Equal(1, factory.OpenCount);
         Assert.Equal(1, rejected.DisposeCount);
         Assert.Equal(0, neverOpened.ProtectionQueryCount);

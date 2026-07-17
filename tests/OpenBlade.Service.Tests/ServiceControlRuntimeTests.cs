@@ -314,6 +314,27 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     }
 
     [Fact]
+    public async Task ProtocolObservationFailure_PublishesAndRecordsSafeValidationCategory()
+    {
+        TestContext context = CreateContext(providerAvailable: true);
+        context.Device.ReadStateFailure = new RazerProtocolException(
+            "Battery state query failed protocol validation (Checksum).",
+            HidProtocolValidationFailure.Checksum);
+
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+
+        const string expected =
+            "Verified device access failed: Battery state query failed protocol validation (Checksum).";
+        Assert.Equal(expected, context.Runtime.GetStatus().Message);
+        DiagnosticCommandResult record = Assert.Single(
+            context.History.Snapshot().CommandResults);
+        Assert.Equal("Service", record.Subsystem);
+        Assert.Equal("Reconcile", record.Action);
+        Assert.Equal("Failed", record.Status);
+        Assert.Equal(expected, record.Detail);
+    }
+
+    [Fact]
     public async Task UnsupportedIntentionalReconciliation_PreservesLatchedExternalChanges()
     {
         TestContext context = CreateContext(providerAvailable: true);

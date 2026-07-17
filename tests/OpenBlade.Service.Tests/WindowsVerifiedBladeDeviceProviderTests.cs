@@ -335,9 +335,12 @@ public sealed class WindowsVerifiedBladeDeviceProviderTests
         RazerProtocolException error = await Assert.ThrowsAsync<RazerProtocolException>(
             () => device.ReadStateAsync(default));
 
-        Assert.Equal("Battery state query failed protocol validation.", error.Message);
+        Assert.Equal(
+            "Battery state query failed protocol validation (Checksum).",
+            error.Message);
         Assert.Equal(HidProtocolValidationFailure.Checksum, error.ValidationFailure);
         Assert.Null(error.InnerException);
+        Assert.DoesNotContain("raw report", error.Message, StringComparison.Ordinal);
     }
 
     [Fact]

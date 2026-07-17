@@ -184,7 +184,7 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
             catch (RazerProtocolException exception)
             {
                 throw new RazerProtocolException(
-                    "Battery state query failed protocol validation.",
+                    $"Battery state query failed protocol validation ({exception.ValidationFailure}).",
                     exception.ValidationFailure);
             }
             catch (ObjectDisposedException)
