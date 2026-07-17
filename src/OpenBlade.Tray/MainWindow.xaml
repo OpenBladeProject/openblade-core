@@ -44,6 +44,16 @@
                    BasedOn="{StaticResource SettingsRowStyle}">
                 <Setter Property="BorderThickness" Value="0" />
             </Style>
+            <Style x:Key="SubSettingRowStyle"
+                   TargetType="Border"
+                   BasedOn="{StaticResource SettingsRowStyle}">
+                <Setter Property="Padding" Value="32,12,16,12" />
+            </Style>
+            <Style x:Key="SubSettingLastRowStyle"
+                   TargetType="Border"
+                   BasedOn="{StaticResource SubSettingRowStyle}">
+                <Setter Property="BorderThickness" Value="0" />
+            </Style>
             <Style x:Key="CardTitleStyle"
                    TargetType="TextBlock"
                    BasedOn="{StaticResource BodyStrongTextBlockStyle}" />
@@ -279,11 +289,34 @@
                                 <Grid ColumnSpacing="20">
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel Spacing="3" VerticalAlignment="Center">
+                                        <TextBlock Text="Battery protection" Style="{StaticResource CardTitleStyle}" />
+                                        <TextBlock Text="Limit charging to help preserve battery health."
+                                                   Style="{StaticResource SecondaryTextStyle}" />
+                                    </StackPanel>
+                                    <ToggleSwitch x:Name="BatteryProtectionToggle"
+                                                  Grid.Column="1"
+                                                  HorizontalAlignment="Right"
+                                                  MinWidth="0"
+                                                  AutomationProperties.Name="Battery protection"
+                                                  OffContent=""
+                                                  OnContent=""
+                                                  IsEnabled="{x:Bind ViewModel.CanChangeBatteryProtection, Mode=OneWay}"
+                                                  IsOn="{x:Bind ViewModel.BatteryProtectionEnabled, Mode=OneWay}"
+                                                  Toggled="OnBatteryProtectionToggled" />
+                                </Grid>
+                            </Border>
+                            <Border Style="{StaticResource SubSettingRowStyle}">
+                                <Grid ColumnSpacing="20">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
                                         <ColumnDefinition Width="260" />
                                     </Grid.ColumnDefinitions>
                                     <StackPanel Spacing="3" VerticalAlignment="Center">
                                         <TextBlock Text="Charge limit" Style="{StaticResource CardTitleStyle}" />
-                                        <TextBlock Text="Limit charging to help preserve battery health."
+                                        <TextBlock Text="Choose the maximum charge level while protection is on."
                                                    Style="{StaticResource SecondaryTextStyle}" />
                                     </StackPanel>
                                     <StackPanel Grid.Column="1"
@@ -313,30 +346,7 @@
                                     </StackPanel>
                                 </Grid>
                             </Border>
-                            <Border Style="{StaticResource SettingsRowStyle}">
-                                <Grid ColumnSpacing="20">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="*" />
-                                        <ColumnDefinition Width="Auto" />
-                                    </Grid.ColumnDefinitions>
-                                    <StackPanel Spacing="3" VerticalAlignment="Center">
-                                        <TextBlock Text="Battery protection" Style="{StaticResource CardTitleStyle}" />
-                                        <TextBlock Text="Turn the configured charge limit on or off."
-                                                   Style="{StaticResource SecondaryTextStyle}" />
-                                    </StackPanel>
-                                    <ToggleSwitch x:Name="BatteryProtectionToggle"
-                                                  Grid.Column="1"
-                                                  HorizontalAlignment="Right"
-                                                  MinWidth="0"
-                                                  AutomationProperties.Name="Battery protection"
-                                                  OffContent=""
-                                                  OnContent=""
-                                                  IsEnabled="{x:Bind ViewModel.CanChangeBatteryProtection, Mode=OneWay}"
-                                                  IsOn="{x:Bind ViewModel.BatteryProtectionEnabled, Mode=OneWay}"
-                                                  Toggled="OnBatteryProtectionToggled" />
-                                </Grid>
-                            </Border>
-                            <Border Style="{StaticResource SettingsLastRowStyle}">
+                            <Border Style="{StaticResource SubSettingLastRowStyle}">
                                 <Grid ColumnSpacing="20">
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="*" />
@@ -391,6 +401,7 @@
                                     <Grid>
                                         <TextBlock Text="Plugged in" Style="{StaticResource SectionHeaderStyle}" Margin="0" />
                                         <Border HorizontalAlignment="Right"
+                                                VerticalAlignment="Center"
                                                 CornerRadius="10"
                                                 Padding="8,2"
                                                 Background="{ThemeResource AccentFillColorDefaultBrush}"
@@ -416,6 +427,7 @@
                                     <Grid>
                                         <TextBlock Text="On battery" Style="{StaticResource SectionHeaderStyle}" Margin="0" />
                                         <Border HorizontalAlignment="Right"
+                                                VerticalAlignment="Center"
                                                 CornerRadius="10"
                                                 Padding="8,2"
                                                 Background="{ThemeResource AccentFillColorDefaultBrush}"
@@ -522,7 +534,7 @@
                                     </Grid.ColumnDefinitions>
                                     <StackPanel Spacing="3" VerticalAlignment="Center">
                                         <TextBlock Text="Start at sign-in" Style="{StaticResource CardTitleStyle}" />
-                                        <TextBlock Text="{x:Bind ViewModel.StartupStatusMessage, Mode=OneWay}"
+                                        <TextBlock Text="{x:Bind ViewModel.StartupDescription, Mode=OneWay}"
                                                    Style="{StaticResource SecondaryTextStyle}" />
                                     </StackPanel>
                                     <ToggleSwitch Grid.Column="1"
@@ -585,48 +597,46 @@
                         </Border>
 
                         <TextBlock Text="Support" Style="{StaticResource SectionHeaderStyle}" />
-                        <Border Style="{StaticResource SettingsGroupStyle}">
-                            <StackPanel>
-                            <Border Style="{StaticResource SettingsRowStyle}">
-                                <Grid ColumnSpacing="20">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="*" />
-                                        <ColumnDefinition Width="Auto" />
-                                    </Grid.ColumnDefinitions>
-                                    <StackPanel Spacing="3">
-                                        <TextBlock Text="Export diagnostics" Style="{StaticResource CardTitleStyle}" />
-                                        <TextBlock Text="Save a redacted support package to a location you choose."
-                                                   Style="{StaticResource SecondaryTextStyle}" />
-                                    </StackPanel>
-                                    <Button Grid.Column="1"
-                                            HorizontalAlignment="Right"
-                                            VerticalAlignment="Center"
-                                            Command="{x:Bind ViewModel.ExportDiagnosticsCommand}"
-                                            AutomationProperties.Name="Export diagnostics"
-                                            ToolTipService.ToolTip="Export diagnostics">
-                                        <FontIcon Glyph="&#xE896;" />
-                                    </Button>
-                                </Grid>
-                            </Border>
-                            <Border Style="{StaticResource SettingsLastRowStyle}">
-                                <Expander HorizontalAlignment="Stretch"
-                                          HorizontalContentAlignment="Stretch"
-                                          AutomationProperties.Name="Troubleshooting details">
-                                    <Expander.Header>
-                                        <StackPanel Spacing="3">
-                                            <TextBlock Text="Troubleshooting" Style="{StaticResource CardTitleStyle}" />
-                                            <TextBlock Text="View service, device, and connection details."
-                                                       Style="{StaticResource SecondaryTextStyle}" />
-                                        </StackPanel>
-                                    </Expander.Header>
-                                    <TextBlock Text="{x:Bind ViewModel.TroubleshootingDetails, Mode=OneWay}"
-                                               Style="{StaticResource SecondaryTextStyle}"
-                                               IsTextSelectionEnabled="True"
-                                               Margin="0,10,28,4" />
-                                </Expander>
-                            </Border>
-                            </StackPanel>
+                        <Border Style="{StaticResource CardStyle}">
+                            <Grid ColumnSpacing="20">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <StackPanel Spacing="3">
+                                    <TextBlock Text="Export diagnostics" Style="{StaticResource CardTitleStyle}" />
+                                    <TextBlock Text="Save a redacted support package to a location you choose."
+                                               Style="{StaticResource SecondaryTextStyle}" />
+                                </StackPanel>
+                                <Button Grid.Column="1"
+                                        Width="40"
+                                        Height="32"
+                                        Padding="0"
+                                        HorizontalAlignment="Right"
+                                        VerticalAlignment="Center"
+                                        Command="{x:Bind ViewModel.ExportDiagnosticsCommand}"
+                                        AutomationProperties.Name="Export diagnostics"
+                                        ToolTipService.ToolTip="Export diagnostics">
+                                    <FontIcon Glyph="&#xE896;" FontSize="16" />
+                                </Button>
+                            </Grid>
                         </Border>
+                        <Expander HorizontalAlignment="Stretch"
+                                  HorizontalContentAlignment="Stretch"
+                                  Margin="0,0,0,12"
+                                  AutomationProperties.Name="Troubleshooting details">
+                            <Expander.Header>
+                                <StackPanel Spacing="3">
+                                    <TextBlock Text="Troubleshooting" Style="{StaticResource CardTitleStyle}" />
+                                    <TextBlock Text="View service, device, and connection details."
+                                               Style="{StaticResource SecondaryTextStyle}" />
+                                </StackPanel>
+                            </Expander.Header>
+                            <TextBlock Text="{x:Bind ViewModel.TroubleshootingDetails, Mode=OneWay}"
+                                       Style="{StaticResource SecondaryTextStyle}"
+                                       IsTextSelectionEnabled="True"
+                                       Margin="16,10,44,16" />
+                        </Expander>
                     </StackPanel>
                 </ScrollViewer>
             </Grid>

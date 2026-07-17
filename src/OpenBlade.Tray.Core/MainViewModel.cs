@@ -1042,8 +1042,23 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     public string StartupStatusMessage
     {
         get => startupStatusMessage;
-        private set => SetField(ref startupStatusMessage, value);
+        private set
+        {
+            if (startupStatusMessage == value)
+            {
+                return;
+            }
+
+            SetField(ref startupStatusMessage, value);
+            PropertyChanged?.Invoke(
+                this,
+                new PropertyChangedEventArgs(nameof(StartupDescription)));
+        }
     }
+
+    public string StartupDescription => string.IsNullOrWhiteSpace(StartupStatusMessage)
+        ? "Launch OpenBlade automatically when you sign in."
+        : StartupStatusMessage;
 
     public ICommand SetPerformanceCommand { get; }
     public ICommand SetFanModeCommand { get; }

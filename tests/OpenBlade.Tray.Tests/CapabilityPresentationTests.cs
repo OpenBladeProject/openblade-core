@@ -25,6 +25,11 @@ public sealed class CapabilityPresentationTests
         XElement fans = NamedElement(document, "ComboBox", "DashboardFanModeSelector");
         XElement chargeLimit = NamedElement(document, "Slider", "DashboardChargeLimitSlider");
         XElement batteryProtection = NamedElement(document, "ToggleSwitch", "BatteryProtectionToggle");
+        XElement temporaryFullCharge = Assert.Single(document.Descendants(), element =>
+            element.Name.LocalName == "Button"
+            && Attribute(element, "Content")?.Contains(
+                "ViewModel.FullChargeActionLabel",
+                StringComparison.Ordinal) is true);
         Assert.Equal("OnDashboardPerformanceChanged", Attribute(performance, "SelectionChanged"));
         Assert.Equal("OnDashboardFanModeSelectionChanged", Attribute(fans, "SelectionChanged"));
         Assert.Equal(
@@ -41,6 +46,25 @@ public sealed class CapabilityPresentationTests
         Assert.Equal("5", Attribute(chargeLimit, "StepFrequency"));
         Assert.Equal("StepValues", Attribute(chargeLimit, "SnapsTo"));
         Assert.Equal("Stretch", Attribute(chargeLimit, "HorizontalAlignment"));
+        Assert.Equal(
+            "{StaticResource SettingsRowStyle}",
+            Attribute(
+                batteryProtection.Ancestors().First(element => element.Name.LocalName == "Border"),
+                "Style"));
+        Assert.Equal(
+            "{StaticResource SubSettingRowStyle}",
+            Attribute(
+                chargeLimit.Ancestors().First(element => element.Name.LocalName == "Border"),
+                "Style"));
+        Assert.Equal(
+            "{StaticResource SubSettingLastRowStyle}",
+            Attribute(
+                temporaryFullCharge.Ancestors().First(element => element.Name.LocalName == "Border"),
+                "Style"));
+        List<XElement> dashboardElements = document.Descendants().ToList();
+        Assert.True(
+            dashboardElements.IndexOf(batteryProtection)
+            < dashboardElements.IndexOf(chargeLimit));
 
         Assert.DoesNotContain(
             document.Descendants().Where(element => element.Name.LocalName == "Button"),
@@ -70,15 +94,15 @@ public sealed class CapabilityPresentationTests
         XElement settings = NamedElement(document, "ScrollViewer", "SettingsPage");
 
         Assert.Equal(
-            3,
+            2,
             settings.Descendants().Count(element =>
                 Attribute(element, "Style") == "{StaticResource SettingsGroupStyle}"));
         Assert.Equal(
-            4,
+            3,
             settings.Descendants().Count(element =>
                 Attribute(element, "Style") == "{StaticResource SettingsRowStyle}"));
         Assert.Equal(
-            3,
+            2,
             settings.Descendants().Count(element =>
                 Attribute(element, "Style") == "{StaticResource SettingsLastRowStyle}"));
 
@@ -94,7 +118,9 @@ public sealed class CapabilityPresentationTests
         Assert.Contains(settings.Descendants(), element =>
             element.Name.LocalName == "Button"
             && Attribute(element, "AutomationProperties.Name") == "Export diagnostics"
-            && Attribute(element, "HorizontalAlignment") == "Right");
+            && Attribute(element, "HorizontalAlignment") == "Right"
+            && Attribute(element, "Width") == "40"
+            && Attribute(element, "Height") == "32");
 
         Assert.Contains("ViewModel.ManualChangeDurationOptions", xaml, StringComparison.Ordinal);
         Assert.Contains("ViewModel.SelectedManualChangeDurationOption", xaml, StringComparison.Ordinal);
@@ -107,6 +133,7 @@ public sealed class CapabilityPresentationTests
             && Attribute(element, "AutomationProperties.Name")
                 == "Start OpenBlade when I sign in");
         Assert.Equal("OnStartAtSignInToggled", Attribute(startAtSignIn, "Toggled"));
+        Assert.Contains("ViewModel.StartupDescription", xaml, StringComparison.Ordinal);
 
         Assert.Single(document.Descendants(), element => element.Name.LocalName == "Flyout");
         Assert.Contains(document.Descendants(), element =>
@@ -134,6 +161,14 @@ public sealed class CapabilityPresentationTests
         _ = NamedElement(document, "ColumnDefinition", "ProfilesSecondColumn");
         _ = NamedElement(document, "Border", "BatteryProfileCard");
         _ = NamedElement(document, "Grid", "Root");
+        foreach (XElement activeBadgeText in document.Descendants().Where(element =>
+                     element.Name.LocalName == "TextBlock"
+                     && Attribute(element, "Text") == "Active"))
+        {
+            Assert.NotNull(activeBadgeText.Parent);
+            Assert.Equal("Border", activeBadgeText.Parent!.Name.LocalName);
+            Assert.Equal("Center", Attribute(activeBadgeText.Parent, "VerticalAlignment"));
+        }
         Assert.DoesNotContain("ProfileChargeLimitEditor", xaml, StringComparison.Ordinal);
 
         string window = ReadTraySource("MainWindow.xaml.cs");

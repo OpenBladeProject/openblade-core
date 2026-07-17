@@ -130,6 +130,9 @@ public sealed class MainViewModelTests
 
         Assert.True(viewModel.StartupStateKnown);
         Assert.Equal(enabled, viewModel.StartAtSignIn);
+        Assert.Equal(
+            "Launch OpenBlade automatically when you sign in.",
+            viewModel.StartupDescription);
         Assert.True(viewModel.SetStartAtSignInCommand.CanExecute(!enabled));
         Assert.False(viewModel.SetStartAtSignInCommand.CanExecute(enabled));
     }
