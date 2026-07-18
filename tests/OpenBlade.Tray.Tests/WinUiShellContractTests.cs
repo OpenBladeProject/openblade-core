@@ -5,6 +5,22 @@ namespace OpenBlade.Tray.Tests;
 public sealed class WinUiShellContractTests
 {
     [Fact]
+    public void TrayStartsOnlyItsExactSiblingSessionAgent()
+    {
+        string app = ReadRepositoryFile("src", "OpenBlade.Tray", "App.xaml.cs");
+        string launcher = ReadRepositoryFile(
+            "src",
+            "OpenBlade.Tray",
+            "SessionAgentLauncher.cs");
+
+        Assert.Contains("SessionAgentLauncher.TryStartSibling()", app, StringComparison.Ordinal);
+        Assert.Contains("AppContext.BaseDirectory", launcher, StringComparison.Ordinal);
+        Assert.Contains("OpenBlade.SessionAgent.exe", launcher, StringComparison.Ordinal);
+        Assert.Contains("UseShellExecute = false", launcher, StringComparison.Ordinal);
+        Assert.DoesNotContain("Environment.GetEnvironmentVariable", launcher, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void ProfilesPageUsesReadOnlySummariesAndOneCurrentDraftReview()
     {
         string xaml = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml");
@@ -31,9 +47,12 @@ public sealed class WinUiShellContractTests
             window,
             StringComparison.Ordinal);
         Assert.Contains("ViewModel.SavedDisplayProfileRestoreRequested +=", window, StringComparison.Ordinal);
-        Assert.Contains("DisplayViewModel.ApplyProfileAsync(settings, token)", window, StringComparison.Ordinal);
+        Assert.Contains("new SessionDisplaySettingsAdapter()", window, StringComparison.Ordinal);
+        Assert.Contains("expectedPowerSource,", window, StringComparison.Ordinal);
         Assert.Contains("nameof(MainViewModel.ActivePowerSource)", window, StringComparison.Ordinal);
-        Assert.Contains("ViewModel.ActiveSavedDisplayProfile", window, StringComparison.Ordinal);
+        Assert.DoesNotContain("WindowsDisplaySettingsController", window, StringComparison.Ordinal);
+        Assert.DoesNotContain("observedDisplayProfilePowerSource", window, StringComparison.Ordinal);
+        Assert.DoesNotContain("ViewModel.ActiveSavedDisplayProfile", window, StringComparison.Ordinal);
     }
 
     [Fact]

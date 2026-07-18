@@ -42,15 +42,23 @@ public interface IDisplaySettingsAdapter
     Task<DisplaySettingsSnapshot> GetStateAsync(CancellationToken token);
 
     Task<DisplaySettingsSnapshot> SetRefreshRateAsync(
+        PowerSource expectedPowerSource,
         string refreshRateKey,
         CancellationToken token);
 
     Task<DisplaySettingsSnapshot> SetHdrEnabledAsync(
+        PowerSource expectedPowerSource,
         bool enabled,
         CancellationToken token);
 
     Task<DisplaySettingsSnapshot> SetColorProfileAsync(
+        PowerSource expectedPowerSource,
         string colorProfileKey,
+        CancellationToken token);
+
+    Task<DisplaySettingsSnapshot> ApplyProfileAsync(
+        PowerSource expectedPowerSource,
+        DisplayProfileSettings settings,
         CancellationToken token);
 }
 
@@ -76,15 +84,23 @@ public sealed class UnavailableDisplaySettingsAdapter : IDisplaySettingsAdapter
         Task.FromResult(UnavailableState);
 
     public Task<DisplaySettingsSnapshot> SetRefreshRateAsync(
+        PowerSource expectedPowerSource,
         string refreshRateKey,
         CancellationToken token) => Task.FromResult(UnavailableState);
 
     public Task<DisplaySettingsSnapshot> SetHdrEnabledAsync(
+        PowerSource expectedPowerSource,
         bool enabled,
         CancellationToken token) => Task.FromResult(UnavailableState);
 
     public Task<DisplaySettingsSnapshot> SetColorProfileAsync(
+        PowerSource expectedPowerSource,
         string colorProfileKey,
+        CancellationToken token) => Task.FromResult(UnavailableState);
+
+    public Task<DisplaySettingsSnapshot> ApplyProfileAsync(
+        PowerSource expectedPowerSource,
+        DisplayProfileSettings settings,
         CancellationToken token) => Task.FromResult(UnavailableState);
 }
 
@@ -308,7 +324,10 @@ public sealed class DisplaySettingsViewModel : INotifyPropertyChanged, IAsyncDis
             operationToken =>
             {
                 previous = CurrentProfileSettings;
-                return adapter.SetRefreshRateAsync(option.Key, operationToken);
+                return adapter.SetRefreshRateAsync(
+                    sourceAtStart,
+                    option.Key,
+                    operationToken);
             },
             token,
             state =>
@@ -337,7 +356,10 @@ public sealed class DisplaySettingsViewModel : INotifyPropertyChanged, IAsyncDis
             operationToken =>
             {
                 previous = CurrentProfileSettings;
-                return adapter.SetHdrEnabledAsync(enabled, operationToken);
+                return adapter.SetHdrEnabledAsync(
+                    sourceAtStart,
+                    enabled,
+                    operationToken);
             },
             token,
             state =>
@@ -367,7 +389,10 @@ public sealed class DisplaySettingsViewModel : INotifyPropertyChanged, IAsyncDis
             operationToken =>
             {
                 previous = CurrentProfileSettings;
-                return adapter.SetColorProfileAsync(option.Key, operationToken);
+                return adapter.SetColorProfileAsync(
+                    sourceAtStart,
+                    option.Key,
+                    operationToken);
             },
             token,
             state =>
@@ -384,6 +409,7 @@ public sealed class DisplaySettingsViewModel : INotifyPropertyChanged, IAsyncDis
     }
 
     public async Task<bool> ApplyProfileAsync(
+        PowerSource expectedPowerSource,
         DisplayProfileSettings? settings,
         CancellationToken token = default)
     {
@@ -394,56 +420,10 @@ public sealed class DisplaySettingsViewModel : INotifyPropertyChanged, IAsyncDis
 
         bool succeeded = false;
         await RunSerializedAsync(
-            async operationToken =>
-            {
-                DisplaySettingsSnapshot state = await adapter.GetStateAsync(operationToken);
-                if (!state.IsAvailable || !state.OperationSucceeded)
-                {
-                    return state;
-                }
-
-                if (settings.RefreshRateKey is not null
-                    && !string.Equals(
-                        state.SelectedRefreshRateKey,
-                        settings.RefreshRateKey,
-                        StringComparison.Ordinal))
-                {
-                    state = await adapter.SetRefreshRateAsync(
-                        settings.RefreshRateKey,
-                        operationToken);
-                    if (!state.OperationSucceeded)
-                    {
-                        return state;
-                    }
-                }
-
-                if (settings.HdrEnabled.HasValue
-                    && state.IsHdrSupported
-                    && state.IsHdrEnabled != settings.HdrEnabled.Value)
-                {
-                    state = await adapter.SetHdrEnabledAsync(
-                        settings.HdrEnabled.Value,
-                        operationToken);
-                    if (!state.OperationSucceeded)
-                    {
-                        return state;
-                    }
-                }
-
-                if (settings.ColorProfileKey is not null
-                    && !state.IsHdrEnabled
-                    && !string.Equals(
-                        state.SelectedColorProfileKey,
-                        settings.ColorProfileKey,
-                        StringComparison.Ordinal))
-                {
-                    state = await adapter.SetColorProfileAsync(
-                        settings.ColorProfileKey,
-                        operationToken);
-                }
-
-                return state;
-            },
+            operationToken => adapter.ApplyProfileAsync(
+                expectedPowerSource,
+                settings,
+                operationToken),
             token,
             state => succeeded = ProfileSettingsMatch(settings, state));
         return succeeded;

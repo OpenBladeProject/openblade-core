@@ -187,11 +187,15 @@ public sealed class DisplaySettingsViewModelTests
         viewModel.UserSettingsChanged += (_, _) => changedCount++;
 
         bool applied = await viewModel.ApplyProfileAsync(
+            PowerSource.PluggedIn,
             new DisplayProfileSettings(Dynamic.Key, false, Srgb.Key));
 
-        Assert.Equal([Dynamic.Key], adapter.RefreshRequests);
-        Assert.Equal([false], adapter.HdrRequests);
-        Assert.Equal([Srgb.Key], adapter.ColorRequests);
+        Assert.Equal(
+            [(PowerSource.PluggedIn, new DisplayProfileSettings(Dynamic.Key, false, Srgb.Key))],
+            adapter.ProfileRequests);
+        Assert.Empty(adapter.RefreshRequests);
+        Assert.Empty(adapter.HdrRequests);
+        Assert.Empty(adapter.ColorRequests);
         Assert.Equal(Dynamic.Key, viewModel.SelectedRefreshRate?.Key);
         Assert.Equal(Srgb.Key, viewModel.SelectedColorProfile?.Key);
         Assert.False(viewModel.IsHdrEnabled);
@@ -219,6 +223,7 @@ public sealed class DisplaySettingsViewModelTests
         await change;
 
         Assert.Equal(PowerSource.PluggedIn, changedSource);
+        Assert.Equal([PowerSource.PluggedIn], adapter.RefreshRequestSources);
         viewModel.ActivePowerSource = PowerSource.ExternalUnknown;
         Assert.False(viewModel.CanChangeRefreshRate);
         await viewModel.SelectRefreshRateAsync(Dynamic);
@@ -236,6 +241,7 @@ public sealed class DisplaySettingsViewModelTests
         await using var viewModel = CreateViewModel(adapter);
 
         bool applied = await viewModel.ApplyProfileAsync(
+            PowerSource.PluggedIn,
             new DisplayProfileSettings(Fixed240.Key, false, Native.Key));
 
         Assert.False(applied);
@@ -250,6 +256,7 @@ public sealed class DisplaySettingsViewModelTests
         await using var viewModel = CreateViewModel(adapter);
 
         bool applied = await viewModel.ApplyProfileAsync(
+            PowerSource.PluggedIn,
             new DisplayProfileSettings(Fixed240.Key, true, Native.Key));
 
         Assert.True(applied);
@@ -290,8 +297,12 @@ public sealed class DisplaySettingsViewModelTests
         public TaskCompletionSource ReleaseFirstRefreshChange { get; } = new(
             TaskCreationOptions.RunContinuationsAsynchronously);
         public List<string> RefreshRequests { get; } = [];
+        public List<PowerSource> RefreshRequestSources { get; } = [];
         public List<bool> HdrRequests { get; } = [];
+        public List<PowerSource> HdrRequestSources { get; } = [];
         public List<string> ColorRequests { get; } = [];
+        public List<PowerSource> ColorRequestSources { get; } = [];
+        public List<(PowerSource Source, DisplayProfileSettings Settings)> ProfileRequests { get; } = [];
         public int MaximumConcurrentOperations { get; private set; }
 
         public void SetExternalState(DisplaySettingsSnapshot value) => state = value;
@@ -304,6 +315,7 @@ public sealed class DisplaySettingsViewModelTests
         }
 
         public async Task<DisplaySettingsSnapshot> SetRefreshRateAsync(
+            PowerSource expectedPowerSource,
             string refreshRateKey,
             CancellationToken token)
         {
@@ -311,6 +323,7 @@ public sealed class DisplaySettingsViewModelTests
             try
             {
                 RefreshRequests.Add(refreshRateKey);
+                RefreshRequestSources.Add(expectedPowerSource);
                 if (FailNextRefreshChange)
                 {
                     return state with
@@ -336,6 +349,7 @@ public sealed class DisplaySettingsViewModelTests
         }
 
         public async Task<DisplaySettingsSnapshot> SetHdrEnabledAsync(
+            PowerSource expectedPowerSource,
             bool enabled,
             CancellationToken token)
         {
@@ -343,6 +357,7 @@ public sealed class DisplaySettingsViewModelTests
             try
             {
                 HdrRequests.Add(enabled);
+                HdrRequestSources.Add(expectedPowerSource);
                 state = state with { IsHdrEnabled = enabled };
                 return state;
             }
@@ -353,6 +368,7 @@ public sealed class DisplaySettingsViewModelTests
         }
 
         public async Task<DisplaySettingsSnapshot> SetColorProfileAsync(
+            PowerSource expectedPowerSource,
             string colorProfileKey,
             CancellationToken token)
         {
@@ -360,7 +376,48 @@ public sealed class DisplaySettingsViewModelTests
             try
             {
                 ColorRequests.Add(colorProfileKey);
+                ColorRequestSources.Add(expectedPowerSource);
                 state = state with { SelectedColorProfileKey = colorProfileKey };
+                return state;
+            }
+            finally
+            {
+                Exit();
+            }
+        }
+
+        public async Task<DisplaySettingsSnapshot> ApplyProfileAsync(
+            PowerSource expectedPowerSource,
+            DisplayProfileSettings settings,
+            CancellationToken token)
+        {
+            await EnterAsync(token);
+            try
+            {
+                ProfileRequests.Add((expectedPowerSource, settings));
+                if (FailNextRefreshChange)
+                {
+                    return state with
+                    {
+                        StatusMessage = "Profile change failed.",
+                        OperationSucceeded = false,
+                    };
+                }
+
+                state = state with
+                {
+                    SelectedRefreshRateKey = settings.RefreshRateKey
+                        ?? state.SelectedRefreshRateKey,
+                    IsHdrEnabled = settings.HdrEnabled ?? state.IsHdrEnabled,
+                };
+                if (settings.ColorProfileKey is not null && !state.IsHdrEnabled)
+                {
+                    state = state with
+                    {
+                        SelectedColorProfileKey = settings.ColorProfileKey,
+                    };
+                }
+
                 return state;
             }
             finally

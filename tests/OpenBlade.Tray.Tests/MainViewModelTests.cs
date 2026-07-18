@@ -286,8 +286,10 @@ public sealed class MainViewModelTests
         client.Publish(original);
         await WaitUntilAsync(() => viewModel.IsConnected);
         DisplayProfileSettings? restoredDisplay = null;
-        viewModel.SavedDisplayProfileRestoreRequested += (settings, _) =>
+        PowerSource? restoredSource = null;
+        viewModel.SavedDisplayProfileRestoreRequested += (source, settings, _) =>
         {
+            restoredSource = source;
             restoredDisplay = settings;
             return Task.FromResult(true);
         };
@@ -305,6 +307,7 @@ public sealed class MainViewModelTests
             .ExecuteAsync(null);
 
         Assert.Null(client.FanOverride);
+        Assert.Equal(PowerSource.PluggedIn, restoredSource);
         Assert.Equal(originalDisplay, restoredDisplay);
         Assert.Equal(original.Profiles, viewModel.Profiles);
         Assert.False(viewModel.HasActiveProfileDraft);
@@ -327,7 +330,7 @@ public sealed class MainViewModelTests
         client.Publish(baseline with { Profiles = profiles });
         await WaitUntilAsync(() => viewModel.Profiles == profiles);
         DisplayProfileSettings? restoredDisplay = null;
-        viewModel.SavedDisplayProfileRestoreRequested += (settings, _) =>
+        viewModel.SavedDisplayProfileRestoreRequested += (_, settings, _) =>
         {
             restoredDisplay = settings;
             return Task.FromResult(true);
@@ -355,7 +358,7 @@ public sealed class MainViewModelTests
         await viewModel.StartAsync();
         client.Publish(CreateStatus(verified: true, blocked: false));
         await WaitUntilAsync(() => viewModel.IsConnected);
-        viewModel.SavedDisplayProfileRestoreRequested += (_, _) =>
+        viewModel.SavedDisplayProfileRestoreRequested += (_, _, _) =>
             Task.FromResult(false);
         viewModel.RecordDisplayProfileChange(
             PowerSource.PluggedIn,
@@ -370,6 +373,50 @@ public sealed class MainViewModelTests
             "did not confirm",
             viewModel.OperationStatusMessage,
             StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task DisplayDiscard_CarriesOriginalSourceAndDoesNotReportSuccessAfterTransition()
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        ServiceStatusSnapshot pluggedIn = CreateStatus(verified: true, blocked: false);
+        client.Publish(pluggedIn);
+        await WaitUntilAsync(() => viewModel.IsConnected);
+        var restoreStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var allowRestore = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        PowerSource? expectedSource = null;
+        viewModel.SavedDisplayProfileRestoreRequested += async (source, _, _) =>
+        {
+            expectedSource = source;
+            restoreStarted.TrySetResult();
+            await allowRestore.Task;
+            return true;
+        };
+        viewModel.RecordDisplayProfileChange(
+            PowerSource.PluggedIn,
+            new DisplayProfileSettings("fixed-240", false, "native"),
+            new DisplayProfileSettings("fixed-60", false, "native"));
+
+        Task discard = Assert.IsType<AsyncRelayCommand>(viewModel.DiscardProfileDraftCommand)
+            .ExecuteAsync(null);
+        await restoreStarted.Task;
+        client.Publish(pluggedIn with
+        {
+            Revision = pluggedIn.Revision + 1,
+            ActivePowerSource = PowerSource.Battery,
+        });
+        await WaitUntilAsync(() => viewModel.ActivePowerSource == PowerSource.Battery);
+        allowRestore.TrySetResult();
+        await discard;
+
+        Assert.Equal(PowerSource.PluggedIn, expectedSource);
+        Assert.Contains(
+            "power source changed",
+            viewModel.OperationStatusMessage,
+            StringComparison.OrdinalIgnoreCase);
+        Assert.False(viewModel.HasActiveProfileDraft);
     }
 
     [Fact]

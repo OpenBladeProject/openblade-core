@@ -25,6 +25,7 @@
   <ItemGroup>
     <ProjectReference Include="..\OpenBlade.Contracts\OpenBlade.Contracts.csproj" />
     <ProjectReference Include="..\OpenBlade.Display\OpenBlade.Display.csproj" />
+    <ProjectReference Include="..\OpenBlade.Session\OpenBlade.Session.csproj" />
     <ProjectReference Include="..\OpenBlade.Tray.Core\OpenBlade.Tray.Core.csproj" />
   </ItemGroup>
   <ItemGroup>

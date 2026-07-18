@@ -275,7 +275,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
 
     public event PropertyChangedEventHandler? PropertyChanged;
 
-    public event Func<DisplayProfileSettings, CancellationToken, Task<bool>>?
+    public event Func<PowerSource, DisplayProfileSettings, CancellationToken, Task<bool>>?
         SavedDisplayProfileRestoreRequested;
 
     public bool IsConnected
@@ -2546,6 +2546,12 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             return;
         }
 
+        if (ActivePowerSource != source)
+        {
+            await ReportDisplayRestoreSourceChangedAsync(token);
+            return;
+        }
+
         DisplayProfileSettings savedDisplay =
             GetProfile(source).Display ?? DisplayProfileSettings.Unconfigured();
         DisplayProfileSettings originalDisplay =
@@ -2556,10 +2562,14 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             savedDisplay.ColorProfileKey ?? originalDisplay.ColorProfileKey);
         bool controlsRestored = await ClearActiveProfileHardwareOverridesAsync(token);
         bool displayRestored = activeProfileDraftDisplay is null
-            || await RestoreSavedDisplayProfileAsync(displayToRestore, token);
-        if (controlsRestored && displayRestored)
+            || await RestoreSavedDisplayProfileAsync(source, displayToRestore, token);
+        if (controlsRestored && displayRestored && ActivePowerSource == source)
         {
             ClearActiveProfileDraft();
+        }
+        else if (ActivePowerSource != source)
+        {
+            await ReportDisplayRestoreSourceChangedAsync(token);
         }
     }
 
@@ -2595,6 +2605,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     }
 
     private async Task<bool> RestoreSavedDisplayProfileAsync(
+        PowerSource expectedPowerSource,
         DisplayProfileSettings settings,
         CancellationToken token)
     {
@@ -2612,7 +2623,14 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         {
             foreach (Delegate handler in handlers)
             {
-                bool restored = await ((Func<DisplayProfileSettings, CancellationToken, Task<bool>>)handler)(
+                if (ActivePowerSource != expectedPowerSource)
+                {
+                    await ReportDisplayRestoreSourceChangedAsync(token);
+                    return false;
+                }
+
+                bool restored = await ((Func<PowerSource, DisplayProfileSettings, CancellationToken, Task<bool>>)handler)(
+                    expectedPowerSource,
                     settings,
                     token);
                 if (!restored)
@@ -2643,6 +2661,12 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             return false;
         }
     }
+
+    private Task ReportDisplayRestoreSourceChangedAsync(CancellationToken token) =>
+        dispatcher.InvokeAsync(
+            () => OperationStatusMessage =
+                "Could not restore the saved display profile because the power source changed.",
+            token);
 
     private bool TryGetSupportedProfileDraft(object? parameter, out ProfileSet draft)
     {

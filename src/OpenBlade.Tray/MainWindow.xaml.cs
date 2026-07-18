@@ -6,7 +6,6 @@ using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using OpenBlade.Contracts;
-using OpenBlade.Display;
 using Windows.Graphics;
 using WinRT.Interop;
 
@@ -26,7 +25,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, ITrayIconThem
     private readonly UiPreferenceStore preferenceStore;
     private readonly UiPreferenceSaveQueue preferenceSaveQueue;
     private readonly VisibleObservationLoop visibleObservationLoop;
-    private readonly WindowsDisplaySettingsAdapter displaySettingsAdapter;
+    private readonly SessionDisplaySettingsAdapter displaySettingsAdapter;
     private readonly ReactiveKeyPulsePump reactiveKeyPulsePump;
     private readonly DispatcherQueueTimer chargeLimitCommitTimer;
     private readonly DispatcherQueueTimer displayRefreshTimer;
@@ -43,7 +42,6 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, ITrayIconThem
     private WindowsRawKeyboardSource? reactiveKeyboardSource;
     private bool? dashboardIsStacked;
     private bool? profilesAreStacked;
-    private PowerSource? observedDisplayProfilePowerSource;
     private long lastReactiveInputFailureTick;
     private int disposed;
 
@@ -72,8 +70,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, ITrayIconThem
             },
             errorHandler: exception => ReportReactiveInputFailure(
                 $"Reactive keyboard input failed: {exception.Message}"));
-        displaySettingsAdapter = new WindowsDisplaySettingsAdapter(
-            new WindowsDisplaySettingsController());
+        displaySettingsAdapter = new SessionDisplaySettingsAdapter();
         DisplayViewModel = new DisplaySettingsViewModel(displaySettingsAdapter);
         DisplayViewModel.UserSettingsChanged += OnDisplayUserSettingsChanged;
         ViewModel.SavedDisplayProfileRestoreRequested += OnSavedDisplayProfileRestoreRequested;
@@ -181,7 +178,6 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, ITrayIconThem
         await visibleObservationLoop.DisposeAsync();
         await preferenceSaveQueue.DisposeAsync();
         await DisplayViewModel.DisposeAsync();
-        displaySettingsAdapter.Dispose();
         await reactiveKeyPulsePump.DisposeAsync();
         await ViewModel.DisposeAsync();
     }
@@ -262,14 +258,6 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, ITrayIconThem
                 exception);
         }
 
-        // Startup is observation-only. A saved display profile is applied only
-        // after a real, confirmed power-source transition so launching OpenBlade
-        // does not overwrite a choice made elsewhere while it was closed.
-        if (ViewModel.ActivePowerSource is
-            PowerSource.PluggedIn or PowerSource.Battery or PowerSource.UsbC)
-        {
-            observedDisplayProfilePowerSource ??= ViewModel.ActivePowerSource;
-        }
         DisplayViewModel.ActivePowerSource = ViewModel.ActivePowerSource;
         await RefreshDisplaySettingsAsync();
     }
@@ -309,24 +297,6 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, ITrayIconThem
         if (args.PropertyName == nameof(MainViewModel.ActivePowerSource))
         {
             DisplayViewModel.ActivePowerSource = ViewModel.ActivePowerSource;
-        }
-
-        if (args.PropertyName == nameof(MainViewModel.ActivePowerSource)
-            && ViewModel.ActivePowerSource is
-                PowerSource.PluggedIn or PowerSource.Battery or PowerSource.UsbC)
-        {
-            PowerSource current = ViewModel.ActivePowerSource;
-            if (observedDisplayProfilePowerSource is null)
-            {
-                observedDisplayProfilePowerSource = current;
-            }
-            else if (observedDisplayProfilePowerSource != current)
-            {
-                observedDisplayProfilePowerSource = current;
-                _ = RunDisplayOperationAsync(
-                    () => DisplayViewModel.ApplyProfileAsync(
-                        ViewModel.ActiveSavedDisplayProfile));
-            }
         }
 
         if (args.PropertyName is nameof(MainViewModel.KeepManualChangesUntilCleared)
@@ -911,10 +881,14 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, ITrayIconThem
             args.PreviousSettings);
 
     private async Task<bool> OnSavedDisplayProfileRestoreRequested(
+        PowerSource expectedPowerSource,
         DisplayProfileSettings settings,
         CancellationToken token)
     {
-        bool restored = await DisplayViewModel.ApplyProfileAsync(settings, token);
+        bool restored = await DisplayViewModel.ApplyProfileAsync(
+            expectedPowerSource,
+            settings,
+            token);
         SynchronizeDisplayControls();
         return restored;
     }

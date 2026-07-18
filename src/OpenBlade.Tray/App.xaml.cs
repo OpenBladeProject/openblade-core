@@ -38,6 +38,21 @@ public partial class App : Microsoft.UI.Xaml.Application
             return;
         }
 
+        try
+        {
+            if (!SessionAgentLauncher.TryStartSibling())
+            {
+                Trace.TraceWarning(
+                    "OpenBlade session agent is not present beside the tray executable.");
+            }
+        }
+        catch (Exception exception)
+        {
+            Trace.TraceError(
+                "OpenBlade session agent could not be started: {0}",
+                exception);
+        }
+
         mainWindow = new MainWindow();
         windowInitializationTask = mainWindow.InitializeAsync();
 
