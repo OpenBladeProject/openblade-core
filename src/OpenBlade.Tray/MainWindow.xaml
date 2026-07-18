@@ -689,16 +689,17 @@
                                 </Button>
                             </Grid>
                         </Border>
-                        <Border Style="{StaticResource SettingsGroupStyle}">
+                        <Border Style="{StaticResource CardStyle}" Padding="0">
                             <Expander x:Name="TroubleshootingExpander"
                                       Style="{StaticResource CardContentExpanderStyle}"
+                                      CornerRadius="8"
                                       AutomationProperties.Name="Troubleshooting details">
                                 <Expander.Resources>
                                     <SolidColorBrush x:Key="ExpanderHeaderBackground" Color="Transparent" />
                                     <Thickness x:Key="ExpanderHeaderBorderThickness">0</Thickness>
                                 </Expander.Resources>
                                 <Expander.Header>
-                                    <StackPanel Spacing="3" Margin="0,10,0,10">
+                                    <StackPanel Spacing="3" Margin="2,18,0,18">
                                         <TextBlock Text="Troubleshooting" Style="{StaticResource CardTitleStyle}" />
                                         <TextBlock Text="View service, device, and connection details."
                                                    Style="{StaticResource SecondaryTextStyle}" />

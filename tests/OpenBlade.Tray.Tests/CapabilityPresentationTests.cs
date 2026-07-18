@@ -106,7 +106,7 @@ public sealed class CapabilityPresentationTests
         XElement settings = NamedElement(document, "ScrollViewer", "SettingsPage");
 
         Assert.Equal(
-            3,
+            2,
             settings.Descendants().Count(element =>
                 Attribute(element, "Style") == "{StaticResource SettingsGroupStyle}"));
         Assert.Equal(
@@ -188,10 +188,15 @@ public sealed class CapabilityPresentationTests
                 && Attribute(element, "AutomationProperties.Name") == "Troubleshooting details");
         Assert.Equal("{StaticResource CardContentExpanderStyle}", Attribute(troubleshooting, "Style"));
         Assert.Equal(
-            "{StaticResource SettingsGroupStyle}",
+            "{StaticResource CardStyle}",
             Attribute(
                 troubleshooting.Ancestors().First(element => element.Name.LocalName == "Border"),
                 "Style"));
+        Assert.Equal(
+            "0",
+            Attribute(
+                troubleshooting.Ancestors().First(element => element.Name.LocalName == "Border"),
+                "Padding"));
         foreach (string property in new[]
                  {
                      "ViewModel.TroubleshootingServiceStatus",
@@ -307,9 +312,14 @@ public sealed class CapabilityPresentationTests
         XElement borderThickness = Assert.Single(
             resources.Descendants(),
             element => Attribute(element, "Key") == "ExpanderHeaderBorderThickness");
+        XElement header = Assert.Single(
+            troubleshooting.Elements()
+                .Where(element => element.Name.LocalName == "Expander.Header")
+                .SelectMany(element => element.Elements()));
 
         Assert.Equal("Transparent", Attribute(background, "Color"));
         Assert.Equal("0", borderThickness.Value.Trim());
+        Assert.Equal("2,18,0,18", Attribute(header, "Margin"));
     }
 
     [Fact]
