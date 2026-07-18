@@ -5,6 +5,7 @@
     <Project Path="src/OpenBlade.Display/OpenBlade.Display.csproj" />
     <Project Path="src/OpenBlade.Protocol/OpenBlade.Protocol.csproj" />
     <Project Path="src/OpenBlade.Service/OpenBlade.Service.csproj" />
+    <Project Path="src/OpenBlade.Session/OpenBlade.Session.csproj" />
     <Project Path="src/OpenBlade.Setup/OpenBlade.Setup.csproj" />
     <Project Path="src/OpenBlade.Tray.Core/OpenBlade.Tray.Core.csproj" />
     <Project Path="src/OpenBlade.Tray/OpenBlade.Tray.csproj" />
@@ -15,6 +16,7 @@
     <Project Path="tests/OpenBlade.Capture.Tests/OpenBlade.Capture.Tests.csproj" />
     <Project Path="tests/OpenBlade.Protocol.Tests/OpenBlade.Protocol.Tests.csproj" />
     <Project Path="tests/OpenBlade.Service.Tests/OpenBlade.Service.Tests.csproj" />
+    <Project Path="tests/OpenBlade.Session.Tests/OpenBlade.Session.Tests.csproj" />
     <Project Path="tests/OpenBlade.Setup.Tests/OpenBlade.Setup.Tests.csproj" />
     <Project Path="tests/OpenBlade.Tray.Tests/OpenBlade.Tray.Tests.csproj" />
   </Folder>
