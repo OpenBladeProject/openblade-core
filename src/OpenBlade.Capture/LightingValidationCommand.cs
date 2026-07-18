@@ -495,6 +495,11 @@ public sealed class LightingValidationCommand
     {
         const string commandPrefix = "The lighting command failed (";
         const string matrixPrefix = "The matrix write failed (";
+        if (TryReadMatrixWriteDiagnostic(exception.Message, out string matrixDiagnostic))
+        {
+            return matrixDiagnostic;
+        }
+
         if (TryReadLightingCommandResponse(exception.Message, out string response))
         {
             return response;
@@ -520,6 +525,52 @@ public sealed class LightingValidationCommand
             StringComparison.Ordinal)
                 ? "rollbackIncomplete"
                 : "lightingWrite";
+    }
+
+    private static bool TryReadMatrixWriteDiagnostic(
+        string message,
+        out string diagnostic)
+    {
+        const string prefix = "The matrix write failed (";
+        diagnostic = string.Empty;
+        if (!message.StartsWith(prefix, StringComparison.Ordinal)
+            || !message.EndsWith(").", StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        string[] values = message[prefix.Length..^2]
+            .Split(", ", StringSplitOptions.None);
+        if (values.Length != 4
+            || values[0].Length is 0 or > 64
+            || values[1].Length is 0 or > 64
+            || values[0].Any(character => !char.IsLetterOrDigit(character))
+            || values[1].Any(character => !char.IsLetterOrDigit(character))
+            || !IsBoundedDiagnosticInteger(values[2])
+            || !IsBoundedDiagnosticInteger(values[3]))
+        {
+            return false;
+        }
+
+        diagnostic = $"matrixWrite.{values[0]}.{values[1]}" +
+            $".error.{values[2]}.bytes.{values[3]}";
+        return true;
+    }
+
+    private static bool IsBoundedDiagnosticInteger(string value)
+    {
+        if (value == "None")
+        {
+            return true;
+        }
+
+        ReadOnlySpan<char> digits = value.AsSpan();
+        if (digits.Length > 1 && digits[0] == '-')
+        {
+            digits = digits[1..];
+        }
+
+        return digits.Length is > 0 and <= 10 && digits.ToArray().All(char.IsDigit);
     }
 
     private static bool TryReadLightingCommandResponse(

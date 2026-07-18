@@ -481,7 +481,12 @@ internal sealed class ProductionLightingPort : IProductionLightingPort
             HidSessionFailureKind.ConflictDetectionFailed
                 ? WriteSubmissionState.KnownNotApplied
                 : WriteSubmissionState.Indeterminate;
-        throw new BladeWriteException(state, $"The matrix write failed ({result.Failure}).");
+        string phase = result.Diagnostic?.Phase.ToString() ?? "None";
+        string error = result.Diagnostic?.NativeWin32Error?.ToString() ?? "None";
+        string bytes = result.Diagnostic?.TransferredByteCount?.ToString() ?? "None";
+        throw new BladeWriteException(
+            state,
+            $"The matrix write failed ({result.Failure}, {phase}, {error}, {bytes}).");
     }
 
     private IPid02E0LightingEffect CreateEffect(LightingSettings settings)

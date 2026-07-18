@@ -217,6 +217,31 @@ public sealed class ProductionLightingPortTests
     }
 
     [Fact]
+    public async Task MatrixFailureReportsBoundedNativeDiagnostic()
+    {
+        var session = new LightingSession(initialBrightness: 0xC5);
+        var writer = new MatrixWriter
+        {
+            NextDiagnostic = new(
+                HidSessionFailurePhase.SetSubmit,
+                HidSessionFailureKind.NativeIoFailure,
+                87,
+                0),
+        };
+        writer.Failures.Enqueue(HidSessionFailureKind.NativeIoFailure);
+        await using var port = CreatePort(session, writer, admitted: true);
+
+        BladeWriteException error = await Assert.ThrowsAsync<BladeWriteException>(() =>
+            port.SetLightingAsync(
+                LightingSettingsFactory.Static(new RgbColor(1, 2, 3), 77),
+                default));
+
+        Assert.Equal(
+            "The matrix write failed (NativeIoFailure, SetSubmit, 87, 0).",
+            error.Message);
+    }
+
+    [Fact]
     public async Task ReadState_DoesNotPromoteOwnedRendererIntentToConfirmedState()
     {
         var session = new LightingSession(initialBrightness: 0xFF);
@@ -677,6 +702,8 @@ public sealed class ProductionLightingPortTests
 
         internal Queue<HidSessionFailureKind> Failures { get; } = [];
 
+        internal HidSessionFailureDiagnostic? NextDiagnostic { get; set; }
+
         public RazerCommandSessionDisposition Disposition { get; private set; } =
             RazerCommandSessionDisposition.Healthy;
 
@@ -699,11 +726,17 @@ public sealed class ProductionLightingPortTests
             HidSessionFailureKind failure = Failures.TryDequeue(out HidSessionFailureKind queued)
                 ? queued
                 : HidSessionFailureKind.ProtocolFailure;
-            return Task.FromResult(fail
-                ? new HidSessionResult<HidUnit>(
-                    default,
-                    failure)
-                : new HidSessionResult<HidUnit>(new HidUnit(), null));
+            if (!fail)
+            {
+                return Task.FromResult(new HidSessionResult<HidUnit>(new HidUnit(), null));
+            }
+
+            HidSessionFailureDiagnostic? diagnostic = NextDiagnostic;
+            NextDiagnostic = null;
+            return Task.FromResult(new HidSessionResult<HidUnit>(default, failure)
+            {
+                Diagnostic = diagnostic,
+            });
         }
 
         internal async Task WaitForWriteCountAsync(int count, TimeSpan timeout)

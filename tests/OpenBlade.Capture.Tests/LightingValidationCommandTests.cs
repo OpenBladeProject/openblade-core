@@ -152,6 +152,33 @@ public sealed class LightingValidationCommandTests
     }
 
     [Fact]
+    public async Task RunAsync_MatrixFailureRecordsOnlyBoundedNativeDiagnostic()
+    {
+        var port = new FakeLightingPort
+        {
+            FailEffect = LightingEffect.Static,
+            FailException = new BladeWriteException(
+                WriteSubmissionState.Indeterminate,
+                "The matrix write failed " +
+                "(NativeIoFailure, SetSubmit, 87, 0)."),
+        };
+        var console = new FakeConsole(
+            LightingValidationCommand.ExactTargetConfirmation);
+        var artifacts = new List<(string Path, string Json)>();
+        LightingValidationCommand command = CreateCommand(port, console, artifacts);
+
+        int exitCode = await command.RunAsync(ValidArguments(), default);
+
+        Assert.Equal(LightingValidationCommand.ValidationFailureExitCode, exitCode);
+        using JsonDocument document = JsonDocument.Parse(Assert.Single(artifacts).Json);
+        Assert.StartsWith(
+            "validationFailed:knownBaselineApply:bladeWrite.Indeterminate." +
+            "matrixWrite.NativeIoFailure.SetSubmit.error.87.bytes.0",
+            document.RootElement.GetProperty("failure").GetString(),
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task RunAsync_ShortSuccessfulResponseIsRecordedAsBoundedHex()
     {
         var port = new FakeLightingPort
