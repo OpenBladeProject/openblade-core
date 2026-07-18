@@ -83,8 +83,12 @@ public sealed class LightingValidationCommandTests
         Assert.False(
             document.RootElement.GetProperty("unknownPreTestStateRestored").GetBoolean());
         Assert.Equal(
-            "typedApplyFailed",
+            "validationFailed:action.spectrum.apply:io",
             document.RootElement.GetProperty("failure").GetString());
+        Assert.Contains(
+            "Validation diagnostic: validationFailed:action.spectrum.apply:io",
+            console.Text,
+            StringComparison.Ordinal);
     }
 
     [Fact]

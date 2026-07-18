@@ -375,6 +375,7 @@ public sealed class LightingValidationCommand
         bool pulseApplied = false;
         bool visualConfirmed = false;
         string? failure = null;
+        string actionStage = "apply";
         try
         {
             await output.WriteLineAsync($"Applying {spec.Description}...")
@@ -382,6 +383,7 @@ public sealed class LightingValidationCommand
             await port.SetLightingAsync(spec.Settings, cancellationToken)
                 .ConfigureAwait(false);
             applySucceeded = true;
+            actionStage = "brightnessReadback";
             (observedRaw, brightnessMatched) = await QueryBrightnessAsync(
                 expectedRaw,
                 cancellationToken).ConfigureAwait(false);
@@ -393,6 +395,7 @@ public sealed class LightingValidationCommand
             {
                 if (spec.ReactivePulseRequired)
                 {
+                    actionStage = "reactivePulse";
                     await output.WriteLineAsync(
                         "Press Enter, then watch the Space key for the reactive pulse.")
                         .ConfigureAwait(false);
@@ -403,6 +406,7 @@ public sealed class LightingValidationCommand
                     pulseApplied = true;
                 }
 
+                actionStage = "visualConfirmation";
                 visualConfirmed = await PromptYesAsync(
                     $"Did {spec.Description} look correct?",
                     cancellationToken).ConfigureAwait(false);
@@ -421,9 +425,12 @@ public sealed class LightingValidationCommand
         {
             throw;
         }
-        catch
+        catch (Exception exception)
         {
-            failure = "typedApplyFailed";
+            failure = CreateFailureCode(
+                $"action.{spec.Name}.{actionStage}",
+                exception);
+            await WriteFailureAsync(failure).ConfigureAwait(false);
         }
 
         return new(
