@@ -39,7 +39,8 @@ public sealed class LightingValidationCommandTests
                 LightingEffect.Static,
             ],
             port.Settings.Select(setting => setting.Effect));
-        Assert.Equal([91, 91, 91], port.Pulses.Select(pulse => (int)pulse.MatrixSlot));
+        Assert.Equal([53, 53, 53], port.Pulses.Select(pulse => (int)pulse.MatrixSlot));
+        Assert.Contains("watch the A key", console.Text, StringComparison.Ordinal);
         Assert.Single(artifacts);
         Assert.Equal(@"C:\ProgramData\OpenBlade\lighting-validation.json", artifacts[0].Path);
 

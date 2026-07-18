@@ -14,7 +14,7 @@ public sealed class LightingValidationCommand
     public const int ValidationFailureExitCode = 2;
     public const int CanceledExitCode = 4;
 
-    private const byte ReactiveValidationMatrixSlot = 91; // Captured Space slot.
+    private const byte ReactiveValidationMatrixSlot = 53; // Captured A-key slot.
     private const string Usage =
         "Usage: OpenBlade.Capture validate-lighting --confirm-target " +
         ExactTargetConfirmation + " --brightness <1-100>";
@@ -397,7 +397,7 @@ public sealed class LightingValidationCommand
                 {
                     actionStage = "reactivePulse";
                     await output.WriteLineAsync(
-                        "Press Enter, then watch the Space key for the reactive pulse.")
+                        "Press Enter, then watch the A key for the reactive pulse.")
                         .ConfigureAwait(false);
                     _ = await input.ReadLineAsync(cancellationToken).ConfigureAwait(false);
                     await port.PulseReactiveKeyAsync(
