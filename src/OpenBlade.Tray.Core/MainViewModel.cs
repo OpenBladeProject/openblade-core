@@ -442,13 +442,13 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             ? "Laptop not found"
             : ActivePowerSource == PowerSource.ExternalUnknown
                 ? "Checking power source"
-                : CanControlHardware
+                : CanControlHardware || IsRetainedPowerSourceRecheck(latestStatus)
                     ? "Ready"
                     : "Controls unavailable";
 
     public bool IsReadinessReady => IsConnected
         && latestStatus?.DeviceVerified == true
-        && CanControlHardware;
+        && (CanControlHardware || IsRetainedPowerSourceRecheck(latestStatus));
 
     public bool IsReadinessChecking => IsConnected
         && latestStatus?.DeviceVerified == true
@@ -457,6 +457,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     public bool IsReadinessWarning => IsConnected
         && latestStatus?.DeviceVerified == true
         && ActivePowerSource != PowerSource.ExternalUnknown
+        && !IsRetainedPowerSourceRecheck(latestStatus)
         && !CanControlHardware;
 
     public bool IsReadinessError => !IsConnected
@@ -2644,10 +2645,26 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             return "Checking power source";
         }
 
+        if (IsRetainedPowerSourceRecheck(status))
+        {
+            return "Ready";
+        }
+
         return status.WritesBlocked
             ? "Controls unavailable"
             : "Ready";
     }
+
+    private static bool IsRetainedPowerSourceRecheck(ServiceStatusSnapshot? status) =>
+        status is
+        {
+            DeviceVerified: true,
+            WritesBlocked: true,
+            ActivePowerSource: PowerSource.PluggedIn or PowerSource.UsbC,
+        }
+        && status.Message.Contains(
+            "last confirmed power source is retained",
+            StringComparison.OrdinalIgnoreCase);
 
     private static string FormatOperationFeedback(string message)
     {

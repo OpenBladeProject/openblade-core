@@ -9,6 +9,12 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 - Built-in display controls for driver-enumerated fixed refresh rates, EDID-reported Windows Dynamic Refresh Rate, HDR, and the locally installed Razer color profiles.
 - A typed, read-only lighting-brightness query for continued PID 02E0 protocol validation.
+- Sanitized USBPcap evidence for the exact PID 02E0 `03/83` brightness readback exchange.
+
+### Changed
+
+- Replaced the page-level legacy `ScrollViewer` controls with InteractionTracker-based `ScrollView` controls for smoother high-refresh-rate scrolling.
+- A transient adapter recheck that retains the last confirmed power source no longer flashes the dashboard as `Controls unavailable`; hardware writes remain blocked until classification recovers.
 
 ### Safety
 
@@ -51,7 +57,7 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 - Version 0.1.0 supports only the Razer Blade 16 RZ09-0581 / PID 02E0 on BIOS 3.01 and Windows 11 x64.
 - Sensor coverage is intentionally limited to fan speed and net battery power.
-- Lighting remains unavailable because the current firmware exposes no independently verified state readback.
+- Lighting effects and writes remain unavailable. Brightness now has an independently captured readback query, but its setter is not admitted until a separate write, readback, and restoration cycle succeeds.
 - Fan control provides Automatic and validated Maximum modes, not custom fan curves.
 - Unrecognized external adapters remain read-only.
 - Unsupported or unverified controls remain unavailable rather than attempting arbitrary firmware commands.

@@ -1,9 +1,39 @@
+using System.Text.Json;
 using OpenBlade.Protocol;
 
 namespace OpenBlade.Protocol.Tests;
 
 public sealed class LightingCaptureReportDecoderTests
 {
+    [Fact]
+    public void CapturedBrightnessFixture_DecodesExactIndependentReadback()
+    {
+        string fixturePath = RepositoryFile(
+            "captures",
+            "decoded",
+            "rz09-0581-pid-02e0-bios-3.01-lighting-brightness-query-fixture.json");
+        using JsonDocument document = JsonDocument.Parse(File.ReadAllText(fixturePath));
+        JsonElement root = document.RootElement;
+        JsonElement exchange = root.GetProperty("exchange");
+        byte[] request = Convert.FromHexString(
+            exchange.GetProperty("requestEnvelopeHex").GetString()!);
+        byte[] response = Convert.FromHexString(
+            exchange.GetProperty("responseEnvelopeHex").GetString()!);
+
+        Assert.Equal(RazerReport.ReportLength, request.Length);
+        Assert.Equal(RazerReport.ReportLength, response.Length);
+        Assert.True(LightingCaptureReportDecoder.TryDecode(request, out var decodedRequest));
+        Assert.True(LightingCaptureReportDecoder.TryDecode(response, out var decodedResponse));
+        Assert.Equal(LightingCaptureSemantic.BrightnessQuery, decodedRequest.Semantic);
+        Assert.Equal(LightingCaptureSemantic.BrightnessQuery, decodedResponse.Semantic);
+        Assert.Equal(decodedRequest.TransactionId, decodedResponse.TransactionId);
+        Assert.Equal([0x01, 0x05, 0x00], decodedRequest.Payload.ToArray());
+        Assert.Equal([0x01, 0x05, 0xFF], decodedResponse.Payload.ToArray());
+        Assert.True(decodedResponse.IsIndependentBrightnessReadback);
+        Assert.False(root.GetProperty("productionWired").GetBoolean());
+        Assert.False(root.GetProperty("rawCaptureCommitted").GetBoolean());
+    }
+
     [Fact]
     public void Decoder_RecognizesValidatedBrightnessQueryResponseAsIndependentReadback()
     {
@@ -147,5 +177,23 @@ public sealed class LightingCaptureReportDecoderTests
         }
 
         report[88] = checksum;
+    }
+
+    private static string RepositoryFile(params string[] relativeSegments)
+    {
+        DirectoryInfo? directory = new(AppContext.BaseDirectory);
+        while (directory is not null)
+        {
+            string candidate = Path.Combine([directory.FullName, .. relativeSegments]);
+            if (File.Exists(candidate))
+            {
+                return candidate;
+            }
+
+            directory = directory.Parent;
+        }
+
+        throw new FileNotFoundException(
+            $"Could not locate repository file {Path.Combine(relativeSegments)}.");
     }
 }

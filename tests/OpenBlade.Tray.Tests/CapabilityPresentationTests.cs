@@ -99,7 +99,7 @@ public sealed class CapabilityPresentationTests
     }
 
     [Fact]
-    public void MainWindow_KeepsPagePaddingInsideEdgeAlignedScrollViewers()
+    public void MainWindow_UsesInteractionTrackerScrollViewsWithEdgeAlignedPadding()
     {
         XDocument document = XDocument.Parse(ReadMainWindowXaml());
 
@@ -111,8 +111,12 @@ public sealed class CapabilityPresentationTests
                      "SettingsPage",
                  })
         {
-            XElement page = NamedElement(document, "ScrollViewer", pageName);
+            XElement page = NamedElement(document, "ScrollView", pageName);
             Assert.Null(Attribute(page.Parent!, "Padding"));
+            Assert.Equal("Disabled", Attribute(page, "HorizontalScrollMode"));
+            Assert.Equal("Hidden", Attribute(page, "HorizontalScrollBarVisibility"));
+            Assert.Equal("Enabled", Attribute(page, "VerticalScrollMode"));
+            Assert.Equal("Auto", Attribute(page, "VerticalScrollBarVisibility"));
             XElement content = Assert.Single(
                 page.Elements(),
                 element => element.Name.LocalName == "StackPanel");
@@ -124,7 +128,7 @@ public sealed class CapabilityPresentationTests
     public void MainWindow_DisplayPageUsesSettingsRowsAndHdrGatesColorProfiles()
     {
         XDocument document = XDocument.Parse(ReadMainWindowXaml());
-        XElement display = NamedElement(document, "ScrollViewer", "DisplayPage");
+        XElement display = NamedElement(document, "ScrollView", "DisplayPage");
 
         Assert.Contains(document.Descendants(), element =>
             element.Name.LocalName == "NavigationViewItem"
@@ -163,7 +167,7 @@ public sealed class CapabilityPresentationTests
     {
         string xaml = ReadMainWindowXaml();
         XDocument document = XDocument.Parse(xaml);
-        XElement settings = NamedElement(document, "ScrollViewer", "SettingsPage");
+        XElement settings = NamedElement(document, "ScrollView", "SettingsPage");
 
         Assert.Equal(
             3,

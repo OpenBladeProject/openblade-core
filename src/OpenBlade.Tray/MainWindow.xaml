@@ -152,9 +152,12 @@
             </NavigationView.MenuItems>
 
             <Grid HorizontalAlignment="Stretch">
-                <ScrollViewer x:Name="HomePage"
-                              HorizontalContentAlignment="Stretch"
-                              VerticalScrollBarVisibility="Auto">
+                <ScrollView x:Name="HomePage"
+                            HorizontalContentAlignment="Stretch"
+                            HorizontalScrollMode="Disabled"
+                            HorizontalScrollBarVisibility="Hidden"
+                            VerticalScrollMode="Enabled"
+                            VerticalScrollBarVisibility="Auto">
                     <StackPanel Padding="28,20,28,28" HorizontalAlignment="Stretch">
                         <StackPanel.Transitions>
                             <TransitionCollection>
@@ -447,12 +450,15 @@
                             </StackPanel>
                         </Border>
                     </StackPanel>
-                </ScrollViewer>
+                </ScrollView>
 
-                <ScrollViewer x:Name="ProfilesPage"
-                              Visibility="Collapsed"
-                              HorizontalContentAlignment="Stretch"
-                              VerticalScrollBarVisibility="Auto">
+                <ScrollView x:Name="ProfilesPage"
+                            Visibility="Collapsed"
+                            HorizontalContentAlignment="Stretch"
+                            HorizontalScrollMode="Disabled"
+                            HorizontalScrollBarVisibility="Hidden"
+                            VerticalScrollMode="Enabled"
+                            VerticalScrollBarVisibility="Auto">
                     <StackPanel Padding="28,20,28,28" HorizontalAlignment="Stretch">
                         <StackPanel.Transitions>
                             <TransitionCollection>
@@ -575,12 +581,15 @@
                             </Grid>
                         </Border>
                     </StackPanel>
-                </ScrollViewer>
+                </ScrollView>
 
-                <ScrollViewer x:Name="DisplayPage"
-                              Visibility="Collapsed"
-                              HorizontalContentAlignment="Stretch"
-                              VerticalScrollBarVisibility="Auto">
+                <ScrollView x:Name="DisplayPage"
+                            Visibility="Collapsed"
+                            HorizontalContentAlignment="Stretch"
+                            HorizontalScrollMode="Disabled"
+                            HorizontalScrollBarVisibility="Hidden"
+                            VerticalScrollMode="Enabled"
+                            VerticalScrollBarVisibility="Auto">
                     <StackPanel Padding="28,20,28,28" HorizontalAlignment="Stretch">
                         <StackPanel.Transitions>
                             <TransitionCollection>
@@ -674,12 +683,15 @@
                                    Style="{StaticResource SecondaryTextStyle}"
                                    Margin="0,2,0,0" />
                     </StackPanel>
-                </ScrollViewer>
+                </ScrollView>
 
-                <ScrollViewer x:Name="SettingsPage"
-                              Visibility="Collapsed"
-                              HorizontalContentAlignment="Stretch"
-                              VerticalScrollBarVisibility="Auto">
+                <ScrollView x:Name="SettingsPage"
+                            Visibility="Collapsed"
+                            HorizontalContentAlignment="Stretch"
+                            HorizontalScrollMode="Disabled"
+                            HorizontalScrollBarVisibility="Hidden"
+                            VerticalScrollMode="Enabled"
+                            VerticalScrollBarVisibility="Auto">
                     <StackPanel Padding="28,20,28,28" HorizontalAlignment="Stretch">
                         <StackPanel.Transitions>
                             <TransitionCollection>
@@ -1018,7 +1030,7 @@
                             </StackPanel>
                         </Border>
                     </StackPanel>
-                </ScrollViewer>
+                </ScrollView>
             </Grid>
         </NavigationView>
     </Grid>

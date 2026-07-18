@@ -1351,12 +1351,27 @@ public sealed class MainViewModelTests
         await WaitUntilAsync(() =>
             viewModel.ControlAccessStatus == "Controls unavailable");
 
+        client.Publish(CreateStatus(verified: true, blocked: true) with
+        {
+            Revision = 2,
+            ActivePowerSource = PowerSource.UsbC,
+            Message = "Power adapter classification is temporarily unavailable; the last confirmed power source is retained and control writes are blocked.",
+        });
+        await WaitUntilAsync(() => viewModel.ActivePowerSource == PowerSource.UsbC);
+        Assert.Equal("Ready", viewModel.ControlAccessStatus);
+        Assert.Equal("Ready", viewModel.ProfileStateLabel);
+        Assert.True(viewModel.IsReadinessReady);
+        Assert.False(viewModel.IsReadinessWarning);
+        Assert.False(viewModel.CanControlHardware);
+
         client.Publish(CreateStatus(verified: true, blocked: false) with
         {
+            Revision = 3,
             Firmware = new FirmwareVersions("3.01", "1.04", "Unavailable", "98.3.5c.40.3d"),
         });
         await WaitUntilAsync(() =>
-            viewModel.ControlAccessStatus == "Ready");
+            viewModel.ControlAccessStatus == "Ready"
+            && viewModel.ActivePowerSource == PowerSource.PluggedIn);
         Assert.Equal("Ready", viewModel.ProfileStateLabel);
         Assert.True(viewModel.IsReadinessReady);
         Assert.False(viewModel.IsReadinessWarning);
@@ -1372,7 +1387,7 @@ public sealed class MainViewModelTests
 
         client.Publish(CreateStatus(verified: true, blocked: false) with
         {
-            Revision = 2,
+            Revision = 4,
             ActivePowerSource = PowerSource.ExternalUnknown,
         });
         await WaitUntilAsync(() =>
