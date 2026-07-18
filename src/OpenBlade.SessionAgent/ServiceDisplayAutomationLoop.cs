@@ -5,6 +5,7 @@ namespace OpenBlade.SessionAgent;
 
 public sealed class ServiceDisplayAutomationLoop
 {
+    private static readonly TimeSpan FailureRetryDelay = TimeSpan.FromSeconds(1);
     private readonly IServiceClient serviceClient;
     private readonly DisplayAutomationCoordinator coordinator;
 
@@ -18,19 +19,35 @@ public sealed class ServiceDisplayAutomationLoop
 
     public async Task RunAsync(CancellationToken cancellationToken)
     {
-        await foreach (ServiceWatchUpdate update in serviceClient
-            .WatchStatusAsync(cancellationToken)
-            .WithCancellation(cancellationToken)
-            .ConfigureAwait(false))
+        while (true)
         {
-            switch (update)
+            cancellationToken.ThrowIfCancellationRequested();
+            try
             {
-                case ServiceWatchUpdate.Connected connected:
-                    coordinator.Observe(connected.Status);
-                    break;
-                case ServiceWatchUpdate.Reconnecting:
-                    coordinator.MarkUnavailable();
-                    break;
+                await foreach (ServiceWatchUpdate update in serviceClient
+                    .WatchStatusAsync(cancellationToken)
+                    .WithCancellation(cancellationToken)
+                    .ConfigureAwait(false))
+                {
+                    switch (update)
+                    {
+                        case ServiceWatchUpdate.Connected connected:
+                            coordinator.Observe(connected.Status);
+                            break;
+                        case ServiceWatchUpdate.Reconnecting:
+                            coordinator.MarkUnavailable();
+                            break;
+                    }
+                }
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch
+            {
+                coordinator.MarkUnavailable();
+                await Task.Delay(FailureRetryDelay, cancellationToken).ConfigureAwait(false);
             }
         }
     }
