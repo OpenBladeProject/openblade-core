@@ -123,11 +123,11 @@
                 </NavigationViewItem>
             </NavigationView.MenuItems>
 
-            <Grid Padding="28,20,28,28" HorizontalAlignment="Stretch">
+            <Grid HorizontalAlignment="Stretch">
                 <ScrollViewer x:Name="HomePage"
                               HorizontalContentAlignment="Stretch"
                               VerticalScrollBarVisibility="Auto">
-                    <StackPanel HorizontalAlignment="Stretch">
+                    <StackPanel Padding="28,20,28,28" HorizontalAlignment="Stretch">
                         <StackPanel.Transitions>
                             <TransitionCollection>
                                 <EntranceThemeTransition FromHorizontalOffset="20" />
@@ -427,7 +427,7 @@
                               Visibility="Collapsed"
                               HorizontalContentAlignment="Stretch"
                               VerticalScrollBarVisibility="Auto">
-                    <StackPanel HorizontalAlignment="Stretch">
+                    <StackPanel Padding="28,20,28,28" HorizontalAlignment="Stretch">
                         <StackPanel.Transitions>
                             <TransitionCollection>
                                 <EntranceThemeTransition FromHorizontalOffset="20" />
@@ -555,7 +555,7 @@
                               Visibility="Collapsed"
                               HorizontalContentAlignment="Stretch"
                               VerticalScrollBarVisibility="Auto">
-                    <StackPanel HorizontalAlignment="Stretch">
+                    <StackPanel Padding="28,20,28,28" HorizontalAlignment="Stretch">
                         <StackPanel.Transitions>
                             <TransitionCollection>
                                 <EntranceThemeTransition FromHorizontalOffset="20" />

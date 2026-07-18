@@ -99,6 +99,22 @@ public sealed class CapabilityPresentationTests
     }
 
     [Fact]
+    public void MainWindow_KeepsPagePaddingInsideEdgeAlignedScrollViewers()
+    {
+        XDocument document = XDocument.Parse(ReadMainWindowXaml());
+
+        foreach (string pageName in new[] { "HomePage", "ProfilesPage", "SettingsPage" })
+        {
+            XElement page = NamedElement(document, "ScrollViewer", pageName);
+            Assert.Null(Attribute(page.Parent!, "Padding"));
+            XElement content = Assert.Single(
+                page.Elements(),
+                element => element.Name.LocalName == "StackPanel");
+            Assert.Equal("28,20,28,28", Attribute(content, "Padding"));
+        }
+    }
+
+    [Fact]
     public void MainWindow_UsesSettingsRowsDurationOptionsAndFlyoutDetails()
     {
         string xaml = ReadMainWindowXaml();
