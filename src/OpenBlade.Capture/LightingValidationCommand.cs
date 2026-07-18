@@ -495,6 +495,16 @@ public sealed class LightingValidationCommand
     {
         const string commandPrefix = "The lighting command failed (";
         const string matrixPrefix = "The matrix write failed (";
+        if (TryReadLightingCommandResponse(exception.Message, out string response))
+        {
+            return response;
+        }
+
+        if (TryReadLightingCommandDiagnostic(exception.Message, out string diagnostic))
+        {
+            return diagnostic;
+        }
+
         if (TryReadParenthesizedCode(exception.Message, commandPrefix, out string command))
         {
             return $"lightingCommand.{command}";
@@ -510,6 +520,85 @@ public sealed class LightingValidationCommand
             StringComparison.Ordinal)
                 ? "rollbackIncomplete"
                 : "lightingWrite";
+    }
+
+    private static bool TryReadLightingCommandResponse(
+        string message,
+        out string response)
+    {
+        const string prefix = "The lighting command ";
+        const string separator = " returned ";
+        response = string.Empty;
+        if (!message.StartsWith(prefix, StringComparison.Ordinal)
+            || !message.EndsWith(".", StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        int separatorIndex = message.IndexOf(
+            separator,
+            prefix.Length,
+            StringComparison.Ordinal);
+        if (separatorIndex < 0)
+        {
+            return false;
+        }
+
+        string operation = message[prefix.Length..separatorIndex];
+        string payload = message[(separatorIndex + separator.Length)..^1];
+        if (operation.Length != 5
+            || operation[2] != '/'
+            || !operation.Where(character => character != '/').All(Uri.IsHexDigit)
+            || payload.Length is 0 or > 16
+            || payload.Length % 2 != 0
+            || !payload.All(Uri.IsHexDigit))
+        {
+            return false;
+        }
+
+        response = $"lightingCommand.{operation.Replace('/', '.')}" +
+            $".response.{payload}";
+        return true;
+    }
+
+    private static bool TryReadLightingCommandDiagnostic(
+        string message,
+        out string diagnostic)
+    {
+        const string prefix = "The lighting command ";
+        const string separator = " failed (";
+        diagnostic = string.Empty;
+        if (!message.StartsWith(prefix, StringComparison.Ordinal)
+            || !message.EndsWith(").", StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        int separatorIndex = message.IndexOf(
+            separator,
+            prefix.Length,
+            StringComparison.Ordinal);
+        if (separatorIndex < 0)
+        {
+            return false;
+        }
+
+        string operation = message[prefix.Length..separatorIndex];
+        string[] categories = message[(separatorIndex + separator.Length)..^2]
+            .Split(", ", StringSplitOptions.None);
+        if (operation.Length != 5
+            || operation[2] != '/'
+            || !operation.Where(character => character != '/').All(Uri.IsHexDigit)
+            || categories.Length != 2
+            || categories.Any(category => category.Length is 0 or > 64
+                || category.Any(character => !char.IsLetterOrDigit(character))))
+        {
+            return false;
+        }
+
+        diagnostic = $"lightingCommand.{operation.Replace('/', '.')}" +
+            $".{categories[0]}.{categories[1]}";
+        return true;
     }
 
     private static bool TryReadParenthesizedCode(

@@ -1,0 +1,40 @@
+{
+  "schemaVersion": 1,
+  "evidenceKind": "openBladeBoundedProtocolObservation",
+  "device": {
+    "model": "RZ09-0581",
+    "vendorIdHex": "1532",
+    "productIdHex": "02E0",
+    "biosVersion": "3.01"
+  },
+  "build": {
+    "commitHash": "e17d99f445acca34b65aa9c5d1025d77dd4ab238",
+    "protocolAssemblySha256": "699F515590EF9A9B2831DD7B1BC5C438CB5F4B6D2C3D81142F337A2B14FD0E9B"
+  },
+  "observedAtUtc": "2026-07-18T22:27:25.9716304+00:00",
+  "operation": {
+    "classHex": "00",
+    "idHex": "84",
+    "requestPayloadHex": "0000",
+    "responsePayloadHex": "0000",
+    "expectedPayloadLength": 2,
+    "envelopeValidation": {
+      "reportId": true,
+      "length": true,
+      "checksum": true,
+      "transaction": true,
+      "classAndId": true,
+      "successStatus": true
+    }
+  },
+  "comparison": {
+    "synapseCapturedResponsePayloadHex": "0300",
+    "conclusion": "The successful response payload is state-dependent on this exact firmware. Production accepts only the captured 0300 and exact-device-observed 0000 values."
+  },
+  "scope": {
+    "matrixWriteReached": false,
+    "reason": "The diagnostic intentionally stopped after recording a response that differed from the capture fixture.",
+    "rawDevicePathIncluded": false,
+    "rawCaptureIncluded": false
+  }
+}

@@ -125,6 +125,59 @@ public sealed class LightingValidationCommandTests
     }
 
     [Fact]
+    public async Task RunAsync_CommandFailureRecordsOnlySanitizedOperationAndValidationCategory()
+    {
+        var port = new FakeLightingPort
+        {
+            FailEffect = LightingEffect.Static,
+            FailException = new BladeWriteException(
+                WriteSubmissionState.Indeterminate,
+                "The lighting command 00/86 failed " +
+                "(ProtocolFailure, PayloadValidator)."),
+        };
+        var console = new FakeConsole(
+            LightingValidationCommand.ExactTargetConfirmation);
+        var artifacts = new List<(string Path, string Json)>();
+        LightingValidationCommand command = CreateCommand(port, console, artifacts);
+
+        int exitCode = await command.RunAsync(ValidArguments(), default);
+
+        Assert.Equal(LightingValidationCommand.ValidationFailureExitCode, exitCode);
+        using JsonDocument document = JsonDocument.Parse(Assert.Single(artifacts).Json);
+        Assert.StartsWith(
+            "validationFailed:knownBaselineApply:bladeWrite.Indeterminate." +
+            "lightingCommand.00.86.ProtocolFailure.PayloadValidator",
+            document.RootElement.GetProperty("failure").GetString(),
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task RunAsync_ShortSuccessfulResponseIsRecordedAsBoundedHex()
+    {
+        var port = new FakeLightingPort
+        {
+            FailEffect = LightingEffect.Static,
+            FailException = new BladeWriteException(
+                WriteSubmissionState.Indeterminate,
+                "The lighting command 00/84 returned 0200."),
+        };
+        var console = new FakeConsole(
+            LightingValidationCommand.ExactTargetConfirmation);
+        var artifacts = new List<(string Path, string Json)>();
+        LightingValidationCommand command = CreateCommand(port, console, artifacts);
+
+        int exitCode = await command.RunAsync(ValidArguments(), default);
+
+        Assert.Equal(LightingValidationCommand.ValidationFailureExitCode, exitCode);
+        using JsonDocument document = JsonDocument.Parse(Assert.Single(artifacts).Json);
+        Assert.StartsWith(
+            "validationFailed:knownBaselineApply:bladeWrite.Indeterminate." +
+            "lightingCommand.00.84.response.0200",
+            document.RootElement.GetProperty("failure").GetString(),
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task RunAsync_LostRendererOwnershipCannotProduceAdmittingArtifact()
     {
         var port = new FakeLightingPort

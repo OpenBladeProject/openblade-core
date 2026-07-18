@@ -367,9 +367,22 @@ internal sealed class ProductionLightingPort : IProductionLightingPort
         await ExecuteWriteCoreAsync(
             Spec(0x00, 0x86, [0x00, 0x00, 0x00], [0x01, 0x00, 0x00]),
             cancellationToken).ConfigureAwait(false);
-        await ExecuteWriteCoreAsync(
-            Spec(0x00, 0x84, [0x00, 0x00], [0x03, 0x00]),
+        ReadOnlyMemory<byte> transitionState = await ExecuteWriteCoreAsync(
+            new RazerCommandSpec(0x00, 0x84, [0x00, 0x00], 2),
             cancellationToken).ConfigureAwait(false);
+        // Synapse capture returned 03 00, while the bounded exact-device
+        // OpenBlade validation returned 00 00 with the same successful,
+        // fully validated response envelope. Treat only those two observed
+        // states as acknowledgements; the operation's meaning remains
+        // unresolved and every other payload stays fail-closed.
+        if (!transitionState.Span.SequenceEqual(new byte[] { 0x03, 0x00 })
+            && !transitionState.Span.SequenceEqual(new byte[] { 0x00, 0x00 }))
+        {
+            throw new BladeWriteException(
+                WriteSubmissionState.Indeterminate,
+                $"The lighting command 00/84 returned " +
+                $"{Convert.ToHexString(transitionState.Span)}.");
+        }
         await ExecuteWriteCoreAsync(
             Spec(0x03, 0x0A, [0x05, 0x00], [0x05, 0x00]),
             cancellationToken).ConfigureAwait(false);
@@ -410,7 +423,7 @@ internal sealed class ProductionLightingPort : IProductionLightingPort
             : new IOException($"Lighting brightness query failed ({result.Failure}).");
     }
 
-    private async Task ExecuteWriteCoreAsync(
+    private async Task<ReadOnlyMemory<byte>> ExecuteWriteCoreAsync(
         RazerCommandSpec command,
         CancellationToken cancellationToken)
     {
@@ -421,7 +434,7 @@ internal sealed class ProductionLightingPort : IProductionLightingPort
             cancellationToken).ConfigureAwait(false);
         if (result.Failure is null)
         {
-            return;
+            return result.Value;
         }
 
         if (cancellationToken.IsCancellationRequested)
@@ -437,9 +450,12 @@ internal sealed class ProductionLightingPort : IProductionLightingPort
             HidSessionFailureKind.ConflictDetectionFailed
                 ? WriteSubmissionState.KnownNotApplied
                 : WriteSubmissionState.Indeterminate;
+        string validation = result.Diagnostic?.ProtocolValidationFailure?.ToString()
+            ?? "None";
         throw new BladeWriteException(
             state,
-            $"The lighting command failed ({result.Failure}).");
+            $"The lighting command {command.ClassId:X2}/{command.CommandId:X2} " +
+            $"failed ({result.Failure}, {validation}).");
     }
 
     private async Task WriteMatrixCoreAsync(

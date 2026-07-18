@@ -140,6 +140,83 @@ public sealed class ProductionLightingPortTests
     }
 
     [Fact]
+    public async Task TransitionFailureReportsSanitizedCommandAndValidationCategory()
+    {
+        var session = new LightingSession(initialBrightness: 0xC5)
+        {
+            TransitionFailure = new HidSessionResult<ReadOnlyMemory<byte>>(
+                default,
+                HidSessionFailureKind.ProtocolFailure)
+            {
+                Diagnostic = new(
+                    HidSessionFailurePhase.ProtocolValidation,
+                    HidSessionFailureKind.ProtocolFailure,
+                    null,
+                    91)
+                {
+                    ProtocolValidationFailure =
+                        HidProtocolValidationFailure.PayloadValidator,
+                },
+            },
+        };
+        var writer = new MatrixWriter();
+        await using var port = CreatePort(session, writer, admitted: true);
+
+        BladeWriteException error = await Assert.ThrowsAsync<BladeWriteException>(() =>
+            port.SetLightingAsync(
+                LightingSettingsFactory.Static(new RgbColor(1, 2, 3), 77),
+                default));
+
+        Assert.Equal(
+            "The lighting command 00/86 failed (ProtocolFailure, PayloadValidator).",
+            error.Message);
+    }
+
+    [Fact]
+    public async Task Transition84UnexpectedSuccessfulPayloadIsReportedWithoutContinuing()
+    {
+        var session = new LightingSession(initialBrightness: 0xC5)
+        {
+            Transition84Response = [0x02, 0x00],
+        };
+        var writer = new MatrixWriter();
+        await using var port = CreatePort(session, writer, admitted: true);
+
+        BladeWriteException error = await Assert.ThrowsAsync<BladeWriteException>(() =>
+            port.SetLightingAsync(
+                LightingSettingsFactory.Static(new RgbColor(1, 2, 3), 77),
+                default));
+
+        Assert.Equal(
+            "The lighting command 00/84 returned 0200.",
+            error.Message);
+        Assert.DoesNotContain(
+            session.Commands,
+            command => (command.ClassId, command.CommandId) == (0x03, 0x0A));
+        Assert.Empty(writer.Reports);
+    }
+
+    [Fact]
+    public async Task Transition84ExactDeviceIdleResponseContinuesToMatrixWrite()
+    {
+        var session = new LightingSession(initialBrightness: 0xC5)
+        {
+            Transition84Response = [0x00, 0x00],
+        };
+        var writer = new MatrixWriter();
+        await using var port = CreatePort(session, writer, admitted: true);
+
+        await port.SetLightingAsync(
+            LightingSettingsFactory.Static(new RgbColor(1, 2, 3), 77),
+            default);
+
+        Assert.Contains(
+            session.Commands,
+            command => (command.ClassId, command.CommandId) == (0x03, 0x0A));
+        Assert.Single(writer.Reports);
+    }
+
+    [Fact]
     public async Task ReadState_DoesNotPromoteOwnedRendererIntentToConfirmedState()
     {
         var session = new LightingSession(initialBrightness: 0xFF);
@@ -523,6 +600,10 @@ public sealed class ProductionLightingPortTests
 
         internal int? FailBrightnessSetOnCall { get; set; }
 
+        internal HidSessionResult<ReadOnlyMemory<byte>>? TransitionFailure { get; set; }
+
+        internal byte[] Transition84Response { get; set; } = [0x03, 0x00];
+
         public RazerCommandSessionDisposition Disposition { get; private set; } =
             RazerCommandSessionDisposition.Healthy;
 
@@ -534,6 +615,13 @@ public sealed class ProductionLightingPortTests
         {
             _ = assignTransactionId();
             Commands.Add(command);
+            if ((command.ClassId, command.CommandId) == (0x00, 0x86)
+                && TransitionFailure is { } transitionFailure)
+            {
+                TransitionFailure = null;
+                return Task.FromResult(transitionFailure);
+            }
+
             if ((command.ClassId, command.CommandId) == (0x03, 0x03))
             {
                 BrightnessSetCalls++;
@@ -554,7 +642,7 @@ public sealed class ProductionLightingPortTests
                         : Brightness],
                 (0x03, 0x03) => SetBrightness(command.Arguments.Span),
                 (0x00, 0x86) => [0x01, 0x00, 0x00],
-                (0x00, 0x84) => [0x03, 0x00],
+                (0x00, 0x84) => Transition84Response,
                 (0x03, 0x0A) => [0x05, 0x00],
                 _ => throw new InvalidOperationException(),
             };
