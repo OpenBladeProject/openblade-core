@@ -1,0 +1,97 @@
+{
+  "schemaVersion": 1,
+  "id": "pid-02e0-lighting-spectrum-random-oracle-v1",
+  "evidenceProvenance": {
+    "controller": "Razer Synapse",
+    "role": "OracleCapture",
+    "openBladeTypedApplyPerformed": false,
+    "openBladeVisualParityConfirmed": false
+  },
+  "target": {
+    "model": "Razer Blade 16 (2026)",
+    "modelNumber": "RZ09-0581",
+    "vendorIdHex": "1532",
+    "productIdHex": "02E0",
+    "bios": "3.01"
+  },
+  "capture": {
+    "timeoutSeconds": 2700,
+    "controlledObservationSeconds": 2160,
+    "spectrumRunCount": 3,
+    "spectrumRunSeconds": 100,
+    "randomBreathingSeconds": 1800,
+    "brightnessPercent": 100
+  },
+  "steps": [
+    {
+      "id": "static-baseline",
+      "instruction": "In Synapse, select Static, set the keyboard color to #00FF00, and leave brightness at 100%.",
+      "holdSeconds": 10,
+      "evidenceIntent": "Establish a sharp, known boundary before the first Spectrum run."
+    },
+    {
+      "id": "spectrum-run-1",
+      "instruction": "Select Spectrum Cycling, then do not touch Synapse or the keyboard lighting controls.",
+      "holdSeconds": 100,
+      "evidenceIntent": "Seek at least two complete wraps and record the initial phase after selection; prior partial-arc fits are only a hypothesis and do not prove a cycle period."
+    },
+    {
+      "id": "static-separator-1",
+      "instruction": "Select Static #00FF00 again and leave brightness at 100%.",
+      "holdSeconds": 10,
+      "evidenceIntent": "Separate Spectrum runs with an unambiguous uniform-color boundary."
+    },
+    {
+      "id": "spectrum-run-2",
+      "instruction": "Select Spectrum Cycling again, then do not touch Synapse or the keyboard lighting controls.",
+      "holdSeconds": 100,
+      "evidenceIntent": "Seek complete wraps in a second independent run and measure its phase start without assuming a cycle period."
+    },
+    {
+      "id": "static-separator-2",
+      "instruction": "Select Static #00FF00 again and leave brightness at 100%.",
+      "holdSeconds": 10,
+      "evidenceIntent": "Separate Spectrum runs with an unambiguous uniform-color boundary."
+    },
+    {
+      "id": "spectrum-run-3",
+      "instruction": "Select Spectrum Cycling again, then do not touch Synapse or the keyboard lighting controls.",
+      "holdSeconds": 100,
+      "evidenceIntent": "Measure repeatability and complete wraps across a third phase start without assuming a cycle period."
+    },
+    {
+      "id": "static-separator-3",
+      "instruction": "Select Static #00FF00 again and leave brightness at 100%.",
+      "holdSeconds": 10,
+      "evidenceIntent": "End Spectrum evidence cleanly before Random Breathing."
+    },
+    {
+      "id": "breathing-random-long",
+      "instruction": "Select Breathing, enable Random colors, and leave brightness at 100%; do not touch lighting controls during the hold.",
+      "holdSeconds": 1800,
+      "evidenceIntent": "Capture approximately 257 seven-second cycles for palette, transition, and sequence analysis."
+    },
+    {
+      "id": "static-evidence-end",
+      "instruction": "Select Static #00FF00 again and leave brightness at 100%.",
+      "holdSeconds": 10,
+      "evidenceIntent": "Create a sharp end boundary for the Random Breathing interval."
+    },
+    {
+      "id": "restore-pre-capture-setting",
+      "instruction": "Restore the exact keyboard effect, colors, and brightness recorded before the capture.",
+      "holdSeconds": 10,
+      "evidenceIntent": "Record a visually confirmed Synapse-oracle restoration before graceful shutdown."
+    }
+  ],
+  "annotationGuidance": [
+    "Treat the result as Synapse oracle evidence, not OpenBlade typed-apply or visual-parity validation.",
+    "Record the UTC bracket immediately before each UI action and immediately after the visual change is confirmed.",
+    "Keep the raw PCAP outside the repository; record only its SHA-256, byte length, packet count, and duration.",
+    "Extract only target-device MI_03 reports and the bounded transition traffic correlated to the recorded action brackets.",
+    "For each Spectrum run, independently derive the RGB curve, wrap point, period, frame cadence, and phase after selection; compare all three runs before changing the renderer.",
+    "For Random Breathing, record every plateau color and cycle boundary, count repetitions and transitions, and do not infer a PRNG or restart seed without separate restart evidence.",
+    "Redact serial numbers, unrelated USB traffic, user paths, and process identifiers from committed fixtures and annotations.",
+    "Record graceful stop mode and prove the finalized PCAP is decodable before annotating any frames."
+  ]
+}

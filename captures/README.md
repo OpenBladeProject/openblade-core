@@ -52,6 +52,46 @@ uses `Stop-Process -Force`, which may lose buffered capture data and leave the
 PCAP incomplete. Never use the former helper implementation or any direct
 `GenerateConsoleCtrlEvent` call with a zero process-group ID.
 
+## Spectrum and Random Breathing oracle capture
+
+The reviewed long-running oracle plan is
+`captures/plans/2026-07-18-lighting-spectrum-random-oracle.json`. It contains
+three independent 100-second Spectrum runs, separated by 10-second
+Static-green boundaries, followed by one uninterrupted 1,800-second Random
+Breathing run. The 100-second windows seek at least two complete Spectrum wraps
+but deliberately encode no expected period: the existing partial arcs do not
+prove a wrap or global cycle duration. Including the initial and final evidence
+boundaries and restoration, the controlled observation time is 2,160 seconds
+(36 minutes). The runner uses a 2,700-second (45-minute) timeout to leave nine
+minutes for deliberate Synapse UI transitions.
+
+Do not start this capture from Codex without first showing the current launch
+and shutdown implementation to the user and receiving explicit approval. From
+an already elevated PowerShell, the approved command is:
+
+```powershell
+& .\captures\tools\Invoke-LightingSpectrumRandomCapture.ps1 `
+    -UsbPcapDevice '\\.\USBPcap3' `
+    -DeviceAddress 2 `
+    -OutputDirectory 'C:\tmp\openblade-lighting-spectrum-random-oracle-v1'
+```
+
+Re-enumerate the root and device address immediately before using the command;
+the example address is not stable across reconnects or reboots. The
+orchestrator never calls a console-control API or the USBPcap helpers directly.
+It starts only `Invoke-InteractiveUsbPcapCapture.ps1`, which in turn launches
+USBPcap as the root of a nonzero `CREATE_NEW_PROCESS_GROUP` and stops it through
+the isolated worker's targeted `CTRL_BREAK_EVENT`. The workflow does not enable
+the force-stop fallback.
+
+For every step, the orchestrator records UTC timestamps immediately before the
+Synapse action and immediately after the visual change is confirmed. It then
+holds the reviewed window without further lighting changes. The resulting
+annotation JSON records the raw PCAP hash and size only after graceful shutdown
+and a successful one-packet tshark decode. Follow the plan's annotation
+guidance when producing sanitized fixtures; never commit the raw PCAP or treat
+this Synapse-oracle session as OpenBlade installed-build validation.
+
 Decoded PID `02E0` evidence lives under `captures/decoded`. It intentionally
 uses an evidence schema rather than the production fixture schema so incomplete
 gates, admitted validation cycles, multi-command operations, expected ACKs, and
