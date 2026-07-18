@@ -103,6 +103,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
     private bool mcuVersionReadAttempted;
     private LightingSettings? lastOwnedLightingSettings;
     private LightingSettings? pendingLightingRestore;
+    private bool controllerLightingRelinquishPending;
 
     public ServiceControlRuntime(
         BatteryConfigurationStore store,
@@ -518,6 +519,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         try
         {
             PowerSource powerSource = await ResolveCurrentPowerSourceAsync(token);
+            await RefreshControllerPresenceAndRelinquishIfNewConflictAsync(token)
+                .ConfigureAwait(false);
 
             if (powerSource == PowerSource.ExternalUnknown)
             {
@@ -598,7 +601,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         try
         {
             cancellationToken.ThrowIfCancellationRequested();
-            RefreshControllerPresenceCore(cancellationToken);
+            await RefreshControllerPresenceAndRelinquishIfNewConflictAsync(
+                cancellationToken).ConfigureAwait(false);
             PowerSource powerSource = await ResolveCurrentPowerSourceAsync(cancellationToken);
             int? batteryPowerFlow = includeLiveReadings
                 ? powerStateProvider.CaptureBatteryPowerFlowMilliwatts()
@@ -637,7 +641,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         {
             PowerSource powerSource = await ResolveCurrentPowerSourceAsync(cancellationToken);
             cancellationToken.ThrowIfCancellationRequested();
-            RefreshControllerPresenceCore(cancellationToken);
+            await RefreshControllerPresenceAndRelinquishIfNewConflictAsync(
+                cancellationToken).ConfigureAwait(false);
             if (powerSource != PowerSource.ExternalUnknown
                 && Automation.ChangePowerSource(powerSource))
             {
@@ -667,6 +672,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         await operationGate.WaitAsync(cancellationToken);
         try
         {
+            await RefreshControllerPresenceAndRelinquishIfNewConflictAsync(
+                cancellationToken).ConfigureAwait(false);
             PowerSource classified =
                 await ResolveCurrentPowerSourceAsync(cancellationToken);
             ServiceStatusSnapshot current = GetStatus();
@@ -721,7 +728,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         await operationGate.WaitAsync(cancellationToken);
         try
         {
-            RefreshControllerPresenceCore(cancellationToken);
+            await RefreshControllerPresenceAndRelinquishIfNewConflictAsync(
+                cancellationToken).ConfigureAwait(false);
         }
         finally
         {
@@ -736,36 +744,67 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         await operationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            LightingRendererOwnershipState ownership =
-                GetStatus().LightingRendererOwnership;
-            if (IsExplicitLightingOwnership(ownership)
-                && lastOwnedLightingSettings is { } owned
-                && OwnershipMatches(ownership, owned))
-            {
-                pendingLightingRestore = owned;
-            }
-            else if (ownership == LightingRendererOwnershipState.Faulted)
-            {
-                pendingLightingRestore = null;
-            }
-
-            lastOwnedLightingSettings = null;
-            try
-            {
-                await deviceProvider.InvalidateLightingRendererAsync(cancellationToken)
-                    .ConfigureAwait(false);
-            }
-            finally
-            {
-                PublishIfChanged(GetStatus() with
-                {
-                    LightingRendererOwnership = LightingRendererOwnershipState.None,
-                });
-            }
+            await InvalidateLightingRendererCoreAsync(
+                preserveForLifecycleRestore: true,
+                cancellationToken).ConfigureAwait(false);
         }
         finally
         {
             operationGate.Release();
+        }
+    }
+
+    private async Task InvalidateLightingRendererCoreAsync(
+        bool preserveForLifecycleRestore,
+        CancellationToken cancellationToken)
+    {
+        if (!preserveForLifecycleRestore)
+        {
+            pendingLightingRestore = null;
+        }
+
+        try
+        {
+            LightingSettings? owned = lastOwnedLightingSettings;
+            LightingRendererOwnershipState liveOwnership =
+                await deviceProvider
+                    .InvalidateLightingRendererAsync(cancellationToken)
+                    .ConfigureAwait(false);
+
+            // Do not clear the cached ownership until the provider confirms that
+            // it reached the live port. A canceled hardware-gate wait leaves the
+            // renderer untouched and must remain retryable.
+            lastOwnedLightingSettings = null;
+            if (preserveForLifecycleRestore
+                && IsExplicitLightingOwnership(liveOwnership)
+                && owned is not null
+                && OwnershipMatches(liveOwnership, owned))
+            {
+                pendingLightingRestore = owned;
+            }
+            else if (preserveForLifecycleRestore
+                && (liveOwnership == LightingRendererOwnershipState.Faulted
+                    || owned is not null))
+            {
+                // A live fault, relinquished renderer, or ownership mismatch
+                // disproves the cached status and must cancel any stale restore.
+                pendingLightingRestore = null;
+            }
+            // Repeated invalidation after a successful suspend/removal has no
+            // live renderer and no new owned snapshot. Preserve the restore
+            // already captured by the first invalidation.
+
+            PublishIfChanged(GetStatus() with
+            {
+                LightingRendererOwnership = LightingRendererOwnershipState.None,
+            });
+        }
+        finally
+        {
+            if (!preserveForLifecycleRestore)
+            {
+                pendingLightingRestore = null;
+            }
         }
     }
 
@@ -788,6 +827,15 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             {
                 // A power-source transition already established the destination
                 // profile's renderer. Never replace it with the pre-lifecycle one.
+                return;
+            }
+
+            if (IsControllerPresenceUnsafe(current))
+            {
+                const string blockedMessage =
+                    "OpenBlade lighting was not restored because another Razer controller may be active.";
+                history.RecordSummary(ControlOperationStatus.Blocked, blockedMessage);
+                PublishIfChanged(current with { Message = blockedMessage });
                 return;
             }
 
@@ -941,6 +989,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         try
         {
             PowerSource powerSource = await ResolveCurrentPowerSourceAsync(token);
+            await RefreshControllerPresenceAndRelinquishIfNewConflictAsync(token)
+                .ConfigureAwait(false);
             if (powerSource == PowerSource.ExternalUnknown)
             {
                 return PublishScopedUnavailable(
@@ -992,6 +1042,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         try
         {
             PowerSource powerSource = await ResolveCurrentPowerSourceAsync(token);
+            await RefreshControllerPresenceAndRelinquishIfNewConflictAsync(token)
+                .ConfigureAwait(false);
             if (powerSource == PowerSource.ExternalUnknown)
             {
                 return PublishScopedUnavailable(
@@ -1065,7 +1117,6 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 "The external power adapter could not be classified; control writes are blocked.");
         }
 
-        RefreshControllerPresenceCore(token);
         ServiceStatusSnapshot current = GetStatus();
         ConfirmedDeviceState? cachedConfirmed = current.ConfirmedState;
         DesiredDeviceState desired = Automation.Resolve(cachedConfirmed ?? UnknownConfirmedState);
@@ -1240,6 +1291,51 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         });
     }
 
+    private async Task RefreshControllerPresenceAndRelinquishIfNewConflictAsync(
+        CancellationToken cancellationToken)
+    {
+        ServiceStatusSnapshot before = GetStatus();
+        bool previouslyUnsafe = IsControllerPresenceUnsafe(before);
+        RefreshControllerPresenceCore(cancellationToken);
+        ServiceStatusSnapshot current = GetStatus();
+        if (!IsControllerPresenceUnsafe(current))
+        {
+            controllerLightingRelinquishPending = false;
+            return;
+        }
+
+        bool hasRendererState =
+            IsExplicitLightingOwnership(current.LightingRendererOwnership)
+            || lastOwnedLightingSettings is not null
+            || pendingLightingRestore is not null;
+        if (!previouslyUnsafe && hasRendererState)
+        {
+            controllerLightingRelinquishPending = true;
+        }
+
+        if (!controllerLightingRelinquishPending)
+        {
+            return;
+        }
+
+        await InvalidateLightingRendererCoreAsync(
+            preserveForLifecycleRestore: false,
+            cancellationToken).ConfigureAwait(false);
+        controllerLightingRelinquishPending = false;
+        string message = current.PotentialControllers.Count > 0
+            ? "Another Razer controller was detected; OpenBlade released keyboard lighting control."
+            : "Other-controller detection became incomplete; OpenBlade released keyboard lighting control.";
+        history.RecordSummary(ControlOperationStatus.Blocked, message);
+        ServiceStatusSnapshot relinquished = GetStatus();
+        PublishIfChanged(relinquished with
+        {
+            ConfirmedState = relinquished.ConfirmedState is null
+                ? null
+                : relinquished.ConfirmedState with { Lighting = null },
+            Message = message,
+        });
+    }
+
     private async Task ApplyFullTransitionAsync(
         PowerSource powerSource,
         CancellationToken token,
@@ -1273,9 +1369,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         }
 
         DesiredDeviceState desired = Automation.Resolve(cachedConfirmed ?? UnknownConfirmedState);
-        bool allowAutomaticLightingWrite = IsExplicitLightingOwnership(
-                current.LightingRendererOwnership)
-            || pendingLightingRestore is not null;
+        bool allowAutomaticLightingWrite =
+            CanClaimLightingForAutomaticProfile(current);
         FullTransitionApplyOutcome outcome;
         try
         {
@@ -2067,6 +2162,15 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         LightingRendererOwnershipState.Spectrum or
         LightingRendererOwnershipState.Breathing or
         LightingRendererOwnershipState.Reactive;
+
+    private static bool CanClaimLightingForAutomaticProfile(
+        ServiceStatusSnapshot status) =>
+        status.PotentialControllers.Count == 0
+        && string.IsNullOrWhiteSpace(status.ControllerDetectionWarning);
+
+    private static bool IsControllerPresenceUnsafe(ServiceStatusSnapshot status) =>
+        status.PotentialControllers.Count > 0
+        || !string.IsNullOrWhiteSpace(status.ControllerDetectionWarning);
 
     private static bool OwnershipMatches(
         LightingRendererOwnershipState ownership,

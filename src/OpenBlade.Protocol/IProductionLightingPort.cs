@@ -21,6 +21,12 @@ public interface IProductionLightingPort : IAsyncDisposable
     Task PulseReactiveKeyAsync(
         ReactiveKeyPulse pulse,
         CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Stops and disposes the live renderer, returning its final ownership state
+    /// after the render stream has settled and before ownership is relinquished.
+    /// </summary>
+    Task<LightingRendererOwnershipState> InvalidateAsync();
 }
 
 public interface IProductionLightingPortFactory

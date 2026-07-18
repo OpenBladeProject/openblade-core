@@ -82,9 +82,10 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
         }
     }
 
-    public Task InvalidateLightingRendererAsync(CancellationToken cancellationToken) =>
+    public Task<LightingRendererOwnershipState> InvalidateLightingRendererAsync(
+        CancellationToken cancellationToken) =>
         Volatile.Read(ref disposed) != 0
-            ? Task.CompletedTask
+            ? Task.FromResult(LightingRendererOwnershipState.None)
             : device.InvalidateLightingRendererAsync(cancellationToken);
 
     public void Dispose()
@@ -547,13 +548,27 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
             }
         }
 
-        internal async Task InvalidateLightingRendererAsync(
+        internal async Task<LightingRendererOwnershipState> InvalidateLightingRendererAsync(
             CancellationToken cancellationToken)
         {
             await EnterHardwareOperationAsync(cancellationToken).ConfigureAwait(false);
             try
             {
-                await ResetLightingPortCoreAsync(lightingPort).ConfigureAwait(false);
+                IProductionLightingPort? current = lightingPort;
+                if (current is null)
+                {
+                    return LightingRendererOwnershipState.None;
+                }
+
+                lightingPort = null;
+                try
+                {
+                    return await current.InvalidateAsync().ConfigureAwait(false);
+                }
+                catch
+                {
+                    return LightingRendererOwnershipState.Faulted;
+                }
             }
             finally
             {

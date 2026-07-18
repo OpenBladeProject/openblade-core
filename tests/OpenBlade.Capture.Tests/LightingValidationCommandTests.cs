@@ -372,6 +372,13 @@ public sealed class LightingValidationCommandTests
             return Task.CompletedTask;
         }
 
+        public Task<LightingRendererOwnershipState> InvalidateAsync()
+        {
+            LightingRendererOwnershipState observed = OwnershipState;
+            OwnershipState = LightingRendererOwnershipState.None;
+            return Task.FromResult(observed);
+        }
+
         public ValueTask DisposeAsync() => ValueTask.CompletedTask;
     }
 

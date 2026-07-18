@@ -524,7 +524,9 @@ public sealed class WindowsVerifiedBladeDeviceProviderTests
         Assert.Equal([77], lightingPort.Pulses.Select(pulse => (int)pulse.MatrixSlot));
         Assert.Equal(0, lightingPort.DisposeCount);
 
-        await provider.InvalidateLightingRendererAsync(default);
+        LightingRendererOwnershipState invalidated =
+            await provider.InvalidateLightingRendererAsync(default);
+        Assert.Equal(LightingRendererOwnershipState.Static, invalidated);
         Assert.Equal(1, lightingPort.DisposeCount);
         Assert.Equal(
             LightingRendererOwnershipState.None,
@@ -532,6 +534,32 @@ public sealed class WindowsVerifiedBladeDeviceProviderTests
 
         provider.Dispose();
         Assert.Equal(1, lightingPort.DisposeCount);
+    }
+
+    [Fact]
+    public async Task InvalidateLightingRenderer_ReturnsLiveFaultBeforeRetiringPort()
+    {
+        var lightingPort = new FakeLightingPort();
+        var lightingFactory = new FakeLightingFactory(lightingPort);
+        using var provider = new WindowsVerifiedBladeDeviceProvider(
+            () => Probe(BatteryValidationProbeClassification.Ready),
+            Adapt(new FakeQueryFactory()),
+            UnavailableFanRpmFactory(),
+            lightingFactory);
+        provider.TryGetVerifiedDevice(out IBladeDevice device);
+        await device.SetLightingAsync(
+            LightingSettingsFactory.Static(new RgbColor(1, 2, 3), 50),
+            default);
+        lightingPort.OwnershipState = LightingRendererOwnershipState.Faulted;
+
+        LightingRendererOwnershipState invalidated =
+            await provider.InvalidateLightingRendererAsync(default);
+
+        Assert.Equal(LightingRendererOwnershipState.Faulted, invalidated);
+        Assert.Equal(1, lightingPort.DisposeCount);
+        Assert.Equal(
+            LightingRendererOwnershipState.None,
+            await device.ReadLightingRendererOwnershipAsync(default));
     }
 
     [Fact]
@@ -860,6 +888,13 @@ public sealed class WindowsVerifiedBladeDeviceProviderTests
         {
             Pulses.Add(pulse);
             return Task.CompletedTask;
+        }
+
+        public async Task<LightingRendererOwnershipState> InvalidateAsync()
+        {
+            LightingRendererOwnershipState observed = OwnershipState;
+            await DisposeAsync();
+            return observed;
         }
 
         public ValueTask DisposeAsync()

@@ -126,10 +126,10 @@ public sealed class WindowsServiceLifecycleEventSource
     private const int PowerChangedBit = 1 << 0;
     private const int SuspendingBit = 1 << 1;
     private const int ResumedBit = 1 << 2;
-    private const int DeviceArrivedBit = 1 << 3;
-    private const int DeviceRemovedBit = 1 << 4;
     private static readonly ConcurrentBag<IDisposable> FailedSubscriptions = [];
     private readonly object disposeSync = new();
+    private readonly object pendingDeviceSync = new();
+    private readonly List<ServiceLifecycleTrigger> pendingDeviceTriggers = [];
     private readonly Func<CancellationToken, ValueTask>? beforePendingDrainAsync;
     private readonly Channel<bool> signal;
     private readonly IDisposable subscription;
@@ -189,7 +189,8 @@ public sealed class WindowsServiceLifecycleEventSource
                 }
 
                 int drained = Interlocked.Exchange(ref pendingTriggers, 0);
-                if (drained == 0)
+                ServiceLifecycleTrigger[] deviceTriggers = DrainDeviceTriggers();
+                if (drained == 0 && deviceTriggers.Length == 0)
                 {
                     break;
                 }
@@ -209,14 +210,9 @@ public sealed class WindowsServiceLifecycleEventSource
                     yield return ServiceLifecycleTrigger.Resumed;
                 }
 
-                if ((drained & DeviceArrivedBit) != 0)
+                foreach (ServiceLifecycleTrigger deviceTrigger in deviceTriggers)
                 {
-                    yield return ServiceLifecycleTrigger.DeviceArrived;
-                }
-
-                if ((drained & DeviceRemovedBit) != 0)
-                {
-                    yield return ServiceLifecycleTrigger.DeviceRemoved;
+                    yield return deviceTrigger;
                 }
             }
         }
@@ -262,17 +258,50 @@ public sealed class WindowsServiceLifecycleEventSource
             return;
         }
 
+        if (trigger is ServiceLifecycleTrigger.DeviceArrived
+            or ServiceLifecycleTrigger.DeviceRemoved)
+        {
+            QueueDeviceTrigger(trigger);
+            signal.Writer.TryWrite(true);
+            return;
+        }
+
         int bit = trigger switch
         {
             ServiceLifecycleTrigger.PowerChanged => PowerChangedBit,
             ServiceLifecycleTrigger.Suspending => SuspendingBit,
             ServiceLifecycleTrigger.Resumed => ResumedBit,
-            ServiceLifecycleTrigger.DeviceArrived => DeviceArrivedBit,
-            ServiceLifecycleTrigger.DeviceRemoved => DeviceRemovedBit,
             _ => throw new ArgumentOutOfRangeException(nameof(trigger)),
         };
         Interlocked.Or(ref pendingTriggers, bit);
         signal.Writer.TryWrite(true);
+    }
+
+    private void QueueDeviceTrigger(ServiceLifecycleTrigger trigger)
+    {
+        lock (pendingDeviceSync)
+        {
+            // One Windows transition can produce several HID-interface callbacks.
+            // Consecutive duplicates need only one re-enumeration, while alternating
+            // remove/arrival transitions must retain their callback order.
+            if (pendingDeviceTriggers.Count > 0
+                && pendingDeviceTriggers[^1] == trigger)
+            {
+                return;
+            }
+
+            pendingDeviceTriggers.Add(trigger);
+        }
+    }
+
+    private ServiceLifecycleTrigger[] DrainDeviceTriggers()
+    {
+        lock (pendingDeviceSync)
+        {
+            ServiceLifecycleTrigger[] drained = [.. pendingDeviceTriggers];
+            pendingDeviceTriggers.Clear();
+            return drained;
+        }
     }
 }
 

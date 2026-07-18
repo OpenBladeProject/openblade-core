@@ -62,7 +62,7 @@ public sealed class WindowsServiceLifecycleEventSourceTests
     }
 
     [Fact]
-    public async Task WatchAsync_DrainsDifferentPendingTriggersInPriorityOrder()
+    public async Task WatchAsync_PrioritizesNonDeviceTriggersAndPreservesDeviceOrder()
     {
         var backend = new FakeWindowsLifecycleNotificationBackend();
         using var source = new WindowsServiceLifecycleEventSource(backend);
@@ -86,6 +86,51 @@ public sealed class WindowsServiceLifecycleEventSourceTests
                 ServiceLifecycleTrigger.PowerChanged,
                 ServiceLifecycleTrigger.Suspending,
                 ServiceLifecycleTrigger.Resumed,
+                ServiceLifecycleTrigger.DeviceRemoved,
+                ServiceLifecycleTrigger.DeviceArrived,
+            ],
+            actual);
+    }
+
+    [Fact]
+    public async Task WatchAsync_PreservesRapidArrivalThenRemovalOrder()
+    {
+        var backend = new FakeWindowsLifecycleNotificationBackend();
+        using var source = new WindowsServiceLifecycleEventSource(backend);
+        backend.Publish(ServiceLifecycleTrigger.DeviceArrived);
+        backend.Publish(ServiceLifecycleTrigger.DeviceRemoved);
+        await using IAsyncEnumerator<ServiceLifecycleTrigger> notifications =
+            source.WatchAsync(CancellationToken.None).GetAsyncEnumerator();
+
+        Assert.True(await notifications.MoveNextAsync());
+        Assert.Equal(ServiceLifecycleTrigger.DeviceArrived, notifications.Current);
+        Assert.True(await notifications.MoveNextAsync());
+        Assert.Equal(ServiceLifecycleTrigger.DeviceRemoved, notifications.Current);
+    }
+
+    [Fact]
+    public async Task WatchAsync_CoalescesOnlyConsecutiveDuplicateDeviceNotifications()
+    {
+        var backend = new FakeWindowsLifecycleNotificationBackend();
+        using var source = new WindowsServiceLifecycleEventSource(backend);
+        backend.Publish(ServiceLifecycleTrigger.DeviceRemoved);
+        backend.Publish(ServiceLifecycleTrigger.DeviceRemoved);
+        backend.Publish(ServiceLifecycleTrigger.DeviceArrived);
+        backend.Publish(ServiceLifecycleTrigger.DeviceArrived);
+        backend.Publish(ServiceLifecycleTrigger.DeviceRemoved);
+        await using IAsyncEnumerator<ServiceLifecycleTrigger> notifications =
+            source.WatchAsync(CancellationToken.None).GetAsyncEnumerator();
+
+        var actual = new List<ServiceLifecycleTrigger>();
+        for (int index = 0; index < 3; index++)
+        {
+            Assert.True(await notifications.MoveNextAsync());
+            actual.Add(notifications.Current);
+        }
+
+        Assert.Equal(
+            [
+                ServiceLifecycleTrigger.DeviceRemoved,
                 ServiceLifecycleTrigger.DeviceArrived,
                 ServiceLifecycleTrigger.DeviceRemoved,
             ],

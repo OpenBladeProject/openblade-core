@@ -278,23 +278,30 @@ internal sealed class ProductionLightingPort : IProductionLightingPort
         }
     }
 
-    public async ValueTask DisposeAsync()
+    public async Task<LightingRendererOwnershipState> InvalidateAsync() =>
+        await CloseAsync().ConfigureAwait(false);
+
+    public async ValueTask DisposeAsync() =>
+        _ = await CloseAsync().ConfigureAwait(false);
+
+    private async Task<LightingRendererOwnershipState> CloseAsync()
     {
         lock (lifecycleSync)
         {
             if (closing || disposed)
             {
-                return;
+                return OwnershipState;
             }
 
             closing = true;
         }
-        SetOwnership(LightingRendererOwnershipState.None);
 
         await operationGate.WaitAsync().ConfigureAwait(false);
         try
         {
             await StopStreamCoreAsync().ConfigureAwait(false);
+            LightingRendererOwnershipState observed = OwnershipState;
+            SetOwnership(LightingRendererOwnershipState.None);
             if (matrixWriter is not null)
             {
                 await matrixWriter.DisposeAsync().ConfigureAwait(false);
@@ -305,6 +312,8 @@ internal sealed class ProductionLightingPort : IProductionLightingPort
             {
                 disposed = true;
             }
+
+            return observed;
         }
         finally
         {

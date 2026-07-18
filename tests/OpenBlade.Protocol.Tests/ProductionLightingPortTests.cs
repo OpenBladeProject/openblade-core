@@ -356,7 +356,10 @@ public sealed class ProductionLightingPortTests
             () => port.OwnershipState == LightingRendererOwnershipState.Faulted,
             TimeSpan.FromSeconds(2));
 
-        Assert.Equal(LightingRendererOwnershipState.Faulted, port.OwnershipState);
+        LightingRendererOwnershipState invalidated = await port.InvalidateAsync();
+
+        Assert.Equal(LightingRendererOwnershipState.Faulted, invalidated);
+        Assert.Equal(LightingRendererOwnershipState.None, port.OwnershipState);
     }
 
     [Fact]
@@ -369,8 +372,9 @@ public sealed class ProductionLightingPortTests
             LightingSettingsFactory.Static(new RgbColor(1, 2, 3), 100),
             default);
 
-        await port.DisposeAsync();
+        LightingRendererOwnershipState invalidated = await port.InvalidateAsync();
 
+        Assert.Equal(LightingRendererOwnershipState.Static, invalidated);
         Assert.Equal(LightingRendererOwnershipState.None, port.OwnershipState);
     }
 
