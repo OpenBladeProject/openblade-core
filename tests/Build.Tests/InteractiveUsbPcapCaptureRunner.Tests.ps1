@@ -247,6 +247,8 @@ Remove-Item -LiteralPath $SessionPath -Force
         (Join-Path $allDirectory 'capture.usbpcap.json.start.json') | ConvertFrom-Json
     Assert-True (($allArguments -join ' ') -notmatch '(?:^| )--devices(?: |$)') `
         'All-devices mode unexpectedly filtered the capture by address.'
+    Assert-True (($allArguments -join ' ') -match '(?:^| )-A(?: |$)') `
+        'All-devices mode did not request USBPcap capture from all devices.'
 
     $timeoutDirectory = Join-Path $testRoot 'timeout'
     $timeoutProcess = Start-Runner -Arguments @(

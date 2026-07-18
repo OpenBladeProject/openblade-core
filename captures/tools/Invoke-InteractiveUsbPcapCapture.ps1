@@ -182,7 +182,10 @@ try {
     }
 
     $arguments = @('-d', $UsbPcapDevice)
-    if (-not $AllDevices) {
+    if ($AllDevices) {
+        $arguments += '-A'
+    }
+    else {
         $arguments += @(
             '--devices',
             $DeviceAddress.ToString([Globalization.CultureInfo]::InvariantCulture))
@@ -254,7 +257,11 @@ try {
     Update-CaptureState -Status 'Stopping'
 }
 catch {
-    [void]$errors.Add("$($_.Exception.GetType().FullName): $($_.Exception.Message)")
+    $failure = "$($_.Exception.GetType().FullName): $($_.Exception.Message)"
+    if (-not [string]::IsNullOrWhiteSpace($_.ScriptStackTrace)) {
+        $failure += "`n$($_.ScriptStackTrace)"
+    }
+    [void]$errors.Add($failure)
 }
 finally {
     if ($captureStarted -and (Test-Path -LiteralPath $sessionPath -PathType Leaf)) {

@@ -104,6 +104,15 @@ Assert-True ($workflowSource -match 'ReadToEndAsync\(\)') `
     'Redirected runner output must be drained asynchronously to prevent pipe deadlock.'
 Assert-True ($workflowSource -match '(?i)CreateNoWindow\s*=\s*\$false') `
     'The runner must retain a console so its USBPcap child can receive targeted Ctrl+Break.'
+Assert-True ($workflowSource -match '(?i)FileControlled') `
+    'The workflow must support non-terminal control for Computer Use automation.'
+Assert-True ($workflowSource -match '(?i)ApprovalPhrase\s*-cne\s*''CAPTURE SPECTRUM AND RANDOM BREATHING''') `
+    'File-controlled capture must preserve the reviewed approval phrase gate.'
+Assert-True ($workflowSource -match '(?i)AwaitingActionStart' -and
+    $workflowSource -match '(?i)AwaitingVisualConfirmation') `
+    'File-controlled capture must bracket every Synapse action with explicit signals.'
+Assert-True ($workflowSource -match '(?i)Wait-ForControlSignal') `
+    'File-controlled capture must wait on bounded control signals rather than terminal input.'
 Assert-True (@($plan.annotationGuidance | Where-Object { $_ -match 'raw PCAP outside' }).Count -eq 1) `
     'The plan must forbid committing the raw capture.'
 Assert-True (@($plan.annotationGuidance | Where-Object { $_ -match 'not OpenBlade typed-apply' }).Count -eq 1) `

@@ -26,7 +26,18 @@ param(
 
     [Parameter(DontShow)]
     [ValidateRange(1, 60)]
-    [int]$ReadyTimeoutSeconds = 60
+    [int]$ReadyTimeoutSeconds = 60,
+
+    [switch]$FileControlled,
+
+    [string]$PreCaptureSetting,
+
+    [Parameter(DontShow)]
+    [string]$ApprovalPhrase,
+
+    [Parameter(DontShow)]
+    [ValidateRange(10, 300)]
+    [int]$ActionTimeoutSeconds = 120
 )
 
 $ErrorActionPreference = 'Stop'
@@ -82,6 +93,27 @@ function Wait-ForCaptureReady {
         Start-Sleep -Milliseconds 100
     }
     throw "Timed out waiting for the capture runner readiness file: $ReadyPath"
+}
+
+function Wait-ForControlSignal {
+    param(
+        [Parameter(Mandatory)][Diagnostics.Process]$Process,
+        [Parameter(Mandatory)][string]$Path,
+        [Parameter(Mandatory)][string]$Description,
+        [int]$TimeoutSeconds = 120
+    )
+
+    $deadline = [DateTimeOffset]::UtcNow.AddSeconds($TimeoutSeconds)
+    while ([DateTimeOffset]::UtcNow -lt $deadline) {
+        if (Test-Path -LiteralPath $Path -PathType Leaf) {
+            return
+        }
+        if ($Process.HasExited) {
+            throw "The capture runner exited while waiting for $Description."
+        }
+        Start-Sleep -Milliseconds 100
+    }
+    throw "Timed out waiting for $Description at $Path"
 }
 
 function Wait-ForObservation {
@@ -153,23 +185,43 @@ $statePath = Join-Path $resolvedOutputDirectory 'capture.state.json'
 $stopPath = Join-Path $resolvedOutputDirectory 'capture.stop'
 $pcapPath = Join-Path $resolvedOutputDirectory 'capture.pcap'
 $annotationPath = Join-Path $resolvedOutputDirectory 'lighting-spectrum-random-annotations.json'
+$controlStatePath = Join-Path $resolvedOutputDirectory 'lighting-sequence-control.json'
+$controlDirectory = Join-Path $resolvedOutputDirectory 'lighting-sequence-control'
 foreach ($path in @($readyPath, $statePath, $stopPath, $pcapPath, $annotationPath)) {
     if (Test-Path -LiteralPath $path) {
         throw "Refusing to overwrite an existing capture artifact: $path"
     }
 }
+if ($FileControlled) {
+    if ((Test-Path -LiteralPath $controlStatePath) -or
+        (Test-Path -LiteralPath $controlDirectory)) {
+        throw 'Refusing to overwrite existing file-control artifacts.'
+    }
+    [IO.Directory]::CreateDirectory($controlDirectory) | Out-Null
+}
 
 Write-Host 'This is a Synapse oracle capture, not OpenBlade lighting validation.'
 Write-Host 'It will capture 2,160 controlled seconds (36 minutes) inside a 45-minute bounded session.'
 Write-Host 'USBPcap will be launched only by the reviewed isolated-process-group runner.'
-$confirmation = Read-Host 'Type CAPTURE SPECTRUM AND RANDOM BREATHING to continue'
-if ($confirmation -cne 'CAPTURE SPECTRUM AND RANDOM BREATHING') {
-    throw 'Capture confirmation did not match; nothing was started.'
+if ($FileControlled) {
+    if ($ApprovalPhrase -cne 'CAPTURE SPECTRUM AND RANDOM BREATHING') {
+        throw 'File-controlled capture requires the exact reviewed approval phrase.'
+    }
+    if ([string]::IsNullOrWhiteSpace($PreCaptureSetting)) {
+        throw 'File-controlled capture requires the exact pre-capture lighting description.'
+    }
+    $preCaptureSetting = $PreCaptureSetting
 }
-$preCaptureSetting = Read-Host `
-    'Describe the current effect, colors, and brightness exactly so the final step can restore them'
-if ([string]::IsNullOrWhiteSpace($preCaptureSetting)) {
-    throw 'A pre-capture lighting description is required for restoration.'
+else {
+    $confirmation = Read-Host 'Type CAPTURE SPECTRUM AND RANDOM BREATHING to continue'
+    if ($confirmation -cne 'CAPTURE SPECTRUM AND RANDOM BREATHING') {
+        throw 'Capture confirmation did not match; nothing was started.'
+    }
+    $preCaptureSetting = Read-Host `
+        'Describe the current effect, colors, and brightness exactly so the final step can restore them'
+    if ([string]::IsNullOrWhiteSpace($preCaptureSetting)) {
+        throw 'A pre-capture lighting description is required for restoration.'
+    }
 }
 
 $hostExecutable = (Get-Process -Id $PID -ErrorAction Stop).Path
@@ -226,17 +278,57 @@ try {
         -TimeoutSeconds $ReadyTimeoutSeconds
     Write-AtomicJson -Path $annotationPath -Value $annotations
 
-    foreach ($step in $steps) {
+    for ($stepIndex = 0; $stepIndex -lt $steps.Count; $stepIndex++) {
+        $step = $steps[$stepIndex]
         Write-Host ''
         Write-Host "Next: $($step.id)"
         Write-Host $step.instruction
         if ($step.id -ceq 'restore-pre-capture-setting') {
             Write-Host "Recorded pre-capture setting: $preCaptureSetting"
         }
-        [void](Read-Host 'Press Enter immediately before making this Synapse change')
-        $actionStartedAtUtc = [DateTimeOffset]::UtcNow.ToString('O')
-        [void](Read-Host 'Make the change now, then press Enter immediately after it is visibly applied')
-        $actionConfirmedAtUtc = [DateTimeOffset]::UtcNow.ToString('O')
+        if ($FileControlled) {
+            $controlPrefix = '{0:D2}-{1}' -f ($stepIndex + 1), $step.id
+            $startSignalPath = Join-Path $controlDirectory "$controlPrefix.start"
+            $confirmedSignalPath = Join-Path $controlDirectory "$controlPrefix.confirmed"
+            $controlState = [ordered]@{
+                schemaVersion = 1
+                status = 'AwaitingActionStart'
+                stepIndex = $stepIndex
+                stepCount = $steps.Count
+                stepId = $step.id
+                instruction = $step.instruction
+                preCaptureSetting = if ($step.id -ceq 'restore-pre-capture-setting') {
+                    $preCaptureSetting
+                } else {
+                    $null
+                }
+                startSignalPath = $startSignalPath
+                confirmedSignalPath = $confirmedSignalPath
+                holdSeconds = $step.holdSeconds
+                updatedAtUtc = [DateTimeOffset]::UtcNow.ToString('O')
+            }
+            Write-AtomicJson -Path $controlStatePath -Value $controlState
+            Wait-ForControlSignal -Process $runner -Path $startSignalPath `
+                -Description "the action-start signal for $($step.id)" `
+                -TimeoutSeconds $ActionTimeoutSeconds
+            $actionStartedAtUtc = [DateTimeOffset]::UtcNow.ToString('O')
+            $controlState.status = 'AwaitingVisualConfirmation'
+            $controlState.updatedAtUtc = [DateTimeOffset]::UtcNow.ToString('O')
+            Write-AtomicJson -Path $controlStatePath -Value $controlState
+            Wait-ForControlSignal -Process $runner -Path $confirmedSignalPath `
+                -Description "the visual-confirmation signal for $($step.id)" `
+                -TimeoutSeconds $ActionTimeoutSeconds
+            $actionConfirmedAtUtc = [DateTimeOffset]::UtcNow.ToString('O')
+            $controlState.status = 'Holding'
+            $controlState.updatedAtUtc = [DateTimeOffset]::UtcNow.ToString('O')
+            Write-AtomicJson -Path $controlStatePath -Value $controlState
+        }
+        else {
+            [void](Read-Host 'Press Enter immediately before making this Synapse change')
+            $actionStartedAtUtc = [DateTimeOffset]::UtcNow.ToString('O')
+            [void](Read-Host 'Make the change now, then press Enter immediately after it is visibly applied')
+            $actionConfirmedAtUtc = [DateTimeOffset]::UtcNow.ToString('O')
+        }
         $action = [ordered]@{
             id = $step.id
             instruction = $step.instruction
@@ -251,6 +343,11 @@ try {
         Wait-ForObservation -Seconds $step.holdSeconds -StepId $step.id
         $action.holdCompletedAtUtc = [DateTimeOffset]::UtcNow.ToString('O')
         Write-AtomicJson -Path $annotationPath -Value $annotations
+        if ($FileControlled) {
+            $controlState.status = 'HoldCompleted'
+            $controlState.updatedAtUtc = [DateTimeOffset]::UtcNow.ToString('O')
+            Write-AtomicJson -Path $controlStatePath -Value $controlState
+        }
     }
 }
 catch {
