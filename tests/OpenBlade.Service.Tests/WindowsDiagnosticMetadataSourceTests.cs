@@ -1,5 +1,6 @@
 using System.Security;
 using System.Security.Principal;
+using OpenBlade.Contracts;
 
 namespace OpenBlade.Service.Tests;
 
@@ -64,6 +65,22 @@ public sealed class WindowsDiagnosticMetadataSourceTests
         Assert.False(string.IsNullOrWhiteSpace(metadata.Versions.BiosVersion));
     }
 
+    [Fact]
+    public void MetadataSource_IncludesAllCapturedFirmwareVersions()
+    {
+        var firmware = new FirmwareVersions("3.01", "1.04", "1.5.0.0", "98.3.5c.40.3d");
+        var source = new WindowsDiagnosticMetadataSource(
+            new FixedAuthorizedUserTokenSource(),
+            new FixedFirmwareVersionSource(firmware));
+
+        DiagnosticVersions versions = source.Capture().Versions;
+
+        Assert.Equal(firmware.BiosVersion, versions.BiosVersion);
+        Assert.Equal(firmware.EcVersion, versions.EcVersion);
+        Assert.Equal(firmware.McuVersion, versions.McuVersion);
+        Assert.Equal(firmware.VbiosVersion, versions.VbiosVersion);
+    }
+
     [Theory]
     [InlineData("x")]
     [InlineData("xy")]
@@ -92,5 +109,11 @@ public sealed class WindowsDiagnosticMetadataSourceTests
         : IAuthorizedUserTokenSource
     {
         public IReadOnlyCollection<string> ReadTokens() => tokens;
+    }
+
+    private sealed class FixedFirmwareVersionSource(FirmwareVersions versions)
+        : IFirmwareVersionSource
+    {
+        public FirmwareVersions Capture() => versions;
     }
 }

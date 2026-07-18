@@ -39,6 +39,19 @@ public sealed record ConfirmedDeviceState(
     ConfirmedBatteryState? Battery,
     LightingSettings? Lighting);
 
+public sealed record FirmwareVersions(
+    string BiosVersion,
+    string EcVersion,
+    string McuVersion,
+    string VbiosVersion)
+{
+    public static FirmwareVersions Unavailable() => new(
+        "Unavailable",
+        "Unavailable",
+        "Unavailable",
+        "Unavailable");
+}
+
 public enum ControlResultStatus
 {
     Applied,

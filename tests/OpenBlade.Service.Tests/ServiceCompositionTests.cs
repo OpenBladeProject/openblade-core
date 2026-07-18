@@ -103,6 +103,11 @@ public sealed class ServiceCompositionTests
                 && descriptor.Lifetime == ServiceLifetime.Singleton);
         Assert.Contains(
             services,
+            descriptor => descriptor.ServiceType == typeof(IFirmwareVersionSource)
+                && descriptor.ImplementationType == typeof(WindowsFirmwareVersionSource)
+                && descriptor.Lifetime == ServiceLifetime.Singleton);
+        Assert.Contains(
+            services,
             descriptor => descriptor.ServiceType == typeof(IAuthorizedUserTokenSource)
                 && descriptor.ImplementationType == typeof(WindowsAuthorizedUserTokenSource)
                 && descriptor.Lifetime == ServiceLifetime.Singleton);

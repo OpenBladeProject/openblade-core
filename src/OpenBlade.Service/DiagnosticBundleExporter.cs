@@ -7,7 +7,10 @@ namespace OpenBlade.Service;
 public sealed record DiagnosticVersions(
     string OpenBladeVersion,
     string WindowsVersion,
-    string BiosVersion);
+    string BiosVersion,
+    string EcVersion = "Unavailable",
+    string McuVersion = "Unavailable",
+    string VbiosVersion = "Unavailable");
 
 public sealed record DiagnosticDeviceIdentity(
     string Model,

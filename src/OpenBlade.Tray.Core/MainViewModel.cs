@@ -587,6 +587,18 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         ? FormatTroubleshootingValue(ControllerDetectionWarningText)
         : "Controller check completed";
 
+    public string TroubleshootingBiosFirmwareStatus =>
+        FormatFirmwareVersion("BIOS", latestStatus?.Firmware?.BiosVersion);
+
+    public string TroubleshootingEcFirmwareStatus =>
+        FormatFirmwareVersion("EC", latestStatus?.Firmware?.EcVersion);
+
+    public string TroubleshootingMcuFirmwareStatus =>
+        FormatFirmwareVersion("MCU", latestStatus?.Firmware?.McuVersion);
+
+    public string TroubleshootingVbiosFirmwareStatus =>
+        FormatFirmwareVersion("VBIOS", latestStatus?.Firmware?.VbiosVersion);
+
     public string TroubleshootingLastOperationStatus => string.IsNullOrWhiteSpace(
         OperationStatusMessage)
             ? "No recent actions"
@@ -2587,6 +2599,9 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     private static string FormatTroubleshootingValue(string value) =>
         value.Trim().TrimEnd('.');
 
+    private static string FormatFirmwareVersion(string label, string? value) =>
+        $"{label}: {(string.IsNullOrWhiteSpace(value) ? "Unavailable" : value.Trim())}";
+
     private static string FormatOperationResult(ControlOperationResult result) => result.Status switch
     {
         ControlOperationStatus.Applied or ControlOperationStatus.Stored => string.Empty,
@@ -2623,6 +2638,18 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         PropertyChanged?.Invoke(
             this,
             new PropertyChangedEventArgs(nameof(TroubleshootingDetectionStatus)));
+        PropertyChanged?.Invoke(
+            this,
+            new PropertyChangedEventArgs(nameof(TroubleshootingBiosFirmwareStatus)));
+        PropertyChanged?.Invoke(
+            this,
+            new PropertyChangedEventArgs(nameof(TroubleshootingEcFirmwareStatus)));
+        PropertyChanged?.Invoke(
+            this,
+            new PropertyChangedEventArgs(nameof(TroubleshootingMcuFirmwareStatus)));
+        PropertyChanged?.Invoke(
+            this,
+            new PropertyChangedEventArgs(nameof(TroubleshootingVbiosFirmwareStatus)));
     }
 
     private void NotifyTrayHoverLabel() => PropertyChanged?.Invoke(

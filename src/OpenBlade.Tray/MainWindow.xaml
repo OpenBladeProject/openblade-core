@@ -778,6 +778,23 @@
                                     </Border>
                                     <Border Style="{StaticResource TroubleshootingSectionStyle}">
                                         <StackPanel Spacing="3">
+                                            <TextBlock Text="Firmware" Style="{StaticResource CardTitleStyle}" />
+                                            <TextBlock Text="{x:Bind ViewModel.TroubleshootingBiosFirmwareStatus, Mode=OneWay}"
+                                                       Style="{StaticResource SecondaryTextStyle}"
+                                                       IsTextSelectionEnabled="True" />
+                                            <TextBlock Text="{x:Bind ViewModel.TroubleshootingEcFirmwareStatus, Mode=OneWay}"
+                                                       Style="{StaticResource SecondaryTextStyle}"
+                                                       IsTextSelectionEnabled="True" />
+                                            <TextBlock Text="{x:Bind ViewModel.TroubleshootingMcuFirmwareStatus, Mode=OneWay}"
+                                                       Style="{StaticResource SecondaryTextStyle}"
+                                                       IsTextSelectionEnabled="True" />
+                                            <TextBlock Text="{x:Bind ViewModel.TroubleshootingVbiosFirmwareStatus, Mode=OneWay}"
+                                                       Style="{StaticResource SecondaryTextStyle}"
+                                                       IsTextSelectionEnabled="True" />
+                                        </StackPanel>
+                                    </Border>
+                                    <Border Style="{StaticResource TroubleshootingSectionStyle}">
+                                        <StackPanel Spacing="3">
                                             <TextBlock Text="Last operation" Style="{StaticResource CardTitleStyle}" />
                                             <TextBlock Text="{x:Bind ViewModel.TroubleshootingLastOperationStatus, Mode=OneWay}"
                                                        Style="{StaticResource SecondaryTextStyle}"

@@ -70,6 +70,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
     private readonly IVerifiedBladeDeviceProvider deviceProvider;
     private readonly IControllerPresenceMonitor controllerPresenceMonitor;
     private readonly DiagnosticHistory history;
+    private readonly IFirmwareVersionSource firmwareVersionSource;
     private readonly Func<TimeSpan, CancellationToken, Task> transitionRetryDelay;
     private readonly SemaphoreSlim operationGate = new(1, 1);
     private readonly ProfileSetValidator validator =
@@ -97,6 +98,28 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             deviceProvider,
             history,
             controllerPresenceMonitor,
+            UnavailableFirmwareVersionSource.Instance)
+    {
+    }
+
+    public ServiceControlRuntime(
+        BatteryConfigurationStore store,
+        PersistentOverrideStore overrideStore,
+        IPowerStateProvider powerStateProvider,
+        IStatusSubscriptionHub subscriptionHub,
+        IVerifiedBladeDeviceProvider deviceProvider,
+        DiagnosticHistory history,
+        IControllerPresenceMonitor controllerPresenceMonitor,
+        IFirmwareVersionSource firmwareVersionSource)
+        : this(
+            store,
+            overrideStore,
+            powerStateProvider,
+            subscriptionHub,
+            deviceProvider,
+            history,
+            controllerPresenceMonitor,
+            firmwareVersionSource,
             static (delay, token) => Task.Delay(delay, token))
     {
     }
@@ -109,6 +132,29 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         IVerifiedBladeDeviceProvider deviceProvider,
         DiagnosticHistory history,
         IControllerPresenceMonitor controllerPresenceMonitor,
+        Func<TimeSpan, CancellationToken, Task> transitionRetryDelay)
+        : this(
+            store,
+            overrideStore,
+            powerStateProvider,
+            subscriptionHub,
+            deviceProvider,
+            history,
+            controllerPresenceMonitor,
+            UnavailableFirmwareVersionSource.Instance,
+            transitionRetryDelay)
+    {
+    }
+
+    internal ServiceControlRuntime(
+        BatteryConfigurationStore store,
+        PersistentOverrideStore overrideStore,
+        IPowerStateProvider powerStateProvider,
+        IStatusSubscriptionHub subscriptionHub,
+        IVerifiedBladeDeviceProvider deviceProvider,
+        DiagnosticHistory history,
+        IControllerPresenceMonitor controllerPresenceMonitor,
+        IFirmwareVersionSource firmwareVersionSource,
         Func<TimeSpan, CancellationToken, Task> transitionRetryDelay)
     {
         this.store = store ?? throw new ArgumentNullException(nameof(store));
@@ -123,6 +169,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         this.history = history ?? throw new ArgumentNullException(nameof(history));
         this.controllerPresenceMonitor = controllerPresenceMonitor
             ?? throw new ArgumentNullException(nameof(controllerPresenceMonitor));
+        this.firmwareVersionSource = firmwareVersionSource
+            ?? throw new ArgumentNullException(nameof(firmwareVersionSource));
         this.transitionRetryDelay = transitionRetryDelay
             ?? throw new ArgumentNullException(nameof(transitionRetryDelay));
     }
@@ -1343,7 +1391,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             PerformanceOverride: Automation.PerformanceOverride,
             FanOverride: Automation.FanOverride,
             LightingOverride: Automation.LightingOverride,
-            FullChargeOverride: Automation.DesiredBattery.TemporaryFullCharge);
+            FullChargeOverride: Automation.DesiredBattery.TemporaryFullCharge,
+            Firmware: firmwareVersionSource.Capture());
 
     private ControlOperationResult PublishScopedUnavailable(
         DeviceSubsystem subsystem,
@@ -1482,7 +1531,15 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         && left.PerformanceOverride == right.PerformanceOverride
         && left.FanOverride == right.FanOverride
         && left.LightingOverride == right.LightingOverride
-        && left.FullChargeOverride == right.FullChargeOverride;
+        && left.FullChargeOverride == right.FullChargeOverride
+        && left.Firmware == right.Firmware;
+
+    private sealed class UnavailableFirmwareVersionSource : IFirmwareVersionSource
+    {
+        internal static UnavailableFirmwareVersionSource Instance { get; } = new();
+
+        public FirmwareVersions Capture() => FirmwareVersions.Unavailable();
+    }
 
     private static bool CapabilitiesEqual(
         DeviceCapabilities? left,

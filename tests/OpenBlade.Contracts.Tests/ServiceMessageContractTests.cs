@@ -47,6 +47,7 @@ public sealed class ServiceMessageContractTests
             "Capabilities", "ConfirmedState", "Profiles", "DesiredState",
             "ActivePowerSource", "LiveReadings",
             "PerformanceOverride", "FanOverride", "LightingOverride", "FullChargeOverride",
+            "Firmware",
         ];
 
         Assert.Equal(
@@ -54,6 +55,7 @@ public sealed class ServiceMessageContractTests
             typeof(ServiceStatusSnapshot).GetProperties().Select(property => property.Name).Order());
         Assert.Equal(typeof(DeviceCapabilities), typeof(ServiceStatusSnapshot).GetProperty("Capabilities")!.PropertyType);
         Assert.Equal(typeof(ConfirmedDeviceState), typeof(ServiceStatusSnapshot).GetProperty("ConfirmedState")!.PropertyType);
+        Assert.Equal(typeof(FirmwareVersions), typeof(ServiceStatusSnapshot).GetProperty("Firmware")!.PropertyType);
     }
 
     [Fact]

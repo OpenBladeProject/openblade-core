@@ -1324,7 +1324,10 @@ public sealed class MainViewModelTests
         await WaitUntilAsync(() =>
             viewModel.ControlAccessStatus == "Controls unavailable");
 
-        client.Publish(CreateStatus(verified: true, blocked: false));
+        client.Publish(CreateStatus(verified: true, blocked: false) with
+        {
+            Firmware = new FirmwareVersions("3.01", "1.04", "Unavailable", "98.3.5c.40.3d"),
+        });
         await WaitUntilAsync(() =>
             viewModel.ControlAccessStatus == "Ready");
         Assert.Equal("Ready", viewModel.ProfileStateLabel);
@@ -1335,6 +1338,10 @@ public sealed class MainViewModelTests
             viewModel.TroubleshootingLaptopStatus);
         Assert.Equal("Full-power adapter", viewModel.TroubleshootingPowerSourceStatus);
         Assert.Equal("None detected", viewModel.TroubleshootingOtherRazerSoftwareStatus);
+        Assert.Equal("BIOS: 3.01", viewModel.TroubleshootingBiosFirmwareStatus);
+        Assert.Equal("EC: 1.04", viewModel.TroubleshootingEcFirmwareStatus);
+        Assert.Equal("MCU: Unavailable", viewModel.TroubleshootingMcuFirmwareStatus);
+        Assert.Equal("VBIOS: 98.3.5c.40.3d", viewModel.TroubleshootingVbiosFirmwareStatus);
 
         client.Publish(CreateStatus(verified: true, blocked: false) with
         {

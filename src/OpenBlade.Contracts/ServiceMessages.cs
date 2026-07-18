@@ -94,7 +94,8 @@ public sealed record ServiceStatusSnapshot(
     ManualOverride<PerformancePreset>? PerformanceOverride,
     ManualOverride<FanMode>? FanOverride,
     ManualOverride<LightingSettings>? LightingOverride,
-    bool FullChargeOverride);
+    bool FullChargeOverride,
+    FirmwareVersions? Firmware = null);
 
 [JsonPolymorphic(TypeDiscriminatorPropertyName = "frame")]
 [JsonDerivedType(typeof(ServiceResponse), "response")]

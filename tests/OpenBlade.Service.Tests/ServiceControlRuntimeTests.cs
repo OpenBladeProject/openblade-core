@@ -46,6 +46,19 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     }
 
     [Fact]
+    public void Initialize_PublishesCapturedFirmwareWithoutHardwareAccess()
+    {
+        var firmware = new FirmwareVersions("3.01", "1.04", "Unavailable", "98.3.5c.40.3d");
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            firmwareVersions: firmware);
+
+        Assert.Equal(firmware, context.Runtime.GetStatus().Firmware);
+        Assert.Equal(0, context.Provider.TryGetCount);
+        Assert.Equal(0, context.Device.TotalCalls);
+    }
+
+    [Fact]
     public async Task Initialize_DisabledProtectionSurvivesObservationAndProfileSaveWithoutSetters()
     {
         TestContext context = CreateContext(
@@ -2652,7 +2665,8 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         string? persistentOverridePath = null,
         Func<CancellationToken, Task>? overrideWriteBoundary = null,
         bool loadPersistentOverrides = false,
-        Func<TimeSpan, CancellationToken, Task>? transitionRetryDelay = null)
+        Func<TimeSpan, CancellationToken, Task>? transitionRetryDelay = null,
+        FirmwareVersions? firmwareVersions = null)
     {
         string profilePath = Path.Combine(directory, "profiles.json");
         string preferencesPath = Path.Combine(directory, "battery-preferences.json");
@@ -2694,6 +2708,8 @@ public sealed class ServiceControlRuntimeTests : IDisposable
                 directory,
                 $"manual-overrides-{Guid.NewGuid():N}.json"),
             overrideWriteBoundary);
+        var firmwareSource = new FixedFirmwareVersionSource(
+            firmwareVersions ?? FirmwareVersions.Unavailable());
         var runtime = transitionRetryDelay is null
             ? new ServiceControlRuntime(
                 store,
@@ -2702,7 +2718,8 @@ public sealed class ServiceControlRuntimeTests : IDisposable
                 hub,
                 provider,
                 history,
-                monitor)
+                monitor,
+                firmwareSource)
             : new ServiceControlRuntime(
                 store,
                 overrideStore,
@@ -2711,6 +2728,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
                 provider,
                 history,
                 monitor,
+                firmwareSource,
                 transitionRetryDelay);
         if (initialize)
         {
@@ -2797,6 +2815,12 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         CountingProvider Provider,
         CountingBladeDevice Device,
         DiagnosticHistory History);
+
+    private sealed class FixedFirmwareVersionSource(FirmwareVersions versions)
+        : IFirmwareVersionSource
+    {
+        public FirmwareVersions Capture() => versions;
+    }
 
     private sealed class FakeControllerPresenceMonitor(ControllerPresenceObservation current)
         : IControllerPresenceMonitor

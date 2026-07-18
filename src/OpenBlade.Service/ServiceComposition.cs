@@ -14,6 +14,7 @@ internal static class ServiceComposition
         services.AddSingleton<DiagnosticHistory>();
         services.AddSingleton<ILoggerProvider>(provider =>
             provider.GetRequiredService<DiagnosticHistory>());
+        services.AddSingleton<IFirmwareVersionSource, WindowsFirmwareVersionSource>();
         services.AddSingleton<IAuthorizedUserTokenSource, WindowsAuthorizedUserTokenSource>();
         services.AddSingleton<IDiagnosticMetadataSource, WindowsDiagnosticMetadataSource>();
         services.AddSingleton<IDiagnosticArchiveProvider, DiagnosticArchiveProvider>();

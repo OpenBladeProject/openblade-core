@@ -157,26 +157,43 @@ public sealed class WindowsAuthorizedUserTokenSource : IAuthorizedUserTokenSourc
 public sealed class WindowsDiagnosticMetadataSource : IDiagnosticMetadataSource
 {
     private readonly IAuthorizedUserTokenSource authorizedUserTokenSource;
+    private readonly IFirmwareVersionSource firmwareVersionSource;
 
     public WindowsDiagnosticMetadataSource()
-        : this(new WindowsAuthorizedUserTokenSource())
+        : this(new WindowsAuthorizedUserTokenSource(), new WindowsFirmwareVersionSource())
     {
     }
 
     public WindowsDiagnosticMetadataSource(
         IAuthorizedUserTokenSource authorizedUserTokenSource)
+        : this(authorizedUserTokenSource, new WindowsFirmwareVersionSource())
+    {
+    }
+
+    public WindowsDiagnosticMetadataSource(
+        IAuthorizedUserTokenSource authorizedUserTokenSource,
+        IFirmwareVersionSource firmwareVersionSource)
     {
         this.authorizedUserTokenSource = authorizedUserTokenSource
             ?? throw new ArgumentNullException(nameof(authorizedUserTokenSource));
+        this.firmwareVersionSource = firmwareVersionSource
+            ?? throw new ArgumentNullException(nameof(firmwareVersionSource));
     }
 
-    public DiagnosticHostMetadata Capture() => new(
-        new DiagnosticVersions(
-            ReadOpenBladeVersion(),
-            Environment.OSVersion.VersionString,
-            ReadBiosVersion()),
-        ReadSensitiveTokens(),
-        DateTimeOffset.UtcNow);
+    public DiagnosticHostMetadata Capture()
+    {
+        FirmwareVersions firmware = firmwareVersionSource.Capture();
+        return new DiagnosticHostMetadata(
+            new DiagnosticVersions(
+                ReadOpenBladeVersion(),
+                Environment.OSVersion.VersionString,
+                firmware.BiosVersion,
+                firmware.EcVersion,
+                firmware.McuVersion,
+                firmware.VbiosVersion),
+            ReadSensitiveTokens(),
+            DateTimeOffset.UtcNow);
+    }
 
     private static string ReadOpenBladeVersion()
     {
@@ -185,28 +202,6 @@ public sealed class WindowsDiagnosticMetadataSource : IDiagnosticMetadataSource
                 ?.InformationalVersion
             ?? assembly.GetName().Version?.ToString()
             ?? "Unavailable";
-    }
-
-    private static string ReadBiosVersion()
-    {
-        try
-        {
-            using RegistryKey? bios = Registry.LocalMachine.OpenSubKey(
-                @"HARDWARE\DESCRIPTION\System\BIOS",
-                writable: false);
-            object? value = bios?.GetValue("BIOSVersion");
-            return value switch
-            {
-                string text when !string.IsNullOrWhiteSpace(text) => text,
-                string[] values when values.Length > 0 => string.Join(" ", values),
-                _ => "Unavailable",
-            };
-        }
-        catch (Exception exception) when (exception is
-            IOException or UnauthorizedAccessException or System.Security.SecurityException)
-        {
-            return "Unavailable";
-        }
     }
 
     private IReadOnlyCollection<string> ReadSensitiveTokens()

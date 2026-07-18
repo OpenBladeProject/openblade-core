@@ -281,6 +281,10 @@ public sealed class CapabilityPresentationTests
                      "ViewModel.TroubleshootingControlsStatus",
                      "ViewModel.TroubleshootingOtherRazerSoftwareStatus",
                      "ViewModel.TroubleshootingDetectionStatus",
+                     "ViewModel.TroubleshootingBiosFirmwareStatus",
+                     "ViewModel.TroubleshootingEcFirmwareStatus",
+                     "ViewModel.TroubleshootingMcuFirmwareStatus",
+                     "ViewModel.TroubleshootingVbiosFirmwareStatus",
                      "ViewModel.TroubleshootingLastOperationStatus",
                  })
         {
@@ -292,6 +296,9 @@ public sealed class CapabilityPresentationTests
         Assert.Contains(troubleshooting.Descendants(), element =>
             element.Name.LocalName == "TextBlock"
             && Attribute(element, "Text") == "Other Razer software running");
+        Assert.Contains(troubleshooting.Descendants(), element =>
+            element.Name.LocalName == "TextBlock"
+            && Attribute(element, "Text") == "Firmware");
         Assert.Contains(
             "Save logs and system details with sensitive information removed.",
             xaml,
