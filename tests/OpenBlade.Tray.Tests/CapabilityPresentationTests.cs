@@ -140,8 +140,9 @@ public sealed class CapabilityPresentationTests
             element.Name.LocalName == "ComboBox"
             && Attribute(element, "AutomationProperties.Name")
                 == "Live readings refresh interval");
-        Assert.Equal("Right", Attribute(liveReadings, "HorizontalAlignment"));
-        Assert.Equal("Center", Attribute(liveReadings, "VerticalAlignment"));
+        Assert.Equal(
+            "{StaticResource SettingsPickerStyle}",
+            Attribute(liveReadings, "Style"));
         Assert.Equal(
             "{x:Bind ViewModel.LiveReadingsRefreshOptions, Mode=OneWay}",
             Attribute(liveReadings, "ItemsSource"));
@@ -151,8 +152,41 @@ public sealed class CapabilityPresentationTests
         XElement appTheme = Assert.Single(settings.Descendants(), element =>
             element.Name.LocalName == "ComboBox"
             && Attribute(element, "AutomationProperties.Name") == "App theme");
-        Assert.Equal("Right", Attribute(appTheme, "HorizontalAlignment"));
-        Assert.Equal("Center", Attribute(appTheme, "VerticalAlignment"));
+        Assert.Equal(
+            "{StaticResource SettingsPickerStyle}",
+            Attribute(appTheme, "Style"));
+        XElement settingsPickerStyle = Assert.Single(document.Descendants(), element =>
+            element.Name.LocalName == "Style"
+            && Attribute(element, "Key") == "SettingsPickerStyle");
+        Assert.Equal("ComboBox", Attribute(settingsPickerStyle, "TargetType"));
+        Assert.Equal(
+            "{StaticResource DefaultComboBoxStyle}",
+            Attribute(settingsPickerStyle, "BasedOn"));
+        Assert.Contains(settingsPickerStyle.Elements(), element =>
+            element.Name.LocalName == "Setter"
+            && Attribute(element, "Property") == "HorizontalAlignment"
+            && Attribute(element, "Value") == "Right");
+        Assert.Contains(settingsPickerStyle.Elements(), element =>
+            element.Name.LocalName == "Setter"
+            && Attribute(element, "Property") == "VerticalAlignment"
+            && Attribute(element, "Value") == "Center");
+        foreach (string pickerName in new[]
+                 {
+                     "Manual change duration",
+                     "Live readings refresh interval",
+                     "App theme",
+                     "Taskbar hover label",
+                 })
+        {
+            XElement picker = Assert.Single(settings.Descendants(), element =>
+                element.Name.LocalName == "ComboBox"
+                && Attribute(element, "AutomationProperties.Name") == pickerName);
+            Assert.Equal(
+                "{StaticResource SettingsPickerStyle}",
+                Attribute(picker, "Style"));
+            Assert.Null(Attribute(picker, "HorizontalAlignment"));
+            Assert.Null(Attribute(picker, "VerticalAlignment"));
+        }
         Assert.Contains(
             "Choose how often OpenBlade checks fan speed and net battery power.",
             xaml,

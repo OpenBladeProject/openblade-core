@@ -48,6 +48,12 @@
                    BasedOn="{StaticResource SettingsRowStyle}">
                 <Setter Property="BorderThickness" Value="0" />
             </Style>
+            <Style x:Key="SettingsPickerStyle"
+                   TargetType="ComboBox"
+                   BasedOn="{StaticResource DefaultComboBoxStyle}">
+                <Setter Property="HorizontalAlignment" Value="Right" />
+                <Setter Property="VerticalAlignment" Value="Center" />
+            </Style>
             <Style x:Key="CardContentExpanderStyle" TargetType="Expander">
                 <Setter Property="HorizontalAlignment" Value="Stretch" />
                 <Setter Property="HorizontalContentAlignment" Value="Stretch" />
@@ -566,7 +572,7 @@
                                     </StackPanel>
                                     <ComboBox Grid.Column="1"
                                               MinWidth="230"
-                                              HorizontalAlignment="Right"
+                                              Style="{StaticResource SettingsPickerStyle}"
                                               AutomationProperties.Name="Manual change duration"
                                               ItemsSource="{x:Bind ViewModel.ManualChangeDurationOptions, Mode=OneWay}"
                                               DisplayMemberPath="Label"
@@ -586,8 +592,7 @@
                                     </StackPanel>
                                     <ComboBox Grid.Column="1"
                                               MinWidth="170"
-                                              HorizontalAlignment="Right"
-                                              VerticalAlignment="Center"
+                                              Style="{StaticResource SettingsPickerStyle}"
                                               AutomationProperties.Name="Live readings refresh interval"
                                               ItemsSource="{x:Bind ViewModel.LiveReadingsRefreshOptions, Mode=OneWay}"
                                               DisplayMemberPath="Label"
@@ -634,8 +639,7 @@
                                     </StackPanel>
                                     <ComboBox Grid.Column="1"
                                               MinWidth="170"
-                                              HorizontalAlignment="Right"
-                                              VerticalAlignment="Center"
+                                              Style="{StaticResource SettingsPickerStyle}"
                                               AutomationProperties.Name="App theme"
                                               ItemsSource="{x:Bind ViewModel.ThemeSelectionOptions, Mode=OneWay}"
                                               DisplayMemberPath="Label"
@@ -655,7 +659,7 @@
                                     </StackPanel>
                                     <ComboBox Grid.Column="1"
                                               MinWidth="190"
-                                              HorizontalAlignment="Right"
+                                              Style="{StaticResource SettingsPickerStyle}"
                                               AutomationProperties.Name="Taskbar hover label"
                                               ItemsSource="{x:Bind ViewModel.TrayHoverLabelOptions, Mode=OneWay}"
                                               DisplayMemberPath="Label"
