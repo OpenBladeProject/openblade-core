@@ -50,49 +50,6 @@ public sealed class MainViewModelTests
     }
 
     [Fact]
-    public async Task ManualChangeDurationOptions_MapToExistingPersistencePreference()
-    {
-        await using var viewModel = new MainViewModel(
-            new FakeServiceClient(),
-            new RecordingDispatcher());
-        var changed = new List<string?>();
-        viewModel.PropertyChanged += (_, args) => changed.Add(args.PropertyName);
-
-        Assert.Collection(
-            viewModel.ManualChangeDurationOptions,
-            option =>
-            {
-                Assert.Equal(OverrideLifetime.UntilPowerSourceChange, option.Lifetime);
-                Assert.Equal("Until the power source changes", option.Label);
-            },
-            option =>
-            {
-                Assert.Equal(OverrideLifetime.Persistent, option.Lifetime);
-                Assert.Equal("Until I reset them", option.Label);
-            });
-        Assert.Equal(
-            OverrideLifetime.UntilPowerSourceChange,
-            viewModel.SelectedManualChangeDurationOption.Lifetime);
-
-        viewModel.SelectedManualChangeDurationOption =
-            viewModel.ManualChangeDurationOptions[1];
-
-        Assert.True(viewModel.KeepManualChangesUntilCleared);
-        Assert.Equal(
-            OverrideLifetime.Persistent,
-            viewModel.SelectedManualChangeDurationOption.Lifetime);
-        Assert.Contains(
-            nameof(MainViewModel.SelectedManualChangeDurationOption),
-            changed);
-
-        viewModel.KeepManualChangesUntilCleared = false;
-
-        Assert.Equal(
-            OverrideLifetime.UntilPowerSourceChange,
-            viewModel.SelectedManualChangeDurationOption.Lifetime);
-    }
-
-    [Fact]
     public async Task ProfileEditors_ReportUnsavedChangesUntilSaveThenReloadCleanly()
     {
         var client = new FakeServiceClient();
@@ -2034,10 +1991,7 @@ public sealed class MainViewModelTests
     public async Task ActiveProfileCommand_AlwaysUsesPowerSourceScopedOverride()
     {
         var client = new FakeServiceClient();
-        await using var viewModel = new MainViewModel(client, new RecordingDispatcher())
-        {
-            KeepManualChangesUntilCleared = true,
-        };
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
         await viewModel.StartAsync();
         client.Publish(CreateStatus(verified: true, blocked: false));
         await WaitUntilAsync(() => viewModel.CanControlHardware);

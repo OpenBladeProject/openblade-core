@@ -17,7 +17,6 @@ public sealed class UiPreferenceStoreTests : IDisposable
         UiPreferences preferences = await store.LoadAsync();
 
         Assert.Equal(ThemePreference.FollowWindows, preferences.Theme);
-        Assert.False(preferences.KeepManualChangesUntilCleared);
         Assert.True(preferences.LiveReadingsEnabled);
         Assert.Equal(
             LiveReadingsCadence.EveryTwoSeconds,
@@ -35,7 +34,6 @@ public sealed class UiPreferenceStoreTests : IDisposable
 
         await store.SaveAsync(new UiPreferences(
             ThemePreference.Dark,
-            KeepManualChangesUntilCleared: true,
             LiveReadingsEnabled: false,
             TrayHoverLabelMode: TrayHoverLabelMode.BatteryPowerFlow,
             LiveReadingsRefreshCadence: LiveReadingsCadence.EveryTenSeconds));
@@ -43,12 +41,13 @@ public sealed class UiPreferenceStoreTests : IDisposable
         UiPreferences reloaded = await store.LoadAsync();
         using JsonDocument document = JsonDocument.Parse(await File.ReadAllTextAsync(path));
         Assert.Equal(ThemePreference.Dark, reloaded.Theme);
-        Assert.True(reloaded.KeepManualChangesUntilCleared);
         Assert.False(reloaded.LiveReadingsEnabled);
         Assert.Equal(LiveReadingsCadence.Off, reloaded.EffectiveLiveReadingsCadence);
         Assert.Equal(TrayHoverLabelMode.BatteryPowerFlow, reloaded.TrayHoverLabelMode);
         Assert.Equal("Dark", document.RootElement.GetProperty("theme").GetString());
-        Assert.True(document.RootElement.GetProperty("keepManualChangesUntilCleared").GetBoolean());
+        Assert.False(document.RootElement.TryGetProperty(
+            "keepManualChangesUntilCleared",
+            out _));
         Assert.False(document.RootElement.GetProperty("liveReadingsEnabled").GetBoolean());
         Assert.Equal(
             "BatteryPowerFlow",
@@ -72,7 +71,7 @@ public sealed class UiPreferenceStoreTests : IDisposable
     }
 
     [Fact]
-    public async Task LoadAsync_PreviousSchemaDefaultsLiveReadingsOn()
+    public async Task LoadAsync_ObsoleteManualPreferenceIsIgnored()
     {
         Directory.CreateDirectory(directory);
         string path = Path.Combine(directory, "preferences.json");
@@ -83,7 +82,6 @@ public sealed class UiPreferenceStoreTests : IDisposable
         UiPreferences preferences = await new UiPreferenceStore(path).LoadAsync();
 
         Assert.Equal(ThemePreference.Dark, preferences.Theme);
-        Assert.True(preferences.KeepManualChangesUntilCleared);
         Assert.True(preferences.LiveReadingsEnabled);
         Assert.Equal(
             LiveReadingsCadence.EveryTwoSeconds,

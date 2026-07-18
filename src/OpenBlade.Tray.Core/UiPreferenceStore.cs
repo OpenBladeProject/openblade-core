@@ -15,7 +15,6 @@ public enum LiveReadingsCadence
 
 public sealed record UiPreferences(
     ThemePreference Theme,
-    bool KeepManualChangesUntilCleared = false,
     bool LiveReadingsEnabled = true,
     TrayHoverLabelMode TrayHoverLabelMode = TrayHoverLabelMode.ProfileAndPowerFlow,
     LiveReadingsCadence LiveReadingsRefreshCadence =
@@ -23,7 +22,6 @@ public sealed record UiPreferences(
 {
     public static UiPreferences Default { get; } = new(
         ThemePreference.FollowWindows,
-        KeepManualChangesUntilCleared: false,
         LiveReadingsEnabled: true,
         TrayHoverLabelMode: TrayHoverLabelMode.ProfileAndPowerFlow,
         LiveReadingsRefreshCadence: LiveReadingsCadence.EveryTwoSeconds);

@@ -188,7 +188,6 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, ITrayIconThem
     private async Task InitializeCoreAsync()
     {
         ThemePreference initialTheme = ThemePreference.FollowWindows;
-        bool keepManualChangesUntilCleared = false;
         LiveReadingsCadence liveReadingsRefreshCadence =
             LiveReadingsCadence.EveryTwoSeconds;
         TrayHoverLabelMode trayHoverLabelMode =
@@ -198,7 +197,6 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, ITrayIconThem
             UiPreferences preferences = await preferenceStore.LoadAsync();
             ThemeSelectionPolicy.Resolve(preferences.Theme);
             initialTheme = preferences.Theme;
-            keepManualChangesUntilCleared = preferences.KeepManualChangesUntilCleared;
             liveReadingsRefreshCadence = preferences.EffectiveLiveReadingsCadence;
             trayHoverLabelMode = preferences.TrayHoverLabelMode;
         }
@@ -215,7 +213,6 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, ITrayIconThem
         }
 
         ViewModel.Theme = initialTheme;
-        ViewModel.KeepManualChangesUntilCleared = keepManualChangesUntilCleared;
         ViewModel.LiveReadingsRefreshCadence = liveReadingsRefreshCadence;
         ViewModel.TrayHoverLabelMode = trayHoverLabelMode;
         try
@@ -299,8 +296,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, ITrayIconThem
             DisplayViewModel.ActivePowerSource = ViewModel.ActivePowerSource;
         }
 
-        if (args.PropertyName is nameof(MainViewModel.KeepManualChangesUntilCleared)
-            or nameof(MainViewModel.LiveReadingsRefreshCadence)
+        if (args.PropertyName is nameof(MainViewModel.LiveReadingsRefreshCadence)
             or nameof(MainViewModel.TrayHoverLabelMode))
         {
             QueuePreferenceSave();
@@ -429,7 +425,6 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, ITrayIconThem
         {
             preferenceSaveQueue.Enqueue(new UiPreferences(
                 ViewModel.Theme,
-                ViewModel.KeepManualChangesUntilCleared,
                 ViewModel.LiveReadingsEnabled,
                 ViewModel.TrayHoverLabelMode,
                 ViewModel.LiveReadingsRefreshCadence));

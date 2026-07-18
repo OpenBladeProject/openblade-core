@@ -32,6 +32,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 - The Profiles page previews pending values directly in the affected profile card,
   marks that card with an unsaved dot, and keeps Save and Discard in one compact
   action row.
+- Removed the obsolete hidden manual-change-duration preference. Active-page
+  changes are always scoped to the current power source until saved as a profile.
 - Profile save and discard now remain truthful when temporary-override cleanup fails or a previously unconfigured display profile must return to its pre-edit state.
 
 ### Safety

@@ -18,10 +18,6 @@ public sealed record ThemePreferenceOption(
     ThemePreference Preference,
     string Label);
 
-public sealed record ManualChangeDurationOption(
-    OverrideLifetime Lifetime,
-    string Label);
-
 public sealed record LiveReadingsRefreshOption(
     LiveReadingsCadence Cadence,
     string Label);
@@ -127,7 +123,6 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     private DisplayProfileSettings? activeProfileDraftDisplay;
     private DisplayProfileSettings? activeProfileOriginalDisplay;
     private ThemePreference theme = ThemePreference.FollowWindows;
-    private bool keepManualChangesUntilCleared;
     private LiveReadingsCadence liveReadingsRefreshCadence =
         LiveReadingsCadence.EveryTwoSeconds;
     private TrayHoverLabelMode trayHoverLabelMode =
@@ -1412,54 +1407,6 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             Theme = value.Preference;
         }
     }
-
-    public bool KeepManualChangesUntilCleared
-    {
-        get => keepManualChangesUntilCleared;
-        set
-        {
-            if (keepManualChangesUntilCleared == value)
-            {
-                return;
-            }
-
-            SetField(ref keepManualChangesUntilCleared, value);
-            PropertyChanged?.Invoke(
-                this,
-                new PropertyChangedEventArgs(nameof(SelectedManualChangeDurationOption)));
-            PropertyChanged?.Invoke(
-                this,
-                new PropertyChangedEventArgs(nameof(SelectedOverrideLifetime)));
-        }
-    }
-
-    public IReadOnlyList<ManualChangeDurationOption> ManualChangeDurationOptions { get; } =
-    [
-        new(
-            OverrideLifetime.UntilPowerSourceChange,
-            "Until the power source changes"),
-        new(OverrideLifetime.Persistent, "Until I reset them"),
-    ];
-
-    public ManualChangeDurationOption SelectedManualChangeDurationOption
-    {
-        get => ManualChangeDurationOptions.Single(
-            option => option.Lifetime == SelectedOverrideLifetime);
-        set
-        {
-            ArgumentNullException.ThrowIfNull(value);
-            KeepManualChangesUntilCleared = value.Lifetime switch
-            {
-                OverrideLifetime.UntilPowerSourceChange => false,
-                OverrideLifetime.Persistent => true,
-                _ => throw new ArgumentOutOfRangeException(nameof(value)),
-            };
-        }
-    }
-
-    public OverrideLifetime SelectedOverrideLifetime => KeepManualChangesUntilCleared
-        ? OverrideLifetime.Persistent
-        : OverrideLifetime.UntilPowerSourceChange;
 
     public IReadOnlyList<LiveReadingsRefreshOption> LiveReadingsRefreshOptions { get; } =
     [
