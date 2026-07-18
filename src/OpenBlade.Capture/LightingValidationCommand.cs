@@ -126,6 +126,7 @@ public sealed class LightingValidationCommand
         bool baselineRestoreBrightnessMatched = false;
         bool baselineRestoreVisuallyConfirmed = false;
         bool baselineRestored = false;
+        string validationStage = "preflight";
 
         try
         {
@@ -159,6 +160,7 @@ public sealed class LightingValidationCommand
                 }
                 else
                 {
+                    validationStage = "openPort";
                     HidSessionResult<IProductionLightingPort> opened =
                         await openPort(commandCancellation.Token).ConfigureAwait(false);
                     port = opened.Value;
@@ -174,13 +176,16 @@ public sealed class LightingValidationCommand
                     else
                     {
                         hardwareTouched = true;
+                        validationStage = "knownBaselineApply";
                         await port.SetLightingAsync(
                             baselineSettings,
                             commandCancellation.Token).ConfigureAwait(false);
+                        validationStage = "knownBaselineBrightnessReadback";
                         (baselineObservedRaw, baselineBrightnessMatched) =
                             await QueryBrightnessAsync(
                                 baselineExpectedRaw,
                                 commandCancellation.Token).ConfigureAwait(false);
+                        validationStage = "knownBaselineVisualConfirmation";
                         bool baselineVisualAccepted = baselineBrightnessMatched
                             && await PromptYesAsync(
                                 $"Is the entire keyboard Static green at {brightness}%?",
@@ -221,9 +226,10 @@ public sealed class LightingValidationCommand
             canceled = true;
             failure = "canceled";
         }
-        catch
+        catch (Exception exception)
         {
-            failure = "validationFailed";
+            failure = CreateFailureCode(validationStage, exception);
+            await WriteFailureAsync(failure).ConfigureAwait(false);
         }
         finally
         {
@@ -247,9 +253,16 @@ public sealed class LightingValidationCommand
                         && baselineRestoreBrightnessMatched
                         && baselineRestoreVisuallyConfirmed;
                 }
-                catch
+                catch (Exception exception)
                 {
                     baselineRestored = false;
+                    string restoreFailure = CreateFailureCode(
+                        "knownBaselineRestore",
+                        exception);
+                    failure = failure is null
+                        ? restoreFailure
+                        : $"{failure}|{restoreFailure}";
+                    await WriteFailureAsync(restoreFailure).ConfigureAwait(false);
                 }
             }
 
@@ -446,6 +459,84 @@ public sealed class LightingValidationCommand
         string? response = await input.ReadLineAsync(cancellationToken).ConfigureAwait(false);
         return string.Equals(response, "yes", StringComparison.OrdinalIgnoreCase);
     }
+
+    private async Task WriteFailureAsync(string failureCode)
+    {
+        await output.WriteLineAsync(
+            $"Validation diagnostic: {failureCode}").ConfigureAwait(false);
+    }
+
+    private static string CreateFailureCode(string stage, Exception exception)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(stage);
+        ArgumentNullException.ThrowIfNull(exception);
+
+        if (exception is BladeWriteException write)
+        {
+            string operation = WriteOperationCode(write);
+            string inner = write.InnerException is null
+                ? string.Empty
+                : $".{ExceptionKind(write.InnerException)}";
+            return $"validationFailed:{stage}:bladeWrite." +
+                $"{write.SubmissionState}.{operation}{inner}";
+        }
+
+        return $"validationFailed:{stage}:{ExceptionKind(exception)}";
+    }
+
+    private static string WriteOperationCode(BladeWriteException exception)
+    {
+        const string commandPrefix = "The lighting command failed (";
+        const string matrixPrefix = "The matrix write failed (";
+        if (TryReadParenthesizedCode(exception.Message, commandPrefix, out string command))
+        {
+            return $"lightingCommand.{command}";
+        }
+
+        if (TryReadParenthesizedCode(exception.Message, matrixPrefix, out string matrix))
+        {
+            return $"matrixWrite.{matrix}";
+        }
+
+        return exception.Message.StartsWith(
+            "The lighting change failed and the previous lighting state could not be fully restored.",
+            StringComparison.Ordinal)
+                ? "rollbackIncomplete"
+                : "lightingWrite";
+    }
+
+    private static bool TryReadParenthesizedCode(
+        string message,
+        string prefix,
+        out string code)
+    {
+        code = string.Empty;
+        if (!message.StartsWith(prefix, StringComparison.Ordinal)
+            || !message.EndsWith(").", StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        string candidate = message[prefix.Length..^2];
+        if (candidate.Length is 0 or > 64
+            || candidate.Any(character => !char.IsLetterOrDigit(character)))
+        {
+            return false;
+        }
+
+        code = candidate;
+        return true;
+    }
+
+    private static string ExceptionKind(Exception exception) => exception switch
+    {
+        System.TimeoutException => "timeout",
+        UnauthorizedAccessException => "accessDenied",
+        IOException => "io",
+        ObjectDisposedException => "disposed",
+        InvalidOperationException => "invalidOperation",
+        _ => "unexpected",
+    };
 
     private static IReadOnlyList<ValidationActionSpec> CreateActionSpecs(byte brightness) =>
     [

@@ -277,9 +277,7 @@ public sealed class CapabilityPresentationTests
         Assert.Equal(
             "{StaticResource StatusPillButtonStyle}",
             Attribute(warningIndicator, "Style"));
-        Assert.Equal(
-            "{ThemeResource SystemFillColorCautionBackgroundBrush}",
-            Attribute(warningIndicator, "Background"));
+        Assert.Null(Attribute(warningIndicator, "Background"));
         Assert.Contains(
             "ViewModel.AttentionSummary",
             Attribute(warningIndicator, "ToolTipService.ToolTip") ?? string.Empty,

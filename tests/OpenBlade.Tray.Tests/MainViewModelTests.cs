@@ -1892,6 +1892,11 @@ public sealed class MainViewModelTests
         await WaitUntilAsync(() =>
             viewModel.ControlAccessStatus == "OpenBlade service isn’t running");
         Assert.Equal("Service unavailable", viewModel.ProfileStateLabel);
+        Assert.Equal("Power source unavailable", viewModel.ActivePowerSourceLabel);
+        Assert.Equal("Profile unavailable", viewModel.ActivePerformanceLabel);
+        Assert.Equal("Fan setting unavailable", viewModel.ActiveFanModeLabel);
+        Assert.Equal("Battery setting unavailable", viewModel.CurrentBatterySettingLabel);
+        Assert.Null(viewModel.LiveReadings);
         Assert.True(viewModel.IsReadinessError);
         Assert.Equal("Unavailable", viewModel.TroubleshootingServiceStatus);
     }

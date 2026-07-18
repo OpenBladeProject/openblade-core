@@ -57,10 +57,13 @@
                    TargetType="Button"
                    BasedOn="{StaticResource DefaultButtonStyle}">
                 <Setter Property="MinWidth" Value="0" />
-                <Setter Property="MinHeight" Value="0" />
+                <Setter Property="MinHeight" Value="28" />
+                <Setter Property="Height" Value="28" />
                 <Setter Property="BorderThickness" Value="0" />
-                <Setter Property="CornerRadius" Value="12" />
-                <Setter Property="Padding" Value="10,3" />
+                <Setter Property="CornerRadius" Value="14" />
+                <Setter Property="Padding" Value="10,0" />
+                <Setter Property="Background" Value="{ThemeResource SubtleFillColorSecondaryBrush}" />
+                <Setter Property="HorizontalContentAlignment" Value="Center" />
                 <Setter Property="VerticalAlignment" Value="Center" />
             </Style>
             <Style x:Key="StatusPillTextStyle"
@@ -207,7 +210,6 @@
                                                  AutomationProperties.Name="Unsaved changes" />
                                         <Button x:Name="ProfileStateBadge"
                                                 Style="{StaticResource StatusPillButtonStyle}"
-                                                Background="{ThemeResource SubtleFillColorSecondaryBrush}"
                                                 Click="OnProfileStateBadgeClick"
                                                 AutomationProperties.Name="Open troubleshooting details"
                                                 ToolTipService.ToolTip="View device status">
@@ -228,7 +230,6 @@
                                         </Button>
                                         <Button x:Name="AttentionIndicator"
                                                 Style="{StaticResource StatusPillButtonStyle}"
-                                                Background="{ThemeResource SystemFillColorCautionBackgroundBrush}"
                                                 Visibility="{x:Bind ViewModel.HasAttention, Mode=OneWay}"
                                                 AutomationProperties.Name="Show warning details"
                                                 ToolTipService.ToolTip="{x:Bind ViewModel.AttentionSummary, Mode=OneWay}">

@@ -88,6 +88,39 @@ public sealed class LightingValidationCommandTests
     }
 
     [Fact]
+    public async Task RunAsync_BaselineWriteFailureRecordsStageAndSafeProtocolCategory()
+    {
+        var port = new FakeLightingPort
+        {
+            FailEffect = LightingEffect.Static,
+            FailException = new BladeWriteException(
+                WriteSubmissionState.Indeterminate,
+                "The matrix write failed (Timeout)."),
+        };
+        var console = new FakeConsole(
+            LightingValidationCommand.ExactTargetConfirmation);
+        var artifacts = new List<(string Path, string Json)>();
+        LightingValidationCommand command = CreateCommand(port, console, artifacts);
+
+        int exitCode = await command.RunAsync(ValidArguments(), default);
+
+        Assert.Equal(LightingValidationCommand.ValidationFailureExitCode, exitCode);
+        using JsonDocument document = JsonDocument.Parse(Assert.Single(artifacts).Json);
+        Assert.Equal(
+            "validationFailed:knownBaselineApply:bladeWrite.Indeterminate." +
+            "matrixWrite.Timeout|validationFailed:knownBaselineRestore:" +
+            "bladeWrite.Indeterminate.matrixWrite.Timeout",
+            document.RootElement.GetProperty("failure").GetString());
+        Assert.Contains(
+            "Validation diagnostic: validationFailed:knownBaselineApply:" +
+            "bladeWrite.Indeterminate.matrixWrite.Timeout",
+            console.Text,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain("payload", artifacts[0].Json, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("devicePath", artifacts[0].Json, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public async Task RunAsync_LostRendererOwnershipCannotProduceAdmittingArtifact()
     {
         var port = new FakeLightingPort
@@ -330,6 +363,7 @@ public sealed class LightingValidationCommandTests
         public List<ReactiveKeyPulse> Pulses { get; } = [];
         public LightingSettings Current { get; private set; } = LightingSettingsFactory.Off();
         public LightingEffect? FailEffect { get; init; }
+        public Exception? FailException { get; init; }
         public LightingEffect? FaultOwnershipEffect { get; init; }
         public Action<LightingSettings>? OnSet { get; init; }
 
@@ -353,7 +387,7 @@ public sealed class LightingValidationCommandTests
             OnSet?.Invoke(settings);
             if (settings.Effect == FailEffect)
             {
-                throw new IOException("Fake typed failure");
+                throw FailException ?? new IOException("Fake typed failure");
             }
 
             Current = settings;

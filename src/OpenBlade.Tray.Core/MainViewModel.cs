@@ -458,10 +458,13 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
 
     public bool IsUsbCProfileActive => ActivePowerSource == PowerSource.UsbC;
 
-    public string ActivePerformanceLabel =>
-        PerformancePresetPresentation.Label(SelectedPerformance);
+    public string ActivePerformanceLabel => IsConnected
+        ? PerformancePresetPresentation.Label(SelectedPerformance)
+        : "Profile unavailable";
 
-    public string ActiveFanModeLabel => $"{SelectedFanMode} fans";
+    public string ActiveFanModeLabel => IsConnected
+        ? $"{SelectedFanMode} fans"
+        : "Fan setting unavailable";
 
     public string ProfileStateLabel => !IsConnected
         ? "Service unavailable"
@@ -558,9 +561,10 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         private set => SetField(ref externalChangesText, value);
     }
 
-    public bool HasAttention => HasControllerAdvisory
-        || HasControllerDetectionWarning
-        || HasExternalChanges;
+    public bool HasAttention => IsConnected
+        && (HasControllerAdvisory
+            || HasControllerDetectionWarning
+            || HasExternalChanges);
 
     public string AttentionSummary
     {
@@ -2103,6 +2107,10 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         CanControlHardware = false;
         IsReactiveLightingActive = false;
         ConnectionStatus = message;
+        ActivePowerSourceLabel = "Power source unavailable";
+        CurrentBatterySettingLabel = "Battery setting unavailable";
+        LiveReadings = null;
+        ClearLiveReadingsRefreshTime();
         ControlAccessStatus = "OpenBlade service isn’t running";
         NotifyCommands();
         NotifyPresentationState();
@@ -3475,6 +3483,8 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     private void NotifyPresentationState()
     {
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsServiceUnavailable)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ActivePerformanceLabel)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ActiveFanModeLabel)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ProfileStateLabel)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsReadinessReady)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsReadinessChecking)));

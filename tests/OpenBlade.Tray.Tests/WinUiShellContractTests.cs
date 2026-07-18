@@ -60,6 +60,24 @@ public sealed class WinUiShellContractTests
     }
 
     [Fact]
+    public void DashboardStatusPillsShareOneNeutralContainerStyle()
+    {
+        string xaml = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml");
+
+        Assert.Equal(2, CountOccurrences(
+            xaml,
+            "Style=\"{StaticResource StatusPillButtonStyle}\""));
+        Assert.Contains(
+            "<Setter Property=\"Background\" Value=\"{ThemeResource SubtleFillColorSecondaryBrush}\" />",
+            xaml,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            "Background=\"{ThemeResource SystemFillColorCautionBackgroundBrush}\"",
+            xaml,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void ReactiveRawInputKeepsFailedNativeSubclassAliveUntilWindowTeardown()
     {
         string source = ReadRepositoryFile(
