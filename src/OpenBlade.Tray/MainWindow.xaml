@@ -64,6 +64,11 @@
                 <Setter Property="Padding" Value="10,3" />
                 <Setter Property="VerticalAlignment" Value="Center" />
             </Style>
+            <Style x:Key="StatusPillTextStyle"
+                   TargetType="TextBlock"
+                   BasedOn="{StaticResource CaptionTextBlockStyle}">
+                <Setter Property="Foreground" Value="{ThemeResource TextFillColorSecondaryBrush}" />
+            </Style>
             <Style x:Key="CardContentExpanderStyle" TargetType="Expander">
                 <Setter Property="HorizontalAlignment" Value="Stretch" />
                 <Setter Property="HorizontalContentAlignment" Value="Stretch" />
@@ -165,8 +170,7 @@
                                                              Visibility="{x:Bind ViewModel.IsReadinessError, Mode=OneWay}" />
                                                 </Grid>
                                                 <TextBlock Text="{x:Bind ViewModel.ProfileStateLabel, Mode=OneWay}"
-                                                           Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                                                           Style="{StaticResource CaptionTextBlockStyle}" />
+                                                           Style="{StaticResource StatusPillTextStyle}" />
                                             </StackPanel>
                                         </Button>
                                         <Button x:Name="AttentionIndicator"
@@ -192,8 +196,7 @@
                                                           Foreground="{ThemeResource SystemFillColorCautionBrush}" />
                                                 <TextBlock x:Name="AttentionIndicatorLabel"
                                                            Text="{x:Bind ViewModel.AttentionBadgeLabel, Mode=OneWay}"
-                                                           Foreground="{ThemeResource TextFillColorPrimaryBrush}"
-                                                           Style="{StaticResource CaptionTextBlockStyle}" />
+                                                           Style="{StaticResource StatusPillTextStyle}" />
                                             </StackPanel>
                                         </Button>
                                     </StackPanel>

@@ -243,6 +243,18 @@ public sealed class CapabilityPresentationTests
             "ViewModel.AttentionBadgeLabel",
             Attribute(warningLabel, "Text") ?? string.Empty,
             StringComparison.Ordinal);
+        Assert.Equal(
+            "{StaticResource StatusPillTextStyle}",
+            Attribute(warningLabel, "Style"));
+        XElement readinessBadge = NamedElement(document, "Button", "ProfileStateBadge");
+        XElement readinessLabel = Assert.Single(readinessBadge.Descendants(), element =>
+            element.Name.LocalName == "TextBlock"
+            && Attribute(element, "Text")?.Contains(
+                "ViewModel.ProfileStateLabel",
+                StringComparison.Ordinal) is true);
+        Assert.Equal(
+            "{StaticResource StatusPillTextStyle}",
+            Attribute(readinessLabel, "Style"));
         Assert.Contains(warningIndicator.Ancestors(), element =>
             element.Name.LocalName == "Grid" && Attribute(element, "Name") == "HeroLayout");
         Assert.Contains(warningIndicator.Descendants(), element => element.Name.LocalName == "Flyout");
