@@ -1389,6 +1389,111 @@ public sealed class MainViewModelTests
         Assert.Equal(confirmed, viewModel.LightingDraft);
     }
 
+    [Theory]
+    [InlineData(PowerSource.Battery, false)]
+    [InlineData(PowerSource.Battery, true)]
+    [InlineData(PowerSource.UsbC, false)]
+    [InlineData(PowerSource.UsbC, true)]
+    public async Task UnappliedLightingEditor_IsReloadedForConfirmedPowerSourceTransition(
+        PowerSource destination,
+        bool passesThroughUnknown)
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        ServiceStatusSnapshot initial = CreateStatus(
+            verified: true,
+            blocked: false,
+            capabilities: DeviceCapabilities.SafeTargetDefaults() with
+            {
+                LightingEffects = new HashSet<LightingEffect>(
+                    Enum.GetValues<LightingEffect>()),
+                ChargeLimits = ChargeLimits(),
+            });
+        LightingSettings destinationLighting = destination == PowerSource.Battery
+            ? LightingSettingsFactory.SpectrumCycling(35)
+            : LightingSettingsFactory.BreathingSingle(new RgbColor(12, 34, 56), 45);
+        ServiceStatusSnapshot destinationStatus = initial with
+        {
+            Revision = passesThroughUnknown ? initial.Revision + 2 : initial.Revision + 1,
+            ActivePowerSource = destination,
+            ConfirmedState = initial.ConfirmedState! with { Lighting = destinationLighting },
+            DesiredState = initial.DesiredState with
+            {
+                Lighting = new ResolvedSetting<LightingSettings>(
+                    destinationLighting,
+                    SettingValueSource.PowerProfile),
+            },
+        };
+        client.Publish(initial);
+        await WaitUntilAsync(() => viewModel.IsConnected);
+
+        viewModel.LightingEffectEditor = LightingEffect.Static;
+        viewModel.LightingBrightnessEditor = 77;
+        viewModel.LightingRedEditor = 231;
+        LightingSettings unapplied = viewModel.LightingDraft;
+
+        if (passesThroughUnknown)
+        {
+            client.Publish(initial with
+            {
+                Revision = initial.Revision + 1,
+                ActivePowerSource = PowerSource.ExternalUnknown,
+            });
+            await WaitUntilAsync(() =>
+                viewModel.ActivePowerSource == PowerSource.ExternalUnknown);
+            Assert.Equal(unapplied, viewModel.LightingDraft);
+        }
+
+        client.Publish(destinationStatus);
+        await WaitUntilAsync(() => viewModel.ActivePowerSource == destination);
+
+        Assert.NotEqual(unapplied, viewModel.LightingDraft);
+        Assert.Equal(destinationLighting, viewModel.LightingDraft);
+
+        await Assert.IsType<AsyncRelayCommand>(viewModel.SetLightingCommand)
+            .ExecuteAsync(viewModel.LightingDraft);
+        Assert.Equal(destinationLighting, client.LightingOverride?.Value);
+    }
+
+    [Fact]
+    public async Task UnappliedLightingEditor_IsPreservedAcrossTransientUnknownRecheck()
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        ServiceStatusSnapshot initial = CreateStatus(
+            verified: true,
+            blocked: false,
+            capabilities: DeviceCapabilities.SafeTargetDefaults() with
+            {
+                LightingEffects = new HashSet<LightingEffect>(
+                    Enum.GetValues<LightingEffect>()),
+                ChargeLimits = ChargeLimits(),
+            });
+        client.Publish(initial);
+        await WaitUntilAsync(() => viewModel.IsConnected);
+
+        viewModel.LightingEffectEditor = LightingEffect.Static;
+        viewModel.LightingBrightnessEditor = 67;
+        viewModel.LightingGreenEditor = 123;
+        LightingSettings unapplied = viewModel.LightingDraft;
+
+        client.Publish(initial with
+        {
+            Revision = initial.Revision + 1,
+            ActivePowerSource = PowerSource.ExternalUnknown,
+        });
+        await WaitUntilAsync(() =>
+            viewModel.ActivePowerSource == PowerSource.ExternalUnknown);
+        Assert.Equal(unapplied, viewModel.LightingDraft);
+
+        client.Publish(initial with { Revision = initial.Revision + 2 });
+        await WaitUntilAsync(() => viewModel.ActivePowerSource == PowerSource.PluggedIn);
+
+        Assert.Equal(unapplied, viewModel.LightingDraft);
+    }
+
     [Fact]
     public async Task Status_RendersLiveReadingsAndActiveQuickChanges()
     {

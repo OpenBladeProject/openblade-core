@@ -119,6 +119,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     private ReactiveLightingDuration lightingReactiveDurationEditor =
         ReactiveLightingDuration.Medium;
     private bool lightingEditorDirty;
+    private PowerSource? lastConfirmedLightingEditorPowerSource;
     private PowerSource? activeProfileDraftSource;
     private PerformancePreset? activeProfileDraftPerformance;
     private FanMode? activeProfileDraftFans;
@@ -1954,6 +1955,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         ConfirmedDeviceState? confirmed = status.ConfirmedState;
         SelectedPerformance = confirmed?.Performance ?? status.DesiredState.Performance.Value;
         SelectedFanMode = confirmed?.Fans ?? status.DesiredState.Fans.Value;
+        PrepareLightingEditorForPowerSource(status.ActivePowerSource);
         SelectedLighting = confirmed?.Lighting ?? status.DesiredState.Lighting.Value;
         IsReactiveLightingActive = status.LightingRendererOwnership ==
             LightingRendererOwnershipState.Reactive;
@@ -2870,6 +2872,22 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             this,
             new PropertyChangedEventArgs(nameof(SelectedLightingEffectOption)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(LightingDraft)));
+    }
+
+    private void PrepareLightingEditorForPowerSource(PowerSource powerSource)
+    {
+        if (powerSource is not (PowerSource.PluggedIn or PowerSource.Battery or PowerSource.UsbC))
+        {
+            return;
+        }
+
+        if (lastConfirmedLightingEditorPowerSource is { } previousPowerSource
+            && previousPowerSource != powerSource)
+        {
+            lightingEditorDirty = false;
+        }
+
+        lastConfirmedLightingEditorPowerSource = powerSource;
     }
 
     private void LoadChargeLimitEditor(ServiceStatusSnapshot status)
