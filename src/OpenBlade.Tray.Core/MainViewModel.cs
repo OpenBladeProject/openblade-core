@@ -22,6 +22,10 @@ public sealed record ManualChangeDurationOption(
     OverrideLifetime Lifetime,
     string Label);
 
+public sealed record LiveReadingsRefreshOption(
+    LiveReadingsCadence Cadence,
+    string Label);
+
 public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
 {
     private readonly IServiceClient serviceClient;
@@ -99,7 +103,8 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     private bool lightingEditorDirty;
     private ThemePreference theme = ThemePreference.FollowWindows;
     private bool keepManualChangesUntilCleared;
-    private bool liveReadingsEnabled = true;
+    private LiveReadingsCadence liveReadingsRefreshCadence =
+        LiveReadingsCadence.EveryTwoSeconds;
     private TrayHoverLabelMode trayHoverLabelMode =
         TrayHoverLabelMode.ProfileAndPowerFlow;
     private bool startAtSignIn;
@@ -359,9 +364,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             PropertyChanged?.Invoke(
                 this,
                 new PropertyChangedEventArgs(nameof(SelectedPerformanceOption)));
-            PropertyChanged?.Invoke(
-                this,
-                new PropertyChangedEventArgs(nameof(AvailableActiveFanModes)));
+            NotifyActiveFanSelectionBinding();
             PropertyChanged?.Invoke(
                 this,
                 new PropertyChangedEventArgs(nameof(BatteryPowerFlowLabel)));
@@ -1131,23 +1134,78 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         ? OverrideLifetime.Persistent
         : OverrideLifetime.UntilPowerSourceChange;
 
-    public bool LiveReadingsEnabled
+    public IReadOnlyList<LiveReadingsRefreshOption> LiveReadingsRefreshOptions { get; } =
+    [
+        new(LiveReadingsCadence.Off, "Off"),
+        new(LiveReadingsCadence.EverySecond, "Every second"),
+        new(LiveReadingsCadence.EveryTwoSeconds, "Every 2 seconds"),
+        new(LiveReadingsCadence.EveryFiveSeconds, "Every 5 seconds"),
+        new(LiveReadingsCadence.EveryTenSeconds, "Every 10 seconds"),
+    ];
+
+    public LiveReadingsCadence LiveReadingsRefreshCadence
     {
-        get => liveReadingsEnabled;
+        get => liveReadingsRefreshCadence;
         set
         {
-            if (liveReadingsEnabled == value)
+            if (!Enum.IsDefined(value))
+            {
+                throw new ArgumentOutOfRangeException(nameof(value));
+            }
+            if (liveReadingsRefreshCadence == value)
             {
                 return;
             }
-            SetField(ref liveReadingsEnabled, value);
-            if (!value)
+            SetField(ref liveReadingsRefreshCadence, value);
+            PropertyChanged?.Invoke(
+                this,
+                new PropertyChangedEventArgs(nameof(LiveReadingsEnabled)));
+            PropertyChanged?.Invoke(
+                this,
+                new PropertyChangedEventArgs(nameof(SelectedLiveReadingsRefreshOption)));
+            PropertyChanged?.Invoke(
+                this,
+                new PropertyChangedEventArgs(nameof(LiveReadingsObservationInterval)));
+            if (!LiveReadingsEnabled)
             {
                 LiveReadings = null;
             }
             NotifyTrayHoverLabel();
         }
     }
+
+    public bool LiveReadingsEnabled
+    {
+        get => LiveReadingsRefreshCadence != LiveReadingsCadence.Off;
+        set => LiveReadingsRefreshCadence = value
+            ? LiveReadingsRefreshCadence == LiveReadingsCadence.Off
+                ? LiveReadingsCadence.EveryTwoSeconds
+                : LiveReadingsRefreshCadence
+            : LiveReadingsCadence.Off;
+    }
+
+    public LiveReadingsRefreshOption SelectedLiveReadingsRefreshOption
+    {
+        get => LiveReadingsRefreshOptions.Single(
+            option => option.Cadence == LiveReadingsRefreshCadence);
+        set
+        {
+            ArgumentNullException.ThrowIfNull(value);
+            LiveReadingsRefreshCadence = value.Cadence;
+        }
+    }
+
+    public TimeSpan LiveReadingsObservationInterval =>
+        LiveReadingsRefreshCadence switch
+        {
+            LiveReadingsCadence.Off => TimeSpan.FromSeconds(5),
+            LiveReadingsCadence.EverySecond => TimeSpan.FromSeconds(1),
+            LiveReadingsCadence.EveryTwoSeconds => TimeSpan.FromSeconds(2),
+            LiveReadingsCadence.EveryFiveSeconds => TimeSpan.FromSeconds(5),
+            LiveReadingsCadence.EveryTenSeconds => TimeSpan.FromSeconds(10),
+            _ => throw new InvalidOperationException(
+                "The live-readings refresh interval is invalid."),
+        };
 
     public IReadOnlyList<TrayHoverLabelOption> TrayHoverLabelOptions { get; } =
     [
@@ -1670,12 +1728,6 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             AvailableUsbCFanModes = fanModes.Contains(FanMode.Automatic)
                 ? [FanMode.Automatic]
                 : [];
-            // WinUI clears a ComboBox selection when ItemsSource is replaced.
-            // Reapply the confirmed value only when the admitted set changes;
-            // equivalent status refreshes must preserve a pending user choice.
-            PropertyChanged?.Invoke(
-                this,
-                new PropertyChangedEventArgs(nameof(SelectedFanMode)));
             PropertyChanged?.Invoke(
                 this,
                 new PropertyChangedEventArgs(nameof(PluggedInFanModeEditor)));
@@ -1685,9 +1737,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             PropertyChanged?.Invoke(
                 this,
                 new PropertyChangedEventArgs(nameof(UsbCFanModeEditor)));
-            PropertyChanged?.Invoke(
-                this,
-                new PropertyChangedEventArgs(nameof(AvailableActiveFanModes)));
+            NotifyActiveFanSelectionBinding();
         }
         AvailableLightingEffects = capabilities.LightingEffects
             .Where(Enum.IsDefined)
@@ -1704,6 +1754,18 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             new PropertyChangedEventArgs(nameof(IsProfileControlVisible)));
         NotifyCommands();
         NotifyPresentationState();
+    }
+
+    private void NotifyActiveFanSelectionBinding()
+    {
+        // WinUI clears SelectedItem whenever the active ItemsSource is replaced.
+        // Always publish the list first, then reapply the confirmed selection.
+        PropertyChanged?.Invoke(
+            this,
+            new PropertyChangedEventArgs(nameof(AvailableActiveFanModes)));
+        PropertyChanged?.Invoke(
+            this,
+            new PropertyChangedEventArgs(nameof(SelectedFanMode)));
     }
 
     private void MarkDisconnected() => MarkDisconnected("Service disconnected");

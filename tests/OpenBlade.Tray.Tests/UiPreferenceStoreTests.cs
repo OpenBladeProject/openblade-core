@@ -20,6 +20,9 @@ public sealed class UiPreferenceStoreTests : IDisposable
         Assert.False(preferences.KeepManualChangesUntilCleared);
         Assert.True(preferences.LiveReadingsEnabled);
         Assert.Equal(
+            LiveReadingsCadence.EveryTwoSeconds,
+            preferences.EffectiveLiveReadingsCadence);
+        Assert.Equal(
             TrayHoverLabelMode.ProfileAndPowerFlow,
             preferences.TrayHoverLabelMode);
     }
@@ -34,13 +37,15 @@ public sealed class UiPreferenceStoreTests : IDisposable
             ThemePreference.Dark,
             KeepManualChangesUntilCleared: true,
             LiveReadingsEnabled: false,
-            TrayHoverLabelMode: TrayHoverLabelMode.BatteryPowerFlow));
+            TrayHoverLabelMode: TrayHoverLabelMode.BatteryPowerFlow,
+            LiveReadingsRefreshCadence: LiveReadingsCadence.EveryTenSeconds));
 
         UiPreferences reloaded = await store.LoadAsync();
         using JsonDocument document = JsonDocument.Parse(await File.ReadAllTextAsync(path));
         Assert.Equal(ThemePreference.Dark, reloaded.Theme);
         Assert.True(reloaded.KeepManualChangesUntilCleared);
         Assert.False(reloaded.LiveReadingsEnabled);
+        Assert.Equal(LiveReadingsCadence.Off, reloaded.EffectiveLiveReadingsCadence);
         Assert.Equal(TrayHoverLabelMode.BatteryPowerFlow, reloaded.TrayHoverLabelMode);
         Assert.Equal("Dark", document.RootElement.GetProperty("theme").GetString());
         Assert.True(document.RootElement.GetProperty("keepManualChangesUntilCleared").GetBoolean());
@@ -48,6 +53,9 @@ public sealed class UiPreferenceStoreTests : IDisposable
         Assert.Equal(
             "BatteryPowerFlow",
             document.RootElement.GetProperty("trayHoverLabelMode").GetString());
+        Assert.Equal(
+            "EveryTenSeconds",
+            document.RootElement.GetProperty("liveReadingsRefreshCadence").GetString());
     }
 
     [Fact]
@@ -78,8 +86,26 @@ public sealed class UiPreferenceStoreTests : IDisposable
         Assert.True(preferences.KeepManualChangesUntilCleared);
         Assert.True(preferences.LiveReadingsEnabled);
         Assert.Equal(
+            LiveReadingsCadence.EveryTwoSeconds,
+            preferences.EffectiveLiveReadingsCadence);
+        Assert.Equal(
             TrayHoverLabelMode.ProfileAndPowerFlow,
             preferences.TrayHoverLabelMode);
+    }
+
+    [Fact]
+    public async Task LoadAsync_PreviousDisabledPreferenceRemainsOff()
+    {
+        Directory.CreateDirectory(directory);
+        string path = Path.Combine(directory, "preferences.json");
+        await File.WriteAllTextAsync(
+            path,
+            """{"theme":"Dark","liveReadingsEnabled":false}""");
+
+        UiPreferences preferences = await new UiPreferenceStore(path).LoadAsync();
+
+        Assert.False(preferences.LiveReadingsEnabled);
+        Assert.Equal(LiveReadingsCadence.Off, preferences.EffectiveLiveReadingsCadence);
     }
 
     [Fact]

@@ -5,6 +5,10 @@
     xmlns:local="using:OpenBlade.Tray"
     Title="OpenBlade">
     <Grid x:Name="Root" Background="Transparent">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
         <Grid.Resources>
             <SolidColorBrush x:Key="NavigationViewContentBackground" Color="Transparent" />
             <Thickness x:Key="NavigationViewContentGridBorderThickness">0</Thickness>
@@ -66,9 +70,16 @@
             </Style>
         </Grid.Resources>
 
+        <TitleBar x:Name="AppTitleBar"
+                  Grid.Row="0"
+                  Title="OpenBlade"
+                  Background="Transparent" />
+
         <NavigationView x:Name="MainNavigation"
+                        Grid.Row="1"
                         Background="Transparent"
                         PaneDisplayMode="Auto"
+                        IsTitleBarAutoPaddingEnabled="False"
                         IsBackButtonVisible="Collapsed"
                         IsSettingsVisible="False"
                         AlwaysShowHeader="False"
@@ -541,16 +552,16 @@
                                     </Grid.ColumnDefinitions>
                                     <StackPanel Spacing="3" VerticalAlignment="Center">
                                         <TextBlock Text="Live readings" Style="{StaticResource CardTitleStyle}" />
-                                        <TextBlock Text="Show fan speed and net battery power in OpenBlade."
+                                        <TextBlock Text="Choose how often OpenBlade reads fan speed and net battery power."
                                                    Style="{StaticResource SecondaryTextStyle}" />
                                     </StackPanel>
-                                    <ToggleSwitch Grid.Column="1"
-                                                  HorizontalAlignment="Right"
-                                                  MinWidth="0"
-                                                  AutomationProperties.Name="Live readings"
-                                                  OffContent=""
-                                                  OnContent=""
-                                                  IsOn="{x:Bind ViewModel.LiveReadingsEnabled, Mode=TwoWay}" />
+                                    <ComboBox Grid.Column="1"
+                                              MinWidth="170"
+                                              HorizontalAlignment="Right"
+                                              AutomationProperties.Name="Live readings refresh interval"
+                                              ItemsSource="{x:Bind ViewModel.LiveReadingsRefreshOptions, Mode=OneWay}"
+                                              DisplayMemberPath="Label"
+                                              SelectedItem="{x:Bind ViewModel.SelectedLiveReadingsRefreshOption, Mode=TwoWay}" />
                                 </Grid>
                             </Border>
                             <Border Style="{StaticResource SettingsLastRowStyle}">

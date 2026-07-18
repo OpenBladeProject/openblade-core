@@ -177,6 +177,35 @@ public sealed class WinUiShellContractTests
     }
 
     [Fact]
+    public void WindowExtendsMicaThroughNativeCaptionArea()
+    {
+        string xaml = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml");
+        string window = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml.cs");
+        Assert.Contains("<TitleBar x:Name=\"AppTitleBar\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("Grid.Row=\"0\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("Title=\"OpenBlade\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("Background=\"Transparent\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("<NavigationView x:Name=\"MainNavigation\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("Grid.Row=\"1\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("IsTitleBarAutoPaddingEnabled=\"False\"", xaml, StringComparison.Ordinal);
+
+        int initialize = window.IndexOf("InitializeComponent()", StringComparison.Ordinal);
+        int extend = window.IndexOf("ExtendsContentIntoTitleBar = true", StringComparison.Ordinal);
+        int setTitleBar = window.IndexOf("SetTitleBar(AppTitleBar)", StringComparison.Ordinal);
+        int createBackdrop = window.IndexOf("new MicaBackdropHost(this, Root)", StringComparison.Ordinal);
+        Assert.True(initialize >= 0 && initialize < extend);
+        Assert.True(extend < setTitleBar && setTitleBar < createBackdrop);
+        Assert.DoesNotContain("SetDragRectangles", window, StringComparison.Ordinal);
+        Assert.DoesNotContain("InputNonClientPointerSource", window, StringComparison.Ordinal);
+        Assert.DoesNotContain("ButtonForegroundColor", window, StringComparison.Ordinal);
+        Assert.Contains("AppWindowTitleBar.IsCustomizationSupported()", window, StringComparison.Ordinal);
+        Assert.Contains("AppWindow.TitleBar.PreferredTheme", window, StringComparison.Ordinal);
+        Assert.Contains("TitleBarTheme.UseDefaultAppMode", window, StringComparison.Ordinal);
+        Assert.Contains("TitleBarTheme.Light", window, StringComparison.Ordinal);
+        Assert.Contains("TitleBarTheme.Dark", window, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void MainWindowLoadsThemeBeforeWatchingAndOwnsPreferenceSaveLifetime()
     {
         string source = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml.cs");
@@ -189,7 +218,7 @@ public sealed class WinUiShellContractTests
         Assert.Contains("await preferenceSaveQueue.DisposeAsync()", source, StringComparison.Ordinal);
 
         int load = source.IndexOf("await preferenceStore.LoadAsync", StringComparison.Ordinal);
-        int apply = source.IndexOf("ThemeManager.Apply", StringComparison.Ordinal);
+        int apply = source.IndexOf("ApplyTheme(ViewModel.Theme)", StringComparison.Ordinal);
         int subscribe = source.IndexOf(
             "ViewModel.PropertyChanged += OnViewModelPropertyChanged",
             StringComparison.Ordinal);

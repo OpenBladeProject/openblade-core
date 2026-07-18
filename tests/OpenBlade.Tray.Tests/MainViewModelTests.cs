@@ -372,6 +372,34 @@ public sealed class MainViewModelTests
     }
 
     [Fact]
+    public async Task LiveReadingsRefreshOptionsMapCadenceAndOffToTelemetryGate()
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+
+        Assert.Equal(
+            ["Off", "Every second", "Every 2 seconds", "Every 5 seconds", "Every 10 seconds"],
+            viewModel.LiveReadingsRefreshOptions.Select(option => option.Label));
+        Assert.Equal(
+            LiveReadingsCadence.EveryTwoSeconds,
+            viewModel.SelectedLiveReadingsRefreshOption.Cadence);
+        Assert.Equal(TimeSpan.FromSeconds(2), viewModel.LiveReadingsObservationInterval);
+
+        viewModel.SelectedLiveReadingsRefreshOption =
+            viewModel.LiveReadingsRefreshOptions.Single(
+                option => option.Cadence == LiveReadingsCadence.EverySecond);
+        Assert.True(viewModel.LiveReadingsEnabled);
+        Assert.Equal(TimeSpan.FromSeconds(1), viewModel.LiveReadingsObservationInterval);
+
+        viewModel.SelectedLiveReadingsRefreshOption =
+            viewModel.LiveReadingsRefreshOptions.Single(
+                option => option.Cadence == LiveReadingsCadence.Off);
+        Assert.False(viewModel.LiveReadingsEnabled);
+        Assert.Equal(TimeSpan.FromSeconds(5), viewModel.LiveReadingsObservationInterval);
+    }
+
+    [Fact]
     public async Task DirectRequestBegunDisconnectedCannotEstablishEpochOrBlockRevisionZero()
     {
         var client = new FakeServiceClient();
@@ -695,7 +723,7 @@ public sealed class MainViewModelTests
         await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
         await viewModel.StartAsync();
         client.Publish(CreateStatus(verified: true, blocked: false));
-        await WaitUntilAsync(() => viewModel.IsConnected);
+        await WaitUntilAsync(() => viewModel.AvailableActiveFanModes.Count > 0);
         var changed = new List<string?>();
         viewModel.PropertyChanged += (_, args) => changed.Add(args.PropertyName);
 
@@ -797,18 +825,53 @@ public sealed class MainViewModelTests
         await viewModel.StartAsync();
 
         client.Publish(CreateStatus(verified: true, blocked: false));
-        await WaitUntilAsync(() => viewModel.IsConnected);
+        await WaitUntilAsync(() => viewModel.AvailableActiveFanModes.Count > 0);
 
-        int itemsSourceChange = changed.IndexOf(nameof(MainViewModel.AvailableFanModes));
+        int directItemsSourceChange = changed.IndexOf(nameof(MainViewModel.AvailableFanModes));
+        int activeItemsSourceChange = changed.IndexOf(nameof(MainViewModel.AvailableActiveFanModes));
         int selectionReapply = changed.LastIndexOf(nameof(MainViewModel.SelectedFanMode));
         int pluggedInReapply = changed.LastIndexOf(nameof(MainViewModel.PluggedInFanModeEditor));
         int batteryReapply = changed.LastIndexOf(nameof(MainViewModel.BatteryFanModeEditor));
         int usbCReapply = changed.LastIndexOf(nameof(MainViewModel.UsbCFanModeEditor));
+        Assert.True(directItemsSourceChange >= 0);
+        Assert.True(activeItemsSourceChange > directItemsSourceChange);
+        Assert.True(selectionReapply > activeItemsSourceChange);
+        Assert.True(pluggedInReapply > directItemsSourceChange);
+        Assert.True(batteryReapply > directItemsSourceChange);
+        Assert.True(usbCReapply > directItemsSourceChange);
+        Assert.Equal(FanMode.Automatic, viewModel.SelectedFanMode);
+    }
+
+    [Fact]
+    public async Task PowerSourceChangeReappliesFanSelectionAfterActiveItemsSource()
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        var changed = new List<string>();
+        viewModel.PropertyChanged += (_, args) =>
+        {
+            if (args.PropertyName is not null)
+            {
+                changed.Add(args.PropertyName);
+            }
+        };
+        await viewModel.StartAsync();
+        ServiceStatusSnapshot initial = CreateStatus(verified: true, blocked: false);
+        client.Publish(initial);
+        await WaitUntilAsync(() => viewModel.AvailableActiveFanModes.Count > 0);
+        changed.Clear();
+
+        client.Publish(initial with
+        {
+            Revision = initial.Revision + 1,
+            ActivePowerSource = PowerSource.UsbC,
+        });
+        await WaitUntilAsync(() => viewModel.ActivePowerSource == PowerSource.UsbC);
+
+        int itemsSourceChange = changed.IndexOf(nameof(MainViewModel.AvailableActiveFanModes));
+        int selectionReapply = changed.IndexOf(nameof(MainViewModel.SelectedFanMode));
         Assert.True(itemsSourceChange >= 0);
         Assert.True(selectionReapply > itemsSourceChange);
-        Assert.True(pluggedInReapply > itemsSourceChange);
-        Assert.True(batteryReapply > itemsSourceChange);
-        Assert.True(usbCReapply > itemsSourceChange);
         Assert.Equal(FanMode.Automatic, viewModel.SelectedFanMode);
     }
 

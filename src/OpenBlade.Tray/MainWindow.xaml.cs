@@ -52,8 +52,12 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
         visibleObservationLoop = new VisibleObservationLoop(ViewModel.ObserveStateAsync,
             errorHandler: exception => Trace.TraceError(
                 "OpenBlade visible observation failed: {0}",
-                exception));
+                exception),
+            observationIntervalProvider: () =>
+                ViewModel.LiveReadingsObservationInterval);
         InitializeComponent();
+        ExtendsContentIntoTitleBar = true;
+        SetTitleBar(AppTitleBar);
         chargeLimitCommitTimer = dispatcherQueue.CreateTimer();
         chargeLimitCommitTimer.Interval = ChargeLimitCommitDelay;
         chargeLimitCommitTimer.IsRepeating = false;
@@ -133,7 +137,8 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
     {
         ThemePreference initialTheme = ThemePreference.FollowWindows;
         bool keepManualChangesUntilCleared = false;
-        bool liveReadingsEnabled = true;
+        LiveReadingsCadence liveReadingsRefreshCadence =
+            LiveReadingsCadence.EveryTwoSeconds;
         TrayHoverLabelMode trayHoverLabelMode =
             TrayHoverLabelMode.ProfileAndPowerFlow;
         try
@@ -142,7 +147,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
             ThemeSelectionPolicy.Resolve(preferences.Theme);
             initialTheme = preferences.Theme;
             keepManualChangesUntilCleared = preferences.KeepManualChangesUntilCleared;
-            liveReadingsEnabled = preferences.LiveReadingsEnabled;
+            liveReadingsRefreshCadence = preferences.EffectiveLiveReadingsCadence;
             trayHoverLabelMode = preferences.TrayHoverLabelMode;
         }
         catch (Exception exception)
@@ -159,11 +164,11 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
 
         ViewModel.Theme = initialTheme;
         ViewModel.KeepManualChangesUntilCleared = keepManualChangesUntilCleared;
-        ViewModel.LiveReadingsEnabled = liveReadingsEnabled;
+        ViewModel.LiveReadingsRefreshCadence = liveReadingsRefreshCadence;
         ViewModel.TrayHoverLabelMode = trayHoverLabelMode;
         try
         {
-            ThemeManager.Apply(Root, ViewModel.Theme);
+            ApplyTheme(ViewModel.Theme);
         }
         catch (Exception exception)
         {
@@ -173,7 +178,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
             ViewModel.Theme = ThemePreference.FollowWindows;
             try
             {
-                ThemeManager.Apply(Root, ViewModel.Theme);
+                ApplyTheme(ViewModel.Theme);
             }
             catch (Exception fallbackException)
             {
@@ -223,11 +228,11 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
         }
 
         if (args.PropertyName is nameof(MainViewModel.KeepManualChangesUntilCleared)
-            or nameof(MainViewModel.LiveReadingsEnabled)
+            or nameof(MainViewModel.LiveReadingsRefreshCadence)
             or nameof(MainViewModel.TrayHoverLabelMode))
         {
             QueuePreferenceSave();
-            if (args.PropertyName == nameof(MainViewModel.LiveReadingsEnabled))
+            if (args.PropertyName == nameof(MainViewModel.LiveReadingsRefreshCadence))
             {
                 visibleObservationLoop.StartOrWake();
             }
@@ -243,7 +248,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
 
         try
         {
-            ThemeManager.Apply(Root, selectedTheme);
+            ApplyTheme(selectedTheme);
         }
         catch (Exception exception)
         {
@@ -254,6 +259,25 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
         QueuePreferenceSave();
     }
 
+    private void ApplyTheme(ThemePreference selectedTheme)
+    {
+        ThemeManager.Apply(Root, selectedTheme);
+
+        if (!AppWindowTitleBar.IsCustomizationSupported())
+        {
+            return;
+        }
+
+        AppWindow.TitleBar.PreferredTheme =
+            ThemeSelectionPolicy.Resolve(selectedTheme) switch
+            {
+                ResolvedTheme.Default => TitleBarTheme.UseDefaultAppMode,
+                ResolvedTheme.Light => TitleBarTheme.Light,
+                ResolvedTheme.Dark => TitleBarTheme.Dark,
+                _ => throw new ArgumentOutOfRangeException(nameof(selectedTheme)),
+            };
+    }
+
     private void QueuePreferenceSave()
     {
         try
@@ -262,7 +286,8 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
                 ViewModel.Theme,
                 ViewModel.KeepManualChangesUntilCleared,
                 ViewModel.LiveReadingsEnabled,
-                ViewModel.TrayHoverLabelMode));
+                ViewModel.TrayHoverLabelMode,
+                ViewModel.LiveReadingsRefreshCadence));
         }
         catch (ObjectDisposedException)
         {

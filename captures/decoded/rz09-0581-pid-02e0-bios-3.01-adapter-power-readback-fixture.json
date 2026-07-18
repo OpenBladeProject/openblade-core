@@ -19,14 +19,14 @@
       "responsePayloadHex": "0711",
       "adapterWattageLevel": 100,
       "classification": "UsbCPower100W",
-      "capture": "opensynapse-synapse-session.pcap",
+      "rawCapture": "opensynapse-synapse-session.pcap",
       "responseFrames": [3242, 3268, 3848, 5350]
     },
     {
       "responsePayloadHex": "1111",
       "adapterWattageLevel": 280,
       "classification": "FullPower280W",
-      "capture": "opensynapse-performance-full-power.pcap",
+      "rawCapture": "opensynapse-performance-full-power.pcap",
       "responseFrames": [732]
     }
   ],

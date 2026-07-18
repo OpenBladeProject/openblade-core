@@ -4,17 +4,37 @@ using System.Text.Json.Serialization;
 
 namespace OpenBlade.Tray;
 
+public enum LiveReadingsCadence
+{
+    Off = 0,
+    EverySecond = 1,
+    EveryTwoSeconds = 2,
+    EveryFiveSeconds = 5,
+    EveryTenSeconds = 10,
+}
+
 public sealed record UiPreferences(
     ThemePreference Theme,
     bool KeepManualChangesUntilCleared = false,
     bool LiveReadingsEnabled = true,
-    TrayHoverLabelMode TrayHoverLabelMode = TrayHoverLabelMode.ProfileAndPowerFlow)
+    TrayHoverLabelMode TrayHoverLabelMode = TrayHoverLabelMode.ProfileAndPowerFlow,
+    LiveReadingsCadence LiveReadingsRefreshCadence =
+        LiveReadingsCadence.EveryTwoSeconds)
 {
     public static UiPreferences Default { get; } = new(
         ThemePreference.FollowWindows,
         KeepManualChangesUntilCleared: false,
         LiveReadingsEnabled: true,
-        TrayHoverLabelMode: TrayHoverLabelMode.ProfileAndPowerFlow);
+        TrayHoverLabelMode: TrayHoverLabelMode.ProfileAndPowerFlow,
+        LiveReadingsRefreshCadence: LiveReadingsCadence.EveryTwoSeconds);
+
+    public LiveReadingsCadence EffectiveLiveReadingsCadence =>
+        !LiveReadingsEnabled
+            ? LiveReadingsCadence.Off
+            : Enum.IsDefined(LiveReadingsRefreshCadence)
+                && LiveReadingsRefreshCadence != LiveReadingsCadence.Off
+                    ? LiveReadingsRefreshCadence
+                    : LiveReadingsCadence.EveryTwoSeconds;
 }
 
 public sealed class UiPreferenceStore

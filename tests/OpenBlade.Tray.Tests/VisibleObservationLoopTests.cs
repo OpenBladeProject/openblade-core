@@ -15,7 +15,7 @@ public sealed class VisibleObservationLoopTests
 
         loop.StartOrWake();
         await WaitUntilAsync(() => Volatile.Read(ref calls) == 1 && delay.WaitingCount == 1);
-        Assert.Equal(TimeSpan.FromSeconds(5), delay.LastDelay);
+        Assert.Equal(TimeSpan.FromSeconds(2), delay.LastDelay);
 
         delay.CompleteNext();
         await WaitUntilAsync(() => Volatile.Read(ref calls) == 2 && delay.WaitingCount == 1);
@@ -24,6 +24,27 @@ public sealed class VisibleObservationLoopTests
         delay.CompleteNext();
         await Task.Delay(20);
         Assert.Equal(2, calls);
+    }
+
+    [Fact]
+    public async Task NextCycleUsesUpdatedInjectedInterval()
+    {
+        var delay = new ManualDelay();
+        int calls = 0;
+        TimeSpan interval = TimeSpan.FromSeconds(10);
+        await using var loop = new VisibleObservationLoop(
+            _ => { Interlocked.Increment(ref calls); return Task.CompletedTask; },
+            delay.WaitAsync,
+            observationIntervalProvider: () => interval);
+
+        loop.StartOrWake();
+        await WaitUntilAsync(() => calls == 1 && delay.WaitingCount == 1);
+        Assert.Equal(TimeSpan.FromSeconds(10), delay.LastDelay);
+
+        interval = TimeSpan.FromSeconds(1);
+        loop.StartOrWake();
+        await WaitUntilAsync(() => calls == 2 && delay.WaitingCount == 2);
+        Assert.Equal(TimeSpan.FromSeconds(1), delay.LastDelay);
     }
 
     [Fact]

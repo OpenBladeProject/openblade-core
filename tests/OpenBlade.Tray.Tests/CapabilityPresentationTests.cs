@@ -39,6 +39,12 @@ public sealed class CapabilityPresentationTests
             Attribute(performance, "SelectedItem"));
         Assert.Equal("OnDashboardFanModeSelectionChanged", Attribute(fans, "SelectionChanged"));
         Assert.Equal(
+            "{x:Bind ViewModel.AvailableActiveFanModes, Mode=OneWay}",
+            Attribute(fans, "ItemsSource"));
+        Assert.Equal(
+            "{x:Bind ViewModel.SelectedFanMode, Mode=OneWay}",
+            Attribute(fans, "SelectedItem"));
+        Assert.Equal(
             "OnDashboardChargeLimitPointerPressed",
             Attribute(chargeLimit, "PointerPressed"));
         Assert.Equal(
@@ -130,6 +136,20 @@ public sealed class CapabilityPresentationTests
 
         Assert.Contains("ViewModel.ManualChangeDurationOptions", xaml, StringComparison.Ordinal);
         Assert.Contains("ViewModel.SelectedManualChangeDurationOption", xaml, StringComparison.Ordinal);
+        XElement liveReadings = Assert.Single(settings.Descendants(), element =>
+            element.Name.LocalName == "ComboBox"
+            && Attribute(element, "AutomationProperties.Name")
+                == "Live readings refresh interval");
+        Assert.Equal("Right", Attribute(liveReadings, "HorizontalAlignment"));
+        Assert.Equal(
+            "{x:Bind ViewModel.LiveReadingsRefreshOptions, Mode=OneWay}",
+            Attribute(liveReadings, "ItemsSource"));
+        Assert.Equal(
+            "{x:Bind ViewModel.SelectedLiveReadingsRefreshOption, Mode=TwoWay}",
+            Attribute(liveReadings, "SelectedItem"));
+        Assert.DoesNotContain(settings.Descendants(), element =>
+            element.Name.LocalName == "ToggleSwitch"
+            && Attribute(element, "AutomationProperties.Name") == "Live readings");
         string viewModel = ReadTrayCoreSource("MainViewModel.cs");
         Assert.Contains("Until the power source changes", viewModel, StringComparison.Ordinal);
         Assert.Contains("Until I reset them", viewModel, StringComparison.Ordinal);

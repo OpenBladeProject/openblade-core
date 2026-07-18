@@ -2,11 +2,12 @@ namespace OpenBlade.Tray;
 
 public sealed class VisibleObservationLoop : IAsyncDisposable
 {
-    private static readonly TimeSpan ObservationInterval = TimeSpan.FromSeconds(5);
+    private static readonly TimeSpan DefaultObservationInterval = TimeSpan.FromSeconds(2);
 
     private readonly Func<CancellationToken, Task> observeAsync;
     private readonly Func<TimeSpan, CancellationToken, Task> delayAsync;
     private readonly Action<Exception>? errorHandler;
+    private readonly Func<TimeSpan> observationIntervalProvider;
     private readonly object sync = new();
     private CancellationTokenSource? loopCancellation;
     private Task? loopTask;
@@ -17,12 +18,15 @@ public sealed class VisibleObservationLoop : IAsyncDisposable
     public VisibleObservationLoop(
         Func<CancellationToken, Task> observeAsync,
         Func<TimeSpan, CancellationToken, Task>? delayAsync = null,
-        Action<Exception>? errorHandler = null)
+        Action<Exception>? errorHandler = null,
+        Func<TimeSpan>? observationIntervalProvider = null)
     {
         this.observeAsync = observeAsync ?? throw new ArgumentNullException(nameof(observeAsync));
         this.delayAsync = delayAsync
             ?? Task.Delay;
         this.errorHandler = errorHandler;
+        this.observationIntervalProvider = observationIntervalProvider
+            ?? (() => DefaultObservationInterval);
     }
 
     public void StartOrWake()
@@ -153,7 +157,12 @@ public sealed class VisibleObservationLoop : IAsyncDisposable
             Task delay;
             try
             {
-                delay = delayAsync(ObservationInterval, token);
+                TimeSpan interval = observationIntervalProvider();
+                if (interval <= TimeSpan.Zero || interval == Timeout.InfiniteTimeSpan)
+                {
+                    interval = DefaultObservationInterval;
+                }
+                delay = delayAsync(interval, token);
                 Task completed = await Task.WhenAny(delay, wake.Task).ConfigureAwait(false);
                 await completed.ConfigureAwait(false);
             }
