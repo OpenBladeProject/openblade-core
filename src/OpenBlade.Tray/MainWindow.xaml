@@ -513,7 +513,18 @@
                             <Border Style="{StaticResource CardStyle}">
                                 <StackPanel Spacing="8">
                                     <Grid>
-                                        <TextBlock Text="Plugged in" Style="{StaticResource SectionHeaderStyle}" Margin="0" />
+                                        <StackPanel Orientation="Horizontal" Spacing="8">
+                                            <TextBlock Text="Plugged in"
+                                                       Style="{StaticResource SectionHeaderStyle}"
+                                                       Margin="0" />
+                                            <Ellipse Width="7"
+                                                     Height="7"
+                                                     VerticalAlignment="Center"
+                                                     Fill="{ThemeResource AccentFillColorDefaultBrush}"
+                                                     Visibility="{x:Bind ViewModel.IsPluggedInProfileDraft, Mode=OneWay}"
+                                                     ToolTipService.ToolTip="Unsaved changes"
+                                                     AutomationProperties.Name="Unsaved changes" />
+                                        </StackPanel>
                                         <Border HorizontalAlignment="Right"
                                                 VerticalAlignment="Center"
                                                 CornerRadius="10"
@@ -539,7 +550,18 @@
                                     Style="{StaticResource CardStyle}">
                                 <StackPanel Spacing="8">
                                     <Grid>
-                                        <TextBlock Text="On battery" Style="{StaticResource SectionHeaderStyle}" Margin="0" />
+                                        <StackPanel Orientation="Horizontal" Spacing="8">
+                                            <TextBlock Text="On battery"
+                                                       Style="{StaticResource SectionHeaderStyle}"
+                                                       Margin="0" />
+                                            <Ellipse Width="7"
+                                                     Height="7"
+                                                     VerticalAlignment="Center"
+                                                     Fill="{ThemeResource AccentFillColorDefaultBrush}"
+                                                     Visibility="{x:Bind ViewModel.IsBatteryProfileDraft, Mode=OneWay}"
+                                                     ToolTipService.ToolTip="Unsaved changes"
+                                                     AutomationProperties.Name="Unsaved changes" />
+                                        </StackPanel>
                                         <Border HorizontalAlignment="Right"
                                                 VerticalAlignment="Center"
                                                 CornerRadius="10"
@@ -565,7 +587,18 @@
                                     Style="{StaticResource CardStyle}">
                                 <StackPanel Spacing="8">
                                     <Grid>
-                                        <TextBlock Text="USB-C" Style="{StaticResource SectionHeaderStyle}" Margin="0" />
+                                        <StackPanel Orientation="Horizontal" Spacing="8">
+                                            <TextBlock Text="USB-C"
+                                                       Style="{StaticResource SectionHeaderStyle}"
+                                                       Margin="0" />
+                                            <Ellipse Width="7"
+                                                     Height="7"
+                                                     VerticalAlignment="Center"
+                                                     Fill="{ThemeResource AccentFillColorDefaultBrush}"
+                                                     Visibility="{x:Bind ViewModel.IsUsbCProfileDraft, Mode=OneWay}"
+                                                     ToolTipService.ToolTip="Unsaved changes"
+                                                     AutomationProperties.Name="Unsaved changes" />
+                                        </StackPanel>
                                         <Border HorizontalAlignment="Right"
                                                 VerticalAlignment="Center"
                                                 CornerRadius="10"
@@ -589,37 +622,27 @@
 
                         <Border Style="{StaticResource CardStyle}"
                                 Visibility="{x:Bind ViewModel.HasActiveProfileDraft, Mode=OneWay}">
-                            <StackPanel Spacing="16">
-                                <StackPanel Spacing="4">
-                                    <StackPanel Orientation="Horizontal" Spacing="8">
+                            <Grid ColumnSpacing="20">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <StackPanel Orientation="Horizontal"
+                                            Spacing="8"
+                                            VerticalAlignment="Center">
                                         <Ellipse Width="8"
                                                  Height="8"
                                                  VerticalAlignment="Center"
                                                  Fill="{ThemeResource AccentFillColorDefaultBrush}" />
-                                        <TextBlock Text="Unsaved changes"
+                                        <TextBlock Text="{x:Bind ViewModel.ActiveProfileDraftName, Mode=OneWay}"
                                                    Style="{StaticResource CardTitleStyle}" />
-                                    </StackPanel>
-                                    <TextBlock Text="{x:Bind ViewModel.ActiveProfileDraftName, Mode=OneWay}"
+                                        <TextBlock Text="has unsaved changes"
                                                Style="{StaticResource SecondaryTextStyle}" />
                                 </StackPanel>
-                                <Grid ColumnSpacing="28">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="*" />
-                                        <ColumnDefinition Width="*" />
-                                    </Grid.ColumnDefinitions>
-                                    <StackPanel Spacing="5">
-                                        <TextBlock Text="Saved profile" Style="{StaticResource CardTitleStyle}" />
-                                        <TextBlock Text="{x:Bind ViewModel.SavedActiveProfileSummary, Mode=OneWay}"
-                                                   Style="{StaticResource SecondaryTextStyle}" />
-                                    </StackPanel>
-                                    <StackPanel Grid.Column="1" Spacing="5">
-                                        <TextBlock Text="Pending profile" Style="{StaticResource CardTitleStyle}" />
-                                        <TextBlock Text="{x:Bind ViewModel.PendingActiveProfileSummary, Mode=OneWay}"
-                                                   Style="{StaticResource SecondaryTextStyle}" />
-                                    </StackPanel>
-                                </Grid>
-                                <StackPanel Orientation="Horizontal"
+                                <StackPanel Grid.Column="1"
+                                            Orientation="Horizontal"
                                             HorizontalAlignment="Right"
+                                            VerticalAlignment="Center"
                                             Spacing="8">
                                     <Button Content="Discard"
                                             Command="{x:Bind ViewModel.DiscardProfileDraftCommand}" />
@@ -627,7 +650,7 @@
                                             Style="{StaticResource AccentButtonStyle}"
                                             Command="{x:Bind ViewModel.SaveProfilesCommand}" />
                                 </StackPanel>
-                            </StackPanel>
+                            </Grid>
                         </Border>
                     </StackPanel>
                 </ScrollView>

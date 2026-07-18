@@ -21,15 +21,19 @@ public sealed class WinUiShellContractTests
     }
 
     [Fact]
-    public void ProfilesPageUsesReadOnlySummariesAndOneCurrentDraftReview()
+    public void ProfilesPageUsesReadOnlySummariesAndCompactCurrentDraftActions()
     {
         string xaml = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml");
 
         Assert.Contains("ViewModel.PluggedInProfileThermalSummary", xaml, StringComparison.Ordinal);
         Assert.Contains("ViewModel.BatteryProfileLightingSummary", xaml, StringComparison.Ordinal);
         Assert.Contains("ViewModel.UsbCProfileDisplaySummary", xaml, StringComparison.Ordinal);
-        Assert.Contains("ViewModel.SavedActiveProfileSummary", xaml, StringComparison.Ordinal);
-        Assert.Contains("ViewModel.PendingActiveProfileSummary", xaml, StringComparison.Ordinal);
+        Assert.Contains("ViewModel.IsPluggedInProfileDraft", xaml, StringComparison.Ordinal);
+        Assert.Contains("ViewModel.IsBatteryProfileDraft", xaml, StringComparison.Ordinal);
+        Assert.Contains("ViewModel.IsUsbCProfileDraft", xaml, StringComparison.Ordinal);
+        Assert.Contains("has unsaved changes", xaml, StringComparison.Ordinal);
+        Assert.DoesNotContain("ViewModel.SavedActiveProfileSummary", xaml, StringComparison.Ordinal);
+        Assert.DoesNotContain("ViewModel.PendingActiveProfileSummary", xaml, StringComparison.Ordinal);
         Assert.Contains("ViewModel.DiscardProfileDraftCommand", xaml, StringComparison.Ordinal);
         Assert.Contains("Content=\"Save changes\"", xaml, StringComparison.Ordinal);
         Assert.Contains("ToolTipService.ToolTip=\"Unsaved changes\"", xaml, StringComparison.Ordinal);

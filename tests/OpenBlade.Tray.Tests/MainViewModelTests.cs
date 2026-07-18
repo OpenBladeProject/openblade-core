@@ -200,10 +200,16 @@ public sealed class MainViewModelTests
 
         Assert.True(viewModel.HasActiveProfileDraft);
         Assert.True(viewModel.HasUnsavedProfileChanges);
+        Assert.True(viewModel.IsPluggedInProfileDraft);
+        Assert.False(viewModel.IsBatteryProfileDraft);
+        Assert.False(viewModel.IsUsbCProfileDraft);
         Assert.Equal("Plugged in", viewModel.ActiveProfileDraftName);
         Assert.Contains("Performance", viewModel.PendingActiveProfileSummary);
         Assert.Contains("Static", viewModel.PendingActiveProfileSummary);
         Assert.Contains("drr-48-240", viewModel.PendingActiveProfileSummary);
+        Assert.Contains("Performance", viewModel.PluggedInProfileThermalSummary);
+        Assert.Contains("Static", viewModel.PluggedInProfileLightingSummary);
+        Assert.Contains("drr-48-240", viewModel.PluggedInProfileDisplaySummary);
         Assert.Equal(original.Profiles, viewModel.Profiles);
         Assert.Equal(
             OverrideLifetime.UntilPowerSourceChange,
@@ -227,6 +233,8 @@ public sealed class MainViewModelTests
         Assert.Null(client.LightingOverride);
         Assert.False(viewModel.HasActiveProfileDraft);
         Assert.False(viewModel.HasUnsavedProfileChanges);
+        Assert.False(viewModel.IsPluggedInProfileDraft);
+        Assert.Contains("Performance", viewModel.PluggedInProfileThermalSummary);
     }
 
     [Fact]

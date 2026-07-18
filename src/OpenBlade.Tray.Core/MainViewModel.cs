@@ -1162,32 +1162,41 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
 
     public bool HasActiveProfileDraft => activeProfileDraftSource is not null;
 
+    public bool IsPluggedInProfileDraft =>
+        activeProfileDraftSource == PowerSource.PluggedIn;
+
+    public bool IsBatteryProfileDraft =>
+        activeProfileDraftSource == PowerSource.Battery;
+
+    public bool IsUsbCProfileDraft =>
+        activeProfileDraftSource == PowerSource.UsbC;
+
     public string PluggedInProfileThermalSummary =>
-        FormatThermalProfile(Profiles.PluggedIn);
+        FormatThermalProfile(GetPresentedProfile(PowerSource.PluggedIn));
 
     public string PluggedInProfileLightingSummary =>
-        FormatLightingProfile(Profiles.PluggedIn.Lighting);
+        FormatLightingProfile(GetPresentedProfile(PowerSource.PluggedIn).Lighting);
 
     public string PluggedInProfileDisplaySummary =>
-        FormatDisplayProfile(Profiles.PluggedIn.Display);
+        FormatDisplayProfile(GetPresentedProfile(PowerSource.PluggedIn).Display);
 
     public string BatteryProfileThermalSummary =>
-        FormatThermalProfile(Profiles.Battery);
+        FormatThermalProfile(GetPresentedProfile(PowerSource.Battery));
 
     public string BatteryProfileLightingSummary =>
-        FormatLightingProfile(Profiles.Battery.Lighting);
+        FormatLightingProfile(GetPresentedProfile(PowerSource.Battery).Lighting);
 
     public string BatteryProfileDisplaySummary =>
-        FormatDisplayProfile(Profiles.Battery.Display);
+        FormatDisplayProfile(GetPresentedProfile(PowerSource.Battery).Display);
 
     public string UsbCProfileThermalSummary =>
-        FormatThermalProfile(Profiles.UsbC);
+        FormatThermalProfile(GetPresentedProfile(PowerSource.UsbC));
 
     public string UsbCProfileLightingSummary =>
-        FormatLightingProfile(Profiles.UsbC.Lighting);
+        FormatLightingProfile(GetPresentedProfile(PowerSource.UsbC).Lighting);
 
     public string UsbCProfileDisplaySummary =>
-        FormatDisplayProfile(Profiles.UsbC.Display);
+        FormatDisplayProfile(GetPresentedProfile(PowerSource.UsbC).Display);
 
     public DisplayProfileSettings ActiveSavedDisplayProfile =>
         ActivePowerSource is PowerSource.PluggedIn or PowerSource.Battery or PowerSource.UsbC
@@ -2985,6 +2994,11 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         _ => throw new ArgumentOutOfRangeException(nameof(source)),
     };
 
+    private PowerProfile GetPresentedProfile(PowerSource source) =>
+        activeProfileDraftSource == source
+            ? GetActiveProfileDraft() ?? GetProfile(source)
+            : GetProfile(source);
+
     private PowerProfile? GetActiveProfileDraft()
     {
         if (activeProfileDraftSource is not { } source)
@@ -3124,6 +3138,9 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     private void NotifyActiveProfileDraft()
     {
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasActiveProfileDraft)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsPluggedInProfileDraft)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsBatteryProfileDraft)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsUsbCProfileDraft)));
         PropertyChanged?.Invoke(
             this,
             new PropertyChangedEventArgs(nameof(HasUnsavedProfileChanges)));
@@ -3134,6 +3151,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         PropertyChanged?.Invoke(
             this,
             new PropertyChangedEventArgs(nameof(PendingActiveProfileSummary)));
+        NotifyProfileSummaries();
         NotifyCommands();
     }
 
