@@ -489,8 +489,7 @@ internal sealed class ProductionLightingPort : IProductionLightingPort
                 } => Pid02E0BreathingEffect.Dual(Color(primary), Color(secondary)),
             BreathingLightingParameters { ColorMode: BreathingColorMode.Random } =>
                 Pid02E0BreathingEffect.Random(
-                    new Pid02E0SeededRandomColorSource(
-                        unchecked((ulong)timeProvider.GetTimestamp()))),
+                    new Pid02E0RandomPaletteColorSource()),
             ReactiveLightingParameters value => new Pid02E0ReactiveEffect(
                 Color(value.Color),
                 ReactiveFadeDuration(value.Duration)),

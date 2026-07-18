@@ -1,3 +1,4 @@
+using System.Text.Json;
 using OpenBlade.Protocol;
 
 namespace OpenBlade.Protocol.Tests;
@@ -12,7 +13,7 @@ public sealed class Pid02E0LightingEffectsTests
         Assert.Equal(TimeSpan.FromMilliseconds(50), Pid02E0LightingTiming.AnimatedFrameInterval);
         Assert.Equal(TimeSpan.FromSeconds(5), Pid02E0LightingTiming.IdleKeepaliveInterval);
         Assert.Equal(TimeSpan.FromSeconds(1), Pid02E0LightingTiming.BreathingPlateauStreamDuration);
-        Assert.Equal(TimeSpan.FromSeconds(40), Pid02E0LightingTiming.SpectrumCycle);
+        Assert.Equal(TimeSpan.FromMilliseconds(37_708.802), Pid02E0LightingTiming.SpectrumCycle);
         Assert.Equal(TimeSpan.FromSeconds(7), Pid02E0LightingTiming.BreathingCycle);
         Assert.Equal(20, 1 / Pid02E0LightingTiming.AnimatedFrameInterval.TotalSeconds);
     }
@@ -34,27 +35,42 @@ public sealed class Pid02E0LightingEffectsTests
     }
 
     [Theory]
-    [InlineData(0, 255, 0, 0)]
-    [InlineData(5, 255, 191, 0)]
-    [InlineData(10, 128, 255, 0)]
-    [InlineData(20, 0, 255, 255)]
-    [InlineData(30, 128, 0, 255)]
-    [InlineData(40, 255, 0, 0)]
-    public void Spectrum_TraversesOneUniformHsvCycleInFortySeconds(
-        int seconds,
+    [InlineData(0.00, 0xFF, 0x10, 0x10)]
+    [InlineData(0.10, 0xFF, 0x7E, 0x00)]
+    [InlineData(0.34, 0x00, 0xFF, 0xFF)]
+    [InlineData(0.50, 0x18, 0x58, 0xFF)]
+    [InlineData(0.60, 0x1F, 0x55, 0xFF)]
+    [InlineData(0.84, 0xFF, 0x17, 0xE7)]
+    [InlineData(1.00, 0xFF, 0x10, 0x10)]
+    public void Spectrum_FollowsCapturedThreeRunAverageCurve(
+        double phase,
         byte red,
         byte green,
         byte blue)
     {
         var effect = new Pid02E0SpectrumEffect();
+        TimeSpan elapsed = TimeSpan.FromTicks(
+            (long)Math.Round(Pid02E0LightingTiming.SpectrumCycle.Ticks * phase));
 
-        Pid02E0MatrixFrame frame = effect.RenderFrame(TimeSpan.FromSeconds(seconds));
+        Pid02E0MatrixFrame frame = effect.RenderFrame(elapsed);
 
         Assert.Equal(
             Pid02E0LightingTiming.AnimatedFrameInterval,
-            effect.GetNextFrameDelay(TimeSpan.FromSeconds(seconds)));
+            effect.GetNextFrameDelay(elapsed));
         Assert.Equal(new MatrixRgb(red, green, blue), frame[1]);
         AssertUniform(frame, new MatrixRgb(red, green, blue));
+    }
+
+    [Fact]
+    public void Spectrum_InterpolatesBetweenCapturedAnchors()
+    {
+        var effect = new Pid02E0SpectrumEffect();
+        TimeSpan onePercent = TimeSpan.FromTicks(
+            Pid02E0LightingTiming.SpectrumCycle.Ticks / 100);
+
+        Assert.Equal(
+            new MatrixRgb(0xFF, 0x1A, 0x0E),
+            effect.RenderFrame(onePercent)[1]);
     }
 
     [Theory]
@@ -125,21 +141,75 @@ public sealed class Pid02E0LightingEffectsTests
     }
 
     [Fact]
-    public void SeededRandomColorSource_IsDeterministicAndCycleSpecific()
+    public void RandomPaletteColorSource_UsesCapturedPaletteAndKeepsEachCycleStable()
     {
-        var first = new Pid02E0SeededRandomColorSource(12345);
-        var second = new Pid02E0SeededRandomColorSource(12345);
+        int[] selectedIndices = [0, 0, 23];
+        int nextSelection = 0;
+        var source = new Pid02E0RandomPaletteColorSource(
+            _ => selectedIndices[nextSelection++]);
 
-        MatrixRgb[] firstPass = Enumerable.Range(0, 4)
-            .Select(index => first.ColorForCycle(index))
-            .ToArray();
-        MatrixRgb[] secondPass = Enumerable.Range(0, 4)
-            .Select(index => second.ColorForCycle(index))
-            .ToArray();
+        MatrixRgb cycleZero = source.ColorForCycle(0);
+        MatrixRgb cycleZeroAgain = source.ColorForCycle(0);
+        MatrixRgb cycleOne = source.ColorForCycle(1);
+        MatrixRgb cycleTwo = source.ColorForCycle(2);
 
-        Assert.Equal(firstPass, secondPass);
-        Assert.True(firstPass.Distinct().Count() > 1);
-        Assert.All(firstPass, color => Assert.Equal(255, Math.Max(color.Red, Math.Max(color.Green, color.Blue))));
+        Assert.Equal(new MatrixRgb(0x00, 0x00, 0x80), cycleZero);
+        Assert.Equal(cycleZero, cycleZeroAgain);
+        Assert.Equal(cycleZero, cycleOne);
+        Assert.Equal(new MatrixRgb(0xFF, 0xFF, 0x80), cycleTwo);
+        Assert.Equal(3, nextSelection);
+
+        IReadOnlyList<MatrixRgb> palette = Pid02E0RandomPaletteColorSource.CapturedPalette;
+        Assert.Equal(24, palette.Count);
+        Assert.Equal(24, palette.Distinct().Count());
+        Assert.DoesNotContain(MatrixRgb.Black, palette);
+        Assert.DoesNotContain(new MatrixRgb(0x80, 0x80, 0x80), palette);
+        Assert.DoesNotContain(new MatrixRgb(0xFF, 0xFF, 0xFF), palette);
+        Assert.All(
+            palette.SelectMany(color => new[] { color.Red, color.Green, color.Blue }),
+            channel => Assert.Contains(channel, new byte[] { 0x00, 0x80, 0xFF }));
+    }
+
+    [Fact]
+    public void SpectrumAndRandomBreathingFixture_PinsProductionOracleMeasurements()
+    {
+        using JsonDocument document = JsonDocument.Parse(File.ReadAllText(RepositoryFile(
+            "captures",
+            "decoded",
+            "rz09-0581-pid-02e0-bios-3.01-lighting-spectrum-random-oracle-summary.json")));
+        JsonElement root = document.RootElement;
+        JsonElement spectrum = root.GetProperty("spectrum");
+        JsonElement random = root.GetProperty("randomBreathing");
+
+        Assert.Equal(
+            "D0186AB4A14DBFAF9ABCE91BC39F30A05CF51E6D35C6AAD137D3DB6C8BAF7628",
+            root.GetProperty("sourceCapture").GetProperty("sha256").GetString());
+        Assert.Equal(3, spectrum.GetProperty("completeCycleCount").GetInt32());
+        Assert.Equal(
+            Pid02E0LightingTiming.SpectrumCycle.TotalMilliseconds,
+            spectrum.GetProperty("meanPeriodMilliseconds").GetDouble(),
+            precision: 3);
+        Assert.Equal(256, random.GetProperty("boundedCycleCount").GetInt32());
+        Assert.Equal(12, random.GetProperty("consecutiveRepeatedPlateauCount").GetInt32());
+
+        var effect = new Pid02E0SpectrumEffect();
+        MatrixRgb[] expectedAnchors = spectrum.GetProperty("anchorsRgbHex")
+            .EnumerateArray()
+            .Select(value => ParseRgb(value.GetString()!))
+            .ToArray();
+        Assert.Equal(51, expectedAnchors.Length);
+        for (int index = 0; index < expectedAnchors.Length; index++)
+        {
+            TimeSpan elapsed = TimeSpan.FromTicks(
+                (long)Math.Round(Pid02E0LightingTiming.SpectrumCycle.Ticks * (index / 50.0)));
+            Assert.Equal(expectedAnchors[index], effect.RenderFrame(elapsed)[1]);
+        }
+
+        MatrixRgb[] expectedPalette = random.GetProperty("paletteRgbHex")
+            .EnumerateArray()
+            .Select(value => ParseRgb(value.GetString()!))
+            .ToArray();
+        Assert.Equal(Pid02E0RandomPaletteColorSource.CapturedPalette, expectedPalette);
     }
 
     [Fact]
@@ -237,6 +307,29 @@ public sealed class Pid02E0LightingEffectsTests
     {
         Assert.All(Pid02E0MatrixLayout.CapturedHoleSlots,
             slot => Assert.Equal(MatrixRgb.Black, frame[slot]));
+    }
+
+    private static MatrixRgb ParseRgb(string hex) => new(
+        Convert.ToByte(hex[..2], 16),
+        Convert.ToByte(hex.Substring(2, 2), 16),
+        Convert.ToByte(hex.Substring(4, 2), 16));
+
+    private static string RepositoryFile(params string[] relativeSegments)
+    {
+        DirectoryInfo? directory = new(AppContext.BaseDirectory);
+        while (directory is not null)
+        {
+            string candidate = Path.Combine([directory.FullName, .. relativeSegments]);
+            if (File.Exists(candidate))
+            {
+                return candidate;
+            }
+
+            directory = directory.Parent;
+        }
+
+        throw new FileNotFoundException(
+            $"Could not locate repository file {Path.Combine(relativeSegments)}.");
     }
 
     private sealed class RecordingColorSource : IPid02E0RandomColorSource

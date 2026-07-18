@@ -17,7 +17,9 @@ internal static class Pid02E0LightingTiming
     internal static readonly TimeSpan AnimatedFrameInterval = TimeSpan.FromMilliseconds(50);
     internal static readonly TimeSpan IdleKeepaliveInterval = TimeSpan.FromSeconds(5);
     internal static readonly TimeSpan BreathingPlateauStreamDuration = TimeSpan.FromSeconds(1);
-    internal static readonly TimeSpan SpectrumCycle = TimeSpan.FromSeconds(40);
+    // Mean of three complete Synapse cycles captured on RZ09-0581/PID 02E0:
+    // 37,716.720 ms, 37,685.435 ms, and 37,724.251 ms.
+    internal static readonly TimeSpan SpectrumCycle = TimeSpan.FromMilliseconds(37_708.802);
     internal static readonly TimeSpan BreathingCycle = TimeSpan.FromSeconds(7);
 }
 
@@ -59,7 +61,7 @@ internal sealed class Pid02E0SpectrumEffect : IPid02E0LightingEffect
         Pid02E0LightingMath.ThrowIfNegative(elapsed);
         double phase = Pid02E0LightingMath.CyclePhase(elapsed, cycleDuration);
         return Pid02E0MatrixRenderers.RenderSpectrumSample(
-            Pid02E0LightingMath.HueToRgb(phase));
+            Pid02E0LightingMath.SpectrumColor(phase));
     }
 }
 
@@ -81,11 +83,56 @@ internal interface IPid02E0RandomColorSource
 }
 
 /// <summary>
-/// Deterministic full-brightness hue source. A production caller can seed one
-/// instance randomly; tests can use a fixed seed or a small fake.
+/// Selects independently from the 24-color palette observed across 256
+/// bounded Synapse Random Breathing cycles. A selected color remains stable
+/// for its cycle, including when a frame is retried.
 /// </summary>
-internal sealed class Pid02E0SeededRandomColorSource(ulong seed) : IPid02E0RandomColorSource
+internal sealed class Pid02E0RandomPaletteColorSource : IPid02E0RandomColorSource
 {
+    private static readonly MatrixRgb[] Palette =
+    [
+        new(0x00, 0x00, 0x80),
+        new(0x00, 0x00, 0xFF),
+        new(0x00, 0x80, 0x00),
+        new(0x00, 0x80, 0x80),
+        new(0x00, 0x80, 0xFF),
+        new(0x00, 0xFF, 0x00),
+        new(0x00, 0xFF, 0x80),
+        new(0x00, 0xFF, 0xFF),
+        new(0x80, 0x00, 0x00),
+        new(0x80, 0x00, 0x80),
+        new(0x80, 0x00, 0xFF),
+        new(0x80, 0x80, 0x00),
+        new(0x80, 0x80, 0xFF),
+        new(0x80, 0xFF, 0x00),
+        new(0x80, 0xFF, 0x80),
+        new(0x80, 0xFF, 0xFF),
+        new(0xFF, 0x00, 0x00),
+        new(0xFF, 0x00, 0x80),
+        new(0xFF, 0x00, 0xFF),
+        new(0xFF, 0x80, 0x00),
+        new(0xFF, 0x80, 0x80),
+        new(0xFF, 0x80, 0xFF),
+        new(0xFF, 0xFF, 0x00),
+        new(0xFF, 0xFF, 0x80),
+    ];
+
+    private readonly Func<int, int> selectIndex;
+    private long? selectedCycle;
+    private MatrixRgb selectedColor;
+
+    internal Pid02E0RandomPaletteColorSource()
+        : this(System.Security.Cryptography.RandomNumberGenerator.GetInt32)
+    {
+    }
+
+    internal Pid02E0RandomPaletteColorSource(Func<int, int> selectIndex)
+    {
+        this.selectIndex = selectIndex ?? throw new ArgumentNullException(nameof(selectIndex));
+    }
+
+    internal static IReadOnlyList<MatrixRgb> CapturedPalette => Palette;
+
     public MatrixRgb ColorForCycle(long cycleIndex)
     {
         if (cycleIndex < 0)
@@ -93,14 +140,21 @@ internal sealed class Pid02E0SeededRandomColorSource(ulong seed) : IPid02E0Rando
             throw new ArgumentOutOfRangeException(nameof(cycleIndex));
         }
 
-        ulong value = unchecked(seed + ((ulong)cycleIndex * 0x9E3779B97F4A7C15UL));
-        value += 0x9E3779B97F4A7C15UL;
-        value = (value ^ (value >> 30)) * 0xBF58476D1CE4E5B9UL;
-        value = (value ^ (value >> 27)) * 0x94D049BB133111EBUL;
-        value ^= value >> 31;
+        if (selectedCycle == cycleIndex)
+        {
+            return selectedColor;
+        }
 
-        double hue = (value >> 11) * (1.0 / (1UL << 53));
-        return Pid02E0LightingMath.HueToRgb(hue);
+        int index = selectIndex(Palette.Length);
+        if ((uint)index >= Palette.Length)
+        {
+            throw new InvalidOperationException(
+                $"The random palette selector returned invalid index {index}.");
+        }
+
+        selectedCycle = cycleIndex;
+        selectedColor = Palette[index];
+        return selectedColor;
     }
 }
 
@@ -262,6 +316,64 @@ internal sealed class Pid02E0ReactiveEffect : IPid02E0LightingEffect
 
 internal static class Pid02E0LightingMath
 {
+    // RGB anchors sampled every 2% of one complete cycle and averaged across
+    // three independent Synapse oracle runs. The repeated blue anchors retain
+    // the measured #1858FF hold that a conventional HSV wheel cannot model.
+    private static readonly MatrixRgb[] SpectrumAnchors =
+    [
+        new(0xFF, 0x10, 0x10),
+        new(0xFF, 0x25, 0x0C),
+        new(0xFF, 0x3B, 0x09),
+        new(0xFF, 0x52, 0x06),
+        new(0xFF, 0x68, 0x03),
+        new(0xFF, 0x7E, 0x00),
+        new(0xFA, 0xA1, 0x00),
+        new(0xF6, 0xC7, 0x00),
+        new(0xF1, 0xEC, 0x00),
+        new(0xED, 0xFF, 0x00),
+        new(0xE8, 0xFF, 0x00),
+        new(0xE3, 0xFF, 0x00),
+        new(0xDF, 0xFF, 0x00),
+        new(0xA4, 0xFF, 0x00),
+        new(0x63, 0xFF, 0x00),
+        new(0x21, 0xFF, 0x00),
+        new(0x00, 0xFF, 0x4E),
+        new(0x00, 0xFF, 0xFF),
+        new(0x03, 0xE4, 0xFF),
+        new(0x07, 0xC8, 0xFF),
+        new(0x0B, 0xAC, 0xFF),
+        new(0x0F, 0x90, 0xFF),
+        new(0x13, 0x74, 0xFF),
+        new(0x18, 0x58, 0xFF),
+        new(0x18, 0x58, 0xFF),
+        new(0x18, 0x58, 0xFF),
+        new(0x18, 0x58, 0xFF),
+        new(0x18, 0x58, 0xFF),
+        new(0x19, 0x57, 0xFF),
+        new(0x19, 0x57, 0xFF),
+        new(0x1F, 0x55, 0xFF),
+        new(0x34, 0x50, 0xFF),
+        new(0x49, 0x4A, 0xFF),
+        new(0x5C, 0x45, 0xFF),
+        new(0x70, 0x3F, 0xFF),
+        new(0x85, 0x39, 0xFF),
+        new(0x99, 0x34, 0xFF),
+        new(0xAC, 0x2E, 0xFF),
+        new(0xC1, 0x29, 0xFF),
+        new(0xD6, 0x23, 0xFF),
+        new(0xEA, 0x1D, 0xFF),
+        new(0xFD, 0x18, 0xFF),
+        new(0xFF, 0x17, 0xE7),
+        new(0xFF, 0x16, 0xCB),
+        new(0xFF, 0x15, 0xB1),
+        new(0xFF, 0x14, 0x95),
+        new(0xFF, 0x13, 0x7B),
+        new(0xFF, 0x12, 0x60),
+        new(0xFF, 0x11, 0x46),
+        new(0xFF, 0x10, 0x2B),
+        new(0xFF, 0x10, 0x10),
+    ];
+
     internal static long CycleIndex(TimeSpan elapsed, TimeSpan cycleDuration) =>
         elapsed.Ticks / cycleDuration.Ticks;
 
@@ -319,25 +431,23 @@ internal static class Pid02E0LightingMath
             + Pid02E0LightingTiming.AnimatedFrameInterval;
     }
 
-    internal static MatrixRgb HueToRgb(double hue)
+    internal static MatrixRgb SpectrumColor(double phase)
     {
-        hue -= Math.Floor(hue);
-        double scaled = hue * 6.0;
-        int sector = (int)Math.Floor(scaled);
-        double fraction = scaled - sector;
-        byte rising = ToByte(fraction * 255.0);
-        byte falling = ToByte((1.0 - fraction) * 255.0);
+        phase -= Math.Floor(phase);
+        double position = phase * (SpectrumAnchors.Length - 1);
+        int lowerIndex = (int)Math.Floor(position);
+        double fraction = position - lowerIndex;
+        MatrixRgb lower = SpectrumAnchors[lowerIndex];
+        MatrixRgb upper = SpectrumAnchors[lowerIndex + 1];
 
-        return sector switch
-        {
-            0 => new MatrixRgb(255, rising, 0),
-            1 => new MatrixRgb(falling, 255, 0),
-            2 => new MatrixRgb(0, 255, rising),
-            3 => new MatrixRgb(0, falling, 255),
-            4 => new MatrixRgb(rising, 0, 255),
-            _ => new MatrixRgb(255, 0, falling),
-        };
+        return new MatrixRgb(
+            Interpolate(lower.Red, upper.Red, fraction),
+            Interpolate(lower.Green, upper.Green, fraction),
+            Interpolate(lower.Blue, upper.Blue, fraction));
     }
+
+    private static byte Interpolate(byte from, byte to, double fraction) =>
+        ToByte(from + ((to - from) * fraction));
 
     internal static byte ToByte(double value) => checked((byte)Math.Clamp(
         Math.Round(value + 1e-9, MidpointRounding.AwayFromZero),
