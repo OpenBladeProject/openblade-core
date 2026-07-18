@@ -20,6 +20,10 @@ public sealed class ControlRequestHandlerTests
             new SetFanOverrideRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid(),
                 new ManualOverride<FanMode>(FanMode.Maximum, OverrideLifetime.UntilPowerSourceChange)),
             new SetLightingOverrideRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid(), null),
+            new PulseReactiveKeyRequest(
+                OpenBladeIpc.ProtocolVersion,
+                Guid.NewGuid(),
+                new ReactiveKeyPulse(77)),
             new SetBatteryPolicyRequest(
                 OpenBladeIpc.ProtocolVersion,
                 Guid.NewGuid(),
@@ -37,7 +41,7 @@ public sealed class ControlRequestHandlerTests
         string[] expectedCalls =
         [
             "GetStatus", "GetStatus", "UpdateProfiles", "SetPerformanceOverride",
-            "SetFanOverride", "SetLightingOverride", "SetBatteryPolicy",
+            "SetFanOverride", "SetLightingOverride", "PulseReactiveKey", "SetBatteryPolicy",
             "SetBatteryProtection", "SetFullChargeOverride", "ExportDiagnostics",
         ];
 
@@ -219,6 +223,14 @@ public sealed class ControlRequestHandlerTests
 
         public Task<ControlOperationResult> SetLightingOverrideAsync(ManualOverride<LightingSettings>? value, CancellationToken token) =>
             Record("SetLightingOverride");
+
+        public Task<ControlOperationResult> PulseReactiveKeyAsync(
+            ReactiveKeyPulse pulse,
+            CancellationToken token)
+        {
+            Assert.Equal(77, pulse.MatrixSlot);
+            return Record("PulseReactiveKey");
+        }
 
         public Task<ControlOperationResult> SetBatteryPolicyAsync(BatteryPolicy value, CancellationToken token) =>
             Record("SetBatteryPolicy");

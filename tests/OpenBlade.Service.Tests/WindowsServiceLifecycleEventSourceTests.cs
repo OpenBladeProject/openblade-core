@@ -69,12 +69,13 @@ public sealed class WindowsServiceLifecycleEventSourceTests
         backend.Publish(ServiceLifecycleTrigger.DeviceRemoved);
         backend.Publish(ServiceLifecycleTrigger.DeviceArrived);
         backend.Publish(ServiceLifecycleTrigger.Resumed);
+        backend.Publish(ServiceLifecycleTrigger.Suspending);
         backend.Publish(ServiceLifecycleTrigger.PowerChanged);
         await using IAsyncEnumerator<ServiceLifecycleTrigger> notifications =
             source.WatchAsync(CancellationToken.None).GetAsyncEnumerator();
 
         var actual = new List<ServiceLifecycleTrigger>();
-        for (int index = 0; index < 4; index++)
+        for (int index = 0; index < 5; index++)
         {
             Assert.True(await notifications.MoveNextAsync());
             actual.Add(notifications.Current);
@@ -83,11 +84,34 @@ public sealed class WindowsServiceLifecycleEventSourceTests
         Assert.Equal(
             [
                 ServiceLifecycleTrigger.PowerChanged,
+                ServiceLifecycleTrigger.Suspending,
                 ServiceLifecycleTrigger.Resumed,
                 ServiceLifecycleTrigger.DeviceArrived,
                 ServiceLifecycleTrigger.DeviceRemoved,
             ],
             actual);
+    }
+
+    [Theory]
+    [InlineData(0x0004u, ServiceLifecycleTrigger.Suspending)]
+    [InlineData(0x0007u, ServiceLifecycleTrigger.Resumed)]
+    [InlineData(0x0012u, ServiceLifecycleTrigger.Resumed)]
+    public void SuspendResumeNotification_MapsOfficialPowerBroadcastValues(
+        uint value,
+        ServiceLifecycleTrigger expected)
+    {
+        Assert.Equal(
+            expected,
+            NativeWindowsLifecycleNotificationBackend
+                .ClassifySuspendResumeNotification(value));
+    }
+
+    [Fact]
+    public void SuspendResumeNotification_IgnoresUnrelatedValues()
+    {
+        Assert.Null(
+            NativeWindowsLifecycleNotificationBackend
+                .ClassifySuspendResumeNotification(0x1234));
     }
 
     [Fact]

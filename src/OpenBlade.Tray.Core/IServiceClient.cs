@@ -41,6 +41,13 @@ public interface IServiceClient
         ManualOverride<LightingSettings>? value,
         CancellationToken token);
 
+    Task<ControlOperationResult> PulseReactiveKeyAsync(
+        ReactiveKeyPulse pulse,
+        CancellationToken token) => Task.FromResult(
+            new ControlOperationResult(
+                ControlOperationStatus.Blocked,
+                "Reactive lighting input is unavailable."));
+
     Task<ControlOperationResult> SetBatteryPolicyAsync(
         BatteryPolicy value,
         CancellationToken token);

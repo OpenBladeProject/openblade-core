@@ -124,6 +124,37 @@ public sealed class LightingCaptureReportDecoderTests
     }
 
     [Theory]
+    [InlineData(0x00, "010400", "ReferenceLogoOffCandidate")]
+    [InlineData(0x00, "010401", "ReferenceLogoOnCandidate")]
+    [InlineData(0x02, "010400", "ReferenceLogoStaticCandidate")]
+    [InlineData(0x02, "010402", "ReferenceLogoBreathingCandidate")]
+    public void Decoder_ClassifiesExactReferenceLogoShapes(
+        byte commandId,
+        string payloadHex,
+        string expected)
+    {
+        Assert.True(LightingCaptureReportDecoder.TryDecode(
+            Report(0x00, commandId, Convert.FromHexString(payloadHex)),
+            out var decoded));
+        Assert.Equal(expected, decoded.Semantic.ToString());
+        Assert.False(decoded.IsIndependentBrightnessReadback);
+    }
+
+    [Theory]
+    [InlineData(0x00, "010402")]
+    [InlineData(0x02, "010401")]
+    [InlineData(0x02, "000402")]
+    public void Decoder_LeavesUnrecognizedReferenceLogoShapesUnknown(
+        byte commandId,
+        string payloadHex)
+    {
+        Assert.True(LightingCaptureReportDecoder.TryDecode(
+            Report(0x00, commandId, Convert.FromHexString(payloadHex)),
+            out var decoded));
+        Assert.Equal(LightingCaptureSemantic.UnknownLightingCommand, decoded.Semantic);
+    }
+
+    [Theory]
     [InlineData(0)]
     [InlineData(2)]
     [InlineData(3)]

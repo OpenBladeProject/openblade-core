@@ -27,4 +27,15 @@ public interface IBladeDevice
     Task SetTemporaryFullChargeAsync(bool enabled, CancellationToken cancellationToken);
 
     Task SetLightingAsync(LightingSettings value, CancellationToken cancellationToken);
+
+    Task<LightingRendererOwnershipState> ReadLightingRendererOwnershipAsync(
+        CancellationToken cancellationToken) =>
+        Task.FromResult(LightingRendererOwnershipState.None);
+
+    Task PulseReactiveKeyAsync(
+        ReactiveKeyPulse pulse,
+        CancellationToken cancellationToken) => Task.FromException(
+            new BladeWriteException(
+                WriteSubmissionState.KnownNotApplied,
+                "Reactive lighting input is unavailable."));
 }

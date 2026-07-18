@@ -47,4 +47,14 @@ public sealed class LightingBrightnessProtocolTests
     {
         Assert.Equal(expectedPercent, new LightingBrightnessReading(raw).Percent);
     }
+
+    [Theory]
+    [InlineData(0, 0x00)]
+    [InlineData(77, 0xC5)]
+    [InlineData(80, 0xCC)]
+    [InlineData(100, 0xFF)]
+    public void PercentToRaw_MatchesCapturedCeilingConversion(byte percent, byte expectedRaw)
+    {
+        Assert.Equal(expectedRaw, LightingBrightnessProtocol.PercentToRaw(percent));
+    }
 }

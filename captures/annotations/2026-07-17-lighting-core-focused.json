@@ -1,0 +1,142 @@
+{
+  "schemaVersion": 1,
+  "evidenceProvenance": {
+    "controller": "Razer Synapse",
+    "role": "OracleCapture",
+    "openBladeTypedApplyPerformed": false,
+    "openBladeVisualParityConfirmed": false,
+    "note": "Visual confirmations describe the Synapse action and Synapse restoration, not an OpenBlade apply/readback/restore run."
+  },
+  "capturedAtUtc": "2026-07-18T06:58:06.876999Z",
+  "device": {
+    "model": "Razer Blade 16 (2026)",
+    "modelNumber": "RZ09-0581",
+    "vendorIdHex": "1532",
+    "productIdHex": "02E0",
+    "bios": "3.01",
+    "usbPcapRoot": "USBPcap3",
+    "usbDeviceAddress": 2
+  },
+  "capture": {
+    "sanitizedFileName": "lighting-core-focused.pcap",
+    "sha256": "F05E233135E3A2AB87688EF08C282DA6949F0B32FA9CC0F486ABE823F532D314",
+    "byteLength": 1585577,
+    "packetCount": 10720,
+    "durationSeconds": 535.257527,
+    "rawCaptureCommitted": false,
+    "stopMode": "Graceful",
+    "captureProcessId": 26520,
+    "captureProcessGroupId": 26520,
+    "serviceRestored": true
+  },
+  "baseline": {
+    "effect": "Ambient Awareness",
+    "brightnessPercent": 77,
+    "logoEffect": "Static",
+    "startupAnimation": true,
+    "displayOffRule": false,
+    "idleRule": false
+  },
+  "actions": [
+    {
+      "action": "Select Spectrum Cycling",
+      "inputAtUtc": "2026-07-18T07:02:38.636Z",
+      "relativeSecondsApprox": 271.759,
+      "transitionFrames": [4131, 4137, 4141, 4147],
+      "visuallyConfirmed": true
+    },
+    {
+      "action": "Select Breathing, single green color",
+      "inputAtUtc": "2026-07-18T07:03:28.418Z",
+      "relativeSecondsApprox": 321.541,
+      "transitionFrames": [6701, 6707, 6713],
+      "visuallyConfirmed": true
+    },
+    {
+      "action": "Select Reactive, green, medium duration",
+      "inputAtUtc": "2026-07-18T07:03:59.934Z",
+      "relativeSecondsApprox": 353.057,
+      "transitionFrames": [8089, 8096, 8101],
+      "visuallyConfirmed": true
+    },
+    {
+      "action": "Inject Windows key A",
+      "inputAtUtc": "2026-07-18T07:04:07.916Z",
+      "relativeSecondsApprox": 361.039,
+      "matrixReaction": "None"
+    },
+    {
+      "action": "Inject Windows key M",
+      "inputAtUtc": "2026-07-18T07:04:08.449Z",
+      "relativeSecondsApprox": 361.572,
+      "matrixReaction": "None"
+    },
+    {
+      "action": "Select Static, green",
+      "inputAtUtc": "2026-07-18T07:04:24.087Z",
+      "relativeSecondsApprox": 377.210,
+      "transitionFrames": [8527, 8531, 8535],
+      "visuallyConfirmed": true
+    },
+    {
+      "action": "Set brightness Off",
+      "inputAtUtc": "2026-07-18T07:04:45.022Z",
+      "relativeSecondsApprox": 398.145,
+      "setterFrame": 8937,
+      "setterPayloadHex": "010500",
+      "visuallyConfirmed": true
+    },
+    {
+      "action": "Restore brightness to 77 percent",
+      "inputAtUtc": "2026-07-18T07:04:54.403Z",
+      "relativeSecondsApprox": 407.526,
+      "setterFrames": [9049, 9053, 9057],
+      "finalSetterPayloadHex": "0105C5",
+      "visuallyConfirmed": true
+    },
+    {
+      "action": "Restore Ambient Awareness",
+      "inputAtUtc": "2026-07-18T07:05:54.767Z",
+      "relativeSecondsApprox": 467.890,
+      "transitionFrames": [9757, 9761, 9765],
+      "visuallyConfirmed": true
+    }
+  ],
+  "decodedEvidence": {
+    "matrixReportCount": 2295,
+    "matrixCommand": "03/0B",
+    "matrixEnvelopeBytes": 374,
+    "matrixSlotCount": 102,
+    "spectrumObservedFrameIntervalMillisecondsMean": 51.648,
+    "spectrumHueCyclePeriodSecondsApprox": 40,
+    "breathingPeakToPeakSecondsApprox": 7,
+    "breathingTroughToTroughSecondsApprox": 7,
+    "breathingWaveform": "four-quarter-trapezoid",
+    "breathingQuarterSeconds": 1.75,
+    "breathingPhaseOrder": ["black-hold", "linear-rise", "full-color-hold", "linear-fall"],
+    "breathingRampRegressionIntensityUnitsPerSecondRange": [145.1, 148.9],
+    "breathingRampRegressionR2Range": [0.9980, 0.9997],
+    "breathingPlateauRepeatedFrameSecondsApprox": 1,
+    "breathingLatePlateauMatrixGapSecondsObservedRange": [0.792, 0.876],
+    "reactiveTransitionFadeReachedBlackAtRelativeSecondsApprox": 356.22,
+    "reactiveInjectedKeyWindowStartRelativeSeconds": 359,
+    "reactiveInjectedKeyWindowEndRelativeSeconds": 365,
+    "reactiveInjectedKeyWindowNonBlackFrames": 0,
+    "brightnessOffRawHex": "00",
+    "brightness77RawHex": "C5"
+  },
+  "restoration": {
+    "effect": "Ambient Awareness",
+    "brightnessPercent": 77,
+    "visuallyConfirmed": true,
+    "openBladeServiceRunning": true
+  },
+  "notes": [
+    "The raw PCAP remains outside the repository; only hashes, timestamps, decoded commands, and bounded observations are committed.",
+    "The shared 00/86, 00/84, and 03/0A 0500 transition is followed by host-rendered 03/0B matrix frames.",
+    "Steady Breathing is not sinusoidal. After excluding the effect-selection transition, its seven-second cycle consists of four equal 1.75-second quarters: black hold, linear rise, full-color hold, and linear fall.",
+    "Synapse repeats unchanged plateau frames at about 20 Hz for approximately the first second, then suppresses redundant matrix reports for the remaining approximately 0.75 seconds before resuming on the next ramp.",
+    "Synthetic Windows key events did not trigger Reactive. A focused physical-key capture is required before claiming active-key placement or decay parity.",
+    "The incorrect intermediate Starlight selection used only while calibrating the Synapse menu is present in the raw capture but is not a production-admitted OpenBlade effect."
+  ]
+}

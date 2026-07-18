@@ -225,16 +225,28 @@ internal sealed class OverlappedFeatureOperation : IHidFeatureIo
     private readonly IOverlappedFeatureNative native;
     private readonly Action<OverlappedFeatureOperationCheckpoint> checkpoint;
     private readonly ICancellationRegistrationFactory registrationFactory;
+    private readonly int featureReportLength;
 
     internal OverlappedFeatureOperation(IOverlappedFeatureNative native)
-        : this(native, static _ => { }, CancellationRegistrationFactory.Instance)
+        : this(native, 91)
+    {
+    }
+
+    internal OverlappedFeatureOperation(
+        IOverlappedFeatureNative native,
+        int featureReportLength)
+        : this(
+            native,
+            featureReportLength,
+            static _ => { },
+            CancellationRegistrationFactory.Instance)
     {
     }
 
     internal OverlappedFeatureOperation(
         IOverlappedFeatureNative native,
         Action<OverlappedFeatureOperationCheckpoint> checkpoint)
-        : this(native, checkpoint, CancellationRegistrationFactory.Instance)
+        : this(native, 91, checkpoint, CancellationRegistrationFactory.Instance)
     {
     }
 
@@ -242,13 +254,28 @@ internal sealed class OverlappedFeatureOperation : IHidFeatureIo
         IOverlappedFeatureNative native,
         Action<OverlappedFeatureOperationCheckpoint> checkpoint,
         ICancellationRegistrationFactory registrationFactory)
+        : this(native, 91, checkpoint, registrationFactory)
+    {
+    }
+
+    internal OverlappedFeatureOperation(
+        IOverlappedFeatureNative native,
+        int featureReportLength,
+        Action<OverlappedFeatureOperationCheckpoint> checkpoint,
+        ICancellationRegistrationFactory registrationFactory)
     {
         ArgumentNullException.ThrowIfNull(native);
         ArgumentNullException.ThrowIfNull(checkpoint);
         ArgumentNullException.ThrowIfNull(registrationFactory);
+        if (featureReportLength <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(featureReportLength));
+        }
+
         this.native = native;
         this.checkpoint = checkpoint;
         this.registrationFactory = registrationFactory;
+        this.featureReportLength = featureReportLength;
     }
 
     public Task<HidFeatureIoResult> ExecuteAsync(
@@ -260,9 +287,11 @@ internal sealed class OverlappedFeatureOperation : IHidFeatureIo
     {
         ArgumentNullException.ThrowIfNull(handle);
         ArgumentNullException.ThrowIfNull(buffer);
-        if (buffer.Length != 91)
+        if (buffer.Length != featureReportLength)
         {
-            throw new ArgumentException("Feature buffers must be exactly 91 bytes.", nameof(buffer));
+            throw new ArgumentException(
+                $"Feature buffers must be exactly {featureReportLength} bytes.",
+                nameof(buffer));
         }
 
         var operation = new NativeOperationToken(buffer, checkpoint);

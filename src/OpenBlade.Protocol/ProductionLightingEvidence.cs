@@ -1,0 +1,453 @@
+using System.Reflection;
+using System.Security.Cryptography;
+using System.Text.Json;
+using System.Text.Json.Serialization;
+using OpenBlade.Contracts;
+
+namespace OpenBlade.Protocol;
+
+/// <summary>
+/// Evidence captured from Synapse while it acted as the protocol oracle. These
+/// captures establish wire formats only; they are not evidence that OpenBlade
+/// applied or restored any setting.
+/// </summary>
+internal sealed record ProductionLightingOracleEvidence(
+    int SchemaVersion,
+    string EvidenceKind,
+    ProductionLightingDeviceEvidence Device,
+    ProductionLightingOracleCaptureEvidence CoreCapture,
+    ProductionLightingOracleCaptureEvidence ReactiveCapture,
+    ProductionLightingOracleCaptureEvidence VariantCapture,
+    ProductionLightingOracleCaptureEvidence ReactiveTimingCapture,
+    ProductionLightingOracleCaptureEvidence DualBreathingCapture,
+    ProductionLightingOracleCaptureEvidence ReactiveMainKeyMapCapture,
+    ProductionLightingOracleCaptureEvidence ReactiveFunctionKeyMapCapture,
+    ProductionLightingProtocolEvidence Protocol);
+
+internal sealed record ProductionLightingDeviceEvidence(
+    string Model,
+    ushort VendorId,
+    ushort ProductId,
+    string BiosVersion);
+
+internal sealed record ProductionLightingOracleCaptureEvidence(
+    string Sha256,
+    bool Captured,
+    bool Decoded);
+
+/// <summary>
+/// A separately captured, machine-local OpenBlade hardware-validation result.
+/// It is never embedded: production admission binds this external artifact to
+/// the exact installed protocol assembly after every gate has passed.
+/// </summary>
+internal sealed record ProductionLightingOpenBladeValidationEvidence(
+    int SchemaVersion,
+    string EvidenceKind,
+    ProductionLightingDeviceEvidence Device,
+    string InformationalVersion,
+    string CommitHash,
+    string ProtocolAssemblySha256,
+    DateTimeOffset StartedAtUtc,
+    DateTimeOffset ValidatedAtUtc,
+    ProductionLightingKnownBaselineEvidence KnownBaseline,
+    ProductionLightingValidationActionEvidence[] Actions,
+    bool AllSupportedEffectsApplied,
+    bool BrightnessIndependentReadback,
+    bool TransitionAcknowledged,
+    bool MatrixWriteVisuallyConfirmed,
+    bool MatrixReadbackAvailable,
+    bool BaselineRestoreAttempted,
+    int? BaselineRestoreObservedBrightnessRaw,
+    bool BaselineRestoreBrightnessMatched,
+    bool BaselineRestoreVisuallyConfirmed,
+    bool BaselineRestored,
+    string RestoredStateKind,
+    bool UnknownPreTestStateRestored,
+    string? Failure);
+
+internal sealed record ProductionLightingKnownBaselineEvidence(
+    LightingSettings Settings,
+    int ExpectedBrightnessRaw,
+    int? ObservedBrightnessRaw,
+    bool BrightnessMatched,
+    bool VisuallyConfirmed);
+
+internal sealed record ProductionLightingValidationActionEvidence(
+    string Name,
+    LightingSettings Settings,
+    DateTimeOffset StartedAtUtc,
+    DateTimeOffset CompletedAtUtc,
+    bool ApplySucceeded,
+    int ExpectedBrightnessRaw,
+    int? ObservedBrightnessRaw,
+    bool BrightnessMatched,
+    bool ReactivePulseRequired,
+    bool ReactivePulseApplied,
+    bool VisuallyConfirmed,
+    string? Failure);
+
+internal sealed record ProductionLightingBuildIdentity(
+    string InformationalVersion,
+    string CommitHash,
+    string ProtocolAssemblySha256);
+
+internal sealed record ProductionLightingProtocolEvidence(
+    string BrightnessQuery,
+    string BrightnessSetPrefix,
+    string[] TransitionRequests,
+    string[] TransitionResponses,
+    string MatrixCommand,
+    int MatrixEnvelopeLength,
+    int MatrixFeatureReportLength,
+    int MatrixSlotCount);
+
+internal static class ProductionLightingEvidenceSource
+{
+    private const int MaximumValidationArtifactBytes = 64 * 1024;
+    internal const string OracleResourceName =
+        "OpenBlade.Protocol.Fixtures.Rz09_0581_02e0_3_01_LightingProduction.json";
+
+    internal const string OpenBladeValidationFileName = "lighting-validation.json";
+
+    private const string ApprovedOracleFixtureSha256 =
+        "90E768239A74157C4A8A7EEE0E339CF37C65AA6A2B38635B424231ED0C144B71";
+
+    private static readonly JsonSerializerOptions SerializerOptions =
+        new(JsonSerializerDefaults.Web)
+        {
+            PropertyNameCaseInsensitive = true,
+            UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow,
+            Converters = { new JsonStringEnumConverter(JsonNamingPolicy.CamelCase) },
+        };
+
+    internal static ProductionLightingOracleEvidence ReadValidatedOracle()
+    {
+        byte[] bytes = ReadRequiredEmbeddedResource(OracleResourceName);
+        RequireApprovedHash(bytes, ApprovedOracleFixtureSha256, "Lighting oracle fixture");
+
+        ProductionLightingOracleEvidence? evidence =
+            JsonSerializer.Deserialize<ProductionLightingOracleEvidence>(bytes, SerializerOptions);
+        ValidateOracle(evidence);
+        return evidence!;
+    }
+
+    internal static bool IsCurrentBuildValidated()
+    {
+        try
+        {
+            Assembly assembly = typeof(ProductionLightingEvidenceSource).Assembly;
+            return IsCurrentBuildValidated(
+                GetDefaultOpenBladeValidationPath(),
+                ReadBuildIdentity(assembly));
+        }
+        catch (Exception exception) when (
+            exception is UnvalidatedCommandException
+            or JsonException
+            or IOException
+            or UnauthorizedAccessException)
+        {
+            // A missing, damaged, stale, or unapproved validation artifact can
+            // never turn into permission to write. Keep the factory read-only.
+            return false;
+        }
+    }
+
+    internal static bool IsCurrentBuildValidated(
+        string artifactPath,
+        ProductionLightingBuildIdentity buildIdentity)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(artifactPath);
+        ArgumentNullException.ThrowIfNull(buildIdentity);
+
+        try
+        {
+            var file = new FileInfo(artifactPath);
+            if (!file.Exists || file.Length is <= 0 or > MaximumValidationArtifactBytes)
+            {
+                return false;
+            }
+
+            byte[] bytes = File.ReadAllBytes(artifactPath);
+            ProductionLightingOpenBladeValidationEvidence? evidence =
+                JsonSerializer.Deserialize<ProductionLightingOpenBladeValidationEvidence>(
+                    bytes,
+                    SerializerOptions);
+            return IsValidatedForBuild(evidence, buildIdentity);
+        }
+        catch (Exception exception) when (
+            exception is JsonException
+            or IOException
+            or UnauthorizedAccessException)
+        {
+            return false;
+        }
+    }
+
+    internal static bool IsValidatedForBuild(
+        ProductionLightingOpenBladeValidationEvidence? evidence,
+        ProductionLightingBuildIdentity buildIdentity)
+    {
+        ArgumentNullException.ThrowIfNull(buildIdentity);
+        string informationalVersion = buildIdentity.InformationalVersion;
+        if (evidence is null
+            || evidence.SchemaVersion != 2
+            || evidence.EvidenceKind != "openBladeExactBuildHardwareValidation"
+            || evidence.Device != TargetDeviceEvidence
+            || string.IsNullOrWhiteSpace(informationalVersion)
+            || !string.Equals(
+                evidence.InformationalVersion,
+                informationalVersion,
+                StringComparison.Ordinal)
+            || string.IsNullOrWhiteSpace(evidence.CommitHash)
+            || evidence.CommitHash.Length != 40
+            || !evidence.CommitHash.All(Uri.IsHexDigit)
+            || !informationalVersion.EndsWith(
+                $"+{evidence.CommitHash}",
+                StringComparison.OrdinalIgnoreCase)
+            || string.IsNullOrWhiteSpace(evidence.ProtocolAssemblySha256)
+            || !ValidSha256(evidence.ProtocolAssemblySha256)
+            || !string.Equals(
+                evidence.ProtocolAssemblySha256,
+                buildIdentity.ProtocolAssemblySha256,
+                StringComparison.OrdinalIgnoreCase)
+            || evidence.StartedAtUtc == default
+            || evidence.ValidatedAtUtc == default
+            || evidence.ValidatedAtUtc < evidence.StartedAtUtc
+            || !ValidKnownBaseline(evidence.KnownBaseline)
+            || !ValidActions(
+                evidence.Actions,
+                evidence.KnownBaseline.Settings.Brightness)
+            || evidence.Actions.Any(action =>
+                action.StartedAtUtc < evidence.StartedAtUtc
+                || action.CompletedAtUtc > evidence.ValidatedAtUtc)
+            || !evidence.AllSupportedEffectsApplied
+            || !evidence.BrightnessIndependentReadback
+            || !evidence.TransitionAcknowledged
+            || !evidence.MatrixWriteVisuallyConfirmed
+            || evidence.MatrixReadbackAvailable
+            || !evidence.BaselineRestoreAttempted
+            || evidence.BaselineRestoreObservedBrightnessRaw
+                != evidence.KnownBaseline.ExpectedBrightnessRaw
+            || !evidence.BaselineRestoreBrightnessMatched
+            || !evidence.BaselineRestoreVisuallyConfirmed
+            || !evidence.BaselineRestored
+            || evidence.RestoredStateKind != "knownStaticGreenBaseline"
+            || evidence.UnknownPreTestStateRestored
+            || evidence.Failure is not null)
+        {
+            return false;
+        }
+
+        return true;
+    }
+
+    internal static string GetDefaultOpenBladeValidationPath()
+    {
+        string root = Environment.GetFolderPath(
+            Environment.SpecialFolder.CommonApplicationData);
+        return Path.Combine(root, "OpenBlade", OpenBladeValidationFileName);
+    }
+
+    internal static ProductionLightingBuildIdentity ReadCurrentBuildIdentity() =>
+        ReadBuildIdentity(typeof(ProductionLightingEvidenceSource).Assembly);
+
+    private static bool ValidKnownBaseline(
+        ProductionLightingKnownBaselineEvidence? baseline) =>
+        baseline is not null
+        && baseline.Settings == LightingSettingsFactory.Static(
+            new RgbColor(0, byte.MaxValue, 0),
+            baseline.Settings.Brightness)
+        && baseline.Settings.Brightness is > 0 and <= 100
+        && baseline.ExpectedBrightnessRaw
+            == LightingBrightnessProtocol.PercentToRaw(baseline.Settings.Brightness)
+        && baseline.ObservedBrightnessRaw == baseline.ExpectedBrightnessRaw
+        && baseline.BrightnessMatched
+        && baseline.VisuallyConfirmed;
+
+    private static bool ValidActions(
+        ProductionLightingValidationActionEvidence[]? actions,
+        byte brightness)
+    {
+        string[] expectedNames =
+        [
+            "off",
+            "static",
+            "spectrum",
+            "breathingSingle",
+            "breathingDual",
+            "breathingRandom",
+            "reactiveShort",
+            "reactiveMedium",
+            "reactiveLong",
+        ];
+        if (actions is null
+            || actions.Length != expectedNames.Length
+            || !actions.Select(action => action.Name).SequenceEqual(expectedNames))
+        {
+            return false;
+        }
+
+        foreach (ProductionLightingValidationActionEvidence action in actions)
+        {
+            bool reactive = action.Settings.Effect == LightingEffect.Reactive;
+            if (!LightingSettingsValidation.IsWellFormed(action.Settings)
+                || !MatchesExpectedTypedAction(action, brightness)
+                || action.StartedAtUtc == default
+                || action.CompletedAtUtc < action.StartedAtUtc
+                || !action.ApplySucceeded
+                || action.ExpectedBrightnessRaw
+                    != LightingBrightnessProtocol.PercentToRaw(action.Settings.Brightness)
+                || action.ObservedBrightnessRaw != action.ExpectedBrightnessRaw
+                || !action.BrightnessMatched
+                || action.ReactivePulseRequired != reactive
+                || action.ReactivePulseApplied != reactive
+                || !action.VisuallyConfirmed
+                || action.Failure is not null)
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private static bool MatchesExpectedTypedAction(
+        ProductionLightingValidationActionEvidence action,
+        byte brightness) =>
+        action.Name switch
+        {
+            "off" => action.Settings == LightingSettingsFactory.Off(),
+            "static" => action.Settings == LightingSettingsFactory.Static(
+                new RgbColor(0, 128, byte.MaxValue), brightness),
+            "spectrum" =>
+                action.Settings == LightingSettingsFactory.SpectrumCycling(brightness),
+            "breathingSingle" =>
+                action.Settings == LightingSettingsFactory.BreathingSingle(
+                    new RgbColor(0, byte.MaxValue, 0), brightness),
+            "breathingDual" =>
+                action.Settings == LightingSettingsFactory.BreathingDual(
+                    new RgbColor(byte.MaxValue, 0, 0),
+                    new RgbColor(0, 0, byte.MaxValue),
+                    brightness),
+            "breathingRandom" =>
+                action.Settings == LightingSettingsFactory.BreathingRandom(brightness),
+            "reactiveShort" => action.Settings == LightingSettingsFactory.Reactive(
+                new RgbColor(0, byte.MaxValue, 0),
+                brightness,
+                ReactiveLightingDuration.Short),
+            "reactiveMedium" => action.Settings == LightingSettingsFactory.Reactive(
+                new RgbColor(0, byte.MaxValue, 0),
+                brightness,
+                ReactiveLightingDuration.Medium),
+            "reactiveLong" => action.Settings == LightingSettingsFactory.Reactive(
+                new RgbColor(0, byte.MaxValue, 0),
+                brightness,
+                ReactiveLightingDuration.Long),
+            _ => false,
+        };
+
+    private static bool ValidSha256(string value) =>
+        value.Length == 64 && value.All(Uri.IsHexDigit);
+
+    private static void ValidateOracle(ProductionLightingOracleEvidence? evidence)
+    {
+        if (evidence is null
+            || evidence.SchemaVersion != 2
+            || evidence.EvidenceKind != "synapseOracleCapture"
+            || evidence.Device != TargetDeviceEvidence
+            || !ValidOracleCapture(
+                evidence.CoreCapture,
+                "F05E233135E3A2AB87688EF08C282DA6949F0B32FA9CC0F486ABE823F532D314")
+            || !ValidOracleCapture(
+                evidence.ReactiveCapture,
+                "BFCB03633CBD1F5644AEC885E8830D9489BA5A7100FFFECA0A4DDAB347E13202")
+            || !ValidOracleCapture(
+                evidence.VariantCapture,
+                "8CD72FD3F0AB7AF95B21168C96C371B2C56D7410509046371D46305205E193A6")
+            || !ValidOracleCapture(
+                evidence.ReactiveTimingCapture,
+                "F5A45F5A27B860BFBAE294A692381493619FACBB4E9EB68828B7A459A99ED495")
+            || !ValidOracleCapture(
+                evidence.DualBreathingCapture,
+                "4A99DEECC64D7BEDA6813F691CB1C71A0131B21F8EB2FFD9E19EE9F8C21F45D8")
+            || !ValidOracleCapture(
+                evidence.ReactiveMainKeyMapCapture,
+                "FC28B466691FE7E77A70613E455A18AB673DB2CE62E8ADC9B4DA6808E7B619EB")
+            || !ValidOracleCapture(
+                evidence.ReactiveFunctionKeyMapCapture,
+                "2B8D6D11EA6BE76F6AA0C9CAED4520CFC1DA0171388423A99FFAC9960F0C6F78")
+            || evidence.Protocol.BrightnessQuery != "03/83:010500"
+            || evidence.Protocol.BrightnessSetPrefix != "03/03:0105"
+            || !evidence.Protocol.TransitionRequests.SequenceEqual(
+                ["00/86:000000", "00/84:0000", "03/0A:0500"])
+            || !evidence.Protocol.TransitionResponses.SequenceEqual(
+                ["00/86:010000", "00/84:0300", "03/0A:0500"])
+            || evidence.Protocol.MatrixCommand != "03/0B"
+            || evidence.Protocol.MatrixEnvelopeLength != 374
+            || evidence.Protocol.MatrixFeatureReportLength != 375
+            || evidence.Protocol.MatrixSlotCount != 102)
+        {
+            throw new UnvalidatedCommandException(
+                "Lighting oracle evidence does not match the approved exact-device captures.");
+        }
+    }
+
+    private static ProductionLightingDeviceEvidence TargetDeviceEvidence => new(
+        TargetBladeDevice.Model,
+        TargetBladeDevice.VendorId,
+        TargetBladeDevice.ProductId,
+        TargetBladeDevice.BiosVersion);
+
+    private static bool ValidOracleCapture(
+        ProductionLightingOracleCaptureEvidence capture,
+        string expectedSha256) =>
+        string.Equals(capture.Sha256, expectedSha256, StringComparison.Ordinal)
+        && capture.Captured
+        && capture.Decoded;
+
+    private static byte[] ReadRequiredEmbeddedResource(string resourceName)
+    {
+        Assembly assembly = typeof(ProductionLightingEvidenceSource).Assembly;
+        using Stream? stream = assembly.GetManifestResourceStream(resourceName);
+        if (stream is null)
+        {
+            throw new UnvalidatedCommandException(
+                $"The embedded resource {resourceName} is absent.");
+        }
+
+        using var memory = new MemoryStream();
+        stream.CopyTo(memory);
+        return memory.ToArray();
+    }
+
+    private static void RequireApprovedHash(
+        byte[] bytes,
+        string approvedHash,
+        string description)
+    {
+        string actualHash = Convert.ToHexString(SHA256.HashData(bytes));
+        if (!string.Equals(actualHash, approvedHash, StringComparison.Ordinal))
+        {
+            throw new UnvalidatedCommandException(
+                $"{description} SHA-256 {actualHash} is not code-approved.");
+        }
+    }
+
+    private static ProductionLightingBuildIdentity ReadBuildIdentity(Assembly assembly)
+    {
+        string informationalVersion = assembly
+            .GetCustomAttribute<AssemblyInformationalVersionAttribute>()
+            ?.InformationalVersion
+            ?.Trim()
+            ?? string.Empty;
+        string commitHash = informationalVersion.LastIndexOf('+') is int separator
+            && separator >= 0
+                ? informationalVersion[(separator + 1)..]
+                : string.Empty;
+        string assemblyPath = assembly.Location;
+        string sha256 = File.Exists(assemblyPath)
+            ? Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(assemblyPath)))
+            : string.Empty;
+        return new(informationalVersion, commitHash, sha256);
+    }
+}

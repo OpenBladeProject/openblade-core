@@ -7,10 +7,11 @@ string machineDataDirectory = Path.Combine(
     Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
     "OpenBlade");
 builder.Services.AddWindowsService(options => options.ServiceName = "OpenBlade Service");
-builder.Services.AddSingleton(new BatteryConfigurationStore(
+builder.Services.AddSingleton(provider => new BatteryConfigurationStore(
     Path.Combine(machineDataDirectory, "profiles.json"),
     Path.Combine(machineDataDirectory, "battery-preferences.json"),
-    Path.Combine(machineDataDirectory, "battery-configuration.commit.json")));
+    Path.Combine(machineDataDirectory, "battery-configuration.commit.json"),
+    provider.GetRequiredService<ProfileSetValidator>()));
 builder.Services.AddSingleton(new PersistentOverrideStore(
     Path.Combine(machineDataDirectory, "manual-overrides.json")));
 builder.Services.AddSingleton<MachineProfileBootstrapper>();

@@ -87,6 +87,7 @@ public sealed class PersistentOverrideStore
         PersistentOverrideState overrides,
         CancellationToken cancellationToken)
     {
+        overrides = NormalizeLegacyLighting(overrides);
         Validate(overrides);
         await gate.WaitAsync(cancellationToken);
         try
@@ -130,9 +131,19 @@ public sealed class PersistentOverrideStore
             throw new InvalidDataException("The persistent override schema is unsupported.");
         }
 
-        Validate(document.Overrides);
-        return document.Overrides;
+        PersistentOverrideState overrides = NormalizeLegacyLighting(document.Overrides);
+        Validate(overrides);
+        return overrides;
     }
+
+    internal static PersistentOverrideState NormalizeLegacyLighting(
+        PersistentOverrideState overrides) =>
+        overrides.Lighting is null
+            ? overrides
+            : overrides with
+            {
+                Lighting = LightingSettingsFactory.NormalizeLegacyOff(overrides.Lighting),
+            };
 
     private async Task WriteCoreAsync(
         PersistentOverrideState overrides,

@@ -5,6 +5,66 @@ namespace OpenBlade.Tray.Tests;
 public sealed class WinUiShellContractTests
 {
     [Fact]
+    public void ProfilesPageUsesReadOnlySummariesAndOneCurrentDraftReview()
+    {
+        string xaml = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml");
+
+        Assert.Contains("ViewModel.PluggedInProfileThermalSummary", xaml, StringComparison.Ordinal);
+        Assert.Contains("ViewModel.BatteryProfileLightingSummary", xaml, StringComparison.Ordinal);
+        Assert.Contains("ViewModel.UsbCProfileDisplaySummary", xaml, StringComparison.Ordinal);
+        Assert.Contains("ViewModel.SavedActiveProfileSummary", xaml, StringComparison.Ordinal);
+        Assert.Contains("ViewModel.PendingActiveProfileSummary", xaml, StringComparison.Ordinal);
+        Assert.Contains("ViewModel.DiscardProfileDraftCommand", xaml, StringComparison.Ordinal);
+        Assert.Contains("Content=\"Save changes\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("ToolTipService.ToolTip=\"Unsaved changes\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("AutomationProperties.Name=\"Unsaved changes\"", xaml, StringComparison.Ordinal);
+        Assert.Equal(1, CountOccurrences(xaml, "x:Name=\"LightingEffectPicker\""));
+        Assert.DoesNotContain("PluggedInLightingEditor", xaml, StringComparison.Ordinal);
+        Assert.DoesNotContain("BatteryLightingEditor", xaml, StringComparison.Ordinal);
+        Assert.DoesNotContain("UsbCLightingEditor", xaml, StringComparison.Ordinal);
+        Assert.DoesNotContain("ViewModel.SelectedManualChangeDurationOption", xaml, StringComparison.Ordinal);
+
+        string window = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml.cs");
+        Assert.Contains("DisplayViewModel.UserSettingsChanged +=", window, StringComparison.Ordinal);
+        Assert.Contains(
+            "ViewModel.RecordDisplayProfileChange(args.Settings, args.PreviousSettings)",
+            window,
+            StringComparison.Ordinal);
+        Assert.Contains("ViewModel.SavedDisplayProfileRestoreRequested +=", window, StringComparison.Ordinal);
+        Assert.Contains("DisplayViewModel.ApplyProfileAsync(settings, token)", window, StringComparison.Ordinal);
+        Assert.Contains("nameof(MainViewModel.ActivePowerSource)", window, StringComparison.Ordinal);
+        Assert.Contains("ViewModel.ActiveSavedDisplayProfile", window, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ReactiveRawInputKeepsFailedNativeSubclassAliveUntilWindowTeardown()
+    {
+        string source = ReadRepositoryFile(
+            "src",
+            "OpenBlade.Tray",
+            "WindowsRawKeyboardSource.cs");
+        string window = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml.cs");
+
+        Assert.Contains(
+            "ConcurrentDictionary<SubclassKey, WindowsRawKeyboardSource>",
+            source,
+            StringComparison.Ordinal);
+        Assert.Contains("FailedRemovalKeepAlive[key] = this", source, StringComparison.Ordinal);
+        Assert.Contains(
+            "RetainIfSubclassRemovalFails(\"registration rollback\")",
+            source,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "RetainIfSubclassRemovalFails(\"disposal\")",
+            source,
+            StringComparison.Ordinal);
+        Assert.Contains("WindowMessageNonClientDestroy", source, StringComparison.Ordinal);
+        Assert.Contains("FailedRemovalKeepAlive.TryRemove", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("rawInput.Keyboard.VirtualKey", source, StringComparison.Ordinal);
+        Assert.Contains("reactiveKeyPulsePump.ClearPending()", window, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void SelfContainedPublishRequiresAndCopiesApplicationResourceIndex()
     {
         string project = ReadRepositoryFile("src", "OpenBlade.Tray", "OpenBlade.Tray.csproj");
@@ -381,7 +441,7 @@ public sealed class WinUiShellContractTests
             window,
             StringComparison.Ordinal);
         Assert.Contains(
-            "new MainViewModel(\n            new ServiceClient(),\n            new WinUiDispatcher(dispatcherQueue),",
+            "IServiceClient serviceClient = new ServiceClient();\n        ViewModel = new MainViewModel(\n            serviceClient,\n            new WinUiDispatcher(dispatcherQueue),",
             window.Replace("\r\n", "\n", StringComparison.Ordinal),
             StringComparison.Ordinal);
         Assert.Contains(

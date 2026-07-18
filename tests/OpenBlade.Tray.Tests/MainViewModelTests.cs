@@ -7,6 +7,49 @@ namespace OpenBlade.Tray.Tests;
 public sealed class MainViewModelTests
 {
     [Fact]
+    public async Task ReactiveInputState_FollowsOnlyServiceRendererOwnership()
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        ServiceStatusSnapshot baseline = CreateStatus(verified: true, blocked: false);
+        LightingSettings reactive = LightingSettingsFactory.Reactive(
+            new RgbColor(0, 255, 0),
+            brightness: 77,
+            ReactiveLightingDuration.Medium);
+
+        client.Publish(baseline with
+        {
+            ConfirmedState = baseline.ConfirmedState! with { Lighting = reactive },
+            DesiredState = baseline.DesiredState with
+            {
+                Lighting = new ResolvedSetting<LightingSettings>(
+                    reactive,
+                    SettingValueSource.TemporaryOverride),
+            },
+            LightingRendererOwnership = LightingRendererOwnershipState.Reactive,
+        });
+        await WaitUntilAsync(() => viewModel.IsReactiveLightingActive);
+
+        client.Publish(baseline with
+        {
+            Revision = 2,
+            ConfirmedState = baseline.ConfirmedState! with { Lighting = null },
+            DesiredState = baseline.DesiredState with
+            {
+                Lighting = new ResolvedSetting<LightingSettings>(
+                    reactive,
+                    SettingValueSource.TemporaryOverride),
+            },
+            LightingRendererOwnership = LightingRendererOwnershipState.None,
+        });
+        await WaitUntilAsync(() => !viewModel.IsReactiveLightingActive);
+
+        Assert.Equal(LightingEffect.Reactive, viewModel.SelectedLighting.Effect);
+        Assert.False(viewModel.IsReactiveLightingActive);
+    }
+
+    [Fact]
     public async Task ManualChangeDurationOptions_MapToExistingPersistencePreference()
     {
         await using var viewModel = new MainViewModel(
@@ -125,6 +168,170 @@ public sealed class MainViewModelTests
 
         Assert.False(viewModel.HasUnsavedProfileChanges);
         Assert.Equal([true, false], unsavedTransitions);
+    }
+
+    [Fact]
+    public async Task ActiveProfileChanges_StayDraftedUntilSaveThenClearTemporaryOverrides()
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        ServiceStatusSnapshot original = CreateStatus(
+            verified: true,
+            blocked: false,
+            capabilities: DeviceCapabilities.SafeTargetDefaults() with
+            {
+                LightingEffects = new HashSet<LightingEffect>(
+                    Enum.GetValues<LightingEffect>()),
+                ChargeLimits = ChargeLimits(),
+            });
+        client.Publish(original);
+        await WaitUntilAsync(() => viewModel.IsConnected);
+
+        LightingSettings lighting = LightingSettingsFactory.Static(
+            new RgbColor(90, 80, 70),
+            brightness: 68);
+        await Assert.IsType<AsyncRelayCommand>(viewModel.SetPerformanceCommand)
+            .ExecuteAsync(PerformancePreset.Performance);
+        await Assert.IsType<AsyncRelayCommand>(viewModel.SetLightingCommand)
+            .ExecuteAsync(lighting);
+        var display = new DisplayProfileSettings("drr-48-240", false, "srgb");
+        viewModel.RecordDisplayProfileChange(display);
+
+        Assert.True(viewModel.HasActiveProfileDraft);
+        Assert.True(viewModel.HasUnsavedProfileChanges);
+        Assert.Equal("Plugged in", viewModel.ActiveProfileDraftName);
+        Assert.Contains("Performance", viewModel.PendingActiveProfileSummary);
+        Assert.Contains("Static", viewModel.PendingActiveProfileSummary);
+        Assert.Contains("drr-48-240", viewModel.PendingActiveProfileSummary);
+        Assert.Equal(original.Profiles, viewModel.Profiles);
+        Assert.Equal(
+            OverrideLifetime.UntilPowerSourceChange,
+            client.PerformanceOverride!.Lifetime);
+        Assert.Equal(
+            OverrideLifetime.UntilPowerSourceChange,
+            client.LightingOverride!.Lifetime);
+        Assert.True(viewModel.SaveProfilesCommand.CanExecute(null));
+
+        await Assert.IsType<AsyncRelayCommand>(viewModel.SaveProfilesCommand)
+            .ExecuteAsync(null);
+
+        Assert.NotNull(client.LastProfiles);
+        Assert.Equal(PerformancePreset.Performance, client.LastProfiles.PluggedIn.Performance);
+        Assert.Equal(lighting, client.LastProfiles.PluggedIn.Lighting);
+        Assert.Equal(display, client.LastProfiles.PluggedIn.Display);
+        Assert.Equal(original.Profiles.Battery, client.LastProfiles.Battery);
+        Assert.Equal(original.Profiles.UsbC, client.LastProfiles.UsbC);
+        Assert.Equal(original.Profiles.BatteryPolicy, client.LastProfiles.BatteryPolicy);
+        Assert.Null(client.PerformanceOverride);
+        Assert.Null(client.LightingOverride);
+        Assert.False(viewModel.HasActiveProfileDraft);
+        Assert.False(viewModel.HasUnsavedProfileChanges);
+    }
+
+    [Fact]
+    public async Task ReactiveInputFailureAppearsOnlyAsActionableErrorState()
+    {
+        await using var viewModel = new MainViewModel(
+            new FakeServiceClient(),
+            new RecordingDispatcher());
+
+        viewModel.ReportReactiveInputFailure("  Reactive delivery failed.  ");
+
+        Assert.Equal("Reactive delivery failed.", viewModel.OperationStatusMessage);
+        Assert.Equal("Reactive delivery failed", viewModel.TroubleshootingRecentErrorStatus);
+    }
+
+    [Fact]
+    public async Task SavedProfileRemainsSavedWhenEquivalentOverrideCleanupFails()
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        client.Publish(CreateStatus(verified: true, blocked: false));
+        await WaitUntilAsync(() => viewModel.IsConnected);
+
+        await Assert.IsType<AsyncRelayCommand>(viewModel.SetPerformanceCommand)
+            .ExecuteAsync(PerformancePreset.Performance);
+        client.MutationResults.Enqueue(
+            new ControlOperationResult(ControlOperationStatus.Applied, "Profile saved."));
+        client.MutationResults.Enqueue(
+            new ControlOperationResult(ControlOperationStatus.Failed, "Could not clear override."));
+
+        await Assert.IsType<AsyncRelayCommand>(viewModel.SaveProfilesCommand)
+            .ExecuteAsync(null);
+
+        Assert.NotNull(client.LastProfiles);
+        Assert.Equal(PerformancePreset.Performance, viewModel.Profiles.PluggedIn.Performance);
+        Assert.False(viewModel.HasActiveProfileDraft);
+        Assert.False(viewModel.HasUnsavedProfileChanges);
+        Assert.Equal("Could not clear override.", viewModel.OperationStatusMessage);
+    }
+
+    [Fact]
+    public async Task ActiveProfileDraft_DiscardRestoresSavedControlsAndDisplay()
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        ServiceStatusSnapshot baseline = CreateStatus(verified: true, blocked: false);
+        ServiceStatusSnapshot original = baseline with
+        {
+            ConfirmedState = baseline.ConfirmedState! with
+            {
+                Performance = PerformancePreset.Balanced,
+                Fans = FanMode.Automatic,
+            },
+        };
+        client.Publish(original);
+        await WaitUntilAsync(() => viewModel.IsConnected);
+        DisplayProfileSettings? restoredDisplay = null;
+        viewModel.SavedDisplayProfileRestoreRequested += (settings, _) =>
+        {
+            restoredDisplay = settings;
+            return Task.CompletedTask;
+        };
+
+        await Assert.IsType<AsyncRelayCommand>(viewModel.SetFanModeCommand)
+            .ExecuteAsync(FanMode.Maximum);
+        var originalDisplay = new DisplayProfileSettings("60", false, "native");
+        viewModel.RecordDisplayProfileChange(
+            new DisplayProfileSettings("240", true, null),
+            originalDisplay);
+        Assert.True(viewModel.HasActiveProfileDraft);
+
+        await Assert.IsType<AsyncRelayCommand>(viewModel.DiscardProfileDraftCommand)
+            .ExecuteAsync(null);
+
+        Assert.Null(client.FanOverride);
+        Assert.Equal(originalDisplay, restoredDisplay);
+        Assert.Equal(original.Profiles, viewModel.Profiles);
+        Assert.False(viewModel.HasActiveProfileDraft);
+    }
+
+    [Fact]
+    public async Task ActiveProfileDraft_IsDiscardedWhenConfirmedPowerSourceChanges()
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        ServiceStatusSnapshot original = CreateStatus(verified: true, blocked: false);
+        client.Publish(original);
+        await WaitUntilAsync(() => viewModel.IsConnected);
+
+        await Assert.IsType<AsyncRelayCommand>(viewModel.SetPerformanceCommand)
+            .ExecuteAsync(PerformancePreset.Performance);
+        Assert.True(viewModel.HasActiveProfileDraft);
+
+        client.Publish(original with
+        {
+            Revision = 2,
+            ActivePowerSource = PowerSource.Battery,
+        });
+        await WaitUntilAsync(() => viewModel.ActivePowerSource == PowerSource.Battery);
+
+        Assert.False(viewModel.HasActiveProfileDraft);
+        Assert.False(viewModel.HasUnsavedProfileChanges);
     }
 
     [Theory]
@@ -1054,6 +1261,48 @@ public sealed class MainViewModelTests
     }
 
     [Fact]
+    public async Task AppliedLightingReleasesEditGuardToConfirmedReadback()
+    {
+        var client = new FakeServiceClient { BlockMutations = true };
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        ServiceStatusSnapshot initial = CreateStatus(
+            verified: true,
+            blocked: false,
+            capabilities: DeviceCapabilities.SafeTargetDefaults() with
+            {
+                LightingEffects = new HashSet<LightingEffect>(
+                    Enum.GetValues<LightingEffect>()),
+                ChargeLimits = ChargeLimits(),
+            });
+        client.Publish(initial);
+        await WaitUntilAsync(() => viewModel.IsConnected);
+
+        viewModel.LightingEffectEditor = LightingEffect.Static;
+        viewModel.LightingBrightnessEditor = 65;
+        viewModel.LightingRedEditor = 12;
+        LightingSettings draft = viewModel.LightingDraft;
+        Task apply = Assert.IsType<AsyncRelayCommand>(viewModel.SetLightingCommand)
+            .ExecuteAsync(draft);
+        await client.MutationStarted.Task.WaitAsync(TimeSpan.FromSeconds(2));
+        LightingSettings confirmed = LightingSettingsFactory.SpectrumCycling(40);
+        client.Publish(initial with
+        {
+            Revision = initial.Revision + 1,
+            Message = "Lighting applied with readback",
+            ConfirmedState = initial.ConfirmedState! with { Lighting = confirmed },
+        });
+        await WaitUntilAsync(() =>
+            viewModel.ConnectionStatus == "Lighting applied with readback");
+        Assert.Equal(draft, viewModel.LightingDraft);
+
+        client.CompleteMutation();
+        await apply;
+
+        Assert.Equal(confirmed, viewModel.LightingDraft);
+    }
+
+    [Fact]
     public async Task Status_RendersLiveReadingsAndActiveQuickChanges()
     {
         var client = new FakeServiceClient();
@@ -1194,6 +1443,42 @@ public sealed class MainViewModelTests
         Assert.Contains(nameof(viewModel.Fan2RpmLabel), changed);
         Assert.Contains(nameof(viewModel.Fan1RpmValue), changed);
         Assert.Contains(nameof(viewModel.Fan2RpmValue), changed);
+    }
+
+    [Fact]
+    public async Task LiveReadingsOnlyStatus_DoesNotInvalidateUnchangedPagePresentation()
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        ServiceStatusSnapshot baseline = CreateStatus(verified: true, blocked: false) with
+        {
+            Revision = 10,
+            LiveReadings = new LiveReadings(-18_000, 2400, 2300),
+        };
+        client.Publish(baseline);
+        await WaitUntilAsync(() => viewModel.LiveReadings == baseline.LiveReadings);
+
+        var changed = new HashSet<string>();
+        viewModel.PropertyChanged += (_, args) => changed.Add(args.PropertyName!);
+        ServiceStatusSnapshot update = baseline with
+        {
+            Revision = 11,
+            LiveReadings = new LiveReadings(-18_500, 2450, 2350),
+        };
+
+        client.Publish(update);
+        await WaitUntilAsync(() => viewModel.LiveReadings == update.LiveReadings);
+
+        Assert.Contains(nameof(viewModel.LiveReadings), changed);
+        Assert.Contains(nameof(viewModel.BatteryPowerFlowLabel), changed);
+        Assert.Contains(nameof(viewModel.Fan1RpmValue), changed);
+        Assert.Contains(nameof(viewModel.Fan2RpmValue), changed);
+        Assert.Contains(nameof(viewModel.TrayHoverLabelText), changed);
+        Assert.DoesNotContain(nameof(viewModel.ProfileStateLabel), changed);
+        Assert.DoesNotContain(nameof(viewModel.TroubleshootingServiceStatus), changed);
+        Assert.DoesNotContain(nameof(viewModel.TroubleshootingLaptopStatus), changed);
+        Assert.DoesNotContain(nameof(viewModel.CanAdjustChargeLimit), changed);
     }
 
     [Fact]
@@ -1499,7 +1784,7 @@ public sealed class MainViewModelTests
     }
 
     [Fact]
-    public async Task Command_UsesSelectedPersistentOverrideLifetime()
+    public async Task ActiveProfileCommand_AlwaysUsesPowerSourceScopedOverride()
     {
         var client = new FakeServiceClient();
         await using var viewModel = new MainViewModel(client, new RecordingDispatcher())
@@ -1513,7 +1798,9 @@ public sealed class MainViewModelTests
         await Assert.IsType<AsyncRelayCommand>(viewModel.SetPerformanceCommand)
             .ExecuteAsync(PerformancePreset.Performance);
 
-        Assert.Equal(OverrideLifetime.Persistent, client.PerformanceOverride!.Lifetime);
+        Assert.Equal(
+            OverrideLifetime.UntilPowerSourceChange,
+            client.PerformanceOverride!.Lifetime);
         Assert.Empty(viewModel.OperationFeedbackMessage);
         Assert.False(viewModel.HasOperationFeedback);
     }
@@ -2165,6 +2452,7 @@ public sealed class MainViewModelTests
         public TaskCompletionSource MutationStarted { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public TaskCompletionSource ExportStarted { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public ControlOperationResult NextResult { get; set; } = new(ControlOperationStatus.Applied, "Applied");
+        public Queue<ControlOperationResult> MutationResults { get; } = [];
         public ServiceStatusSnapshot? CurrentStatus { get; private set; }
         public DiagnosticArchive NextArchive { get; init; } = new(
             "OpenBlade-diagnostics.zip",
@@ -2316,7 +2604,7 @@ public sealed class MainViewModelTests
                     throw;
                 }
             }
-            return NextResult;
+            return MutationResults.Count > 0 ? MutationResults.Dequeue() : NextResult;
         }
     }
 

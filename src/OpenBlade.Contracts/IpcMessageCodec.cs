@@ -7,7 +7,7 @@ namespace OpenBlade.Contracts;
 
 public static class OpenBladeIpc
 {
-    public const int ProtocolVersion = 7;
+    public const int ProtocolVersion = 9;
     public const int MaximumMessageBytes = 64 * 1024;
     public const int MaximumDiagnosticArchiveBytes = 32 * 1024;
     public const string PipeName = "OpenBlade.Service.v2";
@@ -117,6 +117,10 @@ public static class IpcMessageCodec
         {
             throw new InvalidDataException("IPC message body is invalid.", exception);
         }
+        catch (ArgumentException exception)
+        {
+            throw new InvalidDataException("IPC message body is invalid.", exception);
+        }
     }
 
     private static void ValidateRequest(ServiceRequest? request)
@@ -147,7 +151,11 @@ public static class IpcMessageCodec
                 || Enum.IsDefined(set.Value.Value) && Enum.IsDefined(set.Value.Lifetime),
             SetLightingOverrideRequest set =>
                 set.Value is null
-                || set.Value.Value is not null && Enum.IsDefined(set.Value.Lifetime),
+                || set.Value.Value is not null
+                    && Enum.IsDefined(set.Value.Lifetime)
+                    && LightingSettingsValidation.IsWellFormed(set.Value.Value),
+            PulseReactiveKeyRequest pulse =>
+                pulse.Pulse.MatrixSlot <= ReactiveKeyPulse.MaximumMatrixSlot,
             SetBatteryPolicyRequest set => set.Value is not null,
             SetBatteryProtectionRequest => true,
             SetFullChargeOverrideRequest => true,
@@ -224,6 +232,7 @@ public static class IpcMessageCodec
             || status.Profiles is null
             || status.DesiredState is null
             || !Enum.IsDefined(status.ActivePowerSource)
+            || !Enum.IsDefined(status.LightingRendererOwnership)
             || status.Capabilities is { } capabilities
                 && (capabilities.PerformancePresets is null
                     || capabilities.FanModes is null

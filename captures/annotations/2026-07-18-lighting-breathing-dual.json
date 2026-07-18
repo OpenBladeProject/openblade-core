@@ -1,0 +1,96 @@
+{
+  "schemaVersion": 1,
+  "evidenceProvenance": {
+    "controller": "Razer Synapse",
+    "role": "OracleCapture",
+    "openBladeTypedApplyPerformed": false,
+    "openBladeVisualParityConfirmed": false,
+    "note": "The recorded color alternation and visual restoration belong to Synapse. They do not establish OpenBlade visual parity or restoration."
+  },
+  "capturedAtUtc": "2026-07-18T07:55:23.8277251Z",
+  "device": {
+    "model": "Razer Blade 16 (2026)",
+    "modelNumber": "RZ09-0581",
+    "vendorIdHex": "1532",
+    "productIdHex": "02E0",
+    "bios": "3.01",
+    "usbPcapRoot": "USBPcap3",
+    "usbDeviceAddress": 2
+  },
+  "capture": {
+    "sanitizedFileName": "lighting-breathing-dual.pcap",
+    "sha256": "4A99DEECC64D7BEDA6813F691CB1C71A0131B21F8EB2FFD9E19EE9F8C21F45D8",
+    "byteLength": 946991,
+    "packetCount": 5085,
+    "durationSeconds": 134.914935,
+    "matrixReportCount": 1734,
+    "rawCaptureCommitted": false,
+    "terminationReason": "StopSentinel",
+    "stopMode": "Graceful",
+    "captureProcessId": 28092,
+    "captureProcessGroupId": 28092,
+    "serviceRestored": true
+  },
+  "baseline": {
+    "effect": "Ambient Awareness",
+    "brightnessPercent": 77,
+    "logoEffect": "Static",
+    "startupAnimation": true
+  },
+  "actions": [
+    {
+      "action": "Select Breathing",
+      "handshakeFrame": 413,
+      "handshakeRelativeSeconds": 25.9042,
+      "completionFrame": 425,
+      "completionRelativeSeconds": 26.013616
+    },
+    {
+      "action": "Enable Color 2 magenta while Color 1 is gray",
+      "handshakeFrame": 2963,
+      "handshakeRelativeSeconds": 86.227447,
+      "completionFrame": 2973,
+      "completionRelativeSeconds": 86.2543,
+      "color1Hex": "C0C0C0",
+      "color2Hex": "FF00FF"
+    }
+  ],
+  "dualColorPeakEvidence": [
+    { "colorHex": "C0C0C0", "peakRelativeSeconds": 90.241539 },
+    { "colorHex": "FF00FF", "peakRelativeSeconds": 97.234818 },
+    { "colorHex": "C0C0C0", "peakRelativeSeconds": 104.24075 },
+    { "colorHex": "FF00FF", "peakRelativeSeconds": 111.240694 },
+    { "colorHex": "C0C0C0", "peakRelativeSeconds": 118.282455 },
+    { "colorHex": "FF00FF", "peakRelativeSeconds": 125.281757 },
+    { "colorHex": "C0C0C0", "peakRelativeSeconds": 132.242348 }
+  ],
+  "decodedEvidence": {
+    "matrixCommand": "03/0B",
+    "matrixEnvelopeBytes": 374,
+    "matrixSlotCount": 102,
+    "dualColorAlternationObserved": true,
+    "successivePeakIntervalSecondsApprox": 7,
+    "sameColorPeakIntervalSecondsApprox": 14,
+    "frameIntervalMillisecondsApprox": 50,
+    "breathingWaveform": "four-quarter-trapezoid",
+    "breathingQuarterSeconds": 1.75,
+    "colorChangesDuringBlackHold": true,
+    "steadyDualFirstMagentaRiseRelativeSecondsApprox": 94.999,
+    "steadyDualFirstMagentaFullRelativeSecondsApprox": 96.719
+  },
+  "restoration": {
+    "effect": "Ambient Awareness",
+    "brightnessPercent": 77,
+    "logoEffect": "Static",
+    "startupAnimation": true,
+    "visuallyConfirmed": true,
+    "openBladeServiceRunning": true
+  },
+  "notes": [
+    "The raw PCAP remains outside the repository; only hashes, timestamps, decoded commands, and bounded observations are committed.",
+    "Seven alternating full-matrix peaks establish that dual Breathing uses one complete seven-second breath per selected color.",
+    "The 86.254-second color-2 transition begins while the prior gray breath is active and is excluded from steady-state curve fitting. The first unambiguous dual change occurs during the later black hold: gray falls to black, then magenta rises linearly.",
+    "After transition exclusion, dual mode reproduces the same 1.75-second black hold, linear rise, full-color hold, and linear fall observed in single and random modes.",
+    "The capture stopped with targeted CTRL_BREAK_EVENT through the isolated USBPcap process group; no force fallback was used."
+  ]
+}

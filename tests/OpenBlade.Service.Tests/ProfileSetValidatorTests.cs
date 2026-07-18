@@ -212,6 +212,50 @@ public sealed class ProfileSetValidatorTests
     }
 
     [Fact]
+    public void Validate_AcceptsUnconfiguredDisplaySettings()
+    {
+        ProfileSet profiles = ProfileDefaults.CreateSafeDefaults() with
+        {
+            PluggedIn = ProfileDefaults.CreateSafeDefaults().PluggedIn with
+            {
+                Display = DisplayProfileSettings.Unconfigured(),
+            },
+        };
+
+        CreateValidator().Validate(profiles);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("fixed-240\nunsafe")]
+    public void Validate_RejectsInvalidDisplayIdentifiers(string key)
+    {
+        ProfileSet profiles = ProfileDefaults.CreateSafeDefaults() with
+        {
+            PluggedIn = ProfileDefaults.CreateSafeDefaults().PluggedIn with
+            {
+                Display = new DisplayProfileSettings(key, false, null),
+            },
+        };
+
+        Assert.Throws<InvalidDataException>(() => CreateValidator().Validate(profiles));
+    }
+
+    [Fact]
+    public void Validate_RejectsOversizedDisplayIdentifier()
+    {
+        ProfileSet profiles = ProfileDefaults.CreateSafeDefaults() with
+        {
+            PluggedIn = ProfileDefaults.CreateSafeDefaults().PluggedIn with
+            {
+                Display = new DisplayProfileSettings(new string('x', 1025), false, null),
+            },
+        };
+
+        Assert.Throws<InvalidDataException>(() => CreateValidator().Validate(profiles));
+    }
+
+    [Fact]
     public void Validate_RejectsCombinationMissingFromExplicitPolicy()
     {
         ProfileSet profiles = ProfileDefaults.CreateSafeDefaults() with

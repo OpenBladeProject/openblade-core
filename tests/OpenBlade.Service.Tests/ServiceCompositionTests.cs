@@ -31,6 +31,69 @@ public sealed class ServiceCompositionTests
     }
 
     [Fact]
+    public void ProductionLightingFactoryFallbackCatchesAdmissionFailureOnly()
+    {
+        var fallback = new StubProductionLightingFactory(DeviceCapabilities.Unavailable());
+
+        IProductionLightingPortFactory selected =
+            ServiceComposition.CreateProductionLightingFactory(
+                () => throw new UnvalidatedCommandException("untrusted lighting fixture"),
+                () => fallback);
+
+        Assert.Same(fallback, selected);
+        Assert.Empty(selected.Capabilities.LightingEffects);
+    }
+
+    [Fact]
+    public void ProductionLightingFactoryFallbackDoesNotHideUnexpectedFailure()
+    {
+        Assert.Throws<InvalidOperationException>(() =>
+            ServiceComposition.CreateProductionLightingFactory(
+                () => throw new InvalidOperationException("programming defect"),
+                () => new StubProductionLightingFactory(DeviceCapabilities.Unavailable())));
+    }
+
+    [Fact]
+    public void ProfileValidatorUsesAdmittedLightingCapabilitiesAndAlwaysKeepsOffSafe()
+    {
+        var factory = new StubProductionLightingFactory(
+            DeviceCapabilities.Unavailable() with
+            {
+                LightingEffects = new HashSet<LightingEffect> { LightingEffect.Static },
+            });
+        ProfileSetValidator validator = ServiceComposition.CreateProfileSetValidator(factory);
+        ProfileSet defaults = ProfileDefaults.CreateSafeDefaults();
+        LightingSettings staticLighting = LightingSettingsFactory.Static(
+            new RgbColor(12, 34, 56),
+            brightness: 70);
+
+        validator.Validate(defaults);
+        validator.Validate(defaults with
+        {
+            PluggedIn = defaults.PluggedIn with { Lighting = staticLighting },
+            Battery = defaults.Battery with { Lighting = staticLighting },
+            UsbC = defaults.UsbC with { Lighting = staticLighting },
+        });
+    }
+
+    [Fact]
+    public void ProfileValidatorRemainsOffOnlyWhenLightingAdmissionFallsBackReadOnly()
+    {
+        ProfileSetValidator validator = ServiceComposition.CreateProfileSetValidator(
+            new StubProductionLightingFactory(DeviceCapabilities.Unavailable()));
+        ProfileSet defaults = ProfileDefaults.CreateSafeDefaults();
+        validator.Validate(defaults);
+
+        Assert.Throws<InvalidDataException>(() => validator.Validate(defaults with
+        {
+            PluggedIn = defaults.PluggedIn with
+            {
+                Lighting = LightingSettingsFactory.SpectrumCycling(50),
+            },
+        }));
+    }
+
+    [Fact]
     public void AddWindowsPowerState_RegistersOnlyPowerProvider()
     {
         var services = new ServiceCollection();
@@ -66,6 +129,11 @@ public sealed class ServiceCompositionTests
         Assert.Contains(
             services,
             descriptor => descriptor.ServiceType == typeof(IFanRpmQueryRunFactory)
+                && descriptor.ImplementationFactory is not null
+                && descriptor.Lifetime == ServiceLifetime.Singleton);
+        Assert.Contains(
+            services,
+            descriptor => descriptor.ServiceType == typeof(IProductionLightingPortFactory)
                 && descriptor.ImplementationFactory is not null
                 && descriptor.Lifetime == ServiceLifetime.Singleton);
 
@@ -142,6 +210,18 @@ public sealed class ServiceCompositionTests
         public Task<HidSessionResult<IProductionBatteryPort>> OpenAsync(
             CancellationToken cancellationToken) => Task.FromResult(
                 new HidSessionResult<IProductionBatteryPort>(
+                    null,
+                    HidSessionFailureKind.NativeIoFailure));
+    }
+
+    private sealed class StubProductionLightingFactory(DeviceCapabilities capabilities)
+        : IProductionLightingPortFactory
+    {
+        public DeviceCapabilities Capabilities { get; } = capabilities;
+
+        public Task<HidSessionResult<IProductionLightingPort>> OpenAsync(
+            CancellationToken cancellationToken) => Task.FromResult(
+                new HidSessionResult<IProductionLightingPort>(
                     null,
                     HidSessionFailureKind.NativeIoFailure));
     }

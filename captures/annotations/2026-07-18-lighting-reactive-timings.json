@@ -1,0 +1,146 @@
+{
+  "schemaVersion": 1,
+  "evidenceProvenance": {
+    "controller": "Razer Synapse",
+    "role": "OracleCapture",
+    "openBladeTypedApplyPerformed": false,
+    "openBladeVisualParityConfirmed": false,
+    "note": "Fade timing was measured from Synapse-rendered matrix traffic and remains an oracle target for installed OpenBlade validation."
+  },
+  "capturedAtUtc": "2026-07-18T07:47:41.3971025Z",
+  "device": {
+    "model": "Razer Blade 16 (2026)",
+    "modelNumber": "RZ09-0581",
+    "vendorIdHex": "1532",
+    "productIdHex": "02E0",
+    "bios": "3.01",
+    "usbPcapRoot": "USBPcap3",
+    "usbDeviceAddress": 2
+  },
+  "capture": {
+    "sanitizedFileName": "lighting-reactive-timings.pcap",
+    "sha256": "F5A45F5A27B860BFBAE294A692381493619FACBB4E9EB68828B7A459A99ED495",
+    "byteLength": 373969,
+    "packetCount": 2830,
+    "durationSeconds": 153.233053,
+    "matrixReportCount": 474,
+    "rawCaptureCommitted": false,
+    "terminationReason": "StopSentinel",
+    "stopMode": "Graceful",
+    "captureProcessId": 29076,
+    "captureProcessGroupId": 29076,
+    "serviceRestored": true
+  },
+  "baseline": {
+    "effect": "Reactive",
+    "colorHex": "00FF00",
+    "duration": "Long",
+    "brightnessPercent": 77
+  },
+  "actions": [
+    {
+      "action": "Press physical keys 2, X, M with Reactive Long",
+      "keyOrder": ["2", "X", "M"],
+      "matrixSlots": [20, 72, 77]
+    },
+    {
+      "action": "Change Reactive duration from Long to Short",
+      "handshakeFrame": 1367,
+      "handshakeRelativeSeconds": 64.927657,
+      "completionFrame": 1375,
+      "completionRelativeSeconds": 64.974203
+    },
+    {
+      "action": "Press physical keys 1, Q, A with Reactive Short",
+      "keyOrder": ["1", "Q", "A"],
+      "matrixSlots": [19, 36, 53]
+    }
+  ],
+  "physicalKeyEvidence": [
+    {
+      "duration": "Long",
+      "key": "2",
+      "matrixSlot": 20,
+      "firstLitRelativeSeconds": 33.513738,
+      "lastLitRelativeSeconds": 35.434353,
+      "observedLastNonzeroSeconds": 1.920615,
+      "peakChannelValue": 255,
+      "finalNonzeroChannelValue": 5
+    },
+    {
+      "duration": "Long",
+      "key": "X",
+      "matrixSlot": 72,
+      "firstLitRelativeSeconds": 35.154357,
+      "lastLitRelativeSeconds": 37.074832,
+      "observedLastNonzeroSeconds": 1.920475,
+      "peakChannelValue": 255,
+      "finalNonzeroChannelValue": 5
+    },
+    {
+      "duration": "Long",
+      "key": "M",
+      "matrixSlot": 77,
+      "firstLitRelativeSeconds": 36.873079,
+      "lastLitRelativeSeconds": 38.793095,
+      "observedLastNonzeroSeconds": 1.920016,
+      "peakChannelValue": 255,
+      "finalNonzeroChannelValue": 5
+    },
+    {
+      "duration": "Short",
+      "key": "1",
+      "matrixSlot": 19,
+      "firstLitRelativeSeconds": 102.666654,
+      "lastLitRelativeSeconds": 103.102012,
+      "observedLastNonzeroSeconds": 0.435358,
+      "peakChannelValue": 255,
+      "finalNonzeroChannelValue": 23
+    },
+    {
+      "duration": "Short",
+      "key": "Q",
+      "matrixSlot": 36,
+      "firstLitRelativeSeconds": 104.711785,
+      "lastLitRelativeSeconds": 105.112395,
+      "observedLastNonzeroSeconds": 0.40061,
+      "peakChannelValue": 255,
+      "finalNonzeroChannelValue": 23
+    },
+    {
+      "duration": "Short",
+      "key": "A",
+      "matrixSlot": 53,
+      "firstLitRelativeSeconds": 106.548844,
+      "lastLitRelativeSeconds": 106.908241,
+      "observedLastNonzeroSeconds": 0.359397,
+      "peakChannelValue": 231,
+      "finalNonzeroChannelValue": 46
+    }
+  ],
+  "decodedEvidence": {
+    "matrixCommand": "03/0B",
+    "matrixEnvelopeBytes": 374,
+    "matrixSlotCount": 102,
+    "shortNominalFadeSeconds": 0.5,
+    "mediumNominalFadeSeconds": 1.5,
+    "longNominalFadeSeconds": 2.0,
+    "fadeCurve": "Linear",
+    "frameIntervalMillisecondsApprox": 50,
+    "overlappingLongPulsesObserved": true
+  },
+  "restoration": {
+    "effect": "Ambient Awareness",
+    "brightnessPercent": 77,
+    "logoEffect": "Static",
+    "startupAnimation": true,
+    "visuallyConfirmed": true,
+    "openBladeServiceRunning": true
+  },
+  "notes": [
+    "The raw PCAP remains outside the repository; only hashes, timestamps, decoded commands, and bounded observations are committed.",
+    "Observed last-nonzero spans are shorter than the nominal duration by the final frame interval. The captured channel steps establish 0.5 second Short and 2.0 second Long endpoints.",
+    "The earlier physical Medium capture reached its final nonzero frame at about 1.4 seconds, establishing the 1.5 second nominal Medium endpoint.",
+    "The first Short A frame was sampled after the peak; its 231 start value and later linear steps match the same 0.5 second curve."
+  ]
+}

@@ -35,13 +35,19 @@ internal static class ServiceComposition
 
         services.AddSingleton<IProductionBatteryPortFactory>(_ =>
             CreateProductionBatteryFactory());
+        services.AddSingleton<IProductionLightingPortFactory>(_ =>
+            CreateProductionLightingFactory());
+        services.AddSingleton(provider =>
+            CreateProfileSetValidator(
+                provider.GetRequiredService<IProductionLightingPortFactory>()));
         services.AddSingleton<IFanRpmQueryRunFactory>(_ =>
             BatteryValidationFactory.CreateWindowsFanRpmQuery());
         services.AddSingleton<IVerifiedBladeDeviceProvider>(provider =>
             new WindowsVerifiedBladeDeviceProvider(
                 WindowsVerifiedBladeDeviceProvider.ProductionProbeFactory,
                 provider.GetRequiredService<IProductionBatteryPortFactory>(),
-                provider.GetRequiredService<IFanRpmQueryRunFactory>()));
+                provider.GetRequiredService<IFanRpmQueryRunFactory>(),
+                provider.GetRequiredService<IProductionLightingPortFactory>()));
         return services;
     }
 
@@ -68,5 +74,38 @@ internal static class ServiceComposition
         {
             return createReadOnly();
         }
+    }
+
+    internal static IProductionLightingPortFactory CreateProductionLightingFactory() =>
+        CreateProductionLightingFactory(
+            ProductionLightingFactory.CreateWindows,
+            ProductionLightingFactory.CreateWindowsReadOnly);
+
+    internal static IProductionLightingPortFactory CreateProductionLightingFactory(
+        Func<IProductionLightingPortFactory> createAdmitted,
+        Func<IProductionLightingPortFactory> createReadOnly)
+    {
+        ArgumentNullException.ThrowIfNull(createAdmitted);
+        ArgumentNullException.ThrowIfNull(createReadOnly);
+        try
+        {
+            return createAdmitted();
+        }
+        catch (UnvalidatedCommandException)
+        {
+            return createReadOnly();
+        }
+        catch (JsonException)
+        {
+            return createReadOnly();
+        }
+    }
+
+    internal static ProfileSetValidator CreateProfileSetValidator(
+        IProductionLightingPortFactory lightingFactory)
+    {
+        ArgumentNullException.ThrowIfNull(lightingFactory);
+        return ProfileSetValidator.CreateForLightingCapabilities(
+            lightingFactory.Capabilities);
     }
 }

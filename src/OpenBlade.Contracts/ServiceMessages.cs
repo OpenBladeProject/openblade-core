@@ -21,6 +21,7 @@ public sealed record ControlOperationResult(ControlOperationStatus Status, strin
 [JsonDerivedType(typeof(SetPerformanceOverrideRequest), "setPerformanceOverride")]
 [JsonDerivedType(typeof(SetFanOverrideRequest), "setFanOverride")]
 [JsonDerivedType(typeof(SetLightingOverrideRequest), "setLightingOverride")]
+[JsonDerivedType(typeof(PulseReactiveKeyRequest), "pulseReactiveKey")]
 [JsonDerivedType(typeof(SetBatteryPolicyRequest), "setBatteryPolicy")]
 [JsonDerivedType(typeof(SetBatteryProtectionRequest), "setBatteryProtection")]
 [JsonDerivedType(typeof(SetFullChargeOverrideRequest), "setFullChargeOverride")]
@@ -65,6 +66,12 @@ public sealed record SetLightingOverrideRequest(
     ManualOverride<LightingSettings>? Value)
     : ServiceRequest(Version, RequestId);
 
+public sealed record PulseReactiveKeyRequest(
+    int Version,
+    Guid RequestId,
+    ReactiveKeyPulse Pulse)
+    : ServiceRequest(Version, RequestId);
+
 public sealed record SetBatteryPolicyRequest(
     int Version,
     Guid RequestId,
@@ -96,7 +103,9 @@ public sealed record ServiceStatusSnapshot(
     ManualOverride<LightingSettings>? LightingOverride,
     bool FullChargeOverride,
     FirmwareVersions? Firmware = null,
-    string? ServiceVersion = null);
+    string? ServiceVersion = null,
+    LightingRendererOwnershipState LightingRendererOwnership =
+        LightingRendererOwnershipState.None);
 
 [JsonPolymorphic(TypeDiscriminatorPropertyName = "frame")]
 [JsonDerivedType(typeof(ServiceResponse), "response")]

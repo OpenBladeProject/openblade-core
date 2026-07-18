@@ -62,6 +62,33 @@ embedded production-fixture hash in the code-controlled registry.
 
 There is intentionally no command for sending arbitrary reports. Hardware validation is implemented through typed, gated operations only.
 
+## Typed OpenBlade lighting validation
+
+Lighting uses a separate installed-build validation because PID `02E0` does
+not expose matrix-effect readback. Run only the Capture executable installed
+beside the exact `OpenBlade.Protocol.dll` being validated:
+
+```text
+OpenBlade.Capture validate-lighting --confirm-target RZ09-0581:1532:02E0:3.01 --brightness 60
+```
+
+The command repeats the exact target phrase interactively before opening a HID
+handle. It clearly states that it cannot recover an unknown externally owned
+effect, establishes a known Static green baseline, applies every typed effect
+and Reactive duration, performs the independent brightness query after every
+setting, asks for visual confirmation, and finally restores that known
+baseline. It has no raw-command or raw-matrix input.
+
+Only an all-gates success atomically replaces
+`%ProgramData%\OpenBlade\lighting-validation.json`. The result is bound to the
+target model, VID/PID, BIOS, full informational version, 40-character commit,
+and SHA-256 of the exact loaded `OpenBlade.Protocol.dll`. Failed and canceled
+runs write timestamped `.failed-*.json` sidecars and cannot replace an existing
+admission artifact. The service fails closed when the artifact is absent,
+malformed, over 64 KiB, incomplete, or does not match its current protocol
+binary. Restart the OpenBlade service after a successful validation so it can
+reevaluate admission.
+
 ## Adapter wattage readback
 
 On this exact device, the read-only `07/8C` query with payload `0000` reports

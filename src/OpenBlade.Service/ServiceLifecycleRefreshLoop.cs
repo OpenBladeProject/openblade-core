@@ -71,11 +71,24 @@ public sealed class ServiceLifecycleRefreshLoop(
                     switch (trigger)
                     {
                         case ServiceLifecycleTrigger.PowerChanged:
-                        case ServiceLifecycleTrigger.Resumed:
                             await runtime.HandlePowerSourceChangedAsync(stoppingToken);
                             break;
+                        case ServiceLifecycleTrigger.Suspending:
+                            await runtime.InvalidateLightingRendererAsync(stoppingToken);
+                            break;
+                        case ServiceLifecycleTrigger.Resumed:
+                            await runtime.InvalidateLightingRendererAsync(stoppingToken);
+                            await runtime.HandlePowerSourceChangedAsync(stoppingToken);
+                            await runtime.RestoreLightingRendererAsync(stoppingToken);
+                            break;
                         case ServiceLifecycleTrigger.DeviceArrived:
+                            await runtime.ObserveAsync(
+                                includeLiveReadings: false,
+                                stoppingToken);
+                            await runtime.RestoreLightingRendererAsync(stoppingToken);
+                            break;
                         case ServiceLifecycleTrigger.DeviceRemoved:
+                            await runtime.InvalidateLightingRendererAsync(stoppingToken);
                             await runtime.ObserveAsync(
                                 includeLiveReadings: false,
                                 stoppingToken);

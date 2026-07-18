@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
+using OpenBlade.Contracts;
 
 namespace OpenBlade.Tray;
 
@@ -21,6 +22,16 @@ public sealed record DisplaySettingsSnapshot(
     IReadOnlyList<DisplayColorProfileOption> ColorProfileOptions,
     string? SelectedColorProfileKey,
     string? StatusMessage = null);
+
+public sealed class DisplayProfileSettingsChangedEventArgs(
+    DisplayProfileSettings previousSettings,
+    DisplayProfileSettings settings)
+    : EventArgs
+{
+    public DisplayProfileSettings PreviousSettings { get; } = previousSettings;
+
+    public DisplayProfileSettings Settings { get; } = settings;
+}
 
 public interface IDisplaySettingsAdapter
 {
@@ -101,28 +112,54 @@ public sealed class DisplaySettingsViewModel : INotifyPropertyChanged, IAsyncDis
 
     public event PropertyChangedEventHandler? PropertyChanged;
 
+    public event EventHandler<DisplayProfileSettingsChangedEventArgs>? UserSettingsChanged;
+
     public IReadOnlyList<DisplayRefreshRateOption> RefreshRateOptions
     {
         get => refreshRateOptions;
-        private set => SetField(ref refreshRateOptions, value);
+        private set
+        {
+            if (SetField(ref refreshRateOptions, value))
+            {
+                NotifyControlStateChanged();
+            }
+        }
     }
 
     public DisplayRefreshRateOption? SelectedRefreshRate
     {
         get => selectedRefreshRate;
-        private set => SetField(ref selectedRefreshRate, value);
+        private set
+        {
+            if (SetField(ref selectedRefreshRate, value))
+            {
+                OnPropertyChanged(nameof(CurrentProfileSettings));
+            }
+        }
     }
 
     public IReadOnlyList<DisplayColorProfileOption> ColorProfileOptions
     {
         get => colorProfileOptions;
-        private set => SetField(ref colorProfileOptions, value);
+        private set
+        {
+            if (SetField(ref colorProfileOptions, value))
+            {
+                NotifyControlStateChanged();
+            }
+        }
     }
 
     public DisplayColorProfileOption? SelectedColorProfile
     {
         get => selectedColorProfile;
-        private set => SetField(ref selectedColorProfile, value);
+        private set
+        {
+            if (SetField(ref selectedColorProfile, value))
+            {
+                OnPropertyChanged(nameof(CurrentProfileSettings));
+            }
+        }
     }
 
     public bool IsAvailable
@@ -132,6 +169,7 @@ public sealed class DisplaySettingsViewModel : INotifyPropertyChanged, IAsyncDis
         {
             if (SetField(ref isAvailable, value))
             {
+                OnPropertyChanged(nameof(CurrentProfileSettings));
                 NotifyControlStateChanged();
             }
         }
@@ -144,6 +182,7 @@ public sealed class DisplaySettingsViewModel : INotifyPropertyChanged, IAsyncDis
         {
             if (SetField(ref isHdrSupported, value))
             {
+                OnPropertyChanged(nameof(CurrentProfileSettings));
                 NotifyControlStateChanged();
             }
         }
@@ -157,6 +196,7 @@ public sealed class DisplaySettingsViewModel : INotifyPropertyChanged, IAsyncDis
             if (SetField(ref isHdrEnabled, value))
             {
                 OnPropertyChanged(nameof(ColorProfileDescription));
+                OnPropertyChanged(nameof(CurrentProfileSettings));
                 NotifyControlStateChanged();
             }
         }
@@ -192,6 +232,13 @@ public sealed class DisplaySettingsViewModel : INotifyPropertyChanged, IAsyncDis
     public bool CanChangeColorProfile =>
         IsAvailable && !IsHdrEnabled && !IsBusy && ColorProfileOptions.Count > 0;
 
+    public DisplayProfileSettings CurrentProfileSettings => IsAvailable
+        ? new DisplayProfileSettings(
+            SelectedRefreshRate?.Key,
+            IsHdrSupported ? IsHdrEnabled : null,
+            SelectedColorProfile?.Key)
+        : DisplayProfileSettings.Unconfigured();
+
     public async Task RefreshAsync(CancellationToken token = default)
     {
         string? previousRefreshRate = SelectedRefreshRate?.Key;
@@ -199,7 +246,7 @@ public sealed class DisplaySettingsViewModel : INotifyPropertyChanged, IAsyncDis
         bool previousHdr = IsHdrEnabled;
         bool hadPriorState = IsAvailable;
 
-        await RunSerializedAsync(adapter.GetStateAsync, token);
+        await RunSerializedAsync(adapter.GetStateAsync, token, showBusy: false);
 
         bool refreshChanged = hadPriorState &&
             !string.Equals(previousRefreshRate, SelectedRefreshRate?.Key, StringComparison.Ordinal);
@@ -229,9 +276,24 @@ public sealed class DisplaySettingsViewModel : INotifyPropertyChanged, IAsyncDis
             return Task.CompletedTask;
         }
 
+        DisplayProfileSettings previous = DisplayProfileSettings.Unconfigured();
         return RunSerializedAsync(
-            operationToken => adapter.SetRefreshRateAsync(option.Key, operationToken),
-            token);
+            operationToken =>
+            {
+                previous = CurrentProfileSettings;
+                return adapter.SetRefreshRateAsync(option.Key, operationToken);
+            },
+            token,
+            state =>
+            {
+                if (string.Equals(
+                    state.SelectedRefreshRateKey,
+                    option.Key,
+                    StringComparison.Ordinal))
+                {
+                    RaiseUserSettingsChanged(previous);
+                }
+            });
     }
 
     public Task SetHdrEnabledAsync(bool enabled, CancellationToken token = default)
@@ -241,9 +303,21 @@ public sealed class DisplaySettingsViewModel : INotifyPropertyChanged, IAsyncDis
             return Task.CompletedTask;
         }
 
+        DisplayProfileSettings previous = DisplayProfileSettings.Unconfigured();
         return RunSerializedAsync(
-            operationToken => adapter.SetHdrEnabledAsync(enabled, operationToken),
-            token);
+            operationToken =>
+            {
+                previous = CurrentProfileSettings;
+                return adapter.SetHdrEnabledAsync(enabled, operationToken);
+            },
+            token,
+            state =>
+            {
+                if (state.IsHdrEnabled == enabled)
+                {
+                    RaiseUserSettingsChanged(previous);
+                }
+            });
     }
 
     public Task SelectColorProfileAsync(
@@ -257,8 +331,78 @@ public sealed class DisplaySettingsViewModel : INotifyPropertyChanged, IAsyncDis
             return Task.CompletedTask;
         }
 
+        DisplayProfileSettings previous = DisplayProfileSettings.Unconfigured();
         return RunSerializedAsync(
-            operationToken => adapter.SetColorProfileAsync(option.Key, operationToken),
+            operationToken =>
+            {
+                previous = CurrentProfileSettings;
+                return adapter.SetColorProfileAsync(option.Key, operationToken);
+            },
+            token,
+            state =>
+            {
+                if (string.Equals(
+                    state.SelectedColorProfileKey,
+                    option.Key,
+                    StringComparison.Ordinal))
+                {
+                    RaiseUserSettingsChanged(previous);
+                }
+            });
+    }
+
+    public Task ApplyProfileAsync(
+        DisplayProfileSettings? settings,
+        CancellationToken token = default)
+    {
+        if (settings is null || !settings.IsConfigured)
+        {
+            return Task.CompletedTask;
+        }
+
+        return RunSerializedAsync(
+            async operationToken =>
+            {
+                DisplaySettingsSnapshot state = await adapter.GetStateAsync(operationToken);
+                if (!state.IsAvailable)
+                {
+                    return state;
+                }
+
+                if (settings.RefreshRateKey is not null
+                    && !string.Equals(
+                        state.SelectedRefreshRateKey,
+                        settings.RefreshRateKey,
+                        StringComparison.Ordinal))
+                {
+                    state = await adapter.SetRefreshRateAsync(
+                        settings.RefreshRateKey,
+                        operationToken);
+                }
+
+                if (settings.HdrEnabled.HasValue
+                    && state.IsHdrSupported
+                    && state.IsHdrEnabled != settings.HdrEnabled.Value)
+                {
+                    state = await adapter.SetHdrEnabledAsync(
+                        settings.HdrEnabled.Value,
+                        operationToken);
+                }
+
+                if (settings.ColorProfileKey is not null
+                    && !state.IsHdrEnabled
+                    && !string.Equals(
+                        state.SelectedColorProfileKey,
+                        settings.ColorProfileKey,
+                        StringComparison.Ordinal))
+                {
+                    state = await adapter.SetColorProfileAsync(
+                        settings.ColorProfileKey,
+                        operationToken);
+                }
+
+                return state;
+            },
             token);
     }
 
@@ -278,7 +422,9 @@ public sealed class DisplaySettingsViewModel : INotifyPropertyChanged, IAsyncDis
 
     private async Task RunSerializedAsync(
         Func<CancellationToken, Task<DisplaySettingsSnapshot>> operation,
-        CancellationToken token)
+        CancellationToken token,
+        Action<DisplaySettingsSnapshot>? applied = null,
+        bool showBusy = true)
     {
         ObjectDisposedException.ThrowIf(Volatile.Read(ref disposed) != 0, this);
         using CancellationTokenSource linkedCancellation =
@@ -288,9 +434,14 @@ public sealed class DisplaySettingsViewModel : INotifyPropertyChanged, IAsyncDis
         await operationGate.WaitAsync(linkedCancellation.Token);
         try
         {
-            IsBusy = true;
+            if (showBusy)
+            {
+                IsBusy = true;
+            }
+
             DisplaySettingsSnapshot state = await operation(linkedCancellation.Token);
             Apply(state);
+            applied?.Invoke(state);
         }
         catch (OperationCanceledException) when (linkedCancellation.IsCancellationRequested)
         {
@@ -302,21 +453,34 @@ public sealed class DisplaySettingsViewModel : INotifyPropertyChanged, IAsyncDis
         }
         finally
         {
-            IsBusy = false;
+            if (showBusy)
+            {
+                IsBusy = false;
+            }
+
             operationGate.Release();
         }
     }
 
+    private void RaiseUserSettingsChanged(DisplayProfileSettings previous) =>
+        UserSettingsChanged?.Invoke(
+            this,
+            new DisplayProfileSettingsChangedEventArgs(previous, CurrentProfileSettings));
+
     private void Apply(DisplaySettingsSnapshot state)
     {
         ArgumentNullException.ThrowIfNull(state);
-        RefreshRateOptions = state.RefreshRateOptions ?? [];
+        RefreshRateOptions = ReuseWhenValueEqual(
+            RefreshRateOptions,
+            state.RefreshRateOptions ?? []);
         SelectedRefreshRate = RefreshRateOptions.FirstOrDefault(
             option => string.Equals(
                 option.Key,
                 state.SelectedRefreshRateKey,
                 StringComparison.Ordinal));
-        ColorProfileOptions = state.ColorProfileOptions ?? [];
+        ColorProfileOptions = ReuseWhenValueEqual(
+            ColorProfileOptions,
+            state.ColorProfileOptions ?? []);
         SelectedColorProfile = ColorProfileOptions.FirstOrDefault(
             option => string.Equals(
                 option.Key,
@@ -328,7 +492,27 @@ public sealed class DisplaySettingsViewModel : INotifyPropertyChanged, IAsyncDis
         StatusMessage = state.StatusMessage ?? (state.IsAvailable
             ? "Built-in display detected."
             : "Display settings are unavailable.");
-        NotifyControlStateChanged();
+    }
+
+    private static IReadOnlyList<T> ReuseWhenValueEqual<T>(
+        IReadOnlyList<T> current,
+        IReadOnlyList<T> incoming)
+    {
+        if (current.Count != incoming.Count)
+        {
+            return incoming;
+        }
+
+        EqualityComparer<T> comparer = EqualityComparer<T>.Default;
+        for (int index = 0; index < current.Count; index++)
+        {
+            if (!comparer.Equals(current[index], incoming[index]))
+            {
+                return incoming;
+            }
+        }
+
+        return current;
     }
 
     private void NotifyControlStateChanged()

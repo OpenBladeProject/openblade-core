@@ -1,0 +1,86 @@
+{
+  "schemaVersion": 1,
+  "evidenceProvenance": {
+    "controller": "Razer Synapse",
+    "role": "OracleCapture",
+    "openBladeTypedApplyPerformed": false,
+    "openBladeVisualParityConfirmed": false,
+    "note": "The listed physical keys triggered Synapse's Reactive renderer. This capture does not validate installed OpenBlade Raw Input delivery or rendering."
+  },
+  "capturedAtUtc": "2026-07-18T08:12:10.7181505Z",
+  "device": {
+    "model": "Razer Blade 16 (2026)",
+    "modelNumber": "RZ09-0581",
+    "vendorIdHex": "1532",
+    "productIdHex": "02E0",
+    "bios": "3.01",
+    "usbPcapRoot": "USBPcap3",
+    "usbDeviceAddress": 2
+  },
+  "capture": {
+    "sanitizedFileName": "lighting-reactive-keymap-main.pcap",
+    "sha256": "FC28B466691FE7E77A70613E455A18AB673DB2CE62E8ADC9B4DA6808E7B619EB",
+    "byteLength": 615021,
+    "packetCount": 3608,
+    "durationSeconds": 115.692966,
+    "matrixReportCount": 1058,
+    "rawCaptureCommitted": false,
+    "terminationReason": "StopSentinel",
+    "stopMode": "Graceful",
+    "captureProcessId": 28148,
+    "captureProcessGroupId": 28148,
+    "serviceRestored": true
+  },
+  "baseline": {
+    "effect": "Reactive",
+    "colorHex": "00FF00",
+    "duration": "Medium",
+    "brightnessPercent": 77
+  },
+  "physicalKeyEvidence": [
+    { "key": "Escape", "matrixSlot": 1, "firstLitRelativeSeconds": 79.959 },
+    { "key": "Grave", "matrixSlot": 18, "firstLitRelativeSeconds": 24.566 },
+    { "key": "Minus", "matrixSlot": 29, "firstLitRelativeSeconds": 25.724 },
+    { "key": "Equals", "matrixSlot": 30, "firstLitRelativeSeconds": 26.123 },
+    { "key": "Backspace", "matrixSlot": 32, "firstLitRelativeSeconds": 31.444 },
+    { "key": "Tab", "matrixSlot": 35, "firstLitRelativeSeconds": 32.556 },
+    { "key": "LeftBracket", "matrixSlot": 46, "firstLitRelativeSeconds": 33.596 },
+    { "key": "RightBracket", "matrixSlot": 47, "firstLitRelativeSeconds": 34.446 },
+    { "key": "Backslash", "matrixSlot": 49, "firstLitRelativeSeconds": 35.356 },
+    { "key": "CapsLock", "matrixSlot": 52, "firstLitRelativeSeconds": 36.484 },
+    { "key": "Semicolon", "matrixSlot": 62, "firstLitRelativeSeconds": 38.241 },
+    { "key": "Apostrophe", "matrixSlot": 63, "firstLitRelativeSeconds": 39.199 },
+    { "key": "Enter", "matrixSlot": 66, "firstLitRelativeSeconds": 46.401 },
+    { "key": "LeftShift", "matrixSlot": 69, "firstLitRelativeSeconds": 50.241 },
+    { "key": "Comma", "matrixSlot": 78, "firstLitRelativeSeconds": 53.882 },
+    { "key": "Period", "matrixSlot": 79, "firstLitRelativeSeconds": 54.158 },
+    { "key": "Slash", "matrixSlot": 80, "firstLitRelativeSeconds": 55.917 },
+    { "key": "RightShift", "matrixSlot": 83, "firstLitRelativeSeconds": 58.242 },
+    { "key": "LeftControl", "matrixSlot": 86, "firstLitRelativeSeconds": 61.041 },
+    { "key": "LeftWindows", "matrixSlot": 88, "firstLitRelativeSeconds": 63.002 },
+    { "key": "LeftAlt", "matrixSlot": 90, "firstLitRelativeSeconds": 66.963 },
+    { "key": "Space", "matrixSlot": 91, "firstLitRelativeSeconds": 68.603 },
+    { "key": "RightAlt", "matrixSlot": 94, "firstLitRelativeSeconds": 70.083 },
+    { "key": "RightControl", "matrixSlot": 96, "firstLitRelativeSeconds": 71.919 },
+    { "key": "LeftArrow", "matrixSlot": 97, "firstLitRelativeSeconds": 73.561 },
+    { "key": "UpArrow", "matrixSlot": 98, "firstLitRelativeSeconds": 74.882 },
+    { "key": "DownArrow", "matrixSlot": 100, "firstLitRelativeSeconds": 76.204 },
+    { "key": "RightArrow", "matrixSlot": 99, "firstLitRelativeSeconds": 77.522 }
+  ],
+  "decodedEvidence": {
+    "matrixCommand": "03/0B",
+    "matrixEnvelopeBytes": 374,
+    "matrixSlotCount": 102,
+    "oneSlotPerTestedPhysicalKey": true,
+    "mediumNominalFadeSeconds": 1.5,
+    "orderedManualInput": true,
+    "coverage": "Listed punctuation, modifiers, space, and arrow keys only; interior alphanumeric mappings are not established by this capture."
+  },
+  "notes": [
+    "The raw PCAP remains outside the repository; only its hash and bounded decoded observations are committed.",
+    "The listed keys were pressed in a fixed order. Per-slot onset times disambiguate pulses that overlapped because the interval was shorter than the 1.5 second fade.",
+    "No tested main key illuminated more than one matrix slot.",
+    "Production mappings not listed in physicalKeyEvidence remain inferred until exercised through the installed OpenBlade build.",
+    "Later sparse events caused by typing the completion reply are intentionally excluded."
+  ]
+}

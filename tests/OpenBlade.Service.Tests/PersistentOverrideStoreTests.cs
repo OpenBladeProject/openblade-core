@@ -68,6 +68,21 @@ public sealed class PersistentOverrideStoreTests : IDisposable
         Assert.Equal(baseline, loaded.Overrides);
     }
 
+    [Fact]
+    public async Task Save_LegacyOffNormalizesToTypedOff()
+    {
+        PersistentOverrideStore store = CreateStore();
+        var legacy = new PersistentOverrideState(
+            null,
+            null,
+            new LightingSettings(LightingEffect.Off, default, Brightness: 0));
+
+        await store.SaveAsync(legacy, CancellationToken.None);
+        PersistentOverrideLoadResult loaded = await store.LoadAsync(CancellationToken.None);
+
+        Assert.IsType<OffLightingParameters>(loaded.Overrides.Lighting?.Parameters);
+    }
+
     public void Dispose()
     {
         if (Directory.Exists(directory))

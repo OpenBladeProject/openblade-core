@@ -191,7 +191,8 @@ public sealed class ControlCoordinator
             capabilities => capabilities.LightingEffects.Contains(value.Effect),
             state => state.Lighting == value,
             token => device.SetLightingAsync(value, token),
-            cancellationToken);
+            cancellationToken,
+            acceptSetterCompletionWithoutReadback: value.Effect != LightingEffect.Off);
 
     internal async Task<FullTransitionApplyOutcome> ApplyDesiredStateOutcomeAsync(
         DesiredDeviceState desired,
@@ -270,7 +271,9 @@ public sealed class ControlCoordinator
                     && capabilities.LightingEffects.Contains(desired.Lighting.Value.Effect),
                 initial.Lighting == desired.Lighting.Value,
                 token => device.SetLightingAsync(desired.Lighting.Value, token),
-                state => state.Lighting == desired.Lighting.Value),
+                state => state.Lighting == desired.Lighting.Value,
+                AcceptSetterCompletionWithoutReadback:
+                    desired.Lighting.Value.Effect != LightingEffect.Off),
         };
         var provisional = new Dictionary<DeviceSubsystem, ControlResult>();
         bool stopFurtherWrites = false;
@@ -424,7 +427,10 @@ public sealed class ControlCoordinator
                     }
                     else
                     {
-                        provisional[subsystem] = Indeterminate(pending.Name, null);
+                        provisional[subsystem] =
+                            pending.AcceptSetterCompletionWithoutReadback
+                                ? AppliedWithoutEffectReadback(pending.Name)
+                                : Indeterminate(pending.Name, null);
                     }
                 }
                 else if (provisional[subsystem].Status == ControlResultStatus.Unchanged)
@@ -586,7 +592,8 @@ public sealed class ControlCoordinator
         Func<ConfirmedDeviceState, bool> matches,
         Func<CancellationToken, Task> setter,
         CancellationToken cancellationToken,
-        Func<ConfirmedDeviceState, string?>? initialStateBlockReason = null)
+        Func<ConfirmedDeviceState, string?>? initialStateBlockReason = null,
+        bool acceptSetterCompletionWithoutReadback = false)
     {
         if (!valid)
         {
@@ -662,7 +669,9 @@ public sealed class ControlCoordinator
             }
 
             return new ScopedApplyOutcome(
-                Indeterminate(name, null),
+                acceptSetterCompletionWithoutReadback
+                    ? AppliedWithoutEffectReadback(name)
+                    : Indeterminate(name, null),
                 final,
                 WriteAttempted: true,
                 ReadbackMatched: false,
@@ -948,22 +957,7 @@ public sealed class ControlCoordinator
         && desired.TemporaryFullCharge == confirmed.TemporaryFullCharge;
 
     private static bool IsLightingValid(LightingSettings value)
-    {
-        if (value is null || !IsDefined(value.Effect) || value.Brightness > 100)
-        {
-            return false;
-        }
-
-        if (value.Effect == LightingEffect.Off && value.Brightness != 0)
-        {
-            return false;
-        }
-
-        bool consumesColor = value.Effect is LightingEffect.Static
-            or LightingEffect.Breathing
-            or LightingEffect.Reactive;
-        return consumesColor || value.Color == default;
-    }
+        => LightingSettingsValidation.IsWellFormed(value);
 
     private static bool IsTerminalDeviceFailure(Exception exception) =>
         exception is IOException
@@ -990,6 +984,10 @@ public sealed class ControlCoordinator
     private static ControlResult Applied(string name) => new(
         ControlResultStatus.Applied,
         $"{name} setting applied and confirmed by readback.");
+
+    private static ControlResult AppliedWithoutEffectReadback(string name) => new(
+        ControlResultStatus.Applied,
+        $"{name} applied. Brightness was verified; this laptop does not report the active effect.");
 
     private static ControlResult Indeterminate(string name, Exception? exception) => new(
         ControlResultStatus.Failed,
@@ -1047,7 +1045,8 @@ public sealed class ControlCoordinator
         bool Supported,
         bool InitiallyMatching,
         Func<CancellationToken, Task> Setter,
-        Func<ConfirmedDeviceState, bool> Matches);
+        Func<ConfirmedDeviceState, bool> Matches,
+        bool AcceptSetterCompletionWithoutReadback = false);
 
     private sealed record BatteryOperationPlan(
         string Name,

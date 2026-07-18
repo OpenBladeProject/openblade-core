@@ -1,0 +1,63 @@
+{
+  "schemaVersion": 2,
+  "evidenceKind": "synapseOracleCapture",
+  "device": {
+    "model": "RZ09-0581",
+    "vendorId": 5426,
+    "productId": 736,
+    "biosVersion": "3.01"
+  },
+  "coreCapture": {
+    "sha256": "F05E233135E3A2AB87688EF08C282DA6949F0B32FA9CC0F486ABE823F532D314",
+    "captured": true,
+    "decoded": true
+  },
+  "reactiveCapture": {
+    "sha256": "BFCB03633CBD1F5644AEC885E8830D9489BA5A7100FFFECA0A4DDAB347E13202",
+    "captured": true,
+    "decoded": true
+  },
+  "variantCapture": {
+    "sha256": "8CD72FD3F0AB7AF95B21168C96C371B2C56D7410509046371D46305205E193A6",
+    "captured": true,
+    "decoded": true
+  },
+  "reactiveTimingCapture": {
+    "sha256": "F5A45F5A27B860BFBAE294A692381493619FACBB4E9EB68828B7A459A99ED495",
+    "captured": true,
+    "decoded": true
+  },
+  "dualBreathingCapture": {
+    "sha256": "4A99DEECC64D7BEDA6813F691CB1C71A0131B21F8EB2FFD9E19EE9F8C21F45D8",
+    "captured": true,
+    "decoded": true
+  },
+  "reactiveMainKeyMapCapture": {
+    "sha256": "FC28B466691FE7E77A70613E455A18AB673DB2CE62E8ADC9B4DA6808E7B619EB",
+    "captured": true,
+    "decoded": true
+  },
+  "reactiveFunctionKeyMapCapture": {
+    "sha256": "2B8D6D11EA6BE76F6AA0C9CAED4520CFC1DA0171388423A99FFAC9960F0C6F78",
+    "captured": true,
+    "decoded": true
+  },
+  "protocol": {
+    "brightnessQuery": "03/83:010500",
+    "brightnessSetPrefix": "03/03:0105",
+    "transitionRequests": [
+      "00/86:000000",
+      "00/84:0000",
+      "03/0A:0500"
+    ],
+    "transitionResponses": [
+      "00/86:010000",
+      "00/84:0300",
+      "03/0A:0500"
+    ],
+    "matrixCommand": "03/0B",
+    "matrixEnvelopeLength": 374,
+    "matrixFeatureReportLength": 375,
+    "matrixSlotCount": 102
+  }
+}

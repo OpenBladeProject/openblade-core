@@ -37,6 +37,15 @@ public sealed class ConfirmedStateDriftTracker
         }
     }
 
+    public void AcknowledgeIntentionalWithoutReadback(DeviceSubsystem subsystem)
+    {
+        // Some setters (currently only host-rendered keyboard effects) can
+        // independently verify transport/brightness but have no firmware GET for
+        // their semantic value. A successful explicit reclaim clears an old
+        // warning without inventing a new confirmed baseline.
+        externalChanges.Remove(subsystem);
+    }
+
     private void ObserveValue<T>(
         T? observed,
         ref T? baseline,

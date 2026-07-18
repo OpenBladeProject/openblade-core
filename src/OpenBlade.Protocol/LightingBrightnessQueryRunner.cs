@@ -82,8 +82,8 @@ internal sealed class LightingBrightnessQueryRunner : ILightingBrightnessQueryRu
 
             var command = new RazerCommandSpec(
                 LightingBrightnessProtocol.OperationClass,
-                LightingBrightnessProtocol.OperationId,
-                LightingBrightnessProtocol.Arguments.ToArray(),
+                LightingBrightnessProtocol.QueryOperationId,
+                LightingBrightnessProtocol.QueryArguments.ToArray(),
                 3,
                 payload => LightingBrightnessProtocol.TryDecodeQuery(payload.Span, out _));
             HidSessionResult<ReadOnlyMemory<byte>> response =

@@ -83,6 +83,20 @@ public sealed class ConfirmedStateDriftTrackerTests
     }
 
     [Fact]
+    public void SuccessfulSetterWithoutSemanticReadback_ClearsWarningWithoutBaseline()
+    {
+        var tracker = new ConfirmedStateDriftTracker();
+        tracker.ConfirmIntentional(DeviceSubsystem.Lighting, matched: false);
+
+        tracker.AcknowledgeIntentionalWithoutReadback(DeviceSubsystem.Lighting);
+        tracker.Observe(State(lighting: LightingSettingsFactory.Static(
+            new RgbColor(1, 2, 3),
+            50)));
+
+        Assert.Empty(tracker.ExternalChanges);
+    }
+
+    [Fact]
     public void NullThenValue_EstablishesBaselineWithoutDrift()
     {
         var tracker = new ConfirmedStateDriftTracker();

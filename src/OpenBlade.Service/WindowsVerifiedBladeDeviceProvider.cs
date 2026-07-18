@@ -17,25 +17,34 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
     internal static Func<IFanRpmQueryRunFactory> ProductionFanRpmFactory { get; } =
         BatteryValidationFactory.CreateWindowsFanRpmQuery;
 
+    internal static Func<IProductionLightingPortFactory> ProductionLightingPortFactory { get; } =
+        ServiceComposition.CreateProductionLightingFactory;
+
     private readonly Func<BatteryValidationProbeResult> probe;
     private readonly SerializedBladeDevice device;
     private readonly object providerLifecycleSync = new();
     private int disposed;
 
     public WindowsVerifiedBladeDeviceProvider()
-        : this(ProductionProbeFactory, ProductionPortFactory(), ProductionFanRpmFactory())
+        : this(
+            ProductionProbeFactory,
+            ProductionPortFactory(),
+            ProductionFanRpmFactory(),
+            ProductionLightingPortFactory())
     {
     }
 
     internal WindowsVerifiedBladeDeviceProvider(
         Func<BatteryValidationProbeResult> probe,
         IProductionBatteryPortFactory batteryFactory,
-        IFanRpmQueryRunFactory fanRpmFactory)
+        IFanRpmQueryRunFactory fanRpmFactory,
+        IProductionLightingPortFactory? lightingFactory = null)
     {
         this.probe = probe ?? throw new ArgumentNullException(nameof(probe));
         device = new SerializedBladeDevice(
             batteryFactory ?? throw new ArgumentNullException(nameof(batteryFactory)),
-            fanRpmFactory ?? throw new ArgumentNullException(nameof(fanRpmFactory)));
+            fanRpmFactory ?? throw new ArgumentNullException(nameof(fanRpmFactory)),
+            lightingFactory ?? UnavailableProductionLightingFactory.Instance);
     }
 
     public bool TryGetVerifiedDevice(out IBladeDevice verifiedDevice)
@@ -73,6 +82,11 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
         }
     }
 
+    public Task InvalidateLightingRendererAsync(CancellationToken cancellationToken) =>
+        Volatile.Read(ref disposed) != 0
+            ? Task.CompletedTask
+            : device.InvalidateLightingRendererAsync(cancellationToken);
+
     public void Dispose()
     {
         lock (providerLifecycleSync)
@@ -93,17 +107,21 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
 
         private readonly IProductionBatteryPortFactory batteryFactory;
         private readonly IFanRpmQueryRunFactory fanRpmFactory;
+        private readonly IProductionLightingPortFactory lightingFactory;
         private readonly object lifecycleSync = new();
         private readonly SemaphoreSlim hardwareOperationGate = new(1, 1);
         private bool closing;
         private bool disposed;
+        private IProductionLightingPort? lightingPort;
 
         internal SerializedBladeDevice(
             IProductionBatteryPortFactory batteryFactory,
-            IFanRpmQueryRunFactory fanRpmFactory)
+            IFanRpmQueryRunFactory fanRpmFactory,
+            IProductionLightingPortFactory lightingFactory)
         {
             this.batteryFactory = batteryFactory;
             this.fanRpmFactory = fanRpmFactory;
+            this.lightingFactory = lightingFactory;
         }
 
         public async Task<DeviceCapabilities> ReadCapabilitiesAsync(
@@ -112,44 +130,61 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
             await EnterHardwareOperationAsync(cancellationToken).ConfigureAwait(false);
             try
             {
-                HidSessionResult<IProductionBatteryPort> opened;
-                try
-                {
-                    opened = await batteryFactory.OpenAsync(cancellationToken)
+                DeviceCapabilities batteryCapabilities =
+                    await ReadBatteryCapabilitiesCoreAsync(cancellationToken)
                         .ConfigureAwait(false);
-                }
-                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-                {
-                    throw new OperationCanceledException(cancellationToken);
-                }
-                catch
-                {
-                    return DeviceCapabilities.Unavailable();
-                }
 
-                if (opened.Value is not { } port)
+                IProductionLightingPort? lighting =
+                    await GetLightingPortCoreAsync(cancellationToken).ConfigureAwait(false);
+                return lighting is null
+                    ? batteryCapabilities
+                    : batteryCapabilities with
                 {
-                    if (opened.Failure is (
-                            HidSessionFailureKind.Canceled
-                            or HidSessionFailureKind.QueuedCanceled)
-                        && cancellationToken.IsCancellationRequested)
-                    {
-                        throw new OperationCanceledException(cancellationToken);
-                    }
-
-                    return DeviceCapabilities.Unavailable();
-                }
-
-                await using (port.ConfigureAwait(false))
-                {
-                    return opened.Failure is null
-                        ? port.Capabilities
-                        : DeviceCapabilities.Unavailable();
-                }
+                    LightingEffects = lighting.Capabilities.LightingEffects,
+                };
             }
             finally
             {
                 hardwareOperationGate.Release();
+            }
+        }
+
+        private async Task<DeviceCapabilities> ReadBatteryCapabilitiesCoreAsync(
+            CancellationToken cancellationToken)
+        {
+            HidSessionResult<IProductionBatteryPort> opened;
+            try
+            {
+                opened = await batteryFactory.OpenAsync(cancellationToken)
+                    .ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw new OperationCanceledException(cancellationToken);
+            }
+            catch
+            {
+                return DeviceCapabilities.Unavailable();
+            }
+
+            if (opened.Value is not { } port)
+            {
+                if (opened.Failure is (
+                        HidSessionFailureKind.Canceled
+                        or HidSessionFailureKind.QueuedCanceled)
+                    && cancellationToken.IsCancellationRequested)
+                {
+                    throw new OperationCanceledException(cancellationToken);
+                }
+
+                return DeviceCapabilities.Unavailable();
+            }
+
+            await using (port.ConfigureAwait(false))
+            {
+                return opened.Failure is null
+                    ? port.Capabilities
+                    : DeviceCapabilities.Unavailable();
             }
         }
 
@@ -243,11 +278,13 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
                 ProductionPerformanceFanState performanceFan =
                     await port.QueryPerformanceFanStateAsync(cancellationToken)
                         .ConfigureAwait(false);
+                LightingSettings? lighting =
+                    await ReadLightingStateCoreAsync(cancellationToken).ConfigureAwait(false);
                 return new ConfirmedDeviceState(
                     performanceFan.Performance,
                     performanceFan.Fans,
                     battery,
-                    null);
+                    lighting);
             }
         }
 
@@ -467,7 +504,62 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
 
         public Task SetLightingAsync(
             LightingSettings value,
-            CancellationToken cancellationToken) => RejectUnvalidatedWrite();
+            CancellationToken cancellationToken)
+        {
+            ArgumentNullException.ThrowIfNull(value);
+            if (!LightingSettingsValidation.IsWellFormed(value)
+                || !lightingFactory.Capabilities.LightingEffects.Contains(value.Effect))
+            {
+                return RejectProductionWrite("The requested lighting setting is not admitted.");
+            }
+
+            return ExecuteProductionLightingWriteAsync(value, cancellationToken);
+        }
+
+        public Task PulseReactiveKeyAsync(
+            ReactiveKeyPulse pulse,
+            CancellationToken cancellationToken) =>
+            lightingFactory.Capabilities.LightingEffects.Contains(LightingEffect.Reactive)
+                ? ExecuteProductionLightingPulseAsync(pulse, cancellationToken)
+                : RejectProductionWrite("Reactive lighting is not admitted.");
+
+        public async Task<LightingRendererOwnershipState>
+            ReadLightingRendererOwnershipAsync(CancellationToken cancellationToken)
+        {
+            await EnterHardwareOperationAsync(cancellationToken).ConfigureAwait(false);
+            try
+            {
+                IProductionLightingPort? current = lightingPort;
+                LightingRendererOwnershipState observed = current?.OwnershipState
+                    ?? LightingRendererOwnershipState.None;
+                if (observed == LightingRendererOwnershipState.Faulted)
+                {
+                    // Preserve Faulted for this observation, but retire the poisoned
+                    // writer before a later explicit lighting action opens a new one.
+                    await ResetLightingPortCoreAsync(current).ConfigureAwait(false);
+                }
+
+                return observed;
+            }
+            finally
+            {
+                hardwareOperationGate.Release();
+            }
+        }
+
+        internal async Task InvalidateLightingRendererAsync(
+            CancellationToken cancellationToken)
+        {
+            await EnterHardwareOperationAsync(cancellationToken).ConfigureAwait(false);
+            try
+            {
+                await ResetLightingPortCoreAsync(lightingPort).ConfigureAwait(false);
+            }
+            finally
+            {
+                hardwareOperationGate.Release();
+            }
+        }
 
         public void Dispose()
         {
@@ -484,6 +576,13 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
             hardwareOperationGate.Wait();
             try
             {
+                IProductionLightingPort? currentLighting = lightingPort;
+                lightingPort = null;
+                if (currentLighting is not null)
+                {
+                    currentLighting.DisposeAsync().AsTask().GetAwaiter().GetResult();
+                }
+
                 lock (lifecycleSync)
                 {
                     disposed = true;
@@ -560,6 +659,220 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
             }
         }
 
+        private async Task ExecuteProductionLightingWriteAsync(
+            LightingSettings value,
+            CancellationToken cancellationToken)
+        {
+            IProductionLightingPort? port = null;
+            try
+            {
+                await EnterHardwareOperationAsync(cancellationToken).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                throw new BladeWriteException(
+                    WriteSubmissionState.KnownNotApplied,
+                    "The lighting write was canceled before a verified session opened.");
+            }
+            catch (ObjectDisposedException exception)
+            {
+                throw new BladeWriteException(
+                    WriteSubmissionState.KnownNotApplied,
+                    "The lighting write was blocked because the device provider is closing.",
+                    exception);
+            }
+
+            try
+            {
+                port = await GetLightingPortCoreAsync(cancellationToken).ConfigureAwait(false);
+                if (port is null || !port.Capabilities.LightingEffects.Contains(value.Effect))
+                {
+                    throw new BladeWriteException(
+                        WriteSubmissionState.KnownNotApplied,
+                        "The lighting writer could not open an exact-device session.");
+                }
+
+                await port.SetLightingAsync(value, cancellationToken).ConfigureAwait(false);
+            }
+            catch (BladeWriteException exception)
+            {
+                if (exception.SubmissionState == WriteSubmissionState.Indeterminate
+                    && port?.OwnershipState is
+                        LightingRendererOwnershipState.None or
+                        LightingRendererOwnershipState.Faulted)
+                {
+                    await ResetLightingPortCoreAsync(port).ConfigureAwait(false);
+                }
+
+                throw;
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw new BladeWriteException(
+                    WriteSubmissionState.Indeterminate,
+                    "The lighting write was canceled after a verified session opened.");
+            }
+            catch (Exception exception)
+            {
+                await ResetLightingPortCoreAsync(port).ConfigureAwait(false);
+                throw new BladeWriteException(
+                    WriteSubmissionState.Indeterminate,
+                    "The lighting write outcome is indeterminate.",
+                    exception);
+            }
+            finally
+            {
+                hardwareOperationGate.Release();
+            }
+        }
+
+        private async Task ExecuteProductionLightingPulseAsync(
+            ReactiveKeyPulse pulse,
+            CancellationToken cancellationToken)
+        {
+            IProductionLightingPort? port = null;
+            try
+            {
+                await EnterHardwareOperationAsync(cancellationToken).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                throw new BladeWriteException(
+                    WriteSubmissionState.KnownNotApplied,
+                    "The reactive lighting input was canceled before a verified session opened.");
+            }
+            catch (ObjectDisposedException exception)
+            {
+                throw new BladeWriteException(
+                    WriteSubmissionState.KnownNotApplied,
+                    "The reactive lighting input was blocked because the device provider is closing.",
+                    exception);
+            }
+
+            try
+            {
+                port = await GetLightingPortCoreAsync(cancellationToken).ConfigureAwait(false);
+                if (port is null
+                    || !port.Capabilities.LightingEffects.Contains(LightingEffect.Reactive))
+                {
+                    throw new BladeWriteException(
+                        WriteSubmissionState.KnownNotApplied,
+                        "The lighting writer could not open an exact-device session.");
+                }
+
+                await port.PulseReactiveKeyAsync(pulse, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+            catch (BladeWriteException exception)
+            {
+                if (exception.SubmissionState == WriteSubmissionState.Indeterminate)
+                {
+                    await ResetLightingPortCoreAsync(port).ConfigureAwait(false);
+                }
+
+                throw;
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw new BladeWriteException(
+                    WriteSubmissionState.Indeterminate,
+                    "The reactive lighting input was canceled after a verified session opened.");
+            }
+            catch (Exception exception)
+            {
+                await ResetLightingPortCoreAsync(port).ConfigureAwait(false);
+                throw new BladeWriteException(
+                    WriteSubmissionState.Indeterminate,
+                    "The reactive lighting input outcome is indeterminate.",
+                    exception);
+            }
+            finally
+            {
+                hardwareOperationGate.Release();
+            }
+        }
+
+        private async Task<IProductionLightingPort?> GetLightingPortCoreAsync(
+            CancellationToken cancellationToken)
+        {
+            if (lightingPort is not null)
+            {
+                return lightingPort;
+            }
+
+            HidSessionResult<IProductionLightingPort> opened;
+            try
+            {
+                opened = await lightingFactory.OpenAsync(cancellationToken)
+                    .ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch
+            {
+                return null;
+            }
+
+            IProductionLightingPort? port = opened.Value;
+            if (port is null || opened.Failure is not null)
+            {
+                if (port is not null)
+                {
+                    await port.DisposeAsync().ConfigureAwait(false);
+                }
+
+                return null;
+            }
+
+            lightingPort = port;
+            return port;
+        }
+
+        private async Task<LightingSettings?> ReadLightingStateCoreAsync(
+            CancellationToken cancellationToken)
+        {
+            try
+            {
+                IProductionLightingPort? port =
+                    await GetLightingPortCoreAsync(cancellationToken).ConfigureAwait(false);
+                return port is null
+                    ? null
+                    : await port.ReadStateAsync(cancellationToken).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (ObjectDisposedException)
+            {
+                throw;
+            }
+            catch
+            {
+                await ResetLightingPortCoreAsync(lightingPort).ConfigureAwait(false);
+                return null;
+            }
+        }
+
+        private async Task ResetLightingPortCoreAsync(IProductionLightingPort? port)
+        {
+            if (port is null || !ReferenceEquals(lightingPort, port))
+            {
+                return;
+            }
+
+            lightingPort = null;
+            try
+            {
+                await port.DisposeAsync().ConfigureAwait(false);
+            }
+            catch
+            {
+            }
+        }
+
         private async Task EnterHardwareOperationAsync(CancellationToken cancellationToken)
         {
             Task waitForHardware;
@@ -625,13 +938,24 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
                     : "The hardware write could not establish an unambiguous verified session.");
         }
 
-        private static Task RejectUnvalidatedWrite() => Task.FromException(
-            new UnvalidatedCommandException(
-                "Hardware writes are not admitted for this subsystem."));
-
         private static Task RejectProductionWrite(string message) => Task.FromException(
             new BladeWriteException(WriteSubmissionState.KnownNotApplied, message));
 
         private sealed class FailClosedDeviceException(string message) : Exception(message);
+    }
+
+    private sealed class UnavailableProductionLightingFactory : IProductionLightingPortFactory
+    {
+        internal static UnavailableProductionLightingFactory Instance { get; } = new();
+
+        public DeviceCapabilities Capabilities => DeviceCapabilities.Unavailable();
+
+        public Task<HidSessionResult<IProductionLightingPort>> OpenAsync(
+            CancellationToken cancellationToken) => Task.FromResult(
+                new HidSessionResult<IProductionLightingPort>(
+                    null,
+                    cancellationToken.IsCancellationRequested
+                        ? HidSessionFailureKind.Canceled
+                        : HidSessionFailureKind.IdentityBlocked));
     }
 }

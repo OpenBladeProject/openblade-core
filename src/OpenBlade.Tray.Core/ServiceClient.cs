@@ -99,6 +99,15 @@ public sealed class ServiceClient : IServiceClient
             new SetLightingOverrideRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid(), value),
             token);
 
+    public Task<ControlOperationResult> PulseReactiveKeyAsync(
+        ReactiveKeyPulse pulse,
+        CancellationToken token) => SendMutationAsync(
+            new PulseReactiveKeyRequest(
+                OpenBladeIpc.ProtocolVersion,
+                Guid.NewGuid(),
+                pulse),
+            token);
+
     public Task<ControlOperationResult> SetBatteryPolicyAsync(
         BatteryPolicy value,
         CancellationToken token) => SendMutationAsync(

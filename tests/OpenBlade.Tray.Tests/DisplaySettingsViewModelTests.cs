@@ -1,3 +1,4 @@
+using OpenBlade.Contracts;
 using OpenBlade.Tray;
 
 namespace OpenBlade.Tray.Tests;
@@ -69,12 +70,46 @@ public sealed class DisplaySettingsViewModelTests
         Task second = viewModel.SelectRefreshRateAsync(Dynamic);
 
         Assert.Equal(1, adapter.MaximumConcurrentOperations);
+        Assert.True(viewModel.IsBusy);
+        Assert.False(viewModel.CanChangeRefreshRate);
+        Assert.False(viewModel.CanChangeHdr);
+        Assert.False(viewModel.CanChangeColorProfile);
         adapter.ReleaseFirstRefreshChange.TrySetResult();
         await Task.WhenAll(first, second);
 
         Assert.Equal([Fixed240.Key, Dynamic.Key], adapter.RefreshRequests);
         Assert.Equal(1, adapter.MaximumConcurrentOperations);
         Assert.Equal(Dynamic.Key, viewModel.SelectedRefreshRate?.Key);
+        Assert.False(viewModel.IsBusy);
+        Assert.True(viewModel.CanChangeRefreshRate);
+        Assert.True(viewModel.CanChangeHdr);
+        Assert.True(viewModel.CanChangeColorProfile);
+    }
+
+    [Fact]
+    public async Task UnchangedBackgroundRefresh_ReusesOptionsAndDoesNotToggleControls()
+    {
+        var adapter = new FakeDisplaySettingsAdapter(
+            Snapshot(refreshKey: Fixed60.Key, hdr: false, colorKey: Native.Key));
+        await using var viewModel = new DisplaySettingsViewModel(adapter);
+        await viewModel.RefreshAsync();
+        IReadOnlyList<DisplayRefreshRateOption> refreshOptions = viewModel.RefreshRateOptions;
+        IReadOnlyList<DisplayColorProfileOption> colorOptions = viewModel.ColorProfileOptions;
+        List<string?> notifications = [];
+        viewModel.PropertyChanged += (_, args) => notifications.Add(args.PropertyName);
+        adapter.SetExternalState(
+            Snapshot(refreshKey: Fixed60.Key, hdr: false, colorKey: Native.Key));
+
+        await viewModel.RefreshAsync();
+
+        Assert.Same(refreshOptions, viewModel.RefreshRateOptions);
+        Assert.Same(colorOptions, viewModel.ColorProfileOptions);
+        Assert.DoesNotContain(nameof(DisplaySettingsViewModel.RefreshRateOptions), notifications);
+        Assert.DoesNotContain(nameof(DisplaySettingsViewModel.ColorProfileOptions), notifications);
+        Assert.DoesNotContain(nameof(DisplaySettingsViewModel.IsBusy), notifications);
+        Assert.DoesNotContain(nameof(DisplaySettingsViewModel.CanChangeRefreshRate), notifications);
+        Assert.DoesNotContain(nameof(DisplaySettingsViewModel.CanChangeHdr), notifications);
+        Assert.DoesNotContain(nameof(DisplaySettingsViewModel.CanChangeColorProfile), notifications);
     }
 
     [Fact]
@@ -93,6 +128,71 @@ public sealed class DisplaySettingsViewModelTests
 
         Assert.Equal(Native.Key, viewModel.SelectedColorProfile?.Key);
         Assert.Equal("Color profile changed outside OpenBlade.", viewModel.StatusMessage);
+    }
+
+    [Fact]
+    public async Task SuccessfulUserChange_RaisesProfileDraftWithFullCurrentDisplayState()
+    {
+        var adapter = new FakeDisplaySettingsAdapter(
+            Snapshot(refreshKey: Fixed60.Key, hdr: false, colorKey: Native.Key));
+        await using var viewModel = new DisplaySettingsViewModel(adapter);
+        await viewModel.RefreshAsync();
+        DisplayProfileSettings? previous = null;
+        DisplayProfileSettings? changed = null;
+        viewModel.UserSettingsChanged += (_, args) =>
+        {
+            previous = args.PreviousSettings;
+            changed = args.Settings;
+        };
+
+        await viewModel.SelectRefreshRateAsync(Dynamic);
+
+        Assert.Equal(
+            new DisplayProfileSettings(Dynamic.Key, false, Native.Key),
+            changed);
+        Assert.Equal(
+            new DisplayProfileSettings(Fixed60.Key, false, Native.Key),
+            previous);
+    }
+
+    [Fact]
+    public async Task RefreshingExternalChange_DoesNotRaiseUserProfileDraft()
+    {
+        var adapter = new FakeDisplaySettingsAdapter(
+            Snapshot(refreshKey: Fixed60.Key, hdr: false, colorKey: Native.Key));
+        await using var viewModel = new DisplaySettingsViewModel(adapter);
+        await viewModel.RefreshAsync();
+        int changedCount = 0;
+        viewModel.UserSettingsChanged += (_, _) => changedCount++;
+        adapter.SetExternalState(Snapshot(
+            refreshKey: Dynamic.Key,
+            hdr: false,
+            colorKey: Srgb.Key));
+
+        await viewModel.RefreshAsync();
+
+        Assert.Equal(0, changedCount);
+    }
+
+    [Fact]
+    public async Task ApplyProfile_UsesReadbackAndDoesNotRaiseUserProfileDraft()
+    {
+        var adapter = new FakeDisplaySettingsAdapter(
+            Snapshot(refreshKey: Fixed60.Key, hdr: true, colorKey: Native.Key));
+        await using var viewModel = new DisplaySettingsViewModel(adapter);
+        int changedCount = 0;
+        viewModel.UserSettingsChanged += (_, _) => changedCount++;
+
+        await viewModel.ApplyProfileAsync(
+            new DisplayProfileSettings(Dynamic.Key, false, Srgb.Key));
+
+        Assert.Equal([Dynamic.Key], adapter.RefreshRequests);
+        Assert.Equal([false], adapter.HdrRequests);
+        Assert.Equal([Srgb.Key], adapter.ColorRequests);
+        Assert.Equal(Dynamic.Key, viewModel.SelectedRefreshRate?.Key);
+        Assert.Equal(Srgb.Key, viewModel.SelectedColorProfile?.Key);
+        Assert.False(viewModel.IsHdrEnabled);
+        Assert.Equal(0, changedCount);
     }
 
     private static DisplaySettingsSnapshot Snapshot(
@@ -121,6 +221,8 @@ public sealed class DisplaySettingsViewModelTests
         public TaskCompletionSource ReleaseFirstRefreshChange { get; } = new(
             TaskCreationOptions.RunContinuationsAsynchronously);
         public List<string> RefreshRequests { get; } = [];
+        public List<bool> HdrRequests { get; } = [];
+        public List<string> ColorRequests { get; } = [];
         public int MaximumConcurrentOperations { get; private set; }
 
         public void SetExternalState(DisplaySettingsSnapshot value) => state = value;
@@ -162,6 +264,7 @@ public sealed class DisplaySettingsViewModelTests
             await EnterAsync(token);
             try
             {
+                HdrRequests.Add(enabled);
                 state = state with { IsHdrEnabled = enabled };
                 return state;
             }
@@ -178,6 +281,7 @@ public sealed class DisplaySettingsViewModelTests
             await EnterAsync(token);
             try
             {
+                ColorRequests.Add(colorProfileKey);
                 state = state with { SelectedColorProfileKey = colorProfileKey };
                 return state;
             }

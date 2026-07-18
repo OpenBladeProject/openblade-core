@@ -9,6 +9,10 @@ internal enum LightingCaptureSemantic
     ReferenceHardwareEffectWaveCandidate,
     ReferenceHardwareEffectSpectrumCandidate,
     ReferenceHardwareEffectStaticCandidate,
+    ReferenceLogoOffCandidate,
+    ReferenceLogoOnCandidate,
+    ReferenceLogoStaticCandidate,
+    ReferenceLogoBreathingCandidate,
     UnknownLightingCommand,
 }
 
@@ -35,6 +39,8 @@ internal static class LightingCaptureReportDecoder
     private const byte BrightnessSetCommand = 0x03;
     private const byte BrightnessQueryCommand = 0x83;
     private const byte KeyboardEffectCommand = 0x0A;
+    private const byte LogoStateCommand = 0x00;
+    private const byte LogoEffectCommand = 0x02;
 
     internal static bool TryDecode(
         ReadOnlySpan<byte> report,
@@ -106,6 +112,18 @@ internal static class LightingCaptureReportDecoder
                     LightingCaptureSemantic.ReferenceHardwareEffectSpectrumCandidate,
                 0x06 when IsZeroFilled(payload[4..]) =>
                     LightingCaptureSemantic.ReferenceHardwareEffectStaticCandidate,
+                _ => LightingCaptureSemantic.UnknownLightingCommand,
+            };
+        }
+
+        if (payload.Length == 3 && payload[0] == 0x01 && payload[1] == 0x04)
+        {
+            return (commandId, payload[2]) switch
+            {
+                (LogoStateCommand, 0x00) => LightingCaptureSemantic.ReferenceLogoOffCandidate,
+                (LogoStateCommand, 0x01) => LightingCaptureSemantic.ReferenceLogoOnCandidate,
+                (LogoEffectCommand, 0x00) => LightingCaptureSemantic.ReferenceLogoStaticCandidate,
+                (LogoEffectCommand, 0x02) => LightingCaptureSemantic.ReferenceLogoBreathingCandidate,
                 _ => LightingCaptureSemantic.UnknownLightingCommand,
             };
         }

@@ -40,6 +40,19 @@ public sealed class IpcMessageCodecTests
             new ManualOverride<LightingSettings>(
                 new LightingSettings(LightingEffect.Off, new RgbColor(0, 0, 0), 0),
                 OverrideLifetime.Persistent)),
+        new SetLightingOverrideRequest(
+            OpenBladeIpc.ProtocolVersion,
+            Guid.NewGuid(),
+            new ManualOverride<LightingSettings>(
+                LightingSettingsFactory.BreathingDual(
+                    new RgbColor(12, 34, 56),
+                    new RgbColor(78, 90, 123),
+                    65),
+                OverrideLifetime.UntilPowerSourceChange)),
+        new PulseReactiveKeyRequest(
+            OpenBladeIpc.ProtocolVersion,
+            Guid.NewGuid(),
+            new ReactiveKeyPulse(77)),
         new SetBatteryPolicyRequest(
             OpenBladeIpc.ProtocolVersion,
             Guid.NewGuid(),
@@ -51,6 +64,24 @@ public sealed class IpcMessageCodecTests
         new SetFullChargeOverrideRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid(), true),
         new SetFullChargeOverrideRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid(), false),
     };
+
+    [Fact]
+    public async Task ReactivePulseRequest_RejectsSlotOutsideCapturedMatrix()
+    {
+        Guid requestId = Guid.NewGuid();
+        using MemoryStream stream = FrameJson(
+            $$"""
+            {
+              "operation":"pulseReactiveKey",
+              "version":{{OpenBladeIpc.ProtocolVersion}},
+              "requestId":"{{requestId}}",
+              "pulse":{"matrixSlot":102}
+            }
+            """);
+
+        await Assert.ThrowsAsync<InvalidDataException>(() =>
+            IpcMessageCodec.ReadRequestAsync(stream, CancellationToken.None));
+    }
 
     [Theory]
     [MemberData(nameof(Requests))]
@@ -70,7 +101,60 @@ public sealed class IpcMessageCodecTests
     }
 
     [Fact]
-    public async Task VersionSevenBatteryContracts_RoundTripExactShape()
+    public async Task LightingRequestRejectsMismatchedTypedEffectParameters()
+    {
+        var malformed = new LightingSettings(
+            LightingEffect.Static,
+            new RgbColor(12, 34, 56),
+            64)
+        {
+            Parameters = new SpectrumCyclingLightingParameters(),
+        };
+        var request = new SetLightingOverrideRequest(
+            OpenBladeIpc.ProtocolVersion,
+            Guid.NewGuid(),
+            new ManualOverride<LightingSettings>(
+                malformed,
+                OverrideLifetime.Persistent));
+
+        using MemoryStream stream = new();
+        await Assert.ThrowsAsync<InvalidDataException>(() =>
+            IpcMessageCodec.WriteRequestAsync(stream, request, CancellationToken.None));
+        Assert.Equal(0, stream.Length);
+    }
+
+    [Fact]
+    public async Task LightingRequestAcceptsLegacyShapeWithoutParameterMember()
+    {
+        Guid requestId = Guid.NewGuid();
+        using MemoryStream stream = FrameJson(
+            $$"""
+            {
+              "operation":"setLightingOverride",
+              "version":{{OpenBladeIpc.ProtocolVersion}},
+              "requestId":"{{requestId}}",
+              "value":{
+                "value":{
+                  "effect":1,
+                  "color":{"red":12,"green":34,"blue":56},
+                  "brightness":64
+                },
+                "lifetime":1
+              }
+            }
+            """);
+
+        SetLightingOverrideRequest request = Assert.IsType<SetLightingOverrideRequest>(
+            await IpcMessageCodec.ReadRequestAsync(stream, CancellationToken.None));
+
+        Assert.Equal(requestId, request.RequestId);
+        Assert.Equal(LightingEffect.Static, request.Value!.Value.Effect);
+        Assert.Null(request.Value.Value.Parameters);
+        Assert.True(LightingSettingsValidation.IsWellFormed(request.Value.Value));
+    }
+
+    [Fact]
+    public async Task VersionNineBatteryContracts_RoundTripExactShape()
     {
         var capabilities = new DeviceCapabilities(
             new HashSet<PerformancePreset>(),
@@ -81,7 +165,10 @@ public sealed class IpcMessageCodecTests
             SupportsTemporaryFullCharge: false);
         var desired = new DesiredBatteryState(BatteryPolicy.Create(80), true, false);
         var confirmed = new ConfirmedBatteryState(true, 80, false);
-        ServiceRequest request = new SetBatteryProtectionRequest(7, Guid.NewGuid(), false);
+        ServiceRequest request = new SetBatteryProtectionRequest(
+            OpenBladeIpc.ProtocolVersion,
+            Guid.NewGuid(),
+            false);
         ServiceStatusSnapshot status = CreateStatus() with
         {
             PotentialControllers = ["RazerAppEngine"],
@@ -92,7 +179,7 @@ public sealed class IpcMessageCodecTests
             DesiredState = CreateStatus().DesiredState with { Battery = desired },
         };
 
-        Assert.Equal(7, OpenBladeIpc.ProtocolVersion);
+        Assert.Equal(9, OpenBladeIpc.ProtocolVersion);
         Assert.Equal(request, await RoundTripRequestAsync(request));
         ServiceStatusSnapshot roundTrip = await RoundTripStatusAsync(status);
         Assert.Equal([80], roundTrip.Capabilities!.ChargeLimits);
@@ -126,7 +213,7 @@ public sealed class IpcMessageCodecTests
     }
 
     [Fact]
-    public async Task VersionSevenStatus_AcceptsCompleteCapabilityCollections()
+    public async Task VersionNineStatus_AcceptsCompleteCapabilityCollections()
     {
         ServiceStatusSnapshot expected = CreateStatus() with
         {
@@ -135,8 +222,23 @@ public sealed class IpcMessageCodecTests
 
         ServiceStatusSnapshot actual = await RoundTripStatusAsync(expected);
 
-        Assert.Equal(7, OpenBladeIpc.ProtocolVersion);
+        Assert.Equal(9, OpenBladeIpc.ProtocolVersion);
         AssertStatusEqual(expected, actual);
+    }
+
+    [Fact]
+    public async Task WriteServerFrameAsync_RejectsUnknownLightingOwnership()
+    {
+        using MemoryStream stream = new();
+        ServiceServerFrame frame = new ServiceStatusEvent(
+            OpenBladeIpc.ProtocolVersion,
+            CreateStatus() with
+            {
+                LightingRendererOwnership = (LightingRendererOwnershipState)999,
+            });
+
+        await Assert.ThrowsAsync<InvalidDataException>(() =>
+            IpcMessageCodec.WriteServerFrameAsync(stream, frame, CancellationToken.None));
     }
 
     [Theory]
@@ -214,7 +316,7 @@ public sealed class IpcMessageCodecTests
     {
         Guid requestId = Guid.NewGuid();
         using MemoryStream stream = FrameJson(
-            $"{{\"operation\":\"setBatteryPolicy\",\"version\":7,\"requestId\":\"{requestId}\",\"value\":{{\"chargeLimitPercent\":80,{extraMember}}}}}");
+            $"{{\"operation\":\"setBatteryPolicy\",\"version\":{OpenBladeIpc.ProtocolVersion},\"requestId\":\"{requestId}\",\"value\":{{\"chargeLimitPercent\":80,{extraMember}}}}}");
 
         await Assert.ThrowsAsync<InvalidDataException>(() =>
             IpcMessageCodec.ReadRequestAsync(stream, CancellationToken.None));
@@ -225,7 +327,7 @@ public sealed class IpcMessageCodecTests
     {
         Guid requestId = Guid.NewGuid();
         using MemoryStream stream = FrameJson(
-            $"{{\"operation\":\"setBatteryPolicy\",\"version\":7,\"requestId\":\"{requestId}\",\"value\":{{\"chargeLimitPercent\":80,\"chargeLimitPercent\":75}}}}");
+            $"{{\"operation\":\"setBatteryPolicy\",\"version\":{OpenBladeIpc.ProtocolVersion},\"requestId\":\"{requestId}\",\"value\":{{\"chargeLimitPercent\":80,\"chargeLimitPercent\":75}}}}");
 
         await Assert.ThrowsAsync<InvalidDataException>(() =>
             IpcMessageCodec.ReadRequestAsync(stream, CancellationToken.None));
@@ -236,7 +338,7 @@ public sealed class IpcMessageCodecTests
     {
         Guid requestId = Guid.NewGuid();
         using MemoryStream stream = FrameJson(
-            $"{{\"operation\":\"setBatteryProtection\",\"version\":7,\"requestId\":\"{requestId}\"}}");
+            $"{{\"operation\":\"setBatteryProtection\",\"version\":{OpenBladeIpc.ProtocolVersion},\"requestId\":\"{requestId}\"}}");
 
         await Assert.ThrowsAsync<InvalidDataException>(() =>
             IpcMessageCodec.ReadRequestAsync(stream, CancellationToken.None));
@@ -397,7 +499,7 @@ public sealed class IpcMessageCodecTests
     {
         const string secret = "unknown-secret-operation";
         using MemoryStream stream = FrameJson(
-            $$"""{"operation":"{{secret}}","version":7,"requestId":"{{Guid.NewGuid()}}"}""");
+            $$"""{"operation":"{{secret}}","version":{{OpenBladeIpc.ProtocolVersion}},"requestId":"{{Guid.NewGuid()}}"}""");
 
         InvalidDataException exception = await Assert.ThrowsAsync<InvalidDataException>(() =>
             IpcMessageCodec.ReadRequestAsync(stream, CancellationToken.None));

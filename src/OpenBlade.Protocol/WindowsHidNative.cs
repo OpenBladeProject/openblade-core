@@ -198,13 +198,18 @@ internal sealed partial class WindowsHidNative : IHidCandidateNative, IOverlappe
         NativeOperationToken operation,
         Action<NativeIoCompletion> completionCallback)
     {
+        bool isSet = controlCode == IoctlHidSetFeature;
+        bool isGet = controlCode == IoctlHidGetFeature;
+        bool supportedLength = buffer is not null &&
+            (buffer.Length == RazerReport.ReportLength + 1 ||
+                (isSet && buffer.Length == TargetBladeDevice.MatrixFeatureReportByteLength));
         if (handle is null ||
             buffer is null ||
             operation is null ||
             completionCallback is null ||
-            buffer.Length != 91 ||
+            !supportedLength ||
             !ReferenceEquals(buffer, operation.PinnedBuffer) ||
-            (controlCode != IoctlHidSetFeature && controlCode != IoctlHidGetFeature))
+            (!isSet && !isGet))
         {
             return new NativeSubmissionResult(
                 NativeSubmissionKind.ImmediateFailure,
@@ -252,12 +257,13 @@ internal sealed partial class WindowsHidNative : IHidCandidateNative, IOverlappe
         NativeCallResult nativeResult;
         try
         {
-            nativeResult = controlCode == IoctlHidSetFeature
+            uint bufferLength = checked((uint)buffer.Length);
+            nativeResult = isSet
                 ? kernel.DeviceIoControl(
                     handle.FileHandle,
                     controlCode,
                     bufferPointer,
-                    91,
+                    bufferLength,
                     IntPtr.Zero,
                     0,
                     operation.GetNativeOverlapped())
@@ -267,7 +273,7 @@ internal sealed partial class WindowsHidNative : IHidCandidateNative, IOverlappe
                     IntPtr.Zero,
                     0,
                     bufferPointer,
-                    91,
+                    bufferLength,
                     operation.GetNativeOverlapped());
         }
         catch (Exception exception)

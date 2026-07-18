@@ -72,6 +72,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     private IReadOnlyList<FanMode> availableFanModes = [];
     private IReadOnlyList<FanMode> availableUsbCFanModes = [];
     private IReadOnlyList<LightingEffect> availableLightingEffects = [];
+    private IReadOnlyList<LightingEffectOption> availableLightingEffectOptions = [];
     private IReadOnlyList<LightingSettings> availableLightingSettings = [];
     private bool isPerformanceVisible;
     private bool isFanControlVisible;
@@ -79,6 +80,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     private PerformancePreset selectedPerformance = PerformancePreset.Balanced;
     private FanMode selectedFanMode = FanMode.Automatic;
     private LightingSettings selectedLighting = ProfileDefaults.CreateSafeDefaults().PluggedIn.Lighting;
+    private bool isReactiveLightingActive;
     private int chargeLimitPercent = 80;
     private string currentBatterySettingLabel = "Battery setting unavailable";
     private bool chargeLimitEditorDirty;
@@ -110,7 +112,19 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     private int lightingRedEditor;
     private int lightingGreenEditor;
     private int lightingBlueEditor;
+    private int lightingSecondaryRedEditor;
+    private int lightingSecondaryGreenEditor;
+    private int lightingSecondaryBlueEditor;
+    private BreathingColorMode lightingBreathingColorModeEditor = BreathingColorMode.Single;
+    private ReactiveLightingDuration lightingReactiveDurationEditor =
+        ReactiveLightingDuration.Medium;
     private bool lightingEditorDirty;
+    private PowerSource? activeProfileDraftSource;
+    private PerformancePreset? activeProfileDraftPerformance;
+    private FanMode? activeProfileDraftFans;
+    private LightingSettings? activeProfileDraftLighting;
+    private DisplayProfileSettings? activeProfileDraftDisplay;
+    private DisplayProfileSettings? activeProfileOriginalDisplay;
     private ThemePreference theme = ThemePreference.FollowWindows;
     private bool keepManualChangesUntilCleared;
     private LiveReadingsCadence liveReadingsRefreshCadence =
@@ -208,6 +222,9 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         SaveProfilesCommand = CreateCommand(
             SaveProfilesAsync,
             CanSaveProfiles);
+        DiscardProfileDraftCommand = CreateCommand(
+            DiscardProfileDraftAsync,
+            _ => HasActiveProfileDraft);
         ExportDiagnosticsCommand = CreateCommand(
             ExportDiagnosticsAsync,
             _ => Volatile.Read(ref disposed) == 0 && IsConnected);
@@ -227,6 +244,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             (AsyncRelayCommand)ToggleFullChargeCommand,
             (AsyncRelayCommand)ClearManualOverridesCommand,
             (AsyncRelayCommand)SaveProfilesCommand,
+            (AsyncRelayCommand)DiscardProfileDraftCommand,
             (AsyncRelayCommand)ExportDiagnosticsCommand,
             (AsyncRelayCommand)SetStartAtSignInCommand,
         ];
@@ -255,6 +273,9 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     }
 
     public event PropertyChangedEventHandler? PropertyChanged;
+
+    public event Func<DisplayProfileSettings, CancellationToken, Task>?
+        SavedDisplayProfileRestoreRequested;
 
     public bool IsConnected
     {
@@ -400,6 +421,13 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
                 return;
             }
 
+            if (value is PowerSource.PluggedIn or PowerSource.Battery or PowerSource.UsbC
+                && activeProfileDraftSource is { } draftSource
+                && draftSource != value)
+            {
+                ClearActiveProfileDraft();
+            }
+
             SetField(ref activePowerSource, value);
             PropertyChanged?.Invoke(
                 this,
@@ -416,6 +444,9 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             PropertyChanged?.Invoke(
                 this,
                 new PropertyChangedEventArgs(nameof(SelectedPerformanceOption)));
+            PropertyChanged?.Invoke(
+                this,
+                new PropertyChangedEventArgs(nameof(ActiveSavedDisplayProfile)));
             NotifyActiveFanSelectionBinding();
             PropertyChanged?.Invoke(
                 this,
@@ -701,6 +732,12 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         private set => SetField(ref availableLightingEffects, value);
     }
 
+    public IReadOnlyList<LightingEffectOption> AvailableLightingEffectOptions
+    {
+        get => availableLightingEffectOptions;
+        private set => SetField(ref availableLightingEffectOptions, value);
+    }
+
     public IReadOnlyList<LightingSettings> AvailableLightingSettings
     {
         get => availableLightingSettings;
@@ -780,6 +817,12 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     {
         get => selectedLighting;
         private set => SetField(ref selectedLighting, value);
+    }
+
+    public bool IsReactiveLightingActive
+    {
+        get => isReactiveLightingActive;
+        private set => SetField(ref isReactiveLightingActive, value);
     }
 
     public int ChargeLimitPercent
@@ -967,7 +1010,16 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     public ProfileSet Profiles
     {
         get => profiles;
-        private set => SetField(ref profiles, value);
+        private set
+        {
+            if (profiles == value)
+            {
+                return;
+            }
+
+            SetField(ref profiles, value);
+            NotifyProfileSummaries();
+        }
     }
 
     public PerformancePreset PluggedInPerformanceEditor
@@ -1105,12 +1157,107 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         set => SetEditorField(ref profileChargeLimitEditor, value);
     }
 
-    public bool HasUnsavedProfileChanges => profileEditorsDirty;
+    public bool HasUnsavedProfileChanges => profileEditorsDirty || HasActiveProfileDraft;
+
+    public bool HasActiveProfileDraft => activeProfileDraftSource is not null;
+
+    public string PluggedInProfileThermalSummary =>
+        FormatThermalProfile(Profiles.PluggedIn);
+
+    public string PluggedInProfileLightingSummary =>
+        FormatLightingProfile(Profiles.PluggedIn.Lighting);
+
+    public string PluggedInProfileDisplaySummary =>
+        FormatDisplayProfile(Profiles.PluggedIn.Display);
+
+    public string BatteryProfileThermalSummary =>
+        FormatThermalProfile(Profiles.Battery);
+
+    public string BatteryProfileLightingSummary =>
+        FormatLightingProfile(Profiles.Battery.Lighting);
+
+    public string BatteryProfileDisplaySummary =>
+        FormatDisplayProfile(Profiles.Battery.Display);
+
+    public string UsbCProfileThermalSummary =>
+        FormatThermalProfile(Profiles.UsbC);
+
+    public string UsbCProfileLightingSummary =>
+        FormatLightingProfile(Profiles.UsbC.Lighting);
+
+    public string UsbCProfileDisplaySummary =>
+        FormatDisplayProfile(Profiles.UsbC.Display);
+
+    public DisplayProfileSettings ActiveSavedDisplayProfile =>
+        ActivePowerSource is PowerSource.PluggedIn or PowerSource.Battery or PowerSource.UsbC
+            ? GetProfile(ActivePowerSource).Display ?? DisplayProfileSettings.Unconfigured()
+            : DisplayProfileSettings.Unconfigured();
+
+    public string ActiveProfileDraftName => activeProfileDraftSource switch
+    {
+        PowerSource.PluggedIn => "Plugged in",
+        PowerSource.Battery => "On battery",
+        PowerSource.UsbC => "USB-C",
+        _ => "Current profile",
+    };
+
+    public string SavedActiveProfileSummary => activeProfileDraftSource is { } source
+        ? FormatPowerProfile(GetProfile(source))
+        : string.Empty;
+
+    public string PendingActiveProfileSummary => GetActiveProfileDraft() is { } draft
+        ? FormatPowerProfile(draft)
+        : string.Empty;
+
+    public void ReportReactiveInputFailure(string message)
+    {
+        string detail = string.IsNullOrWhiteSpace(message)
+            ? "Reactive keyboard input is unavailable."
+            : message.Trim();
+        OperationStatusMessage = detail;
+        TroubleshootingRecentErrorStatus = FormatTroubleshootingValue(detail);
+    }
+
+    public void RecordDisplayProfileChange(
+        DisplayProfileSettings settings,
+        DisplayProfileSettings? previousSettings = null)
+    {
+        ArgumentNullException.ThrowIfNull(settings);
+        MarkActiveProfileDraft(
+            ActivePowerSource,
+            display: settings,
+            previousDisplay: previousSettings);
+    }
 
     public LightingEffect LightingEffectEditor
     {
         get => lightingEffectEditor;
-        set => SetLightingEditorField(ref lightingEffectEditor, value);
+        set
+        {
+            if (!Enum.IsDefined(value)
+                || !SetLightingEditorField(ref lightingEffectEditor, value))
+            {
+                return;
+            }
+
+            NotifyLightingParameterPresentation();
+            PropertyChanged?.Invoke(
+                this,
+                new PropertyChangedEventArgs(nameof(SelectedLightingEffectOption)));
+        }
+    }
+
+    public LightingEffectOption? SelectedLightingEffectOption
+    {
+        get => AvailableLightingEffectOptions.FirstOrDefault(
+            option => option.Effect == LightingEffectEditor);
+        set
+        {
+            if (value is not null)
+            {
+                LightingEffectEditor = value.Effect;
+            }
+        }
     }
 
     public int LightingBrightnessEditor
@@ -1141,6 +1288,76 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         get => lightingBlueEditor;
         set => SetLightingColorField(ref lightingBlueEditor, value);
     }
+
+    public int LightingSecondaryRedEditor
+    {
+        get => lightingSecondaryRedEditor;
+        set => SetLightingColorField(ref lightingSecondaryRedEditor, value);
+    }
+
+    public int LightingSecondaryGreenEditor
+    {
+        get => lightingSecondaryGreenEditor;
+        set => SetLightingColorField(ref lightingSecondaryGreenEditor, value);
+    }
+
+    public int LightingSecondaryBlueEditor
+    {
+        get => lightingSecondaryBlueEditor;
+        set => SetLightingColorField(ref lightingSecondaryBlueEditor, value);
+    }
+
+    public IReadOnlyList<BreathingColorMode> LightingBreathingColorModes { get; } =
+        Enum.GetValues<BreathingColorMode>();
+
+    public BreathingColorMode LightingBreathingColorModeEditor
+    {
+        get => lightingBreathingColorModeEditor;
+        set
+        {
+            if (!Enum.IsDefined(value)
+                || !SetLightingEditorField(ref lightingBreathingColorModeEditor, value))
+            {
+                return;
+            }
+
+            NotifyLightingParameterPresentation();
+        }
+    }
+
+    public IReadOnlyList<ReactiveLightingDuration> LightingReactiveDurations { get; } =
+        Enum.GetValues<ReactiveLightingDuration>();
+
+    public ReactiveLightingDuration LightingReactiveDurationEditor
+    {
+        get => lightingReactiveDurationEditor;
+        set
+        {
+            if (!Enum.IsDefined(value))
+            {
+                return;
+            }
+
+            SetLightingEditorField(ref lightingReactiveDurationEditor, value);
+        }
+    }
+
+    public bool LightingShowsBrightness => LightingEffectEditor != LightingEffect.Off;
+
+    public bool LightingShowsBreathingColorMode =>
+        LightingEffectEditor == LightingEffect.Breathing;
+
+    public bool LightingShowsPrimaryColor =>
+        LightingEffectEditor is LightingEffect.Static or LightingEffect.Reactive
+        || LightingEffectEditor == LightingEffect.Breathing
+            && LightingBreathingColorModeEditor != BreathingColorMode.Random;
+
+    public bool LightingShowsSecondaryColor =>
+        LightingEffectEditor == LightingEffect.Breathing
+        && LightingBreathingColorModeEditor == BreathingColorMode.Dual;
+
+    public bool LightingShowsReactiveDuration =>
+        LightingEffectEditor == LightingEffect.Reactive;
 
     public LightingSettings LightingDraft => CreateLightingDraft();
 
@@ -1410,6 +1627,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     public ICommand ToggleFullChargeCommand { get; }
     public ICommand ClearManualOverridesCommand { get; }
     public ICommand SaveProfilesCommand { get; }
+    public ICommand DiscardProfileDraftCommand { get; }
     public ICommand ExportDiagnosticsCommand { get; }
     public ICommand SetStartAtSignInCommand { get; }
 
@@ -1683,8 +1901,17 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             return;
         }
 
+        ServiceStatusSnapshot? previousStatus = latestStatus;
         latestAcceptedRevision = status.Revision;
         latestStatus = status;
+        if (IsConnected
+            && previousStatus is not null
+            && StatusMetadataEqual(previousStatus, status))
+        {
+            LiveReadings = LiveReadingsEnabled ? status.LiveReadings : null;
+            return;
+        }
+
         IsConnected = true;
         bool controllable = status.DeviceVerified
             && !status.WritesBlocked;
@@ -1727,6 +1954,8 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         SelectedPerformance = confirmed?.Performance ?? status.DesiredState.Performance.Value;
         SelectedFanMode = confirmed?.Fans ?? status.DesiredState.Fans.Value;
         SelectedLighting = confirmed?.Lighting ?? status.DesiredState.Lighting.Value;
+        IsReactiveLightingActive = status.LightingRendererOwnership ==
+            LightingRendererOwnershipState.Reactive;
         if (!lightingEditorDirty)
         {
             LoadLightingEditor(SelectedLighting);
@@ -1869,6 +2098,14 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             .Where(Enum.IsDefined)
             .Order()
             .ToArray();
+        AvailableLightingEffectOptions = AvailableLightingEffects
+            .Select(effect => new LightingEffectOption(
+                effect,
+                effect == LightingEffect.Spectrum ? "Spectrum Cycling" : effect.ToString()))
+            .ToArray();
+        PropertyChanged?.Invoke(
+            this,
+            new PropertyChangedEventArgs(nameof(SelectedLightingEffectOption)));
         AvailableLightingSettings = AvailableLightingEffects
             .Select(CreateLightingChoice)
             .ToArray();
@@ -1905,6 +2142,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         TrayIconState = TrayIconState.GenericError;
         IsReadOnly = true;
         CanControlHardware = false;
+        IsReactiveLightingActive = false;
         ConnectionStatus = message;
         ControlAccessStatus = "OpenBlade service isn’t running";
         NotifyCommands();
@@ -1990,32 +2228,85 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         FullChargeOverride = active;
     }
 
-    private Task SetPerformanceAsync(object? parameter, CancellationToken token) =>
-        RunOperationAsync(
+    private Task SetPerformanceAsync(object? parameter, CancellationToken token)
+    {
+        PerformancePreset requested = (PerformancePreset)parameter!;
+        PowerSource sourceAtStart = ActivePowerSource;
+        return RunOperationAsync(
             cancellationToken => serviceClient.SetPerformanceOverrideAsync(
                 new ManualOverride<PerformancePreset>(
-                    (PerformancePreset)parameter!,
-                    SelectedOverrideLifetime),
+                    requested,
+                    OverrideLifetime.UntilPowerSourceChange),
                 cancellationToken),
-            token);
+            token,
+            result =>
+            {
+                if (result.Status == ControlOperationStatus.Applied)
+                {
+                    MarkActiveProfileDraft(sourceAtStart, performance: requested);
+                }
+            });
+    }
 
-    private Task SetFanModeAsync(object? parameter, CancellationToken token) =>
-        RunOperationAsync(
+    private Task SetFanModeAsync(object? parameter, CancellationToken token)
+    {
+        FanMode requested = (FanMode)parameter!;
+        PowerSource sourceAtStart = ActivePowerSource;
+        return RunOperationAsync(
             cancellationToken => serviceClient.SetFanOverrideAsync(
                 new ManualOverride<FanMode>(
-                    (FanMode)parameter!,
-                    SelectedOverrideLifetime),
+                    requested,
+                    OverrideLifetime.UntilPowerSourceChange),
                 cancellationToken),
-            token);
+            token,
+            result =>
+            {
+                if (result.Status == ControlOperationStatus.Applied)
+                {
+                    MarkActiveProfileDraft(sourceAtStart, fans: requested);
+                }
+            });
+    }
 
-    private Task SetLightingAsync(object? parameter, CancellationToken token) =>
-        RunOperationAsync(
+    private async Task SetLightingAsync(object? parameter, CancellationToken token)
+    {
+        LightingSettings requested = (LightingSettings)parameter!;
+        PowerSource sourceAtStart = ActivePowerSource;
+        long revisionAtStart = latestAcceptedRevision;
+        ControlOperationStatus? resultStatus = null;
+        await RunOperationAsync(
             cancellationToken => serviceClient.SetLightingOverrideAsync(
                 new ManualOverride<LightingSettings>(
-                    (LightingSettings)parameter!,
-                    SelectedOverrideLifetime),
+                    requested,
+                    OverrideLifetime.UntilPowerSourceChange),
                 cancellationToken),
-            token);
+            token,
+            result =>
+            {
+                resultStatus = result.Status;
+                if (result.Status == ControlOperationStatus.Applied)
+                {
+                    MarkActiveProfileDraft(sourceAtStart, lighting: requested);
+                }
+            });
+
+        if (resultStatus == ControlOperationStatus.Applied)
+        {
+            await dispatcher.InvokeAsync(
+                () =>
+                {
+                    lightingEditorDirty = false;
+                    if (latestStatus is not null
+                        && latestAcceptedRevision > revisionAtStart)
+                    {
+                        LoadLightingEditor(
+                            latestStatus.ConfirmedState?.Lighting
+                            ?? latestStatus.DesiredState.Lighting.Value);
+                    }
+                },
+                token);
+        }
+    }
 
     private async Task SetChargeLimitAsync(object? parameter, CancellationToken token)
     {
@@ -2200,7 +2491,11 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
 
     private async Task SaveProfilesAsync(object? parameter, CancellationToken token)
     {
-        if (!TryGetSupportedProfileDraft(parameter, out ProfileSet draft))
+        bool savingActiveDraft = HasActiveProfileDraft;
+        ProfileSet? candidate = savingActiveDraft
+            ? CreateProfileSetWithActiveDraft()
+            : parameter as ProfileSet;
+        if (!TryGetSupportedProfileDraft(candidate, out ProfileSet draft))
         {
             return;
         }
@@ -2210,16 +2505,120 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             token);
         if (accepted)
         {
-            Profiles = draft;
-            SetProfileEditorsDirty(false);
-            LoadProfileEditors(draft);
+            if (savingActiveDraft)
+            {
+                try
+                {
+                    await ClearActiveProfileHardwareOverridesAsync(token);
+                }
+                finally
+                {
+                    // The profile update is already durable in the service. Keep the
+                    // UI in sync even if clearing an equivalent temporary override
+                    // fails or the operation is canceled afterward.
+                    Profiles = draft;
+                    ClearActiveProfileDraft();
+                }
+            }
+            else
+            {
+                Profiles = draft;
+                SetProfileEditorsDirty(false);
+                LoadProfileEditors(draft);
+            }
         }
     }
 
     private bool CanSaveProfiles(object? parameter) =>
-        profileEditorsDirty
-        && CanMutate
-        && TryGetSupportedProfileDraft(parameter, out _);
+        CanMutate
+        && (HasActiveProfileDraft
+            ? TryGetSupportedProfileDraft(CreateProfileSetWithActiveDraft(), out _)
+            : profileEditorsDirty && TryGetSupportedProfileDraft(parameter, out _));
+
+    private async Task DiscardProfileDraftAsync(object? parameter, CancellationToken token)
+    {
+        token.ThrowIfCancellationRequested();
+        if (activeProfileDraftSource is not { } source)
+        {
+            return;
+        }
+
+        DisplayProfileSettings savedDisplay =
+            GetProfile(source).Display ?? DisplayProfileSettings.Unconfigured();
+        DisplayProfileSettings displayToRestore = savedDisplay.IsConfigured
+            ? savedDisplay
+            : activeProfileOriginalDisplay ?? savedDisplay;
+        bool controlsRestored = await ClearActiveProfileHardwareOverridesAsync(token);
+        bool displayRestored = await RestoreSavedDisplayProfileAsync(displayToRestore, token);
+        if (controlsRestored && displayRestored)
+        {
+            ClearActiveProfileDraft();
+        }
+    }
+
+    private async Task<bool> ClearActiveProfileHardwareOverridesAsync(
+        CancellationToken token)
+    {
+        bool restored = true;
+        if (activeProfileDraftPerformance is not null || PerformanceOverride is not null)
+        {
+            restored &= await RunOperationAsync(
+                cancellationToken => serviceClient.SetPerformanceOverrideAsync(
+                    null,
+                    cancellationToken),
+                token);
+        }
+        if (activeProfileDraftFans is not null || FanOverride is not null)
+        {
+            restored &= await RunOperationAsync(
+                cancellationToken => serviceClient.SetFanOverrideAsync(
+                    null,
+                    cancellationToken),
+                token);
+        }
+        if (activeProfileDraftLighting is not null || LightingOverride is not null)
+        {
+            restored &= await RunOperationAsync(
+                cancellationToken => serviceClient.SetLightingOverrideAsync(
+                    null,
+                    cancellationToken),
+                token);
+        }
+        return restored;
+    }
+
+    private async Task<bool> RestoreSavedDisplayProfileAsync(
+        DisplayProfileSettings settings,
+        CancellationToken token)
+    {
+        Delegate[] handlers = SavedDisplayProfileRestoreRequested?.GetInvocationList() ?? [];
+        try
+        {
+            foreach (Delegate handler in handlers)
+            {
+                await ((Func<DisplayProfileSettings, CancellationToken, Task>)handler)(
+                    settings,
+                    token);
+            }
+            return true;
+        }
+        catch (OperationCanceledException) when (token.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception exception)
+        {
+            string message = $"Could not restore the saved display profile: {exception.Message}";
+            await dispatcher.InvokeAsync(
+                () =>
+                {
+                    OperationStatusMessage = message;
+                    TroubleshootingRecentErrorStatus = FormatTroubleshootingValue(message);
+                },
+                token);
+            return false;
+        }
+    }
 
     private bool TryGetSupportedProfileDraft(object? parameter, out ProfileSet draft)
     {
@@ -2233,20 +2632,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
                 return false;
             }
 
-            candidate = new ProfileSet(
-                new PowerProfile(
-                    PluggedInPerformanceEditor,
-                    PluggedInFanModeEditor,
-                    PluggedInLightingEditor),
-                new PowerProfile(
-                    BatteryPerformanceEditor,
-                    BatteryFanModeEditor,
-                    BatteryLightingEditor),
-                new PowerProfile(
-                    UsbCPerformanceEditor,
-                    UsbCFanModeEditor,
-                    UsbCLightingEditor),
-                BatteryPolicy.Create(ProfileChargeLimitEditor));
+            candidate = CreateLegacyProfileEditorDraft();
         }
 
         draft = candidate;
@@ -2319,19 +2705,12 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     {
         if (!Enum.IsDefined(lighting.Effect)
             || !capabilities.LightingEffects.Contains(lighting.Effect)
-            || lighting.Brightness > 100)
+            || !LightingSettingsValidation.IsWellFormed(lighting))
         {
             return false;
         }
 
-        bool hasColor = lighting.Color != default;
-        return lighting.Effect switch
-        {
-            LightingEffect.Off => lighting.Brightness == 0 && !hasColor,
-            LightingEffect.Spectrum => !hasColor,
-            LightingEffect.Static or LightingEffect.Breathing or LightingEffect.Reactive => true,
-            _ => false,
-        };
+        return true;
     }
 
     private async Task<bool> RunOperationAsync(
@@ -2430,6 +2809,44 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         SetField(ref lightingRedEditor, (int)value.Color.Red, nameof(LightingRedEditor));
         SetField(ref lightingGreenEditor, (int)value.Color.Green, nameof(LightingGreenEditor));
         SetField(ref lightingBlueEditor, (int)value.Color.Blue, nameof(LightingBlueEditor));
+        RgbColor secondaryColor = value.Parameters is BreathingLightingParameters
+        {
+            SecondaryColor: { } color,
+        }
+            ? color
+            : value.Color;
+        SetField(
+            ref lightingSecondaryRedEditor,
+            (int)secondaryColor.Red,
+            nameof(LightingSecondaryRedEditor));
+        SetField(
+            ref lightingSecondaryGreenEditor,
+            (int)secondaryColor.Green,
+            nameof(LightingSecondaryGreenEditor));
+        SetField(
+            ref lightingSecondaryBlueEditor,
+            (int)secondaryColor.Blue,
+            nameof(LightingSecondaryBlueEditor));
+        BreathingColorMode breathingColorMode =
+            value.Parameters is BreathingLightingParameters breathing
+                ? breathing.ColorMode
+                : BreathingColorMode.Single;
+        SetField(
+            ref lightingBreathingColorModeEditor,
+            breathingColorMode,
+            nameof(LightingBreathingColorModeEditor));
+        ReactiveLightingDuration reactiveDuration =
+            value.Parameters is ReactiveLightingParameters reactive
+                ? reactive.Duration
+                : ReactiveLightingDuration.Medium;
+        SetField(
+            ref lightingReactiveDurationEditor,
+            reactiveDuration,
+            nameof(LightingReactiveDurationEditor));
+        NotifyLightingParameterPresentation();
+        PropertyChanged?.Invoke(
+            this,
+            new PropertyChangedEventArgs(nameof(SelectedLightingEffectOption)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(LightingDraft)));
     }
 
@@ -2496,30 +2913,309 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         NotifyCommands();
     }
 
-    private LightingSettings CreateLightingDraft()
+    private PowerProfile GetProfile(PowerSource source) => source switch
     {
-        if (LightingEffectEditor == LightingEffect.Off)
+        PowerSource.PluggedIn => Profiles.PluggedIn,
+        PowerSource.Battery => Profiles.Battery,
+        PowerSource.UsbC => Profiles.UsbC,
+        _ => throw new ArgumentOutOfRangeException(nameof(source)),
+    };
+
+    private PowerProfile? GetActiveProfileDraft()
+    {
+        if (activeProfileDraftSource is not { } source)
         {
-            return ProfileDefaults.CreateSafeDefaults().PluggedIn.Lighting;
+            return null;
         }
 
-        RgbColor color = LightingEffectEditor == LightingEffect.Spectrum
-            ? default
-            : new RgbColor(
-                (byte)LightingRedEditor,
-                (byte)LightingGreenEditor,
-                (byte)LightingBlueEditor);
-        return new LightingSettings(
-            LightingEffectEditor,
-            color,
-            (byte)LightingBrightnessEditor);
+        PowerProfile profile = GetProfile(source);
+        return profile with
+        {
+            Performance = activeProfileDraftPerformance ?? profile.Performance,
+            Fans = activeProfileDraftFans ?? profile.Fans,
+            Lighting = activeProfileDraftLighting ?? profile.Lighting,
+            Display = activeProfileDraftDisplay ?? profile.Display,
+        };
+    }
+
+    private ProfileSet CreateProfileSetWithActiveDraft()
+    {
+        PowerSource source = activeProfileDraftSource
+            ?? throw new InvalidOperationException("No active profile draft exists.");
+        PowerProfile draft = GetActiveProfileDraft()
+            ?? throw new InvalidOperationException("No active profile draft exists.");
+        return source switch
+        {
+            PowerSource.PluggedIn => Profiles with { PluggedIn = draft },
+            PowerSource.Battery => Profiles with { Battery = draft },
+            PowerSource.UsbC => Profiles with { UsbC = draft },
+            _ => throw new ArgumentOutOfRangeException(nameof(source)),
+        };
+    }
+
+    private ProfileSet CreateLegacyProfileEditorDraft() => new(
+        Profiles.PluggedIn with
+        {
+            Performance = PluggedInPerformanceEditor,
+            Fans = PluggedInFanModeEditor,
+            Lighting = PluggedInLightingEditor,
+        },
+        Profiles.Battery with
+        {
+            Performance = BatteryPerformanceEditor,
+            Fans = BatteryFanModeEditor,
+            Lighting = BatteryLightingEditor,
+        },
+        Profiles.UsbC with
+        {
+            Performance = UsbCPerformanceEditor,
+            Fans = UsbCFanModeEditor,
+            Lighting = UsbCLightingEditor,
+        },
+        BatteryPolicy.Create(ProfileChargeLimitEditor));
+
+    private void MarkActiveProfileDraft(
+        PowerSource source,
+        PerformancePreset? performance = null,
+        FanMode? fans = null,
+        LightingSettings? lighting = null,
+        DisplayProfileSettings? display = null,
+        DisplayProfileSettings? previousDisplay = null)
+    {
+        if (source != ActivePowerSource
+            || source is not (PowerSource.PluggedIn or PowerSource.Battery or PowerSource.UsbC))
+        {
+            return;
+        }
+
+        if (activeProfileDraftSource != source)
+        {
+            activeProfileDraftSource = source;
+            activeProfileDraftPerformance = null;
+            activeProfileDraftFans = null;
+            activeProfileDraftLighting = null;
+            activeProfileDraftDisplay = null;
+            activeProfileOriginalDisplay = previousDisplay;
+        }
+        else if (display is not null && activeProfileDraftDisplay is null)
+        {
+            activeProfileOriginalDisplay = previousDisplay;
+        }
+
+        activeProfileDraftPerformance = performance ?? activeProfileDraftPerformance;
+        activeProfileDraftFans = fans ?? activeProfileDraftFans;
+        activeProfileDraftLighting = lighting ?? activeProfileDraftLighting;
+        activeProfileDraftDisplay = display ?? activeProfileDraftDisplay;
+
+        PowerProfile saved = GetProfile(source);
+        if (activeProfileDraftPerformance == saved.Performance)
+        {
+            activeProfileDraftPerformance = null;
+        }
+        if (activeProfileDraftFans == saved.Fans)
+        {
+            activeProfileDraftFans = null;
+        }
+        if (activeProfileDraftLighting == saved.Lighting)
+        {
+            activeProfileDraftLighting = null;
+        }
+        DisplayProfileSettings savedDisplay =
+            saved.Display ?? DisplayProfileSettings.Unconfigured();
+        DisplayProfileSettings displayBaseline = savedDisplay.IsConfigured
+            ? savedDisplay
+            : activeProfileOriginalDisplay ?? savedDisplay;
+        if (activeProfileDraftDisplay == displayBaseline)
+        {
+            activeProfileDraftDisplay = null;
+            activeProfileOriginalDisplay = null;
+        }
+        if (activeProfileDraftPerformance is null
+            && activeProfileDraftFans is null
+            && activeProfileDraftLighting is null
+            && activeProfileDraftDisplay is null)
+        {
+            activeProfileDraftSource = null;
+        }
+
+        NotifyActiveProfileDraft();
+    }
+
+    private void ClearActiveProfileDraft()
+    {
+        if (!HasActiveProfileDraft)
+        {
+            return;
+        }
+
+        activeProfileDraftSource = null;
+        activeProfileDraftPerformance = null;
+        activeProfileDraftFans = null;
+        activeProfileDraftLighting = null;
+        activeProfileDraftDisplay = null;
+        activeProfileOriginalDisplay = null;
+        NotifyActiveProfileDraft();
+    }
+
+    private void NotifyActiveProfileDraft()
+    {
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasActiveProfileDraft)));
+        PropertyChanged?.Invoke(
+            this,
+            new PropertyChangedEventArgs(nameof(HasUnsavedProfileChanges)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ActiveProfileDraftName)));
+        PropertyChanged?.Invoke(
+            this,
+            new PropertyChangedEventArgs(nameof(SavedActiveProfileSummary)));
+        PropertyChanged?.Invoke(
+            this,
+            new PropertyChangedEventArgs(nameof(PendingActiveProfileSummary)));
+        NotifyCommands();
+    }
+
+    private void NotifyProfileSummaries()
+    {
+        PropertyChanged?.Invoke(
+            this,
+            new PropertyChangedEventArgs(nameof(PluggedInProfileThermalSummary)));
+        PropertyChanged?.Invoke(
+            this,
+            new PropertyChangedEventArgs(nameof(PluggedInProfileLightingSummary)));
+        PropertyChanged?.Invoke(
+            this,
+            new PropertyChangedEventArgs(nameof(BatteryProfileThermalSummary)));
+        PropertyChanged?.Invoke(
+            this,
+            new PropertyChangedEventArgs(nameof(BatteryProfileLightingSummary)));
+        PropertyChanged?.Invoke(
+            this,
+            new PropertyChangedEventArgs(nameof(UsbCProfileThermalSummary)));
+        PropertyChanged?.Invoke(
+            this,
+            new PropertyChangedEventArgs(nameof(UsbCProfileLightingSummary)));
+        PropertyChanged?.Invoke(
+            this,
+            new PropertyChangedEventArgs(nameof(PluggedInProfileDisplaySummary)));
+        PropertyChanged?.Invoke(
+            this,
+            new PropertyChangedEventArgs(nameof(BatteryProfileDisplaySummary)));
+        PropertyChanged?.Invoke(
+            this,
+            new PropertyChangedEventArgs(nameof(UsbCProfileDisplaySummary)));
+        PropertyChanged?.Invoke(
+            this,
+            new PropertyChangedEventArgs(nameof(ActiveSavedDisplayProfile)));
+        PropertyChanged?.Invoke(
+            this,
+            new PropertyChangedEventArgs(nameof(SavedActiveProfileSummary)));
+        PropertyChanged?.Invoke(
+            this,
+            new PropertyChangedEventArgs(nameof(PendingActiveProfileSummary)));
+    }
+
+    private static string FormatThermalProfile(PowerProfile profile) =>
+        $"{PerformancePresetPresentation.Label(profile.Performance)} | {profile.Fans} fans";
+
+    private static string FormatPowerProfile(PowerProfile profile) =>
+        $"Performance: {PerformancePresetPresentation.Label(profile.Performance)}{Environment.NewLine}"
+        + $"Fans: {profile.Fans}{Environment.NewLine}"
+        + $"Lighting: {FormatLightingProfile(profile.Lighting)}{Environment.NewLine}"
+        + $"Display: {FormatDisplayProfile(profile.Display)}";
+
+    private static string FormatLightingProfile(LightingSettings lighting)
+    {
+        if (lighting.Effect == LightingEffect.Off)
+        {
+            return "Off";
+        }
+
+        string effect = lighting.Effect == LightingEffect.Spectrum
+            ? "Spectrum Cycling"
+            : lighting.Effect.ToString();
+        string details = lighting.Parameters switch
+        {
+            BreathingLightingParameters
+            {
+                ColorMode: BreathingColorMode.Dual,
+                SecondaryColor: { } secondary,
+            } =>
+                $"two colors, {FormatColor(lighting.Color)} and "
+                + FormatColor(secondary),
+            BreathingLightingParameters { ColorMode: BreathingColorMode.Random } => "random colors",
+            BreathingLightingParameters => FormatColor(lighting.Color),
+            ReactiveLightingParameters reactive =>
+                $"{reactive.Duration.ToString().ToLowerInvariant()}, {FormatColor(lighting.Color)}",
+            _ when lighting.Effect == LightingEffect.Static => FormatColor(lighting.Color),
+            _ => string.Empty,
+        };
+        return string.IsNullOrEmpty(details)
+            ? $"{effect} | {lighting.Brightness}%"
+            : $"{effect} | {lighting.Brightness}% | {details}";
+    }
+
+    private static string FormatColor(RgbColor color) =>
+        $"#{color.Red:X2}{color.Green:X2}{color.Blue:X2}";
+
+    private static string FormatDisplayProfile(DisplayProfileSettings? display)
+    {
+        DisplayProfileSettings value = display ?? DisplayProfileSettings.Unconfigured();
+        List<string> settings = [];
+        if (!string.IsNullOrWhiteSpace(value.RefreshRateKey))
+        {
+            settings.Add(value.RefreshRateKey);
+        }
+        if (value.HdrEnabled is bool hdrEnabled)
+        {
+            settings.Add(hdrEnabled ? "HDR on" : "HDR off");
+        }
+        if (!string.IsNullOrWhiteSpace(value.ColorProfileKey))
+        {
+            settings.Add(value.ColorProfileKey);
+        }
+        return settings.Count == 0 ? "Use current settings" : string.Join(" | ", settings);
+    }
+
+    private LightingSettings CreateLightingDraft()
+    {
+        byte brightness = (byte)LightingBrightnessEditor;
+        RgbColor primaryColor = new(
+            (byte)LightingRedEditor,
+            (byte)LightingGreenEditor,
+            (byte)LightingBlueEditor);
+        RgbColor secondaryColor = new(
+            (byte)LightingSecondaryRedEditor,
+            (byte)LightingSecondaryGreenEditor,
+            (byte)LightingSecondaryBlueEditor);
+        return LightingEffectEditor switch
+        {
+            LightingEffect.Off => LightingSettingsFactory.Off(),
+            LightingEffect.Static => LightingSettingsFactory.Static(primaryColor, brightness),
+            LightingEffect.Spectrum => LightingSettingsFactory.SpectrumCycling(brightness),
+            LightingEffect.Breathing when
+                LightingBreathingColorModeEditor == BreathingColorMode.Single =>
+                LightingSettingsFactory.BreathingSingle(primaryColor, brightness),
+            LightingEffect.Breathing when
+                LightingBreathingColorModeEditor == BreathingColorMode.Dual =>
+                LightingSettingsFactory.BreathingDual(
+                    primaryColor,
+                    secondaryColor,
+                    brightness),
+            LightingEffect.Breathing when
+                LightingBreathingColorModeEditor == BreathingColorMode.Random =>
+                LightingSettingsFactory.BreathingRandom(brightness),
+            LightingEffect.Reactive => LightingSettingsFactory.Reactive(
+                primaryColor,
+                brightness,
+                LightingReactiveDurationEditor),
+            _ => new LightingSettings(LightingEffectEditor, default, brightness),
+        };
     }
 
     private LightingSettings CreateLightingChoice(LightingEffect effect)
     {
         if (effect == LightingEffect.Off)
         {
-            return ProfileDefaults.CreateSafeDefaults().PluggedIn.Lighting;
+            return LightingSettingsFactory.Off();
         }
 
         bool usesColor = effect is LightingEffect.Static
@@ -2533,7 +3229,17 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         byte brightness = SelectedLighting.Brightness == 0
             ? (byte)100
             : SelectedLighting.Brightness;
-        return new LightingSettings(effect, color, brightness);
+        return effect switch
+        {
+            LightingEffect.Static => LightingSettingsFactory.Static(color, brightness),
+            LightingEffect.Spectrum => LightingSettingsFactory.SpectrumCycling(brightness),
+            LightingEffect.Breathing => LightingSettingsFactory.BreathingSingle(color, brightness),
+            LightingEffect.Reactive => LightingSettingsFactory.Reactive(
+                color,
+                brightness,
+                ReactiveLightingDuration.Medium),
+            _ => new LightingSettings(effect, color, brightness),
+        };
     }
 
     private void NotifyCommands()
@@ -2665,6 +3371,44 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         && status.Message.Contains(
             "last confirmed power source is retained",
             StringComparison.OrdinalIgnoreCase);
+
+    private static bool StatusMetadataEqual(
+        ServiceStatusSnapshot left,
+        ServiceStatusSnapshot right) =>
+        left.DeviceVerified == right.DeviceVerified
+        && left.WritesBlocked == right.WritesBlocked
+        && left.PotentialControllers.SequenceEqual(
+            right.PotentialControllers,
+            StringComparer.Ordinal)
+        && string.Equals(
+            left.ControllerDetectionWarning,
+            right.ControllerDetectionWarning,
+            StringComparison.Ordinal)
+        && left.ExternalChanges.SequenceEqual(right.ExternalChanges)
+        && string.Equals(left.Message, right.Message, StringComparison.Ordinal)
+        && CapabilitiesEqual(left.Capabilities, right.Capabilities)
+        && left.ConfirmedState == right.ConfirmedState
+        && left.Profiles == right.Profiles
+        && left.DesiredState == right.DesiredState
+        && left.ActivePowerSource == right.ActivePowerSource
+        && left.PerformanceOverride == right.PerformanceOverride
+        && left.FanOverride == right.FanOverride
+        && left.LightingOverride == right.LightingOverride
+        && left.FullChargeOverride == right.FullChargeOverride
+        && left.Firmware == right.Firmware
+        && string.Equals(left.ServiceVersion, right.ServiceVersion, StringComparison.Ordinal);
+
+    private static bool CapabilitiesEqual(
+        DeviceCapabilities? left,
+        DeviceCapabilities? right) =>
+        ReferenceEquals(left, right)
+        || (left is not null && right is not null
+            && left.PerformancePresets.SetEquals(right.PerformancePresets)
+            && left.FanModes.SetEquals(right.FanModes)
+            && left.LightingEffects.SetEquals(right.LightingEffects)
+            && left.ChargeLimits.SetEquals(right.ChargeLimits)
+            && left.SupportsBatteryProtectionOff == right.SupportsBatteryProtectionOff
+            && left.SupportsTemporaryFullCharge == right.SupportsTemporaryFullCharge);
 
     private static string FormatOperationFeedback(string message)
     {
@@ -2839,15 +3583,36 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         SetLightingEditorField(ref field, value);
     }
 
-    private void SetLightingEditorField<T>(
+    private bool SetLightingEditorField<T>(
         ref T field,
         T value,
         [CallerMemberName] string? propertyName = null)
     {
+        if (EqualityComparer<T>.Default.Equals(field, value))
+        {
+            return false;
+        }
+
         lightingEditorDirty = true;
         SetField(ref field, value, propertyName);
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(LightingDraft)));
         NotifyCommands();
+        return true;
+    }
+
+    private void NotifyLightingParameterPresentation()
+    {
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(LightingShowsBrightness)));
+        PropertyChanged?.Invoke(
+            this,
+            new PropertyChangedEventArgs(nameof(LightingShowsBreathingColorMode)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(LightingShowsPrimaryColor)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(LightingShowsSecondaryColor)));
+        PropertyChanged?.Invoke(
+            this,
+            new PropertyChangedEventArgs(nameof(LightingShowsReactiveDuration)));
     }
 
 }
+
+public sealed record LightingEffectOption(LightingEffect Effect, string Label);

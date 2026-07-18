@@ -41,6 +41,19 @@ if (args.Length == 1 && args[0].Equals("scan", StringComparison.OrdinalIgnoreCas
     return interfaces.Count > 0 ? 0 : 3;
 }
 
+if (args.Length == 1 && args[0].Equals("scan-all", StringComparison.OrdinalIgnoreCase))
+{
+    IReadOnlyList<HidInterfaceInfo> interfaces = WindowsHidEnumerator.FindTargetCollections();
+    Console.WriteLine($"Found {interfaces.Count} HID collection(s) for 1532:02E0.");
+    foreach (HidInterfaceInfo device in interfaces)
+    {
+        Console.WriteLine(
+            $"Usage {device.UsagePage:X4}:{device.Usage:X4}, feature bytes {device.FeatureReportByteLength}: {device.DevicePath}");
+    }
+
+    return interfaces.Count > 0 ? 0 : 3;
+}
+
 if (args.Length == 1 && args[0].Equals("query-display", StringComparison.OrdinalIgnoreCase))
 {
     using var controller = new WindowsDisplaySettingsController();
@@ -126,6 +139,14 @@ if (args.Length > 0 && args[0].Equals(
     return await command.RunAsync(args[1..], CancellationToken.None);
 }
 
+if (args.Length > 0 && args[0].Equals(
+    "validate-lighting",
+    StringComparison.OrdinalIgnoreCase))
+{
+    var command = LightingValidationCommand.CreateWindows(Console.In, Console.Out);
+    return await command.RunAsync(args[1..], CancellationToken.None);
+}
+
 if (args.Length > 0 && args[0].Equals("probe-battery-sequence", StringComparison.OrdinalIgnoreCase))
 {
     var session = new BatteryQuerySequenceSession(
@@ -170,6 +191,7 @@ if (args.Length > 0 && args[0].Equals("validate-temporary-full-charge", StringCo
 Console.WriteLine("OpenBlade capture utility (no raw hardware command support)");
 Console.WriteLine("  OpenBlade.Capture target");
 Console.WriteLine("  OpenBlade.Capture scan");
+Console.WriteLine("  OpenBlade.Capture scan-all");
 Console.WriteLine("  OpenBlade.Capture query-display");
 Console.WriteLine("  OpenBlade.Capture validate <fixtures.json>");
 Console.WriteLine("  OpenBlade.Capture probe-battery");
@@ -183,6 +205,10 @@ Console.WriteLine(
     "<balanced|silent|performance|fixed5400|battery-saver|battery-balanced> " +
     "--confirm-target " +
     PerformanceFanSetterValidationCommand.ExactTargetConfirmation);
+Console.WriteLine(
+    "  OpenBlade.Capture validate-lighting --confirm-target " +
+    LightingValidationCommand.ExactTargetConfirmation +
+    " --brightness <1-100>");
 Console.WriteLine("  OpenBlade.Capture probe-battery-sequence");
 Console.WriteLine("  OpenBlade.Capture validate-battery <off|50|55|60|65|70|75|80>");
 Console.WriteLine("  OpenBlade.Capture validate-protection-off");

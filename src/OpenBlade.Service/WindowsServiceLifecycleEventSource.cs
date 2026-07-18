@@ -8,6 +8,7 @@ namespace OpenBlade.Service;
 public enum ServiceLifecycleTrigger
 {
     PowerChanged,
+    Suspending,
     Resumed,
     DeviceArrived,
     DeviceRemoved,
@@ -123,9 +124,10 @@ public sealed class WindowsServiceLifecycleEventSource
     : IServiceLifecycleEventSource, IDisposable
 {
     private const int PowerChangedBit = 1 << 0;
-    private const int ResumedBit = 1 << 1;
-    private const int DeviceArrivedBit = 1 << 2;
-    private const int DeviceRemovedBit = 1 << 3;
+    private const int SuspendingBit = 1 << 1;
+    private const int ResumedBit = 1 << 2;
+    private const int DeviceArrivedBit = 1 << 3;
+    private const int DeviceRemovedBit = 1 << 4;
     private static readonly ConcurrentBag<IDisposable> FailedSubscriptions = [];
     private readonly object disposeSync = new();
     private readonly Func<CancellationToken, ValueTask>? beforePendingDrainAsync;
@@ -197,6 +199,11 @@ public sealed class WindowsServiceLifecycleEventSource
                     yield return ServiceLifecycleTrigger.PowerChanged;
                 }
 
+                if ((drained & SuspendingBit) != 0)
+                {
+                    yield return ServiceLifecycleTrigger.Suspending;
+                }
+
                 if ((drained & ResumedBit) != 0)
                 {
                     yield return ServiceLifecycleTrigger.Resumed;
@@ -258,6 +265,7 @@ public sealed class WindowsServiceLifecycleEventSource
         int bit = trigger switch
         {
             ServiceLifecycleTrigger.PowerChanged => PowerChangedBit,
+            ServiceLifecycleTrigger.Suspending => SuspendingBit,
             ServiceLifecycleTrigger.Resumed => ResumedBit,
             ServiceLifecycleTrigger.DeviceArrived => DeviceArrivedBit,
             ServiceLifecycleTrigger.DeviceRemoved => DeviceRemovedBit,
@@ -271,6 +279,14 @@ public sealed class WindowsServiceLifecycleEventSource
 internal sealed class NativeWindowsLifecycleNotificationBackend
     : IWindowsLifecycleNotificationBackend
 {
+    internal static ServiceLifecycleTrigger? ClassifySuspendResumeNotification(uint type) =>
+        type switch
+        {
+            0x0004 => ServiceLifecycleTrigger.Suspending, // PBT_APMSUSPEND
+            0x0007 or 0x0012 => ServiceLifecycleTrigger.Resumed,
+            _ => null,
+        };
+
     public IDisposable Subscribe(Action<ServiceLifecycleTrigger> publish)
     {
         ArgumentNullException.ThrowIfNull(publish);
@@ -286,8 +302,6 @@ internal sealed class NativeWindowsLifecycleNotificationBackend
     private sealed class NativeSubscription : IDisposable
     {
         private const uint DeviceNotifyCallbackFlag = 2;
-        private const uint PowerResumeAutomatic = 0x0012;
-        private const uint PowerResumeSuspend = 0x0007;
         private const uint DeviceInterfaceArrival = 0;
         private const uint DeviceInterfaceRemoval = 1;
         private const uint CrSuccess = 0;
@@ -387,10 +401,12 @@ internal sealed class NativeWindowsLifecycleNotificationBackend
 
         private uint OnSuspendResumeNotification(IntPtr context, uint type, IntPtr setting)
         {
-            if (type is PowerResumeAutomatic or PowerResumeSuspend
-                && Volatile.Read(ref disposed) == 0)
+            ServiceLifecycleTrigger? trigger =
+                NativeWindowsLifecycleNotificationBackend
+                    .ClassifySuspendResumeNotification(type);
+            if (trigger is { } notification && Volatile.Read(ref disposed) == 0)
             {
-                publish(ServiceLifecycleTrigger.Resumed);
+                publish(notification);
             }
 
             return 0;

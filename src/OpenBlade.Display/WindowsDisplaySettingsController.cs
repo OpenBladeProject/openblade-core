@@ -24,7 +24,9 @@ public sealed class WindowsDisplaySettingsController : IDisplaySettingsControlle
         await _operationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            return QueryCore(cancellationToken);
+            return await RunNativeAsync(
+                () => QueryCore(cancellationToken),
+                cancellationToken).ConfigureAwait(false);
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
@@ -45,44 +47,47 @@ public sealed class WindowsDisplaySettingsController : IDisplaySettingsControlle
         await _operationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            DisplayTopology original = QueryTopology();
-            DisplayTarget target = GetSingleInternalTarget(original);
-            DisplaySettingsSnapshot before = BuildSnapshot(original, target, cancellationToken);
-            DisplayRefreshOption? requested = before.RefreshOptions.FirstOrDefault(option => option.Key == key);
-            if (requested is null)
+            return await RunNativeAsync(() =>
             {
-                return DisplayOperationResult.Failure("That refresh-rate option is not available for the internal display.", before);
-            }
+                DisplayTopology original = QueryTopology();
+                DisplayTarget target = GetSingleInternalTarget(original);
+                DisplaySettingsSnapshot before = BuildSnapshot(original, target, cancellationToken);
+                DisplayRefreshOption? requested = before.RefreshOptions.FirstOrDefault(option => option.Key == key);
+                if (requested is null)
+                {
+                    return DisplayOperationResult.Failure("That refresh-rate option is not available for the internal display.", before);
+                }
 
-            if (string.Equals(before.CurrentRefreshKey, key, StringComparison.Ordinal))
-            {
-                return DisplayOperationResult.Success(before);
-            }
+                if (string.Equals(before.CurrentRefreshKey, key, StringComparison.Ordinal))
+                {
+                    return DisplayOperationResult.Success(before);
+                }
 
-            try
-            {
-                DisplayTopology requestedTopology = original.Copy();
-                DisplayTarget requestedTarget = GetSingleInternalTarget(requestedTopology);
-                ApplyBoostState(requestedTopology, requestedTarget, requested.IsDynamic, requested.DesktopHertz);
+                try
+                {
+                    DisplayTopology requestedTopology = original.Copy();
+                    DisplayTarget requestedTarget = GetSingleInternalTarget(requestedTopology);
+                    ApplyBoostState(requestedTopology, requestedTarget, requested.IsDynamic, requested.DesktopHertz);
 
-                DisplaySettingsSnapshot after = QueryCore(cancellationToken);
-                if (!string.Equals(after.CurrentRefreshKey, key, StringComparison.Ordinal))
+                    DisplaySettingsSnapshot after = QueryCore(cancellationToken);
+                    if (!string.Equals(after.CurrentRefreshKey, key, StringComparison.Ordinal))
+                    {
+                        TryRestoreTopology(original);
+                        return DisplayOperationResult.Failure(
+                            "Windows did not confirm the requested refresh-rate mode, so the previous display configuration was restored.",
+                            QueryCore(cancellationToken));
+                    }
+
+                    return DisplayOperationResult.Success(after);
+                }
+                catch (Exception exception) when (exception is not OperationCanceledException)
                 {
                     TryRestoreTopology(original);
                     return DisplayOperationResult.Failure(
-                        "Windows did not confirm the requested refresh-rate mode, so the previous display configuration was restored.",
-                        QueryCore(cancellationToken));
+                        $"The refresh-rate change failed and OpenBlade attempted to restore the previous display configuration: {exception.Message}",
+                        TryQuerySnapshot(cancellationToken));
                 }
-
-                return DisplayOperationResult.Success(after);
-            }
-            catch (Exception exception) when (exception is not OperationCanceledException)
-            {
-                TryRestoreTopology(original);
-                return DisplayOperationResult.Failure(
-                    $"The refresh-rate change failed and OpenBlade attempted to restore the previous display configuration: {exception.Message}",
-                    TryQuerySnapshot(cancellationToken));
-            }
+            }, cancellationToken).ConfigureAwait(false);
         }
         finally
         {
@@ -98,44 +103,51 @@ public sealed class WindowsDisplaySettingsController : IDisplaySettingsControlle
         await _operationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            DisplayTopology topology = QueryTopology();
-            DisplayTarget target = GetSingleInternalTarget(topology);
-            AdvancedColorState current = QueryAdvancedColor(target);
-            DisplaySettingsSnapshot before = BuildSnapshot(topology, target, cancellationToken);
-            if (!current.HdrSupported)
+            return await RunNativeAsync(() =>
             {
-                return DisplayOperationResult.Failure("HDR is not supported for the active internal display.", before);
-            }
+                DisplayTopology topology = QueryTopology();
+                DisplayTarget target = GetSingleInternalTarget(topology);
+                AdvancedColorState current = QueryAdvancedColor(target);
+                DisplaySettingsSnapshot before = BuildSnapshot(topology, target, cancellationToken);
+                if (!current.HdrSupported)
+                {
+                    return DisplayOperationResult.Failure("HDR is not supported for the active internal display.", before);
+                }
 
-            if (current.HdrEnabled == enabled)
-            {
-                return DisplayOperationResult.Success(before);
-            }
+                if (current.HdrEnabled == enabled)
+                {
+                    return DisplayOperationResult.Success(before);
+                }
 
-            DisplayConfigSetHdrState request = new()
-            {
-                Header = CreateHeader(
-                    WindowsDisplayNative.DisplayConfigDeviceInfoSetHdrState,
-                    target.Path.TargetInfo.AdapterId,
-                    target.Path.TargetInfo.Id,
-                    Marshal.SizeOf<DisplayConfigSetHdrState>()),
-                Value = enabled ? 1u : 0u,
-            };
+                DisplayConfigSetHdrState request = new()
+                {
+                    Header = CreateHeader(
+                        WindowsDisplayNative.DisplayConfigDeviceInfoSetHdrState,
+                        target.Path.TargetInfo.AdapterId,
+                        target.Path.TargetInfo.Id,
+                        Marshal.SizeOf<DisplayConfigSetHdrState>()),
+                    Value = enabled ? 1u : 0u,
+                };
 
-            int result = WindowsDisplayNative.DisplayConfigSetHdrState(ref request);
-            ThrowIfWin32Error(result, "Windows could not change HDR");
+                int result = WindowsDisplayNative.DisplayConfigSetHdrState(ref request);
+                ThrowIfWin32Error(result, "Windows could not change HDR");
 
-            DisplaySettingsSnapshot after = QueryCore(cancellationToken);
-            if (after.HdrEnabled != enabled)
-            {
-                return DisplayOperationResult.Failure("Windows did not confirm the requested HDR state.", after);
-            }
+                DisplaySettingsSnapshot after = QueryCore(cancellationToken);
+                if (after.HdrEnabled != enabled)
+                {
+                    return DisplayOperationResult.Failure("Windows did not confirm the requested HDR state.", after);
+                }
 
-            return DisplayOperationResult.Success(after);
+                return DisplayOperationResult.Success(after);
+            }, cancellationToken).ConfigureAwait(false);
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
-            return DisplayOperationResult.Failure(exception.Message, TryQuerySnapshot(cancellationToken));
+            return await RunNativeAsync(
+                () => DisplayOperationResult.Failure(
+                    exception.Message,
+                    TryQuerySnapshot(cancellationToken)),
+                CancellationToken.None).ConfigureAwait(false);
         }
         finally
         {
@@ -152,54 +164,57 @@ public sealed class WindowsDisplaySettingsController : IDisplaySettingsControlle
         await _operationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            DisplayTopology topology = QueryTopology();
-            DisplayTarget target = GetSingleInternalTarget(topology);
-            DisplaySettingsSnapshot state = BuildSnapshot(topology, target, cancellationToken);
-            if (!state.ColorProfilesEnabled)
+            return await RunNativeAsync(() =>
             {
-                return DisplayOperationResult.Failure("Color profiles are unavailable while HDR is on.", state);
-            }
-
-            DisplayColorProfile? requested = state.ColorProfiles.FirstOrDefault(
-                profile => ProfilesMatch(profile.Id, id));
-            if (requested is null)
-            {
-                return DisplayOperationResult.Failure("That color profile is not available for the internal display.", state);
-            }
-
-            if (ProfilesMatch(requested.Id, state.ActiveColorProfileId))
-            {
-                return DisplayOperationResult.Success(state);
-            }
-
-            uint originalScope = GetSelectedColorProfileScope(target);
-            string? previous = state.ActiveColorProfileId;
-            try
-            {
-                if (originalScope != WindowsDisplayNative.CurrentUserScope)
+                DisplayTopology topology = QueryTopology();
+                DisplayTarget target = GetSingleInternalTarget(topology);
+                DisplaySettingsSnapshot state = BuildSnapshot(topology, target, cancellationToken);
+                if (!state.ColorProfilesEnabled)
                 {
-                    SetUsePerUserProfiles(target, true);
+                    return DisplayOperationResult.Failure("Color profiles are unavailable while HDR is on.", state);
                 }
 
-                SetDefaultStandardColorProfile(target, requested.Id);
-                DisplaySettingsSnapshot after = QueryCore(cancellationToken);
-                if (!ProfilesMatch(after.ActiveColorProfileId ?? string.Empty, requested.Id))
+                DisplayColorProfile? requested = state.ColorProfiles.FirstOrDefault(
+                    profile => ProfilesMatch(profile.Id, id));
+                if (requested is null)
+                {
+                    return DisplayOperationResult.Failure("That color profile is not available for the internal display.", state);
+                }
+
+                if (ProfilesMatch(requested.Id, state.ActiveColorProfileId))
+                {
+                    return DisplayOperationResult.Success(state);
+                }
+
+                uint originalScope = GetSelectedColorProfileScope(target);
+                string? previous = state.ActiveColorProfileId;
+                try
+                {
+                    if (originalScope != WindowsDisplayNative.CurrentUserScope)
+                    {
+                        SetUsePerUserProfiles(target, true);
+                    }
+
+                    SetDefaultStandardColorProfile(target, requested.Id);
+                    DisplaySettingsSnapshot after = QueryCore(cancellationToken);
+                    if (!ProfilesMatch(after.ActiveColorProfileId ?? string.Empty, requested.Id))
+                    {
+                        TryRestoreColorProfile(target, previous, originalScope);
+                        return DisplayOperationResult.Failure(
+                            "Windows did not confirm the requested color profile, so OpenBlade restored the previous profile.",
+                            QueryCore(cancellationToken));
+                    }
+
+                    return DisplayOperationResult.Success(after);
+                }
+                catch (Exception exception) when (exception is not OperationCanceledException)
                 {
                     TryRestoreColorProfile(target, previous, originalScope);
                     return DisplayOperationResult.Failure(
-                        "Windows did not confirm the requested color profile, so OpenBlade restored the previous profile.",
-                        QueryCore(cancellationToken));
+                        $"The color-profile change failed and OpenBlade attempted to restore the previous profile: {exception.Message}",
+                        TryQuerySnapshot(cancellationToken));
                 }
-
-                return DisplayOperationResult.Success(after);
-            }
-            catch (Exception exception) when (exception is not OperationCanceledException)
-            {
-                TryRestoreColorProfile(target, previous, originalScope);
-                return DisplayOperationResult.Failure(
-                    $"The color-profile change failed and OpenBlade attempted to restore the previous profile: {exception.Message}",
-                    TryQuerySnapshot(cancellationToken));
-            }
+            }, cancellationToken).ConfigureAwait(false);
         }
         finally
         {
@@ -216,6 +231,14 @@ public sealed class WindowsDisplaySettingsController : IDisplaySettingsControlle
 
         _disposed = true;
         _operationGate.Dispose();
+    }
+
+    internal static Task<T> RunNativeAsync<T>(
+        Func<T> operation,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(operation);
+        return Task.Run(operation, cancellationToken);
     }
 
     private static DisplaySettingsSnapshot QueryCore(CancellationToken cancellationToken)
@@ -597,14 +620,11 @@ public sealed class WindowsDisplaySettingsController : IDisplaySettingsControlle
                 .ToArray();
         }
 
-        int[] fixedRates = driverRates
-            .Where(advertisedRates.Contains)
-            .Append(RefreshRateClassifier.Normalize(currentHertz))
-            .Append(physical)
-            .Where(driverRates.Contains)
-            .Distinct()
-            .Order()
-            .ToArray();
+        int[] fixedRates = RefreshRateVisibilityFilter.SelectFixedRates(
+            driverRates,
+            advertisedRates,
+            RefreshRateClassifier.Normalize(currentHertz),
+            physical);
         List<DisplayRefreshOption> options = fixedRates
             .Select(hertz => new DisplayRefreshOption(
                 DisplayRefreshKeys.Fixed(hertz),

@@ -27,7 +27,21 @@ public static class WindowsHidEnumerator
         return FindTargetInterfaces(new WindowsHidNative());
     }
 
+    public static IReadOnlyList<HidInterfaceInfo> FindTargetCollections()
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            return [];
+        }
+
+        return FindTargetCollections(new WindowsHidNative());
+    }
+
     internal static IReadOnlyList<HidInterfaceInfo> FindTargetInterfaces(
+        IHidCandidateNative native) =>
+        SelectProductionInterfaces(FindTargetCollections(native));
+
+    internal static IReadOnlyList<HidInterfaceInfo> FindTargetCollections(
         IHidCandidateNative native)
     {
         ArgumentNullException.ThrowIfNull(native);
@@ -69,7 +83,11 @@ public static class WindowsHidEnumerator
             }
         }
 
-        return SelectProductionInterfaces(interfaces);
+        return interfaces
+            .Where(device => TargetBladeDevice.Matches(
+                device.VendorId,
+                device.ProductId))
+            .ToArray();
     }
 
     public static IReadOnlyList<HidInterfaceInfo> SelectProductionInterfaces(

@@ -36,7 +36,10 @@ internal static class WindowsDisplayNative
     internal const uint DmInterlaced = 0x00000002;
     internal const uint CurrentUserScope = 1;
     internal const uint SystemWideScope = 0;
-    internal const uint ClassMonitor = 1;
+    // CLASS_MONITOR from icm.h is the ICC device-class signature 'mntr'.
+    // WcsSetUsePerUserProfiles rejects the ordinal value used by some unrelated
+    // device-class enums, leaving the system-wide color-profile list active.
+    internal const uint ClassMonitor = 0x6D6E7472;
     internal const uint ColorProfileTypeIcc = 0;
     internal const uint ColorProfileSubtypeStandardDisplay = 7;
 

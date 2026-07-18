@@ -1,5 +1,6 @@
 using OpenBlade.Contracts;
 using OpenBlade.Service;
+using System.Text.Json;
 
 namespace OpenBlade.Service.Tests;
 
@@ -109,6 +110,61 @@ public sealed class ProfileStoreTests : IDisposable
 
         Assert.True(result.RecoveredFromInvalidFile);
         Assert.Equal(ProfileDefaults.CreateSafeDefaults(), result.Profiles);
+    }
+
+    [Fact]
+    public async Task Load_CurrentSchemaLegacyOffNormalizesAndRewritesTypedParameters()
+    {
+        Directory.CreateDirectory(_directory);
+        string path = Path.Combine(_directory, "profiles.json");
+        LightingSettings legacyOff = new(LightingEffect.Off, default, Brightness: 0);
+        ProfileSet defaults = ProfileDefaults.CreateSafeDefaults();
+        ProfileSet legacy = defaults with
+        {
+            PluggedIn = defaults.PluggedIn with { Lighting = legacyOff },
+            Battery = defaults.Battery with { Lighting = legacyOff },
+            UsbC = defaults.UsbC with { Lighting = legacyOff },
+        };
+        byte[] json = JsonSerializer.SerializeToUtf8Bytes(
+            new ProfileDocument(ProfileStore.CurrentSchemaVersion, legacy),
+            ProfileStore.SerializerOptions);
+        await File.WriteAllBytesAsync(path, json);
+
+        ProfileLoadResult result = await new ProfileStore(path).LoadAsync(
+            CancellationToken.None);
+
+        Assert.False(result.RecoveredFromInvalidFile);
+        Assert.IsType<OffLightingParameters>(result.Profiles.PluggedIn.Lighting.Parameters);
+        Assert.IsType<OffLightingParameters>(result.Profiles.Battery.Lighting.Parameters);
+        Assert.IsType<OffLightingParameters>(result.Profiles.UsbC.Lighting.Parameters);
+        Assert.Contains("\"kind\": \"off\"", await File.ReadAllTextAsync(path));
+    }
+
+    [Fact]
+    public async Task Load_CurrentSchemaWithoutDisplaySettingsNormalizesAndRewritesProfiles()
+    {
+        Directory.CreateDirectory(_directory);
+        string path = Path.Combine(_directory, "profiles.json");
+        ProfileSet defaults = ProfileDefaults.CreateSafeDefaults();
+        ProfileSet legacy = defaults with
+        {
+            PluggedIn = defaults.PluggedIn with { Display = null },
+            Battery = defaults.Battery with { Display = null },
+            UsbC = defaults.UsbC with { Display = null },
+        };
+        byte[] json = JsonSerializer.SerializeToUtf8Bytes(
+            new ProfileDocument(ProfileStore.CurrentSchemaVersion, legacy),
+            ProfileStore.SerializerOptions);
+        await File.WriteAllBytesAsync(path, json);
+
+        ProfileLoadResult result = await new ProfileStore(path).LoadAsync(
+            CancellationToken.None);
+
+        Assert.False(result.RecoveredFromInvalidFile);
+        Assert.Equal(DisplayProfileSettings.Unconfigured(), result.Profiles.PluggedIn.Display);
+        Assert.Equal(DisplayProfileSettings.Unconfigured(), result.Profiles.Battery.Display);
+        Assert.Equal(DisplayProfileSettings.Unconfigured(), result.Profiles.UsbC.Display);
+        Assert.DoesNotContain("\"display\": null", await File.ReadAllTextAsync(path));
     }
 
     public void Dispose()

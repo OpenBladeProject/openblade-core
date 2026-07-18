@@ -1,0 +1,89 @@
+{
+  "schemaVersion": 1,
+  "evidenceProvenance": {
+    "controller": "Razer Synapse",
+    "role": "OracleCapture",
+    "openBladeTypedApplyPerformed": false,
+    "openBladeVisualParityConfirmed": false,
+    "note": "The matrix placements and input reports are oracle evidence. Installed OpenBlade Raw Input delivery, rendering, and parity remain unconfirmed."
+  },
+  "capturedAtUtc": "2026-07-18T08:16:32.5999608Z",
+  "device": {
+    "model": "Razer Blade 16 (2026)",
+    "modelNumber": "RZ09-0581",
+    "vendorIdHex": "1532",
+    "productIdHex": "02E0",
+    "bios": "3.01",
+    "usbPcapRoot": "USBPcap3",
+    "usbDeviceAddress": 2
+  },
+  "capture": {
+    "sanitizedFileName": "lighting-reactive-keymap-function.pcap",
+    "sha256": "2B8D6D11EA6BE76F6AA0C9CAED4520CFC1DA0171388423A99FFAC9960F0C6F78",
+    "byteLength": 475155,
+    "packetCount": 2910,
+    "durationSeconds": 85.753769,
+    "matrixReportCount": 804,
+    "rawCaptureCommitted": false,
+    "terminationReason": "StopSentinel",
+    "stopMode": "Graceful",
+    "captureProcessId": 4772,
+    "captureProcessGroupId": 4772,
+    "serviceRestored": true
+  },
+  "baseline": {
+    "effect": "Reactive",
+    "colorHex": "00FF00",
+    "duration": "Medium",
+    "brightnessPercent": 77
+  },
+  "physicalKeyEvidence": [
+    { "key": "F1", "matrixSlot": 2, "firstLitRelativeSeconds": 32.441 },
+    { "key": "F2", "matrixSlot": 3, "firstLitRelativeSeconds": 33.924 },
+    { "key": "F3", "matrixSlot": 4, "firstLitRelativeSeconds": 35.332 },
+    { "key": "F4", "matrixSlot": 5, "firstLitRelativeSeconds": 36.811 },
+    { "key": "F5", "matrixSlot": 6, "firstLitRelativeSeconds": 38.244 },
+    { "key": "F6", "matrixSlot": 7, "firstLitRelativeSeconds": 39.764 },
+    { "key": "F7", "matrixSlot": 8, "firstLitRelativeSeconds": 41.135 },
+    { "key": "F8", "matrixSlot": 9, "firstLitRelativeSeconds": 42.532 },
+    { "key": "F9", "matrixSlot": 10, "firstLitRelativeSeconds": 43.892 },
+    { "key": "F10", "matrixSlot": 11, "firstLitRelativeSeconds": 45.246 },
+    { "key": "F11", "matrixSlot": 12, "firstLitRelativeSeconds": 46.614 },
+    { "key": "F12", "matrixSlot": 13, "firstLitRelativeSeconds": 48.208 },
+    {
+      "key": "PrintScreen",
+      "physicalChord": ["Fn", "F12"],
+      "matrixSlotsInOrder": [87, 13],
+      "firstLitRelativeSeconds": [56.847, 56.888]
+    },
+    { "key": "Delete", "matrixSlot": 15, "firstLitRelativeSeconds": 61.362 },
+    { "key": "Fn", "matrixSlot": 87, "firstLitRelativeSeconds": 62.812 }
+  ],
+  "decodedEvidence": {
+    "matrixCommand": "03/0B",
+    "matrixEnvelopeBytes": 374,
+    "matrixSlotCount": 102,
+    "mediumNominalFadeSeconds": 1.5,
+    "printScreenPulseOrder": [87, 13],
+    "printScreenPulseSeparationMillisecondsApprox": 41,
+    "orderedManualInput": true,
+    "excludedKeys": ["Power"]
+  },
+  "usbInputReportEvidence": {
+    "interface": "MI_01",
+    "endpointHex": "82",
+    "interruptInReportBytes": 16,
+    "f12MakePrefixHex": "010045",
+    "fnMakePrefixHex": "040A00",
+    "fnReleasePrefixHex": "040000",
+    "printScreenPhysicalChord": ["Fn", "F12"],
+    "interpretation": "Fn is observable in the USB input stream. Whether the installed OpenBlade process receives an equivalent Fn transition through Windows Raw Input remains unvalidated."
+  },
+  "notes": [
+    "The raw PCAP remains outside the repository; only its hash and bounded decoded observations are committed.",
+    "This keyboard exposes Print Screen as the physical Fn plus F12 chord. Synapse lights Fn and F12 as two successive matrix frames.",
+    "Fn alone lights matrix slot 87 in Synapse. Whether Windows Raw Input exposes an Fn make event requires installed-app validation on the interactive desktop.",
+    "Later sparse events caused by typing the completion reply are intentionally excluded.",
+    "The power button was deliberately not pressed."
+  ]
+}

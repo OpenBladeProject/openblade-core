@@ -21,6 +21,12 @@ public sealed class WindowsDisplayNativeContractTests
         Assert.Equal(220, Marshal.SizeOf<DevMode>());
     }
 
+    [Fact]
+    public void ColorManagementConstants_MatchWindowsSdkIcmHeader()
+    {
+        Assert.Equal(0x6D6E7472u, WindowsDisplayNative.ClassMonitor);
+    }
+
     [Theory]
     [InlineData(0u, false, false)]
     [InlineData(0x10u, true, false)]

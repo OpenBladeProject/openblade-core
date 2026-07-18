@@ -124,6 +124,7 @@ public sealed class BatteryConfigurationStore
         ProfileSet profiles,
         CancellationToken cancellationToken)
     {
+        profiles = ProfileStore.NormalizeLegacyBatteryProfile(profiles, out _);
         validator.Validate(profiles);
         await gate.WaitAsync(cancellationToken);
         try
@@ -147,6 +148,7 @@ public sealed class BatteryConfigurationStore
         BatteryAutomationPreferences preferences,
         CancellationToken cancellationToken)
     {
+        profiles = ProfileStore.NormalizeLegacyBatteryProfile(profiles, out _);
         validator.Validate(profiles);
         validator.ValidatePreferences(preferences);
         await gate.WaitAsync(cancellationToken);

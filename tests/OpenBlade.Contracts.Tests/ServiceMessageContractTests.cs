@@ -7,9 +7,9 @@ namespace OpenBlade.Contracts.Tests;
 public sealed class ServiceMessageContractTests
 {
     [Fact]
-    public void ProtocolConstants_AreClosedVersionSevenAndRetainExactSizeLimit()
+    public void ProtocolConstants_AreClosedVersionNineAndRetainExactSizeLimit()
     {
-        Assert.Equal(7, OpenBladeIpc.ProtocolVersion);
+        Assert.Equal(9, OpenBladeIpc.ProtocolVersion);
         Assert.Equal("OpenBlade.Service.v2", OpenBladeIpc.PipeName);
         Assert.Equal(64 * 1024, OpenBladeIpc.MaximumMessageBytes);
         Assert.Equal(32 * 1024, OpenBladeIpc.MaximumDiagnosticArchiveBytes);
@@ -28,6 +28,7 @@ public sealed class ServiceMessageContractTests
             (typeof(SetPerformanceOverrideRequest), "setPerformanceOverride"),
             (typeof(SetFanOverrideRequest), "setFanOverride"),
             (typeof(SetLightingOverrideRequest), "setLightingOverride"),
+            (typeof(PulseReactiveKeyRequest), "pulseReactiveKey"),
             (typeof(SetBatteryPolicyRequest), "setBatteryPolicy"),
             (typeof(SetBatteryProtectionRequest), "setBatteryProtection"),
             (typeof(SetFullChargeOverrideRequest), "setFullChargeOverride"));
@@ -47,7 +48,7 @@ public sealed class ServiceMessageContractTests
             "Capabilities", "ConfirmedState", "Profiles", "DesiredState",
             "ActivePowerSource", "LiveReadings",
             "PerformanceOverride", "FanOverride", "LightingOverride", "FullChargeOverride",
-            "Firmware", "ServiceVersion",
+            "Firmware", "ServiceVersion", "LightingRendererOwnership",
         ];
 
         Assert.Equal(
@@ -57,6 +58,7 @@ public sealed class ServiceMessageContractTests
         Assert.Equal(typeof(ConfirmedDeviceState), typeof(ServiceStatusSnapshot).GetProperty("ConfirmedState")!.PropertyType);
         Assert.Equal(typeof(FirmwareVersions), typeof(ServiceStatusSnapshot).GetProperty("Firmware")!.PropertyType);
         Assert.Equal(typeof(string), typeof(ServiceStatusSnapshot).GetProperty("ServiceVersion")!.PropertyType);
+        Assert.Equal(typeof(LightingRendererOwnershipState), typeof(ServiceStatusSnapshot).GetProperty("LightingRendererOwnership")!.PropertyType);
     }
 
     [Fact]

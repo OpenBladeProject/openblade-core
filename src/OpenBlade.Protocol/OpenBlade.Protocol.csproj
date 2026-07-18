@@ -19,6 +19,9 @@
     <EmbeddedResource
       Include="Fixtures\Rz09_0581_02e0_3_01_BatteryProduction.json"
       LogicalName="OpenBlade.Protocol.Fixtures.Rz09_0581_02e0_3_01_BatteryProduction.json" />
+    <EmbeddedResource
+      Include="Fixtures\Rz09_0581_02e0_3_01_LightingProduction.json"
+      LogicalName="OpenBlade.Protocol.Fixtures.Rz09_0581_02e0_3_01_LightingProduction.json" />
   </ItemGroup>
 
 </Project>

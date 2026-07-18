@@ -44,6 +44,9 @@ public sealed class ControlRequestHandler(
             SetLightingOverrideRequest set => Result(
                 request.RequestId,
                 await runtime.SetLightingOverrideAsync(set.Value, cancellationToken)),
+            PulseReactiveKeyRequest pulse => Result(
+                request.RequestId,
+                await runtime.PulseReactiveKeyAsync(pulse.Pulse, cancellationToken)),
             SetBatteryPolicyRequest set => Result(
                 request.RequestId,
                 await runtime.SetBatteryPolicyAsync(set.Value, cancellationToken)),

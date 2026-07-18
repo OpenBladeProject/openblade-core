@@ -79,7 +79,9 @@ public sealed class CapabilityPresentationTests
             < dashboardElements.IndexOf(chargeLimit));
 
         Assert.DoesNotContain(
-            document.Descendants().Where(element => element.Name.LocalName == "Button"),
+            NamedElement(document, "ScrollView", "HomePage")
+                .Descendants()
+                .Where(element => element.Name.LocalName == "Button"),
             button =>
             Attribute(button, "Content")?.StartsWith("Apply", StringComparison.Ordinal) is true);
         Assert.DoesNotContain(xaml, "ViewModel.SetPerformanceCommand", StringComparison.Ordinal);
@@ -93,7 +95,7 @@ public sealed class CapabilityPresentationTests
         Assert.DoesNotContain("BatteryActionColumn", xaml, StringComparison.Ordinal);
         Assert.DoesNotContain("ProfileChargeLimitEditor", xaml, StringComparison.Ordinal);
         _ = Assert.Single(
-            document.Descendants(),
+            NamedElement(document, "ScrollView", "HomePage").Descendants(),
             element => element.Name.LocalName == "Slider");
         Assert.DoesNotContain("\u00c2", xaml, StringComparison.Ordinal);
     }
@@ -107,6 +109,7 @@ public sealed class CapabilityPresentationTests
                  {
                      "HomePage",
                      "ProfilesPage",
+                     "LightingPage",
                      "DisplayPage",
                      "SettingsPage",
                  })
@@ -174,7 +177,7 @@ public sealed class CapabilityPresentationTests
             settings.Descendants().Count(element =>
                 Attribute(element, "Style") == "{StaticResource SettingsGroupStyle}"));
         Assert.Equal(
-            4,
+            3,
             settings.Descendants().Count(element =>
                 Attribute(element, "Style") == "{StaticResource SettingsRowStyle}"));
         Assert.Equal(
@@ -198,8 +201,8 @@ public sealed class CapabilityPresentationTests
             && Attribute(element, "Width") == "40"
             && Attribute(element, "Height") == "32");
 
-        Assert.Contains("ViewModel.ManualChangeDurationOptions", xaml, StringComparison.Ordinal);
-        Assert.Contains("ViewModel.SelectedManualChangeDurationOption", xaml, StringComparison.Ordinal);
+        Assert.DoesNotContain("ViewModel.ManualChangeDurationOptions", xaml, StringComparison.Ordinal);
+        Assert.DoesNotContain("ViewModel.SelectedManualChangeDurationOption", xaml, StringComparison.Ordinal);
         XElement liveReadings = Assert.Single(settings.Descendants(), element =>
             element.Name.LocalName == "ComboBox"
             && Attribute(element, "AutomationProperties.Name")
@@ -236,7 +239,6 @@ public sealed class CapabilityPresentationTests
             && Attribute(element, "Value") == "Center");
         foreach (string pickerName in new[]
                  {
-                     "Manual change duration",
                      "Live readings refresh interval",
                      "App theme",
                      "Taskbar hover label",
@@ -262,10 +264,6 @@ public sealed class CapabilityPresentationTests
         Assert.DoesNotContain(settings.Descendants(), element =>
             element.Name.LocalName == "ToggleSwitch"
             && Attribute(element, "AutomationProperties.Name") == "Live readings");
-        string viewModel = ReadTrayCoreSource("MainViewModel.cs");
-        Assert.Contains("Until the power source changes", viewModel, StringComparison.Ordinal);
-        Assert.Contains("Until I reset them", viewModel, StringComparison.Ordinal);
-
         XElement startAtSignIn = Assert.Single(settings.Descendants(), element =>
             element.Name.LocalName == "ToggleSwitch"
             && Attribute(element, "AutomationProperties.Name")
@@ -534,8 +532,10 @@ public sealed class CapabilityPresentationTests
         Assert.DoesNotContain("ProfileChargeLimitEditor", xaml, StringComparison.Ordinal);
         Assert.Contains("ViewModel.IsBatteryProfileActive", xaml, StringComparison.Ordinal);
         Assert.Contains("ViewModel.IsUsbCProfileActive", xaml, StringComparison.Ordinal);
-        Assert.Contains("ViewModel.AvailableUsbCPerformanceOptions", xaml, StringComparison.Ordinal);
-        Assert.Contains("ViewModel.AvailableUsbCFanModes", xaml, StringComparison.Ordinal);
+        Assert.Contains("ViewModel.UsbCProfileThermalSummary", xaml, StringComparison.Ordinal);
+        Assert.Contains("ViewModel.UsbCProfileLightingSummary", xaml, StringComparison.Ordinal);
+        Assert.DoesNotContain("ViewModel.AvailableUsbCPerformanceOptions", xaml, StringComparison.Ordinal);
+        Assert.DoesNotContain("ViewModel.AvailableUsbCFanModes", xaml, StringComparison.Ordinal);
 
         string window = ReadTraySource("MainWindow.xaml.cs");
         Assert.Contains("ProfilesStackThresholdDip", window, StringComparison.Ordinal);
@@ -575,7 +575,7 @@ public sealed class CapabilityPresentationTests
         Assert.Contains("{StaticResource TitleLargeTextBlockStyle}", xaml, StringComparison.Ordinal);
         Assert.Contains("{StaticResource AccentButtonStyle}", xaml, StringComparison.Ordinal);
         Assert.Equal(
-            4,
+            5,
             document.Descendants().Count(element =>
                 element.Name.LocalName == "EntranceThemeTransition"));
     }
@@ -1087,12 +1087,105 @@ public sealed class CapabilityPresentationTests
         viewModel.LightingBlueEditor = 56;
 
         Assert.Equal(
-            new LightingSettings(LightingEffect.Static, new RgbColor(12, 34, 56), 64),
+            LightingSettingsFactory.Static(new RgbColor(12, 34, 56), 64),
             viewModel.LightingDraft);
         Assert.True(viewModel.SetLightingCommand.CanExecute(viewModel.LightingDraft));
 
         viewModel.LightingEffectEditor = LightingEffect.Spectrum;
         Assert.False(viewModel.SetLightingCommand.CanExecute(viewModel.LightingDraft));
+    }
+
+    [Fact]
+    public async Task LightingEditorBuildsEffectSpecificCoreParityParameters()
+    {
+        var client = new PresentationClient();
+        await using var viewModel = new MainViewModel(client, new ImmediateDispatcher());
+        await viewModel.StartAsync();
+        client.Publish(CreateStatus(
+            verified: true,
+            blocked: false,
+            capabilities: new DeviceCapabilities(
+                new HashSet<PerformancePreset> { PerformancePreset.Balanced },
+                new HashSet<FanMode> { FanMode.Automatic },
+                new HashSet<LightingEffect>(Enum.GetValues<LightingEffect>()),
+                ChargeLimits(), true, true)));
+        await WaitUntilAsync(() =>
+            viewModel.CanControlHardware
+            && viewModel.AvailableLightingEffectOptions.Count ==
+                Enum.GetValues<LightingEffect>().Length);
+
+        viewModel.LightingBrightnessEditor = 64;
+        viewModel.LightingRedEditor = 12;
+        viewModel.LightingGreenEditor = 34;
+        viewModel.LightingBlueEditor = 56;
+        viewModel.LightingSecondaryRedEditor = 78;
+        viewModel.LightingSecondaryGreenEditor = 90;
+        viewModel.LightingSecondaryBlueEditor = 123;
+
+        viewModel.LightingEffectEditor = LightingEffect.Breathing;
+        viewModel.LightingBreathingColorModeEditor = BreathingColorMode.Dual;
+        Assert.Equal(
+            LightingSettingsFactory.BreathingDual(
+                new RgbColor(12, 34, 56),
+                new RgbColor(78, 90, 123),
+                64),
+            viewModel.LightingDraft);
+        Assert.True(viewModel.LightingShowsPrimaryColor);
+        Assert.True(viewModel.LightingShowsSecondaryColor);
+
+        viewModel.LightingBreathingColorModeEditor = BreathingColorMode.Random;
+        Assert.Equal(
+            LightingSettingsFactory.BreathingRandom(64),
+            viewModel.LightingDraft);
+        Assert.False(viewModel.LightingShowsPrimaryColor);
+        Assert.False(viewModel.LightingShowsSecondaryColor);
+
+        viewModel.LightingEffectEditor = LightingEffect.Reactive;
+        viewModel.LightingReactiveDurationEditor = ReactiveLightingDuration.Long;
+        Assert.Equal(
+            LightingSettingsFactory.Reactive(
+                new RgbColor(12, 34, 56),
+                64,
+                ReactiveLightingDuration.Long),
+            viewModel.LightingDraft);
+        Assert.True(viewModel.LightingShowsReactiveDuration);
+
+        viewModel.LightingEffectEditor = LightingEffect.Spectrum;
+        Assert.Equal(
+            LightingSettingsFactory.SpectrumCycling(64),
+            viewModel.LightingDraft);
+        Assert.Equal(
+            "Spectrum Cycling",
+            viewModel.SelectedLightingEffectOption?.Label);
+    }
+
+    [Fact]
+    public void MainWindow_LightingPageIsCapabilityGatedAndContainsOnlyCoreEffects()
+    {
+        string xaml = ReadMainWindowXaml();
+        XDocument document = XDocument.Parse(xaml);
+        XElement navigation = NamedElement(
+            document,
+            "NavigationViewItem",
+            "LightingNavigationItem");
+        XElement page = NamedElement(document, "ScrollView", "LightingPage");
+        XElement effectPicker = NamedElement(document, "ComboBox", "LightingEffectPicker");
+
+        Assert.Equal("lighting", Attribute(navigation, "Tag"));
+        Assert.Equal(
+            "{x:Bind ViewModel.IsLightingVisible, Mode=OneWay}",
+            Attribute(navigation, "Visibility"));
+        Assert.Equal("Collapsed", Attribute(page, "Visibility"));
+        Assert.Equal(
+            "{x:Bind ViewModel.AvailableLightingEffectOptions, Mode=OneWay}",
+            Attribute(effectPicker, "ItemsSource"));
+        string lightingXaml = page.ToString();
+        Assert.Contains("Breathing colors", lightingXaml, StringComparison.Ordinal);
+        Assert.Contains("Reactive duration", lightingXaml, StringComparison.Ordinal);
+        Assert.DoesNotContain("Ambient", lightingXaml, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("Audio", lightingXaml, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("Fire", lightingXaml, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("Ripple", lightingXaml, StringComparison.OrdinalIgnoreCase);
     }
 
     private static string ReadMainWindowXaml() => ReadTraySource("MainWindow.xaml");

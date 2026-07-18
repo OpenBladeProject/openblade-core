@@ -1,0 +1,123 @@
+{
+  "schemaVersion": 1,
+  "evidenceProvenance": {
+    "controller": "Razer Synapse",
+    "role": "OracleCapture",
+    "openBladeTypedApplyPerformed": false,
+    "openBladeVisualParityConfirmed": false,
+    "note": "Observed variants were rendered by Synapse. The timed-out session did not visually confirm restoration and does not establish OpenBlade parity or restoration."
+  },
+  "capturedAtUtc": "2026-07-18T07:29:21.271437Z",
+  "device": {
+    "model": "Razer Blade 16 (2026)",
+    "modelNumber": "RZ09-0581",
+    "vendorIdHex": "1532",
+    "productIdHex": "02E0",
+    "bios": "3.01",
+    "usbPcapRoot": "USBPcap3",
+    "usbDeviceAddress": 2
+  },
+  "capture": {
+    "sanitizedFileName": "lighting-variants-focused.pcap",
+    "sha256": "8CD72FD3F0AB7AF95B21168C96C371B2C56D7410509046371D46305205E193A6",
+    "byteLength": 3263277,
+    "packetCount": 20508,
+    "durationSeconds": 900.504183,
+    "matrixReportCount": 5143,
+    "rawCaptureCommitted": false,
+    "terminationReason": "Timeout",
+    "stopMode": "Graceful",
+    "captureProcessId": 2304,
+    "captureProcessGroupId": 2304,
+    "serviceRestored": true
+  },
+  "baseline": {
+    "effect": "Ambient Awareness",
+    "brightnessPercent": 77
+  },
+  "actions": [
+    {
+      "action": "Accidentally select Starlight, green",
+      "handshakeFrame": 3841,
+      "handshakeRelativeSeconds": 245.238528,
+      "firstSparseOnlyMatrixFrame": 3993,
+      "firstSparseOnlyRelativeSeconds": 248.303894,
+      "productionAdmission": false
+    },
+    {
+      "action": "Select Breathing, single green color",
+      "handshakeFrame": 8905,
+      "handshakeRelativeSeconds": 344.518247,
+      "firstFullyUniformGreenFrame": 9061,
+      "firstFullyUniformGreenRelativeSeconds": 347.57735
+    },
+    {
+      "action": "Enable Breathing random color",
+      "handshakeFrame": 10583,
+      "handshakeRelativeSeconds": 382.857402,
+      "firstNewColorFrame": 10685,
+      "firstNewColorRelativeSeconds": 384.806654,
+      "observedPeakFrames": [10761, 11065, 11337, 11671, 11947],
+      "observedPeakRelativeSeconds": [386.462698, 393.497201, 400.454488, 407.991943, 414.618912],
+      "observedPeakRgbHex": ["00FFFF", "8000FF", "00FF80", "000080", "FF00FF"]
+    },
+    {
+      "action": "Disable Breathing random color, returning to single green",
+      "handshakeFrame": 11973,
+      "handshakeRelativeSeconds": 415.086665,
+      "firstFixedGreenOnlyFrame": 12121,
+      "firstFixedGreenOnlyRelativeSeconds": 417.945581
+    },
+    {
+      "action": "Change Breathing single color from green to white",
+      "handshakeFrame": 13157,
+      "handshakeRelativeSeconds": 442.158548,
+      "firstUniformWhiteFrame": 13255,
+      "firstUniformWhiteRelativeSeconds": 444.026502
+    },
+    {
+      "action": "Select Reactive and configure its color or duration",
+      "handshakeFrames": [15669, 16039, 16159, 16497],
+      "handshakeRelativeSeconds": [501.130085, 516.624692, 526.358842, 553.182068],
+      "firstAllBlackFrame": 15857,
+      "firstAllBlackRelativeSeconds": 504.302377,
+      "keyDrivenNonBlackFrames": 0
+    }
+  ],
+  "decodedEvidence": {
+    "matrixCommand": "03/0B",
+    "matrixEnvelopeBytes": 374,
+    "matrixSlotCount": 102,
+    "breathingFrameIntervalMillisecondsApprox": 50,
+    "breathingCycleSecondsApprox": 7,
+    "breathingWaveform": "four-quarter-trapezoid",
+    "breathingQuarterSeconds": 1.75,
+    "randomColorChangesDuringBlackHold": true,
+    "randomBreathingDistinctObservedPeakColorCount": 5,
+    "randomBreathingPeakColorSequenceHex": ["00FFFF", "8000FF", "00FF80", "000080", "FF00FF"],
+    "dualColorBreathingObserved": false,
+    "reactivePostBlackMatrixFrameCount": 100,
+    "reactivePostBlackFirstFrame": 15857,
+    "reactivePostBlackLastFrame": 20507,
+    "reactivePostBlackFirstRelativeSeconds": 504.302377,
+    "reactivePostBlackLastRelativeSeconds": 900.503413,
+    "reactivePostBlackNonBlackFrameCount": 0,
+    "reactiveShortFadeSeconds": null,
+    "reactiveLongFadeSeconds": null
+  },
+  "evidenceGaps": [
+    "No dual-color Breathing interval was performed. The capture contains single green, random color, and single white Breathing only.",
+    "Five random peaks establish per-cycle color changes but are insufficient to infer Synapse's exact random palette or probability distribution. The observed sequence uses RGB components from 00, 80, and FF; a longer capture is required before claiming exact random-color generation.",
+    "No physical-key Reactive pulse reached this capture after the Reactive matrix became black, so Short fade duration cannot be derived.",
+    "Reactive Long was not configured and no Long physical-key pulse was captured.",
+    "The capture timed out before a visually confirmed restoration to Ambient Awareness. The OpenBlade service was restarted successfully, but visual effect restoration is not claimed."
+  ],
+  "notes": [
+    "The raw PCAP remains outside the repository; only hashes, timestamps, decoded commands, and bounded observations are committed.",
+    "The five random Breathing peak colors are successive full-matrix colors approximately seven seconds apart, establishing that random mode chooses a new color per cycle.",
+    "Falling frames keep the old random color, the black hold hides the color change, and rising frames use the next random color.",
+    "Single and random intervals independently reproduce the same four-quarter trapezoid seen in the core capture.",
+    "The 100 matrix reports from the first all-black Reactive frame through the end of capture are all black. Periodic black keepalive frames are not physical-key evidence.",
+    "The Starlight interval was an accidental UI selection and is explicitly excluded from production admission."
+  ]
+}

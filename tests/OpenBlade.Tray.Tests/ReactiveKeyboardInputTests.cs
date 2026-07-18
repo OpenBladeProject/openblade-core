@@ -1,0 +1,183 @@
+using OpenBlade.Contracts;
+
+namespace OpenBlade.Tray.Tests;
+
+public sealed class ReactiveKeyboardInputTests
+{
+    [Theory]
+    [InlineData(0x01, 1)]  // Escape
+    [InlineData(0x3B, 2)]  // F1
+    [InlineData(0x44, 11)] // F10
+    [InlineData(0x57, 12)] // F11
+    [InlineData(0x58, 13)] // F12
+    [InlineData(0x29, 18)] // `
+    [InlineData(0x02, 19)] // 1
+    [InlineData(0x0B, 28)] // 0
+    [InlineData(0x0C, 29)] // -
+    [InlineData(0x0D, 30)] // =
+    [InlineData(0x0E, 32)] // Backspace
+    [InlineData(0x0F, 35)] // Tab
+    [InlineData(0x10, 36)] // Q
+    [InlineData(0x19, 45)] // P
+    [InlineData(0x1A, 46)] // [
+    [InlineData(0x1B, 47)] // ]
+    [InlineData(0x2B, 49)] // \
+    [InlineData(0x3A, 52)] // Caps Lock
+    [InlineData(0x1E, 53)] // A
+    [InlineData(0x26, 61)] // L
+    [InlineData(0x27, 62)] // ;
+    [InlineData(0x28, 63)] // '
+    [InlineData(0x1C, 66)] // Enter
+    [InlineData(0x2A, 69)] // Left Shift
+    [InlineData(0x2C, 71)] // Z
+    [InlineData(0x32, 77)] // M
+    [InlineData(0x33, 78)] // ,
+    [InlineData(0x34, 79)] // .
+    [InlineData(0x35, 80)] // /
+    [InlineData(0x36, 83)] // Right Shift
+    [InlineData(0x1D, 86)] // Left Ctrl
+    [InlineData(0x38, 90)] // Left Alt
+    [InlineData(0x39, 91)] // Space
+    public void Map_UsesTheRz09_0581StandardLayout(
+        ushort makeCode,
+        byte expectedSlot)
+    {
+        Assert.True(Rz09_0581ReactiveKeyMap.TryMap(
+            makeCode,
+            isExtended: false,
+            out ReactiveKeyPulse primary,
+            out ReactiveKeyPulse? secondary));
+        Assert.Equal(expectedSlot, primary.MatrixSlot);
+        Assert.Null(secondary);
+    }
+
+    [Theory]
+    [InlineData(0x53, 15)]  // Delete
+    [InlineData(0x5B, 88)]  // Left Windows
+    [InlineData(0x38, 94)]  // Right Alt
+    [InlineData(0x1D, 96)]  // Right Ctrl
+    [InlineData(0x4B, 97)]  // Left Arrow
+    [InlineData(0x48, 98)]  // Up Arrow
+    [InlineData(0x4D, 99)]  // Right Arrow
+    [InlineData(0x50, 100)] // Down Arrow
+    public void Map_UsesCaptureConfirmedExtendedKeys(
+        ushort makeCode,
+        byte expectedSlot)
+    {
+        Assert.True(Rz09_0581ReactiveKeyMap.TryMap(
+            makeCode,
+            isExtended: true,
+            out ReactiveKeyPulse primary,
+            out ReactiveKeyPulse? secondary));
+        Assert.Equal(expectedSlot, primary.MatrixSlot);
+        Assert.Null(secondary);
+    }
+
+    [Fact]
+    public void Map_PrintScreenTranslationEmitsOnlyF12BecauseFnHasItsOwnHidReport()
+    {
+        Assert.True(Rz09_0581ReactiveKeyMap.TryMap(
+            0x37,
+            isExtended: true,
+            out ReactiveKeyPulse primary,
+            out ReactiveKeyPulse? secondary));
+        Assert.Equal(13, primary.MatrixSlot);
+        Assert.Null(secondary);
+    }
+
+    [Theory]
+    [InlineData(0x00, false)]
+    [InlineData(0x54, false)]
+    [InlineData(0x01, true)]
+    [InlineData(0x5C, true)]
+    public void Map_IgnoresKeysWithoutCaptureSupportedSlots(
+        ushort makeCode,
+        bool isExtended)
+    {
+        Assert.False(Rz09_0581ReactiveKeyMap.TryMap(
+            makeCode,
+            isExtended,
+            out _,
+            out _));
+    }
+
+    [Fact]
+    public void RawInput_EmitsOnlySupportedKeyMakeEvents()
+    {
+        Assert.True(ReactiveRawKeyboardInput.TryCreatePulses(
+            0x10,
+            flags: 0,
+            out ReactiveKeyPulse primary,
+            out ReactiveKeyPulse? secondary));
+        Assert.Equal(36, primary.MatrixSlot);
+        Assert.Null(secondary);
+
+        Assert.False(ReactiveRawKeyboardInput.TryCreatePulses(
+            0x10,
+            ReactiveRawKeyboardInput.KeyBreakFlag,
+            out _,
+            out _));
+        Assert.False(ReactiveRawKeyboardInput.TryCreatePulses(
+            0x10,
+            ReactiveRawKeyboardInput.ExtendedE0Flag,
+            out _,
+            out _));
+        Assert.False(ReactiveRawKeyboardInput.TryCreatePulses(
+            0x10,
+            ReactiveRawKeyboardInput.ExtendedE1Flag,
+            out _,
+            out _));
+        Assert.False(ReactiveRawKeyboardInput.TryCreatePulses(
+            0,
+            flags: 0,
+            out _,
+            out _));
+    }
+
+    [Fact]
+    public void Pulse_RejectsSlotsOutsideCapturedMatrix()
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(
+            () => new ReactiveKeyPulse(102));
+    }
+
+    [Fact]
+    public void RawHid_FnMakeEmitsOnePulseUntilRelease()
+    {
+        bool pressed = false;
+
+        Assert.True(Rz09_0581ReactiveRawHidInput.TryCreatePulse(
+            [0x04, 0x0A, 0x00, 0x00],
+            ref pressed,
+            out ReactiveKeyPulse pulse));
+        Assert.Equal(87, pulse.MatrixSlot);
+        Assert.True(pressed);
+
+        Assert.False(Rz09_0581ReactiveRawHidInput.TryCreatePulse(
+            [0x04, 0x0A, 0x00, 0x00],
+            ref pressed,
+            out _));
+        Assert.False(Rz09_0581ReactiveRawHidInput.TryCreatePulse(
+            [0x04, 0x00, 0x00, 0x00],
+            ref pressed,
+            out _));
+        Assert.False(pressed);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("\\\\?\\HID#VID_1532&PID_02E0&MI_00#keyboard")]
+    [InlineData("\\\\?\\HID#VID_1234&PID_5678&MI_01#keyboard")]
+    public void InputDevice_RejectsUnrelatedPaths(string? path)
+    {
+        Assert.False(Rz09_0581ReactiveInputDevice.IsTargetPath(path));
+    }
+
+    [Fact]
+    public void InputDevice_AcceptsOnlyTheBladeMi01Collection()
+    {
+        Assert.True(Rz09_0581ReactiveInputDevice.IsTargetPath(
+            "\\\\?\\HID#VID_1532&PID_02E0&MI_01&COL04#function"));
+    }
+}

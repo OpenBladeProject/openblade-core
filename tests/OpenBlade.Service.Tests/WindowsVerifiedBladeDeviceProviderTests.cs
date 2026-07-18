@@ -18,6 +18,9 @@ public sealed class WindowsVerifiedBladeDeviceProviderTests
         Assert.Equal(
             nameof(BatteryValidationFactory.CreateWindowsFanRpmQuery),
             WindowsVerifiedBladeDeviceProvider.ProductionFanRpmFactory.Method.Name);
+        Assert.Equal(
+            nameof(ServiceComposition.CreateProductionLightingFactory),
+            WindowsVerifiedBladeDeviceProvider.ProductionLightingPortFactory.Method.Name);
     }
 
     [Fact]
@@ -153,6 +156,31 @@ public sealed class WindowsVerifiedBladeDeviceProviderTests
         Assert.False(capabilities.SupportsBatteryProtectionOff);
         Assert.False(capabilities.SupportsTemporaryFullCharge);
         Assert.Equal(1, factory.OpenCount);
+    }
+
+    [Fact]
+    public async Task ReadCapabilities_BatteryUnavailableStillReportsIndependentLighting()
+    {
+        var batteryFactory = new FakeQueryFactory();
+        var lightingPort = new FakeLightingPort();
+        var lightingFactory = new FakeLightingFactory(lightingPort);
+        using var provider = new WindowsVerifiedBladeDeviceProvider(
+            () => Probe(BatteryValidationProbeClassification.Ready),
+            Adapt(batteryFactory),
+            UnavailableFanRpmFactory(),
+            lightingFactory);
+        Assert.True(provider.TryGetVerifiedDevice(out IBladeDevice device));
+
+        DeviceCapabilities capabilities = await device.ReadCapabilitiesAsync(default);
+
+        Assert.Equal(
+            Enum.GetValues<LightingEffect>().Order(),
+            capabilities.LightingEffects.Order());
+        Assert.Empty(capabilities.PerformancePresets);
+        Assert.Empty(capabilities.FanModes);
+        Assert.Empty(capabilities.ChargeLimits);
+        Assert.Equal(1, batteryFactory.OpenCount);
+        Assert.Equal(1, lightingFactory.OpenCount);
     }
 
     [Fact]
@@ -462,10 +490,79 @@ public sealed class WindowsVerifiedBladeDeviceProviderTests
             exception => Assert.Equal(
                 WriteSubmissionState.KnownNotApplied,
                 exception.SubmissionState));
-        await Assert.ThrowsAsync<UnvalidatedCommandException>(
+        BladeWriteException lightingError = await Assert.ThrowsAsync<BladeWriteException>(
             () => device.SetLightingAsync(lighting, default));
+        Assert.Equal(WriteSubmissionState.KnownNotApplied, lightingError.SubmissionState);
 
         Assert.Equal(0, factory.OpenCount);
+    }
+
+    [Fact]
+    public async Task LightingWriter_IsOpenedOnceKeptAliveAndDisposedWithProvider()
+    {
+        var lightingPort = new FakeLightingPort();
+        var lightingFactory = new FakeLightingFactory(lightingPort);
+        var provider = new WindowsVerifiedBladeDeviceProvider(
+            () => Probe(BatteryValidationProbeClassification.Ready),
+            Adapt(new FakeQueryFactory()),
+            UnavailableFanRpmFactory(),
+            lightingFactory);
+        provider.TryGetVerifiedDevice(out IBladeDevice device);
+        LightingSettings first = LightingSettingsFactory.Static(new RgbColor(1, 2, 3), 50);
+        LightingSettings second = LightingSettingsFactory.Static(new RgbColor(4, 5, 6), 75);
+
+        await device.SetLightingAsync(first, default);
+        await device.SetLightingAsync(second, default);
+        await device.PulseReactiveKeyAsync(new ReactiveKeyPulse(77), default);
+
+        Assert.Equal(
+            LightingRendererOwnershipState.Static,
+            await device.ReadLightingRendererOwnershipAsync(default));
+
+        Assert.Equal(1, lightingFactory.OpenCount);
+        Assert.Equal([first, second], lightingPort.Writes);
+        Assert.Equal([77], lightingPort.Pulses.Select(pulse => (int)pulse.MatrixSlot));
+        Assert.Equal(0, lightingPort.DisposeCount);
+
+        await provider.InvalidateLightingRendererAsync(default);
+        Assert.Equal(1, lightingPort.DisposeCount);
+        Assert.Equal(
+            LightingRendererOwnershipState.None,
+            await device.ReadLightingRendererOwnershipAsync(default));
+
+        provider.Dispose();
+        Assert.Equal(1, lightingPort.DisposeCount);
+    }
+
+    [Fact]
+    public async Task FaultedLightingObservation_RetiresCachedPortAndNextWriteReopens()
+    {
+        var faultedPort = new FakeLightingPort();
+        var replacementPort = new FakeLightingPort();
+        var lightingFactory = new FakeLightingFactory(faultedPort, replacementPort);
+        using var provider = new WindowsVerifiedBladeDeviceProvider(
+            () => Probe(BatteryValidationProbeClassification.Ready),
+            Adapt(new FakeQueryFactory()),
+            UnavailableFanRpmFactory(),
+            lightingFactory);
+        provider.TryGetVerifiedDevice(out IBladeDevice device);
+        LightingSettings requested = LightingSettingsFactory.Static(
+            new RgbColor(4, 5, 6),
+            75);
+
+        await device.SetLightingAsync(
+            LightingSettingsFactory.Static(new RgbColor(1, 2, 3), 50),
+            default);
+        faultedPort.OwnershipState = LightingRendererOwnershipState.Faulted;
+
+        LightingRendererOwnershipState observed =
+            await device.ReadLightingRendererOwnershipAsync(default);
+        await device.SetLightingAsync(requested, default);
+
+        Assert.Equal(LightingRendererOwnershipState.Faulted, observed);
+        Assert.Equal(1, faultedPort.DisposeCount);
+        Assert.Equal(2, lightingFactory.OpenCount);
+        Assert.Equal([requested], replacementPort.Writes);
     }
 
     [Fact]
@@ -689,6 +786,86 @@ public sealed class WindowsVerifiedBladeDeviceProviderTests
         public ValueTask DisposeAsync()
         {
             DisposeCount++;
+            return ValueTask.CompletedTask;
+        }
+    }
+
+    private sealed class FakeLightingFactory(params FakeLightingPort[] ports)
+        : IProductionLightingPortFactory
+    {
+        private int nextPort;
+
+        public DeviceCapabilities Capabilities { get; } = new(
+            new HashSet<PerformancePreset>(),
+            new HashSet<FanMode>(),
+            new HashSet<LightingEffect>(Enum.GetValues<LightingEffect>()),
+            new HashSet<int>(),
+            false,
+            false);
+
+        public int OpenCount { get; private set; }
+
+        public Task<HidSessionResult<IProductionLightingPort>> OpenAsync(
+            CancellationToken cancellationToken)
+        {
+            OpenCount++;
+            FakeLightingPort port = ports[Math.Min(nextPort, ports.Length - 1)];
+            nextPort++;
+            return Task.FromResult(
+                new HidSessionResult<IProductionLightingPort>(port, null));
+        }
+    }
+
+    private sealed class FakeLightingPort : IProductionLightingPort
+    {
+        public DeviceCapabilities Capabilities { get; } = new(
+            new HashSet<PerformancePreset>(),
+            new HashSet<FanMode>(),
+            new HashSet<LightingEffect>(Enum.GetValues<LightingEffect>()),
+            new HashSet<int>(),
+            false,
+            false);
+
+        public LightingRendererOwnershipState OwnershipState { get; set; }
+
+        public List<LightingSettings> Writes { get; } = [];
+
+        public List<ReactiveKeyPulse> Pulses { get; } = [];
+
+        public int DisposeCount { get; private set; }
+
+        public Task<LightingSettings?> ReadStateAsync(CancellationToken cancellationToken) =>
+            Task.FromResult<LightingSettings?>(Writes.LastOrDefault());
+
+        public Task SetLightingAsync(
+            LightingSettings settings,
+            CancellationToken cancellationToken)
+        {
+            Writes.Add(settings);
+            OwnershipState = settings.Effect switch
+            {
+                LightingEffect.Off => LightingRendererOwnershipState.None,
+                LightingEffect.Static => LightingRendererOwnershipState.Static,
+                LightingEffect.Spectrum => LightingRendererOwnershipState.Spectrum,
+                LightingEffect.Breathing => LightingRendererOwnershipState.Breathing,
+                LightingEffect.Reactive => LightingRendererOwnershipState.Reactive,
+                _ => throw new ArgumentOutOfRangeException(),
+            };
+            return Task.CompletedTask;
+        }
+
+        public Task PulseReactiveKeyAsync(
+            ReactiveKeyPulse pulse,
+            CancellationToken cancellationToken)
+        {
+            Pulses.Add(pulse);
+            return Task.CompletedTask;
+        }
+
+        public ValueTask DisposeAsync()
+        {
+            DisposeCount++;
+            OwnershipState = LightingRendererOwnershipState.None;
             return ValueTask.CompletedTask;
         }
     }

@@ -18,6 +18,9 @@ public sealed class ProfileDefaultsTests
         Assert.Equal(LightingEffect.Off, profiles.PluggedIn.Lighting.Effect);
         Assert.Equal(LightingEffect.Off, profiles.Battery.Lighting.Effect);
         Assert.Equal(LightingEffect.Off, profiles.UsbC.Lighting.Effect);
+        Assert.False(profiles.PluggedIn.Display!.IsConfigured);
+        Assert.False(profiles.Battery.Display!.IsConfigured);
+        Assert.False(profiles.UsbC.Display!.IsConfigured);
         Assert.Equal(80, profiles.BatteryPolicy.ChargeLimitPercent);
     }
 

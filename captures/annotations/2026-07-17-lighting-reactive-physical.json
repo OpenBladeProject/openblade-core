@@ -1,0 +1,105 @@
+{
+  "schemaVersion": 1,
+  "evidenceProvenance": {
+    "controller": "Razer Synapse",
+    "role": "OracleCapture",
+    "openBladeTypedApplyPerformed": false,
+    "openBladeVisualParityConfirmed": false,
+    "note": "Physical keys triggered Synapse's Reactive renderer; installed OpenBlade input delivery and rendering remain separate validation gates."
+  },
+  "capturedAtUtc": "2026-07-18T07:17:06.448649Z",
+  "device": {
+    "model": "Razer Blade 16 (2026)",
+    "modelNumber": "RZ09-0581",
+    "vendorIdHex": "1532",
+    "productIdHex": "02E0",
+    "bios": "3.01",
+    "usbPcapRoot": "USBPcap3",
+    "usbDeviceAddress": 2
+  },
+  "capture": {
+    "sanitizedFileName": "lighting-reactive-physical.pcap",
+    "sha256": "BFCB03633CBD1F5644AEC885E8830D9489BA5A7100FFFECA0A4DDAB347E13202",
+    "byteLength": 315625,
+    "packetCount": 2352,
+    "durationSeconds": 131.769025,
+    "matrixReportCount": 403,
+    "rawCaptureCommitted": false,
+    "stopMode": "Graceful",
+    "captureProcessId": 5332,
+    "captureProcessGroupId": 5332,
+    "serviceRestored": true
+  },
+  "baseline": {
+    "effect": "Ambient Awareness",
+    "brightnessPercent": 77
+  },
+  "reactiveConfiguration": {
+    "colorHex": "00FF00",
+    "duration": "Medium",
+    "transitionFrames": [563, 575, 583, 589],
+    "transitionRelativeSecondsApprox": 33.04
+  },
+  "physicalKeyEvidence": [
+    {
+      "key": "1",
+      "matrixSlot": 19,
+      "firstLitRelativeSeconds": 86.914,
+      "lastLitRelativeSeconds": 88.318,
+      "observedFadeSeconds": 1.404,
+      "peakChannelValue": 247
+    },
+    {
+      "key": "Q",
+      "matrixSlot": 36,
+      "firstLitRelativeSeconds": 88.757,
+      "lastLitRelativeSeconds": 90.128,
+      "observedFadeSeconds": 1.371,
+      "peakChannelValue": 247
+    },
+    {
+      "key": "A",
+      "matrixSlot": 53,
+      "firstLitRelativeSeconds": 89.408,
+      "lastLitRelativeSeconds": 90.807,
+      "observedFadeSeconds": 1.399,
+      "peakChannelValue": 255
+    },
+    {
+      "key": "Z",
+      "matrixSlot": 71,
+      "firstLitRelativeSeconds": 90.284,
+      "lastLitRelativeSeconds": 91.681,
+      "observedFadeSeconds": 1.397,
+      "peakChannelValue": 255
+    },
+    {
+      "key": "M",
+      "matrixSlot": 77,
+      "firstLitRelativeSeconds": 91.6,
+      "lastLitRelativeSeconds": 93.007,
+      "observedFadeSeconds": 1.407,
+      "peakChannelValue": 255
+    }
+  ],
+  "decodedEvidence": {
+    "matrixCommand": "03/0B",
+    "matrixEnvelopeBytes": 374,
+    "matrixSlotCount": 102,
+    "physicalInputProducedSparsePerKeyFrames": true,
+    "mediumFadeSecondsApprox": 1.4,
+    "syntheticInputComparison": "Synthetic Windows key injection produced no Reactive matrix response in the earlier focused capture."
+  },
+  "restoration": {
+    "effect": "Ambient Awareness",
+    "brightnessPercent": 77,
+    "visuallyConfirmed": true,
+    "openBladeServiceRunning": true
+  },
+  "notes": [
+    "The raw PCAP remains outside the repository; only hashes, timestamps, decoded commands, and bounded observations are committed.",
+    "The first five physical key events were typed slowly in the order 1, Q, A, Z, M and map monotonically to the captured keyboard rows.",
+    "The two 247 peaks reflect capture sampling after the initial frame, not a lower configured brightness; later keys reached 255.",
+    "Additional sparse events after the five-key sequence came from typing the capture-completion reply and are intentionally excluded."
+  ]
+}

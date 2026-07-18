@@ -24,17 +24,49 @@ public enum LightingEffect
     Reactive,
 }
 
+/// <summary>
+/// The host-rendered lighting effect currently owned by the running OpenBlade
+/// service. This is separate from desired profile state because PID 02E0 cannot
+/// report its active matrix effect.
+/// </summary>
+public enum LightingRendererOwnershipState
+{
+    None,
+    Static,
+    Spectrum,
+    Breathing,
+    Reactive,
+    Faulted,
+}
+
 public readonly record struct RgbColor(byte Red, byte Green, byte Blue);
 
 public sealed record LightingSettings(
     LightingEffect Effect,
     RgbColor Color,
-    byte Brightness);
+    byte Brightness)
+{
+    // Optional so profiles and IPC messages written before effect-specific
+    // parameters were introduced remain readable without migration.
+    public LightingEffectParameters? Parameters { get; init; }
+}
 
 public sealed record PowerProfile(
     PerformancePreset Performance,
     FanMode Fans,
-    LightingSettings Lighting);
+    LightingSettings Lighting,
+    DisplayProfileSettings? Display = null);
+
+public sealed record DisplayProfileSettings(
+    string? RefreshRateKey,
+    bool? HdrEnabled,
+    string? ColorProfileKey)
+{
+    public bool IsConfigured =>
+        RefreshRateKey is not null || HdrEnabled.HasValue || ColorProfileKey is not null;
+
+    public static DisplayProfileSettings Unconfigured() => new(null, null, null);
+}
 
 public sealed record BatteryPolicy
 {
@@ -126,14 +158,23 @@ public sealed record ProfileSet(
 
 public static class ProfileDefaults
 {
-    private static readonly LightingSettings LightingOff = new(
-        LightingEffect.Off,
-        new RgbColor(0, 0, 0),
-        Brightness: 0);
+    private static readonly LightingSettings LightingOff = LightingSettingsFactory.Off();
 
     public static ProfileSet CreateSafeDefaults() => new(
-        new PowerProfile(PerformancePreset.Balanced, FanMode.Automatic, LightingOff),
-        new PowerProfile(PerformancePreset.BatterySaver, FanMode.Automatic, LightingOff),
-        new PowerProfile(PerformancePreset.Balanced, FanMode.Automatic, LightingOff),
+        new PowerProfile(
+            PerformancePreset.Balanced,
+            FanMode.Automatic,
+            LightingOff,
+            DisplayProfileSettings.Unconfigured()),
+        new PowerProfile(
+            PerformancePreset.BatterySaver,
+            FanMode.Automatic,
+            LightingOff,
+            DisplayProfileSettings.Unconfigured()),
+        new PowerProfile(
+            PerformancePreset.Balanced,
+            FanMode.Automatic,
+            LightingOff,
+            DisplayProfileSettings.Unconfigured()),
         BatteryPolicy.Create(80));
 }

@@ -27,6 +27,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, ITrayIconThem
     private readonly UiPreferenceSaveQueue preferenceSaveQueue;
     private readonly VisibleObservationLoop visibleObservationLoop;
     private readonly WindowsDisplaySettingsAdapter displaySettingsAdapter;
+    private readonly ReactiveKeyPulsePump reactiveKeyPulsePump;
     private readonly DispatcherQueueTimer chargeLimitCommitTimer;
     private readonly DispatcherQueueTimer displayRefreshTimer;
     private readonly object initializationSync = new();
@@ -39,8 +40,11 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, ITrayIconThem
     private bool chargeLimitCommitInProgress;
     private bool chargeLimitPointerInteraction;
     private int? pendingChargeLimitPercent;
+    private WindowsRawKeyboardSource? reactiveKeyboardSource;
     private bool? dashboardIsStacked;
     private bool? profilesAreStacked;
+    private PowerSource? observedDisplayProfilePowerSource;
+    private long lastReactiveInputFailureTick;
     private int disposed;
 
     public MainWindow()
@@ -48,15 +52,31 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, ITrayIconThem
         dispatcherQueue = DispatcherQueue.GetForCurrentThread()
             ?? throw new InvalidOperationException("The tray must start on a dispatcher thread.");
         dispatcherQueue.EnsureSystemDispatcherQueue();
+        IServiceClient serviceClient = new ServiceClient();
         ViewModel = new MainViewModel(
-            new ServiceClient(),
+            serviceClient,
             new WinUiDispatcher(dispatcherQueue),
             new DiagnosticArchiveSaver(new WinUiDiagnosticArchiveDestination(AppWindow.Id)),
             new WindowsStartupRegistration(),
             uiVersion: OpenBladeProductVersion.Read(typeof(MainWindow).Assembly));
+        reactiveKeyPulsePump = new ReactiveKeyPulsePump(
+            async (pulse, token) =>
+            {
+                ControlOperationResult result =
+                    await serviceClient.PulseReactiveKeyAsync(pulse, token)
+                    .ConfigureAwait(false);
+                if (result.Status != ControlOperationStatus.Applied)
+                {
+                    throw new InvalidOperationException(result.Message);
+                }
+            },
+            errorHandler: exception => ReportReactiveInputFailure(
+                $"Reactive keyboard input failed: {exception.Message}"));
         displaySettingsAdapter = new WindowsDisplaySettingsAdapter(
             new WindowsDisplaySettingsController());
         DisplayViewModel = new DisplaySettingsViewModel(displaySettingsAdapter);
+        DisplayViewModel.UserSettingsChanged += OnDisplayUserSettingsChanged;
+        ViewModel.SavedDisplayProfileRestoreRequested += OnSavedDisplayProfileRestoreRequested;
         visibleObservationLoop = new VisibleObservationLoop(ViewModel.ObserveStateAsync,
             errorHandler: exception => Trace.TraceError(
                 "OpenBlade visible observation failed: {0}",
@@ -146,6 +166,8 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, ITrayIconThem
         }
 
         ViewModel.PropertyChanged -= OnViewModelPropertyChanged;
+        DisplayViewModel.UserSettingsChanged -= OnDisplayUserSettingsChanged;
+        ViewModel.SavedDisplayProfileRestoreRequested -= OnSavedDisplayProfileRestoreRequested;
         AppWindow.Closing -= OnClosing;
         Root.SizeChanged -= OnRootSizeChanged;
         Root.ActualThemeChanged -= OnRootActualThemeChanged;
@@ -153,11 +175,14 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, ITrayIconThem
         chargeLimitCommitTimer.Tick -= OnChargeLimitCommitTimerTick;
         displayRefreshTimer.Stop();
         displayRefreshTimer.Tick -= OnDisplayRefreshTimerTick;
+        reactiveKeyboardSource?.Dispose();
+        reactiveKeyboardSource = null;
         micaBackdropHost.Dispose();
         await visibleObservationLoop.DisposeAsync();
         await preferenceSaveQueue.DisposeAsync();
         await DisplayViewModel.DisposeAsync();
         displaySettingsAdapter.Dispose();
+        await reactiveKeyPulsePump.DisposeAsync();
         await ViewModel.DisposeAsync();
     }
 
@@ -237,6 +262,14 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, ITrayIconThem
                 exception);
         }
 
+        // Startup is observation-only. A saved display profile is applied only
+        // after a real, confirmed power-source transition so launching OpenBlade
+        // does not overwrite a choice made elsewhere while it was closed.
+        if (ViewModel.ActivePowerSource is
+            PowerSource.PluggedIn or PowerSource.Battery or PowerSource.UsbC)
+        {
+            observedDisplayProfilePowerSource ??= ViewModel.ActivePowerSource;
+        }
         await RefreshDisplaySettingsAsync();
     }
 
@@ -260,6 +293,36 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, ITrayIconThem
             return;
         }
 
+        if (args.PropertyName == nameof(MainViewModel.IsReactiveLightingActive))
+        {
+            if (dispatcherQueue.HasThreadAccess)
+            {
+                UpdateReactiveKeyboardSource();
+            }
+            else
+            {
+                dispatcherQueue.TryEnqueue(UpdateReactiveKeyboardSource);
+            }
+        }
+
+        if (args.PropertyName == nameof(MainViewModel.ActivePowerSource)
+            && ViewModel.ActivePowerSource is
+                PowerSource.PluggedIn or PowerSource.Battery or PowerSource.UsbC)
+        {
+            PowerSource current = ViewModel.ActivePowerSource;
+            if (observedDisplayProfilePowerSource is null)
+            {
+                observedDisplayProfilePowerSource = current;
+            }
+            else if (observedDisplayProfilePowerSource != current)
+            {
+                observedDisplayProfilePowerSource = current;
+                _ = RunDisplayOperationAsync(
+                    () => DisplayViewModel.ApplyProfileAsync(
+                        ViewModel.ActiveSavedDisplayProfile));
+            }
+        }
+
         if (args.PropertyName is nameof(MainViewModel.KeepManualChangesUntilCleared)
             or nameof(MainViewModel.LiveReadingsRefreshCadence)
             or nameof(MainViewModel.TrayHoverLabelMode))
@@ -270,6 +333,79 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, ITrayIconThem
                 visibleObservationLoop.StartOrWake();
             }
         }
+
+        if (args.PropertyName == nameof(MainViewModel.IsLightingVisible)
+            && !ViewModel.IsLightingVisible
+            && LightingPage.Visibility == Visibility.Visible)
+        {
+            void ReturnToDashboard() => MainNavigation.SelectedItem = HomeNavigationItem;
+            if (dispatcherQueue.HasThreadAccess)
+            {
+                ReturnToDashboard();
+            }
+            else
+            {
+                dispatcherQueue.TryEnqueue(ReturnToDashboard);
+            }
+        }
+    }
+
+    private void UpdateReactiveKeyboardSource()
+    {
+        if (Volatile.Read(ref disposed) != 0)
+        {
+            return;
+        }
+
+        if (!ViewModel.IsReactiveLightingActive)
+        {
+            reactiveKeyboardSource?.Dispose();
+            reactiveKeyboardSource = null;
+            reactiveKeyPulsePump.ClearPending();
+            return;
+        }
+
+        if (reactiveKeyboardSource is not null)
+        {
+            return;
+        }
+
+        try
+        {
+            reactiveKeyboardSource = new WindowsRawKeyboardSource(
+                WindowNative.GetWindowHandle(this),
+                pulse =>
+                {
+                    if (!reactiveKeyPulsePump.TryEnqueue(pulse))
+                    {
+                        ReportReactiveInputFailure(
+                            "Reactive keyboard input could not keep up and skipped a key press.");
+                    }
+                });
+        }
+        catch (Exception exception)
+        {
+            Trace.TraceWarning(
+                "Reactive keyboard observation is unavailable: {0}",
+                exception.GetType().Name);
+            ReportReactiveInputFailure(
+                $"Reactive keyboard input is unavailable: {exception.Message}");
+        }
+    }
+
+    private void ReportReactiveInputFailure(string message)
+    {
+        const long throttleMilliseconds = 10_000;
+        long now = Environment.TickCount64;
+        long previous = Interlocked.Read(ref lastReactiveInputFailureTick);
+        if (previous != 0 && now - previous < throttleMilliseconds)
+        {
+            return;
+        }
+
+        Interlocked.Exchange(ref lastReactiveInputFailureTick, now);
+        Trace.TraceWarning("{0}", message);
+        dispatcherQueue.TryEnqueue(() => ViewModel.ReportReactiveInputFailure(message));
     }
 
     private void ApplyThemeAndQueueSave(ThemePreference selectedTheme)
@@ -657,6 +793,9 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, ITrayIconThem
         ProfilesPage.Visibility = destination == "profiles"
             ? Visibility.Visible
             : Visibility.Collapsed;
+        LightingPage.Visibility = destination == "lighting" && ViewModel.IsLightingVisible
+            ? Visibility.Visible
+            : Visibility.Collapsed;
         DisplayPage.Visibility = destination == "display"
             ? Visibility.Visible
             : Visibility.Collapsed;
@@ -756,6 +895,19 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, ITrayIconThem
 
     private Task RefreshDisplaySettingsAsync() =>
         RunDisplayOperationAsync(() => DisplayViewModel.RefreshAsync());
+
+    private void OnDisplayUserSettingsChanged(
+        object? sender,
+        DisplayProfileSettingsChangedEventArgs args) =>
+        ViewModel.RecordDisplayProfileChange(args.Settings, args.PreviousSettings);
+
+    private async Task OnSavedDisplayProfileRestoreRequested(
+        DisplayProfileSettings settings,
+        CancellationToken token)
+    {
+        await DisplayViewModel.ApplyProfileAsync(settings, token);
+        SynchronizeDisplayControls();
+    }
 
     private async Task RunDisplayOperationAsync(Func<Task> operation)
     {

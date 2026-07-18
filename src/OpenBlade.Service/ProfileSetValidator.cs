@@ -34,6 +34,22 @@ public sealed class ProfileValidationPolicy
             new(PerformancePreset.BatteryBalanced, FanMode.Automatic),
         },
         new HashSet<LightingEffect> { LightingEffect.Off });
+
+    public static ProfileValidationPolicy CreateForLightingCapabilities(
+        DeviceCapabilities capabilities)
+    {
+        ArgumentNullException.ThrowIfNull(capabilities);
+        ProfileValidationPolicy safeDefaults = CreateUnverifiedSafeDefaults();
+        var supportedLightingEffects = new HashSet<LightingEffect>
+        {
+            LightingEffect.Off,
+        };
+        supportedLightingEffects.UnionWith(
+            capabilities.LightingEffects.Where(Enum.IsDefined));
+        return new ProfileValidationPolicy(
+            safeDefaults.SupportedPerformanceFanCombinations,
+            supportedLightingEffects);
+    }
 }
 
 public sealed class ProfileSetValidator(ProfileValidationPolicy policy)
@@ -44,6 +60,10 @@ public sealed class ProfileSetValidator(ProfileValidationPolicy policy)
 
     public static ProfileSetValidator CreateUnverifiedSafeDefaults() =>
         new(ProfileValidationPolicy.CreateUnverifiedSafeDefaults());
+
+    public static ProfileSetValidator CreateForLightingCapabilities(
+        DeviceCapabilities capabilities) =>
+        new(ProfileValidationPolicy.CreateForLightingCapabilities(capabilities));
 
     public void Validate(ProfileSet profiles)
     {
@@ -115,6 +135,7 @@ public sealed class ProfileSetValidator(ProfileValidationPolicy policy)
         }
 
         ValidateLighting(profile.Lighting, name);
+        ValidateDisplay(profile.Display, name);
     }
 
     private static void ValidatePerformanceSource(
@@ -172,6 +193,11 @@ public sealed class ProfileSetValidator(ProfileValidationPolicy policy)
         {
             throw Invalid($"The {name} lighting brightness must be zero when lighting is off.");
         }
+
+        if (!LightingSettingsValidation.IsWellFormed(lighting))
+        {
+            throw Invalid($"The {name} lighting effect parameters are invalid.");
+        }
     }
 
     private static void ValidateBatteryPolicy(BatteryPolicy? batteryPolicy)
@@ -185,6 +211,32 @@ public sealed class ProfileSetValidator(ProfileValidationPolicy policy)
             || batteryPolicy.ChargeLimitPercent % 5 != 0)
         {
             throw Invalid("The battery charge limit must be from 50 to 80 percent in 5 percent steps.");
+        }
+    }
+
+    private static void ValidateDisplay(DisplayProfileSettings? display, string name)
+    {
+        if (display is null)
+        {
+            // Null is the backward-compatible representation of an
+            // unconfigured display profile.
+            return;
+        }
+
+        ValidateDisplayKey(display.RefreshRateKey, name, "refresh rate");
+        ValidateDisplayKey(display.ColorProfileKey, name, "color profile");
+    }
+
+    private static void ValidateDisplayKey(string? value, string name, string setting)
+    {
+        if (value is null)
+        {
+            return;
+        }
+
+        if (value.Length is 0 or > 1024 || value.Any(char.IsControl))
+        {
+            throw Invalid($"The {name} display {setting} identifier is invalid.");
         }
     }
 

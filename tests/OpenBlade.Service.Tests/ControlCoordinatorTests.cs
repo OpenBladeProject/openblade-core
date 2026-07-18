@@ -154,6 +154,24 @@ public sealed class ControlCoordinatorTests
     }
 
     [Fact]
+    public async Task Lighting_NativeSuccessWithoutEffectReadback_IsAppliedButUnconfirmed()
+    {
+        RecordingBladeDevice device = CreateMismatchedDevice();
+        device.SuppressConfirmationFor = DeviceSubsystem.Lighting;
+        var coordinator = new ControlCoordinator(device);
+
+        ScopedApplyOutcome outcome = await coordinator.ApplyLightingOutcomeAsync(
+            TargetLighting,
+            CancellationToken.None);
+
+        Assert.Equal(ControlResultStatus.Applied, outcome.Result.Status);
+        Assert.Contains("does not report the active effect", outcome.Result.Message);
+        Assert.True(outcome.WriteAttempted);
+        Assert.False(outcome.ReadbackMatched);
+        Assert.Equal(1, device.LightingSetCalls);
+    }
+
+    [Fact]
     public async Task EnableProtection_UnadmittedStoredLimit_BlocksBeforeSetter()
     {
         RecordingBladeDevice device = CreateMismatchedDevice();

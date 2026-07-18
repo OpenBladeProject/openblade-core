@@ -26,6 +26,7 @@ public sealed class ProfileStore(string path, ProfileSetValidator? validator = n
 
     public async Task SaveAsync(ProfileSet profiles, CancellationToken cancellationToken)
     {
+        profiles = NormalizeLegacyBatteryProfile(profiles, out _);
         validator.Validate(profiles);
         byte[] json = JsonSerializer.SerializeToUtf8Bytes(
             new ProfileDocument(CurrentSchemaVersion, profiles),
@@ -127,14 +128,31 @@ public sealed class ProfileStore(string path, ProfileSetValidator? validator = n
             PerformancePreset.Balanced => PerformancePreset.BatteryBalanced,
             _ => profiles.Battery.Performance,
         };
-        migrated = normalized != profiles.Battery.Performance;
+        PowerProfile pluggedIn = NormalizeLegacyLighting(profiles.PluggedIn);
+        PowerProfile battery = NormalizeLegacyLighting(
+            profiles.Battery with { Performance = normalized });
+        PowerProfile usbC = NormalizeLegacyLighting(profiles.UsbC);
+        pluggedIn = NormalizeLegacyDisplay(pluggedIn);
+        battery = NormalizeLegacyDisplay(battery);
+        usbC = NormalizeLegacyDisplay(usbC);
+        migrated = pluggedIn != profiles.PluggedIn
+            || battery != profiles.Battery
+            || usbC != profiles.UsbC;
         return migrated
-            ? profiles with
-            {
-                Battery = profiles.Battery with { Performance = normalized },
-            }
+            ? profiles with { PluggedIn = pluggedIn, Battery = battery, UsbC = usbC }
             : profiles;
     }
+
+    private static PowerProfile NormalizeLegacyLighting(PowerProfile profile) =>
+        profile with
+        {
+            Lighting = LightingSettingsFactory.NormalizeLegacyOff(profile.Lighting),
+        };
+
+    private static PowerProfile NormalizeLegacyDisplay(PowerProfile profile) =>
+        profile.Display is null
+            ? profile with { Display = DisplayProfileSettings.Unconfigured() }
+            : profile;
 
     private async Task<ProfileLoadResult> RecoverSafeDefaultsAsync(
         CancellationToken cancellationToken)
