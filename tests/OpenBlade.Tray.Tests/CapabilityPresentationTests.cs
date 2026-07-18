@@ -208,6 +208,9 @@ public sealed class CapabilityPresentationTests
                 && Attribute(element, "IsTextSelectionEnabled") == "True"
                 && Attribute(element, "Text")?.Contains(property, StringComparison.Ordinal) is true);
         }
+        Assert.Contains(troubleshooting.Descendants(), element =>
+            element.Name.LocalName == "TextBlock"
+            && Attribute(element, "Text") == "Other Razer software running");
         Assert.Contains(
             "Save logs and system details with sensitive information removed.",
             xaml,

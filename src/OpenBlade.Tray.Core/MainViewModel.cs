@@ -32,7 +32,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         RazerBladeModelCatalog.Find(RazerBladeModelCatalog.OpenBladeTargetModelNumber)
         ?? throw new InvalidOperationException("The supported laptop is missing from the model catalog.");
     private static readonly string TargetLaptopLabel =
-        $"{TargetLaptop.DisplayName} — {TargetLaptop.ModelNumber}";
+        $"{TargetLaptop.DisplayName}, {TargetLaptop.ModelNumber}";
 
     private readonly IServiceClient serviceClient;
     private readonly IUiDispatcher dispatcher;
@@ -551,10 +551,10 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         : "Unavailable";
 
     public string TroubleshootingLaptopStatus => !IsConnected
-        ? $"{TargetLaptopLabel} — Status unavailable"
+        ? $"{TargetLaptopLabel}; status unavailable"
         : latestStatus?.DeviceVerified == true
-            ? $"{TargetLaptopLabel} — Detected"
-            : $"{TargetLaptopLabel} — Not detected";
+            ? TargetLaptopLabel
+            : $"{TargetLaptopLabel}; not detected";
 
     public string TroubleshootingPowerSourceStatus => !IsConnected
         ? "Unavailable"
@@ -572,19 +572,19 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         : "Unavailable";
 
     public string TroubleshootingOtherRazerSoftwareStatus => HasControllerAdvisory
-        ? $"Detected — {string.Join(", ", latestStatus?.PotentialControllers ?? [])}"
+        ? string.Join(", ", latestStatus?.PotentialControllers ?? [])
         : HasControllerDetectionWarning
             ? "Could not check"
-            : "Not detected";
+            : "None detected";
 
     public string TroubleshootingDetectionStatus => HasControllerDetectionWarning
-        ? ControllerDetectionWarningText
-        : "Controller check completed.";
+        ? FormatTroubleshootingValue(ControllerDetectionWarningText)
+        : "Controller check completed";
 
     public string TroubleshootingLastOperationStatus => string.IsNullOrWhiteSpace(
         OperationStatusMessage)
-            ? "No recent actions."
-            : OperationStatusMessage;
+            ? "No recent actions"
+            : FormatTroubleshootingValue(OperationStatusMessage);
 
     public IReadOnlyList<PerformancePreset> AvailablePerformancePresets
     {
@@ -2577,6 +2577,9 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         }
         return string.Empty;
     }
+
+    private static string FormatTroubleshootingValue(string value) =>
+        value.Trim().TrimEnd('.');
 
     private static string FormatOperationResult(ControlOperationResult result) => result.Status switch
     {

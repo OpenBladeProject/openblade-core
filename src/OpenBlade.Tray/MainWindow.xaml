@@ -743,7 +743,7 @@
                                     </Border>
                                     <Border Style="{StaticResource TroubleshootingSectionStyle}">
                                         <StackPanel Spacing="3">
-                                            <TextBlock Text="Other Razer software" Style="{StaticResource CardTitleStyle}" />
+                                            <TextBlock Text="Other Razer software running" Style="{StaticResource CardTitleStyle}" />
                                             <TextBlock Text="{x:Bind ViewModel.TroubleshootingOtherRazerSoftwareStatus, Mode=OneWay}"
                                                        Style="{StaticResource SecondaryTextStyle}"
                                                        TextWrapping="Wrap"
