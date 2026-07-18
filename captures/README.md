@@ -92,6 +92,22 @@ and a successful one-packet tshark decode. Follow the plan's annotation
 guidance when producing sanitized fixtures; never commit the raw PCAP or treat
 this Synapse-oracle session as OpenBlade installed-build validation.
 
+After a graceful capture, generate the bounded, sanitized measurement artifact
+with:
+
+```powershell
+& .\captures\tools\Analyze-LightingSpectrumRandomOracle.ps1 `
+    -CapturePath 'C:\tmp\openblade-lighting-spectrum-random-oracle-v1\capture.pcap' `
+    -AnnotationPath 'C:\tmp\openblade-lighting-spectrum-random-oracle-v1\lighting-spectrum-random-annotations.json' `
+    -OutputPath 'C:\tmp\openblade-lighting-spectrum-random-oracle-v1\sanitized-evidence.json'
+```
+
+The analyzer verifies the complete reviewed action sequence, exact target,
+finalized PCAP hash and size, report checksum, and captured 86-key mask. It
+emits only relative RGB/HSV, cadence, observed wrap, and black-bounded breathing
+measurements. It does not fit a renderer curve or infer a palette, PRNG, or
+seed, and it never copies the raw PCAP into the repository.
+
 Decoded PID `02E0` evidence lives under `captures/decoded`. It intentionally
 uses an evidence schema rather than the production fixture schema so incomplete
 gates, admitted validation cycles, multi-command operations, expected ACKs, and
