@@ -26,7 +26,6 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, ITrayIconThem
     private readonly UiPreferenceSaveQueue preferenceSaveQueue;
     private readonly VisibleObservationLoop visibleObservationLoop;
     private readonly SessionDisplaySettingsAdapter displaySettingsAdapter;
-    private readonly ReactiveKeyPulsePump reactiveKeyPulsePump;
     private readonly DispatcherQueueTimer chargeLimitCommitTimer;
     private readonly DispatcherQueueTimer displayRefreshTimer;
     private readonly object initializationSync = new();
@@ -39,10 +38,8 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, ITrayIconThem
     private bool chargeLimitCommitInProgress;
     private bool chargeLimitPointerInteraction;
     private int? pendingChargeLimitPercent;
-    private WindowsRawKeyboardSource? reactiveKeyboardSource;
     private bool? dashboardIsStacked;
     private bool? profilesAreStacked;
-    private long lastReactiveInputFailureTick;
     private int disposed;
 
     public MainWindow()
@@ -57,19 +54,6 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, ITrayIconThem
             new DiagnosticArchiveSaver(new WinUiDiagnosticArchiveDestination(AppWindow.Id)),
             new WindowsStartupRegistration(),
             uiVersion: OpenBladeProductVersion.Read(typeof(MainWindow).Assembly));
-        reactiveKeyPulsePump = new ReactiveKeyPulsePump(
-            async (pulse, token) =>
-            {
-                ControlOperationResult result =
-                    await serviceClient.PulseReactiveKeyAsync(pulse, token)
-                    .ConfigureAwait(false);
-                if (result.Status != ControlOperationStatus.Applied)
-                {
-                    throw new InvalidOperationException(result.Message);
-                }
-            },
-            errorHandler: exception => ReportReactiveInputFailure(
-                $"Reactive keyboard input failed: {exception.Message}"));
         displaySettingsAdapter = new SessionDisplaySettingsAdapter();
         DisplayViewModel = new DisplaySettingsViewModel(displaySettingsAdapter);
         DisplayViewModel.UserSettingsChanged += OnDisplayUserSettingsChanged;
@@ -172,13 +156,10 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, ITrayIconThem
         chargeLimitCommitTimer.Tick -= OnChargeLimitCommitTimerTick;
         displayRefreshTimer.Stop();
         displayRefreshTimer.Tick -= OnDisplayRefreshTimerTick;
-        reactiveKeyboardSource?.Dispose();
-        reactiveKeyboardSource = null;
         micaBackdropHost.Dispose();
         await visibleObservationLoop.DisposeAsync();
         await preferenceSaveQueue.DisposeAsync();
         await DisplayViewModel.DisposeAsync();
-        await reactiveKeyPulsePump.DisposeAsync();
         await ViewModel.DisposeAsync();
     }
 
@@ -279,18 +260,6 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, ITrayIconThem
             return;
         }
 
-        if (args.PropertyName == nameof(MainViewModel.IsReactiveLightingActive))
-        {
-            if (dispatcherQueue.HasThreadAccess)
-            {
-                UpdateReactiveKeyboardSource();
-            }
-            else
-            {
-                dispatcherQueue.TryEnqueue(UpdateReactiveKeyboardSource);
-            }
-        }
-
         if (args.PropertyName == nameof(MainViewModel.ActivePowerSource))
         {
             DisplayViewModel.ActivePowerSource = ViewModel.ActivePowerSource;
@@ -320,64 +289,6 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, ITrayIconThem
                 dispatcherQueue.TryEnqueue(ReturnToDashboard);
             }
         }
-    }
-
-    private void UpdateReactiveKeyboardSource()
-    {
-        if (Volatile.Read(ref disposed) != 0)
-        {
-            return;
-        }
-
-        if (!ViewModel.IsReactiveLightingActive)
-        {
-            reactiveKeyboardSource?.Dispose();
-            reactiveKeyboardSource = null;
-            reactiveKeyPulsePump.ClearPending();
-            return;
-        }
-
-        if (reactiveKeyboardSource is not null)
-        {
-            return;
-        }
-
-        try
-        {
-            reactiveKeyboardSource = new WindowsRawKeyboardSource(
-                WindowNative.GetWindowHandle(this),
-                pulse =>
-                {
-                    if (!reactiveKeyPulsePump.TryEnqueue(pulse))
-                    {
-                        ReportReactiveInputFailure(
-                            "Reactive keyboard input could not keep up and skipped a key press.");
-                    }
-                });
-        }
-        catch (Exception exception)
-        {
-            Trace.TraceWarning(
-                "Reactive keyboard observation is unavailable: {0}",
-                exception.GetType().Name);
-            ReportReactiveInputFailure(
-                $"Reactive keyboard input is unavailable: {exception.Message}");
-        }
-    }
-
-    private void ReportReactiveInputFailure(string message)
-    {
-        const long throttleMilliseconds = 10_000;
-        long now = Environment.TickCount64;
-        long previous = Interlocked.Read(ref lastReactiveInputFailureTick);
-        if (previous != 0 && now - previous < throttleMilliseconds)
-        {
-            return;
-        }
-
-        Interlocked.Exchange(ref lastReactiveInputFailureTick, now);
-        Trace.TraceWarning("{0}", message);
-        dispatcherQueue.TryEnqueue(() => ViewModel.ReportReactiveInputFailure(message));
     }
 
     private void ApplyThemeAndQueueSave(ThemePreference selectedTheme)

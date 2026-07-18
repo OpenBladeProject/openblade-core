@@ -7,49 +7,6 @@ namespace OpenBlade.Tray.Tests;
 public sealed class MainViewModelTests
 {
     [Fact]
-    public async Task ReactiveInputState_FollowsOnlyServiceRendererOwnership()
-    {
-        var client = new FakeServiceClient();
-        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
-        await viewModel.StartAsync();
-        ServiceStatusSnapshot baseline = CreateStatus(verified: true, blocked: false);
-        LightingSettings reactive = LightingSettingsFactory.Reactive(
-            new RgbColor(0, 255, 0),
-            brightness: 77,
-            ReactiveLightingDuration.Medium);
-
-        client.Publish(baseline with
-        {
-            ConfirmedState = baseline.ConfirmedState! with { Lighting = reactive },
-            DesiredState = baseline.DesiredState with
-            {
-                Lighting = new ResolvedSetting<LightingSettings>(
-                    reactive,
-                    SettingValueSource.TemporaryOverride),
-            },
-            LightingRendererOwnership = LightingRendererOwnershipState.Reactive,
-        });
-        await WaitUntilAsync(() => viewModel.IsReactiveLightingActive);
-
-        client.Publish(baseline with
-        {
-            Revision = 2,
-            ConfirmedState = baseline.ConfirmedState! with { Lighting = null },
-            DesiredState = baseline.DesiredState with
-            {
-                Lighting = new ResolvedSetting<LightingSettings>(
-                    reactive,
-                    SettingValueSource.TemporaryOverride),
-            },
-            LightingRendererOwnership = LightingRendererOwnershipState.None,
-        });
-        await WaitUntilAsync(() => !viewModel.IsReactiveLightingActive);
-
-        Assert.Equal(LightingEffect.Reactive, viewModel.SelectedLighting.Effect);
-        Assert.False(viewModel.IsReactiveLightingActive);
-    }
-
-    [Fact]
     public async Task ProfileEditors_ReportUnsavedChangesUntilSaveThenReloadCleanly()
     {
         var client = new FakeServiceClient();
@@ -192,19 +149,6 @@ public sealed class MainViewModelTests
         Assert.False(viewModel.HasUnsavedProfileChanges);
         Assert.False(viewModel.IsPluggedInProfileDraft);
         Assert.Contains("Performance", viewModel.PluggedInProfileThermalSummary);
-    }
-
-    [Fact]
-    public async Task ReactiveInputFailureAppearsOnlyAsActionableErrorState()
-    {
-        await using var viewModel = new MainViewModel(
-            new FakeServiceClient(),
-            new RecordingDispatcher());
-
-        viewModel.ReportReactiveInputFailure("  Reactive delivery failed.  ");
-
-        Assert.Equal("Reactive delivery failed.", viewModel.OperationStatusMessage);
-        Assert.Equal("Reactive delivery failed", viewModel.TroubleshootingRecentErrorStatus);
     }
 
     [Fact]

@@ -78,31 +78,25 @@ public sealed class WinUiShellContractTests
     }
 
     [Fact]
-    public void ReactiveRawInputKeepsFailedNativeSubclassAliveUntilWindowTeardown()
+    public void ReactiveRawInputBelongsToAlwaysRunningSessionAgent()
     {
         string source = ReadRepositoryFile(
             "src",
-            "OpenBlade.Tray",
-            "WindowsRawKeyboardSource.cs");
+            "OpenBlade.SessionAgent",
+            "WindowsReactiveKeyboardSource.cs");
+        string agent = ReadRepositoryFile(
+            "src",
+            "OpenBlade.SessionAgent",
+            "Program.cs");
         string window = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml.cs");
 
-        Assert.Contains(
-            "ConcurrentDictionary<SubclassKey, WindowsRawKeyboardSource>",
-            source,
-            StringComparison.Ordinal);
-        Assert.Contains("FailedRemovalKeepAlive[key] = this", source, StringComparison.Ordinal);
-        Assert.Contains(
-            "RetainIfSubclassRemovalFails(\"registration rollback\")",
-            source,
-            StringComparison.Ordinal);
-        Assert.Contains(
-            "RetainIfSubclassRemovalFails(\"disposal\")",
-            source,
-            StringComparison.Ordinal);
-        Assert.Contains("WindowMessageNonClientDestroy", source, StringComparison.Ordinal);
-        Assert.Contains("FailedRemovalKeepAlive.TryRemove", source, StringComparison.Ordinal);
+        Assert.Contains("MessageOnlyWindow", source, StringComparison.Ordinal);
+        Assert.Contains("RawInputDeviceInputSink", source, StringComparison.Ordinal);
+        Assert.Contains("Rz09_0581ReactiveInputDevice", source, StringComparison.Ordinal);
         Assert.DoesNotContain("rawInput.Keyboard.VirtualKey", source, StringComparison.Ordinal);
-        Assert.Contains("reactiveKeyPulsePump.ClearPending()", window, StringComparison.Ordinal);
+        Assert.Contains("ServiceReactiveLightingLoop", agent, StringComparison.Ordinal);
+        Assert.DoesNotContain("ReactiveKeyPulsePump", window, StringComparison.Ordinal);
+        Assert.DoesNotContain("WindowsRawKeyboardSource", window, StringComparison.Ordinal);
     }
 
     [Fact]

@@ -76,7 +76,6 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     private PerformancePreset selectedPerformance = PerformancePreset.Balanced;
     private FanMode selectedFanMode = FanMode.Automatic;
     private LightingSettings selectedLighting = ProfileDefaults.CreateSafeDefaults().PluggedIn.Lighting;
-    private bool isReactiveLightingActive;
     private int chargeLimitPercent = 80;
     private string currentBatterySettingLabel = "Battery setting unavailable";
     private bool chargeLimitEditorDirty;
@@ -819,12 +818,6 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         private set => SetField(ref selectedLighting, value);
     }
 
-    public bool IsReactiveLightingActive
-    {
-        get => isReactiveLightingActive;
-        private set => SetField(ref isReactiveLightingActive, value);
-    }
-
     public int ChargeLimitPercent
     {
         get => chargeLimitPercent;
@@ -1217,15 +1210,6 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     public string PendingActiveProfileSummary => GetActiveProfileDraft() is { } draft
         ? FormatPowerProfile(draft)
         : string.Empty;
-
-    public void ReportReactiveInputFailure(string message)
-    {
-        string detail = string.IsNullOrWhiteSpace(message)
-            ? "Reactive keyboard input is unavailable."
-            : message.Trim();
-        OperationStatusMessage = detail;
-        TroubleshootingRecentErrorStatus = FormatTroubleshootingValue(detail);
-    }
 
     public void RecordDisplayProfileChange(
         PowerSource powerSource,
@@ -1917,8 +1901,6 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         SelectedFanMode = confirmed?.Fans ?? status.DesiredState.Fans.Value;
         PrepareLightingEditorForPowerSource(status.ActivePowerSource);
         SelectedLighting = confirmed?.Lighting ?? status.DesiredState.Lighting.Value;
-        IsReactiveLightingActive = status.LightingRendererOwnership ==
-            LightingRendererOwnershipState.Reactive;
         if (!lightingEditorDirty)
         {
             LoadLightingEditor(SelectedLighting);
@@ -2105,7 +2087,6 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         TrayIconState = TrayIconState.GenericError;
         IsReadOnly = true;
         CanControlHardware = false;
-        IsReactiveLightingActive = false;
         ConnectionStatus = message;
         ActivePowerSourceLabel = "Power source unavailable";
         CurrentBatterySettingLabel = "Battery setting unavailable";

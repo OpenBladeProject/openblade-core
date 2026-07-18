@@ -61,10 +61,20 @@ internal static class Program
                 var automation = new ServiceDisplayAutomationLoop(
                     new ServiceClient(),
                     coordinator);
+                await using var reactive = new ServiceReactiveLightingLoop(
+                    new ServiceClient(),
+                    WindowsReactiveKeyboardSourceFactory.Instance,
+                    exception => System.Diagnostics.Trace.TraceWarning(
+                        "OpenBlade Reactive input failed: {0}",
+                        exception.Message));
 
                 Task serverTask = server.RunAsync(lifetime.Token);
                 Task automationTask = automation.RunAsync(lifetime.Token);
-                Task completed = await Task.WhenAny(serverTask, automationTask).ConfigureAwait(false);
+                Task reactiveTask = reactive.RunAsync(lifetime.Token);
+                Task completed = await Task.WhenAny(
+                    serverTask,
+                    automationTask,
+                    reactiveTask).ConfigureAwait(false);
                 if (!lifetime.IsCancellationRequested)
                 {
                     lifetime.Cancel();
@@ -72,7 +82,8 @@ internal static class Program
 
                 try
                 {
-                    await Task.WhenAll(serverTask, automationTask).ConfigureAwait(false);
+                    await Task.WhenAll(serverTask, automationTask, reactiveTask)
+                        .ConfigureAwait(false);
                 }
                 catch (OperationCanceledException) when (lifetime.IsCancellationRequested)
                 {
