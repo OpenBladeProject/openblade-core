@@ -61,12 +61,17 @@ Create an untrimmed, self-contained `win-x64` bundle:
 ```
 
 The production installer bundle is written to `artifacts\win-x64\OpenBlade`.
-It contains only the Service and Tray application payload. Run
+It contains the LocalSystem Service, the per-user SessionAgent, and the Tray
+application payload. The SessionAgent is the sole owner of current-user Windows
+display APIs, so saved display profiles continue to follow confirmed power-source
+changes after the visible tray exits. Run
 `OpenBlade.Setup.exe install` from an elevated terminal to install it. Use
 `OpenBlade.Setup.exe uninstall` to preserve profiles or
 `OpenBlade.Setup.exe uninstall --purge` to remove them. Uninstall requests a
-graceful shutdown from the installed tray process and waits for that exact
-executable to exit before removing binaries.
+graceful shutdown from the exact installed tray and SessionAgent processes and
+waits for both to exit before removing binaries. The SessionAgent always starts
+at sign-in for profile automation; the Settings toggle independently controls
+whether the visible tray also starts at sign-in.
 
 The Capture CLI is published separately to
 `artifacts\win-x64\OpenBlade.DeveloperTools`. It is a developer-only protocol

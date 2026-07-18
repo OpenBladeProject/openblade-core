@@ -7,6 +7,9 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Added
 
+- A lightweight per-user SessionAgent that exclusively owns Windows display
+  queries and changes while the LocalSystem service remains the hardware and
+  profile authority.
 - Built-in display controls for driver-enumerated fixed refresh rates, EDID-reported Windows Dynamic Refresh Rate, HDR, and the locally installed Razer color profiles.
 - Keyboard lighting controls under validation for Off, Static, Spectrum Cycling, single/dual/random Breathing, Reactive Short/Medium/Long, color, and brightness on the exact RZ09-0581/PID 02E0 device.
 - Data-minimized Reactive input through Windows Raw Input: scan-code make events map directly to matrix slots without recording characters, virtual-key values, applications, window titles, or input packets.
@@ -14,6 +17,11 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Changed
 
+- Display profile automation now remains active after Tray Exit. The first
+  confirmed source is observation-only; later real AC, USB-C, or battery
+  transitions apply the destination profile through one serialized agent queue.
+- The SessionAgent starts independently at sign-in, while the existing
+  Start-at-sign-in setting continues to control only the visible tray.
 - Replaced the page-level legacy `ScrollViewer` controls with InteractionTracker-based `ScrollView` controls for smoother high-refresh-rate scrolling.
 - Display polling and mutation readback now run Windows topology, registry, and ICC work off the UI thread; unchanged option collections are reused and background checks no longer disable controls, removing a confirmed periodic high-refresh jank path.
 - A transient adapter recheck that retains the last confirmed power source no longer flashes the dashboard as `Controls unavailable`; hardware writes remain blocked until classification recovers.
@@ -25,6 +33,9 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Safety
 
+- Transient unknown power readings and service reconnects block display writes
+  without discarding the last confirmed source baseline. Same-source profile
+  saves and external display changes do not trigger automatic reapplication.
 - Display settings are applied only on direct user action or a confirmed power-profile transition, then validated and read back through Windows. Periodic observation reports changes made elsewhere without reasserting them.
 - SDR color profiles are unavailable while HDR is enabled.
 - Color-profile selection now activates and verifies the current user's Windows profile scope before applying the panel's MHC2 calibration.
