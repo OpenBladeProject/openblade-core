@@ -642,7 +642,25 @@ if ($rows.Count -eq 0) {
     throw 'No target-device matrix reports were found in the finalized PCAP.'
 }
 
-$samples = @($rows | ForEach-Object { ConvertTo-MatrixSample $_ } | Sort-Object Epoch, Frame)
+$analysisWindows = @($spectrumWindows) + @($randomWindow)
+$boundedRows = @(foreach ($row in $rows) {
+    $fields = $row -split "`t"
+    if ($fields.Count -ne 3) {
+        throw "Expected frame, epoch, and data fields; received: $row"
+    }
+    $epoch = [double]::Parse($fields[1], [Globalization.CultureInfo]::InvariantCulture)
+    $inReviewedWindow = @($analysisWindows | Where-Object {
+        $epoch -ge $_.Start -and $epoch -le $_.End
+    }).Count -gt 0
+    if ($inReviewedWindow) {
+        $row
+    }
+})
+if ($boundedRows.Count -eq 0) {
+    throw 'No target-device matrix reports fell inside the reviewed action windows.'
+}
+
+$samples = @($boundedRows | ForEach-Object { ConvertTo-MatrixSample $_ } | Sort-Object Epoch, Frame)
 $spectrumEvidence = @($spectrumWindows | ForEach-Object {
     Get-SpectrumRunEvidence -Window $_ -Samples $samples
 })
@@ -678,6 +696,7 @@ $evidence = [ordered]@{
         matrixCommand = '03/0B'
         matrixEnvelopeBytes = 374
         matrixSlotCount = 102
+        sourceTargetMatrixFrameCount = $rows.Count
         extractedMatrixFrameCount = $samples.Count
     }
     method = [ordered]@{

@@ -22,6 +22,7 @@ function New-MatrixReportHex {
         [Parameter(Mandatory)][string]$RgbHex,
         [Parameter(Mandatory)][ValidateRange(0, 255)][int]$TransactionId,
         [switch]$LightCapturedHole,
+        [switch]$NonUniformCapturedKey,
         [switch]$CorruptChecksum
     )
 
@@ -50,6 +51,9 @@ function New-MatrixReportHex {
         $report[12] = $red
         $report[13] = $green
         $report[14] = $blue
+    }
+    if ($NonUniformCapturedKey) {
+        $report[15] = $report[15] -bxor 0x01
     }
     $checksum = [byte]0
     for ($offset = 2; $offset -lt 372; $offset++) {
@@ -119,6 +123,15 @@ try {
     [Collections.Generic.List[string]]$rows = [Collections.Generic.List[string]]::new()
     $frame = 1
     $transaction = 1
+    $preWindowHex = New-MatrixReportHex -RgbHex '44D62C' `
+        -TransactionId $transaction -NonUniformCapturedKey
+    [void]$rows.Add(("{0}`t{1}`t{2}" -f
+        $frame,
+        (ConvertTo-EpochSeconds '2026-07-18T00:00:05.0000000Z').ToString(
+            '0.000000', [Globalization.CultureInfo]::InvariantCulture),
+        $preWindowHex))
+    $frame++
+    $transaction++
     $spectrumColors = @(
         'FF00FF', # 300 degrees
         'FF0080', # approximately 330 degrees
@@ -244,6 +257,10 @@ try {
         'The evidence does not explicitly exclude the raw PCAP.'
     Assert-True ($evidence.sourceCapture.sha256 -ceq $annotation.pcap.sha256) `
         'The evidence does not retain the verified PCAP hash.'
+    Assert-True ($evidence.protocol.sourceTargetMatrixFrameCount -eq 53) `
+        'The analyzer did not account for the ignored pre-window matrix frame.'
+    Assert-True ($evidence.protocol.extractedMatrixFrameCount -eq 52) `
+        'The analyzer did not limit uniform validation to reviewed action windows.'
     Assert-True (@($evidence.spectrum.runs).Count -eq 3) 'The analyzer did not preserve all three Spectrum runs.'
     foreach ($run in @($evidence.spectrum.runs)) {
         Assert-True ($run.sampleCount -eq 12) 'A Spectrum run lost synthetic samples.'
@@ -339,11 +356,11 @@ try {
         'One-breath evidence did not emit zero-count interval statistics.'
 
     [string[]]$invalidMaskRows = @($rows)
-    $firstFields = $invalidMaskRows[0] -split "`t"
-    $invalidMaskRows[0] = "{0}`t{1}`t{2}" -f `
+    $firstFields = $invalidMaskRows[1] -split "`t"
+    $invalidMaskRows[1] = "{0}`t{1}`t{2}" -f `
         $firstFields[0],
         $firstFields[1],
-        (New-MatrixReportHex -RgbHex 'FF00FF' -TransactionId 1 -LightCapturedHole)
+        (New-MatrixReportHex -RgbHex 'FF00FF' -TransactionId 2 -LightCapturedHole)
     [IO.File]::WriteAllLines(
         $rowsPath,
         $invalidMaskRows,
@@ -364,10 +381,10 @@ try {
         'The analyzer accepted a matrix report that lit a captured hole slot.'
 
     [string[]]$invalidChecksumRows = @($rows)
-    $invalidChecksumRows[0] = "{0}`t{1}`t{2}" -f `
+    $invalidChecksumRows[1] = "{0}`t{1}`t{2}" -f `
         $firstFields[0],
         $firstFields[1],
-        (New-MatrixReportHex -RgbHex 'FF00FF' -TransactionId 1 -CorruptChecksum)
+        (New-MatrixReportHex -RgbHex 'FF00FF' -TransactionId 2 -CorruptChecksum)
     [IO.File]::WriteAllLines(
         $rowsPath,
         $invalidChecksumRows,
