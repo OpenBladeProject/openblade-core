@@ -183,8 +183,14 @@
                                         AutomationProperties.HelpText="{x:Bind ViewModel.LiveReadingsRefreshToolTip, Mode=OneWay}"
                                         Visibility="{x:Bind ViewModel.LiveReadingsEnabled, Mode=OneWay}">
                                     <Grid Background="Transparent"
-                                          ColumnSpacing="24"
-                                          ToolTipService.ToolTip="{x:Bind ViewModel.LiveReadingsRefreshToolTip, Mode=OneWay}">
+                                          ColumnSpacing="24">
+                                        <ToolTipService.ToolTip>
+                                            <ToolTip>
+                                                <TextBlock MaxWidth="340"
+                                                           Text="{x:Bind ViewModel.LiveReadingsRefreshToolTip, Mode=OneWay}"
+                                                           TextWrapping="Wrap" />
+                                            </ToolTip>
+                                        </ToolTipService.ToolTip>
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="*" />
                                             <ColumnDefinition Width="*" />
@@ -561,6 +567,7 @@
                                     <ComboBox Grid.Column="1"
                                               MinWidth="170"
                                               HorizontalAlignment="Right"
+                                              VerticalAlignment="Center"
                                               AutomationProperties.Name="Live readings refresh interval"
                                               ItemsSource="{x:Bind ViewModel.LiveReadingsRefreshOptions, Mode=OneWay}"
                                               DisplayMemberPath="Label"

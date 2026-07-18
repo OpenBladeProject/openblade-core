@@ -141,6 +141,7 @@ public sealed class CapabilityPresentationTests
             && Attribute(element, "AutomationProperties.Name")
                 == "Live readings refresh interval");
         Assert.Equal("Right", Attribute(liveReadings, "HorizontalAlignment"));
+        Assert.Equal("Center", Attribute(liveReadings, "VerticalAlignment"));
         Assert.Equal(
             "{x:Bind ViewModel.LiveReadingsRefreshOptions, Mode=OneWay}",
             Attribute(liveReadings, "ItemsSource"));
@@ -245,9 +246,20 @@ public sealed class CapabilityPresentationTests
             readings.Elements(),
             element => element.Name.LocalName == "Grid");
         Assert.Equal("Transparent", Attribute(readingsGrid, "Background"));
+        XElement toolTipProperty = Assert.Single(
+            readingsGrid.Elements(),
+            element => element.Name.LocalName == "ToolTipService.ToolTip");
+        XElement toolTip = Assert.Single(
+            toolTipProperty.Elements(),
+            element => element.Name.LocalName == "ToolTip");
+        XElement toolTipText = Assert.Single(
+            toolTip.Elements(),
+            element => element.Name.LocalName == "TextBlock");
+        Assert.Equal("340", Attribute(toolTipText, "MaxWidth"));
+        Assert.Equal("Wrap", Attribute(toolTipText, "TextWrapping"));
         Assert.Equal(
             "{x:Bind ViewModel.LiveReadingsRefreshToolTip, Mode=OneWay}",
-            Attribute(readingsGrid, "ToolTipService.ToolTip"));
+            Attribute(toolTipText, "Text"));
         Assert.DoesNotContain(readings.Descendants(), element =>
             element.Name.LocalName == "TextBlock"
             && Attribute(element, "Text") == "Live readings");
