@@ -440,7 +440,7 @@ public sealed class MainViewModelTests
 
         Assert.NotEqual(firstTooltip, viewModel.LiveReadingsRefreshToolTip);
         Assert.Contains(
-            "Values change only when Windows or firmware reports new data.",
+            $"{Environment.NewLine}Values change only when Windows or firmware reports new data.",
             viewModel.LiveReadingsRefreshToolTip,
             StringComparison.Ordinal);
         Assert.Contains(nameof(viewModel.LiveReadingsRefreshToolTip), changed);

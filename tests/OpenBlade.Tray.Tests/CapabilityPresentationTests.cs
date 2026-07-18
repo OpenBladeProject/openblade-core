@@ -149,6 +149,10 @@ public sealed class CapabilityPresentationTests
             "{x:Bind ViewModel.SelectedLiveReadingsRefreshOption, Mode=TwoWay}",
             Attribute(liveReadings, "SelectedItem"));
         Assert.Contains(
+            "Choose how often OpenBlade checks fan speed and net battery power.",
+            xaml,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain(
             "Values may stay the same between checks.",
             xaml,
             StringComparison.Ordinal);

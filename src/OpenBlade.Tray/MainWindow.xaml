@@ -561,7 +561,7 @@
                                     </Grid.ColumnDefinitions>
                                     <StackPanel Spacing="3" VerticalAlignment="Center">
                                         <TextBlock Text="Live readings" Style="{StaticResource CardTitleStyle}" />
-                                        <TextBlock Text="Choose how often OpenBlade checks fan speed and net battery power. Values may stay the same between checks."
+                                        <TextBlock Text="Choose how often OpenBlade checks fan speed and net battery power."
                                                    Style="{StaticResource SecondaryTextStyle}" />
                                     </StackPanel>
                                     <ComboBox Grid.Column="1"

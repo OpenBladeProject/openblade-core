@@ -350,7 +350,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     public string Fan2RpmValue => FormatFanRpmValue(LiveReadings?.Fan2Rpm);
 
     public string LiveReadingsRefreshToolTip => lastLiveReadingsRefreshAt is { } refreshedAt
-        ? $"Last checked at {refreshedAt.ToLocalTime().ToString("T", CultureInfo.CurrentCulture)}. Values change only when Windows or firmware reports new data."
+        ? $"Last checked at {refreshedAt.ToLocalTime().ToString("T", CultureInfo.CurrentCulture)}.{Environment.NewLine}Values change only when Windows or firmware reports new data."
         : "Waiting for the first live-reading check.";
 
     public string ActivePowerSourceLabel
