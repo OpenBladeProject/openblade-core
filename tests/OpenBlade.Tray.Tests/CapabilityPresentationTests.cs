@@ -148,6 +148,11 @@ public sealed class CapabilityPresentationTests
         Assert.Equal(
             "{x:Bind ViewModel.SelectedLiveReadingsRefreshOption, Mode=TwoWay}",
             Attribute(liveReadings, "SelectedItem"));
+        XElement appTheme = Assert.Single(settings.Descendants(), element =>
+            element.Name.LocalName == "ComboBox"
+            && Attribute(element, "AutomationProperties.Name") == "App theme");
+        Assert.Equal("Right", Attribute(appTheme, "HorizontalAlignment"));
+        Assert.Equal("Center", Attribute(appTheme, "VerticalAlignment"));
         Assert.Contains(
             "Choose how often OpenBlade checks fan speed and net battery power.",
             xaml,

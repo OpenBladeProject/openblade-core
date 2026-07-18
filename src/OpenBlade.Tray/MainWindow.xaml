@@ -635,6 +635,7 @@
                                     <ComboBox Grid.Column="1"
                                               MinWidth="170"
                                               HorizontalAlignment="Right"
+                                              VerticalAlignment="Center"
                                               AutomationProperties.Name="App theme"
                                               ItemsSource="{x:Bind ViewModel.ThemeSelectionOptions, Mode=OneWay}"
                                               DisplayMemberPath="Label"
