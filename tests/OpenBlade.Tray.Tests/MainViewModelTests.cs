@@ -218,6 +218,7 @@ public sealed class MainViewModelTests
         Assert.Equal("Controller detection was incomplete.", viewModel.ControllerDetectionWarningText);
         Assert.True(viewModel.HasAttention);
         Assert.Equal("Controller detection needs attention", viewModel.AttentionSummary);
+        Assert.Equal("Check status", viewModel.AttentionBadgeLabel);
         Assert.Equal(
             "Controller detection was incomplete",
             viewModel.TroubleshootingDetectionStatus);
@@ -257,6 +258,7 @@ public sealed class MainViewModelTests
             "Current setting · Charge limit 65%",
             viewModel.BatterySourceLabel);
         Assert.True(viewModel.HasExternalChanges);
+        Assert.Equal("Settings changed", viewModel.AttentionBadgeLabel);
         Assert.Equal(
             "Settings changed outside OpenBlade: Fans, Lighting. Automatic profile changes for these controls are paused; manual actions still apply.",
             viewModel.ExternalChangesText);
@@ -1315,6 +1317,7 @@ public sealed class MainViewModelTests
             "RazerAppEngine",
             viewModel.TroubleshootingOtherRazerSoftwareStatus);
         Assert.Equal("Another Razer app is running", viewModel.AttentionSummary);
+        Assert.Equal("Razer app active", viewModel.AttentionBadgeLabel);
         Assert.Equal("Controls unavailable", viewModel.PerformanceSourceLabel);
 
         client.Publish(CreateStatus(verified: true, blocked: true));

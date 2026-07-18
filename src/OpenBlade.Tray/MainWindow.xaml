@@ -54,6 +54,16 @@
                 <Setter Property="HorizontalAlignment" Value="Right" />
                 <Setter Property="VerticalAlignment" Value="Center" />
             </Style>
+            <Style x:Key="StatusPillButtonStyle"
+                   TargetType="Button"
+                   BasedOn="{StaticResource DefaultButtonStyle}">
+                <Setter Property="MinWidth" Value="0" />
+                <Setter Property="MinHeight" Value="0" />
+                <Setter Property="BorderThickness" Value="0" />
+                <Setter Property="CornerRadius" Value="12" />
+                <Setter Property="Padding" Value="10,3" />
+                <Setter Property="VerticalAlignment" Value="Center" />
+            </Style>
             <Style x:Key="CardContentExpanderStyle" TargetType="Expander">
                 <Setter Property="HorizontalAlignment" Value="Stretch" />
                 <Setter Property="HorizontalContentAlignment" Value="Stretch" />
@@ -138,13 +148,8 @@
                                                    Style="{StaticResource SecondaryTextStyle}"
                                                    VerticalAlignment="Center" />
                                         <Button x:Name="ProfileStateBadge"
-                                                MinWidth="0"
-                                                MinHeight="0"
+                                                Style="{StaticResource StatusPillButtonStyle}"
                                                 Background="{ThemeResource SubtleFillColorSecondaryBrush}"
-                                                BorderThickness="0"
-                                                CornerRadius="12"
-                                                Padding="10,3"
-                                                VerticalAlignment="Center"
                                                 Click="OnProfileStateBadgeClick"
                                                 AutomationProperties.Name="Open troubleshooting details"
                                                 ToolTipService.ToolTip="View device status">
@@ -165,11 +170,8 @@
                                             </StackPanel>
                                         </Button>
                                         <Button x:Name="AttentionIndicator"
-                                                Width="28"
-                                                Height="28"
-                                                Padding="0"
-                                                Background="Transparent"
-                                                BorderThickness="0"
+                                                Style="{StaticResource StatusPillButtonStyle}"
+                                                Background="{ThemeResource SystemFillColorCautionBackgroundBrush}"
                                                 Visibility="{x:Bind ViewModel.HasAttention, Mode=OneWay}"
                                                 AutomationProperties.Name="Show warning details"
                                                 ToolTipService.ToolTip="{x:Bind ViewModel.AttentionSummary, Mode=OneWay}">
@@ -184,9 +186,15 @@
                                                     </StackPanel>
                                                 </Flyout>
                                             </Button.Flyout>
-                                            <FontIcon Glyph="&#xE7BA;"
-                                                      FontSize="14"
-                                                      Foreground="{ThemeResource SystemFillColorCautionBrush}" />
+                                            <StackPanel Orientation="Horizontal" Spacing="6">
+                                                <FontIcon Glyph="&#xE7BA;"
+                                                          FontSize="12"
+                                                          Foreground="{ThemeResource SystemFillColorCautionBrush}" />
+                                                <TextBlock x:Name="AttentionIndicatorLabel"
+                                                           Text="{x:Bind ViewModel.AttentionBadgeLabel, Mode=OneWay}"
+                                                           Foreground="{ThemeResource TextFillColorPrimaryBrush}"
+                                                           Style="{StaticResource CaptionTextBlockStyle}" />
+                                            </StackPanel>
                                         </Button>
                                     </StackPanel>
                                     <TextBlock Text="{x:Bind ViewModel.ActivePerformanceLabel, Mode=OneWay}"

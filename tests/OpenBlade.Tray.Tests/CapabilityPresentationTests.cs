@@ -212,11 +212,20 @@ public sealed class CapabilityPresentationTests
         Assert.Single(document.Descendants(), element => element.Name.LocalName == "Flyout");
         XElement warningIndicator = Assert.Single(document.Descendants(), element =>
             Attribute(element, "AutomationProperties.Name") == "Show warning details");
-        Assert.Equal("28", Attribute(warningIndicator, "Width"));
-        Assert.Equal("28", Attribute(warningIndicator, "Height"));
+        Assert.Equal(
+            "{StaticResource StatusPillButtonStyle}",
+            Attribute(warningIndicator, "Style"));
+        Assert.Equal(
+            "{ThemeResource SystemFillColorCautionBackgroundBrush}",
+            Attribute(warningIndicator, "Background"));
         Assert.Contains(
             "ViewModel.AttentionSummary",
             Attribute(warningIndicator, "ToolTipService.ToolTip") ?? string.Empty,
+            StringComparison.Ordinal);
+        XElement warningLabel = NamedElement(document, "TextBlock", "AttentionIndicatorLabel");
+        Assert.Contains(
+            "ViewModel.AttentionBadgeLabel",
+            Attribute(warningLabel, "Text") ?? string.Empty,
             StringComparison.Ordinal);
         Assert.Contains(warningIndicator.Ancestors(), element =>
             element.Name.LocalName == "Grid" && Attribute(element, "Name") == "HeroLayout");
@@ -374,7 +383,9 @@ public sealed class CapabilityPresentationTests
         _ = NamedElement(document, "Border", "UsbCProfileCard");
         _ = NamedElement(document, "Grid", "Root");
         XElement profileStateBadge = NamedElement(document, "Button", "ProfileStateBadge");
-        Assert.Equal("Center", Attribute(profileStateBadge, "VerticalAlignment"));
+        Assert.Equal(
+            "{StaticResource StatusPillButtonStyle}",
+            Attribute(profileStateBadge, "Style"));
         Assert.Equal("OnProfileStateBadgeClick", Attribute(profileStateBadge, "Click"));
         Assert.Equal(
             "Open troubleshooting details",
@@ -416,6 +427,8 @@ public sealed class CapabilityPresentationTests
 
         string window = ReadTraySource("MainWindow.xaml.cs");
         Assert.Contains("ProfilesStackThresholdDip", window, StringComparison.Ordinal);
+        Assert.Contains("AttentionIndicatorLabel.Visibility = stack", window, StringComparison.Ordinal);
+        Assert.Contains("AttentionIndicator.Padding = stack", window, StringComparison.Ordinal);
         Assert.Contains("Root.SizeChanged += OnRootSizeChanged", window, StringComparison.Ordinal);
         Assert.Contains("Root.SizeChanged -= OnRootSizeChanged", window, StringComparison.Ordinal);
         Assert.Contains("UpdateProfilesLayout", window, StringComparison.Ordinal);

@@ -525,6 +525,12 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         }
     }
 
+    public string AttentionBadgeLabel => HasExternalChanges
+        ? "Settings changed"
+        : HasControllerDetectionWarning
+            ? "Check status"
+            : "Razer app active";
+
     public string AttentionDetails
     {
         get
@@ -2597,6 +2603,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsReadinessError)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasAttention)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(AttentionSummary)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(AttentionBadgeLabel)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(AttentionDetails)));
         PropertyChanged?.Invoke(
             this,

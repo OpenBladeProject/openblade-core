@@ -684,6 +684,12 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
         }
 
         dashboardIsStacked = stack;
+        AttentionIndicatorLabel.Visibility = stack
+            ? Visibility.Collapsed
+            : Visibility.Visible;
+        AttentionIndicator.Padding = stack
+            ? new Thickness(7, 3, 7, 3)
+            : new Thickness(10, 3, 10, 3);
         Grid.SetRow(UseProfileSettingsButton, stack ? 1 : 0);
         Grid.SetColumn(UseProfileSettingsButton, stack ? 0 : 1);
         UseProfileSettingsButton.HorizontalAlignment = stack
