@@ -160,7 +160,7 @@ public sealed class LightingValidationCommandTests
             FailException = new BladeWriteException(
                 WriteSubmissionState.Indeterminate,
                 "The matrix write failed " +
-                "(NativeIoFailure, SetSubmit, 87, 0)."),
+                "(NativeIoFailure, SetSubmit, -2146233079, None)."),
         };
         var console = new FakeConsole(
             LightingValidationCommand.ExactTargetConfirmation);
@@ -173,7 +173,7 @@ public sealed class LightingValidationCommandTests
         using JsonDocument document = JsonDocument.Parse(Assert.Single(artifacts).Json);
         Assert.StartsWith(
             "validationFailed:knownBaselineApply:bladeWrite.Indeterminate." +
-            "matrixWrite.NativeIoFailure.SetSubmit.error.87.bytes.0",
+            "matrixWrite.NativeIoFailure.SetSubmit.error.-2146233079.bytes.None",
             document.RootElement.GetProperty("failure").GetString(),
             StringComparison.Ordinal);
     }

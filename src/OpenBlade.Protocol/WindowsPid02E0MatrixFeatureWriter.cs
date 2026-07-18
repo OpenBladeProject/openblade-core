@@ -444,12 +444,16 @@ internal sealed class WindowsPid02E0MatrixFeatureWriter : IPid02E0MatrixFeatureW
                 item.CancellationToken,
                 deadline.Token).ConfigureAwait(false);
         }
-        catch
+        catch (Exception exception)
         {
             Poison();
+            // Preserve the closed public diagnostic shape. Native Win32 errors
+            // are non-negative; a negative value in the same numeric slot is
+            // the managed HRESULT from preparation or cleanup.
             return DiagnosticFailure(
                 HidSessionFailureKind.NativeIoFailure,
-                HidSessionFailurePhase.SetSubmit);
+                HidSessionFailurePhase.SetSubmit,
+                managedHResult: exception.HResult);
         }
 
         cancellation = ClassifyIoCancellation(
@@ -545,13 +549,14 @@ internal sealed class WindowsPid02E0MatrixFeatureWriter : IPid02E0MatrixFeatureW
     private static HidSessionResult<HidUnit> DiagnosticFailure(
         HidSessionFailureKind failure,
         HidSessionFailurePhase phase,
-        NativeIoCompletion? completion = null) =>
+        NativeIoCompletion? completion = null,
+        int? managedHResult = null) =>
         new(default, failure)
         {
             Diagnostic = new HidSessionFailureDiagnostic(
                 phase,
                 failure,
-                completion?.ErrorCode,
+                completion?.ErrorCode ?? managedHResult,
                 completion?.BytesTransferred),
         };
 
