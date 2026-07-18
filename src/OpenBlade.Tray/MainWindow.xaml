@@ -98,7 +98,9 @@
                         <SymbolIcon Symbol="Switch" />
                     </NavigationViewItem.Icon>
                 </NavigationViewItem>
-                <NavigationViewItem Content="Settings" Tag="settings">
+                <NavigationViewItem x:Name="SettingsNavigationItem"
+                                    Content="Settings"
+                                    Tag="settings">
                     <NavigationViewItem.Icon>
                         <SymbolIcon Symbol="Setting" />
                     </NavigationViewItem.Icon>
@@ -129,15 +131,33 @@
                                         <TextBlock Text="{x:Bind ViewModel.ActivePowerSourceLabel, Mode=OneWay}"
                                                    Style="{StaticResource SecondaryTextStyle}"
                                                    VerticalAlignment="Center" />
-                                        <Border x:Name="ProfileStateBadge"
+                                        <Button x:Name="ProfileStateBadge"
+                                                MinWidth="0"
+                                                MinHeight="0"
                                                 Background="{ThemeResource SubtleFillColorSecondaryBrush}"
+                                                BorderThickness="0"
                                                 CornerRadius="12"
                                                 Padding="10,3"
-                                                VerticalAlignment="Center">
-                                            <TextBlock Text="{x:Bind ViewModel.ProfileStateLabel, Mode=OneWay}"
-                                                       Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                                                       Style="{StaticResource CaptionTextBlockStyle}" />
-                                        </Border>
+                                                VerticalAlignment="Center"
+                                                Click="OnProfileStateBadgeClick"
+                                                AutomationProperties.Name="Open troubleshooting details"
+                                                ToolTipService.ToolTip="View device status">
+                                            <StackPanel Orientation="Horizontal" Spacing="6">
+                                                <Grid Width="8" Height="8" VerticalAlignment="Center">
+                                                    <Ellipse Fill="{ThemeResource SystemFillColorSuccessBrush}"
+                                                             Visibility="{x:Bind ViewModel.IsReadinessReady, Mode=OneWay}" />
+                                                    <Ellipse Fill="{ThemeResource AccentFillColorDefaultBrush}"
+                                                             Visibility="{x:Bind ViewModel.IsReadinessChecking, Mode=OneWay}" />
+                                                    <Ellipse Fill="{ThemeResource SystemFillColorCautionBrush}"
+                                                             Visibility="{x:Bind ViewModel.IsReadinessWarning, Mode=OneWay}" />
+                                                    <Ellipse Fill="{ThemeResource SystemFillColorCriticalBrush}"
+                                                             Visibility="{x:Bind ViewModel.IsReadinessError, Mode=OneWay}" />
+                                                </Grid>
+                                                <TextBlock Text="{x:Bind ViewModel.ProfileStateLabel, Mode=OneWay}"
+                                                           Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                                           Style="{StaticResource CaptionTextBlockStyle}" />
+                                            </StackPanel>
+                                        </Button>
                                         <Button x:Name="AttentionIndicator"
                                                 Width="28"
                                                 Height="28"
@@ -670,7 +690,8 @@
                             </Grid>
                         </Border>
                         <Border Style="{StaticResource SettingsGroupStyle}">
-                            <Expander Style="{StaticResource CardContentExpanderStyle}"
+                            <Expander x:Name="TroubleshootingExpander"
+                                      Style="{StaticResource CardContentExpanderStyle}"
                                       AutomationProperties.Name="Troubleshooting details">
                                 <Expander.Resources>
                                     <SolidColorBrush x:Key="ExpanderHeaderBackground" Color="Transparent" />
@@ -687,7 +708,25 @@
                                     <Border Style="{StaticResource TroubleshootingSectionStyle}">
                                         <StackPanel Spacing="3">
                                             <TextBlock Text="Service" Style="{StaticResource CardTitleStyle}" />
-                                            <TextBlock Text="{x:Bind ViewModel.ConnectionStatus, Mode=OneWay}"
+                                            <TextBlock Text="{x:Bind ViewModel.TroubleshootingServiceStatus, Mode=OneWay}"
+                                                       Style="{StaticResource SecondaryTextStyle}"
+                                                       TextWrapping="Wrap"
+                                                       IsTextSelectionEnabled="True" />
+                                        </StackPanel>
+                                    </Border>
+                                    <Border Style="{StaticResource TroubleshootingSectionStyle}">
+                                        <StackPanel Spacing="3">
+                                            <TextBlock Text="Laptop" Style="{StaticResource CardTitleStyle}" />
+                                            <TextBlock Text="{x:Bind ViewModel.TroubleshootingLaptopStatus, Mode=OneWay}"
+                                                       Style="{StaticResource SecondaryTextStyle}"
+                                                       TextWrapping="Wrap"
+                                                       IsTextSelectionEnabled="True" />
+                                        </StackPanel>
+                                    </Border>
+                                    <Border Style="{StaticResource TroubleshootingSectionStyle}">
+                                        <StackPanel Spacing="3">
+                                            <TextBlock Text="Power source" Style="{StaticResource CardTitleStyle}" />
+                                            <TextBlock Text="{x:Bind ViewModel.TroubleshootingPowerSourceStatus, Mode=OneWay}"
                                                        Style="{StaticResource SecondaryTextStyle}"
                                                        TextWrapping="Wrap"
                                                        IsTextSelectionEnabled="True" />
@@ -696,7 +735,7 @@
                                     <Border Style="{StaticResource TroubleshootingSectionStyle}">
                                         <StackPanel Spacing="3">
                                             <TextBlock Text="Controls" Style="{StaticResource CardTitleStyle}" />
-                                            <TextBlock Text="{x:Bind ViewModel.ControlAccessStatus, Mode=OneWay}"
+                                            <TextBlock Text="{x:Bind ViewModel.TroubleshootingControlsStatus, Mode=OneWay}"
                                                        Style="{StaticResource SecondaryTextStyle}"
                                                        TextWrapping="Wrap"
                                                        IsTextSelectionEnabled="True" />
@@ -704,8 +743,8 @@
                                     </Border>
                                     <Border Style="{StaticResource TroubleshootingSectionStyle}">
                                         <StackPanel Spacing="3">
-                                            <TextBlock Text="Detected controllers" Style="{StaticResource CardTitleStyle}" />
-                                            <TextBlock Text="{x:Bind ViewModel.TroubleshootingControllerStatus, Mode=OneWay}"
+                                            <TextBlock Text="Other Razer software" Style="{StaticResource CardTitleStyle}" />
+                                            <TextBlock Text="{x:Bind ViewModel.TroubleshootingOtherRazerSoftwareStatus, Mode=OneWay}"
                                                        Style="{StaticResource SecondaryTextStyle}"
                                                        TextWrapping="Wrap"
                                                        IsTextSelectionEnabled="True" />

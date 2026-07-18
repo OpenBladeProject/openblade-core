@@ -641,6 +641,24 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
         }
     }
 
+    private void OnProfileStateBadgeClick(object sender, RoutedEventArgs args)
+    {
+        MainNavigation.SelectedItem = SettingsNavigationItem;
+        TroubleshootingExpander.IsExpanded = true;
+        dispatcherQueue.TryEnqueue(
+            DispatcherQueuePriority.Low,
+            () =>
+            {
+                TroubleshootingExpander.Focus(FocusState.Programmatic);
+                TroubleshootingExpander.StartBringIntoView(
+                    new BringIntoViewOptions
+                    {
+                        AnimationDesired = true,
+                        VerticalAlignmentRatio = 0,
+                    });
+            });
+    }
+
     private void OnRootSizeChanged(object sender, SizeChangedEventArgs args)
     {
         UpdateDashboardLayout(args.NewSize.Width);

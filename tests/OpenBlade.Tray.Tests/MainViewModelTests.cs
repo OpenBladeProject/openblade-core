@@ -80,7 +80,7 @@ public sealed class MainViewModelTests
 
         Assert.False(viewModel.HasUnsavedProfileChanges);
         Assert.False(viewModel.SaveProfilesCommand.CanExecute(null));
-        Assert.Equal("Connected", viewModel.ProfileStateLabel);
+        Assert.Equal("Ready", viewModel.ProfileStateLabel);
 
         viewModel.PluggedInPerformanceEditor = PerformancePreset.Performance;
         client.Publish(baseline with
@@ -216,7 +216,8 @@ public sealed class MainViewModelTests
             viewModel.ControllerAdvisoryText);
         Assert.True(viewModel.HasControllerDetectionWarning);
         Assert.Equal("Controller detection was incomplete.", viewModel.ControllerDetectionWarningText);
-        Assert.Equal(viewModel.ControllerAdvisoryText, viewModel.TroubleshootingControllerStatus);
+        Assert.True(viewModel.HasAttention);
+        Assert.Equal("Controller detection needs attention", viewModel.AttentionSummary);
         Assert.Equal(
             viewModel.ControllerDetectionWarningText,
             viewModel.TroubleshootingDetectionStatus);
@@ -1259,7 +1260,7 @@ public sealed class MainViewModelTests
         });
         await WaitUntilAsync(() => viewModel.FullChargeOverride);
         Assert.Equal("Charging to 100%", viewModel.CurrentBatterySettingLabel);
-        Assert.Equal("Charging to 100%", viewModel.ProfileStateLabel);
+        Assert.Equal("Ready", viewModel.ProfileStateLabel);
 
         client.Publish(baseline with
         {
@@ -1279,12 +1280,19 @@ public sealed class MainViewModelTests
         await viewModel.StartAsync();
 
         Assert.Equal("OpenBlade service isn’t running", viewModel.ControlAccessStatus);
+        Assert.True(viewModel.IsReadinessError);
+        Assert.Equal("Unavailable", viewModel.TroubleshootingServiceStatus);
 
         client.Publish(CreateStatus(verified: false, blocked: true));
         await WaitUntilAsync(() =>
             viewModel.ControlAccessStatus == "Laptop not found");
         Assert.Equal("Laptop not found", viewModel.ProfileStateLabel);
-        Assert.Equal("Laptop not found", viewModel.AttentionSummary);
+        Assert.True(viewModel.IsReadinessError);
+        Assert.False(viewModel.IsReadinessWarning);
+        Assert.Equal("Running", viewModel.TroubleshootingServiceStatus);
+        Assert.Equal("Razer Blade 16 not detected", viewModel.TroubleshootingLaptopStatus);
+        Assert.Equal("Unavailable", viewModel.TroubleshootingControlsStatus);
+        Assert.False(viewModel.HasAttention);
         Assert.Equal("Laptop not found", viewModel.PerformanceSourceLabel);
 
         client.Publish(CreateStatus(
@@ -1295,7 +1303,12 @@ public sealed class MainViewModelTests
             viewModel.ControlAccessStatus == "Controls unavailable"
             && viewModel.PerformanceSourceLabel == "Controls unavailable");
         Assert.Equal("Controls unavailable", viewModel.ProfileStateLabel);
-        Assert.Equal("Controls unavailable", viewModel.AttentionSummary);
+        Assert.True(viewModel.IsReadinessWarning);
+        Assert.False(viewModel.IsReadinessError);
+        Assert.Equal(
+            "Detected — RazerAppEngine",
+            viewModel.TroubleshootingOtherRazerSoftwareStatus);
+        Assert.Equal("Another Razer app is running", viewModel.AttentionSummary);
         Assert.Equal("Controls unavailable", viewModel.PerformanceSourceLabel);
 
         client.Publish(CreateStatus(verified: true, blocked: true));
@@ -1305,6 +1318,12 @@ public sealed class MainViewModelTests
         client.Publish(CreateStatus(verified: true, blocked: false));
         await WaitUntilAsync(() =>
             viewModel.ControlAccessStatus == "Ready");
+        Assert.Equal("Ready", viewModel.ProfileStateLabel);
+        Assert.True(viewModel.IsReadinessReady);
+        Assert.False(viewModel.IsReadinessWarning);
+        Assert.Equal("Razer Blade 16 detected", viewModel.TroubleshootingLaptopStatus);
+        Assert.Equal("Full-power adapter", viewModel.TroubleshootingPowerSourceStatus);
+        Assert.Equal("Not detected", viewModel.TroubleshootingOtherRazerSoftwareStatus);
 
         client.Publish(CreateStatus(verified: true, blocked: false) with
         {
@@ -1315,11 +1334,17 @@ public sealed class MainViewModelTests
             viewModel.ControlAccessStatus == "Checking power source"
             && viewModel.ActivePowerSource == PowerSource.ExternalUnknown);
         Assert.Equal("Checking power source", viewModel.ProfileStateLabel);
+        Assert.True(viewModel.IsReadinessChecking);
+        Assert.False(viewModel.IsReadinessReady);
+        Assert.Equal("Checking power source", viewModel.TroubleshootingPowerSourceStatus);
         Assert.False(viewModel.CanControlHardware);
 
         client.PublishReconnecting();
         await WaitUntilAsync(() =>
             viewModel.ControlAccessStatus == "OpenBlade service isn’t running");
+        Assert.Equal("Service unavailable", viewModel.ProfileStateLabel);
+        Assert.True(viewModel.IsReadinessError);
+        Assert.Equal("Unavailable", viewModel.TroubleshootingServiceStatus);
     }
 
     [Fact]

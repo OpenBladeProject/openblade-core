@@ -194,9 +194,11 @@ public sealed class CapabilityPresentationTests
                 "Style"));
         foreach (string property in new[]
                  {
-                     "ViewModel.ConnectionStatus",
-                     "ViewModel.ControlAccessStatus",
-                     "ViewModel.TroubleshootingControllerStatus",
+                     "ViewModel.TroubleshootingServiceStatus",
+                     "ViewModel.TroubleshootingLaptopStatus",
+                     "ViewModel.TroubleshootingPowerSourceStatus",
+                     "ViewModel.TroubleshootingControlsStatus",
+                     "ViewModel.TroubleshootingOtherRazerSoftwareStatus",
                      "ViewModel.TroubleshootingDetectionStatus",
                      "ViewModel.TroubleshootingLastOperationStatus",
                  })
@@ -319,8 +321,33 @@ public sealed class CapabilityPresentationTests
         _ = NamedElement(document, "Border", "BatteryProfileCard");
         _ = NamedElement(document, "Border", "UsbCProfileCard");
         _ = NamedElement(document, "Grid", "Root");
-        XElement profileStateBadge = NamedElement(document, "Border", "ProfileStateBadge");
+        XElement profileStateBadge = NamedElement(document, "Button", "ProfileStateBadge");
         Assert.Equal("Center", Attribute(profileStateBadge, "VerticalAlignment"));
+        Assert.Equal("OnProfileStateBadgeClick", Attribute(profileStateBadge, "Click"));
+        Assert.Equal(
+            "Open troubleshooting details",
+            Attribute(profileStateBadge, "AutomationProperties.Name"));
+        Assert.Equal(
+            4,
+            profileStateBadge.Descendants().Count(element =>
+                element.Name.LocalName == "Ellipse"));
+        foreach (string property in new[]
+                 {
+                     "ViewModel.IsReadinessReady",
+                     "ViewModel.IsReadinessChecking",
+                     "ViewModel.IsReadinessWarning",
+                     "ViewModel.IsReadinessError",
+                 })
+        {
+            Assert.Contains(profileStateBadge.Descendants(), element =>
+                element.Name.LocalName == "Ellipse"
+                && Attribute(element, "Visibility")?.Contains(
+                    property,
+                    StringComparison.Ordinal) is true);
+        }
+        Assert.DoesNotContain(document.Descendants(), element =>
+            element.Name.LocalName == "Border"
+            && Attribute(element, "Name") == "ProfileStateBadge");
         foreach (XElement activeBadgeText in document.Descendants().Where(element =>
                      element.Name.LocalName == "TextBlock"
                      && Attribute(element, "Text") == "Active"))
@@ -340,6 +367,29 @@ public sealed class CapabilityPresentationTests
         Assert.Contains("Root.SizeChanged += OnRootSizeChanged", window, StringComparison.Ordinal);
         Assert.Contains("Root.SizeChanged -= OnRootSizeChanged", window, StringComparison.Ordinal);
         Assert.Contains("UpdateProfilesLayout", window, StringComparison.Ordinal);
+        int badgeHandler = window.IndexOf(
+            "private void OnProfileStateBadgeClick",
+            StringComparison.Ordinal);
+        Assert.True(badgeHandler >= 0);
+        string badgeHandlerSource = window[badgeHandler..];
+        int selectSettings = badgeHandlerSource.IndexOf(
+            "MainNavigation.SelectedItem = SettingsNavigationItem",
+            StringComparison.Ordinal);
+        int expandTroubleshooting = badgeHandlerSource.IndexOf(
+            "TroubleshootingExpander.IsExpanded = true",
+            StringComparison.Ordinal);
+        int focusTroubleshooting = badgeHandlerSource.IndexOf(
+            "TroubleshootingExpander.Focus(FocusState.Programmatic)",
+            StringComparison.Ordinal);
+        int bringIntoView = badgeHandlerSource.IndexOf(
+            "TroubleshootingExpander.StartBringIntoView",
+            StringComparison.Ordinal);
+        Assert.True(selectSettings >= 0);
+        Assert.True(expandTroubleshooting > selectSettings);
+        Assert.True(focusTroubleshooting > expandTroubleshooting);
+        Assert.True(bringIntoView > focusTroubleshooting);
+        Assert.Contains("DispatcherQueuePriority.Low", badgeHandlerSource, StringComparison.Ordinal);
+        Assert.Contains("VerticalAlignmentRatio = 0", badgeHandlerSource, StringComparison.Ordinal);
 
         AssertStyleBasedOn(document, "PageTitleStyle", "{StaticResource TitleTextBlockStyle}");
         AssertStyleBasedOn(document, "SectionHeaderStyle", "{StaticResource SubtitleTextBlockStyle}");

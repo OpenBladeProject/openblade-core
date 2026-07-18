@@ -407,19 +407,29 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
 
     public string ProfileStateLabel => !IsConnected
         ? "Service unavailable"
-        : ActivePowerSource == PowerSource.ExternalUnknown
-            ? "Checking power source"
-        : HasExternalChanges
-            ? "Changed by another app"
-            : FullChargeOverride
-                ? "Charging to 100%"
-            : HasActiveChanges
-                ? "Quick change"
+        : latestStatus?.DeviceVerified == false
+            ? "Laptop not found"
+            : ActivePowerSource == PowerSource.ExternalUnknown
+                ? "Checking power source"
                 : CanControlHardware
-                    ? "Connected"
-                    : latestStatus?.DeviceVerified == false
-                        ? "Laptop not found"
-                        : "Controls unavailable";
+                    ? "Ready"
+                    : "Controls unavailable";
+
+    public bool IsReadinessReady => IsConnected
+        && latestStatus?.DeviceVerified == true
+        && CanControlHardware;
+
+    public bool IsReadinessChecking => IsConnected
+        && latestStatus?.DeviceVerified == true
+        && ActivePowerSource == PowerSource.ExternalUnknown;
+
+    public bool IsReadinessWarning => IsConnected
+        && latestStatus?.DeviceVerified == true
+        && ActivePowerSource != PowerSource.ExternalUnknown
+        && !CanControlHardware;
+
+    public bool IsReadinessError => !IsConnected
+        || latestStatus?.DeviceVerified != true;
 
     public string PerformanceSourceLabel
     {
@@ -489,9 +499,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         private set => SetField(ref externalChangesText, value);
     }
 
-    public bool HasAttention => !IsConnected
-        || IsReadOnly
-        || HasControllerAdvisory
+    public bool HasAttention => HasControllerAdvisory
         || HasControllerDetectionWarning
         || HasExternalChanges;
 
@@ -499,16 +507,6 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     {
         get
         {
-            if (!IsConnected)
-            {
-                return "OpenBlade service isn’t running";
-            }
-            if (IsReadOnly)
-            {
-                return latestStatus?.DeviceVerified == false
-                    ? "Laptop not found"
-                    : "Controls unavailable";
-            }
             if (HasExternalChanges)
             {
                 return "Settings changed by another app";
@@ -526,10 +524,6 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         get
         {
             List<string> details = [];
-            if (!IsConnected || IsReadOnly)
-            {
-                details.Add(ControlAccessStatus);
-            }
             if (HasExternalChanges)
             {
                 details.Add(ExternalChangesText);
@@ -546,9 +540,36 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         }
     }
 
-    public string TroubleshootingControllerStatus => HasControllerAdvisory
-        ? ControllerAdvisoryText
-        : "No other Razer controllers detected.";
+    public string TroubleshootingServiceStatus => IsConnected
+        ? "Running"
+        : "Unavailable";
+
+    public string TroubleshootingLaptopStatus => !IsConnected
+        ? "Unavailable"
+        : latestStatus?.DeviceVerified == true
+            ? "Razer Blade 16 detected"
+            : "Razer Blade 16 not detected";
+
+    public string TroubleshootingPowerSourceStatus => !IsConnected
+        ? "Unavailable"
+        : ActivePowerSource switch
+        {
+            PowerSource.PluggedIn => "Full-power adapter",
+            PowerSource.UsbC => "USB-C power",
+            PowerSource.Battery => "Battery",
+            PowerSource.ExternalUnknown => "Checking power source",
+            _ => "Unavailable",
+        };
+
+    public string TroubleshootingControlsStatus => CanControlHardware
+        ? "Ready"
+        : "Unavailable";
+
+    public string TroubleshootingOtherRazerSoftwareStatus => HasControllerAdvisory
+        ? $"Detected — {string.Join(", ", latestStatus?.PotentialControllers ?? [])}"
+        : HasControllerDetectionWarning
+            ? "Could not check"
+            : "Not detected";
 
     public string TroubleshootingDetectionStatus => HasControllerDetectionWarning
         ? ControllerDetectionWarningText
@@ -2561,12 +2582,28 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     private void NotifyPresentationState()
     {
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ProfileStateLabel)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsReadinessReady)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsReadinessChecking)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsReadinessWarning)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsReadinessError)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasAttention)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(AttentionSummary)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(AttentionDetails)));
         PropertyChanged?.Invoke(
             this,
-            new PropertyChangedEventArgs(nameof(TroubleshootingControllerStatus)));
+            new PropertyChangedEventArgs(nameof(TroubleshootingServiceStatus)));
+        PropertyChanged?.Invoke(
+            this,
+            new PropertyChangedEventArgs(nameof(TroubleshootingLaptopStatus)));
+        PropertyChanged?.Invoke(
+            this,
+            new PropertyChangedEventArgs(nameof(TroubleshootingPowerSourceStatus)));
+        PropertyChanged?.Invoke(
+            this,
+            new PropertyChangedEventArgs(nameof(TroubleshootingControlsStatus)));
+        PropertyChanged?.Invoke(
+            this,
+            new PropertyChangedEventArgs(nameof(TroubleshootingOtherRazerSoftwareStatus)));
         PropertyChanged?.Invoke(
             this,
             new PropertyChangedEventArgs(nameof(TroubleshootingDetectionStatus)));
