@@ -177,6 +177,27 @@ function Assert-ServicePublishPayload {
     }
 }
 
+function Assert-LightingValidationProtocolPair {
+    param(
+        [Parameter(Mandatory)][string]$ServicePayload,
+        [Parameter(Mandatory)][string]$DeveloperTools
+    )
+
+    $serviceProtocol = Join-Path $ServicePayload 'OpenBlade.Protocol.dll'
+    $validationProtocol = Join-Path $DeveloperTools 'OpenBlade.Protocol.dll'
+    foreach ($path in @($serviceProtocol, $validationProtocol)) {
+        if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
+            throw "OpenBlade lighting validation requires protocol assembly: $path"
+        }
+    }
+
+    $serviceHash = (Get-FileHash -LiteralPath $serviceProtocol -Algorithm SHA256).Hash
+    $validationHash = (Get-FileHash -LiteralPath $validationProtocol -Algorithm SHA256).Hash
+    if (-not [string]::Equals($serviceHash, $validationHash, [StringComparison]::Ordinal)) {
+        throw 'OpenBlade developer tools and service payload contain different Protocol binaries; lighting validation could not admit the installed service.'
+    }
+}
+
 function Get-CanonicalPublishPath {
     param(
         [Parameter(Mandatory)][string]$Path,

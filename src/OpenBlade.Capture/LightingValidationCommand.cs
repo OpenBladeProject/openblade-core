@@ -1,3 +1,5 @@
+using System.ComponentModel;
+using System.ServiceProcess;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using OpenBlade.Contracts;
@@ -35,6 +37,7 @@ public sealed class LightingValidationCommand
     private readonly string successArtifactPath;
     private readonly Func<string, string, CancellationToken, Task> writeArtifact;
     private readonly Func<Action, IDisposable> registerCancellation;
+    private readonly Func<string?> checkEnvironment;
 
     public LightingValidationCommand(
         Func<CancellationToken, Task<HidSessionResult<IProductionLightingPort>>> openPort,
@@ -48,7 +51,8 @@ public sealed class LightingValidationCommand
         string successArtifactPath,
         Func<DateTimeOffset>? utcNow = null,
         Func<string, string, CancellationToken, Task>? writeArtifact = null,
-        Func<Action, IDisposable>? registerCancellation = null)
+        Func<Action, IDisposable>? registerCancellation = null,
+        Func<string?>? checkEnvironment = null)
     {
         this.openPort = openPort ?? throw new ArgumentNullException(nameof(openPort));
         this.queryBrightness = queryBrightness
@@ -65,6 +69,7 @@ public sealed class LightingValidationCommand
         this.utcNow = utcNow ?? (() => DateTimeOffset.UtcNow);
         this.writeArtifact = writeArtifact ?? WriteAtomicallyAsync;
         this.registerCancellation = registerCancellation ?? RegisterConsoleCancellation;
+        this.checkEnvironment = checkEnvironment ?? (() => null);
     }
 
     internal static LightingValidationCommand CreateWindows(
@@ -85,7 +90,8 @@ public sealed class LightingValidationCommand
             identity.InformationalVersion,
             identity.CommitHash,
             identity.ProtocolAssemblySha256,
-            ProductionLightingEvidenceSource.GetDefaultOpenBladeValidationPath());
+            ProductionLightingEvidenceSource.GetDefaultOpenBladeValidationPath(),
+            checkEnvironment: CheckWindowsEnvironment);
     }
 
     public async Task<int> RunAsync(
@@ -126,6 +132,11 @@ public sealed class LightingValidationCommand
             if (!ValidBuildIdentity(buildIdentity))
             {
                 failure = "buildIdentityUnavailable";
+            }
+            else if (checkEnvironment() is { } environmentFailure)
+            {
+                failure = "unsafeValidationEnvironment";
+                await output.WriteLineAsync(environmentFailure).ConfigureAwait(false);
             }
             else
             {
@@ -170,15 +181,19 @@ public sealed class LightingValidationCommand
                             await QueryBrightnessAsync(
                                 baselineExpectedRaw,
                                 commandCancellation.Token).ConfigureAwait(false);
-                        baselineVisuallyConfirmed = baselineBrightnessMatched
+                        bool baselineVisualAccepted = baselineBrightnessMatched
                             && await PromptYesAsync(
                                 $"Is the entire keyboard Static green at {brightness}%?",
                                 commandCancellation.Token).ConfigureAwait(false);
+                        baselineVisuallyConfirmed = baselineVisualAccepted
+                            && OwnershipMatches(port, baselineSettings);
                         if (!baselineVisuallyConfirmed)
                         {
-                            failure = baselineBrightnessMatched
-                                ? "knownBaselineVisualRejected"
-                                : "knownBaselineBrightnessMismatch";
+                            failure = !baselineBrightnessMatched
+                                ? "knownBaselineBrightnessMismatch"
+                                : !baselineVisualAccepted
+                                    ? "knownBaselineVisualRejected"
+                                    : "rendererOwnershipLost";
                         }
                         else
                         {
@@ -226,7 +241,8 @@ public sealed class LightingValidationCommand
                     baselineRestoreVisuallyConfirmed = !canceled
                         && await PromptYesAsync(
                             $"Was the known Static green {brightness}% baseline restored?",
-                            CancellationToken.None).ConfigureAwait(false);
+                            CancellationToken.None).ConfigureAwait(false)
+                        && OwnershipMatches(port, baselineSettings);
                     baselineRestored = baselineRestoreObservedRaw == baselineExpectedRaw
                         && baselineRestoreBrightnessMatched
                         && baselineRestoreVisuallyConfirmed;
@@ -377,7 +393,12 @@ public sealed class LightingValidationCommand
                 visualConfirmed = await PromptYesAsync(
                     $"Did {spec.Description} look correct?",
                     cancellationToken).ConfigureAwait(false);
-                if (!visualConfirmed)
+                if (visualConfirmed && !OwnershipMatches(port, spec.Settings))
+                {
+                    visualConfirmed = false;
+                    failure = "rendererOwnershipLost";
+                }
+                else if (!visualConfirmed)
                 {
                     failure = "visualConfirmationRejected";
                 }
@@ -491,6 +512,19 @@ public sealed class LightingValidationCommand
         && action.VisuallyConfirmed
         && action.Failure is null;
 
+    private static bool OwnershipMatches(
+        IProductionLightingPort port,
+        LightingSettings settings) => port.OwnershipState ==
+        (settings.Effect switch
+        {
+            LightingEffect.Off => LightingRendererOwnershipState.None,
+            LightingEffect.Static => LightingRendererOwnershipState.Static,
+            LightingEffect.Spectrum => LightingRendererOwnershipState.Spectrum,
+            LightingEffect.Breathing => LightingRendererOwnershipState.Breathing,
+            LightingEffect.Reactive => LightingRendererOwnershipState.Reactive,
+            _ => throw new ArgumentOutOfRangeException(nameof(settings)),
+        });
+
     private static bool TryParse(
         IReadOnlyList<string> arguments,
         out byte brightness)
@@ -557,6 +591,30 @@ public sealed class LightingValidationCommand
             catch
             {
             }
+        }
+    }
+
+    private static string? CheckWindowsEnvironment()
+    {
+        try
+        {
+            using var service = new ServiceController("OpenBlade");
+            return service.Status == ServiceControllerStatus.Stopped
+                ? null
+                : "Stop the OpenBlade service before validating lighting. No hardware was changed.";
+        }
+        catch (InvalidOperationException exception)
+            when (exception.InnerException is Win32Exception { NativeErrorCode: 1060 })
+        {
+            return null;
+        }
+        catch (Win32Exception exception) when (exception.NativeErrorCode == 1060)
+        {
+            return null;
+        }
+        catch
+        {
+            return "OpenBlade could not verify that its service is stopped. No hardware was changed.";
         }
     }
 

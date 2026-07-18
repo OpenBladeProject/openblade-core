@@ -88,6 +88,36 @@ public sealed class LightingValidationCommandTests
     }
 
     [Fact]
+    public async Task RunAsync_LostRendererOwnershipCannotProduceAdmittingArtifact()
+    {
+        var port = new FakeLightingPort
+        {
+            FaultOwnershipEffect = LightingEffect.Spectrum,
+        };
+        var console = new FakeConsole(
+            LightingValidationCommand.ExactTargetConfirmation,
+            "yes", // Initial baseline.
+            "yes", // Off.
+            "yes", // Static.
+            "yes", // Spectrum appearance before the ownership check.
+            "yes"); // Restored baseline.
+        var artifacts = new List<(string Path, string Json)>();
+        var command = CreateCommand(port, console, artifacts);
+
+        int exitCode = await command.RunAsync(ValidArguments(), default);
+
+        Assert.Equal(LightingValidationCommand.ValidationFailureExitCode, exitCode);
+        Assert.Equal(LightingEffect.Static, port.Settings[^1].Effect);
+        Assert.Contains("lighting-validation.failed-", Assert.Single(artifacts).Path);
+        using JsonDocument document = JsonDocument.Parse(artifacts[0].Json);
+        Assert.Equal(
+            "rendererOwnershipLost",
+            document.RootElement.GetProperty("failure").GetString());
+        Assert.False(
+            document.RootElement.GetProperty("allSupportedEffectsApplied").GetBoolean());
+    }
+
+    [Fact]
     public async Task RunAsync_InteractiveTargetDeclinePerformsNoHardwareWrite()
     {
         var port = new FakeLightingPort();
@@ -107,6 +137,32 @@ public sealed class LightingValidationCommandTests
         Assert.Empty(port.Settings);
         Assert.Single(artifacts);
         Assert.Contains(".failed-", artifacts[0].Path, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task RunAsync_UnsafeEnvironmentPerformsNoHardwareWrite()
+    {
+        var port = new FakeLightingPort();
+        var console = new FakeConsole();
+        var artifacts = new List<(string Path, string Json)>();
+        int openCount = 0;
+        LightingValidationCommand command = CreateCommand(
+            port,
+            console,
+            artifacts,
+            () => openCount++,
+            () => "Stop the OpenBlade service before validating lighting.");
+
+        int exitCode = await command.RunAsync(ValidArguments(), default);
+
+        Assert.Equal(LightingValidationCommand.ValidationFailureExitCode, exitCode);
+        Assert.Equal(0, openCount);
+        Assert.Empty(port.Settings);
+        Assert.Contains("Stop the OpenBlade service", console.Text, StringComparison.Ordinal);
+        using JsonDocument document = JsonDocument.Parse(Assert.Single(artifacts).Json);
+        Assert.Equal(
+            "unsafeValidationEnvironment",
+            document.RootElement.GetProperty("failure").GetString());
     }
 
     [Fact]
@@ -199,7 +255,8 @@ public sealed class LightingValidationCommandTests
         FakeLightingPort port,
         FakeConsole console,
         List<(string Path, string Json)> artifacts,
-        Action? onOpen = null) =>
+        Action? onOpen = null,
+        Func<string?>? checkEnvironment = null) =>
         new(
             _ =>
             {
@@ -223,7 +280,8 @@ public sealed class LightingValidationCommandTests
                 artifacts.Add((path, json));
                 return Task.CompletedTask;
             },
-            _ => NoopDisposable.Instance);
+            _ => NoopDisposable.Instance,
+            checkEnvironment);
 
     private static string[] ValidArguments() =>
     [
@@ -272,6 +330,7 @@ public sealed class LightingValidationCommandTests
         public List<ReactiveKeyPulse> Pulses { get; } = [];
         public LightingSettings Current { get; private set; } = LightingSettingsFactory.Off();
         public LightingEffect? FailEffect { get; init; }
+        public LightingEffect? FaultOwnershipEffect { get; init; }
         public Action<LightingSettings>? OnSet { get; init; }
 
         public Task<LightingSettings?> ReadStateAsync(CancellationToken cancellationToken) =>
@@ -298,6 +357,10 @@ public sealed class LightingValidationCommandTests
             }
 
             Current = settings;
+            if (settings.Effect == FaultOwnershipEffect)
+            {
+                OwnershipState = LightingRendererOwnershipState.Faulted;
+            }
             return Task.CompletedTask;
         }
 

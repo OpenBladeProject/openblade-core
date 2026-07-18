@@ -200,6 +200,34 @@ try {
     New-Item -ItemType Directory -Path $permittedRoot -Force | Out-Null
     $assemblySources = Get-RealHostingAssemblies
 
+    $matchingPayload = Join-Path $testRoot 'matching-payload'
+    $matchingTools = Join-Path $testRoot 'matching-tools'
+    New-Item -ItemType Directory -Path $matchingPayload, $matchingTools -Force | Out-Null
+    [IO.File]::WriteAllBytes(
+        (Join-Path $matchingPayload 'OpenBlade.Protocol.dll'),
+        [byte[]]@(1, 2, 3))
+    [IO.File]::WriteAllBytes(
+        (Join-Path $matchingTools 'OpenBlade.Protocol.dll'),
+        [byte[]]@(1, 2, 3))
+    Assert-LightingValidationProtocolPair `
+        -ServicePayload $matchingPayload `
+        -DeveloperTools $matchingTools
+
+    [IO.File]::WriteAllBytes(
+        (Join-Path $matchingTools 'OpenBlade.Protocol.dll'),
+        [byte[]]@(3, 2, 1))
+    $mismatchRejected = $false
+    try {
+        Assert-LightingValidationProtocolPair `
+            -ServicePayload $matchingPayload `
+            -DeveloperTools $matchingTools
+    }
+    catch {
+        $mismatchRejected = $_.Exception.Message -match 'different Protocol binaries'
+    }
+    Assert-True $mismatchRejected `
+        'Publish validation accepted a developer-tool Protocol binary that cannot admit the service payload.'
+
     $outsideStaging = New-TestBundlePair -PermittedRoot $testRoot -CaseName 'outside-staging' -AssemblySources $assemblySources
     $insideDestination = Join-Path $permittedRoot 'outside-staging-destination\OpenBlade'
     Assert-RejectedAndPreserved -PermittedRoot $permittedRoot -StagingBundle $outsideStaging.StagingBundle `

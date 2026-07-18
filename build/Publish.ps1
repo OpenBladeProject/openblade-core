@@ -68,6 +68,10 @@ try {
         throw "OpenBlade developer-tools artifact is missing: $captureExecutable"
     }
 
+    Assert-LightingValidationProtocolPair `
+        -ServicePayload $payload `
+        -DeveloperTools $stagingDeveloperTools
+
     Complete-ValidatedBundleReplacement `
         -StagingBundle $stagingBundle `
         -Bundle $bundle `

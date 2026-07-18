@@ -49,11 +49,12 @@ public sealed class ProductionLightingFactory : IProductionLightingPortFactory
     {
         _ = ProductionLightingEvidenceSource.ReadValidatedOracle();
         return CreateWindows(
-            admitted: ProductionLightingEvidenceSource.IsCurrentBuildValidated());
+            admitted: ProductionLightingEvidenceSource.IsCurrentBuildValidated(),
+            ControllerExclusivityPolicy.Advisory);
     }
 
     public static IProductionLightingPortFactory CreateWindowsReadOnly() =>
-        CreateWindows(admitted: false);
+        CreateWindows(admitted: false, ControllerExclusivityPolicy.Advisory);
 
     /// <summary>
     /// Developer-only exact-build validation entry point. The Capture assembly
@@ -63,7 +64,7 @@ public sealed class ProductionLightingFactory : IProductionLightingPortFactory
     internal static IProductionLightingPortFactory CreateWindowsForExactBuildValidation()
     {
         _ = ProductionLightingEvidenceSource.ReadValidatedOracle();
-        return CreateWindows(admitted: true);
+        return CreateWindows(admitted: true, ControllerExclusivityPolicy.Strict);
     }
 
     public async Task<HidSessionResult<IProductionLightingPort>> OpenAsync(
@@ -162,7 +163,9 @@ public sealed class ProductionLightingFactory : IProductionLightingPortFactory
             null);
     }
 
-    private static IProductionLightingPortFactory CreateWindows(bool admitted)
+    private static IProductionLightingPortFactory CreateWindows(
+        bool admitted,
+        ControllerExclusivityPolicy exclusivityPolicy)
     {
         var native = new WindowsHidNative();
         var registry = new WindowsRegistryValueSource();
@@ -176,12 +179,12 @@ public sealed class ProductionLightingFactory : IProductionLightingPortFactory
             hostIdentity,
             guard,
             native,
-            ControllerExclusivityPolicy.Advisory);
+            exclusivityPolicy);
         var matrixOpener = new WindowsPid02E0MatrixFeatureOpener(
             hostIdentity,
             guard,
             native,
-            ControllerExclusivityPolicy.Advisory);
+            exclusivityPolicy);
         var io = new OverlappedFeatureOperation(native);
 
         return new ProductionLightingFactory(
@@ -193,7 +196,7 @@ public sealed class ProductionLightingFactory : IProductionLightingPortFactory
                 guard,
                 TimeProvider.System,
                 DefaultExchangeTimeout,
-                ControllerExclusivityPolicy.Advisory,
+                exclusivityPolicy,
                 settleDelay),
             () =>
             {
@@ -206,7 +209,7 @@ public sealed class ProductionLightingFactory : IProductionLightingPortFactory
                             guard,
                             TimeProvider.System,
                             DefaultExchangeTimeout,
-                            ControllerExclusivityPolicy.Advisory),
+                            exclusivityPolicy),
                         null)
                     : new HidSessionResult<IPid02E0MatrixFeatureWriter>(
                         null,

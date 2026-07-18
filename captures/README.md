@@ -79,6 +79,12 @@ and Reactive duration, performs the independent brightness query after every
 setting, asks for visual confirmation, and finally restores that known
 baseline. It has no raw-command or raw-matrix input.
 
+Stop the OpenBlade service before starting the command. The validation CLI
+refuses to open hardware while that service is running and uses strict conflict
+checks, so active Razer controller processes or services also block the run.
+Normal installed OpenBlade operation remains advisory and reports those Razer
+controllers without stopping them.
+
 Only an all-gates success atomically replaces
 `%ProgramData%\OpenBlade\lighting-validation.json`. The result is bound to the
 target model, VID/PID, BIOS, full informational version, 40-character commit,
