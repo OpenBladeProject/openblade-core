@@ -32,6 +32,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     private readonly IUiDispatcher dispatcher;
     private readonly IDiagnosticArchiveSaver diagnosticArchiveSaver;
     private readonly IStartupRegistration startupRegistration;
+    private readonly TimeProvider timeProvider;
     private readonly CancellationTokenSource lifetime = new();
     private readonly object startSync = new();
     private readonly AsyncRelayCommand[] commands;
@@ -80,6 +81,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     private DeviceCapabilities capabilities = DeviceCapabilities.Unavailable();
     private PowerSource activePowerSource = PowerSource.PluggedIn;
     private LiveReadings? liveReadings;
+    private DateTimeOffset? lastLiveReadingsRefreshAt;
     private ManualOverride<PerformancePreset>? performanceOverride;
     private ManualOverride<FanMode>? fanOverride;
     private ManualOverride<LightingSettings>? lightingOverride;
@@ -127,6 +129,19 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     public MainViewModel(
         IServiceClient serviceClient,
         IUiDispatcher dispatcher,
+        TimeProvider timeProvider)
+        : this(
+            serviceClient,
+            dispatcher,
+            new UnavailableDiagnosticArchiveSaver(),
+            new UnavailableStartupRegistration(),
+            timeProvider)
+    {
+    }
+
+    public MainViewModel(
+        IServiceClient serviceClient,
+        IUiDispatcher dispatcher,
         IDiagnosticArchiveSaver diagnosticArchiveSaver)
         : this(
             serviceClient,
@@ -140,7 +155,8 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         IServiceClient serviceClient,
         IUiDispatcher dispatcher,
         IDiagnosticArchiveSaver diagnosticArchiveSaver,
-        IStartupRegistration startupRegistration)
+        IStartupRegistration startupRegistration,
+        TimeProvider? timeProvider = null)
     {
         this.serviceClient = serviceClient ?? throw new ArgumentNullException(nameof(serviceClient));
         this.dispatcher = dispatcher ?? throw new ArgumentNullException(nameof(dispatcher));
@@ -148,6 +164,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             ?? throw new ArgumentNullException(nameof(diagnosticArchiveSaver));
         this.startupRegistration = startupRegistration
             ?? throw new ArgumentNullException(nameof(startupRegistration));
+        this.timeProvider = timeProvider ?? TimeProvider.System;
 
         SetPerformanceCommand = CreateCommand(
             SetPerformanceAsync,
@@ -331,6 +348,10 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     public string Fan1RpmValue => FormatFanRpmValue(LiveReadings?.Fan1Rpm);
 
     public string Fan2RpmValue => FormatFanRpmValue(LiveReadings?.Fan2Rpm);
+
+    public string LiveReadingsRefreshToolTip => lastLiveReadingsRefreshAt is { } refreshedAt
+        ? $"Last checked at {refreshedAt.ToLocalTime().ToString("T", CultureInfo.CurrentCulture)}. Values change only when Windows or firmware reports new data."
+        : "Waiting for the first live-reading check.";
 
     public string ActivePowerSourceLabel
     {
@@ -1169,6 +1190,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             if (!LiveReadingsEnabled)
             {
                 LiveReadings = null;
+                ClearLiveReadingsRefreshTime();
             }
             NotifyTrayHoverLabel();
         }
@@ -1462,18 +1484,33 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     public async Task ObserveStateAsync(CancellationToken cancellationToken)
     {
         ObservationRequestStamp stamp = default;
+        bool includeLiveReadings = false;
         await dispatcher.InvokeAsync(
-            () => stamp = new ObservationRequestStamp(
-                connectionGeneration,
-                subscriptionConnected),
+            () =>
+            {
+                stamp = new ObservationRequestStamp(
+                    connectionGeneration,
+                    subscriptionConnected);
+                includeLiveReadings = LiveReadingsEnabled;
+            },
             cancellationToken);
 
         try
         {
             ServiceStatusSnapshot status = await serviceClient
-                .ObserveStateAsync(LiveReadingsEnabled, cancellationToken);
+                .ObserveStateAsync(includeLiveReadings, cancellationToken);
             await dispatcher.InvokeAsync(
-                () => ApplyObservedStatus(status, stamp),
+                () =>
+                {
+                    bool accepted = ApplyObservedStatus(status, stamp);
+                    if (accepted
+                        && includeLiveReadings
+                        && LiveReadingsEnabled
+                        && status.LiveReadings is not null)
+                    {
+                        MarkLiveReadingsRefreshed();
+                    }
+                },
                 cancellationToken);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -1784,7 +1821,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         NotifyPresentationState();
     }
 
-    private void ApplyObservedStatus(
+    private bool ApplyObservedStatus(
         ServiceStatusSnapshot status,
         ObservationRequestStamp stamp)
     {
@@ -1792,7 +1829,31 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             && stamp.Generation == connectionGeneration)
         {
             ApplyStatus(status);
+            return true;
         }
+
+        return false;
+    }
+
+    private void MarkLiveReadingsRefreshed()
+    {
+        lastLiveReadingsRefreshAt = timeProvider.GetUtcNow();
+        PropertyChanged?.Invoke(
+            this,
+            new PropertyChangedEventArgs(nameof(LiveReadingsRefreshToolTip)));
+    }
+
+    private void ClearLiveReadingsRefreshTime()
+    {
+        if (lastLiveReadingsRefreshAt is null)
+        {
+            return;
+        }
+
+        lastLiveReadingsRefreshAt = null;
+        PropertyChanged?.Invoke(
+            this,
+            new PropertyChangedEventArgs(nameof(LiveReadingsRefreshToolTip)));
     }
 
     private bool CanSetChargeLimit(int value)

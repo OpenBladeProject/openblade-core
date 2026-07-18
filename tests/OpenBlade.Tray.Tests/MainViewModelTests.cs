@@ -400,6 +400,58 @@ public sealed class MainViewModelTests
     }
 
     [Fact]
+    public async Task SuccessfulRepeatedLiveChecksAdvanceTooltipEvenWhenValuesMatch()
+    {
+        var client = new FakeServiceClient();
+        var time = new MutableTimeProvider(
+            new DateTimeOffset(2026, 7, 17, 20, 15, 10, TimeSpan.Zero));
+        await using var viewModel = new MainViewModel(
+            client,
+            new RecordingDispatcher(),
+            time);
+        await viewModel.StartAsync();
+        ServiceStatusSnapshot status = CreateStatus(true, false) with
+        {
+            Revision = 4,
+            LiveReadings = new LiveReadings(37_046, 2200, 2100),
+        };
+        client.Publish(status);
+        await WaitUntilAsync(() => viewModel.IsConnected);
+
+        Assert.Equal(
+            "Waiting for the first live-reading check.",
+            viewModel.LiveReadingsRefreshToolTip);
+
+        client.PendingObservation = new TaskCompletionSource<ServiceStatusSnapshot>(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        Task first = viewModel.ObserveStateAsync(CancellationToken.None);
+        client.PendingObservation.SetResult(status);
+        await first;
+        string firstTooltip = viewModel.LiveReadingsRefreshToolTip;
+
+        var changed = new List<string>();
+        viewModel.PropertyChanged += (_, args) => changed.Add(args.PropertyName!);
+        time.Advance(TimeSpan.FromSeconds(5));
+        client.PendingObservation = new TaskCompletionSource<ServiceStatusSnapshot>(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        Task second = viewModel.ObserveStateAsync(CancellationToken.None);
+        client.PendingObservation.SetResult(status);
+        await second;
+
+        Assert.NotEqual(firstTooltip, viewModel.LiveReadingsRefreshToolTip);
+        Assert.Contains(
+            "Values change only when Windows or firmware reports new data.",
+            viewModel.LiveReadingsRefreshToolTip,
+            StringComparison.Ordinal);
+        Assert.Contains(nameof(viewModel.LiveReadingsRefreshToolTip), changed);
+
+        viewModel.LiveReadingsEnabled = false;
+        Assert.Equal(
+            "Waiting for the first live-reading check.",
+            viewModel.LiveReadingsRefreshToolTip);
+    }
+
+    [Fact]
     public async Task DirectRequestBegunDisconnectedCannotEstablishEpochOrBlockRevisionZero()
     {
         var client = new FakeServiceClient();
@@ -1923,6 +1975,13 @@ public sealed class MainViewModelTests
             action();
             return Task.CompletedTask;
         }
+    }
+
+    private sealed class MutableTimeProvider(DateTimeOffset now) : TimeProvider
+    {
+        public override DateTimeOffset GetUtcNow() => now;
+
+        public void Advance(TimeSpan amount) => now += amount;
     }
 
     private sealed class FakeServiceClient : IServiceClient

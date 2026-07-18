@@ -147,6 +147,10 @@ public sealed class CapabilityPresentationTests
         Assert.Equal(
             "{x:Bind ViewModel.SelectedLiveReadingsRefreshOption, Mode=TwoWay}",
             Attribute(liveReadings, "SelectedItem"));
+        Assert.Contains(
+            "Values may stay the same between checks.",
+            xaml,
+            StringComparison.Ordinal);
         Assert.DoesNotContain(settings.Descendants(), element =>
             element.Name.LocalName == "ToggleSwitch"
             && Attribute(element, "AutomationProperties.Name") == "Live readings");
@@ -234,6 +238,16 @@ public sealed class CapabilityPresentationTests
             3,
             readings.Descendants().Count(element =>
                 element.Name.LocalName == "ColumnDefinition"));
+        Assert.Equal(
+            "{x:Bind ViewModel.LiveReadingsRefreshToolTip, Mode=OneWay}",
+            Attribute(readings, "AutomationProperties.HelpText"));
+        XElement readingsGrid = Assert.Single(
+            readings.Elements(),
+            element => element.Name.LocalName == "Grid");
+        Assert.Equal("Transparent", Attribute(readingsGrid, "Background"));
+        Assert.Equal(
+            "{x:Bind ViewModel.LiveReadingsRefreshToolTip, Mode=OneWay}",
+            Attribute(readingsGrid, "ToolTipService.ToolTip"));
         Assert.DoesNotContain(readings.Descendants(), element =>
             element.Name.LocalName == "TextBlock"
             && Attribute(element, "Text") == "Live readings");
