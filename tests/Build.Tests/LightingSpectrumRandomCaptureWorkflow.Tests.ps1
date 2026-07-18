@@ -113,6 +113,10 @@ Assert-True ($workflowSource -match '(?i)AwaitingActionStart' -and
     'File-controlled capture must bracket every Synapse action with explicit signals.'
 Assert-True ($workflowSource -match '(?i)Wait-ForControlSignal') `
     'File-controlled capture must wait on bounded control signals rather than terminal input.'
+Assert-True ($workflowSource -match '(?i)FileControlDirectory') `
+    'File-controlled capture must support a pre-created controller-owned signal directory.'
+Assert-True ($workflowSource -match '(?i)::Replace\(\$temporaryPath,\s*\$Path,\s*\$backupPath') `
+    'Atomic checkpoint updates must use a real backup path under Windows PowerShell.'
 Assert-True (@($plan.annotationGuidance | Where-Object { $_ -match 'raw PCAP outside' }).Count -eq 1) `
     'The plan must forbid committing the raw capture.'
 Assert-True (@($plan.annotationGuidance | Where-Object { $_ -match 'not OpenBlade typed-apply' }).Count -eq 1) `

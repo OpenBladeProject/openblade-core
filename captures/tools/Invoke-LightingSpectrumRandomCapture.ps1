@@ -32,6 +32,8 @@ param(
 
     [string]$PreCaptureSetting,
 
+    [string]$FileControlDirectory,
+
     [Parameter(DontShow)]
     [string]$ApprovalPhrase,
 
@@ -58,11 +60,13 @@ function Write-AtomicJson {
     )
 
     $temporaryPath = "$Path.$PID.$([Guid]::NewGuid().ToString('N')).tmp"
+    $backupPath = "$Path.$PID.$([Guid]::NewGuid().ToString('N')).bak"
     try {
         $json = $Value | ConvertTo-Json -Depth 20
         [IO.File]::WriteAllText($temporaryPath, $json, [Text.UTF8Encoding]::new($false))
         if (Test-Path -LiteralPath $Path -PathType Leaf) {
-            [IO.File]::Replace($temporaryPath, $Path, $null, $true)
+            [IO.File]::Replace($temporaryPath, $Path, $backupPath, $true)
+            Remove-Item -LiteralPath $backupPath -Force
         }
         else {
             [IO.File]::Move($temporaryPath, $Path)
@@ -71,6 +75,9 @@ function Write-AtomicJson {
     finally {
         if (Test-Path -LiteralPath $temporaryPath) {
             Remove-Item -LiteralPath $temporaryPath -Force
+        }
+        if (Test-Path -LiteralPath $backupPath) {
+            Remove-Item -LiteralPath $backupPath -Force
         }
     }
 }
@@ -186,18 +193,32 @@ $stopPath = Join-Path $resolvedOutputDirectory 'capture.stop'
 $pcapPath = Join-Path $resolvedOutputDirectory 'capture.pcap'
 $annotationPath = Join-Path $resolvedOutputDirectory 'lighting-spectrum-random-annotations.json'
 $controlStatePath = Join-Path $resolvedOutputDirectory 'lighting-sequence-control.json'
-$controlDirectory = Join-Path $resolvedOutputDirectory 'lighting-sequence-control'
+$controlDirectory = if ([string]::IsNullOrWhiteSpace($FileControlDirectory)) {
+    Join-Path $resolvedOutputDirectory 'lighting-sequence-control'
+} else {
+    [IO.Path]::GetFullPath($FileControlDirectory)
+}
 foreach ($path in @($readyPath, $statePath, $stopPath, $pcapPath, $annotationPath)) {
     if (Test-Path -LiteralPath $path) {
         throw "Refusing to overwrite an existing capture artifact: $path"
     }
 }
 if ($FileControlled) {
-    if ((Test-Path -LiteralPath $controlStatePath) -or
-        (Test-Path -LiteralPath $controlDirectory)) {
-        throw 'Refusing to overwrite existing file-control artifacts.'
+    if (Test-Path -LiteralPath $controlStatePath) {
+        throw 'Refusing to overwrite the existing file-control state.'
     }
-    [IO.Directory]::CreateDirectory($controlDirectory) | Out-Null
+    if ([string]::IsNullOrWhiteSpace($FileControlDirectory)) {
+        if (Test-Path -LiteralPath $controlDirectory) {
+            throw 'Refusing to overwrite the existing file-control directory.'
+        }
+        [IO.Directory]::CreateDirectory($controlDirectory) | Out-Null
+    }
+    elseif (-not (Test-Path -LiteralPath $controlDirectory -PathType Container)) {
+        throw 'The supplied file-control directory must already exist.'
+    }
+    elseif (@(Get-ChildItem -LiteralPath $controlDirectory -Force).Count -ne 0) {
+        throw 'The supplied file-control directory must be empty.'
+    }
 }
 
 Write-Host 'This is a Synapse oracle capture, not OpenBlade lighting validation.'
