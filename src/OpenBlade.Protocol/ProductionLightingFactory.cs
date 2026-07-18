@@ -185,14 +185,17 @@ public sealed class ProductionLightingFactory : IProductionLightingPortFactory
             guard,
             native,
             exclusivityPolicy);
-        var io = new OverlappedFeatureOperation(native);
+        var controlIo = new OverlappedFeatureOperation(native);
+        var matrixIo = new OverlappedFeatureOperation(
+            native,
+            TargetBladeDevice.MatrixFeatureReportByteLength);
 
         return new ProductionLightingFactory(
             admitted,
             static () => new ValidationRunContext(),
             settleDelay => new ValidationActorFactory(
                 sessionOpener,
-                io,
+                controlIo,
                 guard,
                 TimeProvider.System,
                 DefaultExchangeTimeout,
@@ -205,7 +208,7 @@ public sealed class ProductionLightingFactory : IProductionLightingPortFactory
                     ? new HidSessionResult<IPid02E0MatrixFeatureWriter>(
                         new WindowsPid02E0MatrixFeatureWriter(
                             handle,
-                            io,
+                            matrixIo,
                             guard,
                             TimeProvider.System,
                             DefaultExchangeTimeout,

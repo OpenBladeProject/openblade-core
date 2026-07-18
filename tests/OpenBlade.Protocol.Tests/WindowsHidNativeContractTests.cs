@@ -111,6 +111,28 @@ public sealed class WindowsHidNativeContractTests
             composition);
     }
 
+    [Fact]
+    public void ProductionLightingFactory_WiresMatrixIoAtExactFeatureLength()
+    {
+        string path = Path.Combine(
+            FindRepositoryRoot(),
+            "src",
+            "OpenBlade.Protocol",
+            "ProductionLightingFactory.cs");
+        string lightingComposition = File.ReadAllText(path).Replace("\r\n", "\n");
+
+        Assert.Contains(
+            "new OverlappedFeatureOperation(\n" +
+            "            native,\n" +
+            "            TargetBladeDevice.MatrixFeatureReportByteLength)",
+            lightingComposition);
+        Assert.Contains(
+            "new WindowsPid02E0MatrixFeatureWriter(\n" +
+            "                            handle,\n" +
+            "                            matrixIo,",
+            lightingComposition);
+    }
+
     [Theory]
     [InlineData(0x000B0191u, true)]
     [InlineData(0x000B0192u, false)]
