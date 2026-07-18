@@ -217,6 +217,29 @@ public sealed class NativeOperationStateTests
         Assert.Equal(1, finalizer.CallCount);
     }
 
+    [Fact]
+    public async Task FinalizerFailurePreservesTheCompletedNativeResult()
+    {
+        var cleanupFailure = new ArgumentException("cleanup");
+        var state = new NativeOperationState(() => throw cleanupFailure);
+        Assert.True(state.TryBeginSubmission(out NativeUseLease submissionLease));
+        var nativeFailure = new NativeIoCompletion(false, 0, 87);
+
+        state.RecordImmediateFailure(nativeFailure);
+        submissionLease.Dispose();
+
+        NativeOperationFinalizationException error =
+            await Assert.ThrowsAsync<NativeOperationFinalizationException>(
+                async () => await state.Completion);
+        Assert.Equal(
+            new HidFeatureIoResult(
+                nativeFailure,
+                true,
+                HidFeatureTermination.Completed),
+            error.Result);
+        Assert.Same(cleanupFailure, error.InnerException);
+    }
+
     [Theory]
     [InlineData((int)HidFeatureTermination.CallerCanceled)]
     [InlineData((int)HidFeatureTermination.DeadlineExpired)]

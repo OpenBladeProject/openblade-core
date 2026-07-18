@@ -1,5 +1,18 @@
 namespace OpenBlade.Protocol;
 
+internal sealed class NativeOperationFinalizationException : Exception
+{
+    internal NativeOperationFinalizationException(
+        HidFeatureIoResult result,
+        Exception innerException)
+        : base("Native overlapped I/O resource finalization failed.", innerException)
+    {
+        Result = result;
+    }
+
+    internal HidFeatureIoResult Result { get; }
+}
+
 internal sealed class NativeUseLease : IDisposable
 {
     private Action? _release;
@@ -235,7 +248,10 @@ internal sealed class NativeOperationState
         }
         catch (Exception exception)
         {
-            _completion.TrySetException(exception);
+            _completion.TrySetException(
+                new NativeOperationFinalizationException(
+                    finalization.Value.Result,
+                    exception));
         }
     }
 

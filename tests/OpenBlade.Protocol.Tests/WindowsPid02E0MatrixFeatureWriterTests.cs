@@ -236,6 +236,33 @@ public sealed class WindowsPid02E0MatrixFeatureWriterTests
     }
 
     [Fact]
+    public async Task Writer_FinalizationFailurePreservesOriginalNativeError()
+    {
+        var nativeResult = new HidFeatureIoResult(
+            new NativeIoCompletion(false, 0, 87),
+            true,
+            HidFeatureTermination.Completed);
+        var io = new ScriptedIo
+        {
+            FirstResult = Task.FromException<HidFeatureIoResult>(
+                new NativeOperationFinalizationException(
+                    nativeResult,
+                    new ArgumentException("cleanup"))),
+        };
+        var owned = CreateOwnedHandle();
+        await using var writer = CreateWriter(owned.Handle, io);
+
+        HidSessionResult<HidUnit> result = await writer.WriteAsync(
+            Report(1, MatrixRgb.Black),
+            CancellationToken.None);
+
+        Assert.Equal(HidSessionFailureKind.NativeIoFailure, result.Failure);
+        Assert.Equal(HidSessionFailurePhase.SetCompletion, result.Diagnostic?.Phase);
+        Assert.Equal(87, result.Diagnostic?.NativeWin32Error);
+        Assert.Equal(0, result.Diagnostic?.TransferredByteCount);
+    }
+
+    [Fact]
     public async Task Writer_StrictConflictStopsBeforeIoButAdvisoryDoesNot()
     {
         var strictIo = new ScriptedIo();

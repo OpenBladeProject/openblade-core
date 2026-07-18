@@ -444,6 +444,20 @@ internal sealed class WindowsPid02E0MatrixFeatureWriter : IPid02E0MatrixFeatureW
                 item.CancellationToken,
                 deadline.Token).ConfigureAwait(false);
         }
+        catch (NativeOperationFinalizationException exception)
+        {
+            Poison();
+            NativeIoCompletion? completion = exception.Result.Completion;
+            return DiagnosticFailure(
+                HidSessionFailureKind.NativeIoFailure,
+                exception.Result.WasSubmitted
+                    ? HidSessionFailurePhase.SetCompletion
+                    : HidSessionFailurePhase.SetSubmit,
+                completion,
+                managedHResult: completion is null
+                    ? exception.InnerException?.HResult
+                    : null);
+        }
         catch (Exception exception)
         {
             Poison();
