@@ -120,7 +120,8 @@ public sealed class WindowsSetupPlatformServiceTests
         SetupInstallLifecycleState prior =
             await platform.CaptureInstallLifecycleStateAsync(CancellationToken.None);
 
-        Assert.True(prior.Startup.ShortcutExisted);
+        Assert.True(prior.Startup.TrayShortcutExisted);
+        Assert.True(prior.Startup.SessionAgentShortcutExisted);
         Assert.Empty(files.DeletedFiles);
     }
 
@@ -184,6 +185,63 @@ public sealed class WindowsSetupPlatformServiceTests
     }
 
     [Fact]
+    public async Task StopSessionAgent_InstalledAgent_SignalsDistinctPathBoundEndpointAndWaits()
+    {
+        string installedAgent = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles),
+            "OpenBlade",
+            "OpenBlade.SessionAgent.exe");
+        RecordingProcess process = new(installedAgent);
+        RecordingProcessOperations processes = new(process);
+        WindowsSetupPlatform platform = new(processOperations: processes);
+
+        await platform.StopSessionAgentAsync(CancellationToken.None);
+
+        Assert.Collection(
+            processes.Operations,
+            operation => Assert.Equal("query:OpenBlade.SessionAgent", operation),
+            operation => Assert.StartsWith(
+                "signal:Local\\OpenBlade.SessionAgent.Shutdown.",
+                operation,
+                StringComparison.Ordinal));
+        Assert.True(process.WaitedForExit);
+        Assert.True(process.Disposed);
+    }
+
+    [Fact]
+    public async Task StopSessionAgent_SameNamedForeignProcess_IsDisposedWithoutSignalOrWait()
+    {
+        RecordingProcess foreign = new(@"C:\worktree\OpenBlade.SessionAgent.exe");
+        RecordingProcessOperations processes = new(foreign);
+        WindowsSetupPlatform platform = new(processOperations: processes);
+
+        await platform.StopSessionAgentAsync(CancellationToken.None);
+
+        Assert.Equal(["query:OpenBlade.SessionAgent"], processes.Operations);
+        Assert.False(foreign.WaitedForExit);
+        Assert.True(foreign.Disposed);
+    }
+
+    [Fact]
+    public async Task StopSessionAgent_MissingGracefulEndpoint_FailsWithoutForceTermination()
+    {
+        string installedAgent = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles),
+            "OpenBlade",
+            "OpenBlade.SessionAgent.exe");
+        RecordingProcess process = new(installedAgent);
+        RecordingProcessOperations processes = new(process) { SignalResult = false };
+        WindowsSetupPlatform platform = new(processOperations: processes);
+
+        InvalidOperationException failure = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => platform.StopSessionAgentAsync(CancellationToken.None));
+
+        Assert.Contains("does not expose its shutdown event", failure.Message, StringComparison.Ordinal);
+        Assert.False(process.WaitedForExit);
+        Assert.True(process.Disposed);
+    }
+
+    [Fact]
     public async Task RemoveService_StopsWaitsDeletesThenWaitsForDeletion()
     {
         RecordingServiceControl serviceControl = new() { Exists = true };
@@ -230,6 +288,23 @@ public sealed class WindowsSetupPlatformServiceTests
     }
 
     [Fact]
+    public async Task InstallSessionAgentStartupShortcut_CreatesIndependentMandatoryLink()
+    {
+        RecordingShortcutWriter shortcutWriter = new();
+        WindowsSetupPlatform platform = new(new RecordingServiceControl(), shortcutWriter);
+
+        await platform.InstallSessionAgentStartupShortcutAsync(CancellationToken.None);
+
+        string installDirectory = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles),
+            "OpenBlade");
+        ShortcutRequest request = Assert.Single(shortcutWriter.Requests);
+        Assert.EndsWith("OpenBlade.SessionAgent.lnk", request.ShortcutPath, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(Path.Combine(installDirectory, "OpenBlade.SessionAgent.exe"), request.TargetPath);
+        Assert.Equal(installDirectory, request.WorkingDirectory);
+    }
+
+    [Fact]
     public async Task RemoveStartupShortcut_RemovesCurrentAndLegacyStartupEntries()
     {
         RecordingFileOperations files = new();
@@ -244,6 +319,18 @@ public sealed class WindowsSetupPlatformServiceTests
             files.DeletedFiles,
             path => Assert.EndsWith("OpenBlade.lnk", path, StringComparison.OrdinalIgnoreCase),
             path => Assert.EndsWith("OpenBlade.cmd", path, StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public async Task RemoveSessionAgentStartupShortcut_RemovesOnlyAgentEntry()
+    {
+        RecordingFileOperations files = new();
+        WindowsSetupPlatform platform = new(fileOperations: files);
+
+        await platform.RemoveSessionAgentStartupShortcutAsync(CancellationToken.None);
+
+        string removed = Assert.Single(files.DeletedFiles);
+        Assert.EndsWith("OpenBlade.SessionAgent.lnk", removed, StringComparison.OrdinalIgnoreCase);
     }
 
     [Theory]
@@ -436,6 +523,7 @@ public sealed class WindowsSetupPlatformServiceTests
     private sealed class RecordingProcessOperations(params ISetupProcess[] processes) : ISetupProcessOperations
     {
         public List<string> Operations { get; } = [];
+        public bool SignalResult { get; init; } = true;
 
         public IReadOnlyList<ISetupProcess> GetProcessesByName(string processName)
         {
@@ -446,7 +534,7 @@ public sealed class WindowsSetupPlatformServiceTests
         public bool TrySignalEvent(string eventName)
         {
             Operations.Add($"signal:{eventName}");
-            return true;
+            return SignalResult;
         }
     }
 

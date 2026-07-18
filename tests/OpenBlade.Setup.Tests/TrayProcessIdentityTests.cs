@@ -24,4 +24,19 @@ public sealed class TrayProcessIdentityTests
             candidate,
             @"C:\Program Files\OpenBlade\OpenBlade.Tray.exe"));
     }
+
+    [Theory]
+    [InlineData(@"C:\Program Files\OpenBlade\OpenBlade.SessionAgent.exe", true)]
+    [InlineData(@"c:\program files\openblade\OPENBLADE.SESSIONAGENT.EXE", true)]
+    [InlineData(@"C:\worktree\OpenBlade.SessionAgent.exe", false)]
+    [InlineData(@"C:\Program Files\OpenBlade\OpenBlade.SessionAgent.Helper.exe", false)]
+    [InlineData("", false)]
+    public void IsExactInstalledExecutable_AcceptsOnlyExactAgentPath(
+        string candidate,
+        bool expected) =>
+        Assert.Equal(
+            expected,
+            TrayProcessIdentity.IsExactInstalledExecutable(
+                candidate,
+                @"C:\Program Files\OpenBlade\OpenBlade.SessionAgent.exe"));
 }

@@ -67,11 +67,12 @@ public sealed class WindowsSetupPlatform : ISetupPlatform
         CancellationToken cancellationToken)
     {
         SetupServiceState? state = await serviceControl.GetStateAsync(ServiceName, cancellationToken);
-        bool shortcutExisted = fileOperations.FileExists(paths.StartupFile)
+        bool trayShortcutExisted = fileOperations.FileExists(paths.StartupFile)
             || fileOperations.FileExists(paths.LegacyStartupFile);
+        bool sessionAgentShortcutExisted = fileOperations.FileExists(paths.SessionAgentStartupFile);
         return new(
             new(state is not null, state == SetupServiceState.Running),
-            new(shortcutExisted));
+            new(trayShortcutExisted, sessionAgentShortcutExisted));
     }
 
     public async Task PrepareServiceForInstallAsync(CancellationToken cancellationToken)
@@ -233,6 +234,26 @@ public sealed class WindowsSetupPlatform : ISetupPlatform
         return Task.CompletedTask;
     }
 
+    public Task InstallSessionAgentStartupShortcutAsync(CancellationToken cancellationToken)
+    {
+        string sessionAgentExecutable = Path.Combine(
+            paths.InstallDirectory,
+            "OpenBlade.SessionAgent.exe");
+        return shortcutWriter.CreateAsync(
+            new ShortcutRequest(
+                paths.SessionAgentStartupFile,
+                sessionAgentExecutable,
+                paths.InstallDirectory),
+            cancellationToken);
+    }
+
+    public Task RemoveSessionAgentStartupShortcutAsync(CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        fileOperations.DeleteFile(paths.SessionAgentStartupFile);
+        return Task.CompletedTask;
+    }
+
     public async Task RemoveServiceAsync(CancellationToken cancellationToken)
     {
         if (!await serviceControl.ExistsAsync(ServiceName, cancellationToken))
@@ -250,15 +271,43 @@ public sealed class WindowsSetupPlatform : ISetupPlatform
         await serviceControl.WaitForDeletionAsync(ServiceName, TimeSpan.FromSeconds(30), cancellationToken);
     }
 
-    public async Task StopTrayAsync(CancellationToken cancellationToken)
+    public Task StopTrayAsync(CancellationToken cancellationToken)
     {
         string installedTray = Path.Combine(paths.InstallDirectory, "OpenBlade.Tray.exe");
+        return StopInstalledProcessAsync(
+            "OpenBlade.Tray",
+            installedTray,
+            TrayShutdownEndpoint.ForExecutablePath(installedTray),
+            "tray",
+            cancellationToken);
+    }
+
+    public Task StopSessionAgentAsync(CancellationToken cancellationToken)
+    {
+        string installedAgent = Path.Combine(paths.InstallDirectory, "OpenBlade.SessionAgent.exe");
+        return StopInstalledProcessAsync(
+            "OpenBlade.SessionAgent",
+            installedAgent,
+            SessionAgentShutdownEndpoint.ForExecutablePath(installedAgent),
+            "session agent",
+            cancellationToken);
+    }
+
+    private async Task StopInstalledProcessAsync(
+        string processName,
+        string installedExecutable,
+        string shutdownEventName,
+        string componentName,
+        CancellationToken cancellationToken)
+    {
         List<ISetupProcess> installedProcesses = [];
-        foreach (ISetupProcess process in processOperations.GetProcessesByName("OpenBlade.Tray"))
+        foreach (ISetupProcess process in processOperations.GetProcessesByName(processName))
         {
             try
             {
-                if (TrayProcessIdentity.IsInstalledTray(process.ExecutablePath, installedTray))
+                if (TrayProcessIdentity.IsExactInstalledExecutable(
+                    process.ExecutablePath,
+                    installedExecutable))
                 {
                     installedProcesses.Add(process);
                 }
@@ -278,11 +327,11 @@ public sealed class WindowsSetupPlatform : ISetupPlatform
             return;
         }
 
-        string shutdownEventName = TrayShutdownEndpoint.ForExecutablePath(installedTray);
         if (!processOperations.TrySignalEvent(shutdownEventName))
         {
             installedProcesses.ForEach(process => process.Dispose());
-            throw new InvalidOperationException("The installed tray process does not expose its shutdown event.");
+            throw new InvalidOperationException(
+                $"The installed {componentName} process does not expose its shutdown event.");
         }
 
         try
@@ -294,7 +343,9 @@ public sealed class WindowsSetupPlatform : ISetupPlatform
         }
         catch (TimeoutException exception)
         {
-            throw new InvalidOperationException("The installed tray process did not exit; binaries were not removed.", exception);
+            throw new InvalidOperationException(
+                $"The installed {componentName} process did not exit; binaries were not removed.",
+                exception);
         }
         finally
         {

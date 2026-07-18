@@ -31,28 +31,32 @@ public sealed class SetupCommandRunnerTests
         Assert.Equal(0, exitCode);
         Assert.Equal(
             [
-                "payload-stage", "lifecycle-capture", "shortcut-remove", "service-prepare", "tray-stop",
+                "payload-stage", "lifecycle-capture", "shortcut-remove", "agent-shortcut-remove",
+                "service-prepare", "tray-stop", "session-agent-stop",
                 "payload-activate", "sid:S-1-5-21-test", "service-install",
-                "service-health", "shortcut-install", "payload-commit",
+                "service-health", "agent-shortcut-install", "shortcut-install", "payload-commit",
             ],
             platform.Operations);
     }
 
     [Fact]
-    public async Task Install_UpdateWithDisabledStartup_PreservesMissingShortcut()
+    public async Task Install_UpdateWithDisabledTrayStartup_PreservesMissingTrayShortcutAndRepairsAgentShortcut()
     {
         RecordingSetupPlatform platform = new()
         {
             ServiceExists = true,
-            ShortcutExisted = false,
+            TrayShortcutExisted = false,
+            SessionAgentShortcutExisted = false,
             Transaction = new RecordingPayloadTransaction(hadExistingInstall: true),
         };
 
         int exitCode = await new SetupCommandRunner(platform).RunAsync(["install"], CancellationToken.None);
 
         Assert.Equal(0, exitCode);
-        Assert.False(platform.ShortcutPresent);
+        Assert.False(platform.TrayShortcutPresent);
+        Assert.True(platform.SessionAgentShortcutPresent);
         Assert.DoesNotContain("shortcut-install", platform.Operations);
+        Assert.Contains("agent-shortcut-install", platform.Operations);
         Assert.Equal("payload-commit", platform.Operations[^1]);
     }
 
@@ -61,14 +65,16 @@ public sealed class SetupCommandRunnerTests
     {
         RecordingSetupPlatform platform = new()
         {
-            ShortcutExisted = false,
+            TrayShortcutExisted = false,
+            SessionAgentShortcutExisted = false,
             Transaction = new RecordingPayloadTransaction(hadExistingInstall: false),
         };
 
         int exitCode = await new SetupCommandRunner(platform).RunAsync(["install"], CancellationToken.None);
 
         Assert.Equal(0, exitCode);
-        Assert.True(platform.ShortcutPresent);
+        Assert.True(platform.TrayShortcutPresent);
+        Assert.True(platform.SessionAgentShortcutPresent);
         Assert.Contains("shortcut-install", platform.Operations);
         Assert.Equal("payload-commit", platform.Operations[^1]);
     }
@@ -111,8 +117,9 @@ public sealed class SetupCommandRunnerTests
         AssertEndsWith(
             platform.Operations,
             [
-                "shortcut-remove", "service-prepare", "tray-stop", "payload-rollback",
-                "service-restore", "shortcut-install",
+                "shortcut-remove", "agent-shortcut-remove", "service-prepare", "tray-stop",
+                "session-agent-stop", "payload-rollback", "service-restore",
+                "agent-shortcut-install", "shortcut-install",
             ]);
         Assert.All(platform.CleanupTokens, token => Assert.False(token.IsCancellationRequested));
     }
@@ -123,7 +130,8 @@ public sealed class SetupCommandRunnerTests
         RecordingSetupPlatform platform = new()
         {
             FailurePoint = "service-health",
-            ShortcutExisted = false,
+            TrayShortcutExisted = false,
+            SessionAgentShortcutExisted = false,
             Transaction = new RecordingPayloadTransaction(hadExistingInstall: false),
         };
 
@@ -132,7 +140,10 @@ public sealed class SetupCommandRunnerTests
 
         AssertEndsWith(
             platform.Operations,
-            ["shortcut-remove", "service-remove", "tray-stop", "payload-rollback"]);
+            [
+                "shortcut-remove", "agent-shortcut-remove", "service-remove", "tray-stop",
+                "session-agent-stop", "payload-rollback",
+            ]);
         Assert.DoesNotContain("shortcut-install", platform.Operations);
         Assert.DoesNotContain("data-remove", platform.Operations);
     }
@@ -144,7 +155,8 @@ public sealed class SetupCommandRunnerTests
         {
             ServiceExists = true,
             ServiceWasRunning = false,
-            ShortcutExisted = false,
+            TrayShortcutExisted = false,
+            SessionAgentShortcutExisted = false,
             FailurePoint = "service-health",
             Transaction = new RecordingPayloadTransaction(hadExistingInstall: true),
         };
@@ -164,7 +176,7 @@ public sealed class SetupCommandRunnerTests
         RecordingSetupPlatform platform = new()
         {
             ServiceExists = true,
-            ShortcutExisted = true,
+            TrayShortcutExisted = true,
             FailurePoint = "service-prepare",
             Transaction = new RecordingPayloadTransaction(hadExistingInstall: true),
         };
@@ -174,7 +186,10 @@ public sealed class SetupCommandRunnerTests
 
         AssertEndsWith(
             platform.Operations,
-            ["shortcut-remove", "payload-rollback", "service-restore", "shortcut-install"]);
+            [
+                "shortcut-remove", "agent-shortcut-remove", "payload-rollback", "service-restore",
+                "agent-shortcut-install", "shortcut-install",
+            ]);
         Assert.DoesNotContain("service-remove", platform.Operations);
     }
 
@@ -194,7 +209,7 @@ public sealed class SetupCommandRunnerTests
         Assert.Equal(["payload-stage", "lifecycle-capture", "payload-rollback"], platform.Operations);
         Assert.True(platform.ServiceRegistered);
         Assert.True(platform.ServiceRunning);
-        Assert.True(platform.ShortcutPresent);
+        Assert.True(platform.TrayShortcutPresent);
     }
 
     [Fact]
@@ -204,7 +219,7 @@ public sealed class SetupCommandRunnerTests
         {
             ServiceExists = true,
             ServiceWasRunning = false,
-            ShortcutExisted = true,
+            TrayShortcutExisted = true,
             Transaction = new RecordingPayloadTransaction(hadExistingInstall: false),
         };
 
@@ -215,7 +230,7 @@ public sealed class SetupCommandRunnerTests
         Assert.Equal(["payload-stage", "lifecycle-capture", "payload-rollback"], platform.Operations);
         Assert.True(platform.ServiceRegistered);
         Assert.False(platform.ServiceRunning);
-        Assert.True(platform.ShortcutPresent);
+        Assert.True(platform.TrayShortcutPresent);
     }
 
     [Fact]
@@ -290,7 +305,7 @@ public sealed class SetupCommandRunnerTests
     {
         RecordingSetupPlatform platform = new()
         {
-            ShortcutExisted = false,
+            TrayShortcutExisted = false,
             Transaction = new RecordingPayloadTransaction(
                 false,
                 commitWarning: "guarded rollback directory retained"),
@@ -345,7 +360,9 @@ public sealed class SetupCommandRunnerTests
         int exitCode = await new SetupCommandRunner(platform).RunAsync(["uninstall"], CancellationToken.None);
 
         Assert.Equal(0, exitCode);
-        Assert.Equal(["shortcut-remove", "service-remove", "tray-stop", "binaries-remove"], platform.Operations);
+        Assert.Equal(
+            ["shortcut-remove", "agent-shortcut-remove", "service-remove", "tray-stop", "session-agent-stop", "binaries-remove"],
+            platform.Operations);
         Assert.DoesNotContain("data-remove", platform.Operations);
     }
 
@@ -358,7 +375,7 @@ public sealed class SetupCommandRunnerTests
 
         Assert.Equal(0, exitCode);
         Assert.Equal(
-            ["shortcut-remove", "service-remove", "tray-stop", "binaries-remove", "data-remove"],
+            ["shortcut-remove", "agent-shortcut-remove", "service-remove", "tray-stop", "session-agent-stop", "binaries-remove", "data-remove"],
             platform.Operations);
     }
 
@@ -396,18 +413,21 @@ public sealed class SetupCommandRunnerTests
         public bool FailPayloadStage { get; init; }
         public bool ServiceExists { get; init; }
         public bool ServiceWasRunning { get; init; } = true;
-        public bool ShortcutExisted { get; init; } = true;
+        public bool TrayShortcutExisted { get; init; } = true;
+        public bool SessionAgentShortcutExisted { get; init; } = true;
         public string? FailurePoint { get; set; }
         public CancellationTokenSource? Cancellation { get; init; }
         public RecordingPayloadTransaction Transaction { get; init; } = new(hadExistingInstall: false);
         private bool lifecycleInitialized;
         private bool serviceRegistered;
         private bool serviceRunning;
-        private bool shortcutPresent;
+        private bool trayShortcutPresent;
+        private bool sessionAgentShortcutPresent;
 
         public bool ServiceRegistered => serviceRegistered;
         public bool ServiceRunning => serviceRunning;
-        public bool ShortcutPresent => shortcutPresent;
+        public bool TrayShortcutPresent => trayShortcutPresent;
+        public bool SessionAgentShortcutPresent => sessionAgentShortcutPresent;
 
         public string CurrentUserSid => "S-1-5-21-test";
 
@@ -435,13 +455,14 @@ public sealed class SetupCommandRunnerTests
             {
                 serviceRegistered = ServiceExists;
                 serviceRunning = ServiceExists && ServiceWasRunning;
-                shortcutPresent = ShortcutExisted;
+                trayShortcutPresent = TrayShortcutExisted;
+                sessionAgentShortcutPresent = SessionAgentShortcutExisted;
                 lifecycleInitialized = true;
             }
 
             return Task.FromResult(new SetupInstallLifecycleState(
                 new(serviceRegistered, serviceRunning),
-                new(shortcutPresent)));
+                new(trayShortcutPresent, sessionAgentShortcutPresent)));
         }
 
         public Task PrepareServiceForInstallAsync(CancellationToken cancellationToken)
@@ -490,13 +511,23 @@ public sealed class SetupCommandRunnerTests
         public Task VerifyServiceHealthAsync(CancellationToken cancellationToken) => AddAsync("service-health", cancellationToken);
         public Task InstallStartupShortcutAsync(CancellationToken cancellationToken)
         {
-            shortcutPresent = true;
+            trayShortcutPresent = true;
             return AddAsync("shortcut-install", cancellationToken);
         }
         public Task RemoveStartupShortcutAsync(CancellationToken cancellationToken)
         {
-            shortcutPresent = false;
+            trayShortcutPresent = false;
             return AddAsync("shortcut-remove", cancellationToken);
+        }
+        public Task InstallSessionAgentStartupShortcutAsync(CancellationToken cancellationToken)
+        {
+            sessionAgentShortcutPresent = true;
+            return AddAsync("agent-shortcut-install", cancellationToken);
+        }
+        public Task RemoveSessionAgentStartupShortcutAsync(CancellationToken cancellationToken)
+        {
+            sessionAgentShortcutPresent = false;
+            return AddAsync("agent-shortcut-remove", cancellationToken);
         }
         public Task RemoveServiceAsync(CancellationToken cancellationToken)
         {
@@ -505,13 +536,16 @@ public sealed class SetupCommandRunnerTests
             return AddAsync("service-remove", cancellationToken);
         }
         public Task StopTrayAsync(CancellationToken cancellationToken) => AddAsync("tray-stop", cancellationToken);
+        public Task StopSessionAgentAsync(CancellationToken cancellationToken) =>
+            AddAsync("session-agent-stop", cancellationToken);
         public Task RemoveBinariesAsync(CancellationToken cancellationToken) => AddAsync("binaries-remove", cancellationToken);
         public Task RemoveDataAsync(CancellationToken cancellationToken) => AddAsync("data-remove", cancellationToken);
 
         private Task AddAsync(string operation, CancellationToken token)
         {
             Operations.Add(operation);
-            if (Operations.Contains("payload-activate") && operation is "shortcut-remove" or "service-remove" or "tray-stop")
+            if (Operations.Contains("payload-activate")
+                && operation is "shortcut-remove" or "agent-shortcut-remove" or "service-remove" or "tray-stop" or "session-agent-stop")
             {
                 CleanupTokens.Add(token);
             }

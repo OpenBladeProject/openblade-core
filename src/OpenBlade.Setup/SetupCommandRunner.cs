@@ -14,7 +14,9 @@ public interface ISetupPayloadTransaction : IAsyncDisposable
 
 public sealed record SetupServiceInstallState(bool Existed, bool WasRunning);
 
-public sealed record SetupStartupInstallState(bool ShortcutExisted);
+public sealed record SetupStartupInstallState(
+    bool TrayShortcutExisted,
+    bool SessionAgentShortcutExisted);
 
 public sealed record SetupInstallLifecycleState(
     SetupServiceInstallState Service,
@@ -34,8 +36,11 @@ public interface ISetupPlatform
     Task VerifyServiceHealthAsync(CancellationToken cancellationToken);
     Task InstallStartupShortcutAsync(CancellationToken cancellationToken);
     Task RemoveStartupShortcutAsync(CancellationToken cancellationToken);
+    Task InstallSessionAgentStartupShortcutAsync(CancellationToken cancellationToken);
+    Task RemoveSessionAgentStartupShortcutAsync(CancellationToken cancellationToken);
     Task RemoveServiceAsync(CancellationToken cancellationToken);
     Task StopTrayAsync(CancellationToken cancellationToken);
+    Task StopSessionAgentAsync(CancellationToken cancellationToken);
     Task RemoveBinariesAsync(CancellationToken cancellationToken);
     Task RemoveDataAsync(CancellationToken cancellationToken);
 }
@@ -68,13 +73,16 @@ public sealed class SetupCommandRunner(ISetupPlatform platform)
 
                 mutationStarted = true;
                 await platform.RemoveStartupShortcutAsync(cancellationToken);
+                await platform.RemoveSessionAgentStartupShortcutAsync(cancellationToken);
                 await platform.PrepareServiceForInstallAsync(cancellationToken);
                 await platform.StopTrayAsync(cancellationToken);
+                await platform.StopSessionAgentAsync(cancellationToken);
                 await transaction.ActivateAsync(cancellationToken);
                 await platform.WriteAuthorizedUserSidAsync(platform.CurrentUserSid, cancellationToken);
                 await platform.InstallServiceAsync(cancellationToken);
                 await platform.VerifyServiceHealthAsync(cancellationToken);
-                if (!transaction.HadExistingInstall || priorLifecycle.Startup.ShortcutExisted)
+                await platform.InstallSessionAgentStartupShortcutAsync(cancellationToken);
+                if (!transaction.HadExistingInstall || priorLifecycle.Startup.TrayShortcutExisted)
                 {
                     await platform.InstallStartupShortcutAsync(cancellationToken);
                 }
@@ -93,6 +101,9 @@ public sealed class SetupCommandRunner(ISetupPlatform platform)
                     await RecoverAsync(
                         () => platform.RemoveStartupShortcutAsync(recoveryToken),
                         recoveryFailures);
+                    await RecoverAsync(
+                        () => platform.RemoveSessionAgentStartupShortcutAsync(recoveryToken),
+                        recoveryFailures);
                 }
 
                 bool wasActivated = transaction.IsActivated;
@@ -108,6 +119,7 @@ public sealed class SetupCommandRunner(ISetupPlatform platform)
                     }
 
                     await RecoverAsync(() => platform.StopTrayAsync(recoveryToken), recoveryFailures);
+                    await RecoverAsync(() => platform.StopSessionAgentAsync(recoveryToken), recoveryFailures);
                 }
 
                 await RecoverAsync(() => transaction.RollbackAsync(recoveryToken), recoveryFailures);
@@ -125,7 +137,14 @@ public sealed class SetupCommandRunner(ISetupPlatform platform)
                         await RecoverAsync(() => platform.RemoveServiceAsync(recoveryToken), recoveryFailures);
                     }
 
-                    if (priorLifecycle?.Startup is { ShortcutExisted: true })
+                    if (priorLifecycle?.Startup is { SessionAgentShortcutExisted: true })
+                    {
+                        await RecoverAsync(
+                            () => platform.InstallSessionAgentStartupShortcutAsync(recoveryToken),
+                            recoveryFailures);
+                    }
+
+                    if (priorLifecycle?.Startup is { TrayShortcutExisted: true })
                     {
                         await RecoverAsync(() => platform.InstallStartupShortcutAsync(recoveryToken), recoveryFailures);
                     }
@@ -142,8 +161,10 @@ public sealed class SetupCommandRunner(ISetupPlatform platform)
         }
 
         await platform.RemoveStartupShortcutAsync(cancellationToken);
+        await platform.RemoveSessionAgentStartupShortcutAsync(cancellationToken);
         await platform.RemoveServiceAsync(cancellationToken);
         await platform.StopTrayAsync(cancellationToken);
+        await platform.StopSessionAgentAsync(cancellationToken);
         await platform.RemoveBinariesAsync(cancellationToken);
         if (command == SetupCommand.UninstallAndPurge)
         {

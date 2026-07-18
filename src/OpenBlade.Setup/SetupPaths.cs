@@ -16,6 +16,7 @@ public sealed record SetupPaths
         MachineDataDirectory = Path.Combine(machineDataRoot, "OpenBlade");
         UserDataDirectory = Path.Combine(userDataRoot, "OpenBlade");
         StartupFile = Path.Combine(startupRoot, "OpenBlade.lnk");
+        SessionAgentStartupFile = Path.Combine(startupRoot, "OpenBlade.SessionAgent.lnk");
         LegacyStartupFile = Path.Combine(startupRoot, "OpenBlade.cmd");
     }
 
@@ -27,6 +28,7 @@ public sealed record SetupPaths
     public string MachineDataDirectory { get; }
     public string UserDataDirectory { get; }
     public string StartupFile { get; }
+    public string SessionAgentStartupFile { get; }
     public string LegacyStartupFile { get; }
 
     public static SetupPaths Create(

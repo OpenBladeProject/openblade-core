@@ -9,6 +9,10 @@ public sealed class SetupPayloadTransactionTests
 {
     [Theory]
     [InlineData("OpenBlade.Service.exe")]
+    [InlineData("OpenBlade.SessionAgent.exe")]
+    [InlineData("OpenBlade.SessionAgent.dll")]
+    [InlineData("OpenBlade.SessionAgent.deps.json")]
+    [InlineData("OpenBlade.SessionAgent.runtimeconfig.json")]
     [InlineData("OpenBlade.Tray.exe")]
     [InlineData("OpenBlade.Tray.dll")]
     [InlineData("OpenBlade.Tray.deps.json")]
@@ -708,6 +712,10 @@ public sealed class SetupPayloadTransactionTests
         private static readonly string[] RequiredFiles =
         [
             "OpenBlade.Service.exe",
+            "OpenBlade.SessionAgent.exe",
+            "OpenBlade.SessionAgent.dll",
+            "OpenBlade.SessionAgent.deps.json",
+            "OpenBlade.SessionAgent.runtimeconfig.json",
             "OpenBlade.Tray.exe",
             "OpenBlade.Tray.dll",
             "OpenBlade.Tray.deps.json",
@@ -854,8 +862,11 @@ public sealed class SetupPayloadTransactionTests
         public Task VerifyServiceHealthAsync(CancellationToken cancellationToken) => throw new NotSupportedException();
         public Task InstallStartupShortcutAsync(CancellationToken cancellationToken) => throw new NotSupportedException();
         public Task RemoveStartupShortcutAsync(CancellationToken cancellationToken) => throw new NotSupportedException();
+        public Task InstallSessionAgentStartupShortcutAsync(CancellationToken cancellationToken) => throw new NotSupportedException();
+        public Task RemoveSessionAgentStartupShortcutAsync(CancellationToken cancellationToken) => throw new NotSupportedException();
         public Task RemoveServiceAsync(CancellationToken cancellationToken) => throw new NotSupportedException();
         public Task StopTrayAsync(CancellationToken cancellationToken) => throw new NotSupportedException();
+        public Task StopSessionAgentAsync(CancellationToken cancellationToken) => throw new NotSupportedException();
         public Task RemoveBinariesAsync(CancellationToken cancellationToken) => throw new NotSupportedException();
         public Task RemoveDataAsync(CancellationToken cancellationToken) => throw new NotSupportedException();
     }

@@ -66,6 +66,19 @@ function Assert-ManagedAssemblyIdentity {
 function Assert-ServicePublishPayload {
     param([Parameter(Mandatory)][string]$Payload)
 
+    $requiredSessionAgentFiles = @(
+        'OpenBlade.SessionAgent.exe',
+        'OpenBlade.SessionAgent.dll',
+        'OpenBlade.SessionAgent.deps.json',
+        'OpenBlade.SessionAgent.runtimeconfig.json'
+    )
+    foreach ($requiredSessionAgentFile in $requiredSessionAgentFiles) {
+        $requiredPath = Join-Path $Payload $requiredSessionAgentFile
+        if (-not (Test-Path -LiteralPath $requiredPath -PathType Leaf)) {
+            throw "OpenBlade production payload is missing required session agent file: $requiredPath"
+        }
+    }
+
     $forbiddenCaptureTool = Get-ChildItem -LiteralPath $Payload -File -Recurse -ErrorAction Stop |
         Where-Object { $_.Name.StartsWith('OpenBlade.Capture', [StringComparison]::OrdinalIgnoreCase) } |
         Select-Object -First 1

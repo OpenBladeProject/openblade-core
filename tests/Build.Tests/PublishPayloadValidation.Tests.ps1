@@ -139,6 +139,14 @@ function Write-ValidServicePayload {
 
     New-Item -ItemType Directory -Path $Payload -Force | Out-Null
     Write-ServiceManifest -Payload $Payload -Manifest (New-ValidServiceManifest)
+    foreach ($sessionAgentFile in @(
+            'OpenBlade.SessionAgent.exe',
+            'OpenBlade.SessionAgent.dll',
+            'OpenBlade.SessionAgent.deps.json',
+            'OpenBlade.SessionAgent.runtimeconfig.json')) {
+        Set-Content -LiteralPath (Join-Path $Payload $sessionAgentFile) `
+            -Value 'session agent payload' -NoNewline
+    }
     foreach ($assembly in $AssemblySources.GetEnumerator()) {
         Copy-Item -LiteralPath $assembly.Value -Destination (Join-Path $Payload $assembly.Key)
     }
@@ -411,6 +419,18 @@ try {
     Remove-Item -LiteralPath (Join-Path $missingDll.Payload 'Microsoft.Extensions.Hosting.dll')
     Assert-RejectedAndPreserved -PermittedRoot $permittedRoot -StagingBundle $missingDll.StagingBundle `
         -ExistingBundle $missingDll.ExistingBundle -ExpectedError 'missing required assembly' -CaseName 'A missing required assembly'
+
+    $missingSessionAgent = New-TestBundlePair `
+        -PermittedRoot $permittedRoot `
+        -CaseName 'missing-session-agent' `
+        -AssemblySources $assemblySources
+    Remove-Item -LiteralPath (Join-Path $missingSessionAgent.Payload 'OpenBlade.SessionAgent.exe')
+    Assert-RejectedAndPreserved `
+        -PermittedRoot $permittedRoot `
+        -StagingBundle $missingSessionAgent.StagingBundle `
+        -ExistingBundle $missingSessionAgent.ExistingBundle `
+        -ExpectedError 'missing required session agent file' `
+        -CaseName 'A missing required session agent executable'
 
     $captureTool = New-TestBundlePair -PermittedRoot $permittedRoot -CaseName 'capture-tool' -AssemblySources $assemblySources
     $captureToolDirectory = Join-Path $captureTool.Payload 'tools'
