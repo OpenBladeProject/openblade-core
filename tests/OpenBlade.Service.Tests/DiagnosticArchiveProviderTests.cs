@@ -173,6 +173,34 @@ public sealed class DiagnosticArchiveProviderTests
     }
 
     [Fact]
+    public async Task CreateAsync_UsesObservedMcuVersionWithoutRefreshingHardware()
+    {
+        var runtime = new SnapshotOnlyRuntime(CreateStatus() with
+        {
+            Firmware = new FirmwareVersions(
+                "3.01",
+                "1.04",
+                "1.5.0.0",
+                "98.3.5c.40.3d"),
+        });
+        var provider = new DiagnosticArchiveProvider(
+            runtime,
+            new DiagnosticHistory(),
+            new FixedMetadataSource());
+
+        DiagnosticArchive result = await provider.CreateAsync(
+            liveReadingsEnabled: false,
+            CancellationToken.None);
+
+        using var archive = new ZipArchive(new MemoryStream(result.ZipBytes), ZipArchiveMode.Read);
+        using JsonDocument versions = JsonDocument.Parse(
+            await ReadEntryAsync(archive, "versions.json"));
+        Assert.Equal("1.5.0.0", versions.RootElement.GetProperty("mcuVersion").GetString());
+        Assert.Equal(1, runtime.StatusReads);
+        Assert.Equal(0, runtime.HardwareOrMutationCalls);
+    }
+
+    [Fact]
     public async Task CreateAsync_RejectsArchiveLargerThanThirtyTwoKiB()
     {
         byte[] randomBytes = new byte[50_000];

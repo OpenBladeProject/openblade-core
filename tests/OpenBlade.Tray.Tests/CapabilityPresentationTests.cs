@@ -122,15 +122,15 @@ public sealed class CapabilityPresentationTests
         XElement settings = NamedElement(document, "ScrollViewer", "SettingsPage");
 
         Assert.Equal(
-            2,
+            3,
             settings.Descendants().Count(element =>
                 Attribute(element, "Style") == "{StaticResource SettingsGroupStyle}"));
         Assert.Equal(
-            3,
+            4,
             settings.Descendants().Count(element =>
                 Attribute(element, "Style") == "{StaticResource SettingsRowStyle}"));
         Assert.Equal(
-            2,
+            3,
             settings.Descendants().Count(element =>
                 Attribute(element, "Style") == "{StaticResource SettingsLastRowStyle}"));
 
@@ -264,7 +264,7 @@ public sealed class CapabilityPresentationTests
                 && Attribute(element, "AutomationProperties.Name") == "Troubleshooting details");
         Assert.Equal("{StaticResource CardContentExpanderStyle}", Attribute(troubleshooting, "Style"));
         Assert.Equal(
-            "{StaticResource CardStyle}",
+            "{StaticResource SettingsLastRowStyle}",
             Attribute(
                 troubleshooting.Ancestors().First(element => element.Name.LocalName == "Border"),
                 "Style"));
@@ -276,22 +276,51 @@ public sealed class CapabilityPresentationTests
         foreach (string property in new[]
                  {
                      "ViewModel.TroubleshootingServiceStatus",
+                     "ViewModel.TroubleshootingUiVersionStatus",
+                     "ViewModel.TroubleshootingServiceVersionStatus",
                      "ViewModel.TroubleshootingLaptopStatus",
                      "ViewModel.TroubleshootingPowerSourceStatus",
                      "ViewModel.TroubleshootingControlsStatus",
                      "ViewModel.TroubleshootingOtherRazerSoftwareStatus",
-                     "ViewModel.TroubleshootingDetectionStatus",
                      "ViewModel.TroubleshootingBiosFirmwareStatus",
                      "ViewModel.TroubleshootingEcFirmwareStatus",
                      "ViewModel.TroubleshootingMcuFirmwareStatus",
                      "ViewModel.TroubleshootingVbiosFirmwareStatus",
-                     "ViewModel.TroubleshootingLastOperationStatus",
+                     "ViewModel.TroubleshootingRecentErrorStatus",
                  })
         {
             Assert.Contains(troubleshooting.Descendants(), element =>
                 element.Name.LocalName == "TextBlock"
-                && Attribute(element, "IsTextSelectionEnabled") == "True"
+                && Attribute(element, "Style") == "{StaticResource TroubleshootingValueStyle}"
                 && Attribute(element, "Text")?.Contains(property, StringComparison.Ordinal) is true);
+        }
+        XElement recentError = Assert.Single(
+            troubleshooting.Descendants(),
+            element => element.Name.LocalName == "Border"
+                && Attribute(element, "Visibility")?.Contains(
+                    "ViewModel.HasTroubleshootingRecentError",
+                    StringComparison.Ordinal) is true);
+        Assert.Contains(recentError.Descendants(), element =>
+            element.Name.LocalName == "TextBlock"
+            && Attribute(element, "Text") == "Recent error");
+        Assert.DoesNotContain(troubleshooting.Descendants(), element =>
+            element.Name.LocalName == "TextBlock"
+            && Attribute(element, "Text") is "Controller detection" or "Last operation");
+        foreach (string label in new[]
+                 {
+                     "OpenBlade service",
+                     "Versions",
+                     "Laptop",
+                     "Laptop controls",
+                     "Power source",
+                     "Other Razer software running",
+                     "Firmware",
+                 })
+        {
+            Assert.Contains(troubleshooting.Descendants(), element =>
+                element.Name.LocalName == "TextBlock"
+                && Attribute(element, "Style") == "{StaticResource TroubleshootingLabelStyle}"
+                && Attribute(element, "Text") == label);
         }
         Assert.Contains(troubleshooting.Descendants(), element =>
             element.Name.LocalName == "TextBlock"
@@ -402,7 +431,7 @@ public sealed class CapabilityPresentationTests
 
         Assert.Equal("Transparent", Attribute(background, "Color"));
         Assert.Equal("0", borderThickness.Value.Trim());
-        Assert.Equal("2,18,0,18", Attribute(header, "Margin"));
+        Assert.Equal("2,14,0,14", Attribute(header, "Margin"));
     }
 
     [Fact]

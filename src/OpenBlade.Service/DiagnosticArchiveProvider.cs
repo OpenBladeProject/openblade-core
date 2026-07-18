@@ -1,4 +1,3 @@
-using System.Reflection;
 using System.Security.Principal;
 using Microsoft.Win32;
 using OpenBlade.Contracts;
@@ -195,14 +194,8 @@ public sealed class WindowsDiagnosticMetadataSource : IDiagnosticMetadataSource
             DateTimeOffset.UtcNow);
     }
 
-    private static string ReadOpenBladeVersion()
-    {
-        Assembly assembly = Assembly.GetEntryAssembly() ?? typeof(DiagnosticArchiveProvider).Assembly;
-        return assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()
-                ?.InformationalVersion
-            ?? assembly.GetName().Version?.ToString()
-            ?? "Unavailable";
-    }
+    private static string ReadOpenBladeVersion() => OpenBladeProductVersion.Read(
+        typeof(DiagnosticArchiveProvider).Assembly);
 
     private IReadOnlyCollection<string> ReadSensitiveTokens()
     {
@@ -273,8 +266,19 @@ public sealed class DiagnosticArchiveProvider : IDiagnosticArchiveProvider
         ServiceStatusSnapshot status = runtime.GetStatus();
         DiagnosticHistorySnapshot historySnapshot = history.Snapshot();
         DiagnosticHostMetadata metadata = metadataSource.Capture();
+        DiagnosticVersions versions = metadata.Versions;
+        if (status.Firmware is { } firmware
+            && !string.IsNullOrWhiteSpace(firmware.McuVersion)
+            && !string.Equals(
+                firmware.McuVersion,
+                "Unavailable",
+                StringComparison.OrdinalIgnoreCase))
+        {
+            versions = versions with { McuVersion = firmware.McuVersion };
+        }
+
         DiagnosticBundle bundle = new(
-            metadata.Versions,
+            versions,
             new DiagnosticDeviceIdentity("RZ09-0581", "1532", "02E0", SerialNumber: null),
             CreateCapabilities(status.Capabilities),
             CreateConfiguration(status, liveReadingsEnabled),

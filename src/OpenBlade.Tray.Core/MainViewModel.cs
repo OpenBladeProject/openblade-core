@@ -39,6 +39,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     private readonly IDiagnosticArchiveSaver diagnosticArchiveSaver;
     private readonly IStartupRegistration startupRegistration;
     private readonly TimeProvider timeProvider;
+    private readonly string uiVersion;
     private readonly CancellationTokenSource lifetime = new();
     private readonly object startSync = new();
     private readonly AsyncRelayCommand[] commands;
@@ -51,6 +52,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     private string connectionStatus = "Service unavailable";
     private string operationStatusMessage = string.Empty;
     private string operationFeedbackMessage = string.Empty;
+    private string troubleshootingRecentErrorStatus = string.Empty;
     private string controlAccessStatus = "OpenBlade service isn’t running";
     private string activePowerSourceLabel = "Power source unavailable";
     private string performanceSourceLabel = "Unavailable";
@@ -118,6 +120,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     private bool startAtSignIn;
     private bool startupStateKnown;
     private string startupStatusMessage = string.Empty;
+    private TrayIconState trayIconState = TrayIconState.GenericError;
     private int disposed;
     private long latestAcceptedRevision = -1;
     private long connectionGeneration;
@@ -162,7 +165,8 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         IUiDispatcher dispatcher,
         IDiagnosticArchiveSaver diagnosticArchiveSaver,
         IStartupRegistration startupRegistration,
-        TimeProvider? timeProvider = null)
+        TimeProvider? timeProvider = null,
+        string? uiVersion = null)
     {
         this.serviceClient = serviceClient ?? throw new ArgumentNullException(nameof(serviceClient));
         this.dispatcher = dispatcher ?? throw new ArgumentNullException(nameof(dispatcher));
@@ -171,6 +175,9 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         this.startupRegistration = startupRegistration
             ?? throw new ArgumentNullException(nameof(startupRegistration));
         this.timeProvider = timeProvider ?? TimeProvider.System;
+        this.uiVersion = string.IsNullOrWhiteSpace(uiVersion)
+            ? OpenBladeProductVersion.Read(typeof(MainViewModel).Assembly)
+            : uiVersion.Trim();
 
         SetPerformanceCommand = CreateCommand(
             SetPerformanceAsync,
@@ -264,6 +271,8 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         }
     }
 
+    public bool IsServiceUnavailable => !IsConnected;
+
     public bool IsReadOnly
     {
         get => isReadOnly;
@@ -308,9 +317,6 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             }
             SetField(ref operationStatusMessage, value);
             OperationFeedbackMessage = FormatOperationFeedback(value);
-            PropertyChanged?.Invoke(
-                this,
-                new PropertyChangedEventArgs(nameof(TroubleshootingLastOperationStatus)));
         }
     }
 
@@ -329,6 +335,25 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     }
 
     public bool HasOperationFeedback => !string.IsNullOrWhiteSpace(OperationFeedbackMessage);
+
+    public string TroubleshootingRecentErrorStatus
+    {
+        get => troubleshootingRecentErrorStatus;
+        private set
+        {
+            if (troubleshootingRecentErrorStatus == value)
+            {
+                return;
+            }
+            SetField(ref troubleshootingRecentErrorStatus, value);
+            PropertyChanged?.Invoke(
+                this,
+                new PropertyChangedEventArgs(nameof(HasTroubleshootingRecentError)));
+        }
+    }
+
+    public bool HasTroubleshootingRecentError => !string.IsNullOrWhiteSpace(
+        TroubleshootingRecentErrorStatus);
 
     public string ControlAccessStatus
     {
@@ -556,6 +581,11 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         ? "Running"
         : "Unavailable";
 
+    public string TroubleshootingUiVersionStatus => $"UI: {uiVersion}";
+
+    public string TroubleshootingServiceVersionStatus =>
+        $"Service: {(!IsConnected || string.IsNullOrWhiteSpace(latestStatus?.ServiceVersion) ? "Unavailable" : latestStatus.ServiceVersion.Trim())}";
+
     public string TroubleshootingLaptopStatus => !IsConnected
         ? $"{TargetLaptopLabel}; status unavailable"
         : latestStatus?.DeviceVerified == true
@@ -573,19 +603,26 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             _ => "Unavailable",
         };
 
-    public string TroubleshootingControlsStatus => CanControlHardware
-        ? "Ready"
+    public string TroubleshootingControlsStatus => IsConnected
+        ? ControlAccessStatus
         : "Unavailable";
 
-    public string TroubleshootingOtherRazerSoftwareStatus => HasControllerAdvisory
-        ? string.Join(", ", latestStatus?.PotentialControllers ?? [])
-        : HasControllerDetectionWarning
-            ? "Could not check"
-            : "None detected";
+    public string TroubleshootingOtherRazerSoftwareStatus
+    {
+        get
+        {
+            string running = string.Join(", ", latestStatus?.PotentialControllers ?? []);
+            if (!HasControllerDetectionWarning)
+            {
+                return string.IsNullOrWhiteSpace(running) ? "None running" : running;
+            }
 
-    public string TroubleshootingDetectionStatus => HasControllerDetectionWarning
-        ? FormatTroubleshootingValue(ControllerDetectionWarningText)
-        : "Controller check completed";
+            string warning = FormatTroubleshootingValue(ControllerDetectionWarningText);
+            return string.IsNullOrWhiteSpace(running)
+                ? $"Could not check: {warning}"
+                : $"{running}; check incomplete: {warning}";
+        }
+    }
 
     public string TroubleshootingBiosFirmwareStatus =>
         FormatFirmwareVersion("BIOS", latestStatus?.Firmware?.BiosVersion);
@@ -598,11 +635,6 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
 
     public string TroubleshootingVbiosFirmwareStatus =>
         FormatFirmwareVersion("VBIOS", latestStatus?.Firmware?.VbiosVersion);
-
-    public string TroubleshootingLastOperationStatus => string.IsNullOrWhiteSpace(
-        OperationStatusMessage)
-            ? "No recent actions"
-            : FormatTroubleshootingValue(OperationStatusMessage);
 
     public IReadOnlyList<PerformancePreset> AvailablePerformancePresets
     {
@@ -1321,6 +1353,12 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         SelectedPerformance,
         BatteryPowerFlowLabel);
 
+    public TrayIconState TrayIconState
+    {
+        get => trayIconState;
+        private set => SetField(ref trayIconState, value);
+    }
+
     public bool StartAtSignIn
     {
         get => startAtSignIn;
@@ -1701,6 +1739,11 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         CurrentBatterySettingLabel = FormatCurrentBatterySetting(confirmed?.Battery);
         SetTemporaryFullChargeState(confirmed?.Battery?.TemporaryFullCharge);
         ActivePowerSource = status.ActivePowerSource;
+        TrayIconState = TrayIconStateResolver.Resolve(
+            isConnected: true,
+            status.DeviceVerified,
+            status.ActivePowerSource,
+            confirmed?.Performance);
         LiveReadings = LiveReadingsEnabled ? status.LiveReadings : null;
         PerformanceOverride = status.PerformanceOverride;
         FanOverride = status.FanOverride;
@@ -1858,6 +1901,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         subscriptionConnected = false;
         latestAcceptedRevision = -1;
         IsConnected = false;
+        TrayIconState = TrayIconState.GenericError;
         IsReadOnly = true;
         CanControlHardware = false;
         ConnectionStatus = message;
@@ -2043,6 +2087,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         }
 
         string message;
+        bool failed;
         try
         {
             ServiceStatusSnapshot status = await serviceClient.GetStatusAsync(token)
@@ -2066,6 +2111,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
                 : hardwareNotApplied.Count == 0
                     ? "Manual overrides cleared."
                     : $"Manual overrides cleared; hardware restoration was not applied for {string.Join(", ", hardwareNotApplied)}.";
+            failed = notCleared.Count > 0;
         }
         catch (OperationCanceledException) when (token.IsCancellationRequested)
         {
@@ -2074,10 +2120,17 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         catch
         {
             message = "Manual override clear requests completed; service confirmation is unavailable.";
+            failed = true;
         }
 
         await dispatcher.InvokeAsync(
-            () => OperationStatusMessage = message,
+            () =>
+            {
+                OperationStatusMessage = message;
+                TroubleshootingRecentErrorStatus = failed
+                    ? FormatTroubleshootingValue(message)
+                    : string.Empty;
+            },
             token).ConfigureAwait(false);
     }
 
@@ -2293,6 +2346,9 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
                 {
                     OperationStatusMessage = result.Message;
                     OperationFeedbackMessage = FormatOperationResult(result);
+                    TroubleshootingRecentErrorStatus = result.Status == ControlOperationStatus.Failed
+                        ? FormatTroubleshootingValue(result.Message)
+                        : string.Empty;
                     onCompleted?.Invoke(result);
                 },
                 token);
@@ -2304,8 +2360,13 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         }
         catch (Exception exception)
         {
+            string message = $"Operation failed: {exception.Message}";
             await dispatcher.InvokeAsync(
-                () => OperationStatusMessage = $"Operation failed: {exception.Message}",
+                () =>
+                {
+                    OperationStatusMessage = message;
+                    TroubleshootingRecentErrorStatus = FormatTroubleshootingValue(message);
+                },
                 token);
             return false;
         }
@@ -2316,7 +2377,11 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         try
         {
             await dispatcher.InvokeAsync(
-                () => OperationStatusMessage = "Preparing diagnostic export...",
+                () =>
+                {
+                    OperationStatusMessage = "Preparing diagnostic export...";
+                    TroubleshootingRecentErrorStatus = string.Empty;
+                },
                 token);
             DiagnosticArchive archive = await serviceClient.ExportDiagnosticsAsync(
                 LiveReadingsEnabled,
@@ -2325,14 +2390,18 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
                 archive,
                 token);
             await dispatcher.InvokeAsync(
-                () => OperationStatusMessage = result.Status switch
+                () =>
                 {
-                    DiagnosticArchiveSaveStatus.Canceled => "Diagnostic export canceled.",
-                    DiagnosticArchiveSaveStatus.Saved
-                        when !string.IsNullOrWhiteSpace(result.DestinationPath) =>
-                        $"Diagnostics exported to {result.DestinationPath}.",
-                    _ => throw new InvalidDataException(
-                        "The diagnostic saver returned an invalid result."),
+                    OperationStatusMessage = result.Status switch
+                    {
+                        DiagnosticArchiveSaveStatus.Canceled => "Diagnostic export canceled.",
+                        DiagnosticArchiveSaveStatus.Saved
+                            when !string.IsNullOrWhiteSpace(result.DestinationPath) =>
+                            $"Diagnostics exported to {result.DestinationPath}.",
+                        _ => throw new InvalidDataException(
+                            "The diagnostic saver returned an invalid result."),
+                    };
+                    TroubleshootingRecentErrorStatus = string.Empty;
                 },
                 token);
         }
@@ -2342,9 +2411,13 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         }
         catch (Exception exception)
         {
+            string message = $"Diagnostic export failed: {exception.Message}";
             await dispatcher.InvokeAsync(
-                () => OperationStatusMessage =
-                    $"Diagnostic export failed: {exception.Message}",
+                () =>
+                {
+                    OperationStatusMessage = message;
+                    TroubleshootingRecentErrorStatus = FormatTroubleshootingValue(message);
+                },
                 token);
         }
     }
@@ -2611,6 +2684,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
 
     private void NotifyPresentationState()
     {
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsServiceUnavailable)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ProfileStateLabel)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsReadinessReady)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsReadinessChecking)));
@@ -2625,6 +2699,9 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             new PropertyChangedEventArgs(nameof(TroubleshootingServiceStatus)));
         PropertyChanged?.Invoke(
             this,
+            new PropertyChangedEventArgs(nameof(TroubleshootingServiceVersionStatus)));
+        PropertyChanged?.Invoke(
+            this,
             new PropertyChangedEventArgs(nameof(TroubleshootingLaptopStatus)));
         PropertyChanged?.Invoke(
             this,
@@ -2635,9 +2712,6 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         PropertyChanged?.Invoke(
             this,
             new PropertyChangedEventArgs(nameof(TroubleshootingOtherRazerSoftwareStatus)));
-        PropertyChanged?.Invoke(
-            this,
-            new PropertyChangedEventArgs(nameof(TroubleshootingDetectionStatus)));
         PropertyChanged?.Invoke(
             this,
             new PropertyChangedEventArgs(nameof(TroubleshootingBiosFirmwareStatus)));

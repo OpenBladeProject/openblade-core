@@ -7,26 +7,34 @@ public sealed class WinFormsTrayIconHost : ITrayIconHost
     private readonly ContextMenuStrip menu;
     private readonly NotifyIcon trayIcon;
     private readonly MainViewModel viewModel;
+    private readonly ITrayIconThemeSource themeSource;
+    private Icon? currentIcon;
     private int disposed;
 
     public WinFormsTrayIconHost(
         TrayMenuController controller,
-        MainViewModel viewModel)
+        MainViewModel viewModel,
+        ITrayIconThemeSource themeSource)
     {
         ArgumentNullException.ThrowIfNull(controller);
         this.viewModel = viewModel ?? throw new ArgumentNullException(nameof(viewModel));
+        this.themeSource = themeSource ?? throw new ArgumentNullException(nameof(themeSource));
 
         menu = BuildTrayMenu(controller);
         TrayMenuItem open = controller.Find("Open");
+        currentIcon = OpenBladeIconAssets.LoadTrayIcon(
+            viewModel.TrayIconState,
+            themeSource.UseLightTrayIconGlyphs);
         trayIcon = new NotifyIcon
         {
             Text = viewModel.TrayHoverLabelText,
-            Icon = System.Drawing.SystemIcons.Application,
+            Icon = currentIcon,
             ContextMenuStrip = menu,
             Visible = true,
         };
         trayIcon.DoubleClick += (_, _) => open.Invoke();
         viewModel.PropertyChanged += OnViewModelPropertyChanged;
+        themeSource.TrayIconThemeChanged += OnTrayIconThemeChanged;
     }
 
     public void Dispose()
@@ -37,8 +45,11 @@ public sealed class WinFormsTrayIconHost : ITrayIconHost
         }
 
         viewModel.PropertyChanged -= OnViewModelPropertyChanged;
+        themeSource.TrayIconThemeChanged -= OnTrayIconThemeChanged;
         trayIcon.Visible = false;
         trayIcon.Dispose();
+        currentIcon?.Dispose();
+        currentIcon = null;
         menu.Dispose();
     }
 
@@ -46,11 +57,38 @@ public sealed class WinFormsTrayIconHost : ITrayIconHost
         object? sender,
         PropertyChangedEventArgs args)
     {
-        if (Volatile.Read(ref disposed) == 0
-            && args.PropertyName == nameof(MainViewModel.TrayHoverLabelText))
+        if (Volatile.Read(ref disposed) != 0)
+        {
+            return;
+        }
+
+        if (args.PropertyName == nameof(MainViewModel.TrayHoverLabelText))
         {
             trayIcon.Text = viewModel.TrayHoverLabelText;
         }
+        else if (args.PropertyName == nameof(MainViewModel.TrayIconState))
+        {
+            UpdateTrayIcon();
+        }
+    }
+
+    private void OnTrayIconThemeChanged(object? sender, EventArgs args)
+    {
+        if (Volatile.Read(ref disposed) == 0)
+        {
+            UpdateTrayIcon();
+        }
+    }
+
+    private void UpdateTrayIcon()
+    {
+        Icon replacement = OpenBladeIconAssets.LoadTrayIcon(
+            viewModel.TrayIconState,
+            themeSource.UseLightTrayIconGlyphs);
+        Icon? previous = currentIcon;
+        currentIcon = replacement;
+        trayIcon.Icon = replacement;
+        previous?.Dispose();
     }
 
     private static ContextMenuStrip BuildTrayMenu(TrayMenuController controller)

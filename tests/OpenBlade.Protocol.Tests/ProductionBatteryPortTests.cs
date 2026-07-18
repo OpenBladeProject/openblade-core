@@ -41,6 +41,34 @@ public sealed class ProductionBatteryPortTests
     }
 
     [Fact]
+    public async Task McuVersionQuery_WithoutCodeControlledEvidenceReturnsNullWithoutIo()
+    {
+        var session = new ScriptedSession(Success([0x01, 0x05, 0x00, 0x00]));
+        await using var port = CreatePort(session, DeviceCommandCatalog.Empty);
+
+        Assert.Null(await port.QueryMcuVersionAsync(default));
+        Assert.Empty(session.Commands);
+    }
+
+    [Fact]
+    public async Task McuVersionQuery_IsSerializedAndReadOnly()
+    {
+        var session = new ScriptedSession(Success([0x01, 0x05, 0x00, 0x00]));
+        await using var port = CreatePort(
+            session,
+            DeviceCommandCatalog.Empty,
+            AcceptedMcuVersionReadEvidence());
+
+        Assert.True(port.SupportsMcuVersionQuery);
+        Assert.Equal("1.5.0.0", await port.QueryMcuVersionAsync(default));
+
+        RazerCommandSpec command = Assert.Single(session.Commands);
+        Assert.Equal((0x00, 0x87), (command.ClassId, command.CommandId));
+        Assert.Equal([0x00, 0x00, 0x00, 0x00], command.Arguments.ToArray());
+        Assert.Equal(4, command.ExpectedPayloadLength);
+    }
+
+    [Fact]
     public async Task EmptyCatalog_RemainsProtectionReadableAndRejectsEverySetter()
     {
         var session = new ScriptedSession(
@@ -952,6 +980,12 @@ public sealed class ProductionBatteryPortTests
         new HashSet<ProductionBatteryQueryCapability>
         {
             ProductionBatteryQueryCapability.AdapterPower,
+        });
+
+    private static ProductionBatteryReadEvidence AcceptedMcuVersionReadEvidence() => new(
+        new HashSet<ProductionBatteryQueryCapability>
+        {
+            ProductionBatteryQueryCapability.McuVersion,
         });
 
     private static ProductionBatteryReadEvidence NoTemporaryReadEvidence() => new(

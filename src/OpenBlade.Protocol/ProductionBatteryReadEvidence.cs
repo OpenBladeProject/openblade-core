@@ -4,6 +4,7 @@ internal enum ProductionBatteryQueryCapability
 {
     TemporaryFullCharge,
     AdapterPower,
+    McuVersion,
 }
 
 internal sealed class ProductionBatteryReadEvidence
@@ -16,6 +17,8 @@ internal sealed class ProductionBatteryReadEvidence
             ProductionBatteryQueryCapability.TemporaryFullCharge);
         SupportsAdapterPowerQuery = capabilities.Contains(
             ProductionBatteryQueryCapability.AdapterPower);
+        SupportsMcuVersionQuery = capabilities.Contains(
+            ProductionBatteryQueryCapability.McuVersion);
     }
 
     public static ProductionBatteryReadEvidence Production { get; } = new(
@@ -23,9 +26,12 @@ internal sealed class ProductionBatteryReadEvidence
         {
             ProductionBatteryQueryCapability.TemporaryFullCharge,
             ProductionBatteryQueryCapability.AdapterPower,
+            ProductionBatteryQueryCapability.McuVersion,
         });
 
     public bool SupportsTemporaryFullChargeQuery { get; }
 
     public bool SupportsAdapterPowerQuery { get; }
+
+    public bool SupportsMcuVersionQuery { get; }
 }

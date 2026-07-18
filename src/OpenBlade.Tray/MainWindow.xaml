@@ -13,7 +13,6 @@
             <SolidColorBrush x:Key="NavigationViewContentBackground" Color="Transparent" />
             <Thickness x:Key="NavigationViewContentGridBorderThickness">0</Thickness>
             <local:Int32DoubleConverter x:Key="Int32Double" />
-            <local:BooleanNegationToVisibilityConverter x:Key="BooleanNegationToVisibility" />
 
             <Style x:Key="PageTitleStyle"
                    TargetType="TextBlock"
@@ -78,7 +77,26 @@
             <Style x:Key="TroubleshootingSectionStyle" TargetType="Border">
                 <Setter Property="BorderBrush" Value="{ThemeResource CardStrokeColorDefaultBrush}" />
                 <Setter Property="BorderThickness" Value="0,1,0,0" />
-                <Setter Property="Padding" Value="16,12,44,12" />
+                <Setter Property="Padding" Value="16,11" />
+            </Style>
+            <Style x:Key="TroubleshootingLabelStyle"
+                   TargetType="TextBlock"
+                   BasedOn="{StaticResource BodyStrongTextBlockStyle}">
+                <Setter Property="VerticalAlignment" Value="Center" />
+                <Setter Property="TextWrapping" Value="Wrap" />
+            </Style>
+            <Style x:Key="TroubleshootingValueStyle"
+                   TargetType="TextBlock"
+                   BasedOn="{StaticResource BodyTextBlockStyle}">
+                <Setter Property="Foreground" Value="{ThemeResource TextFillColorSecondaryBrush}" />
+                <Setter Property="IsTextSelectionEnabled" Value="True" />
+                <Setter Property="TextWrapping" Value="Wrap" />
+                <Setter Property="VerticalAlignment" Value="Center" />
+            </Style>
+            <Style x:Key="TroubleshootingStatusDotStyle" TargetType="Ellipse">
+                <Setter Property="Width" Value="8" />
+                <Setter Property="Height" Value="8" />
+                <Setter Property="VerticalAlignment" Value="Center" />
             </Style>
             <Style x:Key="CardTitleStyle"
                    TargetType="TextBlock"
@@ -286,7 +304,7 @@
                             </Grid>
                         </Border>
 
-                        <TextBlock Text="Performance and fans" Style="{StaticResource SectionHeaderStyle}" />
+                        <TextBlock Text="Active profile" Style="{StaticResource SectionHeaderStyle}" />
                         <Border Style="{StaticResource SettingsGroupStyle}">
                             <StackPanel>
                             <Border Style="{StaticResource SettingsRowStyle}"
@@ -681,129 +699,219 @@
                         </Border>
 
                         <TextBlock Text="Support" Style="{StaticResource SectionHeaderStyle}" />
-                        <Border Style="{StaticResource CardStyle}">
-                            <Grid ColumnSpacing="20">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="*" />
-                                    <ColumnDefinition Width="Auto" />
-                                </Grid.ColumnDefinitions>
-                                <StackPanel Spacing="3">
-                                    <TextBlock Text="Export diagnostics" Style="{StaticResource CardTitleStyle}" />
-                                    <TextBlock Text="Save logs and system details with sensitive information removed."
-                                               Style="{StaticResource SecondaryTextStyle}" />
-                                </StackPanel>
-                                <Button Grid.Column="1"
-                                        Width="40"
-                                        Height="32"
-                                        Padding="0"
-                                        HorizontalAlignment="Right"
-                                        VerticalAlignment="Center"
-                                        Command="{x:Bind ViewModel.ExportDiagnosticsCommand}"
-                                        AutomationProperties.Name="Export diagnostics"
-                                        ToolTipService.ToolTip="Export diagnostics">
-                                    <FontIcon Glyph="&#xE896;" FontSize="16" />
-                                </Button>
-                            </Grid>
-                        </Border>
-                        <Border Style="{StaticResource CardStyle}" Padding="0">
+                        <Border Style="{StaticResource SettingsGroupStyle}">
+                            <StackPanel>
+                            <Border Style="{StaticResource SettingsRowStyle}">
+                                <Grid ColumnSpacing="20">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel Spacing="3">
+                                        <TextBlock Text="Export diagnostics" Style="{StaticResource CardTitleStyle}" />
+                                        <TextBlock Text="Save logs and system details with sensitive information removed."
+                                                   Style="{StaticResource SecondaryTextStyle}" />
+                                    </StackPanel>
+                                    <Button Grid.Column="1"
+                                            Width="40"
+                                            Height="32"
+                                            Padding="0"
+                                            HorizontalAlignment="Right"
+                                            VerticalAlignment="Center"
+                                            Command="{x:Bind ViewModel.ExportDiagnosticsCommand}"
+                                            AutomationProperties.Name="Export diagnostics"
+                                            ToolTipService.ToolTip="Export diagnostics">
+                                        <FontIcon Glyph="&#xE896;" FontSize="16" />
+                                    </Button>
+                                </Grid>
+                            </Border>
+                            <Border Style="{StaticResource SettingsLastRowStyle}" Padding="0">
                             <Expander x:Name="TroubleshootingExpander"
                                       Style="{StaticResource CardContentExpanderStyle}"
-                                      CornerRadius="8"
                                       AutomationProperties.Name="Troubleshooting details">
                                 <Expander.Resources>
                                     <SolidColorBrush x:Key="ExpanderHeaderBackground" Color="Transparent" />
                                     <Thickness x:Key="ExpanderHeaderBorderThickness">0</Thickness>
                                 </Expander.Resources>
                                 <Expander.Header>
-                                    <StackPanel Spacing="3" Margin="2,18,0,18">
+                                    <StackPanel Spacing="3" Margin="2,14,0,14">
                                         <TextBlock Text="Troubleshooting" Style="{StaticResource CardTitleStyle}" />
-                                        <TextBlock Text="View service, device, and connection details."
+                                        <TextBlock Text="View service, laptop, firmware, and version details."
                                                    Style="{StaticResource SecondaryTextStyle}" />
                                     </StackPanel>
                                 </Expander.Header>
                                 <StackPanel>
                                     <Border Style="{StaticResource TroubleshootingSectionStyle}">
-                                        <StackPanel Spacing="3">
-                                            <TextBlock Text="Service" Style="{StaticResource CardTitleStyle}" />
-                                            <TextBlock Text="{x:Bind ViewModel.TroubleshootingServiceStatus, Mode=OneWay}"
-                                                       Style="{StaticResource SecondaryTextStyle}"
-                                                       TextWrapping="Wrap"
-                                                       IsTextSelectionEnabled="True" />
-                                        </StackPanel>
+                                        <Grid ColumnSpacing="24">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="2*" />
+                                                <ColumnDefinition Width="3*" />
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock Text="OpenBlade service"
+                                                       Style="{StaticResource TroubleshootingLabelStyle}" />
+                                            <Grid Grid.Column="1" ColumnSpacing="7">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="Auto" />
+                                                    <ColumnDefinition Width="*" />
+                                                </Grid.ColumnDefinitions>
+                                                <Grid Width="8" Height="8" VerticalAlignment="Center">
+                                                    <Ellipse Style="{StaticResource TroubleshootingStatusDotStyle}"
+                                                             Fill="{ThemeResource SystemFillColorSuccessBrush}"
+                                                             Visibility="{x:Bind ViewModel.IsConnected, Mode=OneWay}" />
+                                                    <Ellipse Style="{StaticResource TroubleshootingStatusDotStyle}"
+                                                             Fill="{ThemeResource SystemFillColorCriticalBrush}"
+                                                             Visibility="{x:Bind ViewModel.IsServiceUnavailable, Mode=OneWay}" />
+                                                </Grid>
+                                                <TextBlock Grid.Column="1"
+                                                           Text="{x:Bind ViewModel.TroubleshootingServiceStatus, Mode=OneWay}"
+                                                           Style="{StaticResource TroubleshootingValueStyle}" />
+                                            </Grid>
+                                        </Grid>
                                     </Border>
                                     <Border Style="{StaticResource TroubleshootingSectionStyle}">
-                                        <StackPanel Spacing="3">
-                                            <TextBlock Text="Laptop" Style="{StaticResource CardTitleStyle}" />
-                                            <TextBlock Text="{x:Bind ViewModel.TroubleshootingLaptopStatus, Mode=OneWay}"
-                                                       Style="{StaticResource SecondaryTextStyle}"
-                                                       TextWrapping="Wrap"
-                                                       IsTextSelectionEnabled="True" />
-                                        </StackPanel>
+                                        <Grid ColumnSpacing="24">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="2*" />
+                                                <ColumnDefinition Width="3*" />
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock Text="Versions"
+                                                       Style="{StaticResource TroubleshootingLabelStyle}" />
+                                            <Grid Grid.Column="1" ColumnSpacing="18">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="*" />
+                                                    <ColumnDefinition Width="*" />
+                                                </Grid.ColumnDefinitions>
+                                                <TextBlock Text="{x:Bind ViewModel.TroubleshootingUiVersionStatus, Mode=OneWay}"
+                                                           Style="{StaticResource TroubleshootingValueStyle}" />
+                                                <TextBlock Grid.Column="1"
+                                                           Text="{x:Bind ViewModel.TroubleshootingServiceVersionStatus, Mode=OneWay}"
+                                                           Style="{StaticResource TroubleshootingValueStyle}" />
+                                            </Grid>
+                                        </Grid>
                                     </Border>
                                     <Border Style="{StaticResource TroubleshootingSectionStyle}">
-                                        <StackPanel Spacing="3">
-                                            <TextBlock Text="Power source" Style="{StaticResource CardTitleStyle}" />
-                                            <TextBlock Text="{x:Bind ViewModel.TroubleshootingPowerSourceStatus, Mode=OneWay}"
-                                                       Style="{StaticResource SecondaryTextStyle}"
-                                                       TextWrapping="Wrap"
-                                                       IsTextSelectionEnabled="True" />
-                                        </StackPanel>
+                                        <Grid ColumnSpacing="24">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="2*" />
+                                                <ColumnDefinition Width="3*" />
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock Text="Laptop"
+                                                       Style="{StaticResource TroubleshootingLabelStyle}" />
+                                            <TextBlock Grid.Column="1"
+                                                       Text="{x:Bind ViewModel.TroubleshootingLaptopStatus, Mode=OneWay}"
+                                                       Style="{StaticResource TroubleshootingValueStyle}" />
+                                        </Grid>
                                     </Border>
                                     <Border Style="{StaticResource TroubleshootingSectionStyle}">
-                                        <StackPanel Spacing="3">
-                                            <TextBlock Text="Controls" Style="{StaticResource CardTitleStyle}" />
-                                            <TextBlock Text="{x:Bind ViewModel.TroubleshootingControlsStatus, Mode=OneWay}"
-                                                       Style="{StaticResource SecondaryTextStyle}"
-                                                       TextWrapping="Wrap"
-                                                       IsTextSelectionEnabled="True" />
-                                        </StackPanel>
+                                        <Grid ColumnSpacing="24">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="2*" />
+                                                <ColumnDefinition Width="3*" />
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock Text="Laptop controls"
+                                                       Style="{StaticResource TroubleshootingLabelStyle}" />
+                                            <Grid Grid.Column="1" ColumnSpacing="7">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="Auto" />
+                                                    <ColumnDefinition Width="*" />
+                                                </Grid.ColumnDefinitions>
+                                                <Grid Width="8" Height="8" VerticalAlignment="Center">
+                                                    <Ellipse Style="{StaticResource TroubleshootingStatusDotStyle}"
+                                                             Fill="{ThemeResource SystemFillColorSuccessBrush}"
+                                                             Visibility="{x:Bind ViewModel.IsReadinessReady, Mode=OneWay}" />
+                                                    <Ellipse Style="{StaticResource TroubleshootingStatusDotStyle}"
+                                                             Fill="{ThemeResource AccentFillColorDefaultBrush}"
+                                                             Visibility="{x:Bind ViewModel.IsReadinessChecking, Mode=OneWay}" />
+                                                    <Ellipse Style="{StaticResource TroubleshootingStatusDotStyle}"
+                                                             Fill="{ThemeResource SystemFillColorCautionBrush}"
+                                                             Visibility="{x:Bind ViewModel.IsReadinessWarning, Mode=OneWay}" />
+                                                    <Ellipse Style="{StaticResource TroubleshootingStatusDotStyle}"
+                                                             Fill="{ThemeResource SystemFillColorCriticalBrush}"
+                                                             Visibility="{x:Bind ViewModel.IsReadinessError, Mode=OneWay}" />
+                                                </Grid>
+                                                <TextBlock Grid.Column="1"
+                                                           Text="{x:Bind ViewModel.TroubleshootingControlsStatus, Mode=OneWay}"
+                                                           Style="{StaticResource TroubleshootingValueStyle}" />
+                                            </Grid>
+                                        </Grid>
                                     </Border>
                                     <Border Style="{StaticResource TroubleshootingSectionStyle}">
-                                        <StackPanel Spacing="3">
-                                            <TextBlock Text="Other Razer software running" Style="{StaticResource CardTitleStyle}" />
-                                            <TextBlock Text="{x:Bind ViewModel.TroubleshootingOtherRazerSoftwareStatus, Mode=OneWay}"
-                                                       Style="{StaticResource SecondaryTextStyle}"
-                                                       TextWrapping="Wrap"
-                                                       IsTextSelectionEnabled="True" />
-                                        </StackPanel>
+                                        <Grid ColumnSpacing="24">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="2*" />
+                                                <ColumnDefinition Width="3*" />
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock Text="Power source"
+                                                       Style="{StaticResource TroubleshootingLabelStyle}" />
+                                            <TextBlock Grid.Column="1"
+                                                       Text="{x:Bind ViewModel.TroubleshootingPowerSourceStatus, Mode=OneWay}"
+                                                       Style="{StaticResource TroubleshootingValueStyle}" />
+                                        </Grid>
                                     </Border>
                                     <Border Style="{StaticResource TroubleshootingSectionStyle}">
-                                        <StackPanel Spacing="3">
-                                            <TextBlock Text="Controller detection" Style="{StaticResource CardTitleStyle}" />
-                                            <TextBlock Text="{x:Bind ViewModel.TroubleshootingDetectionStatus, Mode=OneWay}"
-                                                       Style="{StaticResource SecondaryTextStyle}"
-                                                       TextWrapping="Wrap"
-                                                       IsTextSelectionEnabled="True" />
-                                        </StackPanel>
+                                        <Grid ColumnSpacing="24">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="2*" />
+                                                <ColumnDefinition Width="3*" />
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock Text="Other Razer software running"
+                                                       Style="{StaticResource TroubleshootingLabelStyle}" />
+                                            <TextBlock Grid.Column="1"
+                                                       Text="{x:Bind ViewModel.TroubleshootingOtherRazerSoftwareStatus, Mode=OneWay}"
+                                                       Style="{StaticResource TroubleshootingValueStyle}" />
+                                        </Grid>
                                     </Border>
                                     <Border Style="{StaticResource TroubleshootingSectionStyle}">
-                                        <StackPanel Spacing="3">
-                                            <TextBlock Text="Firmware" Style="{StaticResource CardTitleStyle}" />
-                                            <TextBlock Text="{x:Bind ViewModel.TroubleshootingBiosFirmwareStatus, Mode=OneWay}"
-                                                       Style="{StaticResource SecondaryTextStyle}"
-                                                       IsTextSelectionEnabled="True" />
-                                            <TextBlock Text="{x:Bind ViewModel.TroubleshootingEcFirmwareStatus, Mode=OneWay}"
-                                                       Style="{StaticResource SecondaryTextStyle}"
-                                                       IsTextSelectionEnabled="True" />
-                                            <TextBlock Text="{x:Bind ViewModel.TroubleshootingMcuFirmwareStatus, Mode=OneWay}"
-                                                       Style="{StaticResource SecondaryTextStyle}"
-                                                       IsTextSelectionEnabled="True" />
-                                            <TextBlock Text="{x:Bind ViewModel.TroubleshootingVbiosFirmwareStatus, Mode=OneWay}"
-                                                       Style="{StaticResource SecondaryTextStyle}"
-                                                       IsTextSelectionEnabled="True" />
-                                        </StackPanel>
+                                        <Grid ColumnSpacing="24">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="2*" />
+                                                <ColumnDefinition Width="3*" />
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock Text="Firmware"
+                                                       Style="{StaticResource TroubleshootingLabelStyle}" />
+                                            <Grid Grid.Column="1" ColumnSpacing="18" RowSpacing="3">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="*" />
+                                                    <ColumnDefinition Width="*" />
+                                                </Grid.ColumnDefinitions>
+                                                <Grid.RowDefinitions>
+                                                    <RowDefinition Height="Auto" />
+                                                    <RowDefinition Height="Auto" />
+                                                </Grid.RowDefinitions>
+                                                <TextBlock Text="{x:Bind ViewModel.TroubleshootingBiosFirmwareStatus, Mode=OneWay}"
+                                                           Style="{StaticResource TroubleshootingValueStyle}" />
+                                                <TextBlock Grid.Column="1"
+                                                           Text="{x:Bind ViewModel.TroubleshootingEcFirmwareStatus, Mode=OneWay}"
+                                                           Style="{StaticResource TroubleshootingValueStyle}" />
+                                                <TextBlock Grid.Row="1"
+                                                           Text="{x:Bind ViewModel.TroubleshootingMcuFirmwareStatus, Mode=OneWay}"
+                                                           Style="{StaticResource TroubleshootingValueStyle}" />
+                                                <TextBlock Grid.Row="1"
+                                                           Grid.Column="1"
+                                                           Text="{x:Bind ViewModel.TroubleshootingVbiosFirmwareStatus, Mode=OneWay}"
+                                                           Style="{StaticResource TroubleshootingValueStyle}" />
+                                            </Grid>
+                                        </Grid>
                                     </Border>
-                                    <Border Style="{StaticResource TroubleshootingSectionStyle}">
-                                        <StackPanel Spacing="3">
-                                            <TextBlock Text="Last operation" Style="{StaticResource CardTitleStyle}" />
-                                            <TextBlock Text="{x:Bind ViewModel.TroubleshootingLastOperationStatus, Mode=OneWay}"
-                                                       Style="{StaticResource SecondaryTextStyle}"
-                                                       TextWrapping="Wrap"
-                                                       IsTextSelectionEnabled="True" />
-                                        </StackPanel>
+                                    <Border Style="{StaticResource TroubleshootingSectionStyle}"
+                                            Visibility="{x:Bind ViewModel.HasTroubleshootingRecentError, Mode=OneWay}">
+                                        <Grid ColumnSpacing="24">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="2*" />
+                                                <ColumnDefinition Width="3*" />
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock Text="Recent error"
+                                                       Style="{StaticResource TroubleshootingLabelStyle}" />
+                                            <TextBlock Grid.Column="1"
+                                                       Text="{x:Bind ViewModel.TroubleshootingRecentErrorStatus, Mode=OneWay}"
+                                                       Style="{StaticResource TroubleshootingValueStyle}"
+                                                       Foreground="{ThemeResource SystemFillColorCriticalBrush}" />
+                                        </Grid>
                                     </Border>
                                 </StackPanel>
                             </Expander>
+                            </Border>
+                            </StackPanel>
                         </Border>
                     </StackPanel>
                 </ScrollViewer>

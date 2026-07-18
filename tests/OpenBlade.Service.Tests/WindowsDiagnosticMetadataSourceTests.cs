@@ -60,7 +60,9 @@ public sealed class WindowsDiagnosticMetadataSourceTests
         DiagnosticHostMetadata metadata = source.Capture();
 
         Assert.Contains("installer-private-token", metadata.SensitiveTokens);
-        Assert.False(string.IsNullOrWhiteSpace(metadata.Versions.OpenBladeVersion));
+        Assert.Matches(
+            "^0\\.1\\.0\\+[0-9a-f]{8}$",
+            metadata.Versions.OpenBladeVersion);
         Assert.False(string.IsNullOrWhiteSpace(metadata.Versions.WindowsVersion));
         Assert.False(string.IsNullOrWhiteSpace(metadata.Versions.BiosVersion));
     }

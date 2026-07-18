@@ -13,6 +13,9 @@ public interface IBladeDevice
     Task<AdapterPowerState> ReadAdapterPowerStateAsync(
         CancellationToken cancellationToken);
 
+    Task<string?> ReadMcuVersionAsync(CancellationToken cancellationToken) =>
+        Task.FromResult<string?>(null);
+
     Task SetPerformanceAsync(PerformancePreset value, CancellationToken cancellationToken);
 
     Task SetFanModeAsync(FanMode value, CancellationToken cancellationToken);

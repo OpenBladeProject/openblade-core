@@ -35,6 +35,10 @@ public sealed class WinUiShellContractTests
         Assert.Contains("<Platforms>x64</Platforms>", project, StringComparison.Ordinal);
         Assert.Contains("<PublishTrimmed>false</PublishTrimmed>", project, StringComparison.Ordinal);
         Assert.Contains("<ApplicationManifest>app.manifest</ApplicationManifest>", project, StringComparison.Ordinal);
+        Assert.Contains("<ApplicationIcon Condition=\"Exists('Assets\\Brand\\OpenBlade.ico')\">", project, StringComparison.Ordinal);
+        Assert.Contains("Assets\\Brand\\**\\*.ico\" Condition=\"Exists('Assets\\Brand')", project, StringComparison.Ordinal);
+        Assert.Contains("<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>", project, StringComparison.Ordinal);
+        Assert.Contains("<CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>", project, StringComparison.Ordinal);
         Assert.Contains("Include=\"Microsoft.WindowsAppSDK\" Version=\"2.2.0\"", project, StringComparison.Ordinal);
         Assert.Contains("<ImportFrameworkWinFXTargets>true</ImportFrameworkWinFXTargets>", project, StringComparison.Ordinal);
         Assert.Contains("prevents the Windows Desktop SDK from sending WinUI XAML through the WPF compiler", project, StringComparison.Ordinal);
@@ -79,11 +83,19 @@ public sealed class WinUiShellContractTests
         Assert.Contains("viewModel.TrayHoverLabelText", trayHost, StringComparison.Ordinal);
         Assert.Contains("viewModel.PropertyChanged +=", trayHost, StringComparison.Ordinal);
         Assert.Contains("viewModel.PropertyChanged -=", trayHost, StringComparison.Ordinal);
+        Assert.Contains("nameof(MainViewModel.TrayIconState)", trayHost, StringComparison.Ordinal);
+        Assert.Contains("OpenBladeIconAssets.LoadTrayIcon", trayHost, StringComparison.Ordinal);
         Assert.Contains("open.Invoke()", trayHost, StringComparison.Ordinal);
         Assert.Contains("Interlocked.Exchange(ref disposed, 1)", trayHost, StringComparison.Ordinal);
         Assert.Contains("trayIcon.Visible = false", trayHost, StringComparison.Ordinal);
         Assert.Contains("trayIcon.Dispose()", trayHost, StringComparison.Ordinal);
         Assert.Contains("menu.Dispose()", trayHost, StringComparison.Ordinal);
+
+        string window = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml.cs");
+        Assert.Contains("OpenBladeIconAssets.ApplicationIconPath is { } applicationIconPath", window, StringComparison.Ordinal);
+        Assert.Contains("AppWindow.SetIcon(applicationIconPath)", window, StringComparison.Ordinal);
+        Assert.Contains("Root.ActualThemeChanged +=", window, StringComparison.Ordinal);
+        Assert.Contains("Root.ActualThemeChanged -=", window, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -371,6 +383,10 @@ public sealed class WinUiShellContractTests
         Assert.Contains(
             "new MainViewModel(\n            new ServiceClient(),\n            new WinUiDispatcher(dispatcherQueue),",
             window.Replace("\r\n", "\n", StringComparison.Ordinal),
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "uiVersion: OpenBladeProductVersion.Read(typeof(MainWindow).Assembly)",
+            window,
             StringComparison.Ordinal);
     }
 

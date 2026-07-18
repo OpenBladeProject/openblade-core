@@ -79,7 +79,9 @@ public sealed class SetupServiceHealthProbeTests
             null,
             null,
             null,
-            false);
+            false,
+            Firmware: null,
+            ServiceVersion: "0.1.0-test");
     }
 
     private sealed class TestDuplexStream(Stream response) : Stream

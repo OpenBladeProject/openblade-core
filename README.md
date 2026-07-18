@@ -16,16 +16,14 @@ advisory warning. OpenBlade observes confirmed device state and does not
 automatically overwrite a control that another controller changed. An explicit
 manual OpenBlade action may reclaim that control after a fresh readback.
 
-## Telemetry
+## Live readings
 
-OpenBlade reads AC and battery state from Windows. On this target machine it
-also reads GPU temperature through NVIDIA NVML loaded only from the absolute
-`%SystemRoot%\System32\nvml.dll` path. Missing or unavailable NVML support
-degrades to `GPU unavailable`; OpenBlade does not launch `nvidia-smi` or install
-a sensor kernel driver. Fan RPM comes from a validated, read-only HID query on
-this exact device and degrades to unavailable if either selector cannot be
-read. CPU temperature remains unavailable unless Windows or firmware exposes a
-safe source.
+OpenBlade can show net battery power from Windows and independent Fan 1 and
+Fan 2 RPM values from a validated, read-only HID query on this exact device.
+Each reading degrades to unavailable when its source cannot be read. The user
+can choose an Off, 1-, 2-, 5-, or 10-second refresh interval; collection stops
+while the window is closed to the tray. OpenBlade does not collect CPU or GPU
+temperature and does not install a sensor kernel driver.
 
 ## Diagnostics
 
@@ -74,6 +72,13 @@ The Capture CLI is published separately to
 `artifacts\win-x64\OpenBlade.DeveloperTools`. It is a developer-only protocol
 tool and is not copied into the production installer or installed under
 Program Files.
+
+## Brand assets
+
+This repository contains only the application and tray `.ico` files required
+to build and run OpenBlade. Brand source files, alternate exports, and unused
+variants are maintained in
+[`boyuanx/openblade-branding`](https://github.com/boyuanx/openblade-branding).
 
 ## Capture workflow
 

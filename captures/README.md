@@ -88,6 +88,21 @@ Correlate the request and completion using `usb.irp_id` (`usb.urb_id` on capture
 
 USB device addresses are session-local and can change after reconnect or reboot. Re-enumerate the root topology and verify the target VID/PID before replacing `<verified-session-address>` for every capture.
 
+## MCU version readback
+
+The read-only MCU version query is class `00`, command `87`, with a four-byte
+zero request payload and a four-byte response. In
+`openblade-performance-fan-refresh-20260714.pcap`, frames 73/75/76 contain a
+matching transaction whose response payload is `01 05 00 00`, decoded as
+`1.5.0.0`. The sanitized envelope and source hash are recorded in
+`captures/decoded/rz09-0581-pid-02e0-bios-3.01-mcu-version-fixture.json`.
+
+Razer's published Synapse bundles independently identify `00/87` as "Get
+Extended Firmware Version", decode the response as
+`major.minor.internal.reserved`, store it as `firmwareInfo.currentFWVersion`,
+and present that value as MCU. This is distinct from the shorter standard
+firmware query `00/81`.
+
 ## Performance and fan readback discriminator
 
 The existing no-mutation Performance-page capture exposed query-shaped

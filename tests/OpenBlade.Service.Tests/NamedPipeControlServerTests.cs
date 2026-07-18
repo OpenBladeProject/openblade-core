@@ -266,7 +266,9 @@ public sealed class NamedPipeControlServerTests
                 new DesiredBatteryState(profiles.BatteryPolicy, true, false)),
             PowerSource.PluggedIn,
             null,
-            null, null, null, false);
+            null, null, null, false,
+            Firmware: null,
+            ServiceVersion: "0.1.0-test");
     }
 
     private sealed record TestServer(

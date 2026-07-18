@@ -5,14 +5,13 @@ using Microsoft.UI.Dispatching;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
-using Microsoft.UI.Xaml.Data;
 using OpenBlade.Contracts;
 using Windows.Graphics;
 using WinRT.Interop;
 
 namespace OpenBlade.Tray;
 
-public sealed partial class MainWindow : Window, IAsyncDisposable
+public sealed partial class MainWindow : Window, IAsyncDisposable, ITrayIconThemeSource
 {
     private const double InitialWidthDip = 840;
     private const double InitialHeightDip = 720;
@@ -48,7 +47,8 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
             new ServiceClient(),
             new WinUiDispatcher(dispatcherQueue),
             new DiagnosticArchiveSaver(new WinUiDiagnosticArchiveDestination(AppWindow.Id)),
-            new WindowsStartupRegistration());
+            new WindowsStartupRegistration(),
+            uiVersion: OpenBladeProductVersion.Read(typeof(MainWindow).Assembly));
         visibleObservationLoop = new VisibleObservationLoop(ViewModel.ObserveStateAsync,
             errorHandler: exception => Trace.TraceError(
                 "OpenBlade visible observation failed: {0}",
@@ -56,6 +56,10 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
             observationIntervalProvider: () =>
                 ViewModel.LiveReadingsObservationInterval);
         InitializeComponent();
+        if (OpenBladeIconAssets.ApplicationIconPath is { } applicationIconPath)
+        {
+            AppWindow.SetIcon(applicationIconPath);
+        }
         ExtendsContentIntoTitleBar = true;
         SetTitleBar(AppTitleBar);
         chargeLimitCommitTimer = dispatcherQueue.CreateTimer();
@@ -65,6 +69,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
         micaBackdropHost = new MicaBackdropHost(this, Root);
         Root.DataContext = ViewModel;
         Root.SizeChanged += OnRootSizeChanged;
+        Root.ActualThemeChanged += OnRootActualThemeChanged;
 
         string localApplicationData = Environment.GetFolderPath(
             Environment.SpecialFolder.LocalApplicationData);
@@ -81,6 +86,10 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
     }
 
     public MainViewModel ViewModel { get; }
+
+    public event EventHandler? TrayIconThemeChanged;
+
+    public bool UseLightTrayIconGlyphs => Root.ActualTheme == ElementTheme.Dark;
 
     public PerformancePreset SilentPreset { get; } = PerformancePreset.Silent;
 
@@ -125,6 +134,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
         ViewModel.PropertyChanged -= OnViewModelPropertyChanged;
         AppWindow.Closing -= OnClosing;
         Root.SizeChanged -= OnRootSizeChanged;
+        Root.ActualThemeChanged -= OnRootActualThemeChanged;
         chargeLimitCommitTimer.Stop();
         chargeLimitCommitTimer.Tick -= OnChargeLimitCommitTimerTick;
         micaBackdropHost.Dispose();
@@ -132,6 +142,9 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
         await preferenceSaveQueue.DisposeAsync();
         await ViewModel.DisposeAsync();
     }
+
+    private void OnRootActualThemeChanged(FrameworkElement sender, object args) =>
+        TrayIconThemeChanged?.Invoke(this, EventArgs.Empty);
 
     private async Task InitializeCoreAsync()
     {
@@ -736,13 +749,4 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
 
     [DllImport("user32.dll")]
     private static extern uint GetDpiForWindow(nint hwnd);
-}
-
-public sealed class BooleanNegationToVisibilityConverter : IValueConverter
-{
-    public object Convert(object value, Type targetType, object parameter, string language) =>
-        value is true ? Visibility.Collapsed : Visibility.Visible;
-
-    public object ConvertBack(object value, Type targetType, object parameter, string language) =>
-        throw new NotSupportedException();
 }

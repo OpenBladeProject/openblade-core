@@ -220,8 +220,29 @@ public sealed class MainViewModelTests
         Assert.Equal("Controller detection needs attention", viewModel.AttentionSummary);
         Assert.Equal("Check status", viewModel.AttentionBadgeLabel);
         Assert.Equal(
-            "Controller detection was incomplete",
-            viewModel.TroubleshootingDetectionStatus);
+            "RazerAppEngine, Razer Synapse Service; check incomplete: Controller detection was incomplete",
+            viewModel.TroubleshootingOtherRazerSoftwareStatus);
+    }
+
+    [Fact]
+    public async Task TroubleshootingOtherRazerSoftware_IncludesDetectionFailureAndRecovers()
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+
+        client.Publish(CreateStatus(verified: true, blocked: false) with
+        {
+            ControllerDetectionWarning = "Controller detection was incomplete.",
+        });
+        await WaitUntilAsync(() => viewModel.IsConnected);
+        Assert.Equal(
+            "Could not check: Controller detection was incomplete",
+            viewModel.TroubleshootingOtherRazerSoftwareStatus);
+
+        client.Publish(CreateStatus(verified: true, blocked: false) with { Revision = 2 });
+        await WaitUntilAsync(() => !viewModel.HasControllerDetectionWarning);
+        Assert.Equal("None running", viewModel.TroubleshootingOtherRazerSoftwareStatus);
     }
 
     [Fact]
@@ -1284,10 +1305,15 @@ public sealed class MainViewModelTests
         Assert.Equal("OpenBlade service isn’t running", viewModel.ControlAccessStatus);
         Assert.True(viewModel.IsReadinessError);
         Assert.Equal("Unavailable", viewModel.TroubleshootingServiceStatus);
+        Assert.Matches(
+            "^UI: 0\\.1\\.0\\+[0-9a-f]{8}$",
+            viewModel.TroubleshootingUiVersionStatus);
+        Assert.Equal("Service: Unavailable", viewModel.TroubleshootingServiceVersionStatus);
         Assert.Equal(
             "Razer Blade 16 (2026), RZ09-0581; status unavailable",
             viewModel.TroubleshootingLaptopStatus);
-        Assert.Equal("No recent actions", viewModel.TroubleshootingLastOperationStatus);
+        Assert.False(viewModel.HasTroubleshootingRecentError);
+        Assert.Empty(viewModel.TroubleshootingRecentErrorStatus);
 
         client.Publish(CreateStatus(verified: false, blocked: true));
         await WaitUntilAsync(() =>
@@ -1296,10 +1322,11 @@ public sealed class MainViewModelTests
         Assert.True(viewModel.IsReadinessError);
         Assert.False(viewModel.IsReadinessWarning);
         Assert.Equal("Running", viewModel.TroubleshootingServiceStatus);
+        Assert.Equal("Service: 0.1.0-test", viewModel.TroubleshootingServiceVersionStatus);
         Assert.Equal(
             "Razer Blade 16 (2026), RZ09-0581; not detected",
             viewModel.TroubleshootingLaptopStatus);
-        Assert.Equal("Unavailable", viewModel.TroubleshootingControlsStatus);
+        Assert.Equal("Laptop not found", viewModel.TroubleshootingControlsStatus);
         Assert.False(viewModel.HasAttention);
         Assert.Equal("Laptop not found", viewModel.PerformanceSourceLabel);
 
@@ -1337,7 +1364,7 @@ public sealed class MainViewModelTests
             "Razer Blade 16 (2026), RZ09-0581",
             viewModel.TroubleshootingLaptopStatus);
         Assert.Equal("Full-power adapter", viewModel.TroubleshootingPowerSourceStatus);
-        Assert.Equal("None detected", viewModel.TroubleshootingOtherRazerSoftwareStatus);
+        Assert.Equal("None running", viewModel.TroubleshootingOtherRazerSoftwareStatus);
         Assert.Equal("BIOS: 3.01", viewModel.TroubleshootingBiosFirmwareStatus);
         Assert.Equal("EC: 1.04", viewModel.TroubleshootingEcFirmwareStatus);
         Assert.Equal("MCU: Unavailable", viewModel.TroubleshootingMcuFirmwareStatus);
@@ -1366,6 +1393,35 @@ public sealed class MainViewModelTests
     }
 
     [Fact]
+    public async Task TroubleshootingVersions_KeepUiVersionAndTrackConnectedServiceVersion()
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(
+            client,
+            new RecordingDispatcher(),
+            new FakeDiagnosticArchiveSaver(),
+            new FakeStartupRegistration(false),
+            uiVersion: "2.0.0");
+        await viewModel.StartAsync();
+
+        Assert.Equal("UI: 2.0.0", viewModel.TroubleshootingUiVersionStatus);
+        Assert.Equal("Service: Unavailable", viewModel.TroubleshootingServiceVersionStatus);
+
+        client.Publish(CreateStatus(verified: true, blocked: false) with
+        {
+            ServiceVersion = "1.9.0",
+        });
+        await WaitUntilAsync(() => viewModel.IsConnected);
+        Assert.Equal("UI: 2.0.0", viewModel.TroubleshootingUiVersionStatus);
+        Assert.Equal("Service: 1.9.0", viewModel.TroubleshootingServiceVersionStatus);
+
+        client.PublishReconnecting();
+        await WaitUntilAsync(() => !viewModel.IsConnected);
+        Assert.Equal("UI: 2.0.0", viewModel.TroubleshootingUiVersionStatus);
+        Assert.Equal("Service: Unavailable", viewModel.TroubleshootingServiceVersionStatus);
+    }
+
+    [Fact]
     public async Task Command_SendsTypedTemporaryOverrideAndDisplaysOperationResult()
     {
         var client = new FakeServiceClient
@@ -1391,6 +1447,40 @@ public sealed class MainViewModelTests
             "OpenBlade saved the change, but the laptop has not applied it.",
             viewModel.OperationFeedbackMessage);
         Assert.True(viewModel.HasOperationFeedback);
+        Assert.False(viewModel.HasTroubleshootingRecentError);
+        Assert.Empty(viewModel.TroubleshootingRecentErrorStatus);
+    }
+
+    [Fact]
+    public async Task TroubleshootingRecentError_TracksFailuresAndClearsAfterSuccess()
+    {
+        var client = new FakeServiceClient
+        {
+            NextResult = new ControlOperationResult(
+                ControlOperationStatus.Failed,
+                "Firmware rejected the request."),
+        };
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        var changed = new List<string?>();
+        viewModel.PropertyChanged += (_, args) => changed.Add(args.PropertyName);
+        await viewModel.StartAsync();
+        client.Publish(CreateStatus(verified: true, blocked: false));
+        await WaitUntilAsync(() => viewModel.CanControlHardware);
+
+        await Assert.IsType<AsyncRelayCommand>(viewModel.SetPerformanceCommand)
+            .ExecuteAsync(PerformancePreset.Performance);
+
+        Assert.True(viewModel.HasTroubleshootingRecentError);
+        Assert.Equal("Firmware rejected the request", viewModel.TroubleshootingRecentErrorStatus);
+        Assert.Contains(nameof(MainViewModel.TroubleshootingRecentErrorStatus), changed);
+        Assert.Contains(nameof(MainViewModel.HasTroubleshootingRecentError), changed);
+
+        client.NextResult = new ControlOperationResult(ControlOperationStatus.Applied, "Applied");
+        await Assert.IsType<AsyncRelayCommand>(viewModel.SetPerformanceCommand)
+            .ExecuteAsync(PerformancePreset.Silent);
+
+        Assert.False(viewModel.HasTroubleshootingRecentError);
+        Assert.Empty(viewModel.TroubleshootingRecentErrorStatus);
     }
 
     [Fact]
@@ -1916,6 +2006,10 @@ public sealed class MainViewModelTests
         Assert.Equal(
             "Diagnostic export failed: disk full",
             viewModel.OperationStatusMessage);
+        Assert.True(viewModel.HasTroubleshootingRecentError);
+        Assert.Equal(
+            "Diagnostic export failed: disk full",
+            viewModel.TroubleshootingRecentErrorStatus);
     }
 
     [Fact]
@@ -1994,7 +2088,9 @@ public sealed class MainViewModelTests
             null,
             null,
             null,
-            false);
+            false,
+            Firmware: null,
+            ServiceVersion: "0.1.0-test");
     }
 
     private static async Task WaitUntilAsync(Func<bool> predicate)
@@ -2053,7 +2149,7 @@ public sealed class MainViewModelTests
         public ProfileSet? LastProfiles { get; private set; }
         public TaskCompletionSource MutationStarted { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public TaskCompletionSource ExportStarted { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
-        public ControlOperationResult NextResult { get; init; } = new(ControlOperationStatus.Applied, "Applied");
+        public ControlOperationResult NextResult { get; set; } = new(ControlOperationStatus.Applied, "Applied");
         public ServiceStatusSnapshot? CurrentStatus { get; private set; }
         public DiagnosticArchive NextArchive { get; init; } = new(
             "OpenBlade-diagnostics.zip",

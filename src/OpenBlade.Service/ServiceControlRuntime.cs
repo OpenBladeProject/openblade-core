@@ -56,6 +56,8 @@ public interface IServiceControlRuntime
 
 public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
 {
+    private static readonly string ServiceVersion = OpenBladeProductVersion.Read(
+        typeof(ServiceControlRuntime).Assembly);
     private static readonly TimeSpan PowerTransitionAccessRetryDelay =
         TimeSpan.FromMilliseconds(750);
     private static readonly ConfirmedDeviceState UnknownConfirmedState =
@@ -81,6 +83,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
     private readonly ConfirmedStateDriftTracker driftTracker = new();
     private readonly HashSet<DeviceSubsystem> initialAutomaticComparisons = [];
     private ServiceStatusSnapshot? status;
+    private bool mcuVersionReadAttempted;
 
     public ServiceControlRuntime(
         BatteryConfigurationStore store,
@@ -1100,6 +1103,9 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             ConfirmedDeviceState confirmed = await ReadObservedStateAsync(
                 device,
                 cancellationToken);
+            FirmwareVersions? firmware = await ReadFirmwareVersionsAsync(
+                device,
+                cancellationToken);
             FanRpmReadings? fans = null;
             if (includeLiveReadings)
             {
@@ -1141,6 +1147,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 FanOverride = Automation.FanOverride,
                 LightingOverride = Automation.LightingOverride,
                 FullChargeOverride = ResolveFullChargeOverride(confirmed),
+                Firmware = firmware,
             });
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -1176,6 +1183,40 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         {
             cancellationToken.ThrowIfCancellationRequested();
             return await device.ReadStateAsync(cancellationToken).ConfigureAwait(false);
+        }
+    }
+
+    private async Task<FirmwareVersions?> ReadFirmwareVersionsAsync(
+        IBladeDevice device,
+        CancellationToken cancellationToken)
+    {
+        FirmwareVersions? current = GetStatus().Firmware;
+        if (mcuVersionReadAttempted
+            || current is null
+            || !string.Equals(
+                current.McuVersion,
+                "Unavailable",
+                StringComparison.OrdinalIgnoreCase))
+        {
+            return current;
+        }
+
+        mcuVersionReadAttempted = true;
+        try
+        {
+            string? mcuVersion = await device.ReadMcuVersionAsync(cancellationToken)
+                .ConfigureAwait(false);
+            return string.IsNullOrWhiteSpace(mcuVersion)
+                ? current
+                : current with { McuVersion = mcuVersion.Trim() };
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch
+        {
+            return current;
         }
     }
 
@@ -1392,7 +1433,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             FanOverride: Automation.FanOverride,
             LightingOverride: Automation.LightingOverride,
             FullChargeOverride: Automation.DesiredBattery.TemporaryFullCharge,
-            Firmware: firmwareVersionSource.Capture());
+            Firmware: firmwareVersionSource.Capture(),
+            ServiceVersion: ServiceVersion);
 
     private ControlOperationResult PublishScopedUnavailable(
         DeviceSubsystem subsystem,
@@ -1532,7 +1574,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         && left.FanOverride == right.FanOverride
         && left.LightingOverride == right.LightingOverride
         && left.FullChargeOverride == right.FullChargeOverride
-        && left.Firmware == right.Firmware;
+        && left.Firmware == right.Firmware
+        && string.Equals(left.ServiceVersion, right.ServiceVersion, StringComparison.Ordinal);
 
     private sealed class UnavailableFirmwareVersionSource : IFirmwareVersionSource
     {

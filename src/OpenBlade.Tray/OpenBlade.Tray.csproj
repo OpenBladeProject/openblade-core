@@ -15,6 +15,7 @@
     <Platforms>x64</Platforms>
     <PublishTrimmed>false</PublishTrimmed>
     <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon Condition="Exists('Assets\Brand\OpenBlade.ico')">Assets\Brand\OpenBlade.ico</ApplicationIcon>
     <!-- On .NET 10, this prevents the Windows Desktop SDK from sending WinUI XAML through the WPF compiler while WinForms supplies the tray icon. -->
     <ImportFrameworkWinFXTargets>true</ImportFrameworkWinFXTargets>
   </PropertyGroup>
@@ -28,6 +29,12 @@
   <ItemGroup>
     <Compile Include="..\OpenBlade.Setup\StartupShortcutWriter.cs"
              Link="StartupShortcutWriter.cs" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Update="Assets\Brand\**\*.ico" Condition="Exists('Assets\Brand')">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+    </None>
   </ItemGroup>
   <Target Name="PublishApplicationResourceIndex" AfterTargets="Publish">
     <Error

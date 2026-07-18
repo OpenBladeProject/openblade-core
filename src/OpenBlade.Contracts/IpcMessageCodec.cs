@@ -7,7 +7,7 @@ namespace OpenBlade.Contracts;
 
 public static class OpenBladeIpc
 {
-    public const int ProtocolVersion = 6;
+    public const int ProtocolVersion = 7;
     public const int MaximumMessageBytes = 64 * 1024;
     public const int MaximumDiagnosticArchiveBytes = 32 * 1024;
     public const string PipeName = "OpenBlade.Service.v2";
@@ -246,6 +246,12 @@ public static class IpcMessageCodec
             && status.ExternalChanges.All(Enum.IsDefined)
             && status.ExternalChanges.Distinct().Count() == status.ExternalChanges.Count
             && status.ExternalChanges.SequenceEqual(status.ExternalChanges.Order())
+            && !string.IsNullOrWhiteSpace(status.ServiceVersion)
+            && status.ServiceVersion.Length <= 64
+            && string.Equals(
+                status.ServiceVersion,
+                status.ServiceVersion.Trim(),
+                StringComparison.Ordinal)
             && (status.LiveReadings is null || ValidLiveReadings(status.LiveReadings));
     }
 

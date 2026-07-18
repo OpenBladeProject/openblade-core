@@ -70,7 +70,7 @@ public sealed class IpcMessageCodecTests
     }
 
     [Fact]
-    public async Task VersionSixBatteryContracts_RoundTripExactShape()
+    public async Task VersionSevenBatteryContracts_RoundTripExactShape()
     {
         var capabilities = new DeviceCapabilities(
             new HashSet<PerformancePreset>(),
@@ -81,7 +81,7 @@ public sealed class IpcMessageCodecTests
             SupportsTemporaryFullCharge: false);
         var desired = new DesiredBatteryState(BatteryPolicy.Create(80), true, false);
         var confirmed = new ConfirmedBatteryState(true, 80, false);
-        ServiceRequest request = new SetBatteryProtectionRequest(6, Guid.NewGuid(), false);
+        ServiceRequest request = new SetBatteryProtectionRequest(7, Guid.NewGuid(), false);
         ServiceStatusSnapshot status = CreateStatus() with
         {
             PotentialControllers = ["RazerAppEngine"],
@@ -92,7 +92,7 @@ public sealed class IpcMessageCodecTests
             DesiredState = CreateStatus().DesiredState with { Battery = desired },
         };
 
-        Assert.Equal(6, OpenBladeIpc.ProtocolVersion);
+        Assert.Equal(7, OpenBladeIpc.ProtocolVersion);
         Assert.Equal(request, await RoundTripRequestAsync(request));
         ServiceStatusSnapshot roundTrip = await RoundTripStatusAsync(status);
         Assert.Equal([80], roundTrip.Capabilities!.ChargeLimits);
@@ -126,7 +126,7 @@ public sealed class IpcMessageCodecTests
     }
 
     [Fact]
-    public async Task VersionSixStatus_AcceptsCompleteCapabilityCollections()
+    public async Task VersionSevenStatus_AcceptsCompleteCapabilityCollections()
     {
         ServiceStatusSnapshot expected = CreateStatus() with
         {
@@ -135,8 +135,37 @@ public sealed class IpcMessageCodecTests
 
         ServiceStatusSnapshot actual = await RoundTripStatusAsync(expected);
 
-        Assert.Equal(6, OpenBladeIpc.ProtocolVersion);
+        Assert.Equal(7, OpenBladeIpc.ProtocolVersion);
         AssertStatusEqual(expected, actual);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData(" 0.1.0")]
+    [InlineData("0.1.0 ")]
+    public async Task WriteServerFrameAsync_RejectsMissingOrUntrimmedServiceVersion(
+        string? serviceVersion)
+    {
+        using MemoryStream stream = new();
+        ServiceServerFrame frame = new ServiceStatusEvent(
+            OpenBladeIpc.ProtocolVersion,
+            CreateStatus() with { ServiceVersion = serviceVersion });
+
+        await Assert.ThrowsAsync<InvalidDataException>(() =>
+            IpcMessageCodec.WriteServerFrameAsync(stream, frame, CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task WriteServerFrameAsync_RejectsOversizedServiceVersion()
+    {
+        using MemoryStream stream = new();
+        ServiceServerFrame frame = new ServiceStatusEvent(
+            OpenBladeIpc.ProtocolVersion,
+            CreateStatus() with { ServiceVersion = new string('1', 65) });
+
+        await Assert.ThrowsAsync<InvalidDataException>(() =>
+            IpcMessageCodec.WriteServerFrameAsync(stream, frame, CancellationToken.None));
     }
 
     [Fact]
@@ -185,7 +214,7 @@ public sealed class IpcMessageCodecTests
     {
         Guid requestId = Guid.NewGuid();
         using MemoryStream stream = FrameJson(
-            $"{{\"operation\":\"setBatteryPolicy\",\"version\":6,\"requestId\":\"{requestId}\",\"value\":{{\"chargeLimitPercent\":80,{extraMember}}}}}");
+            $"{{\"operation\":\"setBatteryPolicy\",\"version\":7,\"requestId\":\"{requestId}\",\"value\":{{\"chargeLimitPercent\":80,{extraMember}}}}}");
 
         await Assert.ThrowsAsync<InvalidDataException>(() =>
             IpcMessageCodec.ReadRequestAsync(stream, CancellationToken.None));
@@ -196,7 +225,7 @@ public sealed class IpcMessageCodecTests
     {
         Guid requestId = Guid.NewGuid();
         using MemoryStream stream = FrameJson(
-            $"{{\"operation\":\"setBatteryPolicy\",\"version\":6,\"requestId\":\"{requestId}\",\"value\":{{\"chargeLimitPercent\":80,\"chargeLimitPercent\":75}}}}");
+            $"{{\"operation\":\"setBatteryPolicy\",\"version\":7,\"requestId\":\"{requestId}\",\"value\":{{\"chargeLimitPercent\":80,\"chargeLimitPercent\":75}}}}");
 
         await Assert.ThrowsAsync<InvalidDataException>(() =>
             IpcMessageCodec.ReadRequestAsync(stream, CancellationToken.None));
@@ -207,7 +236,7 @@ public sealed class IpcMessageCodecTests
     {
         Guid requestId = Guid.NewGuid();
         using MemoryStream stream = FrameJson(
-            $"{{\"operation\":\"setBatteryProtection\",\"version\":6,\"requestId\":\"{requestId}\"}}");
+            $"{{\"operation\":\"setBatteryProtection\",\"version\":7,\"requestId\":\"{requestId}\"}}");
 
         await Assert.ThrowsAsync<InvalidDataException>(() =>
             IpcMessageCodec.ReadRequestAsync(stream, CancellationToken.None));
@@ -368,7 +397,7 @@ public sealed class IpcMessageCodecTests
     {
         const string secret = "unknown-secret-operation";
         using MemoryStream stream = FrameJson(
-            $$"""{"operation":"{{secret}}","version":6,"requestId":"{{Guid.NewGuid()}}"}""");
+            $$"""{"operation":"{{secret}}","version":7,"requestId":"{{Guid.NewGuid()}}"}""");
 
         InvalidDataException exception = await Assert.ThrowsAsync<InvalidDataException>(() =>
             IpcMessageCodec.ReadRequestAsync(stream, CancellationToken.None));
@@ -669,7 +698,9 @@ public sealed class IpcMessageCodecTests
             PerformanceOverride: null,
             FanOverride: null,
             LightingOverride: null,
-            FullChargeOverride: false);
+            FullChargeOverride: false,
+            Firmware: null,
+            ServiceVersion: "0.1.0-test");
     }
 
     private static void AssertStatusEqual(
@@ -700,5 +731,6 @@ public sealed class IpcMessageCodecTests
         Assert.Equal(expected.FanOverride, actual.FanOverride);
         Assert.Equal(expected.LightingOverride, actual.LightingOverride);
         Assert.Equal(expected.FullChargeOverride, actual.FullChargeOverride);
+        Assert.Equal(expected.ServiceVersion, actual.ServiceVersion);
     }
 }

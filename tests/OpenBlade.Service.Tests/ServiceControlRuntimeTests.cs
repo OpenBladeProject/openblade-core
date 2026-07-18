@@ -53,9 +53,36 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             providerAvailable: true,
             firmwareVersions: firmware);
 
-        Assert.Equal(firmware, context.Runtime.GetStatus().Firmware);
+        ServiceStatusSnapshot status = context.Runtime.GetStatus();
+        Assert.Equal(firmware, status.Firmware);
+        Assert.Equal(
+            OpenBladeProductVersion.Read(typeof(ServiceControlRuntime).Assembly),
+            status.ServiceVersion);
+        Assert.Matches("^0\\.1\\.0\\+[0-9a-f]{8}$", status.ServiceVersion);
         Assert.Equal(0, context.Provider.TryGetCount);
         Assert.Equal(0, context.Device.TotalCalls);
+    }
+
+    [Fact]
+    public async Task FirstVerifiedObservation_ReadsMcuVersionOnceAndPreservesOtherFirmware()
+    {
+        var firmware = new FirmwareVersions(
+            "3.01",
+            "1.04",
+            "Unavailable",
+            "98.3.5c.40.3d");
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            firmwareVersions: firmware);
+        context.Device.McuVersion = "1.5.0.0";
+
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+
+        Assert.Equal(
+            firmware with { McuVersion = "1.5.0.0" },
+            context.Runtime.GetStatus().Firmware);
+        Assert.Equal(1, context.Device.McuVersionReadCalls);
     }
 
     [Fact]
@@ -2924,12 +2951,16 @@ public sealed class ServiceControlRuntimeTests : IDisposable
 
         public int AdapterPowerReadCalls { get; private set; }
 
+        public int McuVersionReadCalls { get; private set; }
+
         public AdapterPowerState AdapterPowerState { get; set; } =
             AdapterPowerState.FullPower280W;
 
         public Queue<AdapterPowerState> AdapterPowerStates { get; } = new();
 
         public Exception? AdapterPowerFailure { get; set; }
+
+        public string? McuVersion { get; set; }
 
         public int TotalSetterCalls => PerformanceSetCalls
             + FanSetCalls
@@ -3015,6 +3046,19 @@ public sealed class ServiceControlRuntimeTests : IDisposable
                 AdapterPowerStates.Count > 0
                     ? AdapterPowerStates.Dequeue()
                     : AdapterPowerState);
+        }
+
+        public Task<string?> ReadMcuVersionAsync(CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (McuVersion is null)
+            {
+                return Task.FromResult<string?>(null);
+            }
+
+            TotalCalls++;
+            McuVersionReadCalls++;
+            return Task.FromResult<string?>(McuVersion);
         }
 
         public Task SetPerformanceAsync(PerformancePreset value, CancellationToken cancellationToken)

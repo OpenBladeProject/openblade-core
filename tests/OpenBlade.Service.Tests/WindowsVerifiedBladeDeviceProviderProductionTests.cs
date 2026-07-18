@@ -102,6 +102,27 @@ public sealed class WindowsVerifiedBladeDeviceProviderProductionTests
         Assert.Equal(1, port.TemporaryQueryCount);
     }
 
+    [Fact]
+    public async Task ReadMcuVersion_UsesFreshIdentityGatedReadOnlyPort()
+    {
+        DeviceCapabilities capabilities = DeviceCapabilities.Unavailable();
+        var port = new FakeProductionPort(
+            capabilities,
+            BatteryValidationSetting.Limit80,
+            temporary: null,
+            mcuVersion: "1.5.0.0");
+        var factory = new FakeProductionFactory(capabilities, port);
+        using var provider = ReadyProvider(factory);
+        provider.TryGetVerifiedDevice(out IBladeDevice device);
+
+        string? version = await device.ReadMcuVersionAsync(default);
+
+        Assert.Equal("1.5.0.0", version);
+        Assert.Equal(1, factory.OpenCount);
+        Assert.Equal(1, port.McuVersionQueryCount);
+        Assert.Equal(1, port.DisposeCount);
+    }
+
     [Theory]
     [InlineData(PerformancePreset.Balanced)]
     [InlineData(PerformancePreset.Silent)]
@@ -738,7 +759,8 @@ public sealed class WindowsVerifiedBladeDeviceProviderProductionTests
         bool? temporary,
         bool blockProtectionQuery = false,
         bool blockWrite = false,
-        ProductionPerformanceFanState? performanceFan = null) : IProductionBatteryPort
+        ProductionPerformanceFanState? performanceFan = null,
+        string? mcuVersion = null) : IProductionBatteryPort
     {
         private readonly TaskCompletionSource? protectionRelease = blockProtectionQuery
             ? new(TaskCreationOptions.RunContinuationsAsynchronously)
@@ -749,6 +771,7 @@ public sealed class WindowsVerifiedBladeDeviceProviderProductionTests
 
         public DeviceCapabilities Capabilities { get; } = capabilities;
         public bool SupportsTemporaryFullChargeQuery => temporary.HasValue;
+        public bool SupportsMcuVersionQuery => mcuVersion is not null;
         public BladeWriteException? WriteFailure { get; set; }
         public Exception? ProtectionFailure { get; init; }
         public Exception? TemporaryFailure { get; init; }
@@ -759,6 +782,7 @@ public sealed class WindowsVerifiedBladeDeviceProviderProductionTests
         public int ProtectionQueryCount { get; private set; }
         public int TemporaryQueryCount { get; private set; }
         public int PerformanceFanQueryCount { get; private set; }
+        public int McuVersionQueryCount { get; private set; }
         public int SetPerformanceCount { get; private set; }
         public int SetFanModeCount { get; private set; }
         public PerformancePreset? LastPerformance { get; private set; }
@@ -810,6 +834,13 @@ public sealed class WindowsVerifiedBladeDeviceProviderProductionTests
         public Task<AdapterPowerState> QueryAdapterPowerStateAsync(
             CancellationToken cancellationToken) =>
             Task.FromResult(AdapterPowerState.FullPower280W);
+
+        public Task<string?> QueryMcuVersionAsync(CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            McuVersionQueryCount++;
+            return Task.FromResult(mcuVersion);
+        }
 
         public Task SetPerformanceAsync(
             PerformancePreset value,
