@@ -137,6 +137,11 @@
                         <SymbolIcon Symbol="Switch" />
                     </NavigationViewItem.Icon>
                 </NavigationViewItem>
+                <NavigationViewItem Content="Display" Tag="display">
+                    <NavigationViewItem.Icon>
+                        <FontIcon Glyph="&#xE7F4;" />
+                    </NavigationViewItem.Icon>
+                </NavigationViewItem>
                 <NavigationViewItem x:Name="SettingsNavigationItem"
                                     Content="Settings"
                                     Tag="settings">
@@ -569,6 +574,105 @@
                                         VerticalAlignment="Center" />
                             </Grid>
                         </Border>
+                    </StackPanel>
+                </ScrollViewer>
+
+                <ScrollViewer x:Name="DisplayPage"
+                              Visibility="Collapsed"
+                              HorizontalContentAlignment="Stretch"
+                              VerticalScrollBarVisibility="Auto">
+                    <StackPanel Padding="28,20,28,28" HorizontalAlignment="Stretch">
+                        <StackPanel.Transitions>
+                            <TransitionCollection>
+                                <EntranceThemeTransition FromHorizontalOffset="20" />
+                            </TransitionCollection>
+                        </StackPanel.Transitions>
+
+                        <TextBlock Text="Display" Style="{StaticResource PageTitleStyle}" />
+                        <TextBlock Text="Built-in display"
+                                   Style="{StaticResource SectionHeaderStyle}"
+                                   Margin="0,0,0,10" />
+                        <Border Style="{StaticResource SettingsGroupStyle}">
+                            <StackPanel>
+                                <Border Style="{StaticResource SettingsRowStyle}">
+                                    <Grid ColumnSpacing="20">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel Spacing="3" VerticalAlignment="Center">
+                                            <TextBlock Text="Refresh rate"
+                                                       Style="{StaticResource CardTitleStyle}" />
+                                            <TextBlock Text="Choose a refresh rate reported by Windows or use dynamic refresh rate."
+                                                       Style="{StaticResource SecondaryTextStyle}" />
+                                        </StackPanel>
+                                        <ComboBox x:Name="DisplayRefreshRatePicker"
+                                                  Grid.Column="1"
+                                                  MinWidth="180"
+                                                  Style="{StaticResource SettingsPickerStyle}"
+                                                  AutomationProperties.Name="Display refresh rate"
+                                                  ItemsSource="{x:Bind DisplayViewModel.RefreshRateOptions, Mode=OneWay}"
+                                                  DisplayMemberPath="Label"
+                                                  SelectedItem="{x:Bind DisplayViewModel.SelectedRefreshRate, Mode=OneWay}"
+                                                  IsEnabled="{x:Bind DisplayViewModel.CanChangeRefreshRate, Mode=OneWay}"
+                                                  SelectionChanged="OnDisplayRefreshRateChanged" />
+                                    </Grid>
+                                </Border>
+                                <Border Style="{StaticResource SettingsRowStyle}">
+                                    <Grid ColumnSpacing="20">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel Spacing="3" VerticalAlignment="Center">
+                                            <TextBlock Text="Use HDR"
+                                                       Style="{StaticResource CardTitleStyle}" />
+                                            <TextBlock Text="Show a wider range of colors and brightness in supported content."
+                                                       Style="{StaticResource SecondaryTextStyle}" />
+                                        </StackPanel>
+                                        <ToggleSwitch x:Name="DisplayHdrToggle"
+                                                      Grid.Column="1"
+                                                      HorizontalAlignment="Right"
+                                                      VerticalAlignment="Center"
+                                                      MinWidth="0"
+                                                      AutomationProperties.Name="Use HDR"
+                                                      OffContent=""
+                                                      OnContent=""
+                                                      IsOn="{x:Bind DisplayViewModel.IsHdrEnabled, Mode=OneWay}"
+                                                      IsEnabled="{x:Bind DisplayViewModel.CanChangeHdr, Mode=OneWay}"
+                                                      Toggled="OnDisplayHdrToggled" />
+                                    </Grid>
+                                </Border>
+                                <Border Style="{StaticResource SettingsLastRowStyle}">
+                                    <Grid ColumnSpacing="20">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel Spacing="3" VerticalAlignment="Center">
+                                            <TextBlock Text="Color profile"
+                                                       Style="{StaticResource CardTitleStyle}" />
+                                            <TextBlock Text="{x:Bind DisplayViewModel.ColorProfileDescription, Mode=OneWay}"
+                                                       Style="{StaticResource SecondaryTextStyle}" />
+                                        </StackPanel>
+                                        <ComboBox x:Name="DisplayColorProfilePicker"
+                                                  Grid.Column="1"
+                                                  MinWidth="180"
+                                                  Style="{StaticResource SettingsPickerStyle}"
+                                                  AutomationProperties.Name="Display color profile"
+                                                  ItemsSource="{x:Bind DisplayViewModel.ColorProfileOptions, Mode=OneWay}"
+                                                  DisplayMemberPath="Label"
+                                                  SelectedItem="{x:Bind DisplayViewModel.SelectedColorProfile, Mode=OneWay}"
+                                                  IsEnabled="{x:Bind DisplayViewModel.CanChangeColorProfile, Mode=OneWay}"
+                                                  SelectionChanged="OnDisplayColorProfileChanged" />
+                                    </Grid>
+                                </Border>
+                            </StackPanel>
+                        </Border>
+
+                        <TextBlock Text="{x:Bind DisplayViewModel.StatusMessage, Mode=OneWay}"
+                                   Style="{StaticResource SecondaryTextStyle}"
+                                   Margin="0,2,0,0" />
                     </StackPanel>
                 </ScrollViewer>
 

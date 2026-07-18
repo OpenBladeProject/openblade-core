@@ -9,6 +9,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\OpenBlade.Contracts\OpenBlade.Contracts.csproj" />
+    <ProjectReference Include="..\OpenBlade.Display\OpenBlade.Display.csproj" />
     <ProjectReference Include="..\OpenBlade.Protocol\OpenBlade.Protocol.csproj" />
   </ItemGroup>
 

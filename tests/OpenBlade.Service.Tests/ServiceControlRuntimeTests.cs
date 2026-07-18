@@ -2486,7 +2486,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     }
 
     [Fact]
-    public async Task SourceOnlyRefresh_PreservesLiveReadingsAcrossSameUnknownAndRecovery()
+    public async Task SourceOnlyRefresh_PreservesLiveReadingsAndLastConfirmedSourceAcrossTransientUnknown()
     {
         TestContext context = CreateWritableContext();
         context.Device.FanReadings = new FanRpmReadings(2400, 2300);
@@ -2509,8 +2509,9 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         await context.Runtime.RefreshPowerSourceClassificationAsync(CancellationToken.None);
 
         ServiceStatusSnapshot unknown = context.Runtime.GetStatus();
-        Assert.Equal(PowerSource.ExternalUnknown, unknown.ActivePowerSource);
+        Assert.Equal(PowerSource.PluggedIn, unknown.ActivePowerSource);
         Assert.True(unknown.WritesBlocked);
+        Assert.Contains("last confirmed power source", unknown.Message, StringComparison.OrdinalIgnoreCase);
         Assert.Equal(expected, unknown.LiveReadings);
         Assert.Equal(stateReads, context.Device.StateReadCalls);
         Assert.Equal(fanReads, context.Device.FanRpmReadCalls);
@@ -2524,6 +2525,48 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         Assert.Equal(expected, recovered.LiveReadings);
         Assert.Equal(stateReads, context.Device.StateReadCalls);
         Assert.Equal(fanReads, context.Device.FanRpmReadCalls);
+    }
+
+    [Fact]
+    public async Task SteadyUsbCPd_TransientUnknownSamplesDoNotReplaceConfirmedDashboardSource()
+    {
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            initialPowerSource: PowerSource.ExternalUnknown);
+        context.Telemetry.Current = CreateTelemetry(PowerSource.ExternalUnknown);
+        context.Device.Capabilities = DeviceCapabilities.SafeTargetDefaults();
+        context.Device.AdapterPowerState = AdapterPowerState.UsbCPower100W;
+        context.Device.ConfirmedState = new ConfirmedDeviceState(
+            PerformancePreset.Balanced,
+            FanMode.Automatic,
+            ConfirmedBattery(80),
+            context.Runtime.GetStatus().Profiles.UsbC.Lighting);
+
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        Assert.Equal(PowerSource.UsbC, context.Runtime.GetStatus().ActivePowerSource);
+        Assert.False(context.Runtime.GetStatus().WritesBlocked);
+
+        context.Device.AdapterPowerState = AdapterPowerState.Unknown;
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+
+        ServiceStatusSnapshot transient = context.Runtime.GetStatus();
+        Assert.Equal(PowerSource.UsbC, transient.ActivePowerSource);
+        Assert.True(transient.WritesBlocked);
+        Assert.Contains("last confirmed power source", transient.Message, StringComparison.OrdinalIgnoreCase);
+
+        long transientRevision = transient.Revision;
+        await context.Runtime.RefreshPowerSourceClassificationAsync(CancellationToken.None);
+
+        Assert.Equal(PowerSource.UsbC, context.Runtime.GetStatus().ActivePowerSource);
+        Assert.Equal(transientRevision, context.Runtime.GetStatus().Revision);
+
+        context.Device.AdapterPowerState = AdapterPowerState.UsbCPower100W;
+        await context.Runtime.RefreshPowerSourceClassificationAsync(CancellationToken.None);
+
+        ServiceStatusSnapshot recovered = context.Runtime.GetStatus();
+        Assert.Equal(PowerSource.UsbC, recovered.ActivePowerSource);
+        Assert.False(recovered.WritesBlocked);
+        Assert.Equal("Power adapter classification recovered.", recovered.Message);
     }
 
     [Fact]
@@ -2543,8 +2586,9 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         await context.Runtime.ObserveAsync(CancellationToken.None);
 
         ServiceStatusSnapshot status = context.Runtime.GetStatus();
-        Assert.Equal(PowerSource.ExternalUnknown, status.ActivePowerSource);
+        Assert.Equal(PowerSource.PluggedIn, status.ActivePowerSource);
         Assert.True(status.WritesBlocked);
+        Assert.Contains("last confirmed power source", status.Message, StringComparison.OrdinalIgnoreCase);
         Assert.NotNull(context.Runtime.GetStatus().PerformanceOverride);
         Assert.Equal(settersBefore, context.Device.TotalSetterCalls);
     }

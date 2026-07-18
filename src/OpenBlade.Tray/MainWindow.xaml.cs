@@ -6,6 +6,7 @@ using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using OpenBlade.Contracts;
+using OpenBlade.Display;
 using Windows.Graphics;
 using WinRT.Interop;
 
@@ -18,19 +19,23 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, ITrayIconThem
     private const double DashboardStackThresholdDip = 600;
     private const double ProfilesStackThresholdDip = 720;
     private static readonly TimeSpan ChargeLimitCommitDelay = TimeSpan.FromMilliseconds(400);
+    private static readonly TimeSpan DisplayRefreshInterval = TimeSpan.FromSeconds(2);
 
     private readonly DispatcherQueue dispatcherQueue;
     private readonly MicaBackdropHost micaBackdropHost;
     private readonly UiPreferenceStore preferenceStore;
     private readonly UiPreferenceSaveQueue preferenceSaveQueue;
     private readonly VisibleObservationLoop visibleObservationLoop;
+    private readonly WindowsDisplaySettingsAdapter displaySettingsAdapter;
     private readonly DispatcherQueueTimer chargeLimitCommitTimer;
+    private readonly DispatcherQueueTimer displayRefreshTimer;
     private readonly object initializationSync = new();
     private Task? initializationTask;
     private bool initialPlacementAttempted;
     private bool changingPerformanceSelection;
     private bool changingFanSelection;
     private bool changingBatteryProtection;
+    private bool changingDisplaySettings;
     private bool chargeLimitCommitInProgress;
     private bool chargeLimitPointerInteraction;
     private int? pendingChargeLimitPercent;
@@ -49,12 +54,19 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, ITrayIconThem
             new DiagnosticArchiveSaver(new WinUiDiagnosticArchiveDestination(AppWindow.Id)),
             new WindowsStartupRegistration(),
             uiVersion: OpenBladeProductVersion.Read(typeof(MainWindow).Assembly));
+        displaySettingsAdapter = new WindowsDisplaySettingsAdapter(
+            new WindowsDisplaySettingsController());
+        DisplayViewModel = new DisplaySettingsViewModel(displaySettingsAdapter);
         visibleObservationLoop = new VisibleObservationLoop(ViewModel.ObserveStateAsync,
             errorHandler: exception => Trace.TraceError(
                 "OpenBlade visible observation failed: {0}",
                 exception),
             observationIntervalProvider: () =>
                 ViewModel.LiveReadingsObservationInterval);
+        displayRefreshTimer = dispatcherQueue.CreateTimer();
+        displayRefreshTimer.Interval = DisplayRefreshInterval;
+        displayRefreshTimer.IsRepeating = true;
+        displayRefreshTimer.Tick += OnDisplayRefreshTimerTick;
         InitializeComponent();
         if (OpenBladeIconAssets.ApplicationIconPath is { } applicationIconPath)
         {
@@ -86,6 +98,8 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, ITrayIconThem
     }
 
     public MainViewModel ViewModel { get; }
+
+    public DisplaySettingsViewModel DisplayViewModel { get; }
 
     public event EventHandler? TrayIconThemeChanged;
 
@@ -137,9 +151,13 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, ITrayIconThem
         Root.ActualThemeChanged -= OnRootActualThemeChanged;
         chargeLimitCommitTimer.Stop();
         chargeLimitCommitTimer.Tick -= OnChargeLimitCommitTimerTick;
+        displayRefreshTimer.Stop();
+        displayRefreshTimer.Tick -= OnDisplayRefreshTimerTick;
         micaBackdropHost.Dispose();
         await visibleObservationLoop.DisposeAsync();
         await preferenceSaveQueue.DisposeAsync();
+        await DisplayViewModel.DisposeAsync();
+        displaySettingsAdapter.Dispose();
         await ViewModel.DisposeAsync();
     }
 
@@ -218,6 +236,8 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, ITrayIconThem
                 "OpenBlade status watch initialization failed: {0}",
                 exception);
         }
+
+        await RefreshDisplaySettingsAsync();
     }
 
     private void OnViewModelPropertyChanged(object? sender, PropertyChangedEventArgs args)
@@ -637,6 +657,9 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, ITrayIconThem
         ProfilesPage.Visibility = destination == "profiles"
             ? Visibility.Visible
             : Visibility.Collapsed;
+        DisplayPage.Visibility = destination == "display"
+            ? Visibility.Visible
+            : Visibility.Collapsed;
         SettingsPage.Visibility = destination == "settings"
             ? Visibility.Visible
             : Visibility.Collapsed;
@@ -651,6 +674,132 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, ITrayIconThem
             dispatcherQueue.TryEnqueue(
                 DispatcherQueuePriority.Low,
                 () => UpdateDashboardLayout());
+        }
+        else if (destination == "display")
+        {
+            displayRefreshTimer.Start();
+            _ = RefreshDisplaySettingsAsync();
+        }
+
+        if (destination != "display")
+        {
+            displayRefreshTimer.Stop();
+        }
+    }
+
+    private async void OnDisplayRefreshTimerTick(
+        DispatcherQueueTimer sender,
+        object args)
+    {
+        if (Volatile.Read(ref disposed) != 0
+            || DisplayPage.Visibility != Visibility.Visible
+            || DisplayViewModel.IsBusy
+            || DisplayRefreshRatePicker.IsDropDownOpen
+            || DisplayColorProfilePicker.IsDropDownOpen)
+        {
+            return;
+        }
+
+        await RefreshDisplaySettingsAsync();
+    }
+
+    private async void OnDisplayRefreshRateChanged(
+        object sender,
+        SelectionChangedEventArgs args)
+    {
+        if (sender is not Microsoft.UI.Xaml.Controls.ComboBox
+            { SelectedItem: DisplayRefreshRateOption option }
+            || changingDisplaySettings
+            || string.Equals(
+                option.Key,
+                DisplayViewModel.SelectedRefreshRate?.Key,
+                StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        await RunDisplayOperationAsync(
+            () => DisplayViewModel.SelectRefreshRateAsync(option));
+    }
+
+    private async void OnDisplayHdrToggled(object sender, RoutedEventArgs args)
+    {
+        if (sender is not ToggleSwitch toggle
+            || changingDisplaySettings
+            || toggle.IsOn == DisplayViewModel.IsHdrEnabled)
+        {
+            return;
+        }
+
+        await RunDisplayOperationAsync(
+            () => DisplayViewModel.SetHdrEnabledAsync(toggle.IsOn));
+    }
+
+    private async void OnDisplayColorProfileChanged(
+        object sender,
+        SelectionChangedEventArgs args)
+    {
+        if (sender is not Microsoft.UI.Xaml.Controls.ComboBox
+            { SelectedItem: DisplayColorProfileOption option }
+            || changingDisplaySettings
+            || string.Equals(
+                option.Key,
+                DisplayViewModel.SelectedColorProfile?.Key,
+                StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        await RunDisplayOperationAsync(
+            () => DisplayViewModel.SelectColorProfileAsync(option));
+    }
+
+    private Task RefreshDisplaySettingsAsync() =>
+        RunDisplayOperationAsync(() => DisplayViewModel.RefreshAsync());
+
+    private async Task RunDisplayOperationAsync(Func<Task> operation)
+    {
+        try
+        {
+            await operation();
+        }
+        catch (OperationCanceledException) when (Volatile.Read(ref disposed) != 0)
+        {
+        }
+        catch (ObjectDisposedException) when (Volatile.Read(ref disposed) != 0)
+        {
+        }
+        catch (Exception exception)
+        {
+            Trace.TraceError("OpenBlade display operation failed: {0}", exception);
+        }
+        finally
+        {
+            SynchronizeDisplayControls();
+        }
+    }
+
+    private void SynchronizeDisplayControls()
+    {
+        bool wasChanging = changingDisplaySettings;
+        changingDisplaySettings = true;
+        try
+        {
+            if ((DisplayRefreshRatePicker.SelectedItem as DisplayRefreshRateOption)?.Key
+                != DisplayViewModel.SelectedRefreshRate?.Key)
+            {
+                DisplayRefreshRatePicker.SelectedItem = DisplayViewModel.SelectedRefreshRate;
+            }
+            DisplayHdrToggle.IsOn = DisplayViewModel.IsHdrEnabled;
+            if ((DisplayColorProfilePicker.SelectedItem as DisplayColorProfileOption)?.Key
+                != DisplayViewModel.SelectedColorProfile?.Key)
+            {
+                DisplayColorProfilePicker.SelectedItem = DisplayViewModel.SelectedColorProfile;
+            }
+        }
+        finally
+        {
+            changingDisplaySettings = wasChanging;
         }
     }
 

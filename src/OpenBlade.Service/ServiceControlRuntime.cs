@@ -56,6 +56,11 @@ public interface IServiceControlRuntime
 
 public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
 {
+    private const string UnclassifiedExternalPowerMessage =
+        "The external power adapter could not be classified; control writes are blocked.";
+    private const string TransientExternalPowerMessage =
+        "Power adapter classification is temporarily unavailable; the last confirmed power source is retained and control writes are blocked.";
+
     private static readonly string ServiceVersion = OpenBladeProductVersion.Read(
         typeof(ServiceControlRuntime).Assembly);
     private static readonly TimeSpan PowerTransitionAccessRetryDelay =
@@ -445,8 +450,10 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             }
             else
             {
+                bool powerSourceConfirmed = powerSource != PowerSource.ExternalUnknown;
                 await ObserveCoreAsync(
-                    powerSource,
+                    PowerSourceForStatus(powerSource),
+                    powerSourceConfirmed,
                     includeLiveReadings,
                     batteryPowerFlow,
                     cancellationToken);
@@ -477,8 +484,10 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             }
             else
             {
+                bool powerSourceConfirmed = powerSource != PowerSource.ExternalUnknown;
                 await ObserveCoreAsync(
-                    powerSource,
+                    PowerSourceForStatus(powerSource),
+                    powerSourceConfirmed,
                     includeLiveReadings: false,
                     batteryPowerFlowMilliwatts: null,
                     cancellationToken);
@@ -502,11 +511,14 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             ServiceStatusSnapshot current = GetStatus();
             if (classified == PowerSource.ExternalUnknown)
             {
+                PowerSource statusPowerSource = PowerSourceForStatus(classified);
                 PublishIfChanged(current with
                 {
-                    ActivePowerSource = PowerSource.ExternalUnknown,
+                    ActivePowerSource = statusPowerSource,
                     WritesBlocked = true,
-                    Message = "The external power adapter could not be classified; control writes are blocked.",
+                    Message = statusPowerSource == PowerSource.ExternalUnknown
+                        ? UnclassifiedExternalPowerMessage
+                        : TransientExternalPowerMessage,
                 });
                 return;
             }
@@ -520,7 +532,11 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 return;
             }
 
-            if (current.ActivePowerSource != classified)
+            if (current.ActivePowerSource != classified
+                || string.Equals(
+                    current.Message,
+                    TransientExternalPowerMessage,
+                    StringComparison.Ordinal))
             {
                 PublishIfChanged(current with
                 {
@@ -1079,6 +1095,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
 
     private async Task ObserveCoreAsync(
         PowerSource powerSource,
+        bool powerSourceConfirmed,
         bool includeLiveReadings,
         int? batteryPowerFlowMilliwatts,
         CancellationToken cancellationToken)
@@ -1127,10 +1144,12 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             PublishIfChanged(GetStatus() with
             {
                 DeviceVerified = true,
-                WritesBlocked = powerSource == PowerSource.ExternalUnknown,
+                WritesBlocked = !powerSourceConfirmed,
                 ExternalChanges = driftTracker.ExternalChanges,
-                Message = powerSource == PowerSource.ExternalUnknown
-                    ? "Verified device state observed, but the external power adapter could not be classified; control writes are blocked."
+                Message = !powerSourceConfirmed
+                    ? powerSource == PowerSource.ExternalUnknown
+                        ? "Verified device state observed, but the external power adapter could not be classified; control writes are blocked."
+                        : TransientExternalPowerMessage
                     : "Verified device state observed.",
                 Capabilities = capabilities,
                 ConfirmedState = confirmed,
@@ -1389,6 +1408,19 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         confirmed.ProtectionEnabled == desired.ProtectionEnabled
         && (!desired.ProtectionEnabled
             || confirmed.ChargeLimitPercent == desired.ConfiguredPolicy.ChargeLimitPercent);
+
+    private PowerSource PowerSourceForStatus(PowerSource observed)
+    {
+        if (observed != PowerSource.ExternalUnknown)
+        {
+            return observed;
+        }
+
+        PowerSource lastConfirmed = GetStatus().ActivePowerSource;
+        return lastConfirmed is PowerSource.PluggedIn or PowerSource.UsbC
+            ? lastConfirmed
+            : PowerSource.ExternalUnknown;
+    }
 
     private void PublishObservationUnavailable(
         PowerSource powerSource,

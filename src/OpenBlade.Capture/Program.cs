@@ -1,4 +1,5 @@
 using OpenBlade.Capture;
+using OpenBlade.Display;
 using OpenBlade.Protocol;
 
 if (args.Length == 1 && args[0].Equals("target", StringComparison.OrdinalIgnoreCase))
@@ -40,6 +41,25 @@ if (args.Length == 1 && args[0].Equals("scan", StringComparison.OrdinalIgnoreCas
     return interfaces.Count > 0 ? 0 : 3;
 }
 
+if (args.Length == 1 && args[0].Equals("query-display", StringComparison.OrdinalIgnoreCase))
+{
+    using var controller = new WindowsDisplaySettingsController();
+    DisplaySettingsSnapshot state = await controller.QueryAsync();
+    Console.WriteLine($"Available={state.IsAvailable}");
+    Console.WriteLine($"Display={state.DisplayName ?? "Unavailable"}");
+    Console.WriteLine($"Resolution={state.Width}x{state.Height}");
+    Console.WriteLine($"Refresh={state.CurrentRefreshKey ?? "Unavailable"}");
+    Console.WriteLine(
+        $"RefreshOptions={string.Join(",", state.RefreshOptions.Select(option => option.Key))}");
+    Console.WriteLine($"HdrSupported={state.HdrSupported}");
+    Console.WriteLine($"HdrEnabled={state.HdrEnabled}");
+    Console.WriteLine($"ActiveColorProfile={state.ActiveColorProfileId ?? "Unavailable"}");
+    Console.WriteLine(
+        $"ColorProfiles={string.Join(",", state.ColorProfiles.Select(profile => profile.Name))}");
+    Console.WriteLine($"Message={state.Message ?? "None"}");
+    return state.IsAvailable ? 0 : 3;
+}
+
 if (args.Length > 0 && args[0].Equals("probe-battery", StringComparison.OrdinalIgnoreCase))
 {
     var command = new BatteryProbeCommand(BatteryValidationFactory.ProbeWindows, Console.Out);
@@ -66,6 +86,24 @@ if (args.Length > 0 && args[0].Equals("query-fan-rpm", StringComparison.OrdinalI
     var session = new FanRpmQuerySession(BatteryValidationFactory.CreateWindowsFanRpmQuery());
     var command = new FanRpmQueryCommand(session.RunAsync, Console.Out);
     return await command.RunAsync(args[1..], CancellationToken.None);
+}
+
+if (args.Length == 1 && args[0].Equals(
+    "query-lighting-brightness",
+    StringComparison.OrdinalIgnoreCase))
+{
+    ILightingBrightnessQueryRunner runner =
+        BatteryValidationFactory.CreateWindowsLightingBrightnessQuery();
+    HidSessionResult<LightingBrightnessReading> result =
+        await runner.RunAsync(CancellationToken.None);
+    Console.WriteLine($"RawValue={result.Value?.RawValue.ToString() ?? "Unavailable"}");
+    Console.WriteLine($"Percent={result.Value?.Percent.ToString() ?? "Unavailable"}");
+    Console.WriteLine($"Failure={result.Failure?.ToString() ?? "None"}");
+    Console.WriteLine($"FailurePhase={result.Diagnostic?.Phase.ToString() ?? "None"}");
+    Console.WriteLine(
+        $"ProtocolValidation={result.Diagnostic?.ProtocolValidationFailure?.ToString() ?? "None"}");
+    Console.WriteLine($"Success={result.Failure is null && result.Value is not null}");
+    return result.Failure is null && result.Value is not null ? 0 : 2;
 }
 
 if (args.Length > 0 && args[0].Equals(
@@ -132,11 +170,13 @@ if (args.Length > 0 && args[0].Equals("validate-temporary-full-charge", StringCo
 Console.WriteLine("OpenBlade capture utility (no raw hardware command support)");
 Console.WriteLine("  OpenBlade.Capture target");
 Console.WriteLine("  OpenBlade.Capture scan");
+Console.WriteLine("  OpenBlade.Capture query-display");
 Console.WriteLine("  OpenBlade.Capture validate <fixtures.json>");
 Console.WriteLine("  OpenBlade.Capture probe-battery");
 Console.WriteLine("  OpenBlade.Capture query-battery");
 Console.WriteLine("  OpenBlade.Capture query-temporary-full-charge");
 Console.WriteLine("  OpenBlade.Capture query-fan-rpm");
+Console.WriteLine("  OpenBlade.Capture query-lighting-brightness");
 Console.WriteLine("  OpenBlade.Capture query-performance-fan-discriminator");
 Console.WriteLine(
     "  OpenBlade.Capture validate-performance-fan " +

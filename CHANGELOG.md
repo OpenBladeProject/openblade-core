@@ -5,6 +5,20 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ## [Unreleased]
 
+### Added
+
+- Built-in display controls for driver-enumerated fixed refresh rates, EDID-reported Windows Dynamic Refresh Rate, HDR, and the locally installed Razer color profiles.
+- A typed, read-only lighting-brightness query for continued PID 02E0 protocol validation.
+
+### Safety
+
+- Display settings are applied only on direct user action, validated and read back through Windows, and never automatically reasserted over changes made elsewhere.
+- SDR color profiles are unavailable while HDR is enabled.
+- Color-profile selection now activates and verifies the current user's Windows profile scope before applying the panel's MHC2 calibration.
+- The Display page observes changes made by Windows or other software without reasserting OpenBlade values, and pauses observation while a picker is open.
+- Transient USB-C adapter-classification failures retain the last confirmed power-source label while blocking hardware writes until classification recovers.
+- Added capture-only lighting report decoding for brightness readback and reference effect packets without exposing an unvalidated lighting write path.
+
 ## [0.1.0] - 2026-07-17
 
 ### Added
@@ -21,7 +35,7 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Changed
 
-- Renamed the project from OpenSynapse to OpenBlade to reflect its Razer Blade-only scope.
+- Renamed the project to OpenBlade to reflect its Razer Blade-only scope.
 - Other Razer software is treated as a coexistence warning instead of being stopped automatically or making all controls read-only.
 - Settings changed by another controller are observed and reported instead of being immediately overwritten.
 - The core repository includes only the application and tray icon binaries needed at runtime. Brand source files, exports, and unused variants remain in the separate branding repository.

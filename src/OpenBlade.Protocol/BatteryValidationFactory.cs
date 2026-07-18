@@ -73,6 +73,22 @@ public static class BatteryValidationFactory
             DefaultCleanupDrainTimeout);
     }
 
+    public static ILightingBrightnessQueryRunner CreateWindowsLightingBrightnessQuery()
+    {
+        var native = new WindowsHidNative();
+        var registry = new WindowsRegistryValueSource();
+        return CreateWindowsLightingBrightnessQuery(
+            registry,
+            new RuntimeWindowsPlatformEvidenceSource(registry),
+            new RunningProcessSource(),
+            new WindowsServiceSource(),
+            native,
+            new OverlappedFeatureOperation(native),
+            TimeProvider.System,
+            DefaultExchangeTimeout,
+            DefaultCleanupDrainTimeout);
+    }
+
     public static IPerformanceFanDiscriminatorQueryRunner
         CreateWindowsPerformanceFanDiscriminatorQuery()
     {
@@ -347,6 +363,35 @@ public static class BatteryValidationFactory
             exchangeTimeout,
             ControllerExclusivityPolicy.Advisory);
         return new FanRpmQueryRunFactory(
+            static () => new ValidationRunContext(),
+            actorFactory,
+            timeProvider,
+            exchangeTimeout,
+            cleanupDrainTimeout);
+    }
+
+    internal static ILightingBrightnessQueryRunner CreateWindowsLightingBrightnessQuery(
+        IRegistryValueSource registry,
+        IWindowsPlatformEvidenceSource platform,
+        IRunningProcessSource processSource,
+        IWindowsServiceSource serviceSource,
+        IHidCandidateNative native,
+        IHidFeatureIo featureIo,
+        TimeProvider timeProvider,
+        TimeSpan exchangeTimeout,
+        TimeSpan cleanupDrainTimeout)
+    {
+        ValidationActorFactory actorFactory = CreateActorFactory(
+            registry,
+            platform,
+            processSource,
+            serviceSource,
+            native,
+            featureIo,
+            timeProvider,
+            exchangeTimeout,
+            ControllerExclusivityPolicy.Advisory);
+        return new LightingBrightnessQueryRunner(
             static () => new ValidationRunContext(),
             actorFactory,
             timeProvider,

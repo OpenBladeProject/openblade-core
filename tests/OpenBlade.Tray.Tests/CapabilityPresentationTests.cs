@@ -103,7 +103,13 @@ public sealed class CapabilityPresentationTests
     {
         XDocument document = XDocument.Parse(ReadMainWindowXaml());
 
-        foreach (string pageName in new[] { "HomePage", "ProfilesPage", "SettingsPage" })
+        foreach (string pageName in new[]
+                 {
+                     "HomePage",
+                     "ProfilesPage",
+                     "DisplayPage",
+                     "SettingsPage",
+                 })
         {
             XElement page = NamedElement(document, "ScrollViewer", pageName);
             Assert.Null(Attribute(page.Parent!, "Padding"));
@@ -112,6 +118,44 @@ public sealed class CapabilityPresentationTests
                 element => element.Name.LocalName == "StackPanel");
             Assert.Equal("28,20,28,28", Attribute(content, "Padding"));
         }
+    }
+
+    [Fact]
+    public void MainWindow_DisplayPageUsesSettingsRowsAndHdrGatesColorProfiles()
+    {
+        XDocument document = XDocument.Parse(ReadMainWindowXaml());
+        XElement display = NamedElement(document, "ScrollViewer", "DisplayPage");
+
+        Assert.Contains(document.Descendants(), element =>
+            element.Name.LocalName == "NavigationViewItem"
+            && Attribute(element, "Content") == "Display"
+            && Attribute(element, "Tag") == "display");
+        Assert.Equal(
+            2,
+            display.Descendants().Count(element =>
+                Attribute(element, "Style") == "{StaticResource SettingsRowStyle}"));
+        Assert.Single(display.Descendants(), element =>
+            Attribute(element, "Style") == "{StaticResource SettingsLastRowStyle}");
+
+        XElement refresh = NamedElement(document, "ComboBox", "DisplayRefreshRatePicker");
+        Assert.Equal(
+            "{x:Bind DisplayViewModel.RefreshRateOptions, Mode=OneWay}",
+            Attribute(refresh, "ItemsSource"));
+        Assert.Equal(
+            "{x:Bind DisplayViewModel.CanChangeRefreshRate, Mode=OneWay}",
+            Attribute(refresh, "IsEnabled"));
+        Assert.Equal("OnDisplayRefreshRateChanged", Attribute(refresh, "SelectionChanged"));
+
+        XElement hdr = NamedElement(document, "ToggleSwitch", "DisplayHdrToggle");
+        Assert.Equal("Right", Attribute(hdr, "HorizontalAlignment"));
+        Assert.Equal("Center", Attribute(hdr, "VerticalAlignment"));
+        Assert.Equal("OnDisplayHdrToggled", Attribute(hdr, "Toggled"));
+
+        XElement color = NamedElement(document, "ComboBox", "DisplayColorProfilePicker");
+        Assert.Equal(
+            "{x:Bind DisplayViewModel.CanChangeColorProfile, Mode=OneWay}",
+            Attribute(color, "IsEnabled"));
+        Assert.Equal("OnDisplayColorProfileChanged", Attribute(color, "SelectionChanged"));
     }
 
     [Fact]
@@ -527,7 +571,7 @@ public sealed class CapabilityPresentationTests
         Assert.Contains("{StaticResource TitleLargeTextBlockStyle}", xaml, StringComparison.Ordinal);
         Assert.Contains("{StaticResource AccentButtonStyle}", xaml, StringComparison.Ordinal);
         Assert.Equal(
-            3,
+            4,
             document.Descendants().Count(element =>
                 element.Name.LocalName == "EntranceThemeTransition"));
     }
