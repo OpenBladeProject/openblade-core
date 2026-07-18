@@ -21,13 +21,17 @@ public sealed record DisplaySettingsSnapshot(
     bool IsHdrEnabled,
     IReadOnlyList<DisplayColorProfileOption> ColorProfileOptions,
     string? SelectedColorProfileKey,
-    string? StatusMessage = null);
+    string? StatusMessage = null,
+    bool OperationSucceeded = true);
 
 public sealed class DisplayProfileSettingsChangedEventArgs(
+    PowerSource powerSource,
     DisplayProfileSettings previousSettings,
     DisplayProfileSettings settings)
     : EventArgs
 {
+    public PowerSource PowerSource { get; } = powerSource;
+
     public DisplayProfileSettings PreviousSettings { get; } = previousSettings;
 
     public DisplayProfileSettings Settings { get; } = settings;
@@ -102,6 +106,7 @@ public sealed class DisplaySettingsViewModel : INotifyPropertyChanged, IAsyncDis
     private bool isHdrSupported;
     private bool isHdrEnabled;
     private bool isBusy;
+    private PowerSource activePowerSource = PowerSource.ExternalUnknown;
     private string statusMessage = "Checking the built-in display...";
     private int disposed;
 
@@ -214,6 +219,18 @@ public sealed class DisplaySettingsViewModel : INotifyPropertyChanged, IAsyncDis
         }
     }
 
+    public PowerSource ActivePowerSource
+    {
+        get => activePowerSource;
+        set
+        {
+            if (SetField(ref activePowerSource, value))
+            {
+                NotifyControlStateChanged();
+            }
+        }
+    }
+
     public string StatusMessage
     {
         get => statusMessage;
@@ -225,12 +242,20 @@ public sealed class DisplaySettingsViewModel : INotifyPropertyChanged, IAsyncDis
         : DefaultColorProfileMessage;
 
     public bool CanChangeRefreshRate =>
-        IsAvailable && !IsBusy && RefreshRateOptions.Count > 0;
+        HasConfirmedPowerSource && IsAvailable && !IsBusy && RefreshRateOptions.Count > 0;
 
-    public bool CanChangeHdr => IsAvailable && IsHdrSupported && !IsBusy;
+    public bool CanChangeHdr =>
+        HasConfirmedPowerSource && IsAvailable && IsHdrSupported && !IsBusy;
 
     public bool CanChangeColorProfile =>
-        IsAvailable && !IsHdrEnabled && !IsBusy && ColorProfileOptions.Count > 0;
+        HasConfirmedPowerSource
+        && IsAvailable
+        && !IsHdrEnabled
+        && !IsBusy
+        && ColorProfileOptions.Count > 0;
+
+    private bool HasConfirmedPowerSource => ActivePowerSource is
+        PowerSource.PluggedIn or PowerSource.Battery or PowerSource.UsbC;
 
     public DisplayProfileSettings CurrentProfileSettings => IsAvailable
         ? new DisplayProfileSettings(
@@ -271,11 +296,13 @@ public sealed class DisplaySettingsViewModel : INotifyPropertyChanged, IAsyncDis
         CancellationToken token = default)
     {
         if (option is null
+            || !HasConfirmedPowerSource
             || string.Equals(option.Key, SelectedRefreshRate?.Key, StringComparison.Ordinal))
         {
             return Task.CompletedTask;
         }
 
+        PowerSource sourceAtStart = ActivePowerSource;
         DisplayProfileSettings previous = DisplayProfileSettings.Unconfigured();
         return RunSerializedAsync(
             operationToken =>
@@ -286,23 +313,25 @@ public sealed class DisplaySettingsViewModel : INotifyPropertyChanged, IAsyncDis
             token,
             state =>
             {
-                if (string.Equals(
-                    state.SelectedRefreshRateKey,
-                    option.Key,
-                    StringComparison.Ordinal))
+                if (state.OperationSucceeded
+                    && string.Equals(
+                        state.SelectedRefreshRateKey,
+                        option.Key,
+                        StringComparison.Ordinal))
                 {
-                    RaiseUserSettingsChanged(previous);
+                    RaiseUserSettingsChanged(sourceAtStart, previous);
                 }
             });
     }
 
     public Task SetHdrEnabledAsync(bool enabled, CancellationToken token = default)
     {
-        if (enabled == IsHdrEnabled)
+        if (!HasConfirmedPowerSource || enabled == IsHdrEnabled)
         {
             return Task.CompletedTask;
         }
 
+        PowerSource sourceAtStart = ActivePowerSource;
         DisplayProfileSettings previous = DisplayProfileSettings.Unconfigured();
         return RunSerializedAsync(
             operationToken =>
@@ -313,9 +342,9 @@ public sealed class DisplaySettingsViewModel : INotifyPropertyChanged, IAsyncDis
             token,
             state =>
             {
-                if (state.IsHdrEnabled == enabled)
+                if (state.OperationSucceeded && state.IsHdrEnabled == enabled)
                 {
-                    RaiseUserSettingsChanged(previous);
+                    RaiseUserSettingsChanged(sourceAtStart, previous);
                 }
             });
     }
@@ -325,12 +354,14 @@ public sealed class DisplaySettingsViewModel : INotifyPropertyChanged, IAsyncDis
         CancellationToken token = default)
     {
         if (option is null
+            || !HasConfirmedPowerSource
             || IsHdrEnabled
             || string.Equals(option.Key, SelectedColorProfile?.Key, StringComparison.Ordinal))
         {
             return Task.CompletedTask;
         }
 
+        PowerSource sourceAtStart = ActivePowerSource;
         DisplayProfileSettings previous = DisplayProfileSettings.Unconfigured();
         return RunSerializedAsync(
             operationToken =>
@@ -341,30 +372,32 @@ public sealed class DisplaySettingsViewModel : INotifyPropertyChanged, IAsyncDis
             token,
             state =>
             {
-                if (string.Equals(
-                    state.SelectedColorProfileKey,
-                    option.Key,
-                    StringComparison.Ordinal))
+                if (state.OperationSucceeded
+                    && string.Equals(
+                        state.SelectedColorProfileKey,
+                        option.Key,
+                        StringComparison.Ordinal))
                 {
-                    RaiseUserSettingsChanged(previous);
+                    RaiseUserSettingsChanged(sourceAtStart, previous);
                 }
             });
     }
 
-    public Task ApplyProfileAsync(
+    public async Task<bool> ApplyProfileAsync(
         DisplayProfileSettings? settings,
         CancellationToken token = default)
     {
         if (settings is null || !settings.IsConfigured)
         {
-            return Task.CompletedTask;
+            return true;
         }
 
-        return RunSerializedAsync(
+        bool succeeded = false;
+        await RunSerializedAsync(
             async operationToken =>
             {
                 DisplaySettingsSnapshot state = await adapter.GetStateAsync(operationToken);
-                if (!state.IsAvailable)
+                if (!state.IsAvailable || !state.OperationSucceeded)
                 {
                     return state;
                 }
@@ -378,6 +411,10 @@ public sealed class DisplaySettingsViewModel : INotifyPropertyChanged, IAsyncDis
                     state = await adapter.SetRefreshRateAsync(
                         settings.RefreshRateKey,
                         operationToken);
+                    if (!state.OperationSucceeded)
+                    {
+                        return state;
+                    }
                 }
 
                 if (settings.HdrEnabled.HasValue
@@ -387,6 +424,10 @@ public sealed class DisplaySettingsViewModel : INotifyPropertyChanged, IAsyncDis
                     state = await adapter.SetHdrEnabledAsync(
                         settings.HdrEnabled.Value,
                         operationToken);
+                    if (!state.OperationSucceeded)
+                    {
+                        return state;
+                    }
                 }
 
                 if (settings.ColorProfileKey is not null
@@ -403,7 +444,9 @@ public sealed class DisplaySettingsViewModel : INotifyPropertyChanged, IAsyncDis
 
                 return state;
             },
-            token);
+            token,
+            state => succeeded = ProfileSettingsMatch(settings, state));
+        return succeeded;
     }
 
     public async ValueTask DisposeAsync()
@@ -462,10 +505,35 @@ public sealed class DisplaySettingsViewModel : INotifyPropertyChanged, IAsyncDis
         }
     }
 
-    private void RaiseUserSettingsChanged(DisplayProfileSettings previous) =>
+    private void RaiseUserSettingsChanged(
+        PowerSource powerSource,
+        DisplayProfileSettings previous) =>
         UserSettingsChanged?.Invoke(
             this,
-            new DisplayProfileSettingsChangedEventArgs(previous, CurrentProfileSettings));
+            new DisplayProfileSettingsChangedEventArgs(
+                powerSource,
+                previous,
+                CurrentProfileSettings));
+
+    private static bool ProfileSettingsMatch(
+        DisplayProfileSettings settings,
+        DisplaySettingsSnapshot state) =>
+        state.OperationSucceeded
+        && state.IsAvailable
+        && (settings.RefreshRateKey is null
+            || string.Equals(
+                settings.RefreshRateKey,
+                state.SelectedRefreshRateKey,
+                StringComparison.Ordinal))
+        && (!settings.HdrEnabled.HasValue
+            || settings.HdrEnabled == state.IsHdrEnabled)
+        && (settings.ColorProfileKey is null
+            || settings.HdrEnabled is true
+            || (!state.IsHdrEnabled
+                && string.Equals(
+                    settings.ColorProfileKey,
+                    state.SelectedColorProfileKey,
+                    StringComparison.Ordinal)));
 
     private void Apply(DisplaySettingsSnapshot state)
     {

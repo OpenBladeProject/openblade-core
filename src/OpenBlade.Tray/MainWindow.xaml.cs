@@ -270,6 +270,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, ITrayIconThem
         {
             observedDisplayProfilePowerSource ??= ViewModel.ActivePowerSource;
         }
+        DisplayViewModel.ActivePowerSource = ViewModel.ActivePowerSource;
         await RefreshDisplaySettingsAsync();
     }
 
@@ -303,6 +304,11 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, ITrayIconThem
             {
                 dispatcherQueue.TryEnqueue(UpdateReactiveKeyboardSource);
             }
+        }
+
+        if (args.PropertyName == nameof(MainViewModel.ActivePowerSource))
+        {
+            DisplayViewModel.ActivePowerSource = ViewModel.ActivePowerSource;
         }
 
         if (args.PropertyName == nameof(MainViewModel.ActivePowerSource)
@@ -899,14 +905,18 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, ITrayIconThem
     private void OnDisplayUserSettingsChanged(
         object? sender,
         DisplayProfileSettingsChangedEventArgs args) =>
-        ViewModel.RecordDisplayProfileChange(args.Settings, args.PreviousSettings);
+        ViewModel.RecordDisplayProfileChange(
+            args.PowerSource,
+            args.Settings,
+            args.PreviousSettings);
 
-    private async Task OnSavedDisplayProfileRestoreRequested(
+    private async Task<bool> OnSavedDisplayProfileRestoreRequested(
         DisplayProfileSettings settings,
         CancellationToken token)
     {
-        await DisplayViewModel.ApplyProfileAsync(settings, token);
+        bool restored = await DisplayViewModel.ApplyProfileAsync(settings, token);
         SynchronizeDisplayControls();
+        return restored;
     }
 
     private async Task RunDisplayOperationAsync(Func<Task> operation)

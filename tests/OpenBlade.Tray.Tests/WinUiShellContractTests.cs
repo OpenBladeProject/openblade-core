@@ -27,7 +27,7 @@ public sealed class WinUiShellContractTests
         string window = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml.cs");
         Assert.Contains("DisplayViewModel.UserSettingsChanged +=", window, StringComparison.Ordinal);
         Assert.Contains(
-            "ViewModel.RecordDisplayProfileChange(args.Settings, args.PreviousSettings)",
+            "args.PowerSource,",
             window,
             StringComparison.Ordinal);
         Assert.Contains("ViewModel.SavedDisplayProfileRestoreRequested +=", window, StringComparison.Ordinal);

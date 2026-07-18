@@ -196,7 +196,7 @@ public sealed class MainViewModelTests
         await Assert.IsType<AsyncRelayCommand>(viewModel.SetLightingCommand)
             .ExecuteAsync(lighting);
         var display = new DisplayProfileSettings("drr-48-240", false, "srgb");
-        viewModel.RecordDisplayProfileChange(display);
+        viewModel.RecordDisplayProfileChange(PowerSource.PluggedIn, display);
 
         Assert.True(viewModel.HasActiveProfileDraft);
         Assert.True(viewModel.HasUnsavedProfileChanges);
@@ -289,13 +289,14 @@ public sealed class MainViewModelTests
         viewModel.SavedDisplayProfileRestoreRequested += (settings, _) =>
         {
             restoredDisplay = settings;
-            return Task.CompletedTask;
+            return Task.FromResult(true);
         };
 
         await Assert.IsType<AsyncRelayCommand>(viewModel.SetFanModeCommand)
             .ExecuteAsync(FanMode.Maximum);
         var originalDisplay = new DisplayProfileSettings("60", false, "native");
         viewModel.RecordDisplayProfileChange(
+            PowerSource.PluggedIn,
             new DisplayProfileSettings("240", true, null),
             originalDisplay);
         Assert.True(viewModel.HasActiveProfileDraft);
@@ -306,6 +307,92 @@ public sealed class MainViewModelTests
         Assert.Null(client.FanOverride);
         Assert.Equal(originalDisplay, restoredDisplay);
         Assert.Equal(original.Profiles, viewModel.Profiles);
+        Assert.False(viewModel.HasActiveProfileDraft);
+    }
+
+    [Fact]
+    public async Task DisplayDiscard_MergesPartialSavedProfileOverPreEditState()
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        ServiceStatusSnapshot baseline = CreateStatus(verified: true, blocked: false);
+        ProfileSet profiles = baseline.Profiles with
+        {
+            PluggedIn = baseline.Profiles.PluggedIn with
+            {
+                Display = new DisplayProfileSettings("fixed-60", null, null),
+            },
+        };
+        client.Publish(baseline with { Profiles = profiles });
+        await WaitUntilAsync(() => viewModel.Profiles == profiles);
+        DisplayProfileSettings? restoredDisplay = null;
+        viewModel.SavedDisplayProfileRestoreRequested += (settings, _) =>
+        {
+            restoredDisplay = settings;
+            return Task.FromResult(true);
+        };
+        var original = new DisplayProfileSettings("fixed-240", false, "native");
+        viewModel.RecordDisplayProfileChange(
+            PowerSource.PluggedIn,
+            new DisplayProfileSettings("fixed-240", true, null),
+            original);
+
+        await Assert.IsType<AsyncRelayCommand>(viewModel.DiscardProfileDraftCommand)
+            .ExecuteAsync(null);
+
+        Assert.Equal(
+            new DisplayProfileSettings("fixed-60", false, "native"),
+            restoredDisplay);
+        Assert.False(viewModel.HasActiveProfileDraft);
+    }
+
+    [Fact]
+    public async Task DisplayDiscard_KeepsDraftWhenReadbackIsNotConfirmed()
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        client.Publish(CreateStatus(verified: true, blocked: false));
+        await WaitUntilAsync(() => viewModel.IsConnected);
+        viewModel.SavedDisplayProfileRestoreRequested += (_, _) =>
+            Task.FromResult(false);
+        viewModel.RecordDisplayProfileChange(
+            PowerSource.PluggedIn,
+            new DisplayProfileSettings("fixed-240", false, "native"),
+            new DisplayProfileSettings("fixed-60", false, "native"));
+
+        await Assert.IsType<AsyncRelayCommand>(viewModel.DiscardProfileDraftCommand)
+            .ExecuteAsync(null);
+
+        Assert.True(viewModel.HasActiveProfileDraft);
+        Assert.Contains(
+            "did not confirm",
+            viewModel.OperationStatusMessage,
+            StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task StaleDisplayCompletion_IsNotStagedToDestinationProfile()
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        ServiceStatusSnapshot original = CreateStatus(verified: true, blocked: false);
+        client.Publish(original);
+        await WaitUntilAsync(() => viewModel.IsConnected);
+        client.Publish(original with
+        {
+            Revision = original.Revision + 1,
+            ActivePowerSource = PowerSource.Battery,
+        });
+        await WaitUntilAsync(() => viewModel.ActivePowerSource == PowerSource.Battery);
+
+        viewModel.RecordDisplayProfileChange(
+            PowerSource.PluggedIn,
+            new DisplayProfileSettings("fixed-240", false, "native"),
+            new DisplayProfileSettings("fixed-60", false, "native"));
+
         Assert.False(viewModel.HasActiveProfileDraft);
     }
 
@@ -2190,10 +2277,14 @@ public sealed class MainViewModelTests
                     SettingValueSource.PowerProfile),
             },
         });
-        await WaitUntilAsync(() => viewModel.SelectedPerformance == PerformancePreset.Performance);
+        await WaitUntilAsync(() =>
+            viewModel.IsConnected
+            && viewModel.SelectedPerformance == PerformancePreset.Performance);
 
         client.PublishReconnecting();
-        await WaitUntilAsync(() => !viewModel.IsConnected);
+        await WaitUntilAsync(() =>
+            !viewModel.IsConnected
+            && viewModel.ConnectionStatus == "Reconnecting to service");
 
         Assert.Equal(PerformancePreset.Performance, viewModel.SelectedPerformance);
         Assert.Equal("Reconnecting to service", viewModel.ConnectionStatus);

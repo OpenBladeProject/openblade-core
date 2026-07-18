@@ -167,6 +167,41 @@ public sealed class ProfileStoreTests : IDisposable
         Assert.DoesNotContain("\"display\": null", await File.ReadAllTextAsync(path));
     }
 
+    [Fact]
+    public async Task Load_SchemaOneAddsUsbCAndNormalizesMissingDisplaySettings()
+    {
+        Directory.CreateDirectory(_directory);
+        string path = Path.Combine(_directory, "profiles.json");
+        ProfileSet defaults = ProfileDefaults.CreateSafeDefaults();
+        var legacy = new LegacyProfileDocument(
+            ProfileStore.LegacySchemaVersion,
+            new LegacyProfileSet(
+                defaults.PluggedIn with { Display = null },
+                defaults.Battery with
+                {
+                    Performance = PerformancePreset.Silent,
+                    Display = null,
+                },
+                BatteryPolicy.Create(75)));
+        await File.WriteAllBytesAsync(
+            path,
+            JsonSerializer.SerializeToUtf8Bytes(legacy, ProfileStore.SerializerOptions));
+
+        ProfileLoadResult result = await new ProfileStore(path).LoadAsync(
+            CancellationToken.None);
+
+        Assert.False(result.RecoveredFromInvalidFile);
+        Assert.Equal(DisplayProfileSettings.Unconfigured(), result.Profiles.PluggedIn.Display);
+        Assert.Equal(DisplayProfileSettings.Unconfigured(), result.Profiles.Battery.Display);
+        Assert.Equal(PerformancePreset.BatterySaver, result.Profiles.Battery.Performance);
+        Assert.Equal(defaults.UsbC, result.Profiles.UsbC);
+        Assert.Equal(75, result.Profiles.BatteryPolicy.ChargeLimitPercent);
+        Assert.Contains(
+            $"\"schemaVersion\": {ProfileStore.CurrentSchemaVersion}",
+            await File.ReadAllTextAsync(path));
+        Assert.DoesNotContain("\"display\": null", await File.ReadAllTextAsync(path));
+    }
+
     public void Dispose()
     {
         if (Directory.Exists(_directory))

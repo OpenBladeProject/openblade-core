@@ -41,7 +41,11 @@ internal sealed class WindowsDisplaySettingsAdapter : IDisplaySettingsAdapter, I
     {
         Backend.DisplaySettingsSnapshot state = result.State ?? new(
             false, null, 0, 0, null, [], false, false, false, null, [], result.Error);
-        return Map(state) with { StatusMessage = result.Error ?? state.Message };
+        return Map(state) with
+        {
+            StatusMessage = result.Error ?? state.Message,
+            OperationSucceeded = result.Succeeded,
+        };
     }
 
     private static DisplaySettingsSnapshot Map(Backend.DisplaySettingsSnapshot state) => new(

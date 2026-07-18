@@ -274,7 +274,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
 
     public event PropertyChangedEventHandler? PropertyChanged;
 
-    public event Func<DisplayProfileSettings, CancellationToken, Task>?
+    public event Func<DisplayProfileSettings, CancellationToken, Task<bool>>?
         SavedDisplayProfileRestoreRequested;
 
     public bool IsConnected
@@ -1219,12 +1219,13 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     }
 
     public void RecordDisplayProfileChange(
+        PowerSource powerSource,
         DisplayProfileSettings settings,
         DisplayProfileSettings? previousSettings = null)
     {
         ArgumentNullException.ThrowIfNull(settings);
         MarkActiveProfileDraft(
-            ActivePowerSource,
+            powerSource,
             display: settings,
             previousDisplay: previousSettings);
     }
@@ -2545,11 +2546,15 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
 
         DisplayProfileSettings savedDisplay =
             GetProfile(source).Display ?? DisplayProfileSettings.Unconfigured();
-        DisplayProfileSettings displayToRestore = savedDisplay.IsConfigured
-            ? savedDisplay
-            : activeProfileOriginalDisplay ?? savedDisplay;
+        DisplayProfileSettings originalDisplay =
+            activeProfileOriginalDisplay ?? DisplayProfileSettings.Unconfigured();
+        DisplayProfileSettings displayToRestore = new(
+            savedDisplay.RefreshRateKey ?? originalDisplay.RefreshRateKey,
+            savedDisplay.HdrEnabled ?? originalDisplay.HdrEnabled,
+            savedDisplay.ColorProfileKey ?? originalDisplay.ColorProfileKey);
         bool controlsRestored = await ClearActiveProfileHardwareOverridesAsync(token);
-        bool displayRestored = await RestoreSavedDisplayProfileAsync(displayToRestore, token);
+        bool displayRestored = activeProfileDraftDisplay is null
+            || await RestoreSavedDisplayProfileAsync(displayToRestore, token);
         if (controlsRestored && displayRestored)
         {
             ClearActiveProfileDraft();
@@ -2592,13 +2597,30 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         CancellationToken token)
     {
         Delegate[] handlers = SavedDisplayProfileRestoreRequested?.GetInvocationList() ?? [];
+        if (handlers.Length == 0)
+        {
+            await dispatcher.InvokeAsync(
+                () => OperationStatusMessage =
+                    "Could not restore the saved display profile because the display controller is unavailable.",
+                token);
+            return false;
+        }
+
         try
         {
             foreach (Delegate handler in handlers)
             {
-                await ((Func<DisplayProfileSettings, CancellationToken, Task>)handler)(
+                bool restored = await ((Func<DisplayProfileSettings, CancellationToken, Task<bool>>)handler)(
                     settings,
                     token);
+                if (!restored)
+                {
+                    await dispatcher.InvokeAsync(
+                        () => OperationStatusMessage =
+                            "Could not restore the saved display profile because Windows did not confirm every setting.",
+                        token);
+                    return false;
+                }
             }
             return true;
         }

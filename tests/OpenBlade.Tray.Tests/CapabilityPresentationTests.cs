@@ -795,7 +795,7 @@ public sealed class CapabilityPresentationTests
             Message = "Later profiles",
             Profiles = laterProfiles,
         });
-        await WaitUntilAsync(() => viewModel.ConnectionStatus == "Later profiles");
+        await WaitUntilAsync(() => viewModel.Profiles == laterProfiles);
 
         Assert.Equal(laterProfiles, viewModel.Profiles);
         Assert.Equal(PerformancePreset.Balanced, viewModel.PluggedInPerformanceEditor);

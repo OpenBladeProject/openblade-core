@@ -27,7 +27,7 @@ public sealed class DisplaySettingsViewModelTests
     {
         var adapter = new FakeDisplaySettingsAdapter(
             Snapshot(refreshKey: Fixed240.Key, hdr: true, colorKey: Native.Key));
-        await using var viewModel = new DisplaySettingsViewModel(adapter);
+        await using var viewModel = CreateViewModel(adapter);
 
         await viewModel.RefreshAsync();
 
@@ -45,7 +45,7 @@ public sealed class DisplaySettingsViewModelTests
     {
         var adapter = new FakeDisplaySettingsAdapter(
             Snapshot(refreshKey: Dynamic.Key, hdr: false, colorKey: Srgb.Key));
-        await using var viewModel = new DisplaySettingsViewModel(adapter);
+        await using var viewModel = CreateViewModel(adapter);
 
         await viewModel.RefreshAsync();
 
@@ -62,7 +62,7 @@ public sealed class DisplaySettingsViewModelTests
         {
             BlockFirstRefreshChange = true,
         };
-        await using var viewModel = new DisplaySettingsViewModel(adapter);
+        await using var viewModel = CreateViewModel(adapter);
         await viewModel.RefreshAsync();
 
         Task first = viewModel.SelectRefreshRateAsync(Fixed240);
@@ -91,7 +91,7 @@ public sealed class DisplaySettingsViewModelTests
     {
         var adapter = new FakeDisplaySettingsAdapter(
             Snapshot(refreshKey: Fixed60.Key, hdr: false, colorKey: Native.Key));
-        await using var viewModel = new DisplaySettingsViewModel(adapter);
+        await using var viewModel = CreateViewModel(adapter);
         await viewModel.RefreshAsync();
         IReadOnlyList<DisplayRefreshRateOption> refreshOptions = viewModel.RefreshRateOptions;
         IReadOnlyList<DisplayColorProfileOption> colorOptions = viewModel.ColorProfileOptions;
@@ -117,7 +117,7 @@ public sealed class DisplaySettingsViewModelTests
     {
         var adapter = new FakeDisplaySettingsAdapter(
             Snapshot(refreshKey: Fixed60.Key, hdr: false, colorKey: Srgb.Key));
-        await using var viewModel = new DisplaySettingsViewModel(adapter);
+        await using var viewModel = CreateViewModel(adapter);
         await viewModel.RefreshAsync();
         adapter.SetExternalState(Snapshot(
             refreshKey: Fixed60.Key,
@@ -135,14 +135,16 @@ public sealed class DisplaySettingsViewModelTests
     {
         var adapter = new FakeDisplaySettingsAdapter(
             Snapshot(refreshKey: Fixed60.Key, hdr: false, colorKey: Native.Key));
-        await using var viewModel = new DisplaySettingsViewModel(adapter);
+        await using var viewModel = CreateViewModel(adapter);
         await viewModel.RefreshAsync();
         DisplayProfileSettings? previous = null;
         DisplayProfileSettings? changed = null;
+        PowerSource? changedSource = null;
         viewModel.UserSettingsChanged += (_, args) =>
         {
             previous = args.PreviousSettings;
             changed = args.Settings;
+            changedSource = args.PowerSource;
         };
 
         await viewModel.SelectRefreshRateAsync(Dynamic);
@@ -153,6 +155,7 @@ public sealed class DisplaySettingsViewModelTests
         Assert.Equal(
             new DisplayProfileSettings(Fixed60.Key, false, Native.Key),
             previous);
+        Assert.Equal(PowerSource.PluggedIn, changedSource);
     }
 
     [Fact]
@@ -160,7 +163,7 @@ public sealed class DisplaySettingsViewModelTests
     {
         var adapter = new FakeDisplaySettingsAdapter(
             Snapshot(refreshKey: Fixed60.Key, hdr: false, colorKey: Native.Key));
-        await using var viewModel = new DisplaySettingsViewModel(adapter);
+        await using var viewModel = CreateViewModel(adapter);
         await viewModel.RefreshAsync();
         int changedCount = 0;
         viewModel.UserSettingsChanged += (_, _) => changedCount++;
@@ -179,11 +182,11 @@ public sealed class DisplaySettingsViewModelTests
     {
         var adapter = new FakeDisplaySettingsAdapter(
             Snapshot(refreshKey: Fixed60.Key, hdr: true, colorKey: Native.Key));
-        await using var viewModel = new DisplaySettingsViewModel(adapter);
+        await using var viewModel = CreateViewModel(adapter);
         int changedCount = 0;
         viewModel.UserSettingsChanged += (_, _) => changedCount++;
 
-        await viewModel.ApplyProfileAsync(
+        bool applied = await viewModel.ApplyProfileAsync(
             new DisplayProfileSettings(Dynamic.Key, false, Srgb.Key));
 
         Assert.Equal([Dynamic.Key], adapter.RefreshRequests);
@@ -193,7 +196,72 @@ public sealed class DisplaySettingsViewModelTests
         Assert.Equal(Srgb.Key, viewModel.SelectedColorProfile?.Key);
         Assert.False(viewModel.IsHdrEnabled);
         Assert.Equal(0, changedCount);
+        Assert.True(applied);
     }
+
+    [Fact]
+    public async Task UserMutation_CapturesSourceAndUnknownSourcePreventsWrites()
+    {
+        var adapter = new FakeDisplaySettingsAdapter(
+            Snapshot(refreshKey: Fixed60.Key, hdr: false, colorKey: Native.Key))
+        {
+            BlockFirstRefreshChange = true,
+        };
+        await using var viewModel = CreateViewModel(adapter);
+        await viewModel.RefreshAsync();
+        PowerSource? changedSource = null;
+        viewModel.UserSettingsChanged += (_, args) => changedSource = args.PowerSource;
+
+        Task change = viewModel.SelectRefreshRateAsync(Fixed240);
+        await adapter.FirstRefreshChangeStarted.Task;
+        viewModel.ActivePowerSource = PowerSource.Battery;
+        adapter.ReleaseFirstRefreshChange.TrySetResult();
+        await change;
+
+        Assert.Equal(PowerSource.PluggedIn, changedSource);
+        viewModel.ActivePowerSource = PowerSource.ExternalUnknown;
+        Assert.False(viewModel.CanChangeRefreshRate);
+        await viewModel.SelectRefreshRateAsync(Dynamic);
+        Assert.Equal([Fixed240.Key], adapter.RefreshRequests);
+    }
+
+    [Fact]
+    public async Task ApplyProfile_ReturnsFalseWhenAdapterDoesNotConfirmMutation()
+    {
+        var adapter = new FakeDisplaySettingsAdapter(
+            Snapshot(refreshKey: Fixed60.Key, hdr: false, colorKey: Native.Key))
+        {
+            FailNextRefreshChange = true,
+        };
+        await using var viewModel = CreateViewModel(adapter);
+
+        bool applied = await viewModel.ApplyProfileAsync(
+            new DisplayProfileSettings(Fixed240.Key, false, Native.Key));
+
+        Assert.False(applied);
+        Assert.Equal(Fixed60.Key, viewModel.SelectedRefreshRate?.Key);
+    }
+
+    [Fact]
+    public async Task ApplyProfile_HdrTargetIgnoresDormantColorProfileKey()
+    {
+        var adapter = new FakeDisplaySettingsAdapter(
+            Snapshot(refreshKey: Fixed240.Key, hdr: false, colorKey: Native.Key));
+        await using var viewModel = CreateViewModel(adapter);
+
+        bool applied = await viewModel.ApplyProfileAsync(
+            new DisplayProfileSettings(Fixed240.Key, true, Native.Key));
+
+        Assert.True(applied);
+        Assert.True(viewModel.IsHdrEnabled);
+        Assert.Empty(adapter.ColorRequests);
+    }
+
+    private static DisplaySettingsViewModel CreateViewModel(
+        IDisplaySettingsAdapter adapter) => new(adapter)
+        {
+            ActivePowerSource = PowerSource.PluggedIn,
+        };
 
     private static DisplaySettingsSnapshot Snapshot(
         string refreshKey,
@@ -216,6 +284,7 @@ public sealed class DisplaySettingsViewModelTests
         private int refreshChanges;
 
         public bool BlockFirstRefreshChange { get; init; }
+        public bool FailNextRefreshChange { get; init; }
         public TaskCompletionSource FirstRefreshChangeStarted { get; } = new(
             TaskCreationOptions.RunContinuationsAsynchronously);
         public TaskCompletionSource ReleaseFirstRefreshChange { get; } = new(
@@ -242,6 +311,15 @@ public sealed class DisplaySettingsViewModelTests
             try
             {
                 RefreshRequests.Add(refreshRateKey);
+                if (FailNextRefreshChange)
+                {
+                    return state with
+                    {
+                        StatusMessage = "Refresh change failed.",
+                        OperationSucceeded = false,
+                    };
+                }
+
                 if (BlockFirstRefreshChange && Interlocked.Increment(ref refreshChanges) == 1)
                 {
                     FirstRefreshChangeStarted.TrySetResult();
