@@ -28,6 +28,12 @@ public sealed record LiveReadingsRefreshOption(
 
 public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
 {
+    private static readonly RazerBladeModelInfo TargetLaptop =
+        RazerBladeModelCatalog.Find(RazerBladeModelCatalog.OpenBladeTargetModelNumber)
+        ?? throw new InvalidOperationException("The supported laptop is missing from the model catalog.");
+    private static readonly string TargetLaptopLabel =
+        $"{TargetLaptop.DisplayName} — {TargetLaptop.ModelNumber}";
+
     private readonly IServiceClient serviceClient;
     private readonly IUiDispatcher dispatcher;
     private readonly IDiagnosticArchiveSaver diagnosticArchiveSaver;
@@ -545,10 +551,10 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         : "Unavailable";
 
     public string TroubleshootingLaptopStatus => !IsConnected
-        ? "Unavailable"
+        ? $"{TargetLaptopLabel} — Status unavailable"
         : latestStatus?.DeviceVerified == true
-            ? "Razer Blade 16 detected"
-            : "Razer Blade 16 not detected";
+            ? $"{TargetLaptopLabel} — Detected"
+            : $"{TargetLaptopLabel} — Not detected";
 
     public string TroubleshootingPowerSourceStatus => !IsConnected
         ? "Unavailable"

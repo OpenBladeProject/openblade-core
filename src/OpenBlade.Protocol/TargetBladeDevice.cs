@@ -1,8 +1,10 @@
+using OpenBlade.Contracts;
+
 namespace OpenBlade.Protocol;
 
 public static class TargetBladeDevice
 {
-    public const string Model = "RZ09-0581";
+    public const string Model = RazerBladeModelCatalog.OpenBladeTargetModelNumber;
     public const string BiosVersion = "3.01";
     public const ushort VendorId = 0x1532;
     public const ushort ProductId = 0x02E0;

@@ -1282,6 +1282,9 @@ public sealed class MainViewModelTests
         Assert.Equal("OpenBlade service isn’t running", viewModel.ControlAccessStatus);
         Assert.True(viewModel.IsReadinessError);
         Assert.Equal("Unavailable", viewModel.TroubleshootingServiceStatus);
+        Assert.Equal(
+            "Razer Blade 16 (2026) — RZ09-0581 — Status unavailable",
+            viewModel.TroubleshootingLaptopStatus);
 
         client.Publish(CreateStatus(verified: false, blocked: true));
         await WaitUntilAsync(() =>
@@ -1290,7 +1293,9 @@ public sealed class MainViewModelTests
         Assert.True(viewModel.IsReadinessError);
         Assert.False(viewModel.IsReadinessWarning);
         Assert.Equal("Running", viewModel.TroubleshootingServiceStatus);
-        Assert.Equal("Razer Blade 16 not detected", viewModel.TroubleshootingLaptopStatus);
+        Assert.Equal(
+            "Razer Blade 16 (2026) — RZ09-0581 — Not detected",
+            viewModel.TroubleshootingLaptopStatus);
         Assert.Equal("Unavailable", viewModel.TroubleshootingControlsStatus);
         Assert.False(viewModel.HasAttention);
         Assert.Equal("Laptop not found", viewModel.PerformanceSourceLabel);
@@ -1321,7 +1326,9 @@ public sealed class MainViewModelTests
         Assert.Equal("Ready", viewModel.ProfileStateLabel);
         Assert.True(viewModel.IsReadinessReady);
         Assert.False(viewModel.IsReadinessWarning);
-        Assert.Equal("Razer Blade 16 detected", viewModel.TroubleshootingLaptopStatus);
+        Assert.Equal(
+            "Razer Blade 16 (2026) — RZ09-0581 — Detected",
+            viewModel.TroubleshootingLaptopStatus);
         Assert.Equal("Full-power adapter", viewModel.TroubleshootingPowerSourceStatus);
         Assert.Equal("Not detected", viewModel.TroubleshootingOtherRazerSoftwareStatus);
 
