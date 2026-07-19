@@ -2,10 +2,31 @@ using OpenBlade.Contracts;
 
 namespace OpenBlade.Service;
 
-public sealed class ControlRequestHandler(
-    IServiceControlRuntime runtime,
-    IDiagnosticArchiveProvider diagnosticArchiveProvider)
+public sealed class ControlRequestHandler
 {
+    private readonly IServiceControlRuntime runtime;
+    private readonly IDiagnosticArchiveProvider diagnosticArchiveProvider;
+    private readonly IServiceShutdownSignal shutdownSignal;
+
+    public ControlRequestHandler(
+        IServiceControlRuntime runtime,
+        IDiagnosticArchiveProvider diagnosticArchiveProvider)
+        : this(runtime, diagnosticArchiveProvider, NullServiceShutdownSignal.Instance)
+    {
+    }
+
+    public ControlRequestHandler(
+        IServiceControlRuntime runtime,
+        IDiagnosticArchiveProvider diagnosticArchiveProvider,
+        IServiceShutdownSignal shutdownSignal)
+    {
+        this.runtime = runtime ?? throw new ArgumentNullException(nameof(runtime));
+        this.diagnosticArchiveProvider = diagnosticArchiveProvider
+            ?? throw new ArgumentNullException(nameof(diagnosticArchiveProvider));
+        this.shutdownSignal = shutdownSignal
+            ?? throw new ArgumentNullException(nameof(shutdownSignal));
+    }
+
     public async Task<ServiceResponse> HandleAsync(
         ServiceRequest request,
         CancellationToken cancellationToken)
@@ -60,8 +81,19 @@ public sealed class ControlRequestHandler(
                 export.RequestId,
                 export.LiveReadingsEnabled,
                 cancellationToken),
+            ShutdownOpenBladeRequest => RequestShutdown(request.RequestId),
             _ => Failure(request.RequestId, "IPC request operation is unsupported."),
         };
+    }
+
+    private ServiceResponse RequestShutdown(Guid requestId)
+    {
+        shutdownSignal.RequestShutdownAfterResponse();
+        return Result(
+            requestId,
+            new ControlOperationResult(
+                ControlOperationStatus.Stored,
+                "OpenBlade is shutting down."));
     }
 
     private async Task<ServiceResponse> ObserveStatusAsync(

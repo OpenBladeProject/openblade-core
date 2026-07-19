@@ -25,6 +25,7 @@ public sealed record ControlOperationResult(ControlOperationStatus Status, strin
 [JsonDerivedType(typeof(SetBatteryPolicyRequest), "setBatteryPolicy")]
 [JsonDerivedType(typeof(SetBatteryProtectionRequest), "setBatteryProtection")]
 [JsonDerivedType(typeof(SetFullChargeOverrideRequest), "setFullChargeOverride")]
+[JsonDerivedType(typeof(ShutdownOpenBladeRequest), "shutdownOpenBlade")]
 public abstract record ServiceRequest(int Version, Guid RequestId);
 
 public sealed record GetStatusRequest(int Version, Guid RequestId)
@@ -82,6 +83,9 @@ public sealed record SetBatteryProtectionRequest(int Version, Guid RequestId, bo
     : ServiceRequest(Version, RequestId);
 
 public sealed record SetFullChargeOverrideRequest(int Version, Guid RequestId, bool Enabled)
+    : ServiceRequest(Version, RequestId);
+
+public sealed record ShutdownOpenBladeRequest(int Version, Guid RequestId)
     : ServiceRequest(Version, RequestId);
 
 public sealed record ServiceStatusSnapshot(

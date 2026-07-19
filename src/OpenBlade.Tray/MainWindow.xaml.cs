@@ -901,6 +901,47 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, ITrayIconThem
         }
     }
 
+    private async void OnShutdownOpenBlade(object sender, RoutedEventArgs args)
+    {
+        var confirmation = new ContentDialog
+        {
+            XamlRoot = Root.XamlRoot,
+            Title = "Shut down OpenBlade?",
+            Content = "This stops the app, display helper, and hardware service. "
+                + "OpenBlade will remain off until Windows restarts or the service is started again.",
+            PrimaryButtonText = "Shut down",
+            CloseButtonText = "Cancel",
+            DefaultButton = ContentDialogButton.Close,
+        };
+        if (await confirmation.ShowAsync() != ContentDialogResult.Primary)
+        {
+            return;
+        }
+
+        try
+        {
+            await ViewModel.ShutdownOpenBladeAsync(CancellationToken.None);
+            _ = SessionAgentLauncher.TryStopSibling();
+            if (Microsoft.UI.Xaml.Application.Current is App app)
+            {
+                await app.ExitTrayAsync();
+            }
+        }
+        catch (Exception exception)
+        {
+            Trace.TraceError("OpenBlade shutdown failed: {0}", exception);
+            var failure = new ContentDialog
+            {
+                XamlRoot = Root.XamlRoot,
+                Title = "OpenBlade could not shut down",
+                Content = exception.Message,
+                CloseButtonText = "Close",
+                DefaultButton = ContentDialogButton.Close,
+            };
+            await failure.ShowAsync();
+        }
+    }
+
     private void OnRootSizeChanged(object sender, SizeChangedEventArgs args)
     {
         UpdateDashboardLayout(args.NewSize.Width);

@@ -60,5 +60,10 @@ public interface IServiceClient
         bool enabled,
         CancellationToken token);
 
+    Task<ControlOperationResult> ShutdownOpenBladeAsync(CancellationToken token) =>
+        Task.FromResult(new ControlOperationResult(
+            ControlOperationStatus.Blocked,
+            "OpenBlade shutdown is unavailable."));
+
     IAsyncEnumerable<ServiceWatchUpdate> WatchStatusAsync(CancellationToken token);
 }

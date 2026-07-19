@@ -37,19 +37,21 @@ public sealed class ControlRequestHandlerTests
                 OpenBladeIpc.ProtocolVersion,
                 Guid.NewGuid(),
                 LiveReadingsEnabled: true),
+            new ShutdownOpenBladeRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid()),
         ];
         string[] expectedCalls =
         [
             "GetStatus", "GetStatus", "UpdateProfiles", "SetPerformanceOverride",
             "SetFanOverride", "SetLightingOverride", "PulseReactiveKey", "SetBatteryPolicy",
-            "SetBatteryProtection", "SetFullChargeOverride", "ExportDiagnostics",
+            "SetBatteryProtection", "SetFullChargeOverride", "ExportDiagnostics", "Shutdown",
         ];
 
         for (int index = 0; index < requests.Length; index++)
         {
             var runtime = new RecordingRuntime();
             var archives = new RecordingArchiveProvider();
-            var handler = new ControlRequestHandler(runtime, archives);
+            var shutdown = new RecordingShutdownSignal();
+            var handler = new ControlRequestHandler(runtime, archives, shutdown);
 
             ServiceResponse response = await handler.HandleAsync(
                 requests[index],
@@ -60,7 +62,7 @@ public sealed class ControlRequestHandlerTests
             Assert.True(response.Success);
             Assert.Equal(
                 [expectedCalls[index]],
-                runtime.Calls.Concat(archives.Calls));
+                runtime.Calls.Concat(archives.Calls).Concat(shutdown.Calls));
             if (requests[index] is GetStatusRequest or SubscribeStatusRequest)
             {
                 Assert.NotNull(response.Status);
@@ -266,6 +268,13 @@ public sealed class ControlRequestHandlerTests
         : IControllerPresenceMonitor
     {
         public ControllerPresenceObservation Observe() => new(controllers, null);
+    }
+
+    private sealed class RecordingShutdownSignal : IServiceShutdownSignal
+    {
+        public List<string> Calls { get; } = [];
+
+        public void RequestShutdownAfterResponse() => Calls.Add("Shutdown");
     }
 
     private sealed class FixedTelemetry : IPowerStateProvider

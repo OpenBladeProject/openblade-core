@@ -181,7 +181,7 @@ public sealed class CapabilityPresentationTests
         XElement about = NamedElement(document, "ScrollView", "AboutPage");
 
         Assert.Equal(
-            2,
+            3,
             settings.Descendants().Count(element =>
                 Attribute(element, "Style") == "{StaticResource SettingsGroupStyle}"));
         Assert.Equal(
@@ -189,7 +189,7 @@ public sealed class CapabilityPresentationTests
             settings.Descendants().Count(element =>
                 Attribute(element, "Style") == "{StaticResource SettingsRowStyle}"));
         Assert.Equal(
-            2,
+            3,
             settings.Descendants().Count(element =>
                 Attribute(element, "Style") == "{StaticResource SettingsLastRowStyle}"));
 
@@ -396,7 +396,7 @@ public sealed class CapabilityPresentationTests
         Assert.DoesNotContain(settingsPage.Descendants(), element =>
             element.Name.LocalName == "TextBlock"
             && Attribute(element, "Text") == "Support");
-        foreach (string section in new[] { "Device information", "Support", "Troubleshooting", "Project" })
+        foreach (string section in new[] { "Versions", "Device information", "Support", "Troubleshooting" })
         {
             Assert.Contains(aboutPage.Descendants(), element =>
                 element.Name.LocalName == "TextBlock"
@@ -404,7 +404,15 @@ public sealed class CapabilityPresentationTests
         }
         Assert.Contains("ViewModel.AboutUiVersionStatus", aboutPage.ToString(), StringComparison.Ordinal);
         Assert.Contains("ViewModel.AboutServiceVersionStatus", aboutPage.ToString(), StringComparison.Ordinal);
-        Assert.Contains("ViewModel.AboutSupportedLaptopStatus", aboutPage.ToString(), StringComparison.Ordinal);
+        Assert.DoesNotContain("Supported laptop", aboutPage.ToString(), StringComparison.Ordinal);
+        Assert.DoesNotContain("Relationship to Razer", aboutPage.ToString(), StringComparison.Ordinal);
+        Assert.Contains("Independent open-source project; not affiliated with Razer.", aboutPage.ToString(), StringComparison.Ordinal);
+        Assert.Contains("ms-appx:///Assets/Brand/OpenBlade.png", aboutPage.ToString(), StringComparison.Ordinal);
+        Assert.Equal(
+            4,
+            aboutPage.Descendants().Count(element =>
+                element.Name.LocalName == "HyperlinkButton"
+                && Attribute(element, "Style") == "{StaticResource ExternalLinkButtonStyle}"));
         Assert.Contains(
             "Save logs and system details with sensitive information removed.",
             xaml,

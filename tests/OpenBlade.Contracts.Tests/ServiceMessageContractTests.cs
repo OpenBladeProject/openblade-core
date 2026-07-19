@@ -7,9 +7,9 @@ namespace OpenBlade.Contracts.Tests;
 public sealed class ServiceMessageContractTests
 {
     [Fact]
-    public void ProtocolConstants_AreClosedVersionNineAndRetainExactSizeLimit()
+    public void ProtocolConstants_AreClosedVersionTenAndRetainExactSizeLimit()
     {
-        Assert.Equal(9, OpenBladeIpc.ProtocolVersion);
+        Assert.Equal(10, OpenBladeIpc.ProtocolVersion);
         Assert.Equal("OpenBlade.Service.v2", OpenBladeIpc.PipeName);
         Assert.Equal(64 * 1024, OpenBladeIpc.MaximumMessageBytes);
         Assert.Equal(32 * 1024, OpenBladeIpc.MaximumDiagnosticArchiveBytes);
@@ -31,7 +31,8 @@ public sealed class ServiceMessageContractTests
             (typeof(PulseReactiveKeyRequest), "pulseReactiveKey"),
             (typeof(SetBatteryPolicyRequest), "setBatteryPolicy"),
             (typeof(SetBatteryProtectionRequest), "setBatteryProtection"),
-            (typeof(SetFullChargeOverrideRequest), "setFullChargeOverride"));
+            (typeof(SetFullChargeOverrideRequest), "setFullChargeOverride"),
+            (typeof(ShutdownOpenBladeRequest), "shutdownOpenBlade"));
         AssertDerivedTypes(
             typeof(ServiceServerFrame),
             (typeof(ServiceResponse), "response"),

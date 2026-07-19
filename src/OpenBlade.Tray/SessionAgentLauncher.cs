@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using OpenBlade.Contracts;
 
 namespace OpenBlade.Tray;
 
@@ -23,5 +24,22 @@ internal static class SessionAgentLauncher
             WindowStyle = ProcessWindowStyle.Hidden,
         });
         return process is not null;
+    }
+
+    internal static bool TryStopSibling()
+    {
+        string executable = Path.Combine(
+            AppContext.BaseDirectory,
+            "OpenBlade.SessionAgent.exe");
+        try
+        {
+            using EventWaitHandle shutdownEvent = EventWaitHandle.OpenExisting(
+                SessionAgentShutdownEndpoint.ForExecutablePath(executable));
+            return shutdownEvent.Set();
+        }
+        catch (WaitHandleCannotBeOpenedException)
+        {
+            return false;
+        }
     }
 }

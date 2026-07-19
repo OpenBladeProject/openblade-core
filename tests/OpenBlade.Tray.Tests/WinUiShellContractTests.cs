@@ -79,6 +79,13 @@ public sealed class WinUiShellContractTests
         Assert.Contains("MainNavigation.SelectedItem = AboutNavigationItem", window, StringComparison.Ordinal);
         Assert.Contains("https://github.com/boyuanx/openblade-core/issues", xaml, StringComparison.Ordinal);
         Assert.Contains("https://github.com/boyuanx/openblade-core/blob/main/CHANGELOG.md", xaml, StringComparison.Ordinal);
+        Assert.Contains("ms-appx:///Assets/Brand/OpenBlade.png", xaml, StringComparison.Ordinal);
+        Assert.Contains("Glyph=\"&#xE8A7;\"", xaml, StringComparison.Ordinal);
+        Assert.DoesNotContain("Content=\"Open\"", xaml, StringComparison.Ordinal);
+        Assert.DoesNotContain("Content=\"View\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("Click=\"OnShutdownOpenBlade\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("ViewModel.ShutdownOpenBladeAsync", window, StringComparison.Ordinal);
+        Assert.Contains("SessionAgentLauncher.TryStopSibling()", window, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -154,6 +161,7 @@ public sealed class WinUiShellContractTests
         Assert.Contains("<ApplicationManifest>app.manifest</ApplicationManifest>", project, StringComparison.Ordinal);
         Assert.Contains("<ApplicationIcon Condition=\"Exists('Assets\\Brand\\OpenBlade.ico')\">", project, StringComparison.Ordinal);
         Assert.Contains("Assets\\Brand\\**\\*.ico\" Condition=\"Exists('Assets\\Brand')", project, StringComparison.Ordinal);
+        Assert.Contains("<Content Update=\"Assets\\Brand\\OpenBlade.png\">", project, StringComparison.Ordinal);
         Assert.Contains("<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>", project, StringComparison.Ordinal);
         Assert.Contains("<CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>", project, StringComparison.Ordinal);
         Assert.Contains("Include=\"Microsoft.WindowsAppSDK\" Version=\"2.2.0\"", project, StringComparison.Ordinal);

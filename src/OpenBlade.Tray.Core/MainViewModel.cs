@@ -671,8 +671,6 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             ? "Unavailable"
             : latestStatus.ServiceVersion.Trim();
 
-    public string AboutSupportedLaptopStatus => TargetLaptopLabel;
-
     public string AboutDetectedLaptopStatus => !IsConnected
         ? "Unavailable"
         : latestStatus?.DeviceVerified == true
@@ -690,7 +688,6 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     public string AboutVersionInformation =>
         $"OpenBlade UI: {AboutUiVersionStatus}{Environment.NewLine}"
         + $"OpenBlade service: {AboutServiceVersionStatus}{Environment.NewLine}"
-        + $"Supported laptop: {AboutSupportedLaptopStatus}{Environment.NewLine}"
         + $"Detected laptop: {AboutDetectedLaptopStatus}{Environment.NewLine}"
         + $"BIOS: {AboutBiosVersionStatus}{Environment.NewLine}"
         + $"EC: {AboutEcVersionStatus}{Environment.NewLine}"
@@ -1928,6 +1925,17 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
             throw;
+        }
+    }
+
+    public async Task ShutdownOpenBladeAsync(CancellationToken cancellationToken)
+    {
+        ControlOperationResult result = await serviceClient
+            .ShutdownOpenBladeAsync(cancellationToken)
+            .ConfigureAwait(false);
+        if (result.Status != ControlOperationStatus.Stored)
+        {
+            throw new InvalidOperationException(result.Message);
         }
     }
 

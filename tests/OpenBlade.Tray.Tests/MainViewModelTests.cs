@@ -1989,7 +1989,6 @@ public sealed class MainViewModelTests
         Assert.Equal("Unavailable", viewModel.TroubleshootingServiceStatus);
         Assert.Matches("^0\\.1\\.0\\+[0-9a-f]{8}$", viewModel.AboutUiVersionStatus);
         Assert.Equal("Unavailable", viewModel.AboutServiceVersionStatus);
-        Assert.Equal("Razer Blade 16 (2026), RZ09-0581", viewModel.AboutSupportedLaptopStatus);
         Assert.Equal("Unavailable", viewModel.AboutDetectedLaptopStatus);
         Assert.False(viewModel.HasTroubleshootingRecentError);
         Assert.Empty(viewModel.TroubleshootingRecentErrorStatus);
@@ -2061,6 +2060,7 @@ public sealed class MainViewModelTests
         Assert.Equal("Unavailable", viewModel.AboutMcuVersionStatus);
         Assert.Equal("98.3.5c.40.3d", viewModel.AboutVbiosVersionStatus);
         Assert.Contains("OpenBlade service: 0.1.0-test", viewModel.AboutVersionInformation, StringComparison.Ordinal);
+        Assert.DoesNotContain("Supported laptop", viewModel.AboutVersionInformation, StringComparison.Ordinal);
 
         client.Publish(CreateStatus(verified: true, blocked: false) with
         {
@@ -2122,6 +2122,17 @@ public sealed class MainViewModelTests
         client.PublishReconnecting();
         await WaitUntilAsync(() => !viewModel.IsConnected);
         Assert.Equal("Unavailable", viewModel.AboutServiceVersionStatus);
+    }
+
+    [Fact]
+    public async Task ShutdownOpenBlade_RequestsTypedServiceShutdown()
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+
+        await viewModel.ShutdownOpenBladeAsync(CancellationToken.None);
+
+        Assert.True(client.ShutdownRequested);
     }
 
     [Fact]
@@ -2852,6 +2863,7 @@ public sealed class MainViewModelTests
         public ManualOverride<LightingSettings>? LightingOverride { get; private set; }
         public bool? BatteryProtectionEnabled { get; private set; }
         public bool? FullChargeEnabled { get; private set; }
+        public bool ShutdownRequested { get; private set; }
         public ProfileSet? LastProfiles { get; private set; }
         public TaskCompletionSource MutationStarted { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public TaskCompletionSource ExportStarted { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -2990,6 +3002,15 @@ public sealed class MainViewModelTests
         {
             FullChargeEnabled = enabled;
             return MutateAsync(token);
+        }
+
+        public Task<ControlOperationResult> ShutdownOpenBladeAsync(CancellationToken token)
+        {
+            token.ThrowIfCancellationRequested();
+            ShutdownRequested = true;
+            return Task.FromResult(new ControlOperationResult(
+                ControlOperationStatus.Stored,
+                "OpenBlade is shutting down."));
         }
 
         private async Task<ControlOperationResult> MutateAsync(CancellationToken token)

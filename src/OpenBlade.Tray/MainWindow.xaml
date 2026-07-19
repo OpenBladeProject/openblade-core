@@ -111,6 +111,18 @@
                 <Setter Property="Foreground" Value="{ThemeResource TextFillColorSecondaryBrush}" />
                 <Setter Property="TextWrapping" Value="Wrap" />
             </Style>
+            <Style x:Key="ExternalLinkButtonStyle" TargetType="HyperlinkButton">
+                <Setter Property="Width" Value="40" />
+                <Setter Property="Height" Value="40" />
+                <Setter Property="Padding" Value="0" />
+                <Setter Property="HorizontalAlignment" Value="Right" />
+                <Setter Property="VerticalAlignment" Value="Center" />
+                <Setter Property="HorizontalContentAlignment" Value="Center" />
+                <Setter Property="VerticalContentAlignment" Value="Center" />
+                <Setter Property="Foreground" Value="{ThemeResource TextFillColorPrimaryBrush}" />
+                <Setter Property="Background" Value="{ThemeResource SubtleFillColorSecondaryBrush}" />
+                <Setter Property="CornerRadius" Value="4" />
+            </Style>
         </Grid.Resources>
 
         <TitleBar x:Name="AppTitleBar"
@@ -1286,6 +1298,31 @@
                             </StackPanel>
                         </Border>
 
+                        <TextBlock Text="Shutdown" Style="{StaticResource SectionHeaderStyle}" />
+                        <Border Style="{StaticResource SettingsGroupStyle}">
+                            <Border Style="{StaticResource SettingsLastRowStyle}">
+                                <Grid ColumnSpacing="20">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel Spacing="3" VerticalAlignment="Center">
+                                        <TextBlock Text="Shut down OpenBlade"
+                                                   Style="{StaticResource CardTitleStyle}" />
+                                        <TextBlock Text="Stop the app, display helper, and hardware service until Windows restarts."
+                                                   Style="{StaticResource SecondaryTextStyle}" />
+                                    </StackPanel>
+                                    <Button Grid.Column="1"
+                                            Content="Shut down"
+                                            HorizontalAlignment="Right"
+                                            VerticalAlignment="Center"
+                                            IsEnabled="{x:Bind ViewModel.IsConnected, Mode=OneWay}"
+                                            Click="OnShutdownOpenBlade"
+                                            AutomationProperties.Name="Shut down OpenBlade" />
+                                </Grid>
+                            </Border>
+                        </Border>
+
                     </StackPanel>
                 </ScrollView>
 
@@ -1308,56 +1345,68 @@
                         <Border Style="{StaticResource CardStyle}" Padding="22">
                             <Grid ColumnSpacing="18">
                                 <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="64" />
+                                    <ColumnDefinition Width="80" />
                                     <ColumnDefinition Width="*" />
-                                    <ColumnDefinition Width="Auto" />
                                 </Grid.ColumnDefinitions>
-                                <Image Width="64"
-                                       Height="64"
-                                       Source="ms-appx:///Assets/Brand/OpenBlade.ico"
+                                <Image Width="80"
+                                       Height="80"
+                                       Source="ms-appx:///Assets/Brand/OpenBlade.png"
                                        AutomationProperties.Name="OpenBlade app icon" />
-                                <StackPanel Grid.Column="1" Spacing="3" VerticalAlignment="Center">
+                                <StackPanel Grid.Column="1" Spacing="4" VerticalAlignment="Center">
                                     <TextBlock Text="OpenBlade"
                                                Style="{StaticResource TitleLargeTextBlockStyle}" />
                                     <TextBlock Text="Lightweight controls for Razer Blade laptops"
                                                Style="{StaticResource SecondaryTextStyle}" />
-                                    <StackPanel Spacing="1">
-                                        <StackPanel Orientation="Horizontal" Spacing="4">
-                                            <TextBlock Text="UI" Style="{StaticResource SecondaryTextStyle}" />
-                                            <TextBlock Text="{x:Bind ViewModel.AboutUiVersionStatus, Mode=OneWay}"
-                                                       Style="{StaticResource SecondaryTextStyle}"
-                                                       IsTextSelectionEnabled="True" />
-                                        </StackPanel>
-                                        <StackPanel Orientation="Horizontal" Spacing="4">
-                                            <TextBlock Text="Service" Style="{StaticResource SecondaryTextStyle}" />
-                                            <TextBlock Text="{x:Bind ViewModel.AboutServiceVersionStatus, Mode=OneWay}"
-                                                       Style="{StaticResource SecondaryTextStyle}"
-                                                       IsTextSelectionEnabled="True"
-                                                       AutomationProperties.Name="OpenBlade service version" />
-                                        </StackPanel>
-                                    </StackPanel>
+                                    <TextBlock Text="Independent open-source project; not affiliated with Razer."
+                                               Style="{StaticResource SecondaryTextStyle}" />
                                 </StackPanel>
-                                <Button Grid.Column="2"
-                                        Content="Copy version info"
-                                        HorizontalAlignment="Right"
-                                        VerticalAlignment="Center"
-                                        Click="OnCopyVersionInformation"
-                                        AutomationProperties.Name="Copy OpenBlade version information" />
                             </Grid>
                         </Border>
 
-                        <TextBlock Text="Device information" Style="{StaticResource SectionHeaderStyle}" />
+                        <TextBlock Text="Versions" Style="{StaticResource SectionHeaderStyle}" />
                         <Border Style="{StaticResource SettingsGroupStyle}">
                             <StackPanel>
                                 <Border Style="{StaticResource SettingsRowStyle}">
                                     <Grid ColumnSpacing="24">
                                         <Grid.ColumnDefinitions><ColumnDefinition Width="2*" /><ColumnDefinition Width="3*" /></Grid.ColumnDefinitions>
-                                        <TextBlock Text="Supported laptop" Style="{StaticResource CardTitleStyle}" />
+                                        <TextBlock Text="OpenBlade app" Style="{StaticResource CardTitleStyle}" />
                                         <TextBlock Grid.Column="1"
-                                                   Text="{x:Bind ViewModel.AboutSupportedLaptopStatus, Mode=OneWay}"
+                                                   Text="{x:Bind ViewModel.AboutUiVersionStatus, Mode=OneWay}"
                                                    Style="{StaticResource TroubleshootingValueStyle}" />
                                     </Grid>
                                 </Border>
+                                <Border Style="{StaticResource SettingsRowStyle}">
+                                    <Grid ColumnSpacing="24">
+                                        <Grid.ColumnDefinitions><ColumnDefinition Width="2*" /><ColumnDefinition Width="3*" /></Grid.ColumnDefinitions>
+                                        <TextBlock Text="OpenBlade service" Style="{StaticResource CardTitleStyle}" />
+                                        <TextBlock Grid.Column="1"
+                                                   Text="{x:Bind ViewModel.AboutServiceVersionStatus, Mode=OneWay}"
+                                                   Style="{StaticResource TroubleshootingValueStyle}"
+                                                   AutomationProperties.Name="OpenBlade service version" />
+                                    </Grid>
+                                </Border>
+                                <Border Style="{StaticResource SettingsLastRowStyle}">
+                                    <Grid ColumnSpacing="20">
+                                        <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                                        <TextBlock Text="Copy version information"
+                                                   Style="{StaticResource CardTitleStyle}"
+                                                   VerticalAlignment="Center" />
+                                        <Button Grid.Column="1"
+                                                Width="40" Height="32" Padding="0"
+                                                HorizontalAlignment="Right" VerticalAlignment="Center"
+                                                Click="OnCopyVersionInformation"
+                                                AutomationProperties.Name="Copy OpenBlade version information"
+                                                ToolTipService.ToolTip="Copy version information">
+                                            <FontIcon Glyph="&#xE8C8;" FontSize="16" />
+                                        </Button>
+                                    </Grid>
+                                </Border>
+                            </StackPanel>
+                        </Border>
+
+                        <TextBlock Text="Device information" Style="{StaticResource SectionHeaderStyle}" />
+                        <Border Style="{StaticResource SettingsGroupStyle}">
+                            <StackPanel>
                                 <Border Style="{StaticResource SettingsRowStyle}">
                                     <Grid ColumnSpacing="24">
                                         <Grid.ColumnDefinitions><ColumnDefinition Width="2*" /><ColumnDefinition Width="3*" /></Grid.ColumnDefinitions>
@@ -1440,9 +1489,12 @@
                                             <TextBlock Text="Open GitHub Issues to report a bug or request an improvement." Style="{StaticResource SecondaryTextStyle}" />
                                         </StackPanel>
                                         <HyperlinkButton Grid.Column="1"
-                                                         Content="Open"
                                                          NavigateUri="https://github.com/boyuanx/openblade-core/issues"
-                                                         HorizontalAlignment="Right" VerticalAlignment="Center" />
+                                                         Style="{StaticResource ExternalLinkButtonStyle}"
+                                                         AutomationProperties.Name="Open GitHub Issues"
+                                                         ToolTipService.ToolTip="Open GitHub Issues">
+                                            <FontIcon Glyph="&#xE8A7;" FontSize="16" />
+                                        </HyperlinkButton>
                                     </Grid>
                                 </Border>
                                 <Border Style="{StaticResource SettingsRowStyle}">
@@ -1453,12 +1505,15 @@
                                             <TextBlock Text="Read setup, usage, and compatibility information." Style="{StaticResource SecondaryTextStyle}" />
                                         </StackPanel>
                                         <HyperlinkButton Grid.Column="1"
-                                                         Content="View"
                                                          NavigateUri="https://github.com/boyuanx/openblade-core#readme"
-                                                         HorizontalAlignment="Right" VerticalAlignment="Center" />
+                                                         Style="{StaticResource ExternalLinkButtonStyle}"
+                                                         AutomationProperties.Name="Open documentation"
+                                                         ToolTipService.ToolTip="Open documentation">
+                                            <FontIcon Glyph="&#xE8A7;" FontSize="16" />
+                                        </HyperlinkButton>
                                     </Grid>
                                 </Border>
-                                <Border Style="{StaticResource SettingsLastRowStyle}">
+                                <Border Style="{StaticResource SettingsRowStyle}">
                                     <Grid ColumnSpacing="20">
                                         <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
                                         <StackPanel Spacing="3">
@@ -1466,9 +1521,28 @@
                                             <TextBlock Text="See what changed in each OpenBlade build." Style="{StaticResource SecondaryTextStyle}" />
                                         </StackPanel>
                                         <HyperlinkButton Grid.Column="1"
-                                                         Content="View"
                                                          NavigateUri="https://github.com/boyuanx/openblade-core/blob/main/CHANGELOG.md"
-                                                         HorizontalAlignment="Right" VerticalAlignment="Center" />
+                                                         Style="{StaticResource ExternalLinkButtonStyle}"
+                                                         AutomationProperties.Name="Open release notes"
+                                                         ToolTipService.ToolTip="Open release notes">
+                                            <FontIcon Glyph="&#xE8A7;" FontSize="16" />
+                                        </HyperlinkButton>
+                                    </Grid>
+                                </Border>
+                                <Border Style="{StaticResource SettingsLastRowStyle}">
+                                    <Grid ColumnSpacing="20">
+                                        <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                                        <StackPanel Spacing="3">
+                                            <TextBlock Text="Source code" Style="{StaticResource CardTitleStyle}" />
+                                            <TextBlock Text="View and contribute to OpenBlade on GitHub." Style="{StaticResource SecondaryTextStyle}" />
+                                        </StackPanel>
+                                        <HyperlinkButton Grid.Column="1"
+                                                         NavigateUri="https://github.com/boyuanx/openblade-core"
+                                                         Style="{StaticResource ExternalLinkButtonStyle}"
+                                                         AutomationProperties.Name="Open source code"
+                                                         ToolTipService.ToolTip="Open source code">
+                                            <FontIcon Glyph="&#xE8A7;" FontSize="16" />
+                                        </HyperlinkButton>
                                     </Grid>
                                 </Border>
                             </StackPanel>
@@ -1543,31 +1617,6 @@
                                     </Border>
                                 </StackPanel>
                             </Expander>
-                        </Border>
-
-                        <TextBlock Text="Project" Style="{StaticResource SectionHeaderStyle}" />
-                        <Border Style="{StaticResource SettingsGroupStyle}">
-                            <StackPanel>
-                                <Border Style="{StaticResource SettingsRowStyle}">
-                                    <Grid ColumnSpacing="20">
-                                        <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
-                                        <StackPanel Spacing="3">
-                                            <TextBlock Text="Source code" Style="{StaticResource CardTitleStyle}" />
-                                            <TextBlock Text="View and contribute to OpenBlade on GitHub." Style="{StaticResource SecondaryTextStyle}" />
-                                        </StackPanel>
-                                        <HyperlinkButton Grid.Column="1" Content="Open" NavigateUri="https://github.com/boyuanx/openblade-core" HorizontalAlignment="Right" VerticalAlignment="Center" />
-                                    </Grid>
-                                </Border>
-                                <Border Style="{StaticResource SettingsLastRowStyle}">
-                                    <Grid ColumnSpacing="24">
-                                        <Grid.ColumnDefinitions><ColumnDefinition Width="2*" /><ColumnDefinition Width="3*" /></Grid.ColumnDefinitions>
-                                        <TextBlock Text="Relationship to Razer" Style="{StaticResource CardTitleStyle}" />
-                                        <TextBlock Grid.Column="1"
-                                                   Text="Independent project; not affiliated with Razer."
-                                                   Style="{StaticResource TroubleshootingValueStyle}" />
-                                    </Grid>
-                                </Border>
-                            </StackPanel>
                         </Border>
                     </StackPanel>
                 </ScrollView>

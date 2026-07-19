@@ -132,6 +132,11 @@ public sealed class ServiceClient : IServiceClient
                 enabled),
             token);
 
+    public Task<ControlOperationResult> ShutdownOpenBladeAsync(CancellationToken token) =>
+        SendMutationAsync(
+            new ShutdownOpenBladeRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid()),
+            token);
+
     public async IAsyncEnumerable<ServiceWatchUpdate> WatchStatusAsync(
         [EnumeratorCancellation] CancellationToken token)
     {

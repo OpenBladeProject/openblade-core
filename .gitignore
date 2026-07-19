@@ -10,6 +10,7 @@ captures/raw/*
 !captures/raw/.gitkeep
 src/OpenBlade.Tray/Assets/Brand/*
 !src/OpenBlade.Tray/Assets/Brand/OpenBlade.ico
+!src/OpenBlade.Tray/Assets/Brand/OpenBlade.png
 !src/OpenBlade.Tray/Assets/Brand/Tray/
 src/OpenBlade.Tray/Assets/Brand/Tray/*
 !src/OpenBlade.Tray/Assets/Brand/Tray/ac-balanced-dark.ico

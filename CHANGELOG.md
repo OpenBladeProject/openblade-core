@@ -7,6 +7,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Added
 
+- Settings now offers a confirmed full shutdown that stops the tray,
+  SessionAgent, and LocalSystem service without launching a shell command.
 - A lightweight per-user SessionAgent that exclusively owns Windows display
   queries and changes while the LocalSystem service remains the hardware and
   profile authority.
@@ -17,6 +19,11 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Changed
 
+- About now uses the canonical 256 px OpenBlade artwork, groups app and service
+  builds in a dedicated Versions card, integrates the independent-project
+  disclosure into the title card, and uses Windows-style external-link icons.
+- Named-pipe protocol version 10 adds the typed, installing-user-only full
+  shutdown request.
 - The tray icon now follows the effective active profile when firmware readback is
   unavailable, instead of showing a generic error while the service is ready.
 - Updated the runtime application icon from the canonical OpenBlade branding

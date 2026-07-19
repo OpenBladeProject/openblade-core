@@ -253,6 +253,7 @@ public sealed class ServiceClientTests
             await client.SetBatteryPolicyAsync(BatteryPolicy.Create(75), timeout.Token),
             await client.SetBatteryProtectionAsync(false, timeout.Token),
             await client.SetFullChargeOverrideAsync(true, timeout.Token),
+            await client.ShutdownOpenBladeAsync(timeout.Token),
         ];
         await server;
 
@@ -269,9 +270,10 @@ public sealed class ServiceClientTests
             request => Assert.IsType<SetBatteryPolicyRequest>(request),
             request => Assert.False(
                 Assert.IsType<SetBatteryProtectionRequest>(request).Enabled),
-            request => Assert.IsType<SetFullChargeOverrideRequest>(request));
+            request => Assert.IsType<SetFullChargeOverrideRequest>(request),
+            request => Assert.IsType<ShutdownOpenBladeRequest>(request));
         Assert.All(observed, request => Assert.NotEqual(Guid.Empty, request.RequestId));
-        Assert.Equal(8, observed.Select(request => request.RequestId).Distinct().Count());
+        Assert.Equal(9, observed.Select(request => request.RequestId).Distinct().Count());
     }
 
     [Fact]
@@ -582,7 +584,7 @@ public sealed class ServiceClientTests
         List<ServiceRequest> observed,
         CancellationToken token)
     {
-        for (int index = 0; index < 8; index++)
+        for (int index = 0; index < 9; index++)
         {
             await using NamedPipeServerStream server = CreateServer(pipeName);
             await server.WaitForConnectionAsync(token);
