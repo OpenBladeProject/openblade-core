@@ -23,6 +23,9 @@ All notable changes to OpenBlade are documented in this file. The project follow
   builds in a dedicated Versions card, integrates the independent-project
   disclosure into the title card, and uses borderless Windows-style action
   icons.
+- Profiles can capture Windows' current refresh rate, HDR state, and color
+  profile into the active power profile before saving the draft.
+- The Troubleshooting header now aligns with the other About card content.
 - Named-pipe protocol version 10 adds the typed, installing-user-only full
   shutdown request.
 - The tray icon now follows the effective active profile when firmware readback is

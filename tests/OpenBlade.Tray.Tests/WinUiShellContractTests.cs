@@ -40,6 +40,9 @@ public sealed class WinUiShellContractTests
         Assert.DoesNotContain("ViewModel.PendingActiveProfileSummary", xaml, StringComparison.Ordinal);
         Assert.Contains("ViewModel.DiscardProfileDraftCommand", xaml, StringComparison.Ordinal);
         Assert.Contains("Content=\"Save changes\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("Text=\"Current display\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("Click=\"OnCaptureCurrentDisplaySettings\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("DisplayViewModel.CanCaptureCurrentSettings", xaml, StringComparison.Ordinal);
         Assert.Contains("ToolTipService.ToolTip=\"Unsaved changes\"", xaml, StringComparison.Ordinal);
         Assert.Contains("AutomationProperties.Name=\"Unsaved changes\"", xaml, StringComparison.Ordinal);
         Assert.Equal(1, CountOccurrences(xaml, "x:Name=\"LightingEffectPicker\""));
@@ -58,6 +61,8 @@ public sealed class WinUiShellContractTests
         Assert.Contains("new SessionDisplaySettingsAdapter()", window, StringComparison.Ordinal);
         Assert.Contains("expectedPowerSource,", window, StringComparison.Ordinal);
         Assert.Contains("nameof(MainViewModel.ActivePowerSource)", window, StringComparison.Ordinal);
+        Assert.Contains("DisplayViewModel.CurrentProfileSettings", window, StringComparison.Ordinal);
+        Assert.Contains("sourceAtStart != ViewModel.ActivePowerSource", window, StringComparison.Ordinal);
         Assert.DoesNotContain("WindowsDisplaySettingsController", window, StringComparison.Ordinal);
         Assert.DoesNotContain("observedDisplayProfilePowerSource", window, StringComparison.Ordinal);
         Assert.DoesNotContain("ViewModel.ActiveSavedDisplayProfile", window, StringComparison.Ordinal);

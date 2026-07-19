@@ -356,6 +356,33 @@ public sealed class MainViewModelTests
     }
 
     [Fact]
+    public async Task CapturedCurrentDisplaySettings_CanBeSavedToActiveProfile()
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        client.Publish(CreateStatus(verified: true, blocked: false));
+        await WaitUntilAsync(() => viewModel.IsConnected);
+        var current = new DisplayProfileSettings(
+            "dynamic-48-240",
+            false,
+            "srgb");
+
+        viewModel.RecordDisplayProfileChange(PowerSource.PluggedIn, current);
+
+        Assert.True(viewModel.HasActiveProfileDraft);
+        Assert.Equal("Dynamic 48–240 Hz", viewModel.PluggedInProfilePresentation.DisplayRefreshRate);
+        Assert.Equal("Off", viewModel.PluggedInProfilePresentation.DisplayHdr);
+        Assert.Equal("sRGB", viewModel.PluggedInProfilePresentation.DisplayColorProfile);
+
+        await Assert.IsType<AsyncRelayCommand>(viewModel.SaveProfilesCommand)
+            .ExecuteAsync(null);
+
+        Assert.Equal(current, client.LastProfiles?.PluggedIn.Display);
+        Assert.False(viewModel.HasActiveProfileDraft);
+    }
+
+    [Fact]
     public async Task DisplayDiscard_KeepsDraftWhenReadbackIsNotConfirmed()
     {
         var client = new FakeServiceClient();

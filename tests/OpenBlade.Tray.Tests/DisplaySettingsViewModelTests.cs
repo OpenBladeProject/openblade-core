@@ -77,6 +77,7 @@ public sealed class DisplaySettingsViewModelTests
         Assert.False(viewModel.CanChangeRefreshRate);
         Assert.False(viewModel.CanChangeHdr);
         Assert.False(viewModel.CanChangeColorProfile);
+        Assert.False(viewModel.CanCaptureCurrentSettings);
         adapter.ReleaseFirstRefreshChange.TrySetResult();
         await Task.WhenAll(first, second);
 
@@ -87,6 +88,7 @@ public sealed class DisplaySettingsViewModelTests
         Assert.True(viewModel.CanChangeRefreshRate);
         Assert.True(viewModel.CanChangeHdr);
         Assert.True(viewModel.CanChangeColorProfile);
+        Assert.True(viewModel.CanCaptureCurrentSettings);
     }
 
     [Fact]
@@ -113,6 +115,7 @@ public sealed class DisplaySettingsViewModelTests
         Assert.DoesNotContain(nameof(DisplaySettingsViewModel.CanChangeRefreshRate), notifications);
         Assert.DoesNotContain(nameof(DisplaySettingsViewModel.CanChangeHdr), notifications);
         Assert.DoesNotContain(nameof(DisplaySettingsViewModel.CanChangeColorProfile), notifications);
+        Assert.DoesNotContain(nameof(DisplaySettingsViewModel.CanCaptureCurrentSettings), notifications);
     }
 
     [Fact]

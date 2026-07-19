@@ -690,13 +690,50 @@
                                             <TextBlock Grid.Column="3" Text="{x:Bind ViewModel.BatteryProfilePresentation.DisplayHdr, Mode=OneWay}" TextWrapping="Wrap" />
                                         </Grid>
                                     </Border>
-                                    <Border Style="{StaticResource SettingsLastRowStyle}">
+                                    <Border Style="{StaticResource SettingsRowStyle}">
                                         <Grid ColumnSpacing="16">
                                             <Grid.ColumnDefinitions><ColumnDefinition Width="150" /><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
                                             <TextBlock Text="Color profile" Style="{StaticResource CardTitleStyle}" />
                                             <TextBlock Grid.Column="1" Text="{x:Bind ViewModel.PluggedInProfilePresentation.DisplayColorProfile, Mode=OneWay}" TextWrapping="Wrap" />
                                             <TextBlock Grid.Column="2" Text="{x:Bind ViewModel.UsbCProfilePresentation.DisplayColorProfile, Mode=OneWay}" TextWrapping="Wrap" />
                                             <TextBlock Grid.Column="3" Text="{x:Bind ViewModel.BatteryProfilePresentation.DisplayColorProfile, Mode=OneWay}" TextWrapping="Wrap" />
+                                        </Grid>
+                                    </Border>
+                                    <Border Style="{StaticResource SettingsLastRowStyle}">
+                                        <Grid ColumnSpacing="16">
+                                            <Grid.ColumnDefinitions><ColumnDefinition Width="150" /><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                                            <StackPanel Spacing="2" VerticalAlignment="Center">
+                                                <TextBlock Text="Current display" Style="{StaticResource CardTitleStyle}" />
+                                                <TextBlock Text="Capture the values Windows is using now."
+                                                           Style="{StaticResource SecondaryTextStyle}" />
+                                            </StackPanel>
+                                            <Button Grid.Column="1"
+                                                    Content="Capture"
+                                                    HorizontalAlignment="Left"
+                                                    VerticalAlignment="Center"
+                                                    Visibility="{x:Bind ViewModel.IsPluggedInProfileActive, Mode=OneWay}"
+                                                    IsEnabled="{x:Bind DisplayViewModel.CanCaptureCurrentSettings, Mode=OneWay}"
+                                                    Click="OnCaptureCurrentDisplaySettings"
+                                                    AutomationProperties.Name="Capture current display settings for the active profile"
+                                                    ToolTipService.ToolTip="Add the current refresh rate, HDR state, and color profile. Then select Save changes." />
+                                            <Button Grid.Column="2"
+                                                    Content="Capture"
+                                                    HorizontalAlignment="Left"
+                                                    VerticalAlignment="Center"
+                                                    Visibility="{x:Bind ViewModel.IsUsbCProfileActive, Mode=OneWay}"
+                                                    IsEnabled="{x:Bind DisplayViewModel.CanCaptureCurrentSettings, Mode=OneWay}"
+                                                    Click="OnCaptureCurrentDisplaySettings"
+                                                    AutomationProperties.Name="Capture current display settings for the active profile"
+                                                    ToolTipService.ToolTip="Add the current refresh rate, HDR state, and color profile. Then select Save changes." />
+                                            <Button Grid.Column="3"
+                                                    Content="Capture"
+                                                    HorizontalAlignment="Left"
+                                                    VerticalAlignment="Center"
+                                                    Visibility="{x:Bind ViewModel.IsBatteryProfileActive, Mode=OneWay}"
+                                                    IsEnabled="{x:Bind DisplayViewModel.CanCaptureCurrentSettings, Mode=OneWay}"
+                                                    Click="OnCaptureCurrentDisplaySettings"
+                                                    AutomationProperties.Name="Capture current display settings for the active profile"
+                                                    ToolTipService.ToolTip="Add the current refresh rate, HDR state, and color profile. Then select Save changes." />
                                         </Grid>
                                     </Border>
                                 </StackPanel>
@@ -745,8 +782,26 @@
                                     <Border Style="{StaticResource SettingsRowStyle}">
                                         <Grid ColumnSpacing="16"><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><TextBlock Text="HDR" Style="{StaticResource CardTitleStyle}" /><TextBlock Grid.Column="1" Text="{x:Bind ViewModel.SelectedProfilePresentation.DisplayHdr, Mode=OneWay}" /></Grid>
                                     </Border>
-                                    <Border Style="{StaticResource SettingsLastRowStyle}">
+                                    <Border Style="{StaticResource SettingsRowStyle}">
                                         <Grid ColumnSpacing="16"><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><TextBlock Text="Color profile" Style="{StaticResource CardTitleStyle}" /><TextBlock Grid.Column="1" Text="{x:Bind ViewModel.SelectedProfilePresentation.DisplayColorProfile, Mode=OneWay}" TextWrapping="Wrap" TextAlignment="Right" /></Grid>
+                                    </Border>
+                                    <Border Style="{StaticResource SettingsLastRowStyle}">
+                                        <Grid ColumnSpacing="16">
+                                            <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                                            <StackPanel Spacing="2" VerticalAlignment="Center">
+                                                <TextBlock Text="Current display" Style="{StaticResource CardTitleStyle}" />
+                                                <TextBlock Text="Capture for the active profile."
+                                                           Style="{StaticResource SecondaryTextStyle}" />
+                                            </StackPanel>
+                                            <Button Grid.Column="1"
+                                                    Content="Capture"
+                                                    HorizontalAlignment="Right"
+                                                    VerticalAlignment="Center"
+                                                    IsEnabled="{x:Bind DisplayViewModel.CanCaptureCurrentSettings, Mode=OneWay}"
+                                                    Click="OnCaptureCurrentDisplaySettings"
+                                                    AutomationProperties.Name="Capture current display settings for the active profile"
+                                                    ToolTipService.ToolTip="Add the current refresh rate, HDR state, and color profile. Then select Save changes." />
+                                        </Grid>
                                     </Border>
                                 </StackPanel>
                             </Border>
@@ -1553,7 +1608,7 @@
                                     <Thickness x:Key="ExpanderHeaderBorderThickness">0</Thickness>
                                 </Expander.Resources>
                                 <Expander.Header>
-                                    <StackPanel Spacing="3" Margin="16,14,0,14">
+                                    <StackPanel Spacing="3" Margin="0,14,0,14">
                                         <TextBlock Text="Service and device status" Style="{StaticResource CardTitleStyle}" />
                                         <TextBlock Text="View live connection and control details." Style="{StaticResource SecondaryTextStyle}" />
                                     </StackPanel>

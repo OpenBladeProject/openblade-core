@@ -807,6 +807,30 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, ITrayIconThem
             args.Settings,
             args.PreviousSettings);
 
+    private async void OnCaptureCurrentDisplaySettings(
+        object sender,
+        RoutedEventArgs args)
+    {
+        PowerSource sourceAtStart = ViewModel.ActivePowerSource;
+        if (sourceAtStart is not (PowerSource.PluggedIn
+            or PowerSource.Battery
+            or PowerSource.UsbC))
+        {
+            return;
+        }
+
+        await RefreshDisplaySettingsAsync();
+        if (sourceAtStart != ViewModel.ActivePowerSource
+            || !DisplayViewModel.CanCaptureCurrentSettings)
+        {
+            return;
+        }
+
+        ViewModel.RecordDisplayProfileChange(
+            sourceAtStart,
+            DisplayViewModel.CurrentProfileSettings);
+    }
+
     private async Task<bool> OnSavedDisplayProfileRestoreRequested(
         PowerSource expectedPowerSource,
         DisplayProfileSettings settings,

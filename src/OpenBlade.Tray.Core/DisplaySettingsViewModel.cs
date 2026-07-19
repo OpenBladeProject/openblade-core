@@ -274,6 +274,9 @@ public sealed class DisplaySettingsViewModel : INotifyPropertyChanged, IAsyncDis
         && !IsBusy
         && ColorProfileOptions.Count > 0;
 
+    public bool CanCaptureCurrentSettings =>
+        HasConfirmedPowerSource && IsAvailable && !IsBusy;
+
     private bool HasConfirmedPowerSource => ActivePowerSource is
         PowerSource.PluggedIn or PowerSource.Battery or PowerSource.UsbC;
 
@@ -617,6 +620,7 @@ public sealed class DisplaySettingsViewModel : INotifyPropertyChanged, IAsyncDis
         OnPropertyChanged(nameof(CanChangeRefreshRate));
         OnPropertyChanged(nameof(CanChangeHdr));
         OnPropertyChanged(nameof(CanChangeColorProfile));
+        OnPropertyChanged(nameof(CanCaptureCurrentSettings));
     }
 
     private bool SetField<T>(ref T field, T value, [CallerMemberName] string? name = null)

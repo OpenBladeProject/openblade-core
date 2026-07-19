@@ -527,7 +527,7 @@ public sealed class CapabilityPresentationTests
 
         Assert.Equal("Transparent", Attribute(background, "Color"));
         Assert.Equal("0", borderThickness.Value.Trim());
-        Assert.Equal("16,14,0,14", Attribute(header, "Margin"));
+        Assert.Equal("0,14,0,14", Attribute(header, "Margin"));
     }
 
     [Fact]
