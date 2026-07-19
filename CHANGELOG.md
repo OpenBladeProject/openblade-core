@@ -20,6 +20,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
   random colors and independent Short, Medium, and Long twinkle durations.
 - Capture-faithful Wave and Wheel keyboard lighting. Wave supports leftward and
   rightward motion; Wheel supports clockwise and counterclockwise rotation.
+- Capture-calibrated Ripple keyboard lighting with a selected color and
+  per-key expanding rings driven by the existing data-minimized Raw Input path.
 - Typed laptop-logo lighting controls for Static, Breathing, and Off with
   independent state/effect readback and rollback.
 - Data-minimized Reactive input through Windows Raw Input: scan-code make events map directly to matrix slots without recording characters, virtual-key values, applications, window titles, or input packets.
@@ -42,7 +44,7 @@ All notable changes to OpenBlade are documented in this file. The project follow
   and Gaming Mode. OpenBlade validates each captured response but deliberately
   does not present, persist, or automatically reapply a value it cannot query.
 - A captured-feature audit that maps every reproducible target-device operation
-  to its production surface and records why Ripple, Trackpad, Snap Tap, and
+  to its production surface and records why Trackpad, Snap Tap, and
   uncaptured effects remain hidden instead of relying on guessed commands.
 
 ### Changed

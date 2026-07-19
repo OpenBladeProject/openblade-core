@@ -1,0 +1,98 @@
+{
+  "schemaVersion": 1,
+  "evidenceKind": "synapseRippleOracleCapture",
+  "device": {
+    "model": "RZ09-0581",
+    "vendorId": "1532",
+    "productId": "02E0",
+    "biosVersion": "3.01"
+  },
+  "sourceCapture": {
+    "sha256": "5A38B7B453470EFECE9A383F761EEE073290E357801C8F9E9140886A152F17A9",
+    "bytes": 672073,
+    "finalizedGracefully": true,
+    "decodable": true,
+    "targetFrameCount": 4732,
+    "targetControlFrameCount": 4680,
+    "matrixFrameCount": 927,
+    "rawCaptureCommitted": false
+  },
+  "captureAddress": {
+    "usbPcapRoot": 3,
+    "deviceAddress": 2,
+    "verifiedByDescriptor": true
+  },
+  "baseline": {
+    "before": "Ambient Awareness at 77 percent brightness; logo Static",
+    "restored": "Ambient Awareness at 77 percent brightness; logo Static",
+    "visuallyConfirmed": true
+  },
+  "colors": [
+    "00FF00",
+    "FF0000"
+  ],
+  "isolatedTriggers": [
+    {
+      "key": "A",
+      "matrixSlot": 53,
+      "color": "00FF00",
+      "firstFrameUtc": "2026-07-19T19:16:44.235Z",
+      "lastFrameUtc": "2026-07-19T19:16:44.832Z",
+      "visuallyConfirmed": true
+    },
+    {
+      "key": "F5",
+      "matrixSlot": 6,
+      "color": "00FF00",
+      "firstFrameUtc": "2026-07-19T19:16:47.239Z",
+      "lastFrameUtc": "2026-07-19T19:16:47.707Z",
+      "visuallyConfirmed": true
+    },
+    {
+      "key": "Left Arrow",
+      "matrixSlot": 97,
+      "color": "00FF00",
+      "firstFrameUtc": "2026-07-19T19:16:50.106Z",
+      "lastFrameUtc": "2026-07-19T19:16:50.672Z",
+      "visuallyConfirmed": true
+    },
+    {
+      "key": "A",
+      "matrixSlot": 53,
+      "color": "FF0000",
+      "firstFrameUtc": "2026-07-19T19:18:09.751Z",
+      "visuallyConfirmed": true
+    }
+  ],
+  "rendererModel": {
+    "matrixRows": 6,
+    "matrixColumns": 17,
+    "frameIntervalMilliseconds": 50,
+    "durationMilliseconds": 800,
+    "colorIntensity": 255,
+    "coordinateModel": "Protocol slots projected onto a 6 by 17 grid; this is a capture-calibrated rendering approximation, not a claimed physical key map.",
+    "radialBands": [
+      [0.00, 0.00],
+      [0.00, 1.00],
+      [1.00, 2.24],
+      [1.41, 3.61],
+      [2.83, 4.24],
+      [3.61, 5.39],
+      [4.47, 6.32],
+      [5.83, 7.28],
+      [6.71, 8.25],
+      [7.28, 9.22],
+      [8.25, 10.44],
+      [9.22, 11.40],
+      [10.20, 13.15],
+      [11.18, 13.34],
+      [12.17, 14.32],
+      [14.00, 14.32]
+    ]
+  },
+  "notes": [
+    "All isolated key responses were physically pressed and visually confirmed by the operator.",
+    "Additional chat-typing bursts while Ripple remained active were excluded from the isolated oracle windows.",
+    "The earlier ripple-1 attempt captured no frames because it used a non-capture-plane device address and is not production evidence."
+  ]
+}

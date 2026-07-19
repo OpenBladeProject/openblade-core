@@ -705,15 +705,14 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             {
                 return new ControlOperationResult(
                     ControlOperationStatus.Blocked,
-                    "Reactive lighting input is blocked while laptop controls are unavailable.");
+                    "Key-triggered lighting input is blocked while laptop controls are unavailable.");
             }
 
-            if (current.LightingRendererOwnership !=
-                LightingRendererOwnershipState.Reactive)
+            if (!IsKeyTriggeredLightingOwnership(current.LightingRendererOwnership))
             {
                 return new ControlOperationResult(
                     ControlOperationStatus.Blocked,
-                    "Reactive lighting is not currently active.");
+                    "Key-triggered lighting is not currently active.");
             }
 
             IBladeDevice? device = null;
@@ -723,7 +722,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 {
                     return new ControlOperationResult(
                         ControlOperationStatus.Blocked,
-                        "Reactive lighting input is unavailable for this laptop.");
+                        "Key-triggered lighting input is unavailable for this laptop.");
                 }
 
                 LightingRendererOwnershipState liveOwnership =
@@ -732,18 +731,18 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 {
                     LightingRendererOwnership = liveOwnership,
                 });
-                if (liveOwnership != LightingRendererOwnershipState.Reactive)
+                if (!IsKeyTriggeredLightingOwnership(liveOwnership))
                 {
                     return new ControlOperationResult(
                         ControlOperationStatus.Blocked,
-                        "Reactive lighting is not currently active.");
+                        "Key-triggered lighting is not currently active.");
                 }
 
                 token.ThrowIfCancellationRequested();
                 await device.PulseReactiveKeyAsync(pulse, token).ConfigureAwait(false);
                 return new ControlOperationResult(
                     ControlOperationStatus.Applied,
-                    "Reactive lighting input was applied.");
+                    "Key-triggered lighting input was applied.");
             }
             catch (OperationCanceledException) when (token.IsCancellationRequested)
             {
@@ -2831,7 +2830,13 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         LightingRendererOwnershipState.Tidal or
         LightingRendererOwnershipState.Starlight or
         LightingRendererOwnershipState.Wave or
-        LightingRendererOwnershipState.Wheel;
+        LightingRendererOwnershipState.Wheel or
+        LightingRendererOwnershipState.Ripple;
+
+    private static bool IsKeyTriggeredLightingOwnership(
+        LightingRendererOwnershipState ownership) => ownership is
+        LightingRendererOwnershipState.Reactive or
+        LightingRendererOwnershipState.Ripple;
 
     private static bool CanClaimLightingForAutomaticProfile(
         ServiceStatusSnapshot status) =>
@@ -2883,6 +2888,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             LightingEffect.Starlight => LightingRendererOwnershipState.Starlight,
             LightingEffect.Wave => LightingRendererOwnershipState.Wave,
             LightingEffect.Wheel => LightingRendererOwnershipState.Wheel,
+            LightingEffect.Ripple => LightingRendererOwnershipState.Ripple,
             _ => LightingRendererOwnershipState.None,
         });
 

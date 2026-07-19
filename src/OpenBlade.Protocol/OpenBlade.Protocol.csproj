@@ -50,6 +50,7 @@
     <LightingImplementationSource Include="OverlappedFeatureOperation.cs" />
     <LightingImplementationSource Include="PendingDisposalRegistry.cs" />
     <LightingImplementationSource Include="Pid02E0LightingEffects.cs" />
+    <LightingImplementationSource Include="Pid02E0RippleEffect.cs" />
     <LightingImplementationSource Include="Pid02E0TidalEffect.cs" />
     <LightingImplementationSource Include="Pid02E0StarlightEffect.cs" />
     <LightingImplementationSource Include="Pid02E0WaveWheelEffects.cs" />

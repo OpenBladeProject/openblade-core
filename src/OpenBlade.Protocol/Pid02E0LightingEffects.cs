@@ -12,6 +12,11 @@ internal interface IPid02E0LightingEffect
     Pid02E0MatrixFrame RenderFrame(TimeSpan elapsed);
 }
 
+internal interface IPid02E0KeyTriggeredLightingEffect : IPid02E0LightingEffect
+{
+    void Pulse(int slot, TimeSpan at);
+}
+
 internal static class Pid02E0LightingTiming
 {
     internal static readonly TimeSpan AnimatedFrameInterval = TimeSpan.FromMilliseconds(50);
@@ -233,7 +238,7 @@ internal sealed class Pid02E0BreathingEffect : IPid02E0LightingEffect
 /// Stateful per-slot Reactive renderer. Pulse timestamps are supplied by the
 /// caller, so this type observes no keyboard input and records no key data.
 /// </summary>
-internal sealed class Pid02E0ReactiveEffect : IPid02E0LightingEffect
+internal sealed class Pid02E0ReactiveEffect : IPid02E0KeyTriggeredLightingEffect
 {
     private readonly MatrixRgb color;
     private readonly TimeSpan fadeDuration;
@@ -254,7 +259,7 @@ internal sealed class Pid02E0ReactiveEffect : IPid02E0LightingEffect
             : Pid02E0LightingTiming.IdleKeepaliveInterval;
     }
 
-    internal void Pulse(int slot, TimeSpan at)
+    public void Pulse(int slot, TimeSpan at)
     {
         Pid02E0LightingMath.ThrowIfNegative(at);
         if ((uint)slot >= Pid02E0MatrixFrame.SlotCount)

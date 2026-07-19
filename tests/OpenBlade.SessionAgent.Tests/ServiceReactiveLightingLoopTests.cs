@@ -47,6 +47,13 @@ public sealed class ServiceReactiveLightingLoopTests
         client.Publish(Status(LightingRendererOwnershipState.Reactive) with { Revision = 4 });
         await Task.Delay(25);
         Assert.Equal(1, factory.CreateCount);
+
+        client.Publish(Status(LightingRendererOwnershipState.Ripple) with { Revision = 5 });
+        await Task.Delay(25);
+        first.Publish(new ReactiveKeyPulse(79));
+        await WaitUntilAsync(() => client.Pulses.Count == 2);
+        Assert.Equal(1, factory.CreateCount);
+
         client.Reconnect();
         await WaitUntilAsync(() => first.Disposed);
 

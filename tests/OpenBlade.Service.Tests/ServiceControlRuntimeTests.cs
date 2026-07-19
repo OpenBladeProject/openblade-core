@@ -227,6 +227,40 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         Assert.Equal(1, context.Device.ReactivePulseCalls);
     }
 
+    [Fact]
+    public async Task KeyPulse_AcceptsOwnedRippleRenderer()
+    {
+        DeviceCapabilities capabilities = DeviceCapabilities.Unavailable() with
+        {
+            LightingEffects = new HashSet<LightingEffect>
+            {
+                LightingEffect.Off,
+                LightingEffect.Ripple,
+            },
+        };
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            profileValidator: ProfileSetValidator.CreateForLightingCapabilities(capabilities));
+        context.Device.Capabilities = capabilities;
+        context.Device.ConfirmedState = new ConfirmedDeviceState(null, null, null, null);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        await context.Runtime.SetLightingOverrideAsync(
+            new ManualOverride<LightingSettings>(
+                LightingSettingsFactory.Ripple(new RgbColor(0, 255, 0), 77),
+                OverrideLifetime.UntilPowerSourceChange),
+            CancellationToken.None);
+
+        ControlOperationResult result = await context.Runtime.PulseReactiveKeyAsync(
+            new ReactiveKeyPulse(53),
+            CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Applied, result.Status);
+        Assert.Equal(1, context.Device.ReactivePulseCalls);
+        Assert.Equal(
+            LightingRendererOwnershipState.Ripple,
+            context.Runtime.GetStatus().LightingRendererOwnership);
+    }
+
     [Theory]
     [InlineData(LightingRendererOwnershipState.None)]
     [InlineData(LightingRendererOwnershipState.Faulted)]
@@ -4428,6 +4462,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
                 LightingEffect.Spectrum => LightingRendererOwnershipState.Spectrum,
                 LightingEffect.Breathing => LightingRendererOwnershipState.Breathing,
                 LightingEffect.Reactive => LightingRendererOwnershipState.Reactive,
+                LightingEffect.Ripple => LightingRendererOwnershipState.Ripple,
                 _ => throw new ArgumentOutOfRangeException(),
             };
 

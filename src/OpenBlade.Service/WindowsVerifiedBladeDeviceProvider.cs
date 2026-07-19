@@ -561,8 +561,9 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
             ReactiveKeyPulse pulse,
             CancellationToken cancellationToken) =>
             lightingFactory.Capabilities.LightingEffects.Contains(LightingEffect.Reactive)
+                || lightingFactory.Capabilities.LightingEffects.Contains(LightingEffect.Ripple)
                 ? ExecuteProductionLightingPulseAsync(pulse, cancellationToken)
-                : RejectProductionWrite("Reactive lighting is not admitted.");
+                : RejectProductionWrite("Key-triggered lighting is not admitted.");
 
         public async Task<LightingRendererOwnershipState>
             ReadLightingRendererOwnershipAsync(CancellationToken cancellationToken)

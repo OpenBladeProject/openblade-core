@@ -23,7 +23,7 @@ public sealed class LightingValidationCommandTests
         int exitCode = await command.RunAsync(ValidArguments(), default);
 
         Assert.Equal(0, exitCode);
-        Assert.Equal(26, port.Settings.Count); // baseline, twenty-four actions, restore.
+        Assert.Equal(27, port.Settings.Count); // baseline, twenty-five actions, restore.
         Assert.Equal(
             [
                 LightingEffect.Static,
@@ -36,6 +36,7 @@ public sealed class LightingValidationCommandTests
                 LightingEffect.Reactive,
                 LightingEffect.Reactive,
                 LightingEffect.Reactive,
+                LightingEffect.Ripple,
                 LightingEffect.Tidal,
                 LightingEffect.Tidal,
                 LightingEffect.Tidal,
@@ -54,7 +55,7 @@ public sealed class LightingValidationCommandTests
                 LightingEffect.Static,
             ],
             port.Settings.Select(setting => setting.Effect));
-        Assert.Equal([53, 53, 53], port.Pulses.Select(pulse => (int)pulse.MatrixSlot));
+        Assert.Equal([53, 53, 53, 53], port.Pulses.Select(pulse => (int)pulse.MatrixSlot));
         Assert.Contains("watch the A key", console.Text, StringComparison.Ordinal);
         Assert.Single(artifacts);
         Assert.Equal(@"C:\ProgramData\OpenBlade\lighting-validation.json", artifacts[0].Path);
@@ -63,7 +64,7 @@ public sealed class LightingValidationCommandTests
         JsonElement root = document.RootElement;
         Assert.Equal(2, root.GetProperty("schemaVersion").GetInt32());
         Assert.Equal(AssemblySha, root.GetProperty("protocolAssemblySha256").GetString());
-        Assert.Equal(24, root.GetProperty("actions").GetArrayLength());
+        Assert.Equal(25, root.GetProperty("actions").GetArrayLength());
         Assert.True(root.GetProperty("allSupportedEffectsApplied").GetBoolean());
         Assert.True(root.GetProperty("brightnessIndependentReadback").GetBoolean());
         Assert.True(root.GetProperty("baselineRestored").GetBoolean());
@@ -440,6 +441,8 @@ public sealed class LightingValidationCommandTests
         "yes", // Reactive medium.
         string.Empty,
         "yes", // Reactive long.
+        string.Empty,
+        "yes", // Ripple.
         "yes", // Tidal fixed rightward.
         "yes", // Tidal fixed leftward.
         "yes", // Tidal random.
@@ -504,6 +507,7 @@ public sealed class LightingValidationCommandTests
                 LightingEffect.Starlight => LightingRendererOwnershipState.Starlight,
                 LightingEffect.Wave => LightingRendererOwnershipState.Wave,
                 LightingEffect.Wheel => LightingRendererOwnershipState.Wheel,
+                LightingEffect.Ripple => LightingRendererOwnershipState.Ripple,
                 _ => throw new ArgumentOutOfRangeException(),
             };
             Settings.Add(settings);

@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 2,
+  "schemaVersion": 3,
   "evidenceKind": "synapseOracleCapture",
   "device": {
     "model": "RZ09-0581",
@@ -39,6 +39,11 @@
   },
   "reactiveFunctionKeyMapCapture": {
     "sha256": "2B8D6D11EA6BE76F6AA0C9CAED4520CFC1DA0171388423A99FFAC9960F0C6F78",
+    "captured": true,
+    "decoded": true
+  },
+  "rippleCapture": {
+    "sha256": "5A38B7B453470EFECE9A383F761EEE073290E357801C8F9E9140886A152F17A9",
     "captured": true,
     "decoded": true
   },

@@ -37,6 +37,7 @@ public sealed class ProductionLightingPortTests
         Assert.True(evidence.DualBreathingCapture.Decoded);
         Assert.True(evidence.ReactiveMainKeyMapCapture.Decoded);
         Assert.True(evidence.ReactiveFunctionKeyMapCapture.Decoded);
+        Assert.True(evidence.RippleCapture.Decoded);
         Assert.Null(typeof(ProductionLightingOracleCaptureEvidence).GetProperty("Applied"));
         Assert.Null(typeof(ProductionLightingOracleCaptureEvidence).GetProperty("Restored"));
         Assert.Equal(
@@ -401,6 +402,22 @@ public sealed class ProductionLightingPortTests
     }
 
     [Fact]
+    public async Task KeyPulse_StartsRippleWhenLiveRendererIsRipple()
+    {
+        var session = new LightingSession(initialBrightness: 0xFF);
+        var writer = new MatrixWriter();
+        await using var port = CreatePort(session, writer, admitted: true);
+        await port.SetLightingAsync(
+            LightingSettingsFactory.Ripple(new RgbColor(0x12, 0x34, 0x56), 100),
+            default);
+
+        await port.PulseReactiveKeyAsync(new ReactiveKeyPulse(53), default);
+
+        Assert.Equal(LightingRendererOwnershipState.Ripple, port.OwnershipState);
+        Assert.Equal(new MatrixRgb(0x12, 0x34, 0x56), writer.Reports[^1].Frame[53]);
+    }
+
+    [Fact]
     public async Task BrightnessOnlyChange_RetainsRendererAndSkipsTransitionHandshake()
     {
         var session = new LightingSession(initialBrightness: 0xFF);
@@ -619,6 +636,8 @@ public sealed class ProductionLightingPortTests
                 new RgbColor(0, 255, 0), 60, ReactiveLightingDuration.Medium)),
             ("reactiveLong", LightingSettingsFactory.Reactive(
                 new RgbColor(0, 255, 0), 60, ReactiveLightingDuration.Long)),
+            ("ripple", LightingSettingsFactory.Ripple(
+                new RgbColor(0, 255, 0), 60)),
             ("tidalRightFixed", LightingSettingsFactory.Tidal(
                 new RgbColor(0, 255, 0),
                 new RgbColor(0, 0, 255),
@@ -689,7 +708,8 @@ public sealed class ProductionLightingPortTests
             .Select(entry =>
             {
                 int raw = LightingBrightnessProtocol.PercentToRaw(entry.Settings.Brightness);
-                bool reactive = entry.Settings.Effect == LightingEffect.Reactive;
+                bool keyTriggered = entry.Settings.Effect is
+                    LightingEffect.Reactive or LightingEffect.Ripple;
                 return new ProductionLightingValidationActionEvidence(
                     entry.Name,
                     entry.Settings,
@@ -699,8 +719,8 @@ public sealed class ProductionLightingPortTests
                     ExpectedBrightnessRaw: raw,
                     ObservedBrightnessRaw: raw,
                     BrightnessMatched: true,
-                    ReactivePulseRequired: reactive,
-                    ReactivePulseApplied: reactive,
+                    ReactivePulseRequired: keyTriggered,
+                    ReactivePulseApplied: keyTriggered,
                     VisuallyConfirmed: true,
                     Failure: null);
             })

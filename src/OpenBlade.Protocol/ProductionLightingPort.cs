@@ -18,7 +18,7 @@ internal sealed class ProductionLightingPort : IProductionLightingPort
     private CancellationTokenSource? streamCancellation;
     private Task? streamTask;
     private IPid02E0LightingEffect? activeEffect;
-    private Pid02E0ReactiveEffect? activeReactiveEffect;
+    private IPid02E0KeyTriggeredLightingEffect? activeKeyTriggeredEffect;
     private long effectStartedTimestamp;
     private LightingSettings? lastDeliveredState;
     private int nextCommandTransaction = 1;
@@ -86,7 +86,7 @@ internal sealed class ProductionLightingPort : IProductionLightingPort
             lock (effectSync)
             {
                 activeEffect = null;
-                activeReactiveEffect = null;
+                activeKeyTriggeredEffect = null;
                 lastDeliveredState = LightingSettingsFactory.Off();
             }
             SetOwnership(LightingRendererOwnershipState.None);
@@ -202,7 +202,7 @@ internal sealed class ProductionLightingPort : IProductionLightingPort
                     lock (effectSync)
                     {
                         activeEffect = null;
-                        activeReactiveEffect = null;
+                        activeKeyTriggeredEffect = null;
                         lastDeliveredState = settings;
                     }
                     SetOwnership(LightingRendererOwnershipState.None);
@@ -226,7 +226,7 @@ internal sealed class ProductionLightingPort : IProductionLightingPort
                     lock (effectSync)
                     {
                         activeEffect = effect;
-                        activeReactiveEffect = effect as Pid02E0ReactiveEffect;
+                        activeKeyTriggeredEffect = effect as IPid02E0KeyTriggeredLightingEffect;
                         lastDeliveredState = settings;
                     }
 
@@ -257,7 +257,7 @@ internal sealed class ProductionLightingPort : IProductionLightingPort
                     lock (effectSync)
                     {
                         activeEffect = null;
-                        activeReactiveEffect = null;
+                        activeKeyTriggeredEffect = null;
                         lastDeliveredState = null;
                     }
                     SetOwnership(LightingRendererOwnershipState.None);
@@ -288,17 +288,17 @@ internal sealed class ProductionLightingPort : IProductionLightingPort
         await EnterWriteAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            Pid02E0ReactiveEffect effect;
+            IPid02E0KeyTriggeredLightingEffect effect;
             lock (effectSync)
             {
-                if (activeReactiveEffect is null)
+                if (activeKeyTriggeredEffect is null)
                 {
                     throw new BladeWriteException(
                         WriteSubmissionState.KnownNotApplied,
-                        "Reactive lighting input was rejected because the live renderer is not Reactive.");
+                        "Key-triggered lighting input was rejected because no key-triggered renderer is active.");
                 }
 
-                effect = activeReactiveEffect;
+                effect = activeKeyTriggeredEffect;
             }
 
             await StopStreamCoreAsync().ConfigureAwait(false);
@@ -320,7 +320,7 @@ internal sealed class ProductionLightingPort : IProductionLightingPort
                 lock (effectSync)
                 {
                     activeEffect = null;
-                    activeReactiveEffect = null;
+                    activeKeyTriggeredEffect = null;
                     lastDeliveredState = null;
                 }
                 SetOwnership(LightingRendererOwnershipState.Faulted);
@@ -631,6 +631,7 @@ internal sealed class ProductionLightingPort : IProductionLightingPort
             ReactiveLightingParameters value => new Pid02E0ReactiveEffect(
                 Color(value.Color),
                 ReactiveFadeDuration(value.Duration)),
+            RippleLightingParameters value => new Pid02E0RippleEffect(Color(value.Color)),
             TidalLightingParameters value => new Pid02E0TidalEffect(
                 Color(value.PrimaryColor),
                 Color(value.SecondaryColor),
@@ -675,6 +676,8 @@ internal sealed class ProductionLightingPort : IProductionLightingPort
                 new Pid02E0ReactiveEffect(
                     Color(settings.Color),
                     ReactiveFadeDuration(ReactiveLightingDuration.Medium)),
+            null when settings.Effect == LightingEffect.Ripple =>
+                new Pid02E0RippleEffect(Color(settings.Color)),
             _ => throw KnownNotApplied("The requested lighting parameters are unsupported."),
         };
     }
@@ -754,7 +757,7 @@ internal sealed class ProductionLightingPort : IProductionLightingPort
                 if (ReferenceEquals(activeEffect, effect))
                 {
                     activeEffect = null;
-                    activeReactiveEffect = null;
+                    activeKeyTriggeredEffect = null;
                     lastDeliveredState = null;
                     SetOwnership(LightingRendererOwnershipState.Faulted);
                 }
@@ -823,7 +826,7 @@ internal sealed class ProductionLightingPort : IProductionLightingPort
                 ? null
                 : new OwnedEffectSnapshot(
                     activeEffect,
-                    activeReactiveEffect,
+                    activeKeyTriggeredEffect,
                     effectStartedTimestamp,
                     lastDeliveredState,
                     OwnershipState);
@@ -860,7 +863,7 @@ internal sealed class ProductionLightingPort : IProductionLightingPort
             lock (effectSync)
             {
                 activeEffect = previous.Effect;
-                activeReactiveEffect = previous.ReactiveEffect;
+                activeKeyTriggeredEffect = previous.KeyTriggeredEffect;
                 effectStartedTimestamp = previous.StartedTimestamp;
                 lastDeliveredState = previous.Settings;
             }
@@ -949,12 +952,13 @@ internal sealed class ProductionLightingPort : IProductionLightingPort
             LightingEffect.Starlight => LightingRendererOwnershipState.Starlight,
             LightingEffect.Wave => LightingRendererOwnershipState.Wave,
             LightingEffect.Wheel => LightingRendererOwnershipState.Wheel,
+            LightingEffect.Ripple => LightingRendererOwnershipState.Ripple,
             _ => throw new ArgumentOutOfRangeException(nameof(effect)),
         };
 
     private sealed record OwnedEffectSnapshot(
         IPid02E0LightingEffect Effect,
-        Pid02E0ReactiveEffect? ReactiveEffect,
+        IPid02E0KeyTriggeredLightingEffect? KeyTriggeredEffect,
         long StartedTimestamp,
         LightingSettings Settings,
         LightingRendererOwnershipState Ownership);

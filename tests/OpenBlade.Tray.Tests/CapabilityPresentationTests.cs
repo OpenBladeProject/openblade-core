@@ -1203,6 +1203,13 @@ public sealed class CapabilityPresentationTests
             viewModel.LightingDraft);
         Assert.True(viewModel.LightingShowsReactiveDuration);
 
+        viewModel.LightingEffectEditor = LightingEffect.Ripple;
+        Assert.Equal(
+            LightingSettingsFactory.Ripple(new RgbColor(12, 34, 56), 64),
+            viewModel.LightingDraft);
+        Assert.True(viewModel.LightingShowsPrimaryColor);
+        Assert.False(viewModel.LightingShowsReactiveDuration);
+
         viewModel.LightingEffectEditor = LightingEffect.Tidal;
         viewModel.LightingDirectionEditor = LightingDirection.Leftward;
         viewModel.LightingRandomColorsEditor = false;

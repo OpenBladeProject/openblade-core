@@ -1806,7 +1806,8 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         LightingEffectEditor == LightingEffect.Starlight;
 
     public bool LightingShowsPrimaryColor =>
-        LightingEffectEditor is LightingEffect.Static or LightingEffect.Reactive
+        LightingEffectEditor is
+            LightingEffect.Static or LightingEffect.Reactive or LightingEffect.Ripple
         || LightingEffectEditor == LightingEffect.Breathing
             && LightingBreathingColorModeEditor != BreathingColorMode.Random
         || LightingEffectEditor == LightingEffect.Tidal
@@ -4157,6 +4158,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             BreathingLightingParameters => FormatColor(lighting.Color),
             ReactiveLightingParameters reactive =>
                 $"{reactive.Duration.ToString().ToLowerInvariant()}, {FormatColor(lighting.Color)}",
+            RippleLightingParameters => FormatColor(lighting.Color),
             TidalLightingParameters { RandomColors: true } tidal =>
                 $"random colors, {tidal.Direction.ToString().ToLowerInvariant()}",
             TidalLightingParameters tidal =>
@@ -4263,6 +4265,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             Effect: LightingEffect.Reactive,
             Parameters: ReactiveLightingParameters reactive,
         } => $"Reactive, {reactive.Duration.ToString().ToLowerInvariant()}",
+        { Effect: LightingEffect.Ripple } => "Ripple",
         {
             Effect: LightingEffect.Tidal,
             Parameters: TidalLightingParameters tidal,
@@ -4415,6 +4418,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
                 primaryColor,
                 brightness,
                 LightingReactiveDurationEditor),
+            LightingEffect.Ripple => LightingSettingsFactory.Ripple(primaryColor, brightness),
             LightingEffect.Tidal => LightingSettingsFactory.Tidal(
                 primaryColor,
                 secondaryColor,
@@ -4469,6 +4473,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         bool selectedUsesColor = selected is LightingEffect.Static
             or LightingEffect.Breathing
             or LightingEffect.Reactive
+            or LightingEffect.Ripple
             or LightingEffect.Tidal
             or LightingEffect.Starlight;
         bool previousHadNoEditableColor = previous is LightingEffect.Off
@@ -4566,6 +4571,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
                 color,
                 brightness,
                 ReactiveLightingDuration.Medium),
+            LightingEffect.Ripple => LightingSettingsFactory.Ripple(color, brightness),
             LightingEffect.Tidal => LightingSettingsFactory.Tidal(
                 color,
                 new RgbColor(0, 0, 255),

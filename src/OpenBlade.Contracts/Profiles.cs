@@ -69,6 +69,7 @@ public enum LightingEffect
     Starlight,
     Wave,
     Wheel,
+    Ripple,
 }
 
 public enum LightingDirection
@@ -107,6 +108,7 @@ public enum LightingRendererOwnershipState
     Wave,
     Wheel,
     Faulted,
+    Ripple,
 }
 
 public readonly record struct RgbColor(byte Red, byte Green, byte Blue);

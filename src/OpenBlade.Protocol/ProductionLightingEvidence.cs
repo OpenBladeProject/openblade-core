@@ -23,6 +23,7 @@ internal sealed record ProductionLightingOracleEvidence(
     ProductionLightingOracleCaptureEvidence DualBreathingCapture,
     ProductionLightingOracleCaptureEvidence ReactiveMainKeyMapCapture,
     ProductionLightingOracleCaptureEvidence ReactiveFunctionKeyMapCapture,
+    ProductionLightingOracleCaptureEvidence RippleCapture,
     ProductionLightingProtocolEvidence Protocol);
 
 internal sealed record ProductionLightingDeviceEvidence(
@@ -111,13 +112,13 @@ internal static class ProductionLightingEvidenceSource
     internal const string OpenBladeValidationFileName = "lighting-validation.json";
 
     private const string ApprovedOracleFixtureSha256 =
-        "90E768239A74157C4A8A7EEE0E339CF37C65AA6A2B38635B424231ED0C144B71";
+        "5177FA9F6F91D96C9C34C5506CDA8EDC0A86EE5B5EEFA5F4322F4E4633C23521";
 
     private const string LightingImplementationMetadataKey =
         "OpenBladeLightingImplementationFingerprint";
 
     private const string ApprovedLightingImplementationFingerprintSha256 =
-        "897162036F7F9B759914B0615C0E51652D1CD7B45DEA7E55DEA9FA198B65F370";
+        "B5C4F07B9CD23A43B7236CB89980E57AEC320F405C02D9776A7265CC9DA7B669";
 
     private static readonly JsonSerializerOptions SerializerOptions =
         new(JsonSerializerDefaults.Web)
@@ -318,6 +319,7 @@ internal static class ProductionLightingEvidenceSource
             "reactiveShort",
             "reactiveMedium",
             "reactiveLong",
+            "ripple",
             "tidalRightFixed",
             "tidalLeftFixed",
             "tidalRandom",
@@ -343,7 +345,8 @@ internal static class ProductionLightingEvidenceSource
 
         foreach (ProductionLightingValidationActionEvidence action in actions)
         {
-            bool reactive = action.Settings.Effect == LightingEffect.Reactive;
+            bool keyTriggered = action.Settings.Effect is
+                LightingEffect.Reactive or LightingEffect.Ripple;
             if (!LightingSettingsValidation.IsWellFormed(action.Settings)
                 || !MatchesExpectedTypedAction(action, brightness)
                 || action.StartedAtUtc == default
@@ -353,8 +356,8 @@ internal static class ProductionLightingEvidenceSource
                     != LightingBrightnessProtocol.PercentToRaw(action.Settings.Brightness)
                 || action.ObservedBrightnessRaw != action.ExpectedBrightnessRaw
                 || !action.BrightnessMatched
-                || action.ReactivePulseRequired != reactive
-                || action.ReactivePulseApplied != reactive
+                || action.ReactivePulseRequired != keyTriggered
+                || action.ReactivePulseApplied != keyTriggered
                 || !action.VisuallyConfirmed
                 || action.Failure is not null)
             {
@@ -397,6 +400,9 @@ internal static class ProductionLightingEvidenceSource
                 new RgbColor(0, byte.MaxValue, 0),
                 brightness,
                 ReactiveLightingDuration.Long),
+            "ripple" => action.Settings == LightingSettingsFactory.Ripple(
+                new RgbColor(0, byte.MaxValue, 0),
+                brightness),
             "tidalRightFixed" => action.Settings == LightingSettingsFactory.Tidal(
                 new RgbColor(0, byte.MaxValue, 0),
                 new RgbColor(0, 0, byte.MaxValue),
@@ -479,7 +485,7 @@ internal static class ProductionLightingEvidenceSource
     private static void ValidateOracle(ProductionLightingOracleEvidence? evidence)
     {
         if (evidence is null
-            || evidence.SchemaVersion != 2
+            || evidence.SchemaVersion != 3
             || evidence.EvidenceKind != "synapseOracleCapture"
             || evidence.Device != TargetDeviceEvidence
             || !ValidOracleCapture(
@@ -503,6 +509,9 @@ internal static class ProductionLightingEvidenceSource
             || !ValidOracleCapture(
                 evidence.ReactiveFunctionKeyMapCapture,
                 "2B8D6D11EA6BE76F6AA0C9CAED4520CFC1DA0171388423A99FFAC9960F0C6F78")
+            || !ValidOracleCapture(
+                evidence.RippleCapture,
+                "5A38B7B453470EFECE9A383F761EEE073290E357801C8F9E9140886A152F17A9")
             || evidence.Protocol.BrightnessQuery != "03/83:010500"
             || evidence.Protocol.BrightnessSetPrefix != "03/03:0105"
             || !evidence.Protocol.TransitionRequests.SequenceEqual(

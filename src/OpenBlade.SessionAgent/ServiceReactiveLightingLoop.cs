@@ -16,9 +16,9 @@ public interface IReactiveKeyboardSourceFactory
 }
 
 /// <summary>
-/// Owns the one session-local Raw Input registration used by Reactive lighting
-/// and the captured performance shortcuts. The SessionAgent remains running
-/// when the visible tray exits, so neither behavior depends on the UI process.
+/// Owns the one session-local Raw Input registration used by key-triggered
+/// lighting and the captured performance shortcuts. The SessionAgent remains
+/// running when the visible tray exits, so neither behavior depends on the UI.
 /// </summary>
 public sealed class ServiceReactiveLightingLoop : IAsyncDisposable
 {
@@ -30,7 +30,7 @@ public sealed class ServiceReactiveLightingLoop : IAsyncDisposable
     private readonly PerformanceShortcutTriggerPump shortcutPump;
     private readonly Action<Exception>? errorHandler;
     private IReactiveKeyboardSource? source;
-    private int reactiveActive;
+    private int keyTriggeredActive;
     private int disposed;
 
     public ServiceReactiveLightingLoop(
@@ -66,11 +66,12 @@ public sealed class ServiceReactiveLightingLoop : IAsyncDisposable
                             case ServiceWatchUpdate.Connected connected:
                                 SetInputState(
                                     connected: true,
-                                    reactive: connected.Status.LightingRendererOwnership ==
-                                        LightingRendererOwnershipState.Reactive);
+                                    keyTriggered: connected.Status.LightingRendererOwnership is
+                                        LightingRendererOwnershipState.Reactive or
+                                        LightingRendererOwnershipState.Ripple);
                                 break;
                             case ServiceWatchUpdate.Reconnecting:
-                                SetInputState(connected: false, reactive: false);
+                                SetInputState(connected: false, keyTriggered: false);
                                 break;
                         }
                     }
@@ -81,7 +82,7 @@ public sealed class ServiceReactiveLightingLoop : IAsyncDisposable
                 }
                 catch (Exception exception)
                 {
-                    SetInputState(connected: false, reactive: false);
+                    SetInputState(connected: false, keyTriggered: false);
                     ReportFailure(exception);
                     await Task.Delay(FailureRetryDelay, cancellationToken).ConfigureAwait(false);
                 }
@@ -89,7 +90,7 @@ public sealed class ServiceReactiveLightingLoop : IAsyncDisposable
         }
         finally
         {
-            SetInputState(connected: false, reactive: false);
+            SetInputState(connected: false, keyTriggered: false);
         }
     }
 
@@ -100,15 +101,15 @@ public sealed class ServiceReactiveLightingLoop : IAsyncDisposable
             return;
         }
 
-        SetInputState(connected: false, reactive: false);
+        SetInputState(connected: false, keyTriggered: false);
         await pulsePump.DisposeAsync().ConfigureAwait(false);
         await shortcutPump.DisposeAsync().ConfigureAwait(false);
     }
 
-    private void SetInputState(bool connected, bool reactive)
+    private void SetInputState(bool connected, bool keyTriggered)
     {
-        Interlocked.Exchange(ref reactiveActive, reactive ? 1 : 0);
-        if (!reactive)
+        Interlocked.Exchange(ref keyTriggeredActive, keyTriggered ? 1 : 0);
+        if (!keyTriggered)
         {
             pulsePump.ClearPending();
         }
@@ -132,11 +133,11 @@ public sealed class ServiceReactiveLightingLoop : IAsyncDisposable
             IReactiveKeyboardSource created = sourceFactory.Create(
                 pulse =>
                 {
-                    if (Volatile.Read(ref reactiveActive) != 0
+                    if (Volatile.Read(ref keyTriggeredActive) != 0
                         && !pulsePump.TryEnqueue(pulse))
                     {
                         ReportFailure(new InvalidOperationException(
-                            "Reactive keyboard input could not keep up and skipped a key press."));
+                            "Key-triggered lighting input could not keep up and skipped a key press."));
                     }
                 },
                 shortcut =>

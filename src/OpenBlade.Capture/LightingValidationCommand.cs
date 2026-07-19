@@ -401,9 +401,9 @@ public sealed class LightingValidationCommand
             {
                 if (spec.ReactivePulseRequired)
                 {
-                    actionStage = "reactivePulse";
+                    actionStage = "keyTriggeredPulse";
                     await output.WriteLineAsync(
-                        "Press Enter, then watch the A key for the reactive pulse.")
+                        "Press Enter, then watch the A key for the lighting response.")
                         .ConfigureAwait(false);
                     _ = await input.ReadLineAsync(cancellationToken).ConfigureAwait(false);
                     await port.PulseReactiveKeyAsync(
@@ -747,6 +747,11 @@ public sealed class LightingValidationCommand
                 ReactiveLightingDuration.Long),
             true),
         new(
+            "ripple",
+            "Ripple green",
+            LightingSettingsFactory.Ripple(BaselineGreen, brightness),
+            true),
+        new(
             "tidalRightFixed",
             "Tidal rightward, fixed green and blue",
             LightingSettingsFactory.Tidal(
@@ -888,6 +893,7 @@ public sealed class LightingValidationCommand
             LightingEffect.Starlight => LightingRendererOwnershipState.Starlight,
             LightingEffect.Wave => LightingRendererOwnershipState.Wave,
             LightingEffect.Wheel => LightingRendererOwnershipState.Wheel,
+            LightingEffect.Ripple => LightingRendererOwnershipState.Ripple,
             _ => throw new ArgumentOutOfRangeException(nameof(settings)),
         });
 

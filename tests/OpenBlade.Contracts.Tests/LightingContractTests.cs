@@ -85,6 +85,7 @@ public sealed class LightingContractTests
             LightingSettingsFactory.Wheel(
                 LightingRotationDirection.Counterclockwise,
                 11),
+            LightingSettingsFactory.Ripple(primary, 25),
         ];
 
         Assert.All(settings, value =>
@@ -125,6 +126,7 @@ public sealed class LightingContractTests
         Assert.Equal(
             LightingRotationDirection.Counterclockwise,
             Assert.IsType<WheelLightingParameters>(settings[13].Parameters).Direction);
+        Assert.Equal(primary, Assert.IsType<RippleLightingParameters>(settings[14].Parameters).Color);
     }
 
     [Fact]
@@ -193,6 +195,10 @@ public sealed class LightingContractTests
             {
                 Parameters = new WheelLightingParameters((LightingRotationDirection)999),
             },
+            LightingSettingsFactory.Ripple(primary, 50) with
+            {
+                Parameters = new RippleLightingParameters(new RgbColor(4, 5, 6)),
+            },
         ];
 
         Assert.All(invalid, value =>
@@ -223,6 +229,7 @@ public sealed class LightingContractTests
                 StarlightLightingDuration.Medium),
             LightingSettingsFactory.Wave(LightingDirection.Rightward, 0),
             LightingSettingsFactory.Wheel(LightingRotationDirection.Clockwise, 0),
+            LightingSettingsFactory.Ripple(new RgbColor(1, 2, 3), 0),
         ];
 
         Assert.All(invisible, value =>

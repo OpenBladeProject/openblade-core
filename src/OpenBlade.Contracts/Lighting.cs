@@ -40,6 +40,7 @@ public enum StarlightLightingDuration
 [JsonDerivedType(typeof(StarlightLightingParameters), "starlight")]
 [JsonDerivedType(typeof(WaveLightingParameters), "wave")]
 [JsonDerivedType(typeof(WheelLightingParameters), "wheel")]
+[JsonDerivedType(typeof(RippleLightingParameters), "ripple")]
 public abstract record LightingEffectParameters;
 
 public sealed record OffLightingParameters : LightingEffectParameters;
@@ -78,6 +79,9 @@ public sealed record WaveLightingParameters(LightingDirection Direction)
     : LightingEffectParameters;
 
 public sealed record WheelLightingParameters(LightingRotationDirection Direction)
+    : LightingEffectParameters;
+
+public sealed record RippleLightingParameters(RgbColor Color)
     : LightingEffectParameters;
 
 public static class LightingSettingsFactory
@@ -240,6 +244,14 @@ public static class LightingSettingsFactory
             Parameters = new WheelLightingParameters(direction),
         };
 
+    public static LightingSettings Ripple(RgbColor color, byte brightness) => new(
+        LightingEffect.Ripple,
+        color,
+        brightness)
+    {
+        Parameters = new RippleLightingParameters(color),
+    };
+
     public static LightingSettings NormalizeLegacyOff(LightingSettings settings)
     {
         ArgumentNullException.ThrowIfNull(settings);
@@ -307,6 +319,9 @@ public static class LightingSettingsFactory
                 DefaultVisibleBrightness),
             WheelLightingParameters wheel => Wheel(
                 wheel.Direction,
+                DefaultVisibleBrightness),
+            RippleLightingParameters => Ripple(
+                visibleColor,
                 DefaultVisibleBrightness),
             StarlightLightingParameters
             {
@@ -393,6 +408,8 @@ public static class LightingSettingsValidation
                 Enum.IsDefined(parameters.Direction) && settings.Color == default,
             (LightingEffect.Wheel, WheelLightingParameters parameters) =>
                 Enum.IsDefined(parameters.Direction) && settings.Color == default,
+            (LightingEffect.Ripple, RippleLightingParameters parameters) =>
+                settings.Color == parameters.Color,
             _ => false,
         };
 

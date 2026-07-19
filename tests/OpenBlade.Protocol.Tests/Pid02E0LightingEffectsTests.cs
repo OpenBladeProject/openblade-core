@@ -266,6 +266,72 @@ public sealed class Pid02E0LightingEffectsTests
     }
 
     [Fact]
+    public void Ripple_StartsAtOriginThenExpandsUsingCapturedBands()
+    {
+        var effect = new Pid02E0RippleEffect(Green);
+        effect.Pulse(53, TimeSpan.Zero);
+
+        Pid02E0MatrixFrame origin = effect.RenderFrame(TimeSpan.Zero);
+        Pid02E0MatrixFrame expanded = effect.RenderFrame(TimeSpan.FromMilliseconds(100));
+
+        Assert.Equal(Green, origin[53]);
+        Assert.Single(origin.ToArray(), color => color != MatrixRgb.Black);
+        Assert.Equal(MatrixRgb.Black, expanded[53]);
+        Assert.Equal(Green, expanded[36]);
+        Assert.Equal(Green, expanded[55]);
+        AssertHolesBlack(expanded);
+    }
+
+    [Theory]
+    [InlineData(6)]
+    [InlineData(97)]
+    public void Ripple_ClipsCapturedEdgeOriginsAndCompletesAfterEightHundredMilliseconds(
+        int origin)
+    {
+        var effect = new Pid02E0RippleEffect(Green);
+        effect.Pulse(origin, TimeSpan.Zero);
+
+        Assert.Equal(Green, effect.RenderFrame(TimeSpan.Zero)[origin]);
+        Assert.Equal(
+            Pid02E0LightingTiming.AnimatedFrameInterval,
+            effect.GetNextFrameDelay(TimeSpan.FromMilliseconds(750)));
+        Assert.All(
+            effect.RenderFrame(Pid02E0RippleEffect.Duration).ToArray(),
+            color => Assert.Equal(MatrixRgb.Black, color));
+        Assert.Equal(
+            Pid02E0LightingTiming.IdleKeepaliveInterval,
+            effect.GetNextFrameDelay(Pid02E0RippleEffect.Duration));
+    }
+
+    [Fact]
+    public void Ripple_SubstitutesColorAndUnionsOverlappingPulses()
+    {
+        MatrixRgb red = new(255, 0, 0);
+        var effect = new Pid02E0RippleEffect(red);
+        effect.Pulse(53, TimeSpan.Zero);
+        effect.Pulse(6, TimeSpan.FromMilliseconds(100));
+
+        Pid02E0MatrixFrame frame = effect.RenderFrame(TimeSpan.FromMilliseconds(100));
+
+        Assert.Equal(red, frame[6]);
+        Assert.Equal(red, frame[36]);
+        Assert.All(
+            frame.ToArray(),
+            color => Assert.True(color == MatrixRgb.Black || color == red));
+    }
+
+    [Fact]
+    public void Ripple_RejectsInvalidAndHoleSlots()
+    {
+        var effect = new Pid02E0RippleEffect(Green);
+
+        Assert.Throws<ArgumentOutOfRangeException>(() => effect.Pulse(-1, TimeSpan.Zero));
+        Assert.Throws<ArgumentOutOfRangeException>(() => effect.Pulse(102, TimeSpan.Zero));
+        Assert.Throws<ArgumentException>(() => effect.Pulse(17, TimeSpan.Zero));
+        Assert.Throws<ArgumentOutOfRangeException>(() => effect.Pulse(1, TimeSpan.FromTicks(-1)));
+    }
+
+    [Fact]
     public void Tidal_UsesSanitizedCapturedDirectionTemplatesAndSubstitutesColors()
     {
         MatrixRgb red = new(255, 0, 0);
@@ -459,6 +525,7 @@ public sealed class Pid02E0LightingEffectsTests
             new Pid02E0SpectrumEffect(),
             Pid02E0BreathingEffect.Single(Green),
             new Pid02E0ReactiveEffect(Green, TimeSpan.FromSeconds(1)),
+            new Pid02E0RippleEffect(Green),
             new Pid02E0TidalEffect(
                 Green,
                 new MatrixRgb(0, 0, 255),
