@@ -54,6 +54,30 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         new(PowerSource.Battery, "On battery"),
     ];
 
+    private static readonly IReadOnlyList<LightingEffect> KnownLightingEffects =
+        Enum.GetValues<LightingEffect>()
+            .Where(Enum.IsDefined)
+            .Order()
+            .ToArray();
+
+    private static readonly IReadOnlyList<LogoLightingMode> KnownLogoLightingModes =
+        Enum.GetValues<LogoLightingMode>()
+            .Where(Enum.IsDefined)
+            .Order()
+            .ToArray();
+
+    private static readonly IReadOnlyList<LightingEffectOption> KnownLightingEffectOptions =
+        KnownLightingEffects
+            .Select(CreateLightingEffectOption)
+            .ToArray();
+
+    private static readonly IReadOnlyList<LogoLightingModeOption> KnownLogoLightingModeOptions =
+    [
+        new(null, "Leave unchanged"),
+        .. KnownLogoLightingModes.Select(
+            mode => new LogoLightingModeOption(mode, mode.ToString())),
+    ];
+
     private static readonly RazerBladeModelInfo TargetLaptop =
         RazerBladeModelCatalog.Find(RazerBladeModelCatalog.OpenBladeTargetModelNumber)
         ?? throw new InvalidOperationException("The supported laptop is missing from the model catalog.");
@@ -98,12 +122,13 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     private IReadOnlyList<FanMode> availableFanModes = [];
     private IReadOnlyList<FanMode> availableUsbCFanModes = [];
     private IReadOnlyList<LightingEffect> availableLightingEffects = [];
-    private IReadOnlyList<LightingEffectOption> availableLightingEffectOptions = [];
-    private IReadOnlyList<LogoLightingModeOption> availableLogoLightingModeOptions = [];
+    private IReadOnlyList<LightingEffectOption> availableLightingEffectOptions =
+        KnownLightingEffectOptions;
+    private IReadOnlyList<LogoLightingModeOption> availableLogoLightingModeOptions =
+        KnownLogoLightingModeOptions;
     private IReadOnlyList<LightingSettings> availableLightingSettings = [];
     private bool isPerformanceVisible;
     private bool isFanControlVisible;
-    private bool isLightingVisible;
     private PerformancePreset selectedPerformance = PerformancePreset.Balanced;
     private CustomPerformanceLevel selectedCustomCpuLevel = CustomPerformanceLevel.Medium;
     private CustomPerformanceLevel selectedCustomGpuLevel = CustomPerformanceLevel.High;
@@ -903,23 +928,54 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         private set => SetField(ref isFanControlVisible, value);
     }
 
-    public bool IsLightingVisible
+    public bool IsLightingVisible => true;
+
+    public bool HasLightingCapability => AvailableLightingEffects.Count > 0;
+
+    public bool CanControlLighting => CanControlHardware && HasLightingCapability;
+
+    public bool IsLightingControlUnavailable => !CanControlLighting;
+
+    public string LightingControlUnavailableMessage
     {
-        get => isLightingVisible;
-        private set
+        get
         {
-            if (isLightingVisible == value)
+            if (!IsConnected)
             {
-                return;
+                return "OpenBlade can’t connect to its service, so lighting controls are unavailable.";
             }
-            SetField(ref isLightingVisible, value);
-            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasActiveChanges)));
-            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ActiveChangesText)));
+
+            if (latestStatus?.DeviceVerified != true)
+            {
+                return "OpenBlade can’t find a supported laptop, so lighting controls are unavailable.";
+            }
+
+            if (!HasLightingCapability && latestStatus.PotentialControllers.Count > 0)
+            {
+                return "Another Razer app may be using the laptop’s lighting interface. OpenBlade will enable these controls when it becomes available.";
+            }
+
+            if (!HasLightingCapability && HasControllerDetectionWarning)
+            {
+                return "OpenBlade couldn’t confirm whether another Razer app is using the laptop’s lighting interface. Controls will remain disabled until access is available.";
+            }
+
+            if (!HasLightingCapability)
+            {
+                return "OpenBlade couldn’t access the laptop’s lighting interface. Another lighting app may be using it.";
+            }
+
+            if (ActivePowerSource == PowerSource.ExternalUnknown)
+            {
+                return "OpenBlade is checking the laptop before enabling lighting controls.";
+            }
+
+            return "Laptop controls are currently unavailable. Check Troubleshooting for details.";
         }
     }
 
     public bool IsProfileControlVisible =>
-        IsPerformanceVisible || IsFanControlVisible || IsLightingVisible;
+        IsPerformanceVisible || IsFanControlVisible || HasLightingCapability;
 
     public PerformancePreset SelectedPerformance
     {
@@ -1206,7 +1262,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
 
     public bool HasActiveChanges => PerformanceOverride is not null
         || FanOverride is not null
-        || (IsLightingVisible && LightingOverride is not null);
+        || (HasLightingCapability && LightingOverride is not null);
 
     public string ActiveChangesText
     {
@@ -1219,7 +1275,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
                 PerformanceOverride,
                 PerformancePresetPresentation.Label);
             AddOverrideStatus(active, "Fans", FanOverride);
-            if (IsLightingVisible)
+            if (HasLightingCapability)
             {
                 AddOverrideStatus(
                     active,
@@ -2633,10 +2689,12 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             .Where(Enum.IsDefined)
             .Order()
             .ToArray();
-        AvailableLightingEffectOptions = AvailableLightingEffects
-            .Select(effect => new LightingEffectOption(
-                effect,
-                effect == LightingEffect.Spectrum ? "Spectrum Cycling" : effect.ToString()))
+        IReadOnlyList<LightingEffect> presentedLightingEffects =
+            AvailableLightingEffects.Count > 0
+                ? AvailableLightingEffects
+                : KnownLightingEffects;
+        AvailableLightingEffectOptions = presentedLightingEffects
+            .Select(CreateLightingEffectOption)
             .ToArray();
         PropertyChanged?.Invoke(
             this,
@@ -2644,12 +2702,18 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         AvailableLightingSettings = AvailableLightingEffects
             .Select(CreateLightingChoice)
             .ToArray();
+        LogoLightingMode[] admittedLogoLightingModes = capabilities.LogoLightingModes
+            .Where(Enum.IsDefined)
+            .Order()
+            .ToArray();
+        IReadOnlyList<LogoLightingMode> presentedLogoLightingModes =
+            AvailableLightingEffects.Count == 0 && admittedLogoLightingModes.Length == 0
+                ? KnownLogoLightingModes
+                : admittedLogoLightingModes;
         AvailableLogoLightingModeOptions =
         [
             new(null, "Leave unchanged"),
-            .. capabilities.LogoLightingModes
-                .Where(Enum.IsDefined)
-                .Order()
+            .. presentedLogoLightingModes
                 .Select(mode => new LogoLightingModeOption(mode, mode.ToString())),
         ];
         PropertyChanged?.Invoke(
@@ -2660,14 +2724,17 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             new PropertyChangedEventArgs(nameof(IsLogoLightingVisible)));
         IsPerformanceVisible = AvailablePerformancePresets.Count > 0;
         IsFanControlVisible = AvailableFanModes.Count > 0;
-        IsLightingVisible = AvailableLightingEffects.Count > 0
-            || capabilities.LogoLightingModes.Count > 0;
         PropertyChanged?.Invoke(
             this,
             new PropertyChangedEventArgs(nameof(IsProfileControlVisible)));
         NotifyCommands();
         NotifyPresentationState();
     }
+
+    private static LightingEffectOption CreateLightingEffectOption(LightingEffect effect) =>
+        new(
+            effect,
+            effect == LightingEffect.Spectrum ? "Spectrum Cycling" : effect.ToString());
 
     private void NotifyActiveFanSelectionBinding()
     {
@@ -3151,6 +3218,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     private bool CanSaveLightingPowerPolicy(object? parameter) =>
         Volatile.Read(ref disposed) == 0
         && IsConnected
+        && CanControlLighting
         && lightingPowerPolicyEditorDirty
         && parameter is LightingPowerPolicy policy
         && policy.IdleTimeoutMinutes is null or >= 1 and <= 60;
@@ -3163,6 +3231,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
 
     private bool CanSaveActiveProfileDraft(ProfileDraftGroup group) =>
         CanMutate
+        && (group != ProfileDraftGroup.Lighting || CanControlLighting)
         && HasActiveProfileDraftFor(group)
         && activeProfileDraftSource == ActivePowerSource
         && TryGetSupportedProfileDraft(CreateProfileSetWithActiveDraft(group), out _);
@@ -4811,6 +4880,16 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsReadinessChecking)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsReadinessWarning)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsReadinessError)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasLightingCapability)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(CanControlLighting)));
+        PropertyChanged?.Invoke(
+            this,
+            new PropertyChangedEventArgs(nameof(IsLightingControlUnavailable)));
+        PropertyChanged?.Invoke(
+            this,
+            new PropertyChangedEventArgs(nameof(LightingControlUnavailableMessage)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasActiveChanges)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ActiveChangesText)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasAttention)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(AttentionSummary)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(AttentionBadgeLabel)));

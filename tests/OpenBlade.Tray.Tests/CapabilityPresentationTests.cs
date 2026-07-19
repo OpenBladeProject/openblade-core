@@ -654,7 +654,7 @@ public sealed class CapabilityPresentationTests
     }
 
     [Fact]
-    public async Task UnverifiedCapabilities_OmitEveryLightingChoice()
+    public async Task UnverifiedCapabilities_KeepLightingPageVisibleButUnavailable()
     {
         var client = new PresentationClient();
         await using var viewModel = new MainViewModel(client, new ImmediateDispatcher());
@@ -668,8 +668,40 @@ public sealed class CapabilityPresentationTests
 
         Assert.Empty(viewModel.AvailableLightingEffects);
         Assert.Empty(viewModel.AvailableLightingSettings);
-        Assert.False(viewModel.IsLightingVisible);
+        Assert.NotEmpty(viewModel.AvailableLightingEffectOptions);
+        Assert.True(viewModel.IsLightingVisible);
+        Assert.False(viewModel.HasLightingCapability);
+        Assert.False(viewModel.CanControlLighting);
+        Assert.True(viewModel.IsLightingControlUnavailable);
+        Assert.Contains(
+            "can’t find a supported laptop",
+            viewModel.LightingControlUnavailableMessage,
+            StringComparison.Ordinal);
         Assert.True(viewModel.EnableFullChargeOverride);
+    }
+
+    [Fact]
+    public async Task UnavailableLightingInterface_ExplainsPotentialRazerConflict()
+    {
+        var client = new PresentationClient();
+        await using var viewModel = new MainViewModel(client, new ImmediateDispatcher());
+        await viewModel.StartAsync();
+
+        client.Publish(CreateStatus(
+            verified: true,
+            blocked: false,
+            capabilities: DeviceCapabilities.Unavailable(),
+            conflicts: ["Razer Synapse"]));
+        await WaitUntilAsync(() => viewModel.IsConnected);
+
+        Assert.True(viewModel.IsLightingVisible);
+        Assert.False(viewModel.CanControlLighting);
+        Assert.Contains(
+            "Another Razer app may be using",
+            viewModel.LightingControlUnavailableMessage,
+            StringComparison.Ordinal);
+        Assert.False(viewModel.SetLightingCommand.CanExecute(
+            ProfileDefaults.CreateSafeDefaults().PluggedIn.Lighting));
     }
 
     [Fact]
@@ -981,7 +1013,7 @@ public sealed class CapabilityPresentationTests
                 new HashSet<FanMode> { FanMode.Automatic },
                 new HashSet<LightingEffect> { LightingEffect.Off, invalidEffect },
                 ChargeLimits(), true, true)));
-        await WaitUntilAsync(() => viewModel.IsLightingVisible);
+        await WaitUntilAsync(() => viewModel.AvailableLightingEffects.Count > 0);
 
         Assert.Equal([LightingEffect.Off], viewModel.AvailableLightingEffects);
         Assert.All(
@@ -1290,7 +1322,7 @@ public sealed class CapabilityPresentationTests
     }
 
     [Fact]
-    public void MainWindow_LightingPageIsCapabilityGatedAndContainsOnlyCoreEffects()
+    public void MainWindow_LightingPageIsAlwaysVisibleAndDisablesItsControlsAsOneGroup()
     {
         string xaml = ReadMainWindowXaml();
         XDocument document = XDocument.Parse(xaml);
@@ -1300,12 +1332,21 @@ public sealed class CapabilityPresentationTests
             "LightingNavigationItem");
         XElement page = NamedElement(document, "ScrollView", "LightingPage");
         XElement effectPicker = NamedElement(document, "ComboBox", "LightingEffectPicker");
+        XElement controls = NamedElement(document, "ContentControl", "LightingControls");
+        XElement infoBar = NamedElement(document, "InfoBar", "LightingUnavailableInfoBar");
 
         Assert.Equal("lighting", Attribute(navigation, "Tag"));
-        Assert.Equal(
-            "{x:Bind ViewModel.IsLightingVisible, Mode=OneWay}",
-            Attribute(navigation, "Visibility"));
+        Assert.Null(Attribute(navigation, "Visibility"));
         Assert.Equal("Collapsed", Attribute(page, "Visibility"));
+        Assert.Equal(
+            "{x:Bind ViewModel.CanControlLighting, Mode=OneWay}",
+            Attribute(controls, "IsEnabled"));
+        Assert.Equal(
+            "{x:Bind ViewModel.IsLightingControlUnavailable, Mode=OneWay}",
+            Attribute(infoBar, "IsOpen"));
+        Assert.Equal(
+            "{x:Bind ViewModel.LightingControlUnavailableMessage, Mode=OneWay}",
+            Attribute(infoBar, "Message"));
         Assert.Equal(
             "{x:Bind ViewModel.AvailableLightingEffectOptions, Mode=OneWay}",
             Attribute(effectPicker, "ItemsSource"));

@@ -1966,7 +1966,9 @@ public sealed class MainViewModelTests
         });
         await WaitUntilAsync(() => viewModel.IsConnected);
 
-        Assert.False(viewModel.IsLightingVisible);
+        Assert.True(viewModel.IsLightingVisible);
+        Assert.False(viewModel.HasLightingCapability);
+        Assert.False(viewModel.CanControlLighting);
         Assert.False(viewModel.HasActiveChanges);
         Assert.Equal(string.Empty, viewModel.ActiveChangesText);
     }

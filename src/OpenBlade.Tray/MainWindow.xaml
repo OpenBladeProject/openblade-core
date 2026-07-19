@@ -179,8 +179,7 @@
                 </NavigationViewItem>
                 <NavigationViewItem x:Name="LightingNavigationItem"
                                     Content="Lighting"
-                                    Tag="lighting"
-                                    Visibility="{x:Bind ViewModel.IsLightingVisible, Mode=OneWay}">
+                                    Tag="lighting">
                     <NavigationViewItem.Icon>
                         <FontIcon Glyph="&#xE781;" />
                     </NavigationViewItem.Icon>
@@ -816,6 +815,17 @@
                         </StackPanel.Transitions>
 
                         <TextBlock Text="Lighting" Style="{StaticResource PageTitleStyle}" />
+                        <InfoBar x:Name="LightingUnavailableInfoBar"
+                                 Margin="0,0,0,18"
+                                 IsOpen="{x:Bind ViewModel.IsLightingControlUnavailable, Mode=OneWay}"
+                                 IsClosable="False"
+                                 Severity="Informational"
+                                 Title="Lighting controls unavailable"
+                                 Message="{x:Bind ViewModel.LightingControlUnavailableMessage, Mode=OneWay}" />
+                        <ContentControl x:Name="LightingControls"
+                                        HorizontalContentAlignment="Stretch"
+                                        IsEnabled="{x:Bind ViewModel.CanControlLighting, Mode=OneWay}">
+                            <StackPanel>
                         <TextBlock Text="Keyboard"
                                    Style="{StaticResource SectionHeaderStyle}"
                                    Margin="0,0,0,10" />
@@ -1327,6 +1337,8 @@
                                 </Border>
                             </StackPanel>
                         </Border>
+                            </StackPanel>
+                        </ContentControl>
                     </StackPanel>
                 </ScrollView>
 

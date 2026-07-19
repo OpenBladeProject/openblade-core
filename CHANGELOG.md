@@ -49,6 +49,10 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Changed
 
+- Lighting remains available in navigation when its device interface cannot be
+  accessed. The page shows the configured values in a disabled editor and
+  explains whether the service, laptop detection, or another Razer app is
+  preventing control.
 - Status subscriptions now reserve enough bounded pipe capacity for the Tray,
   all three SessionAgent observers, and concurrent short control or diagnostic
   requests, preventing a healthy service from appearing unavailable in the UI.
