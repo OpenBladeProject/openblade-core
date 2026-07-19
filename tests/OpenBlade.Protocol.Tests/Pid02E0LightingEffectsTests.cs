@@ -1,4 +1,5 @@
 using System.Text.Json;
+using OpenBlade.Contracts;
 using OpenBlade.Protocol;
 
 namespace OpenBlade.Protocol.Tests;
@@ -265,6 +266,73 @@ public sealed class Pid02E0LightingEffectsTests
     }
 
     [Fact]
+    public void Tidal_UsesSanitizedCapturedDirectionTemplatesAndSubstitutesColors()
+    {
+        MatrixRgb red = new(255, 0, 0);
+        MatrixRgb cyan = new(0, 255, 255);
+        var left = new Pid02E0TidalEffect(
+            red,
+            cyan,
+            randomColors: false,
+            LightingDirection.Leftward);
+        var right = new Pid02E0TidalEffect(
+            red,
+            cyan,
+            randomColors: false,
+            LightingDirection.Rightward);
+
+        Pid02E0MatrixFrame leftFrame = left.RenderFrame(TimeSpan.FromMilliseconds(500));
+        Pid02E0MatrixFrame rightFrame = right.RenderFrame(TimeSpan.FromMilliseconds(500));
+
+        Assert.NotEqual(leftFrame.ToArray(), rightFrame.ToArray());
+        AssertHolesBlack(leftFrame);
+        AssertHolesBlack(rightFrame);
+        Assert.All(leftFrame.ToArray(), color =>
+            Assert.True(
+                color == MatrixRgb.Black
+                || color.Green == 0 && color.Blue == 0
+                || color.Red == 0 && color.Green == color.Blue));
+    }
+
+    [Fact]
+    public void Tidal_LoopsAtFiveSecondsAndAdvancesEveryFiftyMilliseconds()
+    {
+        var effect = new Pid02E0TidalEffect(
+            Green,
+            new MatrixRgb(0, 0, 255),
+            randomColors: false,
+            LightingDirection.Rightward);
+
+        Assert.Equal(TimeSpan.FromMilliseconds(50), effect.GetNextFrameDelay(TimeSpan.Zero));
+        AssertFramesEqual(
+            effect.RenderFrame(TimeSpan.Zero),
+            effect.RenderFrame(TimeSpan.FromSeconds(5)));
+        Assert.NotEqual(
+            effect.RenderFrame(TimeSpan.Zero).ToArray(),
+            effect.RenderFrame(TimeSpan.FromMilliseconds(50)).ToArray());
+    }
+
+    [Fact]
+    public void TidalRandom_UsesOneStableDistinctPairPerCycle()
+    {
+        var source = new RecordingColorPairSource();
+        var effect = new Pid02E0TidalEffect(
+            default,
+            default,
+            randomColors: true,
+            LightingDirection.Rightward,
+            source);
+
+        Pid02E0MatrixFrame first = effect.RenderFrame(TimeSpan.FromMilliseconds(500));
+        Pid02E0MatrixFrame repeated = effect.RenderFrame(TimeSpan.FromMilliseconds(500));
+        Pid02E0MatrixFrame nextCycle = effect.RenderFrame(TimeSpan.FromMilliseconds(5500));
+
+        AssertFramesEqual(first, repeated);
+        Assert.NotEqual(first.ToArray(), nextCycle.ToArray());
+        Assert.Equal([0L, 0L, 1L], source.RequestedCycles);
+    }
+
+    [Fact]
     public void Effects_RejectInvalidTimingInputs()
     {
         Assert.Throws<ArgumentOutOfRangeException>(() => new Pid02E0SpectrumEffect(TimeSpan.Zero));
@@ -279,6 +347,11 @@ public sealed class Pid02E0LightingEffectsTests
             new Pid02E0SpectrumEffect(),
             Pid02E0BreathingEffect.Single(Green),
             new Pid02E0ReactiveEffect(Green, TimeSpan.FromSeconds(1)),
+            new Pid02E0TidalEffect(
+                Green,
+                new MatrixRgb(0, 0, 255),
+                randomColors: false,
+                LightingDirection.Rightward),
         ];
 
         Assert.All(effects, effect =>
@@ -340,6 +413,19 @@ public sealed class Pid02E0LightingEffectsTests
         {
             RequestedCycles.Add(cycleIndex);
             return new MatrixRgb((byte)cycleIndex, (byte)(cycleIndex + 100), (byte)(cycleIndex + 200));
+        }
+    }
+
+    private sealed class RecordingColorPairSource : IPid02E0RandomColorPairSource
+    {
+        internal List<long> RequestedCycles { get; } = [];
+
+        public (MatrixRgb Primary, MatrixRgb Secondary) ColorsForCycle(long cycleIndex)
+        {
+            RequestedCycles.Add(cycleIndex);
+            return cycleIndex == 0
+                ? (new MatrixRgb(255, 0, 0), new MatrixRgb(0, 0, 255))
+                : (new MatrixRgb(0, 255, 0), new MatrixRgb(255, 0, 255));
         }
     }
 }

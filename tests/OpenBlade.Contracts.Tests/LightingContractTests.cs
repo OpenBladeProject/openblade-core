@@ -34,6 +34,18 @@ public sealed class LightingContractTests
                 primary,
                 40,
                 ReactiveLightingDuration.Long),
+            LightingSettingsFactory.Tidal(
+                primary,
+                secondary,
+                randomColors: false,
+                LightingDirection.Rightward,
+                brightness: 77),
+            LightingSettingsFactory.Tidal(
+                primary,
+                secondary,
+                randomColors: true,
+                LightingDirection.Leftward,
+                brightness: 66),
         ];
 
         Assert.All(settings, value =>
@@ -55,6 +67,9 @@ public sealed class LightingContractTests
         Assert.Equal(
             ReactiveLightingDuration.Long,
             Assert.IsType<ReactiveLightingParameters>(settings[6].Parameters).Duration);
+        Assert.False(
+            Assert.IsType<TidalLightingParameters>(settings[7].Parameters).RandomColors);
+        Assert.Equal(default, settings[8].Color);
     }
 
     [Fact]
@@ -91,6 +106,19 @@ public sealed class LightingContractTests
                     primary,
                     (ReactiveLightingDuration)999),
             },
+            LightingSettingsFactory.Tidal(
+                primary,
+                new RgbColor(4, 5, 6),
+                randomColors: false,
+                LightingDirection.Rightward,
+                brightness: 50) with
+            {
+                Parameters = new TidalLightingParameters(
+                    primary,
+                    new RgbColor(4, 5, 6),
+                    RandomColors: false,
+                    (LightingDirection)999),
+            },
         ];
 
         Assert.All(invalid, value =>
@@ -110,6 +138,12 @@ public sealed class LightingContractTests
                 new RgbColor(1, 2, 3),
                 0,
                 ReactiveLightingDuration.Medium),
+            LightingSettingsFactory.Tidal(
+                new RgbColor(1, 2, 3),
+                new RgbColor(4, 5, 6),
+                randomColors: false,
+                LightingDirection.Rightward,
+                brightness: 0),
         ];
 
         Assert.All(invisible, value =>

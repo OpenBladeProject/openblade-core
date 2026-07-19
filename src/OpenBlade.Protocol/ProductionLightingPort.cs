@@ -56,7 +56,12 @@ internal sealed class ProductionLightingPort : IProductionLightingPort
             : new HashSet<LightingEffect>(),
         new HashSet<int>(),
         SupportsBatteryProtectionOff: false,
-        SupportsTemporaryFullCharge: false);
+        SupportsTemporaryFullCharge: false)
+    {
+        LogoLightingModes = admitted
+            ? new HashSet<LogoLightingMode>(Enum.GetValues<LogoLightingMode>())
+            : new HashSet<LogoLightingMode>(),
+    };
 
     public async Task<LightingSettings?> ReadStateAsync(
         CancellationToken cancellationToken)
@@ -94,6 +99,25 @@ internal sealed class ProductionLightingPort : IProductionLightingPort
         }
     }
 
+    public async Task<LogoLightingMode?> ReadLogoStateAsync(
+        CancellationToken cancellationToken)
+    {
+        if (Capabilities.LogoLightingModes.Count == 0)
+        {
+            return null;
+        }
+
+        await EnterAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            return await QueryLogoModeCoreAsync(cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            operationGate.Release();
+        }
+    }
+
     public async Task SetLightingAsync(
         LightingSettings settings,
         CancellationToken cancellationToken)
@@ -101,7 +125,9 @@ internal sealed class ProductionLightingPort : IProductionLightingPort
         ArgumentNullException.ThrowIfNull(settings);
         settings = LightingSettingsFactory.NormalizeLegacyOff(settings);
         if (!LightingSettingsValidation.IsWellFormed(settings)
-            || !Capabilities.LightingEffects.Contains(settings.Effect))
+            || !Capabilities.LightingEffects.Contains(settings.Effect)
+            || settings.LogoMode is { } logoMode
+                && !Capabilities.LogoLightingModes.Contains(logoMode))
         {
             throw KnownNotApplied("The requested lighting setting is not admitted.");
         }
@@ -111,38 +137,54 @@ internal sealed class ProductionLightingPort : IProductionLightingPort
         {
             byte baselineRaw = await QueryBrightnessRawCoreAsync(cancellationToken)
                 .ConfigureAwait(false);
+            LogoLightingMode? baselineLogo = settings.LogoMode is null
+                ? null
+                : await QueryLogoModeCoreAsync(cancellationToken).ConfigureAwait(false);
             byte requestedRaw = LightingBrightnessProtocol.PercentToRaw(settings.Brightness);
             OwnedEffectSnapshot? previous = CaptureOwnedEffectCore();
 
             if (CanRetainRenderer(previous, settings))
             {
-                if (baselineRaw != requestedRaw)
+                try
                 {
-                    try
+                    if (baselineRaw != requestedRaw)
                     {
                         await SetBrightnessAndVerifyCoreAsync(requestedRaw, cancellationToken)
                             .ConfigureAwait(false);
                     }
-                    catch (Exception exception)
+
+                    if (settings.LogoMode is { } requestedLogo
+                        && baselineLogo != requestedLogo)
                     {
-                        if (!await TryRestoreBrightnessCoreAsync(baselineRaw)
-                            .ConfigureAwait(false))
-                        {
-                            throw RollbackIndeterminate(
-                                "Lighting brightness failed and the previous brightness could not be restored.",
-                                exception);
-                        }
-
-                        throw;
+                        await SetLogoModeAndVerifyCoreAsync(requestedLogo, cancellationToken)
+                            .ConfigureAwait(false);
                     }
-                }
 
-                lock (effectSync)
+                    lock (effectSync)
+                    {
+                        lastDeliveredState = settings;
+                    }
+
+                    return;
+                }
+                catch (Exception exception)
                 {
-                    lastDeliveredState = settings;
-                }
+                    bool brightnessRestored = baselineRaw == requestedRaw
+                        || await TryRestoreBrightnessCoreAsync(baselineRaw)
+                            .ConfigureAwait(false);
+                    bool logoRestored = baselineLogo is null
+                        || settings.LogoMode == baselineLogo
+                        || await TryRestoreLogoCoreAsync(baselineLogo.Value)
+                            .ConfigureAwait(false);
+                    if (!brightnessRestored || !logoRestored)
+                    {
+                        throw RollbackIndeterminate(
+                            "The lighting update failed and the previous brightness or logo mode could not be restored.",
+                            exception);
+                    }
 
-                return;
+                    throw;
+                }
             }
 
             await StopStreamCoreAsync().ConfigureAwait(false);
@@ -161,36 +203,43 @@ internal sealed class ProductionLightingPort : IProductionLightingPort
                     {
                         activeEffect = null;
                         activeReactiveEffect = null;
-                        lastDeliveredState = LightingSettingsFactory.Off();
+                        lastDeliveredState = settings;
                     }
                     SetOwnership(LightingRendererOwnershipState.None);
-
-                    return;
                 }
-
-                IPid02E0LightingEffect effect = CreateEffect(settings);
-                await ExecuteTransitionHandshakeCoreAsync(cancellationToken)
-                    .ConfigureAwait(false);
-
-                effectStartedTimestamp = timeProvider.GetTimestamp();
-                Pid02E0MatrixFrame initialFrame;
-                lock (effectSync)
+                else
                 {
-                    initialFrame = effect.RenderFrame(TimeSpan.Zero);
+                    IPid02E0LightingEffect effect = CreateEffect(settings);
+                    await ExecuteTransitionHandshakeCoreAsync(cancellationToken)
+                        .ConfigureAwait(false);
+
+                    effectStartedTimestamp = timeProvider.GetTimestamp();
+                    Pid02E0MatrixFrame initialFrame;
+                    lock (effectSync)
+                    {
+                        initialFrame = effect.RenderFrame(TimeSpan.Zero);
+                    }
+
+                    await WriteMatrixCoreAsync(initialFrame, cancellationToken)
+                        .ConfigureAwait(false);
+
+                    lock (effectSync)
+                    {
+                        activeEffect = effect;
+                        activeReactiveEffect = effect as Pid02E0ReactiveEffect;
+                        lastDeliveredState = settings;
+                    }
+
+                    SetOwnership(OwnershipFor(settings.Effect));
+                    StartStreamCore(effect);
                 }
 
-                await WriteMatrixCoreAsync(initialFrame, cancellationToken)
-                    .ConfigureAwait(false);
-
-                lock (effectSync)
+                if (settings.LogoMode is { } requestedLogo
+                    && baselineLogo != requestedLogo)
                 {
-                    activeEffect = effect;
-                    activeReactiveEffect = effect as Pid02E0ReactiveEffect;
-                    lastDeliveredState = settings;
+                    await SetLogoModeAndVerifyCoreAsync(requestedLogo, cancellationToken)
+                        .ConfigureAwait(false);
                 }
-
-                SetOwnership(OwnershipFor(settings.Effect));
-                StartStreamCore(effect);
             }
             catch (Exception exception)
             {
@@ -198,6 +247,10 @@ internal sealed class ProductionLightingPort : IProductionLightingPort
                     || await TryRestoreBrightnessCoreAsync(baselineRaw).ConfigureAwait(false);
                 bool rendererRestored = previous is not null
                     && await TryRestoreOwnedEffectCoreAsync(previous).ConfigureAwait(false);
+                bool logoRestored = baselineLogo is null
+                    || settings.LogoMode == baselineLogo
+                    || await TryRestoreLogoCoreAsync(baselineLogo.Value)
+                        .ConfigureAwait(false);
 
                 if (previous is null || !rendererRestored)
                 {
@@ -210,7 +263,9 @@ internal sealed class ProductionLightingPort : IProductionLightingPort
                     SetOwnership(LightingRendererOwnershipState.None);
                 }
 
-                if (!brightnessRestored || (previous is not null && !rendererRestored))
+                if (!brightnessRestored
+                    || !logoRestored
+                    || (previous is not null && !rendererRestored))
                 {
                     throw RollbackIndeterminate(
                         "The lighting change failed and the previous lighting state could not be fully restored.",
@@ -358,6 +413,68 @@ internal sealed class ProductionLightingPort : IProductionLightingPort
             throw new BladeWriteException(
                 WriteSubmissionState.Indeterminate,
                 "Lighting brightness did not match independent readback.");
+        }
+    }
+
+    private async Task<LogoLightingMode> QueryLogoModeCoreAsync(
+        CancellationToken cancellationToken)
+    {
+        ReadOnlyMemory<byte> state = await ExecuteReadCoreAsync(
+            new RazerCommandSpec(
+                LogoLightingProtocol.CommandClass,
+                LogoLightingProtocol.QueryStateCommandId,
+                LogoLightingProtocol.QueryArguments(),
+                3,
+                payload => LogoLightingProtocol.TryDecodeState(payload.Span, out _)),
+            cancellationToken).ConfigureAwait(false);
+        ReadOnlyMemory<byte> effect = await ExecuteReadCoreAsync(
+            new RazerCommandSpec(
+                LogoLightingProtocol.CommandClass,
+                LogoLightingProtocol.QueryEffectCommandId,
+                LogoLightingProtocol.QueryArguments(),
+                3,
+                payload => LogoLightingProtocol.TryDecodeEffect(payload.Span, out _)),
+            cancellationToken).ConfigureAwait(false);
+        if (!LogoLightingProtocol.TryDecodeMode(state.Span, effect.Span, out LogoLightingMode mode))
+        {
+            throw new IOException("Logo lighting response was malformed or unsupported.");
+        }
+
+        return mode;
+    }
+
+    private async Task SetLogoModeAndVerifyCoreAsync(
+        LogoLightingMode mode,
+        CancellationToken cancellationToken)
+    {
+        if (mode != LogoLightingMode.Off)
+        {
+            byte[] effect = LogoLightingProtocol.SetEffectArguments(mode);
+            await ExecuteWriteCoreAsync(
+                Spec(
+                    LogoLightingProtocol.CommandClass,
+                    LogoLightingProtocol.SetEffectCommandId,
+                    effect,
+                    effect),
+                cancellationToken).ConfigureAwait(false);
+        }
+
+        byte[] state = LogoLightingProtocol.SetStateArguments(mode);
+        await ExecuteWriteCoreAsync(
+            Spec(
+                LogoLightingProtocol.CommandClass,
+                LogoLightingProtocol.SetStateCommandId,
+                state,
+                state),
+            cancellationToken).ConfigureAwait(false);
+
+        LogoLightingMode confirmed = await QueryLogoModeCoreAsync(cancellationToken)
+            .ConfigureAwait(false);
+        if (confirmed != mode)
+        {
+            throw new BladeWriteException(
+                WriteSubmissionState.Indeterminate,
+                "Logo lighting did not match independent readback.");
         }
     }
 
@@ -514,6 +631,11 @@ internal sealed class ProductionLightingPort : IProductionLightingPort
             ReactiveLightingParameters value => new Pid02E0ReactiveEffect(
                 Color(value.Color),
                 ReactiveFadeDuration(value.Duration)),
+            TidalLightingParameters value => new Pid02E0TidalEffect(
+                Color(value.PrimaryColor),
+                Color(value.SecondaryColor),
+                value.RandomColors,
+                value.Direction),
             null when settings.Effect == LightingEffect.Static =>
                 new Pid02E0StaticEffect(Color(settings.Color)),
             null when settings.Effect == LightingEffect.Spectrum =>
@@ -630,6 +752,20 @@ internal sealed class ProductionLightingPort : IProductionLightingPort
         try
         {
             await SetBrightnessAndVerifyCoreAsync(raw, CancellationToken.None)
+                .ConfigureAwait(false);
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private async Task<bool> TryRestoreLogoCoreAsync(LogoLightingMode mode)
+    {
+        try
+        {
+            await SetLogoModeAndVerifyCoreAsync(mode, CancellationToken.None)
                 .ConfigureAwait(false);
             return true;
         }
@@ -769,6 +905,7 @@ internal sealed class ProductionLightingPort : IProductionLightingPort
             LightingEffect.Spectrum => LightingRendererOwnershipState.Spectrum,
             LightingEffect.Breathing => LightingRendererOwnershipState.Breathing,
             LightingEffect.Reactive => LightingRendererOwnershipState.Reactive,
+            LightingEffect.Tidal => LightingRendererOwnershipState.Tidal,
             _ => throw new ArgumentOutOfRangeException(nameof(effect)),
         };
 

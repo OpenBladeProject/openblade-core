@@ -1203,6 +1203,33 @@ public sealed class CapabilityPresentationTests
             viewModel.LightingDraft);
         Assert.True(viewModel.LightingShowsReactiveDuration);
 
+        viewModel.LightingEffectEditor = LightingEffect.Tidal;
+        viewModel.LightingDirectionEditor = LightingDirection.Leftward;
+        viewModel.LightingRandomColorsEditor = false;
+        Assert.Equal(
+            LightingSettingsFactory.Tidal(
+                new RgbColor(12, 34, 56),
+                new RgbColor(78, 90, 123),
+                randomColors: false,
+                LightingDirection.Leftward,
+                brightness: 64),
+            viewModel.LightingDraft);
+        Assert.True(viewModel.LightingShowsPrimaryColor);
+        Assert.True(viewModel.LightingShowsSecondaryColor);
+        Assert.True(viewModel.LightingShowsDirection);
+
+        viewModel.LightingRandomColorsEditor = true;
+        Assert.Equal(
+            LightingSettingsFactory.Tidal(
+                new RgbColor(12, 34, 56),
+                new RgbColor(78, 90, 123),
+                randomColors: true,
+                LightingDirection.Leftward,
+                brightness: 64),
+            viewModel.LightingDraft);
+        Assert.False(viewModel.LightingShowsPrimaryColor);
+        Assert.False(viewModel.LightingShowsSecondaryColor);
+
         viewModel.LightingEffectEditor = LightingEffect.Spectrum;
         Assert.Equal(
             LightingSettingsFactory.SpectrumCycling(64),
@@ -1235,6 +1262,8 @@ public sealed class CapabilityPresentationTests
         string lightingXaml = page.ToString();
         Assert.Contains("Breathing colors", lightingXaml, StringComparison.Ordinal);
         Assert.Contains("Reactive duration", lightingXaml, StringComparison.Ordinal);
+        Assert.Contains("Random colors", lightingXaml, StringComparison.Ordinal);
+        Assert.Contains("Tidal direction", lightingXaml, StringComparison.Ordinal);
         XElement[] colorPickers = page.Descendants()
             .Where(element => element.Name.LocalName == "ColorPicker")
             .ToArray();

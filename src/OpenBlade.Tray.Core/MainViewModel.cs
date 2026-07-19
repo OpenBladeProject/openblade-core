@@ -99,6 +99,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     private IReadOnlyList<FanMode> availableUsbCFanModes = [];
     private IReadOnlyList<LightingEffect> availableLightingEffects = [];
     private IReadOnlyList<LightingEffectOption> availableLightingEffectOptions = [];
+    private IReadOnlyList<LogoLightingModeOption> availableLogoLightingModeOptions = [];
     private IReadOnlyList<LightingSettings> availableLightingSettings = [];
     private bool isPerformanceVisible;
     private bool isFanControlVisible;
@@ -144,6 +145,9 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     private BreathingColorMode lightingBreathingColorModeEditor = BreathingColorMode.Single;
     private ReactiveLightingDuration lightingReactiveDurationEditor =
         ReactiveLightingDuration.Medium;
+    private bool lightingRandomColorsEditor;
+    private LightingDirection lightingDirectionEditor = LightingDirection.Rightward;
+    private LogoLightingMode? logoLightingModeEditor;
     private bool lightingEditorDirty;
     private PowerSource? lastConfirmedLightingEditorPowerSource;
     private PowerSource? activeProfileDraftSource;
@@ -852,6 +856,12 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     {
         get => availableLightingSettings;
         private set => SetField(ref availableLightingSettings, value);
+    }
+
+    public IReadOnlyList<LogoLightingModeOption> AvailableLogoLightingModeOptions
+    {
+        get => availableLogoLightingModeOptions;
+        private set => SetField(ref availableLogoLightingModeOptions, value);
     }
 
     public bool IsPerformanceVisible
@@ -1565,6 +1575,71 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         }
     }
 
+    public bool LightingRandomColorsEditor
+    {
+        get => lightingRandomColorsEditor;
+        set
+        {
+            if (!SetLightingEditorField(ref lightingRandomColorsEditor, value))
+            {
+                return;
+            }
+
+            NotifyLightingParameterPresentation();
+        }
+    }
+
+    public IReadOnlyList<LightingDirection> LightingDirections { get; } =
+        Enum.GetValues<LightingDirection>();
+
+    public LightingDirection LightingDirectionEditor
+    {
+        get => lightingDirectionEditor;
+        set
+        {
+            if (!Enum.IsDefined(value))
+            {
+                return;
+            }
+
+            SetLightingEditorField(ref lightingDirectionEditor, value);
+        }
+    }
+
+    public LogoLightingMode? LogoLightingModeEditor
+    {
+        get => logoLightingModeEditor;
+        set
+        {
+            if (value is { } mode && !Enum.IsDefined(mode))
+            {
+                return;
+            }
+
+            if (SetLightingEditorField(ref logoLightingModeEditor, value))
+            {
+                PropertyChanged?.Invoke(
+                    this,
+                    new PropertyChangedEventArgs(nameof(SelectedLogoLightingModeOption)));
+            }
+        }
+    }
+
+    public LogoLightingModeOption? SelectedLogoLightingModeOption
+    {
+        get => AvailableLogoLightingModeOptions.FirstOrDefault(
+            option => option.Mode == LogoLightingModeEditor);
+        set
+        {
+            if (value is not null)
+            {
+                LogoLightingModeEditor = value.Mode;
+            }
+        }
+    }
+
+    public bool IsLogoLightingVisible => AvailableLogoLightingModeOptions.Count > 1;
+
     public bool LightingShowsBrightness => LightingEffectEditor != LightingEffect.Off;
 
     public bool LightingShowsBreathingColorMode =>
@@ -1573,14 +1648,24 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     public bool LightingShowsPrimaryColor =>
         LightingEffectEditor is LightingEffect.Static or LightingEffect.Reactive
         || LightingEffectEditor == LightingEffect.Breathing
-            && LightingBreathingColorModeEditor != BreathingColorMode.Random;
+            && LightingBreathingColorModeEditor != BreathingColorMode.Random
+        || LightingEffectEditor == LightingEffect.Tidal
+            && !LightingRandomColorsEditor;
 
     public bool LightingShowsSecondaryColor =>
         LightingEffectEditor == LightingEffect.Breathing
-        && LightingBreathingColorModeEditor == BreathingColorMode.Dual;
+            && LightingBreathingColorModeEditor == BreathingColorMode.Dual
+        || LightingEffectEditor == LightingEffect.Tidal
+            && !LightingRandomColorsEditor;
 
     public bool LightingShowsReactiveDuration =>
         LightingEffectEditor == LightingEffect.Reactive;
+
+    public bool LightingShowsRandomColors =>
+        LightingEffectEditor == LightingEffect.Tidal;
+
+    public bool LightingShowsDirection =>
+        LightingEffectEditor == LightingEffect.Tidal;
 
     public LightingSettings LightingDraft => CreateLightingDraft();
 
@@ -2300,9 +2385,24 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         AvailableLightingSettings = AvailableLightingEffects
             .Select(CreateLightingChoice)
             .ToArray();
+        AvailableLogoLightingModeOptions =
+        [
+            new(null, "Leave unchanged"),
+            .. capabilities.LogoLightingModes
+                .Where(Enum.IsDefined)
+                .Order()
+                .Select(mode => new LogoLightingModeOption(mode, mode.ToString())),
+        ];
+        PropertyChanged?.Invoke(
+            this,
+            new PropertyChangedEventArgs(nameof(SelectedLogoLightingModeOption)));
+        PropertyChanged?.Invoke(
+            this,
+            new PropertyChangedEventArgs(nameof(IsLogoLightingVisible)));
         IsPerformanceVisible = AvailablePerformancePresets.Count > 0;
         IsFanControlVisible = AvailableFanModes.Count > 0;
-        IsLightingVisible = AvailableLightingEffects.Count > 0;
+        IsLightingVisible = AvailableLightingEffects.Count > 0
+            || capabilities.LogoLightingModes.Count > 0;
         PropertyChanged?.Invoke(
             this,
             new PropertyChangedEventArgs(nameof(IsProfileControlVisible)));
@@ -3143,12 +3243,12 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         SetField(ref lightingRedEditor, (int)value.Color.Red, nameof(LightingRedEditor));
         SetField(ref lightingGreenEditor, (int)value.Color.Green, nameof(LightingGreenEditor));
         SetField(ref lightingBlueEditor, (int)value.Color.Blue, nameof(LightingBlueEditor));
-        RgbColor secondaryColor = value.Parameters is BreathingLightingParameters
+        RgbColor secondaryColor = value.Parameters switch
         {
-            SecondaryColor: { } color,
-        }
-            ? color
-            : value.Color;
+            BreathingLightingParameters { SecondaryColor: { } color } => color,
+            TidalLightingParameters tidal => tidal.SecondaryColor,
+            _ => value.Color,
+        };
         SetField(
             ref lightingSecondaryRedEditor,
             (int)secondaryColor.Red,
@@ -3183,10 +3283,32 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             ref lightingReactiveDurationEditor,
             reactiveDuration,
             nameof(LightingReactiveDurationEditor));
+        bool randomColors = value.Parameters is TidalLightingParameters
+        {
+            RandomColors: true,
+        };
+        SetField(
+            ref lightingRandomColorsEditor,
+            randomColors,
+            nameof(LightingRandomColorsEditor));
+        LightingDirection direction = value.Parameters is TidalLightingParameters tidalParameters
+            ? tidalParameters.Direction
+            : LightingDirection.Rightward;
+        SetField(
+            ref lightingDirectionEditor,
+            direction,
+            nameof(LightingDirectionEditor));
+        SetField(
+            ref logoLightingModeEditor,
+            value.LogoMode,
+            nameof(LogoLightingModeEditor));
         NotifyLightingParameterPresentation();
         PropertyChanged?.Invoke(
             this,
             new PropertyChangedEventArgs(nameof(SelectedLightingEffectOption)));
+        PropertyChanged?.Invoke(
+            this,
+            new PropertyChangedEventArgs(nameof(SelectedLogoLightingModeOption)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(LightingDraft)));
     }
 
@@ -3629,6 +3751,11 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             BreathingLightingParameters => FormatColor(lighting.Color),
             ReactiveLightingParameters reactive =>
                 $"{reactive.Duration.ToString().ToLowerInvariant()}, {FormatColor(lighting.Color)}",
+            TidalLightingParameters { RandomColors: true } tidal =>
+                $"random colors, {tidal.Direction.ToString().ToLowerInvariant()}",
+            TidalLightingParameters tidal =>
+                $"{FormatColor(tidal.PrimaryColor)} and {FormatColor(tidal.SecondaryColor)}, "
+                + tidal.Direction.ToString().ToLowerInvariant(),
             _ when lighting.Effect == LightingEffect.Static => FormatColor(lighting.Color),
             _ => string.Empty,
         };
@@ -3702,6 +3829,10 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             Effect: LightingEffect.Reactive,
             Parameters: ReactiveLightingParameters reactive,
         } => $"Reactive, {reactive.Duration.ToString().ToLowerInvariant()}",
+        {
+            Effect: LightingEffect.Tidal,
+            Parameters: TidalLightingParameters tidal,
+        } => $"Tidal, {tidal.Direction.ToString().ToLowerInvariant()}",
         _ => lighting.Effect.ToString(),
     };
 
@@ -3712,6 +3843,12 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         {
             Parameters: BreathingLightingParameters { ColorMode: BreathingColorMode.Random },
         } => "Random",
+        {
+            Parameters: TidalLightingParameters { RandomColors: true },
+        } => "Random",
+        {
+            Parameters: TidalLightingParameters tidal,
+        } => $"{FormatColor(tidal.PrimaryColor)} and {FormatColor(tidal.SecondaryColor)}",
         {
             Parameters: BreathingLightingParameters
             {
@@ -3781,7 +3918,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             (byte)LightingSecondaryRedEditor,
             (byte)LightingSecondaryGreenEditor,
             (byte)LightingSecondaryBlueEditor);
-        return LightingEffectEditor switch
+        LightingSettings keyboard = LightingEffectEditor switch
         {
             LightingEffect.Off => LightingSettingsFactory.Off(),
             LightingEffect.Static => LightingSettingsFactory.Static(primaryColor, brightness),
@@ -3802,8 +3939,15 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
                 primaryColor,
                 brightness,
                 LightingReactiveDurationEditor),
+            LightingEffect.Tidal => LightingSettingsFactory.Tidal(
+                primaryColor,
+                secondaryColor,
+                LightingRandomColorsEditor,
+                LightingDirectionEditor,
+                brightness),
             _ => new LightingSettings(LightingEffectEditor, default, brightness),
         };
+        return keyboard with { LogoMode = LogoLightingModeEditor };
     }
 
     private void SeedVisibleLightingDefaults(
@@ -3824,7 +3968,8 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
 
         bool selectedUsesColor = selected is LightingEffect.Static
             or LightingEffect.Breathing
-            or LightingEffect.Reactive;
+            or LightingEffect.Reactive
+            or LightingEffect.Tidal;
         bool previousHadNoEditableColor = previous is LightingEffect.Off
             or LightingEffect.Spectrum
             || (previous == LightingEffect.Breathing
@@ -3842,6 +3987,11 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         {
             SeedBreathingColorDefaults(LightingBreathingColorModeEditor);
         }
+
+        if (selected == LightingEffect.Tidal)
+        {
+            SeedTidalColorDefaults();
+        }
     }
 
     private void SeedBreathingColorDefaults(BreathingColorMode selected)
@@ -3858,6 +4008,18 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             && LightingSecondaryColorEditor == default)
         {
             SetLightingColorEditor(new RgbColor(255, 0, 170), secondary: true);
+        }
+    }
+
+    private void SeedTidalColorDefaults()
+    {
+        if (LightingPrimaryColorEditor == default)
+        {
+            SetLightingColorEditor(new RgbColor(0, 255, 0), secondary: false);
+        }
+        if (LightingSecondaryColorEditor == default)
+        {
+            SetLightingColorEditor(new RgbColor(0, 0, 255), secondary: true);
         }
     }
 
@@ -3881,6 +4043,12 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
                 color,
                 brightness,
                 ReactiveLightingDuration.Medium),
+            LightingEffect.Tidal => LightingSettingsFactory.Tidal(
+                color,
+                new RgbColor(0, 0, 255),
+                randomColors: false,
+                LightingDirection.Rightward,
+                brightness),
             _ => new LightingSettings(effect, color, brightness),
         };
     }
@@ -4326,8 +4494,16 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         PropertyChanged?.Invoke(
             this,
             new PropertyChangedEventArgs(nameof(LightingShowsReactiveDuration)));
+        PropertyChanged?.Invoke(
+            this,
+            new PropertyChangedEventArgs(nameof(LightingShowsRandomColors)));
+        PropertyChanged?.Invoke(
+            this,
+            new PropertyChangedEventArgs(nameof(LightingShowsDirection)));
     }
 
 }
 
 public sealed record LightingEffectOption(LightingEffect Effect, string Label);
+
+public sealed record LogoLightingModeOption(LogoLightingMode? Mode, string Label);

@@ -1,5 +1,8 @@
 using OpenBlade.Contracts;
 using OpenBlade.Protocol;
+using System.Reflection;
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
@@ -47,10 +50,74 @@ public sealed class ProductionLightingPortTests
             TestBuildIdentity()));
     }
 
+    [Theory]
+    [InlineData(true, 0x00, LogoLightingMode.Off)]
+    [InlineData(false, 0x00, LogoLightingMode.Static)]
+    [InlineData(false, 0x02, LogoLightingMode.Breathing)]
+    public async Task LogoQueryUsesIndependentStateAndEffectReads(
+        bool disabled,
+        byte effect,
+        LogoLightingMode expected)
+    {
+        var session = new LightingSession(initialBrightness: 0xC5)
+        {
+            LogoEnabled = !disabled,
+            LogoEffect = effect,
+        };
+        await using var port = CreatePort(session, new MatrixWriter(), admitted: true);
+
+        Assert.Equal(expected, await port.ReadLogoStateAsync(default));
+        Assert.Equal(
+            [(0x03, 0x80, "010400"), (0x03, 0x82, "010400")],
+            session.Commands.Select(command => (
+                (int)command.ClassId,
+                (int)command.CommandId,
+                Convert.ToHexString(command.Arguments.Span))).ToArray());
+    }
+
+    [Fact]
+    public async Task LightingWriteAppliesAndReadsBackRequestedLogoMode()
+    {
+        var session = new LightingSession(initialBrightness: 0xC5)
+        {
+            LogoEnabled = true,
+            LogoEffect = LogoLightingProtocol.BreathingEffect,
+        };
+        var writer = new MatrixWriter();
+        await using var port = CreatePort(session, writer, admitted: true);
+        LightingSettings requested = LightingSettingsFactory.Static(
+            new RgbColor(0, 255, 0),
+            77) with
+        {
+            LogoMode = LogoLightingMode.Static,
+        };
+
+        await port.SetLightingAsync(requested, default);
+
+        Assert.True(session.LogoEnabled);
+        Assert.Equal(LogoLightingProtocol.StaticEffect, session.LogoEffect);
+        Assert.Contains(session.Commands, command =>
+            (command.ClassId, command.CommandId) == (0x03, 0x02)
+            && command.Arguments.Span.SequenceEqual(new byte[] { 0x01, 0x04, 0x00 }));
+        Assert.Contains(session.Commands, command =>
+            (command.ClassId, command.CommandId) == (0x03, 0x00)
+            && command.Arguments.Span.SequenceEqual(new byte[] { 0x01, 0x04, 0x01 }));
+        Assert.Equal(LogoLightingMode.Static, await port.ReadLogoStateAsync(default));
+    }
+
     [Fact]
     public void LightingAdmission_RequiresTheApprovedSemanticImplementationFingerprint()
     {
-        Assert.True(ProductionLightingEvidenceSource.IsApprovedLightingImplementation());
+        string fingerprint = typeof(ProductionLightingEvidenceSource).Assembly
+            .GetCustomAttributes<AssemblyMetadataAttribute>()
+            .Single(attribute =>
+                attribute.Key == "OpenBladeLightingImplementationFingerprint")
+            .Value!;
+        string actualHash = Convert.ToHexString(
+            SHA256.HashData(Encoding.UTF8.GetBytes(fingerprint)));
+        Assert.True(
+            ProductionLightingEvidenceSource.IsApprovedLightingImplementation(),
+            $"Current lighting implementation hash: {actualHash}");
         Assert.False(
             ProductionLightingEvidenceSource.IsApprovedLightingImplementationFingerprint(null));
         Assert.False(
@@ -532,7 +599,10 @@ public sealed class ProductionLightingPortTests
     {
         LightingSettings baseline = LightingSettingsFactory.Static(
             new RgbColor(0, byte.MaxValue, 0),
-            60);
+            60) with
+        {
+            LogoMode = LogoLightingMode.Static,
+        };
         (string Name, LightingSettings Settings)[] settings =
         [
             ("off", LightingSettingsFactory.Off()),
@@ -549,6 +619,39 @@ public sealed class ProductionLightingPortTests
                 new RgbColor(0, 255, 0), 60, ReactiveLightingDuration.Medium)),
             ("reactiveLong", LightingSettingsFactory.Reactive(
                 new RgbColor(0, 255, 0), 60, ReactiveLightingDuration.Long)),
+            ("tidalRightFixed", LightingSettingsFactory.Tidal(
+                new RgbColor(0, 255, 0),
+                new RgbColor(0, 0, 255),
+                randomColors: false,
+                LightingDirection.Rightward,
+                brightness: 60)),
+            ("tidalLeftFixed", LightingSettingsFactory.Tidal(
+                new RgbColor(0, 255, 0),
+                new RgbColor(0, 0, 255),
+                randomColors: false,
+                LightingDirection.Leftward,
+                brightness: 60)),
+            ("tidalRandom", LightingSettingsFactory.Tidal(
+                new RgbColor(0, 255, 0),
+                new RgbColor(0, 0, 255),
+                randomColors: true,
+                LightingDirection.Rightward,
+                brightness: 60)),
+            ("logoBreathing", LightingSettingsFactory.Static(
+                new RgbColor(0, 255, 0), 60) with
+            {
+                LogoMode = LogoLightingMode.Breathing,
+            }),
+            ("logoOff", LightingSettingsFactory.Static(
+                new RgbColor(0, 255, 0), 60) with
+            {
+                LogoMode = LogoLightingMode.Off,
+            }),
+            ("logoStaticRestore", LightingSettingsFactory.Static(
+                new RgbColor(0, 255, 0), 60) with
+            {
+                LogoMode = LogoLightingMode.Static,
+            }),
         ];
         ProductionLightingValidationActionEvidence[] actions = settings
             .Select(entry =>
@@ -634,6 +737,10 @@ public sealed class ProductionLightingPortTests
 
         internal byte Brightness { get; set; } = initialBrightness;
 
+        internal bool LogoEnabled { get; set; } = true;
+
+        internal byte LogoEffect { get; set; } = LogoLightingProtocol.StaticEffect;
+
         internal int BrightnessSetCalls { get; private set; }
 
         internal int? FailBrightnessSetOnCall { get; set; }
@@ -679,6 +786,11 @@ public sealed class ProductionLightingPortTests
                         ? raw
                         : Brightness],
                 (0x03, 0x03) => SetBrightness(command.Arguments.Span),
+                (0x03, 0x80) =>
+                    [0x01, 0x04, LogoEnabled ? (byte)0x01 : (byte)0x00],
+                (0x03, 0x82) => [0x01, 0x04, LogoEffect],
+                (0x03, 0x00) => SetLogoState(command.Arguments.Span),
+                (0x03, 0x02) => SetLogoEffect(command.Arguments.Span),
                 (0x00, 0x86) => [0x01, 0x00, 0x00],
                 (0x00, 0x84) => Transition84Response,
                 (0x03, 0x0A) => [0x05, 0x00],
@@ -698,6 +810,18 @@ public sealed class ProductionLightingPortTests
         private byte[] SetBrightness(ReadOnlySpan<byte> arguments)
         {
             Brightness = arguments[2];
+            return arguments.ToArray();
+        }
+
+        private byte[] SetLogoState(ReadOnlySpan<byte> arguments)
+        {
+            LogoEnabled = arguments[2] == 0x01;
+            return arguments.ToArray();
+        }
+
+        private byte[] SetLogoEffect(ReadOnlySpan<byte> arguments)
+        {
+            LogoEffect = arguments[2];
             return arguments.ToArray();
         }
     }

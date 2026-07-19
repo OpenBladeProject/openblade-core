@@ -22,6 +22,20 @@ public enum LightingEffect
     Spectrum,
     Breathing,
     Reactive,
+    Tidal,
+}
+
+public enum LightingDirection
+{
+    Leftward,
+    Rightward,
+}
+
+public enum LogoLightingMode
+{
+    Static,
+    Breathing,
+    Off,
 }
 
 /// <summary>
@@ -36,6 +50,7 @@ public enum LightingRendererOwnershipState
     Spectrum,
     Breathing,
     Reactive,
+    Tidal,
     Faulted,
 }
 
@@ -49,6 +64,11 @@ public sealed record LightingSettings(
     // Optional so profiles and IPC messages written before effect-specific
     // parameters were introduced remain readable without migration.
     public LightingEffectParameters? Parameters { get; init; }
+
+    // Null keeps profiles written before logo control support non-destructive:
+    // OpenBlade leaves the firmware-persistent lid logo setting unchanged until
+    // the user explicitly chooses a mode.
+    public LogoLightingMode? LogoMode { get; init; }
 }
 
 public sealed record PowerProfile(

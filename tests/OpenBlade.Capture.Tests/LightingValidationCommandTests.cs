@@ -23,7 +23,7 @@ public sealed class LightingValidationCommandTests
         int exitCode = await command.RunAsync(ValidArguments(), default);
 
         Assert.Equal(0, exitCode);
-        Assert.Equal(11, port.Settings.Count); // baseline, nine actions, restore.
+        Assert.Equal(17, port.Settings.Count); // baseline, fifteen actions, restore.
         Assert.Equal(
             [
                 LightingEffect.Static,
@@ -36,6 +36,12 @@ public sealed class LightingValidationCommandTests
                 LightingEffect.Reactive,
                 LightingEffect.Reactive,
                 LightingEffect.Reactive,
+                LightingEffect.Tidal,
+                LightingEffect.Tidal,
+                LightingEffect.Tidal,
+                LightingEffect.Static,
+                LightingEffect.Static,
+                LightingEffect.Static,
                 LightingEffect.Static,
             ],
             port.Settings.Select(setting => setting.Effect));
@@ -48,7 +54,7 @@ public sealed class LightingValidationCommandTests
         JsonElement root = document.RootElement;
         Assert.Equal(2, root.GetProperty("schemaVersion").GetInt32());
         Assert.Equal(AssemblySha, root.GetProperty("protocolAssemblySha256").GetString());
-        Assert.Equal(9, root.GetProperty("actions").GetArrayLength());
+        Assert.Equal(15, root.GetProperty("actions").GetArrayLength());
         Assert.True(root.GetProperty("allSupportedEffectsApplied").GetBoolean());
         Assert.True(root.GetProperty("brightnessIndependentReadback").GetBoolean());
         Assert.True(root.GetProperty("baselineRestored").GetBoolean());
@@ -425,6 +431,12 @@ public sealed class LightingValidationCommandTests
         "yes", // Reactive medium.
         string.Empty,
         "yes", // Reactive long.
+        "yes", // Tidal fixed rightward.
+        "yes", // Tidal fixed leftward.
+        "yes", // Tidal random.
+        "yes", // Logo Breathing.
+        "yes", // Logo Off.
+        "yes", // Logo Static restored.
         "yes", // Restored known baseline.
     ];
 
@@ -442,7 +454,11 @@ public sealed class LightingValidationCommandTests
             new HashSet<LightingEffect>(Enum.GetValues<LightingEffect>()),
             new HashSet<int>(),
             false,
-            false);
+            false)
+        {
+            LogoLightingModes = new HashSet<LogoLightingMode>(
+                Enum.GetValues<LogoLightingMode>()),
+        };
 
         public List<LightingSettings> Settings { get; } = [];
         public List<ReactiveKeyPulse> Pulses { get; } = [];
@@ -466,6 +482,7 @@ public sealed class LightingValidationCommandTests
                 LightingEffect.Spectrum => LightingRendererOwnershipState.Spectrum,
                 LightingEffect.Breathing => LightingRendererOwnershipState.Breathing,
                 LightingEffect.Reactive => LightingRendererOwnershipState.Reactive,
+                LightingEffect.Tidal => LightingRendererOwnershipState.Tidal,
                 _ => throw new ArgumentOutOfRangeException(),
             };
             Settings.Add(settings);

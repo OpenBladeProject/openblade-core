@@ -189,11 +189,12 @@ public sealed class ControlCoordinator
             DeviceSubsystem.Lighting,
             "Lighting",
             IsLightingValid(value),
-            capabilities => capabilities.LightingEffects.Contains(value.Effect),
-            state => state.Lighting == value,
+            capabilities => LightingSupported(capabilities, value),
+            state => LightingMatches(state, value),
             token => device.SetLightingAsync(value, token),
             cancellationToken,
             acceptSetterCompletionWithoutReadback: value.Effect != LightingEffect.Off,
+            setterCompletionEvidence: state => LogoMatches(state, value),
             forceWrite: forceWrite);
 
     internal async Task<FullTransitionApplyOutcome> ApplyDesiredStateOutcomeAsync(
@@ -270,10 +271,10 @@ public sealed class ControlCoordinator
             [DeviceSubsystem.Lighting] = new(
                 "Lighting",
                 IsLightingValid(desired.Lighting.Value)
-                    && capabilities.LightingEffects.Contains(desired.Lighting.Value.Effect),
-                initial.Lighting == desired.Lighting.Value,
+                    && LightingSupported(capabilities, desired.Lighting.Value),
+                LightingMatches(initial, desired.Lighting.Value),
                 token => device.SetLightingAsync(desired.Lighting.Value, token),
-                state => state.Lighting == desired.Lighting.Value,
+                state => LightingMatches(state, desired.Lighting.Value),
                 AcceptSetterCompletionWithoutReadback:
                     desired.Lighting.Value.Effect != LightingEffect.Off),
         };
@@ -431,6 +432,8 @@ public sealed class ControlCoordinator
                     {
                         provisional[subsystem] =
                             pending.AcceptSetterCompletionWithoutReadback
+                                && (subsystem != DeviceSubsystem.Lighting
+                                    || LogoMatches(final, desired.Lighting.Value))
                                 ? AppliedWithoutEffectReadback(pending.Name)
                                 : Indeterminate(pending.Name, null);
                     }
@@ -596,6 +599,7 @@ public sealed class ControlCoordinator
         CancellationToken cancellationToken,
         Func<ConfirmedDeviceState, string?>? initialStateBlockReason = null,
         bool acceptSetterCompletionWithoutReadback = false,
+        Func<ConfirmedDeviceState, bool>? setterCompletionEvidence = null,
         bool forceWrite = false)
     {
         if (!valid)
@@ -673,6 +677,7 @@ public sealed class ControlCoordinator
 
             return new ScopedApplyOutcome(
                 acceptSetterCompletionWithoutReadback
+                    && (setterCompletionEvidence?.Invoke(final) ?? true)
                     ? AppliedWithoutEffectReadback(name)
                     : Indeterminate(name, null),
                 final,
@@ -961,6 +966,29 @@ public sealed class ControlCoordinator
 
     private static bool IsLightingValid(LightingSettings value)
         => LightingSettingsValidation.IsWellFormed(value);
+
+    private static bool LightingSupported(
+        DeviceCapabilities capabilities,
+        LightingSettings value) =>
+        capabilities.LightingEffects.Contains(value.Effect)
+        && (value.LogoMode is null
+            || capabilities.LogoLightingModes.Contains(value.LogoMode.Value));
+
+    private static bool LightingMatches(
+        ConfirmedDeviceState confirmed,
+        LightingSettings desired)
+    {
+        LightingSettings desiredKeyboard = desired with { LogoMode = null };
+        LightingSettings? confirmedKeyboard = confirmed.Lighting is { } lighting
+            ? lighting with { LogoMode = null }
+            : null;
+        return confirmedKeyboard == desiredKeyboard && LogoMatches(confirmed, desired);
+    }
+
+    private static bool LogoMatches(
+        ConfirmedDeviceState confirmed,
+        LightingSettings desired) => desired.LogoMode is null
+        || confirmed.LogoLighting == desired.LogoMode;
 
     private static bool IsTerminalDeviceFailure(Exception exception) =>
         exception is IOException

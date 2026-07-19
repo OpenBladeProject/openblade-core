@@ -22,6 +22,7 @@ public enum ReactiveLightingDuration
 [JsonDerivedType(typeof(SpectrumCyclingLightingParameters), "spectrumCycling")]
 [JsonDerivedType(typeof(BreathingLightingParameters), "breathing")]
 [JsonDerivedType(typeof(ReactiveLightingParameters), "reactive")]
+[JsonDerivedType(typeof(TidalLightingParameters), "tidal")]
 public abstract record LightingEffectParameters;
 
 public sealed record OffLightingParameters : LightingEffectParameters;
@@ -40,6 +41,13 @@ public sealed record BreathingLightingParameters(
 public sealed record ReactiveLightingParameters(
     RgbColor Color,
     ReactiveLightingDuration Duration)
+    : LightingEffectParameters;
+
+public sealed record TidalLightingParameters(
+    RgbColor PrimaryColor,
+    RgbColor SecondaryColor,
+    bool RandomColors,
+    LightingDirection Direction)
     : LightingEffectParameters;
 
 public static class LightingSettingsFactory
@@ -120,6 +128,23 @@ public static class LightingSettingsFactory
             Parameters = new ReactiveLightingParameters(color, duration),
         };
 
+    public static LightingSettings Tidal(
+        RgbColor primaryColor,
+        RgbColor secondaryColor,
+        bool randomColors,
+        LightingDirection direction,
+        byte brightness) => new(
+            LightingEffect.Tidal,
+            randomColors ? default : primaryColor,
+            brightness)
+        {
+            Parameters = new TidalLightingParameters(
+                primaryColor,
+                secondaryColor,
+                randomColors,
+                direction),
+        };
+
     public static LightingSettings NormalizeLegacyOff(LightingSettings settings)
     {
         ArgumentNullException.ThrowIfNull(settings);
@@ -167,6 +192,14 @@ public static class LightingSettingsFactory
                 visibleColor,
                 DefaultVisibleBrightness,
                 reactive.Duration),
+            TidalLightingParameters tidal => Tidal(
+                tidal.PrimaryColor == default ? DefaultVisibleColor : tidal.PrimaryColor,
+                tidal.SecondaryColor == default
+                    ? new RgbColor(255, 0, 170)
+                    : tidal.SecondaryColor,
+                tidal.RandomColors,
+                tidal.Direction,
+                DefaultVisibleBrightness),
             null => settings.Effect switch
             {
                 LightingEffect.Static => Static(visibleColor, DefaultVisibleBrightness),
@@ -191,6 +224,7 @@ public static class LightingSettingsValidation
     {
         if (settings is null
             || !Enum.IsDefined(settings.Effect)
+            || settings.LogoMode is { } logoMode && !Enum.IsDefined(logoMode)
             || settings.Brightness > 100
             || (settings.Effect != LightingEffect.Off && settings.Brightness == 0))
         {
@@ -225,6 +259,11 @@ public static class LightingSettingsValidation
             (LightingEffect.Reactive, ReactiveLightingParameters parameters) =>
                 Enum.IsDefined(parameters.Duration)
                 && settings.Color == parameters.Color,
+            (LightingEffect.Tidal, TidalLightingParameters parameters) =>
+                Enum.IsDefined(parameters.Direction)
+                && settings.Color == (parameters.RandomColors
+                    ? default
+                    : parameters.PrimaryColor),
             _ => false,
         };
 

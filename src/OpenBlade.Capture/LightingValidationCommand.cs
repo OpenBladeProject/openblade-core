@@ -116,7 +116,10 @@ public sealed class LightingValidationCommand
         string? failure = null;
         var actions = new List<ProductionLightingValidationActionEvidence>();
         LightingSettings baselineSettings =
-            LightingSettingsFactory.Static(BaselineGreen, brightness);
+            LightingSettingsFactory.Static(BaselineGreen, brightness) with
+            {
+                LogoMode = LogoLightingMode.Static,
+            };
         int baselineExpectedRaw = LightingBrightnessProtocol.PercentToRaw(brightness);
         int? baselineObservedRaw = null;
         bool baselineBrightnessMatched = false;
@@ -169,7 +172,9 @@ public sealed class LightingValidationCommand
                         failure = "controlsUnavailable";
                     }
                     else if (!Enum.GetValues<LightingEffect>().All(
-                        port.Capabilities.LightingEffects.Contains))
+                        port.Capabilities.LightingEffects.Contains)
+                        || !Enum.GetValues<LogoLightingMode>().All(
+                            port.Capabilities.LogoLightingModes.Contains))
                     {
                         failure = "typedEffectsNotAdmitted";
                     }
@@ -279,18 +284,19 @@ public sealed class LightingValidationCommand
             }
         }
 
-        bool allActionsApplied = actions.Count == 9
+        int expectedActionCount = CreateActionSpecs(brightness: 100).Count;
+        bool allActionsApplied = actions.Count == expectedActionCount
             && actions.All(action => action.ApplySucceeded)
             && actions.Where(action => action.ReactivePulseRequired)
                 .All(action => action.ReactivePulseApplied);
         bool brightnessReadBack = baselineBrightnessMatched
-            && actions.Count == 9
+            && actions.Count == expectedActionCount
             && actions.All(action => action.BrightnessMatched)
             && baselineRestored;
-        bool transitionsAcknowledged = actions.Count == 9
+        bool transitionsAcknowledged = actions.Count == expectedActionCount
             && actions.All(action => action.ApplySucceeded);
         bool visuallyConfirmed = baselineVisuallyConfirmed
-            && actions.Count == 9
+            && actions.Count == expectedActionCount
             && actions.All(action => action.VisuallyConfirmed)
             && baselineRestored;
         bool allGates = allActionsApplied
@@ -740,6 +746,60 @@ public sealed class LightingValidationCommand
                 brightness,
                 ReactiveLightingDuration.Long),
             true),
+        new(
+            "tidalRightFixed",
+            "Tidal rightward, fixed green and blue",
+            LightingSettingsFactory.Tidal(
+                new RgbColor(0, byte.MaxValue, 0),
+                new RgbColor(0, 0, byte.MaxValue),
+                randomColors: false,
+                LightingDirection.Rightward,
+                brightness),
+            false),
+        new(
+            "tidalLeftFixed",
+            "Tidal leftward, fixed green and blue",
+            LightingSettingsFactory.Tidal(
+                new RgbColor(0, byte.MaxValue, 0),
+                new RgbColor(0, 0, byte.MaxValue),
+                randomColors: false,
+                LightingDirection.Leftward,
+                brightness),
+            false),
+        new(
+            "tidalRandom",
+            "Tidal rightward, random colors",
+            LightingSettingsFactory.Tidal(
+                new RgbColor(0, byte.MaxValue, 0),
+                new RgbColor(0, 0, byte.MaxValue),
+                randomColors: true,
+                LightingDirection.Rightward,
+                brightness),
+            false),
+        new(
+            "logoBreathing",
+            "Static green keyboard with Breathing laptop logo",
+            LightingSettingsFactory.Static(BaselineGreen, brightness) with
+            {
+                LogoMode = LogoLightingMode.Breathing,
+            },
+            false),
+        new(
+            "logoOff",
+            "Static green keyboard with laptop logo off",
+            LightingSettingsFactory.Static(BaselineGreen, brightness) with
+            {
+                LogoMode = LogoLightingMode.Off,
+            },
+            false),
+        new(
+            "logoStaticRestore",
+            "Static green keyboard and Static laptop logo",
+            LightingSettingsFactory.Static(BaselineGreen, brightness) with
+            {
+                LogoMode = LogoLightingMode.Static,
+            },
+            false),
     ];
 
     private static bool ActionPassed(
@@ -760,6 +820,7 @@ public sealed class LightingValidationCommand
             LightingEffect.Spectrum => LightingRendererOwnershipState.Spectrum,
             LightingEffect.Breathing => LightingRendererOwnershipState.Breathing,
             LightingEffect.Reactive => LightingRendererOwnershipState.Reactive,
+            LightingEffect.Tidal => LightingRendererOwnershipState.Tidal,
             _ => throw new ArgumentOutOfRangeException(nameof(settings)),
         });
 

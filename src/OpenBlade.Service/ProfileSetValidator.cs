@@ -185,7 +185,8 @@ public sealed class ProfileSetValidator(ProfileValidationPolicy policy)
         }
 
         bool consumesColor = lighting.Effect is
-            LightingEffect.Static or LightingEffect.Breathing or LightingEffect.Reactive;
+            LightingEffect.Static or LightingEffect.Breathing or LightingEffect.Reactive
+            or LightingEffect.Tidal;
         if (!consumesColor && lighting.Color != NeutralColor)
         {
             throw Invalid($"The {name} lighting effect does not accept a color.");

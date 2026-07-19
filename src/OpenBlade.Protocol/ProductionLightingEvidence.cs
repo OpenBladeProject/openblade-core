@@ -117,7 +117,7 @@ internal static class ProductionLightingEvidenceSource
         "OpenBladeLightingImplementationFingerprint";
 
     private const string ApprovedLightingImplementationFingerprintSha256 =
-        "45670E80748E1F4E56E24611ACCBC9B853E87300DC998245C2C3C0F189B6E83A";
+        "F93E4991ABA854DAB29651CA550F23821BAD8A4565385F76C9741470BB5DDC8F";
 
     private static readonly JsonSerializerOptions SerializerOptions =
         new(JsonSerializerDefaults.Web)
@@ -292,7 +292,10 @@ internal static class ProductionLightingEvidenceSource
         baseline is not null
         && baseline.Settings == LightingSettingsFactory.Static(
             new RgbColor(0, byte.MaxValue, 0),
-            baseline.Settings.Brightness)
+            baseline.Settings.Brightness) with
+            {
+                LogoMode = LogoLightingMode.Static,
+            }
         && baseline.Settings.Brightness is > 0 and <= 100
         && baseline.ExpectedBrightnessRaw
             == LightingBrightnessProtocol.PercentToRaw(baseline.Settings.Brightness)
@@ -315,6 +318,12 @@ internal static class ProductionLightingEvidenceSource
             "reactiveShort",
             "reactiveMedium",
             "reactiveLong",
+            "tidalRightFixed",
+            "tidalLeftFixed",
+            "tidalRandom",
+            "logoBreathing",
+            "logoOff",
+            "logoStaticRestore",
         ];
         if (actions is null
             || actions.Length != expectedNames.Length
@@ -379,6 +388,44 @@ internal static class ProductionLightingEvidenceSource
                 new RgbColor(0, byte.MaxValue, 0),
                 brightness,
                 ReactiveLightingDuration.Long),
+            "tidalRightFixed" => action.Settings == LightingSettingsFactory.Tidal(
+                new RgbColor(0, byte.MaxValue, 0),
+                new RgbColor(0, 0, byte.MaxValue),
+                randomColors: false,
+                LightingDirection.Rightward,
+                brightness),
+            "tidalLeftFixed" => action.Settings == LightingSettingsFactory.Tidal(
+                new RgbColor(0, byte.MaxValue, 0),
+                new RgbColor(0, 0, byte.MaxValue),
+                randomColors: false,
+                LightingDirection.Leftward,
+                brightness),
+            "tidalRandom" => action.Settings == LightingSettingsFactory.Tidal(
+                new RgbColor(0, byte.MaxValue, 0),
+                new RgbColor(0, 0, byte.MaxValue),
+                randomColors: true,
+                LightingDirection.Rightward,
+                brightness),
+            "logoBreathing" => action.Settings ==
+                LightingSettingsFactory.Static(
+                    new RgbColor(0, byte.MaxValue, 0),
+                    brightness) with
+                {
+                    LogoMode = LogoLightingMode.Breathing,
+                },
+            "logoOff" => action.Settings == LightingSettingsFactory.Static(
+                new RgbColor(0, byte.MaxValue, 0),
+                brightness) with
+                {
+                    LogoMode = LogoLightingMode.Off,
+                },
+            "logoStaticRestore" => action.Settings ==
+                LightingSettingsFactory.Static(
+                    new RgbColor(0, byte.MaxValue, 0),
+                    brightness) with
+                {
+                    LogoMode = LogoLightingMode.Static,
+                },
             _ => false,
         };
 

@@ -142,6 +142,7 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
                     : batteryCapabilities with
                 {
                     LightingEffects = lighting.Capabilities.LightingEffects,
+                    LogoLightingModes = lighting.Capabilities.LogoLightingModes,
                 };
             }
             finally
@@ -281,11 +282,17 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
                         .ConfigureAwait(false);
                 LightingSettings? lighting =
                     await ReadLightingStateCoreAsync(cancellationToken).ConfigureAwait(false);
+                LogoLightingMode? logo =
+                    await ReadLogoLightingStateCoreAsync(cancellationToken)
+                        .ConfigureAwait(false);
                 return new ConfirmedDeviceState(
                     performanceFan.Performance,
                     performanceFan.Fans,
                     battery,
-                    lighting);
+                    lighting)
+                {
+                    LogoLighting = logo,
+                };
             }
         }
 
@@ -509,7 +516,9 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
         {
             ArgumentNullException.ThrowIfNull(value);
             if (!LightingSettingsValidation.IsWellFormed(value)
-                || !lightingFactory.Capabilities.LightingEffects.Contains(value.Effect))
+                || !lightingFactory.Capabilities.LightingEffects.Contains(value.Effect)
+                || value.LogoMode is { } logoMode
+                    && !lightingFactory.Capabilities.LogoLightingModes.Contains(logoMode))
             {
                 return RejectProductionWrite("The requested lighting setting is not admitted.");
             }
@@ -700,7 +709,10 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
             try
             {
                 port = await GetLightingPortCoreAsync(cancellationToken).ConfigureAwait(false);
-                if (port is null || !port.Capabilities.LightingEffects.Contains(value.Effect))
+                if (port is null
+                    || !port.Capabilities.LightingEffects.Contains(value.Effect)
+                    || value.LogoMode is { } logoMode
+                        && !port.Capabilities.LogoLightingModes.Contains(logoMode))
                 {
                     throw new BladeWriteException(
                         WriteSubmissionState.KnownNotApplied,
@@ -878,6 +890,31 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
                 {
                     await ResetLightingPortCoreAsync(current).ConfigureAwait(false);
                 }
+                return null;
+            }
+        }
+
+        private async Task<LogoLightingMode?> ReadLogoLightingStateCoreAsync(
+            CancellationToken cancellationToken)
+        {
+            try
+            {
+                IProductionLightingPort? port =
+                    await GetLightingPortCoreAsync(cancellationToken).ConfigureAwait(false);
+                return port is null
+                    ? null
+                    : await port.ReadLogoStateAsync(cancellationToken).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (ObjectDisposedException)
+            {
+                throw;
+            }
+            catch
+            {
                 return null;
             }
         }

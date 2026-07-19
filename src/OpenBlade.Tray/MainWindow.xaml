@@ -849,6 +849,46 @@
                                 </Border>
 
                                 <Border Style="{StaticResource SettingsRowStyle}"
+                                        Visibility="{x:Bind ViewModel.LightingShowsRandomColors, Mode=OneWay}">
+                                    <Grid ColumnSpacing="20">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel Spacing="3" VerticalAlignment="Center">
+                                            <TextBlock Text="Random colors" Style="{StaticResource CardTitleStyle}" />
+                                            <TextBlock Text="Choose a new color pair for each Tidal cycle."
+                                                       Style="{StaticResource SecondaryTextStyle}" />
+                                        </StackPanel>
+                                        <ToggleSwitch Grid.Column="1"
+                                                      VerticalAlignment="Center"
+                                                      AutomationProperties.Name="Random Tidal colors"
+                                                      IsOn="{x:Bind ViewModel.LightingRandomColorsEditor, Mode=TwoWay}" />
+                                    </Grid>
+                                </Border>
+
+                                <Border Style="{StaticResource SettingsRowStyle}"
+                                        Visibility="{x:Bind ViewModel.LightingShowsDirection, Mode=OneWay}">
+                                    <Grid ColumnSpacing="20">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel Spacing="3" VerticalAlignment="Center">
+                                            <TextBlock Text="Direction" Style="{StaticResource CardTitleStyle}" />
+                                            <TextBlock Text="Choose which way the Tidal effect moves."
+                                                       Style="{StaticResource SecondaryTextStyle}" />
+                                        </StackPanel>
+                                        <ComboBox Grid.Column="1"
+                                                  MinWidth="150"
+                                                  Style="{StaticResource SettingsPickerStyle}"
+                                                  AutomationProperties.Name="Tidal direction"
+                                                  ItemsSource="{x:Bind ViewModel.LightingDirections}"
+                                                  SelectedItem="{x:Bind ViewModel.LightingDirectionEditor, Mode=TwoWay}" />
+                                    </Grid>
+                                </Border>
+
+                                <Border Style="{StaticResource SettingsRowStyle}"
                                         Visibility="{x:Bind ViewModel.LightingShowsPrimaryColor, Mode=OneWay}">
                                     <Grid ColumnSpacing="20">
                                         <Grid.RowDefinitions>
@@ -936,7 +976,7 @@
                                         </Grid.ColumnDefinitions>
                                         <StackPanel Spacing="3" VerticalAlignment="Center">
                                             <TextBlock Text="Second color" Style="{StaticResource CardTitleStyle}" />
-                                            <TextBlock Text="Choose the second color in the breathing cycle."
+                                            <TextBlock Text="Choose the effect's second color."
                                                        Style="{StaticResource SecondaryTextStyle}" />
                                         </StackPanel>
                                         <Button Grid.Column="1"
@@ -1019,6 +1059,28 @@
                                     </Grid>
                                 </Border>
 
+                                <Border Style="{StaticResource SettingsRowStyle}"
+                                        Visibility="{x:Bind ViewModel.IsLogoLightingVisible, Mode=OneWay}">
+                                    <Grid ColumnSpacing="20">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel Spacing="3" VerticalAlignment="Center">
+                                            <TextBlock Text="Laptop logo" Style="{StaticResource CardTitleStyle}" />
+                                            <TextBlock Text="Choose the lighting mode for the Razer logo on the lid."
+                                                       Style="{StaticResource SecondaryTextStyle}" />
+                                        </StackPanel>
+                                        <ComboBox Grid.Column="1"
+                                                  MinWidth="170"
+                                                  Style="{StaticResource SettingsPickerStyle}"
+                                                  AutomationProperties.Name="Laptop logo lighting"
+                                                  ItemsSource="{x:Bind ViewModel.AvailableLogoLightingModeOptions, Mode=OneWay}"
+                                                  DisplayMemberPath="Label"
+                                                  SelectedItem="{x:Bind ViewModel.SelectedLogoLightingModeOption, Mode=TwoWay}" />
+                                    </Grid>
+                                </Border>
+
                                 <Border Style="{StaticResource SettingsRowStyle}">
                                     <Grid ColumnSpacing="20">
                                         <Grid.ColumnDefinitions>
@@ -1027,7 +1089,7 @@
                                         </Grid.ColumnDefinitions>
                                         <StackPanel Spacing="3" VerticalAlignment="Center">
                                             <TextBlock Text="Apply lighting" Style="{StaticResource CardTitleStyle}" />
-                                            <TextBlock Text="Apply these settings to the keyboard."
+                                            <TextBlock Text="Apply these settings to the keyboard and laptop logo."
                                                        Style="{StaticResource SecondaryTextStyle}" />
                                         </StackPanel>
                                         <Button Grid.Column="1"

@@ -16,6 +16,9 @@ public sealed record DeviceCapabilities(
     bool SupportsBatteryProtectionOff,
     bool SupportsTemporaryFullCharge)
 {
+    public IReadOnlySet<LogoLightingMode> LogoLightingModes { get; init; } =
+        new HashSet<LogoLightingMode>();
+
     public static DeviceCapabilities Unavailable() => new(
         new HashSet<PerformancePreset>(),
         new HashSet<FanMode>(),
@@ -37,7 +40,10 @@ public sealed record ConfirmedDeviceState(
     PerformancePreset? Performance,
     FanMode? Fans,
     ConfirmedBatteryState? Battery,
-    LightingSettings? Lighting);
+    LightingSettings? Lighting)
+{
+    public LogoLightingMode? LogoLighting { get; init; }
+}
 
 public sealed record FirmwareVersions(
     string BiosVersion,

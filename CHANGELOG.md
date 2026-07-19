@@ -14,10 +14,20 @@ All notable changes to OpenBlade are documented in this file. The project follow
   profile authority.
 - Built-in display controls for driver-enumerated fixed refresh rates, EDID-reported Windows Dynamic Refresh Rate, HDR, and the locally installed Razer color profiles.
 - Keyboard lighting controls for Off, Static, Spectrum Cycling, single/dual/random Breathing, Reactive Short/Medium/Long, color, and brightness on the exact RZ09-0581/PID 02E0 device.
+- Capture-faithful Tidal keyboard lighting with fixed or random two-color
+  palettes and independent leftward/rightward direction controls.
+- Typed laptop-logo lighting controls for Static, Breathing, and Off with
+  independent state/effect readback and rollback.
 - Data-minimized Reactive input through Windows Raw Input: scan-code make events map directly to matrix slots without recording characters, virtual-key values, applications, window titles, or input packets.
 - Sanitized Synapse oracle USBPcap evidence for lighting brightness readback, the 102-slot matrix envelope, effect timing, dual/random Breathing, and Reactive key placement and decay. The admitted configuration was also exercised in repeated installed OpenBlade runs on the target laptop.
+- A sanitized, hash-pinned five-second Tidal matrix oracle for both directions;
+  raw USB captures remain local and are not distributed.
 
 ### Changed
+
+- Exact-build lighting validation now covers fixed and random Tidal in both
+  directions plus laptop-logo Breathing, Off, and Static restoration before
+  the production control surface can be admitted.
 
 - About now uses the canonical 256 px OpenBlade artwork, groups app and service
   builds in a dedicated Versions card, integrates the independent-project
