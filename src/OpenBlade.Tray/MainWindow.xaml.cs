@@ -6,10 +6,8 @@ using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using OpenBlade.Contracts;
-using Windows.ApplicationModel.DataTransfer;
 using Windows.Graphics;
 using WinRT.Interop;
-using DataTransferClipboard = Windows.ApplicationModel.DataTransfer.Clipboard;
 
 namespace OpenBlade.Tray;
 
@@ -884,21 +882,6 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, ITrayIconThem
                         VerticalAlignmentRatio = 0,
                     });
             });
-    }
-
-    private void OnCopyVersionInformation(object sender, RoutedEventArgs args)
-    {
-        try
-        {
-            var package = new DataPackage();
-            package.SetText(ViewModel.AboutVersionInformation);
-            DataTransferClipboard.SetContent(package);
-            DataTransferClipboard.Flush();
-        }
-        catch (Exception exception)
-        {
-            Trace.TraceError("OpenBlade could not copy version information: {0}", exception);
-        }
     }
 
     private async void OnShutdownOpenBlade(object sender, RoutedEventArgs args)

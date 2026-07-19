@@ -21,7 +21,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 - About now uses the canonical 256 px OpenBlade artwork, groups app and service
   builds in a dedicated Versions card, integrates the independent-project
-  disclosure into the title card, and uses Windows-style external-link icons.
+  disclosure into the title card, and uses borderless Windows-style action
+  icons.
 - Named-pipe protocol version 10 adds the typed, installing-user-only full
   shutdown request.
 - The tray icon now follows the effective active profile when firmware readback is

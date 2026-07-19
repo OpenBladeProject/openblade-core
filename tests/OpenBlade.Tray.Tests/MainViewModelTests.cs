@@ -2059,8 +2059,6 @@ public sealed class MainViewModelTests
         Assert.Equal("1.04", viewModel.AboutEcVersionStatus);
         Assert.Equal("Unavailable", viewModel.AboutMcuVersionStatus);
         Assert.Equal("98.3.5c.40.3d", viewModel.AboutVbiosVersionStatus);
-        Assert.Contains("OpenBlade service: 0.1.0-test", viewModel.AboutVersionInformation, StringComparison.Ordinal);
-        Assert.DoesNotContain("Supported laptop", viewModel.AboutVersionInformation, StringComparison.Ordinal);
 
         client.Publish(CreateStatus(verified: true, blocked: false) with
         {
@@ -2117,7 +2115,6 @@ public sealed class MainViewModelTests
         });
         await WaitUntilAsync(() => viewModel.IsConnected);
         Assert.Equal("1.9.0", viewModel.AboutServiceVersionStatus);
-        Assert.Contains("OpenBlade UI: 2.0.0", viewModel.AboutVersionInformation, StringComparison.Ordinal);
 
         client.PublishReconnecting();
         await WaitUntilAsync(() => !viewModel.IsConnected);

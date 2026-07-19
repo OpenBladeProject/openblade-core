@@ -120,8 +120,20 @@
                 <Setter Property="HorizontalContentAlignment" Value="Center" />
                 <Setter Property="VerticalContentAlignment" Value="Center" />
                 <Setter Property="Foreground" Value="{ThemeResource TextFillColorPrimaryBrush}" />
-                <Setter Property="Background" Value="{ThemeResource SubtleFillColorSecondaryBrush}" />
-                <Setter Property="CornerRadius" Value="4" />
+                <Setter Property="Background" Value="Transparent" />
+                <Setter Property="BorderThickness" Value="0" />
+            </Style>
+            <Style x:Key="IconActionButtonStyle" TargetType="Button">
+                <Setter Property="Width" Value="40" />
+                <Setter Property="Height" Value="40" />
+                <Setter Property="Padding" Value="0" />
+                <Setter Property="HorizontalAlignment" Value="Right" />
+                <Setter Property="VerticalAlignment" Value="Center" />
+                <Setter Property="HorizontalContentAlignment" Value="Center" />
+                <Setter Property="VerticalContentAlignment" Value="Center" />
+                <Setter Property="Foreground" Value="{ThemeResource TextFillColorPrimaryBrush}" />
+                <Setter Property="Background" Value="Transparent" />
+                <Setter Property="BorderThickness" Value="0" />
             </Style>
         </Grid.Resources>
 
@@ -1375,7 +1387,7 @@
                                                    Style="{StaticResource TroubleshootingValueStyle}" />
                                     </Grid>
                                 </Border>
-                                <Border Style="{StaticResource SettingsRowStyle}">
+                                <Border Style="{StaticResource SettingsLastRowStyle}">
                                     <Grid ColumnSpacing="24">
                                         <Grid.ColumnDefinitions><ColumnDefinition Width="2*" /><ColumnDefinition Width="3*" /></Grid.ColumnDefinitions>
                                         <TextBlock Text="OpenBlade service" Style="{StaticResource CardTitleStyle}" />
@@ -1383,22 +1395,6 @@
                                                    Text="{x:Bind ViewModel.AboutServiceVersionStatus, Mode=OneWay}"
                                                    Style="{StaticResource TroubleshootingValueStyle}"
                                                    AutomationProperties.Name="OpenBlade service version" />
-                                    </Grid>
-                                </Border>
-                                <Border Style="{StaticResource SettingsLastRowStyle}">
-                                    <Grid ColumnSpacing="20">
-                                        <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
-                                        <TextBlock Text="Copy version information"
-                                                   Style="{StaticResource CardTitleStyle}"
-                                                   VerticalAlignment="Center" />
-                                        <Button Grid.Column="1"
-                                                Width="40" Height="32" Padding="0"
-                                                HorizontalAlignment="Right" VerticalAlignment="Center"
-                                                Click="OnCopyVersionInformation"
-                                                AutomationProperties.Name="Copy OpenBlade version information"
-                                                ToolTipService.ToolTip="Copy version information">
-                                            <FontIcon Glyph="&#xE8C8;" FontSize="16" />
-                                        </Button>
                                     </Grid>
                                 </Border>
                             </StackPanel>
@@ -1472,8 +1468,7 @@
                                             <TextBlock Text="Save logs and system details with sensitive information removed." Style="{StaticResource SecondaryTextStyle}" />
                                         </StackPanel>
                                         <Button Grid.Column="1"
-                                                Width="40" Height="32" Padding="0"
-                                                HorizontalAlignment="Right" VerticalAlignment="Center"
+                                                Style="{StaticResource IconActionButtonStyle}"
                                                 Command="{x:Bind ViewModel.ExportDiagnosticsCommand}"
                                                 AutomationProperties.Name="Export diagnostics"
                                                 ToolTipService.ToolTip="Export diagnostics">

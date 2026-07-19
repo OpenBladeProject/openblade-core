@@ -64,7 +64,7 @@ public sealed class WinUiShellContractTests
     }
 
     [Fact]
-    public void AboutPageOwnsSupportAndProvidesCopyableBuildInformation()
+    public void AboutPageOwnsSupportAndUsesBorderlessIconActions()
     {
         string xaml = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml");
         string window = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml.cs");
@@ -72,15 +72,16 @@ public sealed class WinUiShellContractTests
         Assert.Contains("x:Name=\"AboutNavigationItem\"", xaml, StringComparison.Ordinal);
         Assert.Contains("<NavigationView.FooterMenuItems>", xaml, StringComparison.Ordinal);
         Assert.Contains("x:Name=\"AboutPage\"", xaml, StringComparison.Ordinal);
-        Assert.Contains("ViewModel.AboutVersionInformation", window, StringComparison.Ordinal);
-        Assert.Contains("DataTransferClipboard.SetContent(package)", window, StringComparison.Ordinal);
-        Assert.Contains("DataTransferClipboard.Flush()", window, StringComparison.Ordinal);
+        Assert.DoesNotContain("Copy version information", xaml, StringComparison.Ordinal);
+        Assert.DoesNotContain("OnCopyVersionInformation", window, StringComparison.Ordinal);
+        Assert.DoesNotContain("DataTransferClipboard", window, StringComparison.Ordinal);
         Assert.Contains("AboutPage.Visibility = destination == \"about\"", window, StringComparison.Ordinal);
         Assert.Contains("MainNavigation.SelectedItem = AboutNavigationItem", window, StringComparison.Ordinal);
         Assert.Contains("https://github.com/boyuanx/openblade-core/issues", xaml, StringComparison.Ordinal);
         Assert.Contains("https://github.com/boyuanx/openblade-core/blob/main/CHANGELOG.md", xaml, StringComparison.Ordinal);
         Assert.Contains("ms-appx:///Assets/Brand/OpenBlade.png", xaml, StringComparison.Ordinal);
         Assert.Contains("Glyph=\"&#xE8A7;\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("Style=\"{StaticResource IconActionButtonStyle}\"", xaml, StringComparison.Ordinal);
         Assert.DoesNotContain("Content=\"Open\"", xaml, StringComparison.Ordinal);
         Assert.DoesNotContain("Content=\"View\"", xaml, StringComparison.Ordinal);
         Assert.Contains("Click=\"OnShutdownOpenBlade\"", xaml, StringComparison.Ordinal);

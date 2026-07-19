@@ -685,15 +685,6 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
 
     public string AboutVbiosVersionStatus => FirmwareValue(latestStatus?.Firmware?.VbiosVersion);
 
-    public string AboutVersionInformation =>
-        $"OpenBlade UI: {AboutUiVersionStatus}{Environment.NewLine}"
-        + $"OpenBlade service: {AboutServiceVersionStatus}{Environment.NewLine}"
-        + $"Detected laptop: {AboutDetectedLaptopStatus}{Environment.NewLine}"
-        + $"BIOS: {AboutBiosVersionStatus}{Environment.NewLine}"
-        + $"EC: {AboutEcVersionStatus}{Environment.NewLine}"
-        + $"MCU: {AboutMcuVersionStatus}{Environment.NewLine}"
-        + $"VBIOS: {AboutVbiosVersionStatus}";
-
     public string TroubleshootingPowerSourceStatus => !IsConnected
         ? "Unavailable"
         : ActivePowerSource switch
@@ -3882,9 +3873,6 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         PropertyChanged?.Invoke(
             this,
             new PropertyChangedEventArgs(nameof(AboutVbiosVersionStatus)));
-        PropertyChanged?.Invoke(
-            this,
-            new PropertyChangedEventArgs(nameof(AboutVersionInformation)));
     }
 
     private void NotifyTrayHoverLabel() => PropertyChanged?.Invoke(

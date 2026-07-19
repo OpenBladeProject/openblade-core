@@ -205,9 +205,7 @@ public sealed class CapabilityPresentationTests
         Assert.Contains(about.Descendants(), element =>
             element.Name.LocalName == "Button"
             && Attribute(element, "AutomationProperties.Name") == "Export diagnostics"
-            && Attribute(element, "HorizontalAlignment") == "Right"
-            && Attribute(element, "Width") == "40"
-            && Attribute(element, "Height") == "32");
+            && Attribute(element, "Style") == "{StaticResource IconActionButtonStyle}");
 
         Assert.DoesNotContain("ViewModel.ManualChangeDurationOptions", xaml, StringComparison.Ordinal);
         Assert.DoesNotContain("ViewModel.SelectedManualChangeDurationOption", xaml, StringComparison.Ordinal);
@@ -408,11 +406,24 @@ public sealed class CapabilityPresentationTests
         Assert.DoesNotContain("Relationship to Razer", aboutPage.ToString(), StringComparison.Ordinal);
         Assert.Contains("Independent open-source project; not affiliated with Razer.", aboutPage.ToString(), StringComparison.Ordinal);
         Assert.Contains("ms-appx:///Assets/Brand/OpenBlade.png", aboutPage.ToString(), StringComparison.Ordinal);
+        Assert.DoesNotContain("Copy version information", aboutPage.ToString(), StringComparison.Ordinal);
         Assert.Equal(
             4,
             aboutPage.Descendants().Count(element =>
                 element.Name.LocalName == "HyperlinkButton"
                 && Attribute(element, "Style") == "{StaticResource ExternalLinkButtonStyle}"));
+        foreach (string styleKey in new[] { "ExternalLinkButtonStyle", "IconActionButtonStyle" })
+        {
+            XElement style = Assert.Single(document.Descendants(), element =>
+                element.Name.LocalName == "Style"
+                && Attribute(element, "Key") == styleKey);
+            Assert.Contains(style.Elements(), setter =>
+                Attribute(setter, "Property") == "Background"
+                && Attribute(setter, "Value") == "Transparent");
+            Assert.Contains(style.Elements(), setter =>
+                Attribute(setter, "Property") == "BorderThickness"
+                && Attribute(setter, "Value") == "0");
+        }
         Assert.Contains(
             "Save logs and system details with sensitive information removed.",
             xaml,
