@@ -11,7 +11,7 @@ using WinRT.Interop;
 
 namespace OpenBlade.Tray;
 
-public sealed partial class MainWindow : Window, IAsyncDisposable, ITrayIconThemeSource
+public sealed partial class MainWindow : Window, IAsyncDisposable
 {
     private const double InitialWidthDip = 840;
     private const double InitialHeightDip = 720;
@@ -82,7 +82,6 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, ITrayIconThem
         micaBackdropHost = new MicaBackdropHost(this, Root);
         Root.DataContext = ViewModel;
         Root.SizeChanged += OnRootSizeChanged;
-        Root.ActualThemeChanged += OnRootActualThemeChanged;
 
         string localApplicationData = Environment.GetFolderPath(
             Environment.SpecialFolder.LocalApplicationData);
@@ -103,10 +102,6 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, ITrayIconThem
     public DisplaySettingsViewModel DisplayViewModel { get; }
 
     public bool StartMinimized { get; private set; }
-
-    public event EventHandler? TrayIconThemeChanged;
-
-    public bool UseLightTrayIconGlyphs => Root.ActualTheme == ElementTheme.Dark;
 
     public PerformancePreset SilentPreset { get; } = PerformancePreset.Silent;
 
@@ -153,7 +148,6 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, ITrayIconThem
         ViewModel.SavedDisplayProfileRestoreRequested -= OnSavedDisplayProfileRestoreRequested;
         AppWindow.Closing -= OnClosing;
         Root.SizeChanged -= OnRootSizeChanged;
-        Root.ActualThemeChanged -= OnRootActualThemeChanged;
         chargeLimitCommitTimer.Stop();
         chargeLimitCommitTimer.Tick -= OnChargeLimitCommitTimerTick;
         displayRefreshTimer.Stop();
@@ -164,9 +158,6 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, ITrayIconThem
         await DisplayViewModel.DisposeAsync();
         await ViewModel.DisposeAsync();
     }
-
-    private void OnRootActualThemeChanged(FrameworkElement sender, object args) =>
-        TrayIconThemeChanged?.Invoke(this, EventArgs.Empty);
 
     private async Task InitializeCoreAsync()
     {

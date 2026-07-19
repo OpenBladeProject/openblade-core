@@ -12,6 +12,7 @@ public partial class App : Microsoft.UI.Xaml.Application
     private RegisteredWaitHandle? shutdownRegistration;
     private TrayInstanceCoordinator? instanceCoordinator;
     private MainWindow? mainWindow;
+    private WindowsShellThemeSource? trayIconThemeSource;
     private ITrayIconHost? trayIconHost;
     private TrayExitLifecycle? exitLifecycle;
     private Task windowInitializationTask = Task.CompletedTask;
@@ -72,6 +73,8 @@ public partial class App : Microsoft.UI.Xaml.Application
                 {
                     trayIconHost?.Dispose();
                     trayIconHost = null;
+                    trayIconThemeSource?.Dispose();
+                    trayIconThemeSource = null;
                 },
                 DisposeViewModelAsync: async () =>
                 {
@@ -113,10 +116,11 @@ public partial class App : Microsoft.UI.Xaml.Application
             mainWindow.ViewModel,
             () => Enqueue(ShowMainWindow),
             () => Enqueue(() => _ = ExitTrayAsync()));
+        trayIconThemeSource = new WindowsShellThemeSource(uiDispatcherQueue);
         trayIconHost = new WinFormsTrayIconHost(
             trayMenuController,
             mainWindow.ViewModel,
-            mainWindow);
+            trayIconThemeSource);
         ShowMainWindow(initialLaunch: true);
     }
 

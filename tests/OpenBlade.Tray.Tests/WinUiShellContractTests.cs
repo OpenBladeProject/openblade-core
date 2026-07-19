@@ -228,8 +228,16 @@ public sealed class WinUiShellContractTests
         string window = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml.cs");
         Assert.Contains("OpenBladeIconAssets.ApplicationIconPath is { } applicationIconPath", window, StringComparison.Ordinal);
         Assert.Contains("AppWindow.SetIcon(applicationIconPath)", window, StringComparison.Ordinal);
-        Assert.Contains("Root.ActualThemeChanged +=", window, StringComparison.Ordinal);
-        Assert.Contains("Root.ActualThemeChanged -=", window, StringComparison.Ordinal);
+
+        string shellThemeSource = ReadRepositoryFile(
+            "src",
+            "OpenBlade.Tray",
+            "WindowsShellThemeSource.cs");
+        Assert.Contains("SystemUsesLightTheme", shellThemeSource, StringComparison.Ordinal);
+        Assert.Contains("ShellThemeSelectionPolicy.ShouldUseLightTrayIconGlyphs", shellThemeSource, StringComparison.Ordinal);
+        Assert.Contains("dispatcherQueue.CreateTimer()", shellThemeSource, StringComparison.Ordinal);
+        Assert.Contains("TrayIconThemeChanged?.Invoke", shellThemeSource, StringComparison.Ordinal);
+        Assert.Contains("refreshTimer.Tick -=", shellThemeSource, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -279,7 +287,15 @@ public sealed class WinUiShellContractTests
                          && !path.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}")))
         {
             string source = File.ReadAllText(file);
-            Assert.DoesNotContain("Microsoft.Win32", source, StringComparison.Ordinal);
+            if (!file.EndsWith(
+                    "WindowsShellThemeSource.cs",
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                Assert.DoesNotContain(
+                    "Microsoft.Win32",
+                    source,
+                    StringComparison.Ordinal);
+            }
             Assert.DoesNotContain("SystemEvents", source, StringComparison.Ordinal);
             Assert.DoesNotContain("UISettings", source, StringComparison.Ordinal);
             Assert.DoesNotContain("ColorValuesChanged", source, StringComparison.Ordinal);
