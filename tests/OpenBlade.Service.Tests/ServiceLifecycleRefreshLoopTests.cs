@@ -55,17 +55,20 @@ public sealed class ServiceLifecycleRefreshLoopTests
     }
 
     [Theory]
-    [InlineData(ServiceLifecycleTrigger.PowerChanged, 1, 0, 0, 0)]
-    [InlineData(ServiceLifecycleTrigger.Suspending, 0, 0, 1, 0)]
-    [InlineData(ServiceLifecycleTrigger.Resumed, 1, 0, 1, 1)]
-    [InlineData(ServiceLifecycleTrigger.DeviceArrived, 0, 1, 0, 1)]
-    [InlineData(ServiceLifecycleTrigger.DeviceRemoved, 0, 1, 1, 0)]
+    [InlineData(ServiceLifecycleTrigger.PowerChanged, 1, 0, 0, 0, 0)]
+    [InlineData(ServiceLifecycleTrigger.Suspending, 0, 0, 1, 0, 0)]
+    [InlineData(ServiceLifecycleTrigger.Resumed, 1, 0, 1, 1, 0)]
+    [InlineData(ServiceLifecycleTrigger.DisplayOff, 0, 0, 0, 0, 1)]
+    [InlineData(ServiceLifecycleTrigger.DisplayOn, 0, 0, 0, 0, 1)]
+    [InlineData(ServiceLifecycleTrigger.DeviceArrived, 0, 1, 0, 1, 0)]
+    [InlineData(ServiceLifecycleTrigger.DeviceRemoved, 0, 1, 1, 0, 0)]
     public async Task Notification_RoutesToExpectedTypedRuntimeOperations(
         ServiceLifecycleTrigger trigger,
         int expectedPowerChanges,
         int expectedObservations,
         int expectedInvalidations,
-        int expectedRestores)
+        int expectedRestores,
+        int expectedSuppressions)
     {
         var source = new FakeLifecycleEventSource();
         var runtime = new RecordingRuntime(failFirstRefresh: false);
@@ -86,10 +89,11 @@ public sealed class ServiceLifecycleRefreshLoopTests
         Assert.Equal(expectedObservations, runtime.ObserveCount);
         Assert.Equal(expectedInvalidations, runtime.LightingInvalidationCount);
         Assert.Equal(expectedRestores, runtime.LightingRestoreCount);
+        Assert.Equal(expectedSuppressions, runtime.LightingSuppressionCount);
         Assert.Equal(0, runtime.ControllerPresenceRefreshCount);
         Assert.Equal(
             expectedPowerChanges + expectedObservations + expectedInvalidations
-                + expectedRestores,
+                + expectedRestores + expectedSuppressions,
             runtime.TotalOperationCount);
     }
 
@@ -152,6 +156,7 @@ public sealed class ServiceLifecycleRefreshLoopTests
         private int powerSourceChangeCount;
         private int lightingInvalidationCount;
         private int lightingRestoreCount;
+        private int lightingSuppressionCount;
         private int totalOperationCount;
 
         public int ControllerPresenceRefreshCount =>
@@ -164,6 +169,8 @@ public sealed class ServiceLifecycleRefreshLoopTests
         public int LightingInvalidationCount => Volatile.Read(ref lightingInvalidationCount);
 
         public int LightingRestoreCount => Volatile.Read(ref lightingRestoreCount);
+
+        public int LightingSuppressionCount => Volatile.Read(ref lightingSuppressionCount);
 
         public int TotalOperationCount => Volatile.Read(ref totalOperationCount);
 
@@ -190,6 +197,19 @@ public sealed class ServiceLifecycleRefreshLoopTests
         public Task RestoreLightingRendererAsync(CancellationToken cancellationToken) =>
             RecordRefreshAsync(Operation.RestoreLighting);
 
+        public Task<ControlOperationResult> SetLightingSuppressionAsync(
+            LightingSuppressionReason reason,
+            bool suppressed,
+            CancellationToken cancellationToken) =>
+            RecordSuppressionAsync();
+
+        private async Task<ControlOperationResult> RecordSuppressionAsync()
+        {
+            Interlocked.Increment(ref lightingSuppressionCount);
+            await RecordRefreshAsync(Operation.LightingSuppression);
+            return new ControlOperationResult(ControlOperationStatus.Applied, "Applied");
+        }
+
         private async Task RecordRefreshAsync(Operation operation)
         {
             int concurrent = Interlocked.Increment(ref concurrentRefreshes);
@@ -210,6 +230,8 @@ public sealed class ServiceLifecycleRefreshLoopTests
                     break;
                 case Operation.RestoreLighting:
                     Interlocked.Increment(ref lightingRestoreCount);
+                    break;
+                case Operation.LightingSuppression:
                     break;
             }
 
@@ -245,6 +267,7 @@ public sealed class ServiceLifecycleRefreshLoopTests
             ControllerPresence,
             InvalidateLighting,
             RestoreLighting,
+            LightingSuppression,
         }
 
         public ServiceStatusSnapshot GetStatus() => throw new NotSupportedException();

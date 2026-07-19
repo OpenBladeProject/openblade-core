@@ -41,9 +41,9 @@ public sealed class BatteryConfigurationStoreTests : IDisposable
         using JsonDocument profiles = JsonDocument.Parse(await File.ReadAllTextAsync(paths.Profiles));
         using JsonDocument preferences = JsonDocument.Parse(await File.ReadAllTextAsync(paths.Preferences));
         using JsonDocument marker = JsonDocument.Parse(await File.ReadAllTextAsync(paths.Marker));
-        Assert.Equal(2, profiles.RootElement.GetProperty("schemaVersion").GetInt32());
-        Assert.Equal(2, preferences.RootElement.GetProperty("schemaVersion").GetInt32());
-        Assert.Equal(2, marker.RootElement.GetProperty("schemaVersion").GetInt32());
+        Assert.Equal(3, profiles.RootElement.GetProperty("schemaVersion").GetInt32());
+        Assert.Equal(3, preferences.RootElement.GetProperty("schemaVersion").GetInt32());
+        Assert.Equal(3, marker.RootElement.GetProperty("schemaVersion").GetInt32());
         Assert.Equal(
             Hash(await File.ReadAllBytesAsync(paths.Profiles)),
             marker.RootElement.GetProperty("profileSha256").GetString());
@@ -212,15 +212,15 @@ public sealed class BatteryConfigurationStoreTests : IDisposable
             WriteIndented = true,
         };
         byte[] profiles = JsonSerializer.SerializeToUtf8Bytes(
-            new ProfileDocument(2, ProfileDefaults.CreateSafeDefaults()),
+            new ProfileDocument(3, ProfileDefaults.CreateSafeDefaults()),
             options);
         byte[] preferences = JsonSerializer.SerializeToUtf8Bytes(
             new BatteryPreferencesDocument(
-                2,
+                3,
                 new BatteryAutomationPreferences(ProtectionEnabled: false)),
             options);
         byte[] marker = JsonSerializer.SerializeToUtf8Bytes(
-            new BatteryConfigurationCommit(2, Hash(profiles), Hash(preferences)),
+            new BatteryConfigurationCommit(3, Hash(profiles), Hash(preferences)),
             options);
         await File.WriteAllBytesAsync(paths.Profiles, profiles);
         await File.WriteAllBytesAsync(paths.Preferences, preferences);

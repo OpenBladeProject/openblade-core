@@ -10,6 +10,8 @@ public enum ServiceLifecycleTrigger
     PowerChanged,
     Suspending,
     Resumed,
+    DisplayOff,
+    DisplayOn,
     DeviceArrived,
     DeviceRemoved,
 }
@@ -143,8 +145,8 @@ public sealed class WindowsServiceLifecycleEventSource
     internal const long DuplicateResumeWindowMilliseconds = 5_000;
     private static readonly ConcurrentBag<IDisposable> FailedSubscriptions = [];
     private readonly object disposeSync = new();
-    private readonly object pendingDeviceSync = new();
-    private readonly List<ServiceLifecycleTrigger> pendingDeviceTriggers = [];
+    private readonly object pendingOrderedSync = new();
+    private readonly List<ServiceLifecycleTrigger> pendingOrderedTriggers = [];
     private readonly Func<CancellationToken, ValueTask>? beforePendingDrainAsync;
     private readonly Func<long> getTickCount;
     private readonly object resumeDeduplicationSync = new();
@@ -228,8 +230,8 @@ public sealed class WindowsServiceLifecycleEventSource
                 }
 
                 int drained = Interlocked.Exchange(ref pendingTriggers, 0);
-                ServiceLifecycleTrigger[] deviceTriggers = DrainDeviceTriggers();
-                if (drained == 0 && deviceTriggers.Length == 0)
+                ServiceLifecycleTrigger[] orderedTriggers = DrainOrderedTriggers();
+                if (drained == 0 && orderedTriggers.Length == 0)
                 {
                     break;
                 }
@@ -249,9 +251,9 @@ public sealed class WindowsServiceLifecycleEventSource
                     yield return ServiceLifecycleTrigger.Resumed;
                 }
 
-                foreach (ServiceLifecycleTrigger deviceTrigger in deviceTriggers)
+                foreach (ServiceLifecycleTrigger orderedTrigger in orderedTriggers)
                 {
-                    yield return deviceTrigger;
+                    yield return orderedTrigger;
                 }
             }
         }
@@ -297,10 +299,12 @@ public sealed class WindowsServiceLifecycleEventSource
             return;
         }
 
-        if (trigger is ServiceLifecycleTrigger.DeviceArrived
+        if (trigger is ServiceLifecycleTrigger.DisplayOff
+            or ServiceLifecycleTrigger.DisplayOn
+            or ServiceLifecycleTrigger.DeviceArrived
             or ServiceLifecycleTrigger.DeviceRemoved)
         {
-            QueueDeviceTrigger(trigger);
+            QueueOrderedTrigger(trigger);
             signal.Writer.TryWrite(true);
             return;
         }
@@ -340,29 +344,29 @@ public sealed class WindowsServiceLifecycleEventSource
         signal.Writer.TryWrite(true);
     }
 
-    private void QueueDeviceTrigger(ServiceLifecycleTrigger trigger)
+    private void QueueOrderedTrigger(ServiceLifecycleTrigger trigger)
     {
-        lock (pendingDeviceSync)
+        lock (pendingOrderedSync)
         {
-            // One Windows transition can produce several HID-interface callbacks.
-            // Consecutive duplicates need only one re-enumeration, while alternating
-            // remove/arrival transitions must retain their callback order.
-            if (pendingDeviceTriggers.Count > 0
-                && pendingDeviceTriggers[^1] == trigger)
+            // Display and HID notifications are state transitions. Consecutive
+            // duplicates need only one action, while alternating transitions must
+            // retain callback order so the final hardware state is correct.
+            if (pendingOrderedTriggers.Count > 0
+                && pendingOrderedTriggers[^1] == trigger)
             {
                 return;
             }
 
-            pendingDeviceTriggers.Add(trigger);
+            pendingOrderedTriggers.Add(trigger);
         }
     }
 
-    private ServiceLifecycleTrigger[] DrainDeviceTriggers()
+    private ServiceLifecycleTrigger[] DrainOrderedTriggers()
     {
-        lock (pendingDeviceSync)
+        lock (pendingOrderedSync)
         {
-            ServiceLifecycleTrigger[] drained = [.. pendingDeviceTriggers];
-            pendingDeviceTriggers.Clear();
+            ServiceLifecycleTrigger[] drained = [.. pendingOrderedTriggers];
+            pendingOrderedTriggers.Clear();
             return drained;
         }
     }
@@ -386,8 +390,8 @@ internal sealed class NativeWindowsLifecycleNotificationBackend
         uint? previous,
         uint current) => (previous, current) switch
         {
-            (PowerMonitorOn, PowerMonitorOff) => ServiceLifecycleTrigger.Suspending,
-            (PowerMonitorOff, PowerMonitorOn) => ServiceLifecycleTrigger.Resumed,
+            (PowerMonitorOn, PowerMonitorOff) => ServiceLifecycleTrigger.DisplayOff,
+            (PowerMonitorOff, PowerMonitorOn) => ServiceLifecycleTrigger.DisplayOn,
             _ => null,
         };
 

@@ -364,6 +364,73 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             context.Runtime.GetStatus().LightingRendererOwnership);
     }
 
+    [Fact]
+    public async Task LightingPowerPolicy_OverlappingReasonsSwitchOffOnceAndRestoreLatestIntent()
+    {
+        TestContext context = await CreateOwnedStaticLightingContextAsync();
+        LightingSettings expected = context.Runtime.GetStatus().DesiredState.Lighting.Value;
+        ProfileSet profiles = context.Runtime.GetStatus().Profiles with
+        {
+            LightingPowerPolicy = new LightingPowerPolicy(
+                turnOffWhenDisplayTurnsOff: true,
+                idleTimeoutMinutes: 5),
+        };
+        await context.Runtime.UpdateProfilesAsync(profiles, CancellationToken.None);
+
+        ControlOperationResult displayOff = await context.Runtime
+            .SetLightingSuppressionAsync(
+                LightingSuppressionReason.DisplayOff,
+                suppressed: true,
+                CancellationToken.None);
+        ControlOperationResult idle = await context.Runtime.SetLightingSuppressionAsync(
+            LightingSuppressionReason.UserIdle,
+            suppressed: true,
+            CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Applied, displayOff.Status);
+        Assert.Equal(ControlOperationStatus.Stored, idle.Status);
+        Assert.Equal(LightingEffect.Off, context.Device.ConfirmedState.Lighting!.Effect);
+        Assert.Equal(2, context.Device.LightingSetCalls);
+        Assert.Equal(
+            [LightingSuppressionReason.DisplayOff, LightingSuppressionReason.UserIdle],
+            context.Runtime.GetStatus().LightingSuppressions);
+        Assert.Equal(expected, context.Runtime.GetStatus().DesiredState.Lighting.Value);
+
+        ControlOperationResult displayOn = await context.Runtime
+            .SetLightingSuppressionAsync(
+                LightingSuppressionReason.DisplayOff,
+                suppressed: false,
+                CancellationToken.None);
+        Assert.Equal(ControlOperationStatus.Stored, displayOn.Status);
+        Assert.Equal(2, context.Device.LightingSetCalls);
+
+        ControlOperationResult activeAgain = await context.Runtime
+            .SetLightingSuppressionAsync(
+                LightingSuppressionReason.UserIdle,
+                suppressed: false,
+                CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Applied, activeAgain.Status);
+        Assert.Equal(expected, context.Device.ConfirmedState.Lighting);
+        Assert.Equal(3, context.Device.LightingSetCalls);
+        Assert.Empty(context.Runtime.GetStatus().LightingSuppressions!);
+    }
+
+    [Fact]
+    public async Task LightingPowerPolicy_DisabledReasonIsBlockedWithoutHardwareWrite()
+    {
+        TestContext context = await CreateOwnedStaticLightingContextAsync();
+
+        ControlOperationResult result = await context.Runtime.SetLightingSuppressionAsync(
+            LightingSuppressionReason.UserIdle,
+            suppressed: true,
+            CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Blocked, result.Status);
+        Assert.Equal(1, context.Device.LightingSetCalls);
+        Assert.Empty(context.Runtime.GetStatus().LightingSuppressions!);
+    }
+
     [Theory]
     [InlineData(true, false)]
     [InlineData(false, true)]

@@ -89,6 +89,37 @@ public sealed record PowerProfile(
     LightingSettings Lighting,
     DisplayProfileSettings? Display = null);
 
+public sealed record LightingPowerPolicy
+{
+    public LightingPowerPolicy(
+        bool turnOffWhenDisplayTurnsOff,
+        int? idleTimeoutMinutes)
+    {
+        if (idleTimeoutMinutes is < 1 or > 60)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(idleTimeoutMinutes),
+                idleTimeoutMinutes,
+                "Lighting idle timeout must be from 1 to 60 minutes.");
+        }
+
+        TurnOffWhenDisplayTurnsOff = turnOffWhenDisplayTurnsOff;
+        IdleTimeoutMinutes = idleTimeoutMinutes;
+    }
+
+    public bool TurnOffWhenDisplayTurnsOff { get; }
+
+    public int? IdleTimeoutMinutes { get; }
+
+    public static LightingPowerPolicy Disabled { get; } = new(false, null);
+}
+
+public enum LightingSuppressionReason
+{
+    DisplayOff,
+    UserIdle,
+}
+
 public sealed record DisplayProfileSettings(
     string? RefreshRateKey,
     bool? HdrEnabled,
@@ -186,7 +217,13 @@ public sealed record ProfileSet(
     PowerProfile PluggedIn,
     PowerProfile Battery,
     PowerProfile UsbC,
-    BatteryPolicy BatteryPolicy);
+    BatteryPolicy BatteryPolicy,
+    LightingPowerPolicy? LightingPowerPolicy = null)
+{
+    [System.Text.Json.Serialization.JsonIgnore]
+    public LightingPowerPolicy EffectiveLightingPowerPolicy =>
+        LightingPowerPolicy ?? OpenBlade.Contracts.LightingPowerPolicy.Disabled;
+}
 
 public static class ProfileDefaults
 {
@@ -208,5 +245,6 @@ public static class ProfileDefaults
             FanMode.Automatic,
             LightingOff,
             DisplayProfileSettings.Unconfigured()),
-        BatteryPolicy.Create(80));
+        BatteryPolicy.Create(80),
+        LightingPowerPolicy.Disabled);
 }

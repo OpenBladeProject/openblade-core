@@ -154,6 +154,10 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         LightingRotationDirection.Clockwise;
     private LogoLightingMode? logoLightingModeEditor;
     private bool lightingEditorDirty;
+    private bool lightingTurnOffWithDisplayEditor;
+    private bool lightingIdleTimeoutEnabledEditor;
+    private int lightingIdleTimeoutMinutesEditor = 30;
+    private bool lightingPowerPolicyEditorDirty;
     private PowerSource? lastConfirmedLightingEditorPowerSource;
     private PowerSource? activeProfileDraftSource;
     private PerformancePreset? activeProfileDraftPerformance;
@@ -272,6 +276,9 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         DiscardLightingProfileDraftCommand = CreateCommand(
             (_, token) => DiscardActiveProfileDraftAsync(ProfileDraftGroup.Lighting, token),
             _ => HasLightingProfileDraft);
+        SaveLightingPowerPolicyCommand = CreateCommand(
+            SaveLightingPowerPolicyAsync,
+            CanSaveLightingPowerPolicy);
         SaveDisplayProfileDraftCommand = CreateCommand(
             (_, token) => SaveActiveProfileDraftAsync(ProfileDraftGroup.Display, token),
             _ => CanSaveActiveProfileDraft(ProfileDraftGroup.Display));
@@ -302,6 +309,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             (AsyncRelayCommand)DiscardThermalProfileDraftCommand,
             (AsyncRelayCommand)SaveLightingProfileDraftCommand,
             (AsyncRelayCommand)DiscardLightingProfileDraftCommand,
+            (AsyncRelayCommand)SaveLightingPowerPolicyCommand,
             (AsyncRelayCommand)SaveDisplayProfileDraftCommand,
             (AsyncRelayCommand)DiscardDisplayProfileDraftCommand,
             (AsyncRelayCommand)ExportDiagnosticsCommand,
@@ -1740,6 +1748,41 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
 
     public LightingSettings LightingDraft => CreateLightingDraft();
 
+    public bool LightingTurnOffWithDisplayEditor
+    {
+        get => lightingTurnOffWithDisplayEditor;
+        set => SetLightingPowerPolicyEditorField(
+            ref lightingTurnOffWithDisplayEditor,
+            value);
+    }
+
+    public bool LightingIdleTimeoutEnabledEditor
+    {
+        get => lightingIdleTimeoutEnabledEditor;
+        set => SetLightingPowerPolicyEditorField(
+            ref lightingIdleTimeoutEnabledEditor,
+            value);
+    }
+
+    public int LightingIdleTimeoutMinutesEditor
+    {
+        get => lightingIdleTimeoutMinutesEditor;
+        set
+        {
+            ArgumentOutOfRangeException.ThrowIfLessThan(value, 1);
+            ArgumentOutOfRangeException.ThrowIfGreaterThan(value, 60);
+            SetLightingPowerPolicyEditorField(
+                ref lightingIdleTimeoutMinutesEditor,
+                value);
+        }
+    }
+
+    public bool HasUnsavedLightingPowerPolicy => lightingPowerPolicyEditorDirty;
+
+    public LightingPowerPolicy LightingPowerPolicyDraft => new(
+        LightingTurnOffWithDisplayEditor,
+        LightingIdleTimeoutEnabledEditor ? LightingIdleTimeoutMinutesEditor : null);
+
     public ThemePreference Theme
     {
         get => theme;
@@ -1963,6 +2006,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     public ICommand DiscardThermalProfileDraftCommand { get; }
     public ICommand SaveLightingProfileDraftCommand { get; }
     public ICommand DiscardLightingProfileDraftCommand { get; }
+    public ICommand SaveLightingPowerPolicyCommand { get; }
     public ICommand SaveDisplayProfileDraftCommand { get; }
     public ICommand DiscardDisplayProfileDraftCommand { get; }
     public ICommand ExportDiagnosticsCommand { get; }
@@ -2284,6 +2328,10 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             ? $"Changed outside OpenBlade: {string.Join(", ", externalChanges.Select(SubsystemLabel))}. Your saved profiles are unchanged. Automatic profile updates for these controls are paused until you change them in OpenBlade."
             : string.Empty;
         Profiles = status.Profiles;
+        if (!lightingPowerPolicyEditorDirty)
+        {
+            LoadLightingPowerPolicyEditor(status.Profiles.EffectiveLightingPowerPolicy);
+        }
         if (!profileEditorsDirty)
         {
             LoadProfileEditors(status.Profiles);
@@ -2898,6 +2946,40 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         }
     }
 
+    private async Task SaveLightingPowerPolicyAsync(
+        object? parameter,
+        CancellationToken token)
+    {
+        if (parameter is not LightingPowerPolicy policy)
+        {
+            return;
+        }
+
+        ProfileSet draft = Profiles with { LightingPowerPolicy = policy };
+        bool accepted = await RunOperationAsync(
+            cancellationToken => serviceClient.UpdateProfilesAsync(draft, cancellationToken),
+            token).ConfigureAwait(false);
+        if (!accepted)
+        {
+            return;
+        }
+
+        await dispatcher.InvokeAsync(
+            () =>
+            {
+                Profiles = draft;
+                LoadLightingPowerPolicyEditor(policy);
+            },
+            token).ConfigureAwait(false);
+    }
+
+    private bool CanSaveLightingPowerPolicy(object? parameter) =>
+        Volatile.Read(ref disposed) == 0
+        && IsConnected
+        && lightingPowerPolicyEditorDirty
+        && parameter is LightingPowerPolicy policy
+        && policy.IdleTimeoutMinutes is null or >= 1 and <= 60;
+
     private bool CanSaveProfiles(object? parameter) =>
         CanMutate
         && (HasActiveProfileDraft
@@ -3409,6 +3491,30 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             this,
             new PropertyChangedEventArgs(nameof(SelectedLogoLightingModeOption)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(LightingDraft)));
+    }
+
+    private void LoadLightingPowerPolicyEditor(LightingPowerPolicy policy)
+    {
+        SetField(
+            ref lightingTurnOffWithDisplayEditor,
+            policy.TurnOffWhenDisplayTurnsOff,
+            nameof(LightingTurnOffWithDisplayEditor));
+        SetField(
+            ref lightingIdleTimeoutEnabledEditor,
+            policy.IdleTimeoutMinutes.HasValue,
+            nameof(LightingIdleTimeoutEnabledEditor));
+        SetField(
+            ref lightingIdleTimeoutMinutesEditor,
+            policy.IdleTimeoutMinutes ?? 30,
+            nameof(LightingIdleTimeoutMinutesEditor));
+        lightingPowerPolicyEditorDirty = false;
+        PropertyChanged?.Invoke(
+            this,
+            new PropertyChangedEventArgs(nameof(HasUnsavedLightingPowerPolicy)));
+        PropertyChanged?.Invoke(
+            this,
+            new PropertyChangedEventArgs(nameof(LightingPowerPolicyDraft)));
+        NotifyCommands();
     }
 
     private void PrepareLightingEditorForPowerSource(PowerSource powerSource)
@@ -4423,6 +4529,8 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         && left.FanOverride == right.FanOverride
         && left.LightingOverride == right.LightingOverride
         && left.FullChargeOverride == right.FullChargeOverride
+        && (left.LightingSuppressions ?? []).SequenceEqual(
+            right.LightingSuppressions ?? [])
         && left.Firmware == right.Firmware
         && string.Equals(left.ServiceVersion, right.ServiceVersion, StringComparison.Ordinal);
 
@@ -4629,6 +4737,27 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
 
         SetProfileEditorsDirty(true);
         SetField(ref field, value, propertyName);
+        NotifyCommands();
+    }
+
+    private void SetLightingPowerPolicyEditorField<T>(
+        ref T field,
+        T value,
+        [CallerMemberName] string? propertyName = null)
+    {
+        if (EqualityComparer<T>.Default.Equals(field, value))
+        {
+            return;
+        }
+
+        SetField(ref field, value, propertyName);
+        lightingPowerPolicyEditorDirty = true;
+        PropertyChanged?.Invoke(
+            this,
+            new PropertyChangedEventArgs(nameof(HasUnsavedLightingPowerPolicy)));
+        PropertyChanged?.Invoke(
+            this,
+            new PropertyChangedEventArgs(nameof(LightingPowerPolicyDraft)));
         NotifyCommands();
     }
 

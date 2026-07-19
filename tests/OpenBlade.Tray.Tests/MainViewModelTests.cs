@@ -7,6 +7,31 @@ namespace OpenBlade.Tray.Tests;
 public sealed class MainViewModelTests
 {
     [Fact]
+    public async Task LightingPowerPolicyEditor_SavesGlobalDisplayAndIdleRules()
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        client.Publish(CreateStatus(verified: true, blocked: false));
+        await WaitUntilAsync(() => viewModel.IsConnected);
+
+        viewModel.LightingTurnOffWithDisplayEditor = true;
+        viewModel.LightingIdleTimeoutEnabledEditor = true;
+        viewModel.LightingIdleTimeoutMinutesEditor = 12;
+        LightingPowerPolicy draft = viewModel.LightingPowerPolicyDraft;
+
+        Assert.True(viewModel.HasUnsavedLightingPowerPolicy);
+        Assert.True(viewModel.SaveLightingPowerPolicyCommand.CanExecute(draft));
+
+        await Assert.IsType<AsyncRelayCommand>(viewModel.SaveLightingPowerPolicyCommand)
+            .ExecuteAsync(draft);
+
+        Assert.Equal(new LightingPowerPolicy(true, 12), client.LastProfiles?.LightingPowerPolicy);
+        Assert.Equal(new LightingPowerPolicy(true, 12), viewModel.Profiles.LightingPowerPolicy);
+        Assert.False(viewModel.HasUnsavedLightingPowerPolicy);
+    }
+
+    [Fact]
     public async Task ProfileEditors_ReportUnsavedChangesUntilSaveThenReloadCleanly()
     {
         var client = new FakeServiceClient();

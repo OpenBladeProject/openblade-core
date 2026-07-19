@@ -72,6 +72,7 @@ public sealed class ProfileSetValidator(ProfileValidationPolicy policy)
         ValidateProfile(profiles.Battery, "battery", PowerSource.Battery);
         ValidateProfile(profiles.UsbC, "USB-C", PowerSource.UsbC);
         ValidateBatteryPolicy(profiles.BatteryPolicy);
+        ValidateLightingPowerPolicy(profiles.LightingPowerPolicy);
     }
 
     public void ValidatePreferences(BatteryAutomationPreferences preferences)
@@ -214,6 +215,14 @@ public sealed class ProfileSetValidator(ProfileValidationPolicy policy)
             || batteryPolicy.ChargeLimitPercent % 5 != 0)
         {
             throw Invalid("The battery charge limit must be from 50 to 80 percent in 5 percent steps.");
+        }
+    }
+
+    private static void ValidateLightingPowerPolicy(LightingPowerPolicy? policy)
+    {
+        if (policy?.IdleTimeoutMinutes is < 1 or > 60)
+        {
+            throw Invalid("The lighting idle timeout must be from 1 to 60 minutes.");
         }
     }
 

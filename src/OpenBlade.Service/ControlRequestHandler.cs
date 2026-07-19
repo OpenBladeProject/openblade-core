@@ -65,6 +65,12 @@ public sealed class ControlRequestHandler
             SetLightingOverrideRequest set => Result(
                 request.RequestId,
                 await runtime.SetLightingOverrideAsync(set.Value, cancellationToken)),
+            SetLightingSuppressionRequest set => Result(
+                request.RequestId,
+                await runtime.SetLightingSuppressionAsync(
+                    set.Reason,
+                    set.Suppressed,
+                    cancellationToken)),
             PulseReactiveKeyRequest pulse => Result(
                 request.RequestId,
                 await runtime.PulseReactiveKeyAsync(pulse.Pulse, cancellationToken)),

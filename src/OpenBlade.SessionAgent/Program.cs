@@ -83,14 +83,22 @@ internal static class Program
                     exception => System.Diagnostics.Trace.TraceWarning(
                         "OpenBlade Reactive input failed: {0}",
                         exception.Message));
+                var lightingIdlePolicy = new ServiceLightingIdlePolicyLoop(
+                    new ServiceClient(),
+                    new WindowsUserIdleTimeSource(),
+                    exception => System.Diagnostics.Trace.TraceWarning(
+                        "OpenBlade lighting idle policy failed: {0}",
+                        exception.Message));
 
                 Task serverTask = server.RunAsync(lifetime.Token);
                 Task automationTask = automation.RunAsync(lifetime.Token);
                 Task reactiveTask = reactive.RunAsync(lifetime.Token);
+                Task lightingIdleTask = lightingIdlePolicy.RunAsync(lifetime.Token);
                 Task completed = await Task.WhenAny(
                     serverTask,
                     automationTask,
-                    reactiveTask).ConfigureAwait(false);
+                    reactiveTask,
+                    lightingIdleTask).ConfigureAwait(false);
                 if (!lifetime.IsCancellationRequested)
                 {
                     lifetime.Cancel();
@@ -98,7 +106,11 @@ internal static class Program
 
                 try
                 {
-                    await Task.WhenAll(serverTask, automationTask, reactiveTask)
+                    await Task.WhenAll(
+                            serverTask,
+                            automationTask,
+                            reactiveTask,
+                            lightingIdleTask)
                         .ConfigureAwait(false);
                 }
                 catch (OperationCanceledException) when (lifetime.IsCancellationRequested)

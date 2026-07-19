@@ -84,6 +84,18 @@ public sealed class ServiceLifecycleRefreshLoop(
                             await runtime.HandlePowerSourceChangedAsync(stoppingToken);
                             await runtime.RestoreLightingRendererAsync(stoppingToken);
                             break;
+                        case ServiceLifecycleTrigger.DisplayOff:
+                            await runtime.SetLightingSuppressionAsync(
+                                OpenBlade.Contracts.LightingSuppressionReason.DisplayOff,
+                                suppressed: true,
+                                stoppingToken);
+                            break;
+                        case ServiceLifecycleTrigger.DisplayOn:
+                            await runtime.SetLightingSuppressionAsync(
+                                OpenBlade.Contracts.LightingSuppressionReason.DisplayOff,
+                                suppressed: false,
+                                stoppingToken);
+                            break;
                         case ServiceLifecycleTrigger.DeviceArrived:
                             await runtime.ObserveAsync(
                                 includeLiveReadings: false,

@@ -4,6 +4,29 @@ namespace OpenBlade.Contracts.Tests;
 
 public sealed class LightingContractTests
 {
+    [Theory]
+    [InlineData(1)]
+    [InlineData(30)]
+    [InlineData(60)]
+    public void LightingPowerPolicy_AcceptsCapturedIdleRange(int minutes)
+    {
+        var policy = new LightingPowerPolicy(
+            turnOffWhenDisplayTurnsOff: true,
+            idleTimeoutMinutes: minutes);
+
+        Assert.True(policy.TurnOffWhenDisplayTurnsOff);
+        Assert.Equal(minutes, policy.IdleTimeoutMinutes);
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(61)]
+    public void LightingPowerPolicy_RejectsIdleValueOutsideCapturedRange(int minutes)
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            new LightingPowerPolicy(false, minutes));
+    }
+
     [Fact]
     public void ExistingThreeArgumentSettingsRemainValidLegacyContracts()
     {

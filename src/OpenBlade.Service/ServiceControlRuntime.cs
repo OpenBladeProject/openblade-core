@@ -32,6 +32,14 @@ public interface IServiceControlRuntime
         ManualOverride<LightingSettings>? value,
         CancellationToken token);
 
+    Task<ControlOperationResult> SetLightingSuppressionAsync(
+        LightingSuppressionReason reason,
+        bool suppressed,
+        CancellationToken token) => Task.FromResult(
+            new ControlOperationResult(
+                ControlOperationStatus.Blocked,
+                "Lighting power policy is unavailable."));
+
     Task<ControlOperationResult> PulseReactiveKeyAsync(
         ReactiveKeyPulse pulse,
         CancellationToken token) => Task.FromResult(
@@ -105,6 +113,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
     private LightingSettings? pendingLightingRestore;
     private LightingSettings? faultedLightingRecoveryCandidate;
     private bool controllerLightingRelinquishPending;
+    private readonly HashSet<LightingSuppressionReason> lightingSuppressions = [];
 
     public ServiceControlRuntime(
         BatteryConfigurationStore store,
@@ -302,12 +311,14 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         await operationGate.WaitAsync(token);
         try
         {
+            bool lightingWasSuppressed = lightingSuppressions.Count > 0;
             try
             {
                 profiles = ProfileStore.NormalizeLegacyBatteryProfile(profiles, out _);
                 validator.Validate(profiles);
                 await store.SaveProfilesAsync(profiles, token);
                 Automation.UpdateProfiles(profiles);
+                RemoveDisabledLightingSuppressions();
             }
             catch (OperationCanceledException) when (token.IsCancellationRequested)
             {
@@ -330,8 +341,35 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 FanOverride = Automation.FanOverride,
                 LightingOverride = Automation.LightingOverride,
                 FullChargeOverride = ResolveFullChargeOverride(current.ConfirmedState),
+                LightingSuppressions = CurrentLightingSuppressions(),
             });
             history.RecordSummary(ControlOperationStatus.Stored, message);
+
+            if (lightingWasSuppressed
+                && lightingSuppressions.Count == 0
+                && current.ActivePowerSource is
+                    PowerSource.PluggedIn or PowerSource.Battery or PowerSource.UsbC
+                && !IsControllerPresenceUnsafe(current)
+                && !current.ExternalChanges.Contains(DeviceSubsystem.Lighting))
+            {
+                ControlOperationResult restored = await ApplyScopedIntentAsync(
+                    DeviceSubsystem.Lighting,
+                    current.ActivePowerSource,
+                    (coordinator, desired, cancellationToken) =>
+                        coordinator.ApplyLightingOutcomeAsync(
+                            desired.Lighting.Value,
+                            cancellationToken,
+                            forceWrite: true),
+                    token).ConfigureAwait(false);
+                if (restored.Status != ControlOperationStatus.Applied)
+                {
+                    return restored with
+                    {
+                        Message = $"Profiles were stored. Lighting restore result: {restored.Message}",
+                    };
+                }
+            }
+
             return new ControlOperationResult(ControlOperationStatus.Stored, message);
         }
         finally
@@ -389,6 +427,106 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             normalized is null
                 ? "Lighting override was cleared."
                 : "Lighting override intent was stored.");
+    }
+
+    public async Task<ControlOperationResult> SetLightingSuppressionAsync(
+        LightingSuppressionReason reason,
+        bool suppressed,
+        CancellationToken token)
+    {
+        EnsureInitialized();
+        if (!Enum.IsDefined(reason))
+        {
+            return RecordRejectedIntent(new ArgumentOutOfRangeException(nameof(reason)));
+        }
+
+        await operationGate.WaitAsync(token).ConfigureAwait(false);
+        try
+        {
+            bool alreadySet = lightingSuppressions.Contains(reason);
+            if (alreadySet == suppressed)
+            {
+                return new ControlOperationResult(
+                    ControlOperationStatus.Stored,
+                    "Lighting power policy state is already current.");
+            }
+
+            if (suppressed && !IsLightingSuppressionConfigured(reason))
+            {
+                return new ControlOperationResult(
+                    ControlOperationStatus.Blocked,
+                    "The requested lighting power policy is not enabled.");
+            }
+
+            PowerSource powerSource = await ResolveCurrentPowerSourceAsync(token)
+                .ConfigureAwait(false);
+            await RefreshControllerPresenceAndRelinquishIfNewConflictAsync(token)
+                .ConfigureAwait(false);
+            ServiceStatusSnapshot current = GetStatus();
+            if (powerSource == PowerSource.ExternalUnknown)
+            {
+                return PublishScopedUnavailable(
+                    DeviceSubsystem.Lighting,
+                    powerSource,
+                    "The external power adapter could not be classified; lighting power policy writes are blocked.");
+            }
+            if (IsControllerPresenceUnsafe(current)
+                || current.ExternalChanges.Contains(DeviceSubsystem.Lighting))
+            {
+                return new ControlOperationResult(
+                    ControlOperationStatus.Blocked,
+                    "Lighting power policy is paused while another controller or an external lighting change is present.");
+            }
+
+            if (Automation.ChangePowerSource(powerSource))
+            {
+                await ApplyFullTransitionAsync(powerSource, token).ConfigureAwait(false);
+            }
+
+            bool wasSuppressed = lightingSuppressions.Count > 0;
+            if (suppressed)
+            {
+                lightingSuppressions.Add(reason);
+            }
+            else
+            {
+                lightingSuppressions.Remove(reason);
+            }
+            bool isSuppressed = lightingSuppressions.Count > 0;
+            PublishIfChanged(GetStatus() with
+            {
+                LightingSuppressions = CurrentLightingSuppressions(),
+            });
+
+            if (wasSuppressed == isSuppressed)
+            {
+                return new ControlOperationResult(
+                    ControlOperationStatus.Stored,
+                    "Lighting power policy state was updated.");
+            }
+
+            ControlOperationResult result = await ApplyScopedIntentAsync(
+                DeviceSubsystem.Lighting,
+                powerSource,
+                (coordinator, desired, cancellationToken) =>
+                    coordinator.ApplyLightingOutcomeAsync(
+                        desired.Lighting.Value,
+                        cancellationToken,
+                        forceWrite: true),
+                token).ConfigureAwait(false);
+            return result.Status == ControlOperationStatus.Applied
+                ? result with
+                {
+                    Message = isSuppressed
+                        ? "Keyboard lighting was switched off by the lighting power policy."
+                        : "Keyboard lighting was restored from the current OpenBlade settings.",
+                }
+                : result;
+        }
+        finally
+        {
+            operationGate.Release();
+        }
     }
 
     public async Task<ControlOperationResult> PulseReactiveKeyAsync(
@@ -822,7 +960,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         {
             LightingSettings? requested = pendingLightingRestore;
             pendingLightingRestore = null;
-            if (requested is null)
+            if (requested is null || lightingSuppressions.Count > 0)
             {
                 return;
             }
@@ -1131,7 +1269,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
 
         ServiceStatusSnapshot current = GetStatus();
         ConfirmedDeviceState? cachedConfirmed = current.ConfirmedState;
-        DesiredDeviceState desired = Automation.Resolve(cachedConfirmed ?? UnknownConfirmedState);
+        DesiredDeviceState desired = ResolveHardwareDesired(
+            cachedConfirmed ?? UnknownConfirmedState);
         if (stageDesired is not null)
         {
             desired = stageDesired(desired);
@@ -1393,7 +1532,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             return;
         }
 
-        DesiredDeviceState desired = Automation.Resolve(cachedConfirmed ?? UnknownConfirmedState);
+        DesiredDeviceState desired = ResolveHardwareDesired(
+            cachedConfirmed ?? UnknownConfirmedState);
         bool allowAutomaticLightingWrite =
             CanClaimLightingForAutomaticProfile(current);
         FullTransitionApplyOutcome outcome;
@@ -1765,7 +1905,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         DesiredDeviceState? alternateExpected = null)
     {
         ArgumentNullException.ThrowIfNull(confirmed);
-        DesiredDeviceState desired = expected ?? Automation.Resolve(confirmed);
+        DesiredDeviceState desired = expected ?? ResolveHardwareDesired(confirmed);
         driftTracker.Observe(confirmed);
 
         if (alternateExpected is not null)
@@ -1994,7 +2134,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             FullChargeOverride: Automation.DesiredBattery.TemporaryFullCharge,
             Firmware: firmwareVersionSource.Capture(),
             ServiceVersion: ServiceVersion,
-            LightingRendererOwnership: LightingRendererOwnershipState.None);
+            LightingRendererOwnership: LightingRendererOwnershipState.None,
+            LightingSuppressions: []);
 
     private ControlOperationResult PublishScopedUnavailable(
         DeviceSubsystem subsystem,
@@ -2072,6 +2213,42 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         confirmed?.Battery?.TemporaryFullCharge
         ?? Automation.DesiredBattery.TemporaryFullCharge;
 
+    private DesiredDeviceState ResolveHardwareDesired(ConfirmedDeviceState confirmed)
+    {
+        DesiredDeviceState desired = Automation.Resolve(confirmed);
+        if (lightingSuppressions.Count == 0)
+        {
+            return desired;
+        }
+
+        return desired with
+        {
+            Lighting = desired.Lighting with
+            {
+                Value = LightingSettingsFactory.Off(),
+            },
+        };
+    }
+
+    private bool IsLightingSuppressionConfigured(LightingSuppressionReason reason)
+    {
+        LightingPowerPolicy policy = Automation.Profiles.EffectiveLightingPowerPolicy;
+        return reason switch
+        {
+            LightingSuppressionReason.DisplayOff => policy.TurnOffWhenDisplayTurnsOff,
+            LightingSuppressionReason.UserIdle => policy.IdleTimeoutMinutes.HasValue,
+            _ => false,
+        };
+    }
+
+    private LightingSuppressionReason[] CurrentLightingSuppressions() =>
+        [.. lightingSuppressions.Order()];
+
+    private void RemoveDisabledLightingSuppressions()
+    {
+        lightingSuppressions.RemoveWhere(reason => !IsLightingSuppressionConfigured(reason));
+    }
+
     private ControlOperationResult RecordRejectedIntent(Exception exception)
     {
         var rejected = new ControlOperationResult(
@@ -2138,6 +2315,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         && left.LightingOverride == right.LightingOverride
         && left.FullChargeOverride == right.FullChargeOverride
         && left.LightingRendererOwnership == right.LightingRendererOwnership
+        && (left.LightingSuppressions ?? []).SequenceEqual(
+            right.LightingSuppressions ?? [])
         && left.Firmware == right.Firmware
         && string.Equals(left.ServiceVersion, right.ServiceVersion, StringComparison.Ordinal);
 
@@ -2189,6 +2368,11 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
     private async Task RecoverFaultedLightingRendererCoreAsync(
         CancellationToken cancellationToken)
     {
+        if (lightingSuppressions.Count > 0)
+        {
+            return;
+        }
+
         ServiceStatusSnapshot current = GetStatus();
         LightingSettings? requested = faultedLightingRecoveryCandidate;
         IBladeDevice? device = null;

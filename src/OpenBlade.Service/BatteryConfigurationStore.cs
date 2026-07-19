@@ -177,7 +177,9 @@ public sealed class BatteryConfigurationStore
             markerJson,
             ProfileStore.SerializerOptions);
         if (marker is null || marker.SchemaVersion is not (
-                ProfileStore.LegacySchemaVersion or ProfileStore.CurrentSchemaVersion))
+                ProfileStore.LegacySchemaVersion
+                or ProfileStore.PreviousSchemaVersion
+                or ProfileStore.CurrentSchemaVersion))
         {
             throw new InvalidDataException("The battery configuration marker is unsupported.");
         }

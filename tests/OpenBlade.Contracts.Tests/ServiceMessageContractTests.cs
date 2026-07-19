@@ -7,9 +7,9 @@ namespace OpenBlade.Contracts.Tests;
 public sealed class ServiceMessageContractTests
 {
     [Fact]
-    public void ProtocolConstants_AreClosedVersionTenAndRetainExactSizeLimit()
+    public void ProtocolConstants_AreClosedVersionElevenAndRetainExactSizeLimit()
     {
-        Assert.Equal(10, OpenBladeIpc.ProtocolVersion);
+        Assert.Equal(11, OpenBladeIpc.ProtocolVersion);
         Assert.Equal("OpenBlade.Service.v2", OpenBladeIpc.PipeName);
         Assert.Equal(64 * 1024, OpenBladeIpc.MaximumMessageBytes);
         Assert.Equal(32 * 1024, OpenBladeIpc.MaximumDiagnosticArchiveBytes);
@@ -28,6 +28,7 @@ public sealed class ServiceMessageContractTests
             (typeof(SetPerformanceOverrideRequest), "setPerformanceOverride"),
             (typeof(SetFanOverrideRequest), "setFanOverride"),
             (typeof(SetLightingOverrideRequest), "setLightingOverride"),
+            (typeof(SetLightingSuppressionRequest), "setLightingSuppression"),
             (typeof(PulseReactiveKeyRequest), "pulseReactiveKey"),
             (typeof(SetBatteryPolicyRequest), "setBatteryPolicy"),
             (typeof(SetBatteryProtectionRequest), "setBatteryProtection"),
@@ -49,7 +50,7 @@ public sealed class ServiceMessageContractTests
             "Capabilities", "ConfirmedState", "Profiles", "DesiredState",
             "ActivePowerSource", "LiveReadings",
             "PerformanceOverride", "FanOverride", "LightingOverride", "FullChargeOverride",
-            "Firmware", "ServiceVersion", "LightingRendererOwnership",
+            "Firmware", "ServiceVersion", "LightingRendererOwnership", "LightingSuppressions",
         ];
 
         Assert.Equal(

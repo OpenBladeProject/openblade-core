@@ -41,6 +41,14 @@ public interface IServiceClient
         ManualOverride<LightingSettings>? value,
         CancellationToken token);
 
+    Task<ControlOperationResult> SetLightingSuppressionAsync(
+        LightingSuppressionReason reason,
+        bool suppressed,
+        CancellationToken token) => Task.FromResult(
+            new ControlOperationResult(
+                ControlOperationStatus.Blocked,
+                "Lighting power policy is unavailable."));
+
     Task<ControlOperationResult> PulseReactiveKeyAsync(
         ReactiveKeyPulse pulse,
         CancellationToken token) => Task.FromResult(

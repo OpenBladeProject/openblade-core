@@ -125,7 +125,15 @@
     },
     "targetDeviceControlWriteObservedDuringRuleChanges": false,
     "interpretation": "SynapseHostPolicy",
-    "productionAdmitted": false
+    "productionAdmitted": false,
+    "openBladeImplementation": {
+      "kind": "WindowsHostPolicy",
+      "displayNotifications": true,
+      "signedInSessionIdleMeasurement": true,
+      "overlappingSuppressionReasonsSupported": true,
+      "restoresCurrentTypedLightingIntent": true,
+      "blocksWritesDuringExternalDriftOrControllerConflict": true
+    }
   },
   "functionKeyPrimary": {
     "setter": "02/06",

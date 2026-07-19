@@ -1,0 +1,232 @@
+using System.Collections.Concurrent;
+using System.Threading.Channels;
+using OpenBlade.Contracts;
+using OpenBlade.SessionAgent;
+using OpenBlade.Tray;
+
+namespace OpenBlade.SessionAgent.Tests;
+
+public sealed class ServiceLightingIdlePolicyLoopTests
+{
+    [Fact]
+    public async Task IdleBoundarySuppressesOnceAndActivityRestoresOnce()
+    {
+        var client = new WatchClient();
+        var idle = new FakeIdleTimeSource { Current = TimeSpan.FromMinutes(6) };
+        var delay = new ManualDelay();
+        List<Exception> failures = [];
+        var loop = new ServiceLightingIdlePolicyLoop(
+            client,
+            idle,
+            failures.Add,
+            delay.DelayAsync);
+        using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        Task running = loop.RunAsync(cancellation.Token);
+
+        client.Publish(Status(new LightingPowerPolicy(false, 5)));
+        await client.Delivered.Task.WaitAsync(cancellation.Token);
+        await delay.TickAsync(cancellation.Token);
+        await WaitUntilAsync(() => client.Requests.Count == 1, cancellation.Token);
+
+        Assert.Equal(
+            (LightingSuppressionReason.UserIdle, true),
+            client.Requests.Single());
+
+        client.Publish(Status(new LightingPowerPolicy(false, 5)) with { Revision = 2 });
+        await WaitUntilAsync(() => client.DeliveryCount == 2, cancellation.Token);
+        await delay.TickAsync(cancellation.Token);
+        await Task.Delay(20, cancellation.Token);
+        Assert.Single(client.Requests);
+
+        idle.Current = TimeSpan.Zero;
+        await delay.TickAsync(cancellation.Token);
+        await WaitUntilAsync(() => client.Requests.Count == 2, cancellation.Token);
+
+        Assert.Equal(
+            (LightingSuppressionReason.UserIdle, false),
+            client.Requests.Last());
+        Assert.Empty(failures);
+
+        await cancellation.CancelAsync();
+        await running;
+    }
+
+    [Fact]
+    public async Task DisabledPolicyClearsStaleServiceSuppressionAfterReconnect()
+    {
+        var client = new WatchClient();
+        var delay = new ManualDelay();
+        var loop = new ServiceLightingIdlePolicyLoop(
+            client,
+            new FakeIdleTimeSource(),
+            delay: delay.DelayAsync);
+        using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        Task running = loop.RunAsync(cancellation.Token);
+
+        client.Publish(Status(LightingPowerPolicy.Disabled));
+        await client.Delivered.Task.WaitAsync(cancellation.Token);
+        await delay.TickAsync(cancellation.Token);
+        await WaitUntilAsync(() => client.Requests.Count == 1, cancellation.Token);
+
+        Assert.Equal(
+            (LightingSuppressionReason.UserIdle, false),
+            client.Requests.Single());
+
+        await cancellation.CancelAsync();
+        await running;
+    }
+
+    private static ServiceStatusSnapshot Status(LightingPowerPolicy policy)
+    {
+        ProfileSet profiles = ProfileDefaults.CreateSafeDefaults() with
+        {
+            LightingPowerPolicy = policy,
+        };
+        return new ServiceStatusSnapshot(
+            Revision: 1,
+            DeviceVerified: true,
+            WritesBlocked: false,
+            PotentialControllers: [],
+            ControllerDetectionWarning: null,
+            ExternalChanges: [],
+            Message: "Ready",
+            Capabilities: DeviceCapabilities.Unavailable(),
+            ConfirmedState: null,
+            Profiles: profiles,
+            DesiredState: new DesiredDeviceState(
+                new ResolvedSetting<PerformancePreset>(
+                    profiles.PluggedIn.Performance,
+                    SettingValueSource.PowerProfile),
+                new ResolvedSetting<FanMode>(
+                    profiles.PluggedIn.Fans,
+                    SettingValueSource.PowerProfile),
+                new ResolvedSetting<LightingSettings>(
+                    profiles.PluggedIn.Lighting,
+                    SettingValueSource.PowerProfile),
+                new DesiredBatteryState(profiles.BatteryPolicy, true, false)),
+            ActivePowerSource: PowerSource.PluggedIn,
+            LiveReadings: null,
+            PerformanceOverride: null,
+            FanOverride: null,
+            LightingOverride: null,
+            FullChargeOverride: false);
+    }
+
+    private static async Task WaitUntilAsync(
+        Func<bool> condition,
+        CancellationToken cancellationToken)
+    {
+        while (!condition())
+        {
+            await Task.Delay(10, cancellationToken);
+        }
+    }
+
+    private sealed class FakeIdleTimeSource : IUserIdleTimeSource
+    {
+        public TimeSpan? Current { get; set; }
+
+        public TimeSpan? GetIdleTime() => Current;
+    }
+
+    private sealed class ManualDelay
+    {
+        private readonly Channel<TaskCompletionSource> waits =
+            Channel.CreateUnbounded<TaskCompletionSource>();
+
+        public async Task DelayAsync(TimeSpan delay, CancellationToken cancellationToken)
+        {
+            Assert.Equal(TimeSpan.FromSeconds(1), delay);
+            var wait = new TaskCompletionSource(
+                TaskCreationOptions.RunContinuationsAsynchronously);
+            await waits.Writer.WriteAsync(wait, cancellationToken);
+            await wait.Task.WaitAsync(cancellationToken);
+        }
+
+        public async Task TickAsync(CancellationToken cancellationToken)
+        {
+            TaskCompletionSource wait = await waits.Reader.ReadAsync(cancellationToken);
+            wait.TrySetResult();
+        }
+    }
+
+    private sealed class WatchClient : IServiceClient
+    {
+        private readonly Channel<ServiceWatchUpdate> updates =
+            Channel.CreateUnbounded<ServiceWatchUpdate>();
+        private int deliveryCount;
+
+        public ConcurrentQueue<(LightingSuppressionReason Reason, bool Suppressed)> Requests
+            { get; } = new();
+
+        public TaskCompletionSource Delivered { get; } = new(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public int DeliveryCount => Volatile.Read(ref deliveryCount);
+
+        public void Publish(ServiceStatusSnapshot status) => updates.Writer.TryWrite(
+            new ServiceWatchUpdate.Connected(status));
+
+        public async IAsyncEnumerable<ServiceWatchUpdate> WatchStatusAsync(
+            [System.Runtime.CompilerServices.EnumeratorCancellation]
+            CancellationToken token)
+        {
+            await foreach (ServiceWatchUpdate update in updates.Reader.ReadAllAsync(token))
+            {
+                yield return update;
+                Interlocked.Increment(ref deliveryCount);
+                Delivered.TrySetResult();
+            }
+        }
+
+        public Task<ControlOperationResult> SetLightingSuppressionAsync(
+            LightingSuppressionReason reason,
+            bool suppressed,
+            CancellationToken token)
+        {
+            Requests.Enqueue((reason, suppressed));
+            return Task.FromResult(new ControlOperationResult(
+                ControlOperationStatus.Applied,
+                "Applied"));
+        }
+
+        public Task<ServiceStatusSnapshot> GetStatusAsync(CancellationToken token) =>
+            throw new NotSupportedException();
+
+        public Task<ServiceStatusSnapshot> ObserveStateAsync(
+            bool includeLiveReadings,
+            CancellationToken cancellationToken) => throw new NotSupportedException();
+
+        public Task<DiagnosticArchive> ExportDiagnosticsAsync(
+            bool liveReadingsEnabled,
+            CancellationToken token) => throw new NotSupportedException();
+
+        public Task<ControlOperationResult> UpdateProfilesAsync(
+            ProfileSet profiles,
+            CancellationToken token) => throw new NotSupportedException();
+
+        public Task<ControlOperationResult> SetPerformanceOverrideAsync(
+            ManualOverride<PerformancePreset>? value,
+            CancellationToken token) => throw new NotSupportedException();
+
+        public Task<ControlOperationResult> SetFanOverrideAsync(
+            ManualOverride<FanMode>? value,
+            CancellationToken token) => throw new NotSupportedException();
+
+        public Task<ControlOperationResult> SetLightingOverrideAsync(
+            ManualOverride<LightingSettings>? value,
+            CancellationToken token) => throw new NotSupportedException();
+
+        public Task<ControlOperationResult> SetBatteryPolicyAsync(
+            BatteryPolicy value,
+            CancellationToken token) => throw new NotSupportedException();
+
+        public Task<ControlOperationResult> SetBatteryProtectionAsync(
+            bool enabled,
+            CancellationToken token) => throw new NotSupportedException();
+
+        public Task<ControlOperationResult> SetFullChargeOverrideAsync(
+            bool enabled,
+            CancellationToken token) => throw new NotSupportedException();
+    }
+}

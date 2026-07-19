@@ -160,8 +160,8 @@ public sealed class WindowsServiceLifecycleEventSourceTests
     }
 
     [Theory]
-    [InlineData(1u, 0u, ServiceLifecycleTrigger.Suspending)]
-    [InlineData(0u, 1u, ServiceLifecycleTrigger.Resumed)]
+    [InlineData(1u, 0u, ServiceLifecycleTrigger.DisplayOff)]
+    [InlineData(0u, 1u, ServiceLifecycleTrigger.DisplayOn)]
     public void ConsoleDisplayTransition_MapsOffAndOnLifecycleBoundaries(
         uint previous,
         uint current,

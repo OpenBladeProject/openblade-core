@@ -20,6 +20,11 @@ public sealed class ControlRequestHandlerTests
             new SetFanOverrideRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid(),
                 new ManualOverride<FanMode>(FanMode.Maximum, OverrideLifetime.UntilPowerSourceChange)),
             new SetLightingOverrideRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid(), null),
+            new SetLightingSuppressionRequest(
+                OpenBladeIpc.ProtocolVersion,
+                Guid.NewGuid(),
+                LightingSuppressionReason.DisplayOff,
+                Suppressed: true),
             new PulseReactiveKeyRequest(
                 OpenBladeIpc.ProtocolVersion,
                 Guid.NewGuid(),
@@ -42,7 +47,8 @@ public sealed class ControlRequestHandlerTests
         string[] expectedCalls =
         [
             "GetStatus", "GetStatus", "UpdateProfiles", "SetPerformanceOverride",
-            "SetFanOverride", "SetLightingOverride", "PulseReactiveKey", "SetBatteryPolicy",
+            "SetFanOverride", "SetLightingOverride", "SetLightingSuppression",
+            "PulseReactiveKey", "SetBatteryPolicy",
             "SetBatteryProtection", "SetFullChargeOverride", "ExportDiagnostics", "Shutdown",
         ];
 
@@ -225,6 +231,11 @@ public sealed class ControlRequestHandlerTests
 
         public Task<ControlOperationResult> SetLightingOverrideAsync(ManualOverride<LightingSettings>? value, CancellationToken token) =>
             Record("SetLightingOverride");
+
+        public Task<ControlOperationResult> SetLightingSuppressionAsync(
+            LightingSuppressionReason reason,
+            bool suppressed,
+            CancellationToken token) => Record("SetLightingSuppression");
 
         public Task<ControlOperationResult> PulseReactiveKeyAsync(
             ReactiveKeyPulse pulse,

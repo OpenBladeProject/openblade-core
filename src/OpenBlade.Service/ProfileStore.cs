@@ -8,7 +8,8 @@ public sealed record ProfileLoadResult(ProfileSet Profiles, bool RecoveredFromIn
 
 public sealed class ProfileStore(string path, ProfileSetValidator? validator = null)
 {
-    internal const int CurrentSchemaVersion = 2;
+    internal const int CurrentSchemaVersion = 3;
+    internal const int PreviousSchemaVersion = 2;
     internal const int LegacySchemaVersion = 1;
 
     internal static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web)
@@ -80,7 +81,7 @@ public sealed class ProfileStore(string path, ProfileSetValidator? validator = n
         }
 
         ProfileSet profiles;
-        if (schemaVersion == CurrentSchemaVersion)
+        if (schemaVersion is CurrentSchemaVersion or PreviousSchemaVersion)
         {
             ProfileDocument? document = JsonSerializer.Deserialize<ProfileDocument>(
                 json,
@@ -91,6 +92,7 @@ public sealed class ProfileStore(string path, ProfileSetValidator? validator = n
             }
 
             profiles = NormalizeLegacyBatteryProfile(document.Profiles, out migrated);
+            migrated |= schemaVersion == PreviousSchemaVersion;
         }
         else if (schemaVersion == LegacySchemaVersion)
         {
@@ -135,11 +137,20 @@ public sealed class ProfileStore(string path, ProfileSetValidator? validator = n
         pluggedIn = NormalizeLegacyDisplay(pluggedIn);
         battery = NormalizeLegacyDisplay(battery);
         usbC = NormalizeLegacyDisplay(usbC);
+        LightingPowerPolicy lightingPowerPolicy =
+            profiles.LightingPowerPolicy ?? LightingPowerPolicy.Disabled;
         migrated = pluggedIn != profiles.PluggedIn
             || battery != profiles.Battery
-            || usbC != profiles.UsbC;
+            || usbC != profiles.UsbC
+            || profiles.LightingPowerPolicy is null;
         return migrated
-            ? profiles with { PluggedIn = pluggedIn, Battery = battery, UsbC = usbC }
+            ? profiles with
+            {
+                PluggedIn = pluggedIn,
+                Battery = battery,
+                UsbC = usbC,
+                LightingPowerPolicy = lightingPowerPolicy,
+            }
             : profiles;
     }
 

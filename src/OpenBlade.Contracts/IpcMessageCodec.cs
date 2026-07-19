@@ -7,7 +7,7 @@ namespace OpenBlade.Contracts;
 
 public static class OpenBladeIpc
 {
-    public const int ProtocolVersion = 10;
+    public const int ProtocolVersion = 11;
     public const int MaximumMessageBytes = 64 * 1024;
     public const int MaximumDiagnosticArchiveBytes = 32 * 1024;
     public const string PipeName = "OpenBlade.Service.v2";
@@ -154,6 +154,7 @@ public static class IpcMessageCodec
                 || set.Value.Value is not null
                     && Enum.IsDefined(set.Value.Lifetime)
                     && LightingSettingsValidation.IsWellFormed(set.Value.Value),
+            SetLightingSuppressionRequest set => Enum.IsDefined(set.Reason),
             PulseReactiveKeyRequest pulse =>
                 pulse.Pulse.MatrixSlot <= ReactiveKeyPulse.MaximumMatrixSlot,
             SetBatteryPolicyRequest set => set.Value is not null,
@@ -234,6 +235,11 @@ public static class IpcMessageCodec
             || status.DesiredState is null
             || !Enum.IsDefined(status.ActivePowerSource)
             || !Enum.IsDefined(status.LightingRendererOwnership)
+            || status.LightingSuppressions is { } suppressions
+                && (suppressions.Count > 2
+                    || suppressions.Any(reason => !Enum.IsDefined(reason))
+                    || suppressions.Distinct().Count() != suppressions.Count
+                    || !suppressions.SequenceEqual(suppressions.Order()))
             || status.Capabilities is { } capabilities
                 && (capabilities.PerformancePresets is null
                     || capabilities.FanModes is null
