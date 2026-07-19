@@ -1755,11 +1755,14 @@ public sealed class MainViewModelTests
         var client = new FakeServiceClient();
         await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
 
-        Assert.Equal("Battery power unavailable", viewModel.BatteryPowerFlowLabel);
-        Assert.Equal("Fan 1: unavailable", viewModel.Fan1RpmLabel);
-        Assert.Equal("Fan 2: unavailable", viewModel.Fan2RpmLabel);
+        Assert.Equal("Unavailable", viewModel.BatteryPowerFlowLabel);
+        Assert.Equal("Unavailable", viewModel.Fan1RpmLabel);
+        Assert.Equal("Unavailable", viewModel.Fan2RpmLabel);
         Assert.Equal("Unavailable", viewModel.Fan1RpmValue);
         Assert.Equal("Unavailable", viewModel.Fan2RpmValue);
+        Assert.Equal(
+            "Live readings are unavailable while the OpenBlade service is not running.",
+            viewModel.LiveReadingsRefreshToolTip);
 
         var changed = new HashSet<string>();
         viewModel.PropertyChanged += (_, args) => changed.Add(args.PropertyName!);
@@ -1901,7 +1904,7 @@ public sealed class MainViewModelTests
         var client = new FakeServiceClient();
         await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
 
-        Assert.Equal("Battery setting unavailable", viewModel.CurrentBatterySettingLabel);
+        Assert.Equal("Unavailable", viewModel.CurrentBatterySettingLabel);
         await viewModel.StartAsync();
         ServiceStatusSnapshot baseline = CreateStatus(verified: true, blocked: false);
 
@@ -2046,10 +2049,17 @@ public sealed class MainViewModelTests
         await WaitUntilAsync(() =>
             viewModel.ControlAccessStatus == "OpenBlade service isn’t running");
         Assert.Equal("Service unavailable", viewModel.ProfileStateLabel);
-        Assert.Equal("Power source unavailable", viewModel.ActivePowerSourceLabel);
-        Assert.Equal("Profile unavailable", viewModel.ActivePerformanceLabel);
-        Assert.Equal("Fan setting unavailable", viewModel.ActiveFanModeLabel);
-        Assert.Equal("Battery setting unavailable", viewModel.CurrentBatterySettingLabel);
+        Assert.Equal("Unavailable", viewModel.ActivePowerSourceLabel);
+        Assert.Equal("Unavailable", viewModel.ActivePerformanceLabel);
+        Assert.Equal("Unavailable", viewModel.ActiveFanModeLabel);
+        Assert.Equal("Unavailable", viewModel.CurrentBatterySettingLabel);
+        Assert.Equal("Unavailable", viewModel.BatteryPowerFlowLabel);
+        Assert.Equal("Unavailable", viewModel.Fan1RpmValue);
+        Assert.Equal("Unavailable", viewModel.Fan2RpmValue);
+        Assert.Equal("Unavailable", viewModel.PerformanceSourceLabel);
+        Assert.Equal("Unavailable", viewModel.FanSourceLabel);
+        Assert.Equal("Unavailable", viewModel.LightingSourceLabel);
+        Assert.Equal("Unavailable", viewModel.BatterySourceLabel);
         Assert.Null(viewModel.LiveReadings);
         Assert.True(viewModel.IsReadinessError);
         Assert.Equal("Unavailable", viewModel.TroubleshootingServiceStatus);

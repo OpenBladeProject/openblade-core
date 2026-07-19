@@ -24,6 +24,8 @@ public sealed record LiveReadingsRefreshOption(
 
 public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
 {
+    private const string UnavailableLabel = "Unavailable";
+
     private static readonly RazerBladeModelInfo TargetLaptop =
         RazerBladeModelCatalog.Find(RazerBladeModelCatalog.OpenBladeTargetModelNumber)
         ?? throw new InvalidOperationException("The supported laptop is missing from the model catalog.");
@@ -50,11 +52,11 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     private string operationFeedbackMessage = string.Empty;
     private string troubleshootingRecentErrorStatus = string.Empty;
     private string controlAccessStatus = "OpenBlade service isn’t running";
-    private string activePowerSourceLabel = "Power source unavailable";
-    private string performanceSourceLabel = "Unavailable";
-    private string fanSourceLabel = "Unavailable";
-    private string lightingSourceLabel = "Unavailable";
-    private string batterySourceLabel = "Unavailable";
+    private string activePowerSourceLabel = UnavailableLabel;
+    private string performanceSourceLabel = UnavailableLabel;
+    private string fanSourceLabel = UnavailableLabel;
+    private string lightingSourceLabel = UnavailableLabel;
+    private string batterySourceLabel = UnavailableLabel;
     private bool hasControllerAdvisory;
     private string controllerAdvisoryText = string.Empty;
     private bool hasControllerDetectionWarning;
@@ -77,7 +79,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     private FanMode selectedFanMode = FanMode.Automatic;
     private LightingSettings selectedLighting = ProfileDefaults.CreateSafeDefaults().PluggedIn.Lighting;
     private int chargeLimitPercent = 80;
-    private string currentBatterySettingLabel = "Battery setting unavailable";
+    private string currentBatterySettingLabel = UnavailableLabel;
     private bool chargeLimitEditorDirty;
     private IReadOnlyList<int> chargeLimitOptions = [];
     private bool batteryProtectionEnabled = true;
@@ -384,21 +386,27 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         }
     }
 
-    public string BatteryPowerFlowLabel => FormatBatteryPowerFlow(
-        LiveReadings,
-        ActivePowerSource);
+    public string BatteryPowerFlowLabel => IsConnected
+        ? FormatBatteryPowerFlow(LiveReadings, ActivePowerSource)
+        : UnavailableLabel;
 
-    public string Fan1RpmLabel => FormatFanRpm("Fan 1", LiveReadings?.Fan1Rpm);
+    public string Fan1RpmLabel => IsConnected
+        ? FormatFanRpm("Fan 1", LiveReadings?.Fan1Rpm)
+        : UnavailableLabel;
 
-    public string Fan2RpmLabel => FormatFanRpm("Fan 2", LiveReadings?.Fan2Rpm);
+    public string Fan2RpmLabel => IsConnected
+        ? FormatFanRpm("Fan 2", LiveReadings?.Fan2Rpm)
+        : UnavailableLabel;
 
     public string Fan1RpmValue => FormatFanRpmValue(LiveReadings?.Fan1Rpm);
 
     public string Fan2RpmValue => FormatFanRpmValue(LiveReadings?.Fan2Rpm);
 
-    public string LiveReadingsRefreshToolTip => lastLiveReadingsRefreshAt is { } refreshedAt
-        ? $"Last checked at {refreshedAt.ToLocalTime().ToString("T", CultureInfo.CurrentCulture)}.{Environment.NewLine}Values change only when Windows or firmware reports new data."
-        : "Waiting for the first live-reading check.";
+    public string LiveReadingsRefreshToolTip => !IsConnected
+        ? "Live readings are unavailable while the OpenBlade service is not running."
+        : lastLiveReadingsRefreshAt is { } refreshedAt
+            ? $"Last checked at {refreshedAt.ToLocalTime().ToString("T", CultureInfo.CurrentCulture)}.{Environment.NewLine}Values change only when Windows or firmware reports new data."
+            : "Waiting for the first live-reading check.";
 
     public string ActivePowerSourceLabel
     {
@@ -459,11 +467,11 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
 
     public string ActivePerformanceLabel => IsConnected
         ? PerformancePresetPresentation.Label(SelectedPerformance)
-        : "Profile unavailable";
+        : UnavailableLabel;
 
     public string ActiveFanModeLabel => IsConnected
         ? $"{SelectedFanMode} fans"
-        : "Fan setting unavailable";
+        : UnavailableLabel;
 
     public string ProfileStateLabel => !IsConnected
         ? "Service unavailable"
@@ -2167,8 +2175,12 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         IsReadOnly = true;
         CanControlHardware = false;
         ConnectionStatus = message;
-        ActivePowerSourceLabel = "Power source unavailable";
-        CurrentBatterySettingLabel = "Battery setting unavailable";
+        ActivePowerSourceLabel = UnavailableLabel;
+        CurrentBatterySettingLabel = UnavailableLabel;
+        PerformanceSourceLabel = UnavailableLabel;
+        FanSourceLabel = UnavailableLabel;
+        LightingSourceLabel = UnavailableLabel;
+        BatterySourceLabel = UnavailableLabel;
         LiveReadings = null;
         ClearLiveReadingsRefreshTime();
         ControlAccessStatus = "OpenBlade service isn’t running";
@@ -3597,6 +3609,10 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     private void NotifyPresentationState()
     {
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsServiceUnavailable)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(BatteryPowerFlowLabel)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Fan1RpmLabel)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Fan2RpmLabel)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(LiveReadingsRefreshToolTip)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ActivePerformanceLabel)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ActiveFanModeLabel)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ProfileStateLabel)));

@@ -35,6 +35,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 - The external-change pill now says "Changed outside OpenBlade" and clarifies
   that saved profiles are unchanged, keeping it distinct from an unsaved
   active-profile draft.
+- Dashboard fields now collapse to the single label "Unavailable" when the
+  service is offline instead of repeating subsystem-specific explanations.
 - Reactive input no longer emits a matrix pulse for the unlit space bar.
 
 - Display profile automation now remains active after Tray Exit. The first
