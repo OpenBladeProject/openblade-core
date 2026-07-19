@@ -32,6 +32,9 @@ All notable changes to OpenBlade are documented in this file. The project follow
   area on initial launch while preserving normal tray and second-launch behavior.
 - Status pills now use the same compact dot indicator for readiness and attention
   states.
+- The external-change pill now says "Changed outside OpenBlade" and clarifies
+  that saved profiles are unchanged, keeping it distinct from an unsaved
+  active-profile draft.
 - Reactive input no longer emits a matrix pulse for the unlit space bar.
 
 - Display profile automation now remains active after Tray Exit. The first

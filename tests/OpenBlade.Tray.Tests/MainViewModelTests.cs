@@ -159,6 +159,7 @@ public sealed class MainViewModelTests
         Assert.False(viewModel.IsBatteryProfileDraft);
         Assert.False(viewModel.IsUsbCProfileDraft);
         Assert.Equal("Plugged in", viewModel.ActiveProfileDraftName);
+        Assert.False(viewModel.HasAttention);
         Assert.Contains("Maximum", viewModel.PendingActiveProfileSummary);
         Assert.Contains("Static", viewModel.PendingActiveProfileSummary);
         Assert.Contains("drr-48-240", viewModel.PendingActiveProfileSummary);
@@ -607,15 +608,18 @@ public sealed class MainViewModelTests
         Assert.Equal(65, viewModel.ChargeLimitPercent);
         Assert.Equal(75, viewModel.ProfileChargeLimitEditor);
         Assert.Equal("Current setting", viewModel.PerformanceSourceLabel);
-        Assert.Equal("Changed by another app", viewModel.FanSourceLabel);
-        Assert.Equal("Changed by another app", viewModel.LightingSourceLabel);
+        Assert.Equal("Changed outside OpenBlade", viewModel.FanSourceLabel);
+        Assert.Equal("Changed outside OpenBlade", viewModel.LightingSourceLabel);
         Assert.Equal(
             "Current setting · Charge limit 65%",
             viewModel.BatterySourceLabel);
         Assert.True(viewModel.HasExternalChanges);
-        Assert.Equal("Settings changed", viewModel.AttentionBadgeLabel);
+        Assert.Equal("Changed outside OpenBlade", viewModel.AttentionBadgeLabel);
         Assert.Equal(
-            "Settings changed outside OpenBlade: Fans, Lighting. Automatic profile changes for these controls are paused; manual actions still apply.",
+            "Laptop controls changed outside OpenBlade",
+            viewModel.AttentionSummary);
+        Assert.Equal(
+            "Changed outside OpenBlade: Fans, Lighting. Your saved profiles are unchanged. Automatic profile updates for these controls are paused until you change them in OpenBlade.",
             viewModel.ExternalChangesText);
     }
 
@@ -736,7 +740,7 @@ public sealed class MainViewModelTests
             StringComparison.OrdinalIgnoreCase));
 
         Assert.Equal(65, viewModel.ChargeLimitPercent);
-        Assert.Contains("Changed by another app", viewModel.BatterySourceLabel, StringComparison.Ordinal);
+        Assert.Contains("Changed outside OpenBlade", viewModel.BatterySourceLabel, StringComparison.Ordinal);
         Assert.Contains("protection off", viewModel.BatterySourceLabel, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("full charge", viewModel.BatterySourceLabel, StringComparison.OrdinalIgnoreCase);
     }

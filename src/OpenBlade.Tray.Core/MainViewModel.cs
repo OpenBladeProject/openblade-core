@@ -571,7 +571,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         {
             if (HasExternalChanges)
             {
-                return "Settings changed by another app";
+                return "Laptop controls changed outside OpenBlade";
             }
             if (HasControllerDetectionWarning)
             {
@@ -582,7 +582,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     }
 
     public string AttentionBadgeLabel => HasExternalChanges
-        ? "Settings changed"
+        ? "Changed outside OpenBlade"
         : HasControllerDetectionWarning
             ? "Check status"
             : "Razer app active";
@@ -1958,7 +1958,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             .ToArray();
         HasExternalChanges = externalChanges.Length > 0;
         ExternalChangesText = HasExternalChanges
-            ? $"Settings changed outside OpenBlade: {string.Join(", ", externalChanges)}. Automatic profile changes for these controls are paused; manual actions still apply."
+            ? $"Changed outside OpenBlade: {string.Join(", ", externalChanges)}. Your saved profiles are unchanged. Automatic profile updates for these controls are paused until you change them in OpenBlade."
             : string.Empty;
         Profiles = status.Profiles;
         if (!profileEditorsDirty)
@@ -3416,7 +3416,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         !deviceVerified
             ? "Laptop not found"
             : externalChanges.Contains(subsystem)
-            ? "Changed by another app"
+            ? "Changed outside OpenBlade"
             : confirmed
                 ? "Current setting"
                 : "Controls unavailable";
@@ -3443,7 +3443,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             _ => $"Charge limit {battery.ChargeLimitPercent}%",
         };
         string source = changedOutside
-            ? "Changed by another app"
+            ? "Changed outside OpenBlade"
             : "Current setting";
         return $"{source} · {state}";
     }
