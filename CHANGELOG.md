@@ -45,6 +45,9 @@ All notable changes to OpenBlade are documented in this file. The project follow
   depth, HDR state, and color profile instead of showing a generic detection message.
 - Profile headers keep the Active badge beside the power source, while troubleshooting
   uses concise AC, USB-C, Battery, and None values.
+- A new About footer page now groups app and service versions, supported-device and
+  firmware details, diagnostics, help links, live troubleshooting, and project attribution.
+  Settings now contains preferences only, and the Dashboard status pill opens About.
 - Reactive input no longer emits a matrix pulse for the unlit space bar.
 
 - Display profile automation now remains active after Tray Exit. The first

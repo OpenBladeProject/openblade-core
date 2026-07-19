@@ -1849,7 +1849,7 @@ public sealed class MainViewModelTests
         Assert.Contains(nameof(viewModel.TrayHoverLabelText), changed);
         Assert.DoesNotContain(nameof(viewModel.ProfileStateLabel), changed);
         Assert.DoesNotContain(nameof(viewModel.TroubleshootingServiceStatus), changed);
-        Assert.DoesNotContain(nameof(viewModel.TroubleshootingLaptopStatus), changed);
+        Assert.DoesNotContain(nameof(viewModel.AboutDetectedLaptopStatus), changed);
         Assert.DoesNotContain(nameof(viewModel.CanAdjustChargeLimit), changed);
     }
 
@@ -1962,13 +1962,10 @@ public sealed class MainViewModelTests
         Assert.Equal("OpenBlade service isn’t running", viewModel.ControlAccessStatus);
         Assert.True(viewModel.IsReadinessError);
         Assert.Equal("Unavailable", viewModel.TroubleshootingServiceStatus);
-        Assert.Matches(
-            "^UI: 0\\.1\\.0\\+[0-9a-f]{8}$",
-            viewModel.TroubleshootingUiVersionStatus);
-        Assert.Equal("Service: Unavailable", viewModel.TroubleshootingServiceVersionStatus);
-        Assert.Equal(
-            "Razer Blade 16 (2026), RZ09-0581; status unavailable",
-            viewModel.TroubleshootingLaptopStatus);
+        Assert.Matches("^0\\.1\\.0\\+[0-9a-f]{8}$", viewModel.AboutUiVersionStatus);
+        Assert.Equal("Unavailable", viewModel.AboutServiceVersionStatus);
+        Assert.Equal("Razer Blade 16 (2026), RZ09-0581", viewModel.AboutSupportedLaptopStatus);
+        Assert.Equal("Unavailable", viewModel.AboutDetectedLaptopStatus);
         Assert.False(viewModel.HasTroubleshootingRecentError);
         Assert.Empty(viewModel.TroubleshootingRecentErrorStatus);
 
@@ -1979,10 +1976,8 @@ public sealed class MainViewModelTests
         Assert.True(viewModel.IsReadinessError);
         Assert.False(viewModel.IsReadinessWarning);
         Assert.Equal("Running", viewModel.TroubleshootingServiceStatus);
-        Assert.Equal("Service: 0.1.0-test", viewModel.TroubleshootingServiceVersionStatus);
-        Assert.Equal(
-            "Razer Blade 16 (2026), RZ09-0581; not detected",
-            viewModel.TroubleshootingLaptopStatus);
+        Assert.Equal("0.1.0-test", viewModel.AboutServiceVersionStatus);
+        Assert.Equal("Not detected", viewModel.AboutDetectedLaptopStatus);
         Assert.Equal("Laptop not found", viewModel.TroubleshootingControlsStatus);
         Assert.False(viewModel.HasAttention);
         Assert.Equal("Laptop not found", viewModel.PerformanceSourceLabel);
@@ -2033,15 +2028,14 @@ public sealed class MainViewModelTests
         Assert.Equal("Ready", viewModel.ProfileStateLabel);
         Assert.True(viewModel.IsReadinessReady);
         Assert.False(viewModel.IsReadinessWarning);
-        Assert.Equal(
-            "Razer Blade 16 (2026), RZ09-0581",
-            viewModel.TroubleshootingLaptopStatus);
         Assert.Equal("AC", viewModel.TroubleshootingPowerSourceStatus);
         Assert.Equal("None", viewModel.TroubleshootingOtherRazerSoftwareStatus);
-        Assert.Equal("BIOS: 3.01", viewModel.TroubleshootingBiosFirmwareStatus);
-        Assert.Equal("EC: 1.04", viewModel.TroubleshootingEcFirmwareStatus);
-        Assert.Equal("MCU: Unavailable", viewModel.TroubleshootingMcuFirmwareStatus);
-        Assert.Equal("VBIOS: 98.3.5c.40.3d", viewModel.TroubleshootingVbiosFirmwareStatus);
+        Assert.Equal("Razer Blade 16 (2026), RZ09-0581", viewModel.AboutDetectedLaptopStatus);
+        Assert.Equal("3.01", viewModel.AboutBiosVersionStatus);
+        Assert.Equal("1.04", viewModel.AboutEcVersionStatus);
+        Assert.Equal("Unavailable", viewModel.AboutMcuVersionStatus);
+        Assert.Equal("98.3.5c.40.3d", viewModel.AboutVbiosVersionStatus);
+        Assert.Contains("OpenBlade service: 0.1.0-test", viewModel.AboutVersionInformation, StringComparison.Ordinal);
 
         client.Publish(CreateStatus(verified: true, blocked: false) with
         {
@@ -2078,7 +2072,7 @@ public sealed class MainViewModelTests
     }
 
     [Fact]
-    public async Task TroubleshootingVersions_KeepUiVersionAndTrackConnectedServiceVersion()
+    public async Task AboutVersions_KeepUiVersionAndTrackConnectedServiceVersion()
     {
         var client = new FakeServiceClient();
         await using var viewModel = new MainViewModel(
@@ -2089,21 +2083,20 @@ public sealed class MainViewModelTests
             uiVersion: "2.0.0");
         await viewModel.StartAsync();
 
-        Assert.Equal("UI: 2.0.0", viewModel.TroubleshootingUiVersionStatus);
-        Assert.Equal("Service: Unavailable", viewModel.TroubleshootingServiceVersionStatus);
+        Assert.Equal("2.0.0", viewModel.AboutUiVersionStatus);
+        Assert.Equal("Unavailable", viewModel.AboutServiceVersionStatus);
 
         client.Publish(CreateStatus(verified: true, blocked: false) with
         {
             ServiceVersion = "1.9.0",
         });
         await WaitUntilAsync(() => viewModel.IsConnected);
-        Assert.Equal("UI: 2.0.0", viewModel.TroubleshootingUiVersionStatus);
-        Assert.Equal("Service: 1.9.0", viewModel.TroubleshootingServiceVersionStatus);
+        Assert.Equal("1.9.0", viewModel.AboutServiceVersionStatus);
+        Assert.Contains("OpenBlade UI: 2.0.0", viewModel.AboutVersionInformation, StringComparison.Ordinal);
 
         client.PublishReconnecting();
         await WaitUntilAsync(() => !viewModel.IsConnected);
-        Assert.Equal("UI: 2.0.0", viewModel.TroubleshootingUiVersionStatus);
-        Assert.Equal("Service: Unavailable", viewModel.TroubleshootingServiceVersionStatus);
+        Assert.Equal("Unavailable", viewModel.AboutServiceVersionStatus);
     }
 
     [Fact]

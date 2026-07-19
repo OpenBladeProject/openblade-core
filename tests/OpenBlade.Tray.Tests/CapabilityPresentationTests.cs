@@ -178,17 +178,18 @@ public sealed class CapabilityPresentationTests
         string xaml = ReadMainWindowXaml();
         XDocument document = XDocument.Parse(xaml);
         XElement settings = NamedElement(document, "ScrollView", "SettingsPage");
+        XElement about = NamedElement(document, "ScrollView", "AboutPage");
 
         Assert.Equal(
-            3,
+            2,
             settings.Descendants().Count(element =>
                 Attribute(element, "Style") == "{StaticResource SettingsGroupStyle}"));
         Assert.Equal(
-            4,
+            3,
             settings.Descendants().Count(element =>
                 Attribute(element, "Style") == "{StaticResource SettingsRowStyle}"));
         Assert.Equal(
-            3,
+            2,
             settings.Descendants().Count(element =>
                 Attribute(element, "Style") == "{StaticResource SettingsLastRowStyle}"));
 
@@ -201,7 +202,7 @@ public sealed class CapabilityPresentationTests
             Assert.Equal(string.Empty, Attribute(toggle, "OnContent"));
         }
 
-        Assert.Contains(settings.Descendants(), element =>
+        Assert.Contains(about.Descendants(), element =>
             element.Name.LocalName == "Button"
             && Attribute(element, "AutomationProperties.Name") == "Export diagnostics"
             && Attribute(element, "HorizontalAlignment") == "Right"
@@ -337,28 +338,16 @@ public sealed class CapabilityPresentationTests
                 && Attribute(element, "AutomationProperties.Name") == "Troubleshooting details");
         Assert.Equal("{StaticResource CardContentExpanderStyle}", Attribute(troubleshooting, "Style"));
         Assert.Equal(
-            "{StaticResource SettingsLastRowStyle}",
+            "{StaticResource SettingsGroupStyle}",
             Attribute(
                 troubleshooting.Ancestors().First(element => element.Name.LocalName == "Border"),
                 "Style"));
-        Assert.Equal(
-            "0",
-            Attribute(
-                troubleshooting.Ancestors().First(element => element.Name.LocalName == "Border"),
-                "Padding"));
         foreach (string property in new[]
                  {
                      "ViewModel.TroubleshootingServiceStatus",
-                     "ViewModel.TroubleshootingUiVersionStatus",
-                     "ViewModel.TroubleshootingServiceVersionStatus",
-                     "ViewModel.TroubleshootingLaptopStatus",
                      "ViewModel.TroubleshootingPowerSourceStatus",
                      "ViewModel.TroubleshootingControlsStatus",
                      "ViewModel.TroubleshootingOtherRazerSoftwareStatus",
-                     "ViewModel.TroubleshootingBiosFirmwareStatus",
-                     "ViewModel.TroubleshootingEcFirmwareStatus",
-                     "ViewModel.TroubleshootingMcuFirmwareStatus",
-                     "ViewModel.TroubleshootingVbiosFirmwareStatus",
                      "ViewModel.TroubleshootingRecentErrorStatus",
                  })
         {
@@ -382,12 +371,9 @@ public sealed class CapabilityPresentationTests
         foreach (string label in new[]
                  {
                      "OpenBlade service",
-                     "Versions",
-                     "Laptop",
                      "Laptop controls",
                      "Power source",
                      "Other Razer software running",
-                     "Firmware",
                  })
         {
             Assert.Contains(troubleshooting.Descendants(), element =>
@@ -398,9 +384,27 @@ public sealed class CapabilityPresentationTests
         Assert.Contains(troubleshooting.Descendants(), element =>
             element.Name.LocalName == "TextBlock"
             && Attribute(element, "Text") == "Other Razer software running");
-        Assert.Contains(troubleshooting.Descendants(), element =>
+        Assert.DoesNotContain(troubleshooting.Descendants(), element =>
             element.Name.LocalName == "TextBlock"
-            && Attribute(element, "Text") == "Firmware");
+            && Attribute(element, "Text") is "Versions" or "Laptop" or "Firmware");
+        XElement settingsPage = NamedElement(document, "ScrollView", "SettingsPage");
+        XElement aboutPage = NamedElement(document, "ScrollView", "AboutPage");
+        XElement aboutNavigation = NamedElement(document, "NavigationViewItem", "AboutNavigationItem");
+        Assert.Equal("about", Attribute(aboutNavigation, "Tag"));
+        Assert.Contains(aboutNavigation.Ancestors(), element =>
+            element.Name.LocalName == "NavigationView.FooterMenuItems");
+        Assert.DoesNotContain(settingsPage.Descendants(), element =>
+            element.Name.LocalName == "TextBlock"
+            && Attribute(element, "Text") == "Support");
+        foreach (string section in new[] { "Device information", "Support", "Troubleshooting", "Project" })
+        {
+            Assert.Contains(aboutPage.Descendants(), element =>
+                element.Name.LocalName == "TextBlock"
+                && Attribute(element, "Text") == section);
+        }
+        Assert.Contains("ViewModel.AboutUiVersionStatus", aboutPage.ToString(), StringComparison.Ordinal);
+        Assert.Contains("ViewModel.AboutServiceVersionStatus", aboutPage.ToString(), StringComparison.Ordinal);
+        Assert.Contains("ViewModel.AboutSupportedLaptopStatus", aboutPage.ToString(), StringComparison.Ordinal);
         Assert.Contains(
             "Save logs and system details with sensitive information removed.",
             xaml,
@@ -504,7 +508,7 @@ public sealed class CapabilityPresentationTests
 
         Assert.Equal("Transparent", Attribute(background, "Color"));
         Assert.Equal("0", borderThickness.Value.Trim());
-        Assert.Equal("2,14,0,14", Attribute(header, "Margin"));
+        Assert.Equal("16,14,0,14", Attribute(header, "Margin"));
     }
 
     [Fact]
@@ -579,8 +583,8 @@ public sealed class CapabilityPresentationTests
             StringComparison.Ordinal);
         Assert.True(badgeHandler >= 0);
         string badgeHandlerSource = window[badgeHandler..];
-        int selectSettings = badgeHandlerSource.IndexOf(
-            "MainNavigation.SelectedItem = SettingsNavigationItem",
+        int selectAbout = badgeHandlerSource.IndexOf(
+            "MainNavigation.SelectedItem = AboutNavigationItem",
             StringComparison.Ordinal);
         int expandTroubleshooting = badgeHandlerSource.IndexOf(
             "TroubleshootingExpander.IsExpanded = true",
@@ -591,8 +595,8 @@ public sealed class CapabilityPresentationTests
         int bringIntoView = badgeHandlerSource.IndexOf(
             "TroubleshootingExpander.StartBringIntoView",
             StringComparison.Ordinal);
-        Assert.True(selectSettings >= 0);
-        Assert.True(expandTroubleshooting > selectSettings);
+        Assert.True(selectAbout >= 0);
+        Assert.True(expandTroubleshooting > selectAbout);
         Assert.True(focusTroubleshooting > expandTroubleshooting);
         Assert.True(bringIntoView > focusTroubleshooting);
         Assert.Contains("DispatcherQueuePriority.Low", badgeHandlerSource, StringComparison.Ordinal);
@@ -605,7 +609,7 @@ public sealed class CapabilityPresentationTests
         Assert.Contains("{StaticResource TitleLargeTextBlockStyle}", xaml, StringComparison.Ordinal);
         Assert.Contains("{StaticResource AccentButtonStyle}", xaml, StringComparison.Ordinal);
         Assert.Equal(
-            5,
+            6,
             document.Descendants().Count(element =>
                 element.Name.LocalName == "EntranceThemeTransition"));
     }

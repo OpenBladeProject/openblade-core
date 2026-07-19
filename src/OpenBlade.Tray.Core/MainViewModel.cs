@@ -664,16 +664,38 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         ? "Running"
         : "Unavailable";
 
-    public string TroubleshootingUiVersionStatus => $"UI: {uiVersion}";
+    public string AboutUiVersionStatus => uiVersion;
 
-    public string TroubleshootingServiceVersionStatus =>
-        $"Service: {(!IsConnected || string.IsNullOrWhiteSpace(latestStatus?.ServiceVersion) ? "Unavailable" : latestStatus.ServiceVersion.Trim())}";
+    public string AboutServiceVersionStatus =>
+        !IsConnected || string.IsNullOrWhiteSpace(latestStatus?.ServiceVersion)
+            ? "Unavailable"
+            : latestStatus.ServiceVersion.Trim();
 
-    public string TroubleshootingLaptopStatus => !IsConnected
-        ? $"{TargetLaptopLabel}; status unavailable"
+    public string AboutSupportedLaptopStatus => TargetLaptopLabel;
+
+    public string AboutDetectedLaptopStatus => !IsConnected
+        ? "Unavailable"
         : latestStatus?.DeviceVerified == true
             ? TargetLaptopLabel
-            : $"{TargetLaptopLabel}; not detected";
+            : "Not detected";
+
+    public string AboutBiosVersionStatus => FirmwareValue(latestStatus?.Firmware?.BiosVersion);
+
+    public string AboutEcVersionStatus => FirmwareValue(latestStatus?.Firmware?.EcVersion);
+
+    public string AboutMcuVersionStatus => FirmwareValue(latestStatus?.Firmware?.McuVersion);
+
+    public string AboutVbiosVersionStatus => FirmwareValue(latestStatus?.Firmware?.VbiosVersion);
+
+    public string AboutVersionInformation =>
+        $"OpenBlade UI: {AboutUiVersionStatus}{Environment.NewLine}"
+        + $"OpenBlade service: {AboutServiceVersionStatus}{Environment.NewLine}"
+        + $"Supported laptop: {AboutSupportedLaptopStatus}{Environment.NewLine}"
+        + $"Detected laptop: {AboutDetectedLaptopStatus}{Environment.NewLine}"
+        + $"BIOS: {AboutBiosVersionStatus}{Environment.NewLine}"
+        + $"EC: {AboutEcVersionStatus}{Environment.NewLine}"
+        + $"MCU: {AboutMcuVersionStatus}{Environment.NewLine}"
+        + $"VBIOS: {AboutVbiosVersionStatus}";
 
     public string TroubleshootingPowerSourceStatus => !IsConnected
         ? "Unavailable"
@@ -706,18 +728,6 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
                 : $"{running}; check incomplete: {warning}";
         }
     }
-
-    public string TroubleshootingBiosFirmwareStatus =>
-        FormatFirmwareVersion("BIOS", latestStatus?.Firmware?.BiosVersion);
-
-    public string TroubleshootingEcFirmwareStatus =>
-        FormatFirmwareVersion("EC", latestStatus?.Firmware?.EcVersion);
-
-    public string TroubleshootingMcuFirmwareStatus =>
-        FormatFirmwareVersion("MCU", latestStatus?.Firmware?.McuVersion);
-
-    public string TroubleshootingVbiosFirmwareStatus =>
-        FormatFirmwareVersion("VBIOS", latestStatus?.Firmware?.VbiosVersion);
 
     public IReadOnlyList<PerformancePreset> AvailablePerformancePresets
     {
@@ -3806,8 +3816,8 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     private static string FormatTroubleshootingValue(string value) =>
         value.Trim().TrimEnd('.');
 
-    private static string FormatFirmwareVersion(string label, string? value) =>
-        $"{label}: {(string.IsNullOrWhiteSpace(value) ? "Unavailable" : value.Trim())}";
+    private static string FirmwareValue(string? value) =>
+        string.IsNullOrWhiteSpace(value) ? "Unavailable" : value.Trim();
 
     private static string FormatOperationResult(ControlOperationResult result) => result.Status switch
     {
@@ -3839,12 +3849,6 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             new PropertyChangedEventArgs(nameof(TroubleshootingServiceStatus)));
         PropertyChanged?.Invoke(
             this,
-            new PropertyChangedEventArgs(nameof(TroubleshootingServiceVersionStatus)));
-        PropertyChanged?.Invoke(
-            this,
-            new PropertyChangedEventArgs(nameof(TroubleshootingLaptopStatus)));
-        PropertyChanged?.Invoke(
-            this,
             new PropertyChangedEventArgs(nameof(TroubleshootingPowerSourceStatus)));
         PropertyChanged?.Invoke(
             this,
@@ -3854,16 +3858,25 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             new PropertyChangedEventArgs(nameof(TroubleshootingOtherRazerSoftwareStatus)));
         PropertyChanged?.Invoke(
             this,
-            new PropertyChangedEventArgs(nameof(TroubleshootingBiosFirmwareStatus)));
+            new PropertyChangedEventArgs(nameof(AboutServiceVersionStatus)));
         PropertyChanged?.Invoke(
             this,
-            new PropertyChangedEventArgs(nameof(TroubleshootingEcFirmwareStatus)));
+            new PropertyChangedEventArgs(nameof(AboutDetectedLaptopStatus)));
         PropertyChanged?.Invoke(
             this,
-            new PropertyChangedEventArgs(nameof(TroubleshootingMcuFirmwareStatus)));
+            new PropertyChangedEventArgs(nameof(AboutBiosVersionStatus)));
         PropertyChanged?.Invoke(
             this,
-            new PropertyChangedEventArgs(nameof(TroubleshootingVbiosFirmwareStatus)));
+            new PropertyChangedEventArgs(nameof(AboutEcVersionStatus)));
+        PropertyChanged?.Invoke(
+            this,
+            new PropertyChangedEventArgs(nameof(AboutMcuVersionStatus)));
+        PropertyChanged?.Invoke(
+            this,
+            new PropertyChangedEventArgs(nameof(AboutVbiosVersionStatus)));
+        PropertyChanged?.Invoke(
+            this,
+            new PropertyChangedEventArgs(nameof(AboutVersionInformation)));
     }
 
     private void NotifyTrayHoverLabel() => PropertyChanged?.Invoke(
