@@ -68,6 +68,9 @@ public sealed class ServiceLifecycleRefreshLoop(
             {
                 try
                 {
+                    logger.LogInformation(
+                        "Processing Windows lifecycle trigger {Trigger}.",
+                        trigger);
                     switch (trigger)
                     {
                         case ServiceLifecycleTrigger.PowerChanged:

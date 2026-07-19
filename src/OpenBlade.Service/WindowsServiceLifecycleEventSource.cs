@@ -39,7 +39,8 @@ public sealed class WindowsLifecycleRegistrationCleanup(
     IntPtr deviceRegistration,
     IntPtr powerSourceRegistration,
     IntPtr suspendResumeRegistration,
-    object callbackLifetime) : IDisposable
+    object callbackLifetime,
+    IntPtr consoleDisplayRegistration = default) : IDisposable
 {
     private static readonly ConcurrentBag<WindowsLifecycleRegistrationCleanup>
         FailedCleanups = [];
@@ -86,6 +87,19 @@ public sealed class WindowsLifecycleRegistrationCleanup(
                 if (result == 0)
                 {
                     powerSourceRegistration = IntPtr.Zero;
+                }
+                else
+                {
+                    failures.Add(new Win32Exception((int)result));
+                }
+            }
+
+            if (consoleDisplayRegistration != IntPtr.Zero)
+            {
+                uint result = api.UnregisterPowerSource(consoleDisplayRegistration);
+                if (result == 0)
+                {
+                    consoleDisplayRegistration = IntPtr.Zero;
                 }
                 else
                 {
@@ -308,11 +322,23 @@ public sealed class WindowsServiceLifecycleEventSource
 internal sealed class NativeWindowsLifecycleNotificationBackend
     : IWindowsLifecycleNotificationBackend
 {
+    private const uint PowerMonitorOff = 0;
+    private const uint PowerMonitorOn = 1;
+
     internal static ServiceLifecycleTrigger? ClassifySuspendResumeNotification(uint type) =>
         type switch
         {
             0x0004 => ServiceLifecycleTrigger.Suspending, // PBT_APMSUSPEND
             0x0007 or 0x0012 => ServiceLifecycleTrigger.Resumed,
+            _ => null,
+        };
+
+    internal static ServiceLifecycleTrigger? ClassifyConsoleDisplayTransition(
+        uint? previous,
+        uint current) => (previous, current) switch
+        {
+            (PowerMonitorOn, PowerMonitorOff) => ServiceLifecycleTrigger.Suspending,
+            (PowerMonitorOff, PowerMonitorOn) => ServiceLifecycleTrigger.Resumed,
             _ => null,
         };
 
@@ -337,17 +363,22 @@ internal sealed class NativeWindowsLifecycleNotificationBackend
 
         private static readonly Guid AcDcPowerSource =
             new("5D3E9A59-E9D5-4B00-A6BD-FF34FF516548");
+        private static readonly Guid ConsoleDisplayState =
+            new("6FE69556-704A-47A0-8F24-C28D936FDA47");
         private static readonly Guid HidDeviceInterface =
             new("4D1E55B2-F16F-11CF-88CB-001111000030");
 
         private readonly Action<ServiceLifecycleTrigger> publish;
         private readonly DeviceNotifyCallback suspendResumeCallback;
         private readonly DeviceNotifyCallback powerSourceCallback;
+        private readonly DeviceNotifyCallback consoleDisplayCallback;
         private readonly CmNotifyCallback deviceCallback;
         private IntPtr suspendResumeRegistration;
         private IntPtr powerSourceRegistration;
+        private IntPtr consoleDisplayRegistration;
         private IntPtr deviceRegistration;
         private readonly WindowsLifecycleRegistrationCleanup cleanup;
+        private int consoleDisplayState = -1;
         private int disposed;
 
         public NativeSubscription(Action<ServiceLifecycleTrigger> publish)
@@ -355,6 +386,7 @@ internal sealed class NativeWindowsLifecycleNotificationBackend
             this.publish = publish;
             suspendResumeCallback = OnSuspendResumeNotification;
             powerSourceCallback = OnPowerSourceNotification;
+            consoleDisplayCallback = OnConsoleDisplayNotification;
             deviceCallback = OnDeviceNotification;
 
             try
@@ -376,6 +408,14 @@ internal sealed class NativeWindowsLifecycleNotificationBackend
                     DeviceNotifyCallbackFlag,
                     ref recipient,
                     out powerSourceRegistration));
+
+                Guid displayState = ConsoleDisplayState;
+                recipient.Callback = consoleDisplayCallback;
+                ThrowIfWin32Error(PowerSettingRegisterNotification(
+                    ref displayState,
+                    DeviceNotifyCallbackFlag,
+                    ref recipient,
+                    out consoleDisplayRegistration));
 
                 var filter = new CmNotifyFilter
                 {
@@ -399,7 +439,8 @@ internal sealed class NativeWindowsLifecycleNotificationBackend
                     deviceRegistration,
                     powerSourceRegistration,
                     suspendResumeRegistration,
-                    this);
+                    this,
+                    consoleDisplayRegistration);
             }
             catch (Exception registrationFailure)
             {
@@ -408,7 +449,8 @@ internal sealed class NativeWindowsLifecycleNotificationBackend
                     deviceRegistration,
                     powerSourceRegistration,
                     suspendResumeRegistration,
-                    this);
+                    this,
+                    consoleDisplayRegistration);
                 try
                 {
                     partialCleanup.Dispose();
@@ -449,6 +491,62 @@ internal sealed class NativeWindowsLifecycleNotificationBackend
             }
 
             return 0;
+        }
+
+        private uint OnConsoleDisplayNotification(
+            IntPtr context,
+            uint type,
+            IntPtr setting)
+        {
+            if (Volatile.Read(ref disposed) != 0
+                || !TryReadPowerSettingDword(setting, ConsoleDisplayState, out uint current))
+            {
+                return 0;
+            }
+
+            int previousRaw = Interlocked.Exchange(
+                ref consoleDisplayState,
+                checked((int)current));
+            uint? previous = previousRaw < 0 ? null : checked((uint)previousRaw);
+            ServiceLifecycleTrigger? trigger =
+                ClassifyConsoleDisplayTransition(previous, current);
+            if (trigger is { } notification)
+            {
+                publish(notification);
+            }
+
+            return 0;
+        }
+
+        private static bool TryReadPowerSettingDword(
+            IntPtr setting,
+            Guid expectedSetting,
+            out uint value)
+        {
+            value = 0;
+            if (setting == IntPtr.Zero)
+            {
+                return false;
+            }
+
+            try
+            {
+                var header = Marshal.PtrToStructure<PowerBroadcastSettingHeader>(setting);
+                if (header.PowerSetting != expectedSetting
+                    || header.DataLength < sizeof(uint))
+                {
+                    return false;
+                }
+
+                value = unchecked((uint)Marshal.ReadInt32(
+                    setting,
+                    Marshal.SizeOf<PowerBroadcastSettingHeader>()));
+                return value is PowerMonitorOff or PowerMonitorOn or 2;
+            }
+            catch
+            {
+                return false;
+            }
         }
 
         private uint OnDeviceNotification(
@@ -502,6 +600,13 @@ internal sealed class NativeWindowsLifecycleNotificationBackend
         {
             public DeviceNotifyCallback Callback;
             public IntPtr Context;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct PowerBroadcastSettingHeader
+        {
+            public Guid PowerSetting;
+            public uint DataLength;
         }
 
         [StructLayout(LayoutKind.Explicit, Size = 416)]

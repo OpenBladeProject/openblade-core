@@ -159,6 +159,36 @@ public sealed class WindowsServiceLifecycleEventSourceTests
                 .ClassifySuspendResumeNotification(0x1234));
     }
 
+    [Theory]
+    [InlineData(1u, 0u, ServiceLifecycleTrigger.Suspending)]
+    [InlineData(0u, 1u, ServiceLifecycleTrigger.Resumed)]
+    public void ConsoleDisplayTransition_MapsOffAndOnLifecycleBoundaries(
+        uint previous,
+        uint current,
+        ServiceLifecycleTrigger expected)
+    {
+        Assert.Equal(
+            expected,
+            NativeWindowsLifecycleNotificationBackend
+                .ClassifyConsoleDisplayTransition(previous, current));
+    }
+
+    [Theory]
+    [InlineData(null, 1u)]
+    [InlineData(null, 0u)]
+    [InlineData(1u, 1u)]
+    [InlineData(0u, 0u)]
+    [InlineData(2u, 1u)]
+    [InlineData(1u, 2u)]
+    public void ConsoleDisplayTransition_IgnoresInitialDuplicateAndDimmedValues(
+        uint? previous,
+        uint current)
+    {
+        Assert.Null(
+            NativeWindowsLifecycleNotificationBackend
+                .ClassifyConsoleDisplayTransition(previous, current));
+    }
+
     [Fact]
     public async Task WatchAsync_CoalescesDuplicatePendingTriggersWithoutDisplacingPower()
     {
@@ -288,6 +318,23 @@ public sealed class WindowsServiceLifecycleEventSourceTests
         Assert.Equal(1, api.DeviceUnregisterCount);
         Assert.Equal(1, api.PowerSourceUnregisterCount);
         Assert.Equal(1, api.SuspendResumeUnregisterCount);
+    }
+
+    [Fact]
+    public void RegistrationCleanup_UnregistersBothPowerSettingHandles()
+    {
+        var api = new FakeWindowsLifecycleUnregistrationApi();
+        var cleanup = new WindowsLifecycleRegistrationCleanup(
+            api,
+            deviceRegistration: IntPtr.Zero,
+            powerSourceRegistration: (IntPtr)2,
+            suspendResumeRegistration: IntPtr.Zero,
+            callbackLifetime: new object(),
+            consoleDisplayRegistration: (IntPtr)4);
+
+        cleanup.Dispose();
+
+        Assert.Equal(2, api.PowerSourceUnregisterCount);
     }
 
     [Fact]
