@@ -1,0 +1,213 @@
+{
+  "schemaVersion": 1,
+  "evidenceRole": "SynapseOracleCaptureAnalysis",
+  "target": {
+    "model": "Razer Blade 16 (2026)",
+    "modelNumber": "RZ09-0581",
+    "vendorIdHex": "1532",
+    "productIdHex": "02E0",
+    "bios": "3.01"
+  },
+  "sourceCaptures": [
+    {
+      "id": "extended-control-sweep",
+      "sha256": "F9E458CE3B37BCC882F6D85B97F56D22D55292F71313FFA23AF0E0A46287FBE0",
+      "byteLength": 13166713,
+      "frameCount": 66286,
+      "rawCaptureCommitted": false,
+      "gracefulStopConfirmed": true,
+      "decodable": true
+    },
+    {
+      "id": "tidal-colors-random-direction",
+      "sha256": "6BDB15583C203BA8543A3A87D578144E84C502249E0C14B3CC9F50430C51B3C2",
+      "byteLength": 2989321,
+      "frameCount": 15956,
+      "rawCaptureCommitted": false,
+      "gracefulStopConfirmed": true,
+      "decodable": true
+    }
+  ],
+  "lighting": {
+    "transport": {
+      "hostRenderedMatrixCommand": "03/0B",
+      "matrixEnvelopeBytes": 374,
+      "effectReadbackObserved": false
+    },
+    "capturedEffects": [
+      "Ripple",
+      "Starlight",
+      "Tidal",
+      "Wave",
+      "Wheel"
+    ],
+    "notCaptured": [
+      "Ambient Awareness",
+      "Audio Meter",
+      "Fire"
+    ],
+    "tidal": {
+      "parameters": [
+        "Color1",
+        "Color2",
+        "RandomColor",
+        "Direction"
+      ],
+      "fixedPaletteRgbHex": {
+        "red": "FF0000",
+        "green": "00FF00",
+        "blue": "0000FF",
+        "magenta": "FF00FF"
+      },
+      "fixedColorPairsObserved": [
+        ["00FF00", "0000FF"],
+        ["FF0000", "0000FF"],
+        ["00FF00", "FF00FF"]
+      ],
+      "randomColor": {
+        "toggleOnAndOffCaptured": true,
+        "observedFullIntensityEndpointsRgbHex": ["FF0000", "8000FF"],
+        "fixedGreenBluePairRestoredAfterDisable": true,
+        "internalSelectionAlgorithmKnown": false
+      },
+      "directionsCaptured": ["Leftward", "Rightward"],
+      "directionRendererDecoded": false,
+      "productionAdmitted": false
+    }
+  },
+  "startupAnimation": {
+    "setter": "0F/18",
+    "observedActions": [
+      {
+        "uiAction": "Off",
+        "payloadHex": "0001",
+        "responseStatusHex": "02",
+        "responsePayloadHex": "0001"
+      },
+      {
+        "uiAction": "On",
+        "payloadHex": "0000",
+        "responseStatusHex": "02",
+        "responsePayloadHex": "0000"
+      }
+    ],
+    "independentQueryObserved": false,
+    "productionAdmitted": false
+  },
+  "switchOffLighting": {
+    "rulesCaptured": [
+      "WhenDisplayTurnsOff",
+      "WhenIdleForMinutes"
+    ],
+    "idleRangeMinutes": {
+      "minimum": 1,
+      "maximum": 60,
+      "observed": 30
+    },
+    "targetDeviceControlWriteObservedDuringRuleChanges": false,
+    "interpretation": "SynapseHostPolicy",
+    "productionAdmitted": false
+  },
+  "functionKeyPrimary": {
+    "setter": "02/06",
+    "observedValues": [
+      {
+        "name": "FunctionKeys",
+        "payloadHex": "0100"
+      },
+      {
+        "name": "MultimediaKeys",
+        "payloadHex": "0101"
+      }
+    ],
+    "successfulResponseEchoObserved": true,
+    "independentQueryObserved": false,
+    "productionAdmitted": false
+  },
+  "trackpad": {
+    "disableAndRestoreCaptured": true,
+    "targetDeviceNinetyByteControlWriteObserved": false,
+    "setterIdentified": false,
+    "productionAdmitted": false
+  },
+  "snapTap": {
+    "enableADAndRestoreCaptured": true,
+    "targetDeviceNinetyByteControlWriteObserved": false,
+    "setterIdentified": false,
+    "productionAdmitted": false
+  },
+  "gamingMode": {
+    "setter": "00/08",
+    "observedValues": [
+      {
+        "name": "EnabledWithCapturedOptions",
+        "payloadHex": "01000000"
+      },
+      {
+        "name": "Disabled",
+        "payloadHex": "00000000"
+      }
+    ],
+    "responseStatusHex": "02",
+    "responsePayloadHexForBothValues": "320A0000",
+    "independentQueryObserved": false,
+    "productionAdmitted": false
+  },
+  "customPerformance": {
+    "componentSetter": "0D/07",
+    "componentQuery": "0D/87",
+    "domains": {
+      "cpu": "01",
+      "gpu": "02"
+    },
+    "levels": {
+      "low": "00",
+      "medium": "01",
+      "high": "02"
+    },
+    "setterPayloadFormat": "01 + domain + level",
+    "successfulSetterEchoObserved": true,
+    "cpuQueryReadbacksObserved": [
+      "010100",
+      "010101",
+      "010102"
+    ],
+    "gpuQueryReadbackObserved": false,
+    "invalidCombinationObserved": {
+      "cpu": "High",
+      "gpu": "High"
+    },
+    "restoredCombination": {
+      "cpu": "Medium",
+      "gpu": "High"
+    },
+    "productionAdmitted": false
+  },
+  "performanceShortcuts": {
+    "dedicatedButton": {
+      "inputReportPrefixHex": "D3",
+      "cycle": ["Balanced", "Silent", "Performance", "Custom"]
+    },
+    "fnP": {
+      "inputReportPrefixesHex": ["0A", "0013"],
+      "cycle": ["Balanced", "Silent", "Performance", "Custom"]
+    },
+    "thermalModeCodesHex": {
+      "Balanced": "00",
+      "Silent": "05",
+      "Performance": "02",
+      "Custom": "04"
+    },
+    "customTail": {
+      "cpu": "Medium",
+      "gpu": "High"
+    },
+    "interpretation": "SynapseHandlesDistinctInputReportsAndAppliesTheSameModeCycle",
+    "openBladeShortcutHookImplemented": false
+  },
+  "validationBoundary": {
+    "rawCommandsExposed": false,
+    "openBladeTypedApplyPerformed": false,
+    "independentReadbackRequiredBeforeProductionAdmission": true
+  }
+}
