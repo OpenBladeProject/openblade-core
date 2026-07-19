@@ -1254,6 +1254,25 @@ public sealed class CapabilityPresentationTests
         Assert.False(viewModel.LightingShowsPrimaryColor);
         Assert.False(viewModel.LightingShowsSecondaryColor);
 
+        viewModel.LightingEffectEditor = LightingEffect.Wave;
+        viewModel.LightingDirectionEditor = LightingDirection.Leftward;
+        Assert.Equal(
+            LightingSettingsFactory.Wave(LightingDirection.Leftward, 64),
+            viewModel.LightingDraft);
+        Assert.True(viewModel.LightingShowsDirection);
+        Assert.False(viewModel.LightingShowsPrimaryColor);
+
+        viewModel.LightingEffectEditor = LightingEffect.Wheel;
+        viewModel.LightingRotationDirectionEditor =
+            LightingRotationDirection.Counterclockwise;
+        Assert.Equal(
+            LightingSettingsFactory.Wheel(
+                LightingRotationDirection.Counterclockwise,
+                64),
+            viewModel.LightingDraft);
+        Assert.True(viewModel.LightingShowsRotationDirection);
+        Assert.False(viewModel.LightingShowsPrimaryColor);
+
         viewModel.LightingEffectEditor = LightingEffect.Spectrum;
         Assert.Equal(
             LightingSettingsFactory.SpectrumCycling(64),
@@ -1287,7 +1306,8 @@ public sealed class CapabilityPresentationTests
         Assert.Contains("Breathing colors", lightingXaml, StringComparison.Ordinal);
         Assert.Contains("Reactive duration", lightingXaml, StringComparison.Ordinal);
         Assert.Contains("Random colors", lightingXaml, StringComparison.Ordinal);
-        Assert.Contains("Tidal direction", lightingXaml, StringComparison.Ordinal);
+        Assert.Contains("Lighting direction", lightingXaml, StringComparison.Ordinal);
+        Assert.Contains("Wheel rotation direction", lightingXaml, StringComparison.Ordinal);
         Assert.Contains("Starlight colors", lightingXaml, StringComparison.Ordinal);
         Assert.Contains("Starlight duration", lightingXaml, StringComparison.Ordinal);
         XElement[] colorPickers = page.Descendants()

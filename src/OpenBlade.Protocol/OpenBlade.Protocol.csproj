@@ -25,6 +25,9 @@
     <EmbeddedResource
       Include="Fixtures\Rz09_0581_02e0_3_01_TidalOracle.json"
       LogicalName="OpenBlade.Protocol.Fixtures.Rz09_0581_02e0_3_01_TidalOracle.json" />
+    <EmbeddedResource
+      Include="Fixtures\Rz09_0581_02e0_3_01_WaveWheelOracle.json"
+      LogicalName="OpenBlade.Protocol.Fixtures.Rz09_0581_02e0_3_01_WaveWheelOracle.json" />
   </ItemGroup>
 
   <ItemGroup>
@@ -49,7 +52,9 @@
     <LightingImplementationSource Include="Pid02E0LightingEffects.cs" />
     <LightingImplementationSource Include="Pid02E0TidalEffect.cs" />
     <LightingImplementationSource Include="Pid02E0StarlightEffect.cs" />
+    <LightingImplementationSource Include="Pid02E0WaveWheelEffects.cs" />
     <LightingImplementationSource Include="Fixtures\Rz09_0581_02e0_3_01_TidalOracle.json" />
+    <LightingImplementationSource Include="Fixtures\Rz09_0581_02e0_3_01_WaveWheelOracle.json" />
     <LightingImplementationSource Include="Pid02E0MatrixRenderers.cs" />
     <LightingImplementationSource Include="Pid02E0MatrixReport.cs" />
     <LightingImplementationSource Include="ProductionLightingFactory.cs" />

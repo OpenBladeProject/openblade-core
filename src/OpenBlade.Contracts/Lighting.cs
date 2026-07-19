@@ -38,6 +38,8 @@ public enum StarlightLightingDuration
 [JsonDerivedType(typeof(ReactiveLightingParameters), "reactive")]
 [JsonDerivedType(typeof(TidalLightingParameters), "tidal")]
 [JsonDerivedType(typeof(StarlightLightingParameters), "starlight")]
+[JsonDerivedType(typeof(WaveLightingParameters), "wave")]
+[JsonDerivedType(typeof(WheelLightingParameters), "wheel")]
 public abstract record LightingEffectParameters;
 
 public sealed record OffLightingParameters : LightingEffectParameters;
@@ -70,6 +72,12 @@ public sealed record StarlightLightingParameters(
     RgbColor? PrimaryColor,
     RgbColor? SecondaryColor,
     StarlightLightingDuration Duration)
+    : LightingEffectParameters;
+
+public sealed record WaveLightingParameters(LightingDirection Direction)
+    : LightingEffectParameters;
+
+public sealed record WheelLightingParameters(LightingRotationDirection Direction)
     : LightingEffectParameters;
 
 public static class LightingSettingsFactory
@@ -212,6 +220,26 @@ public static class LightingSettingsFactory
                 duration),
         };
 
+    public static LightingSettings Wave(
+        LightingDirection direction,
+        byte brightness) => new(
+            LightingEffect.Wave,
+            default,
+            brightness)
+        {
+            Parameters = new WaveLightingParameters(direction),
+        };
+
+    public static LightingSettings Wheel(
+        LightingRotationDirection direction,
+        byte brightness) => new(
+            LightingEffect.Wheel,
+            default,
+            brightness)
+        {
+            Parameters = new WheelLightingParameters(direction),
+        };
+
     public static LightingSettings NormalizeLegacyOff(LightingSettings settings)
     {
         ArgumentNullException.ThrowIfNull(settings);
@@ -274,6 +302,12 @@ public static class LightingSettingsFactory
                 visibleColor,
                 DefaultVisibleBrightness,
                 starlight.Duration),
+            WaveLightingParameters wave => Wave(
+                wave.Direction,
+                DefaultVisibleBrightness),
+            WheelLightingParameters wheel => Wheel(
+                wheel.Direction,
+                DefaultVisibleBrightness),
             StarlightLightingParameters
             {
                 ColorMode: StarlightColorMode.Dual,
@@ -355,6 +389,10 @@ public static class LightingSettingsValidation
                     : parameters.PrimaryColor),
             (LightingEffect.Starlight, StarlightLightingParameters parameters) =>
                 ValidStarlight(settings, parameters),
+            (LightingEffect.Wave, WaveLightingParameters parameters) =>
+                Enum.IsDefined(parameters.Direction) && settings.Color == default,
+            (LightingEffect.Wheel, WheelLightingParameters parameters) =>
+                Enum.IsDefined(parameters.Direction) && settings.Color == default,
             _ => false,
         };
 

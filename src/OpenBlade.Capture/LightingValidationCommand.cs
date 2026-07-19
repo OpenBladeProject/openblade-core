@@ -817,6 +817,30 @@ public sealed class LightingValidationCommand
                 StarlightLightingDuration.Medium),
             false),
         new(
+            "waveRightward",
+            "Wave rightward",
+            LightingSettingsFactory.Wave(LightingDirection.Rightward, brightness),
+            false),
+        new(
+            "waveLeftward",
+            "Wave leftward",
+            LightingSettingsFactory.Wave(LightingDirection.Leftward, brightness),
+            false),
+        new(
+            "wheelClockwise",
+            "Wheel clockwise",
+            LightingSettingsFactory.Wheel(
+                LightingRotationDirection.Clockwise,
+                brightness),
+            false),
+        new(
+            "wheelCounterclockwise",
+            "Wheel counterclockwise",
+            LightingSettingsFactory.Wheel(
+                LightingRotationDirection.Counterclockwise,
+                brightness),
+            false),
+        new(
             "logoBreathing",
             "Static green keyboard with Breathing laptop logo",
             LightingSettingsFactory.Static(BaselineGreen, brightness) with
@@ -862,6 +886,8 @@ public sealed class LightingValidationCommand
             LightingEffect.Reactive => LightingRendererOwnershipState.Reactive,
             LightingEffect.Tidal => LightingRendererOwnershipState.Tidal,
             LightingEffect.Starlight => LightingRendererOwnershipState.Starlight,
+            LightingEffect.Wave => LightingRendererOwnershipState.Wave,
+            LightingEffect.Wheel => LightingRendererOwnershipState.Wheel,
             _ => throw new ArgumentOutOfRangeException(nameof(settings)),
         });
 

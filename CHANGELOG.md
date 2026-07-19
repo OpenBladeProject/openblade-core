@@ -18,19 +18,23 @@ All notable changes to OpenBlade are documented in this file. The project follow
   palettes and independent leftward/rightward direction controls.
 - Host-rendered Starlight keyboard lighting with one color, two colors, or
   random colors and independent Short, Medium, and Long twinkle durations.
+- Capture-faithful Wave and Wheel keyboard lighting. Wave supports leftward and
+  rightward motion; Wheel supports clockwise and counterclockwise rotation.
 - Typed laptop-logo lighting controls for Static, Breathing, and Off with
   independent state/effect readback and rollback.
 - Data-minimized Reactive input through Windows Raw Input: scan-code make events map directly to matrix slots without recording characters, virtual-key values, applications, window titles, or input packets.
 - Sanitized Synapse oracle USBPcap evidence for lighting brightness readback, the 102-slot matrix envelope, effect timing, dual/random Breathing, and Reactive key placement and decay. The admitted configuration was also exercised in repeated installed OpenBlade runs on the target laptop.
 - A sanitized, hash-pinned five-second Tidal matrix oracle for both directions;
   raw USB captures remain local and are not distributed.
+- A sanitized, hash-pinned one-second Wave and Wheel matrix oracle covering all
+  four captured direction variants.
 
 ### Changed
 
 - Exact-build lighting validation now covers fixed and random Tidal in both
-  directions, every Starlight color and duration variant, plus laptop-logo
-  Breathing, Off, and Static restoration before the production control surface
-  can be admitted.
+  directions, every Starlight color and duration variant, both Wave directions,
+  both Wheel rotations, plus laptop-logo Breathing, Off, and Static restoration
+  before the production control surface can be admitted.
 
 - About now uses the canonical 256 px OpenBlade artwork, groups app and service
   builds in a dedicated Versions card, integrates the independent-project

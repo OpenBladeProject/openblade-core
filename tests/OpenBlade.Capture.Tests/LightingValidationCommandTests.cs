@@ -23,7 +23,7 @@ public sealed class LightingValidationCommandTests
         int exitCode = await command.RunAsync(ValidArguments(), default);
 
         Assert.Equal(0, exitCode);
-        Assert.Equal(22, port.Settings.Count); // baseline, twenty actions, restore.
+        Assert.Equal(26, port.Settings.Count); // baseline, twenty-four actions, restore.
         Assert.Equal(
             [
                 LightingEffect.Static,
@@ -44,6 +44,10 @@ public sealed class LightingValidationCommandTests
                 LightingEffect.Starlight,
                 LightingEffect.Starlight,
                 LightingEffect.Starlight,
+                LightingEffect.Wave,
+                LightingEffect.Wave,
+                LightingEffect.Wheel,
+                LightingEffect.Wheel,
                 LightingEffect.Static,
                 LightingEffect.Static,
                 LightingEffect.Static,
@@ -59,7 +63,7 @@ public sealed class LightingValidationCommandTests
         JsonElement root = document.RootElement;
         Assert.Equal(2, root.GetProperty("schemaVersion").GetInt32());
         Assert.Equal(AssemblySha, root.GetProperty("protocolAssemblySha256").GetString());
-        Assert.Equal(20, root.GetProperty("actions").GetArrayLength());
+        Assert.Equal(24, root.GetProperty("actions").GetArrayLength());
         Assert.True(root.GetProperty("allSupportedEffectsApplied").GetBoolean());
         Assert.True(root.GetProperty("brightnessIndependentReadback").GetBoolean());
         Assert.True(root.GetProperty("baselineRestored").GetBoolean());
@@ -444,6 +448,10 @@ public sealed class LightingValidationCommandTests
         "yes", // Starlight single long.
         "yes", // Starlight dual.
         "yes", // Starlight random.
+        "yes", // Wave rightward.
+        "yes", // Wave leftward.
+        "yes", // Wheel clockwise.
+        "yes", // Wheel counterclockwise.
         "yes", // Logo Breathing.
         "yes", // Logo Off.
         "yes", // Logo Static restored.
@@ -494,6 +502,8 @@ public sealed class LightingValidationCommandTests
                 LightingEffect.Reactive => LightingRendererOwnershipState.Reactive,
                 LightingEffect.Tidal => LightingRendererOwnershipState.Tidal,
                 LightingEffect.Starlight => LightingRendererOwnershipState.Starlight,
+                LightingEffect.Wave => LightingRendererOwnershipState.Wave,
+                LightingEffect.Wheel => LightingRendererOwnershipState.Wheel,
                 _ => throw new ArgumentOutOfRangeException(),
             };
             Settings.Add(settings);

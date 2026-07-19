@@ -657,6 +657,18 @@ public sealed class ProductionLightingPortTests
             ("starlightRandom", LightingSettingsFactory.StarlightRandom(
                 60,
                 StarlightLightingDuration.Medium)),
+            ("waveRightward", LightingSettingsFactory.Wave(
+                LightingDirection.Rightward,
+                60)),
+            ("waveLeftward", LightingSettingsFactory.Wave(
+                LightingDirection.Leftward,
+                60)),
+            ("wheelClockwise", LightingSettingsFactory.Wheel(
+                LightingRotationDirection.Clockwise,
+                60)),
+            ("wheelCounterclockwise", LightingSettingsFactory.Wheel(
+                LightingRotationDirection.Counterclockwise,
+                60)),
             ("logoBreathing", LightingSettingsFactory.Static(
                 new RgbColor(0, 255, 0), 60) with
             {

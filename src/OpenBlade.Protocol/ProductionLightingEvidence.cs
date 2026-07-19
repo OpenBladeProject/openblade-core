@@ -117,7 +117,7 @@ internal static class ProductionLightingEvidenceSource
         "OpenBladeLightingImplementationFingerprint";
 
     private const string ApprovedLightingImplementationFingerprintSha256 =
-        "895A0A8A919D0CB7E5F73835B248672AD7DF4D7EC851C70EC79ABDFAD26100E6";
+        "576BBAB656EB9FD0703D6CC036A48EB478D2EC9F93213DAF12EA528EA2024926";
 
     private static readonly JsonSerializerOptions SerializerOptions =
         new(JsonSerializerDefaults.Web)
@@ -326,6 +326,10 @@ internal static class ProductionLightingEvidenceSource
             "starlightSingleLong",
             "starlightDual",
             "starlightRandom",
+            "waveRightward",
+            "waveLeftward",
+            "wheelClockwise",
+            "wheelCounterclockwise",
             "logoBreathing",
             "logoOff",
             "logoStaticRestore",
@@ -434,6 +438,18 @@ internal static class ProductionLightingEvidenceSource
             "starlightRandom" => action.Settings == LightingSettingsFactory.StarlightRandom(
                 brightness,
                 StarlightLightingDuration.Medium),
+            "waveRightward" => action.Settings == LightingSettingsFactory.Wave(
+                LightingDirection.Rightward,
+                brightness),
+            "waveLeftward" => action.Settings == LightingSettingsFactory.Wave(
+                LightingDirection.Leftward,
+                brightness),
+            "wheelClockwise" => action.Settings == LightingSettingsFactory.Wheel(
+                LightingRotationDirection.Clockwise,
+                brightness),
+            "wheelCounterclockwise" => action.Settings == LightingSettingsFactory.Wheel(
+                LightingRotationDirection.Counterclockwise,
+                brightness),
             "logoBreathing" => action.Settings ==
                 LightingSettingsFactory.Static(
                     new RgbColor(0, byte.MaxValue, 0),

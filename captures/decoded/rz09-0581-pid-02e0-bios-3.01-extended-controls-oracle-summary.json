@@ -73,6 +73,25 @@
       "directionsCaptured": ["Leftward", "Rightward"],
       "directionRendererDecoded": false,
       "productionAdmitted": false
+    },
+    "ripple": {
+      "inputTriggerAttempted": "A",
+      "nonzeroMatrixFrameObserved": false,
+      "productionAdmitted": false
+    },
+    "wave": {
+      "directionsCaptured": ["Rightward", "Leftward"],
+      "cycleMilliseconds": 1000,
+      "frameCount": 25,
+      "directionRendererDecoded": true,
+      "productionAdmitted": false
+    },
+    "wheel": {
+      "directionsCaptured": ["Clockwise", "Counterclockwise"],
+      "cycleMilliseconds": 1000,
+      "frameCount": 25,
+      "directionRendererDecoded": true,
+      "productionAdmitted": false
     }
   },
   "startupAnimation": {

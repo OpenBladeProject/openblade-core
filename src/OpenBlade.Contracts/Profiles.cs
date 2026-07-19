@@ -24,12 +24,20 @@ public enum LightingEffect
     Reactive,
     Tidal,
     Starlight,
+    Wave,
+    Wheel,
 }
 
 public enum LightingDirection
 {
     Leftward,
     Rightward,
+}
+
+public enum LightingRotationDirection
+{
+    Clockwise,
+    Counterclockwise,
 }
 
 public enum LogoLightingMode
@@ -53,6 +61,8 @@ public enum LightingRendererOwnershipState
     Reactive,
     Tidal,
     Starlight,
+    Wave,
+    Wheel,
     Faulted,
 }
 

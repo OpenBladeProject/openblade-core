@@ -399,6 +399,46 @@ public sealed class Pid02E0LightingEffectsTests
     }
 
     [Fact]
+    public void Wave_UsesCapturedOneSecondTemplatesAndPhysicalDirections()
+    {
+        var rightward = new Pid02E0WaveEffect(LightingDirection.Rightward);
+        var leftward = new Pid02E0WaveEffect(LightingDirection.Leftward);
+
+        Pid02E0MatrixFrame right = rightward.RenderFrame(TimeSpan.FromMilliseconds(240));
+        Pid02E0MatrixFrame left = leftward.RenderFrame(TimeSpan.FromMilliseconds(240));
+
+        Assert.Equal(TimeSpan.FromMilliseconds(40), rightward.GetNextFrameDelay(TimeSpan.Zero));
+        AssertFramesEqual(
+            rightward.RenderFrame(TimeSpan.Zero),
+            rightward.RenderFrame(TimeSpan.FromSeconds(1)));
+        Assert.NotEqual(right.ToArray(), left.ToArray());
+        AssertHolesBlack(right);
+        AssertHolesBlack(left);
+        Assert.Equal(86, right.ToArray().Count(color => color != MatrixRgb.Black));
+    }
+
+    [Fact]
+    public void Wheel_UsesCapturedClockwiseAndCounterclockwiseTemplates()
+    {
+        var clockwise = new Pid02E0WheelEffect(LightingRotationDirection.Clockwise);
+        var counterclockwise = new Pid02E0WheelEffect(
+            LightingRotationDirection.Counterclockwise);
+
+        Pid02E0MatrixFrame clockwiseFrame =
+            clockwise.RenderFrame(TimeSpan.FromMilliseconds(400));
+        Pid02E0MatrixFrame counterclockwiseFrame =
+            counterclockwise.RenderFrame(TimeSpan.FromMilliseconds(400));
+
+        AssertFramesEqual(
+            clockwise.RenderFrame(TimeSpan.Zero),
+            clockwise.RenderFrame(TimeSpan.FromSeconds(1)));
+        Assert.NotEqual(clockwiseFrame.ToArray(), counterclockwiseFrame.ToArray());
+        AssertHolesBlack(clockwiseFrame);
+        AssertHolesBlack(counterclockwiseFrame);
+        Assert.Equal(86, clockwiseFrame.ToArray().Count(color => color != MatrixRgb.Black));
+    }
+
+    [Fact]
     public void Effects_RejectInvalidTimingInputs()
     {
         Assert.Throws<ArgumentOutOfRangeException>(() => new Pid02E0SpectrumEffect(TimeSpan.Zero));
@@ -429,6 +469,8 @@ public sealed class Pid02E0LightingEffectsTests
                 Green,
                 default,
                 TimeSpan.FromSeconds(1.5)),
+            new Pid02E0WaveEffect(LightingDirection.Rightward),
+            new Pid02E0WheelEffect(LightingRotationDirection.Clockwise),
         ];
 
         Assert.All(effects, effect =>

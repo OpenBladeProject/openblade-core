@@ -58,6 +58,10 @@ public sealed class LightingContractTests
             LightingSettingsFactory.StarlightRandom(
                 33,
                 StarlightLightingDuration.Long),
+            LightingSettingsFactory.Wave(LightingDirection.Leftward, 22),
+            LightingSettingsFactory.Wheel(
+                LightingRotationDirection.Counterclockwise,
+                11),
         ];
 
         Assert.All(settings, value =>
@@ -92,6 +96,12 @@ public sealed class LightingContractTests
             StarlightColorMode.Random,
             Assert.IsType<StarlightLightingParameters>(settings[11].Parameters).ColorMode);
         Assert.Equal(default, settings[11].Color);
+        Assert.Equal(
+            LightingDirection.Leftward,
+            Assert.IsType<WaveLightingParameters>(settings[12].Parameters).Direction);
+        Assert.Equal(
+            LightingRotationDirection.Counterclockwise,
+            Assert.IsType<WheelLightingParameters>(settings[13].Parameters).Direction);
     }
 
     [Fact]
@@ -152,6 +162,14 @@ public sealed class LightingContractTests
                     SecondaryColor: null,
                     StarlightLightingDuration.Medium),
             },
+            LightingSettingsFactory.Wave(LightingDirection.Rightward, 50) with
+            {
+                Parameters = new WaveLightingParameters((LightingDirection)999),
+            },
+            LightingSettingsFactory.Wheel(LightingRotationDirection.Clockwise, 50) with
+            {
+                Parameters = new WheelLightingParameters((LightingRotationDirection)999),
+            },
         ];
 
         Assert.All(invalid, value =>
@@ -180,6 +198,8 @@ public sealed class LightingContractTests
             LightingSettingsFactory.StarlightRandom(
                 0,
                 StarlightLightingDuration.Medium),
+            LightingSettingsFactory.Wave(LightingDirection.Rightward, 0),
+            LightingSettingsFactory.Wheel(LightingRotationDirection.Clockwise, 0),
         ];
 
         Assert.All(invisible, value =>

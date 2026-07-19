@@ -645,6 +645,8 @@ internal sealed class ProductionLightingPort : IProductionLightingPort
                     Color(primary),
                     default,
                     StarlightDuration(value.Duration)),
+            WaveLightingParameters value => new Pid02E0WaveEffect(value.Direction),
+            WheelLightingParameters value => new Pid02E0WheelEffect(value.Direction),
             StarlightLightingParameters
                 {
                     ColorMode: StarlightColorMode.Dual,
@@ -945,6 +947,8 @@ internal sealed class ProductionLightingPort : IProductionLightingPort
             LightingEffect.Reactive => LightingRendererOwnershipState.Reactive,
             LightingEffect.Tidal => LightingRendererOwnershipState.Tidal,
             LightingEffect.Starlight => LightingRendererOwnershipState.Starlight,
+            LightingEffect.Wave => LightingRendererOwnershipState.Wave,
+            LightingEffect.Wheel => LightingRendererOwnershipState.Wheel,
             _ => throw new ArgumentOutOfRangeException(nameof(effect)),
         };
 

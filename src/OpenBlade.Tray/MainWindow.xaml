@@ -897,15 +897,36 @@
                                         </Grid.ColumnDefinitions>
                                         <StackPanel Spacing="3" VerticalAlignment="Center">
                                             <TextBlock Text="Direction" Style="{StaticResource CardTitleStyle}" />
-                                            <TextBlock Text="Choose which way the Tidal effect moves."
+                                            <TextBlock Text="Choose which way the effect moves."
                                                        Style="{StaticResource SecondaryTextStyle}" />
                                         </StackPanel>
                                         <ComboBox Grid.Column="1"
                                                   MinWidth="150"
                                                   Style="{StaticResource SettingsPickerStyle}"
-                                                  AutomationProperties.Name="Tidal direction"
+                                                  AutomationProperties.Name="Lighting direction"
                                                   ItemsSource="{x:Bind ViewModel.LightingDirections}"
                                                   SelectedItem="{x:Bind ViewModel.LightingDirectionEditor, Mode=TwoWay}" />
+                                    </Grid>
+                                </Border>
+
+                                <Border Style="{StaticResource SettingsRowStyle}"
+                                        Visibility="{x:Bind ViewModel.LightingShowsRotationDirection, Mode=OneWay}">
+                                    <Grid ColumnSpacing="20">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel Spacing="3" VerticalAlignment="Center">
+                                            <TextBlock Text="Rotation" Style="{StaticResource CardTitleStyle}" />
+                                            <TextBlock Text="Choose which way the Wheel effect rotates."
+                                                       Style="{StaticResource SecondaryTextStyle}" />
+                                        </StackPanel>
+                                        <ComboBox Grid.Column="1"
+                                                  MinWidth="170"
+                                                  Style="{StaticResource SettingsPickerStyle}"
+                                                  AutomationProperties.Name="Wheel rotation direction"
+                                                  ItemsSource="{x:Bind ViewModel.LightingRotationDirections}"
+                                                  SelectedItem="{x:Bind ViewModel.LightingRotationDirectionEditor, Mode=TwoWay}" />
                                     </Grid>
                                 </Border>
 

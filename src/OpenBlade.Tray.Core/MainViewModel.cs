@@ -150,6 +150,8 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         ReactiveLightingDuration.Medium;
     private bool lightingRandomColorsEditor;
     private LightingDirection lightingDirectionEditor = LightingDirection.Rightward;
+    private LightingRotationDirection lightingRotationDirectionEditor =
+        LightingRotationDirection.Clockwise;
     private LogoLightingMode? logoLightingModeEditor;
     private bool lightingEditorDirty;
     private PowerSource? lastConfirmedLightingEditorPowerSource;
@@ -1645,6 +1647,23 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         }
     }
 
+    public IReadOnlyList<LightingRotationDirection> LightingRotationDirections { get; } =
+        Enum.GetValues<LightingRotationDirection>();
+
+    public LightingRotationDirection LightingRotationDirectionEditor
+    {
+        get => lightingRotationDirectionEditor;
+        set
+        {
+            if (!Enum.IsDefined(value))
+            {
+                return;
+            }
+
+            SetLightingEditorField(ref lightingRotationDirectionEditor, value);
+        }
+    }
+
     public LogoLightingMode? LogoLightingModeEditor
     {
         get => logoLightingModeEditor;
@@ -1714,7 +1733,10 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         LightingEffectEditor == LightingEffect.Tidal;
 
     public bool LightingShowsDirection =>
-        LightingEffectEditor == LightingEffect.Tidal;
+        LightingEffectEditor is LightingEffect.Tidal or LightingEffect.Wave;
+
+    public bool LightingShowsRotationDirection =>
+        LightingEffectEditor == LightingEffect.Wheel;
 
     public LightingSettings LightingDraft => CreateLightingDraft();
 
@@ -3357,13 +3379,24 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             ref lightingRandomColorsEditor,
             randomColors,
             nameof(LightingRandomColorsEditor));
-        LightingDirection direction = value.Parameters is TidalLightingParameters tidalParameters
-            ? tidalParameters.Direction
-            : LightingDirection.Rightward;
+        LightingDirection direction = value.Parameters switch
+        {
+            TidalLightingParameters tidalParameters => tidalParameters.Direction,
+            WaveLightingParameters waveParameters => waveParameters.Direction,
+            _ => LightingDirection.Rightward,
+        };
         SetField(
             ref lightingDirectionEditor,
             direction,
             nameof(LightingDirectionEditor));
+        LightingRotationDirection rotationDirection =
+            value.Parameters is WheelLightingParameters wheelParameters
+                ? wheelParameters.Direction
+                : LightingRotationDirection.Clockwise;
+        SetField(
+            ref lightingRotationDirectionEditor,
+            rotationDirection,
+            nameof(LightingRotationDirectionEditor));
         SetField(
             ref logoLightingModeEditor,
             value.LogoMode,
@@ -3837,6 +3870,10 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             StarlightLightingParameters starlight =>
                 $"{FormatColor(lighting.Color)}, "
                 + starlight.Duration.ToString().ToLowerInvariant(),
+            WaveLightingParameters wave =>
+                wave.Direction.ToString().ToLowerInvariant(),
+            WheelLightingParameters wheel =>
+                FormatRotationDirection(wheel.Direction),
             _ when lighting.Effect == LightingEffect.Static => FormatColor(lighting.Color),
             _ => string.Empty,
         };
@@ -3932,6 +3969,14 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             Effect: LightingEffect.Starlight,
             Parameters: StarlightLightingParameters starlight,
         } => $"Starlight, one color, {starlight.Duration.ToString().ToLowerInvariant()}",
+        {
+            Effect: LightingEffect.Wave,
+            Parameters: WaveLightingParameters wave,
+        } => $"Wave, {wave.Direction.ToString().ToLowerInvariant()}",
+        {
+            Effect: LightingEffect.Wheel,
+            Parameters: WheelLightingParameters wheel,
+        } => $"Wheel, {FormatRotationDirection(wheel.Direction)}",
         _ => lighting.Effect.ToString(),
     };
 
@@ -3939,6 +3984,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     {
         { Effect: LightingEffect.Off } => "Not applicable",
         { Effect: LightingEffect.Spectrum } => "Automatic",
+        { Effect: LightingEffect.Wave or LightingEffect.Wheel } => "Automatic",
         {
             Parameters: BreathingLightingParameters { ColorMode: BreathingColorMode.Random },
         } => "Random",
@@ -3967,6 +4013,11 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         } => $"{FormatColor(lighting.Color)} and {FormatColor(secondary)}",
         _ => FormatColor(lighting.Color),
     };
+
+    private static string FormatRotationDirection(LightingRotationDirection direction) =>
+        direction == LightingRotationDirection.Counterclockwise
+            ? "counterclockwise"
+            : "clockwise";
 
     private static string FormatDisplayRefreshRate(string? key)
     {
@@ -4072,6 +4123,12 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
                 LightingSettingsFactory.StarlightRandom(
                     brightness,
                     LightingStarlightDurationEditor),
+            LightingEffect.Wave => LightingSettingsFactory.Wave(
+                LightingDirectionEditor,
+                brightness),
+            LightingEffect.Wheel => LightingSettingsFactory.Wheel(
+                LightingRotationDirectionEditor,
+                brightness),
             _ => new LightingSettings(LightingEffectEditor, default, brightness),
         };
         return keyboard with { LogoMode = LogoLightingModeEditor };
@@ -4203,6 +4260,12 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
                 color,
                 brightness,
                 StarlightLightingDuration.Medium),
+            LightingEffect.Wave => LightingSettingsFactory.Wave(
+                LightingDirection.Rightward,
+                brightness),
+            LightingEffect.Wheel => LightingSettingsFactory.Wheel(
+                LightingRotationDirection.Clockwise,
+                brightness),
             _ => new LightingSettings(effect, color, brightness),
         };
     }
@@ -4660,6 +4723,9 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         PropertyChanged?.Invoke(
             this,
             new PropertyChangedEventArgs(nameof(LightingShowsDirection)));
+        PropertyChanged?.Invoke(
+            this,
+            new PropertyChangedEventArgs(nameof(LightingShowsRotationDirection)));
     }
 
 }

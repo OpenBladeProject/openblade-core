@@ -2374,7 +2374,9 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         LightingRendererOwnershipState.Breathing or
         LightingRendererOwnershipState.Reactive or
         LightingRendererOwnershipState.Tidal or
-        LightingRendererOwnershipState.Starlight;
+        LightingRendererOwnershipState.Starlight or
+        LightingRendererOwnershipState.Wave or
+        LightingRendererOwnershipState.Wheel;
 
     private static bool CanClaimLightingForAutomaticProfile(
         ServiceStatusSnapshot status) =>
@@ -2396,6 +2398,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             LightingEffect.Reactive => LightingRendererOwnershipState.Reactive,
             LightingEffect.Tidal => LightingRendererOwnershipState.Tidal,
             LightingEffect.Starlight => LightingRendererOwnershipState.Starlight,
+            LightingEffect.Wave => LightingRendererOwnershipState.Wave,
+            LightingEffect.Wheel => LightingRendererOwnershipState.Wheel,
             _ => LightingRendererOwnershipState.None,
         });
 
