@@ -1316,6 +1316,7 @@ public sealed class MainViewModelTests
             viewModel.AvailableActivePerformanceOptions.Select(option => option.Value));
         Assert.True(viewModel.SetPerformanceCommand.CanExecute(PerformancePreset.Silent));
         Assert.False(viewModel.SetPerformanceCommand.CanExecute(PerformancePreset.BatterySaver));
+        Assert.Equal("Save to plugged-in profile", viewModel.SaveToActiveProfileLabel);
 
         client.Publish(pluggedIn with
         {
@@ -1330,6 +1331,7 @@ public sealed class MainViewModelTests
         Assert.True(viewModel.SetPerformanceCommand.CanExecute(PerformancePreset.BatterySaver));
         Assert.False(viewModel.SetPerformanceCommand.CanExecute(PerformancePreset.Silent));
         Assert.False(viewModel.SetPerformanceCommand.CanExecute(PerformancePreset.Performance));
+        Assert.Equal("Save to battery profile", viewModel.SaveToActiveProfileLabel);
 
         client.Publish(pluggedIn with
         {
@@ -1347,6 +1349,7 @@ public sealed class MainViewModelTests
         Assert.True(viewModel.SetFanModeCommand.CanExecute(FanMode.Automatic));
         Assert.False(viewModel.SetFanModeCommand.CanExecute(FanMode.Maximum));
         Assert.Equal("USB-C profile", viewModel.ActivePowerSourceLabel);
+        Assert.Equal("Save to USB-C profile", viewModel.SaveToActiveProfileLabel);
 
         client.Publish(pluggedIn with
         {
@@ -1365,6 +1368,7 @@ public sealed class MainViewModelTests
             ProfileDefaults.CreateSafeDefaults().UsbC.Lighting));
         Assert.False(viewModel.ClearManualOverridesCommand.CanExecute(null));
         Assert.Equal("Checking power source", viewModel.ActivePowerSourceLabel);
+        Assert.Equal("Save to profile", viewModel.SaveToActiveProfileLabel);
 
         viewModel.BatteryPerformanceOption = viewModel.AvailableBatteryPerformanceOptions
             .Single(option => option.Value == PerformancePreset.BatteryBalanced);

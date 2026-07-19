@@ -43,8 +43,19 @@ public sealed class WinUiShellContractTests
         Assert.DoesNotContain("OnCaptureCurrentDisplaySettings", xaml, StringComparison.Ordinal);
         Assert.Contains("ViewModel.SaveThermalProfileDraftCommand", xaml, StringComparison.Ordinal);
         Assert.Contains("ViewModel.SaveLightingProfileDraftCommand", xaml, StringComparison.Ordinal);
-        Assert.Contains("DisplayViewModel.ProfileRelationshipStatus", xaml, StringComparison.Ordinal);
         Assert.Contains("DisplayViewModel.CanSaveCurrentSettingsToProfile", xaml, StringComparison.Ordinal);
+        Assert.Contains("x:Name=\"DashboardPageHeader\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("x:Name=\"LightingPageHeader\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("x:Name=\"DisplayPageHeader\"", xaml, StringComparison.Ordinal);
+        Assert.Equal(3, CountOccurrences(
+            xaml,
+            "Content=\"{x:Bind ViewModel.SaveToActiveProfileLabel, Mode=OneWay}\""));
+        Assert.Equal(3, CountOccurrences(xaml, "Text=\"Not saved\""));
+        Assert.Equal(3, CountOccurrences(xaml, "Text=\"Use profile settings\""));
+        Assert.DoesNotContain("ViewModel.ThermalProfileRelationshipStatus", xaml, StringComparison.Ordinal);
+        Assert.DoesNotContain("ViewModel.LightingProfileRelationshipStatus", xaml, StringComparison.Ordinal);
+        Assert.DoesNotContain("DisplayViewModel.ProfileRelationshipStatus", xaml, StringComparison.Ordinal);
+        Assert.DoesNotContain("Content=\"Save to profile\"", xaml, StringComparison.Ordinal);
         Assert.Contains("ToolTipService.ToolTip=\"Unsaved changes\"", xaml, StringComparison.Ordinal);
         Assert.Contains("AutomationProperties.Name=\"Unsaved changes\"", xaml, StringComparison.Ordinal);
         Assert.Equal(1, CountOccurrences(xaml, "x:Name=\"LightingEffectPicker\""));

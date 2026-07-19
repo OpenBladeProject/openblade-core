@@ -20,6 +20,12 @@
                    BasedOn="{StaticResource TitleTextBlockStyle}">
                 <Setter Property="Margin" Value="0,0,0,20" />
             </Style>
+            <Style x:Key="PageHeaderTitleStyle"
+                   TargetType="TextBlock"
+                   BasedOn="{StaticResource PageTitleStyle}">
+                <Setter Property="Margin" Value="0" />
+                <Setter Property="VerticalAlignment" Value="Center" />
+            </Style>
             <Style x:Key="SectionHeaderStyle"
                    TargetType="TextBlock"
                    BasedOn="{StaticResource SubtitleTextBlockStyle}">
@@ -221,7 +227,77 @@
                             </TransitionCollection>
                         </StackPanel.Transitions>
 
-                        <TextBlock Text="Dashboard" Style="{StaticResource PageTitleStyle}" />
+                        <Grid x:Name="DashboardPageHeader"
+                              Margin="0,0,0,20"
+                              ColumnSpacing="16"
+                              RowSpacing="10">
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                            </Grid.RowDefinitions>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <VisualStateManager.VisualStateGroups>
+                                <VisualStateGroup>
+                                    <VisualState x:Name="DashboardHeaderWide">
+                                        <VisualState.StateTriggers>
+                                            <AdaptiveTrigger MinWindowWidth="900" />
+                                        </VisualState.StateTriggers>
+                                        <VisualState.Setters>
+                                            <Setter Target="DashboardProfileSaveActions.(Grid.Row)" Value="0" />
+                                            <Setter Target="DashboardProfileSaveActions.(Grid.Column)" Value="1" />
+                                            <Setter Target="DashboardProfileSaveActions.(Grid.ColumnSpan)" Value="1" />
+                                            <Setter Target="DashboardProfileSaveActions.HorizontalAlignment" Value="Right" />
+                                            <Setter Target="DashboardProfileSaveActions.Margin" Value="0" />
+                                        </VisualState.Setters>
+                                    </VisualState>
+                                    <VisualState x:Name="DashboardHeaderCompact">
+                                        <VisualState.StateTriggers>
+                                            <AdaptiveTrigger MinWindowWidth="0" />
+                                        </VisualState.StateTriggers>
+                                        <VisualState.Setters>
+                                            <Setter Target="DashboardProfileSaveActions.(Grid.Row)" Value="1" />
+                                            <Setter Target="DashboardProfileSaveActions.(Grid.Column)" Value="0" />
+                                            <Setter Target="DashboardProfileSaveActions.(Grid.ColumnSpan)" Value="2" />
+                                            <Setter Target="DashboardProfileSaveActions.HorizontalAlignment" Value="Left" />
+                                            <Setter Target="DashboardProfileSaveActions.Margin" Value="0,2,0,0" />
+                                        </VisualState.Setters>
+                                    </VisualState>
+                                </VisualStateGroup>
+                            </VisualStateManager.VisualStateGroups>
+                            <TextBlock Text="Dashboard" Style="{StaticResource PageHeaderTitleStyle}" />
+                            <StackPanel x:Name="DashboardProfileSaveActions"
+                                        Grid.Column="1"
+                                        Orientation="Horizontal"
+                                        Spacing="8"
+                                        VerticalAlignment="Center"
+                                        Visibility="{x:Bind ViewModel.HasThermalProfileDraft, Mode=OneWay}">
+                                <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                                    <Ellipse Width="7"
+                                             Height="7"
+                                             Fill="{ThemeResource SystemFillColorCautionBrush}" />
+                                    <TextBlock Text="Not saved"
+                                               Style="{StaticResource SecondaryTextStyle}"
+                                               VerticalAlignment="Center" />
+                                </StackPanel>
+                                <Button Content="{x:Bind ViewModel.SaveToActiveProfileLabel, Mode=OneWay}"
+                                        Style="{StaticResource AccentButtonStyle}"
+                                        Command="{x:Bind ViewModel.SaveThermalProfileDraftCommand}" />
+                                <Button Style="{StaticResource IconActionButtonStyle}"
+                                        AutomationProperties.Name="More profile actions"
+                                        ToolTipService.ToolTip="More profile actions">
+                                    <FontIcon Glyph="&#xE712;" FontSize="16" />
+                                    <Button.Flyout>
+                                        <MenuFlyout>
+                                            <MenuFlyoutItem Text="Use profile settings"
+                                                            Command="{x:Bind ViewModel.DiscardThermalProfileDraftCommand}" />
+                                        </MenuFlyout>
+                                    </Button.Flyout>
+                                </Button>
+                            </StackPanel>
+                        </Grid>
 
                         <Border Style="{StaticResource CardStyle}" Padding="22">
                             <Grid x:Name="HeroLayout" RowSpacing="12">
@@ -421,7 +497,7 @@
                                               SelectionChanged="OnDashboardCustomGpuChanged" />
                                 </Grid>
                             </Border>
-                            <Border Style="{StaticResource SettingsRowStyle}"
+                            <Border Style="{StaticResource SettingsLastRowStyle}"
                                     Visibility="{x:Bind ViewModel.IsFanControlVisible, Mode=OneWay}">
                                 <Grid ColumnSpacing="20">
                                     <Grid.ColumnDefinitions>
@@ -442,32 +518,6 @@
                                               ItemsSource="{x:Bind ViewModel.AvailableActiveFanModes, Mode=OneWay}"
                                               SelectedItem="{x:Bind ViewModel.SelectedFanMode, Mode=OneWay}"
                                               SelectionChanged="OnDashboardFanModeSelectionChanged" />
-                                </Grid>
-                            </Border>
-                            <Border Style="{StaticResource SettingsLastRowStyle}">
-                                <Grid ColumnSpacing="20">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="*" />
-                                        <ColumnDefinition Width="Auto" />
-                                    </Grid.ColumnDefinitions>
-                                    <StackPanel Spacing="3" VerticalAlignment="Center">
-                                        <TextBlock Text="{x:Bind ViewModel.ActivePowerSourceLabel, Mode=OneWay}"
-                                                   Style="{StaticResource CardTitleStyle}" />
-                                        <TextBlock Text="{x:Bind ViewModel.ThermalProfileRelationshipStatus, Mode=OneWay}"
-                                                   Style="{StaticResource SecondaryTextStyle}" />
-                                    </StackPanel>
-                                    <StackPanel Grid.Column="1"
-                                                Orientation="Horizontal"
-                                                Spacing="8"
-                                                HorizontalAlignment="Right"
-                                                VerticalAlignment="Center"
-                                                Visibility="{x:Bind ViewModel.HasThermalProfileDraft, Mode=OneWay}">
-                                        <Button Content="Use profile settings"
-                                                Command="{x:Bind ViewModel.DiscardThermalProfileDraftCommand}" />
-                                        <Button Content="Save to profile"
-                                                Style="{StaticResource AccentButtonStyle}"
-                                                Command="{x:Bind ViewModel.SaveThermalProfileDraftCommand}" />
-                                    </StackPanel>
                                 </Grid>
                             </Border>
                             </StackPanel>
@@ -814,7 +864,78 @@
                             </TransitionCollection>
                         </StackPanel.Transitions>
 
-                        <TextBlock Text="Lighting" Style="{StaticResource PageTitleStyle}" />
+                        <Grid x:Name="LightingPageHeader"
+                              Margin="0,0,0,20"
+                              ColumnSpacing="16"
+                              RowSpacing="10">
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                            </Grid.RowDefinitions>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <VisualStateManager.VisualStateGroups>
+                                <VisualStateGroup>
+                                    <VisualState x:Name="LightingHeaderWide">
+                                        <VisualState.StateTriggers>
+                                            <AdaptiveTrigger MinWindowWidth="900" />
+                                        </VisualState.StateTriggers>
+                                        <VisualState.Setters>
+                                            <Setter Target="LightingProfileSaveActions.(Grid.Row)" Value="0" />
+                                            <Setter Target="LightingProfileSaveActions.(Grid.Column)" Value="1" />
+                                            <Setter Target="LightingProfileSaveActions.(Grid.ColumnSpan)" Value="1" />
+                                            <Setter Target="LightingProfileSaveActions.HorizontalAlignment" Value="Right" />
+                                            <Setter Target="LightingProfileSaveActions.Margin" Value="0" />
+                                        </VisualState.Setters>
+                                    </VisualState>
+                                    <VisualState x:Name="LightingHeaderCompact">
+                                        <VisualState.StateTriggers>
+                                            <AdaptiveTrigger MinWindowWidth="0" />
+                                        </VisualState.StateTriggers>
+                                        <VisualState.Setters>
+                                            <Setter Target="LightingProfileSaveActions.(Grid.Row)" Value="1" />
+                                            <Setter Target="LightingProfileSaveActions.(Grid.Column)" Value="0" />
+                                            <Setter Target="LightingProfileSaveActions.(Grid.ColumnSpan)" Value="2" />
+                                            <Setter Target="LightingProfileSaveActions.HorizontalAlignment" Value="Left" />
+                                            <Setter Target="LightingProfileSaveActions.Margin" Value="0,2,0,0" />
+                                        </VisualState.Setters>
+                                    </VisualState>
+                                </VisualStateGroup>
+                            </VisualStateManager.VisualStateGroups>
+                            <TextBlock Text="Lighting" Style="{StaticResource PageHeaderTitleStyle}" />
+                            <ContentControl x:Name="LightingProfileSaveActions"
+                                            Grid.Column="1"
+                                            VerticalAlignment="Center"
+                                            IsEnabled="{x:Bind ViewModel.CanControlLighting, Mode=OneWay}"
+                                            Visibility="{x:Bind ViewModel.HasLightingProfileDraft, Mode=OneWay}">
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                                    <Ellipse Width="7"
+                                             Height="7"
+                                             Fill="{ThemeResource SystemFillColorCautionBrush}" />
+                                    <TextBlock Text="Not saved"
+                                               Style="{StaticResource SecondaryTextStyle}"
+                                               VerticalAlignment="Center" />
+                                </StackPanel>
+                                <Button Content="{x:Bind ViewModel.SaveToActiveProfileLabel, Mode=OneWay}"
+                                        Style="{StaticResource AccentButtonStyle}"
+                                        Command="{x:Bind ViewModel.SaveLightingProfileDraftCommand}" />
+                                <Button Style="{StaticResource IconActionButtonStyle}"
+                                        AutomationProperties.Name="More profile actions"
+                                        ToolTipService.ToolTip="More profile actions">
+                                    <FontIcon Glyph="&#xE712;" FontSize="16" />
+                                    <Button.Flyout>
+                                        <MenuFlyout>
+                                            <MenuFlyoutItem Text="Use profile settings"
+                                                            Command="{x:Bind ViewModel.DiscardLightingProfileDraftCommand}" />
+                                        </MenuFlyout>
+                                    </Button.Flyout>
+                                </Button>
+                                </StackPanel>
+                            </ContentControl>
+                        </Grid>
                         <InfoBar x:Name="LightingUnavailableInfoBar"
                                  Margin="0,0,0,18"
                                  IsOpen="{x:Bind ViewModel.IsLightingControlUnavailable, Mode=OneWay}"
@@ -1200,7 +1321,7 @@
                                     </Grid>
                                 </Border>
 
-                                <Border Style="{StaticResource SettingsRowStyle}">
+                                <Border Style="{StaticResource SettingsLastRowStyle}">
                                     <Grid ColumnSpacing="20">
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="*" />
@@ -1218,32 +1339,6 @@
                                                 Content="Apply"
                                                 Command="{x:Bind ViewModel.SetLightingCommand}"
                                                 CommandParameter="{x:Bind ViewModel.LightingDraft, Mode=OneWay}" />
-                                    </Grid>
-                                </Border>
-                                <Border Style="{StaticResource SettingsLastRowStyle}">
-                                    <Grid ColumnSpacing="20">
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="*" />
-                                            <ColumnDefinition Width="Auto" />
-                                        </Grid.ColumnDefinitions>
-                                        <StackPanel Spacing="3" VerticalAlignment="Center">
-                                            <TextBlock Text="{x:Bind ViewModel.ActivePowerSourceLabel, Mode=OneWay}"
-                                                       Style="{StaticResource CardTitleStyle}" />
-                                            <TextBlock Text="{x:Bind ViewModel.LightingProfileRelationshipStatus, Mode=OneWay}"
-                                                       Style="{StaticResource SecondaryTextStyle}" />
-                                        </StackPanel>
-                                        <StackPanel Grid.Column="1"
-                                                    Orientation="Horizontal"
-                                                    Spacing="8"
-                                                    HorizontalAlignment="Right"
-                                                    VerticalAlignment="Center"
-                                                    Visibility="{x:Bind ViewModel.HasLightingProfileDraft, Mode=OneWay}">
-                                            <Button Content="Use profile settings"
-                                                    Command="{x:Bind ViewModel.DiscardLightingProfileDraftCommand}" />
-                                            <Button Content="Save to profile"
-                                                    Style="{StaticResource AccentButtonStyle}"
-                                                    Command="{x:Bind ViewModel.SaveLightingProfileDraftCommand}" />
-                                        </StackPanel>
                                     </Grid>
                                 </Border>
                             </StackPanel>
@@ -1356,7 +1451,79 @@
                             </TransitionCollection>
                         </StackPanel.Transitions>
 
-                        <TextBlock Text="Display" Style="{StaticResource PageTitleStyle}" />
+                        <Grid x:Name="DisplayPageHeader"
+                              Margin="0,0,0,20"
+                              ColumnSpacing="16"
+                              RowSpacing="10">
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                            </Grid.RowDefinitions>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <VisualStateManager.VisualStateGroups>
+                                <VisualStateGroup>
+                                    <VisualState x:Name="DisplayHeaderWide">
+                                        <VisualState.StateTriggers>
+                                            <AdaptiveTrigger MinWindowWidth="900" />
+                                        </VisualState.StateTriggers>
+                                        <VisualState.Setters>
+                                            <Setter Target="DisplayProfileSaveActions.(Grid.Row)" Value="0" />
+                                            <Setter Target="DisplayProfileSaveActions.(Grid.Column)" Value="1" />
+                                            <Setter Target="DisplayProfileSaveActions.(Grid.ColumnSpan)" Value="1" />
+                                            <Setter Target="DisplayProfileSaveActions.HorizontalAlignment" Value="Right" />
+                                            <Setter Target="DisplayProfileSaveActions.Margin" Value="0" />
+                                        </VisualState.Setters>
+                                    </VisualState>
+                                    <VisualState x:Name="DisplayHeaderCompact">
+                                        <VisualState.StateTriggers>
+                                            <AdaptiveTrigger MinWindowWidth="0" />
+                                        </VisualState.StateTriggers>
+                                        <VisualState.Setters>
+                                            <Setter Target="DisplayProfileSaveActions.(Grid.Row)" Value="1" />
+                                            <Setter Target="DisplayProfileSaveActions.(Grid.Column)" Value="0" />
+                                            <Setter Target="DisplayProfileSaveActions.(Grid.ColumnSpan)" Value="2" />
+                                            <Setter Target="DisplayProfileSaveActions.HorizontalAlignment" Value="Left" />
+                                            <Setter Target="DisplayProfileSaveActions.Margin" Value="0,2,0,0" />
+                                        </VisualState.Setters>
+                                    </VisualState>
+                                </VisualStateGroup>
+                            </VisualStateManager.VisualStateGroups>
+                            <TextBlock Text="Display" Style="{StaticResource PageHeaderTitleStyle}" />
+                            <StackPanel x:Name="DisplayProfileSaveActions"
+                                        Grid.Column="1"
+                                        Orientation="Horizontal"
+                                        Spacing="8"
+                                        VerticalAlignment="Center"
+                                        Visibility="{x:Bind DisplayViewModel.CanSaveCurrentSettingsToProfile, Mode=OneWay}">
+                                <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                                    <Ellipse Width="7"
+                                             Height="7"
+                                             Fill="{ThemeResource SystemFillColorCautionBrush}" />
+                                    <TextBlock Text="Not saved"
+                                               Style="{StaticResource SecondaryTextStyle}"
+                                               VerticalAlignment="Center" />
+                                </StackPanel>
+                                <Button Content="{x:Bind ViewModel.SaveToActiveProfileLabel, Mode=OneWay}"
+                                        Style="{StaticResource AccentButtonStyle}"
+                                        IsEnabled="{x:Bind DisplayViewModel.CanSaveCurrentSettingsToProfile, Mode=OneWay}"
+                                        Click="OnSaveCurrentDisplaySettingsToProfile" />
+                                <Button Style="{StaticResource IconActionButtonStyle}"
+                                        Visibility="{x:Bind ViewModel.HasDisplayProfileDraft, Mode=OneWay}"
+                                        AutomationProperties.Name="More profile actions"
+                                        ToolTipService.ToolTip="More profile actions">
+                                    <FontIcon Glyph="&#xE712;" FontSize="16" />
+                                    <Button.Flyout>
+                                        <MenuFlyout>
+                                            <MenuFlyoutItem Text="Use profile settings"
+                                                            Command="{x:Bind ViewModel.DiscardDisplayProfileDraftCommand}" />
+                                        </MenuFlyout>
+                                    </Button.Flyout>
+                                </Button>
+                            </StackPanel>
+                        </Grid>
                         <TextBlock Text="Built-in display"
                                    Style="{StaticResource SectionHeaderStyle}"
                                    Margin="0,0,0,10" />
@@ -1411,7 +1578,7 @@
                                                       Toggled="OnDisplayHdrToggled" />
                                     </Grid>
                                 </Border>
-                                <Border Style="{StaticResource SettingsRowStyle}">
+                                <Border Style="{StaticResource SettingsLastRowStyle}">
                                     <Grid ColumnSpacing="20">
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="*" />
@@ -1433,33 +1600,6 @@
                                                   SelectedItem="{x:Bind DisplayViewModel.SelectedColorProfile, Mode=OneWay}"
                                                   IsEnabled="{x:Bind DisplayViewModel.CanChangeColorProfile, Mode=OneWay}"
                                                   SelectionChanged="OnDisplayColorProfileChanged" />
-                                    </Grid>
-                                </Border>
-                                <Border Style="{StaticResource SettingsLastRowStyle}">
-                                    <Grid ColumnSpacing="20">
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="*" />
-                                            <ColumnDefinition Width="Auto" />
-                                        </Grid.ColumnDefinitions>
-                                        <StackPanel Spacing="3" VerticalAlignment="Center">
-                                            <TextBlock Text="{x:Bind ViewModel.ActivePowerSourceLabel, Mode=OneWay}"
-                                                       Style="{StaticResource CardTitleStyle}" />
-                                            <TextBlock Text="{x:Bind DisplayViewModel.ProfileRelationshipStatus, Mode=OneWay}"
-                                                       Style="{StaticResource SecondaryTextStyle}" />
-                                        </StackPanel>
-                                        <StackPanel Grid.Column="1"
-                                                    Orientation="Horizontal"
-                                                    Spacing="8"
-                                                    HorizontalAlignment="Right"
-                                                    VerticalAlignment="Center">
-                                            <Button Content="Use profile settings"
-                                                    Visibility="{x:Bind ViewModel.HasDisplayProfileDraft, Mode=OneWay}"
-                                                    Command="{x:Bind ViewModel.DiscardDisplayProfileDraftCommand}" />
-                                            <Button Content="Save to profile"
-                                                    Style="{StaticResource AccentButtonStyle}"
-                                                    IsEnabled="{x:Bind DisplayViewModel.CanSaveCurrentSettingsToProfile, Mode=OneWay}"
-                                                    Click="OnSaveCurrentDisplaySettingsToProfile" />
-                                        </StackPanel>
                                     </Grid>
                                 </Border>
                             </StackPanel>

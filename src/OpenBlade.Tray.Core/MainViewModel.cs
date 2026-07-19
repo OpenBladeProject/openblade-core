@@ -564,6 +564,9 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             PropertyChanged?.Invoke(
                 this,
                 new PropertyChangedEventArgs(nameof(ActiveSavedDisplayProfile)));
+            PropertyChanged?.Invoke(
+                this,
+                new PropertyChangedEventArgs(nameof(SaveToActiveProfileLabel)));
             NotifyActiveFanSelectionBinding();
             PropertyChanged?.Invoke(
                 this,
@@ -578,6 +581,14 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     public bool IsBatteryProfileActive => ActivePowerSource == PowerSource.Battery;
 
     public bool IsUsbCProfileActive => ActivePowerSource == PowerSource.UsbC;
+
+    public string SaveToActiveProfileLabel => ActivePowerSource switch
+    {
+        PowerSource.PluggedIn => "Save to plugged-in profile",
+        PowerSource.Battery => "Save to battery profile",
+        PowerSource.UsbC => "Save to USB-C profile",
+        _ => "Save to profile",
+    };
 
     public IReadOnlyList<ProfileComparisonOption> ProfileComparisonOptions => ComparisonOptions;
 

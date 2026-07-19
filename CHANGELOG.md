@@ -49,6 +49,10 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Changed
 
+- Dashboard, Lighting, and Display now present pending profile saves beside the
+  page title instead of as settings-card rows. The compact action names the
+  destination profile, keeps restoration in an overflow menu, and moves below
+  the title in narrow windows.
 - Lighting remains available in navigation when its device interface cannot be
   accessed. The page shows the configured values in a disabled editor and
   explains whether the service, laptop detection, or another Razer app is
