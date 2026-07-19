@@ -142,14 +142,15 @@ Normal installed OpenBlade operation remains advisory and reports those Razer
 controllers without stopping them.
 
 Only an all-gates success atomically replaces
-`%ProgramData%\OpenBlade\lighting-validation.json`. The result is bound to the
+`%ProgramData%\OpenBlade\lighting-validation.json`. The result records the
 target model, VID/PID, BIOS, full informational version, 40-character commit,
 and SHA-256 of the exact loaded `OpenBlade.Protocol.dll`. Failed and canceled
 runs write timestamped `.failed-*.json` sidecars and cannot replace an existing
-admission artifact. The service fails closed when the artifact is absent,
-malformed, over 64 KiB, incomplete, or does not match its current protocol
-binary. Restart the OpenBlade service after a successful validation so it can
-reevaluate admission.
+validation result. Production admission is instead compiled into the reviewed
+exact-device command set and its hash-pinned oracle fixture. Runtime hardware
+access still verifies the target model, VID/PID, and BIOS before opening either
+HID interface; a UI or service rebuild does not require repeating the physical
+validation sequence.
 
 ## Adapter wattage readback
 

@@ -21,7 +21,7 @@ public sealed class ProductionLightingPortTests
     }
 
     [Fact]
-    public void EmbeddedEvidence_IsOracleOnlyAndDoesNotAdmitProductionWrites()
+    public void ApprovedEvidence_AdmitsTheExactDeviceLightingCommandSet()
     {
         ProductionLightingOracleEvidence evidence =
             ProductionLightingEvidenceSource.ReadValidatedOracle();
@@ -36,7 +36,9 @@ public sealed class ProductionLightingPortTests
         Assert.True(evidence.ReactiveFunctionKeyMapCapture.Decoded);
         Assert.Null(typeof(ProductionLightingOracleCaptureEvidence).GetProperty("Applied"));
         Assert.Null(typeof(ProductionLightingOracleCaptureEvidence).GetProperty("Restored"));
-        Assert.Empty(factory.Capabilities.LightingEffects);
+        Assert.Equal(
+            Enum.GetValues<LightingEffect>().Order(),
+            factory.Capabilities.LightingEffects.Order());
         Assert.Empty(factory.Capabilities.PerformancePresets);
         Assert.Empty(factory.Capabilities.FanModes);
         Assert.Empty(factory.Capabilities.ChargeLimits);
