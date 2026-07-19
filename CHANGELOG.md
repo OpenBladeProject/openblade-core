@@ -43,6 +43,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
   lighting, and display settings, with a single-profile detail view in narrow windows.
 - Display status now identifies the panel, resolution, active refresh mode, color
   depth, HDR state, and color profile instead of showing a generic detection message.
+- Profile headers keep the Active badge beside the power source, while troubleshooting
+  uses concise AC, USB-C, Battery, and None values.
 - Reactive input no longer emits a matrix pulse for the unlit space bar.
 
 - Display profile automation now remains active after Tray Exit. The first

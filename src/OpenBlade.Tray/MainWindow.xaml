@@ -521,15 +521,15 @@
                                                  Fill="{ThemeResource AccentFillColorDefaultBrush}"
                                                  Visibility="{x:Bind ViewModel.IsPluggedInProfileDraft, Mode=OneWay}"
                                                  ToolTipService.ToolTip="Unsaved changes" />
+                                        <Border VerticalAlignment="Center"
+                                                CornerRadius="10" Padding="8,2"
+                                                Background="{ThemeResource AccentFillColorDefaultBrush}"
+                                                Visibility="{x:Bind ViewModel.IsPluggedInProfileActive, Mode=OneWay}">
+                                            <TextBlock Text="Active"
+                                                       Style="{StaticResource CaptionTextBlockStyle}"
+                                                       Foreground="{ThemeResource TextOnAccentFillColorPrimaryBrush}" />
+                                        </Border>
                                     </StackPanel>
-                                    <Border HorizontalAlignment="Left" VerticalAlignment="Center"
-                                            CornerRadius="10" Padding="8,2"
-                                            Background="{ThemeResource AccentFillColorDefaultBrush}"
-                                            Visibility="{x:Bind ViewModel.IsPluggedInProfileActive, Mode=OneWay}">
-                                        <TextBlock Text="Active"
-                                                   Style="{StaticResource CaptionTextBlockStyle}"
-                                                   Foreground="{ThemeResource TextOnAccentFillColorPrimaryBrush}" />
-                                    </Border>
                                 </StackPanel>
                                 <StackPanel Grid.Column="2" Spacing="4">
                                     <StackPanel Orientation="Horizontal" Spacing="7">
@@ -539,15 +539,15 @@
                                                  Fill="{ThemeResource AccentFillColorDefaultBrush}"
                                                  Visibility="{x:Bind ViewModel.IsUsbCProfileDraft, Mode=OneWay}"
                                                  ToolTipService.ToolTip="Unsaved changes" />
+                                        <Border VerticalAlignment="Center"
+                                                CornerRadius="10" Padding="8,2"
+                                                Background="{ThemeResource AccentFillColorDefaultBrush}"
+                                                Visibility="{x:Bind ViewModel.IsUsbCProfileActive, Mode=OneWay}">
+                                            <TextBlock Text="Active"
+                                                       Style="{StaticResource CaptionTextBlockStyle}"
+                                                       Foreground="{ThemeResource TextOnAccentFillColorPrimaryBrush}" />
+                                        </Border>
                                     </StackPanel>
-                                    <Border HorizontalAlignment="Left" VerticalAlignment="Center"
-                                            CornerRadius="10" Padding="8,2"
-                                            Background="{ThemeResource AccentFillColorDefaultBrush}"
-                                            Visibility="{x:Bind ViewModel.IsUsbCProfileActive, Mode=OneWay}">
-                                        <TextBlock Text="Active"
-                                                   Style="{StaticResource CaptionTextBlockStyle}"
-                                                   Foreground="{ThemeResource TextOnAccentFillColorPrimaryBrush}" />
-                                    </Border>
                                 </StackPanel>
                                 <StackPanel Grid.Column="3" Spacing="4">
                                     <StackPanel Orientation="Horizontal" Spacing="7">
@@ -557,15 +557,15 @@
                                                  Fill="{ThemeResource AccentFillColorDefaultBrush}"
                                                  Visibility="{x:Bind ViewModel.IsBatteryProfileDraft, Mode=OneWay}"
                                                  ToolTipService.ToolTip="Unsaved changes" />
+                                        <Border VerticalAlignment="Center"
+                                                CornerRadius="10" Padding="8,2"
+                                                Background="{ThemeResource AccentFillColorDefaultBrush}"
+                                                Visibility="{x:Bind ViewModel.IsBatteryProfileActive, Mode=OneWay}">
+                                            <TextBlock Text="Active"
+                                                       Style="{StaticResource CaptionTextBlockStyle}"
+                                                       Foreground="{ThemeResource TextOnAccentFillColorPrimaryBrush}" />
+                                        </Border>
                                     </StackPanel>
-                                    <Border HorizontalAlignment="Left" VerticalAlignment="Center"
-                                            CornerRadius="10" Padding="8,2"
-                                            Background="{ThemeResource AccentFillColorDefaultBrush}"
-                                            Visibility="{x:Bind ViewModel.IsBatteryProfileActive, Mode=OneWay}">
-                                        <TextBlock Text="Active"
-                                                   Style="{StaticResource CaptionTextBlockStyle}"
-                                                   Foreground="{ThemeResource TextOnAccentFillColorPrimaryBrush}" />
-                                    </Border>
                                 </StackPanel>
                             </Grid>
 

@@ -553,6 +553,9 @@ public sealed class CapabilityPresentationTests
             Assert.NotNull(activeBadgeText.Parent);
             Assert.Equal("Border", activeBadgeText.Parent!.Name.LocalName);
             Assert.Equal("Center", Attribute(activeBadgeText.Parent, "VerticalAlignment"));
+            Assert.NotNull(activeBadgeText.Parent.Parent);
+            Assert.Equal("StackPanel", activeBadgeText.Parent.Parent!.Name.LocalName);
+            Assert.Equal("Horizontal", Attribute(activeBadgeText.Parent.Parent, "Orientation"));
         }
         Assert.DoesNotContain("ProfileChargeLimitEditor", xaml, StringComparison.Ordinal);
         Assert.Contains("ViewModel.IsBatteryProfileActive", xaml, StringComparison.Ordinal);

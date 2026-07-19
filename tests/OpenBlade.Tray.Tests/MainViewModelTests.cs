@@ -588,7 +588,7 @@ public sealed class MainViewModelTests
 
         client.Publish(CreateStatus(verified: true, blocked: false) with { Revision = 2 });
         await WaitUntilAsync(() => !viewModel.HasControllerDetectionWarning);
-        Assert.Equal("None running", viewModel.TroubleshootingOtherRazerSoftwareStatus);
+        Assert.Equal("None", viewModel.TroubleshootingOtherRazerSoftwareStatus);
     }
 
     [Fact]
@@ -2020,6 +2020,7 @@ public sealed class MainViewModelTests
         Assert.True(viewModel.IsReadinessReady);
         Assert.False(viewModel.IsReadinessWarning);
         Assert.False(viewModel.CanControlHardware);
+        Assert.Equal("USB-C", viewModel.TroubleshootingPowerSourceStatus);
 
         client.Publish(CreateStatus(verified: true, blocked: false) with
         {
@@ -2035,8 +2036,8 @@ public sealed class MainViewModelTests
         Assert.Equal(
             "Razer Blade 16 (2026), RZ09-0581",
             viewModel.TroubleshootingLaptopStatus);
-        Assert.Equal("Full-power adapter", viewModel.TroubleshootingPowerSourceStatus);
-        Assert.Equal("None running", viewModel.TroubleshootingOtherRazerSoftwareStatus);
+        Assert.Equal("AC", viewModel.TroubleshootingPowerSourceStatus);
+        Assert.Equal("None", viewModel.TroubleshootingOtherRazerSoftwareStatus);
         Assert.Equal("BIOS: 3.01", viewModel.TroubleshootingBiosFirmwareStatus);
         Assert.Equal("EC: 1.04", viewModel.TroubleshootingEcFirmwareStatus);
         Assert.Equal("MCU: Unavailable", viewModel.TroubleshootingMcuFirmwareStatus);

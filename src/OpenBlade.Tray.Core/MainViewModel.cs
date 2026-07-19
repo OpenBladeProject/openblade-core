@@ -679,8 +679,8 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         ? "Unavailable"
         : ActivePowerSource switch
         {
-            PowerSource.PluggedIn => "Full-power adapter",
-            PowerSource.UsbC => "USB-C power",
+            PowerSource.PluggedIn => "AC",
+            PowerSource.UsbC => "USB-C",
             PowerSource.Battery => "Battery",
             PowerSource.ExternalUnknown => "Checking power source",
             _ => "Unavailable",
@@ -697,7 +697,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             string running = string.Join(", ", latestStatus?.PotentialControllers ?? []);
             if (!HasControllerDetectionWarning)
             {
-                return string.IsNullOrWhiteSpace(running) ? "None running" : running;
+                return string.IsNullOrWhiteSpace(running) ? "None" : running;
             }
 
             string warning = FormatTroubleshootingValue(ControllerDetectionWarningText);
