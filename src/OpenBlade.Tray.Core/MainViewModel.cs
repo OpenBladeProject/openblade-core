@@ -40,6 +40,13 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
 {
     private const string UnavailableLabel = "Unavailable";
 
+    private enum ProfileDraftGroup
+    {
+        Thermal,
+        Lighting,
+        Display,
+    }
+
     private static readonly IReadOnlyList<ProfileComparisonOption> ComparisonOptions =
     [
         new(PowerSource.PluggedIn, "Plugged in"),
@@ -244,6 +251,24 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         DiscardProfileDraftCommand = CreateCommand(
             DiscardProfileDraftAsync,
             _ => HasActiveProfileDraft);
+        SaveThermalProfileDraftCommand = CreateCommand(
+            (_, token) => SaveActiveProfileDraftAsync(ProfileDraftGroup.Thermal, token),
+            _ => CanSaveActiveProfileDraft(ProfileDraftGroup.Thermal));
+        DiscardThermalProfileDraftCommand = CreateCommand(
+            (_, token) => DiscardActiveProfileDraftAsync(ProfileDraftGroup.Thermal, token),
+            _ => HasThermalProfileDraft);
+        SaveLightingProfileDraftCommand = CreateCommand(
+            (_, token) => SaveActiveProfileDraftAsync(ProfileDraftGroup.Lighting, token),
+            _ => CanSaveActiveProfileDraft(ProfileDraftGroup.Lighting));
+        DiscardLightingProfileDraftCommand = CreateCommand(
+            (_, token) => DiscardActiveProfileDraftAsync(ProfileDraftGroup.Lighting, token),
+            _ => HasLightingProfileDraft);
+        SaveDisplayProfileDraftCommand = CreateCommand(
+            (_, token) => SaveActiveProfileDraftAsync(ProfileDraftGroup.Display, token),
+            _ => CanSaveActiveProfileDraft(ProfileDraftGroup.Display));
+        DiscardDisplayProfileDraftCommand = CreateCommand(
+            (_, token) => DiscardActiveProfileDraftAsync(ProfileDraftGroup.Display, token),
+            _ => HasDisplayProfileDraft);
         ExportDiagnosticsCommand = CreateCommand(
             ExportDiagnosticsAsync,
             _ => Volatile.Read(ref disposed) == 0 && IsConnected);
@@ -264,6 +289,12 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             (AsyncRelayCommand)ClearManualOverridesCommand,
             (AsyncRelayCommand)SaveProfilesCommand,
             (AsyncRelayCommand)DiscardProfileDraftCommand,
+            (AsyncRelayCommand)SaveThermalProfileDraftCommand,
+            (AsyncRelayCommand)DiscardThermalProfileDraftCommand,
+            (AsyncRelayCommand)SaveLightingProfileDraftCommand,
+            (AsyncRelayCommand)DiscardLightingProfileDraftCommand,
+            (AsyncRelayCommand)SaveDisplayProfileDraftCommand,
+            (AsyncRelayCommand)DiscardDisplayProfileDraftCommand,
             (AsyncRelayCommand)ExportDiagnosticsCommand,
             (AsyncRelayCommand)SetStartAtSignInCommand,
         ];
@@ -547,19 +578,49 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     public string PerformanceSourceLabel
     {
         get => performanceSourceLabel;
-        private set => SetField(ref performanceSourceLabel, value);
+        private set
+        {
+            if (performanceSourceLabel == value)
+            {
+                return;
+            }
+            SetField(ref performanceSourceLabel, value);
+            PropertyChanged?.Invoke(
+                this,
+                new PropertyChangedEventArgs(nameof(ThermalProfileRelationshipStatus)));
+        }
     }
 
     public string FanSourceLabel
     {
         get => fanSourceLabel;
-        private set => SetField(ref fanSourceLabel, value);
+        private set
+        {
+            if (fanSourceLabel == value)
+            {
+                return;
+            }
+            SetField(ref fanSourceLabel, value);
+            PropertyChanged?.Invoke(
+                this,
+                new PropertyChangedEventArgs(nameof(ThermalProfileRelationshipStatus)));
+        }
     }
 
     public string LightingSourceLabel
     {
         get => lightingSourceLabel;
-        private set => SetField(ref lightingSourceLabel, value);
+        private set
+        {
+            if (lightingSourceLabel == value)
+            {
+                return;
+            }
+            SetField(ref lightingSourceLabel, value);
+            PropertyChanged?.Invoke(
+                this,
+                new PropertyChangedEventArgs(nameof(LightingProfileRelationshipStatus)));
+        }
     }
 
     public string BatterySourceLabel
@@ -1212,6 +1273,22 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
 
     public bool HasActiveProfileDraft => activeProfileDraftSource is not null;
 
+    public bool HasThermalProfileDraft =>
+        activeProfileDraftPerformance is not null || activeProfileDraftFans is not null;
+
+    public bool HasLightingProfileDraft => activeProfileDraftLighting is not null;
+
+    public bool HasDisplayProfileDraft => activeProfileDraftDisplay is not null;
+
+    public string ThermalProfileRelationshipStatus => ProfileRelationshipStatus(
+        HasThermalProfileDraft,
+        PerformanceSourceLabel == "Changed outside OpenBlade"
+            || FanSourceLabel == "Changed outside OpenBlade");
+
+    public string LightingProfileRelationshipStatus => ProfileRelationshipStatus(
+        HasLightingProfileDraft,
+        LightingSourceLabel == "Changed outside OpenBlade");
+
     public bool IsPluggedInProfileDraft =>
         activeProfileDraftSource == PowerSource.PluggedIn;
 
@@ -1726,6 +1803,12 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     public ICommand ClearManualOverridesCommand { get; }
     public ICommand SaveProfilesCommand { get; }
     public ICommand DiscardProfileDraftCommand { get; }
+    public ICommand SaveThermalProfileDraftCommand { get; }
+    public ICommand DiscardThermalProfileDraftCommand { get; }
+    public ICommand SaveLightingProfileDraftCommand { get; }
+    public ICommand DiscardLightingProfileDraftCommand { get; }
+    public ICommand SaveDisplayProfileDraftCommand { get; }
+    public ICommand DiscardDisplayProfileDraftCommand { get; }
     public ICommand ExportDiagnosticsCommand { get; }
     public ICommand SetStartAtSignInCommand { get; }
 
@@ -2650,6 +2733,93 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             ? TryGetSupportedProfileDraft(CreateProfileSetWithActiveDraft(), out _)
             : profileEditorsDirty && TryGetSupportedProfileDraft(parameter, out _));
 
+    private bool CanSaveActiveProfileDraft(ProfileDraftGroup group) =>
+        CanMutate
+        && HasActiveProfileDraftFor(group)
+        && activeProfileDraftSource == ActivePowerSource
+        && TryGetSupportedProfileDraft(CreateProfileSetWithActiveDraft(group), out _);
+
+    private async Task SaveActiveProfileDraftAsync(
+        ProfileDraftGroup group,
+        CancellationToken token)
+    {
+        if (!CanSaveActiveProfileDraft(group)
+            || !TryGetSupportedProfileDraft(
+                CreateProfileSetWithActiveDraft(group),
+                out ProfileSet draft))
+        {
+            return;
+        }
+
+        bool accepted = await RunOperationAsync(
+            cancellationToken => serviceClient.UpdateProfilesAsync(draft, cancellationToken),
+            token);
+        if (!accepted)
+        {
+            return;
+        }
+
+        try
+        {
+            await ClearActiveProfileHardwareOverridesAsync(token, group);
+        }
+        finally
+        {
+            // The profile update is durable even when clearing an equivalent
+            // temporary hardware override fails afterward.
+            Profiles = draft;
+            ClearActiveProfileDraft(group);
+        }
+    }
+
+    private async Task DiscardActiveProfileDraftAsync(
+        ProfileDraftGroup group,
+        CancellationToken token)
+    {
+        token.ThrowIfCancellationRequested();
+        if (!HasActiveProfileDraftFor(group)
+            || activeProfileDraftSource is not { } source)
+        {
+            return;
+        }
+
+        if (ActivePowerSource != source)
+        {
+            await ReportDisplayRestoreSourceChangedAsync(token);
+            return;
+        }
+
+        bool restored;
+        if (group == ProfileDraftGroup.Display)
+        {
+            DisplayProfileSettings savedDisplay =
+                GetProfile(source).Display ?? DisplayProfileSettings.Unconfigured();
+            DisplayProfileSettings originalDisplay =
+                activeProfileOriginalDisplay ?? DisplayProfileSettings.Unconfigured();
+            DisplayProfileSettings displayToRestore = new(
+                savedDisplay.RefreshRateKey ?? originalDisplay.RefreshRateKey,
+                savedDisplay.HdrEnabled ?? originalDisplay.HdrEnabled,
+                savedDisplay.ColorProfileKey ?? originalDisplay.ColorProfileKey);
+            restored = await RestoreSavedDisplayProfileAsync(
+                source,
+                displayToRestore,
+                token);
+        }
+        else
+        {
+            restored = await ClearActiveProfileHardwareOverridesAsync(token, group);
+        }
+
+        if (restored && ActivePowerSource == source)
+        {
+            ClearActiveProfileDraft(group);
+        }
+        else if (ActivePowerSource != source)
+        {
+            await ReportDisplayRestoreSourceChangedAsync(token);
+        }
+    }
+
     private async Task DiscardProfileDraftAsync(object? parameter, CancellationToken token)
     {
         token.ThrowIfCancellationRequested();
@@ -2686,10 +2856,12 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     }
 
     private async Task<bool> ClearActiveProfileHardwareOverridesAsync(
-        CancellationToken token)
+        CancellationToken token,
+        ProfileDraftGroup? group = null)
     {
         bool restored = true;
-        if (activeProfileDraftPerformance is not null)
+        if ((group is null or ProfileDraftGroup.Thermal)
+            && activeProfileDraftPerformance is not null)
         {
             restored &= await RunOperationAsync(
                 cancellationToken => serviceClient.SetPerformanceOverrideAsync(
@@ -2697,7 +2869,8 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
                     cancellationToken),
                 token);
         }
-        if (activeProfileDraftFans is not null)
+        if ((group is null or ProfileDraftGroup.Thermal)
+            && activeProfileDraftFans is not null)
         {
             restored &= await RunOperationAsync(
                 cancellationToken => serviceClient.SetFanOverrideAsync(
@@ -2705,7 +2878,8 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
                     cancellationToken),
                 token);
         }
-        if (activeProfileDraftLighting is not null)
+        if ((group is null or ProfileDraftGroup.Lighting)
+            && activeProfileDraftLighting is not null)
         {
             restored &= await RunOperationAsync(
                 cancellationToken => serviceClient.SetLightingOverrideAsync(
@@ -3140,6 +3314,37 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         };
     }
 
+    private ProfileSet CreateProfileSetWithActiveDraft(ProfileDraftGroup group)
+    {
+        PowerSource source = activeProfileDraftSource
+            ?? throw new InvalidOperationException("No active profile draft exists.");
+        PowerProfile saved = GetProfile(source);
+        PowerProfile draft = group switch
+        {
+            ProfileDraftGroup.Thermal => saved with
+            {
+                Performance = activeProfileDraftPerformance ?? saved.Performance,
+                Fans = activeProfileDraftFans ?? saved.Fans,
+            },
+            ProfileDraftGroup.Lighting => saved with
+            {
+                Lighting = activeProfileDraftLighting ?? saved.Lighting,
+            },
+            ProfileDraftGroup.Display => saved with
+            {
+                Display = activeProfileDraftDisplay ?? saved.Display,
+            },
+            _ => throw new ArgumentOutOfRangeException(nameof(group)),
+        };
+        return source switch
+        {
+            PowerSource.PluggedIn => Profiles with { PluggedIn = draft },
+            PowerSource.Battery => Profiles with { Battery = draft },
+            PowerSource.UsbC => Profiles with { UsbC = draft },
+            _ => throw new ArgumentOutOfRangeException(nameof(source)),
+        };
+    }
+
     private ProfileSet CreateLegacyProfileEditorDraft() => new(
         Profiles.PluggedIn with
         {
@@ -3244,9 +3449,54 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         NotifyActiveProfileDraft();
     }
 
+    private void ClearActiveProfileDraft(ProfileDraftGroup group)
+    {
+        switch (group)
+        {
+            case ProfileDraftGroup.Thermal:
+                activeProfileDraftPerformance = null;
+                activeProfileDraftFans = null;
+                break;
+            case ProfileDraftGroup.Lighting:
+                activeProfileDraftLighting = null;
+                break;
+            case ProfileDraftGroup.Display:
+                activeProfileDraftDisplay = null;
+                activeProfileOriginalDisplay = null;
+                break;
+            default:
+                throw new ArgumentOutOfRangeException(nameof(group));
+        }
+
+        if (!HasThermalProfileDraft
+            && !HasLightingProfileDraft
+            && !HasDisplayProfileDraft)
+        {
+            activeProfileDraftSource = null;
+        }
+        NotifyActiveProfileDraft();
+    }
+
+    private bool HasActiveProfileDraftFor(ProfileDraftGroup group) => group switch
+    {
+        ProfileDraftGroup.Thermal => HasThermalProfileDraft,
+        ProfileDraftGroup.Lighting => HasLightingProfileDraft,
+        ProfileDraftGroup.Display => HasDisplayProfileDraft,
+        _ => false,
+    };
+
     private void NotifyActiveProfileDraft()
     {
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasActiveProfileDraft)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasThermalProfileDraft)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasLightingProfileDraft)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasDisplayProfileDraft)));
+        PropertyChanged?.Invoke(
+            this,
+            new PropertyChangedEventArgs(nameof(ThermalProfileRelationshipStatus)));
+        PropertyChanged?.Invoke(
+            this,
+            new PropertyChangedEventArgs(nameof(LightingProfileRelationshipStatus)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsPluggedInProfileDraft)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsBatteryProfileDraft)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsUsbCProfileDraft)));
@@ -3344,6 +3594,17 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         DeviceSubsystem.Lighting => "Keyboard lighting",
         _ => subsystem.ToString(),
     };
+
+    private string ProfileRelationshipStatus(bool hasDraft, bool changedOutside) =>
+        !IsConnected || latestStatus?.DeviceVerified != true
+            ? UnavailableLabel
+            : !HasConfirmedPowerSource
+                ? "Waiting for power source"
+                : hasDraft
+                    ? "Temporary change not saved to this profile"
+                    : changedOutside
+                        ? "Changed outside OpenBlade"
+                        : "Matches saved profile";
 
     private static string FormatLightingProfile(LightingSettings lighting)
     {

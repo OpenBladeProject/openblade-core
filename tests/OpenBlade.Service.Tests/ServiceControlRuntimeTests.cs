@@ -555,6 +555,37 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     }
 
     [Fact]
+    public async Task OwnedRenderer_ResumeBeforeDeviceArrival_RestoresOnArrival()
+    {
+        TestContext context = await CreateOwnedStaticLightingContextAsync();
+
+        await context.Runtime.InvalidateLightingRendererAsync(CancellationToken.None);
+        context.Provider.Available = false;
+        await context.Runtime.RestoreLightingRendererAsync(CancellationToken.None);
+        await context.Runtime.RestoreLightingRendererAsync(CancellationToken.None);
+
+        Assert.Equal(1, context.Device.LightingSetCalls);
+        Assert.Contains(
+            "waiting for the laptop to reconnect",
+            context.Runtime.GetStatus().Message,
+            StringComparison.OrdinalIgnoreCase);
+
+        context.Provider.Available = true;
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        await context.Runtime.RestoreLightingRendererAsync(CancellationToken.None);
+        await context.Runtime.RestoreLightingRendererAsync(CancellationToken.None);
+
+        Assert.Equal(2, context.Device.LightingSetCalls);
+        Assert.Equal(
+            LightingRendererOwnershipState.Static,
+            context.Runtime.GetStatus().LightingRendererOwnership);
+        Assert.Contains(
+            "was restored",
+            context.Runtime.GetStatus().Message,
+            StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public async Task OwnedRenderer_PowerChangeDuringSuspend_AppliesDestinationProfileOnce()
     {
         TestContext context = await CreateOwnedStaticLightingContextAsync();

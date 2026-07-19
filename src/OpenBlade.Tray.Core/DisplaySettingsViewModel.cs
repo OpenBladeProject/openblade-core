@@ -127,6 +127,10 @@ public sealed class DisplaySettingsViewModel : INotifyPropertyChanged, IAsyncDis
     private bool isHdrEnabled;
     private bool isBusy;
     private PowerSource activePowerSource = PowerSource.ExternalUnknown;
+    private DisplayProfileSettings activeProfileSettings =
+        DisplayProfileSettings.Unconfigured();
+    private bool hasPendingProfileChange;
+    private bool profilePersistenceAvailable;
     private string statusMessage = "Checking the built-in display...";
     private int disposed;
 
@@ -159,6 +163,7 @@ public sealed class DisplaySettingsViewModel : INotifyPropertyChanged, IAsyncDis
             if (SetField(ref selectedRefreshRate, value))
             {
                 OnPropertyChanged(nameof(CurrentProfileSettings));
+                NotifyProfileRelationshipChanged();
             }
         }
     }
@@ -183,6 +188,7 @@ public sealed class DisplaySettingsViewModel : INotifyPropertyChanged, IAsyncDis
             if (SetField(ref selectedColorProfile, value))
             {
                 OnPropertyChanged(nameof(CurrentProfileSettings));
+                NotifyProfileRelationshipChanged();
             }
         }
     }
@@ -196,6 +202,7 @@ public sealed class DisplaySettingsViewModel : INotifyPropertyChanged, IAsyncDis
             {
                 OnPropertyChanged(nameof(CurrentProfileSettings));
                 NotifyControlStateChanged();
+                NotifyProfileRelationshipChanged();
             }
         }
     }
@@ -209,6 +216,7 @@ public sealed class DisplaySettingsViewModel : INotifyPropertyChanged, IAsyncDis
             {
                 OnPropertyChanged(nameof(CurrentProfileSettings));
                 NotifyControlStateChanged();
+                NotifyProfileRelationshipChanged();
             }
         }
     }
@@ -223,6 +231,7 @@ public sealed class DisplaySettingsViewModel : INotifyPropertyChanged, IAsyncDis
                 OnPropertyChanged(nameof(ColorProfileDescription));
                 OnPropertyChanged(nameof(CurrentProfileSettings));
                 NotifyControlStateChanged();
+                NotifyProfileRelationshipChanged();
             }
         }
     }
@@ -247,6 +256,44 @@ public sealed class DisplaySettingsViewModel : INotifyPropertyChanged, IAsyncDis
             if (SetField(ref activePowerSource, value))
             {
                 NotifyControlStateChanged();
+                NotifyProfileRelationshipChanged();
+            }
+        }
+    }
+
+    public DisplayProfileSettings ActiveProfileSettings
+    {
+        get => activeProfileSettings;
+        set
+        {
+            ArgumentNullException.ThrowIfNull(value);
+            if (SetField(ref activeProfileSettings, value))
+            {
+                NotifyProfileRelationshipChanged();
+            }
+        }
+    }
+
+    public bool HasPendingProfileChange
+    {
+        get => hasPendingProfileChange;
+        set
+        {
+            if (SetField(ref hasPendingProfileChange, value))
+            {
+                NotifyProfileRelationshipChanged();
+            }
+        }
+    }
+
+    public bool ProfilePersistenceAvailable
+    {
+        get => profilePersistenceAvailable;
+        set
+        {
+            if (SetField(ref profilePersistenceAvailable, value))
+            {
+                NotifyProfileRelationshipChanged();
             }
         }
     }
@@ -277,6 +324,25 @@ public sealed class DisplaySettingsViewModel : INotifyPropertyChanged, IAsyncDis
     public bool CanCaptureCurrentSettings =>
         HasConfirmedPowerSource && IsAvailable && !IsBusy;
 
+    public bool CanSaveCurrentSettingsToProfile =>
+        ProfilePersistenceAvailable
+        && CanCaptureCurrentSettings
+        && (HasPendingProfileChange
+            || !ActiveProfileSettings.IsConfigured
+            || !CurrentSettingsMatchActiveProfile);
+
+    public string ProfileRelationshipStatus => !ProfilePersistenceAvailable
+        || !HasConfirmedPowerSource
+        || !IsAvailable
+        ? "Unavailable"
+        : HasPendingProfileChange
+            ? "Temporary change not saved to this profile"
+            : !ActiveProfileSettings.IsConfigured
+                ? "Current settings are not saved to this profile"
+                : CurrentSettingsMatchActiveProfile
+                    ? "Matches saved profile"
+                    : "Different from saved profile";
+
     private bool HasConfirmedPowerSource => ActivePowerSource is
         PowerSource.PluggedIn or PowerSource.Battery or PowerSource.UsbC;
 
@@ -286,6 +352,24 @@ public sealed class DisplaySettingsViewModel : INotifyPropertyChanged, IAsyncDis
             IsHdrSupported ? IsHdrEnabled : null,
             SelectedColorProfile?.Key)
         : DisplayProfileSettings.Unconfigured();
+
+    private bool CurrentSettingsMatchActiveProfile =>
+        ActiveProfileSettings.IsConfigured
+        && IsAvailable
+        && (ActiveProfileSettings.RefreshRateKey is null
+            || string.Equals(
+                ActiveProfileSettings.RefreshRateKey,
+                SelectedRefreshRate?.Key,
+                StringComparison.Ordinal))
+        && (!ActiveProfileSettings.HdrEnabled.HasValue
+            || ActiveProfileSettings.HdrEnabled == IsHdrEnabled)
+        && (ActiveProfileSettings.ColorProfileKey is null
+            || ActiveProfileSettings.HdrEnabled is true
+            || (!IsHdrEnabled
+                && string.Equals(
+                    ActiveProfileSettings.ColorProfileKey,
+                    SelectedColorProfile?.Key,
+                    StringComparison.Ordinal)));
 
     public async Task RefreshAsync(CancellationToken token = default)
     {
@@ -621,6 +705,13 @@ public sealed class DisplaySettingsViewModel : INotifyPropertyChanged, IAsyncDis
         OnPropertyChanged(nameof(CanChangeHdr));
         OnPropertyChanged(nameof(CanChangeColorProfile));
         OnPropertyChanged(nameof(CanCaptureCurrentSettings));
+        OnPropertyChanged(nameof(CanSaveCurrentSettingsToProfile));
+    }
+
+    private void NotifyProfileRelationshipChanged()
+    {
+        OnPropertyChanged(nameof(ProfileRelationshipStatus));
+        OnPropertyChanged(nameof(CanSaveCurrentSettingsToProfile));
     }
 
     private bool SetField<T>(ref T field, T value, [CallerMemberName] string? name = null)

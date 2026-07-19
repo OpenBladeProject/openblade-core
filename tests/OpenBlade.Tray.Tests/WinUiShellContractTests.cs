@@ -21,7 +21,7 @@ public sealed class WinUiShellContractTests
     }
 
     [Fact]
-    public void ProfilesPageUsesReadOnlySummariesAndCompactCurrentDraftActions()
+    public void ProfilesPageIsReadOnlyAndSubsystemPagesOwnProfileActions()
     {
         string xaml = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml");
 
@@ -35,14 +35,16 @@ public sealed class WinUiShellContractTests
         Assert.Contains("ViewModel.IsPluggedInProfileDraft", xaml, StringComparison.Ordinal);
         Assert.Contains("ViewModel.IsBatteryProfileDraft", xaml, StringComparison.Ordinal);
         Assert.Contains("ViewModel.IsUsbCProfileDraft", xaml, StringComparison.Ordinal);
-        Assert.Contains("has unsaved changes", xaml, StringComparison.Ordinal);
         Assert.DoesNotContain("ViewModel.SavedActiveProfileSummary", xaml, StringComparison.Ordinal);
         Assert.DoesNotContain("ViewModel.PendingActiveProfileSummary", xaml, StringComparison.Ordinal);
-        Assert.Contains("ViewModel.DiscardProfileDraftCommand", xaml, StringComparison.Ordinal);
-        Assert.Contains("Content=\"Save changes\"", xaml, StringComparison.Ordinal);
-        Assert.Contains("Text=\"Current display\"", xaml, StringComparison.Ordinal);
-        Assert.Contains("Click=\"OnCaptureCurrentDisplaySettings\"", xaml, StringComparison.Ordinal);
-        Assert.Contains("DisplayViewModel.CanCaptureCurrentSettings", xaml, StringComparison.Ordinal);
+        Assert.DoesNotContain("ViewModel.DiscardProfileDraftCommand", xaml, StringComparison.Ordinal);
+        Assert.DoesNotContain("ViewModel.SaveProfilesCommand", xaml, StringComparison.Ordinal);
+        Assert.DoesNotContain("Text=\"Current display\"", xaml, StringComparison.Ordinal);
+        Assert.DoesNotContain("OnCaptureCurrentDisplaySettings", xaml, StringComparison.Ordinal);
+        Assert.Contains("ViewModel.SaveThermalProfileDraftCommand", xaml, StringComparison.Ordinal);
+        Assert.Contains("ViewModel.SaveLightingProfileDraftCommand", xaml, StringComparison.Ordinal);
+        Assert.Contains("DisplayViewModel.ProfileRelationshipStatus", xaml, StringComparison.Ordinal);
+        Assert.Contains("DisplayViewModel.CanSaveCurrentSettingsToProfile", xaml, StringComparison.Ordinal);
         Assert.Contains("ToolTipService.ToolTip=\"Unsaved changes\"", xaml, StringComparison.Ordinal);
         Assert.Contains("AutomationProperties.Name=\"Unsaved changes\"", xaml, StringComparison.Ordinal);
         Assert.Equal(1, CountOccurrences(xaml, "x:Name=\"LightingEffectPicker\""));
@@ -52,6 +54,7 @@ public sealed class WinUiShellContractTests
         Assert.DoesNotContain("ViewModel.SelectedManualChangeDurationOption", xaml, StringComparison.Ordinal);
 
         string window = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml.cs");
+        Assert.Contains("ViewModel.SaveDisplayProfileDraftCommand", window, StringComparison.Ordinal);
         Assert.Contains("DisplayViewModel.UserSettingsChanged +=", window, StringComparison.Ordinal);
         Assert.Contains(
             "args.PowerSource,",
@@ -65,7 +68,7 @@ public sealed class WinUiShellContractTests
         Assert.Contains("sourceAtStart != ViewModel.ActivePowerSource", window, StringComparison.Ordinal);
         Assert.DoesNotContain("WindowsDisplaySettingsController", window, StringComparison.Ordinal);
         Assert.DoesNotContain("observedDisplayProfilePowerSource", window, StringComparison.Ordinal);
-        Assert.DoesNotContain("ViewModel.ActiveSavedDisplayProfile", window, StringComparison.Ordinal);
+        Assert.Contains("ViewModel.ActiveSavedDisplayProfile", window, StringComparison.Ordinal);
     }
 
     [Fact]

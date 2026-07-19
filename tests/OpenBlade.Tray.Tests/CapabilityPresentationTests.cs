@@ -145,7 +145,7 @@ public sealed class CapabilityPresentationTests
             && Attribute(element, "Content") == "Display"
             && Attribute(element, "Tag") == "display");
         Assert.Equal(
-            2,
+            3,
             display.Descendants().Count(element =>
                 Attribute(element, "Style") == "{StaticResource SettingsRowStyle}"));
         Assert.Single(display.Descendants(), element =>

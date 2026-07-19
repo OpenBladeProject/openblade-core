@@ -846,9 +846,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
 
             if (!current.DeviceVerified || current.WritesBlocked)
             {
-                PublishLightingRestoreFailure(
-                    "OpenBlade lighting could not be restored after the system lifecycle change; it will not retry automatically.",
-                    current.LightingRendererOwnership);
+                DeferLightingRestoreUntilDeviceArrival(requested, current);
                 return;
             }
 
@@ -857,9 +855,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             {
                 if (!deviceProvider.TryGetVerifiedDevice(out device))
                 {
-                    PublishLightingRestoreFailure(
-                        "OpenBlade lighting could not be restored after the system lifecycle change; it will not retry automatically.",
-                        current.LightingRendererOwnership);
+                    DeferLightingRestoreUntilDeviceArrival(requested, current);
                     return;
                 }
             }
@@ -921,6 +917,17 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         {
             operationGate.Release();
         }
+    }
+
+    private void DeferLightingRestoreUntilDeviceArrival(
+        LightingSettings requested,
+        ServiceStatusSnapshot current)
+    {
+        pendingLightingRestore = requested;
+        const string message =
+            "OpenBlade is waiting for the laptop to reconnect before restoring lighting.";
+        history.RecordSummary(ControlOperationStatus.Stored, message);
+        PublishIfChanged(current with { Message = message });
     }
 
     public void Dispose() => operationGate.Dispose();

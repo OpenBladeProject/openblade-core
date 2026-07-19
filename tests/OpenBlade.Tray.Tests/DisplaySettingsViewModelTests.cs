@@ -58,6 +58,40 @@ public sealed class DisplaySettingsViewModelTests
     }
 
     [Fact]
+    public async Task ProfileRelationship_TracksSavedCurrentAndPendingDisplayState()
+    {
+        var adapter = new FakeDisplaySettingsAdapter(
+            Snapshot(refreshKey: Fixed60.Key, hdr: false, colorKey: Native.Key));
+        await using var viewModel = CreateViewModel(adapter);
+        viewModel.ProfilePersistenceAvailable = true;
+        viewModel.ActiveProfileSettings = new DisplayProfileSettings(
+            Fixed60.Key,
+            false,
+            Native.Key);
+
+        await viewModel.RefreshAsync();
+
+        Assert.Equal("Matches saved profile", viewModel.ProfileRelationshipStatus);
+        Assert.False(viewModel.CanSaveCurrentSettingsToProfile);
+
+        adapter.SetExternalState(Snapshot(
+            refreshKey: Fixed240.Key,
+            hdr: false,
+            colorKey: Native.Key));
+        await viewModel.RefreshAsync();
+
+        Assert.Equal("Different from saved profile", viewModel.ProfileRelationshipStatus);
+        Assert.True(viewModel.CanSaveCurrentSettingsToProfile);
+
+        viewModel.HasPendingProfileChange = true;
+
+        Assert.Equal(
+            "Temporary change not saved to this profile",
+            viewModel.ProfileRelationshipStatus);
+        Assert.True(viewModel.CanSaveCurrentSettingsToProfile);
+    }
+
+    [Fact]
     public async Task Changes_AreSerializedAndUseAdapterReadback()
     {
         var adapter = new FakeDisplaySettingsAdapter(

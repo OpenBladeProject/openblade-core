@@ -241,6 +241,9 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, ITrayIconThem
         }
 
         DisplayViewModel.ActivePowerSource = ViewModel.ActivePowerSource;
+        DisplayViewModel.ActiveProfileSettings = ViewModel.ActiveSavedDisplayProfile;
+        DisplayViewModel.HasPendingProfileChange = ViewModel.HasDisplayProfileDraft;
+        DisplayViewModel.ProfilePersistenceAvailable = ViewModel.CanControlHardware;
         await RefreshDisplaySettingsAsync();
     }
 
@@ -267,6 +270,22 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, ITrayIconThem
         if (args.PropertyName == nameof(MainViewModel.ActivePowerSource))
         {
             DisplayViewModel.ActivePowerSource = ViewModel.ActivePowerSource;
+        }
+
+        if (args.PropertyName is nameof(MainViewModel.ActivePowerSource)
+            or nameof(MainViewModel.ActiveSavedDisplayProfile))
+        {
+            DisplayViewModel.ActiveProfileSettings = ViewModel.ActiveSavedDisplayProfile;
+        }
+
+        if (args.PropertyName == nameof(MainViewModel.HasDisplayProfileDraft))
+        {
+            DisplayViewModel.HasPendingProfileChange = ViewModel.HasDisplayProfileDraft;
+        }
+
+        if (args.PropertyName == nameof(MainViewModel.CanControlHardware))
+        {
+            DisplayViewModel.ProfilePersistenceAvailable = ViewModel.CanControlHardware;
         }
 
         if (args.PropertyName is nameof(MainViewModel.LiveReadingsRefreshCadence)
@@ -807,7 +826,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, ITrayIconThem
             args.Settings,
             args.PreviousSettings);
 
-    private async void OnCaptureCurrentDisplaySettings(
+    private async void OnSaveCurrentDisplaySettingsToProfile(
         object sender,
         RoutedEventArgs args)
     {
@@ -829,6 +848,11 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, ITrayIconThem
         ViewModel.RecordDisplayProfileChange(
             sourceAtStart,
             DisplayViewModel.CurrentProfileSettings);
+        if (ViewModel.SaveDisplayProfileDraftCommand is AsyncRelayCommand command
+            && command.CanExecute(null))
+        {
+            await command.ExecuteAsync(null);
+        }
     }
 
     private async Task<bool> OnSavedDisplayProfileRestoreRequested(
@@ -980,11 +1004,6 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, ITrayIconThem
         AttentionIndicator.Padding = stack
             ? new Thickness(7, 3, 7, 3)
             : new Thickness(10, 3, 10, 3);
-        Grid.SetRow(UseProfileSettingsButton, stack ? 1 : 0);
-        Grid.SetColumn(UseProfileSettingsButton, stack ? 0 : 1);
-        UseProfileSettingsButton.HorizontalAlignment = stack
-            ? Microsoft.UI.Xaml.HorizontalAlignment.Left
-            : Microsoft.UI.Xaml.HorizontalAlignment.Right;
     }
 
     private void UpdateProfilesLayout(double fallbackWidth = double.NaN)
