@@ -28,6 +28,40 @@
       "decodable": true
     }
   ],
+  "oneShotReadbackAudit": {
+    "sourceCaptureId": "extended-control-sweep",
+    "captureDurationSeconds": 1168.83332,
+    "frameCount": 66286,
+    "observedNinetyByteCommands": [
+      "00/08",
+      "00/84",
+      "00/86",
+      "02/06",
+      "03/00",
+      "03/02",
+      "03/03",
+      "03/0A",
+      "07/8C",
+      "0D/02",
+      "0D/07",
+      "0D/87",
+      "0D/88",
+      "0F/18"
+    ],
+    "observedReadCommands": [
+      "00/84",
+      "00/86",
+      "07/8C",
+      "0D/87",
+      "0D/88"
+    ],
+    "functionKeySetterTransitionsObserved": ["0101", "0100"],
+    "gamingModeSetterTransitionsObserved": ["01000000", "00000000"],
+    "functionKeyIndependentReadObserved": false,
+    "gamingModeIndependentReadObserved": false,
+    "guessedReadCommandsSent": false,
+    "interpretation": "Synapse retained or replayed its own state; this capture does not establish a firmware getter for either control."
+  },
   "lighting": {
     "transport": {
       "hostRenderedMatrixCommand": "03/0B",
@@ -107,6 +141,7 @@
   },
   "startupAnimation": {
     "setter": "0F/18",
+    "query": "0F/98",
     "observedActions": [
       {
         "uiAction": "Off",
@@ -121,10 +156,16 @@
         "responsePayloadHex": "0000"
       }
     ],
-    "independentQueryObserved": false,
+    "independentQueryObserved": true,
+    "queryPayloadHex": "00",
+    "queryReadbacks": {
+      "on": "00",
+      "off": "01"
+    },
     "productionAdmitted": false,
+    "productionReadbackAdmitted": true,
     "openBladeOneShotAdmitted": true,
-    "openBladeStatePresentation": "NeverPresentedAsConfirmedState"
+    "openBladeStatePresentation": "ConfirmedReadback"
   },
   "switchOffLighting": {
     "rulesCaptured": [
@@ -162,6 +203,7 @@
     ],
     "successfulResponseEchoObserved": true,
     "independentQueryObserved": false,
+    "readbackAudit": "oneShotReadbackAudit",
     "productionAdmitted": false,
     "openBladeOneShotAdmitted": true,
     "openBladeStatePresentation": "NeverPresentedAsConfirmedState"
@@ -193,6 +235,7 @@
     "responseStatusHex": "02",
     "responsePayloadHexForBothValues": "320A0000",
     "independentQueryObserved": false,
+    "readbackAudit": "oneShotReadbackAudit",
     "productionAdmitted": false,
     "openBladeOneShotAdmitted": true,
     "openBladeStatePresentation": "NeverPresentedAsConfirmedState"
