@@ -42,6 +42,46 @@ public sealed class DisplayAutomationCoordinatorTests
     }
 
     [Fact]
+    public async Task RestartAfterMissedSourceChange_AppliesCurrentDestinationProfile()
+    {
+        var context = new DisplayPowerContextState();
+        var applier = new FakeApplier();
+        PowerSource? reconciled = null;
+        await using var coordinator = new DisplayAutomationCoordinator(
+            context,
+            applier,
+            lastReconciledPowerSource: PowerSource.PluggedIn,
+            recordReconciledPowerSource: source => reconciled = source);
+
+        DisplayAutomationObservation result = coordinator.Observe(
+            Status(PowerSource.Battery, Profiles("restart")));
+        await coordinator.WhenIdleAsync();
+
+        Assert.Equal(DisplayAutomationObservation.TransitionScheduled, result);
+        Assert.Equal(PowerSource.Battery, Assert.Single(applier.Transitions).Source);
+        Assert.Equal(PowerSource.Battery, reconciled);
+    }
+
+    [Fact]
+    public async Task RestartOnSameSource_DoesNotOverwriteExternalDisplayChanges()
+    {
+        var context = new DisplayPowerContextState();
+        var applier = new FakeApplier();
+        await using var coordinator = new DisplayAutomationCoordinator(
+            context,
+            applier,
+            lastReconciledPowerSource: PowerSource.UsbC);
+
+        DisplayAutomationObservation result = coordinator.Observe(
+            Status(PowerSource.UsbC, Profiles("restart")));
+        await coordinator.WhenIdleAsync();
+
+        Assert.Equal(DisplayAutomationObservation.SameSource, result);
+        Assert.Empty(applier.Transitions);
+        Assert.Equal(PowerSource.UsbC, context.Capture().PowerSource);
+    }
+
+    [Fact]
     public async Task ConfirmedTransition_UsesDestinationProfileFromSameSnapshot()
     {
         var context = new DisplayPowerContextState();
@@ -78,6 +118,65 @@ public sealed class DisplayAutomationCoordinatorTests
 
         Assert.Equal(DisplayAutomationObservation.SameSource, result);
         Assert.Empty(applier.Transitions);
+    }
+
+    [Fact]
+    public async Task FailedTransition_RetriesOnceWithoutAnotherServiceStatus()
+    {
+        var context = new DisplayPowerContextState();
+        var applier = new FakeApplier();
+        applier.Results.Enqueue(Failure("Windows temporarily rejected the change."));
+        applier.Results.Enqueue(Success());
+        await using var coordinator = new DisplayAutomationCoordinator(
+            context,
+            applier,
+            retryDelay: static (_, _) => Task.CompletedTask);
+        coordinator.Observe(Status(PowerSource.PluggedIn, Profiles("initial"), revision: 1));
+        ProfileSet destination = Profiles("destination");
+
+        coordinator.Observe(Status(PowerSource.Battery, destination, revision: 2));
+        await coordinator.WhenIdleAsync();
+
+        Assert.Equal(2, applier.Transitions.Count);
+        Assert.All(applier.Transitions, transition =>
+        {
+            Assert.Equal(PowerSource.Battery, transition.Source);
+            Assert.Equal("destination-battery", transition.Settings.RefreshRateKey);
+        });
+        Assert.Equal(SessionDisplayOperationStatus.Succeeded,
+            coordinator.LastTransitionResult?.Result.Status);
+
+        Assert.Equal(
+            DisplayAutomationObservation.SameSource,
+            coordinator.Observe(Status(PowerSource.Battery, destination, revision: 3)));
+        await coordinator.WhenIdleAsync();
+        Assert.Equal(2, applier.Transitions.Count);
+    }
+
+    [Fact]
+    public async Task PersistentlyFailedTransition_StopsAfterOneAutomaticRetry()
+    {
+        var context = new DisplayPowerContextState();
+        var applier = new FakeApplier();
+        applier.Results.Enqueue(Failure("first failure"));
+        applier.Results.Enqueue(Failure("second failure"));
+        await using var coordinator = new DisplayAutomationCoordinator(
+            context,
+            applier,
+            retryDelay: static (_, _) => Task.CompletedTask);
+        coordinator.Observe(Status(PowerSource.PluggedIn, Profiles("initial"), revision: 1));
+        ProfileSet destination = Profiles("destination");
+
+        coordinator.Observe(Status(PowerSource.Battery, destination, revision: 2));
+        await coordinator.WhenIdleAsync();
+
+        Assert.Equal(SessionDisplayOperationStatus.Failed,
+            coordinator.LastTransitionResult?.Result.Status);
+        Assert.Equal(
+            DisplayAutomationObservation.SameSource,
+            coordinator.Observe(Status(PowerSource.Battery, destination, revision: 3)));
+        await coordinator.WhenIdleAsync();
+        Assert.Equal(2, applier.Transitions.Count);
     }
 
     [Fact]
@@ -249,6 +348,7 @@ public sealed class DisplayAutomationCoordinatorTests
             DisplayProfileSettings Settings);
 
         public List<Transition> Transitions { get; } = [];
+        public Queue<SessionDisplayExecutionResult> Results { get; } = [];
         public bool BlockFirstTransition { get; init; }
         public bool FirstTransitionCanceled { get; private set; }
         public TaskCompletionSource FirstTransitionStarted { get; } = new(
@@ -303,12 +403,22 @@ public sealed class DisplayAutomationCoordinatorTests
                     throw;
                 }
             }
-            return Success();
+            return Results.TryDequeue(out SessionDisplayExecutionResult? result)
+                ? result
+                : Success();
         }
 
-        private static SessionDisplayExecutionResult Success() => new(
+        private static SessionDisplayExecutionResult Success() =>
+            DisplayAutomationCoordinatorTests.Success();
+    }
+
+    private static SessionDisplayExecutionResult Success() => new(
             SessionDisplayOperationStatus.Succeeded,
             null,
             SessionDisplayIpcCodecTests.Snapshot("fixed-60", false, "native"));
-    }
+
+    private static SessionDisplayExecutionResult Failure(string error) => new(
+        SessionDisplayOperationStatus.Failed,
+        error,
+        SessionDisplayIpcCodecTests.Snapshot("fixed-60", false, "native"));
 }

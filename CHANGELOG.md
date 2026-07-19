@@ -37,6 +37,10 @@ All notable changes to OpenBlade are documented in this file. The project follow
 - Display profile automation now remains active after Tray Exit. The first
   confirmed source is observation-only; later real AC, USB-C, or battery
   transitions apply the destination profile through one serialized agent queue.
+- Display automation remembers the last successfully reconciled power source so
+  a SessionAgent restart catches up a source change it missed without
+  reasserting settings when the source is unchanged. A transient Windows
+  display failure receives one bounded retry on the next service status update.
 - The SessionAgent starts independently at sign-in, while the existing
   Start-at-sign-in setting continues to control only the visible tray.
 - Replaced the page-level legacy `ScrollViewer` controls with InteractionTracker-based `ScrollView` controls for smoother high-refresh-rate scrolling.

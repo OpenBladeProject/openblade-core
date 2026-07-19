@@ -17,9 +17,14 @@ public sealed record DisplayTransitionResult(
 
 public sealed class DisplayAutomationCoordinator : IAsyncDisposable
 {
+    private const int MaximumTransitionAttempts = 2;
+    private static readonly TimeSpan TransitionRetryDelay = TimeSpan.FromSeconds(1);
+
     private readonly object sync = new();
     private readonly DisplayPowerContextState powerContext;
     private readonly IDisplayProfileApplier applier;
+    private readonly Action<PowerSource>? recordReconciledPowerSource;
+    private readonly Func<TimeSpan, CancellationToken, Task> retryDelay;
     private readonly CancellationTokenSource lifetimeCancellation = new();
     private CancellationTokenSource? transitionCancellation;
     private readonly List<Task> transitionTasks = [];
@@ -31,10 +36,22 @@ public sealed class DisplayAutomationCoordinator : IAsyncDisposable
 
     public DisplayAutomationCoordinator(
         DisplayPowerContextState powerContext,
-        IDisplayProfileApplier applier)
+        IDisplayProfileApplier applier,
+        PowerSource? lastReconciledPowerSource = null,
+        Action<PowerSource>? recordReconciledPowerSource = null,
+        Func<TimeSpan, CancellationToken, Task>? retryDelay = null)
     {
         this.powerContext = powerContext ?? throw new ArgumentNullException(nameof(powerContext));
         this.applier = applier ?? throw new ArgumentNullException(nameof(applier));
+        if (lastReconciledPowerSource is not null and not (
+                PowerSource.PluggedIn or PowerSource.Battery or PowerSource.UsbC))
+        {
+            throw new ArgumentOutOfRangeException(nameof(lastReconciledPowerSource));
+        }
+
+        lastConfirmedPowerSource = lastReconciledPowerSource;
+        this.recordReconciledPowerSource = recordReconciledPowerSource;
+        this.retryDelay = retryDelay ?? Task.Delay;
     }
 
     public PowerSource? LastConfirmedPowerSource
@@ -86,6 +103,7 @@ public sealed class DisplayAutomationCoordinator : IAsyncDisposable
             {
                 lastConfirmedPowerSource = source;
                 powerContext.Update(source, NextGeneration());
+                RecordReconciledPowerSource(source);
                 return DisplayAutomationObservation.BaselineEstablished;
             }
 
@@ -105,6 +123,7 @@ public sealed class DisplayAutomationCoordinator : IAsyncDisposable
                         return DisplayAutomationObservation.TransitionScheduled;
                     }
                 }
+
                 return DisplayAutomationObservation.SameSource;
             }
 
@@ -187,12 +206,24 @@ public sealed class DisplayAutomationCoordinator : IAsyncDisposable
     {
         try
         {
-            SessionDisplayExecutionResult result =
-                await applier.ApplyProfileForTransitionAsync(
-                    source,
-                    transitionGeneration,
-                    settings,
-                    ownedCancellation.Token).ConfigureAwait(false);
+            SessionDisplayExecutionResult? result = null;
+            for (int attempt = 1; attempt <= MaximumTransitionAttempts; attempt++)
+            {
+                result = await applier.ApplyProfileForTransitionAsync(
+                        source,
+                        transitionGeneration,
+                        settings,
+                        ownedCancellation.Token)
+                    .ConfigureAwait(false);
+                if (result.Succeeded || attempt == MaximumTransitionAttempts)
+                {
+                    break;
+                }
+
+                await retryDelay(TransitionRetryDelay, ownedCancellation.Token)
+                    .ConfigureAwait(false);
+            }
+
             lock (sync)
             {
                 if (generation == transitionGeneration
@@ -202,7 +233,11 @@ public sealed class DisplayAutomationCoordinator : IAsyncDisposable
                     lastTransitionResult = new DisplayTransitionResult(
                         transitionGeneration,
                         source,
-                        result);
+                        result!);
+                    if (result!.Succeeded)
+                    {
+                        RecordReconciledPowerSource(source);
+                    }
                 }
             }
         }
@@ -269,4 +304,16 @@ public sealed class DisplayAutomationCoordinator : IAsyncDisposable
             PowerSource.UsbC => profiles.UsbC,
             _ => throw new ArgumentOutOfRangeException(nameof(source)),
         };
+
+    private void RecordReconciledPowerSource(PowerSource source)
+    {
+        try
+        {
+            recordReconciledPowerSource?.Invoke(source);
+        }
+        catch
+        {
+            // A best-effort restart checkpoint cannot make display automation fail.
+        }
+    }
 }

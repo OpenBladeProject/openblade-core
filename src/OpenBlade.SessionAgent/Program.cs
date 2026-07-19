@@ -55,7 +55,23 @@ internal static class Program
             {
                 var powerContext = new DisplayPowerContextState();
                 using var applier = new DisplayProfileApplier(controller, powerContext);
-                await using var coordinator = new DisplayAutomationCoordinator(powerContext, applier);
+                var checkpointStore = new DisplayAutomationCheckpointStore(
+                    Path.Combine(
+                        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                        "OpenBlade",
+                        "display-automation.json"));
+                await using var coordinator = new DisplayAutomationCoordinator(
+                    powerContext,
+                    applier,
+                    checkpointStore.Load(),
+                    source =>
+                    {
+                        if (!checkpointStore.Save(source))
+                        {
+                            System.Diagnostics.Trace.TraceWarning(
+                                "OpenBlade could not save the display automation checkpoint.");
+                        }
+                    });
                 var dispatcher = new SessionDisplayRequestDispatcher(applier);
                 await using var server = new SessionDisplayPipeServer(acquiredOwner, dispatcher);
                 var automation = new ServiceDisplayAutomationLoop(
