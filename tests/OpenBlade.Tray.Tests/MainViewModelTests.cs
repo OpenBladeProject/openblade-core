@@ -261,6 +261,42 @@ public sealed class MainViewModelTests
     }
 
     [Fact]
+    public async Task SaveLightingProfileDraft_PersistsVisibleSelectionBeforeClearingOverride()
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        ServiceStatusSnapshot baseline = CreateStatus(
+            verified: true,
+            blocked: false,
+            capabilities: DeviceCapabilities.SafeTargetDefaults() with
+            {
+                LightingEffects = new HashSet<LightingEffect>(
+                    Enum.GetValues<LightingEffect>()),
+                ChargeLimits = ChargeLimits(),
+            });
+        client.Publish(baseline);
+        await WaitUntilAsync(() => viewModel.IsConnected);
+        LightingSettings visibleSelection = LightingSettingsFactory.Static(
+            new RgbColor(12, 34, 56),
+            brightness: 67);
+
+        await Assert.IsType<AsyncRelayCommand>(viewModel.SetLightingCommand)
+            .ExecuteAsync(visibleSelection);
+
+        Assert.Equal(visibleSelection, client.LightingOverride?.Value);
+        Assert.True(viewModel.HasLightingProfileDraft);
+
+        await Assert.IsType<AsyncRelayCommand>(viewModel.SaveLightingProfileDraftCommand)
+            .ExecuteAsync(null);
+
+        Assert.Equal(visibleSelection, client.LastProfiles?.PluggedIn.Lighting);
+        Assert.Equal(visibleSelection, viewModel.Profiles.PluggedIn.Lighting);
+        Assert.Null(client.LightingOverride);
+        Assert.False(viewModel.HasLightingProfileDraft);
+    }
+
+    [Fact]
     public async Task SavedProfileRemainsSavedWhenEquivalentOverrideCleanupFails()
     {
         var client = new FakeServiceClient();

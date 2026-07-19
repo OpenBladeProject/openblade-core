@@ -24,12 +24,14 @@ public sealed class ServicePeriodicObservationLoopTests
 
         Assert.Equal(ServicePeriodicObservationLoop.ObservationInterval, requestedDelay);
         Assert.Equal(1, runtime.RefreshCalls);
+        Assert.Equal(1, runtime.RestoreCalls);
     }
 
     private sealed class RecordingRuntime(CancellationTokenSource cancellation)
         : IServiceControlRuntime
     {
         public int RefreshCalls { get; private set; }
+        public int RestoreCalls { get; private set; }
 
         public ServiceStatusSnapshot GetStatus() => throw new NotSupportedException();
 
@@ -65,6 +67,12 @@ public sealed class ServicePeriodicObservationLoopTests
             CancellationToken cancellationToken)
         {
             RefreshCalls++;
+            return Task.CompletedTask;
+        }
+
+        public Task RestoreLightingRendererAsync(CancellationToken cancellationToken)
+        {
+            RestoreCalls++;
             cancellation.Cancel();
             return Task.CompletedTask;
         }

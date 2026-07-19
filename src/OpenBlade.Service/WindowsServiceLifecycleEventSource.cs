@@ -140,11 +140,14 @@ public sealed class WindowsServiceLifecycleEventSource
     private const int PowerChangedBit = 1 << 0;
     private const int SuspendingBit = 1 << 1;
     private const int ResumedBit = 1 << 2;
+    internal const long DuplicateResumeWindowMilliseconds = 5_000;
     private static readonly ConcurrentBag<IDisposable> FailedSubscriptions = [];
     private readonly object disposeSync = new();
     private readonly object pendingDeviceSync = new();
     private readonly List<ServiceLifecycleTrigger> pendingDeviceTriggers = [];
     private readonly Func<CancellationToken, ValueTask>? beforePendingDrainAsync;
+    private readonly Func<long> getTickCount;
+    private readonly object resumeDeduplicationSync = new();
     private readonly Channel<bool> signal;
     private readonly IDisposable subscription;
     private Exception? disposalFailure;
@@ -152,6 +155,8 @@ public sealed class WindowsServiceLifecycleEventSource
     private int disposed;
     private int pendingTriggers;
     private int watcherStarted;
+    private bool hasPublishedResume;
+    private long lastPublishedResumeTick;
 
     public WindowsServiceLifecycleEventSource()
         : this(new NativeWindowsLifecycleNotificationBackend())
@@ -159,8 +164,19 @@ public sealed class WindowsServiceLifecycleEventSource
     }
 
     public WindowsServiceLifecycleEventSource(IWindowsLifecycleNotificationBackend backend)
+        : this(backend, () => Environment.TickCount64, beforePendingDrainAsync: null)
+    {
+    }
+
+    private WindowsServiceLifecycleEventSource(
+        IWindowsLifecycleNotificationBackend backend,
+        Func<long> getTickCount,
+        Func<CancellationToken, ValueTask>? beforePendingDrainAsync)
     {
         ArgumentNullException.ThrowIfNull(backend);
+        this.getTickCount = getTickCount
+            ?? throw new ArgumentNullException(nameof(getTickCount));
+        this.beforePendingDrainAsync = beforePendingDrainAsync;
         signal = Channel.CreateBounded<bool>(new BoundedChannelOptions(1)
         {
             FullMode = BoundedChannelFullMode.DropWrite,
@@ -173,10 +189,19 @@ public sealed class WindowsServiceLifecycleEventSource
     internal WindowsServiceLifecycleEventSource(
         IWindowsLifecycleNotificationBackend backend,
         Func<CancellationToken, ValueTask> beforePendingDrainAsync)
-        : this(backend)
+        : this(
+            backend,
+            () => Environment.TickCount64,
+            beforePendingDrainAsync ?? throw new ArgumentNullException(
+                nameof(beforePendingDrainAsync)))
     {
-        this.beforePendingDrainAsync = beforePendingDrainAsync
-            ?? throw new ArgumentNullException(nameof(beforePendingDrainAsync));
+    }
+
+    internal WindowsServiceLifecycleEventSource(
+        IWindowsLifecycleNotificationBackend backend,
+        Func<long> getTickCount)
+        : this(backend, getTickCount, beforePendingDrainAsync: null)
+    {
     }
 
     public async IAsyncEnumerable<ServiceLifecycleTrigger> WatchAsync(
@@ -278,6 +303,30 @@ public sealed class WindowsServiceLifecycleEventSource
             QueueDeviceTrigger(trigger);
             signal.Writer.TryWrite(true);
             return;
+        }
+
+        if (trigger == ServiceLifecycleTrigger.Suspending)
+        {
+            lock (resumeDeduplicationSync)
+            {
+                hasPublishedResume = false;
+            }
+        }
+        else if (trigger == ServiceLifecycleTrigger.Resumed)
+        {
+            lock (resumeDeduplicationSync)
+            {
+                long now = getTickCount();
+                if (hasPublishedResume
+                    && now - lastPublishedResumeTick is >= 0
+                        and <= DuplicateResumeWindowMilliseconds)
+                {
+                    return;
+                }
+
+                hasPublishedResume = true;
+                lastPublishedResumeTick = now;
+            }
         }
 
         int bit = trigger switch

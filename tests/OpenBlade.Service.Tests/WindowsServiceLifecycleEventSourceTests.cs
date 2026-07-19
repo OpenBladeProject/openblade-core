@@ -214,6 +214,52 @@ public sealed class WindowsServiceLifecycleEventSourceTests
     }
 
     [Fact]
+    public async Task WatchAsync_SuppressesSequentialDuplicateResumeUntilWindowExpires()
+    {
+        var backend = new FakeWindowsLifecycleNotificationBackend();
+        long tick = 1_000;
+        using var source = new WindowsServiceLifecycleEventSource(backend, () => tick);
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        await using IAsyncEnumerator<ServiceLifecycleTrigger> notifications =
+            source.WatchAsync(timeout.Token).GetAsyncEnumerator(timeout.Token);
+
+        backend.Publish(ServiceLifecycleTrigger.Resumed);
+        Assert.True(await notifications.MoveNextAsync());
+        Assert.Equal(ServiceLifecycleTrigger.Resumed, notifications.Current);
+
+        backend.Publish(ServiceLifecycleTrigger.Resumed);
+        backend.Publish(ServiceLifecycleTrigger.DeviceArrived);
+        Assert.True(await notifications.MoveNextAsync());
+        Assert.Equal(ServiceLifecycleTrigger.DeviceArrived, notifications.Current);
+
+        tick += WindowsServiceLifecycleEventSource.DuplicateResumeWindowMilliseconds + 1;
+        backend.Publish(ServiceLifecycleTrigger.Resumed);
+        Assert.True(await notifications.MoveNextAsync());
+        Assert.Equal(ServiceLifecycleTrigger.Resumed, notifications.Current);
+    }
+
+    [Fact]
+    public async Task WatchAsync_SuspendImmediatelyRearmsResume()
+    {
+        var backend = new FakeWindowsLifecycleNotificationBackend();
+        using var source = new WindowsServiceLifecycleEventSource(backend, () => 1_000);
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        await using IAsyncEnumerator<ServiceLifecycleTrigger> notifications =
+            source.WatchAsync(timeout.Token).GetAsyncEnumerator(timeout.Token);
+
+        backend.Publish(ServiceLifecycleTrigger.Resumed);
+        Assert.True(await notifications.MoveNextAsync());
+        Assert.Equal(ServiceLifecycleTrigger.Resumed, notifications.Current);
+
+        backend.Publish(ServiceLifecycleTrigger.Suspending);
+        backend.Publish(ServiceLifecycleTrigger.Resumed);
+        Assert.True(await notifications.MoveNextAsync());
+        Assert.Equal(ServiceLifecycleTrigger.Suspending, notifications.Current);
+        Assert.True(await notifications.MoveNextAsync());
+        Assert.Equal(ServiceLifecycleTrigger.Resumed, notifications.Current);
+    }
+
+    [Fact]
     public async Task WatchAsync_PublishAfterSignalDrainBeforeBitExchangeIsNotLost()
     {
         var backend = new FakeWindowsLifecycleNotificationBackend();
