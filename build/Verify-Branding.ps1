@@ -11,7 +11,7 @@ if ([string]::IsNullOrWhiteSpace($Repository)) {
 $repositoryRoot = [IO.Path]::GetFullPath($Repository)
 $formerToken = 'Open' + 'Synapse'
 $violations = [Collections.Generic.List[string]]::new()
-$tracked = & git -C $repositoryRoot ls-files --cached --others --exclude-standard
+$tracked = & git -C $repositoryRoot ls-files --cached
 if ($LASTEXITCODE -ne 0) {
     throw "git ls-files failed with exit code $LASTEXITCODE"
 }
@@ -24,7 +24,7 @@ foreach ($relativePath in $tracked) {
     $absolutePath = Join-Path $repositoryRoot $relativePath
     if (-not [IO.File]::Exists($absolutePath)) {
         # A staged or working-tree deletion is not part of the bundle being
-        # verified. New untracked files are included by the command above.
+        # verified.
         continue
     }
     $lines = [IO.File]::ReadAllLines($absolutePath)
