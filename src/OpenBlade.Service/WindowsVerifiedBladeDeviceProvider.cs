@@ -866,7 +866,18 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
             }
             catch
             {
-                await ResetLightingPortCoreAsync(lightingPort).ConfigureAwait(false);
+                // Brightness uses the command interface while the host renderer
+                // writes the matrix through a separate interface. A transient
+                // brightness read must not dispose an otherwise healthy renderer.
+                // Retire only a port whose renderer has independently reported
+                // that it is no longer usable.
+                IProductionLightingPort? current = lightingPort;
+                if (current?.OwnershipState is
+                    LightingRendererOwnershipState.None or
+                    LightingRendererOwnershipState.Faulted)
+                {
+                    await ResetLightingPortCoreAsync(current).ConfigureAwait(false);
+                }
                 return null;
             }
         }

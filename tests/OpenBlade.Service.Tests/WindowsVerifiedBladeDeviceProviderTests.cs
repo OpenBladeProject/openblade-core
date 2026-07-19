@@ -537,6 +537,33 @@ public sealed class WindowsVerifiedBladeDeviceProviderTests
     }
 
     [Fact]
+    public async Task LightingBrightnessReadFailure_PreservesHealthyRenderer()
+    {
+        var lightingPort = new FakeLightingPort
+        {
+            ReadFailure = new IOException("transient brightness read failure"),
+        };
+        var lightingFactory = new FakeLightingFactory(lightingPort);
+        using var provider = new WindowsVerifiedBladeDeviceProvider(
+            () => Probe(BatteryValidationProbeClassification.Ready),
+            Adapt(new FakeQueryFactory(
+                FakeQueryPort.Success(BatteryValidationSetting.Limit80))),
+            UnavailableFanRpmFactory(),
+            lightingFactory);
+        provider.TryGetVerifiedDevice(out IBladeDevice device);
+        LightingSettings requested = LightingSettingsFactory.SpectrumCycling(75);
+        await device.SetLightingAsync(requested, default);
+
+        ConfirmedDeviceState observed = await device.ReadStateAsync(default);
+
+        Assert.Null(observed.Lighting);
+        Assert.Equal(0, lightingPort.DisposeCount);
+        Assert.Equal(
+            LightingRendererOwnershipState.Spectrum,
+            await device.ReadLightingRendererOwnershipAsync(default));
+    }
+
+    [Fact]
     public async Task InvalidateLightingRenderer_ReturnsLiveFaultBeforeRetiringPort()
     {
         var lightingPort = new FakeLightingPort();
@@ -862,8 +889,12 @@ public sealed class WindowsVerifiedBladeDeviceProviderTests
 
         public int DisposeCount { get; private set; }
 
+        public Exception? ReadFailure { get; init; }
+
         public Task<LightingSettings?> ReadStateAsync(CancellationToken cancellationToken) =>
-            Task.FromResult<LightingSettings?>(Writes.LastOrDefault());
+            ReadFailure is null
+                ? Task.FromResult<LightingSettings?>(Writes.LastOrDefault())
+                : Task.FromException<LightingSettings?>(ReadFailure);
 
         public Task SetLightingAsync(
             LightingSettings settings,

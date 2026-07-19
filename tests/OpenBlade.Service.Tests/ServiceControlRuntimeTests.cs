@@ -683,11 +683,46 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     }
 
     [Fact]
+    public async Task PeriodicRefreshRecoversUnexpectedlyMissingLightingRenderer()
+    {
+        TestContext context = await CreateOwnedStaticLightingContextAsync();
+        context.Device.LightingRendererOwnership =
+            LightingRendererOwnershipState.None;
+
+        await context.Runtime.RefreshPowerSourceClassificationAsync(
+            CancellationToken.None);
+
+        Assert.Equal(2, context.Device.LightingSetCalls);
+        Assert.Equal(
+            LightingRendererOwnershipState.Static,
+            context.Runtime.GetStatus().LightingRendererOwnership);
+        Assert.Contains(
+            "recovered after a transient renderer error",
+            context.Runtime.GetStatus().Message,
+            StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public async Task VisibleObservationFaultIsRecoveredImmediatelyByServiceObservation()
     {
         TestContext context = await CreateOwnedStaticLightingContextAsync();
         context.Device.LightingRendererOwnership =
             LightingRendererOwnershipState.Faulted;
+
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+
+        Assert.Equal(2, context.Device.LightingSetCalls);
+        Assert.Equal(
+            LightingRendererOwnershipState.Static,
+            context.Runtime.GetStatus().LightingRendererOwnership);
+    }
+
+    [Fact]
+    public async Task VisibleObservationRecoversUnexpectedlyMissingLightingRenderer()
+    {
+        TestContext context = await CreateOwnedStaticLightingContextAsync();
+        context.Device.LightingRendererOwnership =
+            LightingRendererOwnershipState.None;
 
         await context.Runtime.ObserveAsync(CancellationToken.None);
 

@@ -1683,7 +1683,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 LightingRendererOwnership = lightingOwnership,
             });
 
-            if (powerSourceConfirmed && faultedLightingRecoveryCandidate is not null)
+            if (powerSourceConfirmed)
             {
                 await RecoverFaultedLightingRendererCoreAsync(cancellationToken)
                     .ConfigureAwait(false);
@@ -2195,8 +2195,15 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
 
         if (requested is null
             && lastOwnedLightingSettings is { } owned
+            && current.LightingRendererOwnership == LightingRendererOwnershipState.None)
+        {
+            lastOwnedLightingSettings = null;
+            requested = owned;
+        }
+        else if (requested is null
+            && lastOwnedLightingSettings is { } currentlyOwned
             && IsExplicitLightingOwnership(current.LightingRendererOwnership)
-            && OwnershipMatches(current.LightingRendererOwnership, owned))
+            && OwnershipMatches(current.LightingRendererOwnership, currentlyOwned))
         {
             if (!deviceProvider.TryGetVerifiedDevice(out device))
             {
@@ -2206,7 +2213,9 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             LightingRendererOwnershipState observed =
                 await ReadLightingOwnershipAsync(device, cancellationToken)
                     .ConfigureAwait(false);
-            if (observed != LightingRendererOwnershipState.Faulted)
+            if (observed is not (
+                LightingRendererOwnershipState.None or
+                LightingRendererOwnershipState.Faulted))
             {
                 UpdateOwnedLightingSnapshot(observed, appliedSettings: null);
                 PublishIfChanged(GetStatus() with
@@ -2216,9 +2225,9 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 return;
             }
 
-            faultedLightingRecoveryCandidate = owned;
+            faultedLightingRecoveryCandidate = currentlyOwned;
             lastOwnedLightingSettings = null;
-            requested = owned;
+            requested = currentlyOwned;
             PublishIfChanged(GetStatus() with
             {
                 LightingRendererOwnership = LightingRendererOwnershipState.Faulted,
@@ -2310,10 +2319,23 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         LightingRendererOwnershipState ownership,
         LightingSettings? appliedSettings)
     {
-        if (ownership is LightingRendererOwnershipState.None
-            or LightingRendererOwnershipState.Faulted)
+        if (ownership == LightingRendererOwnershipState.Faulted)
         {
             lastOwnedLightingSettings = null;
+            return;
+        }
+
+        if (ownership == LightingRendererOwnershipState.None)
+        {
+            // Observation can temporarily lose the provider's live port even
+            // though OpenBlade still expects to own the saved host-rendered
+            // effect. Intentional invalidation and Off writes clear the snapshot
+            // explicitly; preserve it here so the bounded recovery path can
+            // re-establish an unexpectedly missing renderer.
+            if (appliedSettings is not null)
+            {
+                lastOwnedLightingSettings = null;
+            }
             return;
         }
 
