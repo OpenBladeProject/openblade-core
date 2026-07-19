@@ -20,6 +20,7 @@ internal enum ThermalModeState
     // the production admission process.
     BatterySaverAutomatic,
     BatteryBalancedAutomatic,
+    CustomAutomatic,
 }
 
 internal readonly record struct ThermalModeReading(
@@ -97,6 +98,7 @@ internal static class ThermalModeProtocol
             (0x00, 0x00) => Assign(ThermalModeState.BalancedAutomatic, out state),
             (0x05, 0x00) => Assign(ThermalModeState.SilentAutomatic, out state),
             (0x02, 0x00) => Assign(ThermalModeState.PerformanceAutomatic, out state),
+            (0x04, 0x00) => Assign(ThermalModeState.CustomAutomatic, out state),
             (0x03, 0x00) => Assign(ThermalModeState.BatterySaverAutomatic, out state),
             (0x06, 0x00) => Assign(ThermalModeState.BatteryBalancedAutomatic, out state),
             // The direct, validated setter remains 00/01. Synapse's own path

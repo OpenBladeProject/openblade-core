@@ -58,7 +58,9 @@ public sealed class ControlRequestHandler
                 await runtime.UpdateProfilesAsync(update.Profiles, cancellationToken)),
             SetPerformanceOverrideRequest set => Result(
                 request.RequestId,
-                await runtime.SetPerformanceOverrideAsync(set.Value, cancellationToken)),
+                await runtime.SetPerformanceConfigurationOverrideAsync(
+                    set.Value,
+                    cancellationToken)),
             CyclePerformanceShortcutRequest cycle => Result(
                 request.RequestId,
                 await runtime.CyclePerformanceShortcutAsync(

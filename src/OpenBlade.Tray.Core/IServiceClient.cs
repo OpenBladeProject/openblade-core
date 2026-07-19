@@ -33,6 +33,18 @@ public interface IServiceClient
         ManualOverride<PerformancePreset>? value,
         CancellationToken token);
 
+    Task<ControlOperationResult> SetPerformanceConfigurationOverrideAsync(
+        PerformanceOverride? value,
+        CancellationToken token) => value is { Value: PerformancePreset.Custom }
+            ? Task.FromResult(new ControlOperationResult(
+                ControlOperationStatus.Blocked,
+                "Custom performance is unavailable."))
+            : SetPerformanceOverrideAsync(
+                value is null
+                    ? null
+                    : new ManualOverride<PerformancePreset>(value.Value, value.Lifetime),
+                token);
+
     Task<ControlOperationResult> CyclePerformanceShortcutAsync(
         PerformanceShortcutSource source,
         CancellationToken token) => Task.FromResult(

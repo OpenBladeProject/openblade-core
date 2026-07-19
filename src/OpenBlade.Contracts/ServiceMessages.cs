@@ -55,7 +55,7 @@ public sealed record UpdateProfilesRequest(int Version, Guid RequestId, ProfileS
 public sealed record SetPerformanceOverrideRequest(
     int Version,
     Guid RequestId,
-    ManualOverride<PerformancePreset>? Value)
+    PerformanceOverride? Value)
     : ServiceRequest(Version, RequestId);
 
 public sealed record CyclePerformanceShortcutRequest(
@@ -124,7 +124,7 @@ public sealed record ServiceStatusSnapshot(
     DesiredDeviceState DesiredState,
     PowerSource ActivePowerSource,
     LiveReadings? LiveReadings,
-    ManualOverride<PerformancePreset>? PerformanceOverride,
+    PerformanceOverride? PerformanceOverride,
     ManualOverride<FanMode>? FanOverride,
     ManualOverride<LightingSettings>? LightingOverride,
     bool FullChargeOverride,

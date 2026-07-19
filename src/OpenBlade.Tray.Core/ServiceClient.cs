@@ -80,6 +80,14 @@ public sealed class ServiceClient : IServiceClient
 
     public Task<ControlOperationResult> SetPerformanceOverrideAsync(
         ManualOverride<PerformancePreset>? value,
+        CancellationToken token) => SetPerformanceConfigurationOverrideAsync(
+            value is null
+                ? null
+                : new PerformanceOverride(value.Value, value.Lifetime),
+            token);
+
+    public Task<ControlOperationResult> SetPerformanceConfigurationOverrideAsync(
+        PerformanceOverride? value,
         CancellationToken token) => SendMutationAsync(
             new SetPerformanceOverrideRequest(
                 OpenBladeIpc.ProtocolVersion,

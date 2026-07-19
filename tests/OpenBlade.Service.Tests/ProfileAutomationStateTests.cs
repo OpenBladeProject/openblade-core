@@ -99,6 +99,36 @@ public sealed class ProfileAutomationStateTests
     }
 
     [Fact]
+    public void CustomPerformanceOverride_PreservesLevelsAndPausesAwayFromAc()
+    {
+        ProfileAutomationState state = CreateState(PowerSource.PluggedIn);
+        var levels = new CustomPerformanceSettings(
+            CustomPerformanceLevel.High,
+            CustomPerformanceLevel.Medium);
+        state.SetPerformanceOverride(new PerformanceOverride(
+            PerformancePreset.Custom,
+            OverrideLifetime.Persistent,
+            levels));
+
+        DesiredDeviceState onAc = state.Resolve(
+            new ConfirmedDeviceState(null, null, null, null));
+        state.ChangePowerSource(PowerSource.Battery);
+        DesiredDeviceState onBattery = state.Resolve(
+            new ConfirmedDeviceState(null, null, null, null));
+        state.ChangePowerSource(PowerSource.PluggedIn);
+        DesiredDeviceState restored = state.Resolve(
+            new ConfirmedDeviceState(null, null, null, null));
+
+        Assert.Equal(PerformancePreset.Custom, onAc.Performance.Value);
+        Assert.Equal(levels, onAc.CustomPerformance);
+        Assert.Equal(PerformancePreset.BatterySaver, onBattery.Performance.Value);
+        Assert.Null(onBattery.CustomPerformance);
+        Assert.Equal(PerformancePreset.Custom, restored.Performance.Value);
+        Assert.Equal(levels, restored.CustomPerformance);
+        Assert.Equal(SettingValueSource.PersistentOverride, restored.Performance.Source);
+    }
+
+    [Fact]
     public void PersistentBatteryPerformanceOverride_PausesOnAcAndReturnsOnBattery()
     {
         ProfileAutomationState state = CreateState(PowerSource.Battery);

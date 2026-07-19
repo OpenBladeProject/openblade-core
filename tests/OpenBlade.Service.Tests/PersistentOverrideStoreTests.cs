@@ -30,6 +30,49 @@ public sealed class PersistentOverrideStoreTests : IDisposable
     }
 
     [Fact]
+    public async Task SaveAndLoad_RoundTripsCustomPerformanceLevels()
+    {
+        PersistentOverrideStore store = CreateStore();
+        var expected = new PersistentOverrideState(
+            PerformancePreset.Custom,
+            null,
+            null,
+            new CustomPerformanceSettings(
+                CustomPerformanceLevel.High,
+                CustomPerformanceLevel.Medium));
+
+        await store.SaveAsync(expected, CancellationToken.None);
+        PersistentOverrideLoadResult loaded = await store.LoadAsync(CancellationToken.None);
+
+        Assert.False(loaded.Recovered);
+        Assert.Equal(expected, loaded.Overrides);
+    }
+
+    [Fact]
+    public async Task Load_MigratesSchemaOneWithoutInventingCustomLevels()
+    {
+        string path = Path.Combine(directory, "manual-overrides.json");
+        Directory.CreateDirectory(directory);
+        await File.WriteAllTextAsync(path, """
+            {
+              "schemaVersion": 1,
+              "overrides": {
+                "performance": 2,
+                "fans": null,
+                "lighting": null
+              }
+            }
+            """);
+
+        PersistentOverrideLoadResult loaded = await new PersistentOverrideStore(path)
+            .LoadAsync(CancellationToken.None);
+
+        Assert.False(loaded.Recovered);
+        Assert.Equal(PerformancePreset.Performance, loaded.Overrides.Performance);
+        Assert.Null(loaded.Overrides.CustomPerformance);
+    }
+
+    [Fact]
     public async Task Load_CorruptDocumentRecoversOnceToEmptyState()
     {
         string path = Path.Combine(directory, "manual-overrides.json");

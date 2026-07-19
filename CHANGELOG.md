@@ -32,12 +32,12 @@ All notable changes to OpenBlade are documented in this file. The project follow
   is off or the signed-in user is idle for 1 through 60 minutes, then restore
   the current profile or manual override after every suppression reason clears.
 - Performance-button and Fn+P support from the captured MI_01 Raw Input reports.
-  Plugged-in power cycles Balanced, Silent, and Performance; battery cycles
-  Balanced and Battery Saver; USB-C remains Balanced. Custom stays excluded
-  until both CPU and GPU components have independent readback.
+  Plugged-in power cycles Balanced, Silent, Performance, and Custom; battery
+  cycles Balanced and Battery Saver; USB-C remains Balanced.
 - The bounded read-only performance discriminator probe now includes fixed
-  `0D/87` CPU and GPU component queries. This is validation tooling only;
-  Custom mode remains unavailable until target-hardware GPU readback succeeds.
+  `0D/87` CPU and GPU component queries. Target-hardware readback confirmed the
+  saved CPU Medium and GPU High values, allowing Custom mode to expose the
+  captured Low, Medium, and High component choices while blocking High/High.
 - Exact-device one-shot controls for Startup animation, Function key behavior,
   and Gaming Mode. OpenBlade validates each captured response but deliberately
   does not present, persist, or automatically reapply a value it cannot query.
@@ -56,11 +56,12 @@ All notable changes to OpenBlade are documented in this file. The project follow
 - Profiles can capture Windows' current refresh rate, HDR state, and color
   profile into the active power profile before saving the draft.
 - The Troubleshooting header now aligns with the other About card content.
-- Named-pipe protocol version 13 adds typed one-shot laptop controls while
-  retaining lighting suppression, performance shortcuts, and the
-  installing-user-only full shutdown request.
-- Profile schema version 3 stores the global lighting power policy and migrates
-  schema version 2 profiles with the policy disabled.
+- Named-pipe protocol version 14 carries typed Custom CPU/GPU settings while
+  retaining one-shot laptop controls, lighting suppression, performance
+  shortcuts, and the installing-user-only full shutdown request.
+- Profile schema version 4 stores Custom CPU/GPU settings and migrates schema
+  version 3 profiles with the captured Medium/High default. Schema version 3
+  stores the global lighting power policy and remains migratable.
 - The tray icon now follows the effective active profile when firmware readback is
   unavailable, instead of showing a generic error while the service is ready.
 - Updated the runtime application icon from the canonical OpenBlade branding

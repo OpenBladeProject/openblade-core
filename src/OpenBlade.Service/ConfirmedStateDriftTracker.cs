@@ -7,6 +7,8 @@ public sealed class ConfirmedStateDriftTracker
 {
     private readonly HashSet<DeviceSubsystem> externalChanges = [];
     private PerformancePreset? performance;
+    private CustomPerformanceSettings? customPerformance;
+    private bool customPerformanceObserved;
     private FanMode? fans;
     private ConfirmedBatteryState? battery;
     private bool batteryObserved;
@@ -20,6 +22,7 @@ public sealed class ConfirmedStateDriftTracker
     {
         ArgumentNullException.ThrowIfNull(state);
         ObserveValue(state.Performance, ref performance, DeviceSubsystem.Performance);
+        ObserveCustomPerformance(state);
         ObserveValue(state.Fans, ref fans, DeviceSubsystem.Fans);
         ObserveBattery(state.Battery);
         ObserveValue(state.Lighting, ref lighting, DeviceSubsystem.Lighting);
@@ -97,5 +100,24 @@ public sealed class ConfirmedStateDriftTracker
 
         battery = observed;
         batteryObserved = true;
+    }
+
+    private void ObserveCustomPerformance(ConfirmedDeviceState state)
+    {
+        if (state.Performance != PerformancePreset.Custom)
+        {
+            customPerformance = null;
+            customPerformanceObserved = false;
+            return;
+        }
+
+        if (customPerformanceObserved
+            && customPerformance != state.CustomPerformance)
+        {
+            externalChanges.Add(DeviceSubsystem.Performance);
+        }
+
+        customPerformance = state.CustomPerformance;
+        customPerformanceObserved = true;
     }
 }

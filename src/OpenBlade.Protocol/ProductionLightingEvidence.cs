@@ -117,7 +117,7 @@ internal static class ProductionLightingEvidenceSource
         "OpenBladeLightingImplementationFingerprint";
 
     private const string ApprovedLightingImplementationFingerprintSha256 =
-        "F58D2DC627EE425A6614F9853BEFF2D2DEBB172F4EFAFA41C0C5921B82C977D0";
+        "897162036F7F9B759914B0615C0E51652D1CD7B45DEA7E55DEA9FA198B65F370";
 
     private static readonly JsonSerializerOptions SerializerOptions =
         new(JsonSerializerDefaults.Web)

@@ -18,6 +18,16 @@ public interface IBladeDevice
 
     Task SetPerformanceAsync(PerformancePreset value, CancellationToken cancellationToken);
 
+    Task SetPerformanceAsync(
+        PerformancePreset value,
+        CustomPerformanceSettings? customPerformance,
+        CancellationToken cancellationToken) => value == PerformancePreset.Custom
+            ? Task.FromException(
+                new BladeWriteException(
+                    WriteSubmissionState.KnownNotApplied,
+                    "Custom performance is unavailable."))
+            : SetPerformanceAsync(value, cancellationToken);
+
     Task SetFanModeAsync(FanMode value, CancellationToken cancellationToken);
 
     Task SetChargeLimitAsync(BatteryPolicy value, CancellationToken cancellationToken);

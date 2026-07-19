@@ -7,6 +7,49 @@ public enum PerformancePreset
     Performance,
     BatterySaver,
     BatteryBalanced,
+    Custom,
+}
+
+public enum CustomPerformanceLevel
+{
+    Low,
+    Medium,
+    High,
+}
+
+public sealed record CustomPerformanceSettings
+{
+    public CustomPerformanceSettings(
+        CustomPerformanceLevel cpu,
+        CustomPerformanceLevel gpu)
+    {
+        if (!IsWellFormed(cpu, gpu))
+        {
+            throw new ArgumentException(
+                "Custom performance levels are invalid; CPU High and GPU High cannot be combined.");
+        }
+
+        Cpu = cpu;
+        Gpu = gpu;
+    }
+
+    public CustomPerformanceLevel Cpu { get; }
+
+    public CustomPerformanceLevel Gpu { get; }
+
+    public static CustomPerformanceSettings Default { get; } = new(
+        CustomPerformanceLevel.Medium,
+        CustomPerformanceLevel.High);
+
+    public static bool IsWellFormed(CustomPerformanceSettings? value) =>
+        value is not null && IsWellFormed(value.Cpu, value.Gpu);
+
+    private static bool IsWellFormed(
+        CustomPerformanceLevel cpu,
+        CustomPerformanceLevel gpu) =>
+        Enum.IsDefined(cpu)
+        && Enum.IsDefined(gpu)
+        && (cpu, gpu) is not (CustomPerformanceLevel.High, CustomPerformanceLevel.High);
 }
 
 public enum FanMode
@@ -87,7 +130,12 @@ public sealed record PowerProfile(
     PerformancePreset Performance,
     FanMode Fans,
     LightingSettings Lighting,
-    DisplayProfileSettings? Display = null);
+    DisplayProfileSettings? Display = null)
+{
+    // Retained while another preset is selected so switching back to Custom
+    // restores the user's last valid CPU/GPU pair.
+    public CustomPerformanceSettings? CustomPerformance { get; init; }
+}
 
 public sealed record LightingPowerPolicy
 {
@@ -234,7 +282,10 @@ public static class ProfileDefaults
             PerformancePreset.Balanced,
             FanMode.Automatic,
             LightingOff,
-            DisplayProfileSettings.Unconfigured()),
+            DisplayProfileSettings.Unconfigured())
+        {
+            CustomPerformance = CustomPerformanceSettings.Default,
+        },
         new PowerProfile(
             PerformancePreset.BatterySaver,
             FanMode.Automatic,

@@ -7,7 +7,8 @@ namespace OpenBlade.Service;
 public sealed record PersistentOverrideState(
     PerformancePreset? Performance,
     FanMode? Fans,
-    LightingSettings? Lighting)
+    LightingSettings? Lighting,
+    CustomPerformanceSettings? CustomPerformance = null)
 {
     public static PersistentOverrideState Empty { get; } = new(null, null, null);
 }
@@ -20,9 +21,19 @@ internal sealed record PersistentOverrideDocument(
     int SchemaVersion,
     PersistentOverrideState Overrides);
 
+internal sealed record LegacyPersistentOverrideState(
+    PerformancePreset? Performance,
+    FanMode? Fans,
+    LightingSettings? Lighting);
+
+internal sealed record LegacyPersistentOverrideDocument(
+    int SchemaVersion,
+    LegacyPersistentOverrideState Overrides);
+
 public sealed class PersistentOverrideStore
 {
-    private const int CurrentSchemaVersion = 1;
+    private const int CurrentSchemaVersion = 2;
+    private const int LegacySchemaVersion = 1;
     private static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web)
     {
         RespectRequiredConstructorParameters = true,
@@ -108,6 +119,14 @@ public sealed class PersistentOverrideStore
             throw new InvalidDataException("The persistent performance override is undefined.");
         }
 
+        if (overrides.Performance == PerformancePreset.Custom
+            ? !CustomPerformanceSettings.IsWellFormed(overrides.CustomPerformance)
+            : overrides.CustomPerformance is not null)
+        {
+            throw new InvalidDataException(
+                "The persistent custom performance override is invalid.");
+        }
+
         if (overrides.Fans is { } fans && !Enum.IsDefined(fans))
         {
             throw new InvalidDataException("The persistent fan override is undefined.");
@@ -123,15 +142,41 @@ public sealed class PersistentOverrideStore
     private static PersistentOverrideState Deserialize(ReadOnlySpan<byte> json)
     {
         BatteryConfigurationStore.RejectDuplicateMembers(json);
-        PersistentOverrideDocument? document = JsonSerializer.Deserialize<PersistentOverrideDocument>(
-            json,
-            SerializerOptions);
-        if (document is null || document.SchemaVersion != CurrentSchemaVersion)
+        using JsonDocument parsed = JsonDocument.Parse(json.ToArray());
+        if (!parsed.RootElement.TryGetProperty("schemaVersion", out JsonElement versionElement)
+            || !versionElement.TryGetInt32(out int schemaVersion))
         {
             throw new InvalidDataException("The persistent override schema is unsupported.");
         }
 
-        PersistentOverrideState overrides = NormalizeLegacyLighting(document.Overrides);
+
+        PersistentOverrideState overrides;
+        if (schemaVersion == CurrentSchemaVersion)
+        {
+            PersistentOverrideDocument? document =
+                JsonSerializer.Deserialize<PersistentOverrideDocument>(json, SerializerOptions);
+            overrides = document?.Overrides
+                ?? throw new InvalidDataException("The persistent override document is missing.");
+        }
+        else if (schemaVersion == LegacySchemaVersion)
+        {
+            LegacyPersistentOverrideDocument? document =
+                JsonSerializer.Deserialize<LegacyPersistentOverrideDocument>(
+                    json,
+                    SerializerOptions);
+            LegacyPersistentOverrideState legacy = document?.Overrides
+                ?? throw new InvalidDataException("The legacy override document is missing.");
+            overrides = new PersistentOverrideState(
+                legacy.Performance,
+                legacy.Fans,
+                legacy.Lighting);
+        }
+        else
+        {
+            throw new InvalidDataException("The persistent override schema is unsupported.");
+        }
+
+        overrides = NormalizeLegacyLighting(overrides);
         Validate(overrides);
         return overrides;
     }

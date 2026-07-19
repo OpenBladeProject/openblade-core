@@ -1,0 +1,44 @@
+{
+  "schemaVersion": 1,
+  "device": {
+    "model": "RZ09-0581",
+    "vendorId": "1532",
+    "productId": "02E0",
+    "biosVersion": "3.01"
+  },
+  "evidenceKind": "custom-performance-component-readback",
+  "observedUtcDate": "2026-07-19",
+  "readOnly": true,
+  "rawCaptureCommitted": false,
+  "queries": [
+    {
+      "operation": "0D/87 custom CPU component",
+      "requestPayloadHex": "010100",
+      "statusHex": "02",
+      "responsePayloadHex": "010101",
+      "decodedLevel": "Medium"
+    },
+    {
+      "operation": "0D/87 custom GPU component",
+      "requestPayloadHex": "010200",
+      "statusHex": "02",
+      "responsePayloadHex": "010202",
+      "decodedLevel": "High"
+    }
+  ],
+  "crossCheck": {
+    "synapseSavedCpuLevel": "Medium",
+    "synapseSavedGpuLevel": "High",
+    "matchesSynapseSavedConfiguration": true
+  },
+  "safety": {
+    "acceptedRawSelectors": false,
+    "writesIssued": false,
+    "openBladeServiceStopped": false
+  },
+  "conclusion": {
+    "cpuIndependentReadbackEstablished": true,
+    "gpuIndependentReadbackEstablished": true,
+    "componentReadbackProductionAdmissionAllowed": true
+  }
+}

@@ -16,6 +16,7 @@ public static class PerformancePresetPresentation
         PerformancePreset.Balanced,
         PerformancePreset.Silent,
         PerformancePreset.Performance,
+        PerformancePreset.Custom,
     ];
 
     private static readonly PerformancePreset[] BatteryOrder =
@@ -36,6 +37,7 @@ public static class PerformancePresetPresentation
         PerformancePreset.Performance => "Performance",
         PerformancePreset.BatteryBalanced => "Balanced",
         PerformancePreset.BatterySaver => "Battery Saver",
+        PerformancePreset.Custom => "Custom",
         _ => value.ToString(),
     };
 
@@ -43,7 +45,8 @@ public static class PerformancePresetPresentation
     {
         PowerSource.PluggedIn => value is PerformancePreset.Balanced
             or PerformancePreset.Silent
-            or PerformancePreset.Performance,
+            or PerformancePreset.Performance
+            or PerformancePreset.Custom,
         PowerSource.Battery => value is PerformancePreset.BatteryBalanced
             or PerformancePreset.BatterySaver,
         PowerSource.UsbC => value == PerformancePreset.Balanced,

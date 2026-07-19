@@ -1004,6 +1004,81 @@ public sealed class ProductionBatteryPortTests
                 StringComparison.Ordinal));
     }
 
+    [Fact]
+    public async Task CustomPerformanceQuery_ReturnsBothIndependentComponentLevels()
+    {
+        var session = new ScriptedSession(
+            Success([0x01, 0x01, 0x04, 0x00]),
+            Success([0x01, 0x02, 0x04, 0x00]),
+            Success([0x01, 0x01, 0x01]),
+            Success([0x01, 0x02, 0x02]));
+        await using var port = CreatePort(session, DeviceCommandCatalog.Empty);
+
+        ProductionPerformanceFanState state =
+            await port.QueryPerformanceFanStateAsync(default);
+
+        Assert.Equal(PerformancePreset.Custom, state.Performance);
+        Assert.Equal(FanMode.Automatic, state.Fans);
+        Assert.Equal(CustomPerformanceSettings.Default, state.CustomPerformance);
+        Assert.Equal(
+            [(0x82, "01010000"), (0x82, "01020000"),
+             (0x87, "010100"), (0x87, "010200")],
+            session.Commands.Select(command => (
+                command.CommandId,
+                Convert.ToHexString(command.Arguments.Span))).ToArray());
+    }
+
+    [Fact]
+    public async Task CustomPerformanceSetter_AppliesModeAndComponentsThenConfirms()
+    {
+        CustomPerformanceSettings target = new(
+            CustomPerformanceLevel.High,
+            CustomPerformanceLevel.Medium);
+        CapturedCommandFixture[] fixtures = CustomPerformanceFixtures();
+        var session = new ScriptedSession(
+            Success([0x01, 0x01, 0x00, 0x00]),
+            Success([0x01, 0x02, 0x00, 0x00]),
+            Success([0x01, 0x01, 0x04, 0x00]),
+            Success([0x01, 0x02, 0x04, 0x00]),
+            Success([0x01, 0x01, 0x02]),
+            Success([0x01, 0x02, 0x01]),
+            Success([0x01, 0x01, 0x04, 0x00]),
+            Success([0x01, 0x02, 0x04, 0x00]),
+            Success([0x01, 0x01, 0x02]),
+            Success([0x01, 0x02, 0x01]));
+        await using var port = CreatePort(session, Catalog(fixtures));
+
+        await port.SetCustomPerformanceAsync(target, default);
+
+        Assert.Equal(
+            [0x82, 0x82, 0x02, 0x02, 0x07, 0x07, 0x82, 0x82, 0x87, 0x87],
+            session.Commands.Select(command => command.CommandId).ToArray());
+        Assert.Contains(PerformancePreset.Custom, port.Capabilities.PerformancePresets);
+    }
+
+    [Fact]
+    public void CustomPerformanceCapability_RequiresModeAndEveryLevelCommand()
+    {
+        CapturedCommandFixture[] complete = CustomPerformanceFixtures();
+        Assert.Contains(
+            PerformancePreset.Custom,
+            ProductionBatteryPort.CreateCapabilities(
+                Catalog(complete),
+                NoTemporaryReadEvidence()).PerformancePresets);
+
+        for (int missing = 0; missing < complete.Length; missing++)
+        {
+            CapturedCommandFixture[] incomplete = complete
+                .Where((_, index) => index != missing)
+                .ToArray();
+            Assert.DoesNotContain(
+                PerformancePreset.Custom,
+                ProductionBatteryPort.CreateCapabilities(
+                    Catalog(incomplete),
+                    NoTemporaryReadEvidence()).PerformancePresets);
+        }
+    }
+
     private static ProductionBatteryPort CreatePort(
         IRazerCommandSession session,
         DeviceCommandCatalog catalog,
@@ -1098,6 +1173,26 @@ public sealed class ProductionBatteryPortTests
             0x0D,
             0x01,
             [0x01, 0x02, 0x36]),
+    ];
+
+    private static CapturedCommandFixture[] CustomPerformanceFixtures() =>
+    [
+        Fixture(
+            ProductionBatteryPort.PerformanceCustomFirstAction,
+            0x0D,
+            0x02,
+            [0x01, 0x01, 0x04, 0x00]),
+        Fixture(
+            ProductionBatteryPort.PerformanceCustomSecondAction,
+            0x0D,
+            0x02,
+            [0x01, 0x02, 0x04, 0x00]),
+        Fixture(ProductionBatteryPort.CustomCpuLowAction, 0x0D, 0x07, [0x01, 0x01, 0x00]),
+        Fixture(ProductionBatteryPort.CustomCpuMediumAction, 0x0D, 0x07, [0x01, 0x01, 0x01]),
+        Fixture(ProductionBatteryPort.CustomCpuHighAction, 0x0D, 0x07, [0x01, 0x01, 0x02]),
+        Fixture(ProductionBatteryPort.CustomGpuLowAction, 0x0D, 0x07, [0x01, 0x02, 0x00]),
+        Fixture(ProductionBatteryPort.CustomGpuMediumAction, 0x0D, 0x07, [0x01, 0x02, 0x01]),
+        Fixture(ProductionBatteryPort.CustomGpuHighAction, 0x0D, 0x07, [0x01, 0x02, 0x02]),
     ];
 
     private static HidSessionResult<ReadOnlyMemory<byte>> Success(byte[] payload) =>

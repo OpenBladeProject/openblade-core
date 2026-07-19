@@ -56,7 +56,10 @@ public sealed class ControlCoordinator
     public async Task<ControlResult> ApplyPerformanceAsync(
         PerformancePreset value,
         CancellationToken cancellationToken) =>
-        (await ApplyPerformanceOutcomeAsync(value, cancellationToken)).Result;
+        (await ApplyPerformanceOutcomeAsync(
+            value,
+            value == PerformancePreset.Custom ? CustomPerformanceSettings.Default : null,
+            cancellationToken)).Result;
 
     public async Task<ControlResult> ApplyFanAsync(
         FanMode value,
@@ -94,13 +97,24 @@ public sealed class ControlCoordinator
 
     internal Task<ScopedApplyOutcome> ApplyPerformanceOutcomeAsync(
         PerformancePreset value,
+        CancellationToken cancellationToken) => ApplyPerformanceOutcomeAsync(
+            value,
+            value == PerformancePreset.Custom ? CustomPerformanceSettings.Default : null,
+            cancellationToken);
+
+    internal Task<ScopedApplyOutcome> ApplyPerformanceOutcomeAsync(
+        PerformancePreset value,
+        CustomPerformanceSettings? customPerformance,
         CancellationToken cancellationToken) => ApplyScopedAsync(
             DeviceSubsystem.Performance,
             "Performance",
-            IsDefined(value),
+            IsDefined(value)
+                && (value == PerformancePreset.Custom
+                    ? CustomPerformanceSettings.IsWellFormed(customPerformance)
+                    : customPerformance is null),
             capabilities => capabilities.PerformancePresets.Contains(value),
-            state => state.Performance == value,
-            token => device.SetPerformanceAsync(value, token),
+            state => PerformanceMatches(state, value, customPerformance),
+            token => device.SetPerformanceAsync(value, customPerformance, token),
             cancellationToken,
             state => state.Fans == FanMode.Maximum
                 ? "Performance changes require Automatic fan mode."
@@ -251,9 +265,18 @@ public sealed class ControlCoordinator
                 thermalCombinationSupported
                     && IsDefined(desired.Performance.Value)
                     && capabilities.PerformancePresets.Contains(desired.Performance.Value),
-                initial.Performance == desired.Performance.Value,
-                token => device.SetPerformanceAsync(desired.Performance.Value, token),
-                state => state.Performance == desired.Performance.Value),
+                PerformanceMatches(
+                    initial,
+                    desired.Performance.Value,
+                    desired.CustomPerformance),
+                token => device.SetPerformanceAsync(
+                    desired.Performance.Value,
+                    desired.CustomPerformance,
+                    token),
+                state => PerformanceMatches(
+                    state,
+                    desired.Performance.Value,
+                    desired.CustomPerformance)),
             [DeviceSubsystem.Fans] = new(
                 "Fans",
                 thermalCombinationSupported
@@ -1064,9 +1087,18 @@ public sealed class ControlCoordinator
         (PerformancePreset.Silent, FanMode.Automatic)
         or (PerformancePreset.Balanced, FanMode.Automatic)
         or (PerformancePreset.Performance, FanMode.Automatic)
+        or (PerformancePreset.Custom, FanMode.Automatic)
         or (PerformancePreset.Balanced, FanMode.Maximum)
         or (PerformancePreset.BatterySaver, FanMode.Automatic)
         or (PerformancePreset.BatteryBalanced, FanMode.Automatic);
+
+    private static bool PerformanceMatches(
+        ConfirmedDeviceState state,
+        PerformancePreset performance,
+        CustomPerformanceSettings? customPerformance) =>
+        state.Performance == performance
+        && (performance != PerformancePreset.Custom
+            || state.CustomPerformance == customPerformance);
 
     private static bool IsThermalSubsystem(DeviceSubsystem subsystem) =>
         subsystem is DeviceSubsystem.Performance or DeviceSubsystem.Fans;

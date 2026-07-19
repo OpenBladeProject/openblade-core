@@ -11,6 +11,7 @@ public sealed class PerformancePresetPresentationTests
         Assert.Equal("Balanced", PerformancePresetPresentation.Label(PerformancePreset.Balanced));
         Assert.Equal("Silent", PerformancePresetPresentation.Label(PerformancePreset.Silent));
         Assert.Equal("Performance", PerformancePresetPresentation.Label(PerformancePreset.Performance));
+        Assert.Equal("Custom", PerformancePresetPresentation.Label(PerformancePreset.Custom));
         Assert.Equal("Balanced", PerformancePresetPresentation.Label(PerformancePreset.BatteryBalanced));
         Assert.Equal("Battery Saver", PerformancePresetPresentation.Label(PerformancePreset.BatterySaver));
     }
@@ -28,10 +29,15 @@ public sealed class PerformancePresetPresentationTests
             PerformancePresetPresentation.CreateOptions(PowerSource.UsbC, admitted);
 
         Assert.Equal(
-            [PerformancePreset.Balanced, PerformancePreset.Silent, PerformancePreset.Performance],
+            [
+                PerformancePreset.Balanced,
+                PerformancePreset.Silent,
+                PerformancePreset.Performance,
+                PerformancePreset.Custom,
+            ],
             pluggedIn.Select(option => option.Value));
         Assert.Equal(
-            ["Balanced", "Silent", "Performance"],
+            ["Balanced", "Silent", "Performance", "Custom"],
             pluggedIn.Select(option => option.Label));
         Assert.Equal(
             [PerformancePreset.BatteryBalanced, PerformancePreset.BatterySaver],

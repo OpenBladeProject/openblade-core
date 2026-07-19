@@ -1307,7 +1307,12 @@ public sealed class MainViewModelTests
         await WaitUntilAsync(() => viewModel.IsConnected);
 
         Assert.Equal(
-            [PerformancePreset.Balanced, PerformancePreset.Silent, PerformancePreset.Performance],
+            [
+                PerformancePreset.Balanced,
+                PerformancePreset.Silent,
+                PerformancePreset.Performance,
+                PerformancePreset.Custom,
+            ],
             viewModel.AvailableActivePerformanceOptions.Select(option => option.Value));
         Assert.True(viewModel.SetPerformanceCommand.CanExecute(PerformancePreset.Silent));
         Assert.False(viewModel.SetPerformanceCommand.CanExecute(PerformancePreset.BatterySaver));
@@ -1368,6 +1373,51 @@ public sealed class MainViewModelTests
 
         viewModel.BatteryPerformanceEditor = PerformancePreset.Silent;
         Assert.False(viewModel.SaveProfilesCommand.CanExecute(null));
+    }
+
+    [Fact]
+    public async Task CustomPerformance_ExposesValidPairsAndSendsTypedOverride()
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        ServiceStatusSnapshot status = CreateStatus(verified: true, blocked: false) with
+        {
+            ConfirmedState = CreateStatus(true, false).ConfirmedState! with
+            {
+                Performance = PerformancePreset.Custom,
+                CustomPerformance = new CustomPerformanceSettings(
+                    CustomPerformanceLevel.Medium,
+                    CustomPerformanceLevel.High),
+            },
+            DesiredState = CreateStatus(true, false).DesiredState with
+            {
+                Performance = new ResolvedSetting<PerformancePreset>(
+                    PerformancePreset.Custom,
+                    SettingValueSource.PowerProfile),
+                CustomPerformance = new CustomPerformanceSettings(
+                    CustomPerformanceLevel.Medium,
+                    CustomPerformanceLevel.High),
+            },
+        };
+        client.Publish(status);
+        await WaitUntilAsync(() => viewModel.IsCustomPerformanceVisible);
+
+        Assert.DoesNotContain(
+            CustomPerformanceLevel.High,
+            viewModel.AvailableCustomCpuLevels);
+        var requested = new CustomPerformanceSettings(
+            CustomPerformanceLevel.Low,
+            CustomPerformanceLevel.High);
+        Assert.True(viewModel.SetCustomPerformanceCommand.CanExecute(requested));
+
+        await Assert.IsType<AsyncRelayCommand>(viewModel.SetCustomPerformanceCommand)
+            .ExecuteAsync(requested);
+
+        Assert.Equal(PerformancePreset.Custom, client.PerformanceOverride!.Value);
+        Assert.Equal(requested, client.PerformanceOverride.CustomPerformance);
+        Assert.Equal(OverrideLifetime.UntilPowerSourceChange, client.PerformanceOverride.Lifetime);
+        Assert.True(viewModel.HasThermalProfileDraft);
     }
 
     [Fact]
@@ -1521,6 +1571,7 @@ public sealed class MainViewModelTests
             ActivePowerSource = PowerSource.UsbC,
         });
         await WaitUntilAsync(() => viewModel.ActivePowerSource == PowerSource.UsbC);
+        await WaitUntilAsync(() => changed.Contains(nameof(MainViewModel.SelectedFanMode)));
 
         int itemsSourceChange = changed.IndexOf(nameof(MainViewModel.AvailableActiveFanModes));
         int selectionReapply = changed.IndexOf(nameof(MainViewModel.SelectedFanMode));
@@ -3015,7 +3066,7 @@ public sealed class MainViewModelTests
         public bool BlockExports { get; init; }
         public bool WatchCanceled { get; private set; }
         public bool MutationCanceled { get; private set; }
-        public ManualOverride<PerformancePreset>? PerformanceOverride { get; private set; }
+        public PerformanceOverride? PerformanceOverride { get; private set; }
         public ManualOverride<FanMode>? FanOverride { get; private set; }
         public ManualOverride<LightingSettings>? LightingOverride { get; private set; }
         public bool? BatteryProtectionEnabled { get; private set; }
@@ -3098,6 +3149,11 @@ public sealed class MainViewModelTests
 
         public Task<ControlOperationResult> SetPerformanceOverrideAsync(
             ManualOverride<PerformancePreset>? value,
+            CancellationToken token)
+            => SetPerformanceConfigurationOverrideAsync(value, token);
+
+        public Task<ControlOperationResult> SetPerformanceConfigurationOverrideAsync(
+            PerformanceOverride? value,
             CancellationToken token)
         {
             PerformanceOverride = value;

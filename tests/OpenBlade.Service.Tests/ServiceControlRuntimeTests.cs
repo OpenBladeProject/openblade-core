@@ -1994,20 +1994,26 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             .CyclePerformanceShortcutAsync(
                 PerformanceShortcutSource.FunctionP,
                 CancellationToken.None);
-        ControlOperationResult wrapped = await context.Runtime
+        ControlOperationResult custom = await context.Runtime
             .CyclePerformanceShortcutAsync(
                 PerformanceShortcutSource.DedicatedButton,
+                CancellationToken.None);
+        ControlOperationResult wrapped = await context.Runtime
+            .CyclePerformanceShortcutAsync(
+                PerformanceShortcutSource.FunctionP,
                 CancellationToken.None);
 
         Assert.Equal(ControlOperationStatus.Applied, dedicated.Status);
         Assert.Equal("The performance button selected Silent.", dedicated.Message);
         Assert.Equal(ControlOperationStatus.Applied, functionP.Status);
         Assert.Equal("Fn+P selected Performance.", functionP.Message);
+        Assert.Equal(ControlOperationStatus.Applied, custom.Status);
+        Assert.Equal("The performance button selected Custom.", custom.Message);
         Assert.Equal(ControlOperationStatus.Applied, wrapped.Status);
-        Assert.Equal("The performance button selected Balanced.", wrapped.Message);
-        Assert.Equal(3, context.Device.PerformanceSetCalls);
+        Assert.Equal("Fn+P selected Balanced.", wrapped.Message);
+        Assert.Equal(4, context.Device.PerformanceSetCalls);
         Assert.Equal(
-            new ManualOverride<PerformancePreset>(
+            new PerformanceOverride(
                 PerformancePreset.Balanced,
                 OverrideLifetime.UntilPowerSourceChange),
             context.Runtime.GetStatus().PerformanceOverride);
@@ -4299,6 +4305,33 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             if (SuppressConfirmationFor != DeviceSubsystem.Performance)
             {
                 ConfirmedState = ConfirmedState with { Performance = value };
+            }
+
+            AfterSetter?.Invoke(DeviceSubsystem.Performance);
+            return Task.CompletedTask;
+        }
+
+        public Task SetPerformanceAsync(
+            PerformancePreset value,
+            CustomPerformanceSettings? customPerformance,
+            CancellationToken cancellationToken)
+        {
+            TotalCalls++;
+            PerformanceSetCalls++;
+            if (PerformanceFailure is not null)
+            {
+                throw PerformanceFailure;
+            }
+
+            if (SuppressConfirmationFor != DeviceSubsystem.Performance)
+            {
+                ConfirmedState = ConfirmedState with
+                {
+                    Performance = value,
+                    CustomPerformance = value == PerformancePreset.Custom
+                        ? customPerformance
+                        : null,
+                };
             }
 
             AfterSetter?.Invoke(DeviceSubsystem.Performance);

@@ -45,6 +45,8 @@ public sealed record ConfirmedDeviceState(
     ConfirmedBatteryState? Battery,
     LightingSettings? Lighting)
 {
+    public CustomPerformanceSettings? CustomPerformance { get; init; }
+
     public LogoLightingMode? LogoLighting { get; init; }
 }
 

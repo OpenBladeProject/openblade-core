@@ -4,7 +4,10 @@ namespace OpenBlade.Protocol;
 
 public readonly record struct ProductionPerformanceFanState(
     PerformancePreset? Performance,
-    FanMode? Fans);
+    FanMode? Fans)
+{
+    public CustomPerformanceSettings? CustomPerformance { get; init; }
+}
 
 public interface IProductionBatteryPort : IAsyncDisposable
 {
@@ -30,6 +33,13 @@ public interface IProductionBatteryPort : IAsyncDisposable
     Task SetPerformanceAsync(
         PerformancePreset value,
         CancellationToken cancellationToken);
+
+    Task SetCustomPerformanceAsync(
+        CustomPerformanceSettings value,
+        CancellationToken cancellationToken) => Task.FromException(
+            new BladeWriteException(
+                WriteSubmissionState.KnownNotApplied,
+                "Custom performance is unavailable."));
 
     Task SetFanModeAsync(
         FanMode value,

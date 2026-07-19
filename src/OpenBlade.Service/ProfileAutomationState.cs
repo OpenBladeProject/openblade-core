@@ -5,8 +5,8 @@ namespace OpenBlade.Service;
 public sealed class ProfileAutomationState
 {
     private ProfileSet profiles;
-    private ManualOverride<PerformancePreset>? temporaryPerformance;
-    private ManualOverride<PerformancePreset>? persistentPerformance;
+    private PerformanceOverride? temporaryPerformance;
+    private PerformanceOverride? persistentPerformance;
     private ManualOverride<FanMode>? temporaryFans;
     private ManualOverride<FanMode>? persistentFans;
     private ManualOverride<LightingSettings>? temporaryLighting;
@@ -32,7 +32,12 @@ public sealed class ProfileAutomationState
         PersistentOverrideStore.Validate(persistentOverrides);
         PowerSource = powerSource;
         persistentPerformance = persistentOverrides.Performance is { } performance
-            ? new ManualOverride<PerformancePreset>(performance, OverrideLifetime.Persistent)
+            ? new PerformanceOverride(
+                performance,
+                OverrideLifetime.Persistent,
+                performance == PerformancePreset.Custom
+                    ? persistentOverrides.CustomPerformance
+                    : null)
             : null;
         persistentFans = persistentOverrides.Fans is { } fans
             ? new ManualOverride<FanMode>(fans, OverrideLifetime.Persistent)
@@ -54,7 +59,7 @@ public sealed class ProfileAutomationState
 
     public ProfileSet Profiles => profiles;
 
-    public ManualOverride<PerformancePreset>? PerformanceOverride =>
+    public PerformanceOverride? PerformanceOverride =>
         persistentPerformance ?? temporaryPerformance;
 
     public ManualOverride<FanMode>? FanOverride => persistentFans ?? temporaryFans;
@@ -107,8 +112,14 @@ public sealed class ProfileAutomationState
         return true;
     }
 
-    public void SetPerformanceOverride(ManualOverride<PerformancePreset>? value) =>
+    public void SetPerformanceOverride(PerformanceOverride? value) =>
         SetOverride(value, ref temporaryPerformance, ref persistentPerformance);
+
+    public void SetPerformanceOverride(ManualOverride<PerformancePreset>? value) =>
+        SetPerformanceOverride(
+            value is null
+                ? null
+                : new PerformanceOverride(value.Value, value.Lifetime));
 
     public void SetFanOverride(ManualOverride<FanMode>? value) =>
         SetOverride(value, ref temporaryFans, ref persistentFans);
@@ -145,12 +156,12 @@ public sealed class ProfileAutomationState
             PowerSource.ExternalUnknown => CreateObservedFallbackProfile(confirmed),
             _ => throw new InvalidOperationException("The active power source is undefined."),
         };
-        ManualOverride<PerformancePreset>? activePersistentPerformance =
+        PerformanceOverride? activePersistentPerformance =
             persistentPerformance is { } persistent
             && IsPerformanceCompatibleWithSource(persistent.Value, PowerSource)
                 ? persistent
                 : null;
-        ManualOverride<PerformancePreset>? activeTemporaryPerformance =
+        PerformanceOverride? activeTemporaryPerformance =
             temporaryPerformance is { } temporary
             && IsPerformanceCompatibleWithSource(temporary.Value, PowerSource)
                 ? temporary
@@ -167,11 +178,27 @@ public sealed class ProfileAutomationState
                 : null;
         bool allowLightingOverride = PowerSource != PowerSource.ExternalUnknown;
 
+        ResolvedSetting<PerformancePreset> resolvedPerformance = ResolvePerformance(
+            profile.Performance,
+            activeTemporaryPerformance,
+            activePersistentPerformance);
+        CustomPerformanceSettings? customPerformance = resolvedPerformance.Value
+            == PerformancePreset.Custom
+                ? activePersistentPerformance?.CustomPerformance
+                    ?? activeTemporaryPerformance?.CustomPerformance
+                    ?? profile.CustomPerformance
+                    ?? confirmed.CustomPerformance
+                    ?? CustomPerformanceSettings.Default
+                : null;
+
         return new DesiredDeviceState(
-            OverrideResolver.Resolve<PerformancePreset>(profile.Performance, confirmed.Performance.GetValueOrDefault(), activeTemporaryPerformance, activePersistentPerformance),
+            resolvedPerformance,
             OverrideResolver.Resolve<FanMode>(profile.Fans, confirmed.Fans.GetValueOrDefault(), activeTemporaryFans, activePersistentFans),
             OverrideResolver.Resolve<LightingSettings>(profile.Lighting, confirmed.Lighting ?? profile.Lighting, allowLightingOverride ? temporaryLighting : null, allowLightingOverride ? persistentLighting : null),
-            DesiredBattery);
+            DesiredBattery)
+        {
+            CustomPerformance = customPerformance,
+        };
     }
 
     private static bool IsPerformanceCompatibleWithSource(
@@ -181,7 +208,8 @@ public sealed class ProfileAutomationState
             PowerSource.PluggedIn => performance is
                 PerformancePreset.Silent
                 or PerformancePreset.Balanced
-                or PerformancePreset.Performance,
+                or PerformancePreset.Performance
+                or PerformancePreset.Custom,
             PowerSource.Battery => performance is
                 PerformancePreset.BatterySaver
                 or PerformancePreset.BatteryBalanced,
@@ -192,7 +220,10 @@ public sealed class ProfileAutomationState
     private PowerProfile CreateObservedFallbackProfile(ConfirmedDeviceState confirmed) => new(
         confirmed.Performance ?? profiles.UsbC.Performance,
         confirmed.Fans ?? profiles.UsbC.Fans,
-        confirmed.Lighting ?? profiles.UsbC.Lighting);
+        confirmed.Lighting ?? profiles.UsbC.Lighting)
+    {
+        CustomPerformance = confirmed.CustomPerformance,
+    };
 
     private static bool IsFanCompatibleWithSource(FanMode fans, PowerSource source) =>
         source switch
@@ -207,6 +238,52 @@ public sealed class ProfileAutomationState
         ManualOverride<T>? value,
         ref ManualOverride<T>? temporary,
         ref ManualOverride<T>? persistent)
+    {
+        if (value is null)
+        {
+            temporary = null;
+            persistent = null;
+        }
+        else if (value.Lifetime == OverrideLifetime.Persistent)
+        {
+            temporary = null;
+            persistent = value;
+        }
+        else
+        {
+            temporary = value;
+            persistent = null;
+        }
+    }
+
+    private static ResolvedSetting<PerformancePreset> ResolvePerformance(
+        PerformancePreset profileValue,
+        PerformanceOverride? temporaryOverride,
+        PerformanceOverride? persistentOverride)
+    {
+        if (persistentOverride is not null)
+        {
+            return new ResolvedSetting<PerformancePreset>(
+                persistentOverride.Value,
+                SettingValueSource.PersistentOverride);
+        }
+
+        if (temporaryOverride is not null)
+        {
+            return new ResolvedSetting<PerformancePreset>(
+                temporaryOverride.Value,
+                SettingValueSource.TemporaryOverride);
+        }
+
+        return new ResolvedSetting<PerformancePreset>(
+            profileValue,
+            SettingValueSource.PowerProfile);
+    }
+
+    private static void SetOverride(
+        PerformanceOverride? value,
+        ref PerformanceOverride? temporary,
+        ref PerformanceOverride? persistent)
     {
         if (value is null)
         {

@@ -50,6 +50,22 @@ public sealed class ProductionFixtureSourceTests
                 (0x0D, 0x02, [0x01, 0x01, 0x06, 0x00]),
             [ProductionBatteryPort.PerformanceBatteryBalancedSecondAction] =
                 (0x0D, 0x02, [0x01, 0x02, 0x06, 0x00]),
+            [ProductionBatteryPort.PerformanceCustomFirstAction] =
+                (0x0D, 0x02, [0x01, 0x01, 0x04, 0x00]),
+            [ProductionBatteryPort.PerformanceCustomSecondAction] =
+                (0x0D, 0x02, [0x01, 0x02, 0x04, 0x00]),
+            [ProductionBatteryPort.CustomCpuLowAction] =
+                (0x0D, 0x07, [0x01, 0x01, 0x00]),
+            [ProductionBatteryPort.CustomCpuMediumAction] =
+                (0x0D, 0x07, [0x01, 0x01, 0x01]),
+            [ProductionBatteryPort.CustomCpuHighAction] =
+                (0x0D, 0x07, [0x01, 0x01, 0x02]),
+            [ProductionBatteryPort.CustomGpuLowAction] =
+                (0x0D, 0x07, [0x01, 0x02, 0x00]),
+            [ProductionBatteryPort.CustomGpuMediumAction] =
+                (0x0D, 0x07, [0x01, 0x02, 0x01]),
+            [ProductionBatteryPort.CustomGpuHighAction] =
+                (0x0D, 0x07, [0x01, 0x02, 0x02]),
             [ProductionBatteryPort.FanMaximumStateFirstAction] =
                 (0x0D, 0x02, [0x01, 0x01, 0x00, 0x01]),
             [ProductionBatteryPort.FanMaximumStateSecondAction] =
@@ -114,6 +130,7 @@ public sealed class ProductionFixtureSourceTests
                 PerformancePreset.Balanced,
                 PerformancePreset.Silent,
                 PerformancePreset.Performance,
+                PerformancePreset.Custom,
                 PerformancePreset.BatterySaver,
                 PerformancePreset.BatteryBalanced,
             ]));

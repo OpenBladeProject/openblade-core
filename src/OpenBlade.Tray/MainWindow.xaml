@@ -377,6 +377,52 @@
                                 </Grid>
                             </Border>
                             <Border Style="{StaticResource SettingsRowStyle}"
+                                    Visibility="{x:Bind ViewModel.IsCustomPerformanceVisible, Mode=OneWay}">
+                                <Grid ColumnSpacing="20">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel Spacing="3" VerticalAlignment="Center">
+                                        <TextBlock Text="CPU" Style="{StaticResource CardTitleStyle}" />
+                                        <TextBlock Text="Choose the processor power level for Custom mode."
+                                                   Style="{StaticResource SecondaryTextStyle}" />
+                                    </StackPanel>
+                                    <ComboBox x:Name="DashboardCustomCpuSelector"
+                                              Grid.Column="1"
+                                              MinWidth="150"
+                                              HorizontalAlignment="Right"
+                                              AutomationProperties.Name="Custom CPU level"
+                                              IsEnabled="{x:Bind ViewModel.CanControlHardware, Mode=OneWay}"
+                                              ItemsSource="{x:Bind ViewModel.AvailableCustomCpuLevels, Mode=OneWay}"
+                                              SelectedItem="{x:Bind ViewModel.SelectedCustomCpuLevel, Mode=OneWay}"
+                                              SelectionChanged="OnDashboardCustomCpuChanged" />
+                                </Grid>
+                            </Border>
+                            <Border Style="{StaticResource SettingsRowStyle}"
+                                    Visibility="{x:Bind ViewModel.IsCustomPerformanceVisible, Mode=OneWay}">
+                                <Grid ColumnSpacing="20">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel Spacing="3" VerticalAlignment="Center">
+                                        <TextBlock Text="GPU" Style="{StaticResource CardTitleStyle}" />
+                                        <TextBlock Text="Choose the graphics power level for Custom mode."
+                                                   Style="{StaticResource SecondaryTextStyle}" />
+                                    </StackPanel>
+                                    <ComboBox x:Name="DashboardCustomGpuSelector"
+                                              Grid.Column="1"
+                                              MinWidth="150"
+                                              HorizontalAlignment="Right"
+                                              AutomationProperties.Name="Custom GPU level"
+                                              IsEnabled="{x:Bind ViewModel.CanControlHardware, Mode=OneWay}"
+                                              ItemsSource="{x:Bind ViewModel.AvailableCustomGpuLevels, Mode=OneWay}"
+                                              SelectedItem="{x:Bind ViewModel.SelectedCustomGpuLevel, Mode=OneWay}"
+                                              SelectionChanged="OnDashboardCustomGpuChanged" />
+                                </Grid>
+                            </Border>
+                            <Border Style="{StaticResource SettingsRowStyle}"
                                     Visibility="{x:Bind ViewModel.IsFanControlVisible, Mode=OneWay}">
                                 <Grid ColumnSpacing="20">
                                     <Grid.ColumnDefinitions>

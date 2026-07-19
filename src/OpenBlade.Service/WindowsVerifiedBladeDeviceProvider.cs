@@ -291,6 +291,7 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
                     battery,
                     lighting)
                 {
+                    CustomPerformance = performanceFan.CustomPerformance,
                     LogoLighting = logo,
                 };
             }
@@ -463,10 +464,23 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
 
         public Task SetPerformanceAsync(
             PerformancePreset value,
+            CancellationToken cancellationToken) => SetPerformanceAsync(
+                value,
+                customPerformance: null,
+                cancellationToken);
+
+        public Task SetPerformanceAsync(
+            PerformancePreset value,
+            CustomPerformanceSettings? customPerformance,
             CancellationToken cancellationToken) =>
             batteryFactory.Capabilities.PerformancePresets.Contains(value)
+                && (value == PerformancePreset.Custom
+                    ? CustomPerformanceSettings.IsWellFormed(customPerformance)
+                    : customPerformance is null)
                 ? ExecuteProductionWriteAsync(
-                    port => port.SetPerformanceAsync(value, cancellationToken),
+                    port => value == PerformancePreset.Custom
+                        ? port.SetCustomPerformanceAsync(customPerformance!, cancellationToken)
+                        : port.SetPerformanceAsync(value, cancellationToken),
                     cancellationToken)
                 : RejectProductionWrite("The requested performance preset is not admitted.");
 

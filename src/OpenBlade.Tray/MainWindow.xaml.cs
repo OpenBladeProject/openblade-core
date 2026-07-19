@@ -32,6 +32,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
     private Task? initializationTask;
     private bool initialPlacementAttempted;
     private bool changingPerformanceSelection;
+    private bool changingCustomPerformanceSelection;
     private bool changingFanSelection;
     private bool changingBatteryProtection;
     private bool changingDisplaySettings;
@@ -496,6 +497,70 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
             selector.SelectedItem = ViewModel.SelectedPerformanceOption;
             selector.IsEnabled = true;
             changingPerformanceSelection = false;
+        }
+    }
+
+    private async void OnDashboardCustomCpuChanged(
+        object sender,
+        SelectionChangedEventArgs args)
+    {
+        if (changingCustomPerformanceSelection
+            || Volatile.Read(ref disposed) != 0
+            || sender is not Microsoft.UI.Xaml.Controls.ComboBox selector
+            || selector.SelectedItem is not CustomPerformanceLevel selected
+            || selected == ViewModel.SelectedCustomCpuLevel)
+        {
+            return;
+        }
+
+        await ApplyCustomPerformanceChangeAsync(new CustomPerformanceSettings(
+            selected,
+            ViewModel.SelectedCustomGpuLevel));
+    }
+
+    private async void OnDashboardCustomGpuChanged(
+        object sender,
+        SelectionChangedEventArgs args)
+    {
+        if (changingCustomPerformanceSelection
+            || Volatile.Read(ref disposed) != 0
+            || sender is not Microsoft.UI.Xaml.Controls.ComboBox selector
+            || selector.SelectedItem is not CustomPerformanceLevel selected
+            || selected == ViewModel.SelectedCustomGpuLevel)
+        {
+            return;
+        }
+
+        await ApplyCustomPerformanceChangeAsync(new CustomPerformanceSettings(
+            ViewModel.SelectedCustomCpuLevel,
+            selected));
+    }
+
+    private async Task ApplyCustomPerformanceChangeAsync(
+        CustomPerformanceSettings requested)
+    {
+        changingCustomPerformanceSelection = true;
+        DashboardCustomCpuSelector.IsEnabled = false;
+        DashboardCustomGpuSelector.IsEnabled = false;
+        try
+        {
+            if (ViewModel.SetCustomPerformanceCommand is AsyncRelayCommand command
+                && command.CanExecute(requested))
+            {
+                await command.ExecuteAsync(requested);
+            }
+        }
+        catch (Exception exception)
+        {
+            Trace.TraceError("OpenBlade custom performance selection failed: {0}", exception);
+        }
+        finally
+        {
+            DashboardCustomCpuSelector.SelectedItem = ViewModel.SelectedCustomCpuLevel;
+            DashboardCustomGpuSelector.SelectedItem = ViewModel.SelectedCustomGpuLevel;
+            DashboardCustomCpuSelector.IsEnabled = ViewModel.CanControlHardware;
+            DashboardCustomGpuSelector.IsEnabled = ViewModel.CanControlHardware;
+            changingCustomPerformanceSelection = false;
         }
     }
 

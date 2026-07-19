@@ -34,6 +34,16 @@ internal sealed class ProductionBatteryPort : IProductionBatteryPort
         "performance-battery-balanced-channel-1";
     internal const string PerformanceBatteryBalancedSecondAction =
         "performance-battery-balanced-channel-2";
+    internal const string PerformanceCustomFirstAction =
+        "performance-custom-channel-1";
+    internal const string PerformanceCustomSecondAction =
+        "performance-custom-channel-2";
+    internal const string CustomCpuLowAction = "custom-performance-cpu-low";
+    internal const string CustomCpuMediumAction = "custom-performance-cpu-medium";
+    internal const string CustomCpuHighAction = "custom-performance-cpu-high";
+    internal const string CustomGpuLowAction = "custom-performance-gpu-low";
+    internal const string CustomGpuMediumAction = "custom-performance-gpu-medium";
+    internal const string CustomGpuHighAction = "custom-performance-gpu-high";
     internal const string FanMaximumStateFirstAction =
         "fan-maximum-5400-state-channel-1";
     internal const string FanMaximumStateSecondAction =
@@ -292,6 +302,45 @@ internal sealed class ProductionBatteryPort : IProductionBatteryPort
                 cancellationToken);
     }
 
+    public Task SetCustomPerformanceAsync(
+        CustomPerformanceSettings value,
+        CancellationToken cancellationToken)
+    {
+        if (!CustomPerformanceSettings.IsWellFormed(value))
+        {
+            return Task.FromException(KnownNotApplied(
+                "The custom performance CPU/GPU combination is invalid."));
+        }
+
+        string? cpuAction = CustomPerformanceAction(
+            CustomPerformanceDomain.Cpu,
+            value.Cpu);
+        string? gpuAction = CustomPerformanceAction(
+            CustomPerformanceDomain.Gpu,
+            value.Gpu);
+        if (cpuAction is null || gpuAction is null)
+        {
+            return Task.FromException(KnownNotApplied(
+                "The custom performance CPU/GPU combination is not admitted."));
+        }
+
+        return ExecuteThermalSettersAsync(
+            [
+                PerformanceCustomFirstAction,
+                PerformanceCustomSecondAction,
+                cpuAction,
+                gpuAction,
+            ],
+            state => state.Performance == PerformancePreset.Custom
+                && state.Fans == FanMode.Automatic
+                && state.CustomPerformance == value,
+            state => state.Fans == FanMode.Automatic,
+            "Custom performance requires confirmed Automatic fans.",
+            applyMaximumTiming: false,
+            verifyFinalState: true,
+            cancellationToken);
+    }
+
     public Task SetFanModeAsync(
         FanMode value,
         CancellationToken cancellationToken)
@@ -477,6 +526,19 @@ internal sealed class ProductionBatteryPort : IProductionBatteryPort
             performance.Add(PerformancePreset.BatteryBalanced);
         }
 
+        if (HasPair(catalog, PerformanceCustomFirstAction, PerformanceCustomSecondAction)
+            && HasAll(
+                catalog,
+                CustomCpuLowAction,
+                CustomCpuMediumAction,
+                CustomCpuHighAction,
+                CustomGpuLowAction,
+                CustomGpuMediumAction,
+                CustomGpuHighAction))
+        {
+            performance.Add(PerformancePreset.Custom);
+        }
+
         var fans = new HashSet<FanMode>();
         if (performance.Contains(PerformancePreset.Balanced))
         {
@@ -562,6 +624,25 @@ internal sealed class ProductionBatteryPort : IProductionBatteryPort
 
         return null;
     }
+
+    private static string? CustomPerformanceAction(
+        CustomPerformanceDomain domain,
+        CustomPerformanceLevel level) => (domain, level) switch
+        {
+            (CustomPerformanceDomain.Cpu, CustomPerformanceLevel.Low) =>
+                CustomCpuLowAction,
+            (CustomPerformanceDomain.Cpu, CustomPerformanceLevel.Medium) =>
+                CustomCpuMediumAction,
+            (CustomPerformanceDomain.Cpu, CustomPerformanceLevel.High) =>
+                CustomCpuHighAction,
+            (CustomPerformanceDomain.Gpu, CustomPerformanceLevel.Low) =>
+                CustomGpuLowAction,
+            (CustomPerformanceDomain.Gpu, CustomPerformanceLevel.Medium) =>
+                CustomGpuMediumAction,
+            (CustomPerformanceDomain.Gpu, CustomPerformanceLevel.High) =>
+                CustomGpuHighAction,
+            _ => null,
+        };
 
     private async Task ExecuteSetterAsync(
         string action,
@@ -672,7 +753,9 @@ internal sealed class ProductionBatteryPort : IProductionBatteryPort
             EnsureUsableForWrite();
             ThermalModeState currentMode =
                 await QueryThermalModeStateCoreAsync(cancellationToken).ConfigureAwait(false);
-            ProductionPerformanceFanState current = MapThermalState(currentMode);
+            ProductionPerformanceFanState current = await MapThermalStateAsync(
+                currentMode,
+                cancellationToken).ConfigureAwait(false);
             if (alreadyMatches(current))
             {
                 return;
@@ -775,8 +858,12 @@ internal sealed class ProductionBatteryPort : IProductionBatteryPort
     }
 
     private async Task<ProductionPerformanceFanState> QueryPerformanceFanStateCoreAsync(
-        CancellationToken cancellationToken) => MapThermalState(
-            await QueryThermalModeStateCoreAsync(cancellationToken).ConfigureAwait(false));
+        CancellationToken cancellationToken)
+    {
+        ThermalModeState state = await QueryThermalModeStateCoreAsync(cancellationToken)
+            .ConfigureAwait(false);
+        return await MapThermalStateAsync(state, cancellationToken).ConfigureAwait(false);
+    }
 
     private async Task<ThermalModeState> QueryThermalModeStateCoreAsync(
         CancellationToken cancellationToken)
@@ -825,6 +912,74 @@ internal sealed class ProductionBatteryPort : IProductionBatteryPort
                 "Thermal query returned an undefined state.",
                 HidProtocolValidationFailure.PayloadValidator),
         };
+
+    private async Task<ProductionPerformanceFanState> MapThermalStateAsync(
+        ThermalModeState state,
+        CancellationToken cancellationToken)
+    {
+        if (state != ThermalModeState.CustomAutomatic)
+        {
+            return MapThermalState(state);
+        }
+
+        CustomPerformanceLevel cpu = await QueryCustomPerformanceLevelAsync(
+            CustomPerformanceDomain.Cpu,
+            cancellationToken).ConfigureAwait(false);
+        CustomPerformanceLevel gpu = await QueryCustomPerformanceLevelAsync(
+            CustomPerformanceDomain.Gpu,
+            cancellationToken).ConfigureAwait(false);
+        if ((cpu, gpu) is (CustomPerformanceLevel.High, CustomPerformanceLevel.High))
+        {
+            poisoned = true;
+            throw new RazerProtocolException(
+                "Custom performance returned the unsupported CPU High and GPU High combination.",
+                HidProtocolValidationFailure.PayloadValidator);
+        }
+
+        return new ProductionPerformanceFanState(
+            PerformancePreset.Custom,
+            FanMode.Automatic)
+        {
+            CustomPerformance = new CustomPerformanceSettings(cpu, gpu),
+        };
+    }
+
+    private async Task<CustomPerformanceLevel> QueryCustomPerformanceLevelAsync(
+        CustomPerformanceDomain domain,
+        CancellationToken cancellationToken)
+    {
+        var command = new RazerCommandSpec(
+            CustomPerformanceProtocol.CommandClass,
+            CustomPerformanceProtocol.QueryCommandId,
+            CustomPerformanceProtocol.CreateQueryPayload(domain),
+            3,
+            payload => CustomPerformanceProtocol.TryDecodeQuery(
+                payload.Span,
+                domain,
+                out _));
+        HidSessionResult<ReadOnlyMemory<byte>> result = await session.ExecuteAsync(
+            command,
+            AllocateTransaction,
+            exchangeTimeout,
+            cancellationToken).ConfigureAwait(false);
+        if (result.Failure is not null)
+        {
+            ThrowReadFailure(result.Failure.Value, result.Diagnostic, cancellationToken);
+        }
+
+        if (!CustomPerformanceProtocol.TryDecodeQuery(
+                result.Value.Span,
+                domain,
+                out CustomPerformanceLevel level))
+        {
+            poisoned = true;
+            throw new RazerProtocolException(
+                "Custom performance query failed payload validation.",
+                HidProtocolValidationFailure.PayloadValidator);
+        }
+
+        return level;
+    }
 
     private async Task<ReadOnlyMemory<byte>> QueryThermalChannelAsync(
         ThermalChannel channel,

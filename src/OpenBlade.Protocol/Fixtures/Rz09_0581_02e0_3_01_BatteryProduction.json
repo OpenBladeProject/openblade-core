@@ -346,6 +346,142 @@
       "productId": 736,
       "biosVersion": "3.01"
     },
+    "action": "performance-custom-channel-1",
+    "commandClass": 13,
+    "commandId": 2,
+    "payload": "AQEEAA==",
+    "captured": true,
+    "decoded": true,
+    "applied": true,
+    "readBack": true,
+    "restored": true
+  },
+  {
+    "device": {
+      "model": "RZ09-0581",
+      "vendorId": 5426,
+      "productId": 736,
+      "biosVersion": "3.01"
+    },
+    "action": "performance-custom-channel-2",
+    "commandClass": 13,
+    "commandId": 2,
+    "payload": "AQIEAA==",
+    "captured": true,
+    "decoded": true,
+    "applied": true,
+    "readBack": true,
+    "restored": true
+  },
+  {
+    "device": {
+      "model": "RZ09-0581",
+      "vendorId": 5426,
+      "productId": 736,
+      "biosVersion": "3.01"
+    },
+    "action": "custom-performance-cpu-low",
+    "commandClass": 13,
+    "commandId": 7,
+    "payload": "AQEA",
+    "captured": true,
+    "decoded": true,
+    "applied": true,
+    "readBack": true,
+    "restored": true
+  },
+  {
+    "device": {
+      "model": "RZ09-0581",
+      "vendorId": 5426,
+      "productId": 736,
+      "biosVersion": "3.01"
+    },
+    "action": "custom-performance-cpu-medium",
+    "commandClass": 13,
+    "commandId": 7,
+    "payload": "AQEB",
+    "captured": true,
+    "decoded": true,
+    "applied": true,
+    "readBack": true,
+    "restored": true
+  },
+  {
+    "device": {
+      "model": "RZ09-0581",
+      "vendorId": 5426,
+      "productId": 736,
+      "biosVersion": "3.01"
+    },
+    "action": "custom-performance-cpu-high",
+    "commandClass": 13,
+    "commandId": 7,
+    "payload": "AQEC",
+    "captured": true,
+    "decoded": true,
+    "applied": true,
+    "readBack": true,
+    "restored": true
+  },
+  {
+    "device": {
+      "model": "RZ09-0581",
+      "vendorId": 5426,
+      "productId": 736,
+      "biosVersion": "3.01"
+    },
+    "action": "custom-performance-gpu-low",
+    "commandClass": 13,
+    "commandId": 7,
+    "payload": "AQIA",
+    "captured": true,
+    "decoded": true,
+    "applied": true,
+    "readBack": true,
+    "restored": true
+  },
+  {
+    "device": {
+      "model": "RZ09-0581",
+      "vendorId": 5426,
+      "productId": 736,
+      "biosVersion": "3.01"
+    },
+    "action": "custom-performance-gpu-medium",
+    "commandClass": 13,
+    "commandId": 7,
+    "payload": "AQIB",
+    "captured": true,
+    "decoded": true,
+    "applied": true,
+    "readBack": true,
+    "restored": true
+  },
+  {
+    "device": {
+      "model": "RZ09-0581",
+      "vendorId": 5426,
+      "productId": 736,
+      "biosVersion": "3.01"
+    },
+    "action": "custom-performance-gpu-high",
+    "commandClass": 13,
+    "commandId": 7,
+    "payload": "AQIC",
+    "captured": true,
+    "decoded": true,
+    "applied": true,
+    "readBack": true,
+    "restored": true
+  },
+  {
+    "device": {
+      "model": "RZ09-0581",
+      "vendorId": 5426,
+      "productId": 736,
+      "biosVersion": "3.01"
+    },
     "action": "fan-maximum-5400-state-channel-1",
     "commandClass": 13,
     "commandId": 2,

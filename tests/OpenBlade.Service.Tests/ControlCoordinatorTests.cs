@@ -333,6 +333,27 @@ public sealed class ControlCoordinatorTests
     }
 
     [Fact]
+    public async Task ScopedCustomPerformance_AppliesAndConfirmsBothComponentLevels()
+    {
+        RecordingBladeDevice device = CreateMismatchedDevice();
+        var levels = new CustomPerformanceSettings(
+            CustomPerformanceLevel.High,
+            CustomPerformanceLevel.Medium);
+        var coordinator = new ControlCoordinator(device);
+
+        ScopedApplyOutcome outcome = await coordinator.ApplyPerformanceOutcomeAsync(
+            PerformancePreset.Custom,
+            levels,
+            CancellationToken.None);
+
+        Assert.Equal(ControlResultStatus.Applied, outcome.Result.Status);
+        Assert.True(outcome.ReadbackMatched);
+        Assert.Equal(PerformancePreset.Custom, device.State.Performance);
+        Assert.Equal(levels, device.State.CustomPerformance);
+        Assert.Equal(["Capabilities", "State", "SetPerformance", "State"], device.Calls);
+    }
+
+    [Fact]
     public async Task ScopedMaximumFans_RequireConfirmedBalancedAutomaticState()
     {
         RecordingBladeDevice device = CreateMismatchedDevice();
@@ -903,6 +924,34 @@ public sealed class ControlCoordinatorTests
             if (ShouldConfirm(DeviceSubsystem.Performance))
             {
                 State = State with { Performance = value };
+            }
+
+            AfterSetter?.Invoke(DeviceSubsystem.Performance);
+            return Task.CompletedTask;
+        }
+
+        public Task SetPerformanceAsync(
+            PerformancePreset value,
+            CustomPerformanceSettings? customPerformance,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            Calls.Add("SetPerformance");
+            PerformanceSetCalls++;
+            if (PerformanceFailure is not null)
+            {
+                throw PerformanceFailure;
+            }
+
+            if (ShouldConfirm(DeviceSubsystem.Performance))
+            {
+                State = State with
+                {
+                    Performance = value,
+                    CustomPerformance = value == PerformancePreset.Custom
+                        ? customPerformance
+                        : null,
+                };
             }
 
             AfterSetter?.Invoke(DeviceSubsystem.Performance);

@@ -19,7 +19,10 @@ public sealed record DesiredDeviceState(
     ResolvedSetting<PerformancePreset> Performance,
     ResolvedSetting<FanMode> Fans,
     ResolvedSetting<LightingSettings> Lighting,
-    DesiredBatteryState Battery);
+    DesiredBatteryState Battery)
+{
+    public CustomPerformanceSettings? CustomPerformance { get; init; }
+}
 
 public sealed record LiveReadings(
     int? BatteryPowerFlowMilliwatts,

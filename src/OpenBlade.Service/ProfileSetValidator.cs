@@ -29,6 +29,7 @@ public sealed class ProfileValidationPolicy
             new(PerformancePreset.Balanced, FanMode.Automatic),
             new(PerformancePreset.Silent, FanMode.Automatic),
             new(PerformancePreset.Performance, FanMode.Automatic),
+            new(PerformancePreset.Custom, FanMode.Automatic),
             new(PerformancePreset.Balanced, FanMode.Maximum),
             new(PerformancePreset.BatterySaver, FanMode.Automatic),
             new(PerformancePreset.BatteryBalanced, FanMode.Automatic),
@@ -136,6 +137,7 @@ public sealed class ProfileSetValidator(ProfileValidationPolicy policy)
         }
 
         ValidateLighting(profile.Lighting, name);
+        ValidateCustomPerformance(profile, name);
         ValidateDisplay(profile.Display, name);
     }
 
@@ -148,7 +150,8 @@ public sealed class ProfileSetValidator(ProfileValidationPolicy policy)
             PowerSource.PluggedIn => performance is
                 PerformancePreset.Silent
                 or PerformancePreset.Balanced
-                or PerformancePreset.Performance,
+                or PerformancePreset.Performance
+                or PerformancePreset.Custom,
             PowerSource.Battery => performance is
                 PerformancePreset.BatterySaver
                 or PerformancePreset.BatteryBalanced,
@@ -158,6 +161,22 @@ public sealed class ProfileSetValidator(ProfileValidationPolicy policy)
         if (!valid)
         {
             throw Invalid("The performance preset is not valid for this power source.");
+        }
+    }
+
+    private static void ValidateCustomPerformance(PowerProfile profile, string name)
+    {
+        if (profile.Performance == PerformancePreset.Custom
+            && !CustomPerformanceSettings.IsWellFormed(profile.CustomPerformance))
+        {
+            throw Invalid(
+                $"The {name} custom performance CPU/GPU levels are missing or invalid.");
+        }
+
+        if (profile.CustomPerformance is not null
+            && !CustomPerformanceSettings.IsWellFormed(profile.CustomPerformance))
+        {
+            throw Invalid($"The {name} saved custom performance levels are invalid.");
         }
     }
 

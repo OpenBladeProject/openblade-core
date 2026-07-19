@@ -24,6 +24,18 @@ public interface IServiceControlRuntime
         ManualOverride<PerformancePreset>? value,
         CancellationToken token);
 
+    Task<ControlOperationResult> SetPerformanceConfigurationOverrideAsync(
+        PerformanceOverride? value,
+        CancellationToken token) => value is { Value: PerformancePreset.Custom }
+            ? Task.FromResult(new ControlOperationResult(
+                ControlOperationStatus.Blocked,
+                "Custom performance is unavailable."))
+            : SetPerformanceOverrideAsync(
+                value is null
+                    ? null
+                    : new ManualOverride<PerformancePreset>(value.Value, value.Lifetime),
+                token);
+
     Task<ControlOperationResult> CyclePerformanceShortcutAsync(
         PerformanceShortcutSource source,
         CancellationToken token) => Task.FromResult(
@@ -394,12 +406,21 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
 
     public Task<ControlOperationResult> SetPerformanceOverrideAsync(
         ManualOverride<PerformancePreset>? value,
+        CancellationToken token) => SetPerformanceConfigurationOverrideAsync(
+            value is null
+                ? null
+                : new PerformanceOverride(value.Value, value.Lifetime),
+            token);
+
+    public Task<ControlOperationResult> SetPerformanceConfigurationOverrideAsync(
+        PerformanceOverride? value,
         CancellationToken token) => ExecuteScopedMutationAsync(
             DeviceSubsystem.Performance,
             cancellationToken => SetPerformanceOverrideCoreAsync(value, cancellationToken),
             (coordinator, desired, cancellationToken) =>
                 coordinator.ApplyPerformanceOutcomeAsync(
                     desired.Performance.Value,
+                    desired.CustomPerformance,
                     cancellationToken),
             token,
             value is null
@@ -477,9 +498,13 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 }
             }
             PerformancePreset next = cycle[(currentIndex + 1 + cycle.Count) % cycle.Count];
-            var stagedOverride = new ManualOverride<PerformancePreset>(
+            var stagedOverride = new PerformanceOverride(
                 next,
-                OverrideLifetime.UntilPowerSourceChange);
+                OverrideLifetime.UntilPowerSourceChange,
+                next == PerformancePreset.Custom
+                    ? Automation.Profiles.PluggedIn.CustomPerformance
+                        ?? CustomPerformanceSettings.Default
+                    : null);
             try
             {
                 ValidateThermalOverrideCombination(
@@ -497,6 +522,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 (coordinator, desired, cancellationToken) =>
                     coordinator.ApplyPerformanceOutcomeAsync(
                         desired.Performance.Value,
+                        desired.CustomPerformance,
                         cancellationToken),
                 token,
                 desired => desired with
@@ -504,6 +530,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                     Performance = new ResolvedSetting<PerformancePreset>(
                         next,
                         SettingValueSource.TemporaryOverride),
+                    CustomPerformance = stagedOverride.CustomPerformance,
                 },
                 cancellationToken => SetPerformanceOverrideCoreAsync(
                     stagedOverride,
@@ -1277,7 +1304,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
     public void Dispose() => operationGate.Dispose();
 
     private async Task SetPerformanceOverrideCoreAsync(
-        ManualOverride<PerformancePreset>? value,
+        PerformanceOverride? value,
         CancellationToken cancellationToken)
     {
         ValidateOverride(value, nameof(value));
@@ -1286,6 +1313,9 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         {
             Performance = value?.Lifetime == OverrideLifetime.Persistent
                 ? value.Value
+                : null,
+            CustomPerformance = value?.Lifetime == OverrideLifetime.Persistent
+                ? value.CustomPerformance
                 : null,
         };
         await PersistOverridesIfChangedAsync(staged, cancellationToken);
@@ -2116,11 +2146,10 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
 
         if (alternateExpected is not null)
         {
-            CompareTransitionAutomaticValue(
-                DeviceSubsystem.Performance,
-                confirmed.Performance,
-                desired.Performance.Value,
-                alternateExpected.Performance.Value);
+            CompareTransitionAutomaticPerformance(
+                confirmed,
+                desired,
+                alternateExpected);
             CompareTransitionAutomaticValue(
                 DeviceSubsystem.Fans,
                 confirmed.Fans,
@@ -2145,10 +2174,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             return;
         }
 
-        CompareInitialAutomaticValue(
-            DeviceSubsystem.Performance,
-            confirmed.Performance,
-            desired.Performance.Value);
+        CompareInitialAutomaticPerformance(confirmed, desired);
         CompareInitialAutomaticValue(
             DeviceSubsystem.Fans,
             confirmed.Fans,
@@ -2187,7 +2213,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
     }
 
     private void ValidateThermalOverrideCombination(
-        ManualOverride<PerformancePreset>? performanceOverride,
+        PerformanceOverride? performanceOverride,
         ManualOverride<FanMode>? fanOverride)
     {
         PowerProfile activeProfile = Automation.PowerSource switch
@@ -2219,6 +2245,45 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             subsystem,
             EqualityComparer<T>.Default.Equals(confirmed.Value, desired));
     }
+
+    private void CompareInitialAutomaticPerformance(
+        ConfirmedDeviceState confirmed,
+        DesiredDeviceState desired)
+    {
+        if (confirmed.Performance is null
+            || !initialAutomaticComparisons.Add(DeviceSubsystem.Performance))
+        {
+            return;
+        }
+
+        driftTracker.ConfirmIntentional(
+            DeviceSubsystem.Performance,
+            PerformanceMatchesDesired(confirmed, desired));
+    }
+
+    private void CompareTransitionAutomaticPerformance(
+        ConfirmedDeviceState confirmed,
+        DesiredDeviceState priorDesired,
+        DesiredDeviceState newDesired)
+    {
+        if (confirmed.Performance is null)
+        {
+            return;
+        }
+
+        initialAutomaticComparisons.Add(DeviceSubsystem.Performance);
+        driftTracker.ConfirmIntentional(
+            DeviceSubsystem.Performance,
+            PerformanceMatchesDesired(confirmed, priorDesired)
+                || PerformanceMatchesDesired(confirmed, newDesired));
+    }
+
+    private static bool PerformanceMatchesDesired(
+        ConfirmedDeviceState confirmed,
+        DesiredDeviceState desired) =>
+        confirmed.Performance == desired.Performance.Value
+        && (confirmed.Performance != PerformancePreset.Custom
+            || confirmed.CustomPerformance == desired.CustomPerformance);
 
     private void CompareInitialAutomaticValue<T>(
         DeviceSubsystem subsystem,
@@ -2788,6 +2853,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 PerformancePreset.Balanced,
                 PerformancePreset.Silent,
                 PerformancePreset.Performance,
+                PerformancePreset.Custom,
             ],
             PowerSource.Battery =>
             [
@@ -2871,6 +2937,14 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
     {
         if (value is not null
             && (!Enum.IsDefined(value.Value) || !Enum.IsDefined(value.Lifetime)))
+        {
+            throw new ArgumentOutOfRangeException(parameterName);
+        }
+    }
+
+    private static void ValidateOverride(PerformanceOverride? value, string parameterName)
+    {
+        if (value is not null && !value.IsWellFormed())
         {
             throw new ArgumentOutOfRangeException(parameterName);
         }

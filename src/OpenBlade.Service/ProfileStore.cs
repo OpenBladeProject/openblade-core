@@ -8,8 +8,9 @@ public sealed record ProfileLoadResult(ProfileSet Profiles, bool RecoveredFromIn
 
 public sealed class ProfileStore(string path, ProfileSetValidator? validator = null)
 {
-    internal const int CurrentSchemaVersion = 3;
-    internal const int PreviousSchemaVersion = 2;
+    internal const int CurrentSchemaVersion = 4;
+    internal const int PreviousSchemaVersion = 3;
+    internal const int OlderSchemaVersion = 2;
     internal const int LegacySchemaVersion = 1;
 
     internal static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web)
@@ -81,7 +82,7 @@ public sealed class ProfileStore(string path, ProfileSetValidator? validator = n
         }
 
         ProfileSet profiles;
-        if (schemaVersion is CurrentSchemaVersion or PreviousSchemaVersion)
+        if (schemaVersion is CurrentSchemaVersion or PreviousSchemaVersion or OlderSchemaVersion)
         {
             ProfileDocument? document = JsonSerializer.Deserialize<ProfileDocument>(
                 json,
@@ -92,7 +93,7 @@ public sealed class ProfileStore(string path, ProfileSetValidator? validator = n
             }
 
             profiles = NormalizeLegacyBatteryProfile(document.Profiles, out migrated);
-            migrated |= schemaVersion == PreviousSchemaVersion;
+            migrated |= schemaVersion != CurrentSchemaVersion;
         }
         else if (schemaVersion == LegacySchemaVersion)
         {
@@ -137,6 +138,7 @@ public sealed class ProfileStore(string path, ProfileSetValidator? validator = n
         pluggedIn = NormalizeLegacyDisplay(pluggedIn);
         battery = NormalizeLegacyDisplay(battery);
         usbC = NormalizeLegacyDisplay(usbC);
+        pluggedIn = NormalizeLegacyCustomPerformance(pluggedIn);
         LightingPowerPolicy lightingPowerPolicy =
             profiles.LightingPowerPolicy ?? LightingPowerPolicy.Disabled;
         migrated = pluggedIn != profiles.PluggedIn
@@ -164,6 +166,11 @@ public sealed class ProfileStore(string path, ProfileSetValidator? validator = n
     private static PowerProfile NormalizeLegacyDisplay(PowerProfile profile) =>
         profile.Display is null
             ? profile with { Display = DisplayProfileSettings.Unconfigured() }
+            : profile;
+
+    private static PowerProfile NormalizeLegacyCustomPerformance(PowerProfile profile) =>
+        profile.CustomPerformance is null
+            ? profile with { CustomPerformance = CustomPerformanceSettings.Default }
             : profile;
 
     private async Task<ProfileLoadResult> RecoverSafeDefaultsAsync(

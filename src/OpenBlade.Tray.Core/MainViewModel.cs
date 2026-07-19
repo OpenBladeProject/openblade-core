@@ -105,6 +105,8 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     private bool isFanControlVisible;
     private bool isLightingVisible;
     private PerformancePreset selectedPerformance = PerformancePreset.Balanced;
+    private CustomPerformanceLevel selectedCustomCpuLevel = CustomPerformanceLevel.Medium;
+    private CustomPerformanceLevel selectedCustomGpuLevel = CustomPerformanceLevel.High;
     private FanMode selectedFanMode = FanMode.Automatic;
     private LightingSettings selectedLighting = ProfileDefaults.CreateSafeDefaults().PluggedIn.Lighting;
     private int chargeLimitPercent = 80;
@@ -118,7 +120,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     private PowerSource activePowerSource = PowerSource.PluggedIn;
     private LiveReadings? liveReadings;
     private DateTimeOffset? lastLiveReadingsRefreshAt;
-    private ManualOverride<PerformancePreset>? performanceOverride;
+    private PerformanceOverride? performanceOverride;
     private ManualOverride<FanMode>? fanOverride;
     private ManualOverride<LightingSettings>? lightingOverride;
     private ProfileSet profiles = ProfileDefaults.CreateSafeDefaults();
@@ -161,6 +163,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     private PowerSource? lastConfirmedLightingEditorPowerSource;
     private PowerSource? activeProfileDraftSource;
     private PerformancePreset? activeProfileDraftPerformance;
+    private CustomPerformanceSettings? activeProfileDraftCustomPerformance;
     private FanMode? activeProfileDraftFans;
     private LightingSettings? activeProfileDraftLighting;
     private DisplayProfileSettings? activeProfileDraftDisplay;
@@ -235,6 +238,9 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         SetPerformanceCommand = CreateCommand(
             SetPerformanceAsync,
             CanSetPerformance);
+        SetCustomPerformanceCommand = CreateCommand(
+            SetCustomPerformanceAsync,
+            CanSetCustomPerformance);
         SetFanModeCommand = CreateCommand(
             SetFanModeAsync,
             CanSetFanMode);
@@ -300,6 +306,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         commands =
         [
             (AsyncRelayCommand)SetPerformanceCommand,
+            (AsyncRelayCommand)SetCustomPerformanceCommand,
             (AsyncRelayCommand)SetFanModeCommand,
             (AsyncRelayCommand)SetLightingCommand,
             (AsyncRelayCommand)SetChargeLimitCommand,
@@ -526,6 +533,9 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             PropertyChanged?.Invoke(
                 this,
                 new PropertyChangedEventArgs(nameof(SelectedPerformanceOption)));
+            PropertyChanged?.Invoke(
+                this,
+                new PropertyChangedEventArgs(nameof(IsCustomPerformanceVisible)));
             PropertyChanged?.Invoke(
                 this,
                 new PropertyChangedEventArgs(nameof(ActiveSavedDisplayProfile)));
@@ -926,6 +936,9 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsSilentSelected)));
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsBalancedSelected)));
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsPerformanceSelected)));
+            PropertyChanged?.Invoke(
+                this,
+                new PropertyChangedEventArgs(nameof(IsCustomPerformanceVisible)));
             NotifyTrayHoverLabel();
         }
     }
@@ -935,6 +948,55 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     public bool IsBalancedSelected => SelectedPerformance == PerformancePreset.Balanced;
 
     public bool IsPerformanceSelected => SelectedPerformance == PerformancePreset.Performance;
+
+    public bool IsCustomPerformanceVisible =>
+        ActivePowerSource == PowerSource.PluggedIn
+        && SelectedPerformance == PerformancePreset.Custom
+        && AvailablePerformancePresets.Contains(PerformancePreset.Custom);
+
+    public CustomPerformanceLevel SelectedCustomCpuLevel
+    {
+        get => selectedCustomCpuLevel;
+        private set
+        {
+            if (selectedCustomCpuLevel == value)
+            {
+                return;
+            }
+
+            SetField(ref selectedCustomCpuLevel, value);
+            PropertyChanged?.Invoke(
+                this,
+                new PropertyChangedEventArgs(nameof(AvailableCustomGpuLevels)));
+        }
+    }
+
+    public CustomPerformanceLevel SelectedCustomGpuLevel
+    {
+        get => selectedCustomGpuLevel;
+        private set
+        {
+            if (selectedCustomGpuLevel == value)
+            {
+                return;
+            }
+
+            SetField(ref selectedCustomGpuLevel, value);
+            PropertyChanged?.Invoke(
+                this,
+                new PropertyChangedEventArgs(nameof(AvailableCustomCpuLevels)));
+        }
+    }
+
+    public IReadOnlyList<CustomPerformanceLevel> AvailableCustomCpuLevels =>
+        SelectedCustomGpuLevel == CustomPerformanceLevel.High
+            ? [CustomPerformanceLevel.Low, CustomPerformanceLevel.Medium]
+            : Enum.GetValues<CustomPerformanceLevel>();
+
+    public IReadOnlyList<CustomPerformanceLevel> AvailableCustomGpuLevels =>
+        SelectedCustomCpuLevel == CustomPerformanceLevel.High
+            ? [CustomPerformanceLevel.Low, CustomPerformanceLevel.Medium]
+            : Enum.GetValues<CustomPerformanceLevel>();
 
     public FanMode SelectedFanMode
     {
@@ -1102,7 +1164,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         }
     }
 
-    public ManualOverride<PerformancePreset>? PerformanceOverride
+    public PerformanceOverride? PerformanceOverride
     {
         get => performanceOverride;
         private set => SetOverrideField(ref performanceOverride, value);
@@ -1324,7 +1386,9 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     public bool HasActiveProfileDraft => activeProfileDraftSource is not null;
 
     public bool HasThermalProfileDraft =>
-        activeProfileDraftPerformance is not null || activeProfileDraftFans is not null;
+        activeProfileDraftPerformance is not null
+        || activeProfileDraftCustomPerformance is not null
+        || activeProfileDraftFans is not null;
 
     public bool HasLightingProfileDraft => activeProfileDraftLighting is not null;
 
@@ -2021,6 +2085,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         : StartupStatusMessage;
 
     public ICommand SetPerformanceCommand { get; }
+    public ICommand SetCustomPerformanceCommand { get; }
     public ICommand SetFanModeCommand { get; }
     public ICommand SetLightingCommand { get; }
     public ICommand SetChargeLimitCommand { get; }
@@ -2084,6 +2149,14 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         && HasConfirmedPowerSource
         && latestStatus!.Capabilities!.PerformancePresets.Contains(value)
         && PerformancePresetPresentation.IsAvailable(ActivePowerSource, value)
+        && !MaximumFansAreEffectiveOrConfirmed();
+
+    private bool CanSetCustomPerformance(object? parameter) =>
+        parameter is CustomPerformanceSettings value
+        && CustomPerformanceSettings.IsWellFormed(value)
+        && IsCustomPerformanceVisible
+        && CanMutate
+        && HasConfirmedPowerSource
         && !MaximumFansAreEffectiveOrConfirmed();
 
     private bool CanSetFanMode(object? parameter)
@@ -2422,6 +2495,14 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         CurrentBatterySettingLabel = FormatCurrentBatterySetting(confirmed?.Battery);
         SetTemporaryFullChargeState(confirmed?.Battery?.TemporaryFullCharge);
         ActivePowerSource = status.ActivePowerSource;
+        CustomPerformanceSettings customPerformance =
+            confirmed is { Performance: PerformancePreset.Custom, CustomPerformance: { } observed }
+                ? observed
+                : status.DesiredState.CustomPerformance
+                    ?? status.Profiles.PluggedIn.CustomPerformance
+                    ?? CustomPerformanceSettings.Default;
+        SelectedCustomCpuLevel = customPerformance.Cpu;
+        SelectedCustomGpuLevel = customPerformance.Gpu;
         TrayIconState = TrayIconStateResolver.Resolve(
             isConnected: true,
             status.DeviceVerified,
@@ -2708,10 +2789,13 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         PerformancePreset requested = (PerformancePreset)parameter!;
         PowerSource sourceAtStart = ActivePowerSource;
         return RunOperationAsync(
-            cancellationToken => serviceClient.SetPerformanceOverrideAsync(
-                new ManualOverride<PerformancePreset>(
+            cancellationToken => serviceClient.SetPerformanceConfigurationOverrideAsync(
+                new PerformanceOverride(
                     requested,
-                    OverrideLifetime.UntilPowerSourceChange),
+                    OverrideLifetime.UntilPowerSourceChange,
+                    requested == PerformancePreset.Custom
+                        ? GetActiveProfileCustomPerformance()
+                        : null),
                 cancellationToken),
             token,
             result =>
@@ -2719,6 +2803,30 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
                 if (result.Status == ControlOperationStatus.Applied)
                 {
                     MarkActiveProfileDraft(sourceAtStart, performance: requested);
+                }
+            });
+    }
+
+    private Task SetCustomPerformanceAsync(object? parameter, CancellationToken token)
+    {
+        CustomPerformanceSettings requested = (CustomPerformanceSettings)parameter!;
+        PowerSource sourceAtStart = ActivePowerSource;
+        return RunOperationAsync(
+            cancellationToken => serviceClient.SetPerformanceConfigurationOverrideAsync(
+                new PerformanceOverride(
+                    PerformancePreset.Custom,
+                    OverrideLifetime.UntilPowerSourceChange,
+                    requested),
+                cancellationToken),
+            token,
+            result =>
+            {
+                if (result.Status == ControlOperationStatus.Applied)
+                {
+                    MarkActiveProfileDraft(
+                        sourceAtStart,
+                        performance: PerformancePreset.Custom,
+                        customPerformance: requested);
                 }
             });
     }
@@ -3332,6 +3440,10 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         && (FanModeAvailable(powerSource, draft.Fans)
             || (powerSource != PowerSource.UsbC
                 && draft.Fans == current.Fans))
+        && (draft.Performance != PerformancePreset.Custom
+            || CustomPerformanceSettings.IsWellFormed(draft.CustomPerformance))
+        && (draft.CustomPerformance is null
+            || CustomPerformanceSettings.IsWellFormed(draft.CustomPerformance))
         && ThermalCombinationSupported(draft.Performance, draft.Fans)
         && (LightingSupported(draft.Lighting, capabilities)
             || draft.Lighting == current.Lighting);
@@ -3670,6 +3782,12 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         _ => throw new ArgumentOutOfRangeException(nameof(source)),
     };
 
+    private CustomPerformanceSettings GetActiveProfileCustomPerformance() =>
+        ActivePowerSource is PowerSource.PluggedIn
+            ? GetPresentedProfile(PowerSource.PluggedIn).CustomPerformance
+                ?? CustomPerformanceSettings.Default
+            : CustomPerformanceSettings.Default;
+
     private PowerProfile GetPresentedProfile(PowerSource source) =>
         activeProfileDraftSource == source
             ? GetActiveProfileDraft() ?? GetProfile(source)
@@ -3686,6 +3804,8 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         return profile with
         {
             Performance = activeProfileDraftPerformance ?? profile.Performance,
+            CustomPerformance = activeProfileDraftCustomPerformance
+                ?? profile.CustomPerformance,
             Fans = activeProfileDraftFans ?? profile.Fans,
             Lighting = activeProfileDraftLighting ?? profile.Lighting,
             Display = activeProfileDraftDisplay ?? profile.Display,
@@ -3717,6 +3837,8 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             ProfileDraftGroup.Thermal => saved with
             {
                 Performance = activeProfileDraftPerformance ?? saved.Performance,
+                CustomPerformance = activeProfileDraftCustomPerformance
+                    ?? saved.CustomPerformance,
                 Fans = activeProfileDraftFans ?? saved.Fans,
             },
             ProfileDraftGroup.Lighting => saved with
@@ -3742,6 +3864,8 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         Profiles.PluggedIn with
         {
             Performance = PluggedInPerformanceEditor,
+            CustomPerformance = Profiles.PluggedIn.CustomPerformance
+                ?? CustomPerformanceSettings.Default,
             Fans = PluggedInFanModeEditor,
             Lighting = PluggedInLightingEditor,
         },
@@ -3762,6 +3886,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     private void MarkActiveProfileDraft(
         PowerSource source,
         PerformancePreset? performance = null,
+        CustomPerformanceSettings? customPerformance = null,
         FanMode? fans = null,
         LightingSettings? lighting = null,
         DisplayProfileSettings? display = null,
@@ -3777,6 +3902,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         {
             activeProfileDraftSource = source;
             activeProfileDraftPerformance = null;
+            activeProfileDraftCustomPerformance = null;
             activeProfileDraftFans = null;
             activeProfileDraftLighting = null;
             activeProfileDraftDisplay = null;
@@ -3788,6 +3914,8 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         }
 
         activeProfileDraftPerformance = performance ?? activeProfileDraftPerformance;
+        activeProfileDraftCustomPerformance = customPerformance
+            ?? activeProfileDraftCustomPerformance;
         activeProfileDraftFans = fans ?? activeProfileDraftFans;
         activeProfileDraftLighting = lighting ?? activeProfileDraftLighting;
         activeProfileDraftDisplay = display ?? activeProfileDraftDisplay;
@@ -3796,6 +3924,10 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         if (activeProfileDraftPerformance == saved.Performance)
         {
             activeProfileDraftPerformance = null;
+        }
+        if (activeProfileDraftCustomPerformance == saved.CustomPerformance)
+        {
+            activeProfileDraftCustomPerformance = null;
         }
         if (activeProfileDraftFans == saved.Fans)
         {
@@ -3816,6 +3948,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             activeProfileOriginalDisplay = null;
         }
         if (activeProfileDraftPerformance is null
+            && activeProfileDraftCustomPerformance is null
             && activeProfileDraftFans is null
             && activeProfileDraftLighting is null
             && activeProfileDraftDisplay is null)
@@ -3835,6 +3968,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
 
         activeProfileDraftSource = null;
         activeProfileDraftPerformance = null;
+        activeProfileDraftCustomPerformance = null;
         activeProfileDraftFans = null;
         activeProfileDraftLighting = null;
         activeProfileDraftDisplay = null;
@@ -3848,6 +3982,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         {
             case ProfileDraftGroup.Thermal:
                 activeProfileDraftPerformance = null;
+                activeProfileDraftCustomPerformance = null;
                 activeProfileDraftFans = null;
                 break;
             case ProfileDraftGroup.Lighting:
@@ -3971,10 +4106,10 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     }
 
     private static string FormatThermalProfile(PowerProfile profile) =>
-        $"{PerformancePresetPresentation.Label(profile.Performance)} | {profile.Fans} fans";
+        $"{FormatPerformanceProfile(profile)} | {profile.Fans} fans";
 
     private static string FormatPowerProfile(PowerProfile profile) =>
-        $"Power mode: {PerformancePresetPresentation.Label(profile.Performance)}{Environment.NewLine}"
+        $"Power mode: {FormatPerformanceProfile(profile)}{Environment.NewLine}"
         + $"Fans: {profile.Fans}{Environment.NewLine}"
         + $"Lighting: {FormatLightingProfile(profile.Lighting)}{Environment.NewLine}"
         + $"Display: {FormatDisplayProfile(profile.Display)}";
@@ -4080,7 +4215,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     {
         DisplayProfileSettings display = profile.Display ?? DisplayProfileSettings.Unconfigured();
         return new ProfilePresentation(
-            PerformancePresetPresentation.Label(profile.Performance),
+            FormatPerformanceProfile(profile),
             profile.Fans switch
             {
                 FanMode.Automatic => "Automatic",
@@ -4101,6 +4236,15 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             },
             FormatDisplayColorProfile(display.ColorProfileKey));
     }
+
+    private static string FormatPerformanceProfile(PowerProfile profile) =>
+        profile is
+        {
+            Performance: PerformancePreset.Custom,
+            CustomPerformance: { } custom,
+        }
+            ? $"Custom, CPU {custom.Cpu}, GPU {custom.Gpu}"
+            : PerformancePresetPresentation.Label(profile.Performance);
 
     private static string FormatLightingEffect(LightingSettings lighting) => lighting switch
     {
@@ -4733,6 +4877,24 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ProfileStateLabel)));
     }
 
+    private void SetOverrideField(
+        ref PerformanceOverride? field,
+        PerformanceOverride? value,
+        [CallerMemberName] string? propertyName = null)
+    {
+        if (field == value)
+        {
+            return;
+        }
+
+        field = value;
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ManualOverrideStatus)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasActiveChanges)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ActiveChangesText)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ProfileStateLabel)));
+    }
+
     private static void AddOverrideStatus<T>(
         ICollection<string> status,
         string subsystem,
@@ -4750,6 +4912,28 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         string displayValue = formatValue?.Invoke(value.Value)
             ?? (value.Value is null ? string.Empty : value.Value.ToString())
             ?? string.Empty;
+        status.Add($"{subsystem}: {displayValue} {lifetime}");
+    }
+
+    private static void AddOverrideStatus(
+        ICollection<string> status,
+        string subsystem,
+        PerformanceOverride? value,
+        Func<PerformancePreset, string>? formatValue = null)
+    {
+        if (value is null)
+        {
+            return;
+        }
+
+        string lifetime = value.Lifetime == OverrideLifetime.Persistent
+            ? "until reset"
+            : "until the power source changes";
+        string displayValue = formatValue?.Invoke(value.Value) ?? value.Value.ToString();
+        if (value.CustomPerformance is { } custom)
+        {
+            displayValue += $" (CPU {custom.Cpu}, GPU {custom.Gpu})";
+        }
         status.Add($"{subsystem}: {displayValue} {lifetime}");
     }
 

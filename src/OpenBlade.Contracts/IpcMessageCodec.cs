@@ -7,7 +7,7 @@ namespace OpenBlade.Contracts;
 
 public static class OpenBladeIpc
 {
-    public const int ProtocolVersion = 13;
+    public const int ProtocolVersion = 14;
     public const int MaximumMessageBytes = 64 * 1024;
     public const int MaximumDiagnosticArchiveBytes = 32 * 1024;
     public const string PipeName = "OpenBlade.Service.v2";
@@ -145,7 +145,7 @@ public static class IpcMessageCodec
             UpdateProfilesRequest update => update.Profiles is not null,
             SetPerformanceOverrideRequest set =>
                 set.Value is null
-                || Enum.IsDefined(set.Value.Value) && Enum.IsDefined(set.Value.Lifetime),
+                || set.Value.IsWellFormed(),
             CyclePerformanceShortcutRequest cycle => Enum.IsDefined(cycle.Source),
             SetFanOverrideRequest set =>
                 set.Value is null
@@ -236,6 +236,15 @@ public static class IpcMessageCodec
             || status.Message is null
             || status.Profiles is null
             || status.DesiredState is null
+            || !ValidPerformanceState(
+                status.DesiredState.Performance.Value,
+                status.DesiredState.CustomPerformance)
+            || status.ConfirmedState is { } confirmed
+                && !ValidPerformanceState(
+                    confirmed.Performance,
+                    confirmed.CustomPerformance)
+            || status.PerformanceOverride is { } performanceOverride
+                && !performanceOverride.IsWellFormed()
             || !Enum.IsDefined(status.ActivePowerSource)
             || !Enum.IsDefined(status.LightingRendererOwnership)
             || status.LightingSuppressions is { } suppressions
@@ -277,6 +286,16 @@ public static class IpcMessageCodec
                 StringComparison.Ordinal)
             && (status.LiveReadings is null || ValidLiveReadings(status.LiveReadings));
     }
+
+    private static bool ValidPerformanceState(
+        PerformancePreset? performance,
+        CustomPerformanceSettings? customPerformance) =>
+        performance is null
+            ? customPerformance is null
+            : Enum.IsDefined(performance.Value)
+                && (performance == PerformancePreset.Custom
+                    ? CustomPerformanceSettings.IsWellFormed(customPerformance)
+                    : customPerformance is null);
 
     private static bool ValidLiveReadings(LiveReadings readings) =>
         readings.BatteryPowerFlowMilliwatts is null

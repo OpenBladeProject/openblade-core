@@ -205,11 +205,13 @@
       "010101",
       "010102"
     ],
-    "gpuQueryReadbackObserved": false,
+    "gpuQueryReadbackObserved": true,
+    "gpuQueryReadbackHex": "010202",
     "openBladeReadOnlyProbe": {
       "fixedCpuAndGpuQueriesImplemented": true,
       "acceptsRawSelectors": false,
-      "targetHardwareExecutionPending": true
+      "targetHardwareExecutionPending": false,
+      "targetHardwareExecutionSucceeded": true
     },
     "invalidCombinationObserved": {
       "cpu": "High",
@@ -219,7 +221,7 @@
       "cpu": "Medium",
       "gpu": "High"
     },
-    "productionAdmitted": false
+    "productionAdmitted": true
   },
   "performanceShortcuts": {
     "dedicatedButton": {
@@ -243,10 +245,10 @@
     "interpretation": "SynapseHandlesDistinctInputReportsAndAppliesTheSameModeCycle",
     "openBladeShortcutHookImplemented": true,
     "openBladeCycles": {
-      "pluggedIn": ["Balanced", "Silent", "Performance"],
+      "pluggedIn": ["Balanced", "Silent", "Performance", "Custom"],
       "battery": ["BatteryBalanced", "BatterySaver"],
       "usbC": ["Balanced"],
-      "customExcludedPendingGpuReadback": true,
+      "customComponentReadbackConfirmed": true,
       "blockedDuringControllerConflictOrExternalThermalDrift": true
     }
   },
