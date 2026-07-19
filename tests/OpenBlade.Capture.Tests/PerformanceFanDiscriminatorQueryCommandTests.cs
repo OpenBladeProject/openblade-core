@@ -16,6 +16,7 @@ public sealed class PerformanceFanDiscriminatorQueryCommandTests
             new("0D/82 class1 thermal2", "01020000", "01020000"),
             new("0D/87 custom CPU component", "010100", "010101"),
             new("0D/87 custom GPU component", "010200", "010202"),
+            new("0F/98 startup animation candidate", "00", "00"),
         ]);
         var output = new StringWriter();
         var command = new PerformanceFanDiscriminatorQueryCommand(
@@ -45,10 +46,11 @@ public sealed class PerformanceFanDiscriminatorQueryCommandTests
                 "0D/82 class1 thermal2",
                 "0D/87 custom CPU component",
                 "0D/87 custom GPU component",
+                "0F/98 startup animation candidate",
             ],
             responses.Select(response => response.GetProperty("operation").GetString()!).ToArray());
         Assert.Equal(
-            ["00", "01010000", "01020000", "010100", "010200"],
+            ["00", "01010000", "01020000", "010100", "010200", "00"],
             responses.Select(response =>
                 response.GetProperty("requestPayloadHex").GetString()!).ToArray());
         Assert.All(responses, response =>

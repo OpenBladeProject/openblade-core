@@ -49,5 +49,6 @@
     "productionAdmissionChanged": false,
     "finalStartupAnimationRestoredOutsideCapture": "On"
   },
-  "decision": "Keep Startup animation one-shot. Do not present a selected current value from setter acknowledgement or Synapse page state."
+  "decision": "This page-reentry capture alone did not establish readback. A later isolated state-discrimination probe validated 0F/98; see rz09-0581-pid-02e0-bios-3.01-startup-animation-readback.json.",
+  "supersededForStartupReadback": true
 }
