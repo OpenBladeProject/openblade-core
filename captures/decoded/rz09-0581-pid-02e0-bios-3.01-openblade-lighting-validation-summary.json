@@ -1,0 +1,57 @@
+{
+  "schemaVersion": 1,
+  "evidenceKind": "openBladeExactBuildHardwareValidationSummary",
+  "device": {
+    "model": "RZ09-0581",
+    "vendorIdHex": "1532",
+    "productIdHex": "02E0",
+    "biosVersion": "3.01"
+  },
+  "validatedAtUtc": "2026-07-18T23:27:29.5511369Z",
+  "validatedBuild": {
+    "informationalVersion": "0.1.0+ac4706e9af3f77a3b453f3e999ddf7652bb2294b",
+    "commitHash": "ac4706e9af3f77a3b453f3e999ddf7652bb2294b",
+    "protocolAssemblySha256": "7DE00D9EA93EC1C6235B52E7D3DEFE36AD4E1B14DA15175FFB0F52C38900C88A"
+  },
+  "machineLocalResult": {
+    "fileName": "lighting-validation.json",
+    "sha256": "5D004B668D81DA51CFB55DC5A83DC845F66ABAECB7448AEF35241A74AC8E00AD",
+    "schemaVersion": 2
+  },
+  "knownBaseline": {
+    "effect": "Static",
+    "colorHex": "00FF00",
+    "brightnessPercent": 77,
+    "brightnessMatched": true,
+    "visuallyConfirmed": true
+  },
+  "validatedActions": [
+    "Off",
+    "Static",
+    "Spectrum",
+    "BreathingSingle",
+    "BreathingDual",
+    "BreathingRandom",
+    "ReactiveShort",
+    "ReactiveMedium",
+    "ReactiveLong"
+  ],
+  "result": {
+    "allSupportedEffectsApplied": true,
+    "brightnessIndependentReadback": true,
+    "transitionAcknowledged": true,
+    "matrixWriteVisuallyConfirmed": true,
+    "matrixReadbackAvailable": false,
+    "baselineRestoreAttempted": true,
+    "baselineRestoreBrightnessMatched": true,
+    "baselineRestoreVisuallyConfirmed": true,
+    "baselineRestored": true,
+    "failure": null
+  },
+  "scopeNotes": [
+    "The exact protocol assembly used by the successful run is hash-pinned above.",
+    "The production protocol implementation has not changed since the validated build.",
+    "Reactive actions in this workflow use the typed A-key matrix pulse and do not by themselves validate Windows Raw Input delivery for every physical key.",
+    "Matrix effects have no firmware GET command, so ownership and successful renderer delivery are reported separately from brightness readback."
+  ]
+}

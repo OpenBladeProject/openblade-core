@@ -86,7 +86,6 @@ public static class Rz09_0581ReactiveKeyMap
 
             [0x1D] = 86, // Left Ctrl
             [0x38] = 90, // Left Alt
-            [0x39] = 91, // Space
         };
 
     private static readonly IReadOnlyDictionary<ushort, byte> ExtendedScanCodes =

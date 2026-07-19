@@ -37,7 +37,6 @@ public sealed class ReactiveKeyboardInputTests
     [InlineData(0x36, 83)] // Right Shift
     [InlineData(0x1D, 86)] // Left Ctrl
     [InlineData(0x38, 90)] // Left Alt
-    [InlineData(0x39, 91)] // Space
     public void Map_UsesTheRz09_0581StandardLayout(
         ushort makeCode,
         byte expectedSlot)
@@ -87,6 +86,7 @@ public sealed class ReactiveKeyboardInputTests
 
     [Theory]
     [InlineData(0x00, false)]
+    [InlineData(0x39, false)] // Space bar has no visible lighting on this model.
     [InlineData(0x54, false)]
     [InlineData(0x01, true)]
     [InlineData(0x5C, true)]
