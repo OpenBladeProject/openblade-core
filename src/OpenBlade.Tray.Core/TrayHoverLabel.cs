@@ -54,7 +54,7 @@ public static class TrayHoverLabelFormatter
         PerformancePreset performance) => powerSource switch
         {
             PowerSource.PluggedIn =>
-                $"Plugged in · {PerformancePresetPresentation.Label(performance)}",
+                $"AC · {PerformancePresetPresentation.Label(performance)}",
             PowerSource.Battery =>
                 $"Battery · {PerformancePresetPresentation.Label(performance)}",
             PowerSource.UsbC =>

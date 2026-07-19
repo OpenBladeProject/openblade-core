@@ -83,6 +83,30 @@ public sealed class WinUiShellContractTests
     }
 
     [Fact]
+    public void LogoAndFirmwareOnlyLaptopActionsUseTruthfulSettingsPatterns()
+    {
+        string xaml = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml");
+
+        Assert.Contains("Text=\"Laptop logo\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("Text=\"Laptop behavior\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("AutomationProperties.Name=\"Set function key behavior\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("AutomationProperties.Name=\"Set Gaming Mode\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("AutomationProperties.Name=\"Set startup animation\"", xaml, StringComparison.Ordinal);
+        Assert.Equal(3, CountOccurrences(xaml, "Content=\"Set&#x2026;\""));
+        Assert.DoesNotContain("Content=\"Change\"", xaml, StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            "Text=\"Laptop logo\" Style=\"{StaticResource CardTitleStyle}\"",
+            xaml,
+            StringComparison.Ordinal);
+
+        int functionKeys = xaml.IndexOf("AutomationProperties.Name=\"Set function key behavior\"", StringComparison.Ordinal);
+        int gamingMode = xaml.IndexOf("AutomationProperties.Name=\"Set Gaming Mode\"", StringComparison.Ordinal);
+        int startupAnimation = xaml.IndexOf("AutomationProperties.Name=\"Set startup animation\"", StringComparison.Ordinal);
+        Assert.True(functionKeys < gamingMode);
+        Assert.True(gamingMode < startupAnimation);
+    }
+
+    [Fact]
     public void AboutPageOwnsSupportAndUsesBorderlessIconActions()
     {
         string xaml = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml");

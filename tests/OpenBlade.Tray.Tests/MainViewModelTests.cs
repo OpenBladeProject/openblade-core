@@ -183,7 +183,7 @@ public sealed class MainViewModelTests
         Assert.True(viewModel.IsPluggedInProfileDraft);
         Assert.False(viewModel.IsBatteryProfileDraft);
         Assert.False(viewModel.IsUsbCProfileDraft);
-        Assert.Equal("Plugged in", viewModel.ActiveProfileDraftName);
+        Assert.Equal("AC", viewModel.ActiveProfileDraftName);
         Assert.False(viewModel.HasAttention);
         Assert.Contains("Maximum", viewModel.PendingActiveProfileSummary);
         Assert.Contains("Static", viewModel.PendingActiveProfileSummary);
@@ -1316,7 +1316,8 @@ public sealed class MainViewModelTests
             viewModel.AvailableActivePerformanceOptions.Select(option => option.Value));
         Assert.True(viewModel.SetPerformanceCommand.CanExecute(PerformancePreset.Silent));
         Assert.False(viewModel.SetPerformanceCommand.CanExecute(PerformancePreset.BatterySaver));
-        Assert.Equal("Save to plugged-in profile", viewModel.SaveToActiveProfileLabel);
+        Assert.Equal("AC profile", viewModel.ActivePowerSourceLabel);
+        Assert.Equal("Save to AC profile", viewModel.SaveToActiveProfileLabel);
 
         client.Publish(pluggedIn with
         {

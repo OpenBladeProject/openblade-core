@@ -49,7 +49,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
 
     private static readonly IReadOnlyList<ProfileComparisonOption> ComparisonOptions =
     [
-        new(PowerSource.PluggedIn, "Plugged in"),
+        new(PowerSource.PluggedIn, "AC"),
         new(PowerSource.UsbC, "USB-C"),
         new(PowerSource.Battery, "On battery"),
     ];
@@ -584,7 +584,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
 
     public string SaveToActiveProfileLabel => ActivePowerSource switch
     {
-        PowerSource.PluggedIn => "Save to plugged-in profile",
+        PowerSource.PluggedIn => "Save to AC profile",
         PowerSource.Battery => "Save to battery profile",
         PowerSource.UsbC => "Save to USB-C profile",
         _ => "Save to profile",
@@ -1536,7 +1536,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
 
     public string ActiveProfileDraftName => activeProfileDraftSource switch
     {
-        PowerSource.PluggedIn => "Plugged in",
+        PowerSource.PluggedIn => "AC",
         PowerSource.Battery => "On battery",
         PowerSource.UsbC => "USB-C",
         _ => "Current profile",
@@ -2582,7 +2582,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         LightingOverride = status.LightingOverride;
         ActivePowerSourceLabel = status.ActivePowerSource switch
         {
-            PowerSource.PluggedIn => "Plugged-in profile",
+            PowerSource.PluggedIn => "AC profile",
             PowerSource.Battery => "Battery profile",
             PowerSource.UsbC => "USB-C profile",
             PowerSource.ExternalUnknown => "Checking power source",

@@ -49,6 +49,12 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Changed
 
+- Laptop-logo lighting now has its own section on the Lighting page. Firmware-only
+  Function key behavior, Gaming Mode, and Startup animation actions are grouped
+  under Laptop behavior and use explicit Set menus instead of implying that
+  OpenBlade can query their current values.
+- User-facing power-source labels consistently use AC instead of mixing AC with
+  Plugged in.
 - Dashboard, Lighting, and Display now present pending profile saves beside the
   page title instead of as settings-card rows. The compact action names the
   destination profile, keeps restoration in an overflow menu, and moves below

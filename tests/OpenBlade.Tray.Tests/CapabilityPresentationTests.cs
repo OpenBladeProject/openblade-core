@@ -374,7 +374,7 @@ public sealed class CapabilityPresentationTests
         foreach (string label in new[]
                  {
                      "OpenBlade service",
-                     "Laptop controls",
+                     "Laptop behavior",
                      "Power source",
                      "Other Razer software running",
                  })

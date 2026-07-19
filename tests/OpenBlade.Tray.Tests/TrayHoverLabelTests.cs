@@ -30,7 +30,7 @@ public sealed class TrayHoverLabelTests
     public void Format_PreservesSilentDiagnosticLabelWhenPluggedIn()
     {
         Assert.Equal(
-            "OpenBlade · Plugged in · Silent",
+            "OpenBlade · AC · Silent",
             TrayHoverLabelFormatter.Format(
                 TrayHoverLabelMode.ActiveProfile,
                 isConnected: true,

@@ -644,7 +644,7 @@
                                            VerticalAlignment="Center" />
                                 <StackPanel Grid.Column="1" Spacing="4">
                                     <StackPanel Orientation="Horizontal" Spacing="7">
-                                        <TextBlock Text="Plugged in" Style="{StaticResource CardTitleStyle}" />
+                                        <TextBlock Text="AC" Style="{StaticResource CardTitleStyle}" />
                                         <Ellipse Width="7" Height="7"
                                                  VerticalAlignment="Center"
                                                  Fill="{ThemeResource AccentFillColorDefaultBrush}"
@@ -1299,6 +1299,15 @@
                                     </Grid>
                                 </Border>
 
+                            </StackPanel>
+                        </Border>
+
+                        <TextBlock Text="Laptop logo"
+                                   Style="{StaticResource SectionHeaderStyle}"
+                                   Margin="0,24,0,10"
+                                   Visibility="{x:Bind ViewModel.IsLogoLightingVisible, Mode=OneWay}" />
+                        <Border Style="{StaticResource SettingsGroupStyle}">
+                            <StackPanel>
                                 <Border Style="{StaticResource SettingsRowStyle}"
                                         Visibility="{x:Bind ViewModel.IsLogoLightingVisible, Mode=OneWay}">
                                     <Grid ColumnSpacing="20">
@@ -1307,7 +1316,7 @@
                                             <ColumnDefinition Width="Auto" />
                                         </Grid.ColumnDefinitions>
                                         <StackPanel Spacing="3" VerticalAlignment="Center">
-                                            <TextBlock Text="Laptop logo" Style="{StaticResource CardTitleStyle}" />
+                                            <TextBlock Text="Mode" Style="{StaticResource CardTitleStyle}" />
                                             <TextBlock Text="Choose the lighting mode for the Razer logo on the lid."
                                                        Style="{StaticResource SecondaryTextStyle}" />
                                         </StackPanel>
@@ -1320,7 +1329,6 @@
                                                   SelectedItem="{x:Bind ViewModel.SelectedLogoLightingModeOption, Mode=TwoWay}" />
                                     </Grid>
                                 </Border>
-
                                 <Border Style="{StaticResource SettingsLastRowStyle}">
                                     <Grid ColumnSpacing="20">
                                         <Grid.ColumnDefinitions>
@@ -1329,7 +1337,7 @@
                                         </Grid.ColumnDefinitions>
                                         <StackPanel Spacing="3" VerticalAlignment="Center">
                                             <TextBlock Text="Apply lighting" Style="{StaticResource CardTitleStyle}" />
-                                            <TextBlock Text="Apply these settings to the keyboard and laptop logo."
+                                            <TextBlock Text="Apply the keyboard and logo settings shown on this page."
                                                        Style="{StaticResource SecondaryTextStyle}" />
                                         </StackPanel>
                                         <Button Grid.Column="1"
@@ -1697,41 +1705,12 @@
                             </StackPanel>
                         </Border>
 
-                        <TextBlock Text="Laptop controls"
+                        <TextBlock Text="Laptop behavior"
                                    Style="{StaticResource SectionHeaderStyle}"
                                    Visibility="{x:Bind ViewModel.HasOneShotLaptopControls, Mode=OneWay}" />
                         <Border Style="{StaticResource SettingsGroupStyle}"
                                 Visibility="{x:Bind ViewModel.HasOneShotLaptopControls, Mode=OneWay}">
                             <StackPanel>
-                                <Border Style="{StaticResource SettingsRowStyle}"
-                                        Visibility="{x:Bind ViewModel.SupportsStartupAnimation, Mode=OneWay}">
-                                    <Grid ColumnSpacing="20">
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="*" />
-                                            <ColumnDefinition Width="Auto" />
-                                        </Grid.ColumnDefinitions>
-                                        <StackPanel Spacing="3" VerticalAlignment="Center">
-                                            <TextBlock Text="Startup animation" Style="{StaticResource CardTitleStyle}" />
-                                            <TextBlock Text="Play or skip the keyboard animation when the laptop starts."
-                                                       Style="{StaticResource SecondaryTextStyle}" />
-                                        </StackPanel>
-                                        <DropDownButton Grid.Column="1"
-                                                        Content="Change"
-                                                        HorizontalAlignment="Right"
-                                                        VerticalAlignment="Center">
-                                            <DropDownButton.Flyout>
-                                                <MenuFlyout>
-                                                    <MenuFlyoutItem Text="Turn on"
-                                                                    Command="{x:Bind ViewModel.ApplyOneShotLaptopControlCommand}"
-                                                                    CommandParameter="{x:Bind ViewModel.StartupAnimationOnAction}" />
-                                                    <MenuFlyoutItem Text="Turn off"
-                                                                    Command="{x:Bind ViewModel.ApplyOneShotLaptopControlCommand}"
-                                                                    CommandParameter="{x:Bind ViewModel.StartupAnimationOffAction}" />
-                                                </MenuFlyout>
-                                            </DropDownButton.Flyout>
-                                        </DropDownButton>
-                                    </Grid>
-                                </Border>
                                 <Border Style="{StaticResource SettingsRowStyle}"
                                         Visibility="{x:Bind ViewModel.SupportsFunctionKeyPrimary, Mode=OneWay}">
                                     <Grid ColumnSpacing="20">
@@ -1741,13 +1720,14 @@
                                         </Grid.ColumnDefinitions>
                                         <StackPanel Spacing="3" VerticalAlignment="Center">
                                             <TextBlock Text="Function key behavior" Style="{StaticResource CardTitleStyle}" />
-                                            <TextBlock Text="Choose whether F1–F12 or media actions work without holding Fn."
+                                            <TextBlock Text="Set whether F1 through F12 or media actions work without holding Fn."
                                                        Style="{StaticResource SecondaryTextStyle}" />
                                         </StackPanel>
                                         <DropDownButton Grid.Column="1"
-                                                        Content="Change"
+                                                        Content="Set&#x2026;"
                                                         HorizontalAlignment="Right"
-                                                        VerticalAlignment="Center">
+                                                        VerticalAlignment="Center"
+                                                        AutomationProperties.Name="Set function key behavior">
                                             <DropDownButton.Flyout>
                                                 <MenuFlyout>
                                                     <MenuFlyoutItem Text="Function keys"
@@ -1761,7 +1741,7 @@
                                         </DropDownButton>
                                     </Grid>
                                 </Border>
-                                <Border Style="{StaticResource SettingsLastRowStyle}"
+                                <Border Style="{StaticResource SettingsRowStyle}"
                                         Visibility="{x:Bind ViewModel.SupportsGamingMode, Mode=OneWay}">
                                     <Grid ColumnSpacing="20">
                                         <Grid.ColumnDefinitions>
@@ -1770,13 +1750,14 @@
                                         </Grid.ColumnDefinitions>
                                         <StackPanel Spacing="3" VerticalAlignment="Center">
                                             <TextBlock Text="Gaming Mode" Style="{StaticResource CardTitleStyle}" />
-                                            <TextBlock Text="Turn the laptop's captured Gaming Mode configuration on or off."
+                                            <TextBlock Text="Set Gaming Mode on or off."
                                                        Style="{StaticResource SecondaryTextStyle}" />
                                         </StackPanel>
                                         <DropDownButton Grid.Column="1"
-                                                        Content="Change"
+                                                        Content="Set&#x2026;"
                                                         HorizontalAlignment="Right"
-                                                        VerticalAlignment="Center">
+                                                        VerticalAlignment="Center"
+                                                        AutomationProperties.Name="Set Gaming Mode">
                                             <DropDownButton.Flyout>
                                                 <MenuFlyout>
                                                     <MenuFlyoutItem Text="Turn on"
@@ -1785,6 +1766,36 @@
                                                     <MenuFlyoutItem Text="Turn off"
                                                                     Command="{x:Bind ViewModel.ApplyOneShotLaptopControlCommand}"
                                                                     CommandParameter="{x:Bind ViewModel.GamingModeOffAction}" />
+                                                </MenuFlyout>
+                                            </DropDownButton.Flyout>
+                                        </DropDownButton>
+                                    </Grid>
+                                </Border>
+                                <Border Style="{StaticResource SettingsLastRowStyle}"
+                                        Visibility="{x:Bind ViewModel.SupportsStartupAnimation, Mode=OneWay}">
+                                    <Grid ColumnSpacing="20">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel Spacing="3" VerticalAlignment="Center">
+                                            <TextBlock Text="Startup animation" Style="{StaticResource CardTitleStyle}" />
+                                            <TextBlock Text="Set whether the keyboard animation plays when the laptop starts."
+                                                       Style="{StaticResource SecondaryTextStyle}" />
+                                        </StackPanel>
+                                        <DropDownButton Grid.Column="1"
+                                                        Content="Set&#x2026;"
+                                                        HorizontalAlignment="Right"
+                                                        VerticalAlignment="Center"
+                                                        AutomationProperties.Name="Set startup animation">
+                                            <DropDownButton.Flyout>
+                                                <MenuFlyout>
+                                                    <MenuFlyoutItem Text="Turn on"
+                                                                    Command="{x:Bind ViewModel.ApplyOneShotLaptopControlCommand}"
+                                                                    CommandParameter="{x:Bind ViewModel.StartupAnimationOnAction}" />
+                                                    <MenuFlyoutItem Text="Turn off"
+                                                                    Command="{x:Bind ViewModel.ApplyOneShotLaptopControlCommand}"
+                                                                    CommandParameter="{x:Bind ViewModel.StartupAnimationOffAction}" />
                                                 </MenuFlyout>
                                             </DropDownButton.Flyout>
                                         </DropDownButton>
@@ -2105,7 +2116,7 @@
                                     <Border Style="{StaticResource TroubleshootingSectionStyle}">
                                         <Grid ColumnSpacing="24">
                                             <Grid.ColumnDefinitions><ColumnDefinition Width="2*" /><ColumnDefinition Width="3*" /></Grid.ColumnDefinitions>
-                                            <TextBlock Text="Laptop controls" Style="{StaticResource TroubleshootingLabelStyle}" />
+                                            <TextBlock Text="Laptop behavior" Style="{StaticResource TroubleshootingLabelStyle}" />
                                             <Grid Grid.Column="1" ColumnSpacing="7">
                                                 <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
                                                 <Grid Width="8" Height="8" VerticalAlignment="Center">
