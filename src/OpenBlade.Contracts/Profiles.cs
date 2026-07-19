@@ -23,6 +23,7 @@ public enum LightingEffect
     Breathing,
     Reactive,
     Tidal,
+    Starlight,
 }
 
 public enum LightingDirection
@@ -51,6 +52,7 @@ public enum LightingRendererOwnershipState
     Breathing,
     Reactive,
     Tidal,
+    Starlight,
     Faulted,
 }
 

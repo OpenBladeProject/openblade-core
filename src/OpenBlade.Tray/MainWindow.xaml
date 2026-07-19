@@ -849,6 +849,27 @@
                                 </Border>
 
                                 <Border Style="{StaticResource SettingsRowStyle}"
+                                        Visibility="{x:Bind ViewModel.LightingShowsStarlightColorMode, Mode=OneWay}">
+                                    <Grid ColumnSpacing="20">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel Spacing="3" VerticalAlignment="Center">
+                                            <TextBlock Text="Starlight colors" Style="{StaticResource CardTitleStyle}" />
+                                            <TextBlock Text="Use one color, alternate between two, or choose random colors."
+                                                       Style="{StaticResource SecondaryTextStyle}" />
+                                        </StackPanel>
+                                        <ComboBox Grid.Column="1"
+                                                  MinWidth="150"
+                                                  Style="{StaticResource SettingsPickerStyle}"
+                                                  AutomationProperties.Name="Starlight color mode"
+                                                  ItemsSource="{x:Bind ViewModel.LightingStarlightColorModes}"
+                                                  SelectedItem="{x:Bind ViewModel.LightingStarlightColorModeEditor, Mode=TwoWay}" />
+                                    </Grid>
+                                </Border>
+
+                                <Border Style="{StaticResource SettingsRowStyle}"
                                         Visibility="{x:Bind ViewModel.LightingShowsRandomColors, Mode=OneWay}">
                                     <Grid ColumnSpacing="20">
                                         <Grid.ColumnDefinitions>
@@ -1056,6 +1077,27 @@
                                                   AutomationProperties.Name="Reactive lighting duration"
                                                   ItemsSource="{x:Bind ViewModel.LightingReactiveDurations}"
                                                   SelectedItem="{x:Bind ViewModel.LightingReactiveDurationEditor, Mode=TwoWay}" />
+                                    </Grid>
+                                </Border>
+
+                                <Border Style="{StaticResource SettingsRowStyle}"
+                                        Visibility="{x:Bind ViewModel.LightingShowsStarlightDuration, Mode=OneWay}">
+                                    <Grid ColumnSpacing="20">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel Spacing="3" VerticalAlignment="Center">
+                                            <TextBlock Text="Starlight duration" Style="{StaticResource CardTitleStyle}" />
+                                            <TextBlock Text="Choose how long each random key fades in and out."
+                                                       Style="{StaticResource SecondaryTextStyle}" />
+                                        </StackPanel>
+                                        <ComboBox Grid.Column="1"
+                                                  MinWidth="150"
+                                                  Style="{StaticResource SettingsPickerStyle}"
+                                                  AutomationProperties.Name="Starlight lighting duration"
+                                                  ItemsSource="{x:Bind ViewModel.LightingStarlightDurations}"
+                                                  SelectedItem="{x:Bind ViewModel.LightingStarlightDurationEditor, Mode=TwoWay}" />
                                     </Grid>
                                 </Border>
 

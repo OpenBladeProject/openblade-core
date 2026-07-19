@@ -636,6 +636,33 @@ internal sealed class ProductionLightingPort : IProductionLightingPort
                 Color(value.SecondaryColor),
                 value.RandomColors,
                 value.Direction),
+            StarlightLightingParameters
+                {
+                    ColorMode: StarlightColorMode.Single,
+                    PrimaryColor: { } primary,
+                } value => new Pid02E0StarlightEffect(
+                    value.ColorMode,
+                    Color(primary),
+                    default,
+                    StarlightDuration(value.Duration)),
+            StarlightLightingParameters
+                {
+                    ColorMode: StarlightColorMode.Dual,
+                    PrimaryColor: { } primary,
+                    SecondaryColor: { } secondary,
+                } value => new Pid02E0StarlightEffect(
+                    value.ColorMode,
+                    Color(primary),
+                    Color(secondary),
+                    StarlightDuration(value.Duration)),
+            StarlightLightingParameters
+                {
+                    ColorMode: StarlightColorMode.Random,
+                } value => new Pid02E0StarlightEffect(
+                    value.ColorMode,
+                    default,
+                    default,
+                    StarlightDuration(value.Duration)),
             null when settings.Effect == LightingEffect.Static =>
                 new Pid02E0StaticEffect(Color(settings.Color)),
             null when settings.Effect == LightingEffect.Spectrum =>
@@ -658,6 +685,17 @@ internal sealed class ProductionLightingPort : IProductionLightingPort
             ReactiveLightingDuration.Short => TimeSpan.FromMilliseconds(500),
             ReactiveLightingDuration.Medium => TimeSpan.FromMilliseconds(1500),
             ReactiveLightingDuration.Long => TimeSpan.FromMilliseconds(2000),
+            _ => throw new ArgumentOutOfRangeException(nameof(duration)),
+        };
+
+    internal static TimeSpan StarlightDuration(StarlightLightingDuration duration) =>
+        duration switch
+        {
+            // The focused capture shows the same nominal duration choices as
+            // Reactive, with a symmetric Starlight fade-in/fade-out envelope.
+            StarlightLightingDuration.Short => TimeSpan.FromMilliseconds(500),
+            StarlightLightingDuration.Medium => TimeSpan.FromMilliseconds(1500),
+            StarlightLightingDuration.Long => TimeSpan.FromMilliseconds(2000),
             _ => throw new ArgumentOutOfRangeException(nameof(duration)),
         };
 
@@ -906,6 +944,7 @@ internal sealed class ProductionLightingPort : IProductionLightingPort
             LightingEffect.Breathing => LightingRendererOwnershipState.Breathing,
             LightingEffect.Reactive => LightingRendererOwnershipState.Reactive,
             LightingEffect.Tidal => LightingRendererOwnershipState.Tidal,
+            LightingEffect.Starlight => LightingRendererOwnershipState.Starlight,
             _ => throw new ArgumentOutOfRangeException(nameof(effect)),
         };
 

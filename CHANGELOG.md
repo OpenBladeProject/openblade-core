@@ -16,6 +16,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 - Keyboard lighting controls for Off, Static, Spectrum Cycling, single/dual/random Breathing, Reactive Short/Medium/Long, color, and brightness on the exact RZ09-0581/PID 02E0 device.
 - Capture-faithful Tidal keyboard lighting with fixed or random two-color
   palettes and independent leftward/rightward direction controls.
+- Host-rendered Starlight keyboard lighting with one color, two colors, or
+  random colors and independent Short, Medium, and Long twinkle durations.
 - Typed laptop-logo lighting controls for Static, Breathing, and Off with
   independent state/effect readback and rollback.
 - Data-minimized Reactive input through Windows Raw Input: scan-code make events map directly to matrix slots without recording characters, virtual-key values, applications, window titles, or input packets.
@@ -26,8 +28,9 @@ All notable changes to OpenBlade are documented in this file. The project follow
 ### Changed
 
 - Exact-build lighting validation now covers fixed and random Tidal in both
-  directions plus laptop-logo Breathing, Off, and Static restoration before
-  the production control surface can be admitted.
+  directions, every Starlight color and duration variant, plus laptop-logo
+  Breathing, Off, and Static restoration before the production control surface
+  can be admitted.
 
 - About now uses the canonical 256 px OpenBlade artwork, groups app and service
   builds in a dedicated Versions card, integrates the independent-project

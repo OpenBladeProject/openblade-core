@@ -1230,6 +1230,30 @@ public sealed class CapabilityPresentationTests
         Assert.False(viewModel.LightingShowsPrimaryColor);
         Assert.False(viewModel.LightingShowsSecondaryColor);
 
+        viewModel.LightingEffectEditor = LightingEffect.Starlight;
+        viewModel.LightingStarlightColorModeEditor = StarlightColorMode.Dual;
+        viewModel.LightingStarlightDurationEditor = StarlightLightingDuration.Long;
+        Assert.Equal(
+            LightingSettingsFactory.StarlightDual(
+                new RgbColor(12, 34, 56),
+                new RgbColor(78, 90, 123),
+                64,
+                StarlightLightingDuration.Long),
+            viewModel.LightingDraft);
+        Assert.True(viewModel.LightingShowsStarlightColorMode);
+        Assert.True(viewModel.LightingShowsStarlightDuration);
+        Assert.True(viewModel.LightingShowsPrimaryColor);
+        Assert.True(viewModel.LightingShowsSecondaryColor);
+
+        viewModel.LightingStarlightColorModeEditor = StarlightColorMode.Random;
+        Assert.Equal(
+            LightingSettingsFactory.StarlightRandom(
+                64,
+                StarlightLightingDuration.Long),
+            viewModel.LightingDraft);
+        Assert.False(viewModel.LightingShowsPrimaryColor);
+        Assert.False(viewModel.LightingShowsSecondaryColor);
+
         viewModel.LightingEffectEditor = LightingEffect.Spectrum;
         Assert.Equal(
             LightingSettingsFactory.SpectrumCycling(64),
@@ -1264,6 +1288,8 @@ public sealed class CapabilityPresentationTests
         Assert.Contains("Reactive duration", lightingXaml, StringComparison.Ordinal);
         Assert.Contains("Random colors", lightingXaml, StringComparison.Ordinal);
         Assert.Contains("Tidal direction", lightingXaml, StringComparison.Ordinal);
+        Assert.Contains("Starlight colors", lightingXaml, StringComparison.Ordinal);
+        Assert.Contains("Starlight duration", lightingXaml, StringComparison.Ordinal);
         XElement[] colorPickers = page.Descendants()
             .Where(element => element.Name.LocalName == "ColorPicker")
             .ToArray();

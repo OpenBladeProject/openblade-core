@@ -16,6 +16,20 @@ public enum ReactiveLightingDuration
     Long,
 }
 
+public enum StarlightColorMode
+{
+    Single,
+    Dual,
+    Random,
+}
+
+public enum StarlightLightingDuration
+{
+    Short,
+    Medium,
+    Long,
+}
+
 [JsonPolymorphic(TypeDiscriminatorPropertyName = "kind")]
 [JsonDerivedType(typeof(OffLightingParameters), "off")]
 [JsonDerivedType(typeof(StaticLightingParameters), "static")]
@@ -23,6 +37,7 @@ public enum ReactiveLightingDuration
 [JsonDerivedType(typeof(BreathingLightingParameters), "breathing")]
 [JsonDerivedType(typeof(ReactiveLightingParameters), "reactive")]
 [JsonDerivedType(typeof(TidalLightingParameters), "tidal")]
+[JsonDerivedType(typeof(StarlightLightingParameters), "starlight")]
 public abstract record LightingEffectParameters;
 
 public sealed record OffLightingParameters : LightingEffectParameters;
@@ -48,6 +63,13 @@ public sealed record TidalLightingParameters(
     RgbColor SecondaryColor,
     bool RandomColors,
     LightingDirection Direction)
+    : LightingEffectParameters;
+
+public sealed record StarlightLightingParameters(
+    StarlightColorMode ColorMode,
+    RgbColor? PrimaryColor,
+    RgbColor? SecondaryColor,
+    StarlightLightingDuration Duration)
     : LightingEffectParameters;
 
 public static class LightingSettingsFactory
@@ -145,6 +167,51 @@ public static class LightingSettingsFactory
                 direction),
         };
 
+    public static LightingSettings StarlightSingle(
+        RgbColor color,
+        byte brightness,
+        StarlightLightingDuration duration) => new(
+            LightingEffect.Starlight,
+            color,
+            brightness)
+        {
+            Parameters = new StarlightLightingParameters(
+                StarlightColorMode.Single,
+                color,
+                SecondaryColor: null,
+                duration),
+        };
+
+    public static LightingSettings StarlightDual(
+        RgbColor primaryColor,
+        RgbColor secondaryColor,
+        byte brightness,
+        StarlightLightingDuration duration) => new(
+            LightingEffect.Starlight,
+            primaryColor,
+            brightness)
+        {
+            Parameters = new StarlightLightingParameters(
+                StarlightColorMode.Dual,
+                primaryColor,
+                secondaryColor,
+                duration),
+        };
+
+    public static LightingSettings StarlightRandom(
+        byte brightness,
+        StarlightLightingDuration duration) => new(
+            LightingEffect.Starlight,
+            default,
+            brightness)
+        {
+            Parameters = new StarlightLightingParameters(
+                StarlightColorMode.Random,
+                PrimaryColor: null,
+                SecondaryColor: null,
+                duration),
+        };
+
     public static LightingSettings NormalizeLegacyOff(LightingSettings settings)
     {
         ArgumentNullException.ThrowIfNull(settings);
@@ -200,6 +267,28 @@ public static class LightingSettingsFactory
                 tidal.RandomColors,
                 tidal.Direction,
                 DefaultVisibleBrightness),
+            StarlightLightingParameters
+            {
+                ColorMode: StarlightColorMode.Single,
+            } starlight => StarlightSingle(
+                visibleColor,
+                DefaultVisibleBrightness,
+                starlight.Duration),
+            StarlightLightingParameters
+            {
+                ColorMode: StarlightColorMode.Dual,
+                SecondaryColor: { } secondary,
+            } starlight => StarlightDual(
+                visibleColor,
+                secondary == default ? new RgbColor(255, 0, 170) : secondary,
+                DefaultVisibleBrightness,
+                starlight.Duration),
+            StarlightLightingParameters
+            {
+                ColorMode: StarlightColorMode.Random,
+            } starlight => StarlightRandom(
+                DefaultVisibleBrightness,
+                starlight.Duration),
             null => settings.Effect switch
             {
                 LightingEffect.Static => Static(visibleColor, DefaultVisibleBrightness),
@@ -264,8 +353,38 @@ public static class LightingSettingsValidation
                 && settings.Color == (parameters.RandomColors
                     ? default
                     : parameters.PrimaryColor),
+            (LightingEffect.Starlight, StarlightLightingParameters parameters) =>
+                ValidStarlight(settings, parameters),
             _ => false,
         };
+
+    private static bool ValidStarlight(
+        LightingSettings settings,
+        StarlightLightingParameters parameters)
+    {
+        if (!Enum.IsDefined(parameters.ColorMode)
+            || !Enum.IsDefined(parameters.Duration))
+        {
+            return false;
+        }
+
+        return parameters.ColorMode switch
+        {
+            StarlightColorMode.Single =>
+                parameters.PrimaryColor is { } primary
+                && parameters.SecondaryColor is null
+                && settings.Color == primary,
+            StarlightColorMode.Dual =>
+                parameters.PrimaryColor is { } primary
+                && parameters.SecondaryColor is not null
+                && settings.Color == primary,
+            StarlightColorMode.Random =>
+                parameters.PrimaryColor is null
+                && parameters.SecondaryColor is null
+                && settings.Color == default,
+            _ => false,
+        };
+    }
 
     private static bool ValidBreathing(
         LightingSettings settings,

@@ -117,7 +117,7 @@ internal static class ProductionLightingEvidenceSource
         "OpenBladeLightingImplementationFingerprint";
 
     private const string ApprovedLightingImplementationFingerprintSha256 =
-        "F93E4991ABA854DAB29651CA550F23821BAD8A4565385F76C9741470BB5DDC8F";
+        "895A0A8A919D0CB7E5F73835B248672AD7DF4D7EC851C70EC79ABDFAD26100E6";
 
     private static readonly JsonSerializerOptions SerializerOptions =
         new(JsonSerializerDefaults.Web)
@@ -321,6 +321,11 @@ internal static class ProductionLightingEvidenceSource
             "tidalRightFixed",
             "tidalLeftFixed",
             "tidalRandom",
+            "starlightSingleShort",
+            "starlightSingleMedium",
+            "starlightSingleLong",
+            "starlightDual",
+            "starlightRandom",
             "logoBreathing",
             "logoOff",
             "logoStaticRestore",
@@ -406,6 +411,29 @@ internal static class ProductionLightingEvidenceSource
                 randomColors: true,
                 LightingDirection.Rightward,
                 brightness),
+            "starlightSingleShort" => action.Settings ==
+                LightingSettingsFactory.StarlightSingle(
+                    new RgbColor(0, byte.MaxValue, 0),
+                    brightness,
+                    StarlightLightingDuration.Short),
+            "starlightSingleMedium" => action.Settings ==
+                LightingSettingsFactory.StarlightSingle(
+                    new RgbColor(0, byte.MaxValue, 0),
+                    brightness,
+                    StarlightLightingDuration.Medium),
+            "starlightSingleLong" => action.Settings ==
+                LightingSettingsFactory.StarlightSingle(
+                    new RgbColor(0, byte.MaxValue, 0),
+                    brightness,
+                    StarlightLightingDuration.Long),
+            "starlightDual" => action.Settings == LightingSettingsFactory.StarlightDual(
+                new RgbColor(byte.MaxValue, 0, 0),
+                new RgbColor(0, 0, byte.MaxValue),
+                brightness,
+                StarlightLightingDuration.Medium),
+            "starlightRandom" => action.Settings == LightingSettingsFactory.StarlightRandom(
+                brightness,
+                StarlightLightingDuration.Medium),
             "logoBreathing" => action.Settings ==
                 LightingSettingsFactory.Static(
                     new RgbColor(0, byte.MaxValue, 0),

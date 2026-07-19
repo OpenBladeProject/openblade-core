@@ -46,6 +46,18 @@ public sealed class LightingContractTests
                 randomColors: true,
                 LightingDirection.Leftward,
                 brightness: 66),
+            LightingSettingsFactory.StarlightSingle(
+                primary,
+                55,
+                StarlightLightingDuration.Short),
+            LightingSettingsFactory.StarlightDual(
+                primary,
+                secondary,
+                44,
+                StarlightLightingDuration.Medium),
+            LightingSettingsFactory.StarlightRandom(
+                33,
+                StarlightLightingDuration.Long),
         ];
 
         Assert.All(settings, value =>
@@ -70,6 +82,16 @@ public sealed class LightingContractTests
         Assert.False(
             Assert.IsType<TidalLightingParameters>(settings[7].Parameters).RandomColors);
         Assert.Equal(default, settings[8].Color);
+        Assert.Equal(
+            StarlightColorMode.Single,
+            Assert.IsType<StarlightLightingParameters>(settings[9].Parameters).ColorMode);
+        Assert.Equal(
+            StarlightColorMode.Dual,
+            Assert.IsType<StarlightLightingParameters>(settings[10].Parameters).ColorMode);
+        Assert.Equal(
+            StarlightColorMode.Random,
+            Assert.IsType<StarlightLightingParameters>(settings[11].Parameters).ColorMode);
+        Assert.Equal(default, settings[11].Color);
     }
 
     [Fact]
@@ -119,6 +141,17 @@ public sealed class LightingContractTests
                     RandomColors: false,
                     (LightingDirection)999),
             },
+            LightingSettingsFactory.StarlightSingle(
+                primary,
+                50,
+                StarlightLightingDuration.Medium) with
+            {
+                Parameters = new StarlightLightingParameters(
+                    StarlightColorMode.Random,
+                    primary,
+                    SecondaryColor: null,
+                    StarlightLightingDuration.Medium),
+            },
         ];
 
         Assert.All(invalid, value =>
@@ -144,6 +177,9 @@ public sealed class LightingContractTests
                 randomColors: false,
                 LightingDirection.Rightward,
                 brightness: 0),
+            LightingSettingsFactory.StarlightRandom(
+                0,
+                StarlightLightingDuration.Medium),
         ];
 
         Assert.All(invisible, value =>

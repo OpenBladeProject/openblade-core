@@ -143,6 +143,9 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     private int lightingSecondaryGreenEditor;
     private int lightingSecondaryBlueEditor;
     private BreathingColorMode lightingBreathingColorModeEditor = BreathingColorMode.Single;
+    private StarlightColorMode lightingStarlightColorModeEditor = StarlightColorMode.Single;
+    private StarlightLightingDuration lightingStarlightDurationEditor =
+        StarlightLightingDuration.Medium;
     private ReactiveLightingDuration lightingReactiveDurationEditor =
         ReactiveLightingDuration.Medium;
     private bool lightingRandomColorsEditor;
@@ -1575,6 +1578,42 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         }
     }
 
+    public IReadOnlyList<StarlightColorMode> LightingStarlightColorModes { get; } =
+        Enum.GetValues<StarlightColorMode>();
+
+    public StarlightColorMode LightingStarlightColorModeEditor
+    {
+        get => lightingStarlightColorModeEditor;
+        set
+        {
+            if (!Enum.IsDefined(value)
+                || !SetLightingEditorField(ref lightingStarlightColorModeEditor, value))
+            {
+                return;
+            }
+
+            SeedStarlightColorDefaults(value);
+            NotifyLightingParameterPresentation();
+        }
+    }
+
+    public IReadOnlyList<StarlightLightingDuration> LightingStarlightDurations { get; } =
+        Enum.GetValues<StarlightLightingDuration>();
+
+    public StarlightLightingDuration LightingStarlightDurationEditor
+    {
+        get => lightingStarlightDurationEditor;
+        set
+        {
+            if (!Enum.IsDefined(value))
+            {
+                return;
+            }
+
+            SetLightingEditorField(ref lightingStarlightDurationEditor, value);
+        }
+    }
+
     public bool LightingRandomColorsEditor
     {
         get => lightingRandomColorsEditor;
@@ -1645,21 +1684,31 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     public bool LightingShowsBreathingColorMode =>
         LightingEffectEditor == LightingEffect.Breathing;
 
+    public bool LightingShowsStarlightColorMode =>
+        LightingEffectEditor == LightingEffect.Starlight;
+
     public bool LightingShowsPrimaryColor =>
         LightingEffectEditor is LightingEffect.Static or LightingEffect.Reactive
         || LightingEffectEditor == LightingEffect.Breathing
             && LightingBreathingColorModeEditor != BreathingColorMode.Random
         || LightingEffectEditor == LightingEffect.Tidal
-            && !LightingRandomColorsEditor;
+            && !LightingRandomColorsEditor
+        || LightingEffectEditor == LightingEffect.Starlight
+            && LightingStarlightColorModeEditor != StarlightColorMode.Random;
 
     public bool LightingShowsSecondaryColor =>
         LightingEffectEditor == LightingEffect.Breathing
             && LightingBreathingColorModeEditor == BreathingColorMode.Dual
         || LightingEffectEditor == LightingEffect.Tidal
-            && !LightingRandomColorsEditor;
+            && !LightingRandomColorsEditor
+        || LightingEffectEditor == LightingEffect.Starlight
+            && LightingStarlightColorModeEditor == StarlightColorMode.Dual;
 
     public bool LightingShowsReactiveDuration =>
         LightingEffectEditor == LightingEffect.Reactive;
+
+    public bool LightingShowsStarlightDuration =>
+        LightingEffectEditor == LightingEffect.Starlight;
 
     public bool LightingShowsRandomColors =>
         LightingEffectEditor == LightingEffect.Tidal;
@@ -3247,6 +3296,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         {
             BreathingLightingParameters { SecondaryColor: { } color } => color,
             TidalLightingParameters tidal => tidal.SecondaryColor,
+            StarlightLightingParameters { SecondaryColor: { } color } => color,
             _ => value.Color,
         };
         SetField(
@@ -3283,6 +3333,22 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             ref lightingReactiveDurationEditor,
             reactiveDuration,
             nameof(LightingReactiveDurationEditor));
+        StarlightColorMode starlightColorMode =
+            value.Parameters is StarlightLightingParameters starlight
+                ? starlight.ColorMode
+                : StarlightColorMode.Single;
+        SetField(
+            ref lightingStarlightColorModeEditor,
+            starlightColorMode,
+            nameof(LightingStarlightColorModeEditor));
+        StarlightLightingDuration starlightDuration =
+            value.Parameters is StarlightLightingParameters starlightParameters
+                ? starlightParameters.Duration
+                : StarlightLightingDuration.Medium;
+        SetField(
+            ref lightingStarlightDurationEditor,
+            starlightDuration,
+            nameof(LightingStarlightDurationEditor));
         bool randomColors = value.Parameters is TidalLightingParameters
         {
             RandomColors: true,
@@ -3756,6 +3822,21 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             TidalLightingParameters tidal =>
                 $"{FormatColor(tidal.PrimaryColor)} and {FormatColor(tidal.SecondaryColor)}, "
                 + tidal.Direction.ToString().ToLowerInvariant(),
+            StarlightLightingParameters
+            {
+                ColorMode: StarlightColorMode.Random,
+            } starlight =>
+                $"random colors, {starlight.Duration.ToString().ToLowerInvariant()}",
+            StarlightLightingParameters
+            {
+                ColorMode: StarlightColorMode.Dual,
+                SecondaryColor: { } secondary,
+            } starlight =>
+                $"{FormatColor(lighting.Color)} and {FormatColor(secondary)}, "
+                + starlight.Duration.ToString().ToLowerInvariant(),
+            StarlightLightingParameters starlight =>
+                $"{FormatColor(lighting.Color)}, "
+                + starlight.Duration.ToString().ToLowerInvariant(),
             _ when lighting.Effect == LightingEffect.Static => FormatColor(lighting.Color),
             _ => string.Empty,
         };
@@ -3833,6 +3914,24 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             Effect: LightingEffect.Tidal,
             Parameters: TidalLightingParameters tidal,
         } => $"Tidal, {tidal.Direction.ToString().ToLowerInvariant()}",
+        {
+            Effect: LightingEffect.Starlight,
+            Parameters: StarlightLightingParameters
+            {
+                ColorMode: StarlightColorMode.Dual,
+            } starlight,
+        } => $"Starlight, two colors, {starlight.Duration.ToString().ToLowerInvariant()}",
+        {
+            Effect: LightingEffect.Starlight,
+            Parameters: StarlightLightingParameters
+            {
+                ColorMode: StarlightColorMode.Random,
+            } starlight,
+        } => $"Starlight, random colors, {starlight.Duration.ToString().ToLowerInvariant()}",
+        {
+            Effect: LightingEffect.Starlight,
+            Parameters: StarlightLightingParameters starlight,
+        } => $"Starlight, one color, {starlight.Duration.ToString().ToLowerInvariant()}",
         _ => lighting.Effect.ToString(),
     };
 
@@ -3849,6 +3948,16 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         {
             Parameters: TidalLightingParameters tidal,
         } => $"{FormatColor(tidal.PrimaryColor)} and {FormatColor(tidal.SecondaryColor)}",
+        {
+            Parameters: StarlightLightingParameters { ColorMode: StarlightColorMode.Random },
+        } => "Random",
+        {
+            Parameters: StarlightLightingParameters
+            {
+                ColorMode: StarlightColorMode.Dual,
+                SecondaryColor: { } secondary,
+            },
+        } => $"{FormatColor(lighting.Color)} and {FormatColor(secondary)}",
         {
             Parameters: BreathingLightingParameters
             {
@@ -3945,6 +4054,24 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
                 LightingRandomColorsEditor,
                 LightingDirectionEditor,
                 brightness),
+            LightingEffect.Starlight when
+                LightingStarlightColorModeEditor == StarlightColorMode.Single =>
+                LightingSettingsFactory.StarlightSingle(
+                    primaryColor,
+                    brightness,
+                    LightingStarlightDurationEditor),
+            LightingEffect.Starlight when
+                LightingStarlightColorModeEditor == StarlightColorMode.Dual =>
+                LightingSettingsFactory.StarlightDual(
+                    primaryColor,
+                    secondaryColor,
+                    brightness,
+                    LightingStarlightDurationEditor),
+            LightingEffect.Starlight when
+                LightingStarlightColorModeEditor == StarlightColorMode.Random =>
+                LightingSettingsFactory.StarlightRandom(
+                    brightness,
+                    LightingStarlightDurationEditor),
             _ => new LightingSettings(LightingEffectEditor, default, brightness),
         };
         return keyboard with { LogoMode = LogoLightingModeEditor };
@@ -3969,7 +4096,8 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         bool selectedUsesColor = selected is LightingEffect.Static
             or LightingEffect.Breathing
             or LightingEffect.Reactive
-            or LightingEffect.Tidal;
+            or LightingEffect.Tidal
+            or LightingEffect.Starlight;
         bool previousHadNoEditableColor = previous is LightingEffect.Off
             or LightingEffect.Spectrum
             || (previous == LightingEffect.Breathing
@@ -3991,6 +4119,11 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         if (selected == LightingEffect.Tidal)
         {
             SeedTidalColorDefaults();
+        }
+
+        if (selected == LightingEffect.Starlight)
+        {
+            SeedStarlightColorDefaults(LightingStarlightColorModeEditor);
         }
     }
 
@@ -4023,6 +4156,23 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         }
     }
 
+    private void SeedStarlightColorDefaults(StarlightColorMode selected)
+    {
+        if (selected is StarlightColorMode.Single or StarlightColorMode.Dual
+            && LightingPrimaryColorEditor == default)
+        {
+            SetLightingColorEditor(
+                LightingSettingsFactory.DefaultVisibleColor,
+                secondary: false);
+        }
+
+        if (selected == StarlightColorMode.Dual
+            && LightingSecondaryColorEditor == default)
+        {
+            SetLightingColorEditor(new RgbColor(255, 0, 170), secondary: true);
+        }
+    }
+
     private LightingSettings CreateLightingChoice(LightingEffect effect)
     {
         byte brightness = SelectedLighting.Brightness == 0
@@ -4049,6 +4199,10 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
                 randomColors: false,
                 LightingDirection.Rightward,
                 brightness),
+            LightingEffect.Starlight => LightingSettingsFactory.StarlightSingle(
+                color,
+                brightness,
+                StarlightLightingDuration.Medium),
             _ => new LightingSettings(effect, color, brightness),
         };
     }
@@ -4489,11 +4643,17 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         PropertyChanged?.Invoke(
             this,
             new PropertyChangedEventArgs(nameof(LightingShowsBreathingColorMode)));
+        PropertyChanged?.Invoke(
+            this,
+            new PropertyChangedEventArgs(nameof(LightingShowsStarlightColorMode)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(LightingShowsPrimaryColor)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(LightingShowsSecondaryColor)));
         PropertyChanged?.Invoke(
             this,
             new PropertyChangedEventArgs(nameof(LightingShowsReactiveDuration)));
+        PropertyChanged?.Invoke(
+            this,
+            new PropertyChangedEventArgs(nameof(LightingShowsStarlightDuration)));
         PropertyChanged?.Invoke(
             this,
             new PropertyChangedEventArgs(nameof(LightingShowsRandomColors)));

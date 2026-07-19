@@ -777,6 +777,46 @@ public sealed class LightingValidationCommand
                 brightness),
             false),
         new(
+            "starlightSingleShort",
+            "Starlight single-color green, short",
+            LightingSettingsFactory.StarlightSingle(
+                BaselineGreen,
+                brightness,
+                StarlightLightingDuration.Short),
+            false),
+        new(
+            "starlightSingleMedium",
+            "Starlight single-color green, medium",
+            LightingSettingsFactory.StarlightSingle(
+                BaselineGreen,
+                brightness,
+                StarlightLightingDuration.Medium),
+            false),
+        new(
+            "starlightSingleLong",
+            "Starlight single-color green, long",
+            LightingSettingsFactory.StarlightSingle(
+                BaselineGreen,
+                brightness,
+                StarlightLightingDuration.Long),
+            false),
+        new(
+            "starlightDual",
+            "Starlight red and blue, medium",
+            LightingSettingsFactory.StarlightDual(
+                new RgbColor(byte.MaxValue, 0, 0),
+                new RgbColor(0, 0, byte.MaxValue),
+                brightness,
+                StarlightLightingDuration.Medium),
+            false),
+        new(
+            "starlightRandom",
+            "Starlight random colors, medium",
+            LightingSettingsFactory.StarlightRandom(
+                brightness,
+                StarlightLightingDuration.Medium),
+            false),
+        new(
             "logoBreathing",
             "Static green keyboard with Breathing laptop logo",
             LightingSettingsFactory.Static(BaselineGreen, brightness) with
@@ -821,6 +861,7 @@ public sealed class LightingValidationCommand
             LightingEffect.Breathing => LightingRendererOwnershipState.Breathing,
             LightingEffect.Reactive => LightingRendererOwnershipState.Reactive,
             LightingEffect.Tidal => LightingRendererOwnershipState.Tidal,
+            LightingEffect.Starlight => LightingRendererOwnershipState.Starlight,
             _ => throw new ArgumentOutOfRangeException(nameof(settings)),
         });
 

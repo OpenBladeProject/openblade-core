@@ -637,6 +637,26 @@ public sealed class ProductionLightingPortTests
                 randomColors: true,
                 LightingDirection.Rightward,
                 brightness: 60)),
+            ("starlightSingleShort", LightingSettingsFactory.StarlightSingle(
+                new RgbColor(0, 255, 0),
+                60,
+                StarlightLightingDuration.Short)),
+            ("starlightSingleMedium", LightingSettingsFactory.StarlightSingle(
+                new RgbColor(0, 255, 0),
+                60,
+                StarlightLightingDuration.Medium)),
+            ("starlightSingleLong", LightingSettingsFactory.StarlightSingle(
+                new RgbColor(0, 255, 0),
+                60,
+                StarlightLightingDuration.Long)),
+            ("starlightDual", LightingSettingsFactory.StarlightDual(
+                new RgbColor(255, 0, 0),
+                new RgbColor(0, 0, 255),
+                60,
+                StarlightLightingDuration.Medium)),
+            ("starlightRandom", LightingSettingsFactory.StarlightRandom(
+                60,
+                StarlightLightingDuration.Medium)),
             ("logoBreathing", LightingSettingsFactory.Static(
                 new RgbColor(0, 255, 0), 60) with
             {

@@ -23,7 +23,7 @@ public sealed class LightingValidationCommandTests
         int exitCode = await command.RunAsync(ValidArguments(), default);
 
         Assert.Equal(0, exitCode);
-        Assert.Equal(17, port.Settings.Count); // baseline, fifteen actions, restore.
+        Assert.Equal(22, port.Settings.Count); // baseline, twenty actions, restore.
         Assert.Equal(
             [
                 LightingEffect.Static,
@@ -39,6 +39,11 @@ public sealed class LightingValidationCommandTests
                 LightingEffect.Tidal,
                 LightingEffect.Tidal,
                 LightingEffect.Tidal,
+                LightingEffect.Starlight,
+                LightingEffect.Starlight,
+                LightingEffect.Starlight,
+                LightingEffect.Starlight,
+                LightingEffect.Starlight,
                 LightingEffect.Static,
                 LightingEffect.Static,
                 LightingEffect.Static,
@@ -54,7 +59,7 @@ public sealed class LightingValidationCommandTests
         JsonElement root = document.RootElement;
         Assert.Equal(2, root.GetProperty("schemaVersion").GetInt32());
         Assert.Equal(AssemblySha, root.GetProperty("protocolAssemblySha256").GetString());
-        Assert.Equal(15, root.GetProperty("actions").GetArrayLength());
+        Assert.Equal(20, root.GetProperty("actions").GetArrayLength());
         Assert.True(root.GetProperty("allSupportedEffectsApplied").GetBoolean());
         Assert.True(root.GetProperty("brightnessIndependentReadback").GetBoolean());
         Assert.True(root.GetProperty("baselineRestored").GetBoolean());
@@ -434,6 +439,11 @@ public sealed class LightingValidationCommandTests
         "yes", // Tidal fixed rightward.
         "yes", // Tidal fixed leftward.
         "yes", // Tidal random.
+        "yes", // Starlight single short.
+        "yes", // Starlight single medium.
+        "yes", // Starlight single long.
+        "yes", // Starlight dual.
+        "yes", // Starlight random.
         "yes", // Logo Breathing.
         "yes", // Logo Off.
         "yes", // Logo Static restored.
@@ -483,6 +493,7 @@ public sealed class LightingValidationCommandTests
                 LightingEffect.Breathing => LightingRendererOwnershipState.Breathing,
                 LightingEffect.Reactive => LightingRendererOwnershipState.Reactive,
                 LightingEffect.Tidal => LightingRendererOwnershipState.Tidal,
+                LightingEffect.Starlight => LightingRendererOwnershipState.Starlight,
                 _ => throw new ArgumentOutOfRangeException(),
             };
             Settings.Add(settings);

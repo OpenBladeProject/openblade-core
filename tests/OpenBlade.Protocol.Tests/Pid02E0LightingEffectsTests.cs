@@ -333,6 +333,72 @@ public sealed class Pid02E0LightingEffectsTests
     }
 
     [Fact]
+    public void StarlightSingle_ProducesDeterministicSparseSymmetricTwinkles()
+    {
+        var effect = new Pid02E0StarlightEffect(
+            StarlightColorMode.Single,
+            Green,
+            default,
+            TimeSpan.FromSeconds(1.5));
+
+        Pid02E0MatrixFrame first = effect.RenderFrame(TimeSpan.FromSeconds(30));
+        Pid02E0MatrixFrame repeated = effect.RenderFrame(TimeSpan.FromSeconds(30));
+        int lit = first.ToArray().Count(color => color != MatrixRgb.Black);
+
+        Assert.Equal(TimeSpan.FromMilliseconds(50), effect.GetNextFrameDelay(TimeSpan.Zero));
+        Assert.InRange(lit, 2, 20);
+        AssertFramesEqual(first, repeated);
+        AssertHolesBlack(first);
+        Assert.All(
+            first.ToArray().Where(color => color != MatrixRgb.Black),
+            color => Assert.True(color.Red == 0 && color.Green > 0 && color.Blue == 0));
+    }
+
+    [Fact]
+    public void StarlightDualAndRandom_SelectPerTwinkleColors()
+    {
+        var dual = new Pid02E0StarlightEffect(
+            StarlightColorMode.Dual,
+            new MatrixRgb(255, 0, 0),
+            new MatrixRgb(0, 0, 255),
+            TimeSpan.FromSeconds(1.5));
+        var random = new Pid02E0StarlightEffect(
+            StarlightColorMode.Random,
+            default,
+            default,
+            TimeSpan.FromSeconds(1.5));
+
+        MatrixRgb[] dualColors = Enumerable.Range(0, 200)
+            .SelectMany(index => dual.RenderFrame(TimeSpan.FromMilliseconds(index * 50)).ToArray())
+            .Where(color => color != MatrixRgb.Black)
+            .ToArray();
+        MatrixRgb[] randomColors = Enumerable.Range(0, 200)
+            .SelectMany(index => random.RenderFrame(TimeSpan.FromMilliseconds(index * 50)).ToArray())
+            .Where(color => color != MatrixRgb.Black)
+            .ToArray();
+
+        Assert.Contains(dualColors, color => color.Red > 0 && color.Blue == 0);
+        Assert.Contains(dualColors, color => color.Red == 0 && color.Blue > 0);
+        Assert.True(
+            randomColors.Select(color => (color.Red > 0, color.Green > 0, color.Blue > 0))
+                .Distinct()
+                .Count() >= 4);
+    }
+
+    [Theory]
+    [InlineData(StarlightLightingDuration.Short, 0.5)]
+    [InlineData(StarlightLightingDuration.Medium, 1.5)]
+    [InlineData(StarlightLightingDuration.Long, 2.0)]
+    public void StarlightDuration_UsesCapturedNominalChoices(
+        StarlightLightingDuration duration,
+        double expectedSeconds)
+    {
+        Assert.Equal(
+            TimeSpan.FromSeconds(expectedSeconds),
+            ProductionLightingPort.StarlightDuration(duration));
+    }
+
+    [Fact]
     public void Effects_RejectInvalidTimingInputs()
     {
         Assert.Throws<ArgumentOutOfRangeException>(() => new Pid02E0SpectrumEffect(TimeSpan.Zero));
@@ -340,6 +406,12 @@ public sealed class Pid02E0LightingEffectsTests
             Pid02E0BreathingEffect.Single(Green, TimeSpan.Zero));
         Assert.Throws<ArgumentOutOfRangeException>(() =>
             new Pid02E0ReactiveEffect(Green, TimeSpan.Zero));
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            new Pid02E0StarlightEffect(
+                StarlightColorMode.Single,
+                Green,
+                default,
+                TimeSpan.Zero));
 
         IPid02E0LightingEffect[] effects =
         [
@@ -352,6 +424,11 @@ public sealed class Pid02E0LightingEffectsTests
                 new MatrixRgb(0, 0, 255),
                 randomColors: false,
                 LightingDirection.Rightward),
+            new Pid02E0StarlightEffect(
+                StarlightColorMode.Single,
+                Green,
+                default,
+                TimeSpan.FromSeconds(1.5)),
         ];
 
         Assert.All(effects, effect =>
