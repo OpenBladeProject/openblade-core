@@ -52,6 +52,17 @@ public sealed class WinUiShellContractTests
             "Content=\"{x:Bind ViewModel.SaveToActiveProfileLabel, Mode=OneWay}\""));
         Assert.Equal(3, CountOccurrences(xaml, "Text=\"Not saved\""));
         Assert.Equal(3, CountOccurrences(xaml, "Text=\"Use profile settings\""));
+        Assert.Equal(3, CountOccurrences(
+            xaml,
+            "Style=\"{StaticResource ProfileSaveStatusTextStyle}\""));
+        Assert.Equal(3, CountOccurrences(
+            xaml,
+            "Style=\"{StaticResource ProfileSaveButtonStyle}\""));
+        Assert.Equal(3, CountOccurrences(
+            xaml,
+            "Style=\"{StaticResource ProfileSaveOverflowButtonStyle}\""));
+        Assert.Contains("<Setter Property=\"Height\" Value=\"32\" />", xaml, StringComparison.Ordinal);
+        Assert.Equal(6, CountOccurrences(xaml, "ProfileSaveActions.Margin\" Value=\"0,2,0,0\""));
         Assert.DoesNotContain("ViewModel.ThermalProfileRelationshipStatus", xaml, StringComparison.Ordinal);
         Assert.DoesNotContain("ViewModel.LightingProfileRelationshipStatus", xaml, StringComparison.Ordinal);
         Assert.DoesNotContain("DisplayViewModel.ProfileRelationshipStatus", xaml, StringComparison.Ordinal);

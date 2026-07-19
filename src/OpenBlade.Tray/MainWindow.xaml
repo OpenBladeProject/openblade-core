@@ -117,6 +117,23 @@
                 <Setter Property="Foreground" Value="{ThemeResource TextFillColorSecondaryBrush}" />
                 <Setter Property="TextWrapping" Value="Wrap" />
             </Style>
+            <Style x:Key="ProfileSaveStatusTextStyle"
+                   TargetType="TextBlock"
+                   BasedOn="{StaticResource SecondaryTextStyle}">
+                <Setter Property="FontSize" Value="14" />
+                <Setter Property="LineHeight" Value="20" />
+                <Setter Property="VerticalAlignment" Value="Center" />
+            </Style>
+            <Style x:Key="ProfileSaveButtonStyle"
+                   TargetType="Button"
+                   BasedOn="{StaticResource AccentButtonStyle}">
+                <Setter Property="MinHeight" Value="32" />
+                <Setter Property="Height" Value="32" />
+                <Setter Property="Padding" Value="14,0" />
+                <Setter Property="FontSize" Value="14" />
+                <Setter Property="VerticalAlignment" Value="Center" />
+                <Setter Property="VerticalContentAlignment" Value="Center" />
+            </Style>
             <Style x:Key="ExternalLinkButtonStyle" TargetType="HyperlinkButton">
                 <Setter Property="Width" Value="40" />
                 <Setter Property="Height" Value="40" />
@@ -140,6 +157,12 @@
                 <Setter Property="Foreground" Value="{ThemeResource TextFillColorPrimaryBrush}" />
                 <Setter Property="Background" Value="Transparent" />
                 <Setter Property="BorderThickness" Value="0" />
+            </Style>
+            <Style x:Key="ProfileSaveOverflowButtonStyle"
+                   TargetType="Button"
+                   BasedOn="{StaticResource IconActionButtonStyle}">
+                <Setter Property="Width" Value="32" />
+                <Setter Property="Height" Value="32" />
             </Style>
         </Grid.Resources>
 
@@ -250,7 +273,7 @@
                                             <Setter Target="DashboardProfileSaveActions.(Grid.Column)" Value="1" />
                                             <Setter Target="DashboardProfileSaveActions.(Grid.ColumnSpan)" Value="1" />
                                             <Setter Target="DashboardProfileSaveActions.HorizontalAlignment" Value="Right" />
-                                            <Setter Target="DashboardProfileSaveActions.Margin" Value="0" />
+                                            <Setter Target="DashboardProfileSaveActions.Margin" Value="0,2,0,0" />
                                         </VisualState.Setters>
                                     </VisualState>
                                     <VisualState x:Name="DashboardHeaderCompact">
@@ -279,13 +302,12 @@
                                              Height="7"
                                              Fill="{ThemeResource SystemFillColorCautionBrush}" />
                                     <TextBlock Text="Not saved"
-                                               Style="{StaticResource SecondaryTextStyle}"
-                                               VerticalAlignment="Center" />
+                                               Style="{StaticResource ProfileSaveStatusTextStyle}" />
                                 </StackPanel>
                                 <Button Content="{x:Bind ViewModel.SaveToActiveProfileLabel, Mode=OneWay}"
-                                        Style="{StaticResource AccentButtonStyle}"
+                                        Style="{StaticResource ProfileSaveButtonStyle}"
                                         Command="{x:Bind ViewModel.SaveThermalProfileDraftCommand}" />
-                                <Button Style="{StaticResource IconActionButtonStyle}"
+                                <Button Style="{StaticResource ProfileSaveOverflowButtonStyle}"
                                         AutomationProperties.Name="More profile actions"
                                         ToolTipService.ToolTip="More profile actions">
                                     <FontIcon Glyph="&#xE712;" FontSize="16" />
@@ -887,7 +909,7 @@
                                             <Setter Target="LightingProfileSaveActions.(Grid.Column)" Value="1" />
                                             <Setter Target="LightingProfileSaveActions.(Grid.ColumnSpan)" Value="1" />
                                             <Setter Target="LightingProfileSaveActions.HorizontalAlignment" Value="Right" />
-                                            <Setter Target="LightingProfileSaveActions.Margin" Value="0" />
+                                            <Setter Target="LightingProfileSaveActions.Margin" Value="0,2,0,0" />
                                         </VisualState.Setters>
                                     </VisualState>
                                     <VisualState x:Name="LightingHeaderCompact">
@@ -916,13 +938,12 @@
                                              Height="7"
                                              Fill="{ThemeResource SystemFillColorCautionBrush}" />
                                     <TextBlock Text="Not saved"
-                                               Style="{StaticResource SecondaryTextStyle}"
-                                               VerticalAlignment="Center" />
+                                               Style="{StaticResource ProfileSaveStatusTextStyle}" />
                                 </StackPanel>
                                 <Button Content="{x:Bind ViewModel.SaveToActiveProfileLabel, Mode=OneWay}"
-                                        Style="{StaticResource AccentButtonStyle}"
+                                        Style="{StaticResource ProfileSaveButtonStyle}"
                                         Command="{x:Bind ViewModel.SaveLightingProfileDraftCommand}" />
-                                <Button Style="{StaticResource IconActionButtonStyle}"
+                                <Button Style="{StaticResource ProfileSaveOverflowButtonStyle}"
                                         AutomationProperties.Name="More profile actions"
                                         ToolTipService.ToolTip="More profile actions">
                                     <FontIcon Glyph="&#xE712;" FontSize="16" />
@@ -1482,7 +1503,7 @@
                                             <Setter Target="DisplayProfileSaveActions.(Grid.Column)" Value="1" />
                                             <Setter Target="DisplayProfileSaveActions.(Grid.ColumnSpan)" Value="1" />
                                             <Setter Target="DisplayProfileSaveActions.HorizontalAlignment" Value="Right" />
-                                            <Setter Target="DisplayProfileSaveActions.Margin" Value="0" />
+                                            <Setter Target="DisplayProfileSaveActions.Margin" Value="0,2,0,0" />
                                         </VisualState.Setters>
                                     </VisualState>
                                     <VisualState x:Name="DisplayHeaderCompact">
@@ -1511,14 +1532,13 @@
                                              Height="7"
                                              Fill="{ThemeResource SystemFillColorCautionBrush}" />
                                     <TextBlock Text="Not saved"
-                                               Style="{StaticResource SecondaryTextStyle}"
-                                               VerticalAlignment="Center" />
+                                               Style="{StaticResource ProfileSaveStatusTextStyle}" />
                                 </StackPanel>
                                 <Button Content="{x:Bind ViewModel.SaveToActiveProfileLabel, Mode=OneWay}"
-                                        Style="{StaticResource AccentButtonStyle}"
+                                        Style="{StaticResource ProfileSaveButtonStyle}"
                                         IsEnabled="{x:Bind DisplayViewModel.CanSaveCurrentSettingsToProfile, Mode=OneWay}"
                                         Click="OnSaveCurrentDisplaySettingsToProfile" />
-                                <Button Style="{StaticResource IconActionButtonStyle}"
+                                <Button Style="{StaticResource ProfileSaveOverflowButtonStyle}"
                                         Visibility="{x:Bind ViewModel.HasDisplayProfileDraft, Mode=OneWay}"
                                         AutomationProperties.Name="More profile actions"
                                         ToolTipService.ToolTip="More profile actions">
