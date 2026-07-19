@@ -1269,10 +1269,7 @@ public sealed class MainViewModelTests
             });
         client.Publish(status with
         {
-            ConfirmedState = status.ConfirmedState! with
-            {
-                StartupAnimationEnabled = true,
-            },
+            StartupAnimationEnabled = true,
         });
         await WaitUntilAsync(() =>
             viewModel.StartupAnimationEnabled is true

@@ -1213,10 +1213,8 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             PerformancePreset.Balanced,
             FanMode.Automatic,
             ConfirmedBattery(80),
-            ProfileDefaults.CreateSafeDefaults().PluggedIn.Lighting)
-        {
-            StartupAnimationEnabled = true,
-        };
+            ProfileDefaults.CreateSafeDefaults().PluggedIn.Lighting);
+        context.Device.StartupAnimationEnabled = true;
         await context.Runtime.ObserveAsync(CancellationToken.None);
         var request = new ApplyOneShotLaptopControl(
             OneShotLaptopControl.StartupAnimation,
@@ -1228,7 +1226,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         Assert.Equal(ControlOperationStatus.Applied, result.Status);
         Assert.Equal(request, context.Device.LastOneShotLaptopControl);
         Assert.Equal(1, context.Device.OneShotSetCalls);
-        Assert.False(context.Runtime.GetStatus().ConfirmedState!.StartupAnimationEnabled);
+        Assert.False(context.Runtime.GetStatus().StartupAnimationEnabled);
         Assert.Equal("Startup animation is off.", result.Message);
     }
 
@@ -1720,7 +1718,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             ProfileDefaults.CreateSafeDefaults().PluggedIn.Lighting with { Brightness = 10 });
 
         await context.Runtime.ObserveAsync(CancellationToken.None);
-        Assert.Equal(2, context.Device.TotalCalls);
+        Assert.Equal(3, context.Device.TotalCalls);
         Assert.Equal(0, context.Device.TotalSetterCalls);
 
         int telemetryCaptures = context.Telemetry.CaptureCount;
@@ -1728,7 +1726,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         await context.Runtime.RefreshControllerPresenceAsync(CancellationToken.None);
         Assert.Equal(2, context.Monitor.ObserveCount);
         Assert.Equal(telemetryCaptures, context.Telemetry.CaptureCount);
-        Assert.Equal(2, context.Device.TotalCalls);
+        Assert.Equal(3, context.Device.TotalCalls);
     }
 
     [Fact]
@@ -1886,7 +1884,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         await loop.RunAsync(CancellationToken.None);
 
         Assert.Equal(1, context.Provider.TryGetCount);
-        Assert.Equal(2, context.Device.TotalCalls);
+        Assert.Equal(3, context.Device.TotalCalls);
         Assert.True(context.Runtime.GetStatus().DeviceVerified);
         Assert.False(context.Runtime.GetStatus().WritesBlocked);
         Assert.Equal(0, context.Device.TotalSetterCalls);
@@ -4245,6 +4243,8 @@ public sealed class ServiceControlRuntimeTests : IDisposable
 
         public Exception? OneShotFailure { get; set; }
 
+        public bool? StartupAnimationEnabled { get; set; }
+
         public int OneShotSetCalls { get; private set; }
 
         public ApplyOneShotLaptopControl? LastOneShotLaptopControl { get; private set; }
@@ -4486,14 +4486,19 @@ public sealed class ServiceControlRuntimeTests : IDisposable
                     Enabled: { } enabled,
                 })
             {
-                ConfirmedState = ConfirmedState with
-                {
-                    StartupAnimationEnabled = enabled,
-                };
+                StartupAnimationEnabled = enabled;
             }
             return OneShotFailure is null
                 ? Task.CompletedTask
                 : Task.FromException(OneShotFailure);
+        }
+
+        public Task<bool?> ReadStartupAnimationAsync(
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            TotalCalls++;
+            return Task.FromResult(StartupAnimationEnabled);
         }
 
         public Task<LightingRendererOwnershipState>

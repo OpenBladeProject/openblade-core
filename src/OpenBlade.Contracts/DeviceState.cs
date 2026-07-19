@@ -48,8 +48,6 @@ public sealed record ConfirmedDeviceState(
     public CustomPerformanceSettings? CustomPerformance { get; init; }
 
     public LogoLightingMode? LogoLighting { get; init; }
-
-    public bool? StartupAnimationEnabled { get; init; }
 }
 
 public sealed record FirmwareVersions(

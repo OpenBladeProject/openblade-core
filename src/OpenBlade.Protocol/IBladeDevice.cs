@@ -16,6 +16,9 @@ public interface IBladeDevice
     Task<string?> ReadMcuVersionAsync(CancellationToken cancellationToken) =>
         Task.FromResult<string?>(null);
 
+    Task<bool?> ReadStartupAnimationAsync(CancellationToken cancellationToken) =>
+        Task.FromResult<bool?>(null);
+
     Task SetPerformanceAsync(PerformancePreset value, CancellationToken cancellationToken);
 
     Task SetPerformanceAsync(

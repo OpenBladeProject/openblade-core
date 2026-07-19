@@ -280,9 +280,6 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
                 ProductionPerformanceFanState performanceFan =
                     await port.QueryPerformanceFanStateAsync(cancellationToken)
                         .ConfigureAwait(false);
-                bool? startupAnimation = await ReadStartupAnimationStateCoreAsync(
-                    port,
-                    cancellationToken).ConfigureAwait(false);
                 LightingSettings? lighting =
                     await ReadLightingStateCoreAsync(cancellationToken).ConfigureAwait(false);
                 LogoLightingMode? logo =
@@ -296,36 +293,7 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
                 {
                     CustomPerformance = performanceFan.CustomPerformance,
                     LogoLighting = logo,
-                    StartupAnimationEnabled = startupAnimation,
                 };
-            }
-        }
-
-        private static async Task<bool?> ReadStartupAnimationStateCoreAsync(
-            IProductionBatteryPort port,
-            CancellationToken cancellationToken)
-        {
-            if (!port.SupportsStartupAnimationQuery)
-            {
-                return null;
-            }
-
-            try
-            {
-                return await port.QueryStartupAnimationAsync(cancellationToken)
-                    .ConfigureAwait(false);
-            }
-            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-            {
-                throw;
-            }
-            catch (ObjectDisposedException)
-            {
-                throw;
-            }
-            catch
-            {
-                return null;
             }
         }
 
@@ -472,6 +440,51 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
 
                     return port.SupportsMcuVersionQuery
                         ? await port.QueryMcuVersionAsync(cancellationToken)
+                            .ConfigureAwait(false)
+                        : null;
+                }
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw new OperationCanceledException(cancellationToken);
+            }
+            catch (ObjectDisposedException)
+            {
+                throw;
+            }
+            catch
+            {
+                return null;
+            }
+            finally
+            {
+                hardwareOperationGate.Release();
+            }
+        }
+
+        public async Task<bool?> ReadStartupAnimationAsync(
+            CancellationToken cancellationToken)
+        {
+            await EnterHardwareOperationAsync(cancellationToken).ConfigureAwait(false);
+            try
+            {
+                HidSessionResult<IProductionBatteryPort> opened =
+                    await batteryFactory.OpenAsync(cancellationToken).ConfigureAwait(false);
+                if (opened.Value is not { } port)
+                {
+                    ThrowReadOpenFailure(opened.Failure, cancellationToken);
+                    return null;
+                }
+
+                await using (port.ConfigureAwait(false))
+                {
+                    if (opened.Failure is not null)
+                    {
+                        ThrowReadOpenFailure(opened.Failure, cancellationToken);
+                    }
+
+                    return port.SupportsStartupAnimationQuery
+                        ? await port.QueryStartupAnimationAsync(cancellationToken)
                             .ConfigureAwait(false)
                         : null;
                 }

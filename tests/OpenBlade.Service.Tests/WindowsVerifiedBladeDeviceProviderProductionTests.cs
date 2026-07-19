@@ -126,7 +126,7 @@ public sealed class WindowsVerifiedBladeDeviceProviderProductionTests
     [Theory]
     [InlineData(true)]
     [InlineData(false)]
-    public async Task ReadState_PublishesStartupAnimationState(bool enabled)
+    public async Task ReadStartupAnimation_UsesFreshIdentityGatedReadOnlyPort(bool enabled)
     {
         DeviceCapabilities capabilities = DeviceCapabilities.Unavailable();
         var port = new FakeProductionPort(
@@ -138,15 +138,15 @@ public sealed class WindowsVerifiedBladeDeviceProviderProductionTests
         using var provider = ReadyProvider(factory);
         provider.TryGetVerifiedDevice(out IBladeDevice device);
 
-        ConfirmedDeviceState state = await device.ReadStateAsync(default);
+        bool? actual = await device.ReadStartupAnimationAsync(default);
 
-        Assert.Equal(enabled, state.StartupAnimationEnabled);
+        Assert.Equal(enabled, actual);
         Assert.Equal(1, port.StartupAnimationQueryCount);
         Assert.Equal(1, port.DisposeCount);
     }
 
     [Fact]
-    public async Task ReadState_StartupAnimationFailureDegradesOnlyThatField()
+    public async Task ReadStartupAnimation_QueryFailureReturnsUnavailable()
     {
         DeviceCapabilities capabilities = DeviceCapabilities.Unavailable();
         var port = new FakeProductionPort(
@@ -161,10 +161,9 @@ public sealed class WindowsVerifiedBladeDeviceProviderProductionTests
         using var provider = ReadyProvider(factory);
         provider.TryGetVerifiedDevice(out IBladeDevice device);
 
-        ConfirmedDeviceState state = await device.ReadStateAsync(default);
+        bool? actual = await device.ReadStartupAnimationAsync(default);
 
-        Assert.Null(state.StartupAnimationEnabled);
-        Assert.Equal(new ConfirmedBatteryState(true, 80, null), state.Battery);
+        Assert.Null(actual);
         Assert.Equal(1, port.StartupAnimationQueryCount);
     }
 

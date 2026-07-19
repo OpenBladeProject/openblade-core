@@ -814,12 +814,13 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                     OneShotLaptopControl.GamingMode => "Gaming Mode",
                     _ => "Laptop control",
                 };
-                ConfirmedDeviceState? refreshed = null;
+                bool? refreshedStartupAnimation = null;
                 if (value.Control == OneShotLaptopControl.StartupAnimation)
                 {
                     try
                     {
-                        refreshed = await ReadObservedStateAsync(device, token)
+                        refreshedStartupAnimation = await device
+                            .ReadStartupAnimationAsync(token)
                             .ConfigureAwait(false);
                     }
                     catch (OperationCanceledException) when (token.IsCancellationRequested)
@@ -828,14 +829,14 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                     }
                     catch
                     {
-                        refreshed = null;
+                        refreshedStartupAnimation = null;
                     }
                 }
 
-                bool readbackMatches = refreshed?.StartupAnimationEnabled == value.Enabled;
+                bool readbackMatches = refreshedStartupAnimation == value.Enabled;
                 var result = new ControlOperationResult(
                     value.Control == OneShotLaptopControl.StartupAnimation
-                        && refreshed?.StartupAnimationEnabled is not null
+                        && refreshedStartupAnimation is not null
                         && !readbackMatches
                             ? ControlOperationStatus.Failed
                             : ControlOperationStatus.Applied,
@@ -844,23 +845,20 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                         OneShotLaptopControl.StartupAnimation when readbackMatches =>
                             $"{label} is {(value.Enabled is true ? "on" : "off")}.",
                         OneShotLaptopControl.StartupAnimation when
-                            refreshed?.StartupAnimationEnabled is not null =>
+                            refreshedStartupAnimation is not null =>
                             $"{label} did not match the requested setting.",
                         OneShotLaptopControl.StartupAnimation =>
                             $"{label} was applied, but its current state could not be read.",
                         _ =>
                             $"{label} was applied. OpenBlade cannot read its current firmware value.",
                     });
-                if (refreshed is not null)
+                if (refreshedStartupAnimation is not null)
                 {
-                    ServiceStatusSnapshot afterApply = GetStatus();
-                    PublishScopedStatus(
-                        afterApply.ActivePowerSource,
-                        refreshed,
-                        afterApply.Capabilities,
-                        result.Message,
-                        deviceVerified: true,
-                        writesBlocked: afterApply.WritesBlocked);
+                    PublishIfChanged(GetStatus() with
+                    {
+                        StartupAnimationEnabled = refreshedStartupAnimation,
+                        Message = result.Message,
+                    });
                 }
                 history.RecordSummary(result.Status, result.Message);
                 return result;
@@ -2048,6 +2046,9 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             ConfirmedDeviceState confirmed = await ReadObservedStateAsync(
                 device,
                 cancellationToken);
+            bool? startupAnimation = await ReadStartupAnimationStateAsync(
+                device,
+                cancellationToken).ConfigureAwait(false);
             LightingRendererOwnershipState lightingOwnership =
                 await ReadLightingOwnershipAsync(device, cancellationToken)
                     .ConfigureAwait(false);
@@ -2101,6 +2102,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 FullChargeOverride = ResolveFullChargeOverride(confirmed),
                 Firmware = firmware,
                 LightingRendererOwnership = lightingOwnership,
+                StartupAnimationEnabled = startupAnimation,
             });
 
             if (powerSourceConfirmed)
@@ -2142,6 +2144,29 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         {
             cancellationToken.ThrowIfCancellationRequested();
             return await device.ReadStateAsync(cancellationToken).ConfigureAwait(false);
+        }
+    }
+
+    private static async Task<bool?> ReadStartupAnimationStateAsync(
+        IBladeDevice device,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await device.ReadStartupAnimationAsync(cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (ObjectDisposedException)
+        {
+            throw;
+        }
+        catch
+        {
+            return null;
         }
     }
 
@@ -2426,6 +2451,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             LightingOverride = Automation.LightingOverride,
             FullChargeOverride = ResolveFullChargeOverride(current.ConfirmedState),
             LightingRendererOwnership = LightingRendererOwnershipState.None,
+            StartupAnimationEnabled = null,
         });
     }
 
@@ -2521,6 +2547,9 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             LightingRendererOwnership = deviceVerified
                 ? current.LightingRendererOwnership
                 : LightingRendererOwnershipState.None,
+            StartupAnimationEnabled = deviceVerified
+                ? current.StartupAnimationEnabled
+                : null,
         });
     }
 
@@ -2629,6 +2658,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         && left.FanOverride == right.FanOverride
         && left.LightingOverride == right.LightingOverride
         && left.FullChargeOverride == right.FullChargeOverride
+        && left.StartupAnimationEnabled == right.StartupAnimationEnabled
         && left.LightingRendererOwnership == right.LightingRendererOwnership
         && (left.LightingSuppressions ?? []).SequenceEqual(
             right.LightingSuppressions ?? [])

@@ -2574,7 +2574,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             ChargeLimitOptions = chargeLimits;
         }
         ConfirmedDeviceState? confirmed = status.ConfirmedState;
-        StartupAnimationEnabled = confirmed?.StartupAnimationEnabled;
+        StartupAnimationEnabled = status.StartupAnimationEnabled;
         SelectedPerformance = ResolvePresentedPerformance(status, confirmed, capabilities);
         SelectedFanMode = ResolvePresentedFanMode(status, confirmed, capabilities);
         PrepareLightingEditorForPowerSource(status.ActivePowerSource);
@@ -4854,6 +4854,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         && left.FanOverride == right.FanOverride
         && left.LightingOverride == right.LightingOverride
         && left.FullChargeOverride == right.FullChargeOverride
+        && left.StartupAnimationEnabled == right.StartupAnimationEnabled
         && (left.LightingSuppressions ?? []).SequenceEqual(
             right.LightingSuppressions ?? [])
         && left.Firmware == right.Firmware
