@@ -147,10 +147,12 @@ target model, VID/PID, BIOS, full informational version, 40-character commit,
 and SHA-256 of the exact loaded `OpenBlade.Protocol.dll`. Failed and canceled
 runs write timestamped `.failed-*.json` sidecars and cannot replace an existing
 validation result. Production admission is instead compiled into the reviewed
-exact-device command set and its hash-pinned oracle fixture. Runtime hardware
+exact-device command set, its hash-pinned oracle fixture, and a deterministic
+fingerprint of the lighting transport and renderer sources. Runtime hardware
 access still verifies the target model, VID/PID, and BIOS before opening either
-HID interface; a UI or service rebuild does not require repeating the physical
-validation sequence.
+HID interface. A UI or service rebuild does not require repeating the physical
+validation sequence, while a semantic lighting implementation change fails
+closed until its fingerprint is deliberately approved.
 
 ## Adapter wattage readback
 

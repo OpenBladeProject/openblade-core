@@ -49,7 +49,7 @@ public sealed class ProductionLightingFactory : IProductionLightingPortFactory
     {
         _ = ProductionLightingEvidenceSource.ReadValidatedOracle();
         return CreateWindows(
-            admitted: true,
+            admitted: ProductionLightingEvidenceSource.IsApprovedLightingImplementation(),
             ControllerExclusivityPolicy.Advisory);
     }
 
@@ -225,7 +225,7 @@ public sealed class ProductionLightingFactory : IProductionLightingPortFactory
     }
 
     private async Task DisposeActorBoundedAsync(ValidationActor actor) =>
-        await BatteryValidationRun.DisposeBoundedAsync(
+        await BoundedValidationActorDisposal.DisposeAsync(
             actor,
             timeProvider,
             cleanupDrainTimeout,

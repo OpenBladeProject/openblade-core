@@ -1,1 +1,6 @@
 src/OpenBlade.Protocol/Fixtures/*.json text eol=lf
+src/OpenBlade.Protocol/*.cs text eol=lf
+src/OpenBlade.Contracts/DeviceState.cs text eol=lf
+src/OpenBlade.Contracts/Lighting.cs text eol=lf
+src/OpenBlade.Contracts/Profiles.cs text eol=lf
+src/OpenBlade.Contracts/ReactiveKeyPulse.cs text eol=lf

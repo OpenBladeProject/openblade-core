@@ -90,7 +90,7 @@ public sealed class MainViewModelTests
         var client = new FakeServiceClient();
         await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
         await viewModel.StartAsync();
-        ServiceStatusSnapshot original = CreateStatus(
+        ServiceStatusSnapshot baseStatus = CreateStatus(
             verified: true,
             blocked: false,
             capabilities: DeviceCapabilities.SafeTargetDefaults() with
@@ -99,6 +99,28 @@ public sealed class MainViewModelTests
                     Enum.GetValues<LightingEffect>()),
                 ChargeLimits = ChargeLimits(),
             });
+        ProfileSet initialProfiles = baseStatus.Profiles with
+        {
+            PluggedIn = baseStatus.Profiles.PluggedIn with
+            {
+                Performance = PerformancePreset.Silent,
+            },
+        };
+        ServiceStatusSnapshot original = baseStatus with
+        {
+            Profiles = initialProfiles,
+            ConfirmedState = baseStatus.ConfirmedState! with
+            {
+                Performance = PerformancePreset.Silent,
+                Fans = FanMode.Automatic,
+            },
+            DesiredState = baseStatus.DesiredState with
+            {
+                Performance = new ResolvedSetting<PerformancePreset>(
+                    PerformancePreset.Silent,
+                    SettingValueSource.PowerProfile),
+            },
+        };
         client.Publish(original);
         await WaitUntilAsync(() => viewModel.IsConnected);
 
@@ -106,7 +128,26 @@ public sealed class MainViewModelTests
             new RgbColor(90, 80, 70),
             brightness: 68);
         await Assert.IsType<AsyncRelayCommand>(viewModel.SetPerformanceCommand)
-            .ExecuteAsync(PerformancePreset.Performance);
+            .ExecuteAsync(PerformancePreset.Balanced);
+        client.Publish(original with
+        {
+            Revision = 2,
+            Message = "Performance applied",
+            ConfirmedState = original.ConfirmedState! with
+            {
+                Performance = PerformancePreset.Balanced,
+            },
+            DesiredState = original.DesiredState with
+            {
+                Performance = new ResolvedSetting<PerformancePreset>(
+                    PerformancePreset.Balanced,
+                    SettingValueSource.TemporaryOverride),
+            },
+            PerformanceOverride = client.PerformanceOverride,
+        });
+        await WaitUntilAsync(() => viewModel.ConnectionStatus == "Performance applied");
+        await Assert.IsType<AsyncRelayCommand>(viewModel.SetFanModeCommand)
+            .ExecuteAsync(FanMode.Maximum);
         await Assert.IsType<AsyncRelayCommand>(viewModel.SetLightingCommand)
             .ExecuteAsync(lighting);
         var display = new DisplayProfileSettings("drr-48-240", false, "srgb");
@@ -118,16 +159,19 @@ public sealed class MainViewModelTests
         Assert.False(viewModel.IsBatteryProfileDraft);
         Assert.False(viewModel.IsUsbCProfileDraft);
         Assert.Equal("Plugged in", viewModel.ActiveProfileDraftName);
-        Assert.Contains("Performance", viewModel.PendingActiveProfileSummary);
+        Assert.Contains("Maximum", viewModel.PendingActiveProfileSummary);
         Assert.Contains("Static", viewModel.PendingActiveProfileSummary);
         Assert.Contains("drr-48-240", viewModel.PendingActiveProfileSummary);
-        Assert.Contains("Performance", viewModel.PluggedInProfileThermalSummary);
+        Assert.Contains("Maximum", viewModel.PluggedInProfileThermalSummary);
         Assert.Contains("Static", viewModel.PluggedInProfileLightingSummary);
         Assert.Contains("drr-48-240", viewModel.PluggedInProfileDisplaySummary);
         Assert.Equal(original.Profiles, viewModel.Profiles);
         Assert.Equal(
             OverrideLifetime.UntilPowerSourceChange,
             client.PerformanceOverride!.Lifetime);
+        Assert.Equal(
+            OverrideLifetime.UntilPowerSourceChange,
+            client.FanOverride!.Lifetime);
         Assert.Equal(
             OverrideLifetime.UntilPowerSourceChange,
             client.LightingOverride!.Lifetime);
@@ -137,18 +181,20 @@ public sealed class MainViewModelTests
             .ExecuteAsync(null);
 
         Assert.NotNull(client.LastProfiles);
-        Assert.Equal(PerformancePreset.Performance, client.LastProfiles.PluggedIn.Performance);
+        Assert.Equal(PerformancePreset.Balanced, client.LastProfiles.PluggedIn.Performance);
+        Assert.Equal(FanMode.Maximum, client.LastProfiles.PluggedIn.Fans);
         Assert.Equal(lighting, client.LastProfiles.PluggedIn.Lighting);
         Assert.Equal(display, client.LastProfiles.PluggedIn.Display);
         Assert.Equal(original.Profiles.Battery, client.LastProfiles.Battery);
         Assert.Equal(original.Profiles.UsbC, client.LastProfiles.UsbC);
         Assert.Equal(original.Profiles.BatteryPolicy, client.LastProfiles.BatteryPolicy);
         Assert.Null(client.PerformanceOverride);
+        Assert.Null(client.FanOverride);
         Assert.Null(client.LightingOverride);
         Assert.False(viewModel.HasActiveProfileDraft);
         Assert.False(viewModel.HasUnsavedProfileChanges);
         Assert.False(viewModel.IsPluggedInProfileDraft);
-        Assert.Contains("Performance", viewModel.PluggedInProfileThermalSummary);
+        Assert.Contains("Maximum", viewModel.PluggedInProfileThermalSummary);
     }
 
     [Fact]

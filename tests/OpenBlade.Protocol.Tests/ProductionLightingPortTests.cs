@@ -48,6 +48,17 @@ public sealed class ProductionLightingPortTests
     }
 
     [Fact]
+    public void LightingAdmission_RequiresTheApprovedSemanticImplementationFingerprint()
+    {
+        Assert.True(ProductionLightingEvidenceSource.IsApprovedLightingImplementation());
+        Assert.False(
+            ProductionLightingEvidenceSource.IsApprovedLightingImplementationFingerprint(null));
+        Assert.False(
+            ProductionLightingEvidenceSource.IsApprovedLightingImplementationFingerprint(
+                "changed-lighting-implementation"));
+    }
+
+    [Fact]
     public void ExactBuildValidation_RequiresMatchingCommitAndAllHardwareGates()
     {
         const string commit = "403aa01b11e969a6351595154569ef56f8878efa";

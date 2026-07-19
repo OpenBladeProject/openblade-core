@@ -83,7 +83,15 @@ public sealed class WindowsHidNativeContractTests
     public void ProductionSources_WireRealFeatureInteropOnlyThroughTypedFactories()
     {
         string sourceDirectory = Path.Combine(FindRepositoryRoot(), "src");
-        string[] sourceFiles = Directory.GetFiles(sourceDirectory, "*.cs", SearchOption.AllDirectories);
+        string separator = Path.DirectorySeparatorChar.ToString();
+        string[] sourceFiles = Directory
+            .GetFiles(sourceDirectory, "*.cs", SearchOption.AllDirectories)
+            .Where(path =>
+                !path.Contains($"{separator}obj{separator}", StringComparison.OrdinalIgnoreCase)
+                && !path.Contains(
+                    $"{separator}bin{separator}",
+                    StringComparison.OrdinalIgnoreCase))
+            .ToArray();
         var sources = sourceFiles.ToDictionary(path => path, File.ReadAllText);
 
         Assert.DoesNotContain(sources.Values, source => source.Contains("HidD_SetFeature"));

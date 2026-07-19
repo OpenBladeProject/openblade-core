@@ -1,5 +1,6 @@
 using System.Reflection;
 using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using OpenBlade.Contracts;
@@ -112,6 +113,12 @@ internal static class ProductionLightingEvidenceSource
     private const string ApprovedOracleFixtureSha256 =
         "90E768239A74157C4A8A7EEE0E339CF37C65AA6A2B38635B424231ED0C144B71";
 
+    private const string LightingImplementationMetadataKey =
+        "OpenBladeLightingImplementationFingerprint";
+
+    private const string ApprovedLightingImplementationFingerprintSha256 =
+        "45670E80748E1F4E56E24611ACCBC9B853E87300DC998245C2C3C0F189B6E83A";
+
     private static readonly JsonSerializerOptions SerializerOptions =
         new(JsonSerializerDefaults.Web)
         {
@@ -129,6 +136,35 @@ internal static class ProductionLightingEvidenceSource
             JsonSerializer.Deserialize<ProductionLightingOracleEvidence>(bytes, SerializerOptions);
         ValidateOracle(evidence);
         return evidence!;
+    }
+
+    internal static bool IsApprovedLightingImplementation()
+    {
+        string? fingerprint = typeof(ProductionLightingEvidenceSource).Assembly
+            .GetCustomAttributes<AssemblyMetadataAttribute>()
+            .SingleOrDefault(attribute =>
+                string.Equals(
+                    attribute.Key,
+                    LightingImplementationMetadataKey,
+                    StringComparison.Ordinal))
+            ?.Value;
+        return IsApprovedLightingImplementationFingerprint(fingerprint);
+    }
+
+    internal static bool IsApprovedLightingImplementationFingerprint(
+        string? fingerprint)
+    {
+        if (string.IsNullOrWhiteSpace(fingerprint))
+        {
+            return false;
+        }
+
+        string actual = Convert.ToHexString(
+            SHA256.HashData(Encoding.UTF8.GetBytes(fingerprint)));
+        return string.Equals(
+            actual,
+            ApprovedLightingImplementationFingerprintSha256,
+            StringComparison.Ordinal);
     }
 
     internal static bool IsCurrentBuildValidated()

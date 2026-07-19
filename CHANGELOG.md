@@ -11,9 +11,9 @@ All notable changes to OpenBlade are documented in this file. The project follow
   queries and changes while the LocalSystem service remains the hardware and
   profile authority.
 - Built-in display controls for driver-enumerated fixed refresh rates, EDID-reported Windows Dynamic Refresh Rate, HDR, and the locally installed Razer color profiles.
-- Keyboard lighting controls under validation for Off, Static, Spectrum Cycling, single/dual/random Breathing, Reactive Short/Medium/Long, color, and brightness on the exact RZ09-0581/PID 02E0 device.
+- Keyboard lighting controls for Off, Static, Spectrum Cycling, single/dual/random Breathing, Reactive Short/Medium/Long, color, and brightness on the exact RZ09-0581/PID 02E0 device.
 - Data-minimized Reactive input through Windows Raw Input: scan-code make events map directly to matrix slots without recording characters, virtual-key values, applications, window titles, or input packets.
-- Sanitized Synapse oracle USBPcap evidence for lighting brightness readback, the 102-slot matrix envelope, effect timing, dual/random Breathing, and Reactive key placement and decay. This capture evidence is distinct from pending installed OpenBlade visual validation.
+- Sanitized Synapse oracle USBPcap evidence for lighting brightness readback, the 102-slot matrix envelope, effect timing, dual/random Breathing, and Reactive key placement and decay. The admitted configuration was also exercised in repeated installed OpenBlade runs on the target laptop.
 
 ### Changed
 
@@ -68,7 +68,11 @@ All notable changes to OpenBlade are documented in this file. The project follow
 - Color-profile selection now activates and verifies the current user's Windows profile scope before applying the panel's MHC2 calibration.
 - The Display page observes changes made by Windows or other software without reasserting OpenBlade values, and pauses observation while a picker is open.
 - Transient USB-C adapter-classification failures retain the last confirmed power-source label while blocking hardware writes until classification recovers.
-- Lighting writes remain fail-closed unless the exact model, PID, BIOS, typed effect parameters, pinned oracle evidence, acknowledged transition handshake, and bounded 102-slot matrix report match. Full visual parity is not claimed until installed OpenBlade validation succeeds.
+- Lighting writes remain fail-closed unless the exact model, PID, BIOS, typed effect parameters, pinned oracle evidence, acknowledged transition handshake, and bounded 102-slot matrix report match. The admitted effect set passed the exact-build workflow and repeated installed use on the target laptop.
+- Production lighting admission now fingerprints the reviewed lighting transport
+  and renderer sources. Unrelated UI, service, and display commits retain the
+  admitted command set, while a semantic lighting implementation change fails
+  closed until its new fingerprint is deliberately reviewed and approved.
 - Reactive keyboard observation exists only while accepted Reactive lighting is active; the production lighting port independently rejects pulses unless its live renderer owns Reactive. Unsupported and extended keys are ignored, and repeated make events are delivered sequentially through a bounded queue.
 - Reactive input, renderer-stream, and rollback failures are surfaced without success notifications or per-key message spam. Partial lighting rollback is classified as indeterminate instead of claiming that the prior state was restored.
 - Suspend, resume, removal, and reconnect drain renderer ownership and restore it once only when OpenBlade owned the prior effect. Automatic power transitions preserve unknown external lighting, while a transition from an OpenBlade-owned effect applies the destination profile.
@@ -106,7 +110,7 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 - Version 0.1.0 supports only the Razer Blade 16 RZ09-0581 / PID 02E0 on BIOS 3.01 and Windows 11 x64.
 - Sensor coverage is intentionally limited to fan speed and net battery power.
-- Reactive oracle captures now cover alphanumeric anchors, punctuation, modifiers, arrows, F1-F12, Delete, Fn, and the Fn+F12 Print Screen chord. Interior alphanumeric positions derived from the matrix layout and Windows Raw Input delivery, especially Fn, still require installed OpenBlade visual validation. The power button was deliberately excluded and no numpad is present on this keyboard.
+- Reactive oracle captures cover alphanumeric anchors, punctuation, modifiers, arrows, F1-F12, Delete, Fn, and the Fn+F12 Print Screen chord. The installed Raw Input path was confirmed with the A key; remaining mapped positions are backed by the captured matrix layout and focused automated tests. The unlit space bar is deliberately ignored, the power button was excluded, and no numpad is present on this keyboard.
 - Fan control provides Automatic and validated Maximum modes, not custom fan curves.
 - Unrecognized external adapters remain read-only.
 - Unsupported or unverified controls remain unavailable rather than attempting arbitrary firmware commands.
