@@ -19,6 +19,9 @@ public sealed record DeviceCapabilities(
     public IReadOnlySet<LogoLightingMode> LogoLightingModes { get; init; } =
         new HashSet<LogoLightingMode>();
 
+    public IReadOnlySet<OneShotLaptopControl> OneShotLaptopControls { get; init; } =
+        new HashSet<OneShotLaptopControl>();
+
     public static DeviceCapabilities Unavailable() => new(
         new HashSet<PerformancePreset>(),
         new HashSet<FanMode>(),

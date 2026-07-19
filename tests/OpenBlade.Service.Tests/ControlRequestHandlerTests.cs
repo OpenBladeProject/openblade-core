@@ -42,6 +42,12 @@ public sealed class ControlRequestHandlerTests
                 Guid.NewGuid(),
                 Enabled: false),
             new SetFullChargeOverrideRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid(), true),
+            new ApplyOneShotLaptopControlRequest(
+                OpenBladeIpc.ProtocolVersion,
+                Guid.NewGuid(),
+                new ApplyOneShotLaptopControl(
+                    OneShotLaptopControl.FunctionKeyPrimary,
+                    FunctionKeyMode: FunctionKeyPrimaryMode.FunctionKeys)),
             new ExportDiagnosticsRequest(
                 OpenBladeIpc.ProtocolVersion,
                 Guid.NewGuid(),
@@ -53,7 +59,8 @@ public sealed class ControlRequestHandlerTests
             "GetStatus", "GetStatus", "UpdateProfiles", "SetPerformanceOverride",
             "CyclePerformanceShortcut", "SetFanOverride", "SetLightingOverride", "SetLightingSuppression",
             "PulseReactiveKey", "SetBatteryPolicy",
-            "SetBatteryProtection", "SetFullChargeOverride", "ExportDiagnostics", "Shutdown",
+            "SetBatteryProtection", "SetFullChargeOverride", "ApplyOneShotLaptopControl",
+            "ExportDiagnostics", "Shutdown",
         ];
 
         for (int index = 0; index < requests.Length; index++)
@@ -265,6 +272,15 @@ public sealed class ControlRequestHandlerTests
 
         public Task<ControlOperationResult> SetFullChargeOverrideAsync(bool enabled, CancellationToken token) =>
             Record("SetFullChargeOverride");
+
+        public Task<ControlOperationResult> ApplyOneShotLaptopControlAsync(
+            ApplyOneShotLaptopControl value,
+            CancellationToken token)
+        {
+            Assert.Equal(OneShotLaptopControl.FunctionKeyPrimary, value.Control);
+            Assert.Equal(FunctionKeyPrimaryMode.FunctionKeys, value.FunctionKeyMode);
+            return Record("ApplyOneShotLaptopControl");
+        }
 
         public bool LastIncludeLiveReadings { get; private set; }
 

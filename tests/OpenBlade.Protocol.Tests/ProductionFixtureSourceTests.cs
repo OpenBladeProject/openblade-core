@@ -58,6 +58,18 @@ public sealed class ProductionFixtureSourceTests
                 (0x0D, 0x01, [0x01, 0x01, 0x36]),
             [ProductionBatteryPort.FanMaximumSpeedSecondAction] =
                 (0x0D, 0x01, [0x01, 0x02, 0x36]),
+            [ProductionBatteryPort.StartupAnimationOnAction] =
+                (0x0F, 0x18, [0x00, 0x00]),
+            [ProductionBatteryPort.StartupAnimationOffAction] =
+                (0x0F, 0x18, [0x00, 0x01]),
+            [ProductionBatteryPort.FunctionKeysPrimaryAction] =
+                (0x02, 0x06, [0x01, 0x00]),
+            [ProductionBatteryPort.MultimediaKeysPrimaryAction] =
+                (0x02, 0x06, [0x01, 0x01]),
+            [ProductionBatteryPort.GamingModeOnAction] =
+                (0x00, 0x08, [0x01, 0x00, 0x00, 0x00]),
+            [ProductionBatteryPort.GamingModeOffAction] =
+                (0x00, 0x08, [0x00, 0x00, 0x00, 0x00]),
         };
         using JsonDocument document = JsonDocument.Parse(fixture.Value);
         string[] fixtureActions = document.RootElement.EnumerateArray()
@@ -74,6 +86,26 @@ public sealed class ProductionFixtureSourceTests
             Assert.Equal(payload, command.Payload.ToArray());
         }
 
+        foreach (string action in new[]
+        {
+            ProductionBatteryPort.StartupAnimationOnAction,
+            ProductionBatteryPort.StartupAnimationOffAction,
+            ProductionBatteryPort.FunctionKeysPrimaryAction,
+            ProductionBatteryPort.MultimediaKeysPrimaryAction,
+            ProductionBatteryPort.GamingModeOnAction,
+            ProductionBatteryPort.GamingModeOffAction,
+        })
+        {
+            Assert.True(catalog.TryGet(action, out RazerCommandDefinition? command));
+            Assert.True(command!.OneShotOnly);
+        }
+        Assert.Equal(
+            [0x32, 0x0A, 0x00, 0x00],
+            catalogCommand(ProductionBatteryPort.GamingModeOnAction).ExpectedResponsePayload.ToArray());
+        Assert.Equal(
+            [0x32, 0x0A, 0x00, 0x00],
+            catalogCommand(ProductionBatteryPort.GamingModeOffAction).ExpectedResponsePayload.ToArray());
+
         DeviceCapabilities capabilities = ProductionBatteryPort.CreateCapabilities(
             catalog,
             ProductionBatteryReadEvidence.Production);
@@ -87,6 +119,18 @@ public sealed class ProductionFixtureSourceTests
             ]));
         Assert.True(capabilities.FanModes.SetEquals([FanMode.Automatic, FanMode.Maximum]));
         Assert.Empty(capabilities.LightingEffects);
+        Assert.True(capabilities.OneShotLaptopControls.SetEquals(
+        [
+            OneShotLaptopControl.StartupAnimation,
+            OneShotLaptopControl.FunctionKeyPrimary,
+            OneShotLaptopControl.GamingMode,
+        ]));
+
+        RazerCommandDefinition catalogCommand(string action)
+        {
+            Assert.True(catalog.TryGet(action, out RazerCommandDefinition? command));
+            return command!;
+        }
     }
 
     [Fact]

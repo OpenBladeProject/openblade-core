@@ -294,6 +294,9 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
                 && Volatile.Read(ref disposed) == 0
                 && StartupStateKnown
                 && requested != StartAtSignIn);
+        ApplyOneShotLaptopControlCommand = CreateCommand(
+            ApplyOneShotLaptopControlAsync,
+            CanApplyOneShotLaptopControl);
         commands =
         [
             (AsyncRelayCommand)SetPerformanceCommand,
@@ -314,6 +317,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             (AsyncRelayCommand)DiscardDisplayProfileDraftCommand,
             (AsyncRelayCommand)ExportDiagnosticsCommand,
             (AsyncRelayCommand)SetStartAtSignInCommand,
+            (AsyncRelayCommand)ApplyOneShotLaptopControlCommand,
         ];
     }
 
@@ -1051,8 +1055,31 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             PropertyChanged?.Invoke(
                 this,
                 new PropertyChangedEventArgs(nameof(FullChargeActionLabel)));
+            PropertyChanged?.Invoke(
+                this,
+                new PropertyChangedEventArgs(nameof(HasOneShotLaptopControls)));
+            PropertyChanged?.Invoke(
+                this,
+                new PropertyChangedEventArgs(nameof(SupportsStartupAnimation)));
+            PropertyChanged?.Invoke(
+                this,
+                new PropertyChangedEventArgs(nameof(SupportsFunctionKeyPrimary)));
+            PropertyChanged?.Invoke(
+                this,
+                new PropertyChangedEventArgs(nameof(SupportsGamingMode)));
         }
     }
+
+    public bool HasOneShotLaptopControls => Capabilities.OneShotLaptopControls.Count > 0;
+
+    public bool SupportsStartupAnimation => Capabilities.OneShotLaptopControls.Contains(
+        OneShotLaptopControl.StartupAnimation);
+
+    public bool SupportsFunctionKeyPrimary => Capabilities.OneShotLaptopControls.Contains(
+        OneShotLaptopControl.FunctionKeyPrimary);
+
+    public bool SupportsGamingMode => Capabilities.OneShotLaptopControls.Contains(
+        OneShotLaptopControl.GamingMode);
 
     public LiveReadings? LiveReadings
     {
@@ -2011,6 +2038,31 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     public ICommand DiscardDisplayProfileDraftCommand { get; }
     public ICommand ExportDiagnosticsCommand { get; }
     public ICommand SetStartAtSignInCommand { get; }
+    public ICommand ApplyOneShotLaptopControlCommand { get; }
+
+    public ApplyOneShotLaptopControl StartupAnimationOnAction { get; } = new(
+        OneShotLaptopControl.StartupAnimation,
+        Enabled: true);
+
+    public ApplyOneShotLaptopControl StartupAnimationOffAction { get; } = new(
+        OneShotLaptopControl.StartupAnimation,
+        Enabled: false);
+
+    public ApplyOneShotLaptopControl FunctionKeysPrimaryAction { get; } = new(
+        OneShotLaptopControl.FunctionKeyPrimary,
+        FunctionKeyMode: FunctionKeyPrimaryMode.FunctionKeys);
+
+    public ApplyOneShotLaptopControl MultimediaKeysPrimaryAction { get; } = new(
+        OneShotLaptopControl.FunctionKeyPrimary,
+        FunctionKeyMode: FunctionKeyPrimaryMode.MultimediaKeys);
+
+    public ApplyOneShotLaptopControl GamingModeOnAction { get; } = new(
+        OneShotLaptopControl.GamingMode,
+        Enabled: true);
+
+    public ApplyOneShotLaptopControl GamingModeOffAction { get; } = new(
+        OneShotLaptopControl.GamingMode,
+        Enabled: false);
 
     private bool CanMutate =>
         Volatile.Read(ref disposed) == 0
@@ -2048,6 +2100,12 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         return FanModeAvailable(ActivePowerSource, value)
             && (value == FanMode.Automatic || IsBalancedAutomaticThermalState());
     }
+
+    private bool CanApplyOneShotLaptopControl(object? parameter) =>
+        parameter is ApplyOneShotLaptopControl value
+        && value.IsWellFormed()
+        && CanMutate
+        && latestStatus!.Capabilities!.OneShotLaptopControls.Contains(value.Control);
 
     private bool MaximumFansAreEffectiveOrConfirmed() =>
         latestStatus is { } status
@@ -2905,6 +2963,14 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
                 token).ConfigureAwait(false);
         }
     }
+
+    private Task ApplyOneShotLaptopControlAsync(
+        object? parameter,
+        CancellationToken token) => RunOperationAsync(
+            cancellationToken => serviceClient.ApplyOneShotLaptopControlAsync(
+                (ApplyOneShotLaptopControl)parameter!,
+                cancellationToken),
+            token);
 
     private async Task SaveProfilesAsync(object? parameter, CancellationToken token)
     {
@@ -4542,6 +4608,8 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             && left.PerformancePresets.SetEquals(right.PerformancePresets)
             && left.FanModes.SetEquals(right.FanModes)
             && left.LightingEffects.SetEquals(right.LightingEffects)
+            && left.LogoLightingModes.SetEquals(right.LogoLightingModes)
+            && left.OneShotLaptopControls.SetEquals(right.OneShotLaptopControls)
             && left.ChargeLimits.SetEquals(right.ChargeLimits)
             && left.SupportsBatteryProtectionOff == right.SupportsBatteryProtectionOff
             && left.SupportsTemporaryFullCharge == right.SupportsTemporaryFullCharge);

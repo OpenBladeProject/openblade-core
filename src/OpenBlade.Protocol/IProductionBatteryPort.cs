@@ -40,6 +40,13 @@ public interface IProductionBatteryPort : IAsyncDisposable
     Task SetProtectionOffAsync(CancellationToken cancellationToken);
 
     Task SetTemporaryFullChargeAsync(bool enabled, CancellationToken cancellationToken);
+
+    Task ApplyOneShotLaptopControlAsync(
+        ApplyOneShotLaptopControl value,
+        CancellationToken cancellationToken) => Task.FromException(
+            new BladeWriteException(
+                WriteSubmissionState.KnownNotApplied,
+                "One-shot laptop controls are unavailable."));
 }
 
 public interface IProductionBatteryPortFactory

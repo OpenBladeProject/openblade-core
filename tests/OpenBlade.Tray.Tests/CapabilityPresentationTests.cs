@@ -181,15 +181,15 @@ public sealed class CapabilityPresentationTests
         XElement about = NamedElement(document, "ScrollView", "AboutPage");
 
         Assert.Equal(
-            3,
+            4,
             settings.Descendants().Count(element =>
                 Attribute(element, "Style") == "{StaticResource SettingsGroupStyle}"));
         Assert.Equal(
-            3,
+            5,
             settings.Descendants().Count(element =>
                 Attribute(element, "Style") == "{StaticResource SettingsRowStyle}"));
         Assert.Equal(
-            3,
+            4,
             settings.Descendants().Count(element =>
                 Attribute(element, "Style") == "{StaticResource SettingsLastRowStyle}"));
 

@@ -406,5 +406,119 @@
     "applied": true,
     "readBack": true,
     "restored": true
+  },
+  {
+    "device": {
+      "model": "RZ09-0581",
+      "vendorId": 5426,
+      "productId": 736,
+      "biosVersion": "3.01"
+    },
+    "action": "startup-animation-on",
+    "commandClass": 15,
+    "commandId": 24,
+    "payload": "AAA=",
+    "captured": true,
+    "decoded": true,
+    "applied": true,
+    "readBack": false,
+    "restored": true,
+    "oneShotOnly": true,
+    "expectedResponsePayload": "AAA="
+  },
+  {
+    "device": {
+      "model": "RZ09-0581",
+      "vendorId": 5426,
+      "productId": 736,
+      "biosVersion": "3.01"
+    },
+    "action": "startup-animation-off",
+    "commandClass": 15,
+    "commandId": 24,
+    "payload": "AAE=",
+    "captured": true,
+    "decoded": true,
+    "applied": true,
+    "readBack": false,
+    "restored": true,
+    "oneShotOnly": true,
+    "expectedResponsePayload": "AAE="
+  },
+  {
+    "device": {
+      "model": "RZ09-0581",
+      "vendorId": 5426,
+      "productId": 736,
+      "biosVersion": "3.01"
+    },
+    "action": "function-key-primary-function",
+    "commandClass": 2,
+    "commandId": 6,
+    "payload": "AQA=",
+    "captured": true,
+    "decoded": true,
+    "applied": true,
+    "readBack": false,
+    "restored": true,
+    "oneShotOnly": true,
+    "expectedResponsePayload": "AQA="
+  },
+  {
+    "device": {
+      "model": "RZ09-0581",
+      "vendorId": 5426,
+      "productId": 736,
+      "biosVersion": "3.01"
+    },
+    "action": "function-key-primary-multimedia",
+    "commandClass": 2,
+    "commandId": 6,
+    "payload": "AQE=",
+    "captured": true,
+    "decoded": true,
+    "applied": true,
+    "readBack": false,
+    "restored": true,
+    "oneShotOnly": true,
+    "expectedResponsePayload": "AQE="
+  },
+  {
+    "device": {
+      "model": "RZ09-0581",
+      "vendorId": 5426,
+      "productId": 736,
+      "biosVersion": "3.01"
+    },
+    "action": "gaming-mode-on",
+    "commandClass": 0,
+    "commandId": 8,
+    "payload": "AQAAAA==",
+    "captured": true,
+    "decoded": true,
+    "applied": true,
+    "readBack": false,
+    "restored": true,
+    "oneShotOnly": true,
+    "expectedResponsePayload": "MgoAAA=="
+  },
+  {
+    "device": {
+      "model": "RZ09-0581",
+      "vendorId": 5426,
+      "productId": 736,
+      "biosVersion": "3.01"
+    },
+    "action": "gaming-mode-off",
+    "commandClass": 0,
+    "commandId": 8,
+    "payload": "AAAAAA==",
+    "captured": true,
+    "decoded": true,
+    "applied": true,
+    "readBack": false,
+    "restored": true,
+    "oneShotOnly": true,
+    "expectedResponsePayload": "MgoAAA=="
   }
 ]

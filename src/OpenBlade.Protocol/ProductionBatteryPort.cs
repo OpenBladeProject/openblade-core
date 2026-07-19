@@ -42,6 +42,12 @@ internal sealed class ProductionBatteryPort : IProductionBatteryPort
         "fan-maximum-5400-speed-channel-1";
     internal const string FanMaximumSpeedSecondAction =
         "fan-maximum-5400-speed-channel-2";
+    internal const string StartupAnimationOnAction = "startup-animation-on";
+    internal const string StartupAnimationOffAction = "startup-animation-off";
+    internal const string FunctionKeysPrimaryAction = "function-key-primary-function";
+    internal const string MultimediaKeysPrimaryAction = "function-key-primary-multimedia";
+    internal const string GamingModeOnAction = "gaming-mode-on";
+    internal const string GamingModeOffAction = "gaming-mode-off";
 
     private readonly IRazerCommandSession session;
     private readonly DeviceCommandCatalog catalog;
@@ -349,6 +355,45 @@ internal sealed class ProductionBatteryPort : IProductionBatteryPort
             cancellationToken);
     }
 
+    public Task ApplyOneShotLaptopControlAsync(
+        ApplyOneShotLaptopControl value,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(value);
+        if (!value.IsWellFormed())
+        {
+            return Task.FromException(KnownNotApplied(
+                "The one-shot laptop control request is invalid."));
+        }
+
+        string? action = value.Control switch
+        {
+            OneShotLaptopControl.StartupAnimation => value.Enabled is true
+                ? StartupAnimationOnAction
+                : StartupAnimationOffAction,
+            OneShotLaptopControl.FunctionKeyPrimary => value.FunctionKeyMode switch
+            {
+                FunctionKeyPrimaryMode.FunctionKeys => FunctionKeysPrimaryAction,
+                FunctionKeyPrimaryMode.MultimediaKeys => MultimediaKeysPrimaryAction,
+                _ => null,
+            },
+            OneShotLaptopControl.GamingMode => value.Enabled is true
+                ? GamingModeOnAction
+                : GamingModeOffAction,
+            _ => null,
+        };
+        if (action is null
+            || !catalog.TryGet(action, out RazerCommandDefinition? command)
+            || command is null
+            || !command.OneShotOnly)
+        {
+            return Task.FromException(KnownNotApplied(
+                $"One-shot laptop control '{value.Control}' is not admitted for production use."));
+        }
+
+        return ExecuteSetterAsync(action, cancellationToken);
+    }
+
     public ValueTask DisposeAsync()
     {
         lock (lifecycleSync)
@@ -447,13 +492,30 @@ internal sealed class ProductionBatteryPort : IProductionBatteryPort
             }
         }
 
+        var oneShotControls = new HashSet<OneShotLaptopControl>();
+        if (HasOneShotPair(catalog, StartupAnimationOnAction, StartupAnimationOffAction))
+        {
+            oneShotControls.Add(OneShotLaptopControl.StartupAnimation);
+        }
+        if (HasOneShotPair(catalog, FunctionKeysPrimaryAction, MultimediaKeysPrimaryAction))
+        {
+            oneShotControls.Add(OneShotLaptopControl.FunctionKeyPrimary);
+        }
+        if (HasOneShotPair(catalog, GamingModeOnAction, GamingModeOffAction))
+        {
+            oneShotControls.Add(OneShotLaptopControl.GamingMode);
+        }
+
         return new DeviceCapabilities(
             performance,
             fans,
             new HashSet<LightingEffect>(),
             limits,
             protectionOff,
-            SupportsTemporaryFullCharge: temporaryFullCharge);
+            SupportsTemporaryFullCharge: temporaryFullCharge)
+        {
+            OneShotLaptopControls = oneShotControls,
+        };
     }
 
     private static bool HasPair(
@@ -462,6 +524,15 @@ internal sealed class ProductionBatteryPort : IProductionBatteryPort
         string secondAction) =>
         catalog.TryGet(firstAction, out _)
         && catalog.TryGet(secondAction, out _);
+
+    private static bool HasOneShotPair(
+        DeviceCommandCatalog catalog,
+        string firstAction,
+        string secondAction) =>
+        catalog.TryGet(firstAction, out RazerCommandDefinition? first)
+        && first is { OneShotOnly: true }
+        && catalog.TryGet(secondAction, out RazerCommandDefinition? second)
+        && second is { OneShotOnly: true };
 
     private static bool HasAll(
         DeviceCommandCatalog catalog,
@@ -516,8 +587,9 @@ internal sealed class ProductionBatteryPort : IProductionBatteryPort
                     command.CommandClass,
                     command.CommandId,
                     command.Payload.ToArray(),
-                    command.Payload.Length,
-                    payload => payload.Span.SequenceEqual(command.Payload.AsSpan())),
+                    command.ExpectedResponsePayload.Length,
+                    payload => payload.Span.SequenceEqual(
+                        command.ExpectedResponsePayload.AsSpan())),
                 AllocateTransaction,
                 exchangeTimeout,
                 cancellationToken).ConfigureAwait(false);
@@ -535,10 +607,11 @@ internal sealed class ProductionBatteryPort : IProductionBatteryPort
                 throw failure;
             }
 
-            if (!result.Value.Span.SequenceEqual(command.Payload.AsSpan()))
+            if (!result.Value.Span.SequenceEqual(command.ExpectedResponsePayload.AsSpan()))
             {
                 poisoned = true;
-                throw Indeterminate("The acknowledged battery payload did not match the admitted command.");
+                throw Indeterminate(
+                    "The acknowledged payload did not match the admitted command response.");
             }
         }
         catch (BladeWriteException)

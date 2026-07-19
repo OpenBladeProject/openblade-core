@@ -54,6 +54,13 @@ public interface IServiceControlRuntime
                 ControlOperationStatus.Blocked,
                 "Reactive lighting input is unavailable."));
 
+    Task<ControlOperationResult> ApplyOneShotLaptopControlAsync(
+        ApplyOneShotLaptopControl value,
+        CancellationToken token) => Task.FromResult(
+            new ControlOperationResult(
+                ControlOperationStatus.Blocked,
+                "One-shot laptop controls are unavailable."));
+
     Task<ControlOperationResult> SetBatteryPolicyAsync(
         BatteryPolicy value,
         CancellationToken token);
@@ -726,6 +733,78 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 return new ControlOperationResult(
                     ControlOperationStatus.Failed,
                     "Reactive lighting input could not be applied.");
+            }
+        }
+        finally
+        {
+            operationGate.Release();
+        }
+    }
+
+    public async Task<ControlOperationResult> ApplyOneShotLaptopControlAsync(
+        ApplyOneShotLaptopControl value,
+        CancellationToken token)
+    {
+        EnsureInitialized();
+        ArgumentNullException.ThrowIfNull(value);
+        if (!value.IsWellFormed())
+        {
+            return new ControlOperationResult(
+                ControlOperationStatus.Failed,
+                "The laptop control request is invalid.");
+        }
+
+        await operationGate.WaitAsync(token).ConfigureAwait(false);
+        try
+        {
+            await RefreshControllerPresenceAndRelinquishIfNewConflictAsync(token)
+                .ConfigureAwait(false);
+            ServiceStatusSnapshot current = GetStatus();
+            if (!current.DeviceVerified
+                || current.WritesBlocked
+                || current.Capabilities is null
+                || !current.Capabilities.OneShotLaptopControls.Contains(value.Control))
+            {
+                return new ControlOperationResult(
+                    ControlOperationStatus.Blocked,
+                    "This laptop control is unavailable right now.");
+            }
+
+            try
+            {
+                if (!deviceProvider.TryGetVerifiedDevice(out IBladeDevice device))
+                {
+                    return new ControlOperationResult(
+                        ControlOperationStatus.Blocked,
+                        "This laptop control is unavailable right now.");
+                }
+
+                await device.ApplyOneShotLaptopControlAsync(value, token)
+                    .ConfigureAwait(false);
+                string label = value.Control switch
+                {
+                    OneShotLaptopControl.StartupAnimation => "Startup animation",
+                    OneShotLaptopControl.FunctionKeyPrimary => "Function key behavior",
+                    OneShotLaptopControl.GamingMode => "Gaming Mode",
+                    _ => "Laptop control",
+                };
+                var result = new ControlOperationResult(
+                    ControlOperationStatus.Applied,
+                    $"{label} was applied. OpenBlade cannot read its current firmware value.");
+                history.RecordSummary(result.Status, result.Message);
+                return result;
+            }
+            catch (OperationCanceledException) when (token.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch
+            {
+                var result = new ControlOperationResult(
+                    ControlOperationStatus.Failed,
+                    "The laptop control could not be applied.");
+                history.RecordSummary(result.Status, result.Message);
+                return result;
             }
         }
         finally

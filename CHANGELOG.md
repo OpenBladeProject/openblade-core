@@ -38,6 +38,9 @@ All notable changes to OpenBlade are documented in this file. The project follow
 - The bounded read-only performance discriminator probe now includes fixed
   `0D/87` CPU and GPU component queries. This is validation tooling only;
   Custom mode remains unavailable until target-hardware GPU readback succeeds.
+- Exact-device one-shot controls for Startup animation, Function key behavior,
+  and Gaming Mode. OpenBlade validates each captured response but deliberately
+  does not present, persist, or automatically reapply a value it cannot query.
 
 ### Changed
 
@@ -53,9 +56,9 @@ All notable changes to OpenBlade are documented in this file. The project follow
 - Profiles can capture Windows' current refresh rate, HDR state, and color
   profile into the active power profile before saving the draft.
 - The Troubleshooting header now aligns with the other About card content.
-- Named-pipe protocol version 12 adds typed lighting-suppression and
-  performance-shortcut requests while retaining the installing-user-only full
-  shutdown request.
+- Named-pipe protocol version 13 adds typed one-shot laptop controls while
+  retaining lighting suppression, performance shortcuts, and the
+  installing-user-only full shutdown request.
 - Profile schema version 3 stores the global lighting power policy and migrates
   schema version 2 profiles with the policy disabled.
 - The tray icon now follows the effective active profile when firmware readback is

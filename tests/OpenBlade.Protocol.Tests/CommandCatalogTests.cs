@@ -44,6 +44,34 @@ public sealed class CommandCatalogTests
         Assert.Equal(new byte[] { 0x01, 0x01, 0x00, 0x00 }, command.Payload);
     }
 
+    [Fact]
+    public void Create_RejectsSetterWithoutReadbackUnlessExplicitlyOneShot()
+    {
+        CapturedCommandFixture fixture = CreateFixture() with { ReadBack = false };
+
+        Assert.Throws<UnvalidatedCommandException>(() =>
+            DeviceCommandCatalog.Create(Target, [fixture]));
+    }
+
+    [Fact]
+    public void Create_AdmitsExplicitOneShotWithValidatedExpectedResponse()
+    {
+        CapturedCommandFixture fixture = CreateFixture() with
+        {
+            ReadBack = false,
+            OneShotOnly = true,
+            ExpectedResponsePayload = [0x32, 0x0A, 0x00, 0x00],
+        };
+
+        DeviceCommandCatalog catalog = DeviceCommandCatalog.Create(Target, [fixture]);
+
+        Assert.True(catalog.TryGet(fixture.Action, out RazerCommandDefinition? command));
+        Assert.True(command!.OneShotOnly);
+        Assert.Equal(
+            new byte[] { 0x32, 0x0A, 0x00, 0x00 },
+            command.ExpectedResponsePayload.ToArray());
+    }
+
     [Theory]
     [InlineData(null)]
     [InlineData("")]

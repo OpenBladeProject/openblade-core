@@ -929,6 +929,53 @@ public sealed class ProductionBatteryPortTests
     }
 
     [Fact]
+    public async Task OneShotLaptopControlsUseExactCapturedRequestsAndResponses()
+    {
+        DeviceCommandCatalog catalog = Catalog(
+            OneShotFixture(ProductionBatteryPort.StartupAnimationOnAction, 0x0F, 0x18, [0x00, 0x00], [0x00, 0x00]),
+            OneShotFixture(ProductionBatteryPort.StartupAnimationOffAction, 0x0F, 0x18, [0x00, 0x01], [0x00, 0x01]),
+            OneShotFixture(ProductionBatteryPort.FunctionKeysPrimaryAction, 0x02, 0x06, [0x01, 0x00], [0x01, 0x00]),
+            OneShotFixture(ProductionBatteryPort.MultimediaKeysPrimaryAction, 0x02, 0x06, [0x01, 0x01], [0x01, 0x01]),
+            OneShotFixture(ProductionBatteryPort.GamingModeOnAction, 0x00, 0x08, [0x01, 0x00, 0x00, 0x00], [0x32, 0x0A, 0x00, 0x00]),
+            OneShotFixture(ProductionBatteryPort.GamingModeOffAction, 0x00, 0x08, [0x00, 0x00, 0x00, 0x00], [0x32, 0x0A, 0x00, 0x00]));
+        var cases = new[]
+        {
+            (new ApplyOneShotLaptopControl(OneShotLaptopControl.StartupAnimation, Enabled: true), (byte)0x0F, (byte)0x18, new byte[] { 0x00, 0x00 }, new byte[] { 0x00, 0x00 }),
+            (new ApplyOneShotLaptopControl(OneShotLaptopControl.StartupAnimation, Enabled: false), (byte)0x0F, (byte)0x18, new byte[] { 0x00, 0x01 }, new byte[] { 0x00, 0x01 }),
+            (new ApplyOneShotLaptopControl(OneShotLaptopControl.FunctionKeyPrimary, FunctionKeyMode: FunctionKeyPrimaryMode.FunctionKeys), (byte)0x02, (byte)0x06, new byte[] { 0x01, 0x00 }, new byte[] { 0x01, 0x00 }),
+            (new ApplyOneShotLaptopControl(OneShotLaptopControl.FunctionKeyPrimary, FunctionKeyMode: FunctionKeyPrimaryMode.MultimediaKeys), (byte)0x02, (byte)0x06, new byte[] { 0x01, 0x01 }, new byte[] { 0x01, 0x01 }),
+            (new ApplyOneShotLaptopControl(OneShotLaptopControl.GamingMode, Enabled: true), (byte)0x00, (byte)0x08, new byte[] { 0x01, 0x00, 0x00, 0x00 }, new byte[] { 0x32, 0x0A, 0x00, 0x00 }),
+            (new ApplyOneShotLaptopControl(OneShotLaptopControl.GamingMode, Enabled: false), (byte)0x00, (byte)0x08, new byte[] { 0x00, 0x00, 0x00, 0x00 }, new byte[] { 0x32, 0x0A, 0x00, 0x00 }),
+        };
+
+        DeviceCapabilities capabilities = ProductionBatteryPort.CreateCapabilities(
+            catalog,
+            NoTemporaryReadEvidence());
+        Assert.True(capabilities.OneShotLaptopControls.SetEquals(
+        [
+            OneShotLaptopControl.StartupAnimation,
+            OneShotLaptopControl.FunctionKeyPrimary,
+            OneShotLaptopControl.GamingMode,
+        ]));
+
+        foreach ((ApplyOneShotLaptopControl value, byte classId, byte commandId, byte[] request, byte[] response) in cases)
+        {
+            var session = new ScriptedSession(Success(response));
+            await using var port = CreatePort(session, catalog);
+
+            await port.ApplyOneShotLaptopControlAsync(value, default);
+
+            RazerCommandSpec command = Assert.Single(session.Commands);
+            Assert.Equal((classId, commandId), (command.ClassId, command.CommandId));
+            Assert.Equal(request, command.Arguments.ToArray());
+            Assert.Equal(response.Length, command.ExpectedPayloadLength);
+            Assert.NotNull(command.PayloadValidator);
+            Assert.True(command.PayloadValidator(response));
+            Assert.False(command.PayloadValidator(new byte[] { 0xFF }));
+        }
+    }
+
+    [Fact]
     public void PublicBoundaryContainsNoRawPayloadPathOrSettingSurface()
     {
         string[] memberNames = typeof(IProductionBatteryPort)
@@ -1006,6 +1053,18 @@ public sealed class ProductionBatteryPortTests
             Applied: true,
             ReadBack: true,
             Restored: true);
+
+    private static CapturedCommandFixture OneShotFixture(
+        string action,
+        byte commandClass,
+        byte commandId,
+        byte[] payload,
+        byte[] expectedResponse) => Fixture(action, commandClass, commandId, payload) with
+    {
+        ReadBack = false,
+        OneShotOnly = true,
+        ExpectedResponsePayload = expectedResponse,
+    };
 
     private static CapturedCommandFixture[] MaximumCapabilityFixtures() =>
     [

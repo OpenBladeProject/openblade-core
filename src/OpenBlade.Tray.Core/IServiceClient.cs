@@ -75,6 +75,13 @@ public interface IServiceClient
         bool enabled,
         CancellationToken token);
 
+    Task<ControlOperationResult> ApplyOneShotLaptopControlAsync(
+        ApplyOneShotLaptopControl value,
+        CancellationToken token) => Task.FromResult(
+            new ControlOperationResult(
+                ControlOperationStatus.Blocked,
+                "One-shot laptop controls are unavailable."));
+
     Task<ControlOperationResult> ShutdownOpenBladeAsync(CancellationToken token) =>
         Task.FromResult(new ControlOperationResult(
             ControlOperationStatus.Blocked,

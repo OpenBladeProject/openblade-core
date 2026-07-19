@@ -88,6 +88,11 @@ public sealed class ControlRequestHandler
             SetFullChargeOverrideRequest set => Result(
                 request.RequestId,
                 await runtime.SetFullChargeOverrideAsync(set.Enabled, cancellationToken)),
+            ApplyOneShotLaptopControlRequest apply => Result(
+                request.RequestId,
+                await runtime.ApplyOneShotLaptopControlAsync(
+                    apply.Value,
+                    cancellationToken)),
             ExportDiagnosticsRequest export => await ExportDiagnosticsAsync(
                 export.RequestId,
                 export.LiveReadingsEnabled,

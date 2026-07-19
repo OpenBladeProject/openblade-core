@@ -1258,7 +1258,15 @@ public sealed class MainViewModelTests
                 new HashSet<LightingEffect> { LightingEffect.Off },
                 ChargeLimits(),
                 SupportsBatteryProtectionOff: true,
-                SupportsTemporaryFullCharge: true)));
+                SupportsTemporaryFullCharge: true)
+            {
+                OneShotLaptopControls = new HashSet<OneShotLaptopControl>
+                {
+                    OneShotLaptopControl.StartupAnimation,
+                    OneShotLaptopControl.FunctionKeyPrimary,
+                    OneShotLaptopControl.GamingMode,
+                },
+            }));
         await WaitUntilAsync(() => viewModel.IsConnected);
 
         Assert.True(viewModel.IsPerformanceVisible);
@@ -1273,6 +1281,19 @@ public sealed class MainViewModelTests
         Assert.False(viewModel.SetChargeLimitCommand.CanExecute(77));
         Assert.True(viewModel.SetLightingCommand.CanExecute(
             ProfileDefaults.CreateSafeDefaults().PluggedIn.Lighting));
+        Assert.True(viewModel.HasOneShotLaptopControls);
+        Assert.True(viewModel.SupportsStartupAnimation);
+        Assert.True(viewModel.SupportsFunctionKeyPrimary);
+        Assert.True(viewModel.SupportsGamingMode);
+        var oneShot = new ApplyOneShotLaptopControl(
+            OneShotLaptopControl.StartupAnimation,
+            Enabled: false);
+        Assert.True(viewModel.ApplyOneShotLaptopControlCommand.CanExecute(oneShot));
+
+        await Assert.IsType<AsyncRelayCommand>(viewModel.ApplyOneShotLaptopControlCommand)
+            .ExecuteAsync(oneShot);
+
+        Assert.Equal(oneShot, client.OneShotLaptopControl);
     }
 
     [Fact]
@@ -3137,6 +3158,16 @@ public sealed class MainViewModelTests
             CancellationToken token)
         {
             FullChargeEnabled = enabled;
+            return MutateAsync(token);
+        }
+
+        public ApplyOneShotLaptopControl? OneShotLaptopControl { get; private set; }
+
+        public Task<ControlOperationResult> ApplyOneShotLaptopControlAsync(
+            ApplyOneShotLaptopControl value,
+            CancellationToken token)
+        {
+            OneShotLaptopControl = value;
             return MutateAsync(token);
         }
 

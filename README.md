@@ -7,9 +7,13 @@ Razer Blade 16 RZ09-0581 with USB identity `1532:02E0` and BIOS `3.01`.
 
 The application is deliberately fail-closed. A PID `02E0` hardware write is
 available only when that exact operation has a sanitized capture fixture that
-passed decoding, interactive application, readback, and restoration and whose
-bytes are embedded and hash-trusted in the application. OpenBlade never exposes
-a raw-command IPC endpoint.
+passed decoding, interactive application, response validation, and restoration
+and whose bytes are embedded and hash-trusted in the application. Stateful and
+automatic controls additionally require independent readback. Setter-only
+Startup animation, Function key behavior, and Gaming Mode commands are exposed
+solely as explicit one-shot actions: OpenBlade never labels them as current
+firmware state, saves them in profiles, or reapplies them automatically.
+OpenBlade never exposes a raw-command IPC endpoint.
 
 If a Razer/Synapse controller process is running, the service reports an
 advisory warning. OpenBlade observes confirmed device state and does not

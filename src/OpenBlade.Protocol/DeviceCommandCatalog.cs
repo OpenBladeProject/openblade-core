@@ -18,18 +18,32 @@ internal sealed record CapturedCommandFixture(
     bool Decoded,
     bool Applied,
     bool ReadBack,
-    bool Restored);
+    bool Restored)
+{
+    /// <summary>
+    /// Marks a command that has a validated response and interactive restoration,
+    /// but no independent firmware query. These commands may only be exposed as
+    /// explicit one-shot actions and must never be treated as confirmed state.
+    /// </summary>
+    public bool OneShotOnly { get; init; }
+
+    public byte[]? ExpectedResponsePayload { get; init; }
+}
 
 internal sealed record RazerCommandDefinition
 {
     public RazerCommandDefinition(
         byte commandClass,
         byte commandId,
-        IEnumerable<byte> payload)
+        IEnumerable<byte> payload,
+        IEnumerable<byte>? expectedResponsePayload = null,
+        bool oneShotOnly = false)
     {
         CommandClass = commandClass;
         CommandId = commandId;
         Payload = payload.ToImmutableArray();
+        ExpectedResponsePayload = (expectedResponsePayload ?? payload).ToImmutableArray();
+        OneShotOnly = oneShotOnly;
     }
 
     public byte CommandClass { get; }
@@ -37,6 +51,10 @@ internal sealed record RazerCommandDefinition
     public byte CommandId { get; }
 
     public ImmutableArray<byte> Payload { get; }
+
+    public ImmutableArray<byte> ExpectedResponsePayload { get; }
+
+    public bool OneShotOnly { get; }
 }
 
 public sealed class UnvalidatedCommandException : Exception
@@ -79,10 +97,14 @@ internal sealed class DeviceCommandCatalog
                     "A captured command has a null or blank action.");
             }
 
+            bool independentlyReadable = fixture.ReadBack && !fixture.OneShotOnly;
+            bool validatedOneShot = !fixture.ReadBack
+                && fixture.OneShotOnly
+                && fixture.ExpectedResponsePayload is not null;
             bool allGatesPassed = fixture.Captured
                 && fixture.Decoded
                 && fixture.Applied
-                && fixture.ReadBack
+                && (independentlyReadable || validatedOneShot)
                 && fixture.Restored;
 
             if (fixture.Device != target || !allGatesPassed)
@@ -103,12 +125,21 @@ internal sealed class DeviceCommandCatalog
                     $"Command '{fixture.Action}' has an oversized payload.");
             }
 
+            byte[] expectedResponse = fixture.ExpectedResponsePayload ?? fixture.Payload;
+            if (expectedResponse.Length > RazerReport.MaximumPayloadLength)
+            {
+                throw new UnvalidatedCommandException(
+                    $"Command '{fixture.Action}' has an oversized expected response payload.");
+            }
+
             if (!commands.TryAdd(
                     fixture.Action,
                     new RazerCommandDefinition(
                         fixture.CommandClass,
                         fixture.CommandId,
-                        fixture.Payload)))
+                        fixture.Payload,
+                        expectedResponse,
+                        fixture.OneShotOnly)))
             {
                 throw new UnvalidatedCommandException(
                     $"Command action '{fixture.Action}' is duplicated.");

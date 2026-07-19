@@ -111,7 +111,9 @@
       }
     ],
     "independentQueryObserved": false,
-    "productionAdmitted": false
+    "productionAdmitted": false,
+    "openBladeOneShotAdmitted": true,
+    "openBladeStatePresentation": "NeverPresentedAsConfirmedState"
   },
   "switchOffLighting": {
     "rulesCaptured": [
@@ -149,7 +151,9 @@
     ],
     "successfulResponseEchoObserved": true,
     "independentQueryObserved": false,
-    "productionAdmitted": false
+    "productionAdmitted": false,
+    "openBladeOneShotAdmitted": true,
+    "openBladeStatePresentation": "NeverPresentedAsConfirmedState"
   },
   "trackpad": {
     "disableAndRestoreCaptured": true,
@@ -178,7 +182,9 @@
     "responseStatusHex": "02",
     "responsePayloadHexForBothValues": "320A0000",
     "independentQueryObserved": false,
-    "productionAdmitted": false
+    "productionAdmitted": false,
+    "openBladeOneShotAdmitted": true,
+    "openBladeStatePresentation": "NeverPresentedAsConfirmedState"
   },
   "customPerformance": {
     "componentSetter": "0D/07",

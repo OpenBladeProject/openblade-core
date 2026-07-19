@@ -510,6 +510,23 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
                     cancellationToken)
                 : RejectProductionWrite("Temporary full charge is not admitted.");
 
+        public Task ApplyOneShotLaptopControlAsync(
+            ApplyOneShotLaptopControl value,
+            CancellationToken cancellationToken)
+        {
+            ArgumentNullException.ThrowIfNull(value);
+            if (!value.IsWellFormed()
+                || !batteryFactory.Capabilities.OneShotLaptopControls.Contains(value.Control))
+            {
+                return RejectProductionWrite(
+                    "The requested one-shot laptop control is not admitted.");
+            }
+
+            return ExecuteProductionWriteAsync(
+                port => port.ApplyOneShotLaptopControlAsync(value, cancellationToken),
+                cancellationToken);
+        }
+
         public Task SetLightingAsync(
             LightingSettings value,
             CancellationToken cancellationToken)

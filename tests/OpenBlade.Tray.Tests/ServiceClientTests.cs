@@ -260,6 +260,11 @@ public sealed class ServiceClientTests
             await client.SetBatteryPolicyAsync(BatteryPolicy.Create(75), timeout.Token),
             await client.SetBatteryProtectionAsync(false, timeout.Token),
             await client.SetFullChargeOverrideAsync(true, timeout.Token),
+            await client.ApplyOneShotLaptopControlAsync(
+                new ApplyOneShotLaptopControl(
+                    OneShotLaptopControl.GamingMode,
+                    Enabled: true),
+                timeout.Token),
             await client.ShutdownOpenBladeAsync(timeout.Token),
         ];
         await server;
@@ -288,9 +293,16 @@ public sealed class ServiceClientTests
             request => Assert.False(
                 Assert.IsType<SetBatteryProtectionRequest>(request).Enabled),
             request => Assert.IsType<SetFullChargeOverrideRequest>(request),
+            request =>
+            {
+                ApplyOneShotLaptopControlRequest apply =
+                    Assert.IsType<ApplyOneShotLaptopControlRequest>(request);
+                Assert.Equal(OneShotLaptopControl.GamingMode, apply.Value.Control);
+                Assert.True(apply.Value.Enabled);
+            },
             request => Assert.IsType<ShutdownOpenBladeRequest>(request));
         Assert.All(observed, request => Assert.NotEqual(Guid.Empty, request.RequestId));
-        Assert.Equal(11, observed.Select(request => request.RequestId).Distinct().Count());
+        Assert.Equal(12, observed.Select(request => request.RequestId).Distinct().Count());
     }
 
     [Fact]
@@ -601,7 +613,7 @@ public sealed class ServiceClientTests
         List<ServiceRequest> observed,
         CancellationToken token)
     {
-        for (int index = 0; index < 11; index++)
+        for (int index = 0; index < 12; index++)
         {
             await using NamedPipeServerStream server = CreateServer(pipeName);
             await server.WaitForConnectionAsync(token);

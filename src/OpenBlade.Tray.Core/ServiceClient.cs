@@ -152,6 +152,15 @@ public sealed class ServiceClient : IServiceClient
                 enabled),
             token);
 
+    public Task<ControlOperationResult> ApplyOneShotLaptopControlAsync(
+        ApplyOneShotLaptopControl value,
+        CancellationToken token) => SendMutationAsync(
+            new ApplyOneShotLaptopControlRequest(
+                OpenBladeIpc.ProtocolVersion,
+                Guid.NewGuid(),
+                value),
+            token);
+
     public Task<ControlOperationResult> ShutdownOpenBladeAsync(CancellationToken token) =>
         SendMutationAsync(
             new ShutdownOpenBladeRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid()),

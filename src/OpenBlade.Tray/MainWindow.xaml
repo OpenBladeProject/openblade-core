@@ -1499,6 +1499,102 @@
                             </StackPanel>
                         </Border>
 
+                        <TextBlock Text="Laptop controls"
+                                   Style="{StaticResource SectionHeaderStyle}"
+                                   Visibility="{x:Bind ViewModel.HasOneShotLaptopControls, Mode=OneWay}" />
+                        <Border Style="{StaticResource SettingsGroupStyle}"
+                                Visibility="{x:Bind ViewModel.HasOneShotLaptopControls, Mode=OneWay}">
+                            <StackPanel>
+                                <Border Style="{StaticResource SettingsRowStyle}"
+                                        Visibility="{x:Bind ViewModel.SupportsStartupAnimation, Mode=OneWay}">
+                                    <Grid ColumnSpacing="20">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel Spacing="3" VerticalAlignment="Center">
+                                            <TextBlock Text="Startup animation" Style="{StaticResource CardTitleStyle}" />
+                                            <TextBlock Text="Play or skip the keyboard animation when the laptop starts."
+                                                       Style="{StaticResource SecondaryTextStyle}" />
+                                        </StackPanel>
+                                        <DropDownButton Grid.Column="1"
+                                                        Content="Change"
+                                                        HorizontalAlignment="Right"
+                                                        VerticalAlignment="Center">
+                                            <DropDownButton.Flyout>
+                                                <MenuFlyout>
+                                                    <MenuFlyoutItem Text="Turn on"
+                                                                    Command="{x:Bind ViewModel.ApplyOneShotLaptopControlCommand}"
+                                                                    CommandParameter="{x:Bind ViewModel.StartupAnimationOnAction}" />
+                                                    <MenuFlyoutItem Text="Turn off"
+                                                                    Command="{x:Bind ViewModel.ApplyOneShotLaptopControlCommand}"
+                                                                    CommandParameter="{x:Bind ViewModel.StartupAnimationOffAction}" />
+                                                </MenuFlyout>
+                                            </DropDownButton.Flyout>
+                                        </DropDownButton>
+                                    </Grid>
+                                </Border>
+                                <Border Style="{StaticResource SettingsRowStyle}"
+                                        Visibility="{x:Bind ViewModel.SupportsFunctionKeyPrimary, Mode=OneWay}">
+                                    <Grid ColumnSpacing="20">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel Spacing="3" VerticalAlignment="Center">
+                                            <TextBlock Text="Function key behavior" Style="{StaticResource CardTitleStyle}" />
+                                            <TextBlock Text="Choose whether F1–F12 or media actions work without holding Fn."
+                                                       Style="{StaticResource SecondaryTextStyle}" />
+                                        </StackPanel>
+                                        <DropDownButton Grid.Column="1"
+                                                        Content="Change"
+                                                        HorizontalAlignment="Right"
+                                                        VerticalAlignment="Center">
+                                            <DropDownButton.Flyout>
+                                                <MenuFlyout>
+                                                    <MenuFlyoutItem Text="Function keys"
+                                                                    Command="{x:Bind ViewModel.ApplyOneShotLaptopControlCommand}"
+                                                                    CommandParameter="{x:Bind ViewModel.FunctionKeysPrimaryAction}" />
+                                                    <MenuFlyoutItem Text="Media keys"
+                                                                    Command="{x:Bind ViewModel.ApplyOneShotLaptopControlCommand}"
+                                                                    CommandParameter="{x:Bind ViewModel.MultimediaKeysPrimaryAction}" />
+                                                </MenuFlyout>
+                                            </DropDownButton.Flyout>
+                                        </DropDownButton>
+                                    </Grid>
+                                </Border>
+                                <Border Style="{StaticResource SettingsLastRowStyle}"
+                                        Visibility="{x:Bind ViewModel.SupportsGamingMode, Mode=OneWay}">
+                                    <Grid ColumnSpacing="20">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel Spacing="3" VerticalAlignment="Center">
+                                            <TextBlock Text="Gaming Mode" Style="{StaticResource CardTitleStyle}" />
+                                            <TextBlock Text="Turn the laptop's captured Gaming Mode configuration on or off."
+                                                       Style="{StaticResource SecondaryTextStyle}" />
+                                        </StackPanel>
+                                        <DropDownButton Grid.Column="1"
+                                                        Content="Change"
+                                                        HorizontalAlignment="Right"
+                                                        VerticalAlignment="Center">
+                                            <DropDownButton.Flyout>
+                                                <MenuFlyout>
+                                                    <MenuFlyoutItem Text="Turn on"
+                                                                    Command="{x:Bind ViewModel.ApplyOneShotLaptopControlCommand}"
+                                                                    CommandParameter="{x:Bind ViewModel.GamingModeOnAction}" />
+                                                    <MenuFlyoutItem Text="Turn off"
+                                                                    Command="{x:Bind ViewModel.ApplyOneShotLaptopControlCommand}"
+                                                                    CommandParameter="{x:Bind ViewModel.GamingModeOffAction}" />
+                                                </MenuFlyout>
+                                            </DropDownButton.Flyout>
+                                        </DropDownButton>
+                                    </Grid>
+                                </Border>
+                            </StackPanel>
+                        </Border>
+
                         <TextBlock Text="Appearance" Style="{StaticResource SectionHeaderStyle}" />
                         <Border Style="{StaticResource SettingsGroupStyle}">
                             <StackPanel>

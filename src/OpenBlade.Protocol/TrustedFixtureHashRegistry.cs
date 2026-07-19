@@ -4,7 +4,7 @@ internal sealed class TrustedFixtureHashRegistry
 {
     private static readonly string[] ProductionApprovedSha256Hashes =
     [
-        "D132FBEF04806BB156815F621566FAED7AA8B25988A82944A19EA30827CBCF5E",
+        "C4D0CFC35C827C4010BABB4B9BB399E80B9B5179CAF4BA5B45BDD1D10BE3FC17",
     ];
     private readonly HashSet<string> _sha256Hashes;
 

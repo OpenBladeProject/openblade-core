@@ -28,6 +28,13 @@ public interface IBladeDevice
 
     Task SetLightingAsync(LightingSettings value, CancellationToken cancellationToken);
 
+    Task ApplyOneShotLaptopControlAsync(
+        ApplyOneShotLaptopControl value,
+        CancellationToken cancellationToken) => Task.FromException(
+            new BladeWriteException(
+                WriteSubmissionState.KnownNotApplied,
+                "One-shot laptop controls are unavailable."));
+
     Task<LightingRendererOwnershipState> ReadLightingRendererOwnershipAsync(
         CancellationToken cancellationToken) =>
         Task.FromResult(LightingRendererOwnershipState.None);

@@ -72,6 +72,18 @@ public sealed class IpcMessageCodecTests
             Enabled: false),
         new SetFullChargeOverrideRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid(), true),
         new SetFullChargeOverrideRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid(), false),
+        new ApplyOneShotLaptopControlRequest(
+            OpenBladeIpc.ProtocolVersion,
+            Guid.NewGuid(),
+            new ApplyOneShotLaptopControl(
+                OneShotLaptopControl.StartupAnimation,
+                Enabled: true)),
+        new ApplyOneShotLaptopControlRequest(
+            OpenBladeIpc.ProtocolVersion,
+            Guid.NewGuid(),
+            new ApplyOneShotLaptopControl(
+                OneShotLaptopControl.FunctionKeyPrimary,
+                FunctionKeyMode: FunctionKeyPrimaryMode.MultimediaKeys)),
         new ShutdownOpenBladeRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid()),
     };
 
@@ -193,7 +205,7 @@ public sealed class IpcMessageCodecTests
     }
 
     [Fact]
-    public async Task VersionTwelveBatteryContracts_RoundTripExactShape()
+    public async Task VersionThirteenBatteryContracts_RoundTripExactShape()
     {
         var capabilities = new DeviceCapabilities(
             new HashSet<PerformancePreset>(),
@@ -218,7 +230,7 @@ public sealed class IpcMessageCodecTests
             DesiredState = CreateStatus().DesiredState with { Battery = desired },
         };
 
-        Assert.Equal(12, OpenBladeIpc.ProtocolVersion);
+        Assert.Equal(13, OpenBladeIpc.ProtocolVersion);
         Assert.Equal(request, await RoundTripRequestAsync(request));
         ServiceStatusSnapshot roundTrip = await RoundTripStatusAsync(status);
         Assert.Equal([80], roundTrip.Capabilities!.ChargeLimits);
@@ -230,6 +242,7 @@ public sealed class IpcMessageCodecTests
     [InlineData("PerformancePresets")]
     [InlineData("FanModes")]
     [InlineData("LightingEffects")]
+    [InlineData("OneShotLaptopControls")]
     public async Task ReadServerFrameAsync_RejectsNullNestedCapabilityCollection(
         string propertyName)
     {
@@ -252,7 +265,7 @@ public sealed class IpcMessageCodecTests
     }
 
     [Fact]
-    public async Task VersionTwelveStatus_AcceptsCompleteCapabilityCollections()
+    public async Task VersionThirteenStatus_AcceptsCompleteCapabilityCollections()
     {
         ServiceStatusSnapshot expected = CreateStatus() with
         {
@@ -261,7 +274,7 @@ public sealed class IpcMessageCodecTests
 
         ServiceStatusSnapshot actual = await RoundTripStatusAsync(expected);
 
-        Assert.Equal(12, OpenBladeIpc.ProtocolVersion);
+        Assert.Equal(13, OpenBladeIpc.ProtocolVersion);
         AssertStatusEqual(expected, actual);
     }
 

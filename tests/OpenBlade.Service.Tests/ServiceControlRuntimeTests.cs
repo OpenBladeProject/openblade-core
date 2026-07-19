@@ -1165,6 +1165,37 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     }
 
     [Fact]
+    public async Task OneShotLaptopControl_AppliesWithoutInventingConfirmedState()
+    {
+        TestContext context = CreateContext(providerAvailable: true);
+        context.Device.Capabilities = DeviceCapabilities.SafeTargetDefaults() with
+        {
+            OneShotLaptopControls = new HashSet<OneShotLaptopControl>
+            {
+                OneShotLaptopControl.StartupAnimation,
+            },
+        };
+        context.Device.ConfirmedState = new ConfirmedDeviceState(
+            PerformancePreset.Balanced,
+            FanMode.Automatic,
+            ConfirmedBattery(80),
+            ProfileDefaults.CreateSafeDefaults().PluggedIn.Lighting);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        ConfirmedDeviceState before = context.Runtime.GetStatus().ConfirmedState!;
+        var request = new ApplyOneShotLaptopControl(
+            OneShotLaptopControl.StartupAnimation,
+            Enabled: false);
+
+        ControlOperationResult result = await context.Runtime
+            .ApplyOneShotLaptopControlAsync(request, CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Applied, result.Status);
+        Assert.Equal(request, context.Device.LastOneShotLaptopControl);
+        Assert.Equal(1, context.Device.OneShotSetCalls);
+        Assert.Same(before, context.Runtime.GetStatus().ConfirmedState);
+    }
+
+    [Fact]
     public async Task PayloadValidationObservationFailure_RetriesOneReadAndRecovers()
     {
         TestContext context = CreateContext(providerAvailable: true);
@@ -4169,6 +4200,12 @@ public sealed class ServiceControlRuntimeTests : IDisposable
 
         public Exception? LightingFailure { get; set; }
 
+        public Exception? OneShotFailure { get; set; }
+
+        public int OneShotSetCalls { get; private set; }
+
+        public ApplyOneShotLaptopControl? LastOneShotLaptopControl { get; private set; }
+
         public Exception? ReadStateFailure { get; set; }
 
         public int? ReadStateFailureOnCall { get; set; }
@@ -4363,6 +4400,18 @@ public sealed class ServiceControlRuntimeTests : IDisposable
 
             AfterSetter?.Invoke(DeviceSubsystem.Lighting);
             return Task.CompletedTask;
+        }
+
+        public Task ApplyOneShotLaptopControlAsync(
+            ApplyOneShotLaptopControl value,
+            CancellationToken cancellationToken)
+        {
+            TotalCalls++;
+            OneShotSetCalls++;
+            LastOneShotLaptopControl = value;
+            return OneShotFailure is null
+                ? Task.CompletedTask
+                : Task.FromException(OneShotFailure);
         }
 
         public Task<LightingRendererOwnershipState>
