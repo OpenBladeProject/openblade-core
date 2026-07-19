@@ -2082,7 +2082,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             isConnected: true,
             status.DeviceVerified,
             status.ActivePowerSource,
-            confirmed?.Performance);
+            SelectedPerformance);
         LiveReadings = LiveReadingsEnabled ? status.LiveReadings : null;
         PerformanceOverride = status.PerformanceOverride;
         FanOverride = status.FanOverride;

@@ -4,7 +4,7 @@ namespace OpenBlade.Tray.Tests;
 
 public sealed class TrayIconStateResolverTests
 {
-    public static TheoryData<PowerSource, PerformancePreset, TrayIconState> ConfirmedStates =>
+    public static TheoryData<PowerSource, PerformancePreset, TrayIconState> EffectiveStates =>
         new()
         {
             { PowerSource.PluggedIn, PerformancePreset.Balanced, TrayIconState.AcBalanced },
@@ -17,8 +17,8 @@ public sealed class TrayIconStateResolverTests
         };
 
     [Theory]
-    [MemberData(nameof(ConfirmedStates))]
-    public void ConfirmedStateSelectsMatchingTrayIcon(
+    [MemberData(nameof(EffectiveStates))]
+    public void EffectiveStateSelectsMatchingTrayIcon(
         PowerSource source,
         PerformancePreset performance,
         TrayIconState expected)

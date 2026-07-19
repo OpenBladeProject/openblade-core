@@ -19,17 +19,17 @@ public static class TrayIconStateResolver
         bool isConnected,
         bool deviceVerified,
         PowerSource powerSource,
-        PerformancePreset? confirmedPerformance)
+        PerformancePreset? effectivePerformance)
     {
         if (!isConnected
             || !deviceVerified
             || powerSource == PowerSource.ExternalUnknown
-            || confirmedPerformance is null)
+            || effectivePerformance is null)
         {
             return TrayIconState.GenericError;
         }
 
-        return (powerSource, confirmedPerformance.Value) switch
+        return (powerSource, effectivePerformance.Value) switch
         {
             (PowerSource.PluggedIn, PerformancePreset.Balanced) =>
                 TrayIconState.AcBalanced,

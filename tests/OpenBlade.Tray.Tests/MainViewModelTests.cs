@@ -1885,6 +1885,31 @@ public sealed class MainViewModelTests
     }
 
     [Fact]
+    public async Task TrayIcon_UsesEffectiveProfileWhenFirmwareReadbackIsUnavailable()
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        ServiceStatusSnapshot status = CreateStatus(verified: true, blocked: false);
+        PowerProfile usbC = status.Profiles.UsbC;
+        client.Publish(status with
+        {
+            ActivePowerSource = PowerSource.UsbC,
+            ConfirmedState = status.ConfirmedState! with { Performance = null },
+            DesiredState = status.DesiredState with
+            {
+                Performance = new ResolvedSetting<PerformancePreset>(
+                    usbC.Performance,
+                    SettingValueSource.PowerProfile),
+            },
+        });
+        await WaitUntilAsync(() => viewModel.ActivePowerSource == PowerSource.UsbC);
+
+        Assert.Equal(PerformancePreset.Balanced, viewModel.SelectedPerformance);
+        Assert.Equal(TrayIconState.UsbCBalanced, viewModel.TrayIconState);
+    }
+
+    [Fact]
     public async Task Status_FormatsZeroBatteryFlowForCurrentPowerSource()
     {
         var client = new FakeServiceClient();

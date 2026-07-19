@@ -17,6 +17,10 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Changed
 
+- The tray icon now follows the effective active profile when firmware readback is
+  unavailable, instead of showing a generic error while the service is ready.
+- Updated the runtime application icon from the canonical OpenBlade branding
+  repository, including its continuous notch-free display bezel.
 - Selecting a visible keyboard effect from Off now starts with a visible color
   and nonzero brightness. Legacy non-Off settings saved at 0% are migrated, and
   0% is reserved for Off so Breathing cannot be accepted and then disappear.
