@@ -41,6 +41,12 @@
       "Wave",
       "Wheel"
     ],
+    "openBladeImplementedEffects": [
+      "Starlight",
+      "Tidal",
+      "Wave",
+      "Wheel"
+    ],
     "notCaptured": [
       "Ambient Awareness",
       "Audio Meter",
@@ -72,26 +78,31 @@
       },
       "directionsCaptured": ["Leftward", "Rightward"],
       "directionRendererDecoded": false,
-      "productionAdmitted": false
+      "productionAdmitted": true
     },
     "ripple": {
       "inputTriggerAttempted": "A",
       "nonzeroMatrixFrameObserved": false,
       "productionAdmitted": false
     },
+    "starlight": {
+      "colorModes": ["Single", "Dual", "Random"],
+      "durations": ["Short", "Medium", "Long"],
+      "productionAdmitted": true
+    },
     "wave": {
       "directionsCaptured": ["Rightward", "Leftward"],
       "cycleMilliseconds": 1000,
       "frameCount": 25,
       "directionRendererDecoded": true,
-      "productionAdmitted": false
+      "productionAdmitted": true
     },
     "wheel": {
       "directionsCaptured": ["Clockwise", "Counterclockwise"],
       "cycleMilliseconds": 1000,
       "frameCount": 25,
       "directionRendererDecoded": true,
-      "productionAdmitted": false
+      "productionAdmitted": true
     }
   },
   "startupAnimation": {

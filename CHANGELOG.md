@@ -41,6 +41,9 @@ All notable changes to OpenBlade are documented in this file. The project follow
 - Exact-device one-shot controls for Startup animation, Function key behavior,
   and Gaming Mode. OpenBlade validates each captured response but deliberately
   does not present, persist, or automatically reapply a value it cannot query.
+- A captured-feature audit that maps every reproducible target-device operation
+  to its production surface and records why Ripple, Trackpad, Snap Tap, and
+  uncaptured effects remain hidden instead of relying on guessed commands.
 
 ### Changed
 
