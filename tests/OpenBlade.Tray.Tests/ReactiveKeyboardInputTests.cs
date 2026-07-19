@@ -164,6 +164,105 @@ public sealed class ReactiveKeyboardInputTests
         Assert.False(pressed);
     }
 
+    [Fact]
+    public void RawHid_DedicatedPerformanceButtonEmitsOncePerPress()
+    {
+        bool functionPressed = false;
+        bool dedicatedPressed = false;
+        bool functionPPressed = false;
+
+        Assert.True(Rz09_0581PerformanceShortcutRawHidInput.TryCreateTrigger(
+            [0x04, 0xD3, 0x00, 0x00],
+            ref functionPressed,
+            ref dedicatedPressed,
+            ref functionPPressed,
+            out PerformanceShortcutSource source));
+        Assert.Equal(PerformanceShortcutSource.DedicatedButton, source);
+        Assert.False(Rz09_0581PerformanceShortcutRawHidInput.TryCreateTrigger(
+            [0x04, 0xD3, 0x00, 0x00],
+            ref functionPressed,
+            ref dedicatedPressed,
+            ref functionPPressed,
+            out _));
+        Assert.False(Rz09_0581PerformanceShortcutRawHidInput.TryCreateTrigger(
+            [0x04, 0x00, 0x00, 0x00],
+            ref functionPressed,
+            ref dedicatedPressed,
+            ref functionPPressed,
+            out _));
+        Assert.True(Rz09_0581PerformanceShortcutRawHidInput.TryCreateTrigger(
+            [0x04, 0xD3, 0x00, 0x00],
+            ref functionPressed,
+            ref dedicatedPressed,
+            ref functionPPressed,
+            out source));
+        Assert.Equal(PerformanceShortcutSource.DedicatedButton, source);
+    }
+
+    [Fact]
+    public void RawHid_FnPRequiresCapturedFnThenPSequence()
+    {
+        bool functionPressed = false;
+        bool dedicatedPressed = false;
+        bool functionPPressed = false;
+
+        Assert.False(Rz09_0581PerformanceShortcutRawHidInput.TryCreateTrigger(
+            [0x01, 0x00, 0x13, 0x00],
+            ref functionPressed,
+            ref dedicatedPressed,
+            ref functionPPressed,
+            out _));
+        Assert.False(Rz09_0581PerformanceShortcutRawHidInput.TryCreateTrigger(
+            [0x04, 0x0A, 0x00, 0x00],
+            ref functionPressed,
+            ref dedicatedPressed,
+            ref functionPPressed,
+            out _));
+        Assert.True(Rz09_0581PerformanceShortcutRawHidInput.TryCreateTrigger(
+            [0x01, 0x00, 0x13, 0x00],
+            ref functionPressed,
+            ref dedicatedPressed,
+            ref functionPPressed,
+            out PerformanceShortcutSource source));
+        Assert.Equal(PerformanceShortcutSource.FunctionP, source);
+        Assert.False(Rz09_0581PerformanceShortcutRawHidInput.TryCreateTrigger(
+            [0x01, 0x00, 0x13, 0x00],
+            ref functionPressed,
+            ref dedicatedPressed,
+            ref functionPPressed,
+            out _));
+        Assert.False(Rz09_0581PerformanceShortcutRawHidInput.TryCreateTrigger(
+            [0x01, 0x00, 0x00, 0x00],
+            ref functionPressed,
+            ref dedicatedPressed,
+            ref functionPPressed,
+            out _));
+        Assert.True(Rz09_0581PerformanceShortcutRawHidInput.TryCreateTrigger(
+            [0x01, 0x00, 0x13, 0x00],
+            ref functionPressed,
+            ref dedicatedPressed,
+            ref functionPPressed,
+            out source));
+        Assert.Equal(PerformanceShortcutSource.FunctionP, source);
+    }
+
+    [Fact]
+    public void RawHid_DedicatedButtonWhileFnHeldMatchesCapturedCombinedReport()
+    {
+        bool functionPressed = true;
+        bool dedicatedPressed = false;
+        bool functionPPressed = false;
+
+        Assert.True(Rz09_0581PerformanceShortcutRawHidInput.TryCreateTrigger(
+            [0x04, 0x0A, 0xD3, 0x00],
+            ref functionPressed,
+            ref dedicatedPressed,
+            ref functionPPressed,
+            out PerformanceShortcutSource source));
+        Assert.Equal(PerformanceShortcutSource.DedicatedButton, source);
+        Assert.True(functionPressed);
+    }
+
     [Theory]
     [InlineData(null)]
     [InlineData("")]

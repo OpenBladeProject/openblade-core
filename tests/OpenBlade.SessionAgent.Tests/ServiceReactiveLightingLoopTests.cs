@@ -9,7 +9,7 @@ namespace OpenBlade.SessionAgent.Tests;
 public sealed class ServiceReactiveLightingLoopTests
 {
     [Fact]
-    public async Task ReactiveOwnershipCreatesOneSourceAndSurvivesVisibleTrayExit()
+    public async Task ConnectedServiceKeepsOneSourceForReactiveAndPerformanceShortcuts()
     {
         var client = new WatchClient();
         var factory = new RecordingSourceFactory();
@@ -35,13 +35,20 @@ public sealed class ServiceReactiveLightingLoopTests
         Assert.Equal(77, pulse.MatrixSlot);
 
         client.Publish(Status(LightingRendererOwnershipState.Static) with { Revision = 3 });
-        await WaitUntilAsync(() => first.Disposed);
+        await Task.Delay(25);
+        Assert.False(first.Disposed);
+        first.Publish(new ReactiveKeyPulse(78));
+        await Task.Delay(25);
+        Assert.Single(client.Pulses);
+
+        first.PublishPerformanceShortcut(PerformanceShortcutSource.DedicatedButton);
+        await WaitUntilAsync(() => client.PerformanceShortcuts.Count == 1);
 
         client.Publish(Status(LightingRendererOwnershipState.Reactive) with { Revision = 4 });
-        await WaitUntilAsync(() => factory.CreateCount == 2);
-        RecordingSource second = factory.Last!;
+        await Task.Delay(25);
+        Assert.Equal(1, factory.CreateCount);
         client.Reconnect();
-        await WaitUntilAsync(() => second.Disposed);
+        await WaitUntilAsync(() => first.Disposed);
 
         cancellation.Cancel();
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => running);
@@ -100,16 +107,29 @@ public sealed class ServiceReactiveLightingLoopTests
         public IReactiveKeyboardSource Create(Action<ReactiveKeyPulse> publish)
         {
             CreateCount++;
-            return Last = new RecordingSource(publish);
+            return Last = new RecordingSource(publish, _ => { });
+        }
+
+        public IReactiveKeyboardSource Create(
+            Action<ReactiveKeyPulse> publish,
+            Action<PerformanceShortcutSource> publishPerformanceShortcut)
+        {
+            CreateCount++;
+            return Last = new RecordingSource(publish, publishPerformanceShortcut);
         }
     }
 
-    private sealed class RecordingSource(Action<ReactiveKeyPulse> publish)
+    private sealed class RecordingSource(
+        Action<ReactiveKeyPulse> publish,
+        Action<PerformanceShortcutSource> publishPerformanceShortcut)
         : IReactiveKeyboardSource
     {
         public bool Disposed { get; private set; }
 
         public void Publish(ReactiveKeyPulse pulse) => publish(pulse);
+
+        public void PublishPerformanceShortcut(PerformanceShortcutSource source) =>
+            publishPerformanceShortcut(source);
 
         public void Dispose() => Disposed = true;
     }
@@ -119,6 +139,8 @@ public sealed class ServiceReactiveLightingLoopTests
         private readonly Channel<ServiceWatchUpdate> updates = Channel.CreateUnbounded<ServiceWatchUpdate>();
 
         public ConcurrentQueue<ReactiveKeyPulse> Pulses { get; } = new();
+
+        public ConcurrentQueue<PerformanceShortcutSource> PerformanceShortcuts { get; } = new();
 
         public void Publish(ServiceStatusSnapshot status) =>
             Assert.True(updates.Writer.TryWrite(new ServiceWatchUpdate.Connected(status)));
@@ -163,6 +185,16 @@ public sealed class ServiceReactiveLightingLoopTests
         public Task<ControlOperationResult> SetPerformanceOverrideAsync(
             ManualOverride<PerformancePreset>? value,
             CancellationToken token) => throw new NotSupportedException();
+
+        public Task<ControlOperationResult> CyclePerformanceShortcutAsync(
+            PerformanceShortcutSource source,
+            CancellationToken token)
+        {
+            PerformanceShortcuts.Enqueue(source);
+            return Task.FromResult(new ControlOperationResult(
+                ControlOperationStatus.Applied,
+                "Applied"));
+        }
 
         public Task<ControlOperationResult> SetFanOverrideAsync(
             ManualOverride<FanMode>? value,

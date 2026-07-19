@@ -1951,6 +1951,103 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     }
 
     [Fact]
+    public async Task PerformanceShortcuts_CycleAdmittedPluggedInPresetsAsTemporaryOverrides()
+    {
+        TestContext context = CreateWritableContext();
+
+        ControlOperationResult dedicated = await context.Runtime
+            .CyclePerformanceShortcutAsync(
+                PerformanceShortcutSource.DedicatedButton,
+                CancellationToken.None);
+        ControlOperationResult functionP = await context.Runtime
+            .CyclePerformanceShortcutAsync(
+                PerformanceShortcutSource.FunctionP,
+                CancellationToken.None);
+        ControlOperationResult wrapped = await context.Runtime
+            .CyclePerformanceShortcutAsync(
+                PerformanceShortcutSource.DedicatedButton,
+                CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Applied, dedicated.Status);
+        Assert.Equal("The performance button selected Silent.", dedicated.Message);
+        Assert.Equal(ControlOperationStatus.Applied, functionP.Status);
+        Assert.Equal("Fn+P selected Performance.", functionP.Message);
+        Assert.Equal(ControlOperationStatus.Applied, wrapped.Status);
+        Assert.Equal("The performance button selected Balanced.", wrapped.Message);
+        Assert.Equal(3, context.Device.PerformanceSetCalls);
+        Assert.Equal(
+            new ManualOverride<PerformancePreset>(
+                PerformancePreset.Balanced,
+                OverrideLifetime.UntilPowerSourceChange),
+            context.Runtime.GetStatus().PerformanceOverride);
+    }
+
+    [Fact]
+    public async Task PerformanceShortcut_OnBatteryUsesBalancedAndBatterySaverCycle()
+    {
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            initialPowerSource: PowerSource.Battery);
+        context.Device.Capabilities = DeviceCapabilities.SafeTargetDefaults();
+        PowerProfile battery = context.Runtime.GetStatus().Profiles.Battery;
+        context.Device.ConfirmedState = new ConfirmedDeviceState(
+            PerformancePreset.BatterySaver,
+            battery.Fans,
+            ConfirmedBattery(80),
+            battery.Lighting);
+
+        ControlOperationResult result = await context.Runtime
+            .CyclePerformanceShortcutAsync(
+                PerformanceShortcutSource.FunctionP,
+                CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Applied, result.Status);
+        Assert.Equal(PerformancePreset.BatteryBalanced, context.Device.ConfirmedState.Performance);
+        Assert.Equal(
+            PerformancePreset.BatteryBalanced,
+            context.Runtime.GetStatus().PerformanceOverride!.Value);
+    }
+
+    [Fact]
+    public async Task PerformanceShortcut_IsBlockedDuringControllerConflictWithoutStoringIntent()
+    {
+        TestContext context = CreateWritableContext(conflicts: ["RazerAppEngine"]);
+
+        ControlOperationResult result = await context.Runtime
+            .CyclePerformanceShortcutAsync(
+                PerformanceShortcutSource.DedicatedButton,
+                CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Blocked, result.Status);
+        Assert.Null(context.Runtime.GetStatus().PerformanceOverride);
+        Assert.Equal(0, context.Device.PerformanceSetCalls);
+    }
+
+    [Fact]
+    public async Task PerformanceShortcut_IsNoOpOnUsbCWhereOnlyBalancedIsAdmitted()
+    {
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            initialPowerSource: PowerSource.UsbC);
+        context.Device.Capabilities = DeviceCapabilities.SafeTargetDefaults();
+        PowerProfile usbC = context.Runtime.GetStatus().Profiles.UsbC;
+        context.Device.ConfirmedState = new ConfirmedDeviceState(
+            usbC.Performance,
+            usbC.Fans,
+            ConfirmedBattery(80),
+            usbC.Lighting);
+
+        ControlOperationResult result = await context.Runtime
+            .CyclePerformanceShortcutAsync(
+                PerformanceShortcutSource.DedicatedButton,
+                CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Blocked, result.Status);
+        Assert.Null(context.Runtime.GetStatus().PerformanceOverride);
+        Assert.Equal(0, context.Device.PerformanceSetCalls);
+    }
+
+    [Fact]
     public async Task ClearingFanOverride_AppliesOnlyResolvedFanTarget()
     {
         TestContext context = CreateWritableContext();

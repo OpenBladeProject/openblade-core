@@ -33,6 +33,13 @@ public interface IServiceClient
         ManualOverride<PerformancePreset>? value,
         CancellationToken token);
 
+    Task<ControlOperationResult> CyclePerformanceShortcutAsync(
+        PerformanceShortcutSource source,
+        CancellationToken token) => Task.FromResult(
+            new ControlOperationResult(
+                ControlOperationStatus.Blocked,
+                "Performance shortcuts are unavailable."));
+
     Task<ControlOperationResult> SetFanOverrideAsync(
         ManualOverride<FanMode>? value,
         CancellationToken token);

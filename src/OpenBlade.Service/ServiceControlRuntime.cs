@@ -24,6 +24,13 @@ public interface IServiceControlRuntime
         ManualOverride<PerformancePreset>? value,
         CancellationToken token);
 
+    Task<ControlOperationResult> CyclePerformanceShortcutAsync(
+        PerformanceShortcutSource source,
+        CancellationToken token) => Task.FromResult(
+            new ControlOperationResult(
+                ControlOperationStatus.Blocked,
+                "Performance shortcuts are unavailable."));
+
     Task<ControlOperationResult> SetFanOverrideAsync(
         ManualOverride<FanMode>? value,
         CancellationToken token);
@@ -391,6 +398,126 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             value is null
                 ? "Performance override was cleared."
                 : "Performance override intent was stored.");
+
+    public async Task<ControlOperationResult> CyclePerformanceShortcutAsync(
+        PerformanceShortcutSource source,
+        CancellationToken token)
+    {
+        EnsureInitialized();
+        if (!Enum.IsDefined(source))
+        {
+            return RecordRejectedIntent(new ArgumentOutOfRangeException(nameof(source)));
+        }
+
+        await operationGate.WaitAsync(token).ConfigureAwait(false);
+        try
+        {
+            PowerSource powerSource = await ResolveCurrentPowerSourceAsync(token)
+                .ConfigureAwait(false);
+            await RefreshControllerPresenceAndRelinquishIfNewConflictAsync(token)
+                .ConfigureAwait(false);
+            if (powerSource == PowerSource.ExternalUnknown)
+            {
+                return PublishScopedUnavailable(
+                    DeviceSubsystem.Performance,
+                    powerSource,
+                    "The external power adapter could not be classified; the performance shortcut is blocked.");
+            }
+
+            if (Automation.ChangePowerSource(powerSource))
+            {
+                await ApplyFullTransitionAsync(powerSource, token).ConfigureAwait(false);
+            }
+
+            ServiceStatusSnapshot current = GetStatus();
+            if (IsControllerPresenceUnsafe(current)
+                || current.ExternalChanges.Contains(DeviceSubsystem.Performance)
+                || current.ExternalChanges.Contains(DeviceSubsystem.Fans))
+            {
+                const string conflictMessage =
+                    "The performance shortcut is paused while another controller or an external performance change is present.";
+                history.RecordSummary(ControlOperationStatus.Blocked, conflictMessage);
+                PublishIfChanged(current with { Message = conflictMessage });
+                return new ControlOperationResult(
+                    ControlOperationStatus.Blocked,
+                    conflictMessage);
+            }
+
+            IReadOnlyList<PerformancePreset> cycle = PerformanceShortcutCycle(
+                powerSource,
+                current.Capabilities?.PerformancePresets);
+            if (cycle.Count < 2)
+            {
+                const string unavailableMessage =
+                    "No alternate performance preset is available for the current power source.";
+                history.RecordSummary(ControlOperationStatus.Blocked, unavailableMessage);
+                PublishIfChanged(current with { Message = unavailableMessage });
+                return new ControlOperationResult(
+                    ControlOperationStatus.Blocked,
+                    unavailableMessage);
+            }
+
+            PerformancePreset currentPreset = Automation
+                .Resolve(current.ConfirmedState ?? UnknownConfirmedState)
+                .Performance.Value;
+            int currentIndex = -1;
+            for (int index = 0; index < cycle.Count; index++)
+            {
+                if (cycle[index] == currentPreset)
+                {
+                    currentIndex = index;
+                    break;
+                }
+            }
+            PerformancePreset next = cycle[(currentIndex + 1 + cycle.Count) % cycle.Count];
+            var stagedOverride = new ManualOverride<PerformancePreset>(
+                next,
+                OverrideLifetime.UntilPowerSourceChange);
+            try
+            {
+                ValidateThermalOverrideCombination(
+                    stagedOverride,
+                    Automation.FanOverride);
+            }
+            catch (Exception exception) when (IsIntentFailure(exception))
+            {
+                return RecordRejectedIntent(exception);
+            }
+
+            ControlOperationResult result = await ApplyScopedIntentAsync(
+                DeviceSubsystem.Performance,
+                powerSource,
+                (coordinator, desired, cancellationToken) =>
+                    coordinator.ApplyPerformanceOutcomeAsync(
+                        desired.Performance.Value,
+                        cancellationToken),
+                token,
+                desired => desired with
+                {
+                    Performance = new ResolvedSetting<PerformancePreset>(
+                        next,
+                        SettingValueSource.TemporaryOverride),
+                },
+                cancellationToken => SetPerformanceOverrideCoreAsync(
+                    stagedOverride,
+                    cancellationToken)).ConfigureAwait(false);
+            if (result.Status is ControlOperationStatus.Applied or ControlOperationStatus.Stored)
+            {
+                string message = source == PerformanceShortcutSource.DedicatedButton
+                    ? $"The performance button selected {next}."
+                    : $"Fn+P selected {next}.";
+                history.RecordSummary(result.Status, message);
+                PublishIfChanged(GetStatus() with { Message = message });
+                return result with { Message = message };
+            }
+
+            return result;
+        }
+        finally
+        {
+            operationGate.Release();
+        }
+    }
 
     public Task<ControlOperationResult> SetFanOverrideAsync(
         ManualOverride<FanMode>? value,
@@ -2570,6 +2697,33 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
     private static bool IsControllerPresenceUnsafe(ServiceStatusSnapshot status) =>
         status.PotentialControllers.Count > 0
         || !string.IsNullOrWhiteSpace(status.ControllerDetectionWarning);
+
+    private static IReadOnlyList<PerformancePreset> PerformanceShortcutCycle(
+        PowerSource powerSource,
+        IReadOnlySet<PerformancePreset>? admitted)
+    {
+        PerformancePreset[] ordered = powerSource switch
+        {
+            PowerSource.PluggedIn =>
+            [
+                PerformancePreset.Balanced,
+                PerformancePreset.Silent,
+                PerformancePreset.Performance,
+            ],
+            PowerSource.Battery =>
+            [
+                PerformancePreset.BatteryBalanced,
+                PerformancePreset.BatterySaver,
+            ],
+            _ => [],
+        };
+        if (admitted is null || admitted.Count == 0)
+        {
+            return ordered;
+        }
+
+        return ordered.Where(admitted.Contains).ToArray();
+    }
 
     private static bool OwnershipMatches(
         LightingRendererOwnershipState ownership,

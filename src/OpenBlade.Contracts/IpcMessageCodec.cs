@@ -7,7 +7,7 @@ namespace OpenBlade.Contracts;
 
 public static class OpenBladeIpc
 {
-    public const int ProtocolVersion = 11;
+    public const int ProtocolVersion = 12;
     public const int MaximumMessageBytes = 64 * 1024;
     public const int MaximumDiagnosticArchiveBytes = 32 * 1024;
     public const string PipeName = "OpenBlade.Service.v2";
@@ -146,6 +146,7 @@ public static class IpcMessageCodec
             SetPerformanceOverrideRequest set =>
                 set.Value is null
                 || Enum.IsDefined(set.Value.Value) && Enum.IsDefined(set.Value.Lifetime),
+            CyclePerformanceShortcutRequest cycle => Enum.IsDefined(cycle.Source),
             SetFanOverrideRequest set =>
                 set.Value is null
                 || Enum.IsDefined(set.Value.Value) && Enum.IsDefined(set.Value.Lifetime),

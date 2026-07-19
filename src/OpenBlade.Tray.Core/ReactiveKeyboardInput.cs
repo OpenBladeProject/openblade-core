@@ -204,6 +204,74 @@ public static class Rz09_0581ReactiveRawHidInput
     }
 }
 
+/// <summary>
+/// Recognizes only the two performance shortcut report sequences captured from
+/// the RZ09-0581 MI_01 collection. The parser emits a source identity and keeps
+/// no key text, foreground-app, or user activity history.
+/// </summary>
+public static class Rz09_0581PerformanceShortcutRawHidInput
+{
+    private const byte FunctionReportId = 0x04;
+    private const byte KeyboardReportId = 0x01;
+    private const byte FunctionPressedValue = 0x0A;
+    private const byte DedicatedPerformanceValue = 0xD3;
+    private const byte PUsage = 0x13;
+
+    public static bool TryCreateTrigger(
+        ReadOnlySpan<byte> report,
+        ref bool functionKeyPressed,
+        ref bool dedicatedButtonPressed,
+        ref bool functionPPressed,
+        out PerformanceShortcutSource source)
+    {
+        source = default;
+        if (report.Length < 3)
+        {
+            return false;
+        }
+
+        if (report[0] == FunctionReportId)
+        {
+            bool functionNow = report[1] == FunctionPressedValue;
+            bool dedicatedNow = report[1] == DedicatedPerformanceValue
+                || functionNow && report[2] == DedicatedPerformanceValue;
+            bool trigger = dedicatedNow && !dedicatedButtonPressed;
+            dedicatedButtonPressed = dedicatedNow;
+            functionKeyPressed = functionNow;
+            if (!functionNow)
+            {
+                functionPPressed = false;
+            }
+
+            if (trigger)
+            {
+                source = PerformanceShortcutSource.DedicatedButton;
+                return true;
+            }
+
+            return false;
+        }
+
+        if (report[0] != KeyboardReportId)
+        {
+            return false;
+        }
+
+        bool functionPNow = functionKeyPressed
+            && report[1] == 0
+            && report[2] == PUsage;
+        bool functionPTrigger = functionPNow && !functionPPressed;
+        functionPPressed = functionPNow;
+        if (functionPTrigger)
+        {
+            source = PerformanceShortcutSource.FunctionP;
+            return true;
+        }
+
+        return false;
+    }
+}
+
 public static class Rz09_0581ReactiveInputDevice
 {
     public static bool IsTargetPath(string? path) =>

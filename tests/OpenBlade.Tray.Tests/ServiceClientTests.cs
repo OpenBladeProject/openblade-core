@@ -245,6 +245,9 @@ public sealed class ServiceClientTests
             await client.SetPerformanceOverrideAsync(
                 new ManualOverride<PerformancePreset>(PerformancePreset.Performance, OverrideLifetime.Persistent),
                 timeout.Token),
+            await client.CyclePerformanceShortcutAsync(
+                PerformanceShortcutSource.DedicatedButton,
+                timeout.Token),
             await client.SetFanOverrideAsync(
                 new ManualOverride<FanMode>(FanMode.Maximum, OverrideLifetime.UntilPowerSourceChange),
                 timeout.Token),
@@ -266,6 +269,9 @@ public sealed class ServiceClientTests
             observed,
             request => Assert.IsType<UpdateProfilesRequest>(request),
             request => Assert.IsType<SetPerformanceOverrideRequest>(request),
+            request => Assert.Equal(
+                PerformanceShortcutSource.DedicatedButton,
+                Assert.IsType<CyclePerformanceShortcutRequest>(request).Source),
             request => Assert.IsType<SetFanOverrideRequest>(request),
             request => Assert.IsType<SetLightingOverrideRequest>(request),
             request =>
@@ -284,7 +290,7 @@ public sealed class ServiceClientTests
             request => Assert.IsType<SetFullChargeOverrideRequest>(request),
             request => Assert.IsType<ShutdownOpenBladeRequest>(request));
         Assert.All(observed, request => Assert.NotEqual(Guid.Empty, request.RequestId));
-        Assert.Equal(10, observed.Select(request => request.RequestId).Distinct().Count());
+        Assert.Equal(11, observed.Select(request => request.RequestId).Distinct().Count());
     }
 
     [Fact]
@@ -595,7 +601,7 @@ public sealed class ServiceClientTests
         List<ServiceRequest> observed,
         CancellationToken token)
     {
-        for (int index = 0; index < 10; index++)
+        for (int index = 0; index < 11; index++)
         {
             await using NamedPipeServerStream server = CreateServer(pipeName);
             await server.WaitForConnectionAsync(token);

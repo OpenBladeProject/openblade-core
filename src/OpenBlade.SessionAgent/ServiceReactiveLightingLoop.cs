@@ -8,12 +8,17 @@ public interface IReactiveKeyboardSource : IDisposable;
 public interface IReactiveKeyboardSourceFactory
 {
     IReactiveKeyboardSource Create(Action<ReactiveKeyPulse> publish);
+
+    IReactiveKeyboardSource Create(
+        Action<ReactiveKeyPulse> publish,
+        Action<PerformanceShortcutSource> publishPerformanceShortcut) =>
+        Create(publish);
 }
 
 /// <summary>
-/// Owns session-local key observation for Reactive lighting. The SessionAgent
-/// remains running when the visible tray exits, so profile automation does not
-/// lose Reactive key pulses with the UI process.
+/// Owns the one session-local Raw Input registration used by Reactive lighting
+/// and the captured performance shortcuts. The SessionAgent remains running
+/// when the visible tray exits, so neither behavior depends on the UI process.
 /// </summary>
 public sealed class ServiceReactiveLightingLoop : IAsyncDisposable
 {
@@ -22,8 +27,10 @@ public sealed class ServiceReactiveLightingLoop : IAsyncDisposable
     private readonly IServiceClient serviceClient;
     private readonly IReactiveKeyboardSourceFactory sourceFactory;
     private readonly ReactiveKeyPulsePump pulsePump;
+    private readonly PerformanceShortcutTriggerPump shortcutPump;
     private readonly Action<Exception>? errorHandler;
     private IReactiveKeyboardSource? source;
+    private int reactiveActive;
     private int disposed;
 
     public ServiceReactiveLightingLoop(
@@ -35,6 +42,9 @@ public sealed class ServiceReactiveLightingLoop : IAsyncDisposable
         this.sourceFactory = sourceFactory ?? throw new ArgumentNullException(nameof(sourceFactory));
         this.errorHandler = errorHandler;
         pulsePump = new ReactiveKeyPulsePump(SendPulseAsync, errorHandler: ReportFailure);
+        shortcutPump = new PerformanceShortcutTriggerPump(
+            SendPerformanceShortcutAsync,
+            errorHandler: ReportFailure);
     }
 
     public async Task RunAsync(CancellationToken cancellationToken)
@@ -54,12 +64,13 @@ public sealed class ServiceReactiveLightingLoop : IAsyncDisposable
                         switch (update)
                         {
                             case ServiceWatchUpdate.Connected connected:
-                                SetReactiveActive(
-                                    connected.Status.LightingRendererOwnership ==
-                                    LightingRendererOwnershipState.Reactive);
+                                SetInputState(
+                                    connected: true,
+                                    reactive: connected.Status.LightingRendererOwnership ==
+                                        LightingRendererOwnershipState.Reactive);
                                 break;
                             case ServiceWatchUpdate.Reconnecting:
-                                SetReactiveActive(false);
+                                SetInputState(connected: false, reactive: false);
                                 break;
                         }
                     }
@@ -70,7 +81,7 @@ public sealed class ServiceReactiveLightingLoop : IAsyncDisposable
                 }
                 catch (Exception exception)
                 {
-                    SetReactiveActive(false);
+                    SetInputState(connected: false, reactive: false);
                     ReportFailure(exception);
                     await Task.Delay(FailureRetryDelay, cancellationToken).ConfigureAwait(false);
                 }
@@ -78,7 +89,7 @@ public sealed class ServiceReactiveLightingLoop : IAsyncDisposable
         }
         finally
         {
-            SetReactiveActive(false);
+            SetInputState(connected: false, reactive: false);
         }
     }
 
@@ -89,17 +100,25 @@ public sealed class ServiceReactiveLightingLoop : IAsyncDisposable
             return;
         }
 
-        SetReactiveActive(false);
+        SetInputState(connected: false, reactive: false);
         await pulsePump.DisposeAsync().ConfigureAwait(false);
+        await shortcutPump.DisposeAsync().ConfigureAwait(false);
     }
 
-    private void SetReactiveActive(bool active)
+    private void SetInputState(bool connected, bool reactive)
     {
-        if (!active || Volatile.Read(ref disposed) != 0)
+        Interlocked.Exchange(ref reactiveActive, reactive ? 1 : 0);
+        if (!reactive)
+        {
+            pulsePump.ClearPending();
+        }
+
+        if (!connected || Volatile.Read(ref disposed) != 0)
         {
             IReactiveKeyboardSource? previous = Interlocked.Exchange(ref source, null);
             previous?.Dispose();
             pulsePump.ClearPending();
+            shortcutPump.ClearPending();
             return;
         }
 
@@ -110,14 +129,24 @@ public sealed class ServiceReactiveLightingLoop : IAsyncDisposable
 
         try
         {
-            IReactiveKeyboardSource created = sourceFactory.Create(pulse =>
-            {
-                if (!pulsePump.TryEnqueue(pulse))
+            IReactiveKeyboardSource created = sourceFactory.Create(
+                pulse =>
                 {
-                    ReportFailure(new InvalidOperationException(
-                        "Reactive keyboard input could not keep up and skipped a key press."));
-                }
-            });
+                    if (Volatile.Read(ref reactiveActive) != 0
+                        && !pulsePump.TryEnqueue(pulse))
+                    {
+                        ReportFailure(new InvalidOperationException(
+                            "Reactive keyboard input could not keep up and skipped a key press."));
+                    }
+                },
+                shortcut =>
+                {
+                    if (!shortcutPump.TryEnqueue(shortcut))
+                    {
+                        ReportFailure(new InvalidOperationException(
+                            "Performance shortcut input could not keep up and skipped a button press."));
+                    }
+                });
             if (Volatile.Read(ref disposed) != 0
                 || Interlocked.CompareExchange(ref source, created, null) is not null)
             {
@@ -138,6 +167,19 @@ public sealed class ServiceReactiveLightingLoop : IAsyncDisposable
             .PulseReactiveKeyAsync(pulse, cancellationToken)
             .ConfigureAwait(false);
         if (result.Status != ControlOperationStatus.Applied)
+        {
+            throw new InvalidOperationException(result.Message);
+        }
+    }
+
+    private async Task SendPerformanceShortcutAsync(
+        PerformanceShortcutSource source,
+        CancellationToken cancellationToken)
+    {
+        ControlOperationResult result = await serviceClient
+            .CyclePerformanceShortcutAsync(source, cancellationToken)
+            .ConfigureAwait(false);
+        if (result.Status == ControlOperationStatus.Failed)
         {
             throw new InvalidOperationException(result.Message);
         }

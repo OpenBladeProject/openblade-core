@@ -17,14 +17,19 @@ internal sealed class WindowsReactiveKeyboardSourceFactory : IReactiveKeyboardSo
     }
 
     public IReactiveKeyboardSource Create(Action<ReactiveKeyPulse> publish) =>
-        new WindowsReactiveKeyboardSource(publish);
+        new WindowsReactiveKeyboardSource(publish, _ => { });
+
+    public IReactiveKeyboardSource Create(
+        Action<ReactiveKeyPulse> publish,
+        Action<PerformanceShortcutSource> publishPerformanceShortcut) =>
+        new WindowsReactiveKeyboardSource(publish, publishPerformanceShortcut);
 }
 
 /// <summary>
-/// Session-local, message-only Raw Input window for Reactive lighting. It is
-/// created only while the service reports ownership of a Reactive renderer.
-/// The callback emits anonymous matrix slots and never translated text,
-/// virtual-key values, window titles, or foreground-process information.
+/// Session-local, message-only Raw Input window shared by Reactive lighting and
+/// the two captured performance shortcuts. The callbacks emit only anonymous
+/// matrix slots or a typed shortcut source, never translated text, virtual-key
+/// values, window titles, or foreground-process information.
 /// </summary>
 internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
 {
@@ -47,6 +52,7 @@ internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
     private static readonly WindowProcedure WindowProcedureCallback = ProcessWindowMessage;
 
     private readonly Action<ReactiveKeyPulse> publish;
+    private readonly Action<PerformanceShortcutSource> publishPerformanceShortcut;
     private readonly string windowClassName = $"OpenBlade.Reactive.{Guid.NewGuid():N}";
     private readonly TaskCompletionSource initialization =
         new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -55,11 +61,18 @@ internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
     private nint windowHandle;
     private uint messageThreadId;
     private bool functionKeyPressed;
+    private bool performanceFunctionKeyPressed;
+    private bool dedicatedPerformanceButtonPressed;
+    private bool functionPPressed;
     private int disposed;
 
-    internal WindowsReactiveKeyboardSource(Action<ReactiveKeyPulse> publish)
+    internal WindowsReactiveKeyboardSource(
+        Action<ReactiveKeyPulse> publish,
+        Action<PerformanceShortcutSource> publishPerformanceShortcut)
     {
         this.publish = publish ?? throw new ArgumentNullException(nameof(publish));
+        this.publishPerformanceShortcut = publishPerformanceShortcut
+            ?? throw new ArgumentNullException(nameof(publishPerformanceShortcut));
         messageThread = new Thread(RunMessageWindow)
         {
             IsBackground = true,
@@ -366,6 +379,15 @@ internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
                 report,
                 0,
                 report.Length);
+            if (Rz09_0581PerformanceShortcutRawHidInput.TryCreateTrigger(
+                report,
+                ref performanceFunctionKeyPressed,
+                ref dedicatedPerformanceButtonPressed,
+                ref functionPPressed,
+                out PerformanceShortcutSource shortcut))
+            {
+                publishPerformanceShortcut(shortcut);
+            }
             if (Rz09_0581ReactiveRawHidInput.TryCreatePulse(
                 report,
                 ref functionKeyPressed,

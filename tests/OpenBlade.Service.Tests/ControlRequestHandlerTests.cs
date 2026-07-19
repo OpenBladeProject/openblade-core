@@ -17,6 +17,10 @@ public sealed class ControlRequestHandlerTests
             new UpdateProfilesRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid(), profiles),
             new SetPerformanceOverrideRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid(),
                 new ManualOverride<PerformancePreset>(PerformancePreset.Silent, OverrideLifetime.Persistent)),
+            new CyclePerformanceShortcutRequest(
+                OpenBladeIpc.ProtocolVersion,
+                Guid.NewGuid(),
+                PerformanceShortcutSource.FunctionP),
             new SetFanOverrideRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid(),
                 new ManualOverride<FanMode>(FanMode.Maximum, OverrideLifetime.UntilPowerSourceChange)),
             new SetLightingOverrideRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid(), null),
@@ -47,7 +51,7 @@ public sealed class ControlRequestHandlerTests
         string[] expectedCalls =
         [
             "GetStatus", "GetStatus", "UpdateProfiles", "SetPerformanceOverride",
-            "SetFanOverride", "SetLightingOverride", "SetLightingSuppression",
+            "CyclePerformanceShortcut", "SetFanOverride", "SetLightingOverride", "SetLightingSuppression",
             "PulseReactiveKey", "SetBatteryPolicy",
             "SetBatteryProtection", "SetFullChargeOverride", "ExportDiagnostics", "Shutdown",
         ];
@@ -225,6 +229,14 @@ public sealed class ControlRequestHandlerTests
 
         public Task<ControlOperationResult> SetPerformanceOverrideAsync(ManualOverride<PerformancePreset>? value, CancellationToken token) =>
             Record("SetPerformanceOverride");
+
+        public Task<ControlOperationResult> CyclePerformanceShortcutAsync(
+            PerformanceShortcutSource source,
+            CancellationToken token)
+        {
+            Assert.Equal(PerformanceShortcutSource.FunctionP, source);
+            return Record("CyclePerformanceShortcut");
+        }
 
         public Task<ControlOperationResult> SetFanOverrideAsync(ManualOverride<FanMode>? value, CancellationToken token) =>
             Record("SetFanOverride");

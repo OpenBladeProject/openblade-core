@@ -19,6 +19,7 @@ public sealed record ControlOperationResult(ControlOperationStatus Status, strin
 [JsonDerivedType(typeof(ExportDiagnosticsRequest), "exportDiagnostics")]
 [JsonDerivedType(typeof(UpdateProfilesRequest), "updateProfiles")]
 [JsonDerivedType(typeof(SetPerformanceOverrideRequest), "setPerformanceOverride")]
+[JsonDerivedType(typeof(CyclePerformanceShortcutRequest), "cyclePerformanceShortcut")]
 [JsonDerivedType(typeof(SetFanOverrideRequest), "setFanOverride")]
 [JsonDerivedType(typeof(SetLightingOverrideRequest), "setLightingOverride")]
 [JsonDerivedType(typeof(SetLightingSuppressionRequest), "setLightingSuppression")]
@@ -54,6 +55,12 @@ public sealed record SetPerformanceOverrideRequest(
     int Version,
     Guid RequestId,
     ManualOverride<PerformancePreset>? Value)
+    : ServiceRequest(Version, RequestId);
+
+public sealed record CyclePerformanceShortcutRequest(
+    int Version,
+    Guid RequestId,
+    PerformanceShortcutSource Source)
     : ServiceRequest(Version, RequestId);
 
 public sealed record SetFanOverrideRequest(

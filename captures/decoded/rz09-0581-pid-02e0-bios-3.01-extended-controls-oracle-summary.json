@@ -230,7 +230,14 @@
       "gpu": "High"
     },
     "interpretation": "SynapseHandlesDistinctInputReportsAndAppliesTheSameModeCycle",
-    "openBladeShortcutHookImplemented": false
+    "openBladeShortcutHookImplemented": true,
+    "openBladeCycles": {
+      "pluggedIn": ["Balanced", "Silent", "Performance"],
+      "battery": ["BatteryBalanced", "BatterySaver"],
+      "usbC": ["Balanced"],
+      "customExcludedPendingGpuReadback": true,
+      "blockedDuringControllerConflictOrExternalThermalDrift": true
+    }
   },
   "validationBoundary": {
     "rawCommandsExposed": false,
