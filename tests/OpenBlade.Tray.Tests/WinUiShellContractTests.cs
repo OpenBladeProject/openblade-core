@@ -322,6 +322,8 @@ public sealed class WinUiShellContractTests
         Assert.Contains("ViewModel.PropertyChanged += OnViewModelPropertyChanged", source, StringComparison.Ordinal);
         Assert.Contains("ViewModel.PropertyChanged -= OnViewModelPropertyChanged", source, StringComparison.Ordinal);
         Assert.Contains("preferenceSaveQueue.Enqueue", source, StringComparison.Ordinal);
+        Assert.Contains("StartMinimized = preferences.StartMinimized", source, StringComparison.Ordinal);
+        Assert.Contains("StartMinimizedToggle.IsOn = StartMinimized", source, StringComparison.Ordinal);
         Assert.Contains("await preferenceSaveQueue.DisposeAsync()", source, StringComparison.Ordinal);
 
         int load = source.IndexOf("await preferenceStore.LoadAsync", StringComparison.Ordinal);
@@ -376,7 +378,9 @@ public sealed class WinUiShellContractTests
         int exitLifecycle = app.IndexOf("exitLifecycle = new TrayExitLifecycle", StringComparison.Ordinal);
         int setupShutdown = app.IndexOf("shutdownRegistration =", StringComparison.Ordinal);
         int trayIcon = app.IndexOf("trayIconHost =", StringComparison.Ordinal);
-        int initialShow = app.LastIndexOf("ShowMainWindow();", StringComparison.Ordinal);
+        int initialShow = app.LastIndexOf(
+            "ShowMainWindow(initialLaunch: true);",
+            StringComparison.Ordinal);
         Assert.True(exitLifecycle >= 0 && exitLifecycle < initializationAwait);
         Assert.True(setupShutdown >= 0 && setupShutdown < initializationAwait);
         Assert.True(trayIcon >= 0 && trayIcon < initializationAwait);
@@ -384,6 +388,14 @@ public sealed class WinUiShellContractTests
         Assert.True(setupShutdown < initialShow);
         Assert.True(trayIcon < initialShow);
         Assert.Contains("exitLifecycle.TryRunWhileActive", app, StringComparison.Ordinal);
+        Assert.Contains(
+            "initialLaunch && mainWindow?.StartMinimized == true",
+            app,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "ShowMainWindowWhenReadyAsync(initialLaunch: false)",
+            app,
+            StringComparison.Ordinal);
     }
 
     [Fact]

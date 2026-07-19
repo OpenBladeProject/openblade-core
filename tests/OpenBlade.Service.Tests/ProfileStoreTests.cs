@@ -141,6 +141,46 @@ public sealed class ProfileStoreTests : IDisposable
     }
 
     [Fact]
+    public async Task Load_CurrentSchemaNonOffZeroBrightnessMigratesToVisibleSetting()
+    {
+        Directory.CreateDirectory(_directory);
+        string path = Path.Combine(_directory, "profiles.json");
+        ProfileSet defaults = ProfileDefaults.CreateSafeDefaults();
+        ProfileSet legacy = defaults with
+        {
+            PluggedIn = defaults.PluggedIn with
+            {
+                Lighting = LightingSettingsFactory.BreathingSingle(default, 0),
+            },
+        };
+        byte[] json = JsonSerializer.SerializeToUtf8Bytes(
+            new ProfileDocument(ProfileStore.CurrentSchemaVersion, legacy),
+            ProfileStore.SerializerOptions);
+        await File.WriteAllBytesAsync(path, json);
+
+        DeviceCapabilities capabilities = DeviceCapabilities.Unavailable() with
+        {
+            LightingEffects = new HashSet<LightingEffect>
+            {
+                LightingEffect.Off,
+                LightingEffect.Breathing,
+            },
+        };
+        ProfileLoadResult result = await new ProfileStore(
+            path,
+            ProfileSetValidator.CreateForLightingCapabilities(capabilities))
+            .LoadAsync(CancellationToken.None);
+
+        Assert.False(result.RecoveredFromInvalidFile);
+        Assert.Equal(
+            LightingSettingsFactory.DefaultVisibleBrightness,
+            result.Profiles.PluggedIn.Lighting.Brightness);
+        Assert.Equal(
+            LightingSettingsFactory.DefaultVisibleColor,
+            result.Profiles.PluggedIn.Lighting.Color);
+    }
+
+    [Fact]
     public async Task Load_CurrentSchemaWithoutDisplaySettingsNormalizesAndRewritesProfiles()
     {
         Directory.CreateDirectory(_directory);

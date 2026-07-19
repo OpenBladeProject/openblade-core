@@ -44,6 +44,9 @@ public sealed record ReactiveLightingParameters(
 
 public static class LightingSettingsFactory
 {
+    public const byte DefaultVisibleBrightness = 100;
+    public static RgbColor DefaultVisibleColor { get; } = new(0, 170, 255);
+
     public static LightingSettings Off() => new(
         LightingEffect.Off,
         default,
@@ -127,6 +130,59 @@ public static class LightingSettingsFactory
                 ? Off()
                 : settings;
     }
+
+    public static LightingSettings NormalizeLegacyInvisibleEffect(
+        LightingSettings settings)
+    {
+        settings = NormalizeLegacyOff(settings);
+        if (settings.Effect == LightingEffect.Off || settings.Brightness != 0)
+        {
+            return settings;
+        }
+
+        RgbColor visibleColor = settings.Color == default
+            ? DefaultVisibleColor
+            : settings.Color;
+        return settings.Parameters switch
+        {
+            StaticLightingParameters => Static(visibleColor, DefaultVisibleBrightness),
+            SpectrumCyclingLightingParameters => SpectrumCycling(DefaultVisibleBrightness),
+            BreathingLightingParameters
+            {
+                ColorMode: BreathingColorMode.Single,
+            } => BreathingSingle(visibleColor, DefaultVisibleBrightness),
+            BreathingLightingParameters
+            {
+                ColorMode: BreathingColorMode.Dual,
+                SecondaryColor: { } secondary,
+            } => BreathingDual(
+                visibleColor,
+                secondary == default ? new RgbColor(255, 0, 170) : secondary,
+                DefaultVisibleBrightness),
+            BreathingLightingParameters
+            {
+                ColorMode: BreathingColorMode.Random,
+            } => BreathingRandom(DefaultVisibleBrightness),
+            ReactiveLightingParameters reactive => Reactive(
+                visibleColor,
+                DefaultVisibleBrightness,
+                reactive.Duration),
+            null => settings.Effect switch
+            {
+                LightingEffect.Static => Static(visibleColor, DefaultVisibleBrightness),
+                LightingEffect.Spectrum => SpectrumCycling(DefaultVisibleBrightness),
+                LightingEffect.Breathing => BreathingSingle(
+                    visibleColor,
+                    DefaultVisibleBrightness),
+                LightingEffect.Reactive => Reactive(
+                    visibleColor,
+                    DefaultVisibleBrightness,
+                    ReactiveLightingDuration.Medium),
+                _ => settings,
+            },
+            _ => settings,
+        };
+    }
 }
 
 public static class LightingSettingsValidation
@@ -135,7 +191,8 @@ public static class LightingSettingsValidation
     {
         if (settings is null
             || !Enum.IsDefined(settings.Effect)
-            || settings.Brightness > 100)
+            || settings.Brightness > 100
+            || (settings.Effect != LightingEffect.Off && settings.Brightness == 0))
         {
             return false;
         }

@@ -177,7 +177,7 @@ public sealed class CapabilityPresentationTests
             settings.Descendants().Count(element =>
                 Attribute(element, "Style") == "{StaticResource SettingsGroupStyle}"));
         Assert.Equal(
-            3,
+            4,
             settings.Descendants().Count(element =>
                 Attribute(element, "Style") == "{StaticResource SettingsRowStyle}"));
         Assert.Equal(
@@ -270,10 +270,21 @@ public sealed class CapabilityPresentationTests
                 == "Start OpenBlade when I sign in");
         Assert.Equal("OnStartAtSignInToggled", Attribute(startAtSignIn, "Toggled"));
         Assert.Contains("ViewModel.StartupDescription", xaml, StringComparison.Ordinal);
+        XElement startMinimized = Assert.Single(settings.Descendants(), element =>
+            element.Name.LocalName == "ToggleSwitch"
+            && Attribute(element, "AutomationProperties.Name")
+                == "Start OpenBlade minimized");
+        Assert.Equal("OnStartMinimizedToggled", Attribute(startMinimized, "Toggled"));
+        Assert.Contains(
+            "Open in the notification area without showing the window.",
+            xaml,
+            StringComparison.Ordinal);
 
-        Assert.Single(document.Descendants(), element => element.Name.LocalName == "Flyout");
         XElement warningIndicator = Assert.Single(document.Descendants(), element =>
             Attribute(element, "AutomationProperties.Name") == "Show warning details");
+        Assert.Single(
+            warningIndicator.Descendants(),
+            element => element.Name.LocalName == "Flyout");
         Assert.Equal(
             "{StaticResource StatusPillButtonStyle}",
             Attribute(warningIndicator, "Style"));
@@ -290,6 +301,17 @@ public sealed class CapabilityPresentationTests
         Assert.Equal(
             "{StaticResource StatusPillTextStyle}",
             Attribute(warningLabel, "Style"));
+        XElement warningDot = Assert.Single(
+            warningIndicator.Descendants(),
+            element => element.Name.LocalName == "Ellipse");
+        Assert.Equal("8", Attribute(warningDot, "Width"));
+        Assert.Contains(
+            "SystemFillColorCautionBrush",
+            Attribute(warningDot, "Fill") ?? string.Empty,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            warningIndicator.Descendants(),
+            element => element.Name.LocalName == "FontIcon");
         XElement readinessBadge = NamedElement(document, "Button", "ProfileStateBadge");
         XElement readinessLabel = Assert.Single(readinessBadge.Descendants(), element =>
             element.Name.LocalName == "TextBlock"
@@ -1180,6 +1202,23 @@ public sealed class CapabilityPresentationTests
         string lightingXaml = page.ToString();
         Assert.Contains("Breathing colors", lightingXaml, StringComparison.Ordinal);
         Assert.Contains("Reactive duration", lightingXaml, StringComparison.Ordinal);
+        XElement[] colorPickers = page.Descendants()
+            .Where(element => element.Name.LocalName == "ColorPicker")
+            .ToArray();
+        Assert.Equal(2, colorPickers.Length);
+        Assert.All(colorPickers, picker =>
+        {
+            Assert.Equal("False", Attribute(picker, "IsAlphaEnabled"));
+            Assert.Equal("False", Attribute(picker, "IsColorChannelTextInputVisible"));
+            Assert.Equal("False", Attribute(picker, "IsHexInputVisible"));
+        });
+        Assert.Equal(
+            2,
+            page.Descendants().Count(element =>
+                element.Name.LocalName == "Expander"
+                && Attribute(element, "Header") == "Advanced RGB values"));
+        Assert.Contains("LightingPrimaryColorEditor", lightingXaml, StringComparison.Ordinal);
+        Assert.Contains("LightingSecondaryColorEditor", lightingXaml, StringComparison.Ordinal);
         Assert.DoesNotContain("Ambient", lightingXaml, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("Audio", lightingXaml, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("Fire", lightingXaml, StringComparison.OrdinalIgnoreCase);

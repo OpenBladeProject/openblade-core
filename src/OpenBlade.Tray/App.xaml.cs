@@ -117,7 +117,7 @@ public partial class App : Microsoft.UI.Xaml.Application
             trayMenuController,
             mainWindow.ViewModel,
             mainWindow);
-        ShowMainWindow();
+        ShowMainWindow(initialLaunch: true);
     }
 
     public Task ExitTrayAsync()
@@ -130,9 +130,12 @@ public partial class App : Microsoft.UI.Xaml.Application
         return exitLifecycle.ExitAsync();
     }
 
-    private void ShowMainWindow() => _ = ShowMainWindowWhenReadyAsync();
+    private void ShowMainWindow() => _ = ShowMainWindowWhenReadyAsync(initialLaunch: false);
 
-    private async Task ShowMainWindowWhenReadyAsync()
+    private void ShowMainWindow(bool initialLaunch) =>
+        _ = ShowMainWindowWhenReadyAsync(initialLaunch);
+
+    private async Task ShowMainWindowWhenReadyAsync(bool initialLaunch)
     {
         try
         {
@@ -146,6 +149,11 @@ public partial class App : Microsoft.UI.Xaml.Application
         }
 
         if (exitLifecycle is null)
+        {
+            return;
+        }
+
+        if (initialLaunch && mainWindow?.StartMinimized == true)
         {
             return;
         }

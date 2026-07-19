@@ -177,9 +177,11 @@ public sealed class ProfileSetValidator(ProfileValidationPolicy policy)
             throw Invalid($"The {name} lighting effect is not supported by the active validation policy.");
         }
 
-        if (lighting.Brightness > 100)
+        if (lighting.Brightness > 100
+            || (lighting.Effect != LightingEffect.Off && lighting.Brightness == 0))
         {
-            throw Invalid($"The {name} lighting brightness must be between 0 and 100 percent.");
+            throw Invalid(
+                $"The {name} lighting brightness must be between 1 and 100 percent when lighting is on.");
         }
 
         bool consumesColor = lighting.Effect is

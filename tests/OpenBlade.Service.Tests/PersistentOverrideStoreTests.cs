@@ -83,6 +83,26 @@ public sealed class PersistentOverrideStoreTests : IDisposable
         Assert.IsType<OffLightingParameters>(loaded.Overrides.Lighting?.Parameters);
     }
 
+    [Fact]
+    public async Task Save_NonOffZeroBrightnessMigratesToVisibleSetting()
+    {
+        PersistentOverrideStore store = CreateStore();
+        var legacy = new PersistentOverrideState(
+            null,
+            null,
+            LightingSettingsFactory.BreathingSingle(default, 0));
+
+        await store.SaveAsync(legacy, CancellationToken.None);
+        PersistentOverrideLoadResult loaded = await store.LoadAsync(CancellationToken.None);
+
+        Assert.Equal(
+            LightingSettingsFactory.DefaultVisibleBrightness,
+            loaded.Overrides.Lighting?.Brightness);
+        Assert.Equal(
+            LightingSettingsFactory.DefaultVisibleColor,
+            loaded.Overrides.Lighting?.Color);
+    }
+
     public void Dispose()
     {
         if (Directory.Exists(directory))

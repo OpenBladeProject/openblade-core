@@ -102,6 +102,8 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, ITrayIconThem
 
     public DisplaySettingsViewModel DisplayViewModel { get; }
 
+    public bool StartMinimized { get; private set; }
+
     public event EventHandler? TrayIconThemeChanged;
 
     public bool UseLightTrayIconGlyphs => Root.ActualTheme == ElementTheme.Dark;
@@ -180,6 +182,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, ITrayIconThem
             initialTheme = preferences.Theme;
             liveReadingsRefreshCadence = preferences.EffectiveLiveReadingsCadence;
             trayHoverLabelMode = preferences.TrayHoverLabelMode;
+            StartMinimized = preferences.StartMinimized;
         }
         catch (Exception exception)
         {
@@ -196,6 +199,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, ITrayIconThem
         ViewModel.Theme = initialTheme;
         ViewModel.LiveReadingsRefreshCadence = liveReadingsRefreshCadence;
         ViewModel.TrayHoverLabelMode = trayHoverLabelMode;
+        StartMinimizedToggle.IsOn = StartMinimized;
         try
         {
             ApplyTheme(ViewModel.Theme);
@@ -338,7 +342,8 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, ITrayIconThem
                 ViewModel.Theme,
                 ViewModel.LiveReadingsEnabled,
                 ViewModel.TrayHoverLabelMode,
-                ViewModel.LiveReadingsRefreshCadence));
+                ViewModel.LiveReadingsRefreshCadence,
+                StartMinimized));
         }
         catch (ObjectDisposedException)
         {
@@ -430,6 +435,19 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, ITrayIconThem
             toggle.IsOn = ViewModel.StartAtSignIn;
             toggle.IsEnabled = true;
         }
+    }
+
+    private void OnStartMinimizedToggled(object sender, RoutedEventArgs args)
+    {
+        if (sender is not ToggleSwitch toggle
+            || Volatile.Read(ref disposed) != 0
+            || toggle.IsOn == StartMinimized)
+        {
+            return;
+        }
+
+        StartMinimized = toggle.IsOn;
+        QueuePreferenceSave();
     }
 
     private async void OnDashboardPerformanceChanged(

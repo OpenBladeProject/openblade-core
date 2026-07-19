@@ -970,7 +970,11 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
                 PerformanceOverride,
                 PerformancePresetPresentation.Label);
             AddOverrideStatus(active, "Fans", FanOverride);
-            AddOverrideStatus(active, "Lighting", LightingOverride);
+            AddOverrideStatus(
+                active,
+                "Lighting",
+                LightingOverride,
+                FormatLightingProfile);
             return active.Count == 0
                 ? "No manual overrides active."
                 : string.Join(" | ", active);
@@ -994,7 +998,11 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             AddOverrideStatus(active, "Fans", FanOverride);
             if (IsLightingVisible)
             {
-                AddOverrideStatus(active, "Keyboard lighting", LightingOverride);
+                AddOverrideStatus(
+                    active,
+                    "Keyboard lighting",
+                    LightingOverride,
+                    FormatLightingProfile);
             }
             return string.Join(" · ", active);
         }
@@ -1228,11 +1236,14 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         get => lightingEffectEditor;
         set
         {
+            LightingEffect previous = lightingEffectEditor;
             if (!Enum.IsDefined(value)
                 || !SetLightingEditorField(ref lightingEffectEditor, value))
             {
                 return;
             }
+
+            SeedVisibleLightingDefaults(previous, value);
 
             NotifyLightingParameterPresentation();
             PropertyChanged?.Invoke(
@@ -1268,37 +1279,103 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     public int LightingRedEditor
     {
         get => lightingRedEditor;
-        set => SetLightingColorField(ref lightingRedEditor, value);
+        set
+        {
+            if (SetLightingColorField(ref lightingRedEditor, value))
+            {
+                PropertyChanged?.Invoke(
+                    this,
+                    new PropertyChangedEventArgs(nameof(LightingPrimaryColorEditor)));
+            }
+        }
     }
 
     public int LightingGreenEditor
     {
         get => lightingGreenEditor;
-        set => SetLightingColorField(ref lightingGreenEditor, value);
+        set
+        {
+            if (SetLightingColorField(ref lightingGreenEditor, value))
+            {
+                PropertyChanged?.Invoke(
+                    this,
+                    new PropertyChangedEventArgs(nameof(LightingPrimaryColorEditor)));
+            }
+        }
     }
 
     public int LightingBlueEditor
     {
         get => lightingBlueEditor;
-        set => SetLightingColorField(ref lightingBlueEditor, value);
+        set
+        {
+            if (SetLightingColorField(ref lightingBlueEditor, value))
+            {
+                PropertyChanged?.Invoke(
+                    this,
+                    new PropertyChangedEventArgs(nameof(LightingPrimaryColorEditor)));
+            }
+        }
+    }
+
+    public RgbColor LightingPrimaryColorEditor
+    {
+        get => new(
+            (byte)LightingRedEditor,
+            (byte)LightingGreenEditor,
+            (byte)LightingBlueEditor);
+        set => SetLightingColorEditor(value, secondary: false);
     }
 
     public int LightingSecondaryRedEditor
     {
         get => lightingSecondaryRedEditor;
-        set => SetLightingColorField(ref lightingSecondaryRedEditor, value);
+        set
+        {
+            if (SetLightingColorField(ref lightingSecondaryRedEditor, value))
+            {
+                PropertyChanged?.Invoke(
+                    this,
+                    new PropertyChangedEventArgs(nameof(LightingSecondaryColorEditor)));
+            }
+        }
     }
 
     public int LightingSecondaryGreenEditor
     {
         get => lightingSecondaryGreenEditor;
-        set => SetLightingColorField(ref lightingSecondaryGreenEditor, value);
+        set
+        {
+            if (SetLightingColorField(ref lightingSecondaryGreenEditor, value))
+            {
+                PropertyChanged?.Invoke(
+                    this,
+                    new PropertyChangedEventArgs(nameof(LightingSecondaryColorEditor)));
+            }
+        }
     }
 
     public int LightingSecondaryBlueEditor
     {
         get => lightingSecondaryBlueEditor;
-        set => SetLightingColorField(ref lightingSecondaryBlueEditor, value);
+        set
+        {
+            if (SetLightingColorField(ref lightingSecondaryBlueEditor, value))
+            {
+                PropertyChanged?.Invoke(
+                    this,
+                    new PropertyChangedEventArgs(nameof(LightingSecondaryColorEditor)));
+            }
+        }
+    }
+
+    public RgbColor LightingSecondaryColorEditor
+    {
+        get => new(
+            (byte)LightingSecondaryRedEditor,
+            (byte)LightingSecondaryGreenEditor,
+            (byte)LightingSecondaryBlueEditor);
+        set => SetLightingColorEditor(value, secondary: true);
     }
 
     public IReadOnlyList<BreathingColorMode> LightingBreathingColorModes { get; } =
@@ -1314,6 +1391,8 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             {
                 return;
             }
+
+            SeedBreathingColorDefaults(value);
 
             NotifyLightingParameterPresentation();
         }
@@ -1897,8 +1976,8 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             ChargeLimitOptions = chargeLimits;
         }
         ConfirmedDeviceState? confirmed = status.ConfirmedState;
-        SelectedPerformance = confirmed?.Performance ?? status.DesiredState.Performance.Value;
-        SelectedFanMode = confirmed?.Fans ?? status.DesiredState.Fans.Value;
+        SelectedPerformance = ResolvePresentedPerformance(status, confirmed, capabilities);
+        SelectedFanMode = ResolvePresentedFanMode(status, confirmed, capabilities);
         PrepareLightingEditorForPowerSource(status.ActivePowerSource);
         SelectedLighting = confirmed?.Lighting ?? status.DesiredState.Lighting.Value;
         if (!lightingEditorDirty)
@@ -2522,7 +2601,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         CancellationToken token)
     {
         bool restored = true;
-        if (activeProfileDraftPerformance is not null || PerformanceOverride is not null)
+        if (activeProfileDraftPerformance is not null)
         {
             restored &= await RunOperationAsync(
                 cancellationToken => serviceClient.SetPerformanceOverrideAsync(
@@ -2530,7 +2609,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
                     cancellationToken),
                 token);
         }
-        if (activeProfileDraftFans is not null || FanOverride is not null)
+        if (activeProfileDraftFans is not null)
         {
             restored &= await RunOperationAsync(
                 cancellationToken => serviceClient.SetFanOverrideAsync(
@@ -2538,7 +2617,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
                     cancellationToken),
                 token);
         }
-        if (activeProfileDraftLighting is not null || LightingOverride is not null)
+        if (activeProfileDraftLighting is not null)
         {
             restored &= await RunOperationAsync(
                 cancellationToken => serviceClient.SetLightingOverrideAsync(
@@ -2820,6 +2899,12 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             ref lightingSecondaryBlueEditor,
             (int)secondaryColor.Blue,
             nameof(LightingSecondaryBlueEditor));
+        PropertyChanged?.Invoke(
+            this,
+            new PropertyChangedEventArgs(nameof(LightingPrimaryColorEditor)));
+        PropertyChanged?.Invoke(
+            this,
+            new PropertyChangedEventArgs(nameof(LightingSecondaryColorEditor)));
         BreathingColorMode breathingColorMode =
             value.Parameters is BreathingLightingParameters breathing
                 ? breathing.ColorMode
@@ -3229,29 +3314,77 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         };
     }
 
-    private LightingSettings CreateLightingChoice(LightingEffect effect)
+    private void SeedVisibleLightingDefaults(
+        LightingEffect previous,
+        LightingEffect selected)
     {
-        if (effect == LightingEffect.Off)
+        if (selected == LightingEffect.Off)
         {
-            return LightingSettingsFactory.Off();
+            return;
         }
 
-        bool usesColor = effect is LightingEffect.Static
+        if (previous == LightingEffect.Off && LightingBrightnessEditor == 0)
+        {
+            SetLightingEditorField(
+                ref lightingBrightnessEditor,
+                (int)LightingSettingsFactory.DefaultVisibleBrightness);
+        }
+
+        bool selectedUsesColor = selected is LightingEffect.Static
             or LightingEffect.Breathing
             or LightingEffect.Reactive;
-        RgbColor color = usesColor
-            ? SelectedLighting.Color == default
-                ? new RgbColor(0, 170, 255)
-                : SelectedLighting.Color
-            : default;
+        bool previousHadNoEditableColor = previous is LightingEffect.Off
+            or LightingEffect.Spectrum
+            || (previous == LightingEffect.Breathing
+                && LightingBreathingColorModeEditor == BreathingColorMode.Random);
+        if (selectedUsesColor
+            && previousHadNoEditableColor
+            && LightingPrimaryColorEditor == default)
+        {
+            SetLightingColorEditor(
+                LightingSettingsFactory.DefaultVisibleColor,
+                secondary: false);
+        }
+
+        if (selected == LightingEffect.Breathing)
+        {
+            SeedBreathingColorDefaults(LightingBreathingColorModeEditor);
+        }
+    }
+
+    private void SeedBreathingColorDefaults(BreathingColorMode selected)
+    {
+        if (selected is BreathingColorMode.Single or BreathingColorMode.Dual
+            && LightingPrimaryColorEditor == default)
+        {
+            SetLightingColorEditor(
+                LightingSettingsFactory.DefaultVisibleColor,
+                secondary: false);
+        }
+
+        if (selected == BreathingColorMode.Dual
+            && LightingSecondaryColorEditor == default)
+        {
+            SetLightingColorEditor(new RgbColor(255, 0, 170), secondary: true);
+        }
+    }
+
+    private LightingSettings CreateLightingChoice(LightingEffect effect)
+    {
         byte brightness = SelectedLighting.Brightness == 0
-            ? (byte)100
+            ? LightingSettingsFactory.DefaultVisibleBrightness
             : SelectedLighting.Brightness;
+        RgbColor color = SelectedLighting.Color == default
+            ? LightingSettingsFactory.DefaultVisibleColor
+            : SelectedLighting.Color;
         return effect switch
         {
+            LightingEffect.Off => LightingSettingsFactory.Off(),
             LightingEffect.Static => LightingSettingsFactory.Static(color, brightness),
             LightingEffect.Spectrum => LightingSettingsFactory.SpectrumCycling(brightness),
-            LightingEffect.Breathing => LightingSettingsFactory.BreathingSingle(color, brightness),
+            LightingEffect.Breathing => LightingSettingsFactory.BreathingSingle(
+                color,
+                brightness),
             LightingEffect.Reactive => LightingSettingsFactory.Reactive(
                 color,
                 brightness,
@@ -3568,6 +3701,41 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         PerformancePreset value) =>
         options.FirstOrDefault(option => option.Value == value);
 
+    private static PerformancePreset ResolvePresentedPerformance(
+        ServiceStatusSnapshot status,
+        ConfirmedDeviceState? confirmed,
+        DeviceCapabilities capabilities)
+    {
+        PerformancePreset desired = status.DesiredState.Performance.Value;
+        if (confirmed?.Performance is not { } observed)
+        {
+            return desired;
+        }
+
+        return capabilities.PerformancePresets.Contains(observed)
+            && PerformancePresetPresentation.IsAvailable(status.ActivePowerSource, observed)
+                ? observed
+                : desired;
+    }
+
+    private static FanMode ResolvePresentedFanMode(
+        ServiceStatusSnapshot status,
+        ConfirmedDeviceState? confirmed,
+        DeviceCapabilities capabilities)
+    {
+        FanMode desired = status.DesiredState.Fans.Value;
+        if (confirmed?.Fans is not { } observed)
+        {
+            return desired;
+        }
+
+        bool sourceAllowsObserved = status.ActivePowerSource != PowerSource.UsbC
+            || observed == FanMode.Automatic;
+        return capabilities.FanModes.Contains(observed) && sourceAllowsObserved
+            ? observed
+            : desired;
+    }
+
     private void SetEditorField<T>(
         ref T field,
         T value,
@@ -3596,11 +3764,42 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             new PropertyChangedEventArgs(nameof(HasUnsavedProfileChanges)));
     }
 
-    private void SetLightingColorField(ref int field, int value)
+    private bool SetLightingColorField(ref int field, int value)
     {
         ArgumentOutOfRangeException.ThrowIfNegative(value);
         ArgumentOutOfRangeException.ThrowIfGreaterThan(value, 255);
-        SetLightingEditorField(ref field, value);
+        return SetLightingEditorField(ref field, value);
+    }
+
+    private void SetLightingColorEditor(RgbColor value, bool secondary)
+    {
+        ref int red = ref (secondary
+            ? ref lightingSecondaryRedEditor
+            : ref lightingRedEditor);
+        ref int green = ref (secondary
+            ? ref lightingSecondaryGreenEditor
+            : ref lightingGreenEditor);
+        ref int blue = ref (secondary
+            ? ref lightingSecondaryBlueEditor
+            : ref lightingBlueEditor);
+        if (red == value.Red && green == value.Green && blue == value.Blue)
+        {
+            return;
+        }
+
+        lightingEditorDirty = true;
+        string prefix = secondary ? "LightingSecondary" : "Lighting";
+        SetField(ref red, (int)value.Red, $"{prefix}RedEditor");
+        SetField(ref green, (int)value.Green, $"{prefix}GreenEditor");
+        SetField(ref blue, (int)value.Blue, $"{prefix}BlueEditor");
+        PropertyChanged?.Invoke(
+            this,
+            new PropertyChangedEventArgs(
+                secondary
+                    ? nameof(LightingSecondaryColorEditor)
+                    : nameof(LightingPrimaryColorEditor)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(LightingDraft)));
+        NotifyCommands();
     }
 
     private bool SetLightingEditorField<T>(

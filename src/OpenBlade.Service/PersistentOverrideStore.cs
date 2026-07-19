@@ -142,7 +142,8 @@ public sealed class PersistentOverrideStore
             ? overrides
             : overrides with
             {
-                Lighting = LightingSettingsFactory.NormalizeLegacyOff(overrides.Lighting),
+                Lighting = LightingSettingsFactory.NormalizeLegacyInvisibleEffect(
+                    overrides.Lighting),
             };
 
     private async Task WriteCoreAsync(

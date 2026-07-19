@@ -227,6 +227,49 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         Assert.Equal(1, context.Device.ReactivePulseCalls);
     }
 
+    [Theory]
+    [InlineData(LightingRendererOwnershipState.None)]
+    [InlineData(LightingRendererOwnershipState.Faulted)]
+    public async Task LightingApplyFailsWhenRendererDoesNotRemainOwned(
+        LightingRendererOwnershipState observedOwnership)
+    {
+        DeviceCapabilities capabilities = DeviceCapabilities.Unavailable() with
+        {
+            LightingEffects = new HashSet<LightingEffect>
+            {
+                LightingEffect.Off,
+                LightingEffect.Breathing,
+            },
+        };
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            profileValidator: ProfileSetValidator.CreateForLightingCapabilities(
+                capabilities));
+        context.Device.Capabilities = DeviceCapabilities.SafeTargetDefaults() with
+        {
+            LightingEffects = capabilities.LightingEffects,
+        };
+        context.Device.ConfirmedState = context.Device.ConfirmedState with
+        {
+            Lighting = null,
+        };
+        context.Device.LightingOwnershipAfterSet = observedOwnership;
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+
+        ControlOperationResult result = await context.Runtime.SetLightingOverrideAsync(
+            new ManualOverride<LightingSettings>(
+                LightingSettingsFactory.BreathingSingle(
+                    new RgbColor(0, 170, 255),
+                    100),
+                OverrideLifetime.UntilPowerSourceChange),
+            CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Failed, result.Status);
+        Assert.Contains("did not remain active", result.Message);
+        Assert.NotNull(context.Runtime.GetStatus().LightingOverride);
+        Assert.Equal(observedOwnership, context.Runtime.GetStatus().LightingRendererOwnership);
+    }
+
     [Fact]
     public async Task SavedReactiveProfile_DoesNotClaimRendererOwnershipAtStartup()
     {
@@ -616,6 +659,29 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         Assert.Equal(
             context.Runtime.GetStatus().Profiles.PluggedIn.Lighting,
             context.Device.ConfirmedState.Lighting);
+    }
+
+    [Fact]
+    public async Task PowerTransitionReportsFailureWhenLightingRendererDoesNotRemainOwned()
+    {
+        TestContext context = await CreateLightingTransitionContextAsync(
+            LightingRendererOwnershipState.None);
+        context.Device.LightingOwnershipAfterSet = LightingRendererOwnershipState.None;
+        context.Telemetry.Current = CreateTelemetry(PowerSource.Battery);
+
+        await context.Runtime.HandlePowerSourceChangedAsync(CancellationToken.None);
+
+        Assert.Equal(1, context.Device.LightingSetCalls);
+        Assert.Equal(
+            LightingRendererOwnershipState.None,
+            context.Runtime.GetStatus().LightingRendererOwnership);
+        Assert.Contains(
+            "did not remain active",
+            context.Runtime.GetStatus().Message,
+            StringComparison.OrdinalIgnoreCase);
+        Assert.Contains(
+            DeviceSubsystem.Lighting,
+            context.Runtime.GetStatus().ExternalChanges);
     }
 
     [Theory]
@@ -3749,6 +3815,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         public int ReactivePulseCalls { get; private set; }
 
         public LightingRendererOwnershipState LightingRendererOwnership { get; set; }
+        public LightingRendererOwnershipState? LightingOwnershipAfterSet { get; set; }
 
         public int CapabilitiesReadCalls { get; private set; }
 
@@ -3971,7 +4038,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
                 ConfirmedState = ConfirmedState with { Lighting = value };
             }
 
-            LightingRendererOwnership = value.Effect switch
+            LightingRendererOwnership = LightingOwnershipAfterSet ?? value.Effect switch
             {
                 LightingEffect.Off => LightingRendererOwnershipState.None,
                 LightingEffect.Static => LightingRendererOwnershipState.Static,

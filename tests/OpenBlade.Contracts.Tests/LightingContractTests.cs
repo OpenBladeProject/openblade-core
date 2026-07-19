@@ -96,4 +96,38 @@ public sealed class LightingContractTests
         Assert.All(invalid, value =>
             Assert.False(LightingSettingsValidation.IsWellFormed(value)));
     }
+
+    [Fact]
+    public void ValidationReservesZeroBrightnessForOff()
+    {
+        LightingSettings[] invisible =
+        [
+            LightingSettingsFactory.Static(new RgbColor(1, 2, 3), 0),
+            LightingSettingsFactory.SpectrumCycling(0),
+            LightingSettingsFactory.BreathingSingle(new RgbColor(1, 2, 3), 0),
+            LightingSettingsFactory.BreathingRandom(0),
+            LightingSettingsFactory.Reactive(
+                new RgbColor(1, 2, 3),
+                0,
+                ReactiveLightingDuration.Medium),
+        ];
+
+        Assert.All(invisible, value =>
+            Assert.False(LightingSettingsValidation.IsWellFormed(value)));
+        Assert.True(LightingSettingsValidation.IsWellFormed(
+            LightingSettingsFactory.Off()));
+    }
+
+    [Fact]
+    public void LegacyInvisibleBreathingNormalizesToVisibleDefaults()
+    {
+        LightingSettings normalized =
+            LightingSettingsFactory.NormalizeLegacyInvisibleEffect(
+                LightingSettingsFactory.BreathingSingle(default, 0));
+
+        Assert.Equal(LightingEffect.Breathing, normalized.Effect);
+        Assert.Equal(LightingSettingsFactory.DefaultVisibleBrightness, normalized.Brightness);
+        Assert.Equal(LightingSettingsFactory.DefaultVisibleColor, normalized.Color);
+        Assert.True(LightingSettingsValidation.IsWellFormed(normalized));
+    }
 }

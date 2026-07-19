@@ -24,6 +24,7 @@ public sealed class UiPreferenceStoreTests : IDisposable
         Assert.Equal(
             TrayHoverLabelMode.ProfileAndPowerFlow,
             preferences.TrayHoverLabelMode);
+        Assert.False(preferences.StartMinimized);
     }
 
     [Fact]
@@ -36,7 +37,8 @@ public sealed class UiPreferenceStoreTests : IDisposable
             ThemePreference.Dark,
             LiveReadingsEnabled: false,
             TrayHoverLabelMode: TrayHoverLabelMode.BatteryPowerFlow,
-            LiveReadingsRefreshCadence: LiveReadingsCadence.EveryTenSeconds));
+            LiveReadingsRefreshCadence: LiveReadingsCadence.EveryTenSeconds,
+            StartMinimized: true));
 
         UiPreferences reloaded = await store.LoadAsync();
         using JsonDocument document = JsonDocument.Parse(await File.ReadAllTextAsync(path));
@@ -44,6 +46,7 @@ public sealed class UiPreferenceStoreTests : IDisposable
         Assert.False(reloaded.LiveReadingsEnabled);
         Assert.Equal(LiveReadingsCadence.Off, reloaded.EffectiveLiveReadingsCadence);
         Assert.Equal(TrayHoverLabelMode.BatteryPowerFlow, reloaded.TrayHoverLabelMode);
+        Assert.True(reloaded.StartMinimized);
         Assert.Equal("Dark", document.RootElement.GetProperty("theme").GetString());
         Assert.False(document.RootElement.TryGetProperty(
             "keepManualChangesUntilCleared",
@@ -55,6 +58,7 @@ public sealed class UiPreferenceStoreTests : IDisposable
         Assert.Equal(
             "EveryTenSeconds",
             document.RootElement.GetProperty("liveReadingsRefreshCadence").GetString());
+        Assert.True(document.RootElement.GetProperty("startMinimized").GetBoolean());
     }
 
     [Fact]

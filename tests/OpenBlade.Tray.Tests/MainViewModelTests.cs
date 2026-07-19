@@ -259,6 +259,44 @@ public sealed class MainViewModelTests
         Assert.False(viewModel.HasActiveProfileDraft);
     }
 
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task DisplayOnlyDraftDoesNotClearUnrelatedHardwareOverrides(bool save)
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        ServiceStatusSnapshot baseline = CreateStatus(verified: true, blocked: false);
+        client.Publish(baseline with
+        {
+            PerformanceOverride = new ManualOverride<PerformancePreset>(
+                PerformancePreset.Performance,
+                OverrideLifetime.Persistent),
+            FanOverride = new ManualOverride<FanMode>(
+                FanMode.Maximum,
+                OverrideLifetime.Persistent),
+            LightingOverride = new ManualOverride<LightingSettings>(
+                LightingSettingsFactory.Static(new RgbColor(1, 2, 3), 50),
+                OverrideLifetime.Persistent),
+        });
+        await WaitUntilAsync(() => viewModel.IsConnected);
+        viewModel.SavedDisplayProfileRestoreRequested += (_, _, _) =>
+            Task.FromResult(true);
+        viewModel.RecordDisplayProfileChange(
+            PowerSource.PluggedIn,
+            new DisplayProfileSettings("fixed-240", false, "native"),
+            new DisplayProfileSettings("fixed-60", false, "native"));
+
+        await Assert.IsType<AsyncRelayCommand>(save
+                ? viewModel.SaveProfilesCommand
+                : viewModel.DiscardProfileDraftCommand)
+            .ExecuteAsync(null);
+
+        Assert.Empty(client.MutationOperations);
+        Assert.False(viewModel.HasActiveProfileDraft);
+    }
+
     [Fact]
     public async Task DisplayDiscard_KeepsDraftWhenReadbackIsNotConfirmed()
     {
@@ -533,6 +571,75 @@ public sealed class MainViewModelTests
         Assert.Equal(
             "Settings changed outside OpenBlade: Fans, Lighting. Automatic profile changes for these controls are paused; manual actions still apply.",
             viewModel.ExternalChangesText);
+    }
+
+    [Fact]
+    public async Task UsbC_InvalidObservedThermalStateKeepsProfileSelectionPresentable()
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        ServiceStatusSnapshot baseline = CreateStatus(verified: true, blocked: false);
+        PowerProfile usbC = baseline.Profiles.UsbC;
+        client.Publish(baseline with
+        {
+            ActivePowerSource = PowerSource.UsbC,
+            DesiredState = baseline.DesiredState with
+            {
+                Performance = new ResolvedSetting<PerformancePreset>(
+                    usbC.Performance,
+                    SettingValueSource.PowerProfile),
+                Fans = new ResolvedSetting<FanMode>(
+                    usbC.Fans,
+                    SettingValueSource.PowerProfile),
+            },
+            ConfirmedState = new ConfirmedDeviceState(
+                PerformancePreset.Performance,
+                FanMode.Maximum,
+                new ConfirmedBatteryState(true, 80, false),
+                usbC.Lighting),
+            ExternalChanges = [DeviceSubsystem.Performance, DeviceSubsystem.Fans],
+        });
+        await WaitUntilAsync(() =>
+            viewModel.IsConnected && viewModel.ActivePowerSource == PowerSource.UsbC);
+
+        Assert.Equal(PerformancePreset.Balanced, viewModel.SelectedPerformance);
+        Assert.Equal("Balanced", viewModel.ActivePerformanceLabel);
+        Assert.Equal(
+            PerformancePreset.Balanced,
+            Assert.IsType<PerformancePresetOption>(viewModel.SelectedPerformanceOption).Value);
+        Assert.Equal(FanMode.Automatic, viewModel.SelectedFanMode);
+        Assert.True(viewModel.HasExternalChanges);
+        Assert.Contains("Performance", viewModel.ExternalChangesText, StringComparison.Ordinal);
+        Assert.Contains("Fans", viewModel.ExternalChangesText, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task ActiveChanges_FormatsReactiveLightingForPeople()
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        LightingSettings reactive = LightingSettingsFactory.Reactive(
+            new RgbColor(0, 255, 0),
+            77,
+            ReactiveLightingDuration.Medium);
+        client.Publish(CreateStatus(verified: true, blocked: false) with
+        {
+            LightingOverride = new ManualOverride<LightingSettings>(
+                reactive,
+                OverrideLifetime.UntilPowerSourceChange),
+        });
+        await WaitUntilAsync(() => viewModel.HasActiveChanges);
+
+        const string expected =
+            "Keyboard lighting: Reactive | 77% | medium, #00FF00 until the power source changes";
+        Assert.Equal(expected, viewModel.ActiveChangesText);
+        Assert.Contains(
+            "Lighting: Reactive | 77% | medium, #00FF00 until the power source changes",
+            viewModel.ManualOverrideStatus,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain("LightingSettings {", viewModel.ActiveChangesText, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -1343,6 +1450,59 @@ public sealed class MainViewModelTests
         await apply;
 
         Assert.Equal(confirmed, viewModel.LightingDraft);
+    }
+
+    [Fact]
+    public async Task LightingColorPickerAndAdvancedRgbFieldsStaySynchronized()
+    {
+        await using var viewModel = new MainViewModel(
+            new FakeServiceClient(),
+            new RecordingDispatcher());
+        viewModel.LightingEffectEditor = LightingEffect.Static;
+
+        viewModel.LightingPrimaryColorEditor = new RgbColor(12, 34, 56);
+
+        Assert.Equal(12, viewModel.LightingRedEditor);
+        Assert.Equal(34, viewModel.LightingGreenEditor);
+        Assert.Equal(56, viewModel.LightingBlueEditor);
+        Assert.Equal(new RgbColor(12, 34, 56), viewModel.LightingDraft.Color);
+
+        viewModel.LightingGreenEditor = 200;
+
+        Assert.Equal(new RgbColor(12, 200, 56), viewModel.LightingPrimaryColorEditor);
+
+        viewModel.LightingEffectEditor = LightingEffect.Breathing;
+        viewModel.LightingBreathingColorModeEditor = BreathingColorMode.Dual;
+        viewModel.LightingSecondaryColorEditor = new RgbColor(78, 90, 123);
+
+        Assert.Equal(78, viewModel.LightingSecondaryRedEditor);
+        Assert.Equal(90, viewModel.LightingSecondaryGreenEditor);
+        Assert.Equal(123, viewModel.LightingSecondaryBlueEditor);
+        Assert.Equal(
+            new RgbColor(78, 90, 123),
+            Assert.IsType<BreathingLightingParameters>(viewModel.LightingDraft.Parameters)
+                .SecondaryColor);
+    }
+
+    [Fact]
+    public async Task SelectingBreathingFromOffCreatesAVisibleDraft()
+    {
+        await using var viewModel = new MainViewModel(
+            new FakeServiceClient(),
+            new RecordingDispatcher());
+
+        Assert.Equal(LightingEffect.Off, viewModel.LightingEffectEditor);
+        Assert.Equal(0, viewModel.LightingBrightnessEditor);
+
+        viewModel.LightingEffectEditor = LightingEffect.Breathing;
+
+        Assert.Equal(
+            LightingSettingsFactory.DefaultVisibleBrightness,
+            viewModel.LightingBrightnessEditor);
+        Assert.Equal(
+            LightingSettingsFactory.DefaultVisibleColor,
+            viewModel.LightingPrimaryColorEditor);
+        Assert.True(LightingSettingsValidation.IsWellFormed(viewModel.LightingDraft));
     }
 
     [Theory]

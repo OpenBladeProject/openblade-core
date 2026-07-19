@@ -1194,11 +1194,24 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             LightingRendererOwnershipState observed =
                 await PublishObservedLightingOwnershipAsync(device, token)
                     .ConfigureAwait(false);
+            LightingSettings requested = desired.Lighting.Value;
+            if (outcome.Result.Status is ControlResultStatus.Applied
+                    or ControlResultStatus.Unchanged
+                && !OwnershipMatches(observed, requested))
+            {
+                outcome = outcome with
+                {
+                    Result = new ControlResult(
+                        ControlResultStatus.Failed,
+                        "Keyboard lighting did not remain active after the change."),
+                    ReadbackMatched = false,
+                };
+            }
             UpdateOwnedLightingSnapshot(
                 observed,
                 outcome.Result.Status is ControlResultStatus.Applied
                     or ControlResultStatus.Unchanged
-                    ? desired.Lighting.Value
+                    ? requested
                     : null);
         }
 
@@ -1425,6 +1438,33 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             confirmed = outcome.Readback;
         }
 
+        LightingRendererOwnershipState observedLightingOwnership =
+            await PublishObservedLightingOwnershipAsync(device, token)
+                .ConfigureAwait(false);
+        ControlResult lightingResult = ResultFor(
+            outcome.Results,
+            DeviceSubsystem.Lighting);
+        if (lightingResult.Status is ControlResultStatus.Applied
+                or ControlResultStatus.Unchanged
+            && !OwnershipMatches(observedLightingOwnership, desired.Lighting.Value))
+        {
+            lightingResult = new ControlResult(
+                ControlResultStatus.Failed,
+                "Keyboard lighting did not remain active after the profile change.");
+            var matched = new HashSet<DeviceSubsystem>(outcome.ReadbackMatched);
+            matched.Remove(DeviceSubsystem.Lighting);
+            var contradicted = new HashSet<DeviceSubsystem>(outcome.ReadbackContradicted)
+            {
+                DeviceSubsystem.Lighting,
+            };
+            outcome = outcome with
+            {
+                Results = outcome.Results with { Lighting = lightingResult },
+                ReadbackMatched = matched,
+                ReadbackContradicted = contradicted,
+            };
+        }
+
         foreach (DeviceSubsystem subsystem in OrderedSubsystems)
         {
             if (outcome.ReadbackMatched.Contains(subsystem))
@@ -1444,12 +1484,6 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 driftTracker.ConfirmIntentional(subsystem, matched: false);
             }
         }
-
-
-        LightingRendererOwnershipState observedLightingOwnership =
-            await PublishObservedLightingOwnershipAsync(device, token)
-                .ConfigureAwait(false);
-        ControlResult lightingResult = ResultFor(outcome.Results, DeviceSubsystem.Lighting);
         UpdateOwnedLightingSnapshot(
             observedLightingOwnership,
             lightingResult.Status is ControlResultStatus.Applied

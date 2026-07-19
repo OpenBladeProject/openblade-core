@@ -18,13 +18,15 @@ public sealed record UiPreferences(
     bool LiveReadingsEnabled = true,
     TrayHoverLabelMode TrayHoverLabelMode = TrayHoverLabelMode.ProfileAndPowerFlow,
     LiveReadingsCadence LiveReadingsRefreshCadence =
-        LiveReadingsCadence.EveryTwoSeconds)
+        LiveReadingsCadence.EveryTwoSeconds,
+    bool StartMinimized = false)
 {
     public static UiPreferences Default { get; } = new(
         ThemePreference.FollowWindows,
         LiveReadingsEnabled: true,
         TrayHoverLabelMode: TrayHoverLabelMode.ProfileAndPowerFlow,
-        LiveReadingsRefreshCadence: LiveReadingsCadence.EveryTwoSeconds);
+        LiveReadingsRefreshCadence: LiveReadingsCadence.EveryTwoSeconds,
+        StartMinimized: false);
 
     public LiveReadingsCadence EffectiveLiveReadingsCadence =>
         !LiveReadingsEnabled
