@@ -8,6 +8,102 @@ namespace OpenBlade.SessionAgent.Tests;
 
 public sealed class ServiceReactiveLightingLoopTests
 {
+    [Theory]
+    [InlineData(ControlOperationStatus.Applied, true)]
+    [InlineData(ControlOperationStatus.Stored, false)]
+    [InlineData(ControlOperationStatus.Blocked, false)]
+    [InlineData(ControlOperationStatus.Failed, false)]
+    public async Task PhysicalShortcut_NotifiesOnlyAfterAppliedResult(
+        ControlOperationStatus status,
+        bool shouldNotify)
+    {
+        const string message = "Fn+P selected Performance.";
+        var client = new WatchClient
+        {
+            PerformanceShortcutResult = new(status, message),
+        };
+        var factory = new RecordingSourceFactory();
+        var notifications = new RecordingNotificationSink();
+        List<Exception> failures = [];
+        await using var loop = new ServiceReactiveLightingLoop(
+            client,
+            factory,
+            failures.Add,
+            notifications);
+        using var cancellation = new CancellationTokenSource();
+        Task running = loop.RunAsync(cancellation.Token);
+
+        client.Publish(Status(LightingRendererOwnershipState.Static));
+        await WaitUntilAsync(() => factory.CreateCount == 1);
+        factory.Last!.PublishPerformanceShortcut(PerformanceShortcutSource.FunctionP);
+        await WaitUntilAsync(() => client.PerformanceShortcuts.Count == 1);
+        if (shouldNotify)
+        {
+            await WaitUntilAsync(() => notifications.Messages.Count == 1);
+            Assert.Equal(message, Assert.Single(notifications.Messages));
+        }
+        else
+        {
+            await Task.Delay(50);
+            Assert.Empty(notifications.Messages);
+        }
+
+        cancellation.Cancel();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => running);
+    }
+
+    [Fact]
+    public async Task StatusHydrationAndReconnect_DoNotProduceNotifications()
+    {
+        var client = new WatchClient();
+        var factory = new RecordingSourceFactory();
+        var notifications = new RecordingNotificationSink();
+        await using var loop = new ServiceReactiveLightingLoop(
+            client,
+            factory,
+            shortcutNotifications: notifications);
+        using var cancellation = new CancellationTokenSource();
+        Task running = loop.RunAsync(cancellation.Token);
+
+        client.Publish(Status(LightingRendererOwnershipState.Static));
+        await WaitUntilAsync(() => factory.CreateCount == 1);
+        client.Publish(Status(LightingRendererOwnershipState.Reactive) with { Revision = 2 });
+        client.Reconnect();
+        await WaitUntilAsync(() => factory.Last!.Disposed);
+        await Task.Delay(50);
+
+        Assert.Empty(notifications.Messages);
+        cancellation.Cancel();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => running);
+    }
+
+    [Fact]
+    public async Task NotificationFailure_DoesNotFailTheAppliedShortcutLoop()
+    {
+        var client = new WatchClient();
+        var factory = new RecordingSourceFactory();
+        var failures = new ConcurrentQueue<Exception>();
+        await using var loop = new ServiceReactiveLightingLoop(
+            client,
+            factory,
+            failures.Enqueue,
+            new ThrowingNotificationSink());
+        using var cancellation = new CancellationTokenSource();
+        Task running = loop.RunAsync(cancellation.Token);
+
+        client.Publish(Status(LightingRendererOwnershipState.Static));
+        await WaitUntilAsync(() => factory.CreateCount == 1);
+        factory.Last!.PublishPerformanceShortcut(PerformanceShortcutSource.DedicatedButton);
+        await WaitUntilAsync(() => client.PerformanceShortcuts.Count == 1);
+        await WaitUntilAsync(() => failures.Count == 1);
+
+        Assert.True(failures.TryDequeue(out Exception? failure));
+        Assert.IsType<InvalidOperationException>(failure);
+        Assert.Empty(failures);
+        cancellation.Cancel();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => running);
+    }
+
     [Fact]
     public async Task ConnectedServiceKeepsOneSourceForReactiveAndPerformanceShortcuts()
     {
@@ -149,6 +245,10 @@ public sealed class ServiceReactiveLightingLoopTests
 
         public ConcurrentQueue<PerformanceShortcutSource> PerformanceShortcuts { get; } = new();
 
+        public ControlOperationResult PerformanceShortcutResult { get; init; } = new(
+            ControlOperationStatus.Applied,
+            "Applied");
+
         public void Publish(ServiceStatusSnapshot status) =>
             Assert.True(updates.Writer.TryWrite(new ServiceWatchUpdate.Connected(status)));
 
@@ -198,9 +298,7 @@ public sealed class ServiceReactiveLightingLoopTests
             CancellationToken token)
         {
             PerformanceShortcuts.Enqueue(source);
-            return Task.FromResult(new ControlOperationResult(
-                ControlOperationStatus.Applied,
-                "Applied"));
+            return Task.FromResult(PerformanceShortcutResult);
         }
 
         public Task<ControlOperationResult> SetFanOverrideAsync(
@@ -222,5 +320,26 @@ public sealed class ServiceReactiveLightingLoopTests
         public Task<ControlOperationResult> SetFullChargeOverrideAsync(
             bool enabled,
             CancellationToken token) => throw new NotSupportedException();
+    }
+
+    private sealed class RecordingNotificationSink : IPerformanceShortcutNotificationSink
+    {
+        internal ConcurrentQueue<string> Messages { get; } = new();
+
+        public void ShowApplied(string message) => Messages.Enqueue(message);
+
+        public void Dispose()
+        {
+        }
+    }
+
+    private sealed class ThrowingNotificationSink : IPerformanceShortcutNotificationSink
+    {
+        public void ShowApplied(string message) =>
+            throw new InvalidOperationException("Notification unavailable");
+
+        public void Dispose()
+        {
+        }
     }
 }

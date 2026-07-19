@@ -36,6 +36,10 @@ All notable changes to OpenBlade are documented in this file. The project follow
 - Performance-button and Fn+P support from the captured MI_01 Raw Input reports.
   Plugged-in power cycles Balanced, Silent, Performance, and Custom; battery
   cycles Balanced and Battery Saver; USB-C remains Balanced.
+- Native Windows notifications after a physical performance-button or Fn+P
+  shortcut successfully applies a new mode. Profile changes, startup, resume,
+  polling, blocked shortcuts, and failed shortcuts do not generate a success
+  notification.
 - The bounded read-only performance discriminator probe now includes fixed
   `0D/87` CPU and GPU component queries. Target-hardware readback confirmed the
   saved CPU Medium and GPU High values, allowing Custom mode to expose the
@@ -48,6 +52,10 @@ All notable changes to OpenBlade are documented in this file. The project follow
   state and replayed through setters, not hydrated from observed firmware
   getters. The investigation restored both original selections and sent no
   guessed commands.
+- Developer-only, exact-device candidate probes for the unverified Function-key
+  and Gaming Mode getter hypotheses. Each named command has one compile-time
+  request, strict RZ09-0581/PID 02E0/BIOS 3.01 and controller gates, one
+  exchange with no retry, sanitized output, and no production admission.
 - A captured-feature audit that maps every reproducible target-device operation
   to its production surface and records why Trackpad, Snap Tap, and
   uncaptured effects remain hidden instead of relying on guessed commands.

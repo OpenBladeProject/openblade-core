@@ -80,7 +80,7 @@ public sealed class WindowsHidNativeContractTests
     }
 
     [Fact]
-    public void ProductionSources_WireRealFeatureInteropOnlyThroughTypedFactories()
+    public void Sources_WireRealFeatureInteropOnlyThroughApprovedCompositionPoints()
     {
         string sourceDirectory = Path.Combine(FindRepositoryRoot(), "src");
         string separator = Path.DirectorySeparatorChar.ToString();
@@ -101,7 +101,8 @@ public sealed class WindowsHidNativeContractTests
                 !pair.Key.EndsWith("WindowsHidEnumerator.cs")
                 && !pair.Key.EndsWith("BatteryValidationFactory.cs")
                 && !pair.Key.EndsWith("ProductionBatteryFactory.cs")
-                && !pair.Key.EndsWith("ProductionLightingFactory.cs")),
+                && !pair.Key.EndsWith("ProductionLightingFactory.cs")
+                && !pair.Key.EndsWith("GetterCandidateProbeRunner.cs")),
             pair => pair.Value.Contains("new WindowsHidNative("));
         string[] composition = sources
             .Where(pair => pair.Value.Contains("OverlappedFeatureOperation") &&
@@ -113,10 +114,18 @@ public sealed class WindowsHidNativeContractTests
         Assert.Equal(
             [
                 "BatteryValidationFactory.cs",
+                "GetterCandidateProbeRunner.cs",
                 "ProductionBatteryFactory.cs",
                 "ProductionLightingFactory.cs",
             ],
             composition);
+        string candidateProbePath = Assert.Single(
+            sources.Keys,
+            path => path.EndsWith("GetterCandidateProbeRunner.cs"));
+        Assert.Contains(
+            $"{separator}OpenBlade.Capture{separator}",
+            candidateProbePath,
+            StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]

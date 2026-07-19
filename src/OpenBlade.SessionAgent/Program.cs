@@ -77,12 +77,18 @@ internal static class Program
                 var automation = new ServiceDisplayAutomationLoop(
                     new ServiceClient(),
                     coordinator);
+                using IPerformanceShortcutNotificationSink shortcutNotifications =
+                    WindowsPerformanceShortcutNotificationSink.CreateBestEffort(
+                        exception => System.Diagnostics.Trace.TraceWarning(
+                            "OpenBlade notification failed: {0}",
+                            exception.Message));
                 await using var reactive = new ServiceReactiveLightingLoop(
                     new ServiceClient(),
                     WindowsReactiveKeyboardSourceFactory.Instance,
                     exception => System.Diagnostics.Trace.TraceWarning(
                         "OpenBlade Reactive input failed: {0}",
-                        exception.Message));
+                        exception.Message),
+                    shortcutNotifications);
                 var lightingIdlePolicy = new ServiceLightingIdlePolicyLoop(
                     new ServiceClient(),
                     new WindowsUserIdleTimeSource(),

@@ -28,6 +28,7 @@ public sealed class ServiceReactiveLightingLoop : IAsyncDisposable
     private readonly IReactiveKeyboardSourceFactory sourceFactory;
     private readonly ReactiveKeyPulsePump pulsePump;
     private readonly PerformanceShortcutTriggerPump shortcutPump;
+    private readonly IPerformanceShortcutNotificationSink shortcutNotifications;
     private readonly Action<Exception>? errorHandler;
     private IReactiveKeyboardSource? source;
     private int keyTriggeredActive;
@@ -36,11 +37,14 @@ public sealed class ServiceReactiveLightingLoop : IAsyncDisposable
     public ServiceReactiveLightingLoop(
         IServiceClient serviceClient,
         IReactiveKeyboardSourceFactory sourceFactory,
-        Action<Exception>? errorHandler = null)
+        Action<Exception>? errorHandler = null,
+        IPerformanceShortcutNotificationSink? shortcutNotifications = null)
     {
         this.serviceClient = serviceClient ?? throw new ArgumentNullException(nameof(serviceClient));
         this.sourceFactory = sourceFactory ?? throw new ArgumentNullException(nameof(sourceFactory));
         this.errorHandler = errorHandler;
+        this.shortcutNotifications = shortcutNotifications
+            ?? NullPerformanceShortcutNotificationSink.Instance;
         pulsePump = new ReactiveKeyPulsePump(SendPulseAsync, errorHandler: ReportFailure);
         shortcutPump = new PerformanceShortcutTriggerPump(
             SendPerformanceShortcutAsync,
@@ -183,6 +187,18 @@ public sealed class ServiceReactiveLightingLoop : IAsyncDisposable
         if (result.Status == ControlOperationStatus.Failed)
         {
             throw new InvalidOperationException(result.Message);
+        }
+
+        if (result.Status == ControlOperationStatus.Applied)
+        {
+            try
+            {
+                shortcutNotifications.ShowApplied(result.Message);
+            }
+            catch (Exception exception)
+            {
+                ReportFailure(exception);
+            }
         }
     }
 

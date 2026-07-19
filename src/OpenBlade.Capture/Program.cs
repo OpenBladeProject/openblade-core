@@ -130,6 +130,28 @@ if (args.Length > 0 && args[0].Equals(
 }
 
 if (args.Length > 0 && args[0].Equals(
+    "probe-function-key-primary-getter",
+    StringComparison.OrdinalIgnoreCase))
+{
+    IGetterCandidateProbeRunner runner =
+        GetterCandidateProbeFactory.CreateFunctionKeyPrimaryWindows();
+    var command = new FunctionKeyPrimaryGetterCandidateProbeCommand(
+        runner.RunAsync,
+        Console.Out);
+    return await command.RunAsync(args[1..], CancellationToken.None);
+}
+
+if (args.Length > 0 && args[0].Equals(
+    "probe-gaming-mode-getter",
+    StringComparison.OrdinalIgnoreCase))
+{
+    IGetterCandidateProbeRunner runner =
+        GetterCandidateProbeFactory.CreateGamingModeWindows();
+    var command = new GamingModeGetterCandidateProbeCommand(runner.RunAsync, Console.Out);
+    return await command.RunAsync(args[1..], CancellationToken.None);
+}
+
+if (args.Length > 0 && args[0].Equals(
     "validate-performance-fan",
     StringComparison.OrdinalIgnoreCase))
 {
@@ -200,6 +222,8 @@ Console.WriteLine("  OpenBlade.Capture query-temporary-full-charge");
 Console.WriteLine("  OpenBlade.Capture query-fan-rpm");
 Console.WriteLine("  OpenBlade.Capture query-lighting-brightness");
 Console.WriteLine("  OpenBlade.Capture query-performance-fan-discriminator");
+Console.WriteLine("  OpenBlade.Capture probe-function-key-primary-getter");
+Console.WriteLine("  OpenBlade.Capture probe-gaming-mode-getter");
 Console.WriteLine(
     "  OpenBlade.Capture validate-performance-fan " +
     "<balanced|silent|performance|fixed5400|battery-saver|battery-balanced> " +
