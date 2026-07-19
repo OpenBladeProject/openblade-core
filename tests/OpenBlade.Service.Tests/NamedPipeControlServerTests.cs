@@ -97,15 +97,13 @@ public sealed class NamedPipeControlServerTests
     }
 
     [Fact]
-    public async Task Subscribe_WhenThreeLeasesAreActive_ReturnsFailureWithoutLeakingSlot()
+    public async Task Subscribe_WhenCapacityIsFull_ReturnsFailureWithoutLeakingSlot()
     {
         TestServer context = CreateServer();
-        StatusSubscriptionLease[] leases =
-        [
-            context.Hub.Subscribe(CancellationToken.None),
-            context.Hub.Subscribe(CancellationToken.None),
-            context.Hub.Subscribe(CancellationToken.None),
-        ];
+        StatusSubscriptionLease[] leases = Enumerable
+            .Range(0, StatusSubscriptionHub.MaximumSubscribers)
+            .Select(_ => context.Hub.Subscribe(CancellationToken.None))
+            .ToArray();
         try
         {
             using CancellationTokenSource timeout = new(TimeSpan.FromSeconds(5));
@@ -163,12 +161,10 @@ public sealed class NamedPipeControlServerTests
         await client.DisposeAsync();
         await serverTask.WaitAsync(timeout.Token);
 
-        StatusSubscriptionLease[] leases =
-        [
-            context.Hub.Subscribe(CancellationToken.None),
-            context.Hub.Subscribe(CancellationToken.None),
-            context.Hub.Subscribe(CancellationToken.None),
-        ];
+        StatusSubscriptionLease[] leases = Enumerable
+            .Range(0, StatusSubscriptionHub.MaximumSubscribers)
+            .Select(_ => context.Hub.Subscribe(CancellationToken.None))
+            .ToArray();
         Assert.Throws<InvalidOperationException>(() => context.Hub.Subscribe(CancellationToken.None));
         foreach (StatusSubscriptionLease lease in leases)
         {

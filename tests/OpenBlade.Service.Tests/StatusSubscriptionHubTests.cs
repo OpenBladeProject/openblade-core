@@ -65,17 +65,32 @@ public sealed class StatusSubscriptionHubTests
     }
 
     [Fact]
-    public async Task Subscribe_RejectsFourthActiveLeaseToReserveOnePipeSlot()
+    public async Task Subscribe_RejectsLeaseBeyondBoundedCapacity()
     {
         var hub = new StatusSubscriptionHub(CreateStatus(0), new FakeTimeProvider());
-        StatusSubscriptionLease[] leases =
-        [
-            hub.Subscribe(CancellationToken.None),
-            hub.Subscribe(CancellationToken.None),
-            hub.Subscribe(CancellationToken.None),
-        ];
+        StatusSubscriptionLease[] leases = Enumerable
+            .Range(0, StatusSubscriptionHub.MaximumSubscribers)
+            .Select(_ => hub.Subscribe(CancellationToken.None))
+            .ToArray();
 
         Assert.Throws<InvalidOperationException>(() => hub.Subscribe(CancellationToken.None));
+
+        foreach (StatusSubscriptionLease lease in leases)
+        {
+            await lease.DisposeAsync();
+        }
+    }
+
+    [Fact]
+    public async Task Subscribe_AllowsThreeSessionAgentObserversAndTray()
+    {
+        var hub = new StatusSubscriptionHub(CreateStatus(0), new FakeTimeProvider());
+        StatusSubscriptionLease[] leases = Enumerable
+            .Range(0, 4)
+            .Select(_ => hub.Subscribe(CancellationToken.None))
+            .ToArray();
+
+        Assert.Equal(4, leases.Length);
 
         foreach (StatusSubscriptionLease lease in leases)
         {
@@ -87,12 +102,10 @@ public sealed class StatusSubscriptionHubTests
     public async Task Dispose_ReleasesSlotExactlyOnce()
     {
         var hub = new StatusSubscriptionHub(CreateStatus(0), new FakeTimeProvider());
-        StatusSubscriptionLease[] leases =
-        [
-            hub.Subscribe(CancellationToken.None),
-            hub.Subscribe(CancellationToken.None),
-            hub.Subscribe(CancellationToken.None),
-        ];
+        StatusSubscriptionLease[] leases = Enumerable
+            .Range(0, StatusSubscriptionHub.MaximumSubscribers)
+            .Select(_ => hub.Subscribe(CancellationToken.None))
+            .ToArray();
 
         await leases[0].DisposeAsync();
         await leases[0].DisposeAsync();
@@ -104,6 +117,14 @@ public sealed class StatusSubscriptionHubTests
         {
             await lease.DisposeAsync();
         }
+    }
+
+    [Fact]
+    public void Capacity_ReservesFourConnectionsForShortRequests()
+    {
+        Assert.True(
+            NamedPipeControlServer.MaximumServerInstances
+            - StatusSubscriptionHub.MaximumSubscribers >= 4);
     }
 
     [Fact]

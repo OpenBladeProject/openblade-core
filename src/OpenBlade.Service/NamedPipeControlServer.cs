@@ -8,6 +8,7 @@ namespace OpenBlade.Service;
 
 public sealed class NamedPipeControlServer
 {
+    internal const int MaximumServerInstances = 12;
     private static readonly TimeSpan FrameWriteTimeout = TimeSpan.FromSeconds(2);
     private readonly string pipeName;
     private readonly SecurityIdentifier authorizedUser;
@@ -38,7 +39,7 @@ public sealed class NamedPipeControlServer
         await using NamedPipeServerStream pipe = NamedPipeServerStreamAcl.Create(
             pipeName,
             PipeDirection.InOut,
-            maxNumberOfServerInstances: 4,
+            maxNumberOfServerInstances: MaximumServerInstances,
             PipeTransmissionMode.Byte,
             PipeOptions.Asynchronous,
             inBufferSize: 0,

@@ -13,7 +13,7 @@ public sealed class Worker(
     IServiceLifecycleEventSource lifecycleEventSource,
     ILogger<Worker> logger) : BackgroundService
 {
-    private const int MaximumPipeClients = 4;
+    private const int MaximumPipeClients = NamedPipeControlServer.MaximumServerInstances;
 
     protected override Task ExecuteAsync(CancellationToken stoppingToken)
     {

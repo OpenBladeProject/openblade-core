@@ -47,6 +47,9 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Changed
 
+- Status subscriptions now reserve enough bounded pipe capacity for the Tray,
+  all three SessionAgent observers, and concurrent short control or diagnostic
+  requests, preventing a healthy service from appearing unavailable in the UI.
 - Exact-build lighting validation now covers fixed and random Tidal in both
   directions, every Starlight color and duration variant, both Wave directions,
   both Wheel rotations, plus laptop-logo Breathing, Off, and Static restoration
