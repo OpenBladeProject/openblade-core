@@ -16,7 +16,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, ITrayIconThem
     private const double InitialWidthDip = 840;
     private const double InitialHeightDip = 720;
     private const double DashboardStackThresholdDip = 600;
-    private const double ProfilesStackThresholdDip = 720;
+    private const double ProfilesStackThresholdDip = 760;
     private static readonly TimeSpan ChargeLimitCommitDelay = TimeSpan.FromMilliseconds(400);
     private static readonly TimeSpan DisplayRefreshInterval = TimeSpan.FromSeconds(2);
 
@@ -39,7 +39,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, ITrayIconThem
     private bool chargeLimitPointerInteraction;
     private int? pendingChargeLimitPercent;
     private bool? dashboardIsStacked;
-    private bool? profilesAreStacked;
+    private bool? profilesUseCompactLayout;
     private int disposed;
 
     public MainWindow()
@@ -922,38 +922,30 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, ITrayIconThem
     private void UpdateProfilesLayout(double fallbackWidth = double.NaN)
     {
         if (Volatile.Read(ref disposed) != 0
-            || Root.FindName("ProfilesLayout") is not Grid profilesLayout
-            || Root.FindName("ProfilesSecondColumn") is not ColumnDefinition profilesSecondColumn
-            || Root.FindName("ProfilesThirdColumn") is not ColumnDefinition profilesThirdColumn
-            || Root.FindName("BatteryProfileCard") is not FrameworkElement batteryProfileCard
-            || Root.FindName("UsbCProfileCard") is not FrameworkElement usbCProfileCard)
+            || Root.FindName("ProfilesComparisonLayout") is not FrameworkElement comparisonLayout
+            || Root.FindName("ProfilesCompactLayout") is not FrameworkElement compactLayout)
         {
             return;
         }
 
-        double effectiveWidth = profilesLayout.ActualWidth > 0
-            ? profilesLayout.ActualWidth
+        double effectiveWidth = ProfilesPage.ActualWidth > 0
+            ? ProfilesPage.ActualWidth
             : double.IsFinite(fallbackWidth)
                 ? fallbackWidth
                 : Root.ActualWidth;
-        bool stack = effectiveWidth < ProfilesStackThresholdDip;
-        if (profilesAreStacked == stack)
+        bool useCompactLayout = effectiveWidth < ProfilesStackThresholdDip;
+        if (profilesUseCompactLayout == useCompactLayout)
         {
             return;
         }
 
-        profilesAreStacked = stack;
-        profilesLayout.ColumnSpacing = stack ? 0 : 12;
-        profilesSecondColumn.Width = stack
-            ? new GridLength(0)
-            : new GridLength(1, GridUnitType.Star);
-        profilesThirdColumn.Width = stack
-            ? new GridLength(0)
-            : new GridLength(1, GridUnitType.Star);
-        Grid.SetRow(batteryProfileCard, stack ? 1 : 0);
-        Grid.SetColumn(batteryProfileCard, stack ? 0 : 1);
-        Grid.SetRow(usbCProfileCard, stack ? 2 : 0);
-        Grid.SetColumn(usbCProfileCard, stack ? 0 : 2);
+        profilesUseCompactLayout = useCompactLayout;
+        comparisonLayout.Visibility = useCompactLayout
+            ? Visibility.Collapsed
+            : Visibility.Visible;
+        compactLayout.Visibility = useCompactLayout
+            ? Visibility.Visible
+            : Visibility.Collapsed;
     }
 
     [DllImport("user32.dll")]

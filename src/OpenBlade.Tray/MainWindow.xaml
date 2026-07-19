@@ -353,7 +353,7 @@
                                         <ColumnDefinition Width="Auto" />
                                     </Grid.ColumnDefinitions>
                                     <StackPanel Spacing="3" VerticalAlignment="Center">
-                                        <TextBlock Text="Performance" Style="{StaticResource CardTitleStyle}" />
+                                        <TextBlock Text="Power mode" Style="{StaticResource CardTitleStyle}" />
                                         <TextBlock Text="Balance speed, power use, and noise."
                                                    Style="{StaticResource SecondaryTextStyle}" />
                                     </StackPanel>
@@ -361,7 +361,7 @@
                                               Grid.Column="1"
                                               MinWidth="150"
                                               HorizontalAlignment="Right"
-                                              AutomationProperties.Name="Performance mode"
+                                              AutomationProperties.Name="Power mode"
                                               IsEnabled="{x:Bind ViewModel.CanControlHardware, Mode=OneWay}"
                                               ItemsSource="{x:Bind ViewModel.AvailableActivePerformanceOptions, Mode=OneWay}"
                                               SelectedItem="{x:Bind ViewModel.SelectedPerformanceOption, Mode=OneWay}"
@@ -501,127 +501,223 @@
                                    Style="{StaticResource SecondaryTextStyle}"
                                    Margin="0,0,0,16" />
 
-                        <Grid x:Name="ProfilesLayout" ColumnSpacing="12">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*" />
-                                <ColumnDefinition x:Name="ProfilesSecondColumn" Width="0" />
-                                <ColumnDefinition x:Name="ProfilesThirdColumn" Width="0" />
-                            </Grid.ColumnDefinitions>
-                            <Grid.RowDefinitions>
-                                <RowDefinition Height="Auto" />
-                                <RowDefinition Height="Auto" />
-                                <RowDefinition Height="Auto" />
-                            </Grid.RowDefinitions>
+                        <StackPanel x:Name="ProfilesComparisonLayout">
+                            <Grid Margin="16,0,16,8" ColumnSpacing="16">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="150" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Grid.Column="0"
+                                           Text="Setting"
+                                           Style="{StaticResource SecondaryTextStyle}"
+                                           VerticalAlignment="Center" />
+                                <StackPanel Grid.Column="1" Spacing="4">
+                                    <StackPanel Orientation="Horizontal" Spacing="7">
+                                        <TextBlock Text="Plugged in" Style="{StaticResource CardTitleStyle}" />
+                                        <Ellipse Width="7" Height="7"
+                                                 VerticalAlignment="Center"
+                                                 Fill="{ThemeResource AccentFillColorDefaultBrush}"
+                                                 Visibility="{x:Bind ViewModel.IsPluggedInProfileDraft, Mode=OneWay}"
+                                                 ToolTipService.ToolTip="Unsaved changes" />
+                                    </StackPanel>
+                                    <Border HorizontalAlignment="Left" VerticalAlignment="Center"
+                                            CornerRadius="10" Padding="8,2"
+                                            Background="{ThemeResource AccentFillColorDefaultBrush}"
+                                            Visibility="{x:Bind ViewModel.IsPluggedInProfileActive, Mode=OneWay}">
+                                        <TextBlock Text="Active"
+                                                   Style="{StaticResource CaptionTextBlockStyle}"
+                                                   Foreground="{ThemeResource TextOnAccentFillColorPrimaryBrush}" />
+                                    </Border>
+                                </StackPanel>
+                                <StackPanel Grid.Column="2" Spacing="4">
+                                    <StackPanel Orientation="Horizontal" Spacing="7">
+                                        <TextBlock Text="USB-C" Style="{StaticResource CardTitleStyle}" />
+                                        <Ellipse Width="7" Height="7"
+                                                 VerticalAlignment="Center"
+                                                 Fill="{ThemeResource AccentFillColorDefaultBrush}"
+                                                 Visibility="{x:Bind ViewModel.IsUsbCProfileDraft, Mode=OneWay}"
+                                                 ToolTipService.ToolTip="Unsaved changes" />
+                                    </StackPanel>
+                                    <Border HorizontalAlignment="Left" VerticalAlignment="Center"
+                                            CornerRadius="10" Padding="8,2"
+                                            Background="{ThemeResource AccentFillColorDefaultBrush}"
+                                            Visibility="{x:Bind ViewModel.IsUsbCProfileActive, Mode=OneWay}">
+                                        <TextBlock Text="Active"
+                                                   Style="{StaticResource CaptionTextBlockStyle}"
+                                                   Foreground="{ThemeResource TextOnAccentFillColorPrimaryBrush}" />
+                                    </Border>
+                                </StackPanel>
+                                <StackPanel Grid.Column="3" Spacing="4">
+                                    <StackPanel Orientation="Horizontal" Spacing="7">
+                                        <TextBlock Text="On battery" Style="{StaticResource CardTitleStyle}" />
+                                        <Ellipse Width="7" Height="7"
+                                                 VerticalAlignment="Center"
+                                                 Fill="{ThemeResource AccentFillColorDefaultBrush}"
+                                                 Visibility="{x:Bind ViewModel.IsBatteryProfileDraft, Mode=OneWay}"
+                                                 ToolTipService.ToolTip="Unsaved changes" />
+                                    </StackPanel>
+                                    <Border HorizontalAlignment="Left" VerticalAlignment="Center"
+                                            CornerRadius="10" Padding="8,2"
+                                            Background="{ThemeResource AccentFillColorDefaultBrush}"
+                                            Visibility="{x:Bind ViewModel.IsBatteryProfileActive, Mode=OneWay}">
+                                        <TextBlock Text="Active"
+                                                   Style="{StaticResource CaptionTextBlockStyle}"
+                                                   Foreground="{ThemeResource TextOnAccentFillColorPrimaryBrush}" />
+                                    </Border>
+                                </StackPanel>
+                            </Grid>
 
-                            <Border Style="{StaticResource CardStyle}">
-                                <StackPanel Spacing="8">
-                                    <Grid>
-                                        <StackPanel Orientation="Horizontal" Spacing="8">
-                                            <TextBlock Text="Plugged in"
-                                                       Style="{StaticResource SectionHeaderStyle}"
-                                                       Margin="0" />
-                                            <Ellipse Width="7"
-                                                     Height="7"
-                                                     VerticalAlignment="Center"
-                                                     Fill="{ThemeResource AccentFillColorDefaultBrush}"
-                                                     Visibility="{x:Bind ViewModel.IsPluggedInProfileDraft, Mode=OneWay}"
-                                                     ToolTipService.ToolTip="Unsaved changes"
-                                                     AutomationProperties.Name="Unsaved changes" />
-                                        </StackPanel>
-                                        <Border HorizontalAlignment="Right"
-                                                VerticalAlignment="Center"
-                                                CornerRadius="10"
-                                                Padding="8,2"
-                                                Background="{ThemeResource AccentFillColorDefaultBrush}"
-                                                Visibility="{x:Bind ViewModel.IsPluggedInProfileActive, Mode=OneWay}">
-                                            <TextBlock Text="Active"
-                                                       Foreground="{ThemeResource TextOnAccentFillColorPrimaryBrush}"
-                                                       Style="{StaticResource CaptionTextBlockStyle}" />
-                                        </Border>
-                                    </Grid>
-                                    <TextBlock Text="{x:Bind ViewModel.PluggedInProfileThermalSummary, Mode=OneWay}"
-                                               Style="{StaticResource CardTitleStyle}" />
-                                    <TextBlock Text="{x:Bind ViewModel.PluggedInProfileLightingSummary, Mode=OneWay}"
-                                               Style="{StaticResource SecondaryTextStyle}" />
-                                    <TextBlock Text="{x:Bind ViewModel.PluggedInProfileDisplaySummary, Mode=OneWay}"
-                                               Style="{StaticResource SecondaryTextStyle}" />
+                            <TextBlock Text="Power and cooling" Style="{StaticResource SectionHeaderStyle}" Margin="0,8,0,10" />
+                            <Border Style="{StaticResource SettingsGroupStyle}">
+                                <StackPanel>
+                                    <Border Style="{StaticResource SettingsRowStyle}">
+                                        <Grid ColumnSpacing="16">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="150" />
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="*" />
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock Text="Power mode" Style="{StaticResource CardTitleStyle}" />
+                                            <TextBlock Grid.Column="1" Text="{x:Bind ViewModel.PluggedInProfilePresentation.PowerMode, Mode=OneWay}" TextWrapping="Wrap" />
+                                            <TextBlock Grid.Column="2" Text="{x:Bind ViewModel.UsbCProfilePresentation.PowerMode, Mode=OneWay}" TextWrapping="Wrap" />
+                                            <TextBlock Grid.Column="3" Text="{x:Bind ViewModel.BatteryProfilePresentation.PowerMode, Mode=OneWay}" TextWrapping="Wrap" />
+                                        </Grid>
+                                    </Border>
+                                    <Border Style="{StaticResource SettingsLastRowStyle}">
+                                        <Grid ColumnSpacing="16">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="150" />
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="*" />
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock Text="Fans" Style="{StaticResource CardTitleStyle}" />
+                                            <TextBlock Grid.Column="1" Text="{x:Bind ViewModel.PluggedInProfilePresentation.Fans, Mode=OneWay}" TextWrapping="Wrap" />
+                                            <TextBlock Grid.Column="2" Text="{x:Bind ViewModel.UsbCProfilePresentation.Fans, Mode=OneWay}" TextWrapping="Wrap" />
+                                            <TextBlock Grid.Column="3" Text="{x:Bind ViewModel.BatteryProfilePresentation.Fans, Mode=OneWay}" TextWrapping="Wrap" />
+                                        </Grid>
+                                    </Border>
                                 </StackPanel>
                             </Border>
 
-                            <Border x:Name="BatteryProfileCard"
-                                    Grid.Row="1"
-                                    Style="{StaticResource CardStyle}">
-                                <StackPanel Spacing="8">
-                                    <Grid>
-                                        <StackPanel Orientation="Horizontal" Spacing="8">
-                                            <TextBlock Text="On battery"
-                                                       Style="{StaticResource SectionHeaderStyle}"
-                                                       Margin="0" />
-                                            <Ellipse Width="7"
-                                                     Height="7"
-                                                     VerticalAlignment="Center"
-                                                     Fill="{ThemeResource AccentFillColorDefaultBrush}"
-                                                     Visibility="{x:Bind ViewModel.IsBatteryProfileDraft, Mode=OneWay}"
-                                                     ToolTipService.ToolTip="Unsaved changes"
-                                                     AutomationProperties.Name="Unsaved changes" />
-                                        </StackPanel>
-                                        <Border HorizontalAlignment="Right"
-                                                VerticalAlignment="Center"
-                                                CornerRadius="10"
-                                                Padding="8,2"
-                                                Background="{ThemeResource AccentFillColorDefaultBrush}"
-                                                Visibility="{x:Bind ViewModel.IsBatteryProfileActive, Mode=OneWay}">
-                                            <TextBlock Text="Active"
-                                                       Foreground="{ThemeResource TextOnAccentFillColorPrimaryBrush}"
-                                                       Style="{StaticResource CaptionTextBlockStyle}" />
-                                        </Border>
-                                    </Grid>
-                                    <TextBlock Text="{x:Bind ViewModel.BatteryProfileThermalSummary, Mode=OneWay}"
-                                               Style="{StaticResource CardTitleStyle}" />
-                                    <TextBlock Text="{x:Bind ViewModel.BatteryProfileLightingSummary, Mode=OneWay}"
-                                               Style="{StaticResource SecondaryTextStyle}" />
-                                    <TextBlock Text="{x:Bind ViewModel.BatteryProfileDisplaySummary, Mode=OneWay}"
-                                               Style="{StaticResource SecondaryTextStyle}" />
+                            <TextBlock Text="Keyboard lighting" Style="{StaticResource SectionHeaderStyle}" />
+                            <Border Style="{StaticResource SettingsGroupStyle}">
+                                <StackPanel>
+                                    <Border Style="{StaticResource SettingsRowStyle}">
+                                        <Grid ColumnSpacing="16">
+                                            <Grid.ColumnDefinitions><ColumnDefinition Width="150" /><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                                            <TextBlock Text="Effect" Style="{StaticResource CardTitleStyle}" />
+                                            <TextBlock Grid.Column="1" Text="{x:Bind ViewModel.PluggedInProfilePresentation.LightingEffect, Mode=OneWay}" TextWrapping="Wrap" />
+                                            <TextBlock Grid.Column="2" Text="{x:Bind ViewModel.UsbCProfilePresentation.LightingEffect, Mode=OneWay}" TextWrapping="Wrap" />
+                                            <TextBlock Grid.Column="3" Text="{x:Bind ViewModel.BatteryProfilePresentation.LightingEffect, Mode=OneWay}" TextWrapping="Wrap" />
+                                        </Grid>
+                                    </Border>
+                                    <Border Style="{StaticResource SettingsRowStyle}">
+                                        <Grid ColumnSpacing="16">
+                                            <Grid.ColumnDefinitions><ColumnDefinition Width="150" /><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                                            <TextBlock Text="Brightness" Style="{StaticResource CardTitleStyle}" />
+                                            <TextBlock Grid.Column="1" Text="{x:Bind ViewModel.PluggedInProfilePresentation.LightingBrightness, Mode=OneWay}" TextWrapping="Wrap" />
+                                            <TextBlock Grid.Column="2" Text="{x:Bind ViewModel.UsbCProfilePresentation.LightingBrightness, Mode=OneWay}" TextWrapping="Wrap" />
+                                            <TextBlock Grid.Column="3" Text="{x:Bind ViewModel.BatteryProfilePresentation.LightingBrightness, Mode=OneWay}" TextWrapping="Wrap" />
+                                        </Grid>
+                                    </Border>
+                                    <Border Style="{StaticResource SettingsLastRowStyle}">
+                                        <Grid ColumnSpacing="16">
+                                            <Grid.ColumnDefinitions><ColumnDefinition Width="150" /><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                                            <TextBlock Text="Color" Style="{StaticResource CardTitleStyle}" />
+                                            <TextBlock Grid.Column="1" Text="{x:Bind ViewModel.PluggedInProfilePresentation.LightingColor, Mode=OneWay}" TextWrapping="Wrap" />
+                                            <TextBlock Grid.Column="2" Text="{x:Bind ViewModel.UsbCProfilePresentation.LightingColor, Mode=OneWay}" TextWrapping="Wrap" />
+                                            <TextBlock Grid.Column="3" Text="{x:Bind ViewModel.BatteryProfilePresentation.LightingColor, Mode=OneWay}" TextWrapping="Wrap" />
+                                        </Grid>
+                                    </Border>
                                 </StackPanel>
                             </Border>
 
-                            <Border x:Name="UsbCProfileCard"
-                                    Grid.Row="2"
-                                    Style="{StaticResource CardStyle}">
-                                <StackPanel Spacing="8">
-                                    <Grid>
-                                        <StackPanel Orientation="Horizontal" Spacing="8">
-                                            <TextBlock Text="USB-C"
-                                                       Style="{StaticResource SectionHeaderStyle}"
-                                                       Margin="0" />
-                                            <Ellipse Width="7"
-                                                     Height="7"
-                                                     VerticalAlignment="Center"
-                                                     Fill="{ThemeResource AccentFillColorDefaultBrush}"
-                                                     Visibility="{x:Bind ViewModel.IsUsbCProfileDraft, Mode=OneWay}"
-                                                     ToolTipService.ToolTip="Unsaved changes"
-                                                     AutomationProperties.Name="Unsaved changes" />
-                                        </StackPanel>
-                                        <Border HorizontalAlignment="Right"
-                                                VerticalAlignment="Center"
-                                                CornerRadius="10"
-                                                Padding="8,2"
-                                                Background="{ThemeResource AccentFillColorDefaultBrush}"
-                                                Visibility="{x:Bind ViewModel.IsUsbCProfileActive, Mode=OneWay}">
-                                            <TextBlock Text="Active"
-                                                       Foreground="{ThemeResource TextOnAccentFillColorPrimaryBrush}"
-                                                       Style="{StaticResource CaptionTextBlockStyle}" />
-                                        </Border>
-                                    </Grid>
-                                    <TextBlock Text="{x:Bind ViewModel.UsbCProfileThermalSummary, Mode=OneWay}"
-                                               Style="{StaticResource CardTitleStyle}" />
-                                    <TextBlock Text="{x:Bind ViewModel.UsbCProfileLightingSummary, Mode=OneWay}"
-                                               Style="{StaticResource SecondaryTextStyle}" />
-                                    <TextBlock Text="{x:Bind ViewModel.UsbCProfileDisplaySummary, Mode=OneWay}"
-                                               Style="{StaticResource SecondaryTextStyle}" />
+                            <TextBlock Text="Display" Style="{StaticResource SectionHeaderStyle}" />
+                            <Border Style="{StaticResource SettingsGroupStyle}">
+                                <StackPanel>
+                                    <Border Style="{StaticResource SettingsRowStyle}">
+                                        <Grid ColumnSpacing="16">
+                                            <Grid.ColumnDefinitions><ColumnDefinition Width="150" /><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                                            <TextBlock Text="Refresh rate" Style="{StaticResource CardTitleStyle}" />
+                                            <TextBlock Grid.Column="1" Text="{x:Bind ViewModel.PluggedInProfilePresentation.DisplayRefreshRate, Mode=OneWay}" TextWrapping="Wrap" />
+                                            <TextBlock Grid.Column="2" Text="{x:Bind ViewModel.UsbCProfilePresentation.DisplayRefreshRate, Mode=OneWay}" TextWrapping="Wrap" />
+                                            <TextBlock Grid.Column="3" Text="{x:Bind ViewModel.BatteryProfilePresentation.DisplayRefreshRate, Mode=OneWay}" TextWrapping="Wrap" />
+                                        </Grid>
+                                    </Border>
+                                    <Border Style="{StaticResource SettingsRowStyle}">
+                                        <Grid ColumnSpacing="16">
+                                            <Grid.ColumnDefinitions><ColumnDefinition Width="150" /><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                                            <TextBlock Text="HDR" Style="{StaticResource CardTitleStyle}" />
+                                            <TextBlock Grid.Column="1" Text="{x:Bind ViewModel.PluggedInProfilePresentation.DisplayHdr, Mode=OneWay}" TextWrapping="Wrap" />
+                                            <TextBlock Grid.Column="2" Text="{x:Bind ViewModel.UsbCProfilePresentation.DisplayHdr, Mode=OneWay}" TextWrapping="Wrap" />
+                                            <TextBlock Grid.Column="3" Text="{x:Bind ViewModel.BatteryProfilePresentation.DisplayHdr, Mode=OneWay}" TextWrapping="Wrap" />
+                                        </Grid>
+                                    </Border>
+                                    <Border Style="{StaticResource SettingsLastRowStyle}">
+                                        <Grid ColumnSpacing="16">
+                                            <Grid.ColumnDefinitions><ColumnDefinition Width="150" /><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                                            <TextBlock Text="Color profile" Style="{StaticResource CardTitleStyle}" />
+                                            <TextBlock Grid.Column="1" Text="{x:Bind ViewModel.PluggedInProfilePresentation.DisplayColorProfile, Mode=OneWay}" TextWrapping="Wrap" />
+                                            <TextBlock Grid.Column="2" Text="{x:Bind ViewModel.UsbCProfilePresentation.DisplayColorProfile, Mode=OneWay}" TextWrapping="Wrap" />
+                                            <TextBlock Grid.Column="3" Text="{x:Bind ViewModel.BatteryProfilePresentation.DisplayColorProfile, Mode=OneWay}" TextWrapping="Wrap" />
+                                        </Grid>
+                                    </Border>
                                 </StackPanel>
                             </Border>
-                        </Grid>
+                        </StackPanel>
+
+                        <StackPanel x:Name="ProfilesCompactLayout" Visibility="Collapsed">
+                            <ComboBox HorizontalAlignment="Stretch"
+                                      Margin="0,0,0,12"
+                                      ItemsSource="{x:Bind ViewModel.ProfileComparisonOptions}"
+                                      DisplayMemberPath="Label"
+                                      SelectedItem="{x:Bind ViewModel.SelectedProfileComparisonOption, Mode=TwoWay}"
+                                      AutomationProperties.Name="Profile to review" />
+                            <StackPanel Orientation="Horizontal" Spacing="8" Margin="4,0,0,10">
+                                <TextBlock Text="Active profile"
+                                           Style="{StaticResource CaptionTextBlockStyle}"
+                                           Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}"
+                                           Visibility="{x:Bind ViewModel.IsSelectedProfileActive, Mode=OneWay}" />
+                                <Ellipse Width="7" Height="7"
+                                         VerticalAlignment="Center"
+                                         Fill="{ThemeResource AccentFillColorDefaultBrush}"
+                                         Visibility="{x:Bind ViewModel.IsSelectedProfileDraft, Mode=OneWay}"
+                                         ToolTipService.ToolTip="Unsaved changes"
+                                         AutomationProperties.Name="Unsaved changes" />
+                            </StackPanel>
+                            <Border Style="{StaticResource SettingsGroupStyle}">
+                                <StackPanel>
+                                    <Border Style="{StaticResource SettingsRowStyle}">
+                                        <Grid ColumnSpacing="16"><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><TextBlock Text="Power mode" Style="{StaticResource CardTitleStyle}" /><TextBlock Grid.Column="1" Text="{x:Bind ViewModel.SelectedProfilePresentation.PowerMode, Mode=OneWay}" /></Grid>
+                                    </Border>
+                                    <Border Style="{StaticResource SettingsRowStyle}">
+                                        <Grid ColumnSpacing="16"><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><TextBlock Text="Fans" Style="{StaticResource CardTitleStyle}" /><TextBlock Grid.Column="1" Text="{x:Bind ViewModel.SelectedProfilePresentation.Fans, Mode=OneWay}" /></Grid>
+                                    </Border>
+                                    <Border Style="{StaticResource SettingsRowStyle}">
+                                        <Grid ColumnSpacing="16"><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><TextBlock Text="Lighting effect" Style="{StaticResource CardTitleStyle}" /><TextBlock Grid.Column="1" Text="{x:Bind ViewModel.SelectedProfilePresentation.LightingEffect, Mode=OneWay}" TextWrapping="Wrap" TextAlignment="Right" /></Grid>
+                                    </Border>
+                                    <Border Style="{StaticResource SettingsRowStyle}">
+                                        <Grid ColumnSpacing="16"><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><TextBlock Text="Lighting brightness" Style="{StaticResource CardTitleStyle}" /><TextBlock Grid.Column="1" Text="{x:Bind ViewModel.SelectedProfilePresentation.LightingBrightness, Mode=OneWay}" /></Grid>
+                                    </Border>
+                                    <Border Style="{StaticResource SettingsRowStyle}">
+                                        <Grid ColumnSpacing="16"><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><TextBlock Text="Lighting color" Style="{StaticResource CardTitleStyle}" /><TextBlock Grid.Column="1" Text="{x:Bind ViewModel.SelectedProfilePresentation.LightingColor, Mode=OneWay}" TextWrapping="Wrap" TextAlignment="Right" /></Grid>
+                                    </Border>
+                                    <Border Style="{StaticResource SettingsRowStyle}">
+                                        <Grid ColumnSpacing="16"><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><TextBlock Text="Refresh rate" Style="{StaticResource CardTitleStyle}" /><TextBlock Grid.Column="1" Text="{x:Bind ViewModel.SelectedProfilePresentation.DisplayRefreshRate, Mode=OneWay}" /></Grid>
+                                    </Border>
+                                    <Border Style="{StaticResource SettingsRowStyle}">
+                                        <Grid ColumnSpacing="16"><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><TextBlock Text="HDR" Style="{StaticResource CardTitleStyle}" /><TextBlock Grid.Column="1" Text="{x:Bind ViewModel.SelectedProfilePresentation.DisplayHdr, Mode=OneWay}" /></Grid>
+                                    </Border>
+                                    <Border Style="{StaticResource SettingsLastRowStyle}">
+                                        <Grid ColumnSpacing="16"><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><TextBlock Text="Color profile" Style="{StaticResource CardTitleStyle}" /><TextBlock Grid.Column="1" Text="{x:Bind ViewModel.SelectedProfilePresentation.DisplayColorProfile, Mode=OneWay}" TextWrapping="Wrap" TextAlignment="Right" /></Grid>
+                                    </Border>
+                                </StackPanel>
+                            </Border>
+                        </StackPanel>
 
                         <Border Style="{StaticResource CardStyle}"
                                 Visibility="{x:Bind ViewModel.HasActiveProfileDraft, Mode=OneWay}">

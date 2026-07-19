@@ -33,7 +33,8 @@ public sealed record DisplaySettingsSnapshot(
     bool ColorProfilesEnabled,
     string? ActiveColorProfileId,
     IReadOnlyList<DisplayColorProfile> ColorProfiles,
-    string? Message);
+    string? Message,
+    int? BitsPerColorChannel = null);
 
 public sealed record DisplayOperationResult(
     bool Succeeded,

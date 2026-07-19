@@ -52,6 +52,9 @@ public sealed class DisplaySettingsViewModelTests
         Assert.True(viewModel.SelectedRefreshRate?.IsDynamic);
         Assert.Equal("dynamic-48-240", viewModel.SelectedRefreshRate?.Key);
         Assert.Equal("Dynamic (48-240 Hz)", viewModel.SelectedRefreshRate?.Label);
+        Assert.Equal(
+            "ATNA60HU06-0 · 2560 × 1600 · Dynamic (48-240 Hz) · 10-bit · HDR off · sRGB",
+            viewModel.StatusMessage);
     }
 
     [Fact]
@@ -281,7 +284,11 @@ public sealed class DisplaySettingsViewModelTests
             IsHdrEnabled: hdr,
             ColorProfileOptions: [Native, Srgb],
             SelectedColorProfileKey: colorKey,
-            StatusMessage: "Built-in display detected.");
+            StatusMessage: null,
+            DisplayName: "ATNA60HU06-0",
+            Width: 2560,
+            Height: 1600,
+            BitsPerColorChannel: 10);
 
     private sealed class FakeDisplaySettingsAdapter(DisplaySettingsSnapshot initialState)
         : IDisplaySettingsAdapter

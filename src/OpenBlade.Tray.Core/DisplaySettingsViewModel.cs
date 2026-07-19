@@ -22,7 +22,11 @@ public sealed record DisplaySettingsSnapshot(
     IReadOnlyList<DisplayColorProfileOption> ColorProfileOptions,
     string? SelectedColorProfileKey,
     string? StatusMessage = null,
-    bool OperationSucceeded = true);
+    bool OperationSucceeded = true,
+    string? DisplayName = null,
+    int Width = 0,
+    int Height = 0,
+    int? BitsPerColorChannel = null);
 
 public sealed class DisplayProfileSettingsChangedEventArgs(
     PowerSource powerSource,
@@ -538,8 +542,53 @@ public sealed class DisplaySettingsViewModel : INotifyPropertyChanged, IAsyncDis
         IsHdrSupported = state.IsHdrSupported;
         IsHdrEnabled = state.IsHdrEnabled;
         StatusMessage = state.StatusMessage ?? (state.IsAvailable
-            ? "Built-in display detected."
+            ? FormatDisplayDetails(state)
             : "Display settings are unavailable.");
+    }
+
+    private static string FormatDisplayDetails(DisplaySettingsSnapshot state)
+    {
+        List<string> details = [];
+        if (!string.IsNullOrWhiteSpace(state.DisplayName))
+        {
+            details.Add(state.DisplayName);
+        }
+        if (state.Width > 0 && state.Height > 0)
+        {
+            details.Add($"{state.Width} × {state.Height}");
+        }
+
+        DisplayRefreshRateOption? refresh = state.RefreshRateOptions.FirstOrDefault(
+            option => string.Equals(
+                option.Key,
+                state.SelectedRefreshRateKey,
+                StringComparison.Ordinal));
+        if (refresh is not null)
+        {
+            details.Add(refresh.Label);
+        }
+        if (state.BitsPerColorChannel is > 0)
+        {
+            details.Add($"{state.BitsPerColorChannel}-bit");
+        }
+        if (state.IsHdrSupported)
+        {
+            details.Add(state.IsHdrEnabled ? "HDR on" : "HDR off");
+        }
+        if (!state.IsHdrEnabled)
+        {
+            DisplayColorProfileOption? colorProfile = state.ColorProfileOptions.FirstOrDefault(
+                option => string.Equals(
+                    option.Key,
+                    state.SelectedColorProfileKey,
+                    StringComparison.Ordinal));
+            if (colorProfile is not null)
+            {
+                details.Add(colorProfile.Label);
+            }
+        }
+
+        return details.Count == 0 ? "Display available" : string.Join(" · ", details);
     }
 
     private static IReadOnlyList<T> ReuseWhenValueEqual<T>(

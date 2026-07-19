@@ -137,9 +137,12 @@ internal sealed class SessionDisplaySettingsAdapter : IDisplaySettingsAdapter
             .Select(profile => new DisplayColorProfileOption(profile.Id, profile.Name))
             .ToArray(),
         state.ActiveColorProfileId,
-        state.Message ?? (state.IsAvailable
-            ? $"{state.DisplayName ?? "Built-in display"}, {state.Width} × {state.Height}"
-            : "Display settings are unavailable."));
+        state.Message,
+        true,
+        state.DisplayName,
+        state.Width,
+        state.Height,
+        state.BitsPerColorChannel);
 
     private static DisplaySettingsSnapshot Unavailable(string message) => new(
         IsAvailable: false,

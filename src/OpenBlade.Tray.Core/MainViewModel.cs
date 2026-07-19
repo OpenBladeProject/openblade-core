@@ -22,9 +22,30 @@ public sealed record LiveReadingsRefreshOption(
     LiveReadingsCadence Cadence,
     string Label);
 
+public sealed record ProfileComparisonOption(
+    PowerSource Source,
+    string Label);
+
+public sealed record ProfilePresentation(
+    string PowerMode,
+    string Fans,
+    string LightingEffect,
+    string LightingBrightness,
+    string LightingColor,
+    string DisplayRefreshRate,
+    string DisplayHdr,
+    string DisplayColorProfile);
+
 public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
 {
     private const string UnavailableLabel = "Unavailable";
+
+    private static readonly IReadOnlyList<ProfileComparisonOption> ComparisonOptions =
+    [
+        new(PowerSource.PluggedIn, "Plugged in"),
+        new(PowerSource.UsbC, "USB-C"),
+        new(PowerSource.Battery, "On battery"),
+    ];
 
     private static readonly RazerBladeModelInfo TargetLaptop =
         RazerBladeModelCatalog.Find(RazerBladeModelCatalog.OpenBladeTargetModelNumber)
@@ -93,6 +114,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     private ManualOverride<FanMode>? fanOverride;
     private ManualOverride<LightingSettings>? lightingOverride;
     private ProfileSet profiles = ProfileDefaults.CreateSafeDefaults();
+    private ProfileComparisonOption selectedProfileComparisonOption = ComparisonOptions[0];
     private PerformancePreset pluggedInPerformanceEditor = PerformancePreset.Balanced;
     private FanMode pluggedInFanModeEditor = FanMode.Automatic;
     private LightingSettings pluggedInLightingEditor = ProfileDefaults.CreateSafeDefaults().PluggedIn.Lighting;
@@ -432,6 +454,11 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             }
 
             SetField(ref activePowerSource, value);
+            if (value is PowerSource.PluggedIn or PowerSource.Battery or PowerSource.UsbC)
+            {
+                SelectedProfileComparisonOption = ComparisonOptions.First(option => option.Source == value);
+            }
+            NotifySelectedProfilePresentation();
             PropertyChanged?.Invoke(
                 this,
                 new PropertyChangedEventArgs(nameof(IsPluggedInProfileActive)));
@@ -464,6 +491,23 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     public bool IsBatteryProfileActive => ActivePowerSource == PowerSource.Battery;
 
     public bool IsUsbCProfileActive => ActivePowerSource == PowerSource.UsbC;
+
+    public IReadOnlyList<ProfileComparisonOption> ProfileComparisonOptions => ComparisonOptions;
+
+    public ProfileComparisonOption SelectedProfileComparisonOption
+    {
+        get => selectedProfileComparisonOption;
+        set
+        {
+            if (value is null || selectedProfileComparisonOption == value)
+            {
+                return;
+            }
+
+            SetField(ref selectedProfileComparisonOption, value);
+            NotifySelectedProfilePresentation();
+        }
+    }
 
     public string ActivePerformanceLabel => IsConnected
         ? PerformancePresetPresentation.Label(SelectedPerformance)
@@ -974,7 +1018,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             List<string> active = [];
             AddOverrideStatus(
                 active,
-                "Performance",
+                "Power mode",
                 PerformanceOverride,
                 PerformancePresetPresentation.Label);
             AddOverrideStatus(active, "Fans", FanOverride);
@@ -1000,7 +1044,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             List<string> active = [];
             AddOverrideStatus(
                 active,
-                "Performance",
+                "Power mode",
                 PerformanceOverride,
                 PerformancePresetPresentation.Label);
             AddOverrideStatus(active, "Fans", FanOverride);
@@ -1205,6 +1249,29 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
 
     public string UsbCProfileDisplaySummary =>
         FormatDisplayProfile(GetPresentedProfile(PowerSource.UsbC).Display);
+
+    public ProfilePresentation PluggedInProfilePresentation =>
+        CreateProfilePresentation(GetPresentedProfile(PowerSource.PluggedIn));
+
+    public ProfilePresentation UsbCProfilePresentation =>
+        CreateProfilePresentation(GetPresentedProfile(PowerSource.UsbC));
+
+    public ProfilePresentation BatteryProfilePresentation =>
+        CreateProfilePresentation(GetPresentedProfile(PowerSource.Battery));
+
+    public ProfilePresentation SelectedProfilePresentation =>
+        CreateProfilePresentation(GetPresentedProfile(SelectedProfileComparisonOption.Source));
+
+    public bool IsSelectedProfileActive =>
+        SelectedProfileComparisonOption.Source == ActivePowerSource;
+
+    public bool IsSelectedProfileDraft => SelectedProfileComparisonOption.Source switch
+    {
+        PowerSource.PluggedIn => IsPluggedInProfileDraft,
+        PowerSource.UsbC => IsUsbCProfileDraft,
+        PowerSource.Battery => IsBatteryProfileDraft,
+        _ => false,
+    };
 
     public DisplayProfileSettings ActiveSavedDisplayProfile =>
         ActivePowerSource is PowerSource.PluggedIn or PowerSource.Battery or PowerSource.UsbC
@@ -1966,7 +2033,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             .ToArray();
         HasExternalChanges = externalChanges.Length > 0;
         ExternalChangesText = HasExternalChanges
-            ? $"Changed outside OpenBlade: {string.Join(", ", externalChanges)}. Your saved profiles are unchanged. Automatic profile updates for these controls are paused until you change them in OpenBlade."
+            ? $"Changed outside OpenBlade: {string.Join(", ", externalChanges.Select(SubsystemLabel))}. Your saved profiles are unchanged. Automatic profile updates for these controls are paused until you change them in OpenBlade."
             : string.Empty;
         Profiles = status.Profiles;
         if (!profileEditorsDirty)
@@ -3226,16 +3293,48 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         PropertyChanged?.Invoke(
             this,
             new PropertyChangedEventArgs(nameof(PendingActiveProfileSummary)));
+        PropertyChanged?.Invoke(
+            this,
+            new PropertyChangedEventArgs(nameof(PluggedInProfilePresentation)));
+        PropertyChanged?.Invoke(
+            this,
+            new PropertyChangedEventArgs(nameof(UsbCProfilePresentation)));
+        PropertyChanged?.Invoke(
+            this,
+            new PropertyChangedEventArgs(nameof(BatteryProfilePresentation)));
+        NotifySelectedProfilePresentation();
+    }
+
+    private void NotifySelectedProfilePresentation()
+    {
+        PropertyChanged?.Invoke(
+            this,
+            new PropertyChangedEventArgs(nameof(SelectedProfilePresentation)));
+        PropertyChanged?.Invoke(
+            this,
+            new PropertyChangedEventArgs(nameof(IsSelectedProfileActive)));
+        PropertyChanged?.Invoke(
+            this,
+            new PropertyChangedEventArgs(nameof(IsSelectedProfileDraft)));
     }
 
     private static string FormatThermalProfile(PowerProfile profile) =>
         $"{PerformancePresetPresentation.Label(profile.Performance)} | {profile.Fans} fans";
 
     private static string FormatPowerProfile(PowerProfile profile) =>
-        $"Performance: {PerformancePresetPresentation.Label(profile.Performance)}{Environment.NewLine}"
+        $"Power mode: {PerformancePresetPresentation.Label(profile.Performance)}{Environment.NewLine}"
         + $"Fans: {profile.Fans}{Environment.NewLine}"
         + $"Lighting: {FormatLightingProfile(profile.Lighting)}{Environment.NewLine}"
         + $"Display: {FormatDisplayProfile(profile.Display)}";
+
+    private static string SubsystemLabel(DeviceSubsystem subsystem) => subsystem switch
+    {
+        DeviceSubsystem.Performance => "Power mode",
+        DeviceSubsystem.Fans => "Fans",
+        DeviceSubsystem.Battery => "Battery protection",
+        DeviceSubsystem.Lighting => "Keyboard lighting",
+        _ => subsystem.ToString(),
+    };
 
     private static string FormatLightingProfile(LightingSettings lighting)
     {
@@ -3288,6 +3387,117 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             settings.Add(value.ColorProfileKey);
         }
         return settings.Count == 0 ? "Use current settings" : string.Join(" | ", settings);
+    }
+
+    private static ProfilePresentation CreateProfilePresentation(PowerProfile profile)
+    {
+        DisplayProfileSettings display = profile.Display ?? DisplayProfileSettings.Unconfigured();
+        return new ProfilePresentation(
+            PerformancePresetPresentation.Label(profile.Performance),
+            profile.Fans switch
+            {
+                FanMode.Automatic => "Automatic",
+                FanMode.Maximum => "Maximum",
+                _ => profile.Fans.ToString(),
+            },
+            FormatLightingEffect(profile.Lighting),
+            profile.Lighting.Effect == LightingEffect.Off
+                ? "Not applicable"
+                : $"{profile.Lighting.Brightness}%",
+            FormatLightingColor(profile.Lighting),
+            FormatDisplayRefreshRate(display.RefreshRateKey),
+            display.HdrEnabled switch
+            {
+                true => "On",
+                false => "Off",
+                null => "Use current",
+            },
+            FormatDisplayColorProfile(display.ColorProfileKey));
+    }
+
+    private static string FormatLightingEffect(LightingSettings lighting) => lighting switch
+    {
+        { Effect: LightingEffect.Off } => "Off",
+        { Effect: LightingEffect.Spectrum } => "Spectrum Cycling",
+        {
+            Effect: LightingEffect.Breathing,
+            Parameters: BreathingLightingParameters { ColorMode: BreathingColorMode.Dual },
+        } => "Breathing, two colors",
+        {
+            Effect: LightingEffect.Breathing,
+            Parameters: BreathingLightingParameters { ColorMode: BreathingColorMode.Random },
+        } => "Breathing, random colors",
+        { Effect: LightingEffect.Breathing } => "Breathing, one color",
+        {
+            Effect: LightingEffect.Reactive,
+            Parameters: ReactiveLightingParameters reactive,
+        } => $"Reactive, {reactive.Duration.ToString().ToLowerInvariant()}",
+        _ => lighting.Effect.ToString(),
+    };
+
+    private static string FormatLightingColor(LightingSettings lighting) => lighting switch
+    {
+        { Effect: LightingEffect.Off } => "Not applicable",
+        { Effect: LightingEffect.Spectrum } => "Automatic",
+        {
+            Parameters: BreathingLightingParameters { ColorMode: BreathingColorMode.Random },
+        } => "Random",
+        {
+            Parameters: BreathingLightingParameters
+            {
+                ColorMode: BreathingColorMode.Dual,
+                SecondaryColor: { } secondary,
+            },
+        } => $"{FormatColor(lighting.Color)} and {FormatColor(secondary)}",
+        _ => FormatColor(lighting.Color),
+    };
+
+    private static string FormatDisplayRefreshRate(string? key)
+    {
+        if (string.IsNullOrWhiteSpace(key))
+        {
+            return "Use current";
+        }
+
+        string[] parts = key.Split('-', StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length == 2
+            && string.Equals(parts[0], "fixed", StringComparison.OrdinalIgnoreCase)
+            && int.TryParse(parts[1], CultureInfo.InvariantCulture, out int fixedHertz))
+        {
+            return $"{fixedHertz} Hz";
+        }
+        if (parts.Length == 3
+            && (string.Equals(parts[0], "dynamic", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(parts[0], "drr", StringComparison.OrdinalIgnoreCase))
+            && int.TryParse(parts[1], CultureInfo.InvariantCulture, out int minimumHertz)
+            && int.TryParse(parts[2], CultureInfo.InvariantCulture, out int maximumHertz))
+        {
+            return $"Dynamic {minimumHertz}–{maximumHertz} Hz";
+        }
+
+        return key;
+    }
+
+    private static string FormatDisplayColorProfile(string? key)
+    {
+        if (string.IsNullOrWhiteSpace(key))
+        {
+            return "Use current";
+        }
+
+        string fileName = Path.GetFileNameWithoutExtension(key);
+        string normalized = fileName.Replace("_", " ", StringComparison.Ordinal)
+            .Replace("-", " ", StringComparison.Ordinal)
+            .Trim();
+        return normalized.ToLowerInvariant() switch
+        {
+            "srgb" => "sRGB",
+            "dci p3" or "dcip3" => "DCI-P3",
+            "adobe rgb" or "adobergb" => "Adobe RGB",
+            "rec 709" or "rec709" => "Rec. 709",
+            "native" => "Native",
+            _ => string.IsNullOrWhiteSpace(normalized) ? key : normalized,
+        };
     }
 
     private LightingSettings CreateLightingDraft()

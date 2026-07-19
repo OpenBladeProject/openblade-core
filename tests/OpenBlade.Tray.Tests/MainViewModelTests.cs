@@ -166,6 +166,17 @@ public sealed class MainViewModelTests
         Assert.Contains("Maximum", viewModel.PluggedInProfileThermalSummary);
         Assert.Contains("Static", viewModel.PluggedInProfileLightingSummary);
         Assert.Contains("drr-48-240", viewModel.PluggedInProfileDisplaySummary);
+        Assert.Equal("Balanced", viewModel.PluggedInProfilePresentation.PowerMode);
+        Assert.Equal("Maximum", viewModel.PluggedInProfilePresentation.Fans);
+        Assert.Equal("Static", viewModel.PluggedInProfilePresentation.LightingEffect);
+        Assert.Equal("Dynamic 48–240 Hz", viewModel.PluggedInProfilePresentation.DisplayRefreshRate);
+        Assert.Equal("sRGB", viewModel.PluggedInProfilePresentation.DisplayColorProfile);
+        Assert.Equal(PowerSource.PluggedIn, viewModel.SelectedProfileComparisonOption.Source);
+        Assert.True(viewModel.IsSelectedProfileActive);
+        Assert.True(viewModel.IsSelectedProfileDraft);
+        Assert.Equal(
+            viewModel.PluggedInProfilePresentation,
+            viewModel.SelectedProfilePresentation);
         Assert.Equal(original.Profiles, viewModel.Profiles);
         Assert.Equal(
             OverrideLifetime.UntilPowerSourceChange,
@@ -619,7 +630,7 @@ public sealed class MainViewModelTests
             "Laptop controls changed outside OpenBlade",
             viewModel.AttentionSummary);
         Assert.Equal(
-            "Changed outside OpenBlade: Fans, Lighting. Your saved profiles are unchanged. Automatic profile updates for these controls are paused until you change them in OpenBlade.",
+            "Changed outside OpenBlade: Fans, Keyboard lighting. Your saved profiles are unchanged. Automatic profile updates for these controls are paused until you change them in OpenBlade.",
             viewModel.ExternalChangesText);
     }
 
@@ -660,7 +671,7 @@ public sealed class MainViewModelTests
             Assert.IsType<PerformancePresetOption>(viewModel.SelectedPerformanceOption).Value);
         Assert.Equal(FanMode.Automatic, viewModel.SelectedFanMode);
         Assert.True(viewModel.HasExternalChanges);
-        Assert.Contains("Performance", viewModel.ExternalChangesText, StringComparison.Ordinal);
+        Assert.Contains("Power mode", viewModel.ExternalChangesText, StringComparison.Ordinal);
         Assert.Contains("Fans", viewModel.ExternalChangesText, StringComparison.Ordinal);
     }
 
@@ -1715,7 +1726,7 @@ public sealed class MainViewModelTests
         Assert.Equal(status.FanOverride, viewModel.FanOverride);
         Assert.Equal(status.LightingOverride, viewModel.LightingOverride);
         Assert.Contains(
-            "Performance: Performance until reset",
+            "Power mode: Performance until reset",
             viewModel.ManualOverrideStatus,
             StringComparison.Ordinal);
         Assert.Contains(

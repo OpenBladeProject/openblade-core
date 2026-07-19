@@ -25,9 +25,13 @@ public sealed class WinUiShellContractTests
     {
         string xaml = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml");
 
-        Assert.Contains("ViewModel.PluggedInProfileThermalSummary", xaml, StringComparison.Ordinal);
-        Assert.Contains("ViewModel.BatteryProfileLightingSummary", xaml, StringComparison.Ordinal);
-        Assert.Contains("ViewModel.UsbCProfileDisplaySummary", xaml, StringComparison.Ordinal);
+        Assert.Contains("x:Name=\"ProfilesComparisonLayout\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("x:Name=\"ProfilesCompactLayout\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("ViewModel.PluggedInProfilePresentation.PowerMode", xaml, StringComparison.Ordinal);
+        Assert.Contains("ViewModel.BatteryProfilePresentation.LightingEffect", xaml, StringComparison.Ordinal);
+        Assert.Contains("ViewModel.UsbCProfilePresentation.DisplayColorProfile", xaml, StringComparison.Ordinal);
+        Assert.Contains("ViewModel.SelectedProfileComparisonOption", xaml, StringComparison.Ordinal);
+        Assert.Contains("ViewModel.SelectedProfilePresentation.PowerMode", xaml, StringComparison.Ordinal);
         Assert.Contains("ViewModel.IsPluggedInProfileDraft", xaml, StringComparison.Ordinal);
         Assert.Contains("ViewModel.IsBatteryProfileDraft", xaml, StringComparison.Ordinal);
         Assert.Contains("ViewModel.IsUsbCProfileDraft", xaml, StringComparison.Ordinal);
@@ -418,18 +422,14 @@ public sealed class WinUiShellContractTests
     {
         string source = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml.cs");
 
-        Assert.Contains("ProfilesStackThresholdDip = 720", source, StringComparison.Ordinal);
+        Assert.Contains("ProfilesStackThresholdDip = 760", source, StringComparison.Ordinal);
         Assert.Contains("Root.SizeChanged += OnRootSizeChanged", source, StringComparison.Ordinal);
         Assert.Contains("Root.SizeChanged -= OnRootSizeChanged", source, StringComparison.Ordinal);
-        Assert.Contains("Root.FindName(\"ProfilesLayout\")", source, StringComparison.Ordinal);
-        Assert.Contains("Root.FindName(\"ProfilesSecondColumn\")", source, StringComparison.Ordinal);
-        Assert.Contains("Root.FindName(\"ProfilesThirdColumn\")", source, StringComparison.Ordinal);
-        Assert.Contains("Root.FindName(\"BatteryProfileCard\")", source, StringComparison.Ordinal);
-        Assert.Contains("Root.FindName(\"UsbCProfileCard\")", source, StringComparison.Ordinal);
-        Assert.Contains("Grid.SetRow(batteryProfileCard, stack ? 1 : 0)", source, StringComparison.Ordinal);
-        Assert.Contains("Grid.SetColumn(batteryProfileCard, stack ? 0 : 1)", source, StringComparison.Ordinal);
-        Assert.Contains("Grid.SetRow(usbCProfileCard, stack ? 2 : 0)", source, StringComparison.Ordinal);
-        Assert.Contains("Grid.SetColumn(usbCProfileCard, stack ? 0 : 2)", source, StringComparison.Ordinal);
+        Assert.Contains("Root.FindName(\"ProfilesComparisonLayout\")", source, StringComparison.Ordinal);
+        Assert.Contains("Root.FindName(\"ProfilesCompactLayout\")", source, StringComparison.Ordinal);
+        Assert.Contains("comparisonLayout.Visibility", source, StringComparison.Ordinal);
+        Assert.Contains("compactLayout.Visibility", source, StringComparison.Ordinal);
+        Assert.Contains("ProfilesPage.ActualWidth", source, StringComparison.Ordinal);
 
         Assert.Contains("OnDashboardPerformanceChanged", source, StringComparison.Ordinal);
         Assert.Contains("OnDashboardFanModeSelectionChanged", source, StringComparison.Ordinal);

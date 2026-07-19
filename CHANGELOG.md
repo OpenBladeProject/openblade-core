@@ -37,6 +37,12 @@ All notable changes to OpenBlade are documented in this file. The project follow
   active-profile draft.
 - Dashboard fields now collapse to the single label "Unavailable" when the
   service is offline instead of repeating subsystem-specific explanations.
+- User-facing setting labels now call the performance category "Power mode,"
+  avoiding a duplicate "Performance" label when the Performance mode is selected.
+- The Profiles page now uses an adaptive comparison matrix for power, cooling,
+  lighting, and display settings, with a single-profile detail view in narrow windows.
+- Display status now identifies the panel, resolution, active refresh mode, color
+  depth, HDR state, and color profile instead of showing a generic detection message.
 - Reactive input no longer emits a matrix pulse for the unlit space bar.
 
 - Display profile automation now remains active after Tray Exit. The first

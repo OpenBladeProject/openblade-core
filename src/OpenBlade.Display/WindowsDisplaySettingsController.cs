@@ -305,7 +305,8 @@ public sealed class WindowsDisplaySettingsController : IDisplaySettingsControlle
             profiles,
             currentRefreshKey is null
                 ? "The current refresh-rate mode was not reported as available by Windows."
-                : null);
+                : null,
+            advancedColor.BitsPerColorChannel);
     }
 
     private static DisplayTopology QueryTopology()
@@ -424,12 +425,15 @@ public sealed class WindowsDisplaySettingsController : IDisplaySettingsControlle
         int result = WindowsDisplayNative.DisplayConfigGetAdvancedColorInfo2(ref request);
         if (result != WindowsDisplayNative.ErrorSuccess)
         {
-            return new AdvancedColorState(false, false);
+            return new AdvancedColorState(false, false, null);
         }
 
         bool supported = AdvancedColorBits.IsHdrSupported(request.Value);
         bool userEnabled = AdvancedColorBits.IsHdrUserEnabled(request.Value);
-        return new AdvancedColorState(supported, supported && userEnabled);
+        int? bitsPerColorChannel = request.BitsPerColorChannel > 0
+            ? checked((int)request.BitsPerColorChannel)
+            : null;
+        return new AdvancedColorState(supported, supported && userEnabled, bitsPerColorChannel);
     }
 
     private static IReadOnlyList<string> GetAssociatedColorProfiles(DisplayTarget target, uint scope)
@@ -935,5 +939,8 @@ public sealed class WindowsDisplaySettingsController : IDisplaySettingsControlle
 
     private readonly record struct DisplayTargetIdentity(string FriendlyName, string? MonitorDevicePath);
 
-    private readonly record struct AdvancedColorState(bool HdrSupported, bool HdrEnabled);
+    private readonly record struct AdvancedColorState(
+        bool HdrSupported,
+        bool HdrEnabled,
+        int? BitsPerColorChannel);
 }

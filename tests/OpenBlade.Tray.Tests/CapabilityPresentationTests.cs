@@ -31,6 +31,13 @@ public sealed class CapabilityPresentationTests
                 "ViewModel.FullChargeActionLabel",
                 StringComparison.Ordinal) is true);
         Assert.Equal("OnDashboardPerformanceChanged", Attribute(performance, "SelectionChanged"));
+        Assert.Equal("Power mode", Attribute(performance, "AutomationProperties.Name"));
+        Assert.Contains(document.Descendants(), element =>
+            element.Name.LocalName == "TextBlock"
+            && Attribute(element, "Text") == "Power mode");
+        Assert.DoesNotContain(document.Descendants(), element =>
+            element.Name.LocalName == "TextBlock"
+            && Attribute(element, "Text") == "Performance");
         Assert.Equal(
             "{x:Bind ViewModel.AvailableActivePerformanceOptions, Mode=OneWay}",
             Attribute(performance, "ItemsSource"));
@@ -506,11 +513,9 @@ public sealed class CapabilityPresentationTests
         string xaml = ReadMainWindowXaml();
         XDocument document = XDocument.Parse(xaml);
 
-        _ = NamedElement(document, "Grid", "ProfilesLayout");
-        _ = NamedElement(document, "ColumnDefinition", "ProfilesSecondColumn");
-        _ = NamedElement(document, "ColumnDefinition", "ProfilesThirdColumn");
-        _ = NamedElement(document, "Border", "BatteryProfileCard");
-        _ = NamedElement(document, "Border", "UsbCProfileCard");
+        _ = NamedElement(document, "StackPanel", "ProfilesComparisonLayout");
+        XElement compactProfiles = NamedElement(document, "StackPanel", "ProfilesCompactLayout");
+        Assert.Equal("Collapsed", Attribute(compactProfiles, "Visibility"));
         _ = NamedElement(document, "Grid", "Root");
         XElement profileStateBadge = NamedElement(document, "Button", "ProfileStateBadge");
         Assert.Equal(
@@ -552,8 +557,10 @@ public sealed class CapabilityPresentationTests
         Assert.DoesNotContain("ProfileChargeLimitEditor", xaml, StringComparison.Ordinal);
         Assert.Contains("ViewModel.IsBatteryProfileActive", xaml, StringComparison.Ordinal);
         Assert.Contains("ViewModel.IsUsbCProfileActive", xaml, StringComparison.Ordinal);
-        Assert.Contains("ViewModel.UsbCProfileThermalSummary", xaml, StringComparison.Ordinal);
-        Assert.Contains("ViewModel.UsbCProfileLightingSummary", xaml, StringComparison.Ordinal);
+        Assert.Contains("ViewModel.PluggedInProfilePresentation.PowerMode", xaml, StringComparison.Ordinal);
+        Assert.Contains("ViewModel.UsbCProfilePresentation.LightingEffect", xaml, StringComparison.Ordinal);
+        Assert.Contains("ViewModel.BatteryProfilePresentation.DisplayRefreshRate", xaml, StringComparison.Ordinal);
+        Assert.Contains("ViewModel.SelectedProfilePresentation.PowerMode", xaml, StringComparison.Ordinal);
         Assert.DoesNotContain("ViewModel.AvailableUsbCPerformanceOptions", xaml, StringComparison.Ordinal);
         Assert.DoesNotContain("ViewModel.AvailableUsbCFanModes", xaml, StringComparison.Ordinal);
 
