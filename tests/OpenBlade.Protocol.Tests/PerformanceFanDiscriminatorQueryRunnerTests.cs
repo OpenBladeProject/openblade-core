@@ -14,18 +14,26 @@ public sealed class PerformanceFanDiscriminatorQueryRunnerTests
             await runner.RunAsync(default);
 
         Assert.Null(result.Failure);
-        Assert.Equal([1, 2, 3], session.TransactionIds);
-        Assert.Equal([0x8F, 0x82, 0x82],
+        Assert.Equal([1, 2, 3, 4, 5], session.TransactionIds);
+        Assert.Equal([0x8F, 0x82, 0x82, 0x87, 0x87],
             session.Commands.Select(command => command.CommandId).ToArray());
-        Assert.Equal([0x07, 0x0D, 0x0D],
+        Assert.Equal([0x07, 0x0D, 0x0D, 0x0D, 0x0D],
             session.Commands.Select(command => command.ClassId).ToArray());
-        Assert.Equal([1, 4, 4],
+        Assert.Equal([1, 4, 4, 3, 3],
             session.Commands.Select(command => command.Arguments.Length).ToArray());
         Assert.Equal([0x01, 0x01, 0x00, 0x00], session.Commands[1].Arguments.ToArray());
         Assert.Equal([0x01, 0x02, 0x00, 0x00], session.Commands[2].Arguments.ToArray());
         Assert.Equal([0x00], session.Commands[0].Arguments.ToArray());
+        Assert.Equal([0x01, 0x01, 0x00], session.Commands[3].Arguments.ToArray());
+        Assert.Equal([0x01, 0x02, 0x00], session.Commands[4].Arguments.ToArray());
         Assert.Equal(
-            ["07/8F power control", "0D/82 class1 thermal1", "0D/82 class1 thermal2"],
+            [
+                "07/8F power control",
+                "0D/82 class1 thermal1",
+                "0D/82 class1 thermal2",
+                "0D/87 custom CPU component",
+                "0D/87 custom GPU component",
+            ],
             result.Value!.Readings.Select(reading => reading.Operation).ToArray());
         Assert.Equal(8, result.Value.Readings[1].RequestPayloadHex.Length);
         Assert.Equal(8, result.Value.Readings[1].ResponseHex.Length);

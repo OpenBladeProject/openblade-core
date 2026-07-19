@@ -35,6 +35,9 @@ All notable changes to OpenBlade are documented in this file. The project follow
   Plugged-in power cycles Balanced, Silent, and Performance; battery cycles
   Balanced and Battery Saver; USB-C remains Balanced. Custom stays excluded
   until both CPU and GPU components have independent readback.
+- The bounded read-only performance discriminator probe now includes fixed
+  `0D/87` CPU and GPU component queries. This is validation tooling only;
+  Custom mode remains unavailable until target-hardware GPU readback succeeds.
 
 ### Changed
 

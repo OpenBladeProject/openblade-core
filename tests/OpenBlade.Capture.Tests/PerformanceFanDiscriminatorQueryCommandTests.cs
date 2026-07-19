@@ -14,6 +14,8 @@ public sealed class PerformanceFanDiscriminatorQueryCommandTests
             new("07/8F power control", "00", "00"),
             new("0D/82 class1 thermal1", "01010000", "01010000"),
             new("0D/82 class1 thermal2", "01020000", "01020000"),
+            new("0D/87 custom CPU component", "010100", "010101"),
+            new("0D/87 custom GPU component", "010200", "010202"),
         ]);
         var output = new StringWriter();
         var command = new PerformanceFanDiscriminatorQueryCommand(
@@ -37,10 +39,16 @@ public sealed class PerformanceFanDiscriminatorQueryCommandTests
         Assert.True(root.GetProperty("success").GetBoolean());
         JsonElement[] responses = root.GetProperty("responses").EnumerateArray().ToArray();
         Assert.Equal(
-            ["07/8F power control", "0D/82 class1 thermal1", "0D/82 class1 thermal2"],
+            [
+                "07/8F power control",
+                "0D/82 class1 thermal1",
+                "0D/82 class1 thermal2",
+                "0D/87 custom CPU component",
+                "0D/87 custom GPU component",
+            ],
             responses.Select(response => response.GetProperty("operation").GetString()!).ToArray());
         Assert.Equal(
-            ["00", "01010000", "01020000"],
+            ["00", "01010000", "01020000", "010100", "010200"],
             responses.Select(response =>
                 response.GetProperty("requestPayloadHex").GetString()!).ToArray());
         Assert.All(responses, response =>

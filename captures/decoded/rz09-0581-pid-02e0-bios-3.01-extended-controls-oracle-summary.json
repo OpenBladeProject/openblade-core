@@ -200,6 +200,11 @@
       "010102"
     ],
     "gpuQueryReadbackObserved": false,
+    "openBladeReadOnlyProbe": {
+      "fixedCpuAndGpuQueriesImplemented": true,
+      "acceptsRawSelectors": false,
+      "targetHardwareExecutionPending": true
+    },
     "invalidCombinationObserved": {
       "cpu": "High",
       "gpu": "High"

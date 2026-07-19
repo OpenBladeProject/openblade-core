@@ -22,6 +22,8 @@ internal sealed class PerformanceFanDiscriminatorQueryRunner
         new("07/8F power control", 0x07, 0x8F, [0x00], 1),
         new("0D/82 class1 thermal1", 0x0D, 0x82, [0x01, 0x01, 0x00, 0x00], 4),
         new("0D/82 class1 thermal2", 0x0D, 0x82, [0x01, 0x02, 0x00, 0x00], 4),
+        new("0D/87 custom CPU component", 0x0D, 0x87, [0x01, 0x01, 0x00], 3),
+        new("0D/87 custom GPU component", 0x0D, 0x87, [0x01, 0x02, 0x00], 3),
     ];
 
     private readonly Func<ValidationRunContext> createContext;
