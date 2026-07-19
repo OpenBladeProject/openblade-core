@@ -631,6 +631,89 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             context.Runtime.GetStatus().LightingRendererOwnership);
     }
 
+    [Fact]
+    public async Task PeriodicRefreshRecoversOneTransientLightingRendererFault()
+    {
+        TestContext context = await CreateOwnedStaticLightingContextAsync();
+        context.Device.LightingRendererOwnership =
+            LightingRendererOwnershipState.Faulted;
+
+        await context.Runtime.RefreshPowerSourceClassificationAsync(
+            CancellationToken.None);
+
+        Assert.Equal(2, context.Device.LightingSetCalls);
+        Assert.Equal(
+            LightingRendererOwnershipState.Static,
+            context.Runtime.GetStatus().LightingRendererOwnership);
+        Assert.Contains(
+            "recovered after a transient renderer error",
+            context.Runtime.GetStatus().Message,
+            StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task VisibleObservationFaultIsRecoveredImmediatelyByServiceObservation()
+    {
+        TestContext context = await CreateOwnedStaticLightingContextAsync();
+        context.Device.LightingRendererOwnership =
+            LightingRendererOwnershipState.Faulted;
+
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+
+        Assert.Equal(2, context.Device.LightingSetCalls);
+        Assert.Equal(
+            LightingRendererOwnershipState.Static,
+            context.Runtime.GetStatus().LightingRendererOwnership);
+    }
+
+    [Fact]
+    public async Task VisibleObservationFaultWithExternalLightingChangeIsNotRecovered()
+    {
+        TestContext context = await CreateOwnedStaticLightingContextAsync();
+        context.Device.LightingRendererOwnership =
+            LightingRendererOwnershipState.Faulted;
+        context.Device.ConfirmedState = context.Device.ConfirmedState with
+        {
+            Lighting = new LightingSettings(
+                LightingEffect.Static,
+                new RgbColor(1, 2, 3),
+                25),
+        };
+
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+
+        Assert.Equal(1, context.Device.LightingSetCalls);
+        Assert.Equal(
+            LightingRendererOwnershipState.Faulted,
+            context.Runtime.GetStatus().LightingRendererOwnership);
+        Assert.Contains(
+            DeviceSubsystem.Lighting,
+            context.Runtime.GetStatus().ExternalChanges);
+    }
+
+    [Fact]
+    public async Task PersistentLightingRendererFaultIsReportedWithoutRetryLoop()
+    {
+        TestContext context = await CreateOwnedStaticLightingContextAsync();
+        context.Device.LightingRendererOwnership =
+            LightingRendererOwnershipState.Faulted;
+        context.Device.LightingFailure = new IOException("matrix stream unavailable");
+
+        await context.Runtime.RefreshPowerSourceClassificationAsync(
+            CancellationToken.None);
+        await context.Runtime.RefreshPowerSourceClassificationAsync(
+            CancellationToken.None);
+
+        Assert.Equal(2, context.Device.LightingSetCalls);
+        Assert.Equal(
+            LightingRendererOwnershipState.Faulted,
+            context.Runtime.GetStatus().LightingRendererOwnership);
+        Assert.Contains(
+            "could not be restarted automatically",
+            context.Runtime.GetStatus().Message,
+            StringComparison.OrdinalIgnoreCase);
+    }
+
     [Theory]
     [InlineData(PowerSource.Battery)]
     [InlineData(PowerSource.UsbC)]

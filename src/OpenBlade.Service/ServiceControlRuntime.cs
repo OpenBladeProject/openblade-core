@@ -103,6 +103,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
     private bool mcuVersionReadAttempted;
     private LightingSettings? lastOwnedLightingSettings;
     private LightingSettings? pendingLightingRestore;
+    private LightingSettings? faultedLightingRecoveryCandidate;
     private bool controllerLightingRelinquishPending;
 
     public ServiceControlRuntime(
@@ -715,6 +716,9 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                         current.ConfirmedState ?? UnknownConfirmedState),
                 });
             }
+
+            await RecoverFaultedLightingRendererCoreAsync(cancellationToken)
+                .ConfigureAwait(false);
         }
         finally
         {
@@ -762,6 +766,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         {
             pendingLightingRestore = null;
         }
+        faultedLightingRecoveryCandidate = null;
 
         try
         {
@@ -1619,6 +1624,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             LightingRendererOwnershipState lightingOwnership =
                 await ReadLightingOwnershipAsync(device, cancellationToken)
                     .ConfigureAwait(false);
+            CaptureFaultedLightingRecoveryCandidate(lightingOwnership);
             UpdateOwnedLightingSnapshot(lightingOwnership, appliedSettings: null);
             FirmwareVersions? firmware = await ReadFirmwareVersionsAsync(
                 device,
@@ -1669,6 +1675,12 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 Firmware = firmware,
                 LightingRendererOwnership = lightingOwnership,
             });
+
+            if (powerSourceConfirmed && faultedLightingRecoveryCandidate is not null)
+            {
+                await RecoverFaultedLightingRendererCoreAsync(cancellationToken)
+                    .ConfigureAwait(false);
+            }
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -2149,6 +2161,142 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             await ReadLightingOwnershipAsync(device, cancellationToken).ConfigureAwait(false);
         PublishIfChanged(GetStatus() with { LightingRendererOwnership = ownership });
         return ownership;
+    }
+
+    private void CaptureFaultedLightingRecoveryCandidate(
+        LightingRendererOwnershipState observed)
+    {
+        if (observed != LightingRendererOwnershipState.Faulted
+            || lastOwnedLightingSettings is not { } owned)
+        {
+            return;
+        }
+
+        LightingRendererOwnershipState previous = GetStatus().LightingRendererOwnership;
+        if (IsExplicitLightingOwnership(previous) && OwnershipMatches(previous, owned))
+        {
+            faultedLightingRecoveryCandidate = owned;
+        }
+    }
+
+    private async Task RecoverFaultedLightingRendererCoreAsync(
+        CancellationToken cancellationToken)
+    {
+        ServiceStatusSnapshot current = GetStatus();
+        LightingSettings? requested = faultedLightingRecoveryCandidate;
+        IBladeDevice? device = null;
+
+        if (requested is null
+            && lastOwnedLightingSettings is { } owned
+            && IsExplicitLightingOwnership(current.LightingRendererOwnership)
+            && OwnershipMatches(current.LightingRendererOwnership, owned))
+        {
+            if (!deviceProvider.TryGetVerifiedDevice(out device))
+            {
+                return;
+            }
+
+            LightingRendererOwnershipState observed =
+                await ReadLightingOwnershipAsync(device, cancellationToken)
+                    .ConfigureAwait(false);
+            if (observed != LightingRendererOwnershipState.Faulted)
+            {
+                UpdateOwnedLightingSnapshot(observed, appliedSettings: null);
+                PublishIfChanged(GetStatus() with
+                {
+                    LightingRendererOwnership = observed,
+                });
+                return;
+            }
+
+            faultedLightingRecoveryCandidate = owned;
+            lastOwnedLightingSettings = null;
+            requested = owned;
+            PublishIfChanged(GetStatus() with
+            {
+                LightingRendererOwnership = LightingRendererOwnershipState.Faulted,
+            });
+        }
+
+        if (requested is null)
+        {
+            return;
+        }
+
+        // Consume the candidate before writing. A persistent failure must not
+        // become an unbounded 15-second retry loop; an explicit later lighting
+        // action can establish a fresh ownership snapshot.
+        faultedLightingRecoveryCandidate = null;
+        current = GetStatus();
+        if (IsControllerPresenceUnsafe(current)
+            || current.ExternalChanges.Contains(DeviceSubsystem.Lighting)
+            || !current.DeviceVerified
+            || current.WritesBlocked)
+        {
+            PublishLightingRestoreFailure(
+                "Keyboard lighting stopped after a renderer error and was not restarted automatically.",
+                LightingRendererOwnershipState.Faulted);
+            return;
+        }
+
+        if (device is null && !deviceProvider.TryGetVerifiedDevice(out device))
+        {
+            PublishLightingRestoreFailure(
+                "Keyboard lighting stopped after a renderer error and could not be restarted automatically.",
+                LightingRendererOwnershipState.Faulted);
+            return;
+        }
+
+        ScopedApplyOutcome outcome;
+        try
+        {
+            outcome = await new ControlCoordinator(device)
+                .ApplyLightingOutcomeAsync(
+                    requested,
+                    cancellationToken,
+                    forceWrite: true)
+                .ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch
+        {
+            PublishLightingRestoreFailure(
+                "Keyboard lighting stopped after a renderer error and could not be restarted automatically.",
+                LightingRendererOwnershipState.Faulted);
+            return;
+        }
+
+        LightingRendererOwnershipState recoveredOwnership =
+            await PublishObservedLightingOwnershipAsync(device, cancellationToken)
+                .ConfigureAwait(false);
+        bool recovered = outcome.Result.Status is
+                ControlResultStatus.Applied or ControlResultStatus.Unchanged
+            && OwnershipMatches(recoveredOwnership, requested);
+        UpdateOwnedLightingSnapshot(
+            recoveredOwnership,
+            recovered ? requested : null);
+        if (!recovered)
+        {
+            PublishLightingRestoreFailure(
+                "Keyboard lighting stopped after a renderer error and could not be restarted automatically.",
+                recoveredOwnership);
+            return;
+        }
+
+        const string message =
+            "Keyboard lighting recovered after a transient renderer error.";
+        history.RecordSubsystemResult(
+            DeviceSubsystem.Lighting,
+            new ControlResult(ControlResultStatus.Applied, message));
+        driftTracker.ConfirmIntentional(DeviceSubsystem.Lighting, matched: true);
+        PublishIfChanged(GetStatus() with
+        {
+            ExternalChanges = driftTracker.ExternalChanges,
+            Message = message,
+        });
     }
 
     private void UpdateOwnedLightingSnapshot(

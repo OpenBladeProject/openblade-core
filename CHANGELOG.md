@@ -20,6 +20,9 @@ All notable changes to OpenBlade are documented in this file. The project follow
 - Selecting a visible keyboard effect from Off now starts with a visible color
   and nonzero brightness. Legacy non-Off settings saved at 0% are migrated, and
   0% is reserved for Off so Breathing cannot be accepted and then disappear.
+- A transient keyboard renderer failure now gets one bounded automatic restart,
+  including while the tray is hidden. Persistent failures and settings changed
+  elsewhere remain stopped and are reported without a retry loop.
 - Keyboard colors now use a native color picker with optional advanced RGB
   fields, and lighting overrides are summarized as readable effect details.
 - The dashboard falls back to the active USB-C profile when firmware reports a

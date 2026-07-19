@@ -184,7 +184,8 @@ public sealed class ControlCoordinator
 
     internal Task<ScopedApplyOutcome> ApplyLightingOutcomeAsync(
         LightingSettings value,
-        CancellationToken cancellationToken) => ApplyScopedAsync(
+        CancellationToken cancellationToken,
+        bool forceWrite = false) => ApplyScopedAsync(
             DeviceSubsystem.Lighting,
             "Lighting",
             IsLightingValid(value),
@@ -192,7 +193,8 @@ public sealed class ControlCoordinator
             state => state.Lighting == value,
             token => device.SetLightingAsync(value, token),
             cancellationToken,
-            acceptSetterCompletionWithoutReadback: value.Effect != LightingEffect.Off);
+            acceptSetterCompletionWithoutReadback: value.Effect != LightingEffect.Off,
+            forceWrite: forceWrite);
 
     internal async Task<FullTransitionApplyOutcome> ApplyDesiredStateOutcomeAsync(
         DesiredDeviceState desired,
@@ -593,7 +595,8 @@ public sealed class ControlCoordinator
         Func<CancellationToken, Task> setter,
         CancellationToken cancellationToken,
         Func<ConfirmedDeviceState, string?>? initialStateBlockReason = null,
-        bool acceptSetterCompletionWithoutReadback = false)
+        bool acceptSetterCompletionWithoutReadback = false,
+        bool forceWrite = false)
     {
         if (!valid)
         {
@@ -627,7 +630,7 @@ public sealed class ControlCoordinator
 
             initial = await device.ReadStateAsync(cancellationToken);
             cancellationToken.ThrowIfCancellationRequested();
-            if (matches(initial))
+            if (!forceWrite && matches(initial))
             {
                 return new ScopedApplyOutcome(
                     Unchanged(name),
