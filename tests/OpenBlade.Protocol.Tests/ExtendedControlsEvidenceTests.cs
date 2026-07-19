@@ -42,10 +42,48 @@ public sealed class ExtendedControlsEvidenceTests
         Assert.Equal("ConfirmedReadback", startup.GetProperty("openBladeStatePresentation").GetString());
     }
 
+    [Fact]
+    public void SynapseStateOwnershipEvidence_ProvesSavedSetterReplayNotFirmwareReadback()
+    {
+        using JsonDocument document = JsonDocument.Parse(File.ReadAllText(
+            SynapseStateOwnershipEvidencePath()));
+        JsonElement root = document.RootElement;
+        JsonElement hydration = root.GetProperty("pageHydration");
+        JsonElement discrimination = root.GetProperty("stateDiscrimination");
+        JsonElement decision = root.GetProperty("decision");
+
+        Assert.Equal(
+            ["00/08", "02/06"],
+            hydration.GetProperty("observedActions")
+                .EnumerateArray()
+                .Select(action => action.GetProperty("command").GetString()!)
+                .ToArray());
+
+        JsonElement functionKey = discrimination.GetProperty("functionKeyPrimary");
+        Assert.Equal("02/86", functionKey.GetProperty("candidateIndependentQuery").GetString());
+        Assert.False(functionKey.GetProperty("candidateIndependentQueryObserved").GetBoolean());
+        Assert.False(functionKey.GetProperty("candidateIndependentQuerySentByOpenBlade").GetBoolean());
+
+        JsonElement gamingMode = discrimination.GetProperty("gamingMode");
+        Assert.Equal("00/88", gamingMode.GetProperty("candidateIndependentQuery").GetString());
+        Assert.False(gamingMode.GetProperty("candidateIndependentQueryObserved").GetBoolean());
+        Assert.False(gamingMode.GetProperty("candidateIndependentQuerySentByOpenBlade").GetBoolean());
+
+        Assert.False(decision.GetProperty("currentFirmwareReadbackProven").GetBoolean());
+        Assert.False(decision.GetProperty("openBladeMustPresentAsConfirmedCurrentState").GetBoolean());
+        Assert.False(decision.GetProperty("automaticReplayAllowed").GetBoolean());
+        Assert.False(decision.GetProperty("guessedGetterProbeAllowed").GetBoolean());
+    }
+
     private static string EvidencePath() => RepositoryFile(
         "captures",
         "decoded",
         "rz09-0581-pid-02e0-bios-3.01-extended-controls-oracle-summary.json");
+
+    private static string SynapseStateOwnershipEvidencePath() => RepositoryFile(
+        "captures",
+        "decoded",
+        "rz09-0581-pid-02e0-bios-3.01-synapse-state-ownership.json");
 
     private static string RepositoryFile(params string[] relativeSegments)
     {

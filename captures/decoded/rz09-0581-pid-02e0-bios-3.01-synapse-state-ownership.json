@@ -1,0 +1,141 @@
+{
+  "schemaVersion": 1,
+  "evidenceRole": "SynapseProtocolLoggerStateOwnershipAnalysis",
+  "target": {
+    "model": "Razer Blade 16 (2026)",
+    "modelNumber": "RZ09-0581",
+    "vendorIdHex": "1532",
+    "productIdHex": "02E0",
+    "bios": "3.01"
+  },
+  "synapse": {
+    "version": "4.0.697",
+    "productModuleId": 736,
+    "logger": {
+      "implementation": "RazerAppEngine electron/Protocol/protocolLogger.js",
+      "activationArgument": "--logProtocol",
+      "rawLogCommitted": false,
+      "sanitizedAnalysisOnly": true
+    }
+  },
+  "captureWindow": {
+    "localStart": "2026-07-19T16:04:40.000-07:00",
+    "localEnd": "2026-07-19T16:08:40.000-07:00",
+    "initialSynapseState": {
+      "functionKeyPrimary": "FunctionKeys",
+      "gamingMode": false
+    },
+    "finalSynapseState": {
+      "functionKeyPrimary": "FunctionKeys",
+      "gamingMode": false
+    }
+  },
+  "pageHydration": {
+    "observedActions": [
+      {
+        "control": "GamingMode",
+        "command": "00/08",
+        "requestPayloadHex": "00000000",
+        "responseStatusHex": "02",
+        "responsePayloadHex": "320A0000"
+      },
+      {
+        "control": "FunctionKeyPrimary",
+        "command": "02/06",
+        "requestPayloadHex": "0100",
+        "responseStatusHex": "02",
+        "responsePayloadHex": "0100"
+      }
+    ],
+    "interpretation": "Opening Customize replayed Synapse-owned saved values to the laptop rather than first reading either value from an independent firmware query."
+  },
+  "stateDiscrimination": {
+    "functionKeyPrimary": {
+      "transitions": [
+        {
+          "from": "FunctionKeys",
+          "to": "MultimediaKeys",
+          "command": "02/06",
+          "requestPayloadHex": "0101",
+          "responseStatusHex": "02",
+          "responsePayloadHex": "0101"
+        },
+        {
+          "from": "MultimediaKeys",
+          "to": "FunctionKeys",
+          "command": "02/06",
+          "requestPayloadHex": "0100",
+          "responseStatusHex": "02",
+          "responsePayloadHex": "0100"
+        }
+      ],
+      "candidateIndependentQuery": "02/86",
+      "candidateIndependentQueryObserved": false,
+      "candidateIndependentQuerySentByOpenBlade": false
+    },
+    "gamingMode": {
+      "transitions": [
+        {
+          "from": false,
+          "to": true,
+          "command": "00/08",
+          "requestPayloadHex": "01000000",
+          "responseStatusHex": "02",
+          "responsePayloadHex": "320A0000"
+        },
+        {
+          "from": true,
+          "to": false,
+          "command": "00/08",
+          "requestPayloadHex": "00000000",
+          "responseStatusHex": "02",
+          "responsePayloadHex": "320A0000"
+        }
+      ],
+      "candidateIndependentQuery": "00/88",
+      "candidateIndependentQueryObserved": false,
+      "candidateIndependentQuerySentByOpenBlade": false
+    }
+  },
+  "synapsePersistence": {
+    "source": "Active Synapse IndexedDB device and profile record",
+    "functionKeyPrimaryField": {
+      "name": "functionKeyPrimary",
+      "observedValue": "func"
+    },
+    "gamingModeField": {
+      "name": "gamingMode",
+      "observedValue": {
+        "state": 0,
+        "isWindowsKeyDisabled": false,
+        "isAltTabDisabled": false,
+        "isAltF4Disabled": false,
+        "isGameOn": false,
+        "scancode": 0,
+        "originalState": 0
+      }
+    },
+    "startupAnimationField": {
+      "name": "startupAnimation",
+      "observedValue": true
+    }
+  },
+  "driverBoundary": {
+    "driver": "RzDev_02e0.sys",
+    "version": "1.0.0.78",
+    "keyboardFilterPresent": true,
+    "virtualConsumerControlDevicePresent": true,
+    "functionKeyOrGamingStateValueFoundInDriverRegistry": false,
+    "interpretation": "Gaming Mode is a hybrid Synapse profile and keyboard-filter feature. Command 00/08 represents only its captured hardware-facing component."
+  },
+  "decision": {
+    "functionKeyPrimary": "SetterOnlySynapsePreference",
+    "gamingMode": "SetterOnlyHybridSynapsePreference",
+    "currentFirmwareReadbackProven": false,
+    "openBladeMustPresentAsConfirmedCurrentState": false,
+    "openBladeMayPresentLastAppliedWithExplicitProvenance": true,
+    "automaticReplayAllowed": false,
+    "guessedGetterProbeAllowed": false,
+    "reason": "Synapse displays persisted desired state and replays setters. No independent firmware getter or stable driver-state API was observed, so a saved value cannot be claimed as current laptop state after an external change."
+  }
+}

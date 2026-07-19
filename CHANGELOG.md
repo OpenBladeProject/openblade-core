@@ -43,6 +43,11 @@ All notable changes to OpenBlade are documented in this file. The project follow
 - Exact-device Startup animation control with validated read-only `0F/98`
   state, based on isolated On, Off, and restored-On responses. Function key
   behavior and Gaming Mode remain setter-only and do not imply a known value.
+- A sanitized Synapse protocol-logger and persistence audit proving that
+  Function key behavior and Gaming Mode are displayed from Synapse-owned saved
+  state and replayed through setters, not hydrated from observed firmware
+  getters. The investigation restored both original selections and sent no
+  guessed commands.
 - A captured-feature audit that maps every reproducible target-device operation
   to its production surface and records why Trackpad, Snap Tap, and
   uncaptured effects remain hidden instead of relying on guessed commands.
