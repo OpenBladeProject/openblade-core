@@ -814,9 +814,54 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                     OneShotLaptopControl.GamingMode => "Gaming Mode",
                     _ => "Laptop control",
                 };
+                ConfirmedDeviceState? refreshed = null;
+                if (value.Control == OneShotLaptopControl.StartupAnimation)
+                {
+                    try
+                    {
+                        refreshed = await ReadObservedStateAsync(device, token)
+                            .ConfigureAwait(false);
+                    }
+                    catch (OperationCanceledException) when (token.IsCancellationRequested)
+                    {
+                        throw;
+                    }
+                    catch
+                    {
+                        refreshed = null;
+                    }
+                }
+
+                bool readbackMatches = refreshed?.StartupAnimationEnabled == value.Enabled;
                 var result = new ControlOperationResult(
-                    ControlOperationStatus.Applied,
-                    $"{label} was applied. OpenBlade cannot read its current firmware value.");
+                    value.Control == OneShotLaptopControl.StartupAnimation
+                        && refreshed?.StartupAnimationEnabled is not null
+                        && !readbackMatches
+                            ? ControlOperationStatus.Failed
+                            : ControlOperationStatus.Applied,
+                    value.Control switch
+                    {
+                        OneShotLaptopControl.StartupAnimation when readbackMatches =>
+                            $"{label} is {(value.Enabled is true ? "on" : "off")}.",
+                        OneShotLaptopControl.StartupAnimation when
+                            refreshed?.StartupAnimationEnabled is not null =>
+                            $"{label} did not match the requested setting.",
+                        OneShotLaptopControl.StartupAnimation =>
+                            $"{label} was applied, but its current state could not be read.",
+                        _ =>
+                            $"{label} was applied. OpenBlade cannot read its current firmware value.",
+                    });
+                if (refreshed is not null)
+                {
+                    ServiceStatusSnapshot afterApply = GetStatus();
+                    PublishScopedStatus(
+                        afterApply.ActivePowerSource,
+                        refreshed,
+                        afterApply.Capabilities,
+                        result.Message,
+                        deviceVerified: true,
+                        writesBlocked: afterApply.WritesBlocked);
+                }
                 history.RecordSummary(result.Status, result.Message);
                 return result;
             }

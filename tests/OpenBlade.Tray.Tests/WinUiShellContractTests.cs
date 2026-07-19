@@ -92,7 +92,11 @@ public sealed class WinUiShellContractTests
         Assert.Contains("AutomationProperties.Name=\"Set function key behavior\"", xaml, StringComparison.Ordinal);
         Assert.Contains("AutomationProperties.Name=\"Set Gaming Mode\"", xaml, StringComparison.Ordinal);
         Assert.Contains("AutomationProperties.Name=\"Set startup animation\"", xaml, StringComparison.Ordinal);
-        Assert.Equal(3, CountOccurrences(xaml, "Content=\"Set&#x2026;\""));
+        Assert.Contains(
+            "Content=\"{x:Bind ViewModel.StartupAnimationStateLabel, Mode=OneWay}\"",
+            xaml,
+            StringComparison.Ordinal);
+        Assert.Equal(2, CountOccurrences(xaml, "Content=\"Set&#x2026;\""));
         Assert.DoesNotContain("Content=\"Change\"", xaml, StringComparison.Ordinal);
         Assert.DoesNotContain(
             "Text=\"Laptop logo\" Style=\"{StaticResource CardTitleStyle}\"",

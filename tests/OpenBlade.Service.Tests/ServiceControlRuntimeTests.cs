@@ -1199,7 +1199,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     }
 
     [Fact]
-    public async Task OneShotLaptopControl_AppliesWithoutInventingConfirmedState()
+    public async Task StartupAnimationControl_PublishesConfirmedReadback()
     {
         TestContext context = CreateContext(providerAvailable: true);
         context.Device.Capabilities = DeviceCapabilities.SafeTargetDefaults() with
@@ -1213,9 +1213,11 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             PerformancePreset.Balanced,
             FanMode.Automatic,
             ConfirmedBattery(80),
-            ProfileDefaults.CreateSafeDefaults().PluggedIn.Lighting);
+            ProfileDefaults.CreateSafeDefaults().PluggedIn.Lighting)
+        {
+            StartupAnimationEnabled = true,
+        };
         await context.Runtime.ObserveAsync(CancellationToken.None);
-        ConfirmedDeviceState before = context.Runtime.GetStatus().ConfirmedState!;
         var request = new ApplyOneShotLaptopControl(
             OneShotLaptopControl.StartupAnimation,
             Enabled: false);
@@ -1226,7 +1228,8 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         Assert.Equal(ControlOperationStatus.Applied, result.Status);
         Assert.Equal(request, context.Device.LastOneShotLaptopControl);
         Assert.Equal(1, context.Device.OneShotSetCalls);
-        Assert.Same(before, context.Runtime.GetStatus().ConfirmedState);
+        Assert.False(context.Runtime.GetStatus().ConfirmedState!.StartupAnimationEnabled);
+        Assert.Equal("Startup animation is off.", result.Message);
     }
 
     [Fact]
@@ -4477,6 +4480,17 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             TotalCalls++;
             OneShotSetCalls++;
             LastOneShotLaptopControl = value;
+            if (value is
+                {
+                    Control: OneShotLaptopControl.StartupAnimation,
+                    Enabled: { } enabled,
+                })
+            {
+                ConfirmedState = ConfirmedState with
+                {
+                    StartupAnimationEnabled = enabled,
+                };
+            }
             return OneShotFailure is null
                 ? Task.CompletedTask
                 : Task.FromException(OneShotFailure);

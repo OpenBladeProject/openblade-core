@@ -124,6 +124,51 @@ public sealed class WindowsVerifiedBladeDeviceProviderProductionTests
     }
 
     [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task ReadState_PublishesStartupAnimationState(bool enabled)
+    {
+        DeviceCapabilities capabilities = DeviceCapabilities.Unavailable();
+        var port = new FakeProductionPort(
+            capabilities,
+            BatteryValidationSetting.Limit80,
+            temporary: null,
+            startupAnimation: enabled);
+        var factory = new FakeProductionFactory(capabilities, port);
+        using var provider = ReadyProvider(factory);
+        provider.TryGetVerifiedDevice(out IBladeDevice device);
+
+        ConfirmedDeviceState state = await device.ReadStateAsync(default);
+
+        Assert.Equal(enabled, state.StartupAnimationEnabled);
+        Assert.Equal(1, port.StartupAnimationQueryCount);
+        Assert.Equal(1, port.DisposeCount);
+    }
+
+    [Fact]
+    public async Task ReadState_StartupAnimationFailureDegradesOnlyThatField()
+    {
+        DeviceCapabilities capabilities = DeviceCapabilities.Unavailable();
+        var port = new FakeProductionPort(
+            capabilities,
+            BatteryValidationSetting.Limit80,
+            temporary: null,
+            startupAnimation: true)
+        {
+            StartupAnimationFailure = new IOException("query failed"),
+        };
+        var factory = new FakeProductionFactory(capabilities, port);
+        using var provider = ReadyProvider(factory);
+        provider.TryGetVerifiedDevice(out IBladeDevice device);
+
+        ConfirmedDeviceState state = await device.ReadStateAsync(default);
+
+        Assert.Null(state.StartupAnimationEnabled);
+        Assert.Equal(new ConfirmedBatteryState(true, 80, null), state.Battery);
+        Assert.Equal(1, port.StartupAnimationQueryCount);
+    }
+
+    [Theory]
     [InlineData(PerformancePreset.Balanced)]
     [InlineData(PerformancePreset.Silent)]
     [InlineData(PerformancePreset.Performance)]
@@ -760,7 +805,8 @@ public sealed class WindowsVerifiedBladeDeviceProviderProductionTests
         bool blockProtectionQuery = false,
         bool blockWrite = false,
         ProductionPerformanceFanState? performanceFan = null,
-        string? mcuVersion = null) : IProductionBatteryPort
+        string? mcuVersion = null,
+        bool? startupAnimation = null) : IProductionBatteryPort
     {
         private readonly TaskCompletionSource? protectionRelease = blockProtectionQuery
             ? new(TaskCreationOptions.RunContinuationsAsynchronously)
@@ -772,9 +818,11 @@ public sealed class WindowsVerifiedBladeDeviceProviderProductionTests
         public DeviceCapabilities Capabilities { get; } = capabilities;
         public bool SupportsTemporaryFullChargeQuery => temporary.HasValue;
         public bool SupportsMcuVersionQuery => mcuVersion is not null;
+        public bool SupportsStartupAnimationQuery => startupAnimation.HasValue;
         public BladeWriteException? WriteFailure { get; set; }
         public Exception? ProtectionFailure { get; init; }
         public Exception? TemporaryFailure { get; init; }
+        public Exception? StartupAnimationFailure { get; init; }
         public TaskCompletionSource ProtectionQueryStarted { get; } =
             new(TaskCreationOptions.RunContinuationsAsynchronously);
         public TaskCompletionSource WriteStarted { get; } =
@@ -783,6 +831,7 @@ public sealed class WindowsVerifiedBladeDeviceProviderProductionTests
         public int TemporaryQueryCount { get; private set; }
         public int PerformanceFanQueryCount { get; private set; }
         public int McuVersionQueryCount { get; private set; }
+        public int StartupAnimationQueryCount { get; private set; }
         public int SetPerformanceCount { get; private set; }
         public int SetFanModeCount { get; private set; }
         public PerformancePreset? LastPerformance { get; private set; }
@@ -840,6 +889,16 @@ public sealed class WindowsVerifiedBladeDeviceProviderProductionTests
             cancellationToken.ThrowIfCancellationRequested();
             McuVersionQueryCount++;
             return Task.FromResult(mcuVersion);
+        }
+
+        public Task<bool?> QueryStartupAnimationAsync(
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            StartupAnimationQueryCount++;
+            return StartupAnimationFailure is null
+                ? Task.FromResult(startupAnimation)
+                : Task.FromException<bool?>(StartupAnimationFailure);
         }
 
         public Task SetPerformanceAsync(

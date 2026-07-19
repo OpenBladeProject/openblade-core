@@ -1784,7 +1784,7 @@
                                                        Style="{StaticResource SecondaryTextStyle}" />
                                         </StackPanel>
                                         <DropDownButton Grid.Column="1"
-                                                        Content="Set&#x2026;"
+                                                        Content="{x:Bind ViewModel.StartupAnimationStateLabel, Mode=OneWay}"
                                                         HorizontalAlignment="Right"
                                                         VerticalAlignment="Center"
                                                         AutomationProperties.Name="Set startup animation">

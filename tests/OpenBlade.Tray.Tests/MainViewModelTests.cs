@@ -1249,7 +1249,7 @@ public sealed class MainViewModelTests
         var client = new FakeServiceClient();
         await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
         await viewModel.StartAsync();
-        client.Publish(CreateStatus(
+        ServiceStatusSnapshot status = CreateStatus(
             verified: true,
             blocked: false,
             capabilities: new DeviceCapabilities(
@@ -1266,8 +1266,17 @@ public sealed class MainViewModelTests
                     OneShotLaptopControl.FunctionKeyPrimary,
                     OneShotLaptopControl.GamingMode,
                 },
-            }));
-        await WaitUntilAsync(() => viewModel.IsConnected);
+            });
+        client.Publish(status with
+        {
+            ConfirmedState = status.ConfirmedState! with
+            {
+                StartupAnimationEnabled = true,
+            },
+        });
+        await WaitUntilAsync(() =>
+            viewModel.StartupAnimationEnabled is true
+            && viewModel.IsPerformanceVisible);
 
         Assert.True(viewModel.IsPerformanceVisible);
         Assert.True(viewModel.IsFanControlVisible);
@@ -1285,6 +1294,8 @@ public sealed class MainViewModelTests
         Assert.True(viewModel.SupportsStartupAnimation);
         Assert.True(viewModel.SupportsFunctionKeyPrimary);
         Assert.True(viewModel.SupportsGamingMode);
+        Assert.True(viewModel.StartupAnimationEnabled);
+        Assert.Equal("On", viewModel.StartupAnimationStateLabel);
         var oneShot = new ApplyOneShotLaptopControl(
             OneShotLaptopControl.StartupAnimation,
             Enabled: false);

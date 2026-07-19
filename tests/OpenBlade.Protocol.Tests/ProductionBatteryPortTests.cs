@@ -69,6 +69,39 @@ public sealed class ProductionBatteryPortTests
     }
 
     [Fact]
+    public async Task StartupAnimationQuery_WithoutCodeControlledEvidenceReturnsNullWithoutIo()
+    {
+        var session = new ScriptedSession(Success([0x00]));
+        await using var port = CreatePort(session, DeviceCommandCatalog.Empty);
+
+        Assert.Null(await port.QueryStartupAnimationAsync(default));
+        Assert.Empty(session.Commands);
+    }
+
+    [Theory]
+    [InlineData("00", true)]
+    [InlineData("01", false)]
+    public async Task StartupAnimationQuery_IsSerializedAndReadOnly(
+        string responseHex,
+        bool expected)
+    {
+        var session = new ScriptedSession(
+            Success(Convert.FromHexString(responseHex)));
+        await using var port = CreatePort(
+            session,
+            DeviceCommandCatalog.Empty,
+            AcceptedStartupAnimationReadEvidence());
+
+        Assert.True(port.SupportsStartupAnimationQuery);
+        Assert.Equal(expected, await port.QueryStartupAnimationAsync(default));
+
+        RazerCommandSpec command = Assert.Single(session.Commands);
+        Assert.Equal((0x0F, 0x98), (command.ClassId, command.CommandId));
+        Assert.Equal([0x00], command.Arguments.ToArray());
+        Assert.Equal(1, command.ExpectedPayloadLength);
+    }
+
+    [Fact]
     public async Task EmptyCatalog_RemainsProtectionReadableAndRejectsEverySetter()
     {
         var session = new ScriptedSession(
@@ -1108,6 +1141,12 @@ public sealed class ProductionBatteryPortTests
         new HashSet<ProductionBatteryQueryCapability>
         {
             ProductionBatteryQueryCapability.McuVersion,
+        });
+
+    private static ProductionBatteryReadEvidence AcceptedStartupAnimationReadEvidence() => new(
+        new HashSet<ProductionBatteryQueryCapability>
+        {
+            ProductionBatteryQueryCapability.StartupAnimation,
         });
 
     private static ProductionBatteryReadEvidence NoTemporaryReadEvidence() => new(

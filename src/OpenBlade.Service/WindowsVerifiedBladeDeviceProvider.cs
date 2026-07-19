@@ -280,6 +280,9 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
                 ProductionPerformanceFanState performanceFan =
                     await port.QueryPerformanceFanStateAsync(cancellationToken)
                         .ConfigureAwait(false);
+                bool? startupAnimation = await ReadStartupAnimationStateCoreAsync(
+                    port,
+                    cancellationToken).ConfigureAwait(false);
                 LightingSettings? lighting =
                     await ReadLightingStateCoreAsync(cancellationToken).ConfigureAwait(false);
                 LogoLightingMode? logo =
@@ -293,7 +296,36 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
                 {
                     CustomPerformance = performanceFan.CustomPerformance,
                     LogoLighting = logo,
+                    StartupAnimationEnabled = startupAnimation,
                 };
+            }
+        }
+
+        private static async Task<bool?> ReadStartupAnimationStateCoreAsync(
+            IProductionBatteryPort port,
+            CancellationToken cancellationToken)
+        {
+            if (!port.SupportsStartupAnimationQuery)
+            {
+                return null;
+            }
+
+            try
+            {
+                return await port.QueryStartupAnimationAsync(cancellationToken)
+                    .ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (ObjectDisposedException)
+            {
+                throw;
+            }
+            catch
+            {
+                return null;
             }
         }
 

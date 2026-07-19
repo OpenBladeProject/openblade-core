@@ -68,6 +68,7 @@ internal sealed class ProductionBatteryPort : IProductionBatteryPort
     private readonly TemporaryFullChargeCommandClient temporaryCommands;
     private readonly AdapterPowerCommandClient adapterPowerCommands;
     private readonly McuVersionCommandClient mcuVersionCommands;
+    private readonly StartupAnimationCommandClient startupAnimationCommands;
     private readonly SemaphoreSlim operationGate = new(1, 1);
     private readonly object lifecycleSync = new();
     private readonly IAsyncDisposable ownedSession;
@@ -115,6 +116,9 @@ internal sealed class ProductionBatteryPort : IProductionBatteryPort
         temporaryCommands = new TemporaryFullChargeCommandClient(session, exchangeTimeout);
         adapterPowerCommands = new AdapterPowerCommandClient(session, exchangeTimeout);
         mcuVersionCommands = new McuVersionCommandClient(session, exchangeTimeout);
+        startupAnimationCommands = new StartupAnimationCommandClient(
+            session,
+            exchangeTimeout);
         Capabilities = CreateCapabilities(catalog, readEvidence);
     }
 
@@ -124,6 +128,9 @@ internal sealed class ProductionBatteryPort : IProductionBatteryPort
         readEvidence.SupportsTemporaryFullChargeQuery;
 
     public bool SupportsMcuVersionQuery => readEvidence.SupportsMcuVersionQuery;
+
+    public bool SupportsStartupAnimationQuery =>
+        readEvidence.SupportsStartupAnimationQuery;
 
     public async Task<ConfirmedBatteryState> QueryProtectionAsync(
         CancellationToken cancellationToken)
@@ -243,6 +250,37 @@ internal sealed class ProductionBatteryPort : IProductionBatteryPort
             EnsureUsable();
             byte transactionId = AllocateTransactionForRead();
             HidSessionResult<string?> result = await mcuVersionCommands.QueryAsync(
+                transactionId,
+                cancellationToken).ConfigureAwait(false);
+            if (result.Failure is not null)
+            {
+                ThrowReadFailure(result.Failure.Value, result.Diagnostic, cancellationToken);
+            }
+
+            return result.Value;
+        }
+        finally
+        {
+            operationGate.Release();
+        }
+    }
+
+    public async Task<bool?> QueryStartupAnimationAsync(
+        CancellationToken cancellationToken)
+    {
+        if (!readEvidence.SupportsStartupAnimationQuery)
+        {
+            ThrowIfClosingOrDisposed();
+            cancellationToken.ThrowIfCancellationRequested();
+            return null;
+        }
+
+        await EnterAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            EnsureUsable();
+            byte transactionId = AllocateTransactionForRead();
+            HidSessionResult<bool> result = await startupAnimationCommands.QueryAsync(
                 transactionId,
                 cancellationToken).ConfigureAwait(false);
             if (result.Failure is not null)

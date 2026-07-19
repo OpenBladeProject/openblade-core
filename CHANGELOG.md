@@ -40,12 +40,9 @@ All notable changes to OpenBlade are documented in this file. The project follow
   `0D/87` CPU and GPU component queries. Target-hardware readback confirmed the
   saved CPU Medium and GPU High values, allowing Custom mode to expose the
   captured Low, Medium, and High component choices while blocking High/High.
-- Exact-device one-shot controls for Startup animation, Function key behavior,
-  and Gaming Mode. OpenBlade validates each captured response but deliberately
-  does not present, persist, or automatically reapply a value it cannot query.
-- Validated read-only Startup animation state through `0F/98`, with isolated
-  On, Off, and restored-On responses. Function key behavior and Gaming Mode
-  remain setter-only.
+- Exact-device Startup animation control with validated read-only `0F/98`
+  state, based on isolated On, Off, and restored-On responses. Function key
+  behavior and Gaming Mode remain setter-only and do not imply a known value.
 - A captured-feature audit that maps every reproducible target-device operation
   to its production surface and records why Trackpad, Snap Tap, and
   uncaptured effects remain hidden instead of relying on guessed commands.

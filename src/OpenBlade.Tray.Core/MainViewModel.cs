@@ -200,6 +200,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         TrayHoverLabelMode.ProfileAndPowerFlow;
     private bool startAtSignIn;
     private bool startupStateKnown;
+    private bool? startupAnimationEnabled;
     private string startupStatusMessage = string.Empty;
     private TrayIconState trayIconState = TrayIconState.GenericError;
     private int disposed;
@@ -1203,6 +1204,33 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
 
     public bool SupportsStartupAnimation => Capabilities.OneShotLaptopControls.Contains(
         OneShotLaptopControl.StartupAnimation);
+
+    public bool? StartupAnimationEnabled
+    {
+        get => startupAnimationEnabled;
+        private set
+        {
+            if (startupAnimationEnabled == value)
+            {
+                return;
+            }
+
+            startupAnimationEnabled = value;
+            PropertyChanged?.Invoke(
+                this,
+                new PropertyChangedEventArgs(nameof(StartupAnimationEnabled)));
+            PropertyChanged?.Invoke(
+                this,
+                new PropertyChangedEventArgs(nameof(StartupAnimationStateLabel)));
+        }
+    }
+
+    public string StartupAnimationStateLabel => StartupAnimationEnabled switch
+    {
+        true => "On",
+        false => "Off",
+        null => "Set…",
+    };
 
     public bool SupportsFunctionKeyPrimary => Capabilities.OneShotLaptopControls.Contains(
         OneShotLaptopControl.FunctionKeyPrimary);
@@ -2546,6 +2574,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             ChargeLimitOptions = chargeLimits;
         }
         ConfirmedDeviceState? confirmed = status.ConfirmedState;
+        StartupAnimationEnabled = confirmed?.StartupAnimationEnabled;
         SelectedPerformance = ResolvePresentedPerformance(status, confirmed, capabilities);
         SelectedFanMode = ResolvePresentedFanMode(status, confirmed, capabilities);
         PrepareLightingEditorForPowerSource(status.ActivePowerSource);

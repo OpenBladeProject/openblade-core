@@ -1,8 +1,8 @@
 namespace OpenBlade.Contracts;
 
 /// <summary>
-/// Controls whose setters are verified for the exact target laptop, but whose
-/// current firmware values cannot be queried independently.
+/// Individually applied controls whose setters are verified for the exact
+/// target laptop. A control may additionally expose typed readback.
 /// </summary>
 public enum OneShotLaptopControl
 {
