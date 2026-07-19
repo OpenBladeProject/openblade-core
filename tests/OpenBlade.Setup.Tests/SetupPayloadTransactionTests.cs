@@ -864,6 +864,8 @@ public sealed class SetupPayloadTransactionTests
         public Task RemoveStartupShortcutAsync(CancellationToken cancellationToken) => throw new NotSupportedException();
         public Task InstallSessionAgentStartupShortcutAsync(CancellationToken cancellationToken) => throw new NotSupportedException();
         public Task RemoveSessionAgentStartupShortcutAsync(CancellationToken cancellationToken) => throw new NotSupportedException();
+        public Task InstallStartMenuShortcutAsync(CancellationToken cancellationToken) => throw new NotSupportedException();
+        public Task RemoveStartMenuShortcutAsync(CancellationToken cancellationToken) => throw new NotSupportedException();
         public Task RemoveServiceAsync(CancellationToken cancellationToken) => throw new NotSupportedException();
         public Task StopTrayAsync(CancellationToken cancellationToken) => throw new NotSupportedException();
         public Task StopSessionAgentAsync(CancellationToken cancellationToken) => throw new NotSupportedException();

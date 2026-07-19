@@ -70,9 +70,13 @@ public sealed class WindowsSetupPlatform : ISetupPlatform
         bool trayShortcutExisted = fileOperations.FileExists(paths.StartupFile)
             || fileOperations.FileExists(paths.LegacyStartupFile);
         bool sessionAgentShortcutExisted = fileOperations.FileExists(paths.SessionAgentStartupFile);
+        bool startMenuShortcutExisted = fileOperations.FileExists(paths.StartMenuFile);
         return new(
             new(state is not null, state == SetupServiceState.Running),
-            new(trayShortcutExisted, sessionAgentShortcutExisted));
+            new(
+                trayShortcutExisted,
+                sessionAgentShortcutExisted,
+                startMenuShortcutExisted));
     }
 
     public async Task PrepareServiceForInstallAsync(CancellationToken cancellationToken)
@@ -251,6 +255,24 @@ public sealed class WindowsSetupPlatform : ISetupPlatform
     {
         cancellationToken.ThrowIfCancellationRequested();
         fileOperations.DeleteFile(paths.SessionAgentStartupFile);
+        return Task.CompletedTask;
+    }
+
+    public Task InstallStartMenuShortcutAsync(CancellationToken cancellationToken)
+    {
+        string trayExecutable = Path.Combine(paths.InstallDirectory, "OpenBlade.Tray.exe");
+        return shortcutWriter.CreateAsync(
+            new ShortcutRequest(
+                paths.StartMenuFile,
+                trayExecutable,
+                paths.InstallDirectory),
+            cancellationToken);
+    }
+
+    public Task RemoveStartMenuShortcutAsync(CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        fileOperations.DeleteFile(paths.StartMenuFile);
         return Task.CompletedTask;
     }
 

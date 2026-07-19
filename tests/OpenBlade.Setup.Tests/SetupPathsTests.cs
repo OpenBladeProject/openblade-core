@@ -22,6 +22,9 @@ public sealed class SetupPathsTests
         Assert.Equal(
             @"C:\Users\jack\AppData\Roaming\Microsoft\Windows\Start Menu\Programs\Startup\OpenBlade.SessionAgent.lnk",
             paths.SessionAgentStartupFile);
+        Assert.Equal(
+            @"C:\Users\jack\AppData\Roaming\Microsoft\Windows\Start Menu\Programs\OpenBlade.lnk",
+            paths.StartMenuFile);
     }
 
     [Theory]

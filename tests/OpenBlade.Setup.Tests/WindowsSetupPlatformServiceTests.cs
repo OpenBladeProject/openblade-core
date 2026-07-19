@@ -333,6 +333,43 @@ public sealed class WindowsSetupPlatformServiceTests
         Assert.EndsWith("OpenBlade.SessionAgent.lnk", removed, StringComparison.OrdinalIgnoreCase);
     }
 
+    [Fact]
+    public async Task InstallStartMenuShortcut_CreatesSearchableLinkToTray()
+    {
+        RecordingShortcutWriter shortcutWriter = new();
+        WindowsSetupPlatform platform = new(new RecordingServiceControl(), shortcutWriter);
+
+        await platform.InstallStartMenuShortcutAsync(CancellationToken.None);
+
+        string installDirectory = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles),
+            "OpenBlade");
+        ShortcutRequest request = Assert.Single(shortcutWriter.Requests);
+        Assert.Equal(
+            Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.Programs),
+                "OpenBlade.lnk"),
+            request.ShortcutPath);
+        Assert.Equal(Path.Combine(installDirectory, "OpenBlade.Tray.exe"), request.TargetPath);
+        Assert.Equal(installDirectory, request.WorkingDirectory);
+    }
+
+    [Fact]
+    public async Task RemoveStartMenuShortcut_RemovesSearchableEntry()
+    {
+        RecordingFileOperations files = new();
+        WindowsSetupPlatform platform = new(fileOperations: files);
+
+        await platform.RemoveStartMenuShortcutAsync(CancellationToken.None);
+
+        string removed = Assert.Single(files.DeletedFiles);
+        Assert.Equal(
+            Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.Programs),
+                "OpenBlade.lnk"),
+            removed);
+    }
+
     [Theory]
     [InlineData("")]
     [InlineData("not-a-sid")]

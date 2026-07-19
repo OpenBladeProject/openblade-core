@@ -18,6 +18,11 @@ public sealed record SetupPaths
         StartupFile = Path.Combine(startupRoot, "OpenBlade.lnk");
         SessionAgentStartupFile = Path.Combine(startupRoot, "OpenBlade.SessionAgent.lnk");
         LegacyStartupFile = Path.Combine(startupRoot, "OpenBlade.cmd");
+        string programsRoot = Path.GetDirectoryName(startupRoot)
+            ?? throw new ArgumentException(
+                "The Startup folder must have a Start menu Programs parent.",
+                nameof(startupRoot));
+        StartMenuFile = Path.Combine(programsRoot, "OpenBlade.lnk");
     }
 
     public string ProgramFilesRoot { get; }
@@ -30,6 +35,7 @@ public sealed record SetupPaths
     public string StartupFile { get; }
     public string SessionAgentStartupFile { get; }
     public string LegacyStartupFile { get; }
+    public string StartMenuFile { get; }
 
     public static SetupPaths Create(
         string programFilesRoot,
