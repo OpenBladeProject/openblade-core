@@ -1296,9 +1296,9 @@ public sealed class MainViewModelTests
         Assert.True(viewModel.SupportsFunctionKeyPrimary);
         Assert.True(viewModel.SupportsGamingMode);
         Assert.True(viewModel.StartupAnimationEnabled);
-        Assert.Equal("On", viewModel.StartupAnimationStateLabel);
+        Assert.True(viewModel.StartupAnimationToggleIsOn);
         Assert.Equal("Function keys", viewModel.FunctionKeyPrimaryStateLabel);
-        Assert.Equal("Off", viewModel.GamingModeStateLabel);
+        Assert.False(viewModel.GamingModeToggleIsOn);
         var oneShot = new ApplyOneShotLaptopControl(
             OneShotLaptopControl.StartupAnimation,
             Enabled: false);

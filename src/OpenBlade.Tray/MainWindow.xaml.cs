@@ -35,6 +35,8 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
     private bool changingCustomPerformanceSelection;
     private bool changingFanSelection;
     private bool changingBatteryProtection;
+    private bool changingGamingMode;
+    private bool changingStartupAnimation;
     private bool changingDisplaySettings;
     private bool chargeLimitCommitInProgress;
     private bool chargeLimitPointerInteraction;
@@ -459,6 +461,90 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
 
         StartMinimized = toggle.IsOn;
         QueuePreferenceSave();
+    }
+
+    private async void OnGamingModeToggled(object sender, RoutedEventArgs args)
+    {
+        if (changingGamingMode
+            || Volatile.Read(ref disposed) != 0
+            || sender is not ToggleSwitch toggle
+            || toggle.IsOn == ViewModel.GamingModeToggleIsOn)
+        {
+            return;
+        }
+
+        changingGamingMode = true;
+        try
+        {
+            await ApplyLaptopBehaviorToggleAsync(
+                toggle,
+                toggle.IsOn
+                    ? ViewModel.GamingModeOnAction
+                    : ViewModel.GamingModeOffAction,
+                () => ViewModel.GamingModeToggleIsOn,
+                "Gaming Mode");
+        }
+        finally
+        {
+            changingGamingMode = false;
+        }
+    }
+
+    private async void OnStartupAnimationToggled(object sender, RoutedEventArgs args)
+    {
+        if (changingStartupAnimation
+            || Volatile.Read(ref disposed) != 0
+            || sender is not ToggleSwitch toggle
+            || toggle.IsOn == ViewModel.StartupAnimationToggleIsOn)
+        {
+            return;
+        }
+
+        changingStartupAnimation = true;
+        try
+        {
+            await ApplyLaptopBehaviorToggleAsync(
+                toggle,
+                toggle.IsOn
+                    ? ViewModel.StartupAnimationOnAction
+                    : ViewModel.StartupAnimationOffAction,
+                () => ViewModel.StartupAnimationToggleIsOn,
+                "startup animation");
+        }
+        finally
+        {
+            changingStartupAnimation = false;
+        }
+    }
+
+    private async Task ApplyLaptopBehaviorToggleAsync(
+        ToggleSwitch toggle,
+        ApplyOneShotLaptopControl action,
+        Func<bool> currentState,
+        string label)
+    {
+        if (ViewModel.ApplyOneShotLaptopControlCommand is not AsyncRelayCommand command
+            || !command.CanExecute(action))
+        {
+            toggle.IsOn = currentState();
+            return;
+        }
+
+        toggle.IsEnabled = false;
+        try
+        {
+            await command.ExecuteAsync(action);
+            await ViewModel.ObserveStateAsync(CancellationToken.None);
+        }
+        catch (Exception exception)
+        {
+            Trace.TraceError("OpenBlade {0} change failed: {1}", label, exception);
+        }
+        finally
+        {
+            toggle.IsOn = currentState();
+            toggle.IsEnabled = true;
+        }
     }
 
     private async void OnDashboardPerformanceChanged(

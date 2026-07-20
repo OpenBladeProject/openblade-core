@@ -1770,25 +1770,19 @@
                                         </Grid.ColumnDefinitions>
                                         <StackPanel Spacing="3" VerticalAlignment="Center">
                                             <TextBlock Text="Gaming Mode" Style="{StaticResource CardTitleStyle}" />
-                                            <TextBlock Text="Set Gaming Mode on or off."
+                                            <TextBlock Text="Turn Gaming Mode on or off."
                                                        Style="{StaticResource SecondaryTextStyle}" />
                                         </StackPanel>
-                                        <DropDownButton Grid.Column="1"
-                                                        Content="{x:Bind ViewModel.GamingModeStateLabel, Mode=OneWay}"
-                                                        HorizontalAlignment="Right"
-                                                        VerticalAlignment="Center"
-                                                        AutomationProperties.Name="Set Gaming Mode">
-                                            <DropDownButton.Flyout>
-                                                <MenuFlyout>
-                                                    <MenuFlyoutItem Text="Turn on"
-                                                                    Command="{x:Bind ViewModel.ApplyOneShotLaptopControlCommand}"
-                                                                    CommandParameter="{x:Bind ViewModel.GamingModeOnAction}" />
-                                                    <MenuFlyoutItem Text="Turn off"
-                                                                    Command="{x:Bind ViewModel.ApplyOneShotLaptopControlCommand}"
-                                                                    CommandParameter="{x:Bind ViewModel.GamingModeOffAction}" />
-                                                </MenuFlyout>
-                                            </DropDownButton.Flyout>
-                                        </DropDownButton>
+                                        <ToggleSwitch x:Name="GamingModeToggle"
+                                                      Grid.Column="1"
+                                                      HorizontalAlignment="Right"
+                                                      VerticalAlignment="Center"
+                                                      MinWidth="0"
+                                                      AutomationProperties.Name="Gaming Mode"
+                                                      OffContent=""
+                                                      OnContent=""
+                                                      IsOn="{x:Bind ViewModel.GamingModeToggleIsOn, Mode=OneWay}"
+                                                      Toggled="OnGamingModeToggled" />
                                     </Grid>
                                 </Border>
                                 <Border Style="{StaticResource SettingsLastRowStyle}"
@@ -1803,22 +1797,16 @@
                                             <TextBlock Text="Set whether the keyboard animation plays when the laptop starts."
                                                        Style="{StaticResource SecondaryTextStyle}" />
                                         </StackPanel>
-                                        <DropDownButton Grid.Column="1"
-                                                        Content="{x:Bind ViewModel.StartupAnimationStateLabel, Mode=OneWay}"
-                                                        HorizontalAlignment="Right"
-                                                        VerticalAlignment="Center"
-                                                        AutomationProperties.Name="Set startup animation">
-                                            <DropDownButton.Flyout>
-                                                <MenuFlyout>
-                                                    <MenuFlyoutItem Text="Turn on"
-                                                                    Command="{x:Bind ViewModel.ApplyOneShotLaptopControlCommand}"
-                                                                    CommandParameter="{x:Bind ViewModel.StartupAnimationOnAction}" />
-                                                    <MenuFlyoutItem Text="Turn off"
-                                                                    Command="{x:Bind ViewModel.ApplyOneShotLaptopControlCommand}"
-                                                                    CommandParameter="{x:Bind ViewModel.StartupAnimationOffAction}" />
-                                                </MenuFlyout>
-                                            </DropDownButton.Flyout>
-                                        </DropDownButton>
+                                        <ToggleSwitch x:Name="StartupAnimationToggle"
+                                                      Grid.Column="1"
+                                                      HorizontalAlignment="Right"
+                                                      VerticalAlignment="Center"
+                                                      MinWidth="0"
+                                                      AutomationProperties.Name="Startup animation"
+                                                      OffContent=""
+                                                      OnContent=""
+                                                      IsOn="{x:Bind ViewModel.StartupAnimationToggleIsOn, Mode=OneWay}"
+                                                      Toggled="OnStartupAnimationToggled" />
                                     </Grid>
                                 </Border>
                             </StackPanel>

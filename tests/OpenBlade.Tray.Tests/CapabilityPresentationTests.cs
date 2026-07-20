@@ -286,6 +286,17 @@ public sealed class CapabilityPresentationTests
             && Attribute(element, "AutomationProperties.Name")
                 == "Start OpenBlade minimized");
         Assert.Equal("OnStartMinimizedToggled", Attribute(startMinimized, "Toggled"));
+        XElement gamingMode = NamedElement(document, "ToggleSwitch", "GamingModeToggle");
+        Assert.Equal("OnGamingModeToggled", Attribute(gamingMode, "Toggled"));
+        Assert.Equal("Right", Attribute(gamingMode, "HorizontalAlignment"));
+        Assert.Equal("Center", Attribute(gamingMode, "VerticalAlignment"));
+        XElement startupAnimation = NamedElement(
+            document,
+            "ToggleSwitch",
+            "StartupAnimationToggle");
+        Assert.Equal("OnStartupAnimationToggled", Attribute(startupAnimation, "Toggled"));
+        Assert.Equal("Right", Attribute(startupAnimation, "HorizontalAlignment"));
+        Assert.Equal("Center", Attribute(startupAnimation, "VerticalAlignment"));
         Assert.Contains(
             "Open in the notification area without showing the window.",
             xaml,

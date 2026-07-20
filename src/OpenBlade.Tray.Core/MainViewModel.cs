@@ -1223,16 +1223,11 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
                 new PropertyChangedEventArgs(nameof(StartupAnimationEnabled)));
             PropertyChanged?.Invoke(
                 this,
-                new PropertyChangedEventArgs(nameof(StartupAnimationStateLabel)));
+                new PropertyChangedEventArgs(nameof(StartupAnimationToggleIsOn)));
         }
     }
 
-    public string StartupAnimationStateLabel => StartupAnimationEnabled switch
-    {
-        true => "On",
-        false => "Off",
-        null => "Set…",
-    };
+    public bool StartupAnimationToggleIsOn => StartupAnimationEnabled is true;
 
     public bool SupportsFunctionKeyPrimary => Capabilities.OneShotLaptopControls.Contains(
         OneShotLaptopControl.FunctionKeyPrimary);
@@ -1284,16 +1279,11 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
                 new PropertyChangedEventArgs(nameof(GamingModeEnabled)));
             PropertyChanged?.Invoke(
                 this,
-                new PropertyChangedEventArgs(nameof(GamingModeStateLabel)));
+                new PropertyChangedEventArgs(nameof(GamingModeToggleIsOn)));
         }
     }
 
-    public string GamingModeStateLabel => GamingModeEnabled switch
-    {
-        true => "On",
-        false => "Off",
-        null => "Set…",
-    };
+    public bool GamingModeToggleIsOn => GamingModeEnabled is true;
 
     public LiveReadings? LiveReadings
     {

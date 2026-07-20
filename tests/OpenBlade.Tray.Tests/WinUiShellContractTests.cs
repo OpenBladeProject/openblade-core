@@ -101,20 +101,22 @@ public sealed class WinUiShellContractTests
         Assert.Contains("Text=\"Laptop logo\"", xaml, StringComparison.Ordinal);
         Assert.Contains("Text=\"Laptop behavior\"", xaml, StringComparison.Ordinal);
         Assert.Contains("AutomationProperties.Name=\"Set function key behavior\"", xaml, StringComparison.Ordinal);
-        Assert.Contains("AutomationProperties.Name=\"Set Gaming Mode\"", xaml, StringComparison.Ordinal);
-        Assert.Contains("AutomationProperties.Name=\"Set startup animation\"", xaml, StringComparison.Ordinal);
-        Assert.Contains(
-            "Content=\"{x:Bind ViewModel.StartupAnimationStateLabel, Mode=OneWay}\"",
-            xaml,
-            StringComparison.Ordinal);
+        Assert.Contains("x:Name=\"GamingModeToggle\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("x:Name=\"StartupAnimationToggle\"", xaml, StringComparison.Ordinal);
         Assert.Contains(
             "Content=\"{x:Bind ViewModel.FunctionKeyPrimaryStateLabel, Mode=OneWay}\"",
             xaml,
             StringComparison.Ordinal);
         Assert.Contains(
-            "Content=\"{x:Bind ViewModel.GamingModeStateLabel, Mode=OneWay}\"",
+            "IsOn=\"{x:Bind ViewModel.GamingModeToggleIsOn, Mode=OneWay}\"",
             xaml,
             StringComparison.Ordinal);
+        Assert.Contains(
+            "IsOn=\"{x:Bind ViewModel.StartupAnimationToggleIsOn, Mode=OneWay}\"",
+            xaml,
+            StringComparison.Ordinal);
+        Assert.Contains("Toggled=\"OnGamingModeToggled\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("Toggled=\"OnStartupAnimationToggled\"", xaml, StringComparison.Ordinal);
         Assert.DoesNotContain("Content=\"Set&#x2026;\"", xaml, StringComparison.Ordinal);
         Assert.DoesNotContain("Content=\"Change\"", xaml, StringComparison.Ordinal);
         Assert.DoesNotContain(
@@ -123,8 +125,8 @@ public sealed class WinUiShellContractTests
             StringComparison.Ordinal);
 
         int functionKeys = xaml.IndexOf("AutomationProperties.Name=\"Set function key behavior\"", StringComparison.Ordinal);
-        int gamingMode = xaml.IndexOf("AutomationProperties.Name=\"Set Gaming Mode\"", StringComparison.Ordinal);
-        int startupAnimation = xaml.IndexOf("AutomationProperties.Name=\"Set startup animation\"", StringComparison.Ordinal);
+        int gamingMode = xaml.IndexOf("x:Name=\"GamingModeToggle\"", StringComparison.Ordinal);
+        int startupAnimation = xaml.IndexOf("x:Name=\"StartupAnimationToggle\"", StringComparison.Ordinal);
         Assert.True(functionKeys < gamingMode);
         Assert.True(gamingMode < startupAnimation);
     }

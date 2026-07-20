@@ -69,6 +69,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Changed
 
+- Gaming Mode and Startup animation now use native right-aligned toggles instead
+  of dropdown menus, while retaining confirmed firmware readback.
 - Self-contained WinUI publishing now includes compiled XAML resources;
   incomplete payloads fail validation instead of crashing at startup.
 
