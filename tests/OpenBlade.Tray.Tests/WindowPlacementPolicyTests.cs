@@ -2,6 +2,26 @@ namespace OpenBlade.Tray.Tests;
 
 public sealed class WindowPlacementPolicyTests
 {
+    [Theory]
+    [InlineData(600, 400, 96, 720, 540)]
+    [InlineData(900, 600, 96, 900, 600)]
+    [InlineData(900, 700, 144, 1080, 810)]
+    public void EnforceMinimumSize_ClampsEachDimensionInDpiAwarePixels(
+        int width,
+        int height,
+        int dpi,
+        int expectedWidth,
+        int expectedHeight)
+    {
+        PixelRect result = WindowPlacementPolicy.EnforceMinimumSize(
+            new PixelRect(10, 20, width, height),
+            720,
+            540,
+            dpi);
+
+        Assert.Equal(new PixelRect(10, 20, expectedWidth, expectedHeight), result);
+    }
+
     [Fact]
     public void Center_ConvertsDipsThroughDpiAndCentersInsideWorkArea()
     {

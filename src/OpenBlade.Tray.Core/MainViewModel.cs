@@ -800,6 +800,8 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         ? "Service unavailable"
         : latestStatus?.DeviceVerified == false
             ? "Laptop not found"
+            : IsCheckingLaptopConnection(latestStatus)
+                ? "Checking laptop"
             : ActivePowerSource == PowerSource.ExternalUnknown
                 ? "Checking power source"
                 : CanControlHardware || IsRetainedPowerSourceRecheck(latestStatus)
@@ -812,11 +814,13 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
 
     public bool IsReadinessChecking => IsConnected
         && latestStatus?.DeviceVerified == true
-        && ActivePowerSource == PowerSource.ExternalUnknown;
+        && (ActivePowerSource == PowerSource.ExternalUnknown
+            || IsCheckingLaptopConnection(latestStatus));
 
     public bool IsReadinessWarning => IsConnected
         && latestStatus?.DeviceVerified == true
         && ActivePowerSource != PowerSource.ExternalUnknown
+        && !IsCheckingLaptopConnection(latestStatus)
         && !IsRetainedPowerSourceRecheck(latestStatus)
         && !CanControlHardware;
 
@@ -5913,6 +5917,14 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             return "Laptop not found";
         }
 
+        if (status.WritesBlocked
+            && status.Message.StartsWith(
+                "Checking the laptop connection",
+                StringComparison.OrdinalIgnoreCase))
+        {
+            return "Checking laptop";
+        }
+
         if (status.ActivePowerSource == PowerSource.ExternalUnknown)
         {
             return "Checking power source";
@@ -5937,6 +5949,12 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         }
         && status.Message.Contains(
             "last confirmed power source is retained",
+            StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsCheckingLaptopConnection(ServiceStatusSnapshot? status) =>
+        status is { DeviceVerified: true, WritesBlocked: true }
+        && status.Message.StartsWith(
+            "Checking the laptop connection",
             StringComparison.OrdinalIgnoreCase);
 
     private static bool StatusMetadataEqual(

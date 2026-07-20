@@ -5,6 +5,17 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ## [Unreleased]
 
+### Fixed
+
+- Prevented interactive keyboard pulses from waiting behind periodic firmware
+  observations or repeating exact-device enumeration for every key, and
+  preserved status through routine subscription rotation.
+- Increased dashboard telemetry row height so unavailable temperature values
+  wrap without clipping.
+- Removed the glitchy long-distance navigation selection-indicator animation.
+- Enforced a 720 by 540 DIP minimum app-window size to protect responsive
+  layouts.
+
 ### Added
 
 - JSON export for all saved AC, USB-C, and battery profiles from the Profiles

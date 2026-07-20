@@ -16,6 +16,8 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
 {
     private const double InitialWidthDip = 840;
     private const double InitialHeightDip = 720;
+    private const double MinimumWidthDip = 720;
+    private const double MinimumHeightDip = 540;
     private const double DashboardStackThresholdDip = 600;
     private const double ProfilesStackThresholdDip = 760;
     private static readonly TimeSpan ChargeLimitCommitDelay = TimeSpan.FromMilliseconds(400);
@@ -48,6 +50,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
     private int? pendingChargeLimitPercent;
     private bool? dashboardIsStacked;
     private bool? profilesUseCompactLayout;
+    private bool enforcingMinimumWindowSize;
     private int disposed;
 
     public MainWindow()
@@ -94,6 +97,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
         micaBackdropHost = new MicaBackdropHost(this, Root);
         Root.DataContext = ViewModel;
         Root.SizeChanged += OnRootSizeChanged;
+        AppWindow.Changed += OnAppWindowChanged;
 
         string localApplicationData = Environment.GetFolderPath(
             Environment.SpecialFolder.LocalApplicationData);
@@ -160,6 +164,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
         ViewModel.SavedDisplayProfileRestoreRequested -= OnSavedDisplayProfileRestoreRequested;
         AppWindow.Closing -= OnClosing;
         Root.SizeChanged -= OnRootSizeChanged;
+        AppWindow.Changed -= OnAppWindowChanged;
         chargeLimitCommitTimer.Stop();
         chargeLimitCommitTimer.Tick -= OnChargeLimitCommitTimerTick;
         lightingCommitTimer.Stop();
@@ -449,6 +454,42 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
             args.Cancel = true;
             visibleObservationLoop.Stop();
             AppWindow.Hide();
+        }
+    }
+
+    private void OnAppWindowChanged(AppWindow sender, AppWindowChangedEventArgs args)
+    {
+        if (!args.DidSizeChange || enforcingMinimumWindowSize)
+        {
+            return;
+        }
+
+        try
+        {
+            nint hwnd = WindowNative.GetWindowHandle(this);
+            uint nativeDpi = GetDpiForWindow(hwnd);
+            if (nativeDpi == 0)
+            {
+                return;
+            }
+
+            SizeInt32 size = sender.Size;
+            PixelRect constrained = WindowPlacementPolicy.EnforceMinimumSize(
+                new PixelRect(0, 0, size.Width, size.Height),
+                MinimumWidthDip,
+                MinimumHeightDip,
+                checked((int)nativeDpi));
+            if (constrained.Width == size.Width && constrained.Height == size.Height)
+            {
+                return;
+            }
+
+            enforcingMinimumWindowSize = true;
+            sender.Resize(new SizeInt32(constrained.Width, constrained.Height));
+        }
+        finally
+        {
+            enforcingMinimumWindowSize = false;
         }
     }
 

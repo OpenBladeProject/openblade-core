@@ -421,7 +421,7 @@ public sealed class ServiceClientTests
     }
 
     [Fact]
-    public async Task WatchStatusAsync_ReconnectsAfterDisconnect()
+    public async Task WatchStatusAsync_ImmediatelyReopensHealthyRotatedSubscription()
     {
         string pipeName = NewPipeName();
         var time = new FakeTimeProvider();
@@ -434,18 +434,12 @@ public sealed class ServiceClientTests
         Assert.True(await reader.MoveNextAsync());
         Assert.Equal(1, Assert.IsType<ServiceWatchUpdate.Connected>(reader.Current).Status.Revision);
         await firstServer;
-        Task<bool> reconnectMove = reader.MoveNextAsync().AsTask();
-        Assert.True(await reconnectMove);
-        Assert.IsType<ServiceWatchUpdate.Reconnecting>(reader.Current);
-        reconnectMove = reader.MoveNextAsync().AsTask();
-        await WaitUntilAsync(() => time.Delays.Count == 1);
         Task secondServer = RunSubscriptionServerAsync(
             pipeName, CreateStatus(2), [], cancellation.Token);
 
-        time.Advance(TimeSpan.FromMilliseconds(250));
-
-        Assert.True(await reconnectMove);
+        Assert.True(await reader.MoveNextAsync());
         Assert.Equal(2, Assert.IsType<ServiceWatchUpdate.Connected>(reader.Current).Status.Revision);
+        Assert.Empty(time.Delays);
         await secondServer;
     }
 

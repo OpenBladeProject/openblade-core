@@ -158,6 +158,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
     private readonly IFanTemperatureSource fanTemperatureSource;
     private int? lastCurveFan1Rpm;
     private int? lastCurveFan2Rpm;
+    private int consecutiveDeviceProbeFailures;
 
     public ServiceControlRuntime(
         BatteryConfigurationStore store,
@@ -820,66 +821,56 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         CancellationToken token)
     {
         EnsureInitialized();
-        await operationGate.WaitAsync(token).ConfigureAwait(false);
+        token.ThrowIfCancellationRequested();
+        ServiceStatusSnapshot current = GetStatus();
+        if (!current.DeviceVerified
+            || current.WritesBlocked && !IsTransientDeviceProbeRecheck(current)
+            || current.ActivePowerSource == PowerSource.ExternalUnknown)
+        {
+            return new ControlOperationResult(
+                ControlOperationStatus.Blocked,
+                "Key-triggered lighting input is blocked while laptop controls are unavailable.");
+        }
+
+        if (!IsKeyTriggeredLightingOwnership(current.LightingRendererOwnership))
+        {
+            return new ControlOperationResult(
+                ControlOperationStatus.Blocked,
+                "Key-triggered lighting is not currently active.");
+        }
+
+        IBladeDevice? device = null;
         try
         {
-            ServiceStatusSnapshot current = GetStatus();
-            if (!current.DeviceVerified
-                || current.WritesBlocked
-                || current.ActivePowerSource == PowerSource.ExternalUnknown)
+            if (!deviceProvider.TryGetOwnedKeyTriggeredLightingDevice(out device))
             {
                 return new ControlOperationResult(
                     ControlOperationStatus.Blocked,
-                    "Key-triggered lighting input is blocked while laptop controls are unavailable.");
+                    "Key-triggered lighting input is unavailable for this laptop.");
             }
 
-            if (!IsKeyTriggeredLightingOwnership(current.LightingRendererOwnership))
-            {
-                return new ControlOperationResult(
-                    ControlOperationStatus.Blocked,
-                    "Key-triggered lighting is not currently active.");
-            }
-
-            IBladeDevice? device = null;
-            try
-            {
-                if (!deviceProvider.TryGetVerifiedDevice(out device))
-                {
-                    return new ControlOperationResult(
-                        ControlOperationStatus.Blocked,
-                        "Key-triggered lighting input is unavailable for this laptop.");
-                }
-
-                // The production pulse path validates the live renderer itself.
-                // A separate ownership read here doubled hardware-gate traffic for
-                // every key press and could leave interactive effects waiting
-                // behind a slow observation. Refresh ownership only on failure.
-                token.ThrowIfCancellationRequested();
-                await device.PulseReactiveKeyAsync(pulse, token).ConfigureAwait(false);
-                return new ControlOperationResult(
-                    ControlOperationStatus.Applied,
-                    "Key-triggered lighting input was applied.");
-            }
-            catch (OperationCanceledException) when (token.IsCancellationRequested)
-            {
-                throw;
-            }
-            catch
-            {
-                if (device is not null)
-                {
-                    await PublishObservedLightingOwnershipAsync(
-                        device,
-                        CancellationToken.None).ConfigureAwait(false);
-                }
-                return new ControlOperationResult(
-                    ControlOperationStatus.Failed,
-                    "Reactive lighting input could not be applied.");
-            }
+            // This only updates the already-owned in-memory renderer. Periodic
+            // firmware observation and unrelated controls must not stall it.
+            await device.PulseReactiveKeyAsync(pulse, token).ConfigureAwait(false);
+            return new ControlOperationResult(
+                ControlOperationStatus.Applied,
+                "Key-triggered lighting input was applied.");
         }
-        finally
+        catch (OperationCanceledException) when (token.IsCancellationRequested)
         {
-            operationGate.Release();
+            throw;
+        }
+        catch
+        {
+            if (device is not null)
+            {
+                await PublishObservedLightingOwnershipAsync(
+                    device,
+                    CancellationToken.None).ConfigureAwait(false);
+            }
+            return new ControlOperationResult(
+                ControlOperationStatus.Failed,
+                "Reactive lighting input could not be applied.");
         }
     }
 
@@ -2311,6 +2302,16 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         cancellationToken.ThrowIfCancellationRequested();
         if (!deviceAvailable)
         {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (GetStatus().DeviceVerified
+                && ++consecutiveDeviceProbeFailures < 2)
+            {
+                PublishTransientDeviceProbeFailure(powerSource, includeLiveReadings
+                    ? new LiveReadings(batteryPowerFlowMilliwatts, null, null)
+                    : null);
+                return;
+            }
+
             PublishObservationUnavailable(
                 powerSource,
                 includeLiveReadings
@@ -2319,6 +2320,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 "No verified PID 02E0 device is available.");
             return;
         }
+
+        consecutiveDeviceProbeFailures = 0;
 
         try
         {
@@ -2809,6 +2812,26 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             GamingModeEnabled = null,
         });
     }
+
+    private void PublishTransientDeviceProbeFailure(
+        PowerSource powerSource,
+        LiveReadings? liveReadings)
+    {
+        ServiceStatusSnapshot current = GetStatus();
+        PublishIfChanged(current with
+        {
+            WritesBlocked = true,
+            Message = "Checking the laptop connection after a temporary device-access failure.",
+            ActivePowerSource = powerSource,
+            LiveReadings = liveReadings,
+        });
+    }
+
+    private static bool IsTransientDeviceProbeRecheck(ServiceStatusSnapshot status) =>
+        status is { DeviceVerified: true, WritesBlocked: true }
+        && status.Message.StartsWith(
+            "Checking the laptop connection",
+            StringComparison.OrdinalIgnoreCase);
 
     private ServiceStatusSnapshot CreateInitialSnapshot(PowerSource powerSource) => new(
             Revision: 0,

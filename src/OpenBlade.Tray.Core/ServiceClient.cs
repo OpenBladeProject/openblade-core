@@ -238,9 +238,9 @@ public sealed class ServiceClient : IServiceClient
                 }
             }
 
-            yield return new ServiceWatchUpdate.Reconnecting();
-            await Task.Delay(reconnectDelay, timeProvider, token);
-            reconnectDelay = NextDelay(reconnectDelay);
+            // Healthy subscriptions are intentionally rotated and transient
+            // disconnects are often immediately recoverable. Reopen first; only
+            // the failed-open path above reports Reconnecting to consumers.
         }
     }
 

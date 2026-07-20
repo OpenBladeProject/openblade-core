@@ -82,6 +82,30 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
         }
     }
 
+    public bool TryGetOwnedKeyTriggeredLightingDevice(out IBladeDevice verifiedDevice)
+    {
+        verifiedDevice = null!;
+        if (Volatile.Read(ref disposed) != 0
+            || !device.HasOwnedKeyTriggeredRenderer)
+        {
+            return false;
+        }
+
+        lock (providerLifecycleSync)
+        {
+            if (disposed != 0 || !device.HasOwnedKeyTriggeredRenderer)
+            {
+                return false;
+            }
+
+            // The renderer already owns an exact-device session admitted by the
+            // normal verified lighting path. A pulse opens no handle and submits
+            // no command, so re-enumerating HID for every key only adds latency.
+            verifiedDevice = device;
+            return true;
+        }
+    }
+
     public Task<LightingRendererOwnershipState> InvalidateLightingRendererAsync(
         CancellationToken cancellationToken) =>
         Volatile.Read(ref disposed) != 0
@@ -114,6 +138,24 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
         private bool closing;
         private bool disposed;
         private IProductionLightingPort? lightingPort;
+
+        internal bool HasOwnedKeyTriggeredRenderer
+        {
+            get
+            {
+                lock (lifecycleSync)
+                {
+                    if (closing || disposed)
+                    {
+                        return false;
+                    }
+                }
+
+                return Volatile.Read(ref lightingPort)?.OwnershipState is
+                    LightingRendererOwnershipState.Reactive or
+                    LightingRendererOwnershipState.Ripple;
+            }
+        }
 
         internal SerializedBladeDevice(
             IProductionBatteryPortFactory batteryFactory,

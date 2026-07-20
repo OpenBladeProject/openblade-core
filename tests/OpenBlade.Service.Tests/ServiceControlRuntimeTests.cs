@@ -209,10 +209,10 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         ControlOperationResult faulted = await context.Runtime.PulseReactiveKeyAsync(
             new ReactiveKeyPulse(77),
             CancellationToken.None);
-        Assert.Equal(ControlOperationStatus.Failed, faulted.Status);
-        Assert.Equal(2, context.Device.ReactivePulseCalls);
+        Assert.Equal(ControlOperationStatus.Blocked, faulted.Status);
+        Assert.Equal(1, context.Device.ReactivePulseCalls);
         Assert.Equal(
-            LightingRendererOwnershipState.Faulted,
+            LightingRendererOwnershipState.Reactive,
             context.Runtime.GetStatus().LightingRendererOwnership);
 
         await context.Runtime.SetLightingOverrideAsync(null, CancellationToken.None);
@@ -224,6 +224,66 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             CancellationToken.None);
 
         Assert.Equal(ControlOperationStatus.Blocked, blocked.Status);
+        Assert.Equal(1, context.Device.ReactivePulseCalls);
+    }
+
+    [Fact]
+    public async Task ReactivePulse_DoesNotWaitBehindRuntimeFirmwareOperationGate()
+    {
+        DeviceCapabilities capabilities = DeviceCapabilities.Unavailable() with
+        {
+            LightingEffects = new HashSet<LightingEffect>
+            {
+                LightingEffect.Off,
+                LightingEffect.Reactive,
+            },
+        };
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            profileValidator: ProfileSetValidator.CreateForLightingCapabilities(capabilities));
+        context.Device.Capabilities = capabilities;
+        context.Device.ConfirmedState = new ConfirmedDeviceState(null, null, null, null);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        await context.Runtime.SetLightingOverrideAsync(
+            new ManualOverride<LightingSettings>(
+                LightingSettingsFactory.Reactive(
+                    new RgbColor(0, 255, 0),
+                    77,
+                    ReactiveLightingDuration.Medium),
+                OverrideLifetime.UntilPowerSourceChange),
+            CancellationToken.None);
+
+        var gate = Assert.IsType<SemaphoreSlim>(typeof(ServiceControlRuntime)
+            .GetField(
+                "operationGate",
+                System.Reflection.BindingFlags.Instance
+                    | System.Reflection.BindingFlags.NonPublic)!
+            .GetValue(context.Runtime));
+        await gate.WaitAsync();
+        try
+        {
+            ControlOperationResult result = await context.Runtime.PulseReactiveKeyAsync(
+                    new ReactiveKeyPulse(77),
+                    CancellationToken.None)
+                .WaitAsync(TimeSpan.FromMilliseconds(250));
+            Assert.Equal(ControlOperationStatus.Applied, result.Status);
+        }
+        finally
+        {
+            gate.Release();
+        }
+
+        Assert.Equal(1, context.Device.ReactivePulseCalls);
+
+        context.Provider.Available = false;
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        Assert.Equal("Checking the laptop connection after a temporary device-access failure.",
+            context.Runtime.GetStatus().Message);
+        ControlOperationResult duringRecheck = await context.Runtime.PulseReactiveKeyAsync(
+            new ReactiveKeyPulse(53),
+            CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Applied, duringRecheck.Status);
         Assert.Equal(2, context.Device.ReactivePulseCalls);
     }
 
@@ -1194,6 +1254,13 @@ public sealed class ServiceControlRuntimeTests : IDisposable
 
         context.Device.ReadStateFailure = null;
         context.Provider.Available = false;
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        Assert.True(context.Runtime.GetStatus().DeviceVerified);
+        Assert.True(context.Runtime.GetStatus().WritesBlocked);
+        Assert.Contains("Checking the laptop connection", context.Runtime.GetStatus().Message);
+        Assert.Same(capabilities, context.Runtime.GetStatus().Capabilities);
+        Assert.Same(confirmed, context.Runtime.GetStatus().ConfirmedState);
+
         await context.Runtime.ObserveAsync(CancellationToken.None);
         Assert.False(context.Runtime.GetStatus().DeviceVerified);
         Assert.True(context.Runtime.GetStatus().WritesBlocked);
@@ -4255,6 +4322,17 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             verifiedDevice = device;
             AfterTryGet?.Invoke();
             return Available;
+        }
+
+        public bool TryGetOwnedKeyTriggeredLightingDevice(out IBladeDevice verifiedDevice)
+        {
+            verifiedDevice = device;
+            return device is CountingBladeDevice
+            {
+                LightingRendererOwnership:
+                    LightingRendererOwnershipState.Reactive or
+                    LightingRendererOwnershipState.Ripple,
+            };
         }
 
         public Task<LightingRendererOwnershipState> InvalidateLightingRendererAsync(

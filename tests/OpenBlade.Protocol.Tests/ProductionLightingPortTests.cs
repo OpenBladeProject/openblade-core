@@ -446,6 +446,36 @@ public sealed class ProductionLightingPortTests
     }
 
     [Fact]
+    public async Task ReactivePulse_DoesNotWaitBehindFirmwareOperationGate()
+    {
+        var session = new LightingSession(initialBrightness: 0xFF);
+        var writer = new MatrixWriter();
+        await using var port = CreatePort(session, writer, admitted: true);
+        await port.SetLightingAsync(
+            LightingSettingsFactory.Reactive(
+                new RgbColor(0x12, 0x34, 0x56),
+                100,
+                ReactiveLightingDuration.Medium),
+            default);
+        var gate = Assert.IsType<SemaphoreSlim>(typeof(ProductionLightingPort)
+            .GetField("operationGate", BindingFlags.Instance | BindingFlags.NonPublic)!
+            .GetValue(port));
+        await gate.WaitAsync();
+        try
+        {
+            await port.PulseReactiveKeyAsync(new ReactiveKeyPulse(19), default)
+                .WaitAsync(TimeSpan.FromMilliseconds(250));
+        }
+        finally
+        {
+            gate.Release();
+        }
+
+        await writer.WaitForWriteCountAsync(2, TimeSpan.FromSeconds(2));
+        Assert.Equal(new MatrixRgb(0x12, 0x34, 0x56), writer.Reports[^1].Frame[19]);
+    }
+
+    [Fact]
     public void FrameDeadline_AdvancesFromScheduledTimeAndSkipsMissedFrames()
     {
         var effect = new Pid02E0SpectrumEffect(

@@ -577,6 +577,33 @@ public sealed class WindowsVerifiedBladeDeviceProviderTests
     }
 
     [Fact]
+    public async Task OwnedReactiveRenderer_IsReturnedWithoutRepeatingDeviceProbePerKey()
+    {
+        int probeCount = 0;
+        var lightingPort = new FakeLightingPort();
+        using var provider = new WindowsVerifiedBladeDeviceProvider(
+            () =>
+            {
+                probeCount++;
+                return Probe(BatteryValidationProbeClassification.Ready);
+            },
+            Adapt(new FakeQueryFactory()),
+            UnavailableFanRpmFactory(),
+            new FakeLightingFactory(lightingPort));
+        Assert.True(provider.TryGetVerifiedDevice(out IBladeDevice device));
+        await device.SetLightingAsync(
+            LightingSettingsFactory.Reactive(
+                new RgbColor(0, 255, 0),
+                77,
+                ReactiveLightingDuration.Medium),
+            default);
+
+        Assert.True(provider.TryGetOwnedKeyTriggeredLightingDevice(out IBladeDevice owned));
+        Assert.Same(device, owned);
+        Assert.Equal(1, probeCount);
+    }
+
+    [Fact]
     public async Task LightingBrightnessReadFailure_PreservesHealthyRenderer()
     {
         var lightingPort = new FakeLightingPort

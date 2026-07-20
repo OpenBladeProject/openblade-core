@@ -7,6 +7,9 @@ public interface IVerifiedBladeDeviceProvider
 {
     bool TryGetVerifiedDevice(out IBladeDevice device);
 
+    bool TryGetOwnedKeyTriggeredLightingDevice(out IBladeDevice device) =>
+        TryGetVerifiedDevice(out device);
+
     Task<LightingRendererOwnershipState> InvalidateLightingRendererAsync(
         CancellationToken cancellationToken) =>
         Task.FromResult(LightingRendererOwnershipState.None);

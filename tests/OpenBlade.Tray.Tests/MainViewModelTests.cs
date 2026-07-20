@@ -2511,6 +2511,32 @@ public sealed class MainViewModelTests
     }
 
     [Fact]
+    public async Task TemporaryDeviceProbeFailure_IsPresentedAsCheckingWithoutLosingValues()
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        client.Publish(CreateStatus(verified: true, blocked: false));
+        await WaitUntilAsync(() => viewModel.IsConnected && viewModel.IsReadinessReady);
+        string performance = viewModel.ActivePerformanceLabel;
+        string fans = viewModel.ActiveFanModeLabel;
+
+        client.Publish(CreateStatus(verified: true, blocked: true) with
+        {
+            Revision = 2,
+            Message = "Checking the laptop connection after a temporary device-access failure.",
+        });
+        await WaitUntilAsync(() => viewModel.ProfileStateLabel == "Checking laptop");
+
+        Assert.Equal("Checking laptop", viewModel.ControlAccessStatus);
+        Assert.True(viewModel.IsReadinessChecking);
+        Assert.False(viewModel.IsReadinessWarning);
+        Assert.False(viewModel.IsReadinessError);
+        Assert.Equal(performance, viewModel.ActivePerformanceLabel);
+        Assert.Equal(fans, viewModel.ActiveFanModeLabel);
+    }
+
+    [Fact]
     public async Task AboutVersions_KeepUiVersionAndTrackConnectedServiceVersion()
     {
         var client = new FakeServiceClient();

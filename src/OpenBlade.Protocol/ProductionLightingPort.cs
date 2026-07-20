@@ -282,59 +282,40 @@ internal sealed class ProductionLightingPort : IProductionLightingPort
         }
     }
 
-    public async Task PulseReactiveKeyAsync(
+    public Task PulseReactiveKeyAsync(
         ReactiveKeyPulse pulse,
         CancellationToken cancellationToken)
     {
-        await EnterWriteAsync(cancellationToken).ConfigureAwait(false);
-        try
+        cancellationToken.ThrowIfCancellationRequested();
+        lock (lifecycleSync)
         {
-            IPid02E0KeyTriggeredLightingEffect effect;
-            lock (effectSync)
+            if (closing || disposed)
             {
-                if (activeKeyTriggeredEffect is null)
-                {
-                    throw new BladeWriteException(
-                        WriteSubmissionState.KnownNotApplied,
-                        "Key-triggered lighting input was rejected because no key-triggered renderer is active.");
-                }
-
-                effect = activeKeyTriggeredEffect;
-            }
-
-            try
-            {
-                TimeSpan elapsed = timeProvider.GetElapsedTime(effectStartedTimestamp);
-                lock (effectSync)
-                {
-                    effect.Pulse(pulse.MatrixSlot, elapsed);
-                }
-
-                // Keep one matrix writer in the renderer loop. Submitting a second
-                // write from the IPC request can queue behind an in-flight frame,
-                // which makes a key press appear one or more seconds late under
-                // load. Waking the persistent renderer coalesces all pulses that
-                // arrive before its next frame and lets this transient request
-                // return without waiting for USB feature-report completion.
-                SignalStreamCore();
-            }
-            catch
-            {
-                await StopStreamCoreAsync().ConfigureAwait(false);
-                lock (effectSync)
-                {
-                    activeEffect = null;
-                    activeKeyTriggeredEffect = null;
-                    lastDeliveredState = null;
-                }
-                SetOwnership(LightingRendererOwnershipState.Faulted);
-                throw;
+                throw new BladeWriteException(
+                    WriteSubmissionState.KnownNotApplied,
+                    "The lighting port is closing.");
             }
         }
-        finally
+
+        lock (effectSync)
         {
-            operationGate.Release();
+            if (activeKeyTriggeredEffect is null)
+            {
+                throw new BladeWriteException(
+                    WriteSubmissionState.KnownNotApplied,
+                    "Key-triggered lighting input was rejected because no key-triggered renderer is active.");
+            }
+
+            TimeSpan elapsed = timeProvider.GetElapsedTime(effectStartedTimestamp);
+            activeKeyTriggeredEffect.Pulse(pulse.MatrixSlot, elapsed);
+
+            // A pulse is an in-memory renderer update, not a firmware operation.
+            // Keep effect replacement atomic without queueing input behind slow
+            // brightness queries or effect transitions.
+            streamWake.TrySetResult(true);
         }
+
+        return Task.CompletedTask;
     }
 
     public async Task PushAmbientLightingFrameAsync(

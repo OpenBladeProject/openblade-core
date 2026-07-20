@@ -7,6 +7,25 @@ public readonly record struct PixelRect(int X, int Y, int Width, int Height);
 
 public static class WindowPlacementPolicy
 {
+    public static PixelRect EnforceMinimumSize(
+        PixelRect current,
+        double minimumWidthDip,
+        double minimumHeightDip,
+        int dpi)
+    {
+        ValidateDip(minimumWidthDip, nameof(minimumWidthDip));
+        ValidateDip(minimumHeightDip, nameof(minimumHeightDip));
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(dpi);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(current.Width);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(current.Height);
+
+        return current with
+        {
+            Width = Math.Max(current.Width, ScaleToPixels(minimumWidthDip, dpi)),
+            Height = Math.Max(current.Height, ScaleToPixels(minimumHeightDip, dpi)),
+        };
+    }
+
     public static PixelRect Center(
         double widthDip,
         double heightDip,

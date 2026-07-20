@@ -230,6 +230,13 @@
                         IsSettingsVisible="False"
                         AlwaysShowHeader="False"
                         SelectionChanged="OnNavigationSelectionChanged">
+            <NavigationView.Resources>
+                <!-- The stock indicator can be clipped while traveling between
+                     distant items. The selected Fluent background stays clear
+                     and changes immediately without that motion artifact. -->
+                <SolidColorBrush x:Key="NavigationViewSelectionIndicatorForeground"
+                                 Color="Transparent" />
+            </NavigationView.Resources>
             <NavigationView.MenuItems>
                 <NavigationViewItem x:Name="HomeNavigationItem"
                                     Content="Dashboard"
@@ -478,7 +485,7 @@
                                                 <ItemsPanelTemplate>
                                                     <ItemsWrapGrid Orientation="Horizontal"
                                                                    ItemWidth="220"
-                                                                   ItemHeight="48" />
+                                                                   ItemHeight="68" />
                                                 </ItemsPanelTemplate>
                                             </ItemsControl.ItemsPanel>
                                             <ItemsControl.ItemTemplate>

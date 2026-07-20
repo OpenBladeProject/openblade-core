@@ -424,6 +424,12 @@ public sealed class WinUiShellContractTests
             "x:Key=\"NavigationViewExpandedPaneBackground\"",
             windowXaml,
             StringComparison.Ordinal);
+        Assert.Contains(
+            "x:Key=\"NavigationViewSelectionIndicatorForeground\"",
+            windowXaml,
+            StringComparison.Ordinal);
+        Assert.Contains("MinimumWidthDip = 720", ReadRepositoryFile(
+            "src", "OpenBlade.Tray", "MainWindow.xaml.cs"), StringComparison.Ordinal);
 
         string appXaml = ReadRepositoryFile("src", "OpenBlade.Tray", "App.xaml");
         Assert.DoesNotContain("RequestedTheme", appXaml, StringComparison.Ordinal);

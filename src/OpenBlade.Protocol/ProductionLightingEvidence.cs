@@ -118,10 +118,10 @@ internal static class ProductionLightingEvidenceSource
         "OpenBladeLightingImplementationFingerprint";
 
     private const string ApprovedLightingImplementationFingerprintSha256 =
-        // Re-reviewed after key-triggered pulses moved onto the existing stream
-        // writer, eliminating competing feature-report writes. Transport,
+        // Re-reviewed after the already in-memory key pulse stopped waiting on
+        // the firmware-operation gate. The single matrix writer, transport,
         // oracle, admitted commands, and captured effect semantics are unchanged.
-        "47207C22CDFB7BB1A1D468DE86560359C36EF53E9B215B477CECED98DE7066DB";
+        "693A097A79F893E17C620497621B4FDE8DB852DE0E145D306545B18DFB88C338";
 
     private static readonly JsonSerializerOptions SerializerOptions =
         new(JsonSerializerDefaults.Web)
