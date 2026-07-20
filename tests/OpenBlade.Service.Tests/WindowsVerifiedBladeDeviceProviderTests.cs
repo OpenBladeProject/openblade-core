@@ -604,6 +604,53 @@ public sealed class WindowsVerifiedBladeDeviceProviderTests
     }
 
     [Fact]
+    public async Task OwnedAmbientRenderer_ReusesPortWithoutProbeOrHardwareObservationGate()
+    {
+        int probeCount = 0;
+        var lightingPort = new FakeLightingPort();
+        using var provider = new WindowsVerifiedBladeDeviceProvider(
+            () =>
+            {
+                probeCount++;
+                return Probe(BatteryValidationProbeClassification.Ready);
+            },
+            Adapt(new FakeQueryFactory()),
+            UnavailableFanRpmFactory(),
+            new FakeLightingFactory(lightingPort));
+        Assert.True(provider.TryGetVerifiedDevice(out IBladeDevice device));
+        await device.SetLightingAsync(
+            LightingSettingsFactory.AmbientAwareness(
+                AmbientAwarenessRegion.Full,
+                77),
+            default);
+        Assert.True(provider.TryGetOwnedAmbientLightingDevice(out IBladeDevice owned));
+        Assert.Same(device, owned);
+
+        var gate = Assert.IsType<SemaphoreSlim>(device.GetType()
+            .GetField(
+                "hardwareOperationGate",
+                System.Reflection.BindingFlags.Instance
+                    | System.Reflection.BindingFlags.NonPublic)!
+            .GetValue(device));
+        await gate.WaitAsync();
+        try
+        {
+            await owned.PushAmbientLightingFrameAsync(
+                    new AmbientLightingFrame(
+                        new RgbColor[AmbientLightingFrame.SlotCount]),
+                    default)
+                .WaitAsync(TimeSpan.FromMilliseconds(250));
+        }
+        finally
+        {
+            gate.Release();
+        }
+
+        Assert.Equal(1, probeCount);
+        Assert.Single(lightingPort.AmbientFrames);
+    }
+
+    [Fact]
     public async Task LightingBrightnessReadFailure_PreservesHealthyRenderer()
     {
         var lightingPort = new FakeLightingPort
@@ -954,6 +1001,8 @@ public sealed class WindowsVerifiedBladeDeviceProviderTests
 
         public List<ReactiveKeyPulse> Pulses { get; } = [];
 
+        public List<AmbientLightingFrame> AmbientFrames { get; } = [];
+
         public int DisposeCount { get; private set; }
 
         public Exception? ReadFailure { get; init; }
@@ -975,6 +1024,8 @@ public sealed class WindowsVerifiedBladeDeviceProviderTests
                 LightingEffect.Spectrum => LightingRendererOwnershipState.Spectrum,
                 LightingEffect.Breathing => LightingRendererOwnershipState.Breathing,
                 LightingEffect.Reactive => LightingRendererOwnershipState.Reactive,
+                LightingEffect.AmbientAwareness =>
+                    LightingRendererOwnershipState.AmbientAwareness,
                 _ => throw new ArgumentOutOfRangeException(),
             };
             return Task.CompletedTask;
@@ -985,6 +1036,14 @@ public sealed class WindowsVerifiedBladeDeviceProviderTests
             CancellationToken cancellationToken)
         {
             Pulses.Add(pulse);
+            return Task.CompletedTask;
+        }
+
+        public Task PushAmbientLightingFrameAsync(
+            AmbientLightingFrame frame,
+            CancellationToken cancellationToken)
+        {
+            AmbientFrames.Add(frame);
             return Task.CompletedTask;
         }
 

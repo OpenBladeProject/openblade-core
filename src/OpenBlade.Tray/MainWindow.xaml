@@ -486,7 +486,7 @@
                                                                    MinItemWidth="220"
                                                                    MaximumRowsOrColumns="3"
                                                                    ItemsJustification="SpaceBetween"
-                                                                   ItemsStretch="Fill" />
+                                                                   ItemsStretch="None" />
                                             </ItemsRepeater.Layout>
                                             <ItemsRepeater.ItemTemplate>
                                                 <DataTemplate x:DataType="local:LiveReadingGroupDisplayItem">

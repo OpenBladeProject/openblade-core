@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using System.Diagnostics;
 using System.ServiceProcess;
 
@@ -34,7 +35,22 @@ public sealed class RunningProcessSource : IRunningProcessSource
         Process[] processes = Process.GetProcesses();
         try
         {
-            return processes.Select(process => process.ProcessName).ToArray();
+            var names = new List<string>(processes.Length);
+            foreach (Process process in processes)
+            {
+                try
+                {
+                    names.Add(process.ProcessName);
+                }
+                catch (Exception exception) when (exception is
+                    InvalidOperationException or Win32Exception or NotSupportedException)
+                {
+                    // Processes can exit or become inaccessible between the
+                    // snapshot and this read. Keep the rest of the observation.
+                }
+            }
+
+            return names;
         }
         finally
         {
@@ -53,12 +69,25 @@ public sealed class WindowsServiceSource : IWindowsServiceSource
         ServiceController[] controllers = ServiceController.GetServices();
         try
         {
-            return controllers
-                .Select(controller => new WindowsServiceSnapshot(
-                    controller.ServiceName,
-                    controller.DisplayName,
-                    Map(controller.Status)))
-                .ToArray();
+            var services = new List<WindowsServiceSnapshot>(controllers.Length);
+            foreach (ServiceController controller in controllers)
+            {
+                try
+                {
+                    services.Add(new WindowsServiceSnapshot(
+                        controller.ServiceName,
+                        controller.DisplayName,
+                        Map(controller.Status)));
+                }
+                catch (Exception exception) when (exception is
+                    InvalidOperationException or Win32Exception or NotSupportedException)
+                {
+                    // Services can disappear while the SCM snapshot is read.
+                    // One stale entry must not invalidate the full observation.
+                }
+            }
+
+            return services;
         }
         finally
         {

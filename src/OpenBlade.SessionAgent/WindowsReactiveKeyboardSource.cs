@@ -58,6 +58,8 @@ internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
     private readonly string windowClassName = $"OpenBlade.Reactive.{Guid.NewGuid():N}";
     private readonly TaskCompletionSource initialization =
         new(TaskCreationOptions.RunContinuationsAsynchronously);
+    private readonly TaskCompletionSource completion =
+        new(TaskCreationOptions.RunContinuationsAsynchronously);
     private readonly Thread messageThread;
     private readonly ConcurrentDictionary<nint, bool> targetDevices = new();
     private nint windowHandle;
@@ -91,6 +93,8 @@ internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
             throw;
         }
     }
+
+    public Task Completion => completion.Task;
 
     public void Dispose()
     {
@@ -187,6 +191,7 @@ internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
         catch (Exception exception)
         {
             initialization.TrySetException(exception);
+            completion.TrySetException(exception);
             if (Volatile.Read(ref disposed) == 0)
             {
                 Trace.TraceError(
@@ -223,6 +228,7 @@ internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
 
             initialization.TrySetException(
                 new InvalidOperationException("Reactive input stopped before initialization."));
+            completion.TrySetResult();
         }
     }
 

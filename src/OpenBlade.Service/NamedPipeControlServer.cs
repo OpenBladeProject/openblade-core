@@ -107,13 +107,16 @@ public sealed class NamedPipeControlServer
         ArgumentNullException.ThrowIfNull(connection);
         try
         {
-            bool pulseBurst = false;
+            Type? streamingRequestType = null;
             while (true)
             {
                 ServiceRequest request;
                 try
                 {
-                    request = await ReadRequestAsync(connection, cancellationToken);
+                    request = await ReadRequestAsync(
+                        connection,
+                        cancellationToken,
+                        useDeadline: streamingRequestType is null);
                 }
                 catch (Exception exception) when (exception is InvalidDataException or JsonException)
                 {
@@ -130,29 +133,29 @@ public sealed class NamedPipeControlServer
                     return;
                 }
 
-                if (pulseBurst && request is not PulseReactiveKeyRequest)
+                if (streamingRequestType is not null
+                    && request.GetType() != streamingRequestType)
                 {
                     await WriteFrameAsync(
                         connection,
                         Failure(
                             request.RequestId,
-                            "A Reactive pulse connection accepts only Reactive pulse requests."),
+                            "A lighting input stream accepts only one request type."),
                         cancellationToken);
                     return;
                 }
 
                 ServiceResponse response = await handler.HandleAsync(request, cancellationToken);
                 await WriteFrameAsync(connection, response, cancellationToken);
-                if (request is not PulseReactiveKeyRequest)
+                if (request is not (PulseReactiveKeyRequest or PushAmbientLightingFrameRequest))
                 {
                     return;
                 }
-                pulseBurst = true;
+                streamingRequestType = request.GetType();
 
-                // Key-triggered effects are latency-sensitive and already
-                // serialized by the session agent. Keep only this request class
-                // on the connection, bounded by the normal two-second frame-read
-                // timeout, so a typing burst avoids one pipe handshake per key.
+                // High-frequency lighting inputs are already serialized by
+                // their producer. Keep one request class per long-lived pipe so
+                // input never pays per-frame connection setup or stale reconnects.
             }
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -281,8 +284,14 @@ public sealed class NamedPipeControlServer
 
     private async Task<ServiceRequest> ReadRequestAsync(
         Stream connection,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        bool useDeadline = true)
     {
+        if (!useDeadline)
+        {
+            return await IpcMessageCodec.ReadRequestAsync(connection, cancellationToken);
+        }
+
         using var deadline = new CancellationTokenSource(FrameReadTimeout, timeProvider);
         using CancellationTokenSource linked = CancellationTokenSource.CreateLinkedTokenSource(
             cancellationToken,

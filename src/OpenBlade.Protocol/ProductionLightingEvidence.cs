@@ -118,9 +118,11 @@ internal static class ProductionLightingEvidenceSource
         "OpenBladeLightingImplementationFingerprint";
 
     private const string ApprovedLightingImplementationFingerprintSha256 =
-        // Re-reviewed after SetupAPI enumeration was made fail-closed.
-        // Command bytes, effect timelines, and the single matrix writer are unchanged.
-        "F8415BB9467FE693B7CDFBF178706A015B470C69DDA24014400560ADAAF36568";
+        // Re-reviewed after accepted key pulses were queued until the renderer
+        // can timestamp their first visible frame and stale process/service
+        // entries were contained per item. Command bytes, effect timelines,
+        // admission rules, and the single matrix writer are unchanged.
+        "2F8B859CF8769EC8FE8BEE715DAAAF4A6403348F21A0F35A9B7B7DC93F0A8BD8";
 
     private static readonly JsonSerializerOptions SerializerOptions =
         new(JsonSerializerDefaults.Web)

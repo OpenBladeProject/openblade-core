@@ -12,7 +12,9 @@ public sealed class ServiceClient : IServiceClient
     private readonly Func<CancellationToken, ValueTask<Stream>> connectAsync;
     private readonly TimeProvider timeProvider;
     private readonly SemaphoreSlim reactivePulseGate = new(1, 1);
+    private readonly SemaphoreSlim ambientFrameGate = new(1, 1);
     private Stream? reactivePulseConnection;
+    private Stream? ambientFrameConnection;
 
     public ServiceClient()
         : this(OpenBladeIpc.PipeName)
@@ -188,14 +190,49 @@ public sealed class ServiceClient : IServiceClient
         }
     }
 
-    public Task<ControlOperationResult> PushAmbientLightingFrameAsync(
+    public async Task<ControlOperationResult> PushAmbientLightingFrameAsync(
         AmbientLightingFrame frame,
-        CancellationToken token) => SendMutationAsync(
-            new PushAmbientLightingFrameRequest(
-                OpenBladeIpc.ProtocolVersion,
-                Guid.NewGuid(),
-                frame),
-            token);
+        CancellationToken token)
+    {
+        var request = new PushAmbientLightingFrameRequest(
+            OpenBladeIpc.ProtocolVersion,
+            Guid.NewGuid(),
+            frame);
+        await ambientFrameGate.WaitAsync(token);
+        try
+        {
+            for (int attempt = 0; ; attempt++)
+            {
+                Stream connection = ambientFrameConnection ??= await connectAsync(token);
+                try
+                {
+                    ServiceResponse response = await SendOverConnectionAsync(
+                        connection,
+                        request,
+                        token);
+                    return response.Result
+                        ?? throw new InvalidDataException(
+                            "Service mutation response is missing its result body.");
+                }
+                catch (Exception exception) when (
+                    attempt == 0
+                    && !token.IsCancellationRequested
+                    && IsRetryableTransportFailure(exception))
+                {
+                    await ResetAmbientFrameConnectionCoreAsync();
+                }
+                catch
+                {
+                    await ResetAmbientFrameConnectionCoreAsync();
+                    throw;
+                }
+            }
+        }
+        finally
+        {
+            ambientFrameGate.Release();
+        }
+    }
 
     public Task<ControlOperationResult> SetBatteryPolicyAsync(
         BatteryPolicy value,
@@ -314,6 +351,16 @@ public sealed class ServiceClient : IServiceClient
             reactivePulseGate.Release();
         }
 
+        await ambientFrameGate.WaitAsync(token);
+        try
+        {
+            await ResetAmbientFrameConnectionCoreAsync();
+        }
+        finally
+        {
+            ambientFrameGate.Release();
+        }
+
         await using Stream connection = await connectAsync(token);
         return await SendOverConnectionAsync(connection, request, token);
     }
@@ -332,6 +379,22 @@ public sealed class ServiceClient : IServiceClient
     {
         Stream? connection = reactivePulseConnection;
         reactivePulseConnection = null;
+        if (connection is not null)
+        {
+            try
+            {
+                await connection.DisposeAsync();
+            }
+            catch
+            {
+            }
+        }
+    }
+
+    private async ValueTask ResetAmbientFrameConnectionCoreAsync()
+    {
+        Stream? connection = ambientFrameConnection;
+        ambientFrameConnection = null;
         if (connection is not null)
         {
             try

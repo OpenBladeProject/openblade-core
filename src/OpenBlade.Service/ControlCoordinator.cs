@@ -511,7 +511,7 @@ public sealed class ControlCoordinator
                             pending.AcceptSetterCompletionWithoutReadback
                                 && (subsystem != DeviceSubsystem.Lighting
                                     || LogoMatches(final, desired.Lighting.Value))
-                                ? AppliedWithoutEffectReadback(pending.Name)
+                                ? AppliedWithoutReadback(pending.Name)
                                 : Indeterminate(pending.Name, null);
                     }
                 }
@@ -755,7 +755,7 @@ public sealed class ControlCoordinator
             return new ScopedApplyOutcome(
                 acceptSetterCompletionWithoutReadback
                     && (setterCompletionEvidence?.Invoke(final) ?? true)
-                    ? AppliedWithoutEffectReadback(name)
+                    ? AppliedWithoutReadback(name)
                     : Indeterminate(name, null),
                 final,
                 WriteAttempted: true,
@@ -789,6 +789,17 @@ public sealed class ControlCoordinator
         }
         catch (Exception exception)
         {
+            if (setterCompleted && acceptSetterCompletionWithoutReadback)
+            {
+                return new ScopedApplyOutcome(
+                    AppliedWithoutReadback(name),
+                    initial,
+                    WriteAttempted: true,
+                    ReadbackMatched: false,
+                    capabilities,
+                    DeviceAccessFailed: false);
+            }
+
             return new ScopedApplyOutcome(
                 writeAttempted
                     ? Indeterminate(name, exception)
@@ -1093,9 +1104,9 @@ public sealed class ControlCoordinator
         ControlResultStatus.Applied,
         $"{name} setting applied and confirmed by readback.");
 
-    private static ControlResult AppliedWithoutEffectReadback(string name) => new(
+    private static ControlResult AppliedWithoutReadback(string name) => new(
         ControlResultStatus.Applied,
-        $"{name} applied. Brightness was verified; this laptop does not report the active effect.");
+        $"{name} command completed, but this laptop does not report the resulting state.");
 
     private static ControlResult Indeterminate(string name, Exception? exception) => new(
         ControlResultStatus.Failed,

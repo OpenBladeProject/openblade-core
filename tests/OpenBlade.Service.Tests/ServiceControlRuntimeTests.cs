@@ -289,6 +289,55 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     }
 
     [Fact]
+    public async Task AmbientFrame_DoesNotWaitBehindRuntimeFirmwareOperationGate()
+    {
+        DeviceCapabilities capabilities = DeviceCapabilities.Unavailable() with
+        {
+            LightingEffects = new HashSet<LightingEffect>
+            {
+                LightingEffect.Off,
+                LightingEffect.AmbientAwareness,
+            },
+        };
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            profileValidator: ProfileSetValidator.CreateForLightingCapabilities(capabilities));
+        context.Device.Capabilities = capabilities;
+        context.Device.ConfirmedState = new ConfirmedDeviceState(null, null, null, null);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        await context.Runtime.SetLightingOverrideAsync(
+            new ManualOverride<LightingSettings>(
+                LightingSettingsFactory.AmbientAwareness(
+                    AmbientAwarenessRegion.Full,
+                    77),
+                OverrideLifetime.UntilPowerSourceChange),
+            CancellationToken.None);
+
+        var gate = Assert.IsType<SemaphoreSlim>(typeof(ServiceControlRuntime)
+            .GetField(
+                "operationGate",
+                System.Reflection.BindingFlags.Instance
+                    | System.Reflection.BindingFlags.NonPublic)!
+            .GetValue(context.Runtime));
+        await gate.WaitAsync();
+        try
+        {
+            ControlOperationResult result = await context.Runtime.PushAmbientLightingFrameAsync(
+                    new AmbientLightingFrame(
+                        new RgbColor[AmbientLightingFrame.SlotCount]),
+                    CancellationToken.None)
+                .WaitAsync(TimeSpan.FromMilliseconds(250));
+            Assert.Equal(ControlOperationStatus.Applied, result.Status);
+        }
+        finally
+        {
+            gate.Release();
+        }
+
+        Assert.Equal(1, context.Device.AmbientFrameCalls);
+    }
+
+    [Fact]
     public async Task VerifiedReadFailure_PreservesOwnedReactiveInput()
     {
         DeviceCapabilities capabilities = DeviceCapabilities.Unavailable() with
@@ -315,6 +364,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             CancellationToken.None);
 
         context.Device.ReadStateFailure = new IOException("temporary read failure");
+        await context.Runtime.ObserveAsync(CancellationToken.None);
         await context.Runtime.ObserveAsync(CancellationToken.None);
         await context.Runtime.ObserveAsync(CancellationToken.None);
 
@@ -1304,6 +1354,10 @@ public sealed class ServiceControlRuntimeTests : IDisposable
 
         await context.Runtime.ObserveAsync(CancellationToken.None);
         Assert.True(context.Runtime.GetStatus().DeviceVerified);
+        Assert.False(context.Runtime.GetStatus().WritesBlocked);
+
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        Assert.True(context.Runtime.GetStatus().DeviceVerified);
         Assert.True(context.Runtime.GetStatus().WritesBlocked);
 
         context.Device.ReadStateFailure = null;
@@ -1312,6 +1366,12 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         Assert.True(context.Runtime.GetStatus().DeviceVerified);
         Assert.True(context.Runtime.GetStatus().WritesBlocked);
         Assert.Contains("Checking the laptop connection", context.Runtime.GetStatus().Message);
+        Assert.Same(capabilities, context.Runtime.GetStatus().Capabilities);
+        Assert.Same(confirmed, context.Runtime.GetStatus().ConfirmedState);
+
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        Assert.True(context.Runtime.GetStatus().DeviceVerified);
+        Assert.True(context.Runtime.GetStatus().WritesBlocked);
         Assert.Same(capabilities, context.Runtime.GetStatus().Capabilities);
         Assert.Same(confirmed, context.Runtime.GetStatus().ConfirmedState);
 
@@ -3563,6 +3623,26 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     }
 
     [Fact]
+    public async Task FailedCapabilityRefresh_PreservesLastConfirmedControlSurface()
+    {
+        TestContext context = CreateContext(providerAvailable: true);
+        context.Device.Capabilities = DeviceCapabilities.SafeTargetDefaults() with
+        {
+            ChargeLimits = new HashSet<int> { 50, 60, 70, 80 },
+        };
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        DeviceCapabilities confirmed = Assert.IsType<DeviceCapabilities>(
+            context.Runtime.GetStatus().Capabilities);
+
+        context.Device.Capabilities = DeviceCapabilities.Unavailable();
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+
+        Assert.Same(confirmed, context.Runtime.GetStatus().Capabilities);
+        Assert.True(context.Runtime.GetStatus().DeviceVerified);
+        Assert.False(context.Runtime.GetStatus().WritesBlocked);
+    }
+
+    [Fact]
     public async Task Observe_WithLiveReadingsRefreshesBothFansAndFailureDegradesWithoutLosingDevice()
     {
         var temperatures = new FixedFanTemperatureSource(
@@ -3620,6 +3700,13 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             "temporary device-access failure",
             context.Runtime.GetStatus().Message,
             StringComparison.OrdinalIgnoreCase);
+
+        await context.Runtime.ObserveAsync(
+            includeLiveReadings: true,
+            CancellationToken.None);
+
+        Assert.True(context.Runtime.GetStatus().DeviceVerified);
+        Assert.False(context.Runtime.GetStatus().WritesBlocked);
 
         await context.Runtime.ObserveAsync(
             includeLiveReadings: true,
@@ -3801,6 +3888,65 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         Assert.Equal(FanMode.Automatic, status.DesiredState.Fans.Value);
         Assert.False(status.WritesBlocked);
         Assert.Equal(0, context.Device.TotalSetterCalls);
+    }
+
+    [Fact]
+    public async Task LiveTelemetry_ReusesKnownExternalClassificationBetweenPeriodicRefreshes()
+    {
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            initialPowerSource: PowerSource.ExternalUnknown);
+        context.Telemetry.Current = CreateTelemetry(PowerSource.ExternalUnknown);
+        context.Device.AdapterPowerState = AdapterPowerState.UsbCPower100W;
+        context.Device.Capabilities = DeviceCapabilities.SafeTargetDefaults();
+        context.Device.ConfirmedState = new ConfirmedDeviceState(
+            PerformancePreset.Balanced,
+            FanMode.Automatic,
+            ConfirmedBattery(80),
+            context.Runtime.GetStatus().Profiles.UsbC.Lighting);
+
+        await context.Runtime.ObserveAsync(
+            includeLiveReadings: false,
+            CancellationToken.None);
+        int classifiedReads = context.Device.AdapterPowerReadCalls;
+        Assert.Equal(2, classifiedReads);
+
+        await context.Runtime.ObserveAsync(
+            includeLiveReadings: true,
+            CancellationToken.None);
+        await context.Runtime.ObserveAsync(
+            includeLiveReadings: true,
+            CancellationToken.None);
+
+        Assert.Equal(classifiedReads, context.Device.AdapterPowerReadCalls);
+        Assert.Equal(PowerSource.UsbC, context.Runtime.GetStatus().ActivePowerSource);
+
+        await context.Runtime.RefreshPowerSourceClassificationAsync(CancellationToken.None);
+        Assert.Equal(classifiedReads + 2, context.Device.AdapterPowerReadCalls);
+    }
+
+    [Fact]
+    public async Task LiveTelemetryFastPath_ReusesRecentControllerObservationButMutationDoesNot()
+    {
+        TestContext context = CreateWritableContext();
+
+        await context.Runtime.ObserveAsync(
+            includeLiveReadings: true,
+            CancellationToken.None);
+        Assert.Equal(1, context.Monitor.ObserveCount);
+
+        await context.Runtime.ObserveAsync(
+            includeLiveReadings: true,
+            CancellationToken.None);
+        Assert.Equal(1, context.Monitor.ObserveCount);
+
+        _ = await context.Runtime.SetLightingOverrideAsync(
+            new ManualOverride<LightingSettings>(
+                LightingSettingsFactory.SpectrumCycling(50),
+                OverrideLifetime.UntilPowerSourceChange),
+            CancellationToken.None);
+
+        Assert.Equal(2, context.Monitor.ObserveCount);
     }
 
     [Fact]
@@ -4005,6 +4151,35 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         Assert.Equal(ControlOperationStatus.Blocked, result.Status);
         Assert.Null(context.Runtime.GetStatus().PerformanceOverride);
         Assert.Equal(0, context.Device.TotalSetterCalls);
+    }
+
+    [Fact]
+    public async Task TransientUnknownDuringMutation_PreservesVerifiedLaptopAndLastPowerSource()
+    {
+        TestContext context = CreateWritableContext();
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        ServiceStatusSnapshot verified = context.Runtime.GetStatus();
+        Assert.True(verified.DeviceVerified);
+        Assert.False(verified.WritesBlocked);
+        Assert.Equal(PowerSource.PluggedIn, verified.ActivePowerSource);
+
+        context.Telemetry.Current = CreateTelemetry(PowerSource.ExternalUnknown);
+        context.Device.AdapterPowerState = AdapterPowerState.Unknown;
+        int writesBefore = context.Device.TotalSetterCalls;
+
+        ControlOperationResult result = await context.Runtime.SetLightingOverrideAsync(
+            new ManualOverride<LightingSettings>(
+                LightingSettingsFactory.SpectrumCycling(50),
+                OverrideLifetime.UntilPowerSourceChange),
+            CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Blocked, result.Status);
+        ServiceStatusSnapshot after = context.Runtime.GetStatus();
+        Assert.True(after.DeviceVerified);
+        Assert.False(after.WritesBlocked);
+        Assert.Equal(PowerSource.PluggedIn, after.ActivePowerSource);
+        Assert.Equal(writesBefore, context.Device.TotalSetterCalls);
+        Assert.Same(verified.ConfirmedState, after.ConfirmedState);
     }
 
     [Fact]
@@ -4495,6 +4670,16 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             };
         }
 
+        public bool TryGetOwnedAmbientLightingDevice(out IBladeDevice verifiedDevice)
+        {
+            verifiedDevice = device;
+            return device is CountingBladeDevice
+            {
+                LightingRendererOwnership:
+                    LightingRendererOwnershipState.AmbientAwareness,
+            };
+        }
+
         public Task<LightingRendererOwnershipState> InvalidateLightingRendererAsync(
             CancellationToken cancellationToken)
         {
@@ -4535,6 +4720,8 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         public int LightingSetCalls { get; private set; }
 
         public int ReactivePulseCalls { get; private set; }
+
+        public int AmbientFrameCalls { get; private set; }
 
         public LightingRendererOwnershipState LightingRendererOwnership { get; set; }
         public LightingRendererOwnershipState? LightingOwnershipAfterSet { get; set; }
@@ -4807,6 +4994,8 @@ public sealed class ServiceControlRuntimeTests : IDisposable
                 LightingEffect.Breathing => LightingRendererOwnershipState.Breathing,
                 LightingEffect.Reactive => LightingRendererOwnershipState.Reactive,
                 LightingEffect.Ripple => LightingRendererOwnershipState.Ripple,
+                LightingEffect.AmbientAwareness =>
+                    LightingRendererOwnershipState.AmbientAwareness,
                 _ => throw new ArgumentOutOfRangeException(),
             };
 
@@ -4890,6 +5079,19 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             return LightingRendererOwnership is
                 LightingRendererOwnershipState.Reactive or
                 LightingRendererOwnershipState.Ripple
+                    ? Task.CompletedTask
+                    : Task.FromException(new IOException("Renderer is not active."));
+        }
+
+        public Task PushAmbientLightingFrameAsync(
+            AmbientLightingFrame frame,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            TotalCalls++;
+            AmbientFrameCalls++;
+            return LightingRendererOwnership ==
+                LightingRendererOwnershipState.AmbientAwareness
                     ? Task.CompletedTask
                     : Task.FromException(new IOException("Renderer is not active."));
         }

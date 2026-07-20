@@ -591,7 +591,7 @@ public sealed class CapabilityPresentationTests
         Assert.Equal("220", Attribute(uniformGrid, "MinItemWidth"));
         Assert.Equal("3", Attribute(uniformGrid, "MaximumRowsOrColumns"));
         Assert.Equal("SpaceBetween", Attribute(uniformGrid, "ItemsJustification"));
-        Assert.Equal("Fill", Attribute(uniformGrid, "ItemsStretch"));
+        Assert.Equal("None", Attribute(uniformGrid, "ItemsStretch"));
         Assert.Null(Attribute(uniformGrid, "MinItemHeight"));
         Assert.Equal(
             "{x:Bind ViewModel.LiveReadingsRefreshToolTip, Mode=OneWay}",

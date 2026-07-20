@@ -1934,6 +1934,51 @@ public sealed class MainViewModelTests
         Assert.Equal((byte)50, lightingOverride.Value.Brightness);
     }
 
+    [Fact]
+    public async Task SelectingHiddenDesiredEffectFromUnconfirmedStateAppliesVisibleDefault()
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        ServiceStatusSnapshot initial = CreateStatus(
+            verified: true,
+            blocked: false,
+            capabilities: DeviceCapabilities.SafeTargetDefaults() with
+            {
+                LightingEffects = new HashSet<LightingEffect>(
+                    Enum.GetValues<LightingEffect>()),
+                ChargeLimits = ChargeLimits(),
+            });
+        client.Publish(initial with
+        {
+            ConfirmedState = initial.ConfirmedState! with { Lighting = null },
+            DesiredState = initial.DesiredState with
+            {
+                Lighting = new ResolvedSetting<LightingSettings>(
+                    LightingSettingsFactory.SpectrumCycling(0),
+                    SettingValueSource.PowerProfile),
+            },
+            LightingRendererOwnership = LightingRendererOwnershipState.None,
+        });
+        await WaitUntilAsync(() => viewModel.IsKeyboardEffectUnconfirmed);
+
+        viewModel.SelectedLightingEffectOption = viewModel.AvailableLightingEffectOptions
+            .Single(option => option.Effect == LightingEffect.Spectrum);
+
+        Assert.False(viewModel.IsKeyboardEffectUnconfirmed);
+        Assert.Equal(50, viewModel.LightingBrightnessEditor);
+        Assert.Equal(50, viewModel.LightingDraft.Brightness);
+        Assert.True(viewModel.IsLightingApplyPending);
+
+        await Assert.IsType<AsyncRelayCommand>(viewModel.SetLightingCommand)
+            .ExecuteAsync(viewModel.LightingDraft);
+
+        ManualOverride<LightingSettings> lightingOverride =
+            Assert.IsType<ManualOverride<LightingSettings>>(client.LightingOverride);
+        Assert.Equal(LightingEffect.Spectrum, lightingOverride.Value.Effect);
+        Assert.Equal((byte)50, lightingOverride.Value.Brightness);
+    }
+
     [Theory]
     [InlineData(PowerSource.Battery, false)]
     [InlineData(PowerSource.Battery, true)]

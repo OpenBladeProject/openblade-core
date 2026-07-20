@@ -165,10 +165,47 @@ public sealed class ControlCoordinatorTests
             CancellationToken.None);
 
         Assert.Equal(ControlResultStatus.Applied, outcome.Result.Status);
-        Assert.Contains("does not report the active effect", outcome.Result.Message);
+        Assert.Contains("does not report the resulting state", outcome.Result.Message);
         Assert.True(outcome.WriteAttempted);
         Assert.False(outcome.ReadbackMatched);
         Assert.Equal(1, device.LightingSetCalls);
+    }
+
+    [Fact]
+    public async Task Lighting_PostSetterReadFailure_KeepsValidatedWriteApplied()
+    {
+        RecordingBladeDevice device = CreateMismatchedDevice();
+        device.ReadStateFailureOnCall = 2;
+        var coordinator = new ControlCoordinator(device);
+
+        ScopedApplyOutcome outcome = await coordinator.ApplyLightingOutcomeAsync(
+            TargetLighting,
+            CancellationToken.None);
+
+        Assert.Equal(ControlResultStatus.Applied, outcome.Result.Status);
+        Assert.True(outcome.WriteAttempted);
+        Assert.False(outcome.ReadbackMatched);
+        Assert.False(outcome.DeviceAccessFailed);
+        Assert.Equal(1, device.LightingSetCalls);
+    }
+
+    [Fact]
+    public async Task FixedFans_PostSetterReadFailure_KeepsValidatedWriteApplied()
+    {
+        RecordingBladeDevice device = CreateMismatchedDevice();
+        device.State = device.State with { Performance = PerformancePreset.Balanced };
+        device.ReadStateFailureOnCall = 2;
+        var coordinator = new ControlCoordinator(device);
+
+        ScopedApplyOutcome outcome = await coordinator.ApplyFanControlOutcomeAsync(
+            new FanControlSettings(FanMode.Fixed, 2800, ManualFanCurve.Default),
+            CancellationToken.None);
+
+        Assert.Equal(ControlResultStatus.Applied, outcome.Result.Status);
+        Assert.True(outcome.WriteAttempted);
+        Assert.False(outcome.ReadbackMatched);
+        Assert.False(outcome.DeviceAccessFailed);
+        Assert.Equal(1, device.FanSetCalls);
     }
 
     [Fact]

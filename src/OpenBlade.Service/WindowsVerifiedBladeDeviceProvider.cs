@@ -106,6 +106,29 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
         }
     }
 
+    public bool TryGetOwnedAmbientLightingDevice(out IBladeDevice verifiedDevice)
+    {
+        verifiedDevice = null!;
+        if (Volatile.Read(ref disposed) != 0
+            || !device.HasOwnedAmbientRenderer)
+        {
+            return false;
+        }
+
+        lock (providerLifecycleSync)
+        {
+            if (disposed != 0 || !device.HasOwnedAmbientRenderer)
+            {
+                return false;
+            }
+
+            // Ambient Awareness already owns an exact-device lighting port.
+            // Reusing it avoids a full HID discovery pass for every video frame.
+            verifiedDevice = device;
+            return true;
+        }
+    }
+
     public Task<LightingRendererOwnershipState> InvalidateLightingRendererAsync(
         CancellationToken cancellationToken) =>
         Volatile.Read(ref disposed) != 0
@@ -154,6 +177,23 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
                 return Volatile.Read(ref lightingPort)?.OwnershipState is
                     LightingRendererOwnershipState.Reactive or
                     LightingRendererOwnershipState.Ripple;
+            }
+        }
+
+        internal bool HasOwnedAmbientRenderer
+        {
+            get
+            {
+                lock (lifecycleSync)
+                {
+                    if (closing || disposed)
+                    {
+                        return false;
+                    }
+                }
+
+                return Volatile.Read(ref lightingPort)?.OwnershipState ==
+                    LightingRendererOwnershipState.AmbientAwareness;
             }
         }
 
@@ -1042,6 +1082,38 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
             AmbientLightingFrame frame,
             CancellationToken cancellationToken)
         {
+            IProductionLightingPort? ownedPort = Volatile.Read(ref lightingPort);
+            if (ownedPort?.OwnershipState == LightingRendererOwnershipState.AmbientAwareness)
+            {
+                try
+                {
+                    // The exact-device port is already admitted and owns its
+                    // own writer gate. Avoid re-entering the provider-wide HID
+                    // gate on every 20 Hz frame.
+                    await ownedPort.PushAmbientLightingFrameAsync(frame, cancellationToken)
+                        .ConfigureAwait(false);
+                    return;
+                }
+                catch (BladeWriteException)
+                {
+                    throw;
+                }
+                catch (OperationCanceledException)
+                    when (cancellationToken.IsCancellationRequested)
+                {
+                    throw new BladeWriteException(
+                        WriteSubmissionState.KnownNotApplied,
+                        "Ambient Awareness was canceled before the next frame was queued.");
+                }
+                catch (Exception exception)
+                {
+                    throw new BladeWriteException(
+                        WriteSubmissionState.Indeterminate,
+                        "The Ambient Awareness frame outcome is indeterminate.",
+                        exception);
+                }
+            }
+
             IProductionLightingPort? port = null;
             try
             {

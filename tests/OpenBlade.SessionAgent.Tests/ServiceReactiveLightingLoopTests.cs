@@ -107,6 +107,88 @@ public sealed class ServiceReactiveLightingLoopTests
     }
 
     [Fact]
+    public async Task TransientUnavailableStatus_PreservesReactiveInputOwnership()
+    {
+        var client = new WatchClient();
+        var factory = new RecordingSourceFactory();
+        await using var loop = new ServiceReactiveLightingLoop(client, factory);
+        using var cancellation = new CancellationTokenSource();
+        Task running = loop.RunAsync(cancellation.Token);
+
+        ServiceStatusSnapshot reactive = Status(LightingRendererOwnershipState.Reactive);
+        client.Publish(reactive);
+        await WaitUntilAsync(() => factory.CreateCount == 1);
+
+        client.Publish(reactive with
+        {
+            Revision = 2,
+            DeviceVerified = false,
+            WritesBlocked = true,
+            Message = "Checking the laptop connection.",
+            LightingRendererOwnership = LightingRendererOwnershipState.None,
+        });
+        await Task.Delay(25);
+
+        factory.Last!.Publish(new ReactiveKeyPulse(53));
+        await WaitUntilAsync(() => client.Pulses.Count == 1);
+
+        cancellation.Cancel();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => running);
+    }
+
+    [Fact]
+    public async Task ExplicitEffectChange_ClearsReactiveInputOwnership()
+    {
+        var client = new WatchClient();
+        var factory = new RecordingSourceFactory();
+        await using var loop = new ServiceReactiveLightingLoop(client, factory);
+        using var cancellation = new CancellationTokenSource();
+        Task running = loop.RunAsync(cancellation.Token);
+
+        client.Publish(Status(LightingRendererOwnershipState.Reactive));
+        await WaitUntilAsync(() => factory.CreateCount == 1);
+        client.Publish(Status(LightingRendererOwnershipState.Static) with { Revision = 2 });
+        await Task.Delay(25);
+
+        factory.Last!.Publish(new ReactiveKeyPulse(53));
+        await Task.Delay(50);
+        Assert.Empty(client.Pulses);
+
+        cancellation.Cancel();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => running);
+    }
+
+    [Fact]
+    public async Task FailedInputSource_IsRecreatedAndResumesDelivery()
+    {
+        var client = new WatchClient();
+        var factory = new RecordingSourceFactory();
+        var failures = new ConcurrentQueue<Exception>();
+        await using var loop = new ServiceReactiveLightingLoop(
+            client,
+            factory,
+            failures.Enqueue);
+        using var cancellation = new CancellationTokenSource();
+        Task running = loop.RunAsync(cancellation.Token);
+
+        client.Publish(Status(LightingRendererOwnershipState.Reactive));
+        await WaitUntilAsync(() => factory.CreateCount == 1);
+        RecordingSource first = factory.Last!;
+        first.Fail(new IOException("message loop stopped"));
+
+        await WaitUntilAsync(() => factory.CreateCount == 2);
+        Assert.True(first.Disposed);
+        Assert.NotSame(first, factory.Last);
+        factory.Last!.Publish(new ReactiveKeyPulse(53));
+        await WaitUntilAsync(() => client.Pulses.Count == 1);
+        Assert.True(failures.TryDequeue(out Exception? failure));
+        Assert.IsType<IOException>(failure);
+
+        cancellation.Cancel();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => running);
+    }
+
+    [Fact]
     public async Task NotificationFailure_DoesNotFailTheAppliedShortcutLoop()
     {
         var client = new WatchClient();
@@ -193,6 +275,12 @@ public sealed class ServiceReactiveLightingLoopTests
     private static ServiceStatusSnapshot Status(LightingRendererOwnershipState ownership)
     {
         ProfileSet profiles = ProfileDefaults.CreateSafeDefaults();
+        LightingSettings desiredLighting = ownership is LightingRendererOwnershipState.Reactive
+            ? LightingSettingsFactory.Reactive(
+                new RgbColor(0, 255, 0),
+                brightness: 50,
+                ReactiveLightingDuration.Medium)
+            : profiles.PluggedIn.Lighting;
         return new ServiceStatusSnapshot(
             Revision: 1,
             DeviceVerified: true,
@@ -212,7 +300,7 @@ public sealed class ServiceReactiveLightingLoopTests
                     profiles.PluggedIn.Fans,
                     SettingValueSource.PowerProfile),
                 new ResolvedSetting<LightingSettings>(
-                    profiles.PluggedIn.Lighting,
+                    desiredLighting,
                     SettingValueSource.PowerProfile),
                 new DesiredBatteryState(profiles.BatteryPolicy, true, false)),
             ActivePowerSource: PowerSource.PluggedIn,
@@ -259,14 +347,25 @@ public sealed class ServiceReactiveLightingLoopTests
         Action<PerformanceShortcutSource> publishPerformanceShortcut)
         : IReactiveKeyboardSource
     {
+        private readonly TaskCompletionSource completion =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
         public bool Disposed { get; private set; }
+
+        public Task Completion => completion.Task;
 
         public void Publish(ReactiveKeyPulse pulse) => publish(pulse);
 
         public void PublishPerformanceShortcut(PerformanceShortcutSource source) =>
             publishPerformanceShortcut(source);
 
-        public void Dispose() => Disposed = true;
+        public void Fail(Exception exception) => completion.TrySetException(exception);
+
+        public void Dispose()
+        {
+            Disposed = true;
+            completion.TrySetResult();
+        }
     }
 
     private sealed class WatchClient : IServiceClient

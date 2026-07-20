@@ -3,7 +3,10 @@ using OpenBlade.Tray;
 
 namespace OpenBlade.SessionAgent;
 
-public interface IReactiveKeyboardSource : IDisposable;
+public interface IReactiveKeyboardSource : IDisposable
+{
+    Task Completion { get; }
+}
 
 public interface IReactiveKeyboardSourceFactory
 {
@@ -31,6 +34,7 @@ public sealed class ServiceReactiveLightingLoop : IAsyncDisposable
     private readonly IPerformanceShortcutNotificationSink shortcutNotifications;
     private readonly Action<Exception>? errorHandler;
     private IReactiveKeyboardSource? source;
+    private int inputConnected;
     private int keyTriggeredActive;
     private int disposed;
 
@@ -68,11 +72,7 @@ public sealed class ServiceReactiveLightingLoop : IAsyncDisposable
                         switch (update)
                         {
                             case ServiceWatchUpdate.Connected connected:
-                                SetInputState(
-                                    connected: true,
-                                    keyTriggered: connected.Status.LightingRendererOwnership is
-                                        LightingRendererOwnershipState.Reactive or
-                                        LightingRendererOwnershipState.Ripple);
+                                ApplyAuthoritativeStatus(connected.Status);
                                 break;
                             case ServiceWatchUpdate.Reconnecting:
                                 // A subscription-open retry is not authoritative
@@ -122,6 +122,7 @@ public sealed class ServiceReactiveLightingLoop : IAsyncDisposable
 
     private void SetInputState(bool connected, bool keyTriggered)
     {
+        Interlocked.Exchange(ref inputConnected, connected ? 1 : 0);
         Interlocked.Exchange(ref keyTriggeredActive, keyTriggered ? 1 : 0);
         if (!keyTriggered)
         {
@@ -167,11 +168,82 @@ public sealed class ServiceReactiveLightingLoop : IAsyncDisposable
             {
                 created.Dispose();
             }
+            else
+            {
+                _ = ObserveSourceCompletionAsync(created);
+            }
         }
         catch (Exception exception)
         {
             ReportFailure(exception);
         }
+    }
+
+    private async Task ObserveSourceCompletionAsync(IReactiveKeyboardSource observed)
+    {
+        Exception? failure = null;
+        try
+        {
+            await observed.Completion.ConfigureAwait(false);
+        }
+        catch (Exception exception)
+        {
+            failure = exception;
+        }
+
+        if (!ReferenceEquals(
+            Interlocked.CompareExchange(ref source, null, observed),
+            observed))
+        {
+            return;
+        }
+
+        observed.Dispose();
+        if (Volatile.Read(ref disposed) != 0 || Volatile.Read(ref inputConnected) == 0)
+        {
+            return;
+        }
+
+        ReportFailure(failure ?? new InvalidOperationException(
+            "Reactive input observation stopped unexpectedly."));
+        await Task.Delay(FailureRetryDelay).ConfigureAwait(false);
+        if (Volatile.Read(ref disposed) == 0 && Volatile.Read(ref inputConnected) != 0)
+        {
+            SetInputState(
+                connected: true,
+                keyTriggered: Volatile.Read(ref keyTriggeredActive) != 0);
+        }
+    }
+
+    private void ApplyAuthoritativeStatus(ServiceStatusSnapshot status)
+    {
+        bool ownedKeyTriggered = status.LightingRendererOwnership is
+            LightingRendererOwnershipState.Reactive or
+            LightingRendererOwnershipState.Ripple;
+        if (ownedKeyTriggered)
+        {
+            SetInputState(connected: true, keyTriggered: true);
+            return;
+        }
+
+        bool desiredKeyTriggered = status.DesiredState.Lighting.Value.Effect is
+            LightingEffect.Reactive or LightingEffect.Ripple;
+        bool transientAvailability = desiredKeyTriggered
+            && status.PotentialControllers.Count == 0
+            && (!status.DeviceVerified || status.WritesBlocked)
+            && status.LightingRendererOwnership != LightingRendererOwnershipState.Faulted;
+        if (transientAvailability)
+        {
+            // A short HID/readback or power-classification miss is not evidence
+            // that the renderer stopped. Preserve queued input; the service
+            // validates every pulse against its current ownership before use.
+            SetInputState(
+                connected: true,
+                keyTriggered: Volatile.Read(ref keyTriggeredActive) != 0);
+            return;
+        }
+
+        SetInputState(connected: true, keyTriggered: false);
     }
 
     private async Task SendPulseAsync(

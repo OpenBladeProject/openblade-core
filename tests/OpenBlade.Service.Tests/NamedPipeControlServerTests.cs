@@ -59,6 +59,79 @@ public sealed class NamedPipeControlServerTests
     }
 
     [Fact]
+    public async Task PulseBurst_RemainsConnectedAfterOrdinaryFrameReadDeadline()
+    {
+        var time = new ManualTimeProvider();
+        TestServer context = CreateServer(time);
+        using CancellationTokenSource timeout = new(TimeSpan.FromSeconds(5));
+        Task serverTask = context.Server.ServeOnceAsync(timeout.Token);
+        NamedPipeClientStream client = await ConnectAsync(context.PipeName, timeout.Token);
+        try
+        {
+            var first = new PulseReactiveKeyRequest(
+                OpenBladeIpc.ProtocolVersion,
+                Guid.NewGuid(),
+                new ReactiveKeyPulse(19));
+            await IpcMessageCodec.WriteRequestAsync(client, first, timeout.Token);
+            ServiceResponse firstResponse = Assert.IsType<ServiceResponse>(
+                await IpcMessageCodec.ReadServerFrameAsync(client, timeout.Token));
+            Assert.True(firstResponse.Success);
+
+            time.Advance(TimeSpan.FromSeconds(3));
+            await Task.Yield();
+            Assert.False(serverTask.IsCompleted);
+
+            var second = new PulseReactiveKeyRequest(
+                OpenBladeIpc.ProtocolVersion,
+                Guid.NewGuid(),
+                new ReactiveKeyPulse(53));
+            await IpcMessageCodec.WriteRequestAsync(client, second, timeout.Token);
+            ServiceResponse secondResponse = Assert.IsType<ServiceResponse>(
+                await IpcMessageCodec.ReadServerFrameAsync(client, timeout.Token));
+            Assert.True(secondResponse.Success);
+            Assert.Equal(second.RequestId, secondResponse.RequestId);
+        }
+        finally
+        {
+            await client.DisposeAsync();
+        }
+
+        await serverTask;
+    }
+
+    [Fact]
+    public async Task AmbientFrameBurst_AcceptsMultipleFramesOnOneConnection()
+    {
+        TestServer context = CreateServer();
+        using CancellationTokenSource timeout = new(TimeSpan.FromSeconds(5));
+        Task serverTask = context.Server.ServeOnceAsync(timeout.Token);
+        NamedPipeClientStream client = await ConnectAsync(context.PipeName, timeout.Token);
+        try
+        {
+            for (int index = 0; index < 2; index++)
+            {
+                var colors = new RgbColor[AmbientLightingFrame.SlotCount];
+                colors[1] = new RgbColor((byte)index, 2, 3);
+                var request = new PushAmbientLightingFrameRequest(
+                    OpenBladeIpc.ProtocolVersion,
+                    Guid.NewGuid(),
+                    new AmbientLightingFrame(colors));
+                await IpcMessageCodec.WriteRequestAsync(client, request, timeout.Token);
+                ServiceResponse response = Assert.IsType<ServiceResponse>(
+                    await IpcMessageCodec.ReadServerFrameAsync(client, timeout.Token));
+                Assert.True(response.Success);
+                Assert.Equal(request.RequestId, response.RequestId);
+            }
+        }
+        finally
+        {
+            await client.DisposeAsync();
+        }
+
+        await serverTask;
+    }
+
+    [Fact]
     public async Task ServeOnceAsync_ClaimsFirstPipeInstanceBeforeAcceptingClients()
     {
         TestServer context = CreateServer();

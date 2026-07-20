@@ -62,16 +62,15 @@ public sealed class ReactiveKeyPulsePumpTests
     }
 
     [Fact]
-    public async Task Pump_DiscardsPendingPulseAfterMaximumQueueAge()
+    public async Task Pump_PreservesPendingPulseAcrossTransientDelay()
     {
-        var time = new MutableTimeProvider();
         var firstStarted = new TaskCompletionSource(
             TaskCreationOptions.RunContinuationsAsynchronously);
         var releaseFirst = new TaskCompletionSource(
             TaskCreationOptions.RunContinuationsAsynchronously);
         var firstFinished = new TaskCompletionSource(
             TaskCreationOptions.RunContinuationsAsynchronously);
-        var freshSent = new TaskCompletionSource(
+        var delayedSent = new TaskCompletionSource(
             TaskCreationOptions.RunContinuationsAsynchronously);
         var sent = new List<byte>();
         await using var pump = new ReactiveKeyPulsePump(
@@ -88,36 +87,33 @@ public sealed class ReactiveKeyPulsePumpTests
                     await releaseFirst.Task.WaitAsync(token);
                     firstFinished.TrySetResult();
                 }
-                else if (pulse.MatrixSlot == 53)
+                else if (pulse.MatrixSlot == 36)
                 {
-                    freshSent.TrySetResult();
+                    delayedSent.TrySetResult();
                 }
-            },
-            timeProvider: time,
-            maximumQueueAge: TimeSpan.FromMilliseconds(100));
+            });
 
         Assert.True(pump.TryEnqueue(new ReactiveKeyPulse(19)));
         await firstStarted.Task.WaitAsync(TimeSpan.FromSeconds(2));
         Assert.True(pump.TryEnqueue(new ReactiveKeyPulse(36)));
-        time.Advance(TimeSpan.FromMilliseconds(101));
+        await Task.Delay(150);
         releaseFirst.TrySetResult();
         await firstFinished.Task.WaitAsync(TimeSpan.FromSeconds(2));
-        await Task.Delay(50);
-
-        Assert.True(pump.TryEnqueue(new ReactiveKeyPulse(53)));
-        await freshSent.Task.WaitAsync(TimeSpan.FromSeconds(2));
+        await delayedSent.Task.WaitAsync(TimeSpan.FromSeconds(2));
         lock (sent)
         {
-            Assert.Equal([19, 53], sent);
+            Assert.Equal([19, 36], sent);
         }
     }
 
     [Fact]
-    public async Task Pump_CancelsInFlightPulseAtEndToEndDeadlineAndContinues()
+    public async Task Pump_DoesNotCancelAcceptedPulseDuringTransientTransportDelay()
     {
-        var expiredCanceled = new TaskCompletionSource(
+        var firstStarted = new TaskCompletionSource(
             TaskCreationOptions.RunContinuationsAsynchronously);
-        var freshSent = new TaskCompletionSource(
+        var releaseFirst = new TaskCompletionSource(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        var allSent = new TaskCompletionSource(
             TaskCreationOptions.RunContinuationsAsynchronously);
         var sent = new List<byte>();
         await using var pump = new ReactiveKeyPulsePump(
@@ -125,34 +121,30 @@ public sealed class ReactiveKeyPulsePumpTests
             {
                 if (pulse.MatrixSlot == 19)
                 {
-                    try
-                    {
-                        await Task.Delay(Timeout.InfiniteTimeSpan, token);
-                    }
-                    catch (OperationCanceledException) when (token.IsCancellationRequested)
-                    {
-                        expiredCanceled.TrySetResult();
-                        throw;
-                    }
+                    firstStarted.TrySetResult();
+                    await releaseFirst.Task.WaitAsync(token);
                 }
 
                 lock (sent)
                 {
                     sent.Add(pulse.MatrixSlot);
+                    if (sent.Count == 2)
+                    {
+                        allSent.TrySetResult();
+                    }
                 }
-                freshSent.TrySetResult();
-            },
-            maximumQueueAge: TimeSpan.FromMilliseconds(100));
+            });
 
         Assert.True(pump.TryEnqueue(new ReactiveKeyPulse(19)));
-        await expiredCanceled.Task.WaitAsync(TimeSpan.FromSeconds(2));
-
+        await firstStarted.Task.WaitAsync(TimeSpan.FromSeconds(2));
         Assert.True(pump.TryEnqueue(new ReactiveKeyPulse(36)));
-        await freshSent.Task.WaitAsync(TimeSpan.FromSeconds(2));
+        await Task.Delay(150);
+        releaseFirst.TrySetResult();
+        await allSent.Task.WaitAsync(TimeSpan.FromSeconds(2));
 
         lock (sent)
         {
-            Assert.Equal([36], sent);
+            Assert.Equal([19, 36], sent);
         }
     }
 
@@ -231,17 +223,5 @@ public sealed class ReactiveKeyPulsePumpTests
         {
             Assert.Equal([19, 71], sent);
         }
-    }
-
-    private sealed class MutableTimeProvider : TimeProvider
-    {
-        private long timestamp;
-
-        public override long TimestampFrequency => TimeSpan.TicksPerSecond;
-
-        public override long GetTimestamp() => Volatile.Read(ref timestamp);
-
-        internal void Advance(TimeSpan value) =>
-            Interlocked.Add(ref timestamp, value.Ticks);
     }
 }

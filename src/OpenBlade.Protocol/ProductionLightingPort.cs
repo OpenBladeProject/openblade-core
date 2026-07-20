@@ -4,6 +4,7 @@ namespace OpenBlade.Protocol;
 
 internal sealed class ProductionLightingPort : IProductionLightingPort
 {
+    private const int MaximumPendingKeyTriggeredPulses = 1024;
     private static readonly IReadOnlySet<LightingEffect> AdmittedEffects =
         new HashSet<LightingEffect>(Enum.GetValues<LightingEffect>());
 
@@ -20,6 +21,7 @@ internal sealed class ProductionLightingPort : IProductionLightingPort
     private Task? streamTask;
     private IPid02E0LightingEffect? activeEffect;
     private IPid02E0KeyTriggeredLightingEffect? activeKeyTriggeredEffect;
+    private readonly Queue<ReactiveKeyPulse> pendingKeyTriggeredPulses = [];
     private long effectStartedTimestamp;
     private LightingSettings? lastDeliveredState;
     private int nextCommandTransaction = 1;
@@ -89,6 +91,7 @@ internal sealed class ProductionLightingPort : IProductionLightingPort
             {
                 activeEffect = null;
                 activeKeyTriggeredEffect = null;
+                pendingKeyTriggeredPulses.Clear();
                 lastDeliveredState = LightingSettingsFactory.Off();
             }
             SetOwnership(LightingRendererOwnershipState.None);
@@ -205,6 +208,7 @@ internal sealed class ProductionLightingPort : IProductionLightingPort
                     {
                         activeEffect = null;
                         activeKeyTriggeredEffect = null;
+                        pendingKeyTriggeredPulses.Clear();
                         lastDeliveredState = settings;
                     }
                     SetOwnership(LightingRendererOwnershipState.None);
@@ -229,6 +233,7 @@ internal sealed class ProductionLightingPort : IProductionLightingPort
                     {
                         activeEffect = effect;
                         activeKeyTriggeredEffect = effect as IPid02E0KeyTriggeredLightingEffect;
+                        pendingKeyTriggeredPulses.Clear();
                         lastDeliveredState = settings;
                     }
 
@@ -260,6 +265,7 @@ internal sealed class ProductionLightingPort : IProductionLightingPort
                     {
                         activeEffect = null;
                         activeKeyTriggeredEffect = null;
+                        pendingKeyTriggeredPulses.Clear();
                         lastDeliveredState = null;
                     }
                     SetOwnership(LightingRendererOwnershipState.None);
@@ -307,12 +313,18 @@ internal sealed class ProductionLightingPort : IProductionLightingPort
                     "Key-triggered lighting input was rejected because no key-triggered renderer is active.");
             }
 
-            TimeSpan elapsed = timeProvider.GetElapsedTime(effectStartedTimestamp);
-            activeKeyTriggeredEffect.Pulse(pulse.MatrixSlot, elapsed);
+            if (pendingKeyTriggeredPulses.Count >= MaximumPendingKeyTriggeredPulses)
+            {
+                throw new BladeWriteException(
+                    WriteSubmissionState.KnownNotApplied,
+                    "Key-triggered lighting input was rejected because the renderer queue is full.");
+            }
+
+            pendingKeyTriggeredPulses.Enqueue(pulse);
 
             // A pulse is an in-memory renderer update, not a firmware operation.
-            // Keep effect replacement atomic without queueing input behind slow
-            // brightness queries or effect transitions.
+            // Timestamp it when the renderer consumes it so a slow matrix write
+            // cannot make an accepted pulse expire before its first visible frame.
             streamWake.TrySetResult(true);
         }
 
@@ -356,6 +368,7 @@ internal sealed class ProductionLightingPort : IProductionLightingPort
                 {
                     activeEffect = null;
                     activeKeyTriggeredEffect = null;
+                    pendingKeyTriggeredPulses.Clear();
                     lastDeliveredState = null;
                 }
                 SetOwnership(LightingRendererOwnershipState.Faulted);
@@ -795,6 +808,15 @@ internal sealed class ProductionLightingPort : IProductionLightingPort
                 Pid02E0MatrixFrame frame;
                 lock (effectSync)
                 {
+                    if (ReferenceEquals(activeEffect, effect)
+                        && activeKeyTriggeredEffect is { } keyTriggered)
+                    {
+                        while (pendingKeyTriggeredPulses.TryDequeue(out ReactiveKeyPulse pulse))
+                        {
+                            keyTriggered.Pulse(pulse.MatrixSlot, elapsed);
+                        }
+                    }
+
                     frame = effect.RenderFrame(elapsed);
                 }
 
@@ -829,6 +851,7 @@ internal sealed class ProductionLightingPort : IProductionLightingPort
                 {
                     activeEffect = null;
                     activeKeyTriggeredEffect = null;
+                    pendingKeyTriggeredPulses.Clear();
                     lastDeliveredState = null;
                     SetOwnership(LightingRendererOwnershipState.Faulted);
                 }
@@ -1009,6 +1032,7 @@ internal sealed class ProductionLightingPort : IProductionLightingPort
             {
                 activeEffect = previous.Effect;
                 activeKeyTriggeredEffect = previous.KeyTriggeredEffect;
+                pendingKeyTriggeredPulses.Clear();
                 effectStartedTimestamp = previous.StartedTimestamp;
                 lastDeliveredState = previous.Settings;
             }

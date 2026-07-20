@@ -129,6 +129,9 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
     private static readonly TimeSpan PowerTransitionAccessRetryDelay =
         TimeSpan.FromMilliseconds(750);
     private static readonly TimeSpan FullObservationInterval = TimeSpan.FromSeconds(10);
+    private static readonly TimeSpan FastPathControllerPresenceInterval =
+        TimeSpan.FromSeconds(2);
+    private const int ObservationFailureThreshold = 3;
     private static readonly ConfirmedDeviceState UnknownConfirmedState =
         new(null, null, null, null);
     private static readonly DeviceCapabilities UnavailableCapabilities =
@@ -164,6 +167,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
     private int consecutiveVerifiedAccessFailures;
     private bool fullObservationCompleted;
     private long lastFullObservationTimestamp;
+    private bool controllerPresenceObserved;
+    private long lastControllerPresenceTimestamp;
 
     public ServiceControlRuntime(
         BatteryConfigurationStore store,
@@ -476,8 +481,9 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             {
                 return PublishScopedUnavailable(
                     DeviceSubsystem.Performance,
-                    powerSource,
-                    "The external power adapter could not be classified; the performance shortcut is blocked.");
+                    PowerSourceForStatus(powerSource),
+                    "The external power adapter could not be classified; the performance shortcut is blocked.",
+                    preserveCurrentAvailability: true);
             }
 
             if (Automation.ChangePowerSource(powerSource))
@@ -650,7 +656,11 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         try
         {
             ServiceStatusSnapshot current = GetStatus();
-            if (current.DesiredState.Fans.Value != FanMode.ManualCurve
+            FanControlSettings currentSettings = current.DesiredState.FanControl
+                ?? FanControlSettings.FromLegacy(current.DesiredState.Fans.Value);
+            if (currentSettings != settings
+                || !current.DeviceVerified
+                || current.WritesBlocked
                 || current.ExternalChanges.Contains(DeviceSubsystem.Fans)
                 || !deviceProvider.TryGetVerifiedDevice(out IBladeDevice device))
             {
@@ -759,8 +769,9 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             {
                 return PublishScopedUnavailable(
                     DeviceSubsystem.Lighting,
-                    powerSource,
-                    "The external power adapter could not be classified; lighting power policy writes are blocked.");
+                    PowerSourceForStatus(powerSource),
+                    "The external power adapter could not be classified; lighting power policy writes are blocked.",
+                    preserveCurrentAvailability: true);
             }
             if (IsControllerPresenceUnsafe(current)
                 || current.ExternalChanges.Contains(DeviceSubsystem.Lighting))
@@ -904,76 +915,63 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 "The Ambient Awareness frame is invalid.");
         }
 
-        await operationGate.WaitAsync(token).ConfigureAwait(false);
+        ServiceStatusSnapshot current = GetStatus();
+        if (!current.DeviceVerified
+            || current.WritesBlocked
+            || current.ActivePowerSource == PowerSource.ExternalUnknown)
+        {
+            return new ControlOperationResult(
+                ControlOperationStatus.Blocked,
+                "Ambient Awareness is blocked while laptop controls are unavailable.");
+        }
+
+        if (current.LightingRendererOwnership !=
+            LightingRendererOwnershipState.AmbientAwareness)
+        {
+            return new ControlOperationResult(
+                ControlOperationStatus.Blocked,
+                "Ambient Awareness is not currently active.");
+        }
+
+        IBladeDevice? device = null;
         try
         {
-            ServiceStatusSnapshot current = GetStatus();
-            if (!current.DeviceVerified
-                || current.WritesBlocked
-                || current.ActivePowerSource == PowerSource.ExternalUnknown)
+            if (!deviceProvider.TryGetOwnedAmbientLightingDevice(out device))
             {
                 return new ControlOperationResult(
                     ControlOperationStatus.Blocked,
-                    "Ambient Awareness is blocked while laptop controls are unavailable.");
+                    "Ambient Awareness is unavailable for this laptop.");
             }
 
-            if (current.LightingRendererOwnership !=
-                LightingRendererOwnershipState.AmbientAwareness)
+            await device.PushAmbientLightingFrameAsync(frame.Copy(), token)
+                .ConfigureAwait(false);
+            return new ControlOperationResult(
+                ControlOperationStatus.Applied,
+                "Ambient Awareness frame was applied.");
+        }
+        catch (OperationCanceledException) when (token.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch
+        {
+            if (device is not null)
             {
-                return new ControlOperationResult(
-                    ControlOperationStatus.Blocked,
-                    "Ambient Awareness is not currently active.");
-            }
-
-            IBladeDevice? device = null;
-            try
-            {
-                if (!deviceProvider.TryGetVerifiedDevice(out device))
-                {
-                    return new ControlOperationResult(
-                        ControlOperationStatus.Blocked,
-                        "Ambient Awareness is unavailable for this laptop.");
-                }
-
-                LightingRendererOwnershipState liveOwnership =
-                    await ReadLightingOwnershipAsync(device, token).ConfigureAwait(false);
-                PublishIfChanged(GetStatus() with
-                {
-                    LightingRendererOwnership = liveOwnership,
-                });
-                if (liveOwnership != LightingRendererOwnershipState.AmbientAwareness)
-                {
-                    return new ControlOperationResult(
-                        ControlOperationStatus.Blocked,
-                        "Ambient Awareness is not currently active.");
-                }
-
-                await device.PushAmbientLightingFrameAsync(frame.Copy(), token)
-                    .ConfigureAwait(false);
-                return new ControlOperationResult(
-                    ControlOperationStatus.Applied,
-                    "Ambient Awareness frame was applied.");
-            }
-            catch (OperationCanceledException) when (token.IsCancellationRequested)
-            {
-                throw;
-            }
-            catch
-            {
-                if (device is not null)
+                await operationGate.WaitAsync(CancellationToken.None).ConfigureAwait(false);
+                try
                 {
                     await PublishObservedLightingOwnershipAsync(
                         device,
                         CancellationToken.None).ConfigureAwait(false);
                 }
-                return new ControlOperationResult(
-                    ControlOperationStatus.Failed,
-                    "Ambient Awareness could not update the keyboard.");
+                finally
+                {
+                    operationGate.Release();
+                }
             }
-        }
-        finally
-        {
-            operationGate.Release();
+            return new ControlOperationResult(
+                ControlOperationStatus.Failed,
+                "Ambient Awareness could not update the keyboard.");
         }
     }
 
@@ -1226,8 +1224,9 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             {
                 return PublishScopedUnavailable(
                     DeviceSubsystem.Battery,
-                    powerSource,
-                    "The external power adapter could not be classified; control writes are blocked.");
+                    PowerSourceForStatus(powerSource),
+                    "The external power adapter could not be classified; control writes are blocked.",
+                    preserveCurrentAvailability: true);
             }
 
             if (Automation.ChangePowerSource(powerSource))
@@ -1301,12 +1300,21 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         try
         {
             cancellationToken.ThrowIfCancellationRequested();
-            await RefreshControllerPresenceAndRelinquishIfNewConflictAsync(
-                cancellationToken).ConfigureAwait(false);
-            PowerSource powerSource = await ResolveCurrentPowerSourceAsync(cancellationToken);
+            PowerSource powerSource = await ResolveCurrentPowerSourceAsync(
+                cancellationToken,
+                allowCachedExternalClassification: includeLiveReadings);
             int? batteryPowerFlow = includeLiveReadings
                 ? powerStateProvider.CaptureBatteryPowerFlowMilliwatts()
                 : null;
+            bool sourceChanged = powerSource != PowerSource.ExternalUnknown
+                && Automation.PowerSource != powerSource;
+            bool canUseReadOnlyFastPath = !sourceChanged
+                && CanUseObservationFastPath(
+                    includeLiveReadings,
+                    powerSource != PowerSource.ExternalUnknown);
+            await RefreshControllerPresenceAndRelinquishIfNewConflictAsync(
+                cancellationToken,
+                allowRecentObservation: canUseReadOnlyFastPath).ConfigureAwait(false);
             bool changed = powerSource != PowerSource.ExternalUnknown
                 && Automation.ChangePowerSource(powerSource);
             if (changed)
@@ -1317,9 +1325,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             {
                 bool powerSourceConfirmed = powerSource != PowerSource.ExternalUnknown;
                 PowerSource statusPowerSource = PowerSourceForStatus(powerSource);
-                if (CanUseObservationFastPath(
-                    includeLiveReadings,
-                    powerSourceConfirmed))
+                if (canUseReadOnlyFastPath)
                 {
                     await ObserveFastPathAsync(
                         statusPowerSource,
@@ -1726,8 +1732,9 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             {
                 return PublishScopedUnavailable(
                     subsystem,
-                    powerSource,
-                    "The external power adapter could not be classified; overrides and control writes are blocked.");
+                    PowerSourceForStatus(powerSource),
+                    "The external power adapter could not be classified; overrides and control writes are blocked.",
+                    preserveCurrentAvailability: true);
             }
 
             if (Automation.ChangePowerSource(powerSource))
@@ -1779,8 +1786,9 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             {
                 return PublishScopedUnavailable(
                     DeviceSubsystem.Battery,
-                    powerSource,
-                    "The external power adapter could not be classified; control writes are blocked.");
+                    PowerSourceForStatus(powerSource),
+                    "The external power adapter could not be classified; control writes are blocked.",
+                    preserveCurrentAvailability: true);
             }
 
             if (Automation.ChangePowerSource(powerSource))
@@ -1844,8 +1852,9 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         {
             return PublishScopedUnavailable(
                 subsystem,
-                powerSource,
-                "The external power adapter could not be classified; control writes are blocked.");
+                PowerSourceForStatus(powerSource),
+                "The external power adapter could not be classified; control writes are blocked.",
+                preserveCurrentAvailability: true);
         }
 
         ServiceStatusSnapshot current = GetStatus();
@@ -2032,11 +2041,23 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         return ToOperationResult(outcome.Result);
     }
 
-    private void RefreshControllerPresenceCore(CancellationToken cancellationToken)
+    private void RefreshControllerPresenceCore(
+        CancellationToken cancellationToken,
+        bool allowRecentObservation = false)
     {
         cancellationToken.ThrowIfCancellationRequested();
+        if (allowRecentObservation
+            && controllerPresenceObserved
+            && Stopwatch.GetElapsedTime(lastControllerPresenceTimestamp)
+                < FastPathControllerPresenceInterval)
+        {
+            return;
+        }
+
         ControllerPresenceObservation observation = controllerPresenceMonitor.Observe();
         cancellationToken.ThrowIfCancellationRequested();
+        controllerPresenceObserved = true;
+        lastControllerPresenceTimestamp = Stopwatch.GetTimestamp();
         string[] potentialControllers = observation.PotentialControllers
             .GroupBy(name => name, StringComparer.OrdinalIgnoreCase)
             .Select(group => group.OrderBy(name => name, StringComparer.Ordinal).First())
@@ -2051,11 +2072,12 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
     }
 
     private async Task RefreshControllerPresenceAndRelinquishIfNewConflictAsync(
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        bool allowRecentObservation = false)
     {
         ServiceStatusSnapshot before = GetStatus();
         bool previouslyUnsafe = IsControllerPresenceUnsafe(before);
-        RefreshControllerPresenceCore(cancellationToken);
+        RefreshControllerPresenceCore(cancellationToken, allowRecentObservation);
         ServiceStatusSnapshot current = GetStatus();
         if (!IsControllerPresenceUnsafe(current))
         {
@@ -2260,7 +2282,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         && outcome.Readback is null;
 
     private async Task<PowerSource> ResolveCurrentPowerSourceAsync(
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        bool allowCachedExternalClassification = false)
     {
         PowerSource windowsSource = powerStateProvider.CapturePowerSource();
         cancellationToken.ThrowIfCancellationRequested();
@@ -2273,6 +2296,16 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         {
             // Test doubles and future providers may already have stronger evidence.
             return windowsSource;
+        }
+
+        if (allowCachedExternalClassification
+            && Automation.PowerSource is PowerSource.PluggedIn or PowerSource.UsbC)
+        {
+            // Windows reports only "external power" here. Reuse the last
+            // verified barrel-versus-USB-C classification for high-frequency
+            // telemetry; lifecycle notifications and the 15-second classifier
+            // continue to refresh it independently.
+            return Automation.PowerSource;
         }
 
         try
@@ -2351,7 +2384,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             consecutiveVerifiedAccessFailures = 0;
             cancellationToken.ThrowIfCancellationRequested();
             if (GetStatus().DeviceVerified
-                && ++consecutiveDeviceProbeFailures < 2)
+                && ++consecutiveDeviceProbeFailures < ObservationFailureThreshold)
             {
                 PublishTransientDeviceProbeFailure(powerSource, includeLiveReadings
                     ? new LiveReadings(batteryPowerFlowMilliwatts, null, null)
@@ -2374,6 +2407,17 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         {
             DeviceCapabilities capabilities =
                 await device.ReadCapabilitiesAsync(cancellationToken);
+            ServiceStatusSnapshot currentBeforeRead = GetStatus();
+            if (!HasAnyControlCapability(capabilities)
+                && currentBeforeRead.DeviceVerified
+                && currentBeforeRead.Capabilities is { } previousCapabilities
+                && HasAnyControlCapability(previousCapabilities))
+            {
+                // Capabilities are immutable for a connected model. A failed
+                // refresh must not make every UI control disappear until the
+                // next audit; each mutation still re-admits its own command.
+                capabilities = previousCapabilities;
+            }
             ConfirmedDeviceState confirmed = await ReadObservedStateAsync(
                 device,
                 cancellationToken);
@@ -2481,7 +2525,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             string message = $"Verified device access failed: {exception.Message}";
             ServiceStatusSnapshot current = GetStatus();
             if (current.DeviceVerified
-                && ++consecutiveVerifiedAccessFailures < 2)
+                && ++consecutiveVerifiedAccessFailures < ObservationFailureThreshold)
             {
                 PublishTransientVerifiedAccessFailure(
                     powerSource,
@@ -2533,7 +2577,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             // renderer ownership cannot survive until the audit interval.
             fullObservationCompleted = false;
             consecutiveVerifiedAccessFailures = 0;
-            if (current.DeviceVerified && ++consecutiveDeviceProbeFailures < 2)
+            if (current.DeviceVerified
+                && ++consecutiveDeviceProbeFailures < ObservationFailureThreshold)
             {
                 PublishTransientDeviceProbeFailure(
                     powerSource,
@@ -2921,6 +2966,16 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         confirmed.ProtectionEnabled == desired.ProtectionEnabled
         && (!desired.ProtectionEnabled
             || confirmed.ChargeLimitPercent == desired.ConfiguredPolicy.ChargeLimitPercent);
+
+    private static bool HasAnyControlCapability(DeviceCapabilities capabilities) =>
+        capabilities.PerformancePresets.Count > 0
+        || capabilities.FanModes.Count > 0
+        || capabilities.LightingEffects.Count > 0
+        || capabilities.LogoLightingModes.Count > 0
+        || capabilities.ChargeLimits.Count > 0
+        || capabilities.OneShotLaptopControls.Count > 0
+        || capabilities.SupportsBatteryProtectionOff
+        || capabilities.SupportsTemporaryFullCharge;
 
     private PowerSource PowerSourceForStatus(PowerSource observed)
     {

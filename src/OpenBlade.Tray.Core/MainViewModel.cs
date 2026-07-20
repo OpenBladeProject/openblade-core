@@ -2093,7 +2093,20 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         {
             if (value is not null)
             {
+                bool wasUnconfirmed = keyboardEffectUnconfirmed;
                 SetKeyboardEffectUnconfirmed(false);
+                if (wasUnconfirmed && lightingEffectEditor == value.Effect)
+                {
+                    SeedVisibleLightingDefaults(lightingEffectEditor, value.Effect);
+                    SetLightingEditorDirty(true);
+                    PropertyChanged?.Invoke(
+                        this,
+                        new PropertyChangedEventArgs(nameof(LightingDraft)));
+                    NotifyLightingParameterPresentation();
+                    NotifyCommands();
+                    return;
+                }
+
                 LightingEffectEditor = value.Effect;
             }
         }

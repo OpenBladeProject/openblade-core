@@ -29,8 +29,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
   captured effect durations, and initialized unknown visible brightness at 50%.
 - Bounded session-agent display IPC reads and contained stalled or truncated
   frames to the individual client connection.
-- Enforced an end-to-end 100 ms deadline for Reactive and Ripple key pulses so
-  a slow IPC connection cannot apply stale input or block newer key presses.
+- Retained accepted Reactive and Ripple key pulses through brief IPC and HID
+  stalls instead of canceling them after 100 ms, while keeping the queue bounded.
 - Preserved persistent fixed-speed and manual-curve fan details across service
   restarts with a schema-three override migration.
 - Rejected semantically invalid persistent lighting overrides during recovery
@@ -57,6 +57,12 @@ All notable changes to OpenBlade are documented in this file. The project follow
   device changes or transient lookup failures.
 - Kept one transient verified-device access failure from demoting every control
   while retaining fail-closed handling after attempted or indeterminate writes.
+- Preserved last-confirmed immutable capabilities across a failed refresh and
+  reduced high-frequency controller and external-power discovery work without
+  weakening the checks performed before mutations.
+- Reused one ordered Ambient Awareness connection and the already-admitted
+  exact-device lighting port instead of reopening IPC and rediscovering HID for
+  every 20 Hz frame.
 - Made dashboard telemetry rows content-sized so unavailable temperature values
   wrap without clipping or leaving excess card space.
 - Defaulted an unconfirmed visible lighting effect to 50% brightness in both the
@@ -165,9 +171,10 @@ All notable changes to OpenBlade are documented in this file. The project follow
 - Direct Fixed Fan Speed and Manual Fan Curve changes now accept the generic
   manual firmware readback used by PID 02E0, while entering manual control
   still requires a confirmed Balanced and Automatic state.
-- Reactive and Ripple input now coalesces duplicate pending keys, drops stale
-  pulses, and wakes one persistent renderer. Animated effects use deadline-based
-  scheduling so HID write time no longer accumulates as visible frame drift.
+- Reactive and Ripple input now queues accepted keys for one persistent renderer
+  and timestamps each pulse when the renderer can consume it. Animated effects
+  use deadline-based scheduling so HID write time no longer accumulates as
+  visible frame drift.
 - Firmware controls consistently reserve an inline progress indicator while a
   read or write is pending, and page navigation marks the specific page with
   unsaved changes.
