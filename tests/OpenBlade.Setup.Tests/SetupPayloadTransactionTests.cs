@@ -18,6 +18,8 @@ public sealed class SetupPayloadTransactionTests
     [InlineData("OpenBlade.Tray.deps.json")]
     [InlineData("OpenBlade.Tray.runtimeconfig.json")]
     [InlineData("OpenBlade.Tray.pri")]
+    [InlineData("App.xbf")]
+    [InlineData("MainWindow.xbf")]
     [InlineData("Microsoft.WindowsAppRuntime.dll")]
     [InlineData("Microsoft.WindowsAppRuntime.pri")]
     [InlineData("Microsoft.ui.xaml.dll")]
@@ -721,6 +723,8 @@ public sealed class SetupPayloadTransactionTests
             "OpenBlade.Tray.deps.json",
             "OpenBlade.Tray.runtimeconfig.json",
             "OpenBlade.Tray.pri",
+            "App.xbf",
+            "MainWindow.xbf",
             "Microsoft.WindowsAppRuntime.dll",
             "Microsoft.WindowsAppRuntime.pri",
             "Microsoft.ui.xaml.dll",

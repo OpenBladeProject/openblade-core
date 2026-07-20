@@ -7,6 +7,9 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Added
 
+- Exact-device Function-key behavior readback so Settings can show and verify
+  the current Function keys or Media keys state.
+
 - Settings now offers a confirmed full shutdown that stops the tray,
   SessionAgent, and LocalSystem service without launching a shell command.
 - A lightweight per-user SessionAgent that exclusively owns Windows display
@@ -45,22 +48,27 @@ All notable changes to OpenBlade are documented in this file. The project follow
   saved CPU Medium and GPU High values, allowing Custom mode to expose the
   captured Low, Medium, and High component choices while blocking High/High.
 - Exact-device Startup animation control with validated read-only `0F/98`
-  state, based on isolated On, Off, and restored-On responses. Function key
-  behavior and Gaming Mode remain setter-only and do not imply a known value.
+  state, based on isolated On, Off, and restored-On responses. Function-key
+  behavior now uses validated read-only `02/86` state; Gaming Mode remains
+  setter-only and does not imply a known value.
 - A sanitized Synapse protocol-logger and persistence audit proving that
   Function key behavior and Gaming Mode are displayed from Synapse-owned saved
   state and replayed through setters, not hydrated from observed firmware
   getters. The investigation restored both original selections and sent no
   guessed commands.
-- Developer-only, exact-device candidate probes for the unverified Function-key
+- Developer-only, exact-device candidate probes for the original Function-key
   and Gaming Mode getter hypotheses. Each named command has one compile-time
-  request, strict RZ09-0581/PID 02E0/BIOS 3.01 and controller gates, one
-  exchange with no retry, sanitized output, and no production admission.
+  request, strict RZ09-0581/PID 02E0/BIOS 3.01 and controller gates, and one
+  exchange with no retry. Function-key readback was subsequently validated and
+  admitted; Gaming Mode remains developer-only and unconfirmed.
 - A captured-feature audit that maps every reproducible target-device operation
   to its production surface and records why Trackpad, Snap Tap, and
   uncaptured effects remain hidden instead of relying on guessed commands.
 
 ### Changed
+
+- Self-contained WinUI publishing now includes compiled XAML resources;
+  incomplete payloads fail validation instead of crashing at startup.
 
 - Laptop-logo lighting now has its own section on the Lighting page. Firmware-only
   Function key behavior, Gaming Mode, and Startup animation actions are grouped

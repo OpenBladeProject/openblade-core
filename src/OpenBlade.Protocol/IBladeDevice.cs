@@ -19,6 +19,10 @@ public interface IBladeDevice
     Task<bool?> ReadStartupAnimationAsync(CancellationToken cancellationToken) =>
         Task.FromResult<bool?>(null);
 
+    Task<FunctionKeyPrimaryMode?> ReadFunctionKeyPrimaryAsync(
+        CancellationToken cancellationToken) =>
+        Task.FromResult<FunctionKeyPrimaryMode?>(null);
+
     Task SetPerformanceAsync(PerformancePreset value, CancellationToken cancellationToken);
 
     Task SetPerformanceAsync(

@@ -69,6 +69,8 @@ public sealed class SetupPayloadTransaction : ISetupPayloadTransaction
         "OpenBlade.Tray.deps.json",
         "OpenBlade.Tray.runtimeconfig.json",
         "OpenBlade.Tray.pri",
+        "App.xbf",
+        "MainWindow.xbf",
         "Microsoft.WindowsAppRuntime.dll",
         "Microsoft.WindowsAppRuntime.pri",
         "Microsoft.ui.xaml.dll",

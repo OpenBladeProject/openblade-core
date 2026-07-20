@@ -1231,6 +1231,40 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     }
 
     [Fact]
+    public async Task FunctionKeyControl_PublishesConfirmedReadback()
+    {
+        TestContext context = CreateContext(providerAvailable: true);
+        context.Device.Capabilities = DeviceCapabilities.SafeTargetDefaults() with
+        {
+            OneShotLaptopControls = new HashSet<OneShotLaptopControl>
+            {
+                OneShotLaptopControl.FunctionKeyPrimary,
+            },
+        };
+        context.Device.ConfirmedState = new ConfirmedDeviceState(
+            PerformancePreset.Balanced,
+            FanMode.Automatic,
+            ConfirmedBattery(80),
+            ProfileDefaults.CreateSafeDefaults().PluggedIn.Lighting);
+        context.Device.FunctionKeyPrimary = FunctionKeyPrimaryMode.FunctionKeys;
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        var request = new ApplyOneShotLaptopControl(
+            OneShotLaptopControl.FunctionKeyPrimary,
+            FunctionKeyMode: FunctionKeyPrimaryMode.MultimediaKeys);
+
+        ControlOperationResult result = await context.Runtime
+            .ApplyOneShotLaptopControlAsync(request, CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Applied, result.Status);
+        Assert.Equal(request, context.Device.LastOneShotLaptopControl);
+        Assert.Equal(1, context.Device.OneShotSetCalls);
+        Assert.Equal(
+            FunctionKeyPrimaryMode.MultimediaKeys,
+            context.Runtime.GetStatus().FunctionKeyPrimary);
+        Assert.Equal("Function key behavior is Media keys.", result.Message);
+    }
+
+    [Fact]
     public async Task PayloadValidationObservationFailure_RetriesOneReadAndRecovers()
     {
         TestContext context = CreateContext(providerAvailable: true);
@@ -1718,7 +1752,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             ProfileDefaults.CreateSafeDefaults().PluggedIn.Lighting with { Brightness = 10 });
 
         await context.Runtime.ObserveAsync(CancellationToken.None);
-        Assert.Equal(3, context.Device.TotalCalls);
+        Assert.Equal(4, context.Device.TotalCalls);
         Assert.Equal(0, context.Device.TotalSetterCalls);
 
         int telemetryCaptures = context.Telemetry.CaptureCount;
@@ -1726,7 +1760,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         await context.Runtime.RefreshControllerPresenceAsync(CancellationToken.None);
         Assert.Equal(2, context.Monitor.ObserveCount);
         Assert.Equal(telemetryCaptures, context.Telemetry.CaptureCount);
-        Assert.Equal(3, context.Device.TotalCalls);
+        Assert.Equal(4, context.Device.TotalCalls);
     }
 
     [Fact]
@@ -1884,7 +1918,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         await loop.RunAsync(CancellationToken.None);
 
         Assert.Equal(1, context.Provider.TryGetCount);
-        Assert.Equal(3, context.Device.TotalCalls);
+        Assert.Equal(4, context.Device.TotalCalls);
         Assert.True(context.Runtime.GetStatus().DeviceVerified);
         Assert.False(context.Runtime.GetStatus().WritesBlocked);
         Assert.Equal(0, context.Device.TotalSetterCalls);
@@ -4245,6 +4279,8 @@ public sealed class ServiceControlRuntimeTests : IDisposable
 
         public bool? StartupAnimationEnabled { get; set; }
 
+        public FunctionKeyPrimaryMode? FunctionKeyPrimary { get; set; }
+
         public int OneShotSetCalls { get; private set; }
 
         public ApplyOneShotLaptopControl? LastOneShotLaptopControl { get; private set; }
@@ -4488,6 +4524,14 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             {
                 StartupAnimationEnabled = enabled;
             }
+            else if (value is
+                {
+                    Control: OneShotLaptopControl.FunctionKeyPrimary,
+                    FunctionKeyMode: { } functionKeyMode,
+                })
+            {
+                FunctionKeyPrimary = functionKeyMode;
+            }
             return OneShotFailure is null
                 ? Task.CompletedTask
                 : Task.FromException(OneShotFailure);
@@ -4499,6 +4543,14 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             cancellationToken.ThrowIfCancellationRequested();
             TotalCalls++;
             return Task.FromResult(StartupAnimationEnabled);
+        }
+
+        public Task<FunctionKeyPrimaryMode?> ReadFunctionKeyPrimaryAsync(
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            TotalCalls++;
+            return Task.FromResult(FunctionKeyPrimary);
         }
 
         public Task<LightingRendererOwnershipState>

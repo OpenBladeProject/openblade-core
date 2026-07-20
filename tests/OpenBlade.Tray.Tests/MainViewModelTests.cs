@@ -1270,9 +1270,11 @@ public sealed class MainViewModelTests
         client.Publish(status with
         {
             StartupAnimationEnabled = true,
+            FunctionKeyPrimary = FunctionKeyPrimaryMode.FunctionKeys,
         });
         await WaitUntilAsync(() =>
             viewModel.StartupAnimationEnabled is true
+            && viewModel.FunctionKeyPrimary == FunctionKeyPrimaryMode.FunctionKeys
             && viewModel.IsPerformanceVisible);
 
         Assert.True(viewModel.IsPerformanceVisible);
@@ -1293,6 +1295,7 @@ public sealed class MainViewModelTests
         Assert.True(viewModel.SupportsGamingMode);
         Assert.True(viewModel.StartupAnimationEnabled);
         Assert.Equal("On", viewModel.StartupAnimationStateLabel);
+        Assert.Equal("Function keys", viewModel.FunctionKeyPrimaryStateLabel);
         var oneShot = new ApplyOneShotLaptopControl(
             OneShotLaptopControl.StartupAnimation,
             Enabled: false);

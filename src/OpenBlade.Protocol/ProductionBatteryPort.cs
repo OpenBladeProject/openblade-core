@@ -69,6 +69,7 @@ internal sealed class ProductionBatteryPort : IProductionBatteryPort
     private readonly AdapterPowerCommandClient adapterPowerCommands;
     private readonly McuVersionCommandClient mcuVersionCommands;
     private readonly StartupAnimationCommandClient startupAnimationCommands;
+    private readonly FunctionKeyPrimaryCommandClient functionKeyPrimaryCommands;
     private readonly SemaphoreSlim operationGate = new(1, 1);
     private readonly object lifecycleSync = new();
     private readonly IAsyncDisposable ownedSession;
@@ -119,6 +120,9 @@ internal sealed class ProductionBatteryPort : IProductionBatteryPort
         startupAnimationCommands = new StartupAnimationCommandClient(
             session,
             exchangeTimeout);
+        functionKeyPrimaryCommands = new FunctionKeyPrimaryCommandClient(
+            session,
+            exchangeTimeout);
         Capabilities = CreateCapabilities(catalog, readEvidence);
     }
 
@@ -131,6 +135,9 @@ internal sealed class ProductionBatteryPort : IProductionBatteryPort
 
     public bool SupportsStartupAnimationQuery =>
         readEvidence.SupportsStartupAnimationQuery;
+
+    public bool SupportsFunctionKeyPrimaryQuery =>
+        readEvidence.SupportsFunctionKeyPrimaryQuery;
 
     public async Task<ConfirmedBatteryState> QueryProtectionAsync(
         CancellationToken cancellationToken)
@@ -283,6 +290,38 @@ internal sealed class ProductionBatteryPort : IProductionBatteryPort
             HidSessionResult<bool> result = await startupAnimationCommands.QueryAsync(
                 transactionId,
                 cancellationToken).ConfigureAwait(false);
+            if (result.Failure is not null)
+            {
+                ThrowReadFailure(result.Failure.Value, result.Diagnostic, cancellationToken);
+            }
+
+            return result.Value;
+        }
+        finally
+        {
+            operationGate.Release();
+        }
+    }
+
+    public async Task<FunctionKeyPrimaryMode?> QueryFunctionKeyPrimaryAsync(
+        CancellationToken cancellationToken)
+    {
+        if (!readEvidence.SupportsFunctionKeyPrimaryQuery)
+        {
+            ThrowIfClosingOrDisposed();
+            cancellationToken.ThrowIfCancellationRequested();
+            return null;
+        }
+
+        await EnterAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            EnsureUsable();
+            byte transactionId = AllocateTransactionForRead();
+            HidSessionResult<FunctionKeyPrimaryMode> result =
+                await functionKeyPrimaryCommands.QueryAsync(
+                    transactionId,
+                    cancellationToken).ConfigureAwait(false);
             if (result.Failure is not null)
             {
                 ThrowReadFailure(result.Failure.Value, result.Diagnostic, cancellationToken);

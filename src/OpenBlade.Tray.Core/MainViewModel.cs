@@ -201,6 +201,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     private bool startAtSignIn;
     private bool startupStateKnown;
     private bool? startupAnimationEnabled;
+    private FunctionKeyPrimaryMode? functionKeyPrimary;
     private string startupStatusMessage = string.Empty;
     private TrayIconState trayIconState = TrayIconState.GenericError;
     private int disposed;
@@ -1234,6 +1235,34 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
 
     public bool SupportsFunctionKeyPrimary => Capabilities.OneShotLaptopControls.Contains(
         OneShotLaptopControl.FunctionKeyPrimary);
+
+    public FunctionKeyPrimaryMode? FunctionKeyPrimary
+    {
+        get => functionKeyPrimary;
+        private set
+        {
+            if (functionKeyPrimary == value)
+            {
+                return;
+            }
+
+            functionKeyPrimary = value;
+            PropertyChanged?.Invoke(
+                this,
+                new PropertyChangedEventArgs(nameof(FunctionKeyPrimary)));
+            PropertyChanged?.Invoke(
+                this,
+                new PropertyChangedEventArgs(nameof(FunctionKeyPrimaryStateLabel)));
+        }
+    }
+
+    public string FunctionKeyPrimaryStateLabel => FunctionKeyPrimary switch
+    {
+        FunctionKeyPrimaryMode.FunctionKeys => "Function keys",
+        FunctionKeyPrimaryMode.MultimediaKeys => "Media keys",
+        null => "Setâ€¦",
+        _ => "Setâ€¦",
+    };
 
     public bool SupportsGamingMode => Capabilities.OneShotLaptopControls.Contains(
         OneShotLaptopControl.GamingMode);
@@ -2575,6 +2604,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         }
         ConfirmedDeviceState? confirmed = status.ConfirmedState;
         StartupAnimationEnabled = status.StartupAnimationEnabled;
+        FunctionKeyPrimary = status.FunctionKeyPrimary;
         SelectedPerformance = ResolvePresentedPerformance(status, confirmed, capabilities);
         SelectedFanMode = ResolvePresentedFanMode(status, confirmed, capabilities);
         PrepareLightingEditorForPowerSource(status.ActivePowerSource);
@@ -4855,6 +4885,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         && left.LightingOverride == right.LightingOverride
         && left.FullChargeOverride == right.FullChargeOverride
         && left.StartupAnimationEnabled == right.StartupAnimationEnabled
+        && left.FunctionKeyPrimary == right.FunctionKeyPrimary
         && (left.LightingSuppressions ?? []).SequenceEqual(
             right.LightingSuppressions ?? [])
         && left.Firmware == right.Firmware

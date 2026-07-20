@@ -48,5 +48,5 @@
     "finalStartupAnimationState": "On"
   },
   "rawProbeOutputCommitted": false,
-  "decision": "Admit 0F/98 as the exact-device read-only Startup animation query. Continue treating Function key behavior and Gaming Mode as setter-only controls."
+  "decision": "Admit 0F/98 as the exact-device read-only Startup animation query. At the time of this run, Function key behavior and Gaming Mode remained setter-only; the later Function-key readback record supersedes only that part of the decision."
 }

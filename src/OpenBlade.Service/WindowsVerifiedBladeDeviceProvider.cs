@@ -507,6 +507,51 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
             }
         }
 
+        public async Task<FunctionKeyPrimaryMode?> ReadFunctionKeyPrimaryAsync(
+            CancellationToken cancellationToken)
+        {
+            await EnterHardwareOperationAsync(cancellationToken).ConfigureAwait(false);
+            try
+            {
+                HidSessionResult<IProductionBatteryPort> opened =
+                    await batteryFactory.OpenAsync(cancellationToken).ConfigureAwait(false);
+                if (opened.Value is not { } port)
+                {
+                    ThrowReadOpenFailure(opened.Failure, cancellationToken);
+                    return null;
+                }
+
+                await using (port.ConfigureAwait(false))
+                {
+                    if (opened.Failure is not null)
+                    {
+                        ThrowReadOpenFailure(opened.Failure, cancellationToken);
+                    }
+
+                    return port.SupportsFunctionKeyPrimaryQuery
+                        ? await port.QueryFunctionKeyPrimaryAsync(cancellationToken)
+                            .ConfigureAwait(false)
+                        : null;
+                }
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw new OperationCanceledException(cancellationToken);
+            }
+            catch (ObjectDisposedException)
+            {
+                throw;
+            }
+            catch
+            {
+                return null;
+            }
+            finally
+            {
+                hardwareOperationGate.Release();
+            }
+        }
+
         public Task SetPerformanceAsync(
             PerformancePreset value,
             CancellationToken cancellationToken) => SetPerformanceAsync(

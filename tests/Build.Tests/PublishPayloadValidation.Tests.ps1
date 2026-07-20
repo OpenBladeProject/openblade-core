@@ -147,6 +147,13 @@ function Write-ValidServicePayload {
         Set-Content -LiteralPath (Join-Path $Payload $sessionAgentFile) `
             -Value 'session agent payload' -NoNewline
     }
+    foreach ($trayUiFile in @(
+            'OpenBlade.Tray.pri',
+            'App.xbf',
+            'MainWindow.xbf')) {
+        Set-Content -LiteralPath (Join-Path $Payload $trayUiFile) `
+            -Value 'tray UI payload' -NoNewline
+    }
     foreach ($assembly in $AssemblySources.GetEnumerator()) {
         Copy-Item -LiteralPath $assembly.Value -Destination (Join-Path $Payload $assembly.Key)
     }
@@ -431,6 +438,18 @@ try {
         -ExistingBundle $missingSessionAgent.ExistingBundle `
         -ExpectedError 'missing required session agent file' `
         -CaseName 'A missing required session agent executable'
+
+    $missingTrayUi = New-TestBundlePair `
+        -PermittedRoot $permittedRoot `
+        -CaseName 'missing-tray-ui' `
+        -AssemblySources $assemblySources
+    Remove-Item -LiteralPath (Join-Path $missingTrayUi.Payload 'App.xbf')
+    Assert-RejectedAndPreserved `
+        -PermittedRoot $permittedRoot `
+        -StagingBundle $missingTrayUi.StagingBundle `
+        -ExistingBundle $missingTrayUi.ExistingBundle `
+        -ExpectedError 'missing required tray UI file' `
+        -CaseName 'A missing required compiled XAML file'
 
     $captureTool = New-TestBundlePair -PermittedRoot $permittedRoot -CaseName 'capture-tool' -AssemblySources $assemblySources
     $captureToolDirectory = Join-Path $captureTool.Payload 'tools'

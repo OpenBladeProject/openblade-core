@@ -43,11 +43,20 @@
     </Content>
   </ItemGroup>
   <Target Name="PublishApplicationResourceIndex" AfterTargets="Publish">
+    <ItemGroup>
+      <OpenBladeCompiledXaml Include="$(TargetDir)*.xbf" />
+    </ItemGroup>
     <Error
       Condition="!Exists('$(TargetDir)$(AssemblyName).pri')"
       Text="The generated WinUI resource index was not found at '$(TargetDir)$(AssemblyName).pri'." />
+    <Error
+      Condition="'@(OpenBladeCompiledXaml)' == ''"
+      Text="The generated WinUI compiled XAML files were not found under '$(TargetDir)'." />
     <Copy
       SourceFiles="$(TargetDir)$(AssemblyName).pri"
       DestinationFiles="$(PublishDir)$(AssemblyName).pri" />
+    <Copy
+      SourceFiles="@(OpenBladeCompiledXaml)"
+      DestinationFolder="$(PublishDir)" />
   </Target>
 </Project>

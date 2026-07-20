@@ -53,7 +53,7 @@ public sealed class ServiceMessageContractTests
             "ActivePowerSource", "LiveReadings",
             "PerformanceOverride", "FanOverride", "LightingOverride", "FullChargeOverride",
             "Firmware", "ServiceVersion", "LightingRendererOwnership", "LightingSuppressions",
-            "StartupAnimationEnabled",
+            "StartupAnimationEnabled", "FunctionKeyPrimary",
         ];
 
         Assert.Equal(
@@ -65,6 +65,7 @@ public sealed class ServiceMessageContractTests
         Assert.Equal(typeof(string), typeof(ServiceStatusSnapshot).GetProperty("ServiceVersion")!.PropertyType);
         Assert.Equal(typeof(LightingRendererOwnershipState), typeof(ServiceStatusSnapshot).GetProperty("LightingRendererOwnership")!.PropertyType);
         Assert.Equal(typeof(bool?), typeof(ServiceStatusSnapshot).GetProperty("StartupAnimationEnabled")!.PropertyType);
+        Assert.Equal(typeof(FunctionKeyPrimaryMode?), typeof(ServiceStatusSnapshot).GetProperty("FunctionKeyPrimary")!.PropertyType);
     }
 
     [Fact]

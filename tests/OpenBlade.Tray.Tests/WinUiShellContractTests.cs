@@ -107,7 +107,11 @@ public sealed class WinUiShellContractTests
             "Content=\"{x:Bind ViewModel.StartupAnimationStateLabel, Mode=OneWay}\"",
             xaml,
             StringComparison.Ordinal);
-        Assert.Equal(2, CountOccurrences(xaml, "Content=\"Set&#x2026;\""));
+        Assert.Contains(
+            "Content=\"{x:Bind ViewModel.FunctionKeyPrimaryStateLabel, Mode=OneWay}\"",
+            xaml,
+            StringComparison.Ordinal);
+        Assert.Equal(1, CountOccurrences(xaml, "Content=\"Set&#x2026;\""));
         Assert.DoesNotContain("Content=\"Change\"", xaml, StringComparison.Ordinal);
         Assert.DoesNotContain(
             "Text=\"Laptop logo\" Style=\"{StaticResource CardTitleStyle}\"",
@@ -188,7 +192,7 @@ public sealed class WinUiShellContractTests
     }
 
     [Fact]
-    public void SelfContainedPublishRequiresAndCopiesApplicationResourceIndex()
+    public void SelfContainedPublishRequiresAndCopiesWinUiCompiledResources()
     {
         string project = ReadRepositoryFile("src", "OpenBlade.Tray", "OpenBlade.Tray.csproj");
 
@@ -196,6 +200,10 @@ public sealed class WinUiShellContractTests
         Assert.Contains("AfterTargets=\"Publish\"", project, StringComparison.Ordinal);
         Assert.Contains("$(TargetDir)$(AssemblyName).pri", project, StringComparison.Ordinal);
         Assert.Contains("$(PublishDir)$(AssemblyName).pri", project, StringComparison.Ordinal);
+        Assert.Contains("<OpenBladeCompiledXaml Include=\"$(TargetDir)*.xbf\" />", project, StringComparison.Ordinal);
+        Assert.Contains("Condition=\"'@(OpenBladeCompiledXaml)' == ''\"", project, StringComparison.Ordinal);
+        Assert.Contains("SourceFiles=\"@(OpenBladeCompiledXaml)\"", project, StringComparison.Ordinal);
+        Assert.Contains("DestinationFolder=\"$(PublishDir)\"", project, StringComparison.Ordinal);
         Assert.Contains("<Error", project, StringComparison.Ordinal);
         Assert.Contains("!Exists('$(TargetDir)$(AssemblyName).pri')", project, StringComparison.Ordinal);
         Assert.Contains("<Copy", project, StringComparison.Ordinal);

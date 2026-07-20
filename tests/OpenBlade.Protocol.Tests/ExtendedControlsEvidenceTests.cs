@@ -5,7 +5,7 @@ namespace OpenBlade.Protocol.Tests;
 public sealed class ExtendedControlsEvidenceTests
 {
     [Fact]
-    public void Evidence_KeepsFunctionKeyAndGamingModeSetterOnly()
+    public void HistoricalCapture_ObservedNoFunctionKeyOrGamingModeGetter()
     {
         using JsonDocument document = JsonDocument.Parse(File.ReadAllText(EvidencePath()));
         JsonElement root = document.RootElement;
@@ -26,6 +26,25 @@ public sealed class ExtendedControlsEvidenceTests
             .GetProperty("independentQueryObserved").GetBoolean());
         Assert.False(root.GetProperty("gamingMode")
             .GetProperty("independentQueryObserved").GetBoolean());
+    }
+
+    [Fact]
+    public void FunctionKeyReadbackEvidence_AdmitsOnlyTheDiscriminatedExactQuery()
+    {
+        using JsonDocument document = JsonDocument.Parse(File.ReadAllText(
+            FunctionKeyReadbackEvidencePath()));
+        JsonElement root = document.RootElement;
+        JsonElement operation = root.GetProperty("operation");
+        JsonElement result = root.GetProperty("result");
+
+        Assert.Equal("02/86", operation.GetProperty("command").GetString());
+        Assert.Equal("0100", operation.GetProperty("requestPayloadHex").GetString());
+        Assert.Equal("FunctionKeys", root.GetProperty("mapping").GetProperty("0100").GetString());
+        Assert.Equal("MultimediaKeys", root.GetProperty("mapping").GetProperty("0101").GetString());
+        Assert.True(result.GetProperty("stateDiscriminationValidated").GetBoolean());
+        Assert.True(result.GetProperty("semanticMappingConfirmed").GetBoolean());
+        Assert.True(result.GetProperty("productionReadbackAdmitted").GetBoolean());
+        Assert.False(result.GetProperty("gamingModeReadbackValidated").GetBoolean());
     }
 
     [Fact]
@@ -84,6 +103,11 @@ public sealed class ExtendedControlsEvidenceTests
         "captures",
         "decoded",
         "rz09-0581-pid-02e0-bios-3.01-synapse-state-ownership.json");
+
+    private static string FunctionKeyReadbackEvidencePath() => RepositoryFile(
+        "captures",
+        "decoded",
+        "rz09-0581-pid-02e0-bios-3.01-function-key-primary-readback.json");
 
     private static string RepositoryFile(params string[] relativeSegments)
     {

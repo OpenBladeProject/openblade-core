@@ -79,6 +79,18 @@ function Assert-ServicePublishPayload {
         }
     }
 
+    $requiredTrayUiFiles = @(
+        'OpenBlade.Tray.pri',
+        'App.xbf',
+        'MainWindow.xbf'
+    )
+    foreach ($requiredTrayUiFile in $requiredTrayUiFiles) {
+        $requiredPath = Join-Path $Payload $requiredTrayUiFile
+        if (-not (Test-Path -LiteralPath $requiredPath -PathType Leaf)) {
+            throw "OpenBlade production payload is missing required tray UI file: $requiredPath"
+        }
+    }
+
     $forbiddenCaptureTool = Get-ChildItem -LiteralPath $Payload -File -Recurse -ErrorAction Stop |
         Where-Object { $_.Name.StartsWith('OpenBlade.Capture', [StringComparison]::OrdinalIgnoreCase) } |
         Select-Object -First 1

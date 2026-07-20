@@ -102,6 +102,39 @@ public sealed class ProductionBatteryPortTests
     }
 
     [Fact]
+    public async Task FunctionKeyPrimaryQuery_WithoutCodeControlledEvidenceReturnsNullWithoutIo()
+    {
+        var session = new ScriptedSession(Success([0x01, 0x00]));
+        await using var port = CreatePort(session, DeviceCommandCatalog.Empty);
+
+        Assert.Null(await port.QueryFunctionKeyPrimaryAsync(default));
+        Assert.Empty(session.Commands);
+    }
+
+    [Theory]
+    [InlineData("0100", FunctionKeyPrimaryMode.FunctionKeys)]
+    [InlineData("0101", FunctionKeyPrimaryMode.MultimediaKeys)]
+    public async Task FunctionKeyPrimaryQuery_IsSerializedAndReadOnly(
+        string responseHex,
+        FunctionKeyPrimaryMode expected)
+    {
+        var session = new ScriptedSession(
+            Success(Convert.FromHexString(responseHex)));
+        await using var port = CreatePort(
+            session,
+            DeviceCommandCatalog.Empty,
+            AcceptedFunctionKeyPrimaryReadEvidence());
+
+        Assert.True(port.SupportsFunctionKeyPrimaryQuery);
+        Assert.Equal(expected, await port.QueryFunctionKeyPrimaryAsync(default));
+
+        RazerCommandSpec command = Assert.Single(session.Commands);
+        Assert.Equal((0x02, 0x86), (command.ClassId, command.CommandId));
+        Assert.Equal([0x01, 0x00], command.Arguments.ToArray());
+        Assert.Equal(2, command.ExpectedPayloadLength);
+    }
+
+    [Fact]
     public async Task EmptyCatalog_RemainsProtectionReadableAndRejectsEverySetter()
     {
         var session = new ScriptedSession(
@@ -1147,6 +1180,12 @@ public sealed class ProductionBatteryPortTests
         new HashSet<ProductionBatteryQueryCapability>
         {
             ProductionBatteryQueryCapability.StartupAnimation,
+        });
+
+    private static ProductionBatteryReadEvidence AcceptedFunctionKeyPrimaryReadEvidence() => new(
+        new HashSet<ProductionBatteryQueryCapability>
+        {
+            ProductionBatteryQueryCapability.FunctionKeyPrimary,
         });
 
     private static ProductionBatteryReadEvidence NoTemporaryReadEvidence() => new(

@@ -247,6 +247,8 @@ public static class IpcMessageCodec
                 && !performanceOverride.IsWellFormed()
             || !Enum.IsDefined(status.ActivePowerSource)
             || !Enum.IsDefined(status.LightingRendererOwnership)
+            || status.FunctionKeyPrimary is { } functionKeyPrimary
+                && !Enum.IsDefined(functionKeyPrimary)
             || status.LightingSuppressions is { } suppressions
                 && (suppressions.Count > 2
                     || suppressions.Any(reason => !Enum.IsDefined(reason))
