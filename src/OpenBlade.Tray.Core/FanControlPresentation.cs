@@ -55,6 +55,10 @@ public static class FanModePresentation
         FanMode.ManualCurve,
     ];
 
+    private static readonly FanModeOption[] Options = Order
+        .Select(value => new FanModeOption(value, Label(value)))
+        .ToArray();
+
     public static string Label(FanMode value) => value switch
     {
         FanMode.Automatic => "Automatic",
@@ -69,10 +73,9 @@ public static class FanModePresentation
         bool automaticOnly = false)
     {
         ArgumentNullException.ThrowIfNull(admitted);
-        return Order
-            .Where(value => admitted.Contains(value)
-                && (!automaticOnly || value == FanMode.Automatic))
-            .Select(value => new FanModeOption(value, Label(value)))
+        return Options
+            .Where(option => admitted.Contains(option.Value)
+                && (!automaticOnly || option.Value == FanMode.Automatic))
             .ToArray();
     }
 }

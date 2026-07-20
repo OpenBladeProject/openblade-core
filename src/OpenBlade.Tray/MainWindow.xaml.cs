@@ -697,7 +697,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
         if (ViewModel.SetFanModeCommand is not AsyncRelayCommand command
             || !command.CanExecute(selected.Value))
         {
-            selector.SelectedValue = ViewModel.SelectedFanMode;
+            selector.SelectedItem = ViewModel.SelectedFanModeOption;
             changingFanSelection = false;
             return;
         }
@@ -713,7 +713,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
         }
         finally
         {
-            selector.SelectedValue = ViewModel.SelectedFanMode;
+            selector.SelectedItem = ViewModel.SelectedFanModeOption;
             selector.IsEnabled = true;
             changingFanSelection = false;
         }

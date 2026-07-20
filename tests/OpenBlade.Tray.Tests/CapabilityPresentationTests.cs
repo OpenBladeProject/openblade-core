@@ -48,11 +48,9 @@ public sealed class CapabilityPresentationTests
         Assert.Equal(
             "{x:Bind ViewModel.AvailableActiveFanModeOptions, Mode=OneWay}",
             Attribute(fans, "ItemsSource"));
-        Assert.Equal("Value", Attribute(fans, "SelectedValuePath"));
         Assert.Equal(
-            "{x:Bind ViewModel.SelectedFanMode, Mode=OneWay}",
-            Attribute(fans, "SelectedValue"));
-        Assert.Null(Attribute(fans, "SelectedItem"));
+            "{x:Bind ViewModel.SelectedFanModeOption, Mode=OneWay}",
+            Attribute(fans, "SelectedItem"));
         Assert.Equal(
             "OnDashboardChargeLimitPointerPressed",
             Attribute(chargeLimit, "PointerPressed"));

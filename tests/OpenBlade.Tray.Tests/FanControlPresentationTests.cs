@@ -5,6 +5,24 @@ namespace OpenBlade.Tray.Tests;
 public sealed class FanControlPresentationTests
 {
     [Fact]
+    public void ModeOptions_PreserveItemIdentityAcrossPresentationRefreshes()
+    {
+        var admitted = new HashSet<FanMode>
+        {
+            FanMode.Automatic,
+            FanMode.Fixed,
+            FanMode.ManualCurve,
+        };
+
+        IReadOnlyList<FanModeOption> first = FanModePresentation.CreateOptions(admitted);
+        IReadOnlyList<FanModeOption> second = FanModePresentation.CreateOptions(admitted);
+
+        Assert.All(first, option => Assert.Same(
+            option,
+            second.Single(candidate => candidate.Value == option.Value)));
+    }
+
+    [Fact]
     public void CurvePoint_SliderValueUpdatesVisibleLabelAndQuantizesFirmwareStep()
     {
         var point = new FanCurveEditorPoint(new FanCurvePoint(60, 2_600));
