@@ -15,6 +15,9 @@ All notable changes to OpenBlade are documented in this file. The project follow
   one connection so they cannot stop the other session-agent features.
 - Enforced an 800 by 600 DIP minimum window size without exceeding the current
   display's usable work area at high scaling.
+- Reused a very recent verified device admission across transient HID probe
+  failures so brief enumeration or open errors do not flash the laptop as
+  missing while later reads and writes still perform exact-device checks.
 - Serialized Reactive and Ripple failure-state publication with normal service
   operations so concurrent status revisions cannot overwrite each other.
 - Rejected non-terminal SetupAPI enumeration failures and invalid HID detail

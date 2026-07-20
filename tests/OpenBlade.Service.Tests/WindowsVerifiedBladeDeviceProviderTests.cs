@@ -140,6 +140,85 @@ public sealed class WindowsVerifiedBladeDeviceProviderTests
         Assert.Equal(0, factory.OpenCount);
     }
 
+    [Theory]
+    [InlineData(BatteryValidationProbeClassification.EnumerationFailed)]
+    [InlineData(BatteryValidationProbeClassification.CandidateOpenFailed)]
+    public void TryGetVerifiedDevice_ReusesRecentReadyDeviceForTransientProbeFailure(
+        BatteryValidationProbeClassification transientFailure)
+    {
+        int calls = 0;
+        var factory = new FakeQueryFactory();
+        using var provider = new WindowsVerifiedBladeDeviceProvider(
+            () =>
+            {
+                calls++;
+                return calls == 1
+                    ? Probe(BatteryValidationProbeClassification.Ready)
+                    : Probe(transientFailure);
+            },
+            Adapt(factory),
+            UnavailableFanRpmFactory());
+
+        Assert.True(provider.TryGetVerifiedDevice(out IBladeDevice first));
+        Assert.True(provider.TryGetVerifiedDevice(out IBladeDevice second));
+
+        Assert.Same(first, second);
+        Assert.Equal(0, factory.OpenCount);
+    }
+
+    [Fact]
+    public void TryGetVerifiedDevice_ReusesRecentReadyDeviceWhenProbeThrows()
+    {
+        int calls = 0;
+        var factory = new FakeQueryFactory();
+        using var provider = new WindowsVerifiedBladeDeviceProvider(
+            () =>
+            {
+                calls++;
+                if (calls == 1)
+                {
+                    return Probe(BatteryValidationProbeClassification.Ready);
+                }
+
+                throw new InvalidOperationException("private probe detail");
+            },
+            Adapt(factory),
+            UnavailableFanRpmFactory());
+
+        Assert.True(provider.TryGetVerifiedDevice(out IBladeDevice first));
+        Assert.True(provider.TryGetVerifiedDevice(out IBladeDevice second));
+
+        Assert.Same(first, second);
+        Assert.Equal(0, factory.OpenCount);
+    }
+
+    [Fact]
+    public void TryGetVerifiedDevice_ConcreteDeviceMissClearsRecentReadyDevice()
+    {
+        int calls = 0;
+        var factory = new FakeQueryFactory();
+        using var provider = new WindowsVerifiedBladeDeviceProvider(
+            () =>
+            {
+                calls++;
+                return calls switch
+                {
+                    1 => Probe(BatteryValidationProbeClassification.Ready),
+                    2 => Probe(BatteryValidationProbeClassification.NoExactHandle),
+                    _ => Probe(BatteryValidationProbeClassification.EnumerationFailed),
+                };
+            },
+            Adapt(factory),
+            UnavailableFanRpmFactory());
+
+        Assert.True(provider.TryGetVerifiedDevice(out _));
+        Assert.False(provider.TryGetVerifiedDevice(out IBladeDevice missing));
+        Assert.Null(missing);
+        Assert.False(provider.TryGetVerifiedDevice(out IBladeDevice stillMissing));
+        Assert.Null(stillMissing);
+        Assert.Equal(0, factory.OpenCount);
+    }
+
     [Fact]
     public async Task ReadCapabilities_OpenFailureReturnsExactlyUnavailableAfterFreshOpen()
     {

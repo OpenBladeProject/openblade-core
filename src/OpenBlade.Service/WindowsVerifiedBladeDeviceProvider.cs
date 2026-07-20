@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using OpenBlade.Contracts;
 using OpenBlade.Protocol;
@@ -8,6 +9,9 @@ namespace OpenBlade.Service;
 
 public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDeviceProvider, IDisposable
 {
+    private static readonly TimeSpan RecentReadyProbeGracePeriod =
+        TimeSpan.FromSeconds(5);
+
     internal static Func<BatteryValidationProbeResult> ProductionProbeFactory { get; } =
         BatteryValidationFactory.ProbeWindowsForService;
 
@@ -23,6 +27,7 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
     private readonly Func<BatteryValidationProbeResult> probe;
     private readonly SerializedBladeDevice device;
     private readonly object providerLifecycleSync = new();
+    private long lastReadyProbeTimestamp;
     private int disposed;
 
     public WindowsVerifiedBladeDeviceProvider()
@@ -58,10 +63,15 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
         try
         {
             BatteryValidationProbeClassification classification = probe().Classification;
-            if (classification is not (
-                BatteryValidationProbeClassification.Ready or
-                BatteryValidationProbeClassification.ReadyWithAccessFallback))
+            if (!IsReadyClassification(classification))
             {
+                if (IsTransientProbeClassification(classification)
+                    && TryGetRecentlyVerifiedDevice(out verifiedDevice))
+                {
+                    return true;
+                }
+
+                Volatile.Write(ref lastReadyProbeTimestamp, 0);
                 return false;
             }
 
@@ -72,15 +82,53 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
                     return false;
                 }
 
+                Volatile.Write(
+                    ref lastReadyProbeTimestamp,
+                    Stopwatch.GetTimestamp());
                 verifiedDevice = device;
                 return true;
             }
         }
         catch
         {
-            return false;
+            return TryGetRecentlyVerifiedDevice(out verifiedDevice);
         }
     }
+
+    private bool TryGetRecentlyVerifiedDevice(out IBladeDevice verifiedDevice)
+    {
+        verifiedDevice = null!;
+        long timestamp = Volatile.Read(ref lastReadyProbeTimestamp);
+        if (timestamp == 0
+            || Stopwatch.GetElapsedTime(timestamp) > RecentReadyProbeGracePeriod)
+        {
+            return false;
+        }
+
+        lock (providerLifecycleSync)
+        {
+            if (disposed != 0
+                || Volatile.Read(ref lastReadyProbeTimestamp) != timestamp)
+            {
+                return false;
+            }
+
+            verifiedDevice = device;
+            return true;
+        }
+    }
+
+    private static bool IsReadyClassification(
+        BatteryValidationProbeClassification classification) =>
+        classification is
+            BatteryValidationProbeClassification.Ready
+            or BatteryValidationProbeClassification.ReadyWithAccessFallback;
+
+    private static bool IsTransientProbeClassification(
+        BatteryValidationProbeClassification classification) =>
+        classification is
+            BatteryValidationProbeClassification.EnumerationFailed
+            or BatteryValidationProbeClassification.CandidateOpenFailed;
 
     public bool TryGetOwnedKeyTriggeredLightingDevice(out IBladeDevice verifiedDevice)
     {
