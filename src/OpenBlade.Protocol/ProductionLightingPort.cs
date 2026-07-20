@@ -305,14 +305,17 @@ internal sealed class ProductionLightingPort : IProductionLightingPort
             try
             {
                 TimeSpan elapsed = timeProvider.GetElapsedTime(effectStartedTimestamp);
-                Pid02E0MatrixFrame frame;
                 lock (effectSync)
                 {
                     effect.Pulse(pulse.MatrixSlot, elapsed);
-                    frame = effect.RenderFrame(elapsed);
                 }
 
-                await WriteMatrixCoreAsync(frame, cancellationToken).ConfigureAwait(false);
+                // Keep one matrix writer in the renderer loop. Submitting a second
+                // write from the IPC request can queue behind an in-flight frame,
+                // which makes a key press appear one or more seconds late under
+                // load. Waking the persistent renderer coalesces all pulses that
+                // arrive before its next frame and lets this transient request
+                // return without waiting for USB feature-report completion.
                 SignalStreamCore();
             }
             catch
@@ -794,9 +797,9 @@ internal sealed class ProductionLightingPort : IProductionLightingPort
                         .ConfigureAwait(false);
                 if (woke)
                 {
-                    // A key-triggered pulse has already submitted its immediate
-                    // frame. Keep this renderer task and move its next deadline
-                    // to the effect's current active cadence.
+                    // A key-triggered pulse wakes the single matrix writer. Render
+                    // it now rather than enqueueing a competing write from the IPC
+                    // request path.
                     elapsed = timeProvider.GetElapsedTime(effectStartedTimestamp);
                     TimeSpan? wakeDelay = effect.GetNextFrameDelay(elapsed);
                     if (wakeDelay is null)
@@ -804,8 +807,7 @@ internal sealed class ProductionLightingPort : IProductionLightingPort
                         return;
                     }
 
-                    nextFrameAt = elapsed + wakeDelay.Value;
-                    continue;
+                    nextFrameAt = elapsed;
                 }
 
                 elapsed = timeProvider.GetElapsedTime(effectStartedTimestamp);

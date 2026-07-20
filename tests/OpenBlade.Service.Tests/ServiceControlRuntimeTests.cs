@@ -209,8 +209,8 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         ControlOperationResult faulted = await context.Runtime.PulseReactiveKeyAsync(
             new ReactiveKeyPulse(77),
             CancellationToken.None);
-        Assert.Equal(ControlOperationStatus.Blocked, faulted.Status);
-        Assert.Equal(1, context.Device.ReactivePulseCalls);
+        Assert.Equal(ControlOperationStatus.Failed, faulted.Status);
+        Assert.Equal(2, context.Device.ReactivePulseCalls);
         Assert.Equal(
             LightingRendererOwnershipState.Faulted,
             context.Runtime.GetStatus().LightingRendererOwnership);
@@ -224,7 +224,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             CancellationToken.None);
 
         Assert.Equal(ControlOperationStatus.Blocked, blocked.Status);
-        Assert.Equal(1, context.Device.ReactivePulseCalls);
+        Assert.Equal(2, context.Device.ReactivePulseCalls);
     }
 
     [Fact]
@@ -4649,7 +4649,11 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             cancellationToken.ThrowIfCancellationRequested();
             TotalCalls++;
             ReactivePulseCalls++;
-            return Task.CompletedTask;
+            return LightingRendererOwnership is
+                LightingRendererOwnershipState.Reactive or
+                LightingRendererOwnershipState.Ripple
+                    ? Task.CompletedTask
+                    : Task.FromException(new IOException("Renderer is not active."));
         }
     }
 }

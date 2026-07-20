@@ -7,6 +7,11 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Added
 
+- JSON export for all saved AC, USB-C, and battery profiles from the Profiles
+  page, including a portable schema version, OpenBlade version, and export time.
+- Short height-and-opacity transitions for conditional Power mode and fan-control
+  subcards, with no reserved space after a card collapses.
+- Green accent dots on navigation items with unsaved profile changes.
 - Adjustable Fixed Fan Speed from 2,000 to 5,400 RPM in captured 100 RPM
   steps, plus a native slider that reflects the active target.
 - CPU and GPU manual fan-curve editing, an optional hotter-sensor policy, and
@@ -89,6 +94,11 @@ All notable changes to OpenBlade are documented in this file. The project follow
   uncaptured effects remain hidden instead of relying on guessed commands.
 
 ### Changed
+
+- Reactive and Ripple key presses now wake the existing matrix stream instead
+  of submitting competing feature-report writes. The service also avoids a
+  redundant renderer-ownership read for every key, reducing intermittent input
+  latency and animation-frame contention.
 
 - Direct Fixed Fan Speed and Manual Fan Curve changes now accept the generic
   manual firmware readback used by PID 02E0, while entering manual control

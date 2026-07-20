@@ -863,10 +863,6 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
                     await write(port).ConfigureAwait(false);
                 }
             }
-            catch (BladeWriteException)
-            {
-                throw;
-            }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
                 throw new BladeWriteException(
@@ -960,65 +956,43 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
             ReactiveKeyPulse pulse,
             CancellationToken cancellationToken)
         {
-            IProductionLightingPort? port = null;
+            // A pulse now changes only the in-memory key-triggered effect and
+            // wakes its already-running matrix stream. It performs no HID I/O,
+            // so it must not wait behind unrelated firmware observations on the
+            // global hardware gate. The lighting port still serializes this with
+            // effect replacement and safely rejects a concurrent close.
+            IProductionLightingPort? port = Volatile.Read(ref lightingPort);
             try
             {
-                await EnterHardwareOperationAsync(cancellationToken).ConfigureAwait(false);
-            }
-            catch (OperationCanceledException)
-            {
-                throw new BladeWriteException(
-                    WriteSubmissionState.KnownNotApplied,
-                    "The reactive lighting input was canceled before a verified session opened.");
-            }
-            catch (ObjectDisposedException exception)
-            {
-                throw new BladeWriteException(
-                    WriteSubmissionState.KnownNotApplied,
-                    "The reactive lighting input was blocked because the device provider is closing.",
-                    exception);
-            }
-
-            try
-            {
-                port = await GetLightingPortCoreAsync(cancellationToken).ConfigureAwait(false);
                 if (port is null
-                    || !port.Capabilities.LightingEffects.Contains(LightingEffect.Reactive))
+                    || port.OwnershipState is not (
+                        LightingRendererOwnershipState.Reactive or
+                        LightingRendererOwnershipState.Ripple))
                 {
                     throw new BladeWriteException(
                         WriteSubmissionState.KnownNotApplied,
-                        "The lighting writer could not open an exact-device session.");
+                        "The key-triggered lighting renderer is not active.");
                 }
 
                 await port.PulseReactiveKeyAsync(pulse, cancellationToken)
                     .ConfigureAwait(false);
             }
-            catch (BladeWriteException exception)
+            catch (BladeWriteException)
             {
-                if (exception.SubmissionState == WriteSubmissionState.Indeterminate)
-                {
-                    await ResetLightingPortCoreAsync(port).ConfigureAwait(false);
-                }
-
                 throw;
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
                 throw new BladeWriteException(
-                    WriteSubmissionState.Indeterminate,
-                    "The reactive lighting input was canceled after a verified session opened.");
+                    WriteSubmissionState.KnownNotApplied,
+                    "The key-triggered lighting input was canceled before it was queued.");
             }
             catch (Exception exception)
             {
-                await ResetLightingPortCoreAsync(port).ConfigureAwait(false);
                 throw new BladeWriteException(
-                    WriteSubmissionState.Indeterminate,
-                    "The reactive lighting input outcome is indeterminate.",
+                    WriteSubmissionState.KnownNotApplied,
+                    "The key-triggered lighting input could not be queued.",
                     exception);
-            }
-            finally
-            {
-                hardwareOperationGate.Release();
             }
         }
 

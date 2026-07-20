@@ -397,6 +397,7 @@ public sealed class ProductionLightingPortTests
             default);
 
         await port.PulseReactiveKeyAsync(new ReactiveKeyPulse(19), default);
+        await writer.WaitForWriteCountAsync(2, TimeSpan.FromSeconds(2));
 
         Assert.Equal(new MatrixRgb(0x12, 0x34, 0x56), writer.Reports[^1].Frame[19]);
     }
@@ -421,6 +422,27 @@ public sealed class ProductionLightingPortTests
         await port.PulseReactiveKeyAsync(new ReactiveKeyPulse(19), default);
 
         Assert.Same(before, streamTaskField.GetValue(port));
+    }
+
+    [Fact]
+    public async Task ReactivePulse_ReturnsWithoutWaitingForTheMatrixWrite()
+    {
+        var session = new LightingSession(initialBrightness: 0xFF);
+        var writer = new MatrixWriter();
+        await using var port = CreatePort(session, writer, admitted: true);
+        await port.SetLightingAsync(
+            LightingSettingsFactory.Reactive(
+                new RgbColor(0x12, 0x34, 0x56),
+                100,
+                ReactiveLightingDuration.Medium),
+            default);
+        writer.BlockNextWrite();
+
+        await port.PulseReactiveKeyAsync(new ReactiveKeyPulse(19), default)
+            .WaitAsync(TimeSpan.FromMilliseconds(250));
+        await writer.WaitForWriteCountAsync(2, TimeSpan.FromSeconds(2));
+
+        writer.ReleaseBlockedWrite();
     }
 
     [Fact]
@@ -473,6 +495,7 @@ public sealed class ProductionLightingPortTests
             default);
 
         await port.PulseReactiveKeyAsync(new ReactiveKeyPulse(53), default);
+        await writer.WaitForWriteCountAsync(2, TimeSpan.FromSeconds(2));
 
         Assert.Equal(LightingRendererOwnershipState.Ripple, port.OwnershipState);
         Assert.Equal(new MatrixRgb(0x12, 0x34, 0x56), writer.Reports[^1].Frame[53]);
@@ -943,6 +966,8 @@ public sealed class ProductionLightingPortTests
     {
         private readonly object sync = new();
         private TaskCompletionSource writeObserved = NewWriteObserved();
+        private TaskCompletionSource<HidSessionResult<HidUnit>>? blockedWrite;
+        private bool blockNextWrite;
 
         internal List<Pid02E0MatrixReport> Reports { get; } = [];
 
@@ -971,6 +996,13 @@ public sealed class ProductionLightingPortTests
                 TaskCompletionSource observed = writeObserved;
                 writeObserved = NewWriteObserved();
                 observed.TrySetResult();
+                if (blockNextWrite)
+                {
+                    blockNextWrite = false;
+                    blockedWrite = new TaskCompletionSource<HidSessionResult<HidUnit>>(
+                        TaskCreationOptions.RunContinuationsAsynchronously);
+                    return blockedWrite.Task;
+                }
             }
 
             HidSessionFailureKind failure = Failures.TryDequeue(out HidSessionFailureKind queued)
@@ -987,6 +1019,28 @@ public sealed class ProductionLightingPortTests
             {
                 Diagnostic = diagnostic,
             });
+        }
+
+        internal void BlockNextWrite()
+        {
+            lock (sync)
+            {
+                Assert.Null(blockedWrite);
+                blockNextWrite = true;
+            }
+        }
+
+        internal void ReleaseBlockedWrite()
+        {
+            TaskCompletionSource<HidSessionResult<HidUnit>> release;
+            lock (sync)
+            {
+                release = Assert.IsType<TaskCompletionSource<HidSessionResult<HidUnit>>>(
+                    blockedWrite);
+                blockedWrite = null;
+            }
+
+            release.TrySetResult(new HidSessionResult<HidUnit>(new HidUnit(), null));
         }
 
         internal async Task WaitForWriteCountAsync(int count, TimeSpan timeout)

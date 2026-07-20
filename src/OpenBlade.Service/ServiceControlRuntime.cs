@@ -850,19 +850,10 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                         "Key-triggered lighting input is unavailable for this laptop.");
                 }
 
-                LightingRendererOwnershipState liveOwnership =
-                    await ReadLightingOwnershipAsync(device, token).ConfigureAwait(false);
-                PublishIfChanged(GetStatus() with
-                {
-                    LightingRendererOwnership = liveOwnership,
-                });
-                if (!IsKeyTriggeredLightingOwnership(liveOwnership))
-                {
-                    return new ControlOperationResult(
-                        ControlOperationStatus.Blocked,
-                        "Key-triggered lighting is not currently active.");
-                }
-
+                // The production pulse path validates the live renderer itself.
+                // A separate ownership read here doubled hardware-gate traffic for
+                // every key press and could leave interactive effects waiting
+                // behind a slow observation. Refresh ownership only on failure.
                 token.ThrowIfCancellationRequested();
                 await device.PulseReactiveKeyAsync(pulse, token).ConfigureAwait(false);
                 return new ControlOperationResult(

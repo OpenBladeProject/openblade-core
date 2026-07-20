@@ -509,14 +509,17 @@ public sealed class WindowsVerifiedBladeDeviceProviderTests
             lightingFactory);
         provider.TryGetVerifiedDevice(out IBladeDevice device);
         LightingSettings first = LightingSettingsFactory.Static(new RgbColor(1, 2, 3), 50);
-        LightingSettings second = LightingSettingsFactory.Static(new RgbColor(4, 5, 6), 75);
+        LightingSettings second = LightingSettingsFactory.Reactive(
+            new RgbColor(4, 5, 6),
+            75,
+            ReactiveLightingDuration.Medium);
 
         await device.SetLightingAsync(first, default);
         await device.SetLightingAsync(second, default);
         await device.PulseReactiveKeyAsync(new ReactiveKeyPulse(77), default);
 
         Assert.Equal(
-            LightingRendererOwnershipState.Static,
+            LightingRendererOwnershipState.Reactive,
             await device.ReadLightingRendererOwnershipAsync(default));
 
         Assert.Equal(1, lightingFactory.OpenCount);
@@ -526,7 +529,7 @@ public sealed class WindowsVerifiedBladeDeviceProviderTests
 
         LightingRendererOwnershipState invalidated =
             await provider.InvalidateLightingRendererAsync(default);
-        Assert.Equal(LightingRendererOwnershipState.Static, invalidated);
+        Assert.Equal(LightingRendererOwnershipState.Reactive, invalidated);
         Assert.Equal(1, lightingPort.DisposeCount);
         Assert.Equal(
             LightingRendererOwnershipState.None,
@@ -534,6 +537,43 @@ public sealed class WindowsVerifiedBladeDeviceProviderTests
 
         provider.Dispose();
         Assert.Equal(1, lightingPort.DisposeCount);
+    }
+
+    [Fact]
+    public async Task ReactivePulse_DoesNotWaitBehindUnrelatedHardwareObservationGate()
+    {
+        var lightingPort = new FakeLightingPort();
+        var lightingFactory = new FakeLightingFactory(lightingPort);
+        using var provider = new WindowsVerifiedBladeDeviceProvider(
+            () => Probe(BatteryValidationProbeClassification.Ready),
+            Adapt(new FakeQueryFactory()),
+            UnavailableFanRpmFactory(),
+            lightingFactory);
+        provider.TryGetVerifiedDevice(out IBladeDevice device);
+        await device.SetLightingAsync(
+            LightingSettingsFactory.Reactive(
+                new RgbColor(0, 255, 0),
+                77,
+                ReactiveLightingDuration.Medium),
+            default);
+        var gate = Assert.IsType<SemaphoreSlim>(device.GetType()
+            .GetField(
+                "hardwareOperationGate",
+                System.Reflection.BindingFlags.Instance
+                    | System.Reflection.BindingFlags.NonPublic)!
+            .GetValue(device));
+        await gate.WaitAsync();
+        try
+        {
+            await device.PulseReactiveKeyAsync(new ReactiveKeyPulse(77), default)
+                .WaitAsync(TimeSpan.FromMilliseconds(250));
+        }
+        finally
+        {
+            gate.Release();
+        }
+
+        Assert.Equal([77], lightingPort.Pulses.Select(value => (int)value.MatrixSlot));
     }
 
     [Fact]

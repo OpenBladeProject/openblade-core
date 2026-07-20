@@ -26,6 +26,13 @@ public sealed class CapabilityPresentationTests
         Assert.Equal(
             expectedBadgeBindings.Order(),
             badges.Select(badge => Attribute(badge, "Visibility")).Order());
+        XElement badgeStyle = Assert.Single(document.Descendants(), element =>
+            Attribute(element, "Key") == "UnsavedNavigationBadgeStyle");
+        Assert.Contains(
+            badgeStyle.Descendants(),
+            element => Attribute(element, "Property") == "Background"
+                && Attribute(element, "Value")
+                    == "{ThemeResource AccentFillColorDefaultBrush}");
 
         XElement[] curveSliders = document.Descendants()
             .Where(element => element.Name.LocalName == "Slider"
@@ -42,6 +49,38 @@ public sealed class CapabilityPresentationTests
         Assert.All(curveLists, list => Assert.Equal(
             "{StaticResource FanCurveItemContainerStyle}",
             Attribute(list, "ItemContainerStyle")));
+    }
+
+    [Fact]
+    public void MainWindow_AnimatesConditionalDashboardSubcardsAndExportsJsonProfiles()
+    {
+        string xaml = ReadMainWindowXaml();
+        XDocument document = XDocument.Parse(xaml);
+        XElement[] animated = document.Descendants()
+            .Where(element => Attribute(element, "AnimatedVisibility.IsVisible") is not null)
+            .ToArray();
+
+        Assert.Equal(15, animated.Length);
+        Assert.All(animated, element => Assert.Equal(
+            "Collapsed",
+            Attribute(element, "Visibility")));
+        Assert.Contains(animated, element =>
+            Attribute(element, "AnimatedVisibility.IsVisible")?.Contains(
+                "IsCustomPerformanceVisible",
+                StringComparison.Ordinal) is true);
+        Assert.Contains(animated, element =>
+            Attribute(element, "AnimatedVisibility.IsVisible")?.Contains(
+                "IsFixedFanSpeedVisible",
+                StringComparison.Ordinal) is true);
+        Assert.Contains(animated, element =>
+            Attribute(element, "AnimatedVisibility.IsVisible")?.Contains(
+                "IsManualFanCurveVisible",
+                StringComparison.Ordinal) is true);
+
+        XElement export = Assert.Single(document.Descendants(), element =>
+            Attribute(element, "AutomationProperties.Name") == "Export profiles to JSON");
+        Assert.Equal("OnExportProfiles", Attribute(export, "Click"));
+        Assert.Equal("Export profiles", Attribute(export, "Content"));
     }
 
     [Fact]

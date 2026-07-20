@@ -5,6 +5,7 @@ using Microsoft.UI.Dispatching;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.Windows.Storage.Pickers;
 using OpenBlade.Contracts;
 using Windows.Graphics;
 using WinRT.Interop;
@@ -1314,6 +1315,48 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
                 XamlRoot = Root.XamlRoot,
                 Title = "OpenBlade could not shut down",
                 Content = exception.Message,
+                CloseButtonText = "Close",
+                DefaultButton = ContentDialogButton.Close,
+            };
+            await failure.ShowAsync();
+        }
+    }
+
+    private async void OnExportProfiles(object sender, RoutedEventArgs args)
+    {
+        try
+        {
+            var picker = new FileSavePicker(AppWindow.Id)
+            {
+                SuggestedFileName = $"OpenBlade-profiles-{DateTime.Now:yyyy-MM-dd}",
+                DefaultFileExtension = ".json",
+                ShowOverwritePrompt = true,
+                Title = "Export OpenBlade profiles",
+            };
+            picker.FileTypeChoices.Add("JSON files", [".json"]);
+
+            PickFileResult? result = await picker.PickSaveFileAsync();
+            if (result is null)
+            {
+                return;
+            }
+
+            string applicationVersion = OpenBladeProductVersion.Read(
+                typeof(MainWindow).Assembly);
+            string json = ProfileExportSerializer.Serialize(
+                ViewModel.Profiles,
+                applicationVersion,
+                DateTimeOffset.UtcNow);
+            await File.WriteAllTextAsync(result.Path, json);
+        }
+        catch (Exception exception)
+        {
+            Trace.TraceError("OpenBlade profile export failed: {0}", exception);
+            var failure = new ContentDialog
+            {
+                XamlRoot = Root.XamlRoot,
+                Title = "Profiles could not be exported",
+                Content = "OpenBlade could not save the selected JSON file.",
                 CloseButtonText = "Close",
                 DefaultButton = ContentDialogButton.Close,
             };

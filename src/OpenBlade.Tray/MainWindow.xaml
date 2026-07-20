@@ -203,7 +203,7 @@
                 <Setter Property="Width" Value="8" />
                 <Setter Property="Height" Value="8" />
                 <Setter Property="MinWidth" Value="8" />
-                <Setter Property="Background" Value="{ThemeResource SystemFillColorCautionBrush}" />
+                <Setter Property="Background" Value="{ThemeResource AccentFillColorDefaultBrush}" />
             </Style>
             <Style x:Key="FirmwareProgressRingStyle" TargetType="ProgressRing">
                 <Setter Property="Width" Value="16" />
@@ -540,7 +540,8 @@
                                 </Grid>
                             </Border>
                             <Border Style="{StaticResource SettingsSubcardStyle}"
-                                    Visibility="{x:Bind ViewModel.IsCustomPerformanceVisible, Mode=OneWay}">
+                                    Visibility="Collapsed"
+                                    local:AnimatedVisibility.IsVisible="{x:Bind ViewModel.IsCustomPerformanceVisible, Mode=OneWay}">
                                 <Grid ColumnSpacing="20">
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="*" />
@@ -563,7 +564,8 @@
                                 </Grid>
                             </Border>
                             <Border Style="{StaticResource SettingsSubcardStyle}"
-                                    Visibility="{x:Bind ViewModel.IsCustomPerformanceVisible, Mode=OneWay}">
+                                    Visibility="Collapsed"
+                                    local:AnimatedVisibility.IsVisible="{x:Bind ViewModel.IsCustomPerformanceVisible, Mode=OneWay}">
                                 <Grid ColumnSpacing="20">
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="*" />
@@ -619,7 +621,8 @@
                                 </Grid>
                             </Border>
                             <Border Style="{StaticResource SettingsLastSubcardStyle}"
-                                    Visibility="{x:Bind ViewModel.IsFixedFanSpeedVisible, Mode=OneWay}">
+                                    Visibility="Collapsed"
+                                    local:AnimatedVisibility.IsVisible="{x:Bind ViewModel.IsFixedFanSpeedVisible, Mode=OneWay}">
                                 <Grid ColumnSpacing="20">
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="*" />
@@ -653,7 +656,8 @@
                                 </Grid>
                             </Border>
                             <Border Style="{StaticResource SettingsLastSubcardStyle}"
-                                    Visibility="{x:Bind ViewModel.IsManualFanCurveVisible, Mode=OneWay}">
+                                    Visibility="Collapsed"
+                                    local:AnimatedVisibility.IsVisible="{x:Bind ViewModel.IsManualFanCurveVisible, Mode=OneWay}">
                                 <StackPanel Spacing="12">
                                     <Grid ColumnSpacing="20">
                                         <Grid.ColumnDefinitions>
@@ -873,7 +877,21 @@
                             </TransitionCollection>
                         </StackPanel.Transitions>
 
-                        <TextBlock Text="Profiles" Style="{StaticResource PageTitleStyle}" />
+                        <Grid Margin="0,0,0,20" ColumnSpacing="16">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Text="Profiles"
+                                       Style="{StaticResource PageHeaderTitleStyle}" />
+                            <Button Grid.Column="1"
+                                    Content="Export profiles"
+                                    HorizontalAlignment="Right"
+                                    VerticalAlignment="Center"
+                                    Click="OnExportProfiles"
+                                    ToolTipService.ToolTip="Export saved profiles as JSON"
+                                    AutomationProperties.Name="Export profiles to JSON" />
+                        </Grid>
                         <TextBlock Text="OpenBlade switches between these settings when the power source changes. Change them from Dashboard, Lighting, or Display."
                                    Style="{StaticResource SecondaryTextStyle}"
                                    Margin="0,0,0,16" />
@@ -1242,7 +1260,8 @@
                                 </Border>
 
                                 <Border Style="{StaticResource SettingsRowStyle}"
-                                        Visibility="{x:Bind ViewModel.LightingShowsBrightness, Mode=OneWay}">
+                                        Visibility="Collapsed"
+                                        local:AnimatedVisibility.IsVisible="{x:Bind ViewModel.LightingShowsBrightness, Mode=OneWay}">
                                     <Grid ColumnSpacing="20">
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="*" />
@@ -1272,7 +1291,8 @@
                                 </Border>
 
                                 <Border Style="{StaticResource SettingsRowStyle}"
-                                        Visibility="{x:Bind ViewModel.LightingShowsAmbientAwarenessRegion, Mode=OneWay}">
+                                        Visibility="Collapsed"
+                                        local:AnimatedVisibility.IsVisible="{x:Bind ViewModel.LightingShowsAmbientAwarenessRegion, Mode=OneWay}">
                                     <Grid ColumnSpacing="20">
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="*" />
@@ -1294,7 +1314,8 @@
                                 </Border>
 
                                 <Border Style="{StaticResource SettingsRowStyle}"
-                                        Visibility="{x:Bind ViewModel.LightingShowsBreathingColorMode, Mode=OneWay}">
+                                        Visibility="Collapsed"
+                                        local:AnimatedVisibility.IsVisible="{x:Bind ViewModel.LightingShowsBreathingColorMode, Mode=OneWay}">
                                     <Grid ColumnSpacing="20">
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="*" />
@@ -1315,7 +1336,8 @@
                                 </Border>
 
                                 <Border Style="{StaticResource SettingsRowStyle}"
-                                        Visibility="{x:Bind ViewModel.LightingShowsStarlightColorMode, Mode=OneWay}">
+                                        Visibility="Collapsed"
+                                        local:AnimatedVisibility.IsVisible="{x:Bind ViewModel.LightingShowsStarlightColorMode, Mode=OneWay}">
                                     <Grid ColumnSpacing="20">
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="*" />
@@ -1336,7 +1358,8 @@
                                 </Border>
 
                                 <Border Style="{StaticResource SettingsRowStyle}"
-                                        Visibility="{x:Bind ViewModel.LightingShowsRandomColors, Mode=OneWay}">
+                                        Visibility="Collapsed"
+                                        local:AnimatedVisibility.IsVisible="{x:Bind ViewModel.LightingShowsRandomColors, Mode=OneWay}">
                                     <Grid ColumnSpacing="20">
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="*" />
@@ -1355,7 +1378,8 @@
                                 </Border>
 
                                 <Border Style="{StaticResource SettingsRowStyle}"
-                                        Visibility="{x:Bind ViewModel.LightingShowsDirection, Mode=OneWay}">
+                                        Visibility="Collapsed"
+                                        local:AnimatedVisibility.IsVisible="{x:Bind ViewModel.LightingShowsDirection, Mode=OneWay}">
                                     <Grid ColumnSpacing="20">
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="*" />
@@ -1377,7 +1401,8 @@
                                 </Border>
 
                                 <Border Style="{StaticResource SettingsRowStyle}"
-                                        Visibility="{x:Bind ViewModel.LightingShowsRotationDirection, Mode=OneWay}">
+                                        Visibility="Collapsed"
+                                        local:AnimatedVisibility.IsVisible="{x:Bind ViewModel.LightingShowsRotationDirection, Mode=OneWay}">
                                     <Grid ColumnSpacing="20">
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="*" />
@@ -1398,7 +1423,8 @@
                                 </Border>
 
                                 <Border Style="{StaticResource SettingsRowStyle}"
-                                        Visibility="{x:Bind ViewModel.LightingShowsPrimaryColor, Mode=OneWay}">
+                                        Visibility="Collapsed"
+                                        local:AnimatedVisibility.IsVisible="{x:Bind ViewModel.LightingShowsPrimaryColor, Mode=OneWay}">
                                     <Grid ColumnSpacing="20">
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="*" />
@@ -1442,7 +1468,8 @@
                                 </Border>
 
                                 <Border Style="{StaticResource SettingsRowStyle}"
-                                        Visibility="{x:Bind ViewModel.LightingShowsSecondaryColor, Mode=OneWay}">
+                                        Visibility="Collapsed"
+                                        local:AnimatedVisibility.IsVisible="{x:Bind ViewModel.LightingShowsSecondaryColor, Mode=OneWay}">
                                     <Grid ColumnSpacing="20">
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="*" />
@@ -1485,7 +1512,8 @@
                                 </Border>
 
                                 <Border Style="{StaticResource SettingsRowStyle}"
-                                        Visibility="{x:Bind ViewModel.LightingShowsReactiveDuration, Mode=OneWay}">
+                                        Visibility="Collapsed"
+                                        local:AnimatedVisibility.IsVisible="{x:Bind ViewModel.LightingShowsReactiveDuration, Mode=OneWay}">
                                     <Grid ColumnSpacing="20">
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="*" />
@@ -1506,7 +1534,8 @@
                                 </Border>
 
                                 <Border Style="{StaticResource SettingsRowStyle}"
-                                        Visibility="{x:Bind ViewModel.LightingShowsStarlightDuration, Mode=OneWay}">
+                                        Visibility="Collapsed"
+                                        local:AnimatedVisibility.IsVisible="{x:Bind ViewModel.LightingShowsStarlightDuration, Mode=OneWay}">
                                     <Grid ColumnSpacing="20">
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="*" />

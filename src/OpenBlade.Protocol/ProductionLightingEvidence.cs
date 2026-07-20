@@ -118,10 +118,10 @@ internal static class ProductionLightingEvidenceSource
         "OpenBladeLightingImplementationFingerprint";
 
     private const string ApprovedLightingImplementationFingerprintSha256 =
-        // Re-reviewed after key-triggered effects retained one renderer task
-        // and animated frames moved to absolute deadlines. Transport, oracle,
-        // admitted commands, and captured effect semantics remain unchanged.
-        "D981D7AA9CBB5B68156F3844D2ECAF3A6B4318270EB2D4B881777E4B3B6594A4";
+        // Re-reviewed after key-triggered pulses moved onto the existing stream
+        // writer, eliminating competing feature-report writes. Transport,
+        // oracle, admitted commands, and captured effect semantics are unchanged.
+        "47207C22CDFB7BB1A1D468DE86560359C36EF53E9B215B477CECED98DE7066DB";
 
     private static readonly JsonSerializerOptions SerializerOptions =
         new(JsonSerializerDefaults.Web)
