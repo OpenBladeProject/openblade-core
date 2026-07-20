@@ -49,6 +49,8 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
 {
     private const string UnavailableLabel = "Unavailable";
     private const byte DefaultLightingBrightness = 50;
+    private static readonly TimeSpan ReconnectVisualGracePeriod =
+        TimeSpan.FromMilliseconds(750);
 
     private enum ProfileDraftGroup
     {
@@ -240,6 +242,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     private int disposed;
     private long latestAcceptedRevision = -1;
     private long connectionGeneration;
+    private long reconnectGeneration;
     private bool subscriptionConnected;
     private bool changingTelemetryPreferences;
 
@@ -3125,10 +3128,11 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
                         {
                             case ServiceWatchUpdate.Connected connected:
                                 subscriptionConnected = true;
+                                reconnectGeneration++;
                                 ApplyStatus(connected.Status);
                                 break;
                             case ServiceWatchUpdate.Reconnecting:
-                                MarkDisconnected("Reconnecting to service");
+                                MarkReconnecting("Reconnecting to service");
                                 break;
                         }
                     },
@@ -3467,9 +3471,48 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
 
     private void MarkDisconnected() => MarkDisconnected("Service disconnected");
 
+    private void MarkReconnecting(string message)
+    {
+        if (!IsConnected || latestStatus is null)
+        {
+            MarkDisconnected(message);
+            return;
+        }
+
+        subscriptionConnected = false;
+        long generation = ++reconnectGeneration;
+        ConnectionStatus = message;
+        _ = MarkDisconnectedAfterReconnectGraceAsync(generation, message);
+    }
+
+    private async Task MarkDisconnectedAfterReconnectGraceAsync(
+        long generation,
+        string message)
+    {
+        try
+        {
+            await Task.Delay(ReconnectVisualGracePeriod, lifetime.Token)
+                .ConfigureAwait(false);
+            await dispatcher.InvokeAsync(
+                () =>
+                {
+                    if (generation == reconnectGeneration
+                        && !subscriptionConnected)
+                    {
+                        MarkDisconnected(message);
+                    }
+                },
+                lifetime.Token).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (lifetime.IsCancellationRequested)
+        {
+        }
+    }
+
     private void MarkDisconnected(string message)
     {
         connectionGeneration++;
+        reconnectGeneration++;
         subscriptionConnected = false;
         latestAcceptedRevision = -1;
         IsConnected = false;

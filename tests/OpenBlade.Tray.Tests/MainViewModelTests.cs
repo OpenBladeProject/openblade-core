@@ -3302,7 +3302,37 @@ public sealed class MainViewModelTests
     }
 
     [Fact]
-    public async Task ReconnectingUpdate_RetainsLastSnapshotButImmediatelyDisablesCommands()
+    public async Task ReconnectingUpdate_RetainsLastSnapshotAndCommandsDuringGrace()
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        client.Publish(CreateStatus(verified: true, blocked: false) with
+        {
+            DesiredState = CreateStatus(true, false).DesiredState with
+            {
+                Performance = new ResolvedSetting<PerformancePreset>(
+                    PerformancePreset.Performance,
+                    SettingValueSource.PowerProfile),
+            },
+        });
+        await WaitUntilAsync(() =>
+            viewModel.IsConnected
+            && viewModel.SelectedPerformance == PerformancePreset.Performance);
+
+        client.PublishReconnecting();
+        await WaitUntilAsync(() =>
+            viewModel.IsConnected
+            && viewModel.ConnectionStatus == "Reconnecting to service");
+
+        Assert.Equal(PerformancePreset.Performance, viewModel.SelectedPerformance);
+        Assert.Equal("Reconnecting to service", viewModel.ConnectionStatus);
+        Assert.Equal("Ready", viewModel.ProfileStateLabel);
+        Assert.True(viewModel.SetPerformanceCommand.CanExecute(PerformancePreset.Balanced));
+    }
+
+    [Fact]
+    public async Task ReconnectingUpdate_DisconnectsWhenGraceExpiresWithoutRecovery()
     {
         var client = new FakeServiceClient();
         await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
@@ -3326,8 +3356,42 @@ public sealed class MainViewModelTests
             && viewModel.ConnectionStatus == "Reconnecting to service");
 
         Assert.Equal(PerformancePreset.Performance, viewModel.SelectedPerformance);
-        Assert.Equal("Reconnecting to service", viewModel.ConnectionStatus);
         Assert.False(viewModel.SetPerformanceCommand.CanExecute(PerformancePreset.Balanced));
+    }
+
+    [Fact]
+    public async Task ReconnectingUpdate_DoesNotDisconnectWhenServiceRecoversDuringGrace()
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        ServiceStatusSnapshot initial = CreateStatus(verified: true, blocked: false) with
+        {
+            DesiredState = CreateStatus(true, false).DesiredState with
+            {
+                Performance = new ResolvedSetting<PerformancePreset>(
+                    PerformancePreset.Performance,
+                    SettingValueSource.PowerProfile),
+            },
+        };
+        client.Publish(initial);
+        await WaitUntilAsync(() =>
+            viewModel.IsConnected
+            && viewModel.SelectedPerformance == PerformancePreset.Performance);
+
+        client.PublishReconnecting();
+        await WaitUntilAsync(() => viewModel.ConnectionStatus == "Reconnecting to service");
+        client.Publish(initial with
+        {
+            Revision = initial.Revision + 1,
+            Message = "Ready after reconnect.",
+        });
+        await WaitUntilAsync(() => viewModel.ConnectionStatus == "Ready after reconnect.");
+        await Task.Delay(TimeSpan.FromSeconds(1));
+
+        Assert.True(viewModel.IsConnected);
+        Assert.Equal("Ready", viewModel.ProfileStateLabel);
+        Assert.True(viewModel.SetPerformanceCommand.CanExecute(PerformancePreset.Balanced));
     }
 
     [Fact]
