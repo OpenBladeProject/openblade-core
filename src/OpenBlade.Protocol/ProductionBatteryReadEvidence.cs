@@ -7,6 +7,7 @@ internal enum ProductionBatteryQueryCapability
     McuVersion,
     StartupAnimation,
     FunctionKeyPrimary,
+    GamingMode,
 }
 
 internal sealed class ProductionBatteryReadEvidence
@@ -25,6 +26,8 @@ internal sealed class ProductionBatteryReadEvidence
             ProductionBatteryQueryCapability.StartupAnimation);
         SupportsFunctionKeyPrimaryQuery = capabilities.Contains(
             ProductionBatteryQueryCapability.FunctionKeyPrimary);
+        SupportsGamingModeQuery = capabilities.Contains(
+            ProductionBatteryQueryCapability.GamingMode);
     }
 
     public static ProductionBatteryReadEvidence Production { get; } = new(
@@ -35,6 +38,7 @@ internal sealed class ProductionBatteryReadEvidence
             ProductionBatteryQueryCapability.McuVersion,
             ProductionBatteryQueryCapability.StartupAnimation,
             ProductionBatteryQueryCapability.FunctionKeyPrimary,
+            ProductionBatteryQueryCapability.GamingMode,
         });
 
     public bool SupportsTemporaryFullChargeQuery { get; }
@@ -46,4 +50,6 @@ internal sealed class ProductionBatteryReadEvidence
     public bool SupportsStartupAnimationQuery { get; }
 
     public bool SupportsFunctionKeyPrimaryQuery { get; }
+
+    public bool SupportsGamingModeQuery { get; }
 }

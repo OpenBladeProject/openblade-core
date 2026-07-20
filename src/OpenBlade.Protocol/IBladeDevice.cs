@@ -23,6 +23,9 @@ public interface IBladeDevice
         CancellationToken cancellationToken) =>
         Task.FromResult<FunctionKeyPrimaryMode?>(null);
 
+    Task<bool?> ReadGamingModeAsync(CancellationToken cancellationToken) =>
+        Task.FromResult<bool?>(null);
+
     Task SetPerformanceAsync(PerformancePreset value, CancellationToken cancellationToken);
 
     Task SetPerformanceAsync(

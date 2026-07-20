@@ -111,7 +111,11 @@ public sealed class WinUiShellContractTests
             "Content=\"{x:Bind ViewModel.FunctionKeyPrimaryStateLabel, Mode=OneWay}\"",
             xaml,
             StringComparison.Ordinal);
-        Assert.Equal(1, CountOccurrences(xaml, "Content=\"Set&#x2026;\""));
+        Assert.Contains(
+            "Content=\"{x:Bind ViewModel.GamingModeStateLabel, Mode=OneWay}\"",
+            xaml,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain("Content=\"Set&#x2026;\"", xaml, StringComparison.Ordinal);
         Assert.DoesNotContain("Content=\"Change\"", xaml, StringComparison.Ordinal);
         Assert.DoesNotContain(
             "Text=\"Laptop logo\" Style=\"{StaticResource CardTitleStyle}\"",

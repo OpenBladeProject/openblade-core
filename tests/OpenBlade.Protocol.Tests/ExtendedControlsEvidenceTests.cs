@@ -48,6 +48,27 @@ public sealed class ExtendedControlsEvidenceTests
     }
 
     [Fact]
+    public void GamingModeReadbackEvidence_AdmitsOnlyTheDiscriminatedExactQuery()
+    {
+        using JsonDocument document = JsonDocument.Parse(File.ReadAllText(
+            GamingModeReadbackEvidencePath()));
+        JsonElement root = document.RootElement;
+        JsonElement operation = root.GetProperty("operation");
+        JsonElement result = root.GetProperty("result");
+
+        Assert.Equal("00/88", operation.GetProperty("command").GetString());
+        Assert.Equal("00000000", operation.GetProperty("requestPayloadHex").GetString());
+        Assert.Equal("Off", root.GetProperty("mapping").GetProperty("00000000").GetString());
+        Assert.Equal("On", root.GetProperty("mapping").GetProperty("01000000").GetString());
+        Assert.True(result.GetProperty("stateDiscriminationValidated").GetBoolean());
+        Assert.True(result.GetProperty("semanticMappingConfirmed").GetBoolean());
+        Assert.True(result.GetProperty("productionReadbackAdmitted").GetBoolean());
+        Assert.Equal(
+            "Off",
+            root.GetProperty("restoration").GetProperty("confirmedFinalState").GetString());
+    }
+
+    [Fact]
     public void Evidence_RecordsStartupAnimationAsTheOnlyConfirmedOneShotReadback()
     {
         using JsonDocument document = JsonDocument.Parse(File.ReadAllText(EvidencePath()));
@@ -108,6 +129,11 @@ public sealed class ExtendedControlsEvidenceTests
         "captures",
         "decoded",
         "rz09-0581-pid-02e0-bios-3.01-function-key-primary-readback.json");
+
+    private static string GamingModeReadbackEvidencePath() => RepositoryFile(
+        "captures",
+        "decoded",
+        "rz09-0581-pid-02e0-bios-3.01-gaming-mode-readback.json");
 
     private static string RepositoryFile(params string[] relativeSegments)
     {

@@ -55,5 +55,5 @@
     "gamingModeReadbackValidated": false
   },
   "rawProbeOutputCommitted": false,
-  "decision": "Admit 02/86 0100 as the exact-device Function key primary query. Keep 00/88 out of production pending a separate review and state-discrimination run."
+  "decision": "Admit 02/86 0100 as the exact-device Function key primary query. At the time of this run, 00/88 remained pending; the later Gaming Mode readback record supersedes that part of the decision."
 }

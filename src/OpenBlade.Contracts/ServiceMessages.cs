@@ -134,7 +134,8 @@ public sealed record ServiceStatusSnapshot(
         LightingRendererOwnershipState.None,
     IReadOnlyList<LightingSuppressionReason>? LightingSuppressions = null,
     bool? StartupAnimationEnabled = null,
-    FunctionKeyPrimaryMode? FunctionKeyPrimary = null);
+    FunctionKeyPrimaryMode? FunctionKeyPrimary = null,
+    bool? GamingModeEnabled = null);
 
 [JsonPolymorphic(TypeDiscriminatorPropertyName = "frame")]
 [JsonDerivedType(typeof(ServiceResponse), "response")]

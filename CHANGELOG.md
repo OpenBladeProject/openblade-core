@@ -9,6 +9,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 - Exact-device Function-key behavior readback so Settings can show and verify
   the current Function keys or Media keys state.
+- Exact-device Gaming Mode readback so Settings can show and verify the current
+  firmware-facing On or Off state without implying Synapse software policy.
 
 - Settings now offers a confirmed full shutdown that stops the tray,
   SessionAgent, and LocalSystem service without launching a shell command.
@@ -49,8 +51,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
   captured Low, Medium, and High component choices while blocking High/High.
 - Exact-device Startup animation control with validated read-only `0F/98`
   state, based on isolated On, Off, and restored-On responses. Function-key
-  behavior now uses validated read-only `02/86` state; Gaming Mode remains
-  setter-only and does not imply a known value.
+  behavior uses validated read-only `02/86` state, and the firmware-facing
+  Gaming Mode bit uses validated read-only `00/88` state.
 - A sanitized Synapse protocol-logger and persistence audit proving that
   Function key behavior and Gaming Mode are displayed from Synapse-owned saved
   state and replayed through setters, not hydrated from observed firmware
@@ -59,8 +61,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 - Developer-only, exact-device candidate probes for the original Function-key
   and Gaming Mode getter hypotheses. Each named command has one compile-time
   request, strict RZ09-0581/PID 02E0/BIOS 3.01 and controller gates, and one
-  exchange with no retry. Function-key readback was subsequently validated and
-  admitted; Gaming Mode remains developer-only and unconfirmed.
+  exchange with no retry. Both readbacks were subsequently discriminated across
+  known states and admitted to production with strict payload decoding.
 - A captured-feature audit that maps every reproducible target-device operation
   to its production surface and records why Trackpad, Snap Tap, and
   uncaptured effects remain hidden instead of relying on guessed commands.

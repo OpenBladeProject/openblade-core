@@ -1,0 +1,65 @@
+{
+  "schemaVersion": 1,
+  "validatedAtUtc": "2026-07-20T02:03:11Z",
+  "device": {
+    "model": "Razer Blade 16 RZ09-0581",
+    "vid": "1532",
+    "pid": "02E0",
+    "bios": "3.01"
+  },
+  "operation": {
+    "name": "Gaming Mode state",
+    "command": "00/88",
+    "requestPayloadHex": "00000000",
+    "expectedStatusHex": "02",
+    "responseLength": 4,
+    "semanticIntent": "Read current firmware value"
+  },
+  "observations": [
+    {
+      "sequence": 1,
+      "knownSetterAppliedImmediatelyBeforeQuery": "00/08 00000000",
+      "stateSelectedInOpenBlade": "Off",
+      "responsePayloadHex": "00000000"
+    },
+    {
+      "sequence": 2,
+      "knownSetterAppliedImmediatelyBeforeQuery": "00/08 01000000",
+      "stateSelectedInOpenBlade": "On",
+      "responsePayloadHex": "01000000"
+    },
+    {
+      "sequence": 3,
+      "knownSetterAppliedImmediatelyBeforeQuery": "00/08 00000000",
+      "stateSelectedInOpenBlade": "Off",
+      "responsePayloadHex": "00000000",
+      "purpose": "Restoration confirmation"
+    }
+  ],
+  "mapping": {
+    "00000000": "Off",
+    "01000000": "On"
+  },
+  "isolation": {
+    "razerControllerProcessesStoppedDuringQueries": true,
+    "razerControllerServicesStoppedDuringQueries": true,
+    "openBladeServiceStoppedDuringQueries": true,
+    "oneExchangePerProbeProcess": true,
+    "retries": 0,
+    "openBladeServiceRestoredAfterEachQuery": true,
+    "razerControllerServicesRestoredAfterValidation": true
+  },
+  "restoration": {
+    "knownSetterApplied": "00/08 00000000",
+    "confirmedFinalState": "Off",
+    "confirmationSource": "Final isolated 00/88 readback"
+  },
+  "result": {
+    "transportValidated": true,
+    "stateDiscriminationValidated": true,
+    "semanticMappingConfirmed": true,
+    "productionReadbackAdmitted": true
+  },
+  "rawProbeOutputCommitted": false,
+  "decision": "Admit 00/88 00000000 as the exact-device Gaming Mode query with strict four-byte decoding. This confirms only the firmware-facing Gaming Mode bit, not Synapse software policies such as blocked keys."
+}

@@ -21,6 +21,8 @@ public interface IProductionBatteryPort : IAsyncDisposable
 
     bool SupportsFunctionKeyPrimaryQuery => false;
 
+    bool SupportsGamingModeQuery => false;
+
     Task<ConfirmedBatteryState> QueryProtectionAsync(CancellationToken cancellationToken);
 
     Task<bool?> QueryTemporaryFullChargeAsync(CancellationToken cancellationToken);
@@ -40,6 +42,9 @@ public interface IProductionBatteryPort : IAsyncDisposable
     Task<FunctionKeyPrimaryMode?> QueryFunctionKeyPrimaryAsync(
         CancellationToken cancellationToken) =>
         Task.FromResult<FunctionKeyPrimaryMode?>(null);
+
+    Task<bool?> QueryGamingModeAsync(CancellationToken cancellationToken) =>
+        Task.FromResult<bool?>(null);
 
     Task SetPerformanceAsync(
         PerformancePreset value,

@@ -70,6 +70,7 @@ internal sealed class ProductionBatteryPort : IProductionBatteryPort
     private readonly McuVersionCommandClient mcuVersionCommands;
     private readonly StartupAnimationCommandClient startupAnimationCommands;
     private readonly FunctionKeyPrimaryCommandClient functionKeyPrimaryCommands;
+    private readonly GamingModeCommandClient gamingModeCommands;
     private readonly SemaphoreSlim operationGate = new(1, 1);
     private readonly object lifecycleSync = new();
     private readonly IAsyncDisposable ownedSession;
@@ -123,6 +124,7 @@ internal sealed class ProductionBatteryPort : IProductionBatteryPort
         functionKeyPrimaryCommands = new FunctionKeyPrimaryCommandClient(
             session,
             exchangeTimeout);
+        gamingModeCommands = new GamingModeCommandClient(session, exchangeTimeout);
         Capabilities = CreateCapabilities(catalog, readEvidence);
     }
 
@@ -138,6 +140,8 @@ internal sealed class ProductionBatteryPort : IProductionBatteryPort
 
     public bool SupportsFunctionKeyPrimaryQuery =>
         readEvidence.SupportsFunctionKeyPrimaryQuery;
+
+    public bool SupportsGamingModeQuery => readEvidence.SupportsGamingModeQuery;
 
     public async Task<ConfirmedBatteryState> QueryProtectionAsync(
         CancellationToken cancellationToken)
@@ -322,6 +326,36 @@ internal sealed class ProductionBatteryPort : IProductionBatteryPort
                 await functionKeyPrimaryCommands.QueryAsync(
                     transactionId,
                     cancellationToken).ConfigureAwait(false);
+            if (result.Failure is not null)
+            {
+                ThrowReadFailure(result.Failure.Value, result.Diagnostic, cancellationToken);
+            }
+
+            return result.Value;
+        }
+        finally
+        {
+            operationGate.Release();
+        }
+    }
+
+    public async Task<bool?> QueryGamingModeAsync(CancellationToken cancellationToken)
+    {
+        if (!readEvidence.SupportsGamingModeQuery)
+        {
+            ThrowIfClosingOrDisposed();
+            cancellationToken.ThrowIfCancellationRequested();
+            return null;
+        }
+
+        await EnterAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            EnsureUsable();
+            byte transactionId = AllocateTransactionForRead();
+            HidSessionResult<bool> result = await gamingModeCommands.QueryAsync(
+                transactionId,
+                cancellationToken).ConfigureAwait(false);
             if (result.Failure is not null)
             {
                 ThrowReadFailure(result.Failure.Value, result.Diagnostic, cancellationToken);

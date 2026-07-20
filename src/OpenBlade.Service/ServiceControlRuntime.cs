@@ -816,6 +816,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 };
                 bool? refreshedStartupAnimation = null;
                 FunctionKeyPrimaryMode? refreshedFunctionKeyPrimary = null;
+                bool? refreshedGamingMode = null;
                 if (value.Control == OneShotLaptopControl.StartupAnimation)
                 {
                     try
@@ -850,17 +851,38 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                         refreshedFunctionKeyPrimary = null;
                     }
                 }
+                else if (value.Control == OneShotLaptopControl.GamingMode)
+                {
+                    try
+                    {
+                        refreshedGamingMode = await device
+                            .ReadGamingModeAsync(token)
+                            .ConfigureAwait(false);
+                    }
+                    catch (OperationCanceledException) when (token.IsCancellationRequested)
+                    {
+                        throw;
+                    }
+                    catch
+                    {
+                        refreshedGamingMode = null;
+                    }
+                }
 
                 bool startupReadbackMatches = refreshedStartupAnimation == value.Enabled;
                 bool functionKeyReadbackMatches =
                     refreshedFunctionKeyPrimary == value.FunctionKeyMode;
+                bool gamingModeReadbackMatches = refreshedGamingMode == value.Enabled;
                 bool readbackMismatch =
-                    value.Control == OneShotLaptopControl.StartupAnimation
+                    (value.Control == OneShotLaptopControl.StartupAnimation
                         && refreshedStartupAnimation is not null
-                        && !startupReadbackMatches
-                    || value.Control == OneShotLaptopControl.FunctionKeyPrimary
+                        && !startupReadbackMatches)
+                    || (value.Control == OneShotLaptopControl.FunctionKeyPrimary
                         && refreshedFunctionKeyPrimary is not null
-                        && !functionKeyReadbackMatches;
+                        && !functionKeyReadbackMatches)
+                    || (value.Control == OneShotLaptopControl.GamingMode
+                        && refreshedGamingMode is not null
+                        && !gamingModeReadbackMatches);
                 var result = new ControlOperationResult(
                     readbackMismatch
                         ? ControlOperationStatus.Failed
@@ -881,6 +903,12 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                             $"{label} did not match the requested setting.",
                         OneShotLaptopControl.FunctionKeyPrimary =>
                             $"{label} was applied, but its current state could not be read.",
+                        OneShotLaptopControl.GamingMode when gamingModeReadbackMatches =>
+                            $"{label} is {(value.Enabled is true ? "on" : "off")}.",
+                        OneShotLaptopControl.GamingMode when refreshedGamingMode is not null =>
+                            $"{label} did not match the requested setting.",
+                        OneShotLaptopControl.GamingMode =>
+                            $"{label} was applied, but its current state could not be read.",
                         _ =>
                             $"{label} was applied. OpenBlade cannot read its current firmware value.",
                     });
@@ -897,6 +925,14 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                     PublishIfChanged(GetStatus() with
                     {
                         FunctionKeyPrimary = refreshedFunctionKeyPrimary,
+                        Message = result.Message,
+                    });
+                }
+                if (refreshedGamingMode is not null)
+                {
+                    PublishIfChanged(GetStatus() with
+                    {
+                        GamingModeEnabled = refreshedGamingMode,
                         Message = result.Message,
                     });
                 }
@@ -2093,6 +2129,9 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 await ReadFunctionKeyPrimaryStateAsync(
                     device,
                     cancellationToken).ConfigureAwait(false);
+            bool? gamingModeEnabled = await ReadGamingModeStateAsync(
+                device,
+                cancellationToken).ConfigureAwait(false);
             LightingRendererOwnershipState lightingOwnership =
                 await ReadLightingOwnershipAsync(device, cancellationToken)
                     .ConfigureAwait(false);
@@ -2148,6 +2187,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 LightingRendererOwnership = lightingOwnership,
                 StartupAnimationEnabled = startupAnimation,
                 FunctionKeyPrimary = functionKeyPrimary,
+                GamingModeEnabled = gamingModeEnabled,
             });
 
             if (powerSourceConfirmed)
@@ -2222,6 +2262,29 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         try
         {
             return await device.ReadFunctionKeyPrimaryAsync(cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (ObjectDisposedException)
+        {
+            throw;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static async Task<bool?> ReadGamingModeStateAsync(
+        IBladeDevice device,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await device.ReadGamingModeAsync(cancellationToken)
                 .ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -2521,6 +2584,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             LightingRendererOwnership = LightingRendererOwnershipState.None,
             StartupAnimationEnabled = null,
             FunctionKeyPrimary = null,
+            GamingModeEnabled = null,
         });
     }
 
@@ -2621,6 +2685,9 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 : null,
             FunctionKeyPrimary = deviceVerified
                 ? current.FunctionKeyPrimary
+                : null,
+            GamingModeEnabled = deviceVerified
+                ? current.GamingModeEnabled
                 : null,
         });
     }
@@ -2732,6 +2799,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         && left.FullChargeOverride == right.FullChargeOverride
         && left.StartupAnimationEnabled == right.StartupAnimationEnabled
         && left.FunctionKeyPrimary == right.FunctionKeyPrimary
+        && left.GamingModeEnabled == right.GamingModeEnabled
         && left.LightingRendererOwnership == right.LightingRendererOwnership
         && (left.LightingSuppressions ?? []).SequenceEqual(
             right.LightingSuppressions ?? [])

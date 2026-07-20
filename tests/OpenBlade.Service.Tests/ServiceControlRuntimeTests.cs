@@ -1265,6 +1265,38 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     }
 
     [Fact]
+    public async Task GamingModeControl_PublishesConfirmedReadback()
+    {
+        TestContext context = CreateContext(providerAvailable: true);
+        context.Device.Capabilities = DeviceCapabilities.SafeTargetDefaults() with
+        {
+            OneShotLaptopControls = new HashSet<OneShotLaptopControl>
+            {
+                OneShotLaptopControl.GamingMode,
+            },
+        };
+        context.Device.ConfirmedState = new ConfirmedDeviceState(
+            PerformancePreset.Balanced,
+            FanMode.Automatic,
+            ConfirmedBattery(80),
+            ProfileDefaults.CreateSafeDefaults().PluggedIn.Lighting);
+        context.Device.GamingModeEnabled = false;
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        var request = new ApplyOneShotLaptopControl(
+            OneShotLaptopControl.GamingMode,
+            Enabled: true);
+
+        ControlOperationResult result = await context.Runtime
+            .ApplyOneShotLaptopControlAsync(request, CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Applied, result.Status);
+        Assert.Equal(request, context.Device.LastOneShotLaptopControl);
+        Assert.Equal(1, context.Device.OneShotSetCalls);
+        Assert.True(context.Runtime.GetStatus().GamingModeEnabled);
+        Assert.Equal("Gaming Mode is on.", result.Message);
+    }
+
+    [Fact]
     public async Task PayloadValidationObservationFailure_RetriesOneReadAndRecovers()
     {
         TestContext context = CreateContext(providerAvailable: true);
@@ -1752,7 +1784,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             ProfileDefaults.CreateSafeDefaults().PluggedIn.Lighting with { Brightness = 10 });
 
         await context.Runtime.ObserveAsync(CancellationToken.None);
-        Assert.Equal(4, context.Device.TotalCalls);
+        Assert.Equal(5, context.Device.TotalCalls);
         Assert.Equal(0, context.Device.TotalSetterCalls);
 
         int telemetryCaptures = context.Telemetry.CaptureCount;
@@ -1760,7 +1792,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         await context.Runtime.RefreshControllerPresenceAsync(CancellationToken.None);
         Assert.Equal(2, context.Monitor.ObserveCount);
         Assert.Equal(telemetryCaptures, context.Telemetry.CaptureCount);
-        Assert.Equal(4, context.Device.TotalCalls);
+        Assert.Equal(5, context.Device.TotalCalls);
     }
 
     [Fact]
@@ -1918,7 +1950,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         await loop.RunAsync(CancellationToken.None);
 
         Assert.Equal(1, context.Provider.TryGetCount);
-        Assert.Equal(4, context.Device.TotalCalls);
+        Assert.Equal(5, context.Device.TotalCalls);
         Assert.True(context.Runtime.GetStatus().DeviceVerified);
         Assert.False(context.Runtime.GetStatus().WritesBlocked);
         Assert.Equal(0, context.Device.TotalSetterCalls);
@@ -4281,6 +4313,8 @@ public sealed class ServiceControlRuntimeTests : IDisposable
 
         public FunctionKeyPrimaryMode? FunctionKeyPrimary { get; set; }
 
+        public bool? GamingModeEnabled { get; set; }
+
         public int OneShotSetCalls { get; private set; }
 
         public ApplyOneShotLaptopControl? LastOneShotLaptopControl { get; private set; }
@@ -4532,6 +4566,14 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             {
                 FunctionKeyPrimary = functionKeyMode;
             }
+            else if (value is
+                {
+                    Control: OneShotLaptopControl.GamingMode,
+                    Enabled: { } gamingModeEnabled,
+                })
+            {
+                GamingModeEnabled = gamingModeEnabled;
+            }
             return OneShotFailure is null
                 ? Task.CompletedTask
                 : Task.FromException(OneShotFailure);
@@ -4551,6 +4593,13 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             cancellationToken.ThrowIfCancellationRequested();
             TotalCalls++;
             return Task.FromResult(FunctionKeyPrimary);
+        }
+
+        public Task<bool?> ReadGamingModeAsync(CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            TotalCalls++;
+            return Task.FromResult(GamingModeEnabled);
         }
 
         public Task<LightingRendererOwnershipState>

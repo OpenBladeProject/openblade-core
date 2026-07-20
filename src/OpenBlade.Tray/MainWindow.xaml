@@ -1774,7 +1774,7 @@
                                                        Style="{StaticResource SecondaryTextStyle}" />
                                         </StackPanel>
                                         <DropDownButton Grid.Column="1"
-                                                        Content="Set&#x2026;"
+                                                        Content="{x:Bind ViewModel.GamingModeStateLabel, Mode=OneWay}"
                                                         HorizontalAlignment="Right"
                                                         VerticalAlignment="Center"
                                                         AutomationProperties.Name="Set Gaming Mode">
