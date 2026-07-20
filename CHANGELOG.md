@@ -31,6 +31,10 @@ All notable changes to OpenBlade are documented in this file. The project follow
   independent state/effect readback and rollback.
 - Data-minimized Reactive input through Windows Raw Input: scan-code make events map directly to matrix slots without recording characters, virtual-key values, applications, window titles, or input packets.
 - Sanitized Synapse oracle USBPcap evidence for lighting brightness readback, the 102-slot matrix envelope, effect timing, dual/random Breathing, and Reactive key placement and decay. The admitted configuration was also exercised in repeated installed OpenBlade runs on the target laptop.
+- Sanitized Synapse oracle evidence for all five Ambient Awareness screen
+  regions: Full, Left, Top, Right, and Bottom. The capture confirms that region
+  selection is host-side screen sampling followed by the shared matrix stream,
+  not a firmware region command.
 - A sanitized, hash-pinned five-second Tidal matrix oracle for both directions;
   raw USB captures remain local and are not distributed.
 - A sanitized, hash-pinned one-second Wave and Wheel matrix oracle covering all

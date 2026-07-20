@@ -1,0 +1,115 @@
+{
+  "schemaVersion": 1,
+  "evidenceProvenance": {
+    "controller": "Razer Synapse 4.0.697",
+    "role": "OracleCapture",
+    "openBladeTypedApplyPerformed": false,
+    "openBladeVisualParityConfirmed": false
+  },
+  "capturedAtUtc": "2026-07-20T02:40:14.416007Z",
+  "device": {
+    "model": "Razer Blade 16 (2026)",
+    "modelNumber": "RZ09-0581",
+    "vendorIdHex": "1532",
+    "productIdHex": "02E0",
+    "bios": "3.01",
+    "usbPcapRoot": "USBPcap3",
+    "usbDeviceAddress": 2
+  },
+  "capture": {
+    "sha256": "56AA5AC9153476C005291EE447F0F785B42B7C2613095CECEA121DEE6EC5921D",
+    "byteLength": 385923,
+    "packetCount": 2852,
+    "durationSeconds": 158.578031,
+    "matrixReportCount": 493,
+    "rawCaptureCommitted": false,
+    "terminationReason": "StopSentinel",
+    "stopMode": "Graceful",
+    "captureProcessId": 25264,
+    "captureProcessGroupId": 25264,
+    "serviceRestored": true,
+    "decodable": true,
+    "descriptorVerified": "1532:02E0"
+  },
+  "baseline": {
+    "effect": "Ambient Awareness",
+    "brightnessPercent": 77,
+    "screenRegion": "Full",
+    "screenRegionNaming": "Icon-derived semantic names because Synapse exposes unlabeled region icons"
+  },
+  "actions": [
+    {
+      "screenRegion": "Left",
+      "uiOrder": 2,
+      "actionBeforeUtc": "2026-07-20T02:40:41.072Z",
+      "visualConfirmationUtc": "2026-07-20T02:40:43.682Z",
+      "handshakeFrames": [299, 305, 311],
+      "handshakeRelativeSeconds": [26.752608, 26.811010, 26.818515],
+      "firstMatrixFrame": 315,
+      "firstMatrixRelativeSeconds": 26.882802,
+      "lastMatrixFrameBeforeNextSelection": 595,
+      "lastMatrixRelativeSecondsBeforeNextSelection": 34.342290,
+      "matrixFrames": 95
+    },
+    {
+      "screenRegion": "Top",
+      "uiOrder": 3,
+      "actionBeforeUtc": "2026-07-20T02:40:50.542Z",
+      "visualConfirmationUtc": "2026-07-20T02:40:53.157Z",
+      "handshakeFrames": [613, 617, 621],
+      "handshakeRelativeSeconds": [36.187787, 36.259103, 36.271997],
+      "firstMatrixFrame": 625,
+      "firstMatrixRelativeSeconds": 36.355616,
+      "lastMatrixFrameBeforeNextSelection": 871,
+      "lastMatrixRelativeSecondsBeforeNextSelection": 40.294115,
+      "matrixFrames": 90
+    },
+    {
+      "screenRegion": "Right",
+      "uiOrder": 4,
+      "actionBeforeUtc": "2026-07-20T02:40:58.389Z",
+      "visualConfirmationUtc": "2026-07-20T02:41:01.008Z",
+      "handshakeFrames": [905, 909, 913],
+      "handshakeRelativeSeconds": [44.037242, 44.111795, 44.123993],
+      "firstMatrixFrame": 917,
+      "firstMatrixRelativeSeconds": 44.207275,
+      "lastMatrixFrameBeforeNextSelection": 1173,
+      "lastMatrixRelativeSecondsBeforeNextSelection": 49.329748,
+      "matrixFrames": 93
+    },
+    {
+      "screenRegion": "Bottom",
+      "uiOrder": 5,
+      "actionBeforeUtc": "2026-07-20T02:41:07.340Z",
+      "visualConfirmationUtc": "2026-07-20T02:41:09.941Z",
+      "handshakeFrames": [1207, 1211, 1215],
+      "handshakeRelativeSeconds": [52.985149, 53.048950, 53.065322],
+      "firstMatrixFrame": 1219,
+      "firstMatrixRelativeSeconds": 53.132581,
+      "lastMatrixFrameBeforeNextSelection": 1487,
+      "lastMatrixRelativeSecondsBeforeNextSelection": 59.327539,
+      "matrixFrames": 95
+    },
+    {
+      "screenRegion": "Full",
+      "uiOrder": 1,
+      "restoration": true,
+      "actionBeforeUtc": "2026-07-20T02:41:15.488Z",
+      "visualConfirmationUtc": "2026-07-20T02:41:18.106Z",
+      "handshakeFrames": [1505, 1509, 1513],
+      "handshakeRelativeSeconds": [61.156332, 61.202080, 61.209878],
+      "firstMatrixFrame": 1517,
+      "firstMatrixRelativeSeconds": 61.273580,
+      "lastMatrixFrameInBoundedWindow": 1801,
+      "lastMatrixRelativeSecondsInBoundedWindow": 69.332736,
+      "matrixFrames": 95
+    }
+  ],
+  "notes": [
+    "The five Synapse icons appear left-to-right as Full, Left, Top, Right, and Bottom. These semantic names are derived from the icon geometry; Synapse exposes no text label for an individual icon.",
+    "Each selection emitted the same 00/86 000000, 00/84 0000, and 03/0A 0500 matrix-entry sequence, followed by 03/0B reports.",
+    "No device command encoded the selected screen region. The different region results exist in the RGB contents of the host-rendered matrix stream.",
+    "Ambient Awareness therefore requires a signed-in screen-capture and sampling renderer. The capture does not admit a firmware region setter.",
+    "The original Full region, Ambient Awareness effect, and 77 percent brightness were visibly restored before graceful shutdown."
+  ]
+}

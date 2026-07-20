@@ -257,6 +257,31 @@ public sealed class LightingOnlineEvidenceTests
         Assert.DoesNotContain("serial", File.ReadAllText(AnnotationPath()), StringComparison.OrdinalIgnoreCase);
     }
 
+    [Fact]
+    public void AmbientAwarenessEvidence_RecordsAllRegionsAsHostRenderedInputs()
+    {
+        using JsonDocument document = JsonDocument.Parse(File.ReadAllText(
+            AmbientAwarenessEvidencePath()));
+        JsonElement root = document.RootElement;
+        JsonElement protocol = root.GetProperty("protocol");
+
+        Assert.Equal(
+            ["Full", "Left", "Top", "Right", "Bottom"],
+            root.GetProperty("screenRegions")
+                .EnumerateArray()
+                .Select(region => region.GetProperty("semanticName").GetString()!)
+                .ToArray());
+        Assert.Equal(5, protocol.GetProperty("identicalEntrySequenceCount").GetInt32());
+        Assert.Equal(
+            ["00/86:000000", "00/84:0000", "03/0A:0500"],
+            Strings(protocol, "entrySequence"));
+        Assert.False(protocol.GetProperty("independentRegionSetterObserved").GetBoolean());
+        Assert.True(protocol.GetProperty("regionEncodedInMatrixRgb").GetBoolean());
+        Assert.True(root.GetProperty("restoration").GetProperty("visuallyConfirmed").GetBoolean());
+        Assert.False(root.GetProperty("implementationBoundary")
+            .GetProperty("productionControlAdmitted").GetBoolean());
+    }
+
     private static JsonDocument LoadEvidence() => JsonDocument.Parse(File.ReadAllText(EvidencePath()));
 
     private static string EvidencePath() => RepositoryFile(
@@ -267,6 +292,10 @@ public sealed class LightingOnlineEvidenceTests
 
     private static string HydrationAnnotationPath() => RepositoryFile(
         "captures", "annotations", "2026-07-16-lighting-hydration-negative.json");
+
+    private static string AmbientAwarenessEvidencePath() => RepositoryFile(
+        "captures", "decoded",
+        "rz09-0581-pid-02e0-bios-3.01-ambient-awareness-regions-oracle-summary.json");
 
     private static string RepositoryFile(params string[] relativeSegments)
     {
