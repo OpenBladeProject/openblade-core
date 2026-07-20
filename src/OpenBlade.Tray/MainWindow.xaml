@@ -570,7 +570,8 @@
                                                   AutomationProperties.Name="Fan mode"
                                                   IsEnabled="{x:Bind ViewModel.CanControlHardware, Mode=OneWay}"
                                                   ItemsSource="{x:Bind ViewModel.AvailableActiveFanModeOptions, Mode=OneWay}"
-                                                  SelectedItem="{x:Bind ViewModel.SelectedFanModeOption, Mode=OneWay}"
+                                                  SelectedValuePath="Value"
+                                                  SelectedValue="{x:Bind ViewModel.SelectedFanMode, Mode=OneWay}"
                                                   SelectionChanged="OnDashboardFanModeSelectionChanged" />
                                     </StackPanel>
                                 </Grid>

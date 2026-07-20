@@ -376,6 +376,10 @@ public sealed class WinUiShellContractTests
             "selector.SelectedItem is not FanModeOption selected",
             window,
             StringComparison.Ordinal);
+        Assert.Contains(
+            "selector.SelectedValue = ViewModel.SelectedFanMode",
+            window,
+            StringComparison.Ordinal);
 
         string shellThemeSource = ReadRepositoryFile(
             "src",
