@@ -59,10 +59,11 @@ public interface IFanTemperatureSource
     ValueTask<FanTemperatureReadings> ReadAsync(CancellationToken cancellationToken);
 }
 
-// NVML is a signed, user-mode NVIDIA API. Windows does not expose a dependable
-// CPU package-temperature API on this model, so CpuCelsius deliberately remains
-// unavailable and the curve controller stays at its fail-safe target unless a
-// safe CPU provider is added later.
+// The exact target firmware exposes a Razer-specific ACPI thermal zone named
+// TZRZ. Windows publishes its EC-backed _TMP value through the standard Thermal
+// Zone Information counter set. This is a platform/CPU-side thermal input, not a
+// claim that Windows exposes the processor's per-core DTS values. NVML remains
+// the signed user-mode source for the NVIDIA GPU temperature.
 public sealed class SafeWindowsFanTemperatureSource : IFanTemperatureSource
 {
     public ValueTask<FanTemperatureReadings> ReadAsync(
@@ -70,8 +71,107 @@ public sealed class SafeWindowsFanTemperatureSource : IFanTemperatureSource
     {
         cancellationToken.ThrowIfCancellationRequested();
         return ValueTask.FromResult(new FanTemperatureReadings(
-            CpuCelsius: null,
+            CpuCelsius: WindowsThermalZone.TryReadRazerEcTemperature(),
             GpuCelsius: NvidiaNvml.TryReadTemperature()));
+    }
+
+    internal static class WindowsThermalZone
+    {
+        private const string RazerEcCounterPath =
+            @"\Thermal Zone Information(\_SB.PC00.LPCB.EC0.TZRZ)\High Precision Temperature";
+        private const uint PdhFormatDouble = 0x00000200;
+        private const uint PdhStatusValidData = 0x00000000;
+        private const uint PdhStatusNewData = 0x00000001;
+
+        public static int? TryReadRazerEcTemperature()
+        {
+            nint query = 0;
+            try
+            {
+                if (PdhOpenQueryW(null, 0, out query) != 0
+                    || PdhAddEnglishCounterW(
+                        query,
+                        RazerEcCounterPath,
+                        0,
+                        out nint counter) != 0
+                    || PdhCollectQueryData(query) != 0
+                    || PdhGetFormattedCounterValue(
+                        counter,
+                        PdhFormatDouble,
+                        out _,
+                        out PdhFormattedCounterValue value) != 0
+                    || value.Status is not PdhStatusValidData and not PdhStatusNewData)
+                {
+                    return null;
+                }
+
+                return TryConvertHighPrecisionKelvin(value.DoubleValue);
+            }
+            catch (DllNotFoundException)
+            {
+                return null;
+            }
+            catch (EntryPointNotFoundException)
+            {
+                return null;
+            }
+            finally
+            {
+                if (query != 0)
+                {
+                    _ = PdhCloseQuery(query);
+                }
+            }
+        }
+
+        internal static int? TryConvertHighPrecisionKelvin(double value)
+        {
+            if (!double.IsFinite(value))
+            {
+                return null;
+            }
+
+            double celsius = (value / 10.0) - 273.15;
+            return celsius is >= 0 and <= 115
+                ? checked((int)Math.Round(celsius, MidpointRounding.AwayFromZero))
+                : null;
+        }
+
+        [StructLayout(LayoutKind.Explicit)]
+        private struct PdhFormattedCounterValue
+        {
+            [FieldOffset(0)]
+            public uint Status;
+
+            [FieldOffset(8)]
+            public double DoubleValue;
+        }
+
+        [DllImport("pdh.dll", CharSet = CharSet.Unicode)]
+        private static extern uint PdhOpenQueryW(
+            string? dataSource,
+            nuint userData,
+            out nint query);
+
+        [DllImport("pdh.dll", CharSet = CharSet.Unicode)]
+        private static extern uint PdhAddEnglishCounterW(
+            nint query,
+            string fullCounterPath,
+            nuint userData,
+            out nint counter);
+
+        [DllImport("pdh.dll")]
+        private static extern uint PdhCollectQueryData(nint query);
+
+        [DllImport("pdh.dll")]
+        private static extern uint PdhGetFormattedCounterValue(
+            nint counter,
+            uint format,
+            out uint counterType,
+            out PdhFormattedCounterValue value);
+
+        [DllImport("pdh.dll")]
+        private static extern uint PdhCloseQuery(nint query);
     }
 
     private static class NvidiaNvml

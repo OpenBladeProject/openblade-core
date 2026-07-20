@@ -50,4 +50,31 @@ public sealed class FanCurveCalculatorTests
                 ManualFanCurve.Default,
                 new FanTemperatureReadings(cpu, gpu)));
     }
+
+    [Theory]
+    [InlineData(2732, 0)]
+    [InlineData(3010, 28)]
+    [InlineData(3182, 45)]
+    [InlineData(3881, 115)]
+    public void RazerThermalZoneConvertsTenthsKelvinToCelsius(
+        double highPrecisionKelvin,
+        int expectedCelsius)
+    {
+        Assert.Equal(
+            expectedCelsius,
+            SafeWindowsFanTemperatureSource.WindowsThermalZone
+                .TryConvertHighPrecisionKelvin(highPrecisionKelvin));
+    }
+
+    [Theory]
+    [InlineData(double.NaN)]
+    [InlineData(double.PositiveInfinity)]
+    [InlineData(2500)]
+    [InlineData(3890)]
+    public void RazerThermalZoneRejectsInvalidTemperature(double value)
+    {
+        Assert.Null(
+            SafeWindowsFanTemperatureSource.WindowsThermalZone
+                .TryConvertHighPrecisionKelvin(value));
+    }
 }

@@ -573,13 +573,12 @@ public sealed class CapabilityPresentationTests
             "Open troubleshooting details",
             Attribute(profileStateBadge, "AutomationProperties.Name"));
         Assert.Equal(
-            4,
+            3,
             profileStateBadge.Descendants().Count(element =>
                 element.Name.LocalName == "Ellipse"));
         foreach (string property in new[]
                  {
                      "ViewModel.IsReadinessReady",
-                     "ViewModel.IsReadinessChecking",
                      "ViewModel.IsReadinessWarning",
                      "ViewModel.IsReadinessError",
                  })
@@ -590,6 +589,14 @@ public sealed class CapabilityPresentationTests
                     property,
                     StringComparison.Ordinal) is true);
         }
+        Assert.Contains(profileStateBadge.Descendants(), element =>
+            element.Name.LocalName == "ProgressRing"
+            && Attribute(element, "Visibility")?.Contains(
+                "ViewModel.IsReadinessChecking",
+                StringComparison.Ordinal) is true
+            && Attribute(element, "IsActive")?.Contains(
+                "ViewModel.IsReadinessChecking",
+                StringComparison.Ordinal) is true);
         Assert.DoesNotContain(document.Descendants(), element =>
             element.Name.LocalName == "Border"
             && Attribute(element, "Name") == "ProfileStateBadge");

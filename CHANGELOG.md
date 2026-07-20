@@ -13,6 +13,9 @@ All notable changes to OpenBlade are documented in this file. The project follow
   a service-owned one-second control loop. Curve writes stop if another app
   exits firmware manual mode, and missing or critical temperature data forces
   the captured 5,400 RPM fail-safe target.
+- Exact-device manual curves use the firmware-defined Razer `TZRZ` ACPI thermal
+  zone through Windows PDH for the CPU-side temperature and signed NVIDIA NVML
+  for GPU temperature, without installing or redistributing a sensor driver.
 - Sanitized Synapse oracle evidence proving that Manual Fan Curve is a
   host-calculated pair of independent per-fan RPM writes rather than a
   firmware-stored curve table.
@@ -90,7 +93,9 @@ All notable changes to OpenBlade are documented in this file. The project follow
 - Dashboard colors now have one semantic role each: accent marks the active
   profile and primary action, green marks readiness, amber marks attention,
   red marks failure, and ordinary power-source and unsaved-edit labels remain
-  neutral. Status pills share the same foreground, sizing, and container style.
+  neutral. Status pills share the same foreground, sizing, and container style;
+  profile drafts use neutral text instead of accent dots, and transient checks
+  use progress indicators instead of looking like another status category.
 - Custom CPU/GPU controls and Fixed/Manual Curve fan controls are inset beneath
   their Power mode and Fans parent rows, respectively.
 - Explicit Fixed, Manual Curve, and Maximum fan actions now always resubmit the

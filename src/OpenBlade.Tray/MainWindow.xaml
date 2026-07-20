@@ -143,6 +143,12 @@
                 <Setter Property="LineHeight" Value="20" />
                 <Setter Property="VerticalAlignment" Value="Center" />
             </Style>
+            <Style x:Key="DraftStatusTextStyle"
+                   TargetType="TextBlock"
+                   BasedOn="{StaticResource CaptionTextBlockStyle}">
+                <Setter Property="Foreground" Value="{ThemeResource TextFillColorSecondaryBrush}" />
+                <Setter Property="VerticalAlignment" Value="Center" />
+            </Style>
             <Style x:Key="ProfileSaveButtonStyle"
                    TargetType="Button"
                    BasedOn="{StaticResource AccentButtonStyle}">
@@ -213,16 +219,7 @@
                         <SymbolIcon Symbol="Switch" />
                     </NavigationViewItem.Icon>
                     <NavigationViewItem.Content>
-                        <StackPanel Orientation="Horizontal" Spacing="8">
-                            <TextBlock Text="Profiles" />
-                            <Ellipse Width="7"
-                                     Height="7"
-                                     VerticalAlignment="Center"
-                                     Fill="{ThemeResource AccentFillColorDefaultBrush}"
-                                     Visibility="{x:Bind ViewModel.HasActiveProfileDraft, Mode=OneWay}"
-                                     ToolTipService.ToolTip="Unsaved changes"
-                                     AutomationProperties.Name="Unsaved changes" />
-                        </StackPanel>
+                        <TextBlock Text="Profiles" />
                     </NavigationViewItem.Content>
                 </NavigationViewItem>
                 <NavigationViewItem x:Name="LightingNavigationItem"
@@ -352,14 +349,24 @@
                                                 AutomationProperties.Name="Open troubleshooting details"
                                                 ToolTipService.ToolTip="View device status">
                                             <StackPanel Orientation="Horizontal" Spacing="6">
-                                                <Grid Width="8" Height="8" VerticalAlignment="Center">
-                                                    <Ellipse Fill="{ThemeResource SystemFillColorSuccessBrush}"
+                                                <Grid Width="12" Height="12" VerticalAlignment="Center">
+                                                    <Ellipse Width="8" Height="8"
+                                                             HorizontalAlignment="Center"
+                                                             VerticalAlignment="Center"
+                                                             Fill="{ThemeResource SystemFillColorSuccessBrush}"
                                                              Visibility="{x:Bind ViewModel.IsReadinessReady, Mode=OneWay}" />
-                                                    <Ellipse Fill="{ThemeResource AccentFillColorDefaultBrush}"
-                                                             Visibility="{x:Bind ViewModel.IsReadinessChecking, Mode=OneWay}" />
-                                                    <Ellipse Fill="{ThemeResource SystemFillColorCautionBrush}"
+                                                    <ProgressRing Width="12" Height="12"
+                                                                  IsActive="{x:Bind ViewModel.IsReadinessChecking, Mode=OneWay}"
+                                                                  Visibility="{x:Bind ViewModel.IsReadinessChecking, Mode=OneWay}" />
+                                                    <Ellipse Width="8" Height="8"
+                                                             HorizontalAlignment="Center"
+                                                             VerticalAlignment="Center"
+                                                             Fill="{ThemeResource SystemFillColorCautionBrush}"
                                                              Visibility="{x:Bind ViewModel.IsReadinessWarning, Mode=OneWay}" />
-                                                    <Ellipse Fill="{ThemeResource SystemFillColorCriticalBrush}"
+                                                    <Ellipse Width="8" Height="8"
+                                                             HorizontalAlignment="Center"
+                                                             VerticalAlignment="Center"
+                                                             Fill="{ThemeResource SystemFillColorCriticalBrush}"
                                                              Visibility="{x:Bind ViewModel.IsReadinessError, Mode=OneWay}" />
                                                 </Grid>
                                                 <TextBlock Text="{x:Bind ViewModel.ProfileStateLabel, Mode=OneWay}"
@@ -664,7 +671,7 @@
                                             </ItemsControl>
                                         </Expander>
                                     </Grid>
-                                    <TextBlock Text="OpenBlade keeps the curve active in its service. If a required temperature sensor is unavailable, it uses maximum fan speed."
+                                    <TextBlock Text="OpenBlade uses the laptop firmware temperature and NVIDIA GPU temperature. If either reading is unavailable, it uses maximum fan speed."
                                                Style="{StaticResource SecondaryTextStyle}"
                                                TextWrapping="Wrap" />
                                 </StackPanel>
@@ -794,11 +801,9 @@
                                 <StackPanel Grid.Column="1" Spacing="4">
                                     <StackPanel Orientation="Horizontal" Spacing="7">
                                         <TextBlock Text="AC" Style="{StaticResource CardTitleStyle}" />
-                                        <Ellipse Width="7" Height="7"
-                                                 VerticalAlignment="Center"
-                                                 Fill="{ThemeResource AccentFillColorDefaultBrush}"
-                                                 Visibility="{x:Bind ViewModel.IsPluggedInProfileDraft, Mode=OneWay}"
-                                                 ToolTipService.ToolTip="Unsaved changes" />
+                                        <TextBlock Text="Unsaved"
+                                                   Style="{StaticResource DraftStatusTextStyle}"
+                                                   Visibility="{x:Bind ViewModel.IsPluggedInProfileDraft, Mode=OneWay}" />
                                         <Border Style="{StaticResource ActiveProfilePillStyle}"
                                                 Visibility="{x:Bind ViewModel.IsPluggedInProfileActive, Mode=OneWay}">
                                             <TextBlock Text="Active"
@@ -809,11 +814,9 @@
                                 <StackPanel Grid.Column="2" Spacing="4">
                                     <StackPanel Orientation="Horizontal" Spacing="7">
                                         <TextBlock Text="USB-C" Style="{StaticResource CardTitleStyle}" />
-                                        <Ellipse Width="7" Height="7"
-                                                 VerticalAlignment="Center"
-                                                 Fill="{ThemeResource AccentFillColorDefaultBrush}"
-                                                 Visibility="{x:Bind ViewModel.IsUsbCProfileDraft, Mode=OneWay}"
-                                                 ToolTipService.ToolTip="Unsaved changes" />
+                                        <TextBlock Text="Unsaved"
+                                                   Style="{StaticResource DraftStatusTextStyle}"
+                                                   Visibility="{x:Bind ViewModel.IsUsbCProfileDraft, Mode=OneWay}" />
                                         <Border Style="{StaticResource ActiveProfilePillStyle}"
                                                 Visibility="{x:Bind ViewModel.IsUsbCProfileActive, Mode=OneWay}">
                                             <TextBlock Text="Active"
@@ -824,11 +827,9 @@
                                 <StackPanel Grid.Column="3" Spacing="4">
                                     <StackPanel Orientation="Horizontal" Spacing="7">
                                         <TextBlock Text="Battery" Style="{StaticResource CardTitleStyle}" />
-                                        <Ellipse Width="7" Height="7"
-                                                 VerticalAlignment="Center"
-                                                 Fill="{ThemeResource AccentFillColorDefaultBrush}"
-                                                 Visibility="{x:Bind ViewModel.IsBatteryProfileDraft, Mode=OneWay}"
-                                                 ToolTipService.ToolTip="Unsaved changes" />
+                                        <TextBlock Text="Unsaved"
+                                                   Style="{StaticResource DraftStatusTextStyle}"
+                                                   Visibility="{x:Bind ViewModel.IsBatteryProfileDraft, Mode=OneWay}" />
                                         <Border Style="{StaticResource ActiveProfilePillStyle}"
                                                 Visibility="{x:Bind ViewModel.IsBatteryProfileActive, Mode=OneWay}">
                                             <TextBlock Text="Active"
@@ -947,16 +948,14 @@
                                       SelectedItem="{x:Bind ViewModel.SelectedProfileComparisonOption, Mode=TwoWay}"
                                       AutomationProperties.Name="Profile to review" />
                             <StackPanel Orientation="Horizontal" Spacing="8" Margin="4,0,0,10">
-                                <TextBlock Text="Active profile"
-                                           Style="{StaticResource CaptionTextBlockStyle}"
-                                           Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}"
-                                           Visibility="{x:Bind ViewModel.IsSelectedProfileActive, Mode=OneWay}" />
-                                <Ellipse Width="7" Height="7"
-                                         VerticalAlignment="Center"
-                                         Fill="{ThemeResource AccentFillColorDefaultBrush}"
-                                         Visibility="{x:Bind ViewModel.IsSelectedProfileDraft, Mode=OneWay}"
-                                         ToolTipService.ToolTip="Unsaved changes"
-                                         AutomationProperties.Name="Unsaved changes" />
+                                <Border Style="{StaticResource ActiveProfilePillStyle}"
+                                        Visibility="{x:Bind ViewModel.IsSelectedProfileActive, Mode=OneWay}">
+                                    <TextBlock Text="Active"
+                                               Style="{StaticResource ActiveProfilePillTextStyle}" />
+                                </Border>
+                                <TextBlock Text="Unsaved"
+                                           Style="{StaticResource DraftStatusTextStyle}"
+                                           Visibility="{x:Bind ViewModel.IsSelectedProfileDraft, Mode=OneWay}" />
                             </StackPanel>
                             <Border Style="{StaticResource SettingsGroupStyle}">
                                 <StackPanel>
@@ -2270,9 +2269,11 @@
                                             <TextBlock Text="Laptop behavior" Style="{StaticResource TroubleshootingLabelStyle}" />
                                             <Grid Grid.Column="1" ColumnSpacing="7">
                                                 <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
-                                                <Grid Width="8" Height="8" VerticalAlignment="Center">
+                                                <Grid Width="12" Height="12" VerticalAlignment="Center">
                                                     <Ellipse Style="{StaticResource TroubleshootingStatusDotStyle}" Fill="{ThemeResource SystemFillColorSuccessBrush}" Visibility="{x:Bind ViewModel.IsReadinessReady, Mode=OneWay}" />
-                                                    <Ellipse Style="{StaticResource TroubleshootingStatusDotStyle}" Fill="{ThemeResource AccentFillColorDefaultBrush}" Visibility="{x:Bind ViewModel.IsReadinessChecking, Mode=OneWay}" />
+                                                    <ProgressRing Width="12" Height="12"
+                                                                  IsActive="{x:Bind ViewModel.IsReadinessChecking, Mode=OneWay}"
+                                                                  Visibility="{x:Bind ViewModel.IsReadinessChecking, Mode=OneWay}" />
                                                     <Ellipse Style="{StaticResource TroubleshootingStatusDotStyle}" Fill="{ThemeResource SystemFillColorCautionBrush}" Visibility="{x:Bind ViewModel.IsReadinessWarning, Mode=OneWay}" />
                                                     <Ellipse Style="{StaticResource TroubleshootingStatusDotStyle}" Fill="{ThemeResource SystemFillColorCriticalBrush}" Visibility="{x:Bind ViewModel.IsReadinessError, Mode=OneWay}" />
                                                 </Grid>

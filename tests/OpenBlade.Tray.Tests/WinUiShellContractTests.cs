@@ -68,8 +68,12 @@ public sealed class WinUiShellContractTests
         Assert.DoesNotContain("ViewModel.LightingProfileRelationshipStatus", xaml, StringComparison.Ordinal);
         Assert.DoesNotContain("DisplayViewModel.ProfileRelationshipStatus", xaml, StringComparison.Ordinal);
         Assert.DoesNotContain("Content=\"Save to profile\"", xaml, StringComparison.Ordinal);
-        Assert.Contains("ToolTipService.ToolTip=\"Unsaved changes\"", xaml, StringComparison.Ordinal);
-        Assert.Contains("AutomationProperties.Name=\"Unsaved changes\"", xaml, StringComparison.Ordinal);
+        Assert.DoesNotContain("ToolTipService.ToolTip=\"Unsaved changes\"", xaml, StringComparison.Ordinal);
+        Assert.DoesNotContain("AutomationProperties.Name=\"Unsaved changes\"", xaml, StringComparison.Ordinal);
+        Assert.Equal(4, CountOccurrences(xaml, "Text=\"Unsaved\""));
+        Assert.Equal(4, CountOccurrences(
+            xaml,
+            "Style=\"{StaticResource DraftStatusTextStyle}\""));
         Assert.Equal(1, CountOccurrences(xaml, "x:Name=\"LightingEffectPicker\""));
         Assert.DoesNotContain("PluggedInLightingEditor", xaml, StringComparison.Ordinal);
         Assert.DoesNotContain("BatteryLightingEditor", xaml, StringComparison.Ordinal);
@@ -178,9 +182,15 @@ public sealed class WinUiShellContractTests
             "<Setter Property=\"Foreground\" Value=\"{ThemeResource TextFillColorPrimaryBrush}\" />",
             xaml,
             StringComparison.Ordinal);
-        Assert.Equal(1, CountOccurrences(
+        Assert.DoesNotContain(
+            "Visibility=\"{x:Bind ViewModel.HasActiveProfileDraft, Mode=OneWay}\"",
             xaml,
-            "Visibility=\"{x:Bind ViewModel.HasActiveProfileDraft, Mode=OneWay}\""));
+            StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            "Fill=\"{ThemeResource AccentFillColorDefaultBrush}\"",
+            xaml,
+            StringComparison.Ordinal);
+        Assert.Equal(2, CountOccurrences(xaml, "<ProgressRing Width=\"12\" Height=\"12\""));
     }
 
     [Fact]
@@ -188,8 +198,8 @@ public sealed class WinUiShellContractTests
     {
         string xaml = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml");
 
-        Assert.Equal(3, CountOccurrences(xaml, "Style=\"{StaticResource ActiveProfilePillStyle}\""));
-        Assert.Equal(3, CountOccurrences(xaml, "Style=\"{StaticResource ActiveProfilePillTextStyle}\""));
+        Assert.Equal(4, CountOccurrences(xaml, "Style=\"{StaticResource ActiveProfilePillStyle}\""));
+        Assert.Equal(4, CountOccurrences(xaml, "Style=\"{StaticResource ActiveProfilePillTextStyle}\""));
         Assert.Contains("<TextBlock Text=\"Battery\" Style=\"{StaticResource CardTitleStyle}\" />", xaml, StringComparison.Ordinal);
         Assert.Contains("Text=\"Power mode\"", xaml, StringComparison.Ordinal);
         Assert.Equal(4, CountOccurrences(xaml, "Style=\"{StaticResource SettingsSubcardStyle}\""));
