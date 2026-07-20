@@ -1202,6 +1202,39 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     }
 
     [Fact]
+    public async Task ScopedAdmissionMiss_PreservesPreviouslyVerifiedGlobalAvailability()
+    {
+        TestContext context = CreateContext(providerAvailable: true);
+        context.Device.Capabilities = DeviceCapabilities.SafeTargetDefaults();
+        context.Device.ConfirmedState = new ConfirmedDeviceState(
+            PerformancePreset.Balanced,
+            FanMode.Automatic,
+            ConfirmedBattery(80),
+            LightingSettingsFactory.Off());
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        ServiceStatusSnapshot verified = context.Runtime.GetStatus();
+        Assert.True(verified.DeviceVerified);
+        Assert.False(verified.WritesBlocked);
+
+        context.Provider.Available = false;
+        ControlOperationResult result = await context.Runtime.SetLightingOverrideAsync(
+            new ManualOverride<LightingSettings>(
+                LightingSettingsFactory.Off(),
+                OverrideLifetime.UntilPowerSourceChange),
+            CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Blocked, result.Status);
+        Assert.True(context.Runtime.GetStatus().DeviceVerified);
+        Assert.False(context.Runtime.GetStatus().WritesBlocked);
+        Assert.Same(verified.Capabilities, context.Runtime.GetStatus().Capabilities);
+        Assert.Same(verified.ConfirmedState, context.Runtime.GetStatus().ConfirmedState);
+        Assert.Contains(
+            "this control operation",
+            context.Runtime.GetStatus().Message,
+            StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public async Task StartupAnimationControl_PublishesConfirmedReadback()
     {
         TestContext context = CreateContext(providerAvailable: true);

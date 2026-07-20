@@ -389,13 +389,24 @@ public sealed class ControlCoordinatorTests
     }
 
     [Fact]
-    public async Task ScopedFixedFans_ResubmitTargetWhileFirmwareIsAlreadyManual()
+    public async Task ScopedFixedFans_ResubmitTargetFromProductionGenericManualReadback()
     {
         RecordingBladeDevice device = CreateMismatchedDevice();
         device.State = device.State with
         {
-            Performance = PerformancePreset.Balanced,
+            Performance = null,
             Fans = FanMode.Maximum,
+        };
+        device.AfterSetter = subsystem =>
+        {
+            if (subsystem == DeviceSubsystem.Fans)
+            {
+                device.State = device.State with
+                {
+                    Performance = null,
+                    Fans = FanMode.Maximum,
+                };
+            }
         };
         var coordinator = new ControlCoordinator(device);
         var requested = new FanControlSettings(
@@ -414,13 +425,48 @@ public sealed class ControlCoordinatorTests
     }
 
     [Fact]
+    public async Task ScopedManualFans_RequireBalancedWhenFirmwareIsAutomatic()
+    {
+        RecordingBladeDevice device = CreateMismatchedDevice();
+        var coordinator = new ControlCoordinator(device);
+        var requested = new FanControlSettings(
+            FanMode.ManualCurve,
+            2800,
+            ManualFanCurve.Default);
+
+        ScopedApplyOutcome outcome = await coordinator.ApplyFanControlOutcomeAsync(
+            requested,
+            CancellationToken.None);
+
+        Assert.Equal(ControlResultStatus.Blocked, outcome.Result.Status);
+        Assert.False(outcome.WriteAttempted);
+        Assert.Empty(device.FanControlWrites);
+        Assert.Equal(["Capabilities", "State"], device.Calls);
+    }
+
+    [Fact]
     public async Task ManualFanSubtypeTransition_BridgesThroughAutomatic()
     {
         RecordingBladeDevice device = CreateMismatchedDevice();
         device.State = device.State with
         {
-            Performance = PerformancePreset.Balanced,
-            Fans = FanMode.Fixed,
+            Performance = null,
+            Fans = FanMode.Maximum,
+        };
+        device.AfterSetter = subsystem =>
+        {
+            if (subsystem != DeviceSubsystem.Fans)
+            {
+                return;
+            }
+
+            device.State = device.State.Fans == FanMode.Automatic
+                ? device.State with { Performance = PerformancePreset.Balanced }
+                : device.State with
+                {
+                    Performance = null,
+                    Fans = FanMode.Maximum,
+                };
         };
         var coordinator = new ControlCoordinator(device);
         var previous = new FanControlSettings(FanMode.Fixed, 2800, ManualFanCurve.Default);
@@ -444,8 +490,8 @@ public sealed class ControlCoordinatorTests
         RecordingBladeDevice device = CreateMismatchedDevice();
         device.State = device.State with
         {
-            Performance = PerformancePreset.Balanced,
-            Fans = FanMode.Fixed,
+            Performance = null,
+            Fans = FanMode.Maximum,
         };
         var coordinator = new ControlCoordinator(device);
         var previous = new FanControlSettings(FanMode.Fixed, 2800, ManualFanCurve.Default);

@@ -402,6 +402,42 @@ public sealed class ProductionLightingPortTests
     }
 
     [Fact]
+    public async Task ReactivePulse_RetainsTheExistingRendererTask()
+    {
+        var session = new LightingSession(initialBrightness: 0xFF);
+        var writer = new MatrixWriter();
+        await using var port = CreatePort(session, writer, admitted: true);
+        await port.SetLightingAsync(
+            LightingSettingsFactory.Reactive(
+                new RgbColor(0x12, 0x34, 0x56),
+                100,
+                ReactiveLightingDuration.Medium),
+            default);
+        FieldInfo streamTaskField = typeof(ProductionLightingPort).GetField(
+            "streamTask",
+            BindingFlags.Instance | BindingFlags.NonPublic)!;
+        Task before = Assert.IsAssignableFrom<Task>(streamTaskField.GetValue(port));
+
+        await port.PulseReactiveKeyAsync(new ReactiveKeyPulse(19), default);
+
+        Assert.Same(before, streamTaskField.GetValue(port));
+    }
+
+    [Fact]
+    public void FrameDeadline_AdvancesFromScheduledTimeAndSkipsMissedFrames()
+    {
+        var effect = new Pid02E0SpectrumEffect(
+            cycleDuration: TimeSpan.FromSeconds(1));
+
+        TimeSpan? next = ProductionLightingPort.AdvanceFrameDeadline(
+            effect,
+            currentDeadline: TimeSpan.FromMilliseconds(50),
+            observedAfterWrite: TimeSpan.FromMilliseconds(82));
+
+        Assert.Equal(TimeSpan.FromMilliseconds(100), next);
+    }
+
+    [Fact]
     public async Task AmbientAwareness_WritesOnlyTheTypedSessionSampleWhileOwned()
     {
         var session = new LightingSession(initialBrightness: 0xFF);

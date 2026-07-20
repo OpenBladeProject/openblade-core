@@ -140,16 +140,13 @@ public sealed class ControlCoordinator
             token => device.SetFanControlAsync(value, token),
             cancellationToken,
             IsManualFanMode(value.Mode)
-                ? state => state.Performance == PerformancePreset.Balanced
-                    && (state.Fans == FanMode.Automatic
-                        || IsManualFanMode(state.Fans))
+                ? state => IsConfirmedManualFanWriteBaseline(state)
                         ? null
-                        : "Fixed and manual fan control require confirmed Balanced performance."
+                        : "Fixed and manual fan control require confirmed Balanced Automatic fans to enter manual mode, or an already-confirmed manual fan state."
                 : null,
             acceptSetterCompletionWithoutReadback: IsManualFanMode(value.Mode),
             setterCompletionEvidence: IsManualFanMode(value.Mode)
-                ? state => state.Performance == PerformancePreset.Balanced
-                    && IsManualFanMode(state.Fans)
+                ? state => IsManualFanMode(state.Fans)
                 : null,
             // Firmware exposes only Automatic versus manual state. It cannot
             // read back a fixed target or distinguish Fixed, Curve and Maximum,
@@ -1153,6 +1150,15 @@ public sealed class ControlCoordinator
 
     private static bool IsManualFanMode(FanMode? mode) => mode is
         FanMode.Maximum or FanMode.Fixed or FanMode.ManualCurve;
+
+    private static bool IsConfirmedManualFanWriteBaseline(
+        ConfirmedDeviceState state) => state.Fans switch
+        {
+            FanMode.Automatic => state.Performance == PerformancePreset.Balanced,
+            FanMode.Maximum or FanMode.Fixed or FanMode.ManualCurve =>
+                state.Performance is null or PerformancePreset.Balanced,
+            _ => false,
+        };
 
     private static bool FanModeMatches(FanMode? confirmed, FanMode desired) =>
         desired == FanMode.Automatic

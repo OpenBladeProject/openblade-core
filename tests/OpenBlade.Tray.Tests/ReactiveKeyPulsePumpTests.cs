@@ -6,7 +6,7 @@ namespace OpenBlade.Tray.Tests;
 public sealed class ReactiveKeyPulsePumpTests
 {
     [Fact]
-    public async Task Pump_IsSequentialBoundedAndPreservesRepeatedMakeEvents()
+    public async Task Pump_IsSequentialBoundedAndCoalescesRepeatedPendingSlots()
     {
         var firstStarted = new TaskCompletionSource(
             TaskCreationOptions.RunContinuationsAsynchronously);
@@ -51,13 +51,65 @@ public sealed class ReactiveKeyPulsePumpTests
         await firstStarted.Task.WaitAsync(TimeSpan.FromSeconds(2));
         Assert.True(pump.TryEnqueue(new ReactiveKeyPulse(36)));
         Assert.True(pump.TryEnqueue(new ReactiveKeyPulse(36)));
-        Assert.False(pump.TryEnqueue(new ReactiveKeyPulse(53)));
+        Assert.True(pump.TryEnqueue(new ReactiveKeyPulse(53)));
+        Assert.False(pump.TryEnqueue(new ReactiveKeyPulse(71)));
 
         releaseFirst.TrySetResult();
         await allSent.Task.WaitAsync(TimeSpan.FromSeconds(2));
 
-        Assert.Equal([19, 36, 36], sent);
+        Assert.Equal([19, 36, 53], sent);
         Assert.Equal(1, maximumActive);
+    }
+
+    [Fact]
+    public async Task Pump_DiscardsPendingPulseAfterMaximumQueueAge()
+    {
+        var time = new MutableTimeProvider();
+        var firstStarted = new TaskCompletionSource(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseFirst = new TaskCompletionSource(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        var firstFinished = new TaskCompletionSource(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        var freshSent = new TaskCompletionSource(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        var sent = new List<byte>();
+        await using var pump = new ReactiveKeyPulsePump(
+            async (pulse, token) =>
+            {
+                lock (sent)
+                {
+                    sent.Add(pulse.MatrixSlot);
+                }
+
+                if (pulse.MatrixSlot == 19)
+                {
+                    firstStarted.TrySetResult();
+                    await releaseFirst.Task.WaitAsync(token);
+                    firstFinished.TrySetResult();
+                }
+                else if (pulse.MatrixSlot == 53)
+                {
+                    freshSent.TrySetResult();
+                }
+            },
+            timeProvider: time,
+            maximumQueueAge: TimeSpan.FromMilliseconds(100));
+
+        Assert.True(pump.TryEnqueue(new ReactiveKeyPulse(19)));
+        await firstStarted.Task.WaitAsync(TimeSpan.FromSeconds(2));
+        Assert.True(pump.TryEnqueue(new ReactiveKeyPulse(36)));
+        time.Advance(TimeSpan.FromMilliseconds(101));
+        releaseFirst.TrySetResult();
+        await firstFinished.Task.WaitAsync(TimeSpan.FromSeconds(2));
+        await Task.Delay(50);
+
+        Assert.True(pump.TryEnqueue(new ReactiveKeyPulse(53)));
+        await freshSent.Task.WaitAsync(TimeSpan.FromSeconds(2));
+        lock (sent)
+        {
+            Assert.Equal([19, 53], sent);
+        }
     }
 
     [Fact]
@@ -135,5 +187,17 @@ public sealed class ReactiveKeyPulsePumpTests
         {
             Assert.Equal([19, 71], sent);
         }
+    }
+
+    private sealed class MutableTimeProvider : TimeProvider
+    {
+        private long timestamp;
+
+        public override long TimestampFrequency => TimeSpan.TicksPerSecond;
+
+        public override long GetTimestamp() => Volatile.Read(ref timestamp);
+
+        internal void Advance(TimeSpan value) =>
+            Interlocked.Add(ref timestamp, value.Ticks);
     }
 }

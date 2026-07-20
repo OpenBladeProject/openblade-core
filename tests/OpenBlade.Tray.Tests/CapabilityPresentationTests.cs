@@ -9,6 +9,42 @@ namespace OpenBlade.Tray.Tests;
 public sealed class CapabilityPresentationTests
 {
     [Fact]
+    public void MainWindow_ShowsUnsavedNavigationBadgesAndStretchesFanCurveSliders()
+    {
+        XDocument document = XDocument.Parse(ReadMainWindowXaml());
+        string[] expectedBadgeBindings =
+        [
+            "{x:Bind ViewModel.HasThermalProfileDraft, Mode=OneWay}",
+            "{x:Bind ViewModel.HasProfileEditorChanges, Mode=OneWay}",
+            "{x:Bind ViewModel.HasLightingProfileDraft, Mode=OneWay}",
+            "{x:Bind DisplayViewModel.CanSaveCurrentSettingsToProfile, Mode=OneWay}",
+        ];
+        XElement[] badges = document.Descendants()
+            .Where(element => element.Name.LocalName == "InfoBadge")
+            .ToArray();
+        Assert.Equal(expectedBadgeBindings.Length, badges.Length);
+        Assert.Equal(
+            expectedBadgeBindings.Order(),
+            badges.Select(badge => Attribute(badge, "Visibility")).Order());
+
+        XElement[] curveSliders = document.Descendants()
+            .Where(element => element.Name.LocalName == "Slider"
+                && Attribute(element, "Tag") == "{x:Bind Mode=OneTime}")
+            .ToArray();
+        Assert.Equal(2, curveSliders.Length);
+        Assert.All(curveSliders, slider => Assert.Equal("120", Attribute(slider, "MinWidth")));
+        XElement[] curveLists = curveSliders
+            .Select(slider => slider.Ancestors().First(element =>
+                element.Name.LocalName == "ItemsControl"))
+            .Distinct()
+            .ToArray();
+        Assert.Equal(2, curveLists.Length);
+        Assert.All(curveLists, list => Assert.Equal(
+            "{StaticResource FanCurveItemContainerStyle}",
+            Attribute(list, "ItemContainerStyle")));
+    }
+
+    [Fact]
     public void MainWindow_UsesDashboardNavigationAndImmediateControls()
     {
         string xaml = ReadMainWindowXaml();
@@ -1316,6 +1352,11 @@ public sealed class CapabilityPresentationTests
         Assert.True(viewModel.LightingShowsPrimaryColor);
         Assert.True(viewModel.LightingShowsSecondaryColor);
         Assert.True(viewModel.LightingShowsDirection);
+        Assert.Equal(
+            ["Outward", "Inward"],
+            viewModel.LightingDirectionOptions.Select(option => option.Label));
+        Assert.Equal("Outward", viewModel.SelectedLightingDirectionOption.Label);
+        Assert.Equal("Primary color", viewModel.LightingPrimaryColorLabel);
 
         viewModel.LightingRandomColorsEditor = true;
         Assert.Equal(
@@ -1448,14 +1489,16 @@ public sealed class CapabilityPresentationTests
         Assert.All(colorPickers, picker =>
         {
             Assert.Equal("False", Attribute(picker, "IsAlphaEnabled"));
-            Assert.Equal("False", Attribute(picker, "IsColorChannelTextInputVisible"));
-            Assert.Equal("False", Attribute(picker, "IsHexInputVisible"));
+            Assert.Equal("True", Attribute(picker, "IsColorChannelTextInputVisible"));
+            Assert.Equal("True", Attribute(picker, "IsHexInputVisible"));
         });
         Assert.Equal(
-            2,
+            0,
             page.Descendants().Count(element =>
                 element.Name.LocalName == "Expander"
                 && Attribute(element, "Header") == "Advanced RGB values"));
+        Assert.Contains("LightingDirectionOptions", lightingXaml, StringComparison.Ordinal);
+        Assert.Contains("SelectedLightingDirectionOption", lightingXaml, StringComparison.Ordinal);
         Assert.Contains("LightingPrimaryColorEditor", lightingXaml, StringComparison.Ordinal);
         Assert.Contains("LightingSecondaryColorEditor", lightingXaml, StringComparison.Ordinal);
         Assert.Contains("Ambient Awareness screen region", lightingXaml, StringComparison.Ordinal);

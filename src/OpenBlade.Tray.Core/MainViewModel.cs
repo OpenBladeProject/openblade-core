@@ -28,6 +28,10 @@ public sealed record ProfileComparisonOption(
     PowerSource Source,
     string Label);
 
+public sealed record LightingDirectionOption(
+    LightingDirection Value,
+    string Label);
+
 public sealed record ProfilePresentation(
     string PowerMode,
     string Fans,
@@ -138,6 +142,14 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     private FanMode selectedFanMode = FanMode.Automatic;
     private FanControlSettings? pendingFanControl;
     private bool isFanControlOperationInProgress;
+    private bool isPerformanceOperationInProgress;
+    private bool isLightingOperationInProgress;
+    private bool isChargeLimitOperationInProgress;
+    private bool isBatteryProtectionOperationInProgress;
+    private bool isFullChargeOperationInProgress;
+    private bool isStartupAnimationOperationInProgress;
+    private bool isFunctionKeyOperationInProgress;
+    private bool isGamingModeOperationInProgress;
     private int fixedFanSpeedRpm = FanControlSettings.Default.FixedSpeedRpm;
     private bool useHigherFanTemperature = true;
     private IReadOnlyList<FanCurveEditorPoint> cpuFanCurveEditorPoints =
@@ -309,6 +321,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         SetLightingCommand = CreateCommand(
             SetLightingAsync,
             parameter => parameter is LightingSettings value
+                && !IsLightingOperationInProgress
                 && CanMutate
                 && HasConfirmedPowerSource
                 && LightingSupported(value, latestStatus!.Capabilities!));
@@ -430,6 +443,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             SetField(ref isConnected, value);
             NotifyPresentationState();
             NotifyTrayHoverLabel();
+            NotifyFirmwareFieldLoadingState();
         }
     }
 
@@ -1306,8 +1320,99 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     public bool IsFanControlOperationInProgress
     {
         get => isFanControlOperationInProgress;
-        private set => SetField(ref isFanControlOperationInProgress, value);
+        private set
+        {
+            if (isFanControlOperationInProgress == value)
+            {
+                return;
+            }
+
+            SetField(ref isFanControlOperationInProgress, value);
+            NotifyCommands();
+            PropertyChanged?.Invoke(
+                this,
+                new PropertyChangedEventArgs(nameof(CanEditFanControl)));
+        }
     }
+
+    public bool CanEditFanControl => CanControlHardware && !IsFanControlOperationInProgress;
+
+    public bool IsPerformanceOperationInProgress
+    {
+        get => isPerformanceOperationInProgress;
+        private set
+        {
+            if (isPerformanceOperationInProgress != value)
+            {
+                SetField(ref isPerformanceOperationInProgress, value);
+                NotifyCommands();
+            }
+        }
+    }
+
+    public bool IsLightingOperationInProgress
+    {
+        get => isLightingOperationInProgress;
+        private set
+        {
+            if (isLightingOperationInProgress != value)
+            {
+                SetField(ref isLightingOperationInProgress, value);
+                NotifyCommands();
+            }
+        }
+    }
+
+    public bool IsChargeLimitOperationInProgress
+    {
+        get => isChargeLimitOperationInProgress;
+        private set
+        {
+            if (isChargeLimitOperationInProgress != value)
+            {
+                SetField(ref isChargeLimitOperationInProgress, value);
+                NotifyCommands();
+            }
+        }
+    }
+
+    public bool IsBatteryProtectionOperationInProgress
+    {
+        get => isBatteryProtectionOperationInProgress;
+        private set
+        {
+            if (isBatteryProtectionOperationInProgress != value)
+            {
+                SetField(ref isBatteryProtectionOperationInProgress, value);
+                NotifyCommands();
+            }
+        }
+    }
+
+    public bool IsFullChargeOperationInProgress
+    {
+        get => isFullChargeOperationInProgress;
+        private set
+        {
+            if (isFullChargeOperationInProgress != value)
+            {
+                SetField(ref isFullChargeOperationInProgress, value);
+                NotifyCommands();
+            }
+        }
+    }
+
+    public bool IsStartupAnimationFieldLoading =>
+        isStartupAnimationOperationInProgress
+        || IsConnected && SupportsStartupAnimation && StartupAnimationEnabled is null;
+
+    public bool IsFunctionKeyFieldLoading =>
+        isFunctionKeyOperationInProgress
+        || IsConnected && SupportsFunctionKeyPrimary && FunctionKeyPrimary is null;
+
+    public bool IsGamingModeFieldLoading =>
+        isGamingModeOperationInProgress
+        || IsConnected && SupportsGamingMode && GamingModeEnabled is null;
 
     public FanControlSettings CurrentFanControlSettings => new(
         SelectedFanMode,
@@ -1478,6 +1583,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             PropertyChanged?.Invoke(
                 this,
                 new PropertyChangedEventArgs(nameof(SupportsGamingMode)));
+            NotifyFirmwareFieldLoadingState();
         }
     }
 
@@ -1503,6 +1609,9 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             PropertyChanged?.Invoke(
                 this,
                 new PropertyChangedEventArgs(nameof(StartupAnimationToggleIsOn)));
+            PropertyChanged?.Invoke(
+                this,
+                new PropertyChangedEventArgs(nameof(IsStartupAnimationFieldLoading)));
         }
     }
 
@@ -1528,6 +1637,9 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             PropertyChanged?.Invoke(
                 this,
                 new PropertyChangedEventArgs(nameof(FunctionKeyPrimaryStateLabel)));
+            PropertyChanged?.Invoke(
+                this,
+                new PropertyChangedEventArgs(nameof(IsFunctionKeyFieldLoading)));
         }
     }
 
@@ -1559,6 +1671,9 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             PropertyChanged?.Invoke(
                 this,
                 new PropertyChangedEventArgs(nameof(GamingModeToggleIsOn)));
+            PropertyChanged?.Invoke(
+                this,
+                new PropertyChangedEventArgs(nameof(IsGamingModeFieldLoading)));
         }
     }
 
@@ -1808,6 +1923,8 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     }
 
     public bool HasUnsavedProfileChanges => profileEditorsDirty || HasActiveProfileDraft;
+
+    public bool HasProfileEditorChanges => profileEditorsDirty;
 
     public bool HasActiveProfileDraft => activeProfileDraftSource is not null;
 
@@ -2186,6 +2303,31 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     public IReadOnlyList<LightingDirection> LightingDirections { get; } =
         Enum.GetValues<LightingDirection>();
 
+    public IReadOnlyList<LightingDirectionOption> LightingDirectionOptions =>
+        LightingEffectEditor == LightingEffect.Tidal
+            ?
+            [
+                new(LightingDirection.Leftward, "Outward"),
+                new(LightingDirection.Rightward, "Inward"),
+            ]
+            :
+            [
+                new(LightingDirection.Leftward, "Leftward"),
+                new(LightingDirection.Rightward, "Rightward"),
+            ];
+
+    public LightingDirectionOption SelectedLightingDirectionOption
+    {
+        get => LightingDirectionOptions.First(option => option.Value == LightingDirectionEditor);
+        set
+        {
+            if (value is not null)
+            {
+                LightingDirectionEditor = value.Value;
+            }
+        }
+    }
+
     public LightingDirection LightingDirectionEditor
     {
         get => lightingDirectionEditor;
@@ -2196,7 +2338,12 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
                 return;
             }
 
-            SetLightingEditorField(ref lightingDirectionEditor, value);
+            if (SetLightingEditorField(ref lightingDirectionEditor, value))
+            {
+                PropertyChanged?.Invoke(
+                    this,
+                    new PropertyChangedEventArgs(nameof(SelectedLightingDirectionOption)));
+            }
         }
     }
 
@@ -2317,6 +2464,14 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             && !LightingRandomColorsEditor
         || LightingEffectEditor == LightingEffect.Starlight
             && LightingStarlightColorModeEditor == StarlightColorMode.Dual;
+
+    public string LightingPrimaryColorLabel =>
+        LightingShowsSecondaryColor ? "Primary color" : "Color";
+
+    public string LightingPrimaryColorDescription =>
+        LightingShowsSecondaryColor
+            ? "Choose the effect's first color."
+            : "Choose the keyboard color.";
 
     public bool LightingShowsReactiveDuration =>
         LightingEffectEditor == LightingEffect.Reactive;
@@ -2665,6 +2820,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     private bool CanSetPerformance(object? parameter) =>
         parameter is PerformancePreset value
         && Enum.IsDefined(value)
+        && !IsPerformanceOperationInProgress
         && CanMutate
         && HasConfirmedPowerSource
         && latestStatus!.Capabilities!.PerformancePresets.Contains(value)
@@ -2675,6 +2831,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         parameter is CustomPerformanceSettings value
         && CustomPerformanceSettings.IsWellFormed(value)
         && IsCustomPerformanceVisible
+        && !IsPerformanceOperationInProgress
         && CanMutate
         && HasConfirmedPowerSource
         && !MaximumFansAreEffectiveOrConfirmed();
@@ -2683,6 +2840,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     {
         if (parameter is not FanMode value
             || !Enum.IsDefined(value)
+            || IsFanControlOperationInProgress
             || !CanMutate
             || !HasConfirmedPowerSource
             || !latestStatus!.Capabilities!.FanModes.Contains(value))
@@ -2691,7 +2849,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         }
 
         return FanModeAvailable(ActivePowerSource, value)
-            && (value == FanMode.Automatic || IsBalancedThermalState());
+            && (value == FanMode.Automatic || IsManualFanControlEligible());
     }
 
     private bool CanSetFanControl(object? parameter) =>
@@ -2701,26 +2859,37 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     private bool CanApplyOneShotLaptopControl(object? parameter) =>
         parameter is ApplyOneShotLaptopControl value
         && value.IsWellFormed()
+        && !IsOneShotOperationInProgress(value.Control)
         && CanMutate
         && latestStatus!.Capabilities!.OneShotLaptopControls.Contains(value.Control);
+
+    private bool IsOneShotOperationInProgress(OneShotLaptopControl control) => control switch
+    {
+        OneShotLaptopControl.StartupAnimation => isStartupAnimationOperationInProgress,
+        OneShotLaptopControl.FunctionKeyPrimary => isFunctionKeyOperationInProgress,
+        OneShotLaptopControl.GamingMode => isGamingModeOperationInProgress,
+        _ => false,
+    };
 
     private bool MaximumFansAreEffectiveOrConfirmed() =>
         latestStatus is { } status
         && (status.DesiredState.Fans.Value == FanMode.Maximum
             || status.ConfirmedState?.Fans == FanMode.Maximum);
 
-    private bool IsBalancedThermalState() =>
-        latestStatus is { } status
-        && status.DesiredState.Performance.Value == PerformancePreset.Balanced
-        && status.ConfirmedState is
+    private bool IsManualFanControlEligible()
+    {
+        if (latestStatus is not { } status
+            || status.DesiredState.Performance.Value != PerformancePreset.Balanced
+            || status.ConfirmedState?.Fans is not { } confirmedFans)
         {
-            Performance: PerformancePreset.Balanced,
-            Fans: { } confirmedFans,
+            return false;
         }
-        && confirmedFans is FanMode.Automatic
-            or FanMode.Fixed
-            or FanMode.ManualCurve
-            or FanMode.Maximum;
+
+        return confirmedFans == FanMode.Automatic
+            ? status.ConfirmedState.Performance == PerformancePreset.Balanced
+            : confirmedFans is FanMode.Fixed or FanMode.ManualCurve or FanMode.Maximum
+                && status.ConfirmedState.Performance is null or PerformancePreset.Balanced;
+    }
 
     private bool CanSetFullChargeOverride(object? parameter)
     {
@@ -2729,7 +2898,8 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             return false;
         }
 
-        if (!CanMutate
+        if (IsFullChargeOperationInProgress
+            || !CanMutate
             || !HasConfirmedPowerSource
             || latestStatus?.Capabilities is not { } capabilities
             || !HasBatteryCapability(capabilities)
@@ -2755,6 +2925,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     private bool CanToggleBatteryProtection(object? parameter)
     {
         if (parameter is not null
+            || IsBatteryProtectionOperationInProgress
             || !CanMutate
             || !HasConfirmedPowerSource
             || latestStatus?.Capabilities is not { } capabilities
@@ -3313,7 +3484,8 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
 
     private bool CanSetChargeLimit(int value)
     {
-        if (!CanMutate
+        if (IsChargeLimitOperationInProgress
+            || !CanMutate
             || !HasConfirmedPowerSource
             || latestStatus!.Capabilities is not { } capabilities
             || latestStatus.ConfirmedState?.Battery is not
@@ -3355,51 +3527,67 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         FullChargeOverride = active;
     }
 
-    private Task SetPerformanceAsync(object? parameter, CancellationToken token)
+    private async Task SetPerformanceAsync(object? parameter, CancellationToken token)
     {
         PerformancePreset requested = (PerformancePreset)parameter!;
         PowerSource sourceAtStart = ActivePowerSource;
-        return RunOperationAsync(
-            cancellationToken => serviceClient.SetPerformanceConfigurationOverrideAsync(
-                new PerformanceOverride(
-                    requested,
-                    OverrideLifetime.UntilPowerSourceChange,
-                    requested == PerformancePreset.Custom
-                        ? GetActiveProfileCustomPerformance()
-                        : null),
-                cancellationToken),
-            token,
-            result =>
-            {
-                if (result.Status == ControlOperationStatus.Applied)
+        IsPerformanceOperationInProgress = true;
+        try
+        {
+            await RunOperationAsync(
+                cancellationToken => serviceClient.SetPerformanceConfigurationOverrideAsync(
+                    new PerformanceOverride(
+                        requested,
+                        OverrideLifetime.UntilPowerSourceChange,
+                        requested == PerformancePreset.Custom
+                            ? GetActiveProfileCustomPerformance()
+                            : null),
+                    cancellationToken),
+                token,
+                result =>
                 {
-                    MarkActiveProfileDraft(sourceAtStart, performance: requested);
-                }
-            });
+                    if (result.Status == ControlOperationStatus.Applied)
+                    {
+                        MarkActiveProfileDraft(sourceAtStart, performance: requested);
+                    }
+                });
+        }
+        finally
+        {
+            IsPerformanceOperationInProgress = false;
+        }
     }
 
-    private Task SetCustomPerformanceAsync(object? parameter, CancellationToken token)
+    private async Task SetCustomPerformanceAsync(object? parameter, CancellationToken token)
     {
         CustomPerformanceSettings requested = (CustomPerformanceSettings)parameter!;
         PowerSource sourceAtStart = ActivePowerSource;
-        return RunOperationAsync(
-            cancellationToken => serviceClient.SetPerformanceConfigurationOverrideAsync(
-                new PerformanceOverride(
-                    PerformancePreset.Custom,
-                    OverrideLifetime.UntilPowerSourceChange,
-                    requested),
-                cancellationToken),
-            token,
-            result =>
-            {
-                if (result.Status == ControlOperationStatus.Applied)
+        IsPerformanceOperationInProgress = true;
+        try
+        {
+            await RunOperationAsync(
+                cancellationToken => serviceClient.SetPerformanceConfigurationOverrideAsync(
+                    new PerformanceOverride(
+                        PerformancePreset.Custom,
+                        OverrideLifetime.UntilPowerSourceChange,
+                        requested),
+                    cancellationToken),
+                token,
+                result =>
                 {
-                    MarkActiveProfileDraft(
-                        sourceAtStart,
-                        performance: PerformancePreset.Custom,
-                        customPerformance: requested);
-                }
-            });
+                    if (result.Status == ControlOperationStatus.Applied)
+                    {
+                        MarkActiveProfileDraft(
+                            sourceAtStart,
+                            performance: PerformancePreset.Custom,
+                            customPerformance: requested);
+                    }
+                });
+        }
+        finally
+        {
+            IsPerformanceOperationInProgress = false;
+        }
     }
 
     private Task SetFanModeAsync(object? parameter, CancellationToken token)
@@ -3470,21 +3658,29 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         PowerSource sourceAtStart = ActivePowerSource;
         long revisionAtStart = latestAcceptedRevision;
         ControlOperationStatus? resultStatus = null;
-        await RunOperationAsync(
-            cancellationToken => serviceClient.SetLightingOverrideAsync(
-                new ManualOverride<LightingSettings>(
-                    requested,
-                    OverrideLifetime.UntilPowerSourceChange),
-                cancellationToken),
-            token,
-            result =>
-            {
-                resultStatus = result.Status;
-                if (result.Status == ControlOperationStatus.Applied)
+        IsLightingOperationInProgress = true;
+        try
+        {
+            await RunOperationAsync(
+                cancellationToken => serviceClient.SetLightingOverrideAsync(
+                    new ManualOverride<LightingSettings>(
+                        requested,
+                        OverrideLifetime.UntilPowerSourceChange),
+                    cancellationToken),
+                token,
+                result =>
                 {
-                    MarkActiveProfileDraft(sourceAtStart, lighting: requested);
-                }
-            });
+                    resultStatus = result.Status;
+                    if (result.Status == ControlOperationStatus.Applied)
+                    {
+                        MarkActiveProfileDraft(sourceAtStart, lighting: requested);
+                    }
+                });
+        }
+        finally
+        {
+            IsLightingOperationInProgress = false;
+        }
 
         if (resultStatus == ControlOperationStatus.Applied)
         {
@@ -3513,12 +3709,20 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         int requestedLimit = (int)parameter!;
         long revisionAtStart = latestAcceptedRevision;
         ControlOperationStatus? resultStatus = null;
-        await RunOperationAsync(
-            cancellationToken => serviceClient.SetBatteryPolicyAsync(
-                BatteryPolicy.Create(requestedLimit),
-                cancellationToken),
-            token,
-            result => resultStatus = result.Status);
+        IsChargeLimitOperationInProgress = true;
+        try
+        {
+            await RunOperationAsync(
+                cancellationToken => serviceClient.SetBatteryPolicyAsync(
+                    BatteryPolicy.Create(requestedLimit),
+                    cancellationToken),
+                token,
+                result => resultStatus = result.Status);
+        }
+        finally
+        {
+            IsChargeLimitOperationInProgress = false;
+        }
 
         if (resultStatus == ControlOperationStatus.Applied)
         {
@@ -3536,19 +3740,39 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         }
     }
 
-    private Task ToggleBatteryProtectionAsync(object? parameter, CancellationToken token) =>
-        RunOperationAsync(
-            cancellationToken => serviceClient.SetBatteryProtectionAsync(
-                !BatteryProtectionEnabled,
-                cancellationToken),
-            token);
+    private async Task ToggleBatteryProtectionAsync(object? parameter, CancellationToken token)
+    {
+        IsBatteryProtectionOperationInProgress = true;
+        try
+        {
+            await RunOperationAsync(
+                cancellationToken => serviceClient.SetBatteryProtectionAsync(
+                    !BatteryProtectionEnabled,
+                    cancellationToken),
+                token);
+        }
+        finally
+        {
+            IsBatteryProtectionOperationInProgress = false;
+        }
+    }
 
-    private Task ToggleFullChargeAsync(object? parameter, CancellationToken token) =>
-        RunOperationAsync(
-            cancellationToken => serviceClient.SetFullChargeOverrideAsync(
-                parameter is bool enabled ? enabled : !FullChargeOverride,
-                cancellationToken),
-            token);
+    private async Task ToggleFullChargeAsync(object? parameter, CancellationToken token)
+    {
+        IsFullChargeOperationInProgress = true;
+        try
+        {
+            await RunOperationAsync(
+                cancellationToken => serviceClient.SetFullChargeOverrideAsync(
+                    parameter is bool enabled ? enabled : !FullChargeOverride,
+                    cancellationToken),
+                token);
+        }
+        finally
+        {
+            IsFullChargeOperationInProgress = false;
+        }
+    }
 
     private async Task ClearManualOverridesAsync(object? parameter, CancellationToken token)
     {
@@ -3689,13 +3913,46 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         }
     }
 
-    private Task ApplyOneShotLaptopControlAsync(
+    private async Task ApplyOneShotLaptopControlAsync(
         object? parameter,
-        CancellationToken token) => RunOperationAsync(
-            cancellationToken => serviceClient.ApplyOneShotLaptopControlAsync(
-                (ApplyOneShotLaptopControl)parameter!,
-                cancellationToken),
-            token);
+        CancellationToken token)
+    {
+        ApplyOneShotLaptopControl requested = (ApplyOneShotLaptopControl)parameter!;
+        SetOneShotOperationInProgress(requested.Control, true);
+        try
+        {
+            await RunOperationAsync(
+                cancellationToken => serviceClient.ApplyOneShotLaptopControlAsync(
+                    requested,
+                    cancellationToken),
+                token);
+        }
+        finally
+        {
+            SetOneShotOperationInProgress(requested.Control, false);
+        }
+    }
+
+    private void SetOneShotOperationInProgress(OneShotLaptopControl control, bool value)
+    {
+        switch (control)
+        {
+            case OneShotLaptopControl.StartupAnimation:
+                isStartupAnimationOperationInProgress = value;
+                break;
+            case OneShotLaptopControl.FunctionKeyPrimary:
+                isFunctionKeyOperationInProgress = value;
+                break;
+            case OneShotLaptopControl.GamingMode:
+                isGamingModeOperationInProgress = value;
+                break;
+            default:
+                return;
+        }
+
+        NotifyFirmwareFieldLoadingState();
+        NotifyCommands();
+    }
 
     private async Task SaveProfilesAsync(object? parameter, CancellationToken token)
     {
@@ -5002,7 +5259,9 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         {
             Effect: LightingEffect.Tidal,
             Parameters: TidalLightingParameters tidal,
-        } => $"Tidal, {tidal.Direction.ToString().ToLowerInvariant()}",
+        } => tidal.Direction == LightingDirection.Leftward
+            ? "Tidal, outward"
+            : "Tidal, inward",
         {
             Effect: LightingEffect.Starlight,
             Parameters: StarlightLightingParameters
@@ -5761,6 +6020,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     private void NotifyPresentationState()
     {
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsServiceUnavailable)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(CanEditFanControl)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(BatteryPowerFlowLabel)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Fan1RpmLabel)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Fan2RpmLabel)));
@@ -5821,6 +6081,19 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         PropertyChanged?.Invoke(
             this,
             new PropertyChangedEventArgs(nameof(AboutVbiosVersionStatus)));
+    }
+
+    private void NotifyFirmwareFieldLoadingState()
+    {
+        PropertyChanged?.Invoke(
+            this,
+            new PropertyChangedEventArgs(nameof(IsStartupAnimationFieldLoading)));
+        PropertyChanged?.Invoke(
+            this,
+            new PropertyChangedEventArgs(nameof(IsFunctionKeyFieldLoading)));
+        PropertyChanged?.Invoke(
+            this,
+            new PropertyChangedEventArgs(nameof(IsGamingModeFieldLoading)));
     }
 
     private TrayHoverLabelFormatResult BuildTrayHoverLabel() =>
@@ -6061,6 +6334,9 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         profileEditorsDirty = value;
         PropertyChanged?.Invoke(
             this,
+            new PropertyChangedEventArgs(nameof(HasProfileEditorChanges)));
+        PropertyChanged?.Invoke(
+            this,
             new PropertyChangedEventArgs(nameof(HasUnsavedProfileChanges)));
     }
 
@@ -6143,6 +6419,8 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             new PropertyChangedEventArgs(nameof(LightingShowsStarlightColorMode)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(LightingShowsPrimaryColor)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(LightingShowsSecondaryColor)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(LightingPrimaryColorLabel)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(LightingPrimaryColorDescription)));
         PropertyChanged?.Invoke(
             this,
             new PropertyChangedEventArgs(nameof(LightingShowsReactiveDuration)));
@@ -6155,6 +6433,12 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         PropertyChanged?.Invoke(
             this,
             new PropertyChangedEventArgs(nameof(LightingShowsDirection)));
+        PropertyChanged?.Invoke(
+            this,
+            new PropertyChangedEventArgs(nameof(LightingDirectionOptions)));
+        PropertyChanged?.Invoke(
+            this,
+            new PropertyChangedEventArgs(nameof(SelectedLightingDirectionOption)));
         PropertyChanged?.Invoke(
             this,
             new PropertyChangedEventArgs(nameof(LightingShowsRotationDirection)));

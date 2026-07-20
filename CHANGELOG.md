@@ -90,6 +90,20 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Changed
 
+- Direct Fixed Fan Speed and Manual Fan Curve changes now accept the generic
+  manual firmware readback used by PID 02E0, while entering manual control
+  still requires a confirmed Balanced and Automatic state.
+- Reactive and Ripple input now coalesces duplicate pending keys, drops stale
+  pulses, and wakes one persistent renderer. Animated effects use deadline-based
+  scheduling so HID write time no longer accumulates as visible frame drift.
+- Firmware controls consistently reserve an inline progress indicator while a
+  read or write is pending, and page navigation marks the specific page with
+  unsaved changes.
+- Lighting color rows now stay compact; the native picker flyout contains the
+  color channels and hex input. Tidal directions are labeled Outward and Inward
+  to match the captured keyboard motion.
+- A transient device-admission miss during a scoped lighting action no longer
+  replaces the last verified laptop status with a global unavailable state.
 - Dashboard fan telemetry now presents the two channels as a clear
   `Fan 1 / Fan 2` pair, profile comparisons name lighting triggers and outcomes
   explicitly, and the taskbar hover list can omit the OpenBlade app name.

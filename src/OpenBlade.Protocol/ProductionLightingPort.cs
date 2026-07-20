@@ -15,6 +15,7 @@ internal sealed class ProductionLightingPort : IProductionLightingPort
     private readonly SemaphoreSlim operationGate = new(1, 1);
     private readonly object effectSync = new();
     private readonly object lifecycleSync = new();
+    private TaskCompletionSource<bool> streamWake = NewStreamWake();
     private CancellationTokenSource? streamCancellation;
     private Task? streamTask;
     private IPid02E0LightingEffect? activeEffect;
@@ -301,7 +302,6 @@ internal sealed class ProductionLightingPort : IProductionLightingPort
                 effect = activeKeyTriggeredEffect;
             }
 
-            await StopStreamCoreAsync().ConfigureAwait(false);
             try
             {
                 TimeSpan elapsed = timeProvider.GetElapsedTime(effectStartedTimestamp);
@@ -313,10 +313,11 @@ internal sealed class ProductionLightingPort : IProductionLightingPort
                 }
 
                 await WriteMatrixCoreAsync(frame, cancellationToken).ConfigureAwait(false);
-                StartStreamCore(effect);
+                SignalStreamCore();
             }
             catch
             {
+                await StopStreamCoreAsync().ConfigureAwait(false);
                 lock (effectSync)
                 {
                     activeEffect = null;
@@ -762,6 +763,10 @@ internal sealed class ProductionLightingPort : IProductionLightingPort
         }
 
         var cancellation = new CancellationTokenSource();
+        lock (effectSync)
+        {
+            streamWake = NewStreamWake();
+        }
         streamCancellation = cancellation;
         streamTask = RunStreamAsync(effect, cancellation.Token);
     }
@@ -772,17 +777,37 @@ internal sealed class ProductionLightingPort : IProductionLightingPort
     {
         try
         {
+            TimeSpan elapsed = timeProvider.GetElapsedTime(effectStartedTimestamp);
+            TimeSpan? firstDelay = effect.GetNextFrameDelay(elapsed);
+            if (firstDelay is null)
+            {
+                return;
+            }
+
+            TimeSpan nextFrameAt = elapsed + firstDelay.Value;
             while (true)
             {
-                TimeSpan elapsed = timeProvider.GetElapsedTime(effectStartedTimestamp);
-                TimeSpan? delay = effect.GetNextFrameDelay(elapsed);
-                if (delay is null)
+                elapsed = timeProvider.GetElapsedTime(effectStartedTimestamp);
+                TimeSpan remaining = nextFrameAt - elapsed;
+                bool woke = remaining > TimeSpan.Zero
+                    && await WaitForStreamWakeOrDelayAsync(remaining, cancellationToken)
+                        .ConfigureAwait(false);
+                if (woke)
                 {
-                    return;
+                    // A key-triggered pulse has already submitted its immediate
+                    // frame. Keep this renderer task and move its next deadline
+                    // to the effect's current active cadence.
+                    elapsed = timeProvider.GetElapsedTime(effectStartedTimestamp);
+                    TimeSpan? wakeDelay = effect.GetNextFrameDelay(elapsed);
+                    if (wakeDelay is null)
+                    {
+                        return;
+                    }
+
+                    nextFrameAt = elapsed + wakeDelay.Value;
+                    continue;
                 }
 
-                await Task.Delay(delay.Value, timeProvider, cancellationToken)
-                    .ConfigureAwait(false);
                 elapsed = timeProvider.GetElapsedTime(effectStartedTimestamp);
                 Pid02E0MatrixFrame frame;
                 lock (effectSync)
@@ -795,6 +820,19 @@ internal sealed class ProductionLightingPort : IProductionLightingPort
                 // otherwise the Windows writer correctly marks its handle poisoned.
                 cancellationToken.ThrowIfCancellationRequested();
                 await WriteMatrixCoreAsync(frame, CancellationToken.None).ConfigureAwait(false);
+
+                TimeSpan observedAfterWrite = timeProvider.GetElapsedTime(
+                    effectStartedTimestamp);
+                TimeSpan? advanced = AdvanceFrameDeadline(
+                    effect,
+                    nextFrameAt,
+                    observedAfterWrite);
+                if (advanced is null)
+                {
+                    return;
+                }
+
+                nextFrameAt = advanced.Value;
             }
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -814,6 +852,80 @@ internal sealed class ProductionLightingPort : IProductionLightingPort
             }
         }
     }
+
+    internal static TimeSpan? AdvanceFrameDeadline(
+        IPid02E0LightingEffect effect,
+        TimeSpan currentDeadline,
+        TimeSpan observedAfterWrite)
+    {
+        ArgumentNullException.ThrowIfNull(effect);
+        Pid02E0LightingMath.ThrowIfNegative(currentDeadline);
+        Pid02E0LightingMath.ThrowIfNegative(observedAfterWrite);
+        TimeSpan cursor = currentDeadline;
+        while (cursor <= observedAfterWrite)
+        {
+            TimeSpan? delay = effect.GetNextFrameDelay(cursor);
+            if (delay is null)
+            {
+                return null;
+            }
+
+            cursor += delay.Value;
+        }
+
+        return cursor;
+    }
+
+    private async Task<bool> WaitForStreamWakeOrDelayAsync(
+        TimeSpan delay,
+        CancellationToken cancellationToken)
+    {
+        Task wake;
+        lock (effectSync)
+        {
+            wake = streamWake.Task;
+        }
+
+        using var timerCancellation = CancellationTokenSource.CreateLinkedTokenSource(
+            cancellationToken);
+        Task timer = Task.Delay(delay, timeProvider, timerCancellation.Token);
+        Task completed = await Task.WhenAny(timer, wake).ConfigureAwait(false);
+        if (ReferenceEquals(completed, timer))
+        {
+            await timer.ConfigureAwait(false);
+            return false;
+        }
+
+        lock (effectSync)
+        {
+            if (ReferenceEquals(streamWake.Task, wake))
+            {
+                streamWake = NewStreamWake();
+            }
+        }
+
+        timerCancellation.Cancel();
+        try
+        {
+            await timer.ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (timerCancellation.IsCancellationRequested)
+        {
+        }
+        cancellationToken.ThrowIfCancellationRequested();
+        return true;
+    }
+
+    private void SignalStreamCore()
+    {
+        lock (effectSync)
+        {
+            streamWake.TrySetResult(true);
+        }
+    }
+
+    private static TaskCompletionSource<bool> NewStreamWake() =>
+        new(TaskCreationOptions.RunContinuationsAsynchronously);
 
     private async Task StopStreamCoreAsync()
     {

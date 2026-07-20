@@ -198,6 +198,22 @@
                    BasedOn="{StaticResource DefaultButtonStyle}">
                 <Setter Property="Foreground" Value="{ThemeResource SystemFillColorCriticalBrush}" />
             </Style>
+            <Style x:Key="UnsavedNavigationBadgeStyle" TargetType="InfoBadge">
+                <Setter Property="Value" Value="-1" />
+                <Setter Property="Width" Value="8" />
+                <Setter Property="Height" Value="8" />
+                <Setter Property="MinWidth" Value="8" />
+                <Setter Property="Background" Value="{ThemeResource SystemFillColorCautionBrush}" />
+            </Style>
+            <Style x:Key="FirmwareProgressRingStyle" TargetType="ProgressRing">
+                <Setter Property="Width" Value="16" />
+                <Setter Property="Height" Value="16" />
+                <Setter Property="IsIndeterminate" Value="True" />
+                <Setter Property="VerticalAlignment" Value="Center" />
+            </Style>
+            <Style x:Key="FanCurveItemContainerStyle" TargetType="ContentPresenter">
+                <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+            </Style>
         </Grid.Resources>
 
         <TitleBar x:Name="AppTitleBar"
@@ -222,6 +238,11 @@
                     <NavigationViewItem.Icon>
                         <SymbolIcon Symbol="Home" />
                     </NavigationViewItem.Icon>
+                    <NavigationViewItem.InfoBadge>
+                        <InfoBadge Style="{StaticResource UnsavedNavigationBadgeStyle}"
+                                   Visibility="{x:Bind ViewModel.HasThermalProfileDraft, Mode=OneWay}"
+                                   AutomationProperties.Name="Dashboard has unsaved changes" />
+                    </NavigationViewItem.InfoBadge>
                 </NavigationViewItem>
                 <NavigationViewItem x:Name="ProfilesNavigationItem" Tag="profiles">
                     <NavigationViewItem.Icon>
@@ -230,6 +251,11 @@
                     <NavigationViewItem.Content>
                         <TextBlock Text="Profiles" />
                     </NavigationViewItem.Content>
+                    <NavigationViewItem.InfoBadge>
+                        <InfoBadge Style="{StaticResource UnsavedNavigationBadgeStyle}"
+                                   Visibility="{x:Bind ViewModel.HasProfileEditorChanges, Mode=OneWay}"
+                                   AutomationProperties.Name="Profiles has unsaved changes" />
+                    </NavigationViewItem.InfoBadge>
                 </NavigationViewItem>
                 <NavigationViewItem x:Name="LightingNavigationItem"
                                     Content="Lighting"
@@ -237,11 +263,21 @@
                     <NavigationViewItem.Icon>
                         <FontIcon Glyph="&#xE781;" />
                     </NavigationViewItem.Icon>
+                    <NavigationViewItem.InfoBadge>
+                        <InfoBadge Style="{StaticResource UnsavedNavigationBadgeStyle}"
+                                   Visibility="{x:Bind ViewModel.HasLightingProfileDraft, Mode=OneWay}"
+                                   AutomationProperties.Name="Lighting has unsaved changes" />
+                    </NavigationViewItem.InfoBadge>
                 </NavigationViewItem>
-                <NavigationViewItem Content="Display" Tag="display">
+                <NavigationViewItem x:Name="DisplayNavigationItem" Content="Display" Tag="display">
                     <NavigationViewItem.Icon>
                         <FontIcon Glyph="&#xE7F4;" />
                     </NavigationViewItem.Icon>
+                    <NavigationViewItem.InfoBadge>
+                        <InfoBadge Style="{StaticResource UnsavedNavigationBadgeStyle}"
+                                   Visibility="{x:Bind DisplayViewModel.CanSaveCurrentSettingsToProfile, Mode=OneWay}"
+                                   AutomationProperties.Name="Display has unsaved changes" />
+                    </NavigationViewItem.InfoBadge>
                 </NavigationViewItem>
                 <NavigationViewItem x:Name="SettingsNavigationItem"
                                     Content="Settings"
@@ -485,15 +521,22 @@
                                         <TextBlock Text="Balance speed, power use, and noise."
                                                    Style="{StaticResource SecondaryTextStyle}" />
                                     </StackPanel>
-                                    <ComboBox x:Name="DashboardPerformanceSelector"
-                                              Grid.Column="1"
-                                              MinWidth="150"
-                                              HorizontalAlignment="Right"
-                                              AutomationProperties.Name="Power mode"
-                                              IsEnabled="{x:Bind ViewModel.CanControlHardware, Mode=OneWay}"
-                                              ItemsSource="{x:Bind ViewModel.AvailableActivePerformanceOptions, Mode=OneWay}"
-                                              SelectedItem="{x:Bind ViewModel.SelectedPerformanceOption, Mode=OneWay}"
-                                              SelectionChanged="OnDashboardPerformanceChanged" />
+                                    <StackPanel Grid.Column="1"
+                                                Orientation="Horizontal"
+                                                Spacing="10"
+                                                VerticalAlignment="Center">
+                                        <ProgressRing Style="{StaticResource FirmwareProgressRingStyle}"
+                                                      IsActive="{x:Bind ViewModel.IsPerformanceOperationInProgress, Mode=OneWay}"
+                                                      AutomationProperties.Name="Applying power mode" />
+                                        <ComboBox x:Name="DashboardPerformanceSelector"
+                                                  MinWidth="150"
+                                                  HorizontalAlignment="Right"
+                                                  AutomationProperties.Name="Power mode"
+                                                  IsEnabled="{x:Bind ViewModel.CanControlHardware, Mode=OneWay}"
+                                                  ItemsSource="{x:Bind ViewModel.AvailableActivePerformanceOptions, Mode=OneWay}"
+                                                  SelectedItem="{x:Bind ViewModel.SelectedPerformanceOption, Mode=OneWay}"
+                                                  SelectionChanged="OnDashboardPerformanceChanged" />
+                                    </StackPanel>
                                 </Grid>
                             </Border>
                             <Border Style="{StaticResource SettingsSubcardStyle}"
@@ -568,7 +611,7 @@
                                                   MinWidth="150"
                                                   HorizontalAlignment="Right"
                                                   AutomationProperties.Name="Fan mode"
-                                                  IsEnabled="{x:Bind ViewModel.CanControlHardware, Mode=OneWay}"
+                                                  IsEnabled="{x:Bind ViewModel.CanEditFanControl, Mode=OneWay}"
                                                   ItemsSource="{x:Bind ViewModel.AvailableActiveFanModeOptions, Mode=OneWay}"
                                                   SelectedItem="{x:Bind ViewModel.SelectedFanModeOption, Mode=OneWay}"
                                                   SelectionChanged="OnDashboardFanModeSelectionChanged" />
@@ -601,6 +644,7 @@
                                                 LargeChange="500"
                                                 SnapsTo="StepValues"
                                                 IsThumbToolTipEnabled="True"
+                                                IsEnabled="{x:Bind ViewModel.CanEditFanControl, Mode=OneWay}"
                                                 AutomationProperties.Name="Fixed fan speed"
                                                 Value="{Binding FixedFanSpeedRpm, Mode=TwoWay, Converter={StaticResource Int32Double}}"
                                                 PointerCaptureLost="OnFixedFanSpeedCommit"
@@ -627,6 +671,7 @@
                                                       OffContent=""
                                                       OnContent=""
                                                       HorizontalAlignment="Right"
+                                                      IsEnabled="{x:Bind ViewModel.CanEditFanControl, Mode=OneWay}"
                                                       IsOn="{x:Bind ViewModel.UseHigherFanTemperature, Mode=TwoWay}"
                                                       Toggled="OnManualFanCurveSettingChanged" />
                                     </Grid>
@@ -639,7 +684,9 @@
                                                   IsExpanded="True"
                                                   HorizontalContentAlignment="Stretch">
                                             <ItemsControl ItemsSource="{x:Bind ViewModel.CpuFanCurveEditorPoints, Mode=OneWay}"
-                                                          HorizontalContentAlignment="Stretch">
+                                                          HorizontalContentAlignment="Stretch"
+                                                          IsEnabled="{x:Bind ViewModel.CanEditFanControl, Mode=OneWay}"
+                                                          ItemContainerStyle="{StaticResource FanCurveItemContainerStyle}">
                                                 <ItemsControl.ItemTemplate>
                                                     <DataTemplate x:DataType="local:FanCurveEditorPoint">
                                                         <Grid ColumnSpacing="10"
@@ -652,6 +699,7 @@
                                                             </Grid.ColumnDefinitions>
                                                             <TextBlock Text="{x:Bind TemperatureLabel, Mode=OneTime}" VerticalAlignment="Center" />
                                                             <Slider Grid.Column="1"
+                                                                    MinWidth="120"
                                                                     Minimum="2000" Maximum="5400"
                                                                     StepFrequency="100" SnapsTo="StepValues"
                                                                     Tag="{x:Bind Mode=OneTime}"
@@ -672,7 +720,9 @@
                                                   IsExpanded="True"
                                                   HorizontalContentAlignment="Stretch">
                                             <ItemsControl ItemsSource="{x:Bind ViewModel.GpuFanCurveEditorPoints, Mode=OneWay}"
-                                                          HorizontalContentAlignment="Stretch">
+                                                          HorizontalContentAlignment="Stretch"
+                                                          IsEnabled="{x:Bind ViewModel.CanEditFanControl, Mode=OneWay}"
+                                                          ItemContainerStyle="{StaticResource FanCurveItemContainerStyle}">
                                                 <ItemsControl.ItemTemplate>
                                                     <DataTemplate x:DataType="local:FanCurveEditorPoint">
                                                         <Grid ColumnSpacing="10"
@@ -685,6 +735,7 @@
                                                             </Grid.ColumnDefinitions>
                                                             <TextBlock Text="{x:Bind TemperatureLabel, Mode=OneTime}" VerticalAlignment="Center" />
                                                             <Slider Grid.Column="1"
+                                                                    MinWidth="120"
                                                                     Minimum="2000" Maximum="5400"
                                                                     StepFrequency="100" SnapsTo="StepValues"
                                                                     Tag="{x:Bind Mode=OneTime}"
@@ -723,16 +774,20 @@
                                         <TextBlock Text="Limit charging to help preserve battery health."
                                                    Style="{StaticResource SecondaryTextStyle}" />
                                     </StackPanel>
-                                    <ToggleSwitch x:Name="BatteryProtectionToggle"
-                                                  Grid.Column="1"
-                                                  HorizontalAlignment="Right"
-                                                  MinWidth="0"
-                                                  AutomationProperties.Name="Battery protection"
-                                                  OffContent=""
-                                                  OnContent=""
-                                                  IsEnabled="{x:Bind ViewModel.CanChangeBatteryProtection, Mode=OneWay}"
-                                                  IsOn="{x:Bind ViewModel.BatteryProtectionEnabled, Mode=OneWay}"
-                                                  Toggled="OnBatteryProtectionToggled" />
+                                    <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+                                        <ProgressRing Style="{StaticResource FirmwareProgressRingStyle}"
+                                                      IsActive="{x:Bind ViewModel.IsBatteryProtectionOperationInProgress, Mode=OneWay}"
+                                                      AutomationProperties.Name="Applying battery protection" />
+                                        <ToggleSwitch x:Name="BatteryProtectionToggle"
+                                                      HorizontalAlignment="Right"
+                                                      MinWidth="0"
+                                                      AutomationProperties.Name="Battery protection"
+                                                      OffContent=""
+                                                      OnContent=""
+                                                      IsEnabled="{x:Bind ViewModel.CanChangeBatteryProtection, Mode=OneWay}"
+                                                      IsOn="{x:Bind ViewModel.BatteryProtectionEnabled, Mode=OneWay}"
+                                                      Toggled="OnBatteryProtectionToggled" />
+                                    </StackPanel>
                                 </Grid>
                             </Border>
                             <Border Style="{StaticResource SettingsRowStyle}">
@@ -749,7 +804,10 @@
                                     <StackPanel Grid.Column="1"
                                                 Spacing="4"
                                                 HorizontalAlignment="Stretch">
-                                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8">
+                                            <ProgressRing Style="{StaticResource FirmwareProgressRingStyle}"
+                                                          IsActive="{x:Bind ViewModel.IsChargeLimitOperationInProgress, Mode=OneWay}"
+                                                          AutomationProperties.Name="Applying charge limit" />
                                             <TextBlock Text="{x:Bind ViewModel.ChargeLimitPercent, Mode=OneWay}"
                                                        Style="{StaticResource CardTitleStyle}" />
                                             <TextBlock Text="%" Style="{StaticResource CardTitleStyle}" />
@@ -784,12 +842,16 @@
                                         <TextBlock Text="Charge to 100%, then restore the limit after unplugging."
                                                    Style="{StaticResource SecondaryTextStyle}" />
                                     </StackPanel>
-                                    <Button Grid.Column="1"
-                                            HorizontalAlignment="Right"
-                                            Content="{x:Bind ViewModel.FullChargeActionLabel, Mode=OneWay}"
-                                            Command="{x:Bind ViewModel.ToggleFullChargeCommand}"
-                                            CommandParameter="{x:Bind ViewModel.EnableFullChargeOverride, Mode=OneWay}"
-                                            VerticalAlignment="Center" />
+                                    <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+                                        <ProgressRing Style="{StaticResource FirmwareProgressRingStyle}"
+                                                      IsActive="{x:Bind ViewModel.IsFullChargeOperationInProgress, Mode=OneWay}"
+                                                      AutomationProperties.Name="Applying temporary full charge" />
+                                        <Button HorizontalAlignment="Right"
+                                                Content="{x:Bind ViewModel.FullChargeActionLabel, Mode=OneWay}"
+                                                Command="{x:Bind ViewModel.ToggleFullChargeCommand}"
+                                                CommandParameter="{x:Bind ViewModel.EnableFullChargeOverride, Mode=OneWay}"
+                                                VerticalAlignment="Center" />
+                                    </StackPanel>
                                 </Grid>
                             </Border>
                             </StackPanel>
@@ -1109,7 +1171,12 @@
                                     </VisualState>
                                 </VisualStateGroup>
                             </VisualStateManager.VisualStateGroups>
-                            <TextBlock Text="Lighting" Style="{StaticResource PageHeaderTitleStyle}" />
+                            <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+                                <TextBlock Text="Lighting" Style="{StaticResource PageHeaderTitleStyle}" />
+                                <ProgressRing Style="{StaticResource FirmwareProgressRingStyle}"
+                                              IsActive="{x:Bind ViewModel.IsLightingOperationInProgress, Mode=OneWay}"
+                                              AutomationProperties.Name="Applying lighting" />
+                            </StackPanel>
                             <ContentControl x:Name="LightingProfileSaveActions"
                                             Grid.Column="1"
                                             VerticalAlignment="Center"
@@ -1303,8 +1370,9 @@
                                                   MinWidth="150"
                                                   Style="{StaticResource SettingsPickerStyle}"
                                                   AutomationProperties.Name="Lighting direction"
-                                                  ItemsSource="{x:Bind ViewModel.LightingDirections}"
-                                                  SelectedItem="{x:Bind ViewModel.LightingDirectionEditor, Mode=TwoWay}" />
+                                                  ItemsSource="{x:Bind ViewModel.LightingDirectionOptions, Mode=OneWay}"
+                                                  DisplayMemberPath="Label"
+                                                  SelectedItem="{x:Bind ViewModel.SelectedLightingDirectionOption, Mode=TwoWay}" />
                                     </Grid>
                                 </Border>
 
@@ -1332,17 +1400,14 @@
                                 <Border Style="{StaticResource SettingsRowStyle}"
                                         Visibility="{x:Bind ViewModel.LightingShowsPrimaryColor, Mode=OneWay}">
                                     <Grid ColumnSpacing="20">
-                                        <Grid.RowDefinitions>
-                                            <RowDefinition Height="Auto" />
-                                            <RowDefinition Height="Auto" />
-                                        </Grid.RowDefinitions>
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="*" />
                                             <ColumnDefinition Width="Auto" />
                                         </Grid.ColumnDefinitions>
                                         <StackPanel Spacing="3" VerticalAlignment="Center">
-                                            <TextBlock Text="Color" Style="{StaticResource CardTitleStyle}" />
-                                            <TextBlock Text="Choose the keyboard color."
+                                            <TextBlock Text="{x:Bind ViewModel.LightingPrimaryColorLabel, Mode=OneWay}"
+                                                       Style="{StaticResource CardTitleStyle}" />
+                                            <TextBlock Text="{x:Bind ViewModel.LightingPrimaryColorDescription, Mode=OneWay}"
                                                        Style="{StaticResource SecondaryTextStyle}" />
                                         </StackPanel>
                                         <Button Grid.Column="1"
@@ -1367,50 +1432,18 @@
                                                                  IsAlphaEnabled="False"
                                                                  IsAlphaSliderVisible="False"
                                                                  IsAlphaTextInputVisible="False"
-                                                                 IsColorChannelTextInputVisible="False"
-                                                                 IsHexInputVisible="False"
+                                                                 IsColorChannelTextInputVisible="True"
+                                                                 IsHexInputVisible="True"
                                                                  Color="{Binding LightingPrimaryColorEditor, Mode=TwoWay, Converter={StaticResource RgbColor}}" />
                                                 </Flyout>
                                             </Button.Flyout>
                                         </Button>
-                                        <Expander Grid.Row="1"
-                                                  Grid.ColumnSpan="2"
-                                                  Margin="0,12,0,0"
-                                                  Header="Advanced RGB values"
-                                                  HorizontalContentAlignment="Stretch">
-                                            <StackPanel Orientation="Horizontal"
-                                                        HorizontalAlignment="Right"
-                                                        Spacing="8">
-                                                <NumberBox Header="R"
-                                                           Width="82"
-                                                           Minimum="0"
-                                                           Maximum="255"
-                                                           SpinButtonPlacementMode="Compact"
-                                                           Value="{Binding LightingRedEditor, Mode=TwoWay, Converter={StaticResource Int32Double}}" />
-                                                <NumberBox Header="G"
-                                                           Width="82"
-                                                           Minimum="0"
-                                                           Maximum="255"
-                                                           SpinButtonPlacementMode="Compact"
-                                                           Value="{Binding LightingGreenEditor, Mode=TwoWay, Converter={StaticResource Int32Double}}" />
-                                                <NumberBox Header="B"
-                                                           Width="82"
-                                                           Minimum="0"
-                                                           Maximum="255"
-                                                           SpinButtonPlacementMode="Compact"
-                                                           Value="{Binding LightingBlueEditor, Mode=TwoWay, Converter={StaticResource Int32Double}}" />
-                                            </StackPanel>
-                                        </Expander>
                                     </Grid>
                                 </Border>
 
                                 <Border Style="{StaticResource SettingsRowStyle}"
                                         Visibility="{x:Bind ViewModel.LightingShowsSecondaryColor, Mode=OneWay}">
                                     <Grid ColumnSpacing="20">
-                                        <Grid.RowDefinitions>
-                                            <RowDefinition Height="Auto" />
-                                            <RowDefinition Height="Auto" />
-                                        </Grid.RowDefinitions>
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="*" />
                                             <ColumnDefinition Width="Auto" />
@@ -1442,40 +1475,12 @@
                                                                  IsAlphaEnabled="False"
                                                                  IsAlphaSliderVisible="False"
                                                                  IsAlphaTextInputVisible="False"
-                                                                 IsColorChannelTextInputVisible="False"
-                                                                 IsHexInputVisible="False"
+                                                                 IsColorChannelTextInputVisible="True"
+                                                                 IsHexInputVisible="True"
                                                                  Color="{Binding LightingSecondaryColorEditor, Mode=TwoWay, Converter={StaticResource RgbColor}}" />
                                                 </Flyout>
                                             </Button.Flyout>
                                         </Button>
-                                        <Expander Grid.Row="1"
-                                                  Grid.ColumnSpan="2"
-                                                  Margin="0,12,0,0"
-                                                  Header="Advanced RGB values"
-                                                  HorizontalContentAlignment="Stretch">
-                                            <StackPanel Orientation="Horizontal"
-                                                        HorizontalAlignment="Right"
-                                                        Spacing="8">
-                                                <NumberBox Header="R"
-                                                           Width="82"
-                                                           Minimum="0"
-                                                           Maximum="255"
-                                                           SpinButtonPlacementMode="Compact"
-                                                           Value="{Binding LightingSecondaryRedEditor, Mode=TwoWay, Converter={StaticResource Int32Double}}" />
-                                                <NumberBox Header="G"
-                                                           Width="82"
-                                                           Minimum="0"
-                                                           Maximum="255"
-                                                           SpinButtonPlacementMode="Compact"
-                                                           Value="{Binding LightingSecondaryGreenEditor, Mode=TwoWay, Converter={StaticResource Int32Double}}" />
-                                                <NumberBox Header="B"
-                                                           Width="82"
-                                                           Minimum="0"
-                                                           Maximum="255"
-                                                           SpinButtonPlacementMode="Compact"
-                                                           Value="{Binding LightingSecondaryBlueEditor, Mode=TwoWay, Converter={StaticResource Int32Double}}" />
-                                            </StackPanel>
-                                        </Expander>
                                     </Grid>
                                 </Border>
 
@@ -1694,7 +1699,12 @@
                                     </VisualState>
                                 </VisualStateGroup>
                             </VisualStateManager.VisualStateGroups>
-                            <TextBlock Text="Display" Style="{StaticResource PageHeaderTitleStyle}" />
+                            <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+                                <TextBlock Text="Display" Style="{StaticResource PageHeaderTitleStyle}" />
+                                <ProgressRing Style="{StaticResource FirmwareProgressRingStyle}"
+                                              IsActive="{x:Bind DisplayViewModel.IsBusy, Mode=OneWay}"
+                                              AutomationProperties.Name="Applying display setting" />
+                            </StackPanel>
                             <StackPanel x:Name="DisplayProfileSaveActions"
                                         Grid.Column="1"
                                         Orientation="Horizontal"
@@ -1937,22 +1947,26 @@
                                             <TextBlock Text="Set whether F1 through F12 or media actions work without holding Fn."
                                                        Style="{StaticResource SecondaryTextStyle}" />
                                         </StackPanel>
-                                        <DropDownButton Grid.Column="1"
-                                                        Content="{x:Bind ViewModel.FunctionKeyPrimaryStateLabel, Mode=OneWay}"
-                                                        HorizontalAlignment="Right"
-                                                        VerticalAlignment="Center"
-                                                        AutomationProperties.Name="Set function key behavior">
-                                            <DropDownButton.Flyout>
-                                                <MenuFlyout>
-                                                    <MenuFlyoutItem Text="Function keys"
-                                                                    Command="{x:Bind ViewModel.ApplyOneShotLaptopControlCommand}"
-                                                                    CommandParameter="{x:Bind ViewModel.FunctionKeysPrimaryAction}" />
-                                                    <MenuFlyoutItem Text="Media keys"
-                                                                    Command="{x:Bind ViewModel.ApplyOneShotLaptopControlCommand}"
-                                                                    CommandParameter="{x:Bind ViewModel.MultimediaKeysPrimaryAction}" />
-                                                </MenuFlyout>
-                                            </DropDownButton.Flyout>
-                                        </DropDownButton>
+                                        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+                                            <ProgressRing Style="{StaticResource FirmwareProgressRingStyle}"
+                                                          IsActive="{x:Bind ViewModel.IsFunctionKeyFieldLoading, Mode=OneWay}"
+                                                          AutomationProperties.Name="Reading or applying function key behavior" />
+                                            <DropDownButton Content="{x:Bind ViewModel.FunctionKeyPrimaryStateLabel, Mode=OneWay}"
+                                                            HorizontalAlignment="Right"
+                                                            VerticalAlignment="Center"
+                                                            AutomationProperties.Name="Set function key behavior">
+                                                <DropDownButton.Flyout>
+                                                    <MenuFlyout>
+                                                        <MenuFlyoutItem Text="Function keys"
+                                                                        Command="{x:Bind ViewModel.ApplyOneShotLaptopControlCommand}"
+                                                                        CommandParameter="{x:Bind ViewModel.FunctionKeysPrimaryAction}" />
+                                                        <MenuFlyoutItem Text="Media keys"
+                                                                        Command="{x:Bind ViewModel.ApplyOneShotLaptopControlCommand}"
+                                                                        CommandParameter="{x:Bind ViewModel.MultimediaKeysPrimaryAction}" />
+                                                    </MenuFlyout>
+                                                </DropDownButton.Flyout>
+                                            </DropDownButton>
+                                        </StackPanel>
                                     </Grid>
                                 </Border>
                                 <Border Style="{StaticResource SettingsRowStyle}"
@@ -1967,16 +1981,20 @@
                                             <TextBlock Text="Turn Gaming Mode on or off."
                                                        Style="{StaticResource SecondaryTextStyle}" />
                                         </StackPanel>
-                                        <ToggleSwitch x:Name="GamingModeToggle"
-                                                      Grid.Column="1"
-                                                      HorizontalAlignment="Right"
-                                                      VerticalAlignment="Center"
-                                                      MinWidth="0"
-                                                      AutomationProperties.Name="Gaming Mode"
-                                                      OffContent=""
-                                                      OnContent=""
-                                                      IsOn="{x:Bind ViewModel.GamingModeToggleIsOn, Mode=OneWay}"
-                                                      Toggled="OnGamingModeToggled" />
+                                        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+                                            <ProgressRing Style="{StaticResource FirmwareProgressRingStyle}"
+                                                          IsActive="{x:Bind ViewModel.IsGamingModeFieldLoading, Mode=OneWay}"
+                                                          AutomationProperties.Name="Reading or applying Gaming Mode" />
+                                            <ToggleSwitch x:Name="GamingModeToggle"
+                                                          HorizontalAlignment="Right"
+                                                          VerticalAlignment="Center"
+                                                          MinWidth="0"
+                                                          AutomationProperties.Name="Gaming Mode"
+                                                          OffContent=""
+                                                          OnContent=""
+                                                          IsOn="{x:Bind ViewModel.GamingModeToggleIsOn, Mode=OneWay}"
+                                                          Toggled="OnGamingModeToggled" />
+                                        </StackPanel>
                                     </Grid>
                                 </Border>
                                 <Border Style="{StaticResource SettingsLastRowStyle}"
@@ -1991,16 +2009,20 @@
                                             <TextBlock Text="Set whether the keyboard animation plays when the laptop starts."
                                                        Style="{StaticResource SecondaryTextStyle}" />
                                         </StackPanel>
-                                        <ToggleSwitch x:Name="StartupAnimationToggle"
-                                                      Grid.Column="1"
-                                                      HorizontalAlignment="Right"
-                                                      VerticalAlignment="Center"
-                                                      MinWidth="0"
-                                                      AutomationProperties.Name="Startup animation"
-                                                      OffContent=""
-                                                      OnContent=""
-                                                      IsOn="{x:Bind ViewModel.StartupAnimationToggleIsOn, Mode=OneWay}"
-                                                      Toggled="OnStartupAnimationToggled" />
+                                        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+                                            <ProgressRing Style="{StaticResource FirmwareProgressRingStyle}"
+                                                          IsActive="{x:Bind ViewModel.IsStartupAnimationFieldLoading, Mode=OneWay}"
+                                                          AutomationProperties.Name="Reading or applying startup animation" />
+                                            <ToggleSwitch x:Name="StartupAnimationToggle"
+                                                          HorizontalAlignment="Right"
+                                                          VerticalAlignment="Center"
+                                                          MinWidth="0"
+                                                          AutomationProperties.Name="Startup animation"
+                                                          OffContent=""
+                                                          OnContent=""
+                                                          IsOn="{x:Bind ViewModel.StartupAnimationToggleIsOn, Mode=OneWay}"
+                                                          Toggled="OnStartupAnimationToggled" />
+                                        </StackPanel>
                                     </Grid>
                                 </Border>
                             </StackPanel>

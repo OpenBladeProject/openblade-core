@@ -2656,7 +2656,7 @@ public sealed class MainViewModelTests
     }
 
     [Fact]
-    public async Task GenericManualReadback_PreservesSubtypeAndAllowsDirectManualToFixedChange()
+    public async Task GenericManualReadback_AllowsDirectFixedAndManualCurveChanges()
     {
         var client = new FakeServiceClient();
         await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
@@ -2681,8 +2681,8 @@ public sealed class MainViewModelTests
             FanControlOverride = curve,
             ConfirmedState = baseline.ConfirmedState! with
             {
-                Performance = PerformancePreset.Balanced,
-                Fans = FanMode.Fixed,
+                Performance = null,
+                Fans = FanMode.Maximum,
             },
         });
         await WaitUntilAsync(() => viewModel.SelectedFanMode == FanMode.ManualCurve);
@@ -2692,6 +2692,38 @@ public sealed class MainViewModelTests
 
         Assert.Equal(FanMode.Fixed, viewModel.SelectedFanMode);
         Assert.Equal(FanMode.Fixed, client.LastFanControlSettings!.Mode);
+
+        var fixedSettings = new FanControlSettings(
+            FanMode.Fixed,
+            3700,
+            ManualFanCurve.Default);
+        client.Publish(baseline with
+        {
+            Revision = baseline.Revision + 1,
+            DesiredState = baseline.DesiredState with
+            {
+                Fans = new ResolvedSetting<FanMode>(
+                    FanMode.Fixed,
+                    SettingValueSource.TemporaryOverride),
+                FanControl = fixedSettings,
+            },
+            FanOverride = new ManualOverride<FanMode>(
+                FanMode.Fixed,
+                OverrideLifetime.UntilPowerSourceChange),
+            FanControlOverride = fixedSettings,
+            ConfirmedState = baseline.ConfirmedState! with
+            {
+                Performance = null,
+                Fans = FanMode.Maximum,
+            },
+        });
+        await WaitUntilAsync(() => viewModel.SelectedFanMode == FanMode.Fixed);
+
+        await Assert.IsType<AsyncRelayCommand>(viewModel.SetFanModeCommand)
+            .ExecuteAsync(FanMode.ManualCurve);
+
+        Assert.Equal(FanMode.ManualCurve, viewModel.SelectedFanMode);
+        Assert.Equal(FanMode.ManualCurve, client.LastFanControlSettings!.Mode);
     }
 
     [Fact]

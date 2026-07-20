@@ -1852,7 +1852,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 return PublishScopedUnavailable(
                     subsystem,
                     powerSource,
-                    "No verified PID 02E0 device is available.");
+                    "The laptop could not be admitted for this control operation.",
+                    preserveCurrentAvailability: true);
             }
         }
         catch (OperationCanceledException) when (token.IsCancellationRequested)
@@ -1865,7 +1866,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 subsystem,
                 powerSource,
                 $"Verified device admission failed: {exception.Message}",
-                failed: true);
+                failed: true,
+                preserveCurrentAvailability: true);
         }
 
         ScopedApplyOutcome outcome;
@@ -2847,7 +2849,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         DeviceSubsystem subsystem,
         PowerSource powerSource,
         string reason,
-        bool failed = false)
+        bool failed = false,
+        bool preserveCurrentAvailability = false)
     {
         ControlResultStatus resultStatus = failed
             ? ControlResultStatus.Failed
@@ -2856,13 +2859,16 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             resultStatus,
             $"Hardware application was not confirmed. {reason}");
         history.RecordSubsystemResult(subsystem, result);
+        ServiceStatusSnapshot current = GetStatus();
         PublishScopedStatus(
             powerSource,
-            GetStatus().ConfirmedState,
-            GetStatus().Capabilities,
+            current.ConfirmedState,
+            current.Capabilities,
             result.Message,
-            deviceVerified: false,
-            writesBlocked: true);
+            deviceVerified: preserveCurrentAvailability && current.DeviceVerified,
+            writesBlocked: preserveCurrentAvailability
+                ? current.WritesBlocked
+                : true);
         return ToOperationResult(result);
     }
 

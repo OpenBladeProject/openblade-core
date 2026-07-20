@@ -4,19 +4,23 @@ namespace OpenBlade.Tray;
 
 /// <summary>
 /// Sends transient Reactive-lighting pulses sequentially on a bounded queue.
-/// Repeated make events are preserved so each physical retrigger restarts its
-/// fade. The pump accepts only
-/// data-minimized matrix slots, not translated text, virtual-key values, or
-/// app/window identity.
+/// Pending repeats for the same matrix slot are coalesced, and inputs that
+/// waited too long to remain visually responsive are discarded. The pump
+/// accepts only data-minimized matrix slots, not translated text, virtual-key
+/// values, or app/window identity.
 /// </summary>
 public sealed class ReactiveKeyPulsePump : IAsyncDisposable
 {
     public const int DefaultCapacity = 256;
+    public static readonly TimeSpan DefaultMaximumQueueAge = TimeSpan.FromMilliseconds(100);
 
     private readonly Func<ReactiveKeyPulse, CancellationToken, Task> sendAsync;
     private readonly Action<Exception>? errorHandler;
     private readonly int capacity;
-    private readonly Queue<ReactiveKeyPulse> pending = [];
+    private readonly TimeProvider timeProvider;
+    private readonly TimeSpan maximumQueueAge;
+    private readonly LinkedList<PendingPulse> pending = [];
+    private readonly Dictionary<int, LinkedListNode<PendingPulse>> pendingBySlot = [];
     private readonly SemaphoreSlim signal = new(0);
     private readonly CancellationTokenSource lifetime = new();
     private readonly object sync = new();
@@ -27,7 +31,9 @@ public sealed class ReactiveKeyPulsePump : IAsyncDisposable
     public ReactiveKeyPulsePump(
         Func<ReactiveKeyPulse, CancellationToken, Task> sendAsync,
         int capacity = DefaultCapacity,
-        Action<Exception>? errorHandler = null)
+        Action<Exception>? errorHandler = null,
+        TimeProvider? timeProvider = null,
+        TimeSpan? maximumQueueAge = null)
     {
         this.sendAsync = sendAsync ?? throw new ArgumentNullException(nameof(sendAsync));
         if (capacity <= 0)
@@ -37,6 +43,12 @@ public sealed class ReactiveKeyPulsePump : IAsyncDisposable
 
         this.capacity = capacity;
         this.errorHandler = errorHandler;
+        this.timeProvider = timeProvider ?? TimeProvider.System;
+        this.maximumQueueAge = maximumQueueAge ?? DefaultMaximumQueueAge;
+        if (this.maximumQueueAge <= TimeSpan.Zero)
+        {
+            throw new ArgumentOutOfRangeException(nameof(maximumQueueAge));
+        }
         worker = RunAsync(lifetime.Token);
     }
 
@@ -49,12 +61,23 @@ public sealed class ReactiveKeyPulsePump : IAsyncDisposable
                 return false;
             }
 
-            if (pending.Count >= capacity)
+            long enqueuedAt = timeProvider.GetTimestamp();
+            if (pendingBySlot.TryGetValue(pulse.MatrixSlot, out LinkedListNode<PendingPulse>? existing))
+            {
+                existing.Value = new PendingPulse(pulse, enqueuedAt);
+                pending.Remove(existing);
+                pending.AddLast(existing);
+                return true;
+            }
+
+            if (pendingBySlot.Count >= capacity)
             {
                 return false;
             }
 
-            pending.Enqueue(pulse);
+            LinkedListNode<PendingPulse> added = pending.AddLast(
+                new PendingPulse(pulse, enqueuedAt));
+            pendingBySlot.Add(pulse.MatrixSlot, added);
             signal.Release();
             return true;
         }
@@ -69,6 +92,7 @@ public sealed class ReactiveKeyPulsePump : IAsyncDisposable
         lock (sync)
         {
             pending.Clear();
+            pendingBySlot.Clear();
         }
     }
 
@@ -83,6 +107,7 @@ public sealed class ReactiveKeyPulsePump : IAsyncDisposable
         {
             accepting = false;
             pending.Clear();
+            pendingBySlot.Clear();
         }
 
         lifetime.Cancel();
@@ -104,7 +129,7 @@ public sealed class ReactiveKeyPulsePump : IAsyncDisposable
         while (true)
         {
             await signal.WaitAsync(cancellationToken).ConfigureAwait(false);
-            ReactiveKeyPulse pulse;
+            PendingPulse queued;
             lock (sync)
             {
                 if (pending.Count == 0)
@@ -113,12 +138,20 @@ public sealed class ReactiveKeyPulsePump : IAsyncDisposable
                     continue;
                 }
 
-                pulse = pending.Dequeue();
+                LinkedListNode<PendingPulse> first = pending.First!;
+                queued = first.Value;
+                pending.RemoveFirst();
+                pendingBySlot.Remove(queued.Pulse.MatrixSlot);
+            }
+
+            if (timeProvider.GetElapsedTime(queued.EnqueuedAt) > maximumQueueAge)
+            {
+                continue;
             }
 
             try
             {
-                await sendAsync(pulse, cancellationToken).ConfigureAwait(false);
+                await sendAsync(queued.Pulse, cancellationToken).ConfigureAwait(false);
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
@@ -130,4 +163,6 @@ public sealed class ReactiveKeyPulsePump : IAsyncDisposable
             }
         }
     }
+
+    private readonly record struct PendingPulse(ReactiveKeyPulse Pulse, long EnqueuedAt);
 }
