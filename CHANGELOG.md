@@ -96,8 +96,26 @@ All notable changes to OpenBlade are documented in this file. The project follow
   neutral. Status pills share the same foreground, sizing, and container style;
   profile drafts use neutral text instead of accent dots, and transient checks
   use progress indicators instead of looking like another status category.
-- Custom CPU/GPU controls and Fixed/Manual Curve fan controls are inset beneath
-  their Power mode and Fans parent rows, respectively.
+- Custom CPU/GPU controls and Fixed/Manual Curve fan controls now expand as
+  full-width child rows beneath their Power mode and Fans parent rows, matching
+  the visual hierarchy used by Windows Settings.
+- Dashboard live readings now include the safe CPU-side firmware temperature
+  and NVIDIA GPU temperature. Settings can independently show or hide each
+  temperature, fan, and battery-power item without disabling collection.
+- Taskbar hover content is now a checked, draggable list, allowing users to
+  choose and order the active profile, net battery power, temperatures, and
+  individual fan speeds within the Windows tooltip length limit.
+- OpenBlade uses Razer green for the WinUI accent while reserving green, amber,
+  and red status colors for ready, attention, and failure states.
+- Lighting edits apply automatically after a short debounce instead of requiring
+  a separate Apply button, and newer edits are not cleared by an older in-flight
+  request.
+- Fan-curve slider tracks stretch across their child panels and update their RPM
+  labels as values are dragged.
+- The full-shutdown action uses the Windows critical-action color and keeps its
+  existing confirmation dialog.
+- Profile comparison now includes laptop lid-logo behavior and the global rules
+  that switch keyboard lighting off with the display or after inactivity.
 - Explicit Fixed, Manual Curve, and Maximum fan actions now always resubmit the
   requested RPM target even when firmware already reports its undifferentiated
   manual state. This also allows changing manual targets without returning to

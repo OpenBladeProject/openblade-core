@@ -309,7 +309,9 @@ public static class IpcMessageCodec
         readings.BatteryPowerFlowMilliwatts is null
             or >= -1_000_000 and <= 1_000_000
         && readings.Fan1Rpm is null or >= 0 and <= 20_000
-        && readings.Fan2Rpm is null or >= 0 and <= 20_000;
+        && readings.Fan2Rpm is null or >= 0 and <= 20_000
+        && readings.CpuTemperatureCelsius is null or >= 0 and <= 115
+        && readings.GpuTemperatureCelsius is null or >= 0 and <= 115;
 
     private static void ValidateVersion(int version)
     {

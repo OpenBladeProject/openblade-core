@@ -29,4 +29,6 @@ public sealed record DesiredDeviceState(
 public sealed record LiveReadings(
     int? BatteryPowerFlowMilliwatts,
     int? Fan1Rpm,
-    int? Fan2Rpm);
+    int? Fan2Rpm,
+    int? CpuTemperatureCelsius = null,
+    int? GpuTemperatureCelsius = null);

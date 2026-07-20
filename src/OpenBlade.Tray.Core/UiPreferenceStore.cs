@@ -19,14 +19,18 @@ public sealed record UiPreferences(
     TrayHoverLabelMode TrayHoverLabelMode = TrayHoverLabelMode.ProfileAndPowerFlow,
     LiveReadingsCadence LiveReadingsRefreshCadence =
         LiveReadingsCadence.EveryTwoSeconds,
-    bool StartMinimized = false)
+    bool StartMinimized = false,
+    IReadOnlyList<LiveReadingItemKind>? DashboardTelemetryItems = null,
+    IReadOnlyList<TrayHoverLabelItemPreference>? TrayHoverLabelItems = null)
 {
     public static UiPreferences Default { get; } = new(
         ThemePreference.FollowWindows,
         LiveReadingsEnabled: true,
         TrayHoverLabelMode: TrayHoverLabelMode.ProfileAndPowerFlow,
         LiveReadingsRefreshCadence: LiveReadingsCadence.EveryTwoSeconds,
-        StartMinimized: false);
+        StartMinimized: false,
+        DashboardTelemetryItems: TelemetryPreferenceDefaults.DashboardItems,
+        TrayHoverLabelItems: TelemetryPreferenceDefaults.TrayHoverItems);
 
     public LiveReadingsCadence EffectiveLiveReadingsCadence =>
         !LiveReadingsEnabled
@@ -35,6 +39,16 @@ public sealed record UiPreferences(
                 && LiveReadingsRefreshCadence != LiveReadingsCadence.Off
                     ? LiveReadingsRefreshCadence
                     : LiveReadingsCadence.EveryTwoSeconds;
+
+    public IReadOnlyList<LiveReadingItemKind> EffectiveDashboardTelemetryItems =>
+        TelemetryPreferenceDefaults.NormalizeDashboardItems(DashboardTelemetryItems);
+
+    public IReadOnlyList<TrayHoverLabelItemPreference> EffectiveTrayHoverLabelItems =>
+        TelemetryPreferenceDefaults.NormalizeTrayHoverItems(
+            TrayHoverLabelItems,
+            Enum.IsDefined(TrayHoverLabelMode)
+                ? TrayHoverLabelMode
+                : TrayHoverLabelMode.ProfileAndPowerFlow);
 }
 
 public sealed class UiPreferenceStore

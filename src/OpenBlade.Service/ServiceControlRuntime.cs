@@ -155,8 +155,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
     private LightingSettings? faultedLightingRecoveryCandidate;
     private bool controllerLightingRelinquishPending;
     private readonly HashSet<LightingSuppressionReason> lightingSuppressions = [];
-    private readonly IFanTemperatureSource fanTemperatureSource =
-        new SafeWindowsFanTemperatureSource();
+    private readonly IFanTemperatureSource fanTemperatureSource;
     private int? lastCurveFan1Rpm;
     private int? lastCurveFan2Rpm;
 
@@ -284,7 +283,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         IControllerPresenceMonitor controllerPresenceMonitor,
         IFirmwareVersionSource firmwareVersionSource,
         Func<TimeSpan, CancellationToken, Task> transitionRetryDelay,
-        ProfileSetValidator validator)
+        ProfileSetValidator validator,
+        IFanTemperatureSource? fanTemperatureSource = null)
     {
         this.store = store ?? throw new ArgumentNullException(nameof(store));
         this.overrideStore = overrideStore
@@ -303,6 +303,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         this.transitionRetryDelay = transitionRetryDelay
             ?? throw new ArgumentNullException(nameof(transitionRetryDelay));
         this.validator = validator ?? throw new ArgumentNullException(nameof(validator));
+        this.fanTemperatureSource = fanTemperatureSource
+            ?? new SafeWindowsFanTemperatureSource();
     }
 
     public void Initialize(BatteryConfiguration configuration, PowerSource powerSource) =>
@@ -2336,6 +2338,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 device,
                 cancellationToken);
             FanRpmReadings? fans = null;
+            FanTemperatureReadings temperatures = default;
             if (includeLiveReadings)
             {
                 try
@@ -2349,6 +2352,18 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 catch
                 {
                     fans = null;
+                }
+                try
+                {
+                    temperatures = await fanTemperatureSource.ReadAsync(cancellationToken);
+                }
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                {
+                    throw;
+                }
+                catch
+                {
+                    temperatures = default;
                 }
             }
             cancellationToken.ThrowIfCancellationRequested();
@@ -2372,7 +2387,9 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                     ? new LiveReadings(
                         batteryPowerFlowMilliwatts,
                         fans?.Selector1Rpm,
-                        fans?.Selector2Rpm)
+                        fans?.Selector2Rpm,
+                        temperatures.CpuCelsius,
+                        temperatures.GpuCelsius)
                     : null,
                 PerformanceOverride = Automation.PerformanceOverride,
                 FanOverride = Automation.FanOverride,

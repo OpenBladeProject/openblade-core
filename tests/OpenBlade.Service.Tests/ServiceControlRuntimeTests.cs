@@ -3336,25 +3336,35 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     [Fact]
     public async Task Observe_WithLiveReadingsRefreshesBothFansAndFailureDegradesWithoutLosingDevice()
     {
-        TestContext context = CreateContext(providerAvailable: true);
+        var temperatures = new FixedFanTemperatureSource(
+            new FanTemperatureReadings(47, 52));
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            fanTemperatureSource: temperatures);
         context.Device.FanRpm = 2700;
 
         await context.Runtime.ObserveAsync(includeLiveReadings: true, CancellationToken.None);
 
         Assert.Equal(2700, context.Runtime.GetStatus().LiveReadings!.Fan1Rpm);
         Assert.Equal(2700, context.Runtime.GetStatus().LiveReadings!.Fan2Rpm);
+        Assert.Equal(47, context.Runtime.GetStatus().LiveReadings!.CpuTemperatureCelsius);
+        Assert.Equal(52, context.Runtime.GetStatus().LiveReadings!.GpuTemperatureCelsius);
         Assert.True(context.Runtime.GetStatus().DeviceVerified);
         Assert.Equal(1, context.Device.FanRpmReadCalls);
+        Assert.Equal(1, temperatures.ReadCount);
 
         context.Device.FanRpmFailure = new IOException("fan telemetry unavailable");
         await context.Runtime.ObserveAsync(includeLiveReadings: true, CancellationToken.None);
 
         Assert.Null(context.Runtime.GetStatus().LiveReadings!.Fan1Rpm);
         Assert.Null(context.Runtime.GetStatus().LiveReadings!.Fan2Rpm);
+        Assert.Equal(47, context.Runtime.GetStatus().LiveReadings!.CpuTemperatureCelsius);
+        Assert.Equal(52, context.Runtime.GetStatus().LiveReadings!.GpuTemperatureCelsius);
         Assert.True(context.Runtime.GetStatus().DeviceVerified);
         Assert.False(context.Runtime.GetStatus().WritesBlocked);
         Assert.Equal("Verified device state observed.", context.Runtime.GetStatus().Message);
         Assert.Equal(2, context.Device.FanRpmReadCalls);
+        Assert.Equal(2, temperatures.ReadCount);
     }
 
     [Fact]
@@ -3949,7 +3959,8 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         bool loadPersistentOverrides = false,
         Func<TimeSpan, CancellationToken, Task>? transitionRetryDelay = null,
         FirmwareVersions? firmwareVersions = null,
-        ProfileSetValidator? profileValidator = null)
+        ProfileSetValidator? profileValidator = null,
+        IFanTemperatureSource? fanTemperatureSource = null)
     {
         string profilePath = Path.Combine(directory, "profiles.json");
         string preferencesPath = Path.Combine(directory, "battery-preferences.json");
@@ -3993,46 +4004,18 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             overrideWriteBoundary);
         var firmwareSource = new FixedFirmwareVersionSource(
             firmwareVersions ?? FirmwareVersions.Unavailable());
-        ServiceControlRuntime runtime;
-        if (transitionRetryDelay is not null)
-        {
-            runtime = new ServiceControlRuntime(
-                store,
-                overrideStore,
-                telemetry,
-                hub,
-                provider,
-                history,
-                monitor,
-                firmwareSource,
-                transitionRetryDelay,
-                profileValidator ?? ProfileSetValidator.CreateUnverifiedSafeDefaults());
-        }
-        else if (profileValidator is not null)
-        {
-            runtime = new ServiceControlRuntime(
-                store,
-                overrideStore,
-                telemetry,
-                hub,
-                provider,
-                history,
-                monitor,
-                firmwareSource,
-                profileValidator);
-        }
-        else
-        {
-            runtime = new ServiceControlRuntime(
-                store,
-                overrideStore,
-                telemetry,
-                hub,
-                provider,
-                history,
-                monitor,
-                firmwareSource);
-        }
+        var runtime = new ServiceControlRuntime(
+            store,
+            overrideStore,
+            telemetry,
+            hub,
+            provider,
+            history,
+            monitor,
+            firmwareSource,
+            transitionRetryDelay ?? (static (delay, token) => Task.Delay(delay, token)),
+            profileValidator ?? ProfileSetValidator.CreateUnverifiedSafeDefaults(),
+            fanTemperatureSource ?? new FixedFanTemperatureSource(default));
         if (initialize)
         {
             PersistentOverrideState overrides = loadPersistentOverrides
@@ -4123,6 +4106,20 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         : IFirmwareVersionSource
     {
         public FirmwareVersions Capture() => versions;
+    }
+
+    private sealed class FixedFanTemperatureSource(FanTemperatureReadings readings)
+        : IFanTemperatureSource
+    {
+        public int ReadCount { get; private set; }
+
+        public ValueTask<FanTemperatureReadings> ReadAsync(
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            ReadCount++;
+            return ValueTask.FromResult(readings);
+        }
     }
 
     private sealed class FakeControllerPresenceMonitor(ControllerPresenceObservation current)

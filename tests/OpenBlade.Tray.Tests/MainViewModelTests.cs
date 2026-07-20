@@ -2099,7 +2099,7 @@ public sealed class MainViewModelTests
         client.Publish(CreateStatus(verified: true, blocked: false) with
         {
             ActivePowerSource = PowerSource.Battery,
-            LiveReadings = new LiveReadings(-24_340, 3210, 2875),
+            LiveReadings = new LiveReadings(-24_340, 3210, 2875, 47, 52),
         });
         await WaitUntilAsync(() => viewModel.Fan1RpmLabel.Contains("3", StringComparison.Ordinal));
 
@@ -2108,11 +2108,16 @@ public sealed class MainViewModelTests
         Assert.Contains("2,875 RPM", viewModel.Fan2RpmLabel, StringComparison.Ordinal);
         Assert.Equal("3,210 RPM", viewModel.Fan1RpmValue);
         Assert.Equal("2,875 RPM", viewModel.Fan2RpmValue);
+        Assert.Equal("47 °C", viewModel.CpuTemperatureValue);
+        Assert.Equal("52 °C", viewModel.GpuTemperatureValue);
+        Assert.Equal(5, viewModel.VisibleDashboardTelemetryItems.Count);
         Assert.Contains(nameof(viewModel.BatteryPowerFlowLabel), changed);
         Assert.Contains(nameof(viewModel.Fan1RpmLabel), changed);
         Assert.Contains(nameof(viewModel.Fan2RpmLabel), changed);
         Assert.Contains(nameof(viewModel.Fan1RpmValue), changed);
         Assert.Contains(nameof(viewModel.Fan2RpmValue), changed);
+        Assert.Contains(nameof(viewModel.CpuTemperatureValue), changed);
+        Assert.Contains(nameof(viewModel.GpuTemperatureValue), changed);
 
         changed.Clear();
         client.Publish(CreateStatus(verified: true, blocked: false) with
@@ -2200,6 +2205,44 @@ public sealed class MainViewModelTests
         Assert.Equal(
             "Battery power flow",
             viewModel.SelectedTrayHoverLabelOption.Label);
+    }
+
+    [Fact]
+    public async Task TelemetryPreferences_FilterDashboardAndOrderTrayHoverContent()
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        client.Publish(CreateStatus(verified: true, blocked: false) with
+        {
+            ActivePowerSource = PowerSource.Battery,
+            LiveReadings = new LiveReadings(-18_400, 2600, 2500, 46, 51),
+        });
+        await WaitUntilAsync(() => viewModel.IsConnected);
+
+        viewModel.ApplyTelemetryPreferences(
+            [LiveReadingItemKind.CpuTemperature, LiveReadingItemKind.Fan1Speed],
+            [
+                new(TrayHoverLabelItemKind.GpuTemperature, true),
+                new(TrayHoverLabelItemKind.ActiveProfile, true),
+                new(TrayHoverLabelItemKind.CpuTemperature, true),
+            ]);
+
+        Assert.Equal(
+            ["CPU temperature", "Fan 1"],
+            viewModel.VisibleDashboardTelemetryItems.Select(item => item.Label));
+        Assert.Equal(
+            "OpenBlade · GPU 51 °C · Battery · Balanced · CPU 46 °C",
+            viewModel.TrayHoverLabelText);
+        Assert.Equal(
+            [
+                TrayHoverLabelItemKind.GpuTemperature,
+                TrayHoverLabelItemKind.ActiveProfile,
+                TrayHoverLabelItemKind.CpuTemperature,
+            ],
+            viewModel.TrayHoverLabelPreferences
+                .Where(item => item.IsEnabled)
+                .Select(item => item.Kind));
     }
 
     [Fact]
@@ -2555,6 +2598,45 @@ public sealed class MainViewModelTests
         Assert.True(viewModel.SetFanModeCommand.CanExecute(FanMode.Fixed));
         Assert.True(viewModel.SetFanModeCommand.CanExecute(FanMode.ManualCurve));
         Assert.True(viewModel.SetFanModeCommand.CanExecute(FanMode.Automatic));
+    }
+
+    [Fact]
+    public async Task GenericManualReadback_PreservesSubtypeAndAllowsDirectManualToFixedChange()
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        ServiceStatusSnapshot baseline = CreateStatus(verified: true, blocked: false);
+        var curve = new FanControlSettings(
+            FanMode.ManualCurve,
+            3700,
+            ManualFanCurve.Default);
+        client.Publish(baseline with
+        {
+            DesiredState = baseline.DesiredState with
+            {
+                Fans = new ResolvedSetting<FanMode>(
+                    FanMode.ManualCurve,
+                    SettingValueSource.TemporaryOverride),
+                FanControl = curve,
+            },
+            FanOverride = new ManualOverride<FanMode>(
+                FanMode.ManualCurve,
+                OverrideLifetime.UntilPowerSourceChange),
+            FanControlOverride = curve,
+            ConfirmedState = baseline.ConfirmedState! with
+            {
+                Performance = PerformancePreset.Balanced,
+                Fans = FanMode.Fixed,
+            },
+        });
+        await WaitUntilAsync(() => viewModel.SelectedFanMode == FanMode.ManualCurve);
+
+        await Assert.IsType<AsyncRelayCommand>(viewModel.SetFanModeCommand)
+            .ExecuteAsync(FanMode.Fixed);
+
+        Assert.Equal(FanMode.Fixed, viewModel.SelectedFanMode);
+        Assert.Equal(FanMode.Fixed, client.LastFanControlSettings!.Mode);
     }
 
     [Fact]
@@ -3177,6 +3259,7 @@ public sealed class MainViewModelTests
         public bool MutationCanceled { get; private set; }
         public PerformanceOverride? PerformanceOverride { get; private set; }
         public ManualOverride<FanMode>? FanOverride { get; private set; }
+        public FanControlSettings? LastFanControlSettings { get; private set; }
         public ManualOverride<LightingSettings>? LightingOverride { get; private set; }
         public bool? BatteryProtectionEnabled { get; private set; }
         public bool? FullChargeEnabled { get; private set; }
@@ -3289,6 +3372,15 @@ public sealed class MainViewModelTests
                 ? "fans:<clear>"
                 : $"fans:{value.Value}");
             return MutateAsync(token);
+        }
+
+        public Task<ControlOperationResult> SetFanControlOverrideAsync(
+            ManualOverride<FanMode>? value,
+            FanControlSettings? settings,
+            CancellationToken token)
+        {
+            LastFanControlSettings = settings;
+            return SetFanOverrideAsync(value, token);
         }
 
         public Task<ControlOperationResult> SetLightingOverrideAsync(

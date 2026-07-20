@@ -19,6 +19,55 @@ public static class TrayHoverLabelFormatter
     public const int MaximumLength = 63;
 
     public static string Format(
+        IEnumerable<TrayHoverLabelItemKind> items,
+        bool isConnected,
+        PowerSource powerSource,
+        PerformancePreset performance,
+        string batteryPowerFlow,
+        int? cpuTemperatureCelsius,
+        int? gpuTemperatureCelsius,
+        int? fan1Rpm,
+        int? fan2Rpm)
+    {
+        ArgumentNullException.ThrowIfNull(items);
+        if (!isConnected)
+        {
+            return "OpenBlade · Service unavailable";
+        }
+
+        string[] details = items
+            .Where(Enum.IsDefined)
+            .Distinct()
+            .Select(item => item switch
+            {
+                TrayHoverLabelItemKind.ActiveProfile =>
+                    FormatProfile(powerSource, performance),
+                TrayHoverLabelItemKind.BatteryPower => batteryPowerFlow,
+                TrayHoverLabelItemKind.CpuTemperature =>
+                    FormatTemperature("CPU", cpuTemperatureCelsius),
+                TrayHoverLabelItemKind.GpuTemperature =>
+                    FormatTemperature("GPU", gpuTemperatureCelsius),
+                TrayHoverLabelItemKind.Fan1Speed => FormatFan("Fan 1", fan1Rpm),
+                TrayHoverLabelItemKind.Fan2Speed => FormatFan("Fan 2", fan2Rpm),
+                _ => throw new ArgumentOutOfRangeException(nameof(items)),
+            })
+            .Where(value => !string.IsNullOrWhiteSpace(value))
+            .ToArray();
+
+        string result = "OpenBlade";
+        foreach (string detail in details)
+        {
+            string candidate = $"{result} · {detail}";
+            if (candidate.Length > MaximumLength)
+            {
+                break;
+            }
+            result = candidate;
+        }
+        return result;
+    }
+
+    public static string Format(
         TrayHoverLabelMode mode,
         bool isConnected,
         PowerSource powerSource,
@@ -62,4 +111,12 @@ public static class TrayHoverLabelFormatter
             PowerSource.ExternalUnknown => "Checking power source",
             _ => "Power source unavailable",
         };
+
+    private static string FormatTemperature(string label, int? value) => value is int celsius
+        ? $"{label} {celsius} °C"
+        : $"{label} unavailable";
+
+    private static string FormatFan(string label, int? value) => value is int rpm
+        ? $"{label} {rpm:N0} RPM"
+        : $"{label} unavailable";
 }

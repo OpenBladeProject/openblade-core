@@ -736,23 +736,31 @@ public sealed class IpcMessageCodecTests
     }
 
     [Theory]
-    [InlineData(-1_000_001, null, null)]
-    [InlineData(1_000_001, null, null)]
-    [InlineData(null, -1, null)]
-    [InlineData(null, 20_001, null)]
-    [InlineData(null, null, -1)]
-    [InlineData(null, null, 20_001)]
+    [InlineData(-1_000_001, null, null, null, null)]
+    [InlineData(1_000_001, null, null, null, null)]
+    [InlineData(null, -1, null, null, null)]
+    [InlineData(null, 20_001, null, null, null)]
+    [InlineData(null, null, -1, null, null)]
+    [InlineData(null, null, 20_001, null, null)]
+    [InlineData(null, null, null, -1, null)]
+    [InlineData(null, null, null, 116, null)]
+    [InlineData(null, null, null, null, -1)]
+    [InlineData(null, null, null, null, 116)]
     public async Task WriteServerFrameAsync_RejectsOutOfRangeLiveReadings(
         int? batteryPowerFlowMilliwatts,
         int? fan1Rpm,
-        int? fan2Rpm)
+        int? fan2Rpm,
+        int? cpuTemperatureCelsius,
+        int? gpuTemperatureCelsius)
     {
         ServiceStatusSnapshot status = CreateStatus() with
         {
             LiveReadings = new LiveReadings(
                 batteryPowerFlowMilliwatts,
                 fan1Rpm,
-                fan2Rpm),
+                fan2Rpm,
+                cpuTemperatureCelsius,
+                gpuTemperatureCelsius),
         };
 
         await AssertStatusWriteRejectedAsync(status);
@@ -763,11 +771,11 @@ public sealed class IpcMessageCodecTests
     {
         ServiceStatusSnapshot low = CreateStatus() with
         {
-            LiveReadings = new LiveReadings(-1_000_000, 0, 0),
+            LiveReadings = new LiveReadings(-1_000_000, 0, 0, 0, 0),
         };
         ServiceStatusSnapshot high = CreateStatus() with
         {
-            LiveReadings = new LiveReadings(1_000_000, 20_000, 20_000),
+            LiveReadings = new LiveReadings(1_000_000, 20_000, 20_000, 115, 115),
         };
 
         Assert.Equal(low.LiveReadings, (await RoundTripStatusAsync(low)).LiveReadings);

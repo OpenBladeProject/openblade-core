@@ -18,6 +18,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
     private const double DashboardStackThresholdDip = 600;
     private const double ProfilesStackThresholdDip = 760;
     private static readonly TimeSpan ChargeLimitCommitDelay = TimeSpan.FromMilliseconds(400);
+    private static readonly TimeSpan LightingCommitDelay = TimeSpan.FromMilliseconds(500);
     private static readonly TimeSpan DisplayRefreshInterval = TimeSpan.FromSeconds(2);
 
     private readonly DispatcherQueue dispatcherQueue;
@@ -27,6 +28,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
     private readonly VisibleObservationLoop visibleObservationLoop;
     private readonly SessionDisplaySettingsAdapter displaySettingsAdapter;
     private readonly DispatcherQueueTimer chargeLimitCommitTimer;
+    private readonly DispatcherQueueTimer lightingCommitTimer;
     private readonly DispatcherQueueTimer displayRefreshTimer;
     private readonly object initializationSync = new();
     private Task? initializationTask;
@@ -40,6 +42,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
     private bool changingDisplaySettings;
     private bool chargeLimitCommitInProgress;
     private bool fanControlCommitInProgress;
+    private bool lightingCommitInProgress;
     private bool chargeLimitPointerInteraction;
     private int? pendingChargeLimitPercent;
     private bool? dashboardIsStacked;
@@ -83,6 +86,10 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
         chargeLimitCommitTimer.Interval = ChargeLimitCommitDelay;
         chargeLimitCommitTimer.IsRepeating = false;
         chargeLimitCommitTimer.Tick += OnChargeLimitCommitTimerTick;
+        lightingCommitTimer = dispatcherQueue.CreateTimer();
+        lightingCommitTimer.Interval = LightingCommitDelay;
+        lightingCommitTimer.IsRepeating = false;
+        lightingCommitTimer.Tick += OnLightingCommitTimerTick;
         micaBackdropHost = new MicaBackdropHost(this, Root);
         Root.DataContext = ViewModel;
         Root.SizeChanged += OnRootSizeChanged;
@@ -154,6 +161,8 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
         Root.SizeChanged -= OnRootSizeChanged;
         chargeLimitCommitTimer.Stop();
         chargeLimitCommitTimer.Tick -= OnChargeLimitCommitTimerTick;
+        lightingCommitTimer.Stop();
+        lightingCommitTimer.Tick -= OnLightingCommitTimerTick;
         displayRefreshTimer.Stop();
         displayRefreshTimer.Tick -= OnDisplayRefreshTimerTick;
         micaBackdropHost.Dispose();
@@ -170,6 +179,10 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
             LiveReadingsCadence.EveryTwoSeconds;
         TrayHoverLabelMode trayHoverLabelMode =
             TrayHoverLabelMode.ProfileAndPowerFlow;
+        IReadOnlyList<LiveReadingItemKind> dashboardTelemetryItems =
+            TelemetryPreferenceDefaults.DashboardItems;
+        IReadOnlyList<TrayHoverLabelItemPreference> trayHoverLabelItems =
+            TelemetryPreferenceDefaults.TrayHoverItems;
         try
         {
             UiPreferences preferences = await preferenceStore.LoadAsync();
@@ -177,6 +190,8 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
             initialTheme = preferences.Theme;
             liveReadingsRefreshCadence = preferences.EffectiveLiveReadingsCadence;
             trayHoverLabelMode = preferences.TrayHoverLabelMode;
+            dashboardTelemetryItems = preferences.EffectiveDashboardTelemetryItems;
+            trayHoverLabelItems = preferences.EffectiveTrayHoverLabelItems;
             StartMinimized = preferences.StartMinimized;
         }
         catch (Exception exception)
@@ -194,6 +209,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
         ViewModel.Theme = initialTheme;
         ViewModel.LiveReadingsRefreshCadence = liveReadingsRefreshCadence;
         ViewModel.TrayHoverLabelMode = trayHoverLabelMode;
+        ViewModel.ApplyTelemetryPreferences(dashboardTelemetryItems, trayHoverLabelItems);
         StartMinimizedToggle.IsOn = StartMinimized;
         try
         {
@@ -284,13 +300,24 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
         }
 
         if (args.PropertyName is nameof(MainViewModel.LiveReadingsRefreshCadence)
-            or nameof(MainViewModel.TrayHoverLabelMode))
+            or nameof(MainViewModel.TrayHoverLabelMode)
+            or nameof(MainViewModel.EnabledDashboardTelemetryItems)
+            or nameof(MainViewModel.TrayHoverLabelPreferences))
         {
             QueuePreferenceSave();
             if (args.PropertyName == nameof(MainViewModel.LiveReadingsRefreshCadence))
             {
                 visibleObservationLoop.StartOrWake();
             }
+        }
+
+        if (args.PropertyName is nameof(MainViewModel.LightingDraft)
+            or nameof(MainViewModel.IsLightingApplyPending)
+            or nameof(MainViewModel.LightingPowerPolicyDraft)
+            or nameof(MainViewModel.HasUnsavedLightingPowerPolicy)
+            or nameof(MainViewModel.CanControlLighting))
+        {
+            ScheduleLightingCommit();
         }
 
         if (args.PropertyName == nameof(MainViewModel.IsLightingVisible)
@@ -357,7 +384,9 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
                 ViewModel.LiveReadingsEnabled,
                 ViewModel.TrayHoverLabelMode,
                 ViewModel.LiveReadingsRefreshCadence,
-                StartMinimized));
+                StartMinimized,
+                ViewModel.EnabledDashboardTelemetryItems,
+                ViewModel.TrayHoverLabelPreferences));
         }
         catch (ObjectDisposedException)
         {
@@ -795,6 +824,76 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
         }
     }
 
+    private void ScheduleLightingCommit()
+    {
+        if (Volatile.Read(ref disposed) != 0
+            || (!ViewModel.IsLightingApplyPending
+                && !ViewModel.HasUnsavedLightingPowerPolicy))
+        {
+            lightingCommitTimer.Stop();
+            return;
+        }
+
+        lightingCommitTimer.Stop();
+        lightingCommitTimer.Start();
+    }
+
+    private async void OnLightingCommitTimerTick(
+        DispatcherQueueTimer sender,
+        object args)
+    {
+        sender.Stop();
+        if (Volatile.Read(ref disposed) != 0
+            || !ViewModel.CanControlLighting)
+        {
+            return;
+        }
+        if (lightingCommitInProgress)
+        {
+            sender.Start();
+            return;
+        }
+
+        lightingCommitInProgress = true;
+        try
+        {
+            if (ViewModel.IsLightingApplyPending
+                && ViewModel.SetLightingCommand is AsyncRelayCommand lightingCommand)
+            {
+                LightingSettings draft = ViewModel.LightingDraft;
+                if (lightingCommand.CanExecute(draft))
+                {
+                    await lightingCommand.ExecuteAsync(draft);
+                }
+            }
+
+            if (ViewModel.HasUnsavedLightingPowerPolicy
+                && ViewModel.SaveLightingPowerPolicyCommand is AsyncRelayCommand policyCommand)
+            {
+                LightingPowerPolicy policy = ViewModel.LightingPowerPolicyDraft;
+                if (policyCommand.CanExecute(policy))
+                {
+                    await policyCommand.ExecuteAsync(policy);
+                }
+            }
+        }
+        catch (Exception exception)
+        {
+            Trace.TraceError("OpenBlade automatic lighting apply failed: {0}", exception);
+        }
+        finally
+        {
+            lightingCommitInProgress = false;
+            if (Volatile.Read(ref disposed) == 0
+                && ViewModel.CanControlLighting
+                && (ViewModel.IsLightingApplyPending
+                    || ViewModel.HasUnsavedLightingPowerPolicy))
+            {
+                sender.Start();
+            }
+        }
+    }
+
     private void OnDashboardChargeLimitPointerPressed(
         object sender,
         Microsoft.UI.Xaml.Input.PointerRoutedEventArgs args)
@@ -1191,6 +1290,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
             PrimaryButtonText = "Shut down",
             CloseButtonText = "Cancel",
             DefaultButton = ContentDialogButton.Close,
+            PrimaryButtonStyle = (Style)Root.Resources["DestructiveButtonStyle"],
         };
         if (await confirmation.ShowAsync() != ContentDialogResult.Primary)
         {

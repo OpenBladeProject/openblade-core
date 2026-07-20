@@ -77,4 +77,50 @@ public sealed class TrayHoverLabelTests
             new string('x', 200));
         Assert.Equal(TrayHoverLabelFormatter.MaximumLength, longResult.Length);
     }
+
+    [Fact]
+    public void Format_UsesEnabledItemsInUserSelectedOrder()
+    {
+        string result = TrayHoverLabelFormatter.Format(
+            [
+                TrayHoverLabelItemKind.GpuTemperature,
+                TrayHoverLabelItemKind.ActiveProfile,
+                TrayHoverLabelItemKind.CpuTemperature,
+            ],
+            isConnected: true,
+            PowerSource.UsbC,
+            PerformancePreset.Balanced,
+            "Not charging",
+            cpuTemperatureCelsius: 47,
+            gpuTemperatureCelsius: 52,
+            fan1Rpm: 2_300,
+            fan2Rpm: 2_500);
+
+        Assert.Equal("OpenBlade · GPU 52 °C · USB-C · Balanced · CPU 47 °C", result);
+        Assert.InRange(result.Length, 1, TrayHoverLabelFormatter.MaximumLength);
+    }
+
+    [Fact]
+    public void Format_OmitsItemsThatWouldOverflowWithoutReorderingThem()
+    {
+        string result = TrayHoverLabelFormatter.Format(
+            [
+                TrayHoverLabelItemKind.ActiveProfile,
+                TrayHoverLabelItemKind.Fan1Speed,
+                TrayHoverLabelItemKind.Fan2Speed,
+                TrayHoverLabelItemKind.BatteryPower,
+            ],
+            isConnected: true,
+            PowerSource.Battery,
+            PerformancePreset.BatterySaver,
+            new string('x', 200),
+            cpuTemperatureCelsius: null,
+            gpuTemperatureCelsius: null,
+            fan1Rpm: 2_300,
+            fan2Rpm: 2_500);
+
+        Assert.StartsWith("OpenBlade · Battery · Battery Saver · Fan 1 2,300 RPM", result);
+        Assert.DoesNotContain(new string('x', 10), result, StringComparison.Ordinal);
+        Assert.InRange(result.Length, 1, TrayHoverLabelFormatter.MaximumLength);
+    }
 }

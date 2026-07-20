@@ -1,4 +1,6 @@
 using System.ComponentModel;
+using System.Collections.ObjectModel;
+using System.Collections.Specialized;
 using System.Globalization;
 using System.IO;
 using System.Runtime.CompilerServices;
@@ -32,6 +34,7 @@ public sealed record ProfilePresentation(
     string LightingEffect,
     string LightingBrightness,
     string LightingColor,
+    string LogoLighting,
     string DisplayRefreshRate,
     string DisplayHdr,
     string DisplayColorProfile);
@@ -217,6 +220,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     private long latestAcceptedRevision = -1;
     private long connectionGeneration;
     private bool subscriptionConnected;
+    private bool changingTelemetryPreferences;
 
     public MainViewModel(IServiceClient serviceClient, IUiDispatcher dispatcher)
         : this(
@@ -270,6 +274,20 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         this.uiVersion = string.IsNullOrWhiteSpace(uiVersion)
             ? OpenBladeProductVersion.Read(typeof(MainViewModel).Assembly)
             : uiVersion.Trim();
+
+        DashboardTelemetryItems = new ObservableCollection<LiveReadingVisibilityOption>(
+            TelemetryPreferenceDefaults.DashboardItems.Select(kind =>
+                new LiveReadingVisibilityOption(kind, LiveReadingLabel(kind), true)));
+        TrayHoverLabelItems = new ObservableCollection<TrayHoverLabelItemOption>(
+            TelemetryPreferenceDefaults.TrayHoverItems.Select(item =>
+                new TrayHoverLabelItemOption(
+                    item.Kind,
+                    TrayHoverLabelItemLabel(item.Kind),
+                    item.IsEnabled)));
+        DashboardTelemetryItems.CollectionChanged += OnDashboardTelemetryItemsChanged;
+        TrayHoverLabelItems.CollectionChanged += OnTrayHoverLabelItemsChanged;
+        SubscribeTelemetryOptions(DashboardTelemetryItems);
+        SubscribeTrayHoverOptions(TrayHoverLabelItems);
 
         SetPerformanceCommand = CreateCommand(
             SetPerformanceAsync,
@@ -522,6 +540,90 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     public string Fan1RpmValue => FormatFanRpmValue(LiveReadings?.Fan1Rpm);
 
     public string Fan2RpmValue => FormatFanRpmValue(LiveReadings?.Fan2Rpm);
+
+    public string CpuTemperatureValue =>
+        FormatTemperatureValue(LiveReadings?.CpuTemperatureCelsius);
+
+    public string GpuTemperatureValue =>
+        FormatTemperatureValue(LiveReadings?.GpuTemperatureCelsius);
+
+    public ObservableCollection<LiveReadingVisibilityOption> DashboardTelemetryItems
+    {
+        get;
+    }
+
+    public ObservableCollection<TrayHoverLabelItemOption> TrayHoverLabelItems
+    {
+        get;
+    }
+
+    public IReadOnlyList<LiveReadingDisplayItem> VisibleDashboardTelemetryItems =>
+        DashboardTelemetryItems
+            .Where(option => option.IsEnabled)
+            .Select(option => new LiveReadingDisplayItem(
+                option.Label,
+                LiveReadingValue(option.Kind)))
+            .ToArray();
+
+    public bool ShowDashboardLiveReadings =>
+        LiveReadingsEnabled && DashboardTelemetryItems.Any(option => option.IsEnabled);
+
+    public IReadOnlyList<LiveReadingItemKind> EnabledDashboardTelemetryItems =>
+        DashboardTelemetryItems
+            .Where(option => option.IsEnabled)
+            .Select(option => option.Kind)
+            .ToArray();
+
+    public IReadOnlyList<TrayHoverLabelItemPreference> TrayHoverLabelPreferences =>
+        TrayHoverLabelItems
+            .Select(option => new TrayHoverLabelItemPreference(
+                option.Kind,
+                option.IsEnabled))
+            .ToArray();
+
+    public void ApplyTelemetryPreferences(
+        IEnumerable<LiveReadingItemKind> dashboardItems,
+        IEnumerable<TrayHoverLabelItemPreference> trayHoverItems)
+    {
+        ArgumentNullException.ThrowIfNull(dashboardItems);
+        ArgumentNullException.ThrowIfNull(trayHoverItems);
+
+        changingTelemetryPreferences = true;
+        try
+        {
+            HashSet<LiveReadingItemKind> enabledDashboard = dashboardItems
+                .Where(Enum.IsDefined)
+                .ToHashSet();
+            foreach (LiveReadingVisibilityOption option in DashboardTelemetryItems)
+            {
+                option.IsEnabled = enabledDashboard.Contains(option.Kind);
+            }
+
+            IReadOnlyList<TrayHoverLabelItemPreference> normalized =
+                TelemetryPreferenceDefaults.NormalizeTrayHoverItems(
+                    trayHoverItems,
+                    TrayHoverLabelMode);
+            UnsubscribeTrayHoverOptions(TrayHoverLabelItems);
+            TrayHoverLabelItems.CollectionChanged -= OnTrayHoverLabelItemsChanged;
+            TrayHoverLabelItems.Clear();
+            foreach (TrayHoverLabelItemPreference item in normalized)
+            {
+                TrayHoverLabelItems.Add(new TrayHoverLabelItemOption(
+                    item.Kind,
+                    TrayHoverLabelItemLabel(item.Kind),
+                    item.IsEnabled));
+            }
+            SubscribeTrayHoverOptions(TrayHoverLabelItems);
+            TrayHoverLabelItems.CollectionChanged += OnTrayHoverLabelItemsChanged;
+        }
+        finally
+        {
+            changingTelemetryPreferences = false;
+        }
+        SyncLegacyTrayHoverLabelMode();
+        NotifyDashboardTelemetryPreferencesChanged();
+        NotifyTrayHoverPreferencesChanged();
+    }
 
     public string LiveReadingsRefreshToolTip => !IsConnected
         ? "Live readings are unavailable while the OpenBlade service is not running."
@@ -1423,6 +1525,11 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Fan2RpmLabel)));
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Fan1RpmValue)));
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Fan2RpmValue)));
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(CpuTemperatureValue)));
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(GpuTemperatureValue)));
+            PropertyChanged?.Invoke(
+                this,
+                new PropertyChangedEventArgs(nameof(VisibleDashboardTelemetryItems)));
             NotifyTrayHoverLabel();
         }
     }
@@ -1714,6 +1821,16 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
 
     public ProfilePresentation SelectedProfilePresentation =>
         CreateProfilePresentation(GetPresentedProfile(SelectedProfileComparisonOption.Source));
+
+    public string LightingDisplayOffPolicyPresentation =>
+        Profiles.EffectiveLightingPowerPolicy.TurnOffWhenDisplayTurnsOff
+            ? "Turn off with the display"
+            : "Keep on with the display off";
+
+    public string LightingIdlePolicyPresentation =>
+        Profiles.EffectiveLightingPowerPolicy.IdleTimeoutMinutes is int minutes
+            ? $"After {minutes.ToString(CultureInfo.CurrentCulture)} minutes"
+            : "Never";
 
     public bool IsSelectedProfileActive =>
         SelectedProfileComparisonOption.Source == ActivePowerSource;
@@ -2162,6 +2279,8 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
 
     public LightingSettings LightingDraft => CreateLightingDraft();
 
+    public bool IsLightingApplyPending => lightingEditorDirty;
+
     public bool LightingTurnOffWithDisplayEditor
     {
         get => lightingTurnOffWithDisplayEditor;
@@ -2270,6 +2389,9 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             PropertyChanged?.Invoke(
                 this,
                 new PropertyChangedEventArgs(nameof(LiveReadingsObservationInterval)));
+            PropertyChanged?.Invoke(
+                this,
+                new PropertyChangedEventArgs(nameof(ShowDashboardLiveReadings)));
             if (!LiveReadingsEnabled)
             {
                 LiveReadings = null;
@@ -2335,6 +2457,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             }
 
             SetField(ref trayHoverLabelMode, value);
+            ApplyLegacyTrayHoverLabelMode(value);
             PropertyChanged?.Invoke(
                 this,
                 new PropertyChangedEventArgs(nameof(SelectedTrayHoverLabelOption)));
@@ -2353,11 +2476,17 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     }
 
     public string TrayHoverLabelText => TrayHoverLabelFormatter.Format(
-        TrayHoverLabelMode,
+        TrayHoverLabelItems
+            .Where(option => option.IsEnabled)
+            .Select(option => option.Kind),
         IsConnected,
         ActivePowerSource,
         SelectedPerformance,
-        BatteryPowerFlowLabel);
+        BatteryPowerFlowLabel,
+        LiveReadings?.CpuTemperatureCelsius,
+        LiveReadings?.GpuTemperatureCelsius,
+        LiveReadings?.Fan1Rpm,
+        LiveReadings?.Fan2Rpm);
 
     public TrayIconState TrayIconState
     {
@@ -3267,7 +3396,11 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             await dispatcher.InvokeAsync(
                 () =>
                 {
-                    lightingEditorDirty = false;
+                    if (LightingDraft != requested)
+                    {
+                        return;
+                    }
+                    SetLightingEditorDirty(false);
                     if (latestStatus is not null
                         && latestAcceptedRevision > revisionAtStart)
                     {
@@ -3531,7 +3664,10 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             () =>
             {
                 Profiles = draft;
-                LoadLightingPowerPolicyEditor(policy);
+                if (LightingPowerPolicyDraft == policy)
+                {
+                    LoadLightingPowerPolicyEditor(policy);
+                }
             },
             token).ConfigureAwait(false);
     }
@@ -4129,7 +4265,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         if (lastConfirmedLightingEditorPowerSource is { } previousPowerSource
             && previousPowerSource != powerSource)
         {
-            lightingEditorDirty = false;
+            SetLightingEditorDirty(false);
         }
 
         lastConfirmedLightingEditorPowerSource = powerSource;
@@ -4525,6 +4661,12 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         PropertyChanged?.Invoke(
             this,
             new PropertyChangedEventArgs(nameof(BatteryProfilePresentation)));
+        PropertyChanged?.Invoke(
+            this,
+            new PropertyChangedEventArgs(nameof(LightingDisplayOffPolicyPresentation)));
+        PropertyChanged?.Invoke(
+            this,
+            new PropertyChangedEventArgs(nameof(LightingIdlePolicyPresentation)));
         NotifySelectedProfilePresentation();
     }
 
@@ -4660,17 +4802,20 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         DisplayProfileSettings display = profile.Display ?? DisplayProfileSettings.Unconfigured();
         return new ProfilePresentation(
             FormatPerformanceProfile(profile),
-            profile.Fans switch
-            {
-                FanMode.Automatic => "Automatic",
-                FanMode.Maximum => "Maximum",
-                _ => profile.Fans.ToString(),
-            },
+            FormatFanControl(profile),
             FormatLightingEffect(profile.Lighting),
             profile.Lighting.Effect == LightingEffect.Off
                 ? "Not applicable"
                 : $"{profile.Lighting.Brightness}%",
             FormatLightingColor(profile.Lighting),
+            profile.Lighting.LogoMode switch
+            {
+                LogoLightingMode.Static => "Static",
+                LogoLightingMode.Breathing => "Breathing",
+                LogoLightingMode.Off => "Off",
+                null => "Use current",
+                _ => "Use current",
+            },
             FormatDisplayRefreshRate(display.RefreshRateKey),
             display.HdrEnabled switch
             {
@@ -4679,6 +4824,21 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
                 null => "Use current",
             },
             FormatDisplayColorProfile(display.ColorProfileKey));
+    }
+
+    private static string FormatFanControl(PowerProfile profile)
+    {
+        FanControlSettings settings = profile.FanControl
+            ?? FanControlSettings.FromLegacy(profile.Fans);
+        return settings.Mode switch
+        {
+            FanMode.Automatic => "Automatic",
+            FanMode.Fixed =>
+                $"Fixed, {settings.FixedSpeedRpm.ToString("N0", CultureInfo.CurrentCulture)} RPM",
+            FanMode.ManualCurve => "Manual fan curve",
+            FanMode.Maximum => "Maximum",
+            _ => settings.Mode.ToString(),
+        };
     }
 
     private static string FormatPerformanceProfile(PowerProfile profile) =>
@@ -5146,6 +5306,207 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         ? $"{value.ToString("N0", CultureInfo.CurrentCulture)} RPM"
         : "Unavailable";
 
+    private static string FormatTemperatureValue(int? celsius) => celsius is int value
+        ? $"{value.ToString(CultureInfo.CurrentCulture)} °C"
+        : "Unavailable";
+
+    private string LiveReadingValue(LiveReadingItemKind kind) => kind switch
+    {
+        LiveReadingItemKind.BatteryPower => BatteryPowerFlowLabel,
+        LiveReadingItemKind.CpuTemperature => CpuTemperatureValue,
+        LiveReadingItemKind.GpuTemperature => GpuTemperatureValue,
+        LiveReadingItemKind.Fan1Speed => Fan1RpmValue,
+        LiveReadingItemKind.Fan2Speed => Fan2RpmValue,
+        _ => throw new ArgumentOutOfRangeException(nameof(kind)),
+    };
+
+    private static string LiveReadingLabel(LiveReadingItemKind kind) => kind switch
+    {
+        LiveReadingItemKind.BatteryPower => "Battery",
+        LiveReadingItemKind.CpuTemperature => "CPU temperature",
+        LiveReadingItemKind.GpuTemperature => "GPU temperature",
+        LiveReadingItemKind.Fan1Speed => "Fan 1",
+        LiveReadingItemKind.Fan2Speed => "Fan 2",
+        _ => throw new ArgumentOutOfRangeException(nameof(kind)),
+    };
+
+    private static string TrayHoverLabelItemLabel(TrayHoverLabelItemKind kind) => kind switch
+    {
+        TrayHoverLabelItemKind.ActiveProfile => "Active profile",
+        TrayHoverLabelItemKind.BatteryPower => "Battery power",
+        TrayHoverLabelItemKind.CpuTemperature => "CPU temperature",
+        TrayHoverLabelItemKind.GpuTemperature => "GPU temperature",
+        TrayHoverLabelItemKind.Fan1Speed => "Fan 1 speed",
+        TrayHoverLabelItemKind.Fan2Speed => "Fan 2 speed",
+        _ => throw new ArgumentOutOfRangeException(nameof(kind)),
+    };
+
+    private void SubscribeTelemetryOptions(
+        IEnumerable<LiveReadingVisibilityOption> options)
+    {
+        foreach (LiveReadingVisibilityOption option in options)
+        {
+            option.PropertyChanged += OnDashboardTelemetryOptionChanged;
+        }
+    }
+
+    private void SubscribeTrayHoverOptions(IEnumerable<TrayHoverLabelItemOption> options)
+    {
+        foreach (TrayHoverLabelItemOption option in options)
+        {
+            option.PropertyChanged += OnTrayHoverLabelOptionChanged;
+        }
+    }
+
+    private void UnsubscribeTrayHoverOptions(IEnumerable<TrayHoverLabelItemOption> options)
+    {
+        foreach (TrayHoverLabelItemOption option in options)
+        {
+            option.PropertyChanged -= OnTrayHoverLabelOptionChanged;
+        }
+    }
+
+    private void OnDashboardTelemetryItemsChanged(
+        object? sender,
+        NotifyCollectionChangedEventArgs args)
+    {
+        if (args.OldItems is not null)
+        {
+            foreach (LiveReadingVisibilityOption option in args.OldItems)
+            {
+                option.PropertyChanged -= OnDashboardTelemetryOptionChanged;
+            }
+        }
+        if (args.NewItems is not null)
+        {
+            foreach (LiveReadingVisibilityOption option in args.NewItems)
+            {
+                option.PropertyChanged += OnDashboardTelemetryOptionChanged;
+            }
+        }
+        NotifyDashboardTelemetryPreferencesChanged();
+    }
+
+    private void OnTrayHoverLabelItemsChanged(
+        object? sender,
+        NotifyCollectionChangedEventArgs args)
+    {
+        if (args.OldItems is not null)
+        {
+            foreach (TrayHoverLabelItemOption option in args.OldItems)
+            {
+                option.PropertyChanged -= OnTrayHoverLabelOptionChanged;
+            }
+        }
+        if (args.NewItems is not null)
+        {
+            foreach (TrayHoverLabelItemOption option in args.NewItems)
+            {
+                option.PropertyChanged += OnTrayHoverLabelOptionChanged;
+            }
+        }
+        SyncLegacyTrayHoverLabelMode();
+        NotifyTrayHoverPreferencesChanged();
+    }
+
+    private void OnDashboardTelemetryOptionChanged(
+        object? sender,
+        PropertyChangedEventArgs args)
+    {
+        if (args.PropertyName == nameof(LiveReadingVisibilityOption.IsEnabled))
+        {
+            NotifyDashboardTelemetryPreferencesChanged();
+        }
+    }
+
+    private void OnTrayHoverLabelOptionChanged(
+        object? sender,
+        PropertyChangedEventArgs args)
+    {
+        if (args.PropertyName == nameof(TrayHoverLabelItemOption.IsEnabled))
+        {
+            SyncLegacyTrayHoverLabelMode();
+            NotifyTrayHoverPreferencesChanged();
+        }
+    }
+
+    private void NotifyDashboardTelemetryPreferencesChanged()
+    {
+        if (changingTelemetryPreferences)
+        {
+            return;
+        }
+        PropertyChanged?.Invoke(
+            this,
+            new PropertyChangedEventArgs(nameof(EnabledDashboardTelemetryItems)));
+        PropertyChanged?.Invoke(
+            this,
+            new PropertyChangedEventArgs(nameof(VisibleDashboardTelemetryItems)));
+        PropertyChanged?.Invoke(
+            this,
+            new PropertyChangedEventArgs(nameof(ShowDashboardLiveReadings)));
+    }
+
+    private void NotifyTrayHoverPreferencesChanged()
+    {
+        if (changingTelemetryPreferences)
+        {
+            return;
+        }
+        PropertyChanged?.Invoke(
+            this,
+            new PropertyChangedEventArgs(nameof(TrayHoverLabelPreferences)));
+        NotifyTrayHoverLabel();
+    }
+
+    private void ApplyLegacyTrayHoverLabelMode(TrayHoverLabelMode mode)
+    {
+        changingTelemetryPreferences = true;
+        try
+        {
+            Dictionary<TrayHoverLabelItemKind, bool> enabled =
+                TelemetryPreferenceDefaults.FromLegacyMode(mode)
+                    .ToDictionary(item => item.Kind, item => item.IsEnabled);
+            foreach (TrayHoverLabelItemOption option in TrayHoverLabelItems)
+            {
+                option.IsEnabled = enabled.GetValueOrDefault(option.Kind);
+            }
+        }
+        finally
+        {
+            changingTelemetryPreferences = false;
+        }
+        NotifyTrayHoverPreferencesChanged();
+    }
+
+    private void SyncLegacyTrayHoverLabelMode()
+    {
+        if (changingTelemetryPreferences)
+        {
+            return;
+        }
+
+        HashSet<TrayHoverLabelItemKind> enabled = TrayHoverLabelItems
+            .Where(option => option.IsEnabled)
+            .Select(option => option.Kind)
+            .ToHashSet();
+        TrayHoverLabelMode mode = enabled.SetEquals(
+                [TrayHoverLabelItemKind.ActiveProfile, TrayHoverLabelItemKind.BatteryPower])
+            ? TrayHoverLabelMode.ProfileAndPowerFlow
+            : enabled.SetEquals([TrayHoverLabelItemKind.ActiveProfile])
+                ? TrayHoverLabelMode.ActiveProfile
+                : enabled.SetEquals([TrayHoverLabelItemKind.BatteryPower])
+                    ? TrayHoverLabelMode.BatteryPowerFlow
+                    : TrayHoverLabelMode.OpenBlade;
+        if (trayHoverLabelMode != mode)
+        {
+            SetField(ref trayHoverLabelMode, mode, nameof(TrayHoverLabelMode));
+            PropertyChanged?.Invoke(
+                this,
+                new PropertyChangedEventArgs(nameof(SelectedTrayHoverLabelOption)));
+        }
+    }
+
     private static string FormatControlAccessStatus(ServiceStatusSnapshot status)
     {
         if (!status.DeviceVerified)
@@ -5263,6 +5624,11 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(BatteryPowerFlowLabel)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Fan1RpmLabel)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Fan2RpmLabel)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(CpuTemperatureValue)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(GpuTemperatureValue)));
+        PropertyChanged?.Invoke(
+            this,
+            new PropertyChangedEventArgs(nameof(VisibleDashboardTelemetryItems)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(LiveReadingsRefreshToolTip)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ActivePerformanceLabel)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ActiveFanModeLabel)));
@@ -5446,8 +5812,8 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             return desired;
         }
 
-        if (desired is FanMode.Fixed or FanMode.ManualCurve
-            && observed == FanMode.Maximum)
+        if (desired is FanMode.Fixed or FanMode.ManualCurve or FanMode.Maximum
+            && observed is FanMode.Fixed or FanMode.ManualCurve or FanMode.Maximum)
         {
             return desired;
         }
@@ -5558,7 +5924,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             return;
         }
 
-        lightingEditorDirty = true;
+        SetLightingEditorDirty(true);
         string prefix = secondary ? "LightingSecondary" : "Lighting";
         SetField(ref red, (int)value.Red, $"{prefix}RedEditor");
         SetField(ref green, (int)value.Green, $"{prefix}GreenEditor");
@@ -5583,11 +5949,24 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             return false;
         }
 
-        lightingEditorDirty = true;
+        SetLightingEditorDirty(true);
         SetField(ref field, value, propertyName);
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(LightingDraft)));
         NotifyCommands();
         return true;
+    }
+
+    private void SetLightingEditorDirty(bool value)
+    {
+        if (lightingEditorDirty == value)
+        {
+            return;
+        }
+
+        lightingEditorDirty = value;
+        PropertyChanged?.Invoke(
+            this,
+            new PropertyChangedEventArgs(nameof(IsLightingApplyPending)));
     }
 
     private void NotifyLightingParameterPresentation()

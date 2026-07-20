@@ -25,6 +25,12 @@ public sealed class UiPreferenceStoreTests : IDisposable
             TrayHoverLabelMode.ProfileAndPowerFlow,
             preferences.TrayHoverLabelMode);
         Assert.False(preferences.StartMinimized);
+        Assert.Equal(
+            TelemetryPreferenceDefaults.DashboardItems,
+            preferences.EffectiveDashboardTelemetryItems);
+        Assert.Equal(
+            TelemetryPreferenceDefaults.TrayHoverItems,
+            preferences.EffectiveTrayHoverLabelItems);
     }
 
     [Fact]
@@ -38,7 +44,18 @@ public sealed class UiPreferenceStoreTests : IDisposable
             LiveReadingsEnabled: false,
             TrayHoverLabelMode: TrayHoverLabelMode.BatteryPowerFlow,
             LiveReadingsRefreshCadence: LiveReadingsCadence.EveryTenSeconds,
-            StartMinimized: true));
+            StartMinimized: true,
+            DashboardTelemetryItems:
+            [
+                LiveReadingItemKind.GpuTemperature,
+                LiveReadingItemKind.BatteryPower,
+            ],
+            TrayHoverLabelItems:
+            [
+                new(TrayHoverLabelItemKind.GpuTemperature, true),
+                new(TrayHoverLabelItemKind.ActiveProfile, true),
+                new(TrayHoverLabelItemKind.BatteryPower, false),
+            ]));
 
         UiPreferences reloaded = await store.LoadAsync();
         using JsonDocument document = JsonDocument.Parse(await File.ReadAllTextAsync(path));
@@ -47,6 +64,22 @@ public sealed class UiPreferenceStoreTests : IDisposable
         Assert.Equal(LiveReadingsCadence.Off, reloaded.EffectiveLiveReadingsCadence);
         Assert.Equal(TrayHoverLabelMode.BatteryPowerFlow, reloaded.TrayHoverLabelMode);
         Assert.True(reloaded.StartMinimized);
+        Assert.Equal(
+            [LiveReadingItemKind.BatteryPower, LiveReadingItemKind.GpuTemperature],
+            reloaded.EffectiveDashboardTelemetryItems);
+        Assert.Equal(
+            [
+                TrayHoverLabelItemKind.GpuTemperature,
+                TrayHoverLabelItemKind.ActiveProfile,
+                TrayHoverLabelItemKind.BatteryPower,
+                TrayHoverLabelItemKind.CpuTemperature,
+                TrayHoverLabelItemKind.Fan1Speed,
+                TrayHoverLabelItemKind.Fan2Speed,
+            ],
+            reloaded.EffectiveTrayHoverLabelItems.Select(item => item.Kind));
+        Assert.Equal(
+            [true, true, false, false, false, false],
+            reloaded.EffectiveTrayHoverLabelItems.Select(item => item.IsEnabled));
         Assert.Equal("Dark", document.RootElement.GetProperty("theme").GetString());
         Assert.False(document.RootElement.TryGetProperty(
             "keepManualChangesUntilCleared",
@@ -59,6 +92,13 @@ public sealed class UiPreferenceStoreTests : IDisposable
             "EveryTenSeconds",
             document.RootElement.GetProperty("liveReadingsRefreshCadence").GetString());
         Assert.True(document.RootElement.GetProperty("startMinimized").GetBoolean());
+        Assert.Equal(
+            "GpuTemperature",
+            document.RootElement.GetProperty("dashboardTelemetryItems")[0].GetString());
+        Assert.Equal(
+            "GpuTemperature",
+            document.RootElement.GetProperty("trayHoverLabelItems")[0]
+                .GetProperty("kind").GetString());
     }
 
     [Fact]
@@ -108,6 +148,39 @@ public sealed class UiPreferenceStoreTests : IDisposable
 
         Assert.False(preferences.LiveReadingsEnabled);
         Assert.Equal(LiveReadingsCadence.Off, preferences.EffectiveLiveReadingsCadence);
+    }
+
+    [Theory]
+    [InlineData(TrayHoverLabelMode.OpenBlade, false, false)]
+    [InlineData(TrayHoverLabelMode.ActiveProfile, true, false)]
+    [InlineData(TrayHoverLabelMode.BatteryPowerFlow, false, true)]
+    [InlineData(TrayHoverLabelMode.ProfileAndPowerFlow, true, true)]
+    public async Task LoadAsync_LegacyHoverModeMigratesToOrderedItems(
+        TrayHoverLabelMode mode,
+        bool profileEnabled,
+        bool powerEnabled)
+    {
+        Directory.CreateDirectory(directory);
+        string path = Path.Combine(directory, "preferences.json");
+        await File.WriteAllTextAsync(
+            path,
+            $$"""{"theme":"Dark","trayHoverLabelMode":"{{mode}}"}""");
+
+        UiPreferences preferences = await new UiPreferenceStore(path).LoadAsync();
+
+        Assert.Equal(
+            profileEnabled,
+            preferences.EffectiveTrayHoverLabelItems.Single(
+                item => item.Kind == TrayHoverLabelItemKind.ActiveProfile).IsEnabled);
+        Assert.Equal(
+            powerEnabled,
+            preferences.EffectiveTrayHoverLabelItems.Single(
+                item => item.Kind == TrayHoverLabelItemKind.BatteryPower).IsEnabled);
+        Assert.All(
+            preferences.EffectiveTrayHoverLabelItems.Where(item =>
+                item.Kind is not TrayHoverLabelItemKind.ActiveProfile
+                    and not TrayHoverLabelItemKind.BatteryPower),
+            item => Assert.False(item.IsEnabled));
     }
 
     [Fact]

@@ -163,6 +163,47 @@ public sealed class WinUiShellContractTests
     }
 
     [Fact]
+    public void LightingAutoAppliesWithDebounceAndHasNoSeparateApplyAction()
+    {
+        string xaml = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml");
+        string window = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml.cs");
+
+        Assert.DoesNotContain("Apply lighting", xaml, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("Apply switch-off behavior", xaml, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("TimeSpan.FromMilliseconds(500)", window, StringComparison.Ordinal);
+        Assert.Contains("ScheduleLightingCommit", window, StringComparison.Ordinal);
+        Assert.Contains("ViewModel.SetLightingCommand", window, StringComparison.Ordinal);
+        Assert.Contains("ViewModel.SaveLightingPowerPolicyCommand", window, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void SettingsExposeReorderableTelemetryAndDestructiveShutdown()
+    {
+        string xaml = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml");
+        string app = ReadRepositoryFile("src", "OpenBlade.Tray", "App.xaml");
+
+        Assert.Contains("ViewModel.DashboardTelemetryItems", xaml, StringComparison.Ordinal);
+        Assert.Contains("ViewModel.TrayHoverLabelItems", xaml, StringComparison.Ordinal);
+        Assert.Contains("CanDragItems=\"True\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("CanReorderItems=\"True\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("ReorderMode=\"Enabled\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("Style=\"{StaticResource DestructiveButtonStyle}\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("SystemFillColorCriticalBrush", xaml, StringComparison.Ordinal);
+        Assert.Contains("#44D62C", app, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void ProfileComparisonIncludesCurrentLightingAndPowerPolicySettings()
+    {
+        string xaml = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml");
+
+        Assert.Contains("Laptop lid logo", xaml, StringComparison.Ordinal);
+        Assert.Contains("Switch off lighting · all profiles", xaml, StringComparison.Ordinal);
+        Assert.Contains("ViewModel.LightingDisplayOffPolicyPresentation", xaml, StringComparison.Ordinal);
+        Assert.Contains("ViewModel.LightingIdlePolicyPresentation", xaml, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void DashboardStatusPillsShareOneNeutralContainerStyle()
     {
         string xaml = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml");
@@ -202,7 +243,10 @@ public sealed class WinUiShellContractTests
         Assert.Equal(4, CountOccurrences(xaml, "Style=\"{StaticResource ActiveProfilePillTextStyle}\""));
         Assert.Contains("<TextBlock Text=\"Battery\" Style=\"{StaticResource CardTitleStyle}\" />", xaml, StringComparison.Ordinal);
         Assert.Contains("Text=\"Power mode\"", xaml, StringComparison.Ordinal);
-        Assert.Equal(4, CountOccurrences(xaml, "Style=\"{StaticResource SettingsSubcardStyle}\""));
+        Assert.Equal(3, CountOccurrences(xaml, "Style=\"{StaticResource SettingsSubcardStyle}\""));
+        Assert.Equal(3, CountOccurrences(xaml, "Style=\"{StaticResource SettingsLastSubcardStyle}\""));
+        Assert.Contains("<Setter Property=\"BorderThickness\" Value=\"0,1,0,0\" />", xaml, StringComparison.Ordinal);
+        Assert.DoesNotContain("<Setter Property=\"Margin\" Value=\"16,0,16,14\" />", xaml, StringComparison.Ordinal);
         Assert.DoesNotContain("Text=\"On battery\"", xaml, StringComparison.Ordinal);
     }
 

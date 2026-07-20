@@ -198,11 +198,11 @@ public sealed class CapabilityPresentationTests
             settings.Descendants().Count(element =>
                 Attribute(element, "Style") == "{StaticResource SettingsGroupStyle}"));
         Assert.Equal(
-            5,
+            6,
             settings.Descendants().Count(element =>
                 Attribute(element, "Style") == "{StaticResource SettingsRowStyle}"));
         Assert.Equal(
-            4,
+            3,
             settings.Descendants().Count(element =>
                 Attribute(element, "Style") == "{StaticResource SettingsLastRowStyle}"));
 
@@ -260,7 +260,6 @@ public sealed class CapabilityPresentationTests
                  {
                      "Live readings refresh interval",
                      "App theme",
-                     "Taskbar hover label",
                  })
         {
             XElement picker = Assert.Single(settings.Descendants(), element =>
@@ -273,9 +272,21 @@ public sealed class CapabilityPresentationTests
             Assert.Null(Attribute(picker, "VerticalAlignment"));
         }
         Assert.Contains(
-            "Choose how often OpenBlade checks fan speed and net battery power.",
+            "Choose how often OpenBlade checks temperatures, fan speed, and net battery power.",
             xaml,
             StringComparison.Ordinal);
+        XElement hoverContents = Assert.Single(settings.Descendants(), element =>
+            element.Name.LocalName == "ListView"
+            && Attribute(element, "AutomationProperties.Name")
+                == "Taskbar hover label contents");
+        Assert.Equal("True", Attribute(hoverContents, "CanDragItems"));
+        Assert.Equal("True", Attribute(hoverContents, "CanReorderItems"));
+        Assert.Equal("Enabled", Attribute(hoverContents, "ReorderMode"));
+        Assert.Contains(settings.Descendants(), element =>
+            element.Name.LocalName == "ItemsControl"
+            && Attribute(element, "ItemsSource")?.Contains(
+                "DashboardTelemetryItems",
+                StringComparison.Ordinal) == true);
         Assert.DoesNotContain(
             "Values may stay the same between checks.",
             xaml,
@@ -465,7 +476,7 @@ public sealed class CapabilityPresentationTests
     }
 
     [Fact]
-    public void Dashboard_HeroReadingsAreAFullWidthThreeColumnFooter()
+    public void Dashboard_HeroReadingsAreAFullWidthConfigurableFooter()
     {
         string xaml = ReadMainWindowXaml();
         XDocument document = XDocument.Parse(xaml);
@@ -481,10 +492,16 @@ public sealed class CapabilityPresentationTests
         Assert.True(
             horizontalAlignment is null or "Stretch",
             $"Hero readings must use the native Stretch default or set it explicitly; found '{horizontalAlignment}'.");
-        Assert.Equal(
-            3,
-            readings.Descendants().Count(element =>
-                element.Name.LocalName == "ColumnDefinition"));
+        XElement readingsList = Assert.Single(
+            readings.Descendants(),
+            element => element.Name.LocalName == "ItemsControl"
+                && Attribute(element, "ItemsSource")?.Contains(
+                    "VisibleDashboardTelemetryItems",
+                    StringComparison.Ordinal) == true);
+        XElement wrapGrid = Assert.Single(
+            readingsList.Descendants(),
+            element => element.Name.LocalName == "ItemsWrapGrid");
+        Assert.Equal("Horizontal", Attribute(wrapGrid, "Orientation"));
         Assert.Equal(
             "{x:Bind ViewModel.LiveReadingsRefreshToolTip, Mode=OneWay}",
             Attribute(readings, "AutomationProperties.HelpText"));
@@ -509,17 +526,12 @@ public sealed class CapabilityPresentationTests
         Assert.DoesNotContain(readings.Descendants(), element =>
             element.Name.LocalName == "TextBlock"
             && Attribute(element, "Text") == "Live readings");
-        foreach (string property in new[]
-                 {
-                     "ViewModel.BatteryPowerFlowLabel",
-                     "ViewModel.Fan1RpmValue",
-                     "ViewModel.Fan2RpmValue",
-                 })
-        {
-            Assert.Contains(readings.Descendants(), element =>
-                element.Name.LocalName == "TextBlock"
-                && Attribute(element, "Text")?.Contains(property, StringComparison.Ordinal) is true);
-        }
+        Assert.Contains(readingsList.Descendants(), element =>
+            element.Name.LocalName == "TextBlock"
+            && Attribute(element, "Text") == "{x:Bind Label, Mode=OneTime}");
+        Assert.Contains(readingsList.Descendants(), element =>
+            element.Name.LocalName == "TextBlock"
+            && Attribute(element, "Text") == "{x:Bind Value, Mode=OneTime}");
 
         string window = ReadTraySource("MainWindow.xaml.cs");
         Assert.DoesNotContain("Grid.SetRow(HeroReadings", window, StringComparison.Ordinal);
