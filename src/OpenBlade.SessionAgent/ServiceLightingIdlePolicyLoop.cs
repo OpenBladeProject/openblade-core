@@ -110,7 +110,8 @@ public sealed class ServiceLightingIdlePolicyLoop
                 case ServiceWatchUpdate.Connected connectedUpdate:
                     Volatile.Write(
                         ref currentPolicy,
-                        connectedUpdate.Status.Profiles.EffectiveLightingPowerPolicy);
+                        connectedUpdate.Status.Profiles.LightingPowerPolicyFor(
+                            connectedUpdate.Status.ActivePowerSource));
                     if (Interlocked.Exchange(ref connected, 1) == 0)
                     {
                         Interlocked.Exchange(ref lastSentState, -1);

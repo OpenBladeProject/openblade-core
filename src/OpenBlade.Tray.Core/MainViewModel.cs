@@ -35,6 +35,8 @@ public sealed record ProfilePresentation(
     string LightingBrightness,
     string LightingColor,
     string LogoLighting,
+    string LightingDisplayOff,
+    string LightingIdle,
     string DisplayRefreshRate,
     string DisplayHdr,
     string DisplayColorProfile);
@@ -202,6 +204,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     private FanMode? activeProfileDraftFans;
     private FanControlSettings? activeProfileDraftFanControl;
     private LightingSettings? activeProfileDraftLighting;
+    private LightingPowerPolicy? activeProfileDraftLightingPowerPolicy;
     private DisplayProfileSettings? activeProfileDraftDisplay;
     private DisplayProfileSettings? activeProfileOriginalDisplay;
     private ThemePreference theme = ThemePreference.FollowWindows;
@@ -557,13 +560,52 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         get;
     }
 
-    public IReadOnlyList<LiveReadingDisplayItem> VisibleDashboardTelemetryItems =>
-        DashboardTelemetryItems
-            .Where(option => option.IsEnabled)
-            .Select(option => new LiveReadingDisplayItem(
-                option.Label,
-                LiveReadingValue(option.Kind)))
-            .ToArray();
+    public IReadOnlyList<LiveReadingGroupDisplayItem> VisibleDashboardTelemetryGroups
+    {
+        get
+        {
+            List<LiveReadingGroupDisplayItem> groups = [];
+            if (DashboardTelemetryEnabled(LiveReadingItemKind.BatteryPower))
+            {
+                groups.Add(new LiveReadingGroupDisplayItem(
+                    "Battery",
+                    BatteryPowerFlowLabel));
+            }
+
+            string[] temperatures =
+            [
+                DashboardTelemetryEnabled(LiveReadingItemKind.CpuTemperature)
+                    ? $"CPU {CpuTemperatureValue}"
+                    : string.Empty,
+                DashboardTelemetryEnabled(LiveReadingItemKind.GpuTemperature)
+                    ? $"GPU {GpuTemperatureValue}"
+                    : string.Empty,
+            ];
+            string temperatureValue = JoinLiveReadingValues(temperatures);
+            if (temperatureValue.Length > 0)
+            {
+                groups.Add(new LiveReadingGroupDisplayItem(
+                    "Temperatures",
+                    temperatureValue));
+            }
+
+            bool showFan1 = DashboardTelemetryEnabled(LiveReadingItemKind.Fan1Speed);
+            bool showFan2 = DashboardTelemetryEnabled(LiveReadingItemKind.Fan2Speed);
+            string fanValue = (showFan1, showFan2) switch
+            {
+                (true, true) =>
+                    $"1: {Fan1RpmValue.Replace(" RPM", string.Empty, StringComparison.Ordinal)} · 2: {Fan2RpmValue}",
+                (true, false) => $"Fan 1 {Fan1RpmValue}",
+                (false, true) => $"Fan 2 {Fan2RpmValue}",
+                _ => string.Empty,
+            };
+            if (fanValue.Length > 0)
+            {
+                groups.Add(new LiveReadingGroupDisplayItem("Fans", fanValue));
+            }
+            return groups;
+        }
+    }
 
     public bool ShowDashboardLiveReadings =>
         LiveReadingsEnabled && DashboardTelemetryItems.Any(option => option.IsEnabled);
@@ -1529,7 +1571,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(GpuTemperatureValue)));
             PropertyChanged?.Invoke(
                 this,
-                new PropertyChangedEventArgs(nameof(VisibleDashboardTelemetryItems)));
+                new PropertyChangedEventArgs(nameof(VisibleDashboardTelemetryGroups)));
             NotifyTrayHoverLabel();
         }
     }
@@ -1761,7 +1803,8 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         || activeProfileDraftFans is not null
         || activeProfileDraftFanControl is not null;
 
-    public bool HasLightingProfileDraft => activeProfileDraftLighting is not null;
+    public bool HasLightingProfileDraft => activeProfileDraftLighting is not null
+        || activeProfileDraftLightingPowerPolicy is not null;
 
     public bool HasDisplayProfileDraft => activeProfileDraftDisplay is not null;
 
@@ -1823,12 +1866,14 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         CreateProfilePresentation(GetPresentedProfile(SelectedProfileComparisonOption.Source));
 
     public string LightingDisplayOffPolicyPresentation =>
-        Profiles.EffectiveLightingPowerPolicy.TurnOffWhenDisplayTurnsOff
+        GetPresentedProfile(SelectedProfileComparisonOption.Source)
+            .EffectiveLightingPowerPolicy.TurnOffWhenDisplayTurnsOff
             ? "Turn off with the display"
             : "Keep on with the display off";
 
     public string LightingIdlePolicyPresentation =>
-        Profiles.EffectiveLightingPowerPolicy.IdleTimeoutMinutes is int minutes
+        GetPresentedProfile(SelectedProfileComparisonOption.Source)
+            .EffectiveLightingPowerPolicy.IdleTimeoutMinutes is int minutes
             ? $"After {minutes.ToString(CultureInfo.CurrentCulture)} minutes"
             : "Never";
 
@@ -2921,7 +2966,13 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         Profiles = status.Profiles;
         if (!lightingPowerPolicyEditorDirty)
         {
-            LoadLightingPowerPolicyEditor(status.Profiles.EffectiveLightingPowerPolicy);
+            LoadLightingPowerPolicyEditor(
+                status.ActivePowerSource is PowerSource.PluggedIn
+                    or PowerSource.Battery
+                    or PowerSource.UsbC
+                    ? GetPresentedProfile(status.ActivePowerSource)
+                        .EffectiveLightingPowerPolicy
+                    : LightingPowerPolicy.Disabled);
         }
         if (!profileEditorsDirty)
         {
@@ -3651,11 +3702,8 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             return;
         }
 
-        ProfileSet draft = Profiles with { LightingPowerPolicy = policy };
-        bool accepted = await RunOperationAsync(
-            cancellationToken => serviceClient.UpdateProfilesAsync(draft, cancellationToken),
-            token).ConfigureAwait(false);
-        if (!accepted)
+        if (ActivePowerSource is not (
+                PowerSource.PluggedIn or PowerSource.Battery or PowerSource.UsbC))
         {
             return;
         }
@@ -3663,7 +3711,9 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         await dispatcher.InvokeAsync(
             () =>
             {
-                Profiles = draft;
+                MarkActiveProfileDraft(
+                    ActivePowerSource,
+                    lightingPowerPolicy: policy);
                 if (LightingPowerPolicyDraft == policy)
                 {
                     LoadLightingPowerPolicyEditor(policy);
@@ -3675,7 +3725,9 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     private bool CanSaveLightingPowerPolicy(object? parameter) =>
         Volatile.Read(ref disposed) == 0
         && IsConnected
-        && CanControlLighting
+        && CanMutate
+        && ActivePowerSource is (
+            PowerSource.PluggedIn or PowerSource.Battery or PowerSource.UsbC)
         && lightingPowerPolicyEditorDirty
         && parameter is LightingPowerPolicy policy
         && policy.IdleTimeoutMinutes is null or >= 1 and <= 60;
@@ -3767,6 +3819,11 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         if (restored && ActivePowerSource == source)
         {
             ClearActiveProfileDraft(group);
+            if (group == ProfileDraftGroup.Lighting)
+            {
+                LoadLightingPowerPolicyEditor(
+                    GetProfile(source).EffectiveLightingPowerPolicy);
+            }
         }
         else if (ActivePowerSource != source)
         {
@@ -3802,6 +3859,8 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         if (controlsRestored && displayRestored && ActivePowerSource == source)
         {
             ClearActiveProfileDraft();
+            LoadLightingPowerPolicyEditor(
+                GetProfile(source).EffectiveLightingPowerPolicy);
         }
         else if (ActivePowerSource != source)
         {
@@ -4369,6 +4428,8 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             Fans = activeProfileDraftFans ?? profile.Fans,
             FanControl = activeProfileDraftFanControl ?? profile.FanControl,
             Lighting = activeProfileDraftLighting ?? profile.Lighting,
+            LightingPowerPolicy = activeProfileDraftLightingPowerPolicy
+                ?? profile.LightingPowerPolicy,
             Display = activeProfileDraftDisplay ?? profile.Display,
         };
     }
@@ -4406,6 +4467,8 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             ProfileDraftGroup.Lighting => saved with
             {
                 Lighting = activeProfileDraftLighting ?? saved.Lighting,
+                LightingPowerPolicy = activeProfileDraftLightingPowerPolicy
+                    ?? saved.LightingPowerPolicy,
             },
             ProfileDraftGroup.Display => saved with
             {
@@ -4452,6 +4515,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         FanMode? fans = null,
         FanControlSettings? fanControl = null,
         LightingSettings? lighting = null,
+        LightingPowerPolicy? lightingPowerPolicy = null,
         DisplayProfileSettings? display = null,
         DisplayProfileSettings? previousDisplay = null)
     {
@@ -4469,6 +4533,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             activeProfileDraftFans = null;
             activeProfileDraftFanControl = null;
             activeProfileDraftLighting = null;
+            activeProfileDraftLightingPowerPolicy = null;
             activeProfileDraftDisplay = null;
             activeProfileOriginalDisplay = previousDisplay;
         }
@@ -4483,6 +4548,8 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         activeProfileDraftFans = fans ?? activeProfileDraftFans;
         activeProfileDraftFanControl = fanControl ?? activeProfileDraftFanControl;
         activeProfileDraftLighting = lighting ?? activeProfileDraftLighting;
+        activeProfileDraftLightingPowerPolicy = lightingPowerPolicy
+            ?? activeProfileDraftLightingPowerPolicy;
         activeProfileDraftDisplay = display ?? activeProfileDraftDisplay;
 
         PowerProfile saved = GetProfile(source);
@@ -4506,6 +4573,11 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         {
             activeProfileDraftLighting = null;
         }
+        if (activeProfileDraftLightingPowerPolicy
+            == saved.EffectiveLightingPowerPolicy)
+        {
+            activeProfileDraftLightingPowerPolicy = null;
+        }
         DisplayProfileSettings savedDisplay =
             saved.Display ?? DisplayProfileSettings.Unconfigured();
         DisplayProfileSettings displayBaseline = savedDisplay.IsConfigured
@@ -4521,6 +4593,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             && activeProfileDraftFans is null
             && activeProfileDraftFanControl is null
             && activeProfileDraftLighting is null
+            && activeProfileDraftLightingPowerPolicy is null
             && activeProfileDraftDisplay is null)
         {
             activeProfileDraftSource = null;
@@ -4542,6 +4615,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         activeProfileDraftFans = null;
         activeProfileDraftFanControl = null;
         activeProfileDraftLighting = null;
+        activeProfileDraftLightingPowerPolicy = null;
         activeProfileDraftDisplay = null;
         activeProfileOriginalDisplay = null;
         NotifyActiveProfileDraft();
@@ -4559,6 +4633,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
                 break;
             case ProfileDraftGroup.Lighting:
                 activeProfileDraftLighting = null;
+                activeProfileDraftLightingPowerPolicy = null;
                 break;
             case ProfileDraftGroup.Display:
                 activeProfileDraftDisplay = null;
@@ -4816,6 +4891,12 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
                 null => "Use current",
                 _ => "Use current",
             },
+            profile.EffectiveLightingPowerPolicy.TurnOffWhenDisplayTurnsOff
+                ? "Turn off with the display"
+                : "Keep on with the display off",
+            profile.EffectiveLightingPowerPolicy.IdleTimeoutMinutes is int minutes
+                ? $"After {minutes.ToString(CultureInfo.CurrentCulture)} minutes"
+                : "Never",
             FormatDisplayRefreshRate(display.RefreshRateKey),
             display.HdrEnabled switch
             {
@@ -5320,6 +5401,12 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         _ => throw new ArgumentOutOfRangeException(nameof(kind)),
     };
 
+    private bool DashboardTelemetryEnabled(LiveReadingItemKind kind) =>
+        DashboardTelemetryItems.Any(option => option.Kind == kind && option.IsEnabled);
+
+    private static string JoinLiveReadingValues(IEnumerable<string> values) =>
+        string.Join(" · ", values.Where(value => !string.IsNullOrWhiteSpace(value)));
+
     private static string LiveReadingLabel(LiveReadingItemKind kind) => kind switch
     {
         LiveReadingItemKind.BatteryPower => "Battery",
@@ -5333,6 +5420,8 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     private static string TrayHoverLabelItemLabel(TrayHoverLabelItemKind kind) => kind switch
     {
         TrayHoverLabelItemKind.ActiveProfile => "Active profile",
+        TrayHoverLabelItemKind.PowerSource => "Power source",
+        TrayHoverLabelItemKind.PowerMode => "Power mode",
         TrayHoverLabelItemKind.BatteryPower => "Battery power",
         TrayHoverLabelItemKind.CpuTemperature => "CPU temperature",
         TrayHoverLabelItemKind.GpuTemperature => "GPU temperature",
@@ -5441,7 +5530,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             new PropertyChangedEventArgs(nameof(EnabledDashboardTelemetryItems)));
         PropertyChanged?.Invoke(
             this,
-            new PropertyChangedEventArgs(nameof(VisibleDashboardTelemetryItems)));
+            new PropertyChangedEventArgs(nameof(VisibleDashboardTelemetryGroups)));
         PropertyChanged?.Invoke(
             this,
             new PropertyChangedEventArgs(nameof(ShowDashboardLiveReadings)));
@@ -5491,9 +5580,14 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             .Select(option => option.Kind)
             .ToHashSet();
         TrayHoverLabelMode mode = enabled.SetEquals(
-                [TrayHoverLabelItemKind.ActiveProfile, TrayHoverLabelItemKind.BatteryPower])
+                [
+                    TrayHoverLabelItemKind.PowerSource,
+                    TrayHoverLabelItemKind.PowerMode,
+                    TrayHoverLabelItemKind.BatteryPower,
+                ])
             ? TrayHoverLabelMode.ProfileAndPowerFlow
-            : enabled.SetEquals([TrayHoverLabelItemKind.ActiveProfile])
+            : enabled.SetEquals(
+                [TrayHoverLabelItemKind.PowerSource, TrayHoverLabelItemKind.PowerMode])
                 ? TrayHoverLabelMode.ActiveProfile
                 : enabled.SetEquals([TrayHoverLabelItemKind.BatteryPower])
                     ? TrayHoverLabelMode.BatteryPowerFlow
@@ -5628,7 +5722,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(GpuTemperatureValue)));
         PropertyChanged?.Invoke(
             this,
-            new PropertyChangedEventArgs(nameof(VisibleDashboardTelemetryItems)));
+            new PropertyChangedEventArgs(nameof(VisibleDashboardTelemetryGroups)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(LiveReadingsRefreshToolTip)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ActivePerformanceLabel)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ActiveFanModeLabel)));

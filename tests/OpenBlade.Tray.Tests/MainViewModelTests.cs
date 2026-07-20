@@ -7,7 +7,7 @@ namespace OpenBlade.Tray.Tests;
 public sealed class MainViewModelTests
 {
     [Fact]
-    public async Task LightingPowerPolicyEditor_SavesGlobalDisplayAndIdleRules()
+    public async Task LightingPowerPolicyEditor_StagesAndSavesRulesToActiveProfile()
     {
         var client = new FakeServiceClient();
         await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
@@ -26,9 +26,20 @@ public sealed class MainViewModelTests
         await Assert.IsType<AsyncRelayCommand>(viewModel.SaveLightingPowerPolicyCommand)
             .ExecuteAsync(draft);
 
-        Assert.Equal(new LightingPowerPolicy(true, 12), client.LastProfiles?.LightingPowerPolicy);
-        Assert.Equal(new LightingPowerPolicy(true, 12), viewModel.Profiles.LightingPowerPolicy);
+        Assert.Null(client.LastProfiles);
+        Assert.True(viewModel.HasLightingProfileDraft);
         Assert.False(viewModel.HasUnsavedLightingPowerPolicy);
+
+        await Assert.IsType<AsyncRelayCommand>(viewModel.SaveLightingProfileDraftCommand)
+            .ExecuteAsync(null);
+
+        Assert.Equal(
+            new LightingPowerPolicy(true, 12),
+            client.LastProfiles?.PluggedIn.EffectiveLightingPowerPolicy);
+        Assert.Equal(
+            LightingPowerPolicy.Disabled,
+            client.LastProfiles?.UsbC.EffectiveLightingPowerPolicy);
+        Assert.False(viewModel.HasLightingProfileDraft);
     }
 
     [Fact]
@@ -2110,7 +2121,13 @@ public sealed class MainViewModelTests
         Assert.Equal("2,875 RPM", viewModel.Fan2RpmValue);
         Assert.Equal("47 °C", viewModel.CpuTemperatureValue);
         Assert.Equal("52 °C", viewModel.GpuTemperatureValue);
-        Assert.Equal(5, viewModel.VisibleDashboardTelemetryItems.Count);
+        Assert.Equal(3, viewModel.VisibleDashboardTelemetryGroups.Count);
+        Assert.Equal(
+            ["Battery", "Temperatures", "Fans"],
+            viewModel.VisibleDashboardTelemetryGroups.Select(item => item.Label));
+        Assert.Equal(
+            "1: 3,210 · 2: 2,875 RPM",
+            viewModel.VisibleDashboardTelemetryGroups.Single(item => item.Label == "Fans").Value);
         Assert.Contains(nameof(viewModel.BatteryPowerFlowLabel), changed);
         Assert.Contains(nameof(viewModel.Fan1RpmLabel), changed);
         Assert.Contains(nameof(viewModel.Fan2RpmLabel), changed);
@@ -2224,20 +2241,22 @@ public sealed class MainViewModelTests
             [LiveReadingItemKind.CpuTemperature, LiveReadingItemKind.Fan1Speed],
             [
                 new(TrayHoverLabelItemKind.GpuTemperature, true),
-                new(TrayHoverLabelItemKind.ActiveProfile, true),
+                new(TrayHoverLabelItemKind.PowerSource, true),
+                new(TrayHoverLabelItemKind.PowerMode, true),
                 new(TrayHoverLabelItemKind.CpuTemperature, true),
             ]);
 
         Assert.Equal(
-            ["CPU temperature", "Fan 1"],
-            viewModel.VisibleDashboardTelemetryItems.Select(item => item.Label));
+            ["Temperatures", "Fans"],
+            viewModel.VisibleDashboardTelemetryGroups.Select(item => item.Label));
         Assert.Equal(
             "OpenBlade · GPU 51 °C · Battery · Balanced · CPU 46 °C",
             viewModel.TrayHoverLabelText);
         Assert.Equal(
             [
                 TrayHoverLabelItemKind.GpuTemperature,
-                TrayHoverLabelItemKind.ActiveProfile,
+                TrayHoverLabelItemKind.PowerSource,
+                TrayHoverLabelItemKind.PowerMode,
                 TrayHoverLabelItemKind.CpuTemperature,
             ],
             viewModel.TrayHoverLabelPreferences

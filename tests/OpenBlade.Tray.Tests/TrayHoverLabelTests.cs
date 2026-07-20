@@ -84,7 +84,8 @@ public sealed class TrayHoverLabelTests
         string result = TrayHoverLabelFormatter.Format(
             [
                 TrayHoverLabelItemKind.GpuTemperature,
-                TrayHoverLabelItemKind.ActiveProfile,
+                TrayHoverLabelItemKind.PowerSource,
+                TrayHoverLabelItemKind.PowerMode,
                 TrayHoverLabelItemKind.CpuTemperature,
             ],
             isConnected: true,
@@ -105,7 +106,8 @@ public sealed class TrayHoverLabelTests
     {
         string result = TrayHoverLabelFormatter.Format(
             [
-                TrayHoverLabelItemKind.ActiveProfile,
+                TrayHoverLabelItemKind.PowerSource,
+                TrayHoverLabelItemKind.PowerMode,
                 TrayHoverLabelItemKind.Fan1Speed,
                 TrayHoverLabelItemKind.Fan2Speed,
                 TrayHoverLabelItemKind.BatteryPower,

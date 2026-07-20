@@ -42,6 +42,9 @@ public static class TrayHoverLabelFormatter
             {
                 TrayHoverLabelItemKind.ActiveProfile =>
                     FormatProfile(powerSource, performance),
+                TrayHoverLabelItemKind.PowerSource => FormatPowerSource(powerSource),
+                TrayHoverLabelItemKind.PowerMode =>
+                    PerformancePresetPresentation.Label(performance),
                 TrayHoverLabelItemKind.BatteryPower => batteryPowerFlow,
                 TrayHoverLabelItemKind.CpuTemperature =>
                     FormatTemperature("CPU", cpuTemperatureCelsius),
@@ -111,6 +114,15 @@ public static class TrayHoverLabelFormatter
             PowerSource.ExternalUnknown => "Checking power source",
             _ => "Power source unavailable",
         };
+
+    private static string FormatPowerSource(PowerSource powerSource) => powerSource switch
+    {
+        PowerSource.PluggedIn => "AC",
+        PowerSource.Battery => "Battery",
+        PowerSource.UsbC => "USB-C",
+        PowerSource.ExternalUnknown => "Checking power source",
+        _ => "Power source unavailable",
+    };
 
     private static string FormatTemperature(string label, int? value) => value is int celsius
         ? $"{label} {celsius} °C"

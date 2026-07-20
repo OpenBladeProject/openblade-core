@@ -90,6 +90,17 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Changed
 
+- Dashboard live readings now use three compact semantic groups for Battery,
+  Temperatures, and Fans while retaining individual visibility controls.
+- Taskbar hover content exposes Power source and Power mode as separate,
+  reorderable items instead of combining AC or Battery with the active mode.
+- Lighting display-off and inactivity rules are now saved independently in the
+  AC, USB-C, and Battery profiles. Schema 4 global rules migrate into all three
+  profiles when first loaded.
+- Switching directly between Fixed, Manual fan curve, and Maximum now performs
+  the firmware-required Automatic transition internally without changing the
+  user-visible selection.
+- The application accent palette now uses `#47E10C` as its Razer-green base.
 - Dashboard colors now have one semantic role each: accent marks the active
   profile and primary action, green marks readiness, amber marks attention,
   red marks failure, and ordinary power-source and unsaved-edit labels remain

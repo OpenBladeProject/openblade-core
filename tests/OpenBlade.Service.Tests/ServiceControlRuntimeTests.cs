@@ -405,9 +405,12 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         LightingSettings expected = context.Runtime.GetStatus().DesiredState.Lighting.Value;
         ProfileSet profiles = context.Runtime.GetStatus().Profiles with
         {
-            LightingPowerPolicy = new LightingPowerPolicy(
-                turnOffWhenDisplayTurnsOff: true,
-                idleTimeoutMinutes: 5),
+            PluggedIn = context.Runtime.GetStatus().Profiles.PluggedIn with
+            {
+                LightingPowerPolicy = new LightingPowerPolicy(
+                    turnOffWhenDisplayTurnsOff: true,
+                    idleTimeoutMinutes: 5),
+            },
         };
         await context.Runtime.UpdateProfilesAsync(profiles, CancellationToken.None);
 

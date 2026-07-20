@@ -78,9 +78,10 @@ public sealed class ServiceLightingIdlePolicyLoopTests
 
     private static ServiceStatusSnapshot Status(LightingPowerPolicy policy)
     {
-        ProfileSet profiles = ProfileDefaults.CreateSafeDefaults() with
+        ProfileSet profiles = ProfileDefaults.CreateSafeDefaults();
+        profiles = profiles with
         {
-            LightingPowerPolicy = policy,
+            PluggedIn = profiles.PluggedIn with { LightingPowerPolicy = policy },
         };
         return new ServiceStatusSnapshot(
             Revision: 1,

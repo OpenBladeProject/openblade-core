@@ -70,7 +70,8 @@ public sealed class UiPreferenceStoreTests : IDisposable
         Assert.Equal(
             [
                 TrayHoverLabelItemKind.GpuTemperature,
-                TrayHoverLabelItemKind.ActiveProfile,
+                TrayHoverLabelItemKind.PowerSource,
+                TrayHoverLabelItemKind.PowerMode,
                 TrayHoverLabelItemKind.BatteryPower,
                 TrayHoverLabelItemKind.CpuTemperature,
                 TrayHoverLabelItemKind.Fan1Speed,
@@ -78,7 +79,7 @@ public sealed class UiPreferenceStoreTests : IDisposable
             ],
             reloaded.EffectiveTrayHoverLabelItems.Select(item => item.Kind));
         Assert.Equal(
-            [true, true, false, false, false, false],
+            [true, true, true, false, false, false, false],
             reloaded.EffectiveTrayHoverLabelItems.Select(item => item.IsEnabled));
         Assert.Equal("Dark", document.RootElement.GetProperty("theme").GetString());
         Assert.False(document.RootElement.TryGetProperty(
@@ -171,14 +172,19 @@ public sealed class UiPreferenceStoreTests : IDisposable
         Assert.Equal(
             profileEnabled,
             preferences.EffectiveTrayHoverLabelItems.Single(
-                item => item.Kind == TrayHoverLabelItemKind.ActiveProfile).IsEnabled);
+                item => item.Kind == TrayHoverLabelItemKind.PowerSource).IsEnabled);
+        Assert.Equal(
+            profileEnabled,
+            preferences.EffectiveTrayHoverLabelItems.Single(
+                item => item.Kind == TrayHoverLabelItemKind.PowerMode).IsEnabled);
         Assert.Equal(
             powerEnabled,
             preferences.EffectiveTrayHoverLabelItems.Single(
                 item => item.Kind == TrayHoverLabelItemKind.BatteryPower).IsEnabled);
         Assert.All(
             preferences.EffectiveTrayHoverLabelItems.Where(item =>
-                item.Kind is not TrayHoverLabelItemKind.ActiveProfile
+                item.Kind is not TrayHoverLabelItemKind.PowerSource
+                    and not TrayHoverLabelItemKind.PowerMode
                     and not TrayHoverLabelItemKind.BatteryPower),
             item => Assert.False(item.IsEnabled));
     }

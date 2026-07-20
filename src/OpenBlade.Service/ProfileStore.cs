@@ -8,9 +8,10 @@ public sealed record ProfileLoadResult(ProfileSet Profiles, bool RecoveredFromIn
 
 public sealed class ProfileStore(string path, ProfileSetValidator? validator = null)
 {
-    internal const int CurrentSchemaVersion = 4;
-    internal const int PreviousSchemaVersion = 3;
-    internal const int OlderSchemaVersion = 2;
+    internal const int CurrentSchemaVersion = 5;
+    internal const int PreviousSchemaVersion = 4;
+    internal const int OlderSchemaVersion = 3;
+    internal const int OldestSupportedSchemaVersion = 2;
     internal const int LegacySchemaVersion = 1;
 
     internal static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web)
@@ -82,7 +83,10 @@ public sealed class ProfileStore(string path, ProfileSetValidator? validator = n
         }
 
         ProfileSet profiles;
-        if (schemaVersion is CurrentSchemaVersion or PreviousSchemaVersion or OlderSchemaVersion)
+        if (schemaVersion is CurrentSchemaVersion
+            or PreviousSchemaVersion
+            or OlderSchemaVersion
+            or OldestSupportedSchemaVersion)
         {
             ProfileDocument? document = JsonSerializer.Deserialize<ProfileDocument>(
                 json,
@@ -139,19 +143,22 @@ public sealed class ProfileStore(string path, ProfileSetValidator? validator = n
         battery = NormalizeLegacyDisplay(battery);
         usbC = NormalizeLegacyDisplay(usbC);
         pluggedIn = NormalizeLegacyCustomPerformance(pluggedIn);
-        LightingPowerPolicy lightingPowerPolicy =
+        LightingPowerPolicy legacyLightingPowerPolicy =
             profiles.LightingPowerPolicy ?? LightingPowerPolicy.Disabled;
+        pluggedIn = NormalizeLightingPowerPolicy(pluggedIn, legacyLightingPowerPolicy);
+        battery = NormalizeLightingPowerPolicy(battery, legacyLightingPowerPolicy);
+        usbC = NormalizeLightingPowerPolicy(usbC, legacyLightingPowerPolicy);
         migrated = pluggedIn != profiles.PluggedIn
             || battery != profiles.Battery
             || usbC != profiles.UsbC
-            || profiles.LightingPowerPolicy is null;
+            || profiles.LightingPowerPolicy is not null;
         return migrated
             ? profiles with
             {
                 PluggedIn = pluggedIn,
                 Battery = battery,
                 UsbC = usbC,
-                LightingPowerPolicy = lightingPowerPolicy,
+                LightingPowerPolicy = null,
             }
             : profiles;
     }
@@ -171,6 +178,12 @@ public sealed class ProfileStore(string path, ProfileSetValidator? validator = n
     private static PowerProfile NormalizeLegacyCustomPerformance(PowerProfile profile) =>
         profile.CustomPerformance is null
             ? profile with { CustomPerformance = CustomPerformanceSettings.Default }
+            : profile;
+
+    private static PowerProfile NormalizeLightingPowerPolicy(
+        PowerProfile profile,
+        LightingPowerPolicy legacyPolicy) => profile.LightingPowerPolicy is null
+            ? profile with { LightingPowerPolicy = legacyPolicy }
             : profile;
 
     private async Task<ProfileLoadResult> RecoverSafeDefaultsAsync(

@@ -208,6 +208,41 @@ public sealed class ProfileStoreTests : IDisposable
     }
 
     [Fact]
+    public async Task Load_SchemaFourGlobalLightingPolicyMigratesToEveryPowerProfile()
+    {
+        Directory.CreateDirectory(_directory);
+        string path = Path.Combine(_directory, "profiles.json");
+        ProfileSet defaults = ProfileDefaults.CreateSafeDefaults();
+        var policy = new LightingPowerPolicy(
+            turnOffWhenDisplayTurnsOff: true,
+            idleTimeoutMinutes: 12);
+        ProfileSet legacy = defaults with
+        {
+            PluggedIn = defaults.PluggedIn with { LightingPowerPolicy = null },
+            UsbC = defaults.UsbC with { LightingPowerPolicy = null },
+            Battery = defaults.Battery with { LightingPowerPolicy = null },
+            LightingPowerPolicy = policy,
+        };
+        await File.WriteAllBytesAsync(
+            path,
+            JsonSerializer.SerializeToUtf8Bytes(
+                new ProfileDocument(ProfileStore.PreviousSchemaVersion, legacy),
+                ProfileStore.SerializerOptions));
+
+        ProfileLoadResult result = await new ProfileStore(path).LoadAsync(
+            CancellationToken.None);
+
+        Assert.False(result.RecoveredFromInvalidFile);
+        Assert.Equal(policy, result.Profiles.PluggedIn.EffectiveLightingPowerPolicy);
+        Assert.Equal(policy, result.Profiles.UsbC.EffectiveLightingPowerPolicy);
+        Assert.Equal(policy, result.Profiles.Battery.EffectiveLightingPowerPolicy);
+        Assert.Null(result.Profiles.LightingPowerPolicy);
+        Assert.Contains(
+            $"\"schemaVersion\": {ProfileStore.CurrentSchemaVersion}",
+            await File.ReadAllTextAsync(path));
+    }
+
+    [Fact]
     public async Task Load_SchemaOneAddsUsbCAndNormalizesMissingDisplaySettings()
     {
         Directory.CreateDirectory(_directory);

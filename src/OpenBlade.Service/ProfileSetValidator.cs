@@ -75,6 +75,9 @@ public sealed class ProfileSetValidator(ProfileValidationPolicy policy)
         ValidateProfile(profiles.Battery, "battery", PowerSource.Battery);
         ValidateProfile(profiles.UsbC, "USB-C", PowerSource.UsbC);
         ValidateBatteryPolicy(profiles.BatteryPolicy);
+        ValidateLightingPowerPolicy(profiles.PluggedIn.LightingPowerPolicy);
+        ValidateLightingPowerPolicy(profiles.Battery.LightingPowerPolicy);
+        ValidateLightingPowerPolicy(profiles.UsbC.LightingPowerPolicy);
         ValidateLightingPowerPolicy(profiles.LightingPowerPolicy);
     }
 

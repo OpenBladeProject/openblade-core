@@ -496,7 +496,7 @@ public sealed class CapabilityPresentationTests
             readings.Descendants(),
             element => element.Name.LocalName == "ItemsControl"
                 && Attribute(element, "ItemsSource")?.Contains(
-                    "VisibleDashboardTelemetryItems",
+                    "VisibleDashboardTelemetryGroups",
                     StringComparison.Ordinal) == true);
         XElement wrapGrid = Assert.Single(
             readingsList.Descendants(),

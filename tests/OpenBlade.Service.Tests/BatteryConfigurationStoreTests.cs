@@ -41,9 +41,9 @@ public sealed class BatteryConfigurationStoreTests : IDisposable
         using JsonDocument profiles = JsonDocument.Parse(await File.ReadAllTextAsync(paths.Profiles));
         using JsonDocument preferences = JsonDocument.Parse(await File.ReadAllTextAsync(paths.Preferences));
         using JsonDocument marker = JsonDocument.Parse(await File.ReadAllTextAsync(paths.Marker));
-        Assert.Equal(4, profiles.RootElement.GetProperty("schemaVersion").GetInt32());
-        Assert.Equal(4, preferences.RootElement.GetProperty("schemaVersion").GetInt32());
-        Assert.Equal(4, marker.RootElement.GetProperty("schemaVersion").GetInt32());
+        Assert.Equal(ProfileStore.CurrentSchemaVersion, profiles.RootElement.GetProperty("schemaVersion").GetInt32());
+        Assert.Equal(ProfileStore.CurrentSchemaVersion, preferences.RootElement.GetProperty("schemaVersion").GetInt32());
+        Assert.Equal(ProfileStore.CurrentSchemaVersion, marker.RootElement.GetProperty("schemaVersion").GetInt32());
         Assert.Equal(
             Hash(await File.ReadAllBytesAsync(paths.Profiles)),
             marker.RootElement.GetProperty("profileSha256").GetString());

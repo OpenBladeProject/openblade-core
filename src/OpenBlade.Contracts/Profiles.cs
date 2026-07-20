@@ -358,6 +358,14 @@ public sealed record PowerProfile(
     // Optional for JSON compatibility with profiles written before adjustable
     // fixed speed and manual curves were introduced.
     public FanControlSettings? FanControl { get; init; }
+
+    // Optional so schema 4 profiles remain readable. Profile normalization
+    // fills this from the former ProfileSet-wide policy during migration.
+    public LightingPowerPolicy? LightingPowerPolicy { get; init; }
+
+    [System.Text.Json.Serialization.JsonIgnore]
+    public LightingPowerPolicy EffectiveLightingPowerPolicy =>
+        LightingPowerPolicy ?? OpenBlade.Contracts.LightingPowerPolicy.Disabled;
 }
 
 public sealed record LightingPowerPolicy
@@ -491,9 +499,28 @@ public sealed record ProfileSet(
     BatteryPolicy BatteryPolicy,
     LightingPowerPolicy? LightingPowerPolicy = null)
 {
+    // Retained only as the schema 4 migration source. New documents store the
+    // policy on each PowerProfile and normalize this property to null.
     [System.Text.Json.Serialization.JsonIgnore]
-    public LightingPowerPolicy EffectiveLightingPowerPolicy =>
+    public LightingPowerPolicy LegacyLightingPowerPolicy =>
         LightingPowerPolicy ?? OpenBlade.Contracts.LightingPowerPolicy.Disabled;
+
+    public PowerProfile ForPowerSource(PowerSource source) => source switch
+    {
+        PowerSource.PluggedIn => PluggedIn,
+        PowerSource.Battery => Battery,
+        PowerSource.UsbC => UsbC,
+        _ => throw new ArgumentOutOfRangeException(nameof(source)),
+    };
+
+    public LightingPowerPolicy LightingPowerPolicyFor(PowerSource source) => source switch
+    {
+        PowerSource.PluggedIn => PluggedIn.EffectiveLightingPowerPolicy,
+        PowerSource.Battery => Battery.EffectiveLightingPowerPolicy,
+        PowerSource.UsbC => UsbC.EffectiveLightingPowerPolicy,
+        PowerSource.ExternalUnknown => OpenBlade.Contracts.LightingPowerPolicy.Disabled,
+        _ => OpenBlade.Contracts.LightingPowerPolicy.Disabled,
+    };
 }
 
 public static class ProfileDefaults
@@ -508,17 +535,23 @@ public static class ProfileDefaults
             DisplayProfileSettings.Unconfigured())
         {
             CustomPerformance = CustomPerformanceSettings.Default,
+            LightingPowerPolicy = OpenBlade.Contracts.LightingPowerPolicy.Disabled,
         },
         new PowerProfile(
             PerformancePreset.BatterySaver,
             FanMode.Automatic,
             LightingOff,
-            DisplayProfileSettings.Unconfigured()),
+            DisplayProfileSettings.Unconfigured())
+        {
+            LightingPowerPolicy = OpenBlade.Contracts.LightingPowerPolicy.Disabled,
+        },
         new PowerProfile(
             PerformancePreset.Balanced,
             FanMode.Automatic,
             LightingOff,
-            DisplayProfileSettings.Unconfigured()),
-        BatteryPolicy.Create(80),
-        LightingPowerPolicy.Disabled);
+            DisplayProfileSettings.Unconfigured())
+        {
+            LightingPowerPolicy = OpenBlade.Contracts.LightingPowerPolicy.Disabled,
+        },
+        BatteryPolicy.Create(80));
 }

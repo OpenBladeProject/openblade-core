@@ -436,22 +436,23 @@
                                                            TextWrapping="Wrap" />
                                             </ToolTip>
                                         </ToolTipService.ToolTip>
-                                        <ItemsControl ItemsSource="{x:Bind ViewModel.VisibleDashboardTelemetryItems, Mode=OneWay}"
+                                        <ItemsControl ItemsSource="{x:Bind ViewModel.VisibleDashboardTelemetryGroups, Mode=OneWay}"
                                                       HorizontalAlignment="Stretch">
                                             <ItemsControl.ItemsPanel>
                                                 <ItemsPanelTemplate>
                                                     <ItemsWrapGrid Orientation="Horizontal"
-                                                                   ItemWidth="150"
-                                                                   ItemHeight="52" />
+                                                                   ItemWidth="220"
+                                                                   ItemHeight="64" />
                                                 </ItemsPanelTemplate>
                                             </ItemsControl.ItemsPanel>
                                             <ItemsControl.ItemTemplate>
-                                                <DataTemplate x:DataType="local:LiveReadingDisplayItem">
-                                                    <StackPanel Spacing="2" Margin="0,0,18,8">
+                                                <DataTemplate x:DataType="local:LiveReadingGroupDisplayItem">
+                                                    <StackPanel Spacing="3" Margin="0,0,22,8">
                                                         <TextBlock Text="{x:Bind Label, Mode=OneTime}"
                                                                    Style="{StaticResource SecondaryTextStyle}" />
                                                         <TextBlock Text="{x:Bind Value, Mode=OneTime}"
-                                                                   Style="{StaticResource CardTitleStyle}" />
+                                                                   Style="{StaticResource CardTitleStyle}"
+                                                                   TextWrapping="Wrap" />
                                                     </StackPanel>
                                                 </DataTemplate>
                                             </ItemsControl.ItemTemplate>
@@ -922,7 +923,7 @@
                                             <TextBlock Grid.Column="3" Text="{x:Bind ViewModel.BatteryProfilePresentation.LightingColor, Mode=OneWay}" TextWrapping="Wrap" />
                                         </Grid>
                                     </Border>
-                                    <Border Style="{StaticResource SettingsLastRowStyle}">
+                                    <Border Style="{StaticResource SettingsRowStyle}">
                                         <Grid ColumnSpacing="16">
                                             <Grid.ColumnDefinitions><ColumnDefinition Width="150" /><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
                                             <TextBlock Text="Laptop lid logo" Style="{StaticResource CardTitleStyle}" />
@@ -931,25 +932,22 @@
                                             <TextBlock Grid.Column="3" Text="{x:Bind ViewModel.BatteryProfilePresentation.LogoLighting, Mode=OneWay}" TextWrapping="Wrap" />
                                         </Grid>
                                     </Border>
-                                </StackPanel>
-                            </Border>
-
-                            <TextBlock Text="Switch off lighting · all profiles"
-                                       Style="{StaticResource SectionHeaderStyle}" />
-                            <Border Style="{StaticResource SettingsGroupStyle}">
-                                <StackPanel>
                                     <Border Style="{StaticResource SettingsRowStyle}">
                                         <Grid ColumnSpacing="16">
-                                            <Grid.ColumnDefinitions><ColumnDefinition Width="150" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                                            <Grid.ColumnDefinitions><ColumnDefinition Width="150" /><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
                                             <TextBlock Text="With the display" Style="{StaticResource CardTitleStyle}" />
-                                            <TextBlock Grid.Column="1" Text="{x:Bind ViewModel.LightingDisplayOffPolicyPresentation, Mode=OneWay}" TextWrapping="Wrap" />
+                                            <TextBlock Grid.Column="1" Text="{x:Bind ViewModel.PluggedInProfilePresentation.LightingDisplayOff, Mode=OneWay}" TextWrapping="Wrap" />
+                                            <TextBlock Grid.Column="2" Text="{x:Bind ViewModel.UsbCProfilePresentation.LightingDisplayOff, Mode=OneWay}" TextWrapping="Wrap" />
+                                            <TextBlock Grid.Column="3" Text="{x:Bind ViewModel.BatteryProfilePresentation.LightingDisplayOff, Mode=OneWay}" TextWrapping="Wrap" />
                                         </Grid>
                                     </Border>
                                     <Border Style="{StaticResource SettingsLastRowStyle}">
                                         <Grid ColumnSpacing="16">
-                                            <Grid.ColumnDefinitions><ColumnDefinition Width="150" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                                            <Grid.ColumnDefinitions><ColumnDefinition Width="150" /><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
                                             <TextBlock Text="After inactivity" Style="{StaticResource CardTitleStyle}" />
-                                            <TextBlock Grid.Column="1" Text="{x:Bind ViewModel.LightingIdlePolicyPresentation, Mode=OneWay}" TextWrapping="Wrap" />
+                                            <TextBlock Grid.Column="1" Text="{x:Bind ViewModel.PluggedInProfilePresentation.LightingIdle, Mode=OneWay}" TextWrapping="Wrap" />
+                                            <TextBlock Grid.Column="2" Text="{x:Bind ViewModel.UsbCProfilePresentation.LightingIdle, Mode=OneWay}" TextWrapping="Wrap" />
+                                            <TextBlock Grid.Column="3" Text="{x:Bind ViewModel.BatteryProfilePresentation.LightingIdle, Mode=OneWay}" TextWrapping="Wrap" />
                                         </Grid>
                                     </Border>
                                 </StackPanel>
@@ -1036,10 +1034,10 @@
                                         <Grid ColumnSpacing="16"><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><TextBlock Text="Color profile" Style="{StaticResource CardTitleStyle}" /><TextBlock Grid.Column="1" Text="{x:Bind ViewModel.SelectedProfilePresentation.DisplayColorProfile, Mode=OneWay}" TextWrapping="Wrap" TextAlignment="Right" /></Grid>
                                     </Border>
                                     <Border Style="{StaticResource SettingsRowStyle}">
-                                        <Grid ColumnSpacing="16"><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><TextBlock Text="With the display" Style="{StaticResource CardTitleStyle}" /><TextBlock Grid.Column="1" Text="{x:Bind ViewModel.LightingDisplayOffPolicyPresentation, Mode=OneWay}" TextWrapping="Wrap" TextAlignment="Right" /></Grid>
+                                        <Grid ColumnSpacing="16"><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><TextBlock Text="With the display" Style="{StaticResource CardTitleStyle}" /><TextBlock Grid.Column="1" Text="{x:Bind ViewModel.SelectedProfilePresentation.LightingDisplayOff, Mode=OneWay}" TextWrapping="Wrap" TextAlignment="Right" /></Grid>
                                     </Border>
                                     <Border Style="{StaticResource SettingsLastRowStyle}">
-                                        <Grid ColumnSpacing="16"><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><TextBlock Text="After inactivity" Style="{StaticResource CardTitleStyle}" /><TextBlock Grid.Column="1" Text="{x:Bind ViewModel.LightingIdlePolicyPresentation, Mode=OneWay}" TextWrapping="Wrap" TextAlignment="Right" /></Grid>
+                                        <Grid ColumnSpacing="16"><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><TextBlock Text="After inactivity" Style="{StaticResource CardTitleStyle}" /><TextBlock Grid.Column="1" Text="{x:Bind ViewModel.SelectedProfilePresentation.LightingIdle, Mode=OneWay}" TextWrapping="Wrap" TextAlignment="Right" /></Grid>
                                     </Border>
                                 </StackPanel>
                             </Border>

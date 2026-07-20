@@ -13,19 +13,23 @@ public enum LiveReadingItemKind
 
 public enum TrayHoverLabelItemKind
 {
+    // Schema 1 UI preference value. Normalization expands it to the two
+    // independently configurable items below.
     ActiveProfile,
     BatteryPower,
     CpuTemperature,
     GpuTemperature,
     Fan1Speed,
     Fan2Speed,
+    PowerSource,
+    PowerMode,
 }
 
 public sealed record TrayHoverLabelItemPreference(
     TrayHoverLabelItemKind Kind,
     bool IsEnabled);
 
-public sealed record LiveReadingDisplayItem(string Label, string Value);
+public sealed record LiveReadingGroupDisplayItem(string Label, string Value);
 
 public sealed class LiveReadingVisibilityOption : INotifyPropertyChanged
 {
@@ -112,7 +116,8 @@ public static class TelemetryPreferenceDefaults
 
     public static readonly TrayHoverLabelItemPreference[] TrayHoverItems =
     [
-        new(TrayHoverLabelItemKind.ActiveProfile, true),
+        new(TrayHoverLabelItemKind.PowerSource, true),
+        new(TrayHoverLabelItemKind.PowerMode, true),
         new(TrayHoverLabelItemKind.BatteryPower, true),
         new(TrayHoverLabelItemKind.CpuTemperature, false),
         new(TrayHoverLabelItemKind.GpuTemperature, false),
@@ -143,18 +148,35 @@ public static class TelemetryPreferenceDefaults
             return FromLegacyMode(legacyMode);
         }
 
-        Dictionary<TrayHoverLabelItemKind, bool> supplied = preferences
-            .Where(item => item is not null && Enum.IsDefined(item.Kind))
-            .GroupBy(item => item.Kind)
-            .ToDictionary(group => group.Key, group => group.First().IsEnabled);
-        List<TrayHoverLabelItemPreference> normalized = preferences
-            .Where(item => item is not null && Enum.IsDefined(item.Kind))
+        List<TrayHoverLabelItemPreference> expanded = [];
+        foreach (TrayHoverLabelItemPreference item in preferences.Where(item =>
+                     item is not null && Enum.IsDefined(item.Kind)))
+        {
+            if (item.Kind == TrayHoverLabelItemKind.ActiveProfile)
+            {
+                expanded.Add(new TrayHoverLabelItemPreference(
+                    TrayHoverLabelItemKind.PowerSource,
+                    item.IsEnabled));
+                expanded.Add(new TrayHoverLabelItemPreference(
+                    TrayHoverLabelItemKind.PowerMode,
+                    item.IsEnabled));
+            }
+            else
+            {
+                expanded.Add(item);
+            }
+        }
+
+        List<TrayHoverLabelItemPreference> normalized = expanded
             .DistinctBy(item => item.Kind)
             .Select(item => new TrayHoverLabelItemPreference(item.Kind, item.IsEnabled))
             .ToList();
+        HashSet<TrayHoverLabelItemKind> supplied = normalized
+            .Select(item => item.Kind)
+            .ToHashSet();
         foreach (TrayHoverLabelItemPreference fallback in TrayHoverItems)
         {
-            if (!supplied.ContainsKey(fallback.Kind))
+            if (!supplied.Contains(fallback.Kind))
             {
                 normalized.Add(fallback with { IsEnabled = false });
             }
@@ -174,7 +196,8 @@ public static class TelemetryPreferenceDefaults
             {
                 IsEnabled = item.Kind switch
                 {
-                    TrayHoverLabelItemKind.ActiveProfile => profile,
+                    TrayHoverLabelItemKind.PowerSource => profile,
+                    TrayHoverLabelItemKind.PowerMode => profile,
                     TrayHoverLabelItemKind.BatteryPower => power,
                     _ => false,
                 },

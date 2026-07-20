@@ -157,6 +157,38 @@ public sealed class ControlCoordinator
             forceWrite: IsManualFanMode(value.Mode));
     }
 
+    internal async Task<ScopedApplyOutcome> ApplyFanControlTransitionOutcomeAsync(
+        FanControlSettings previous,
+        FanControlSettings requested,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(previous);
+        ArgumentNullException.ThrowIfNull(requested);
+
+        if (previous.Mode != requested.Mode
+            && IsManualFanMode(previous.Mode)
+            && IsManualFanMode(requested.Mode))
+        {
+            ScopedApplyOutcome automatic = await ApplyFanControlOutcomeAsync(
+                FanControlSettings.FromLegacy(FanMode.Automatic),
+                cancellationToken).ConfigureAwait(false);
+            if (automatic.Result.Status is not (
+                    ControlResultStatus.Applied or ControlResultStatus.Unchanged))
+            {
+                return automatic with
+                {
+                    Result = automatic.Result with
+                    {
+                        Message = $"Could not leave {previous.Mode} before selecting {requested.Mode}. {automatic.Result.Message}",
+                    },
+                };
+            }
+        }
+
+        return await ApplyFanControlOutcomeAsync(requested, cancellationToken)
+            .ConfigureAwait(false);
+    }
+
     internal Task<ScopedApplyOutcome> ApplyBatteryOutcomeAsync(
         BatteryPolicy value,
         CancellationToken cancellationToken) =>

@@ -414,6 +414,56 @@ public sealed class ControlCoordinatorTests
     }
 
     [Fact]
+    public async Task ManualFanSubtypeTransition_BridgesThroughAutomatic()
+    {
+        RecordingBladeDevice device = CreateMismatchedDevice();
+        device.State = device.State with
+        {
+            Performance = PerformancePreset.Balanced,
+            Fans = FanMode.Fixed,
+        };
+        var coordinator = new ControlCoordinator(device);
+        var previous = new FanControlSettings(FanMode.Fixed, 2800, ManualFanCurve.Default);
+        var requested = new FanControlSettings(
+            FanMode.ManualCurve,
+            2800,
+            ManualFanCurve.Default);
+
+        ScopedApplyOutcome outcome = await coordinator.ApplyFanControlTransitionOutcomeAsync(
+            previous,
+            requested,
+            CancellationToken.None);
+
+        Assert.Equal(ControlResultStatus.Applied, outcome.Result.Status);
+        Assert.Equal([FanMode.Automatic, FanMode.ManualCurve], device.FanControlWrites);
+    }
+
+    [Fact]
+    public async Task SameManualFanSubtypeUpdate_DoesNotBridgeThroughAutomatic()
+    {
+        RecordingBladeDevice device = CreateMismatchedDevice();
+        device.State = device.State with
+        {
+            Performance = PerformancePreset.Balanced,
+            Fans = FanMode.Fixed,
+        };
+        var coordinator = new ControlCoordinator(device);
+        var previous = new FanControlSettings(FanMode.Fixed, 2800, ManualFanCurve.Default);
+        var requested = new FanControlSettings(
+            FanMode.Fixed,
+            3200,
+            ManualFanCurve.Default);
+
+        ScopedApplyOutcome outcome = await coordinator.ApplyFanControlTransitionOutcomeAsync(
+            previous,
+            requested,
+            CancellationToken.None);
+
+        Assert.Equal(ControlResultStatus.Applied, outcome.Result.Status);
+        Assert.Equal([FanMode.Fixed], device.FanControlWrites);
+    }
+
+    [Fact]
     public async Task ScopedKnownNotApplied_IsRejectedWithoutAttemptedOrIndeterminateState()
     {
         RecordingBladeDevice device = CreateMismatchedDevice();
@@ -861,6 +911,8 @@ public sealed class ControlCoordinatorTests
 
         public List<string> BatterySetterCalls { get; } = [];
 
+        public List<FanMode> FanControlWrites { get; } = [];
+
         public DeviceCapabilities Capabilities { get; set; } =
             DeviceCapabilities.SafeTargetDefaults() with
             {
@@ -1003,8 +1055,11 @@ public sealed class ControlCoordinatorTests
 
         public Task SetFanControlAsync(
             FanControlSettings value,
-            CancellationToken cancellationToken) =>
-            SetFanModeAsync(value.Mode, cancellationToken);
+            CancellationToken cancellationToken)
+        {
+            FanControlWrites.Add(value.Mode);
+            return SetFanModeAsync(value.Mode, cancellationToken);
+        }
 
         public Task SetChargeLimitAsync(
             BatteryPolicy value,

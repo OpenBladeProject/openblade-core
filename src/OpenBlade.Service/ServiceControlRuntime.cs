@@ -582,21 +582,36 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
     public Task<ControlOperationResult> SetFanControlOverrideAsync(
         ManualOverride<FanMode>? value,
         FanControlSettings? settings,
-        CancellationToken token) => ExecuteScopedMutationAsync(
+        CancellationToken token)
+    {
+        FanControlSettings? previous = null;
+        return ExecuteScopedMutationAsync(
             DeviceSubsystem.Fans,
-            cancellationToken => SetFanOverrideCoreAsync(
-                value,
-                settings,
-                cancellationToken),
+            async cancellationToken =>
+            {
+                DesiredDeviceState before = ResolveHardwareDesired(
+                    GetStatus().ConfirmedState ?? UnknownConfirmedState);
+                previous = before.FanControl
+                    ?? FanControlSettings.FromLegacy(before.Fans.Value);
+                await SetFanOverrideCoreAsync(
+                    value,
+                    settings,
+                    cancellationToken).ConfigureAwait(false);
+            },
             (coordinator, desired, cancellationToken) =>
-                coordinator.ApplyFanControlOutcomeAsync(
-                    desired.FanControl
-                        ?? FanControlSettings.FromLegacy(desired.Fans.Value),
-                    cancellationToken),
+            {
+                FanControlSettings requested = desired.FanControl
+                    ?? FanControlSettings.FromLegacy(desired.Fans.Value);
+                return coordinator.ApplyFanControlTransitionOutcomeAsync(
+                    previous ?? requested,
+                    requested,
+                    cancellationToken);
+            },
             token,
             value is null
                 ? "Fan override was cleared."
                 : "Fan override intent was stored.");
+    }
 
     public async Task MaintainFanCurveAsync(CancellationToken cancellationToken)
     {
@@ -2933,7 +2948,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
 
     private bool IsLightingSuppressionConfigured(LightingSuppressionReason reason)
     {
-        LightingPowerPolicy policy = Automation.Profiles.EffectiveLightingPowerPolicy;
+        LightingPowerPolicy policy = Automation.Profiles.LightingPowerPolicyFor(
+            Automation.PowerSource);
         return reason switch
         {
             LightingSuppressionReason.DisplayOff => policy.TurnOffWhenDisplayTurnsOff,

@@ -189,7 +189,7 @@ public sealed class WinUiShellContractTests
         Assert.Contains("ReorderMode=\"Enabled\"", xaml, StringComparison.Ordinal);
         Assert.Contains("Style=\"{StaticResource DestructiveButtonStyle}\"", xaml, StringComparison.Ordinal);
         Assert.Contains("SystemFillColorCriticalBrush", xaml, StringComparison.Ordinal);
-        Assert.Contains("#44D62C", app, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("#47E10C", app, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -198,9 +198,10 @@ public sealed class WinUiShellContractTests
         string xaml = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml");
 
         Assert.Contains("Laptop lid logo", xaml, StringComparison.Ordinal);
-        Assert.Contains("Switch off lighting · all profiles", xaml, StringComparison.Ordinal);
-        Assert.Contains("ViewModel.LightingDisplayOffPolicyPresentation", xaml, StringComparison.Ordinal);
-        Assert.Contains("ViewModel.LightingIdlePolicyPresentation", xaml, StringComparison.Ordinal);
+        Assert.Contains("PluggedInProfilePresentation.LightingDisplayOff", xaml, StringComparison.Ordinal);
+        Assert.Contains("UsbCProfilePresentation.LightingDisplayOff", xaml, StringComparison.Ordinal);
+        Assert.Contains("BatteryProfilePresentation.LightingDisplayOff", xaml, StringComparison.Ordinal);
+        Assert.Contains("SelectedProfilePresentation.LightingIdle", xaml, StringComparison.Ordinal);
     }
 
     [Fact]
