@@ -89,7 +89,8 @@ public sealed class ServiceStartupCoordinatorTests : IDisposable
         var expected = new PersistentOverrideState(
             PerformancePreset.Performance,
             FanMode.Maximum,
-            null);
+            null,
+            FanControl: FanControlSettings.FromLegacy(FanMode.Maximum));
         await new PersistentOverrideStore(Path.Combine(directory, "manual-overrides.json"))
             .SaveAsync(expected, CancellationToken.None);
         var runtime = new RecordingRuntime(path);

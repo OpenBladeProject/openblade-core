@@ -8,7 +8,8 @@ public sealed record PersistentOverrideState(
     PerformancePreset? Performance,
     FanMode? Fans,
     LightingSettings? Lighting,
-    CustomPerformanceSettings? CustomPerformance = null)
+    CustomPerformanceSettings? CustomPerformance = null,
+    FanControlSettings? FanControl = null)
 {
     public static PersistentOverrideState Empty { get; } = new(null, null, null);
 }
@@ -21,6 +22,16 @@ internal sealed record PersistentOverrideDocument(
     int SchemaVersion,
     PersistentOverrideState Overrides);
 
+internal sealed record SchemaTwoPersistentOverrideState(
+    PerformancePreset? Performance,
+    FanMode? Fans,
+    LightingSettings? Lighting,
+    CustomPerformanceSettings? CustomPerformance);
+
+internal sealed record SchemaTwoPersistentOverrideDocument(
+    int SchemaVersion,
+    SchemaTwoPersistentOverrideState Overrides);
+
 internal sealed record LegacyPersistentOverrideState(
     PerformancePreset? Performance,
     FanMode? Fans,
@@ -32,7 +43,8 @@ internal sealed record LegacyPersistentOverrideDocument(
 
 public sealed class PersistentOverrideStore
 {
-    private const int CurrentSchemaVersion = 2;
+    private const int CurrentSchemaVersion = 3;
+    private const int SchemaTwoVersion = 2;
     private const int LegacySchemaVersion = 1;
     private static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web)
     {
@@ -98,7 +110,7 @@ public sealed class PersistentOverrideStore
         PersistentOverrideState overrides,
         CancellationToken cancellationToken)
     {
-        overrides = NormalizeLegacyLighting(overrides);
+        overrides = NormalizeLegacyFanControl(NormalizeLegacyLighting(overrides));
         Validate(overrides);
         await gate.WaitAsync(cancellationToken);
         try
@@ -132,8 +144,16 @@ public sealed class PersistentOverrideStore
             throw new InvalidDataException("The persistent fan override is undefined.");
         }
 
+        if (overrides.Fans is null
+            ? overrides.FanControl is not null
+            : overrides.FanControl is null || overrides.FanControl.Mode != overrides.Fans)
+        {
+            throw new InvalidDataException(
+                "The persistent fan override details do not match its mode.");
+        }
+
         if (overrides.Lighting is { } lighting
-            && (!Enum.IsDefined(lighting.Effect) || lighting.Brightness > 100))
+            && !LightingSettingsValidation.IsWellFormed(lighting))
         {
             throw new InvalidDataException("The persistent lighting override is invalid.");
         }
@@ -158,6 +178,22 @@ public sealed class PersistentOverrideStore
             overrides = document?.Overrides
                 ?? throw new InvalidDataException("The persistent override document is missing.");
         }
+        else if (schemaVersion == SchemaTwoVersion)
+        {
+            SchemaTwoPersistentOverrideDocument? document =
+                JsonSerializer.Deserialize<SchemaTwoPersistentOverrideDocument>(
+                    json,
+                    SerializerOptions);
+            SchemaTwoPersistentOverrideState legacy = document?.Overrides
+                ?? throw new InvalidDataException(
+                    "The schema-two override document is missing.");
+            overrides = new PersistentOverrideState(
+                legacy.Performance,
+                legacy.Fans,
+                legacy.Lighting,
+                legacy.CustomPerformance,
+                legacy.Fans is { } fans ? FanControlSettings.FromLegacy(fans) : null);
+        }
         else if (schemaVersion == LegacySchemaVersion)
         {
             LegacyPersistentOverrideDocument? document =
@@ -176,7 +212,7 @@ public sealed class PersistentOverrideStore
             throw new InvalidDataException("The persistent override schema is unsupported.");
         }
 
-        overrides = NormalizeLegacyLighting(overrides);
+        overrides = NormalizeLegacyFanControl(NormalizeLegacyLighting(overrides));
         Validate(overrides);
         return overrides;
     }
@@ -190,6 +226,12 @@ public sealed class PersistentOverrideStore
                 Lighting = LightingSettingsFactory.NormalizeLegacyInvisibleEffect(
                     overrides.Lighting),
             };
+
+    internal static PersistentOverrideState NormalizeLegacyFanControl(
+        PersistentOverrideState overrides) =>
+        overrides.Fans is { } fans && overrides.FanControl is null
+            ? overrides with { FanControl = FanControlSettings.FromLegacy(fans) }
+            : overrides;
 
     private async Task WriteCoreAsync(
         PersistentOverrideState overrides,

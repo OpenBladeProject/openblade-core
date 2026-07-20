@@ -9,12 +9,15 @@ namespace OpenBlade.Service;
 public sealed class NamedPipeControlServer
 {
     internal const int MaximumServerInstances = 12;
+    private static readonly TimeSpan FrameReadTimeout = TimeSpan.FromSeconds(2);
     private static readonly TimeSpan FrameWriteTimeout = TimeSpan.FromSeconds(2);
     private readonly string pipeName;
     private readonly SecurityIdentifier authorizedUser;
     private readonly ControlRequestHandler handler;
     private readonly IStatusSubscriptionHub subscriptionHub;
     private readonly TimeProvider timeProvider;
+    private readonly SemaphoreSlim firstListenerGate = new(1, 1);
+    private int firstListenerEstablished;
 
     public NamedPipeControlServer(
         string pipeName,
@@ -36,18 +39,65 @@ public sealed class NamedPipeControlServer
 
     public async Task ServeOnceAsync(CancellationToken cancellationToken)
     {
-        await using NamedPipeServerStream pipe = NamedPipeServerStreamAcl.Create(
+        bool ownsFirstListenerGate = false;
+        NamedPipeServerStream? pipe = null;
+        try
+        {
+            if (Volatile.Read(ref firstListenerEstablished) == 0)
+            {
+                await firstListenerGate.WaitAsync(cancellationToken);
+                ownsFirstListenerGate = true;
+                if (Volatile.Read(ref firstListenerEstablished) == 0)
+                {
+                    pipe = CreatePipe(firstInstance: true);
+                }
+                else
+                {
+                    firstListenerGate.Release();
+                    ownsFirstListenerGate = false;
+                }
+            }
+
+            pipe ??= CreatePipe(firstInstance: false);
+            await pipe.WaitForConnectionAsync(cancellationToken);
+            if (ownsFirstListenerGate)
+            {
+                Volatile.Write(ref firstListenerEstablished, 1);
+                firstListenerGate.Release();
+                ownsFirstListenerGate = false;
+            }
+            await ServeConnectionAsync(pipe, cancellationToken);
+        }
+        finally
+        {
+            if (ownsFirstListenerGate)
+            {
+                firstListenerGate.Release();
+            }
+            if (pipe is not null)
+            {
+                await pipe.DisposeAsync();
+            }
+        }
+    }
+
+    private NamedPipeServerStream CreatePipe(bool firstInstance)
+    {
+        PipeOptions options = PipeOptions.Asynchronous;
+        if (firstInstance)
+        {
+            options |= PipeOptions.FirstPipeInstance;
+        }
+
+        return NamedPipeServerStreamAcl.Create(
             pipeName,
             PipeDirection.InOut,
             maxNumberOfServerInstances: MaximumServerInstances,
             PipeTransmissionMode.Byte,
-            PipeOptions.Asynchronous,
+            options,
             inBufferSize: 0,
             outBufferSize: 0,
             PipeSecurityFactory.Create(authorizedUser));
-
-        await pipe.WaitForConnectionAsync(cancellationToken);
-        await ServeConnectionAsync(pipe, cancellationToken);
     }
 
     public async Task ServeConnectionAsync(
@@ -60,9 +110,7 @@ public sealed class NamedPipeControlServer
             ServiceRequest request;
             try
             {
-                request = await IpcMessageCodec.ReadRequestAsync(
-                    connection,
-                    cancellationToken);
+                request = await ReadRequestAsync(connection, cancellationToken);
             }
             catch (Exception exception) when (exception is InvalidDataException or JsonException)
             {
@@ -203,6 +251,25 @@ public sealed class NamedPipeControlServer
             when (deadline.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
         {
             throw new TimeoutException("IPC frame write exceeded two seconds.", exception);
+        }
+    }
+
+    private async Task<ServiceRequest> ReadRequestAsync(
+        Stream connection,
+        CancellationToken cancellationToken)
+    {
+        using var deadline = new CancellationTokenSource(FrameReadTimeout, timeProvider);
+        using CancellationTokenSource linked = CancellationTokenSource.CreateLinkedTokenSource(
+            cancellationToken,
+            deadline.Token);
+        try
+        {
+            return await IpcMessageCodec.ReadRequestAsync(connection, linked.Token);
+        }
+        catch (OperationCanceledException exception)
+            when (deadline.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
+        {
+            throw new TimeoutException("IPC frame read exceeded two seconds.", exception);
         }
     }
 

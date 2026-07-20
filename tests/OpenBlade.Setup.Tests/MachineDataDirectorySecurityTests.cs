@@ -52,6 +52,37 @@ public sealed class MachineDataDirectorySecurityTests : IDisposable
     }
 
     [Fact]
+    public void ProtectedFileSecurity_UsesAdministratorOwnerAndOnlyPrivilegedFullControl()
+    {
+        FileSecurity security =
+            WindowsMachineDataDirectorySecurity.CreateProtectedFileSecurity();
+
+        WindowsMachineDataDirectorySecurity.VerifyProtectedFileSecurity(security);
+        FileSystemAccessRule[] rules = security
+            .GetAccessRules(
+                includeExplicit: true,
+                includeInherited: true,
+                typeof(SecurityIdentifier))
+            .Cast<FileSystemAccessRule>()
+            .ToArray();
+        SecurityIdentifier localSystem = new(WellKnownSidType.LocalSystemSid, null);
+        SecurityIdentifier administrators = new(
+            WellKnownSidType.BuiltinAdministratorsSid,
+            null);
+
+        Assert.Equal(2, rules.Length);
+        Assert.All(rules, rule =>
+        {
+            Assert.False(rule.IsInherited);
+            Assert.Equal(FileSystemRights.FullControl, rule.FileSystemRights);
+            Assert.Equal(InheritanceFlags.None, rule.InheritanceFlags);
+            Assert.Equal(PropagationFlags.None, rule.PropagationFlags);
+        });
+        Assert.Contains(rules, rule => rule.IdentityReference == localSystem);
+        Assert.Contains(rules, rule => rule.IdentityReference == administrators);
+    }
+
+    [Fact]
     public async Task ProtectAsync_CancellationBeforeMutation_DoesNotCreateDirectory()
     {
         using CancellationTokenSource cancellation = new();

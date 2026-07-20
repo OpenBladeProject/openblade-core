@@ -1647,6 +1647,9 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             Fans = value?.Lifetime == OverrideLifetime.Persistent
                 ? value.Value
                 : null,
+            FanControl = value?.Lifetime == OverrideLifetime.Persistent
+                ? settings ?? FanControlSettings.FromLegacy(value.Value)
+                : null,
         };
         await PersistOverridesIfChangedAsync(staged, cancellationToken);
         Automation.SetFanOverride(value, settings);

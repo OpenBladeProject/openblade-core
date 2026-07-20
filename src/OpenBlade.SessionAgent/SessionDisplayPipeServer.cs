@@ -5,18 +5,22 @@ namespace OpenBlade.SessionAgent;
 
 public sealed class SessionDisplayPipeServer : IAsyncDisposable
 {
+    private static readonly TimeSpan FrameReadTimeout = TimeSpan.FromSeconds(2);
     private static readonly TimeSpan FrameWriteTimeout = TimeSpan.FromSeconds(2);
     private readonly SessionAgentPipeOwner owner;
     private readonly SessionDisplayRequestDispatcher dispatcher;
+    private readonly TimeProvider timeProvider;
     private NamedPipeServerStream? currentPipe;
     private int disposed;
 
     public SessionDisplayPipeServer(
         SessionAgentPipeOwner owner,
-        SessionDisplayRequestDispatcher dispatcher)
+        SessionDisplayRequestDispatcher dispatcher,
+        TimeProvider? timeProvider = null)
     {
         this.owner = owner ?? throw new ArgumentNullException(nameof(owner));
         this.dispatcher = dispatcher ?? throw new ArgumentNullException(nameof(dispatcher));
+        this.timeProvider = timeProvider ?? TimeProvider.System;
         currentPipe = owner.TakeInitialPipe();
     }
 
@@ -51,21 +55,20 @@ public sealed class SessionDisplayPipeServer : IAsyncDisposable
         SessionDisplayRequest request;
         try
         {
-            request = await SessionDisplayIpcCodec.ReadRequestAsync(
-                connection,
-                cancellationToken).ConfigureAwait(false);
+            request = await ReadRequestAsync(connection, cancellationToken).ConfigureAwait(false);
         }
-        catch (InvalidDataException)
+        catch (Exception exception) when (
+            exception is InvalidDataException or IOException or TimeoutException)
         {
-            // A malformed frame has no trustworthy correlation ID. Close only
-            // this connection rather than synthesizing a misleading response.
+            // A malformed, truncated, or stalled frame has no trustworthy
+            // correlation ID. Close only this connection.
             return;
         }
 
         SessionDisplayResponse response = await dispatcher.DispatchAsync(
             request,
             cancellationToken).ConfigureAwait(false);
-        using var deadline = new CancellationTokenSource(FrameWriteTimeout);
+        using var deadline = new CancellationTokenSource(FrameWriteTimeout, timeProvider);
         using CancellationTokenSource linked = CancellationTokenSource.CreateLinkedTokenSource(
             cancellationToken,
             deadline.Token);
@@ -73,6 +76,27 @@ public sealed class SessionDisplayPipeServer : IAsyncDisposable
             connection,
             response,
             linked.Token).ConfigureAwait(false);
+    }
+
+    private async Task<SessionDisplayRequest> ReadRequestAsync(
+        Stream connection,
+        CancellationToken cancellationToken)
+    {
+        using var deadline = new CancellationTokenSource(FrameReadTimeout, timeProvider);
+        using CancellationTokenSource linked = CancellationTokenSource.CreateLinkedTokenSource(
+            cancellationToken,
+            deadline.Token);
+        try
+        {
+            return await SessionDisplayIpcCodec.ReadRequestAsync(
+                connection,
+                linked.Token).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException exception)
+            when (deadline.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
+        {
+            throw new TimeoutException("Display IPC frame read exceeded two seconds.", exception);
+        }
     }
 
     public async ValueTask DisposeAsync()

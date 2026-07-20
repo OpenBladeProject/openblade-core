@@ -113,6 +113,50 @@ public sealed class ReactiveKeyPulsePumpTests
     }
 
     [Fact]
+    public async Task Pump_CancelsInFlightPulseAtEndToEndDeadlineAndContinues()
+    {
+        var expiredCanceled = new TaskCompletionSource(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        var freshSent = new TaskCompletionSource(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        var sent = new List<byte>();
+        await using var pump = new ReactiveKeyPulsePump(
+            async (pulse, token) =>
+            {
+                if (pulse.MatrixSlot == 19)
+                {
+                    try
+                    {
+                        await Task.Delay(Timeout.InfiniteTimeSpan, token);
+                    }
+                    catch (OperationCanceledException) when (token.IsCancellationRequested)
+                    {
+                        expiredCanceled.TrySetResult();
+                        throw;
+                    }
+                }
+
+                lock (sent)
+                {
+                    sent.Add(pulse.MatrixSlot);
+                }
+                freshSent.TrySetResult();
+            },
+            maximumQueueAge: TimeSpan.FromMilliseconds(100));
+
+        Assert.True(pump.TryEnqueue(new ReactiveKeyPulse(19)));
+        await expiredCanceled.Task.WaitAsync(TimeSpan.FromSeconds(2));
+
+        Assert.True(pump.TryEnqueue(new ReactiveKeyPulse(36)));
+        await freshSent.Task.WaitAsync(TimeSpan.FromSeconds(2));
+
+        lock (sent)
+        {
+            Assert.Equal([36], sent);
+        }
+    }
+
+    [Fact]
     public async Task Dispose_CancelsDeliveryAndRejectsNewPulses()
     {
         var started = new TaskCompletionSource(

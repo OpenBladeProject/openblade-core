@@ -27,6 +27,7 @@ internal sealed class ProductionLightingPort : IProductionLightingPort
     private int ownershipState;
     private bool closing;
     private bool disposed;
+    private Task<LightingRendererOwnershipState>? closeTask;
 
     internal ProductionLightingPort(
         ValidationActor actor,
@@ -373,18 +374,17 @@ internal sealed class ProductionLightingPort : IProductionLightingPort
     public async ValueTask DisposeAsync() =>
         _ = await CloseAsync().ConfigureAwait(false);
 
-    private async Task<LightingRendererOwnershipState> CloseAsync()
+    private Task<LightingRendererOwnershipState> CloseAsync()
     {
         lock (lifecycleSync)
         {
-            if (closing || disposed)
-            {
-                return OwnershipState;
-            }
-
             closing = true;
+            return closeTask ??= CloseCoreAsync();
         }
+    }
 
+    private async Task<LightingRendererOwnershipState> CloseCoreAsync()
+    {
         await operationGate.WaitAsync().ConfigureAwait(false);
         try
         {

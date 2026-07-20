@@ -692,6 +692,34 @@ public sealed class ProductionLightingPortTests
     }
 
     [Fact]
+    public async Task ConcurrentCloseCallersAwaitTheSameCleanup()
+    {
+        var session = new LightingSession(initialBrightness: 0xFF);
+        var writer = new MatrixWriter();
+        var port = CreatePort(session, writer, admitted: true);
+        writer.BlockNextWrite();
+        Task write = port.SetLightingAsync(
+            LightingSettingsFactory.Static(new RgbColor(1, 2, 3), 100),
+            default);
+        await writer.WaitForWriteCountAsync(1, TimeSpan.FromSeconds(2));
+
+        Task<LightingRendererOwnershipState> first = port.InvalidateAsync();
+        Task<LightingRendererOwnershipState> second = port.InvalidateAsync();
+        await Task.Delay(50);
+
+        Assert.False(first.IsCompleted);
+        Assert.False(second.IsCompleted);
+
+        writer.ReleaseBlockedWrite();
+        await write;
+        LightingRendererOwnershipState[] results = await Task.WhenAll(first, second);
+
+        Assert.Equal(results[0], results[1]);
+        Assert.Equal(LightingRendererOwnershipState.None, port.OwnershipState);
+        await port.DisposeAsync();
+    }
+
+    [Fact]
     public async Task AnimatedStream_DoesNotPassItsStopTokenIntoNativeWrites()
     {
         var session = new LightingSession(initialBrightness: 0xFF);

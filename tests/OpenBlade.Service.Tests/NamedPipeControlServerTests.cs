@@ -29,6 +29,33 @@ public sealed class NamedPipeControlServerTests
     }
 
     [Fact]
+    public async Task ServeOnceAsync_ClaimsFirstPipeInstanceBeforeAcceptingClients()
+    {
+        TestServer context = CreateServer();
+        using CancellationTokenSource timeout = new(TimeSpan.FromSeconds(5));
+        Task serverTask = context.Server.ServeOnceAsync(timeout.Token);
+        await Task.Delay(50, timeout.Token);
+        Assert.False(serverTask.IsFaulted, serverTask.Exception?.ToString());
+
+        Exception startupClaimFailure = Assert.ThrowsAny<Exception>(() => NamedPipeServerStreamAcl.Create(
+            context.PipeName,
+            PipeDirection.InOut,
+            maxNumberOfServerInstances: NamedPipeControlServer.MaximumServerInstances,
+            PipeTransmissionMode.Byte,
+            PipeOptions.Asynchronous | PipeOptions.FirstPipeInstance,
+            inBufferSize: 0,
+            outBufferSize: 0,
+            PipeSecurityFactory.Create(WindowsIdentity.GetCurrent().User!)));
+        Assert.True(startupClaimFailure is IOException or UnauthorizedAccessException);
+
+        await using NamedPipeClientStream client = await ConnectAsync(context.PipeName, timeout.Token);
+        var request = new GetStatusRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid());
+        await IpcMessageCodec.WriteRequestAsync(client, request, timeout.Token);
+        _ = await IpcMessageCodec.ReadServerFrameAsync(client, timeout.Token);
+        await serverTask;
+    }
+
+    [Fact]
     public async Task ServeOnceAsync_RoundTripsBoundedDiagnosticArchiveOverAclProtectedPipe()
     {
         TestServer context = CreateServer();
@@ -144,6 +171,21 @@ public sealed class NamedPipeControlServerTests
 
         await serving.WaitAsync(TimeSpan.FromSeconds(2));
         Assert.True(stream.WriteCancellationObserved);
+    }
+
+    [Fact]
+    public async Task ServeConnectionAsync_CancelsIncompleteFrameReadAtTwoSeconds()
+    {
+        var time = new ManualTimeProvider();
+        TestServer context = CreateServer(time);
+        await using var stream = new BlockingReadStream();
+
+        Task serving = context.Server.ServeConnectionAsync(stream, CancellationToken.None);
+        await stream.ReadStarted.Task.WaitAsync(TimeSpan.FromSeconds(2));
+        time.Advance(TimeSpan.FromSeconds(2));
+
+        await serving.WaitAsync(TimeSpan.FromSeconds(2));
+        Assert.True(stream.ReadCancellationObserved);
     }
 
     [Fact]
@@ -333,6 +375,49 @@ public sealed class NamedPipeControlServerTests
         public override void SetLength(long value) => throw new NotSupportedException();
         public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
         protected override void Dispose(bool disposing) { if (disposing) reader.Dispose(); base.Dispose(disposing); }
+    }
+
+    private sealed class BlockingReadStream : Stream
+    {
+        public TaskCompletionSource ReadStarted { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public bool ReadCancellationObserved { get; private set; }
+        public override bool CanRead => true;
+        public override bool CanSeek => false;
+        public override bool CanWrite => true;
+        public override long Length => throw new NotSupportedException();
+        public override long Position
+        {
+            get => throw new NotSupportedException();
+            set => throw new NotSupportedException();
+        }
+        public override int Read(byte[] buffer, int offset, int count) =>
+            throw new NotSupportedException();
+        public override async ValueTask<int> ReadAsync(
+            Memory<byte> buffer,
+            CancellationToken token = default)
+        {
+            ReadStarted.TrySetResult();
+            try
+            {
+                await Task.Delay(Timeout.InfiniteTimeSpan, token);
+                return 0;
+            }
+            catch (OperationCanceledException)
+            {
+                ReadCancellationObserved = true;
+                throw;
+            }
+        }
+        public override void Flush()
+        {
+        }
+        public override Task FlushAsync(CancellationToken token) => Task.CompletedTask;
+        public override long Seek(long offset, SeekOrigin origin) =>
+            throw new NotSupportedException();
+        public override void SetLength(long value) => throw new NotSupportedException();
+        public override void Write(byte[] buffer, int offset, int count) =>
+            throw new NotSupportedException();
     }
 
     private sealed class ManualTimeProvider : TimeProvider

@@ -30,6 +30,9 @@ public interface ISetupServiceControl
 internal sealed class ScSetupServiceControl : ISetupServiceControl
 {
     private const int ServiceDoesNotExist = 1060;
+    internal static string ExecutablePath { get; } = Path.Combine(
+        Environment.SystemDirectory,
+        "sc.exe");
 
     public async Task<bool> ExistsAsync(string serviceName, CancellationToken cancellationToken)
     {
@@ -143,7 +146,7 @@ internal sealed class ScSetupServiceControl : ISetupServiceControl
         IReadOnlyList<string> arguments,
         CancellationToken cancellationToken)
     {
-        ProcessStartInfo startInfo = new("sc.exe")
+        ProcessStartInfo startInfo = new(ExecutablePath)
         {
             UseShellExecute = false,
             RedirectStandardError = true,

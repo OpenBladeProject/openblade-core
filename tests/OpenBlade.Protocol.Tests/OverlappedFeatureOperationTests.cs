@@ -354,6 +354,38 @@ public sealed class OverlappedFeatureOperationTests
         Assert.Equal(1, submission.Token.DisposeCount);
     }
 
+    [Theory]
+    [InlineData((int)NativeCancelResult.NotFound)]
+    [InlineData((int)NativeCancelResult.Failed)]
+    public async Task FailedCancellation_CompletesManagedDeadlineWithoutReleasingNativeResources(
+        int cancelResultValue)
+    {
+        var cancelResult = (NativeCancelResult)cancelResultValue;
+        using var deadline = new CancellationTokenSource();
+        var native = new ScriptedNative
+        {
+            OnSubmit = _ => new NativeSubmissionResult(NativeSubmissionKind.Pending, 997),
+            OnCancel = _ => cancelResult,
+        };
+        Task<HidFeatureIoResult> execution = new OverlappedFeatureOperation(native).ExecuteAsync(
+            CreateHandle(), 1, new byte[91], CancellationToken.None, deadline.Token);
+        SubmitContext submission = Assert.Single(native.Submissions);
+
+        deadline.Cancel();
+
+        HidFeatureIoResult result = await execution.WaitAsync(GateTimeout);
+        Assert.Equal(HidFeatureTermination.DeadlineExpired, result.Termination);
+        Assert.True(result.WasSubmitted);
+        Assert.Null(result.Completion);
+        Assert.False(submission.Token.IsDisposed);
+        Assert.True(submission.Token.IsPinAllocated);
+
+        submission.Complete(new NativeIoCompletion(false, 0, 995));
+
+        Assert.Equal(1, submission.Token.DisposeCount);
+        Assert.False(submission.Token.IsPinAllocated);
+    }
+
     [Fact]
     public async Task CallerAndDeadlineCallbacks_ContendButOnlyOneExactTokenCancelOccurs()
     {

@@ -7,6 +7,28 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Bounded session-agent display IPC reads and contained stalled or truncated
+  frames to the individual client connection.
+- Enforced an end-to-end 100 ms deadline for Reactive and Ripple key pulses so
+  a slow IPC connection cannot apply stale input or block newer key presses.
+- Preserved persistent fixed-speed and manual-curve fan details across service
+  restarts with a schema-three override migration.
+- Rejected semantically invalid persistent lighting overrides during recovery
+  instead of retrying unusable settings after every startup.
+- Refreshed the UI when only fan-control details or lighting-renderer ownership
+  changes, rather than treating those events as telemetry-only updates.
+- Made concurrent lighting invalidation and disposal callers await the same
+  hardware cleanup instead of returning before renderer ownership is released.
+- Kept failed native HID cancellation from blocking the serialized hardware
+  session indefinitely while retaining pinned resources for a late callback.
+- Added a two-second service request-read deadline so incomplete local IPC
+  frames cannot indefinitely occupy every named-pipe listener.
+- Preserved exclusive ownership of the service pipe from startup through
+  connection handoff so another local process cannot claim its fixed name.
+- Pinned setup service-control operations to the Windows System32 `sc.exe`
+  instead of allowing executable search-path resolution.
+- Applied and verified the protected machine-data ACL on existing child files
+  and directories instead of securing only the parent directory.
 - Prevented interactive keyboard pulses from waiting behind periodic firmware
   observations or repeating exact-device enumeration for every key, and
   preserved status through routine subscription rotation.

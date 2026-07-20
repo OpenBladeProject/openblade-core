@@ -3195,6 +3195,40 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     }
 
     [Fact]
+    public async Task PersistentFixedFanSpeed_SurvivesServiceRuntimeRecreation()
+    {
+        string overridePath = Path.Combine(directory, "restart-fan-overrides.json");
+        TestContext first = CreateContext(
+            providerAvailable: false,
+            persistentOverridePath: overridePath,
+            loadPersistentOverrides: true);
+        var settings = new FanControlSettings(
+            FanMode.Fixed,
+            2800,
+            ManualFanCurve.Default);
+
+        ControlOperationResult result = await first.Runtime.SetFanControlOverrideAsync(
+            new ManualOverride<FanMode>(
+                FanMode.Fixed,
+                OverrideLifetime.Persistent),
+            settings,
+            CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Blocked, result.Status);
+        TestContext restarted = CreateContext(
+            providerAvailable: false,
+            persistentOverridePath: overridePath,
+            loadPersistentOverrides: true);
+        ServiceStatusSnapshot status = restarted.Runtime.GetStatus();
+        Assert.Equal(
+            new ManualOverride<FanMode>(
+                FanMode.Fixed,
+                OverrideLifetime.Persistent),
+            status.FanOverride);
+        Assert.Equal(settings, status.FanControlOverride);
+    }
+
+    [Fact]
     public async Task SwitchingPersistentOverrideToTemporary_RemovesDurableValue()
     {
         string overridePath = Path.Combine(directory, "replacement-overrides.json");

@@ -128,18 +128,31 @@ public sealed class ReactiveKeyPulsePump : IAsyncDisposable
                 queued = pending.Dequeue();
             }
 
-            if (timeProvider.GetElapsedTime(queued.EnqueuedAt) > maximumQueueAge)
+            TimeSpan elapsed = timeProvider.GetElapsedTime(queued.EnqueuedAt);
+            if (elapsed >= maximumQueueAge)
             {
                 continue;
             }
 
+            using var deadline = new CancellationTokenSource(
+                maximumQueueAge - elapsed,
+                timeProvider);
+            using var delivery = CancellationTokenSource.CreateLinkedTokenSource(
+                cancellationToken,
+                deadline.Token);
             try
             {
-                await sendAsync(queued.Pulse, cancellationToken).ConfigureAwait(false);
+                await sendAsync(queued.Pulse, delivery.Token).ConfigureAwait(false);
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
                 throw;
+            }
+            catch (OperationCanceledException) when (deadline.IsCancellationRequested)
+            {
+                // The visual response is no longer useful. Cancel the whole
+                // connect/request round trip so it cannot apply stale input or
+                // hold newer key presses behind it.
             }
             catch (Exception exception)
             {

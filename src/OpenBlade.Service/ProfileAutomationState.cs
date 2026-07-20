@@ -31,6 +31,8 @@ public sealed class ProfileAutomationState
     {
         this.profiles = profiles ?? throw new ArgumentNullException(nameof(profiles));
         ArgumentNullException.ThrowIfNull(preferences);
+        persistentOverrides = PersistentOverrideStore.NormalizeLegacyFanControl(
+            PersistentOverrideStore.NormalizeLegacyLighting(persistentOverrides));
         PersistentOverrideStore.Validate(persistentOverrides);
         PowerSource = powerSource;
         persistentPerformance = persistentOverrides.Performance is { } performance
@@ -44,9 +46,7 @@ public sealed class ProfileAutomationState
         persistentFans = persistentOverrides.Fans is { } fans
             ? new ManualOverride<FanMode>(fans, OverrideLifetime.Persistent)
             : null;
-        persistentFanControl = persistentOverrides.Fans is { } persistentFan
-            ? FanControlSettings.FromLegacy(persistentFan)
-            : null;
+        persistentFanControl = persistentOverrides.FanControl;
         persistentLighting = persistentOverrides.Lighting is { } lighting
             ? new ManualOverride<LightingSettings>(lighting, OverrideLifetime.Persistent)
             : null;

@@ -171,6 +171,32 @@ internal sealed class NativeOperationState
         }
     }
 
+    public void PublishSubmittedCancellationWithoutNativeCompletion()
+    {
+        HidFeatureIoResult? result = null;
+        lock (_sync)
+        {
+            if (_submissionState == SubmissionState.Submitted
+                && !_completionObserved
+                && _termination != HidFeatureTermination.Completed
+                && !_completion.Task.IsCompleted)
+            {
+                result = new HidFeatureIoResult(
+                    Completion: null,
+                    WasSubmitted: true,
+                    Termination: _termination);
+            }
+        }
+
+        if (result is { } completed)
+        {
+            // The owning HID session treats this submitted cancellation as
+            // indeterminate and poisons the handle. Native buffers remain pinned
+            // until a late completion callback safely finalizes the operation.
+            _completion.TrySetResult(completed);
+        }
+    }
+
     public void RecordCompletion(NativeIoCompletion completion)
     {
         Finalization? finalization = null;

@@ -5,6 +5,15 @@ namespace OpenBlade.Setup.Tests;
 public sealed class WindowsSetupPlatformServiceTests
 {
     [Fact]
+    public void ServiceControlExecutable_IsPinnedToWindowsSystemDirectory()
+    {
+        Assert.Equal(
+            Path.Combine(Environment.SystemDirectory, "sc.exe"),
+            ScSetupServiceControl.ExecutablePath,
+            ignoreCase: true);
+    }
+
+    [Fact]
     public async Task InstallService_NewService_RegistersLiteralQuotedImagePath()
     {
         RecordingServiceControl serviceControl = new();

@@ -5982,8 +5982,10 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         && left.ActivePowerSource == right.ActivePowerSource
         && left.PerformanceOverride == right.PerformanceOverride
         && left.FanOverride == right.FanOverride
+        && left.FanControlOverride == right.FanControlOverride
         && left.LightingOverride == right.LightingOverride
         && left.FullChargeOverride == right.FullChargeOverride
+        && left.LightingRendererOwnership == right.LightingRendererOwnership
         && left.StartupAnimationEnabled == right.StartupAnimationEnabled
         && left.FunctionKeyPrimary == right.FunctionKeyPrimary
         && left.GamingModeEnabled == right.GamingModeEnabled

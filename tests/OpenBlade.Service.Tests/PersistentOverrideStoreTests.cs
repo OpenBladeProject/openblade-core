@@ -20,13 +20,35 @@ public sealed class PersistentOverrideStoreTests : IDisposable
             new LightingSettings(
                 LightingEffect.Static,
                 new RgbColor(12, 34, 56),
-                Brightness: 70));
+                Brightness: 70),
+            FanControl: FanControlSettings.FromLegacy(FanMode.Maximum));
 
         await store.SaveAsync(expected, CancellationToken.None);
         PersistentOverrideLoadResult loaded = await store.LoadAsync(CancellationToken.None);
 
         Assert.False(loaded.Recovered);
         Assert.Equal(expected, loaded.Overrides);
+    }
+
+    [Fact]
+    public async Task SaveAndLoad_RoundTripsFixedFanSpeedDetails()
+    {
+        PersistentOverrideStore store = CreateStore();
+        var fanControl = new FanControlSettings(
+            FanMode.Fixed,
+            2800,
+            ManualFanCurve.Default);
+        var expected = new PersistentOverrideState(
+            null,
+            FanMode.Fixed,
+            null,
+            FanControl: fanControl);
+
+        await store.SaveAsync(expected, CancellationToken.None);
+        PersistentOverrideLoadResult loaded = await store.LoadAsync(CancellationToken.None);
+
+        Assert.False(loaded.Recovered);
+        Assert.Equal(fanControl, loaded.Overrides.FanControl);
     }
 
     [Fact]
@@ -70,6 +92,63 @@ public sealed class PersistentOverrideStoreTests : IDisposable
         Assert.False(loaded.Recovered);
         Assert.Equal(PerformancePreset.Performance, loaded.Overrides.Performance);
         Assert.Null(loaded.Overrides.CustomPerformance);
+    }
+
+    [Fact]
+    public async Task Load_MigratesSchemaTwoFanModeToLegacyDetails()
+    {
+        string path = Path.Combine(directory, "manual-overrides.json");
+        Directory.CreateDirectory(directory);
+        await File.WriteAllTextAsync(path, """
+            {
+              "schemaVersion": 2,
+              "overrides": {
+                "performance": null,
+                "fans": 1,
+                "lighting": null,
+                "customPerformance": null
+              }
+            }
+            """);
+
+        PersistentOverrideLoadResult loaded = await new PersistentOverrideStore(path)
+            .LoadAsync(CancellationToken.None);
+
+        Assert.False(loaded.Recovered);
+        Assert.Equal(FanMode.Fixed, loaded.Overrides.Fans);
+        Assert.Equal(
+            FanControlSettings.FromLegacy(FanMode.Fixed),
+            loaded.Overrides.FanControl);
+    }
+
+    [Fact]
+    public async Task Load_InvalidLightingParametersRecoversToEmptyState()
+    {
+        string path = Path.Combine(directory, "manual-overrides.json");
+        Directory.CreateDirectory(directory);
+        await File.WriteAllTextAsync(path, """
+            {
+              "schemaVersion": 3,
+              "overrides": {
+                "performance": null,
+                "fans": null,
+                "lighting": {
+                  "effect": 1,
+                  "color": { "red": 1, "green": 2, "blue": 3 },
+                  "brightness": 50,
+                  "parameters": { "kind": "off" }
+                },
+                "customPerformance": null,
+                "fanControl": null
+              }
+            }
+            """);
+
+        PersistentOverrideLoadResult loaded = await new PersistentOverrideStore(path)
+            .LoadAsync(CancellationToken.None);
+
+        Assert.True(loaded.Recovered);
+        Assert.Equal(PersistentOverrideState.Empty, loaded.Overrides);
     }
 
     [Fact]

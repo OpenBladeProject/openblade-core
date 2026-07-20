@@ -379,7 +379,11 @@ internal sealed class OverlappedFeatureOperation : IHidFeatureIo
                     NotifyCheckpoint(OverlappedFeatureOperationCheckpoint.AfterRecordSubmitted);
                     if (state.TryClaimTargetedCancellation())
                     {
-                        _ = native.Cancel(handle, operation);
+                        NativeCancelResult cancelResult = native.Cancel(handle, operation);
+                        if (cancelResult != NativeCancelResult.Requested)
+                        {
+                            state.PublishSubmittedCancellationWithoutNativeCompletion();
+                        }
                     }
                 }
             }
@@ -454,7 +458,11 @@ internal sealed class OverlappedFeatureOperation : IHidFeatureIo
         {
             if (state.TryClaimTargetedCancellation())
             {
-                _ = native.Cancel(handle, operation);
+                NativeCancelResult cancelResult = native.Cancel(handle, operation);
+                if (cancelResult != NativeCancelResult.Requested)
+                {
+                    state.PublishSubmittedCancellationWithoutNativeCompletion();
+                }
             }
         }
         finally

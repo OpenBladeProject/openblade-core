@@ -76,6 +76,34 @@ public sealed class SessionDisplayServerTests
         Assert.Equal("fixed-60", response.State.CurrentRefreshKey);
     }
 
+    [Fact]
+    public async Task ServeConnection_TruncatedFrameClosesOnlyThatConnection()
+    {
+        var dispatcher = new SessionDisplayRequestDispatcher(new RecordingApplier());
+        await using var owner = AcquireOwner();
+        await using var server = new SessionDisplayPipeServer(owner, dispatcher);
+        await using var connection = new TestDuplexStream([1, 0]);
+
+        await server.ServeConnectionAsync(connection, CancellationToken.None);
+    }
+
+    [Fact]
+    public async Task ServeConnection_CancelsIncompleteFrameReadAtTwoSeconds()
+    {
+        var time = new ManualTimeProvider();
+        var dispatcher = new SessionDisplayRequestDispatcher(new RecordingApplier());
+        await using var owner = AcquireOwner();
+        await using var server = new SessionDisplayPipeServer(owner, dispatcher, time);
+        await using var connection = new BlockingReadStream();
+
+        Task serving = server.ServeConnectionAsync(connection, CancellationToken.None);
+        await connection.ReadStarted.Task.WaitAsync(TimeSpan.FromSeconds(2));
+        time.Advance(TimeSpan.FromSeconds(2));
+
+        await serving.WaitAsync(TimeSpan.FromSeconds(2));
+        Assert.True(connection.ReadCancellationObserved);
+    }
+
     private static SessionAgentPipeOwner AcquireOwner()
     {
         SecurityIdentifier sid = WindowsIdentity.GetCurrent().User!;
@@ -192,6 +220,102 @@ public sealed class SessionDisplayServerTests
                 writer.Dispose();
             }
             base.Dispose(disposing);
+        }
+    }
+
+    private sealed class BlockingReadStream : Stream
+    {
+        public TaskCompletionSource ReadStarted { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public bool ReadCancellationObserved { get; private set; }
+        public override bool CanRead => true;
+        public override bool CanSeek => false;
+        public override bool CanWrite => true;
+        public override long Length => throw new NotSupportedException();
+        public override long Position
+        {
+            get => throw new NotSupportedException();
+            set => throw new NotSupportedException();
+        }
+        public override int Read(byte[] buffer, int offset, int count) =>
+            throw new NotSupportedException();
+        public override async ValueTask<int> ReadAsync(
+            Memory<byte> buffer,
+            CancellationToken token = default)
+        {
+            ReadStarted.TrySetResult();
+            try
+            {
+                await Task.Delay(Timeout.InfiniteTimeSpan, token);
+                return 0;
+            }
+            catch (OperationCanceledException)
+            {
+                ReadCancellationObserved = true;
+                throw;
+            }
+        }
+        public override void Flush() { }
+        public override Task FlushAsync(CancellationToken token) => Task.CompletedTask;
+        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+        public override void SetLength(long value) => throw new NotSupportedException();
+        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+    }
+
+    private sealed class ManualTimeProvider : TimeProvider
+    {
+        private readonly List<ManualTimer> timers = [];
+        private DateTimeOffset now = DateTimeOffset.UnixEpoch;
+        public override DateTimeOffset GetUtcNow() => now;
+        public override ITimer CreateTimer(
+            TimerCallback callback,
+            object? state,
+            TimeSpan dueTime,
+            TimeSpan period)
+        {
+            var timer = new ManualTimer(callback, state, now + dueTime, period);
+            timers.Add(timer);
+            return timer;
+        }
+        public void Advance(TimeSpan amount)
+        {
+            now += amount;
+            foreach (ManualTimer timer in timers.ToArray())
+            {
+                timer.FireIfDue(now);
+            }
+        }
+        private sealed class ManualTimer(
+            TimerCallback callback,
+            object? state,
+            DateTimeOffset due,
+            TimeSpan period) : ITimer
+        {
+            private bool disposed;
+            private DateTimeOffset next = due;
+            public void FireIfDue(DateTimeOffset now)
+            {
+                if (disposed || now < next)
+                {
+                    return;
+                }
+                callback(state);
+                if (period == Timeout.InfiniteTimeSpan)
+                {
+                    disposed = true;
+                }
+                else
+                {
+                    next = now + period;
+                }
+            }
+            public bool Change(TimeSpan dueTime, TimeSpan period) => throw new NotSupportedException();
+            public void Dispose() => disposed = true;
+            public ValueTask DisposeAsync()
+            {
+                Dispose();
+                return ValueTask.CompletedTask;
+            }
         }
     }
 }

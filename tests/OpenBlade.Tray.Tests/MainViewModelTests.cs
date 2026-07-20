@@ -2202,15 +2202,18 @@ public sealed class MainViewModelTests
     public async Task LiveReadingsOnlyStatus_DoesNotInvalidateUnchangedPagePresentation()
     {
         var client = new FakeServiceClient();
-        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        var dispatcher = new RecordingDispatcher();
+        await using var viewModel = new MainViewModel(client, dispatcher);
         await viewModel.StartAsync();
         ServiceStatusSnapshot baseline = CreateStatus(verified: true, blocked: false) with
         {
             Revision = 10,
             LiveReadings = new LiveReadings(-18_000, 2400, 2300),
         };
+        int dispatchesBeforeBaseline = dispatcher.CompletedCalls;
         client.Publish(baseline);
-        await WaitUntilAsync(() => viewModel.LiveReadings == baseline.LiveReadings);
+        await WaitUntilAsync(() => dispatcher.CompletedCalls > dispatchesBeforeBaseline);
+        Assert.Equal(baseline.LiveReadings, viewModel.LiveReadings);
 
         var changed = new HashSet<string>();
         viewModel.PropertyChanged += (_, args) => changed.Add(args.PropertyName!);
@@ -2232,6 +2235,66 @@ public sealed class MainViewModelTests
         Assert.DoesNotContain(nameof(viewModel.TroubleshootingServiceStatus), changed);
         Assert.DoesNotContain(nameof(viewModel.AboutDetectedLaptopStatus), changed);
         Assert.DoesNotContain(nameof(viewModel.CanAdjustChargeLimit), changed);
+    }
+
+    [Fact]
+    public async Task LightingRendererOwnershipOnlyStatus_RefreshesLightingPresentation()
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        ServiceStatusSnapshot baseline = CreateStatus(verified: true, blocked: false) with
+        {
+            Revision = 10,
+            ConfirmedState = CreateStatus(true, false).ConfirmedState! with
+            {
+                Lighting = null,
+            },
+            LightingRendererOwnership = LightingRendererOwnershipState.None,
+        };
+        client.Publish(baseline);
+        await WaitUntilAsync(() => viewModel.IsKeyboardEffectUnconfirmed);
+
+        client.Publish(baseline with
+        {
+            Revision = 11,
+            LightingRendererOwnership = LightingRendererOwnershipState.Spectrum,
+        });
+        await WaitUntilAsync(() => !viewModel.IsKeyboardEffectUnconfirmed);
+
+        Assert.False(viewModel.IsKeyboardEffectUnconfirmed);
+    }
+
+    [Fact]
+    public async Task FanControlOverrideOnlyStatus_RefreshesFanControlPresentation()
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        var initialFanControl = new FanControlSettings(
+            FanMode.Fixed,
+            3100,
+            ManualFanCurve.Default);
+        ServiceStatusSnapshot baseline = CreateStatus(verified: true, blocked: false) with
+        {
+            Revision = 10,
+            FanControlOverride = initialFanControl,
+        };
+        client.Publish(baseline);
+        await WaitUntilAsync(() => viewModel.FixedFanSpeedRpm == 3100);
+
+        var updatedFanControl = new FanControlSettings(
+            FanMode.Fixed,
+            4200,
+            ManualFanCurve.Default);
+        client.Publish(baseline with
+        {
+            Revision = 11,
+            FanControlOverride = updatedFanControl,
+        });
+        await WaitUntilAsync(() => viewModel.FixedFanSpeedRpm == 4200);
+
+        Assert.Equal(4200, viewModel.FixedFanSpeedRpm);
     }
 
     [Fact]
@@ -3375,12 +3438,18 @@ public sealed class MainViewModelTests
 
     private sealed class RecordingDispatcher : IUiDispatcher
     {
+        private int completedCalls;
+
         public int Calls { get; private set; }
+
+        public int CompletedCalls => Volatile.Read(ref completedCalls);
+
         public Task InvokeAsync(Action action, CancellationToken token)
         {
             token.ThrowIfCancellationRequested();
             Calls++;
             action();
+            Interlocked.Increment(ref completedCalls);
             return Task.CompletedTask;
         }
     }
