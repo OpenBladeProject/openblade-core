@@ -479,15 +479,16 @@
                                                            TextWrapping="Wrap" />
                                             </ToolTip>
                                         </ToolTipService.ToolTip>
-                                        <ItemsControl ItemsSource="{x:Bind ViewModel.VisibleDashboardTelemetryGroups, Mode=OneWay}"
-                                                      HorizontalAlignment="Stretch">
-                                            <ItemsControl.ItemsPanel>
-                                                <ItemsPanelTemplate>
-                                                    <VariableSizedWrapGrid Orientation="Horizontal"
-                                                                           ItemWidth="220" />
-                                                </ItemsPanelTemplate>
-                                            </ItemsControl.ItemsPanel>
-                                            <ItemsControl.ItemTemplate>
+                                        <ItemsRepeater ItemsSource="{x:Bind ViewModel.VisibleDashboardTelemetryGroups, Mode=OneWay}"
+                                                       HorizontalAlignment="Stretch">
+                                            <ItemsRepeater.Layout>
+                                                <UniformGridLayout Orientation="Horizontal"
+                                                                   MinItemWidth="220"
+                                                                   MaximumRowsOrColumns="3"
+                                                                   ItemsJustification="SpaceBetween"
+                                                                   ItemsStretch="Fill" />
+                                            </ItemsRepeater.Layout>
+                                            <ItemsRepeater.ItemTemplate>
                                                 <DataTemplate x:DataType="local:LiveReadingGroupDisplayItem">
                                                     <StackPanel Spacing="3" Margin="0,0,22,0">
                                                         <TextBlock Text="{x:Bind Label, Mode=OneTime}"
@@ -497,8 +498,8 @@
                                                                    TextWrapping="Wrap" />
                                                     </StackPanel>
                                                 </DataTemplate>
-                                            </ItemsControl.ItemTemplate>
-                                        </ItemsControl>
+                                            </ItemsRepeater.ItemTemplate>
+                                        </ItemsRepeater>
                                     </Grid>
                                 </Border>
                             </Grid>

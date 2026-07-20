@@ -8,6 +8,7 @@ public sealed class WinUiShellContractTests
     public void ExecutableProjectsInheritTheSharedOpenBladeIcon()
     {
         string targets = ReadRepositoryFile("src", "Directory.Build.targets");
+        string publish = ReadRepositoryFile("build", "Publish.ps1");
 
         Assert.Contains("'$(OutputType)' == 'Exe'", targets, StringComparison.Ordinal);
         Assert.Contains("'$(OutputType)' == 'WinExe'", targets, StringComparison.Ordinal);
@@ -16,6 +17,29 @@ public sealed class WinUiShellContractTests
             "OpenBlade.Tray\\Assets\\Brand\\OpenBlade.ico",
             targets,
             StringComparison.Ordinal);
+        Assert.True(File.Exists(RepositoryPath(
+            "src",
+            "OpenBlade.Tray",
+            "Assets",
+            "Brand",
+            "OpenBlade.ico")));
+
+        string[] publishedExecutableProjects =
+        [
+            "OpenBlade.Service",
+            "OpenBlade.SessionAgent",
+            "OpenBlade.Tray",
+            "OpenBlade.Capture",
+            "OpenBlade.Setup",
+        ];
+        foreach (string project in publishedExecutableProjects)
+        {
+            Assert.Contains(
+                $"src\\{project}\\{project}.csproj",
+                publish,
+                StringComparison.Ordinal);
+            Assert.True(File.Exists(RepositoryPath("src", project, $"{project}.csproj")));
+        }
     }
 
     [Fact]
@@ -724,11 +748,14 @@ public sealed class WinUiShellContractTests
     private static string ProjectPath => GetProjectPath();
 
     private static string ReadRepositoryFile(params string[] segments) =>
-        File.ReadAllText(Path.GetFullPath(Path.Combine(
+        File.ReadAllText(RepositoryPath(segments));
+
+    private static string RepositoryPath(params string[] segments) =>
+        Path.GetFullPath(Path.Combine(
             Path.GetDirectoryName(ProjectPath)!,
             "..",
             "..",
-            Path.Combine(segments))));
+            Path.Combine(segments)));
 
     private static string GetProjectPath([CallerFilePath] string testPath = "") =>
         Path.GetFullPath(Path.Combine(

@@ -580,16 +580,19 @@ public sealed class CapabilityPresentationTests
             $"Hero readings must use the native Stretch default or set it explicitly; found '{horizontalAlignment}'.");
         XElement readingsList = Assert.Single(
             readings.Descendants(),
-            element => element.Name.LocalName == "ItemsControl"
+            element => element.Name.LocalName == "ItemsRepeater"
                 && Attribute(element, "ItemsSource")?.Contains(
                     "VisibleDashboardTelemetryGroups",
                     StringComparison.Ordinal) == true);
-        XElement wrapGrid = Assert.Single(
+        XElement uniformGrid = Assert.Single(
             readingsList.Descendants(),
-            element => element.Name.LocalName == "VariableSizedWrapGrid");
-        Assert.Equal("Horizontal", Attribute(wrapGrid, "Orientation"));
-        Assert.Equal("220", Attribute(wrapGrid, "ItemWidth"));
-        Assert.Null(Attribute(wrapGrid, "ItemHeight"));
+            element => element.Name.LocalName == "UniformGridLayout");
+        Assert.Equal("Horizontal", Attribute(uniformGrid, "Orientation"));
+        Assert.Equal("220", Attribute(uniformGrid, "MinItemWidth"));
+        Assert.Equal("3", Attribute(uniformGrid, "MaximumRowsOrColumns"));
+        Assert.Equal("SpaceBetween", Attribute(uniformGrid, "ItemsJustification"));
+        Assert.Equal("Fill", Attribute(uniformGrid, "ItemsStretch"));
+        Assert.Null(Attribute(uniformGrid, "MinItemHeight"));
         Assert.Equal(
             "{x:Bind ViewModel.LiveReadingsRefreshToolTip, Mode=OneWay}",
             Attribute(readings, "AutomationProperties.HelpText"));
