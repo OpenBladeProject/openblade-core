@@ -87,6 +87,20 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Changed
 
+- Dashboard colors now have one semantic role each: accent marks the active
+  profile and primary action, green marks readiness, amber marks attention,
+  red marks failure, and ordinary power-source and unsaved-edit labels remain
+  neutral. Status pills share the same foreground, sizing, and container style.
+- Custom CPU/GPU controls and Fixed/Manual Curve fan controls are inset beneath
+  their Power mode and Fans parent rows, respectively.
+- Explicit Fixed, Manual Curve, and Maximum fan actions now always resubmit the
+  requested RPM target even when firmware already reports its undifferentiated
+  manual state. This also allows changing manual targets without returning to
+  Automatic first.
+- Laptop-logo controls now initialize from firmware readback and no longer offer
+  a misleading Leave unchanged choice. When a keyboard effect was selected by
+  another app and cannot be queried, OpenBlade reports that limitation instead
+  of falsely labeling the effect Off.
 - Lighting power-policy switches now use the same compact alignment as other
   settings, and the inactivity value is vertically centered in its NumberBox.
 - Gaming Mode and Startup animation now use native right-aligned toggles instead

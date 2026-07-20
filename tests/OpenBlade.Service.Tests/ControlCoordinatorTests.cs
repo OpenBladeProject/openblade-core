@@ -276,7 +276,6 @@ public sealed class ControlCoordinatorTests
 
     [Theory]
     [InlineData(DeviceSubsystem.Performance)]
-    [InlineData(DeviceSubsystem.Fans)]
     [InlineData(DeviceSubsystem.Battery)]
     [InlineData(DeviceSubsystem.Lighting)]
     public async Task ScopedApply_WhenAlreadyMatching_PerformsNoSetterOrSecondRead(
@@ -320,7 +319,7 @@ public sealed class ControlCoordinatorTests
             Performance = null,
             Fans = FanMode.Maximum,
         };
-        var coordinator = new ControlCoordinator(device);
+        var coordinator = new ControlCoordinator(device, new FakeHardwareAccessGuard([]));
 
         ScopedApplyOutcome outcome = await coordinator.ApplyPerformanceOutcomeAsync(
             PerformancePreset.Performance,
@@ -386,6 +385,31 @@ public sealed class ControlCoordinatorTests
 
         Assert.Equal(ControlResultStatus.Applied, outcome.Result.Status);
         Assert.True(outcome.ReadbackMatched);
+        Assert.Equal(["Capabilities", "State", "SetFans", "State"], device.Calls);
+    }
+
+    [Fact]
+    public async Task ScopedFixedFans_ResubmitTargetWhileFirmwareIsAlreadyManual()
+    {
+        RecordingBladeDevice device = CreateMismatchedDevice();
+        device.State = device.State with
+        {
+            Performance = PerformancePreset.Balanced,
+            Fans = FanMode.Maximum,
+        };
+        var coordinator = new ControlCoordinator(device);
+        var requested = new FanControlSettings(
+            FanMode.Fixed,
+            2800,
+            ManualFanCurve.Default);
+
+        ScopedApplyOutcome outcome = await coordinator.ApplyFanControlOutcomeAsync(
+            requested,
+            CancellationToken.None);
+
+        Assert.Equal(ControlResultStatus.Applied, outcome.Result.Status);
+        Assert.True(outcome.WriteAttempted);
+        Assert.Equal(1, device.FanSetCalls);
         Assert.Equal(["Capabilities", "State", "SetFans", "State"], device.Calls);
     }
 
@@ -976,6 +1000,11 @@ public sealed class ControlCoordinatorTests
             AfterSetter?.Invoke(DeviceSubsystem.Fans);
             return Task.CompletedTask;
         }
+
+        public Task SetFanControlAsync(
+            FanControlSettings value,
+            CancellationToken cancellationToken) =>
+            SetFanModeAsync(value.Mode, cancellationToken);
 
         public Task SetChargeLimitAsync(
             BatteryPolicy value,

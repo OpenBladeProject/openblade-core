@@ -72,11 +72,9 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             .ToArray();
 
     private static readonly IReadOnlyList<LogoLightingModeOption> KnownLogoLightingModeOptions =
-    [
-        new(null, "Leave unchanged"),
-        .. KnownLogoLightingModes.Select(
-            mode => new LogoLightingModeOption(mode, mode.ToString())),
-    ];
+        KnownLogoLightingModes
+            .Select(mode => new LogoLightingModeOption(mode, mode.ToString()))
+            .ToArray();
 
     private static readonly RazerBladeModelInfo TargetLaptop =
         RazerBladeModelCatalog.Find(RazerBladeModelCatalog.OpenBladeTargetModelNumber)
@@ -168,6 +166,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     private int profileChargeLimitEditor = 80;
     private bool profileEditorsDirty;
     private LightingEffect lightingEffectEditor = LightingEffect.Off;
+    private bool keyboardEffectUnconfirmed;
     private int lightingBrightnessEditor;
     private int lightingRedEditor;
     private int lightingGreenEditor;
@@ -1766,8 +1765,13 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         set
         {
             LightingEffect previous = lightingEffectEditor;
-            if (!Enum.IsDefined(value)
-                || !SetLightingEditorField(ref lightingEffectEditor, value))
+            if (!Enum.IsDefined(value))
+            {
+                return;
+            }
+
+            SetKeyboardEffectUnconfirmed(false);
+            if (!SetLightingEditorField(ref lightingEffectEditor, value))
             {
                 return;
             }
@@ -1783,16 +1787,25 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
 
     public LightingEffectOption? SelectedLightingEffectOption
     {
-        get => AvailableLightingEffectOptions.FirstOrDefault(
-            option => option.Effect == LightingEffectEditor);
+        get => keyboardEffectUnconfirmed
+            ? null
+            : AvailableLightingEffectOptions.FirstOrDefault(
+                option => option.Effect == LightingEffectEditor);
         set
         {
             if (value is not null)
             {
+                SetKeyboardEffectUnconfirmed(false);
                 LightingEffectEditor = value.Effect;
             }
         }
     }
+
+    public bool IsKeyboardEffectUnconfirmed => keyboardEffectUnconfirmed;
+
+    public string KeyboardEffectDescription => keyboardEffectUnconfirmed
+        ? "The active effect was set outside OpenBlade and cannot be read from firmware."
+        : "Choose a supported keyboard lighting effect.";
 
     public int LightingBrightnessEditor
     {
@@ -2101,7 +2114,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         }
     }
 
-    public bool IsLogoLightingVisible => AvailableLogoLightingModeOptions.Count > 1;
+    public bool IsLogoLightingVisible => AvailableLogoLightingModeOptions.Count > 0;
 
     public bool LightingShowsBrightness => LightingEffectEditor != LightingEffect.Off;
 
@@ -2482,7 +2495,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         }
 
         return FanModeAvailable(ActivePowerSource, value)
-            && (value == FanMode.Automatic || IsBalancedAutomaticThermalState());
+            && (value == FanMode.Automatic || IsBalancedThermalState());
     }
 
     private bool CanSetFanControl(object? parameter) =>
@@ -2500,15 +2513,18 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         && (status.DesiredState.Fans.Value == FanMode.Maximum
             || status.ConfirmedState?.Fans == FanMode.Maximum);
 
-    private bool IsBalancedAutomaticThermalState() =>
+    private bool IsBalancedThermalState() =>
         latestStatus is { } status
         && status.DesiredState.Performance.Value == PerformancePreset.Balanced
-        && status.DesiredState.Fans.Value == FanMode.Automatic
         && status.ConfirmedState is
         {
             Performance: PerformancePreset.Balanced,
-            Fans: FanMode.Automatic,
-        };
+            Fans: { } confirmedFans,
+        }
+        && confirmedFans is FanMode.Automatic
+            or FanMode.Fixed
+            or FanMode.ManualCurve
+            or FanMode.Maximum;
 
     private bool CanSetFullChargeOverride(object? parameter)
     {
@@ -2803,7 +2819,16 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             ?? status.DesiredState.FanControl
             ?? FanControlSettings.FromLegacy(SelectedFanMode));
         PrepareLightingEditorForPowerSource(status.ActivePowerSource);
+        SetKeyboardEffectUnconfirmed(
+            confirmed?.Lighting is null
+            && status.LightingRendererOwnership is
+                LightingRendererOwnershipState.None or
+                LightingRendererOwnershipState.Faulted);
         SelectedLighting = confirmed?.Lighting ?? status.DesiredState.Lighting.Value;
+        if (confirmed?.LogoLighting is { } confirmedLogo)
+        {
+            SelectedLighting = SelectedLighting with { LogoMode = confirmedLogo };
+        }
         if (!lightingEditorDirty)
         {
             LoadLightingEditor(SelectedLighting);
@@ -2976,11 +3001,9 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
                 ? KnownLogoLightingModes
                 : admittedLogoLightingModes;
         AvailableLogoLightingModeOptions =
-        [
-            new(null, "Leave unchanged"),
-            .. presentedLogoLightingModes
-                .Select(mode => new LogoLightingModeOption(mode, mode.ToString())),
-        ];
+            presentedLogoLightingModes
+                .Select(mode => new LogoLightingModeOption(mode, mode.ToString()))
+                .ToArray();
         PropertyChanged?.Invoke(
             this,
             new PropertyChangedEventArgs(nameof(SelectedLogoLightingModeOption)));
@@ -3207,6 +3230,8 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             {
                 if (result.Status == ControlOperationStatus.Applied)
                 {
+                    SelectedFanMode = requested.Mode;
+                    LoadFanControlEditor(requested);
                     MarkActiveProfileDraft(
                         sourceAtStart,
                         fans: requested.Mode,
@@ -4049,6 +4074,25 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             this,
             new PropertyChangedEventArgs(nameof(SelectedAmbientAwarenessRegionOption)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(LightingDraft)));
+    }
+
+    private void SetKeyboardEffectUnconfirmed(bool value)
+    {
+        if (keyboardEffectUnconfirmed == value)
+        {
+            return;
+        }
+
+        keyboardEffectUnconfirmed = value;
+        PropertyChanged?.Invoke(
+            this,
+            new PropertyChangedEventArgs(nameof(IsKeyboardEffectUnconfirmed)));
+        PropertyChanged?.Invoke(
+            this,
+            new PropertyChangedEventArgs(nameof(KeyboardEffectDescription)));
+        PropertyChanged?.Invoke(
+            this,
+            new PropertyChangedEventArgs(nameof(SelectedLightingEffectOption)));
     }
 
     private void LoadLightingPowerPolicyEditor(LightingPowerPolicy policy)

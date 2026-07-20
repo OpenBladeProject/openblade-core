@@ -54,6 +54,14 @@
                    BasedOn="{StaticResource SettingsRowStyle}">
                 <Setter Property="BorderThickness" Value="0" />
             </Style>
+            <Style x:Key="SettingsSubcardStyle" TargetType="Border">
+                <Setter Property="Background" Value="{ThemeResource SubtleFillColorSecondaryBrush}" />
+                <Setter Property="BorderBrush" Value="{ThemeResource CardStrokeColorDefaultBrush}" />
+                <Setter Property="BorderThickness" Value="1" />
+                <Setter Property="CornerRadius" Value="6" />
+                <Setter Property="Padding" Value="14" />
+                <Setter Property="Margin" Value="16,0,16,14" />
+            </Style>
             <Style x:Key="SettingsPickerStyle"
                    TargetType="ComboBox"
                    BasedOn="{StaticResource DefaultComboBoxStyle}">
@@ -76,7 +84,18 @@
             <Style x:Key="StatusPillTextStyle"
                    TargetType="TextBlock"
                    BasedOn="{StaticResource CaptionTextBlockStyle}">
-                <Setter Property="Foreground" Value="{ThemeResource TextFillColorSecondaryBrush}" />
+                <Setter Property="Foreground" Value="{ThemeResource TextFillColorPrimaryBrush}" />
+            </Style>
+            <Style x:Key="ActiveProfilePillStyle" TargetType="Border">
+                <Setter Property="VerticalAlignment" Value="Center" />
+                <Setter Property="CornerRadius" Value="10" />
+                <Setter Property="Padding" Value="8,2" />
+                <Setter Property="Background" Value="{ThemeResource AccentFillColorDefaultBrush}" />
+            </Style>
+            <Style x:Key="ActiveProfilePillTextStyle"
+                   TargetType="TextBlock"
+                   BasedOn="{StaticResource CaptionTextBlockStyle}">
+                <Setter Property="Foreground" Value="{ThemeResource TextOnAccentFillColorPrimaryBrush}" />
             </Style>
             <Style x:Key="CardContentExpanderStyle" TargetType="Expander">
                 <Setter Property="HorizontalAlignment" Value="Stretch" />
@@ -297,13 +316,8 @@
                                         Spacing="8"
                                         VerticalAlignment="Center"
                                         Visibility="{x:Bind ViewModel.HasThermalProfileDraft, Mode=OneWay}">
-                                <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
-                                    <Ellipse Width="7"
-                                             Height="7"
-                                             Fill="{ThemeResource SystemFillColorCautionBrush}" />
-                                    <TextBlock Text="Not saved"
-                                               Style="{StaticResource ProfileSaveStatusTextStyle}" />
-                                </StackPanel>
+                                <TextBlock Text="Unsaved changes"
+                                           Style="{StaticResource ProfileSaveStatusTextStyle}" />
                                 <Button Content="{x:Bind ViewModel.SaveToActiveProfileLabel, Mode=OneWay}"
                                         Style="{StaticResource ProfileSaveButtonStyle}"
                                         Command="{x:Bind ViewModel.SaveThermalProfileDraftCommand}" />
@@ -332,13 +346,6 @@
                                         <TextBlock Text="{x:Bind ViewModel.ActivePowerSourceLabel, Mode=OneWay}"
                                                    Style="{StaticResource SecondaryTextStyle}"
                                                    VerticalAlignment="Center" />
-                                        <Ellipse Width="7"
-                                                 Height="7"
-                                                 VerticalAlignment="Center"
-                                                 Fill="{ThemeResource AccentFillColorDefaultBrush}"
-                                                 Visibility="{x:Bind ViewModel.HasActiveProfileDraft, Mode=OneWay}"
-                                                 ToolTipService.ToolTip="Unsaved changes"
-                                                 AutomationProperties.Name="Unsaved changes" />
                                         <Button x:Name="ProfileStateBadge"
                                                 Style="{StaticResource StatusPillButtonStyle}"
                                                 Click="OnProfileStateBadgeClick"
@@ -450,7 +457,7 @@
                         <TextBlock Text="Active profile" Style="{StaticResource SectionHeaderStyle}" />
                         <Border Style="{StaticResource SettingsGroupStyle}">
                             <StackPanel>
-                            <Border Style="{StaticResource SettingsRowStyle}"
+                            <Border Style="{StaticResource SettingsLastRowStyle}"
                                     Visibility="{x:Bind ViewModel.IsPerformanceVisible, Mode=OneWay}">
                                 <Grid ColumnSpacing="20">
                                     <Grid.ColumnDefinitions>
@@ -473,7 +480,7 @@
                                               SelectionChanged="OnDashboardPerformanceChanged" />
                                 </Grid>
                             </Border>
-                            <Border Style="{StaticResource SettingsRowStyle}"
+                            <Border Style="{StaticResource SettingsSubcardStyle}"
                                     Visibility="{x:Bind ViewModel.IsCustomPerformanceVisible, Mode=OneWay}">
                                 <Grid ColumnSpacing="20">
                                     <Grid.ColumnDefinitions>
@@ -496,7 +503,7 @@
                                               SelectionChanged="OnDashboardCustomCpuChanged" />
                                 </Grid>
                             </Border>
-                            <Border Style="{StaticResource SettingsRowStyle}"
+                            <Border Style="{StaticResource SettingsSubcardStyle}"
                                     Visibility="{x:Bind ViewModel.IsCustomPerformanceVisible, Mode=OneWay}">
                                 <Grid ColumnSpacing="20">
                                     <Grid.ColumnDefinitions>
@@ -519,7 +526,7 @@
                                               SelectionChanged="OnDashboardCustomGpuChanged" />
                                 </Grid>
                             </Border>
-                            <Border Style="{StaticResource SettingsRowStyle}"
+                            <Border Style="{StaticResource SettingsLastRowStyle}"
                                     Visibility="{x:Bind ViewModel.IsFanControlVisible, Mode=OneWay}">
                                 <Grid ColumnSpacing="20">
                                     <Grid.ColumnDefinitions>
@@ -542,7 +549,7 @@
                                               SelectionChanged="OnDashboardFanModeSelectionChanged" />
                                 </Grid>
                             </Border>
-                            <Border Style="{StaticResource SettingsLastRowStyle}"
+                            <Border Style="{StaticResource SettingsSubcardStyle}"
                                     Visibility="{x:Bind ViewModel.IsFixedFanSpeedVisible, Mode=OneWay}">
                                 <Grid ColumnSpacing="20">
                                     <Grid.ColumnDefinitions>
@@ -570,13 +577,12 @@
                                                 IsThumbToolTipEnabled="True"
                                                 AutomationProperties.Name="Fixed fan speed"
                                                 Value="{Binding FixedFanSpeedRpm, Mode=TwoWay, Converter={StaticResource Int32Double}}"
-                                                PointerReleased="OnFixedFanSpeedCommit"
                                                 PointerCaptureLost="OnFixedFanSpeedCommit"
                                                 KeyUp="OnFixedFanSpeedKeyUp" />
                                     </StackPanel>
                                 </Grid>
                             </Border>
-                            <Border Style="{StaticResource SettingsLastRowStyle}"
+                            <Border Style="{StaticResource SettingsSubcardStyle}"
                                     Visibility="{x:Bind ViewModel.IsManualFanCurveVisible, Mode=OneWay}">
                                 <StackPanel Spacing="12">
                                     <Grid ColumnSpacing="20">
@@ -619,7 +625,6 @@
                                                                     StepFrequency="100" SnapsTo="StepValues"
                                                                     Tag="{x:Bind Mode=OneTime}"
                                                                     Value="{x:Bind SpeedRpm, Mode=OneTime}"
-                                                                    PointerReleased="OnFanCurvePointCommit"
                                                                     PointerCaptureLost="OnFanCurvePointCommit"
                                                                     KeyUp="OnFanCurvePointKeyUp" />
                                                             <TextBlock Grid.Column="2"
@@ -647,7 +652,6 @@
                                                                     StepFrequency="100" SnapsTo="StepValues"
                                                                     Tag="{x:Bind Mode=OneTime}"
                                                                     Value="{x:Bind SpeedRpm, Mode=OneTime}"
-                                                                    PointerReleased="OnFanCurvePointCommit"
                                                                     PointerCaptureLost="OnFanCurvePointCommit"
                                                                     KeyUp="OnFanCurvePointKeyUp" />
                                                             <TextBlock Grid.Column="2"
@@ -795,13 +799,10 @@
                                                  Fill="{ThemeResource AccentFillColorDefaultBrush}"
                                                  Visibility="{x:Bind ViewModel.IsPluggedInProfileDraft, Mode=OneWay}"
                                                  ToolTipService.ToolTip="Unsaved changes" />
-                                        <Border VerticalAlignment="Center"
-                                                CornerRadius="10" Padding="8,2"
-                                                Background="{ThemeResource AccentFillColorDefaultBrush}"
+                                        <Border Style="{StaticResource ActiveProfilePillStyle}"
                                                 Visibility="{x:Bind ViewModel.IsPluggedInProfileActive, Mode=OneWay}">
                                             <TextBlock Text="Active"
-                                                       Style="{StaticResource CaptionTextBlockStyle}"
-                                                       Foreground="{ThemeResource TextOnAccentFillColorPrimaryBrush}" />
+                                                       Style="{StaticResource ActiveProfilePillTextStyle}" />
                                         </Border>
                                     </StackPanel>
                                 </StackPanel>
@@ -813,31 +814,25 @@
                                                  Fill="{ThemeResource AccentFillColorDefaultBrush}"
                                                  Visibility="{x:Bind ViewModel.IsUsbCProfileDraft, Mode=OneWay}"
                                                  ToolTipService.ToolTip="Unsaved changes" />
-                                        <Border VerticalAlignment="Center"
-                                                CornerRadius="10" Padding="8,2"
-                                                Background="{ThemeResource AccentFillColorDefaultBrush}"
+                                        <Border Style="{StaticResource ActiveProfilePillStyle}"
                                                 Visibility="{x:Bind ViewModel.IsUsbCProfileActive, Mode=OneWay}">
                                             <TextBlock Text="Active"
-                                                       Style="{StaticResource CaptionTextBlockStyle}"
-                                                       Foreground="{ThemeResource TextOnAccentFillColorPrimaryBrush}" />
+                                                       Style="{StaticResource ActiveProfilePillTextStyle}" />
                                         </Border>
                                     </StackPanel>
                                 </StackPanel>
                                 <StackPanel Grid.Column="3" Spacing="4">
                                     <StackPanel Orientation="Horizontal" Spacing="7">
-                                        <TextBlock Text="On battery" Style="{StaticResource CardTitleStyle}" />
+                                        <TextBlock Text="Battery" Style="{StaticResource CardTitleStyle}" />
                                         <Ellipse Width="7" Height="7"
                                                  VerticalAlignment="Center"
                                                  Fill="{ThemeResource AccentFillColorDefaultBrush}"
                                                  Visibility="{x:Bind ViewModel.IsBatteryProfileDraft, Mode=OneWay}"
                                                  ToolTipService.ToolTip="Unsaved changes" />
-                                        <Border VerticalAlignment="Center"
-                                                CornerRadius="10" Padding="8,2"
-                                                Background="{ThemeResource AccentFillColorDefaultBrush}"
+                                        <Border Style="{StaticResource ActiveProfilePillStyle}"
                                                 Visibility="{x:Bind ViewModel.IsBatteryProfileActive, Mode=OneWay}">
                                             <TextBlock Text="Active"
-                                                       Style="{StaticResource CaptionTextBlockStyle}"
-                                                       Foreground="{ThemeResource TextOnAccentFillColorPrimaryBrush}" />
+                                                       Style="{StaticResource ActiveProfilePillTextStyle}" />
                                         </Border>
                                     </StackPanel>
                                 </StackPanel>
@@ -1056,13 +1051,8 @@
                                             IsEnabled="{x:Bind ViewModel.CanControlLighting, Mode=OneWay}"
                                             Visibility="{x:Bind ViewModel.HasLightingProfileDraft, Mode=OneWay}">
                                 <StackPanel Orientation="Horizontal" Spacing="8">
-                                <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
-                                    <Ellipse Width="7"
-                                             Height="7"
-                                             Fill="{ThemeResource SystemFillColorCautionBrush}" />
-                                    <TextBlock Text="Not saved"
-                                               Style="{StaticResource ProfileSaveStatusTextStyle}" />
-                                </StackPanel>
+                                <TextBlock Text="Unsaved changes"
+                                           Style="{StaticResource ProfileSaveStatusTextStyle}" />
                                 <Button Content="{x:Bind ViewModel.SaveToActiveProfileLabel, Mode=OneWay}"
                                         Style="{StaticResource ProfileSaveButtonStyle}"
                                         Command="{x:Bind ViewModel.SaveLightingProfileDraftCommand}" />
@@ -1104,7 +1094,7 @@
                                         </Grid.ColumnDefinitions>
                                         <StackPanel Spacing="3" VerticalAlignment="Center">
                                             <TextBlock Text="Effect" Style="{StaticResource CardTitleStyle}" />
-                                            <TextBlock Text="Choose a supported keyboard lighting effect."
+                                            <TextBlock Text="{x:Bind ViewModel.KeyboardEffectDescription, Mode=OneWay}"
                                                        Style="{StaticResource SecondaryTextStyle}" />
                                         </StackPanel>
                                         <ComboBox x:Name="LightingEffectPicker"
@@ -1114,6 +1104,7 @@
                                                   AutomationProperties.Name="Keyboard lighting effect"
                                                   ItemsSource="{x:Bind ViewModel.AvailableLightingEffectOptions, Mode=OneWay}"
                                                   DisplayMemberPath="Label"
+                                                  PlaceholderText="Current effect unavailable"
                                                   SelectedItem="{x:Bind ViewModel.SelectedLightingEffectOption, Mode=TwoWay}" />
                                     </Grid>
                                 </Border>
@@ -1684,13 +1675,8 @@
                                         Spacing="8"
                                         VerticalAlignment="Center"
                                         Visibility="{x:Bind DisplayViewModel.CanSaveCurrentSettingsToProfile, Mode=OneWay}">
-                                <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
-                                    <Ellipse Width="7"
-                                             Height="7"
-                                             Fill="{ThemeResource SystemFillColorCautionBrush}" />
-                                    <TextBlock Text="Not saved"
-                                               Style="{StaticResource ProfileSaveStatusTextStyle}" />
-                                </StackPanel>
+                                <TextBlock Text="Unsaved changes"
+                                           Style="{StaticResource ProfileSaveStatusTextStyle}" />
                                 <Button Content="{x:Bind ViewModel.SaveToActiveProfileLabel, Mode=OneWay}"
                                         Style="{StaticResource ProfileSaveButtonStyle}"
                                         IsEnabled="{x:Bind DisplayViewModel.CanSaveCurrentSettingsToProfile, Mode=OneWay}"

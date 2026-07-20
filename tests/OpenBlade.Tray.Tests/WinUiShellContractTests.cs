@@ -50,7 +50,8 @@ public sealed class WinUiShellContractTests
         Assert.Equal(3, CountOccurrences(
             xaml,
             "Content=\"{x:Bind ViewModel.SaveToActiveProfileLabel, Mode=OneWay}\""));
-        Assert.Equal(3, CountOccurrences(xaml, "Text=\"Not saved\""));
+        Assert.Equal(3, CountOccurrences(xaml, "Text=\"Unsaved changes\""));
+        Assert.DoesNotContain("Text=\"Not saved\"", xaml, StringComparison.Ordinal);
         Assert.Equal(3, CountOccurrences(xaml, "Text=\"Use profile settings\""));
         Assert.Equal(3, CountOccurrences(
             xaml,
@@ -173,6 +174,26 @@ public sealed class WinUiShellContractTests
             "Background=\"{ThemeResource SystemFillColorCautionBackgroundBrush}\"",
             xaml,
             StringComparison.Ordinal);
+        Assert.Contains(
+            "<Setter Property=\"Foreground\" Value=\"{ThemeResource TextFillColorPrimaryBrush}\" />",
+            xaml,
+            StringComparison.Ordinal);
+        Assert.Equal(1, CountOccurrences(
+            xaml,
+            "Visibility=\"{x:Bind ViewModel.HasActiveProfileDraft, Mode=OneWay}\""));
+    }
+
+    [Fact]
+    public void ActiveProfileAndNestedControlStylesHaveSingleSemanticRoles()
+    {
+        string xaml = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml");
+
+        Assert.Equal(3, CountOccurrences(xaml, "Style=\"{StaticResource ActiveProfilePillStyle}\""));
+        Assert.Equal(3, CountOccurrences(xaml, "Style=\"{StaticResource ActiveProfilePillTextStyle}\""));
+        Assert.Contains("<TextBlock Text=\"Battery\" Style=\"{StaticResource CardTitleStyle}\" />", xaml, StringComparison.Ordinal);
+        Assert.Contains("Text=\"Power mode\"", xaml, StringComparison.Ordinal);
+        Assert.Equal(4, CountOccurrences(xaml, "Style=\"{StaticResource SettingsSubcardStyle}\""));
+        Assert.DoesNotContain("Text=\"On battery\"", xaml, StringComparison.Ordinal);
     }
 
     [Fact]

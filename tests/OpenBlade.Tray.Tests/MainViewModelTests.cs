@@ -1744,6 +1744,73 @@ public sealed class MainViewModelTests
     }
 
     [Fact]
+    public async Task ExternalKeyboardEffectIsNotMisreportedAndLogoUsesFirmwareReadback()
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        ServiceStatusSnapshot initial = CreateStatus(
+            verified: true,
+            blocked: false,
+            capabilities: DeviceCapabilities.SafeTargetDefaults() with
+            {
+                LightingEffects = new HashSet<LightingEffect>(
+                    Enum.GetValues<LightingEffect>()),
+                LogoLightingModes = new HashSet<LogoLightingMode>(
+                    Enum.GetValues<LogoLightingMode>()),
+                ChargeLimits = ChargeLimits(),
+            });
+        LightingSettings savedOff = LightingSettingsFactory.Off();
+        client.Publish(initial with
+        {
+            ConfirmedState = initial.ConfirmedState! with
+            {
+                Lighting = null,
+                LogoLighting = LogoLightingMode.Breathing,
+            },
+            DesiredState = initial.DesiredState with
+            {
+                Lighting = new ResolvedSetting<LightingSettings>(
+                    savedOff,
+                    SettingValueSource.PowerProfile),
+            },
+            LightingRendererOwnership = LightingRendererOwnershipState.None,
+        });
+        await WaitUntilAsync(() => viewModel.IsConnected);
+
+        Assert.True(viewModel.IsKeyboardEffectUnconfirmed);
+        Assert.Null(viewModel.SelectedLightingEffectOption);
+        Assert.Contains("outside OpenBlade", viewModel.KeyboardEffectDescription);
+        Assert.Equal(LogoLightingMode.Breathing, viewModel.LogoLightingModeEditor);
+        Assert.DoesNotContain(
+            viewModel.AvailableLogoLightingModeOptions,
+            option => option.Mode is null);
+
+        LightingSettings spectrum = LightingSettingsFactory.SpectrumCycling(40);
+        client.Publish(initial with
+        {
+            Revision = initial.Revision + 1,
+            ConfirmedState = initial.ConfirmedState! with
+            {
+                Lighting = null,
+                LogoLighting = LogoLightingMode.Static,
+            },
+            DesiredState = initial.DesiredState with
+            {
+                Lighting = new ResolvedSetting<LightingSettings>(
+                    spectrum,
+                    SettingValueSource.TemporaryOverride),
+            },
+            LightingRendererOwnership = LightingRendererOwnershipState.Spectrum,
+        });
+        await WaitUntilAsync(() =>
+            viewModel.SelectedLightingEffectOption?.Effect == LightingEffect.Spectrum);
+
+        Assert.False(viewModel.IsKeyboardEffectUnconfirmed);
+        Assert.Equal(LogoLightingMode.Static, viewModel.LogoLightingModeEditor);
+    }
+
+    [Fact]
     public async Task LightingColorPickerAndAdvancedRgbFieldsStaySynchronized()
     {
         await using var viewModel = new MainViewModel(
@@ -2465,7 +2532,7 @@ public sealed class MainViewModelTests
     }
 
     [Fact]
-    public async Task ThermalCommands_BlockPerformanceDuringMaximumAndKeepAutomaticAvailable()
+    public async Task ThermalCommands_BlockPerformanceDuringManualFansButAllowFanTargetChanges()
     {
         var client = new FakeServiceClient();
         await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
@@ -2484,7 +2551,9 @@ public sealed class MainViewModelTests
         Assert.False(viewModel.SetPerformanceCommand.CanExecute(PerformancePreset.Silent));
         Assert.False(viewModel.SetPerformanceCommand.CanExecute(PerformancePreset.Balanced));
         Assert.False(viewModel.SetPerformanceCommand.CanExecute(PerformancePreset.Performance));
-        Assert.False(viewModel.SetFanModeCommand.CanExecute(FanMode.Maximum));
+        Assert.True(viewModel.SetFanModeCommand.CanExecute(FanMode.Maximum));
+        Assert.True(viewModel.SetFanModeCommand.CanExecute(FanMode.Fixed));
+        Assert.True(viewModel.SetFanModeCommand.CanExecute(FanMode.ManualCurve));
         Assert.True(viewModel.SetFanModeCommand.CanExecute(FanMode.Automatic));
     }
 

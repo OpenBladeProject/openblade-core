@@ -141,10 +141,20 @@ public sealed class ControlCoordinator
             cancellationToken,
             IsManualFanMode(value.Mode)
                 ? state => state.Performance == PerformancePreset.Balanced
-                    && state.Fans == FanMode.Automatic
+                    && (state.Fans == FanMode.Automatic
+                        || IsManualFanMode(state.Fans))
                         ? null
-                        : "Fixed and manual fan control require confirmed Balanced performance and Automatic fans."
-                : null);
+                        : "Fixed and manual fan control require confirmed Balanced performance."
+                : null,
+            acceptSetterCompletionWithoutReadback: IsManualFanMode(value.Mode),
+            setterCompletionEvidence: IsManualFanMode(value.Mode)
+                ? state => state.Performance == PerformancePreset.Balanced
+                    && IsManualFanMode(state.Fans)
+                : null,
+            // Firmware exposes only Automatic versus manual state. It cannot
+            // read back a fixed target or distinguish Fixed, Curve and Maximum,
+            // so every explicit manual-mode action must submit its RPM target.
+            forceWrite: IsManualFanMode(value.Mode));
     }
 
     internal Task<ScopedApplyOutcome> ApplyBatteryOutcomeAsync(
