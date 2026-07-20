@@ -69,6 +69,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Changed
 
+- Lighting power-policy switches now use the same compact alignment as other
+  settings, and the inactivity value is vertically centered in its NumberBox.
 - Gaming Mode and Startup animation now use native right-aligned toggles instead
   of dropdown menus, while retaining confirmed firmware readback.
 - Self-contained WinUI publishing now includes compiled XAML resources;

@@ -1390,10 +1390,14 @@
                                             <TextBlock Text="Switch off keyboard lighting until the display turns on again."
                                                        Style="{StaticResource SecondaryTextStyle}" />
                                         </StackPanel>
-                                        <ToggleSwitch Grid.Column="1"
+                                        <ToggleSwitch x:Name="LightingDisplayOffToggle"
+                                                      Grid.Column="1"
                                                       HorizontalAlignment="Right"
                                                       VerticalAlignment="Center"
+                                                      MinWidth="0"
                                                       AutomationProperties.Name="Turn off keyboard lighting with the display"
+                                                      OffContent=""
+                                                      OnContent=""
                                                       IsOn="{x:Bind ViewModel.LightingTurnOffWithDisplayEditor, Mode=TwoWay}" />
                                     </Grid>
                                 </Border>
@@ -1409,10 +1413,14 @@
                                             <TextBlock Text="Switch off keyboard lighting when you have not used the laptop."
                                                        Style="{StaticResource SecondaryTextStyle}" />
                                         </StackPanel>
-                                        <ToggleSwitch Grid.Column="1"
+                                        <ToggleSwitch x:Name="LightingIdleTimeoutToggle"
+                                                      Grid.Column="1"
                                                       HorizontalAlignment="Right"
                                                       VerticalAlignment="Center"
+                                                      MinWidth="0"
                                                       AutomationProperties.Name="Turn off keyboard lighting after inactivity"
+                                                      OffContent=""
+                                                      OnContent=""
                                                       IsOn="{x:Bind ViewModel.LightingIdleTimeoutEnabledEditor, Mode=TwoWay}" />
                                     </Grid>
                                 </Border>
@@ -1428,8 +1436,12 @@
                                             <TextBlock Text="Choose from 1 to 60 minutes."
                                                        Style="{StaticResource SecondaryTextStyle}" />
                                         </StackPanel>
-                                        <NumberBox Grid.Column="1"
+                                        <NumberBox x:Name="LightingIdleTimeoutNumberBox"
+                                                   Grid.Column="1"
                                                    Width="120"
+                                                   HorizontalAlignment="Right"
+                                                   VerticalAlignment="Center"
+                                                   VerticalContentAlignment="Center"
                                                    Minimum="1"
                                                    Maximum="60"
                                                    SmallChange="1"

@@ -1350,6 +1350,18 @@ public sealed class CapabilityPresentationTests
         XElement effectPicker = NamedElement(document, "ComboBox", "LightingEffectPicker");
         XElement controls = NamedElement(document, "ContentControl", "LightingControls");
         XElement infoBar = NamedElement(document, "InfoBar", "LightingUnavailableInfoBar");
+        XElement displayOffToggle = NamedElement(
+            document,
+            "ToggleSwitch",
+            "LightingDisplayOffToggle");
+        XElement idleTimeoutToggle = NamedElement(
+            document,
+            "ToggleSwitch",
+            "LightingIdleTimeoutToggle");
+        XElement idleTimeoutNumberBox = NamedElement(
+            document,
+            "NumberBox",
+            "LightingIdleTimeoutNumberBox");
 
         Assert.Equal("lighting", Attribute(navigation, "Tag"));
         Assert.Null(Attribute(navigation, "Visibility"));
@@ -1366,6 +1378,17 @@ public sealed class CapabilityPresentationTests
         Assert.Equal(
             "{x:Bind ViewModel.AvailableLightingEffectOptions, Mode=OneWay}",
             Attribute(effectPicker, "ItemsSource"));
+        Assert.All([displayOffToggle, idleTimeoutToggle], toggle =>
+        {
+            Assert.Equal("Right", Attribute(toggle, "HorizontalAlignment"));
+            Assert.Equal("Center", Attribute(toggle, "VerticalAlignment"));
+            Assert.Equal("0", Attribute(toggle, "MinWidth"));
+            Assert.Equal(string.Empty, Attribute(toggle, "OffContent"));
+            Assert.Equal(string.Empty, Attribute(toggle, "OnContent"));
+        });
+        Assert.Equal("Right", Attribute(idleTimeoutNumberBox, "HorizontalAlignment"));
+        Assert.Equal("Center", Attribute(idleTimeoutNumberBox, "VerticalAlignment"));
+        Assert.Equal("Center", Attribute(idleTimeoutNumberBox, "VerticalContentAlignment"));
         string lightingXaml = page.ToString();
         Assert.Contains("Breathing colors", lightingXaml, StringComparison.Ordinal);
         Assert.Contains("Reactive duration", lightingXaml, StringComparison.Ordinal);
