@@ -1,0 +1,5 @@
+<Project>
+  <PropertyGroup Condition="('$(OutputType)' == 'Exe' Or '$(OutputType)' == 'WinExe') And '$(ApplicationIcon)' == ''">
+    <ApplicationIcon>$(MSBuildThisFileDirectory)OpenBlade.Tray\Assets\Brand\OpenBlade.ico</ApplicationIcon>
+  </PropertyGroup>
+</Project>

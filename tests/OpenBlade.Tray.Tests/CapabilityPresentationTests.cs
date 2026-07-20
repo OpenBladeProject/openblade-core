@@ -586,9 +586,10 @@ public sealed class CapabilityPresentationTests
                     StringComparison.Ordinal) == true);
         XElement wrapGrid = Assert.Single(
             readingsList.Descendants(),
-            element => element.Name.LocalName == "ItemsWrapGrid");
+            element => element.Name.LocalName == "VariableSizedWrapGrid");
         Assert.Equal("Horizontal", Attribute(wrapGrid, "Orientation"));
-        Assert.Equal("68", Attribute(wrapGrid, "ItemHeight"));
+        Assert.Equal("220", Attribute(wrapGrid, "ItemWidth"));
+        Assert.Null(Attribute(wrapGrid, "ItemHeight"));
         Assert.Equal(
             "{x:Bind ViewModel.LiveReadingsRefreshToolTip, Mode=OneWay}",
             Attribute(readings, "AutomationProperties.HelpText"));

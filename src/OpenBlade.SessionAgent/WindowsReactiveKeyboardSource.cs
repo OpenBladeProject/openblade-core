@@ -34,12 +34,14 @@ internal sealed class WindowsReactiveKeyboardSourceFactory : IReactiveKeyboardSo
 internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
 {
     private const uint WindowMessageInput = 0x00FF;
+    private const uint WindowMessageInputDeviceChange = 0x00FE;
     private const uint WindowMessageClose = 0x0010;
     private const uint WindowMessageDestroy = 0x0002;
     private const uint RawInputCommand = 0x10000003;
     private const uint RawInputTypeKeyboard = 1;
     private const uint RawInputTypeHid = 2;
     private const uint RawInputDeviceInputSink = 0x00000100;
+    private const uint RawInputDeviceNotify = 0x00002000;
     private const uint RawInputDevicePageOnly = 0x00000020;
     private const uint RawInputDeviceRemove = 0x00000001;
     private const uint RawInputDeviceName = 0x20000007;
@@ -162,7 +164,7 @@ internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
 
             windowHandle = created;
             Sources[created] = this;
-            RegisterRawInput(created, RawInputDeviceInputSink);
+            RegisterRawInput(created, RawInputDeviceInputSink | RawInputDeviceNotify);
             inputRegistered = true;
             initialization.TrySetResult();
 
@@ -245,6 +247,14 @@ internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
                     exception.GetType().Name);
             }
         }
+        else if (message == WindowMessageInputDeviceChange
+            && Sources.TryGetValue(window, out WindowsReactiveKeyboardSource? changedSource))
+        {
+            // Raw Input device handles can be replaced across sleep, reconnect,
+            // and driver restarts. Never retain an identity decision for a
+            // handle after Windows reports either arrival or removal.
+            changedSource.targetDevices.TryRemove(messageParameter, out _);
+        }
         else if (message == WindowMessageClose)
         {
             _ = DestroyWindow(window);
@@ -301,7 +311,7 @@ internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
             RawInputHeader header = Marshal.PtrToStructure<RawInputHeader>(buffer);
             if (header.Size < headerSize
                 || header.Size > receivedSize
-                || !targetDevices.GetOrAdd(header.Device, IsTargetInputDevice))
+                || !IsTargetInputDeviceCached(header.Device))
             {
                 return;
             }
@@ -398,7 +408,27 @@ internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
         }
     }
 
-    private static bool IsTargetInputDevice(nint deviceHandle)
+    private bool IsTargetInputDeviceCached(nint deviceHandle)
+    {
+        if (targetDevices.TryGetValue(deviceHandle, out bool cached))
+        {
+            return cached;
+        }
+
+        bool? resolved = TryResolveTargetInputDevice(deviceHandle);
+        if (resolved is not { } isTarget)
+        {
+            // A failed identity query is not evidence that the device is
+            // unsupported. Retry on its next packet instead of permanently
+            // caching a transient setup/resume failure.
+            return false;
+        }
+
+        targetDevices.TryAdd(deviceHandle, isTarget);
+        return isTarget;
+    }
+
+    private static bool? TryResolveTargetInputDevice(nint deviceHandle)
     {
         if (deviceHandle == 0)
         {
@@ -411,7 +441,11 @@ internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
             RawInputDeviceName,
             null,
             ref characterCount);
-        if (sizingResult == uint.MaxValue || characterCount == 0 || characterCount > 4096)
+        if (sizingResult == uint.MaxValue || characterCount == 0)
+        {
+            return null;
+        }
+        if (characterCount > 4096)
         {
             return false;
         }
@@ -422,8 +456,9 @@ internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
             RawInputDeviceName,
             name,
             ref characterCount);
-        return result != uint.MaxValue
-            && Rz09_0581ReactiveInputDevice.IsTargetPath(name.ToString());
+        return result == uint.MaxValue
+            ? null
+            : Rz09_0581ReactiveInputDevice.IsTargetPath(name.ToString());
     }
 
     private static void RegisterRawInput(nint target, uint flags)

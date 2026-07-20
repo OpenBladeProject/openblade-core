@@ -6,7 +6,7 @@ namespace OpenBlade.Tray.Tests;
 public sealed class ReactiveKeyPulsePumpTests
 {
     [Fact]
-    public async Task Pump_IsSequentialBoundedAndCoalescesRepeatedPendingSlots()
+    public async Task Pump_IsSequentialBoundedAndPreservesRepeatedKeyPresses()
     {
         var firstStarted = new TaskCompletionSource(
             TaskCreationOptions.RunContinuationsAsynchronously);
@@ -26,7 +26,7 @@ public sealed class ReactiveKeyPulsePumpTests
                 lock (sent)
                 {
                     sent.Add(pulse.MatrixSlot);
-                    if (sent.Count == 3)
+                    if (sent.Count == 4)
                     {
                         allSent.TrySetResult();
                     }
@@ -45,7 +45,7 @@ public sealed class ReactiveKeyPulsePumpTests
                     Interlocked.Decrement(ref active);
                 }
             },
-            capacity: 2);
+            capacity: 3);
 
         Assert.True(pump.TryEnqueue(new ReactiveKeyPulse(19)));
         await firstStarted.Task.WaitAsync(TimeSpan.FromSeconds(2));
@@ -57,7 +57,7 @@ public sealed class ReactiveKeyPulsePumpTests
         releaseFirst.TrySetResult();
         await allSent.Task.WaitAsync(TimeSpan.FromSeconds(2));
 
-        Assert.Equal([19, 36, 53], sent);
+        Assert.Equal([19, 36, 36, 53], sent);
         Assert.Equal(1, maximumActive);
     }
 

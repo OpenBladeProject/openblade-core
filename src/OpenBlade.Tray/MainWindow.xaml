@@ -483,9 +483,8 @@
                                                       HorizontalAlignment="Stretch">
                                             <ItemsControl.ItemsPanel>
                                                 <ItemsPanelTemplate>
-                                                    <ItemsWrapGrid Orientation="Horizontal"
-                                                                   ItemWidth="220"
-                                                                   ItemHeight="68" />
+                                                    <VariableSizedWrapGrid Orientation="Horizontal"
+                                                                           ItemWidth="220" />
                                                 </ItemsPanelTemplate>
                                             </ItemsControl.ItemsPanel>
                                             <ItemsControl.ItemTemplate>

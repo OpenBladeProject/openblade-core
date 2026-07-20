@@ -75,7 +75,12 @@ public sealed class ServiceReactiveLightingLoop : IAsyncDisposable
                                         LightingRendererOwnershipState.Ripple);
                                 break;
                             case ServiceWatchUpdate.Reconnecting:
-                                SetInputState(connected: false, keyTriggered: false);
+                                // A subscription-open retry is not authoritative
+                                // device or renderer state. Keep the session Raw
+                                // Input window and last ownership active until the
+                                // service publishes a replacement status; tearing
+                                // it down here creates a visible dead zone on every
+                                // short pipe reconnect.
                                 break;
                         }
                     }

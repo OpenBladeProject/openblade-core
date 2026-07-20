@@ -159,6 +159,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
     private int? lastCurveFan1Rpm;
     private int? lastCurveFan2Rpm;
     private int consecutiveDeviceProbeFailures;
+    private int consecutiveVerifiedAccessFailures;
 
     public ServiceControlRuntime(
         BatteryConfigurationStore store,
@@ -824,7 +825,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         token.ThrowIfCancellationRequested();
         ServiceStatusSnapshot current = GetStatus();
         if (!current.DeviceVerified
-            || current.WritesBlocked && !IsTransientDeviceProbeRecheck(current)
+            || current.WritesBlocked
             || current.ActivePowerSource == PowerSource.ExternalUnknown)
         {
             return new ControlOperationResult(
@@ -1977,13 +1978,25 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         }
 
         history.RecordSubsystemResult(subsystem, outcome.Result);
+        // A pre-write read failure is not proof that the exact laptop vanished.
+        // Keep the last confirmed global availability until observation retries;
+        // every later mutation still performs its own verified-device admission.
+        // Once a write was attempted, retain fail-closed behavior because the
+        // resulting firmware state may be indeterminate.
+        bool preserveCurrentAvailability = outcome.DeviceAccessFailed
+            && !outcome.WriteAttempted
+            && current.DeviceVerified;
         PublishScopedStatus(
             powerSource,
             confirmed,
             outcome.Capabilities ?? current.Capabilities,
             outcome.Result.Message,
-            deviceVerified: !outcome.DeviceAccessFailed,
-            writesBlocked: outcome.DeviceAccessFailed);
+            deviceVerified: preserveCurrentAvailability
+                ? current.DeviceVerified
+                : !outcome.DeviceAccessFailed,
+            writesBlocked: preserveCurrentAvailability
+                ? current.WritesBlocked
+                : outcome.DeviceAccessFailed);
         return ToOperationResult(outcome.Result);
     }
 
@@ -2302,6 +2315,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         cancellationToken.ThrowIfCancellationRequested();
         if (!deviceAvailable)
         {
+            consecutiveVerifiedAccessFailures = 0;
             cancellationToken.ThrowIfCancellationRequested();
             if (GetStatus().DeviceVerified
                 && ++consecutiveDeviceProbeFailures < 2)
@@ -2379,6 +2393,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             }
             cancellationToken.ThrowIfCancellationRequested();
             ObserveAutomaticState(confirmed);
+            consecutiveVerifiedAccessFailures = 0;
             PublishIfChanged(GetStatus() with
             {
                 DeviceVerified = true,
@@ -2427,13 +2442,28 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         catch (Exception exception)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            PublishObservationUnavailable(
-                powerSource,
-                includeLiveReadings
-                    ? new LiveReadings(batteryPowerFlowMilliwatts, null, null)
-                    : null,
-                $"Verified device access failed: {exception.Message}",
-                deviceVerified: true);
+            string message = $"Verified device access failed: {exception.Message}";
+            ServiceStatusSnapshot current = GetStatus();
+            if (current.DeviceVerified
+                && ++consecutiveVerifiedAccessFailures < 2)
+            {
+                PublishTransientVerifiedAccessFailure(
+                    powerSource,
+                    includeLiveReadings
+                        ? new LiveReadings(batteryPowerFlowMilliwatts, null, null)
+                        : null,
+                    message);
+            }
+            else
+            {
+                PublishObservationUnavailable(
+                    powerSource,
+                    includeLiveReadings
+                        ? new LiveReadings(batteryPowerFlowMilliwatts, null, null)
+                        : null,
+                    message,
+                    deviceVerified: true);
+            }
             history.RecordSummary(
                 ControlOperationStatus.Failed,
                 GetStatus().Message);
@@ -2818,20 +2848,30 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         LiveReadings? liveReadings)
     {
         ServiceStatusSnapshot current = GetStatus();
+        // Do not flash all controls unavailable for one missed enumeration.
+        // Hardware operations independently re-admit PID 02E0 before access;
+        // a second consecutive miss still publishes the fail-closed state.
         PublishIfChanged(current with
         {
-            WritesBlocked = true,
             Message = "Checking the laptop connection after a temporary device-access failure.",
             ActivePowerSource = powerSource,
             LiveReadings = liveReadings,
         });
     }
 
-    private static bool IsTransientDeviceProbeRecheck(ServiceStatusSnapshot status) =>
-        status is { DeviceVerified: true, WritesBlocked: true }
-        && status.Message.StartsWith(
-            "Checking the laptop connection",
-            StringComparison.OrdinalIgnoreCase);
+    private void PublishTransientVerifiedAccessFailure(
+        PowerSource powerSource,
+        LiveReadings? liveReadings,
+        string detail)
+    {
+        ServiceStatusSnapshot current = GetStatus();
+        PublishIfChanged(current with
+        {
+            Message = $"Refreshing laptop controls after a temporary device-access failure. {detail}",
+            ActivePowerSource = powerSource,
+            LiveReadings = liveReadings,
+        });
+    }
 
     private ServiceStatusSnapshot CreateInitialSnapshot(PowerSource powerSource) => new(
             Revision: 0,

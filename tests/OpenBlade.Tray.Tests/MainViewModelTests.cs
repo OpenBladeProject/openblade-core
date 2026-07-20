@@ -1884,13 +1884,53 @@ public sealed class MainViewModelTests
 
         viewModel.LightingEffectEditor = LightingEffect.Breathing;
 
-        Assert.Equal(
-            LightingSettingsFactory.DefaultVisibleBrightness,
-            viewModel.LightingBrightnessEditor);
+        Assert.Equal(50, viewModel.LightingBrightnessEditor);
         Assert.Equal(
             LightingSettingsFactory.DefaultVisibleColor,
             viewModel.LightingPrimaryColorEditor);
         Assert.True(LightingSettingsValidation.IsWellFormed(viewModel.LightingDraft));
+    }
+
+    [Fact]
+    public async Task SelectingEffectFromUnconfirmedZeroBrightnessUsesMatchingVisibleDefault()
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        ServiceStatusSnapshot initial = CreateStatus(
+            verified: true,
+            blocked: false,
+            capabilities: DeviceCapabilities.SafeTargetDefaults() with
+            {
+                LightingEffects = new HashSet<LightingEffect>(
+                    Enum.GetValues<LightingEffect>()),
+                ChargeLimits = ChargeLimits(),
+            });
+        client.Publish(initial with
+        {
+            ConfirmedState = initial.ConfirmedState! with { Lighting = null },
+            DesiredState = initial.DesiredState with
+            {
+                Lighting = new ResolvedSetting<LightingSettings>(
+                    LightingSettingsFactory.SpectrumCycling(0),
+                    SettingValueSource.PowerProfile),
+            },
+            LightingRendererOwnership = LightingRendererOwnershipState.None,
+        });
+        await WaitUntilAsync(() => viewModel.IsKeyboardEffectUnconfirmed);
+
+        viewModel.SelectedLightingEffectOption = viewModel.AvailableLightingEffectOptions
+            .Single(option => option.Effect == LightingEffect.Starlight);
+
+        Assert.Equal(50, viewModel.LightingBrightnessEditor);
+        Assert.Equal(50, viewModel.LightingDraft.Brightness);
+
+        await Assert.IsType<AsyncRelayCommand>(viewModel.SetLightingCommand)
+            .ExecuteAsync(viewModel.LightingDraft);
+
+        ManualOverride<LightingSettings> lightingOverride = Assert.IsType<ManualOverride<LightingSettings>>(
+            client.LightingOverride);
+        Assert.Equal((byte)50, lightingOverride.Value.Brightness);
     }
 
     [Theory]

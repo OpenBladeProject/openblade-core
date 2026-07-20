@@ -10,8 +10,17 @@ All notable changes to OpenBlade are documented in this file. The project follow
 - Prevented interactive keyboard pulses from waiting behind periodic firmware
   observations or repeating exact-device enumeration for every key, and
   preserved status through routine subscription rotation.
-- Increased dashboard telemetry row height so unavailable temperature values
-  wrap without clipping.
+- Preserved repeated key-triggered lighting pulses, kept Raw Input active across
+  brief service reconnects, and refreshed cached input-device identity after
+  device changes or transient lookup failures.
+- Kept one transient verified-device access failure from demoting every control
+  while retaining fail-closed handling after attempted or indeterminate writes.
+- Made dashboard telemetry rows content-sized so unavailable temperature values
+  wrap without clipping or leaving excess card space.
+- Defaulted an unconfirmed visible lighting effect to 50% brightness in both the
+  editor and the hardware request instead of displaying 0% while firmware used
+  a different value.
+- Applied the OpenBlade application icon to every executable project.
 - Removed the glitchy long-distance navigation selection-indicator animation.
 - Enforced a 720 by 540 DIP minimum app-window size to protect responsive
   layouts.

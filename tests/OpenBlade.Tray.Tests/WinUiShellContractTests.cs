@@ -5,6 +5,20 @@ namespace OpenBlade.Tray.Tests;
 public sealed class WinUiShellContractTests
 {
     [Fact]
+    public void ExecutableProjectsInheritTheSharedOpenBladeIcon()
+    {
+        string targets = ReadRepositoryFile("src", "Directory.Build.targets");
+
+        Assert.Contains("'$(OutputType)' == 'Exe'", targets, StringComparison.Ordinal);
+        Assert.Contains("'$(OutputType)' == 'WinExe'", targets, StringComparison.Ordinal);
+        Assert.Contains("'$(ApplicationIcon)' == ''", targets, StringComparison.Ordinal);
+        Assert.Contains(
+            "OpenBlade.Tray\\Assets\\Brand\\OpenBlade.ico",
+            targets,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void TrayStartsOnlyItsExactSiblingSessionAgent()
     {
         string app = ReadRepositoryFile("src", "OpenBlade.Tray", "App.xaml.cs");
@@ -266,6 +280,9 @@ public sealed class WinUiShellContractTests
 
         Assert.Contains("MessageOnlyWindow", source, StringComparison.Ordinal);
         Assert.Contains("RawInputDeviceInputSink", source, StringComparison.Ordinal);
+        Assert.Contains("RawInputDeviceNotify", source, StringComparison.Ordinal);
+        Assert.Contains("WindowMessageInputDeviceChange", source, StringComparison.Ordinal);
+        Assert.Contains("TryResolveTargetInputDevice", source, StringComparison.Ordinal);
         Assert.Contains("Rz09_0581ReactiveInputDevice", source, StringComparison.Ordinal);
         Assert.DoesNotContain("rawInput.Keyboard.VirtualKey", source, StringComparison.Ordinal);
         Assert.Contains("ServiceReactiveLightingLoop", agent, StringComparison.Ordinal);

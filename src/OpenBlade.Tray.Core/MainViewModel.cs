@@ -48,6 +48,7 @@ public sealed record ProfilePresentation(
 public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
 {
     private const string UnavailableLabel = "Unavailable";
+    private const byte DefaultLightingBrightness = 50;
 
     private enum ProfileDraftGroup
     {
@@ -5387,7 +5388,10 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
 
     private LightingSettings CreateLightingDraft()
     {
-        byte brightness = (byte)LightingBrightnessEditor;
+        byte brightness = LightingEffectEditor != LightingEffect.Off
+            && LightingBrightnessEditor == 0
+                ? DefaultLightingBrightness
+                : (byte)LightingBrightnessEditor;
         RgbColor primaryColor = new(
             (byte)LightingRedEditor,
             (byte)LightingGreenEditor,
@@ -5465,11 +5469,11 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             return;
         }
 
-        if (previous == LightingEffect.Off && LightingBrightnessEditor == 0)
+        if (LightingBrightnessEditor == 0)
         {
             SetLightingEditorField(
                 ref lightingBrightnessEditor,
-                (int)LightingSettingsFactory.DefaultVisibleBrightness);
+                (int)DefaultLightingBrightness);
         }
 
         bool selectedUsesColor = selected is LightingEffect.Static
@@ -5556,7 +5560,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     private LightingSettings CreateLightingChoice(LightingEffect effect)
     {
         byte brightness = SelectedLighting.Brightness == 0
-            ? LightingSettingsFactory.DefaultVisibleBrightness
+            ? DefaultLightingBrightness
             : SelectedLighting.Brightness;
         RgbColor color = SelectedLighting.Color == default
             ? LightingSettingsFactory.DefaultVisibleColor

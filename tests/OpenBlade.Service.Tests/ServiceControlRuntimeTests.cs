@@ -279,6 +279,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         await context.Runtime.ObserveAsync(CancellationToken.None);
         Assert.Equal("Checking the laptop connection after a temporary device-access failure.",
             context.Runtime.GetStatus().Message);
+        Assert.False(context.Runtime.GetStatus().WritesBlocked);
         ControlOperationResult duringRecheck = await context.Runtime.PulseReactiveKeyAsync(
             new ReactiveKeyPulse(53),
             CancellationToken.None);
@@ -1248,9 +1249,17 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         context.Device.ReadStateFailure = new IOException("device vanished");
         await context.Runtime.ObserveAsync(CancellationToken.None);
         Assert.True(context.Runtime.GetStatus().DeviceVerified);
-        Assert.True(context.Runtime.GetStatus().WritesBlocked);
+        Assert.False(context.Runtime.GetStatus().WritesBlocked);
+        Assert.Contains(
+            "temporary device-access failure",
+            context.Runtime.GetStatus().Message,
+            StringComparison.OrdinalIgnoreCase);
         Assert.Same(capabilities, context.Runtime.GetStatus().Capabilities);
         Assert.Same(confirmed, context.Runtime.GetStatus().ConfirmedState);
+
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        Assert.True(context.Runtime.GetStatus().DeviceVerified);
+        Assert.True(context.Runtime.GetStatus().WritesBlocked);
 
         context.Device.ReadStateFailure = null;
         context.Provider.Available = false;
@@ -1299,6 +1308,44 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             "this control operation",
             context.Runtime.GetStatus().Message,
             StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task ScopedReadFailure_PreservesPreviouslyVerifiedGlobalAvailability()
+    {
+        DeviceCapabilities capabilities = DeviceCapabilities.SafeTargetDefaults() with
+        {
+            LightingEffects = new HashSet<LightingEffect>
+            {
+                LightingEffect.Off,
+                LightingEffect.Static,
+            },
+        };
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            profileValidator: ProfileSetValidator.CreateForLightingCapabilities(capabilities));
+        context.Device.Capabilities = capabilities;
+        context.Device.ConfirmedState = new ConfirmedDeviceState(
+            PerformancePreset.Balanced,
+            FanMode.Automatic,
+            ConfirmedBattery(80),
+            LightingSettingsFactory.Off());
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        ServiceStatusSnapshot verified = context.Runtime.GetStatus();
+        context.Device.ReadStateFailureOnCall = context.Device.StateReadCalls + 1;
+        context.Device.ReadStateFailureOnCallException = new IOException("temporary read failure");
+
+        ControlOperationResult result = await context.Runtime.SetLightingOverrideAsync(
+            new ManualOverride<LightingSettings>(
+                LightingSettingsFactory.Static(new RgbColor(0, 255, 0), 77),
+                OverrideLifetime.UntilPowerSourceChange),
+            CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Failed, result.Status);
+        Assert.True(context.Runtime.GetStatus().DeviceVerified);
+        Assert.False(context.Runtime.GetStatus().WritesBlocked);
+        Assert.Same(verified.ConfirmedState, context.Runtime.GetStatus().ConfirmedState);
+        Assert.Contains("temporary read failure", context.Runtime.GetStatus().Message);
     }
 
     [Fact]

@@ -53,7 +53,7 @@ public sealed class ServiceReactiveLightingLoopTests
     }
 
     [Fact]
-    public async Task StatusHydrationAndReconnect_DoNotProduceNotifications()
+    public async Task StatusHydrationAndReconnect_PreserveInputWithoutNotifications()
     {
         var client = new WatchClient();
         var factory = new RecordingSourceFactory();
@@ -69,9 +69,11 @@ public sealed class ServiceReactiveLightingLoopTests
         await WaitUntilAsync(() => factory.CreateCount == 1);
         client.Publish(Status(LightingRendererOwnershipState.Reactive) with { Revision = 2 });
         client.Reconnect();
-        await WaitUntilAsync(() => factory.Last!.Disposed);
         await Task.Delay(50);
 
+        Assert.False(factory.Last!.Disposed);
+        factory.Last.Publish(new ReactiveKeyPulse(53));
+        await WaitUntilAsync(() => client.Pulses.Count == 1);
         Assert.Empty(notifications.Messages);
         cancellation.Cancel();
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => running);
@@ -151,7 +153,10 @@ public sealed class ServiceReactiveLightingLoopTests
         Assert.Equal(1, factory.CreateCount);
 
         client.Reconnect();
-        await WaitUntilAsync(() => first.Disposed);
+        await Task.Delay(25);
+        Assert.False(first.Disposed);
+        first.Publish(new ReactiveKeyPulse(80));
+        await WaitUntilAsync(() => client.Pulses.Count == 3);
 
         cancellation.Cancel();
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => running);
