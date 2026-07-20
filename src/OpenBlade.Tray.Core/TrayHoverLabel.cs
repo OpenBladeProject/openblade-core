@@ -14,11 +14,38 @@ public sealed record TrayHoverLabelOption(
     TrayHoverLabelMode Mode,
     string Label);
 
+public sealed record TrayHoverLabelFormatResult(
+    string Text,
+    IReadOnlyList<TrayHoverLabelItemKind> OmittedItems)
+{
+    public bool HasOmittedItems => OmittedItems.Count > 0;
+}
+
 public static class TrayHoverLabelFormatter
 {
     public const int MaximumLength = 63;
 
     public static string Format(
+        IEnumerable<TrayHoverLabelItemKind> items,
+        bool isConnected,
+        PowerSource powerSource,
+        PerformancePreset performance,
+        string batteryPowerFlow,
+        int? cpuTemperatureCelsius,
+        int? gpuTemperatureCelsius,
+        int? fan1Rpm,
+        int? fan2Rpm) => FormatDetailed(
+            items,
+            isConnected,
+            powerSource,
+            performance,
+            batteryPowerFlow,
+            cpuTemperatureCelsius,
+            gpuTemperatureCelsius,
+            fan1Rpm,
+            fan2Rpm).Text;
+
+    public static TrayHoverLabelFormatResult FormatDetailed(
         IEnumerable<TrayHoverLabelItemKind> items,
         bool isConnected,
         PowerSource powerSource,
@@ -37,45 +64,48 @@ public static class TrayHoverLabelFormatter
         bool showAppName = selectedItems.Contains(TrayHoverLabelItemKind.AppName);
         if (!isConnected)
         {
-            return showAppName
-                ? "OpenBlade · Service unavailable"
-                : "Service unavailable";
+            return new TrayHoverLabelFormatResult(
+                showAppName
+                    ? "OpenBlade · Service unavailable"
+                    : "Service unavailable",
+                []);
         }
 
-        string[] details = selectedItems
+        (TrayHoverLabelItemKind Kind, string Value)[] details = selectedItems
             .Where(item => item != TrayHoverLabelItemKind.AppName)
-            .Select(item => item switch
+            .Select(item => (Kind: item, Value: item switch
             {
-                TrayHoverLabelItemKind.ActiveProfile =>
-                    FormatProfile(powerSource, performance),
+                TrayHoverLabelItemKind.ActiveProfile => FormatProfile(powerSource, performance),
                 TrayHoverLabelItemKind.PowerSource => FormatPowerSource(powerSource),
-                TrayHoverLabelItemKind.PowerMode =>
-                    PerformancePresetPresentation.Label(performance),
+                TrayHoverLabelItemKind.PowerMode => PerformancePresetPresentation.Label(performance),
                 TrayHoverLabelItemKind.BatteryPower => batteryPowerFlow,
-                TrayHoverLabelItemKind.CpuTemperature =>
-                    FormatTemperature("CPU", cpuTemperatureCelsius),
-                TrayHoverLabelItemKind.GpuTemperature =>
-                    FormatTemperature("GPU", gpuTemperatureCelsius),
+                TrayHoverLabelItemKind.CpuTemperature => FormatTemperature("CPU", cpuTemperatureCelsius),
+                TrayHoverLabelItemKind.GpuTemperature => FormatTemperature("GPU", gpuTemperatureCelsius),
                 TrayHoverLabelItemKind.Fan1Speed => FormatFan("Fan 1", fan1Rpm),
                 TrayHoverLabelItemKind.Fan2Speed => FormatFan("Fan 2", fan2Rpm),
                 _ => throw new ArgumentOutOfRangeException(nameof(items)),
-            })
-            .Where(value => !string.IsNullOrWhiteSpace(value))
+            }))
+            .Where(detail => !string.IsNullOrWhiteSpace(detail.Value))
             .ToArray();
 
         string result = showAppName ? "OpenBlade" : string.Empty;
-        foreach (string detail in details)
+        List<TrayHoverLabelItemKind> omittedItems = [];
+        for (int index = 0; index < details.Length; index++)
         {
+            string detail = details[index].Value;
             string candidate = string.IsNullOrEmpty(result)
                 ? detail
                 : $"{result} · {detail}";
             if (candidate.Length > MaximumLength)
             {
+                omittedItems.AddRange(details[index..].Select(value => value.Kind));
                 break;
             }
             result = candidate;
         }
-        return string.IsNullOrWhiteSpace(result) ? "OpenBlade" : result;
+        return new TrayHoverLabelFormatResult(
+            string.IsNullOrWhiteSpace(result) ? "OpenBlade" : result,
+            omittedItems);
     }
 
     public static string Format(

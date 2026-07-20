@@ -687,7 +687,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
         if (changingFanSelection
             || Volatile.Read(ref disposed) != 0
             || sender is not Microsoft.UI.Xaml.Controls.ComboBox selector
-            || selector.SelectedItem is not FanModeOption selected
+            || args.AddedItems.FirstOrDefault() is not FanModeOption selected
             || selected.Value == ViewModel.SelectedFanMode)
         {
             return;

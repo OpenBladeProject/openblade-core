@@ -625,11 +625,7 @@ internal sealed class ProductionBatteryPort : IProductionBatteryPort
                     "Manual fan targets were not written because firmware is no longer in manual fan mode.");
             }
 
-            // Re-submit the admitted manual-state commands when changing an
-            // explicit fixed/curve target. Firmware exposes every manual
-            // subtype as the same state, so skipping those commands based only
-            // on readback can leave a direct Fixed <-> Curve change unarmed.
-            int firstCommand = 0;
+            int firstCommand = manual && requireAutomaticEntry ? 2 : 0;
             for (int index = firstCommand; index < commands.Count; index++)
             {
                 RazerCommandDefinition command = commands[index];

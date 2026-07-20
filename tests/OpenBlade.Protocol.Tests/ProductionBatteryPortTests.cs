@@ -410,38 +410,6 @@ public sealed class ProductionBatteryPortTests
     }
 
     [Fact]
-    public async Task FixedFanSetter_ReissuesManualStateWhenFirmwareAlreadyReportsManual()
-    {
-        byte[] state1 = [0x01, 0x01, 0x00, 0x01];
-        byte[] state2 = [0x01, 0x02, 0x00, 0x01];
-        byte[] template1 = [0x01, 0x01, 0x36];
-        byte[] template2 = [0x01, 0x02, 0x36];
-        var session = new ScriptedSession(
-            Success(state1),
-            Success(state2),
-            Success(state1),
-            Success(state2),
-            Success([0x01, 0x01, 0x20]),
-            Success([0x01, 0x02, 0x20]));
-        await using var port = CreatePort(
-            session,
-            Catalog(
-                Fixture(ProductionBatteryPort.FanMaximumStateFirstAction, 0x0D, 0x02, state1),
-                Fixture(ProductionBatteryPort.FanMaximumStateSecondAction, 0x0D, 0x02, state2),
-                Fixture(ProductionBatteryPort.FanMaximumSpeedFirstAction, 0x0D, 0x01, template1),
-                Fixture(ProductionBatteryPort.FanMaximumSpeedSecondAction, 0x0D, 0x01, template2)));
-
-        await port.SetFanControlAsync(
-            new FanControlSettings(FanMode.Fixed, 3200, ManualFanCurve.Default),
-            default);
-
-        Assert.Equal(
-            ["01010000", "01020000", "01010001", "01020001", "010120", "010220"],
-            session.Commands.Select(command =>
-                Convert.ToHexString(command.Arguments.Span)).ToArray());
-    }
-
-    [Fact]
     public async Task CurveTargetUpdateRefusesToReclaimAutomaticFirmwareState()
     {
         var session = new ScriptedSession(

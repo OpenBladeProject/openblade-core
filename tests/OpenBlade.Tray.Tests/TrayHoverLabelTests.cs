@@ -129,6 +129,38 @@ public sealed class TrayHoverLabelTests
     }
 
     [Fact]
+    public void FormatDetailed_ReportsEveryItemOmittedByTheWindowsLimit()
+    {
+        TrayHoverLabelFormatResult result = TrayHoverLabelFormatter.FormatDetailed(
+            [
+                TrayHoverLabelItemKind.AppName,
+                TrayHoverLabelItemKind.PowerMode,
+                TrayHoverLabelItemKind.BatteryPower,
+                TrayHoverLabelItemKind.CpuTemperature,
+                TrayHoverLabelItemKind.GpuTemperature,
+                TrayHoverLabelItemKind.Fan1Speed,
+                TrayHoverLabelItemKind.Fan2Speed,
+            ],
+            isConnected: true,
+            PowerSource.Battery,
+            PerformancePreset.Balanced,
+            "Using 18.4 W",
+            cpuTemperatureCelsius: 46,
+            gpuTemperatureCelsius: 51,
+            fan1Rpm: 2_300,
+            fan2Rpm: 2_500);
+
+        Assert.True(result.HasOmittedItems);
+        Assert.Equal(
+            [TrayHoverLabelItemKind.Fan1Speed, TrayHoverLabelItemKind.Fan2Speed],
+            result.OmittedItems);
+        Assert.Equal(
+            "OpenBlade · Balanced · Using 18.4 W · CPU 46 °C · GPU 51 °C",
+            result.Text);
+        Assert.InRange(result.Text.Length, 1, TrayHoverLabelFormatter.MaximumLength);
+    }
+
+    [Fact]
     public void Format_CanHideAppNameWithoutHidingSelectedDetails()
     {
         string result = TrayHoverLabelFormatter.Format(

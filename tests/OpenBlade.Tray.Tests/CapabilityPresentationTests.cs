@@ -283,6 +283,17 @@ public sealed class CapabilityPresentationTests
         Assert.Equal("True", Attribute(hoverContents, "CanReorderItems"));
         Assert.Equal("Enabled", Attribute(hoverContents, "ReorderMode"));
         Assert.Contains(settings.Descendants(), element =>
+            element.Name.LocalName == "TextBlock"
+            && Attribute(element, "Text") == "{x:Bind ViewModel.TrayHoverLabelText, Mode=OneWay}");
+        Assert.Contains(settings.Descendants(), element =>
+            element.Name.LocalName == "Grid"
+            && Attribute(element, "Visibility")
+                == "{x:Bind ViewModel.HasTrayHoverLabelOverflow, Mode=OneWay}");
+        Assert.Contains(settings.Descendants(), element =>
+            element.Name.LocalName == "TextBlock"
+            && Attribute(element, "Text")
+                == "{x:Bind ViewModel.TrayHoverLabelOverflowMessage, Mode=OneWay}");
+        Assert.Contains(settings.Descendants(), element =>
             element.Name.LocalName == "ItemsControl"
             && Attribute(element, "ItemsSource")?.Contains(
                 "DashboardTelemetryItems",
@@ -502,6 +513,7 @@ public sealed class CapabilityPresentationTests
             readingsList.Descendants(),
             element => element.Name.LocalName == "ItemsWrapGrid");
         Assert.Equal("Horizontal", Attribute(wrapGrid, "Orientation"));
+        Assert.Equal("48", Attribute(wrapGrid, "ItemHeight"));
         Assert.Equal(
             "{x:Bind ViewModel.LiveReadingsRefreshToolTip, Mode=OneWay}",
             Attribute(readings, "AutomationProperties.HelpText"));

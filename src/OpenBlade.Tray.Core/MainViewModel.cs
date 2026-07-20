@@ -596,7 +596,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             string fanValue = (showFan1, showFan2) switch
             {
                 (true, true) =>
-                    $"{Fan1RpmValue.Replace(" RPM", string.Empty, StringComparison.Ordinal)} / {Fan2RpmValue}",
+                    $"{Fan1RpmValue.Replace(" RPM", string.Empty, StringComparison.Ordinal)} · {Fan2RpmValue}",
                 (true, false) => Fan1RpmValue,
                 (false, true) => Fan2RpmValue,
                 _ => string.Empty,
@@ -2534,18 +2534,26 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         }
     }
 
-    public string TrayHoverLabelText => TrayHoverLabelFormatter.Format(
-        TrayHoverLabelItems
-            .Where(option => option.IsEnabled)
-            .Select(option => option.Kind),
-        IsConnected,
-        ActivePowerSource,
-        SelectedPerformance,
-        BatteryPowerFlowLabel,
-        LiveReadings?.CpuTemperatureCelsius,
-        LiveReadings?.GpuTemperatureCelsius,
-        LiveReadings?.Fan1Rpm,
-        LiveReadings?.Fan2Rpm);
+    public string TrayHoverLabelText => BuildTrayHoverLabel().Text;
+
+    public bool HasTrayHoverLabelOverflow => BuildTrayHoverLabel().HasOmittedItems;
+
+    public string TrayHoverLabelOverflowMessage
+    {
+        get
+        {
+            TrayHoverLabelFormatResult result = BuildTrayHoverLabel();
+            if (!result.HasOmittedItems)
+            {
+                return string.Empty;
+            }
+
+            string omitted = string.Join(", ", result.OmittedItems.Select(kind =>
+                TrayHoverLabelItems.FirstOrDefault(option => option.Kind == kind)?.Label
+                    ?? kind.ToString()));
+            return $"Not shown: {omitted}. Windows limits tray hover text to {TrayHoverLabelFormatter.MaximumLength} characters.";
+        }
+    }
 
     public TrayIconState TrayIconState
     {
@@ -5815,9 +5823,32 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             new PropertyChangedEventArgs(nameof(AboutVbiosVersionStatus)));
     }
 
-    private void NotifyTrayHoverLabel() => PropertyChanged?.Invoke(
-        this,
-        new PropertyChangedEventArgs(nameof(TrayHoverLabelText)));
+    private TrayHoverLabelFormatResult BuildTrayHoverLabel() =>
+        TrayHoverLabelFormatter.FormatDetailed(
+            TrayHoverLabelItems
+                .Where(option => option.IsEnabled)
+                .Select(option => option.Kind),
+            IsConnected,
+            ActivePowerSource,
+            SelectedPerformance,
+            BatteryPowerFlowLabel,
+            LiveReadings?.CpuTemperatureCelsius,
+            LiveReadings?.GpuTemperatureCelsius,
+            LiveReadings?.Fan1Rpm,
+            LiveReadings?.Fan2Rpm);
+
+    private void NotifyTrayHoverLabel()
+    {
+        PropertyChanged?.Invoke(
+            this,
+            new PropertyChangedEventArgs(nameof(TrayHoverLabelText)));
+        PropertyChanged?.Invoke(
+            this,
+            new PropertyChangedEventArgs(nameof(HasTrayHoverLabelOverflow)));
+        PropertyChanged?.Invoke(
+            this,
+            new PropertyChangedEventArgs(nameof(TrayHoverLabelOverflowMessage)));
+    }
 
     private void SetField<T>(
         ref T field,

@@ -442,12 +442,12 @@
                                                 <ItemsPanelTemplate>
                                                     <ItemsWrapGrid Orientation="Horizontal"
                                                                    ItemWidth="220"
-                                                                   ItemHeight="64" />
+                                                                   ItemHeight="48" />
                                                 </ItemsPanelTemplate>
                                             </ItemsControl.ItemsPanel>
                                             <ItemsControl.ItemTemplate>
                                                 <DataTemplate x:DataType="local:LiveReadingGroupDisplayItem">
-                                                    <StackPanel Spacing="3" Margin="0,0,22,8">
+                                                    <StackPanel Spacing="3" Margin="0,0,22,0">
                                                         <TextBlock Text="{x:Bind Label, Mode=OneTime}"
                                                                    Style="{StaticResource SecondaryTextStyle}" />
                                                         <TextBlock Text="{x:Bind Value, Mode=OneTime}"
@@ -2078,6 +2078,28 @@
                                             </DataTemplate>
                                         </ListView.ItemTemplate>
                                     </ListView>
+                                    <StackPanel Spacing="4" Margin="4,4,4,0">
+                                        <TextBlock Text="Preview"
+                                                   Style="{StaticResource CardTitleStyle}" />
+                                        <TextBlock Text="{x:Bind ViewModel.TrayHoverLabelText, Mode=OneWay}"
+                                                   Style="{StaticResource SecondaryTextStyle}"
+                                                   TextWrapping="Wrap" />
+                                        <Grid ColumnSpacing="8"
+                                              Visibility="{x:Bind ViewModel.HasTrayHoverLabelOverflow, Mode=OneWay}">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="Auto" />
+                                                <ColumnDefinition Width="*" />
+                                            </Grid.ColumnDefinitions>
+                                            <Ellipse Width="8"
+                                                     Height="8"
+                                                     VerticalAlignment="Center"
+                                                     Fill="{ThemeResource SystemFillColorCautionBrush}" />
+                                            <TextBlock Grid.Column="1"
+                                                       Text="{x:Bind ViewModel.TrayHoverLabelOverflowMessage, Mode=OneWay}"
+                                                       Style="{StaticResource SecondaryTextStyle}"
+                                                       TextWrapping="Wrap" />
+                                        </Grid>
+                                    </StackPanel>
                                 </StackPanel>
                             </Border>
                             </StackPanel>

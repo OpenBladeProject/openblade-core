@@ -2126,7 +2126,7 @@ public sealed class MainViewModelTests
             ["Battery", "Temperatures", "Fan 1 / Fan 2"],
             viewModel.VisibleDashboardTelemetryGroups.Select(item => item.Label));
         Assert.Equal(
-            "3,210 / 2,875 RPM",
+            "3,210 · 2,875 RPM",
             viewModel.VisibleDashboardTelemetryGroups.Single(
                 item => item.Label == "Fan 1 / Fan 2").Value);
         Assert.Contains(nameof(viewModel.BatteryPowerFlowLabel), changed);
@@ -2264,6 +2264,40 @@ public sealed class MainViewModelTests
             viewModel.TrayHoverLabelPreferences
                 .Where(item => item.IsEnabled)
                 .Select(item => item.Kind));
+    }
+
+    [Fact]
+    public async Task TrayHoverLabel_ExplainsWhenSelectedItemsDoNotFit()
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        client.Publish(CreateStatus(verified: true, blocked: false) with
+        {
+            ActivePowerSource = PowerSource.Battery,
+            LiveReadings = new LiveReadings(-18_400, 2300, 2500, 46, 51),
+        });
+        await WaitUntilAsync(() => viewModel.IsConnected);
+
+        viewModel.ApplyTelemetryPreferences(
+            TelemetryPreferenceDefaults.DashboardItems,
+            [
+                new(TrayHoverLabelItemKind.AppName, true),
+                new(TrayHoverLabelItemKind.PowerMode, true),
+                new(TrayHoverLabelItemKind.BatteryPower, true),
+                new(TrayHoverLabelItemKind.CpuTemperature, true),
+                new(TrayHoverLabelItemKind.GpuTemperature, true),
+                new(TrayHoverLabelItemKind.Fan1Speed, true),
+                new(TrayHoverLabelItemKind.Fan2Speed, true),
+            ]);
+
+        Assert.True(viewModel.HasTrayHoverLabelOverflow);
+        Assert.Equal(
+            "OpenBlade · Balanced · Using 18.4 W · CPU 46 °C · GPU 51 °C",
+            viewModel.TrayHoverLabelText);
+        Assert.Equal(
+            "Not shown: Fan 1 speed, Fan 2 speed. Windows limits tray hover text to 63 characters.",
+            viewModel.TrayHoverLabelOverflowMessage);
     }
 
     [Fact]

@@ -368,6 +368,14 @@ public sealed class WinUiShellContractTests
         string window = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml.cs");
         Assert.Contains("OpenBladeIconAssets.ApplicationIconPath is { } applicationIconPath", window, StringComparison.Ordinal);
         Assert.Contains("AppWindow.SetIcon(applicationIconPath)", window, StringComparison.Ordinal);
+        Assert.Contains(
+            "args.AddedItems.FirstOrDefault() is not FanModeOption selected",
+            window,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            "selector.SelectedItem is not FanModeOption selected",
+            window,
+            StringComparison.Ordinal);
 
         string shellThemeSource = ReadRepositoryFile(
             "src",
