@@ -31,6 +31,8 @@ public sealed class ProfileValidationPolicy
             new(PerformancePreset.Performance, FanMode.Automatic),
             new(PerformancePreset.Custom, FanMode.Automatic),
             new(PerformancePreset.Balanced, FanMode.Maximum),
+            new(PerformancePreset.Balanced, FanMode.Fixed),
+            new(PerformancePreset.Balanced, FanMode.ManualCurve),
             new(PerformancePreset.BatterySaver, FanMode.Automatic),
             new(PerformancePreset.BatteryBalanced, FanMode.Automatic),
         },
@@ -138,6 +140,7 @@ public sealed class ProfileSetValidator(ProfileValidationPolicy policy)
 
         ValidateLighting(profile.Lighting, name);
         ValidateCustomPerformance(profile, name);
+        ValidateFanControl(profile, name);
         ValidateDisplay(profile.Display, name);
     }
 
@@ -177,6 +180,19 @@ public sealed class ProfileSetValidator(ProfileValidationPolicy policy)
             && !CustomPerformanceSettings.IsWellFormed(profile.CustomPerformance))
         {
             throw Invalid($"The {name} saved custom performance levels are invalid.");
+        }
+    }
+
+    private static void ValidateFanControl(PowerProfile profile, string name)
+    {
+        FanControlSettings settings = profile.FanControl
+            ?? FanControlSettings.FromLegacy(profile.Fans);
+        if (settings.Mode != profile.Fans
+            && !(profile.Fans == FanMode.Maximum
+                && settings.Mode == FanMode.Fixed
+                && settings.FixedSpeedRpm == FanControlSettings.MaximumSpeedRpm))
+        {
+            throw Invalid($"The {name} fan settings do not match the selected fan mode.");
         }
     }
 

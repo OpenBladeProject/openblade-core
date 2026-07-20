@@ -489,6 +489,211 @@ internal sealed class ProductionBatteryPort : IProductionBatteryPort
                 cancellationToken);
     }
 
+    public Task SetFanControlAsync(
+        FanControlSettings value,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(value);
+        return value.Mode switch
+        {
+            FanMode.Automatic => SetFanModeAsync(FanMode.Automatic, cancellationToken),
+            FanMode.Maximum => SetFanTargetsWithStateAsync(
+                FanControlSettings.MaximumSpeedRpm,
+                FanControlSettings.MaximumSpeedRpm,
+                cancellationToken),
+            FanMode.Fixed => SetFanTargetsWithStateAsync(
+                value.FixedSpeedRpm,
+                value.FixedSpeedRpm,
+                cancellationToken),
+            // Enter manual mode at maximum. The service-owned curve loop lowers
+            // the targets only after obtaining fresh temperature readings.
+            FanMode.ManualCurve => SetFanTargetsWithStateAsync(
+                FanControlSettings.MaximumSpeedRpm,
+                FanControlSettings.MaximumSpeedRpm,
+                cancellationToken),
+            _ => Task.FromException(KnownNotApplied(
+                $"Fan mode '{value.Mode}' is not admitted for production use.")),
+        };
+    }
+
+    public Task SetFanTargetsAsync(
+        int fan1Rpm,
+        int fan2Rpm,
+        CancellationToken cancellationToken)
+    {
+        ValidateFanSpeed(fan1Rpm, nameof(fan1Rpm));
+        ValidateFanSpeed(fan2Rpm, nameof(fan2Rpm));
+        return ExecuteDynamicFanCommandsAsync(
+            [
+                CreateFanSpeedCommand(ThermalChannel.First, fan1Rpm),
+                CreateFanSpeedCommand(ThermalChannel.Second, fan2Rpm),
+            ],
+            requireAutomaticEntry: false,
+            cancellationToken);
+    }
+
+    private Task SetFanTargetsWithStateAsync(
+        int fan1Rpm,
+        int fan2Rpm,
+        CancellationToken cancellationToken)
+    {
+        ValidateFanSpeed(fan1Rpm, nameof(fan1Rpm));
+        ValidateFanSpeed(fan2Rpm, nameof(fan2Rpm));
+        return ExecuteDynamicFanCommandsAsync(
+            [
+                RequiredCommand(FanMaximumStateFirstAction),
+                RequiredCommand(FanMaximumStateSecondAction),
+                CreateFanSpeedCommand(ThermalChannel.First, fan1Rpm),
+                CreateFanSpeedCommand(ThermalChannel.Second, fan2Rpm),
+            ],
+            requireAutomaticEntry: true,
+            cancellationToken);
+    }
+
+    private RazerCommandDefinition RequiredCommand(string action)
+    {
+        if (!catalog.TryGet(action, out RazerCommandDefinition? command) || command is null)
+        {
+            throw KnownNotApplied(
+                $"Thermal action '{action}' is not admitted for production use.");
+        }
+
+        return command;
+    }
+
+    private RazerCommandDefinition CreateFanSpeedCommand(
+        ThermalChannel channel,
+        int speedRpm)
+    {
+        string templateAction = channel == ThermalChannel.First
+            ? FanMaximumSpeedFirstAction
+            : FanMaximumSpeedSecondAction;
+        RazerCommandDefinition template = RequiredCommand(templateAction);
+        byte[] payload = [0x01, (byte)channel, checked((byte)(speedRpm / 100))];
+        return new RazerCommandDefinition(
+            template.CommandClass,
+            template.CommandId,
+            payload,
+            payload);
+    }
+
+    private static void ValidateFanSpeed(int speedRpm, string parameterName)
+    {
+        if (speedRpm is < FanControlSettings.MinimumSpeedRpm
+            or > FanControlSettings.MaximumSpeedRpm
+            || speedRpm % FanControlSettings.SpeedStepRpm != 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                parameterName,
+                speedRpm,
+                "Fan speed is outside the captured 2,000-5,400 RPM range or is not a 100 RPM step.");
+        }
+    }
+
+    private async Task ExecuteDynamicFanCommandsAsync(
+        IReadOnlyList<RazerCommandDefinition> commands,
+        bool requireAutomaticEntry,
+        CancellationToken cancellationToken)
+    {
+        if (cancellationToken.IsCancellationRequested)
+        {
+            throw KnownNotApplied("The fan write was canceled before submission.");
+        }
+
+        await EnterForWriteAsync(cancellationToken).ConfigureAwait(false);
+        bool submitted = false;
+        try
+        {
+            EnsureUsableForWrite();
+            ProductionPerformanceFanState current =
+                await QueryPerformanceFanStateCoreAsync(cancellationToken)
+                    .ConfigureAwait(false);
+            bool manual = current.Fans == FanMode.Maximum;
+            if (requireAutomaticEntry)
+            {
+                if (!manual
+                    && (current.Performance != PerformancePreset.Balanced
+                        || current.Fans != FanMode.Automatic))
+                {
+                    throw KnownNotApplied(
+                        "Fixed and manual fan control require confirmed Balanced performance and Automatic fans.");
+                }
+            }
+            else if (!manual)
+            {
+                throw KnownNotApplied(
+                    "Manual fan targets were not written because firmware is no longer in manual fan mode.");
+            }
+
+            int firstCommand = manual && requireAutomaticEntry ? 2 : 0;
+            for (int index = firstCommand; index < commands.Count; index++)
+            {
+                RazerCommandDefinition command = commands[index];
+                cancellationToken.ThrowIfCancellationRequested();
+                submitted = true;
+                HidSessionResult<ReadOnlyMemory<byte>> result = await session.ExecuteAsync(
+                    new RazerCommandSpec(
+                        command.CommandClass,
+                        command.CommandId,
+                        command.Payload.ToArray(),
+                        command.Payload.Length,
+                        payload => payload.Span.SequenceEqual(command.Payload.AsSpan())),
+                    AllocateTransaction,
+                    exchangeTimeout,
+                    cancellationToken).ConfigureAwait(false);
+                if (result.Failure is not null
+                    || !result.Value.Span.SequenceEqual(command.Payload.AsSpan()))
+                {
+                    poisoned = true;
+                    throw Indeterminate(
+                        "The adjustable fan write outcome is indeterminate.");
+                }
+
+                if (index < commands.Count - 1)
+                {
+                    await Task.Delay(
+                        ThermalWriteTiming.MaximumInterCommandDelay(index),
+                        cancellationToken).ConfigureAwait(false);
+                }
+            }
+        }
+        catch (BladeWriteException)
+        {
+            throw;
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            if (submitted)
+            {
+                poisoned = true;
+                throw Indeterminate(
+                    "The adjustable fan write was canceled after submission became possible.");
+            }
+
+            throw KnownNotApplied("The fan write was canceled before submission.");
+        }
+        catch (Exception exception)
+        {
+            if (submitted)
+            {
+                poisoned = true;
+            }
+
+            throw new BladeWriteException(
+                submitted
+                    ? WriteSubmissionState.Indeterminate
+                    : WriteSubmissionState.KnownNotApplied,
+                submitted
+                    ? "The adjustable fan write outcome is indeterminate."
+                    : "The adjustable fan write was not applied.",
+                exception);
+        }
+        finally
+        {
+            operationGate.Release();
+        }
+    }
+
     public Task SetProtectionOffAsync(CancellationToken cancellationToken)
     {
         if (!readEvidence.SupportsTemporaryFullChargeQuery)
@@ -662,6 +867,12 @@ internal sealed class ProductionBatteryPort : IProductionBatteryPort
                     FanMaximumSpeedSecondAction))
             {
                 fans.Add(FanMode.Maximum);
+                // Multiple captured fixed targets (2,000, 2,100, 3,700 and
+                // 5,400 RPM) establish the target-byte formula and bounds.
+                // Synapse uses the same admitted state/speed commands for its
+                // host-rendered manual curves.
+                fans.Add(FanMode.Fixed);
+                fans.Add(FanMode.ManualCurve);
             }
         }
 

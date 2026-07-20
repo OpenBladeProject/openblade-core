@@ -134,7 +134,8 @@ public sealed class ProductionFixtureSourceTests
                 PerformancePreset.BatterySaver,
                 PerformancePreset.BatteryBalanced,
             ]));
-        Assert.True(capabilities.FanModes.SetEquals([FanMode.Automatic, FanMode.Maximum]));
+        Assert.True(capabilities.FanModes.SetEquals(
+            [FanMode.Automatic, FanMode.Fixed, FanMode.ManualCurve, FanMode.Maximum]));
         Assert.Empty(capabilities.LightingEffects);
         Assert.True(capabilities.OneShotLaptopControls.SetEquals(
         [

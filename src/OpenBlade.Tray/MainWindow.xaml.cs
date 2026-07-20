@@ -39,6 +39,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
     private bool changingStartupAnimation;
     private bool changingDisplaySettings;
     private bool chargeLimitCommitInProgress;
+    private bool fanControlCommitInProgress;
     private bool chargeLimitPointerInteraction;
     private int? pendingChargeLimitPercent;
     private bool? dashboardIsStacked;
@@ -657,17 +658,17 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
         if (changingFanSelection
             || Volatile.Read(ref disposed) != 0
             || sender is not Microsoft.UI.Xaml.Controls.ComboBox selector
-            || selector.SelectedItem is not FanMode selected
-            || selected == ViewModel.SelectedFanMode)
+            || selector.SelectedItem is not FanModeOption selected
+            || selected.Value == ViewModel.SelectedFanMode)
         {
             return;
         }
 
         changingFanSelection = true;
         if (ViewModel.SetFanModeCommand is not AsyncRelayCommand command
-            || !command.CanExecute(selected))
+            || !command.CanExecute(selected.Value))
         {
-            selector.SelectedItem = ViewModel.SelectedFanMode;
+            selector.SelectedItem = ViewModel.SelectedFanModeOption;
             changingFanSelection = false;
             return;
         }
@@ -675,7 +676,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
         selector.IsEnabled = false;
         try
         {
-            await command.ExecuteAsync(selected);
+            await command.ExecuteAsync(selected.Value);
         }
         catch (Exception exception)
         {
@@ -683,9 +684,114 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
         }
         finally
         {
-            selector.SelectedItem = ViewModel.SelectedFanMode;
+            selector.SelectedItem = ViewModel.SelectedFanModeOption;
             selector.IsEnabled = true;
             changingFanSelection = false;
+        }
+    }
+
+    private async void OnFixedFanSpeedCommit(
+        object sender,
+        Microsoft.UI.Xaml.Input.PointerRoutedEventArgs args)
+    {
+        if (sender is Slider slider)
+        {
+            ViewModel.FixedFanSpeedRpm = IntegerEditorValue.ToInt32(slider.Value);
+            await CommitFanControlAsync();
+        }
+    }
+
+    private async void OnFixedFanSpeedKeyUp(
+        object sender,
+        Microsoft.UI.Xaml.Input.KeyRoutedEventArgs args)
+    {
+        if (sender is Slider slider
+            && args.Key is Windows.System.VirtualKey.Left
+                or Windows.System.VirtualKey.Right
+                or Windows.System.VirtualKey.Up
+                or Windows.System.VirtualKey.Down
+                or Windows.System.VirtualKey.PageUp
+                or Windows.System.VirtualKey.PageDown
+                or Windows.System.VirtualKey.Home
+                or Windows.System.VirtualKey.End)
+        {
+            ViewModel.FixedFanSpeedRpm = IntegerEditorValue.ToInt32(slider.Value);
+            await CommitFanControlAsync();
+        }
+    }
+
+    private async void OnFanCurvePointCommit(
+        object sender,
+        Microsoft.UI.Xaml.Input.PointerRoutedEventArgs args)
+    {
+        if (sender is Slider { Tag: FanCurveEditorPoint point } slider)
+        {
+            ViewModel.UpdateFanCurvePoint(
+                point,
+                IntegerEditorValue.ToInt32(slider.Value));
+            await CommitFanControlAsync();
+        }
+    }
+
+    private async void OnFanCurvePointKeyUp(
+        object sender,
+        Microsoft.UI.Xaml.Input.KeyRoutedEventArgs args)
+    {
+        if (sender is Slider { Tag: FanCurveEditorPoint point } slider
+            && args.Key is Windows.System.VirtualKey.Left
+                or Windows.System.VirtualKey.Right
+                or Windows.System.VirtualKey.PageUp
+                or Windows.System.VirtualKey.PageDown
+                or Windows.System.VirtualKey.Home
+                or Windows.System.VirtualKey.End)
+        {
+            ViewModel.UpdateFanCurvePoint(
+                point,
+                IntegerEditorValue.ToInt32(slider.Value));
+            await CommitFanControlAsync();
+        }
+    }
+
+    private async void OnManualFanCurveSettingChanged(object sender, RoutedEventArgs args) =>
+        await CommitFanControlAsync();
+
+    private async Task CommitFanControlAsync()
+    {
+        if (fanControlCommitInProgress
+            || Volatile.Read(ref disposed) != 0
+            || ViewModel.SetFanControlCommand is not AsyncRelayCommand command)
+        {
+            return;
+        }
+
+        FanControlSettings settings;
+        try
+        {
+            settings = ViewModel.CurrentFanControlSettings;
+        }
+        catch (ArgumentException exception)
+        {
+            Trace.TraceWarning("OpenBlade rejected an invalid fan curve: {0}", exception.Message);
+            return;
+        }
+
+        if (!command.CanExecute(settings))
+        {
+            return;
+        }
+
+        fanControlCommitInProgress = true;
+        try
+        {
+            await command.ExecuteAsync(settings);
+        }
+        catch (Exception exception)
+        {
+            Trace.TraceError("OpenBlade fan-control change failed: {0}", exception);
+        }
+        finally
+        {
+            fanControlCommitInProgress = false;
         }
     }
 

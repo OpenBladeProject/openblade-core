@@ -1,0 +1,79 @@
+{
+  "schemaVersion": 1,
+  "evidenceProvenance": {
+    "controller": "Razer Synapse 4.0.697",
+    "role": "OracleCapture",
+    "openBladeTypedApplyPerformed": false
+  },
+  "capturedAtUtc": "2026-07-20T03:25:48.1391586Z",
+  "device": {
+    "model": "Razer Blade 16 (2026)",
+    "modelNumber": "RZ09-0581",
+    "vendorIdHex": "1532",
+    "productIdHex": "02E0",
+    "bios": "3.01",
+    "usbPcapRoot": "USBPcap3",
+    "usbDeviceAddress": 2
+  },
+  "capture": {
+    "sha256": "D3261EF615667B5AF3B5AD1AE740F0ADC53DC266881D8956CC1EF5DEC103C0B9",
+    "byteLength": 697375,
+    "packetCount": 4896,
+    "durationSeconds": 164.174942,
+    "rawCaptureCommitted": false,
+    "terminationReason": "StopSentinel",
+    "stopMode": "Graceful",
+    "captureProcessId": 29000,
+    "captureProcessGroupId": 29000,
+    "serviceRestored": true,
+    "decodable": true,
+    "descriptorVerified": "1532:02E0"
+  },
+  "fixedSpeed": {
+    "minimumRpm": 2000,
+    "maximumRpm": 5400,
+    "stepRpm": 100,
+    "stateWrites": [
+      "0D/02:01010001",
+      "0D/02:01020001"
+    ],
+    "observedTargets": [
+      { "rpm": 2000, "channel1": "0D/01:010114", "channel2": "0D/01:010214" },
+      { "rpm": 2100, "channel1": "0D/01:010115", "channel2": "0D/01:010215" },
+      { "rpm": 3700, "channel1": "0D/01:010125", "channel2": "0D/01:010225" },
+      { "rpm": 5400, "channel1": "0D/01:010136", "channel2": "0D/01:010236" }
+    ],
+    "targetFormula": "payload[2] = RPM / 100"
+  },
+  "manualCurve": {
+    "firmwareCurveSetterObserved": false,
+    "hostLoopObserved": true,
+    "writeCadenceSecondsApproximate": 1.0,
+    "independentFanTargetsObserved": true,
+    "exampleIndependentTargets": [
+      { "relativeSeconds": 59.397, "fan1": "010115", "fan2": "010213" },
+      { "relativeSeconds": 62.437, "fan1": "01011C", "fan2": "01021A" },
+      { "relativeSeconds": 97.742, "fan1": "010122", "fan2": "010220" }
+    ],
+    "ui": {
+      "cpuAndGpuCurves": true,
+      "useHigherTemperatureForBoth": true,
+      "displayUnits": ["RPM", "Percent"]
+    }
+  },
+  "restoration": {
+    "mode": "Automatic",
+    "writes": [
+      "0D/02:01010000",
+      "0D/02:01020000"
+    ],
+    "relativeSeconds": 157.858,
+    "completed": true
+  },
+  "notes": [
+    "Fixed Fan Speed and Manual Fan Curve use the same manual-state and per-channel RPM commands.",
+    "Manual Fan Curve is calculated by the host. The laptop does not receive a curve table.",
+    "The raw PCAP remains local and is not distributed. This file contains only sanitized command semantics.",
+    "The capture process exited through the isolated process group and targeted Ctrl+Break path; the parent console remained alive."
+  ]
+}

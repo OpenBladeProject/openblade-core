@@ -55,7 +55,213 @@ public sealed record CustomPerformanceSettings
 public enum FanMode
 {
     Automatic,
+    Fixed,
+    ManualCurve,
+
+    // Kept for profiles written before adjustable fixed speed was added.
+    // It is equivalent to Fixed at 5,400 RPM.
     Maximum,
+}
+
+public sealed record FanCurvePoint
+{
+    public FanCurvePoint(int temperatureCelsius, int speedRpm)
+    {
+        if (temperatureCelsius is < 20 or > 100)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(temperatureCelsius),
+                temperatureCelsius,
+                "Fan-curve temperature must be from 20 to 100 degrees Celsius.");
+        }
+
+        FanControlSettings.ValidateSpeed(speedRpm, nameof(speedRpm));
+        TemperatureCelsius = temperatureCelsius;
+        SpeedRpm = speedRpm;
+    }
+
+    public int TemperatureCelsius { get; }
+
+    public int SpeedRpm { get; }
+}
+
+public sealed class ManualFanCurve : IEquatable<ManualFanCurve>
+{
+    public ManualFanCurve(
+        IReadOnlyList<FanCurvePoint> cpu,
+        IReadOnlyList<FanCurvePoint> gpu,
+        bool useHigherTemperatureForBoth)
+    {
+        Cpu = ValidateCurve(cpu, nameof(cpu));
+        Gpu = ValidateCurve(gpu, nameof(gpu));
+        UseHigherTemperatureForBoth = useHigherTemperatureForBoth;
+    }
+
+    public IReadOnlyList<FanCurvePoint> Cpu { get; }
+
+    public IReadOnlyList<FanCurvePoint> Gpu { get; }
+
+    public bool UseHigherTemperatureForBoth { get; }
+
+    public static ManualFanCurve Default { get; } = new(
+        [
+            new(40, 2000),
+            new(50, 2100),
+            new(60, 2600),
+            new(70, 3400),
+            new(80, 4400),
+            new(90, 5400),
+        ],
+        [
+            new(35, 2000),
+            new(45, 2100),
+            new(55, 2700),
+            new(65, 3600),
+            new(75, 4500),
+            new(85, 5400),
+        ],
+        useHigherTemperatureForBoth: true);
+
+    public int InterpolateCpu(int temperatureCelsius) =>
+        Interpolate(Cpu, temperatureCelsius);
+
+    public int InterpolateGpu(int temperatureCelsius) =>
+        Interpolate(Gpu, temperatureCelsius);
+
+    public bool Equals(ManualFanCurve? other) =>
+        other is not null
+        && UseHigherTemperatureForBoth == other.UseHigherTemperatureForBoth
+        && Cpu.SequenceEqual(other.Cpu)
+        && Gpu.SequenceEqual(other.Gpu);
+
+    public override bool Equals(object? obj) => Equals(obj as ManualFanCurve);
+
+    public override int GetHashCode()
+    {
+        var hash = new HashCode();
+        hash.Add(UseHigherTemperatureForBoth);
+        foreach (FanCurvePoint point in Cpu)
+        {
+            hash.Add(point);
+        }
+        foreach (FanCurvePoint point in Gpu)
+        {
+            hash.Add(point);
+        }
+        return hash.ToHashCode();
+    }
+
+    private static IReadOnlyList<FanCurvePoint> ValidateCurve(
+        IReadOnlyList<FanCurvePoint>? points,
+        string parameterName)
+    {
+        if (points is null || points.Count is < 2 or > 10)
+        {
+            throw new ArgumentException(
+                "A fan curve must contain from 2 to 10 points.",
+                parameterName);
+        }
+
+        var copy = points.ToArray();
+        for (int index = 0; index < copy.Length; index++)
+        {
+            ArgumentNullException.ThrowIfNull(copy[index]);
+            if (index > 0
+                && (copy[index].TemperatureCelsius <= copy[index - 1].TemperatureCelsius
+                    || copy[index].SpeedRpm < copy[index - 1].SpeedRpm))
+            {
+                throw new ArgumentException(
+                    "Fan-curve temperatures must increase and speed must not decrease.",
+                    parameterName);
+            }
+        }
+
+        return copy;
+    }
+
+    private static int Interpolate(
+        IReadOnlyList<FanCurvePoint> points,
+        int temperatureCelsius)
+    {
+        if (temperatureCelsius <= points[0].TemperatureCelsius)
+        {
+            return points[0].SpeedRpm;
+        }
+
+        for (int index = 1; index < points.Count; index++)
+        {
+            FanCurvePoint upper = points[index];
+            if (temperatureCelsius <= upper.TemperatureCelsius)
+            {
+                FanCurvePoint lower = points[index - 1];
+                double position = (double)(temperatureCelsius - lower.TemperatureCelsius)
+                    / (upper.TemperatureCelsius - lower.TemperatureCelsius);
+                int interpolated = lower.SpeedRpm
+                    + (int)Math.Round((upper.SpeedRpm - lower.SpeedRpm) * position);
+                return FanControlSettings.QuantizeSpeed(interpolated);
+            }
+        }
+
+        return points[^1].SpeedRpm;
+    }
+}
+
+public sealed record FanControlSettings
+{
+    public const int MinimumSpeedRpm = 2000;
+    public const int MaximumSpeedRpm = 5400;
+    public const int SpeedStepRpm = 100;
+
+    public FanControlSettings(
+        FanMode mode,
+        int fixedSpeedRpm,
+        ManualFanCurve manualCurve)
+    {
+        if (!Enum.IsDefined(mode))
+        {
+            throw new ArgumentOutOfRangeException(nameof(mode));
+        }
+
+        ValidateSpeed(fixedSpeedRpm, nameof(fixedSpeedRpm));
+        ManualCurve = manualCurve ?? throw new ArgumentNullException(nameof(manualCurve));
+        Mode = mode;
+        FixedSpeedRpm = mode == FanMode.Maximum ? MaximumSpeedRpm : fixedSpeedRpm;
+    }
+
+    public FanMode Mode { get; }
+
+    public int FixedSpeedRpm { get; }
+
+    public ManualFanCurve ManualCurve { get; }
+
+    public static FanControlSettings Default { get; } = new(
+        FanMode.Automatic,
+        3700,
+        ManualFanCurve.Default);
+
+    public static FanControlSettings FromLegacy(FanMode mode) => new(
+        mode,
+        mode == FanMode.Maximum ? MaximumSpeedRpm : Default.FixedSpeedRpm,
+        Default.ManualCurve);
+
+    public static int QuantizeSpeed(int speedRpm) => Math.Clamp(
+        (int)Math.Round(
+            speedRpm / (double)SpeedStepRpm,
+            MidpointRounding.AwayFromZero) * SpeedStepRpm,
+        MinimumSpeedRpm,
+        MaximumSpeedRpm);
+
+    internal static void ValidateSpeed(int speedRpm, string parameterName)
+    {
+        if (speedRpm is < MinimumSpeedRpm or > MaximumSpeedRpm
+            || speedRpm % SpeedStepRpm != 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                parameterName,
+                speedRpm,
+                $"Fan speed must be from {MinimumSpeedRpm} to {MaximumSpeedRpm} RPM in {SpeedStepRpm} RPM steps.");
+        }
+    }
 }
 
 public enum LightingEffect
@@ -148,6 +354,10 @@ public sealed record PowerProfile(
     // Retained while another preset is selected so switching back to Custom
     // restores the user's last valid CPU/GPU pair.
     public CustomPerformanceSettings? CustomPerformance { get; init; }
+
+    // Optional for JSON compatibility with profiles written before adjustable
+    // fixed speed and manual curves were introduced.
+    public FanControlSettings? FanControl { get; init; }
 }
 
 public sealed record LightingPowerPolicy

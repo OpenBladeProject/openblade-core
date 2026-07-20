@@ -106,8 +106,16 @@ public sealed class ServiceClient : IServiceClient
 
     public Task<ControlOperationResult> SetFanOverrideAsync(
         ManualOverride<FanMode>? value,
+        CancellationToken token) => SetFanControlOverrideAsync(value, null, token);
+
+    public Task<ControlOperationResult> SetFanControlOverrideAsync(
+        ManualOverride<FanMode>? value,
+        FanControlSettings? settings,
         CancellationToken token) => SendMutationAsync(
-            new SetFanOverrideRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid(), value),
+            new SetFanOverrideRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid(), value)
+            {
+                Settings = settings,
+            },
             token);
 
     public Task<ControlOperationResult> SetLightingOverrideAsync(

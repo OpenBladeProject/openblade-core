@@ -1,0 +1,44 @@
+{
+  "schemaVersion": 1,
+  "evidenceKind": "synapseFanControlModesOracleCapture",
+  "device": {
+    "model": "RZ09-0581",
+    "vendorId": "1532",
+    "productId": "02E0",
+    "biosVersion": "3.01"
+  },
+  "sourceCapture": {
+    "sha256": "D3261EF615667B5AF3B5AD1AE740F0ADC53DC266881D8956CC1EF5DEC103C0B9",
+    "bytes": 697375,
+    "packetCount": 4896,
+    "durationSeconds": 164.174942,
+    "finalizedGracefully": true,
+    "decodable": true,
+    "rawCaptureCommitted": false
+  },
+  "protocol": {
+    "manualStateCommand": "0D/02",
+    "manualStatePayloads": ["01010001", "01020001"],
+    "automaticStatePayloads": ["01010000", "01020000"],
+    "speedCommand": "0D/01",
+    "speedPayloadShape": "01 <channel:01|02> <rpmDividedBy100>",
+    "minimumRpm": 2000,
+    "maximumRpm": 5400,
+    "stepRpm": 100,
+    "independentChannels": true
+  },
+  "manualCurveArchitecture": {
+    "hostRendered": true,
+    "firmwareCurveTable": false,
+    "approximateUpdateIntervalMilliseconds": 1000,
+    "requiresTemperatureProvider": true,
+    "externalModeChangePolicy": "Query manual state before target updates and stop without reclaiming when another controller exits manual mode"
+  },
+  "productionAdmission": {
+    "fixedSpeed": true,
+    "manualTargetWrites": true,
+    "arbitraryRawCommandEndpoint": false,
+    "boundsEnforced": true,
+    "unknownPidWrites": false
+  }
+}

@@ -7,6 +7,16 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Added
 
+- Adjustable Fixed Fan Speed from 2,000 to 5,400 RPM in captured 100 RPM
+  steps, plus a native slider that reflects the active target.
+- CPU and GPU manual fan-curve editing, an optional hotter-sensor policy, and
+  a service-owned one-second control loop. Curve writes stop if another app
+  exits firmware manual mode, and missing or critical temperature data forces
+  the captured 5,400 RPM fail-safe target.
+- Sanitized Synapse oracle evidence proving that Manual Fan Curve is a
+  host-calculated pair of independent per-fan RPM writes rather than a
+  firmware-stored curve table.
+
 - Exact-device Function-key behavior readback so Settings can show and verify
   the current Function keys or Media keys state.
 - Exact-device Gaming Mode readback so Settings can show and verify the current

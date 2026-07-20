@@ -56,6 +56,11 @@ public interface IServiceClient
         ManualOverride<FanMode>? value,
         CancellationToken token);
 
+    Task<ControlOperationResult> SetFanControlOverrideAsync(
+        ManualOverride<FanMode>? value,
+        FanControlSettings? settings,
+        CancellationToken token) => SetFanOverrideAsync(value, token);
+
     Task<ControlOperationResult> SetLightingOverrideAsync(
         ManualOverride<LightingSettings>? value,
         CancellationToken token);

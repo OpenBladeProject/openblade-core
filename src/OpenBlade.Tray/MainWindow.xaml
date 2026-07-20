@@ -519,7 +519,7 @@
                                               SelectionChanged="OnDashboardCustomGpuChanged" />
                                 </Grid>
                             </Border>
-                            <Border Style="{StaticResource SettingsLastRowStyle}"
+                            <Border Style="{StaticResource SettingsRowStyle}"
                                     Visibility="{x:Bind ViewModel.IsFanControlVisible, Mode=OneWay}">
                                 <Grid ColumnSpacing="20">
                                     <Grid.ColumnDefinitions>
@@ -537,10 +537,133 @@
                                               HorizontalAlignment="Right"
                                               AutomationProperties.Name="Fan mode"
                                               IsEnabled="{x:Bind ViewModel.CanControlHardware, Mode=OneWay}"
-                                              ItemsSource="{x:Bind ViewModel.AvailableActiveFanModes, Mode=OneWay}"
-                                              SelectedItem="{x:Bind ViewModel.SelectedFanMode, Mode=OneWay}"
+                                              ItemsSource="{x:Bind ViewModel.AvailableActiveFanModeOptions, Mode=OneWay}"
+                                              SelectedItem="{x:Bind ViewModel.SelectedFanModeOption, Mode=OneWay}"
                                               SelectionChanged="OnDashboardFanModeSelectionChanged" />
                                 </Grid>
+                            </Border>
+                            <Border Style="{StaticResource SettingsLastRowStyle}"
+                                    Visibility="{x:Bind ViewModel.IsFixedFanSpeedVisible, Mode=OneWay}">
+                                <Grid ColumnSpacing="20">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="260" />
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel Spacing="3" VerticalAlignment="Center">
+                                        <TextBlock Text="Fan speed" Style="{StaticResource CardTitleStyle}" />
+                                        <TextBlock Text="Set both fans to a fixed speed."
+                                                   Style="{StaticResource SecondaryTextStyle}" />
+                                    </StackPanel>
+                                    <StackPanel Grid.Column="1" Spacing="4">
+                                        <TextBlock HorizontalAlignment="Right"
+                                                   Style="{StaticResource CardTitleStyle}">
+                                            <Run Text="{x:Bind ViewModel.FixedFanSpeedRpm, Mode=OneWay}" />
+                                            <Run Text=" RPM" />
+                                        </TextBlock>
+                                        <Slider x:Name="FixedFanSpeedSlider"
+                                                Minimum="2000"
+                                                Maximum="5400"
+                                                StepFrequency="100"
+                                                SmallChange="100"
+                                                LargeChange="500"
+                                                SnapsTo="StepValues"
+                                                IsThumbToolTipEnabled="True"
+                                                AutomationProperties.Name="Fixed fan speed"
+                                                Value="{Binding FixedFanSpeedRpm, Mode=TwoWay, Converter={StaticResource Int32Double}}"
+                                                PointerReleased="OnFixedFanSpeedCommit"
+                                                PointerCaptureLost="OnFixedFanSpeedCommit"
+                                                KeyUp="OnFixedFanSpeedKeyUp" />
+                                    </StackPanel>
+                                </Grid>
+                            </Border>
+                            <Border Style="{StaticResource SettingsLastRowStyle}"
+                                    Visibility="{x:Bind ViewModel.IsManualFanCurveVisible, Mode=OneWay}">
+                                <StackPanel Spacing="12">
+                                    <Grid ColumnSpacing="20">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel Spacing="3" VerticalAlignment="Center">
+                                            <TextBlock Text="Use the hotter sensor for both fans"
+                                                       Style="{StaticResource CardTitleStyle}" />
+                                            <TextBlock Text="Keeps both fans together when either processor is hot."
+                                                       Style="{StaticResource SecondaryTextStyle}" />
+                                        </StackPanel>
+                                        <ToggleSwitch Grid.Column="1"
+                                                      MinWidth="0"
+                                                      OffContent=""
+                                                      OnContent=""
+                                                      HorizontalAlignment="Right"
+                                                      IsOn="{x:Bind ViewModel.UseHigherFanTemperature, Mode=TwoWay}"
+                                                      Toggled="OnManualFanCurveSettingChanged" />
+                                    </Grid>
+                                    <Grid ColumnSpacing="20">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="*" />
+                                        </Grid.ColumnDefinitions>
+                                        <Expander Header="CPU curve" IsExpanded="True">
+                                            <ItemsControl ItemsSource="{x:Bind ViewModel.CpuFanCurveEditorPoints, Mode=OneWay}">
+                                                <ItemsControl.ItemTemplate>
+                                                    <DataTemplate x:DataType="local:FanCurveEditorPoint">
+                                                        <Grid ColumnSpacing="10" Margin="0,5">
+                                                            <Grid.ColumnDefinitions>
+                                                                <ColumnDefinition Width="44" />
+                                                                <ColumnDefinition Width="*" />
+                                                                <ColumnDefinition Width="78" />
+                                                            </Grid.ColumnDefinitions>
+                                                            <TextBlock Text="{x:Bind TemperatureLabel, Mode=OneTime}" VerticalAlignment="Center" />
+                                                            <Slider Grid.Column="1"
+                                                                    Minimum="2000" Maximum="5400"
+                                                                    StepFrequency="100" SnapsTo="StepValues"
+                                                                    Tag="{x:Bind Mode=OneTime}"
+                                                                    Value="{x:Bind SpeedRpm, Mode=OneTime}"
+                                                                    PointerReleased="OnFanCurvePointCommit"
+                                                                    PointerCaptureLost="OnFanCurvePointCommit"
+                                                                    KeyUp="OnFanCurvePointKeyUp" />
+                                                            <TextBlock Grid.Column="2"
+                                                                       Text="{x:Bind SpeedLabel, Mode=OneTime}"
+                                                                       HorizontalAlignment="Right"
+                                                                       VerticalAlignment="Center" />
+                                                        </Grid>
+                                                    </DataTemplate>
+                                                </ItemsControl.ItemTemplate>
+                                            </ItemsControl>
+                                        </Expander>
+                                        <Expander Grid.Column="1" Header="GPU curve" IsExpanded="True">
+                                            <ItemsControl ItemsSource="{x:Bind ViewModel.GpuFanCurveEditorPoints, Mode=OneWay}">
+                                                <ItemsControl.ItemTemplate>
+                                                    <DataTemplate x:DataType="local:FanCurveEditorPoint">
+                                                        <Grid ColumnSpacing="10" Margin="0,5">
+                                                            <Grid.ColumnDefinitions>
+                                                                <ColumnDefinition Width="44" />
+                                                                <ColumnDefinition Width="*" />
+                                                                <ColumnDefinition Width="78" />
+                                                            </Grid.ColumnDefinitions>
+                                                            <TextBlock Text="{x:Bind TemperatureLabel, Mode=OneTime}" VerticalAlignment="Center" />
+                                                            <Slider Grid.Column="1"
+                                                                    Minimum="2000" Maximum="5400"
+                                                                    StepFrequency="100" SnapsTo="StepValues"
+                                                                    Tag="{x:Bind Mode=OneTime}"
+                                                                    Value="{x:Bind SpeedRpm, Mode=OneTime}"
+                                                                    PointerReleased="OnFanCurvePointCommit"
+                                                                    PointerCaptureLost="OnFanCurvePointCommit"
+                                                                    KeyUp="OnFanCurvePointKeyUp" />
+                                                            <TextBlock Grid.Column="2"
+                                                                       Text="{x:Bind SpeedLabel, Mode=OneTime}"
+                                                                       HorizontalAlignment="Right"
+                                                                       VerticalAlignment="Center" />
+                                                        </Grid>
+                                                    </DataTemplate>
+                                                </ItemsControl.ItemTemplate>
+                                            </ItemsControl>
+                                        </Expander>
+                                    </Grid>
+                                    <TextBlock Text="OpenBlade keeps the curve active in its service. If a required temperature sensor is unavailable, it uses maximum fan speed."
+                                               Style="{StaticResource SecondaryTextStyle}"
+                                               TextWrapping="Wrap" />
+                                </StackPanel>
                             </Border>
                             </StackPanel>
                         </Border>

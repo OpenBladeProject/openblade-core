@@ -68,7 +68,10 @@ public sealed class ControlRequestHandler
                     cancellationToken)),
             SetFanOverrideRequest set => Result(
                 request.RequestId,
-                await runtime.SetFanOverrideAsync(set.Value, cancellationToken)),
+                await runtime.SetFanControlOverrideAsync(
+                    set.Value,
+                    set.Settings,
+                    cancellationToken)),
             SetLightingOverrideRequest set => Result(
                 request.RequestId,
                 await runtime.SetLightingOverrideAsync(set.Value, cancellationToken)),

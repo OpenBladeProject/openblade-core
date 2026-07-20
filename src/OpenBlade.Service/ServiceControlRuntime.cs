@@ -47,6 +47,11 @@ public interface IServiceControlRuntime
         ManualOverride<FanMode>? value,
         CancellationToken token);
 
+    Task<ControlOperationResult> SetFanControlOverrideAsync(
+        ManualOverride<FanMode>? value,
+        FanControlSettings? settings,
+        CancellationToken token) => SetFanOverrideAsync(value, token);
+
     Task<ControlOperationResult> SetLightingOverrideAsync(
         ManualOverride<LightingSettings>? value,
         CancellationToken token);
@@ -106,6 +111,9 @@ public interface IServiceControlRuntime
 
     Task RestoreLightingRendererAsync(CancellationToken cancellationToken) =>
         Task.CompletedTask;
+
+    Task MaintainFanCurveAsync(CancellationToken cancellationToken) =>
+        Task.CompletedTask;
 }
 
 public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
@@ -147,6 +155,10 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
     private LightingSettings? faultedLightingRecoveryCandidate;
     private bool controllerLightingRelinquishPending;
     private readonly HashSet<LightingSuppressionReason> lightingSuppressions = [];
+    private readonly IFanTemperatureSource fanTemperatureSource =
+        new SafeWindowsFanTemperatureSource();
+    private int? lastCurveFan1Rpm;
+    private int? lastCurveFan2Rpm;
 
     public ServiceControlRuntime(
         BatteryConfigurationStore store,
@@ -372,6 +384,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 DesiredState = Automation.Resolve(confirmed),
                 PerformanceOverride = Automation.PerformanceOverride,
                 FanOverride = Automation.FanOverride,
+                FanControlOverride = Automation.FanControlOverride,
                 LightingOverride = Automation.LightingOverride,
                 FullChargeOverride = ResolveFullChargeOverride(current.ConfirmedState),
                 LightingSuppressions = CurrentLightingSuppressions(),
@@ -562,15 +575,103 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
 
     public Task<ControlOperationResult> SetFanOverrideAsync(
         ManualOverride<FanMode>? value,
+        CancellationToken token) => SetFanControlOverrideAsync(value, null, token);
+
+    public Task<ControlOperationResult> SetFanControlOverrideAsync(
+        ManualOverride<FanMode>? value,
+        FanControlSettings? settings,
         CancellationToken token) => ExecuteScopedMutationAsync(
             DeviceSubsystem.Fans,
-            cancellationToken => SetFanOverrideCoreAsync(value, cancellationToken),
+            cancellationToken => SetFanOverrideCoreAsync(
+                value,
+                settings,
+                cancellationToken),
             (coordinator, desired, cancellationToken) =>
-                coordinator.ApplyFanOutcomeAsync(desired.Fans.Value, cancellationToken),
+                coordinator.ApplyFanControlOutcomeAsync(
+                    desired.FanControl
+                        ?? FanControlSettings.FromLegacy(desired.Fans.Value),
+                    cancellationToken),
             token,
             value is null
                 ? "Fan override was cleared."
                 : "Fan override intent was stored.");
+
+    public async Task MaintainFanCurveAsync(CancellationToken cancellationToken)
+    {
+        EnsureInitialized();
+        ServiceStatusSnapshot snapshot = GetStatus();
+        FanControlSettings settings = snapshot.DesiredState.FanControl
+            ?? FanControlSettings.FromLegacy(snapshot.DesiredState.Fans.Value);
+        if (settings.Mode != FanMode.ManualCurve
+            || !snapshot.DeviceVerified
+            || snapshot.WritesBlocked
+            || snapshot.ExternalChanges.Contains(DeviceSubsystem.Fans))
+        {
+            lastCurveFan1Rpm = null;
+            lastCurveFan2Rpm = null;
+            return;
+        }
+
+        FanTemperatureReadings temperatures =
+            await fanTemperatureSource.ReadAsync(cancellationToken);
+        FanTargetSpeeds targets = FanCurveCalculator.Calculate(
+            settings.ManualCurve,
+            temperatures);
+        if (lastCurveFan1Rpm == targets.Fan1Rpm
+            && lastCurveFan2Rpm == targets.Fan2Rpm)
+        {
+            return;
+        }
+
+        await operationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            ServiceStatusSnapshot current = GetStatus();
+            if (current.DesiredState.Fans.Value != FanMode.ManualCurve
+                || current.ExternalChanges.Contains(DeviceSubsystem.Fans)
+                || !deviceProvider.TryGetVerifiedDevice(out IBladeDevice device))
+            {
+                return;
+            }
+
+            try
+            {
+                await device.SetFanTargetsAsync(
+                    targets.Fan1Rpm,
+                    targets.Fan2Rpm,
+                    cancellationToken).ConfigureAwait(false);
+                lastCurveFan1Rpm = targets.Fan1Rpm;
+                lastCurveFan2Rpm = targets.Fan2Rpm;
+                if (targets.FailSafe)
+                {
+                    string message = temperatures.CpuCelsius is null
+                        ? "Manual fan curve is using maximum speed because CPU package temperature is unavailable."
+                        : "Manual fan curve is using maximum speed for thermal safety.";
+                    if (!string.Equals(current.Message, message, StringComparison.Ordinal))
+                    {
+                        PublishIfChanged(current with { Message = message });
+                    }
+                }
+            }
+            catch (BladeWriteException exception)
+                when (exception.SubmissionState == WriteSubmissionState.KnownNotApplied)
+            {
+                // A GET immediately precedes target writes in the protocol port.
+                // If another controller exited manual mode, preserve that change
+                // and stop the curve loop instead of reclaiming the firmware.
+                driftTracker.ConfirmIntentional(DeviceSubsystem.Fans, matched: false);
+                PublishIfChanged(current with
+                {
+                    ExternalChanges = driftTracker.ExternalChanges,
+                    Message = exception.Message,
+                });
+            }
+        }
+        finally
+        {
+            operationGate.Release();
+        }
+    }
 
     public Task<ControlOperationResult> SetLightingOverrideAsync(
         ManualOverride<LightingSettings>? value,
@@ -1536,6 +1637,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
 
     private async Task SetFanOverrideCoreAsync(
         ManualOverride<FanMode>? value,
+        FanControlSettings? settings,
         CancellationToken cancellationToken)
     {
         ValidateOverride(value, nameof(value));
@@ -1547,7 +1649,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 : null,
         };
         await PersistOverridesIfChangedAsync(staged, cancellationToken);
-        Automation.SetFanOverride(value);
+        Automation.SetFanOverride(value, settings);
         persistentOverrides = staged;
     }
 
@@ -2274,6 +2376,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                     : null,
                 PerformanceOverride = Automation.PerformanceOverride,
                 FanOverride = Automation.FanOverride,
+                FanControlOverride = Automation.FanControlOverride,
                 LightingOverride = Automation.LightingOverride,
                 FullChargeOverride = ResolveFullChargeOverride(confirmed),
                 Firmware = firmware,
@@ -2672,6 +2775,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             LiveReadings = liveReadings,
             PerformanceOverride = Automation.PerformanceOverride,
             FanOverride = Automation.FanOverride,
+            FanControlOverride = Automation.FanControlOverride,
             LightingOverride = Automation.LightingOverride,
             FullChargeOverride = ResolveFullChargeOverride(current.ConfirmedState),
             LightingRendererOwnership = LightingRendererOwnershipState.None,
@@ -2702,7 +2806,10 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             Firmware: firmwareVersionSource.Capture(),
             ServiceVersion: ServiceVersion,
             LightingRendererOwnership: LightingRendererOwnershipState.None,
-            LightingSuppressions: []);
+            LightingSuppressions: [])
+        {
+            FanControlOverride = Automation.FanControlOverride,
+        };
 
     private ControlOperationResult PublishScopedUnavailable(
         DeviceSubsystem subsystem,
@@ -2768,6 +2875,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             ActivePowerSource = powerSource,
             PerformanceOverride = Automation.PerformanceOverride,
             FanOverride = Automation.FanOverride,
+            FanControlOverride = Automation.FanControlOverride,
             LightingOverride = Automation.LightingOverride,
             FullChargeOverride = ResolveFullChargeOverride(confirmed),
             LightingRendererOwnership = deviceVerified
@@ -2888,6 +2996,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         && left.LiveReadings == right.LiveReadings
         && left.PerformanceOverride == right.PerformanceOverride
         && left.FanOverride == right.FanOverride
+        && left.FanControlOverride == right.FanControlOverride
         && left.LightingOverride == right.LightingOverride
         && left.FullChargeOverride == right.FullChargeOverride
         && left.StartupAnimationEnabled == right.StartupAnimationEnabled

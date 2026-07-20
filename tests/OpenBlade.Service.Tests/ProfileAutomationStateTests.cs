@@ -6,6 +6,32 @@ namespace OpenBlade.Service.Tests;
 public sealed class ProfileAutomationStateTests
 {
     [Fact]
+    public void PluggedInFixedOverrideCarriesItsAdjustableTargetIntoDesiredState()
+    {
+        ProfileAutomationState state = CreateState(PowerSource.PluggedIn);
+        var settings = new FanControlSettings(
+            FanMode.Fixed,
+            3700,
+            ManualFanCurve.Default);
+        state.SetFanOverride(
+            new ManualOverride<FanMode>(
+                FanMode.Fixed,
+                OverrideLifetime.UntilPowerSourceChange),
+            settings);
+
+        DesiredDeviceState desired = state.Resolve(
+            new ConfirmedDeviceState(
+                PerformancePreset.Balanced,
+                FanMode.Automatic,
+                null,
+                null));
+
+        Assert.Equal(FanMode.Fixed, desired.Fans.Value);
+        Assert.Equal(SettingValueSource.TemporaryOverride, desired.Fans.Source);
+        Assert.Equal(settings, desired.FanControl);
+    }
+
+    [Fact]
     public void DisabledProtectionPreferenceSurvivesProfileUpdate()
     {
         ProfileSet profiles = ProfileDefaults.CreateSafeDefaults();

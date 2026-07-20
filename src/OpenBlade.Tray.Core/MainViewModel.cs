@@ -133,6 +133,12 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     private CustomPerformanceLevel selectedCustomCpuLevel = CustomPerformanceLevel.Medium;
     private CustomPerformanceLevel selectedCustomGpuLevel = CustomPerformanceLevel.High;
     private FanMode selectedFanMode = FanMode.Automatic;
+    private int fixedFanSpeedRpm = FanControlSettings.Default.FixedSpeedRpm;
+    private bool useHigherFanTemperature = true;
+    private IReadOnlyList<FanCurveEditorPoint> cpuFanCurveEditorPoints =
+        ManualFanCurve.Default.Cpu.Select(point => new FanCurveEditorPoint(point)).ToArray();
+    private IReadOnlyList<FanCurveEditorPoint> gpuFanCurveEditorPoints =
+        ManualFanCurve.Default.Gpu.Select(point => new FanCurveEditorPoint(point)).ToArray();
     private LightingSettings selectedLighting = ProfileDefaults.CreateSafeDefaults().PluggedIn.Lighting;
     private int chargeLimitPercent = 80;
     private string currentBatterySettingLabel = UnavailableLabel;
@@ -192,6 +198,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     private PerformancePreset? activeProfileDraftPerformance;
     private CustomPerformanceSettings? activeProfileDraftCustomPerformance;
     private FanMode? activeProfileDraftFans;
+    private FanControlSettings? activeProfileDraftFanControl;
     private LightingSettings? activeProfileDraftLighting;
     private DisplayProfileSettings? activeProfileDraftDisplay;
     private DisplayProfileSettings? activeProfileOriginalDisplay;
@@ -274,6 +281,9 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         SetFanModeCommand = CreateCommand(
             SetFanModeAsync,
             CanSetFanMode);
+        SetFanControlCommand = CreateCommand(
+            SetFanControlAsync,
+            CanSetFanControl);
         SetLightingCommand = CreateCommand(
             SetLightingAsync,
             parameter => parameter is LightingSettings value
@@ -338,6 +348,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             (AsyncRelayCommand)SetPerformanceCommand,
             (AsyncRelayCommand)SetCustomPerformanceCommand,
             (AsyncRelayCommand)SetFanModeCommand,
+            (AsyncRelayCommand)SetFanControlCommand,
             (AsyncRelayCommand)SetLightingCommand,
             (AsyncRelayCommand)SetChargeLimitCommand,
             (AsyncRelayCommand)ToggleBatteryProtectionCommand,
@@ -617,7 +628,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         : UnavailableLabel;
 
     public string ActiveFanModeLabel => IsConnected
-        ? $"{SelectedFanMode} fans"
+        ? $"{FanModePresentation.Label(SelectedFanMode)} fans"
         : UnavailableLabel;
 
     public string ProfileStateLabel => !IsConnected
@@ -908,6 +919,15 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             _ => [],
         };
 
+    public IReadOnlyList<FanModeOption> AvailableActiveFanModeOptions =>
+        FanModePresentation.CreateOptions(
+            new HashSet<FanMode>(AvailableActiveFanModes),
+            ActivePowerSource != PowerSource.PluggedIn);
+
+    public FanModeOption? SelectedFanModeOption =>
+        AvailableActiveFanModeOptions.FirstOrDefault(
+            option => option.Value == SelectedFanMode);
+
     public IReadOnlyList<LightingEffect> AvailableLightingEffects
     {
         get => availableLightingEffects;
@@ -1081,7 +1101,107 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             }
             SetField(ref selectedFanMode, value);
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ActiveFanModeLabel)));
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(SelectedFanModeOption)));
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsFixedFanSpeedVisible)));
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsManualFanCurveVisible)));
         }
+    }
+
+    public int FixedFanSpeedRpm
+    {
+        get => fixedFanSpeedRpm;
+        set
+        {
+            int normalized = FanControlSettings.QuantizeSpeed(value);
+            if (fixedFanSpeedRpm == normalized)
+            {
+                return;
+            }
+
+            SetField(ref fixedFanSpeedRpm, normalized);
+            PropertyChanged?.Invoke(
+                this,
+                new PropertyChangedEventArgs(nameof(CurrentFanControlSettings)));
+        }
+    }
+
+    public bool UseHigherFanTemperature
+    {
+        get => useHigherFanTemperature;
+        set
+        {
+            if (useHigherFanTemperature == value)
+            {
+                return;
+            }
+
+            SetField(ref useHigherFanTemperature, value);
+            PropertyChanged?.Invoke(
+                this,
+                new PropertyChangedEventArgs(nameof(CurrentFanControlSettings)));
+        }
+    }
+
+    public IReadOnlyList<FanCurveEditorPoint> CpuFanCurveEditorPoints =>
+        cpuFanCurveEditorPoints;
+
+    public IReadOnlyList<FanCurveEditorPoint> GpuFanCurveEditorPoints =>
+        gpuFanCurveEditorPoints;
+
+    public bool IsFixedFanSpeedVisible => SelectedFanMode == FanMode.Fixed;
+
+    public bool IsManualFanCurveVisible => SelectedFanMode == FanMode.ManualCurve;
+
+    public FanControlSettings CurrentFanControlSettings => new(
+        SelectedFanMode,
+        FixedFanSpeedRpm,
+        new ManualFanCurve(
+            CpuFanCurveEditorPoints.Select(point => point.ToValue()).ToArray(),
+            GpuFanCurveEditorPoints.Select(point => point.ToValue()).ToArray(),
+            UseHigherFanTemperature));
+
+    public void UpdateFanCurvePoint(FanCurveEditorPoint point, int speedRpm)
+    {
+        ArgumentNullException.ThrowIfNull(point);
+        IReadOnlyList<FanCurveEditorPoint> source = CpuFanCurveEditorPoints.Contains(point)
+            ? CpuFanCurveEditorPoints
+            : GpuFanCurveEditorPoints.Contains(point)
+                ? GpuFanCurveEditorPoints
+                : throw new ArgumentException(
+                    "The fan-curve point does not belong to the active editor.",
+                    nameof(point));
+        int index = source.ToList().IndexOf(point);
+        int minimum = index == 0
+            ? FanControlSettings.MinimumSpeedRpm
+            : source[index - 1].SpeedRpm;
+        int maximum = index == source.Count - 1
+            ? FanControlSettings.MaximumSpeedRpm
+            : source[index + 1].SpeedRpm;
+        point.SpeedRpm = Math.Clamp(
+            FanControlSettings.QuantizeSpeed(speedRpm),
+            minimum,
+            maximum);
+        if (ReferenceEquals(source, CpuFanCurveEditorPoints))
+        {
+            cpuFanCurveEditorPoints = source
+                .Select(value => new FanCurveEditorPoint(value.ToValue()))
+                .ToArray();
+            PropertyChanged?.Invoke(
+                this,
+                new PropertyChangedEventArgs(nameof(CpuFanCurveEditorPoints)));
+        }
+        else
+        {
+            gpuFanCurveEditorPoints = source
+                .Select(value => new FanCurveEditorPoint(value.ToValue()))
+                .ToArray();
+            PropertyChanged?.Invoke(
+                this,
+                new PropertyChangedEventArgs(nameof(GpuFanCurveEditorPoints)));
+        }
+        PropertyChanged?.Invoke(
+            this,
+            new PropertyChangedEventArgs(nameof(CurrentFanControlSettings)));
     }
 
     public LightingSettings SelectedLighting
@@ -1532,7 +1652,8 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     public bool HasThermalProfileDraft =>
         activeProfileDraftPerformance is not null
         || activeProfileDraftCustomPerformance is not null
-        || activeProfileDraftFans is not null;
+        || activeProfileDraftFans is not null
+        || activeProfileDraftFanControl is not null;
 
     public bool HasLightingProfileDraft => activeProfileDraftLighting is not null;
 
@@ -2276,6 +2397,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     public ICommand SetPerformanceCommand { get; }
     public ICommand SetCustomPerformanceCommand { get; }
     public ICommand SetFanModeCommand { get; }
+    public ICommand SetFanControlCommand { get; }
     public ICommand SetLightingCommand { get; }
     public ICommand SetChargeLimitCommand { get; }
     public ICommand ToggleBatteryProtectionCommand { get; }
@@ -2362,6 +2484,10 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         return FanModeAvailable(ActivePowerSource, value)
             && (value == FanMode.Automatic || IsBalancedAutomaticThermalState());
     }
+
+    private bool CanSetFanControl(object? parameter) =>
+        parameter is FanControlSettings value
+        && CanSetFanMode(value.Mode);
 
     private bool CanApplyOneShotLaptopControl(object? parameter) =>
         parameter is ApplyOneShotLaptopControl value
@@ -2672,6 +2798,10 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         GamingModeEnabled = status.GamingModeEnabled;
         SelectedPerformance = ResolvePresentedPerformance(status, confirmed, capabilities);
         SelectedFanMode = ResolvePresentedFanMode(status, confirmed, capabilities);
+        LoadFanControlEditor(
+            status.FanControlOverride
+            ?? status.DesiredState.FanControl
+            ?? FanControlSettings.FromLegacy(SelectedFanMode));
         PrepareLightingEditorForPowerSource(status.ActivePowerSource);
         SelectedLighting = confirmed?.Lighting ?? status.DesiredState.Lighting.Value;
         if (!lightingEditorDirty)
@@ -2885,7 +3015,13 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             new PropertyChangedEventArgs(nameof(AvailableActiveFanModes)));
         PropertyChanged?.Invoke(
             this,
+            new PropertyChangedEventArgs(nameof(AvailableActiveFanModeOptions)));
+        PropertyChanged?.Invoke(
+            this,
             new PropertyChangedEventArgs(nameof(SelectedFanMode)));
+        PropertyChanged?.Invoke(
+            this,
+            new PropertyChangedEventArgs(nameof(SelectedFanModeOption)));
     }
 
     private void MarkDisconnected() => MarkDisconnected("Service disconnected");
@@ -3042,19 +3178,39 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     private Task SetFanModeAsync(object? parameter, CancellationToken token)
     {
         FanMode requested = (FanMode)parameter!;
+        FanControlSettings settings = new(
+            requested,
+            requested == FanMode.Maximum
+                ? FanControlSettings.MaximumSpeedRpm
+                : FixedFanSpeedRpm,
+            CurrentFanControlSettings.ManualCurve);
+        return ApplyFanControlAsync(settings, token);
+    }
+
+    private Task SetFanControlAsync(object? parameter, CancellationToken token) =>
+        ApplyFanControlAsync((FanControlSettings)parameter!, token);
+
+    private Task ApplyFanControlAsync(
+        FanControlSettings requested,
+        CancellationToken token)
+    {
         PowerSource sourceAtStart = ActivePowerSource;
         return RunOperationAsync(
-            cancellationToken => serviceClient.SetFanOverrideAsync(
+            cancellationToken => serviceClient.SetFanControlOverrideAsync(
                 new ManualOverride<FanMode>(
-                    requested,
+                    requested.Mode,
                     OverrideLifetime.UntilPowerSourceChange),
+                requested,
                 cancellationToken),
             token,
             result =>
             {
                 if (result.Status == ControlOperationStatus.Applied)
                 {
-                    MarkActiveProfileDraft(sourceAtStart, fans: requested);
+                    MarkActiveProfileDraft(
+                        sourceAtStart,
+                        fans: requested.Mode,
+                        fanControl: requested);
                 }
             });
     }
@@ -3662,14 +3818,17 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         PerformancePreset performance,
         FanMode fans) =>
         fans == FanMode.Automatic
-        || (performance == PerformancePreset.Balanced && fans == FanMode.Maximum);
+        || (performance == PerformancePreset.Balanced
+            && fans is FanMode.Fixed or FanMode.ManualCurve or FanMode.Maximum);
 
     private static bool FanModeAvailable(PowerSource powerSource, FanMode fans) =>
         powerSource switch
         {
-            PowerSource.PluggedIn or PowerSource.Battery =>
-                fans is FanMode.Automatic or FanMode.Maximum,
-            PowerSource.UsbC => fans == FanMode.Automatic,
+            PowerSource.PluggedIn => fans is FanMode.Automatic
+                or FanMode.Fixed
+                or FanMode.ManualCurve
+                or FanMode.Maximum,
+            PowerSource.Battery or PowerSource.UsbC => fans == FanMode.Automatic,
             PowerSource.ExternalUnknown => false,
             _ => false,
         };
@@ -4028,6 +4187,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             CustomPerformance = activeProfileDraftCustomPerformance
                 ?? profile.CustomPerformance,
             Fans = activeProfileDraftFans ?? profile.Fans,
+            FanControl = activeProfileDraftFanControl ?? profile.FanControl,
             Lighting = activeProfileDraftLighting ?? profile.Lighting,
             Display = activeProfileDraftDisplay ?? profile.Display,
         };
@@ -4061,6 +4221,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
                 CustomPerformance = activeProfileDraftCustomPerformance
                     ?? saved.CustomPerformance,
                 Fans = activeProfileDraftFans ?? saved.Fans,
+                FanControl = activeProfileDraftFanControl ?? saved.FanControl,
             },
             ProfileDraftGroup.Lighting => saved with
             {
@@ -4109,6 +4270,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         PerformancePreset? performance = null,
         CustomPerformanceSettings? customPerformance = null,
         FanMode? fans = null,
+        FanControlSettings? fanControl = null,
         LightingSettings? lighting = null,
         DisplayProfileSettings? display = null,
         DisplayProfileSettings? previousDisplay = null)
@@ -4125,6 +4287,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             activeProfileDraftPerformance = null;
             activeProfileDraftCustomPerformance = null;
             activeProfileDraftFans = null;
+            activeProfileDraftFanControl = null;
             activeProfileDraftLighting = null;
             activeProfileDraftDisplay = null;
             activeProfileOriginalDisplay = previousDisplay;
@@ -4138,6 +4301,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         activeProfileDraftCustomPerformance = customPerformance
             ?? activeProfileDraftCustomPerformance;
         activeProfileDraftFans = fans ?? activeProfileDraftFans;
+        activeProfileDraftFanControl = fanControl ?? activeProfileDraftFanControl;
         activeProfileDraftLighting = lighting ?? activeProfileDraftLighting;
         activeProfileDraftDisplay = display ?? activeProfileDraftDisplay;
 
@@ -4153,6 +4317,10 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         if (activeProfileDraftFans == saved.Fans)
         {
             activeProfileDraftFans = null;
+        }
+        if (activeProfileDraftFanControl == saved.FanControl)
+        {
+            activeProfileDraftFanControl = null;
         }
         if (activeProfileDraftLighting == saved.Lighting)
         {
@@ -4171,6 +4339,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         if (activeProfileDraftPerformance is null
             && activeProfileDraftCustomPerformance is null
             && activeProfileDraftFans is null
+            && activeProfileDraftFanControl is null
             && activeProfileDraftLighting is null
             && activeProfileDraftDisplay is null)
         {
@@ -4191,6 +4360,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         activeProfileDraftPerformance = null;
         activeProfileDraftCustomPerformance = null;
         activeProfileDraftFans = null;
+        activeProfileDraftFanControl = null;
         activeProfileDraftLighting = null;
         activeProfileDraftDisplay = null;
         activeProfileOriginalDisplay = null;
@@ -4205,6 +4375,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
                 activeProfileDraftPerformance = null;
                 activeProfileDraftCustomPerformance = null;
                 activeProfileDraftFans = null;
+                activeProfileDraftFanControl = null;
                 break;
             case ProfileDraftGroup.Lighting:
                 activeProfileDraftLighting = null;
@@ -4327,11 +4498,11 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     }
 
     private static string FormatThermalProfile(PowerProfile profile) =>
-        $"{FormatPerformanceProfile(profile)} | {profile.Fans} fans";
+        $"{FormatPerformanceProfile(profile)} | {FanModePresentation.Label(profile.Fans)} fans";
 
     private static string FormatPowerProfile(PowerProfile profile) =>
         $"Power mode: {FormatPerformanceProfile(profile)}{Environment.NewLine}"
-        + $"Fans: {profile.Fans}{Environment.NewLine}"
+        + $"Fans: {FanModePresentation.Label(profile.Fans)}{Environment.NewLine}"
         + $"Lighting: {FormatLightingProfile(profile.Lighting)}{Environment.NewLine}"
         + $"Display: {FormatDisplayProfile(profile.Display)}";
 
@@ -5231,11 +5402,44 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             return desired;
         }
 
+        if (desired is FanMode.Fixed or FanMode.ManualCurve
+            && observed == FanMode.Maximum)
+        {
+            return desired;
+        }
+
         bool sourceAllowsObserved = status.ActivePowerSource != PowerSource.UsbC
             || observed == FanMode.Automatic;
         return capabilities.FanModes.Contains(observed) && sourceAllowsObserved
             ? observed
             : desired;
+    }
+
+    private void LoadFanControlEditor(FanControlSettings value)
+    {
+        SetField(
+            ref fixedFanSpeedRpm,
+            value.FixedSpeedRpm,
+            nameof(FixedFanSpeedRpm));
+        SetField(
+            ref useHigherFanTemperature,
+            value.ManualCurve.UseHigherTemperatureForBoth,
+            nameof(UseHigherFanTemperature));
+        cpuFanCurveEditorPoints = value.ManualCurve.Cpu
+            .Select(point => new FanCurveEditorPoint(point))
+            .ToArray();
+        gpuFanCurveEditorPoints = value.ManualCurve.Gpu
+            .Select(point => new FanCurveEditorPoint(point))
+            .ToArray();
+        PropertyChanged?.Invoke(
+            this,
+            new PropertyChangedEventArgs(nameof(CpuFanCurveEditorPoints)));
+        PropertyChanged?.Invoke(
+            this,
+            new PropertyChangedEventArgs(nameof(GpuFanCurveEditorPoints)));
+        PropertyChanged?.Invoke(
+            this,
+            new PropertyChangedEventArgs(nameof(CurrentFanControlSettings)));
     }
 
     private void SetEditorField<T>(

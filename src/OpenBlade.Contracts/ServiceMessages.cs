@@ -69,7 +69,10 @@ public sealed record SetFanOverrideRequest(
     int Version,
     Guid RequestId,
     ManualOverride<FanMode>? Value)
-    : ServiceRequest(Version, RequestId);
+    : ServiceRequest(Version, RequestId)
+{
+    public FanControlSettings? Settings { get; init; }
+}
 
 public sealed record SetLightingOverrideRequest(
     int Version,
@@ -142,7 +145,10 @@ public sealed record ServiceStatusSnapshot(
     IReadOnlyList<LightingSuppressionReason>? LightingSuppressions = null,
     bool? StartupAnimationEnabled = null,
     FunctionKeyPrimaryMode? FunctionKeyPrimary = null,
-    bool? GamingModeEnabled = null);
+    bool? GamingModeEnabled = null)
+{
+    public FanControlSettings? FanControlOverride { get; init; }
+}
 
 [JsonPolymorphic(TypeDiscriminatorPropertyName = "frame")]
 [JsonDerivedType(typeof(ServiceResponse), "response")]

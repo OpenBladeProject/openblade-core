@@ -46,10 +46,10 @@ public sealed class CapabilityPresentationTests
             Attribute(performance, "SelectedItem"));
         Assert.Equal("OnDashboardFanModeSelectionChanged", Attribute(fans, "SelectionChanged"));
         Assert.Equal(
-            "{x:Bind ViewModel.AvailableActiveFanModes, Mode=OneWay}",
+            "{x:Bind ViewModel.AvailableActiveFanModeOptions, Mode=OneWay}",
             Attribute(fans, "ItemsSource"));
         Assert.Equal(
-            "{x:Bind ViewModel.SelectedFanMode, Mode=OneWay}",
+            "{x:Bind ViewModel.SelectedFanModeOption, Mode=OneWay}",
             Attribute(fans, "SelectedItem"));
         Assert.Equal(
             "OnDashboardChargeLimitPointerPressed",
@@ -106,9 +106,17 @@ public sealed class CapabilityPresentationTests
         Assert.DoesNotContain("BalancedChoice", xaml, StringComparison.Ordinal);
         Assert.DoesNotContain("BatteryActionColumn", xaml, StringComparison.Ordinal);
         Assert.DoesNotContain("ProfileChargeLimitEditor", xaml, StringComparison.Ordinal);
+        XElement home = NamedElement(document, "ScrollView", "HomePage");
         _ = Assert.Single(
-            NamedElement(document, "ScrollView", "HomePage").Descendants(),
-            element => element.Name.LocalName == "Slider");
+            home.Descendants(),
+            element => element.Name.LocalName == "Slider"
+                && Attribute(element, "Name") == "DashboardChargeLimitSlider");
+        Assert.Contains(home.Descendants(), element =>
+            element.Name.LocalName == "Slider"
+            && Attribute(element, "Name") == "FixedFanSpeedSlider"
+            && Attribute(element, "Minimum") == "2000"
+            && Attribute(element, "Maximum") == "5400"
+            && Attribute(element, "StepFrequency") == "100");
         Assert.DoesNotContain("\u00c2", xaml, StringComparison.Ordinal);
     }
 

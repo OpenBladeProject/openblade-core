@@ -118,7 +118,9 @@ internal static class ProductionLightingEvidenceSource
         "OpenBladeLightingImplementationFingerprint";
 
     private const string ApprovedLightingImplementationFingerprintSha256 =
-        "B9EFDD3069B8D47062E55D865E51406188897AF9205C26DE052B6C3F0C04C87D";
+        // Re-reviewed after Profiles.cs gained fan-only settings. No lighting
+        // transport, renderer, oracle, or effect semantics changed.
+        "61F587408AAA9F562CC75CF62D1F33EF93AE212F185C6519D90B06FF6E676B0C";
 
     private static readonly JsonSerializerOptions SerializerOptions =
         new(JsonSerializerDefaults.Web)

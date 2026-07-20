@@ -9,6 +9,8 @@ public sealed class ProfileAutomationState
     private PerformanceOverride? persistentPerformance;
     private ManualOverride<FanMode>? temporaryFans;
     private ManualOverride<FanMode>? persistentFans;
+    private FanControlSettings? temporaryFanControl;
+    private FanControlSettings? persistentFanControl;
     private ManualOverride<LightingSettings>? temporaryLighting;
     private ManualOverride<LightingSettings>? persistentLighting;
     private DesiredBatteryState desiredBattery;
@@ -42,6 +44,9 @@ public sealed class ProfileAutomationState
         persistentFans = persistentOverrides.Fans is { } fans
             ? new ManualOverride<FanMode>(fans, OverrideLifetime.Persistent)
             : null;
+        persistentFanControl = persistentOverrides.Fans is { } persistentFan
+            ? FanControlSettings.FromLegacy(persistentFan)
+            : null;
         persistentLighting = persistentOverrides.Lighting is { } lighting
             ? new ManualOverride<LightingSettings>(lighting, OverrideLifetime.Persistent)
             : null;
@@ -63,6 +68,9 @@ public sealed class ProfileAutomationState
         persistentPerformance ?? temporaryPerformance;
 
     public ManualOverride<FanMode>? FanOverride => persistentFans ?? temporaryFans;
+
+    public FanControlSettings? FanControlOverride =>
+        persistentFans is not null ? persistentFanControl : temporaryFanControl;
 
     public ManualOverride<LightingSettings>? LightingOverride =>
         persistentLighting ?? temporaryLighting;
@@ -103,6 +111,7 @@ public sealed class ProfileAutomationState
         PowerSource = powerSource;
         temporaryPerformance = null;
         temporaryFans = null;
+        temporaryFanControl = null;
         temporaryLighting = null;
         if (powerSource == PowerSource.Battery && desiredBattery.TemporaryFullCharge)
         {
@@ -121,8 +130,36 @@ public sealed class ProfileAutomationState
                 ? null
                 : new PerformanceOverride(value.Value, value.Lifetime));
 
-    public void SetFanOverride(ManualOverride<FanMode>? value) =>
+    public void SetFanOverride(
+        ManualOverride<FanMode>? value,
+        FanControlSettings? settings = null)
+    {
+        if (value is not null)
+        {
+            settings ??= FanControlSettings.FromLegacy(value.Value);
+            if (settings.Mode != value.Value)
+            {
+                throw new ArgumentException(
+                    "The fan override mode and fan settings do not match.",
+                    nameof(settings));
+            }
+        }
+
         SetOverride(value, ref temporaryFans, ref persistentFans);
+        switch (value?.Lifetime)
+        {
+            case OverrideLifetime.UntilPowerSourceChange:
+                temporaryFanControl = settings;
+                break;
+            case OverrideLifetime.Persistent:
+                persistentFanControl = settings;
+                break;
+            case null:
+                temporaryFanControl = null;
+                persistentFanControl = null;
+                break;
+        }
+    }
 
     public void SetLightingOverride(ManualOverride<LightingSettings>? value) =>
         SetOverride(value, ref temporaryLighting, ref persistentLighting);
@@ -191,15 +228,43 @@ public sealed class ProfileAutomationState
                     ?? CustomPerformanceSettings.Default
                 : null;
 
+        ResolvedSetting<FanMode> resolvedFans = OverrideResolver.Resolve<FanMode>(
+            profile.Fans,
+            confirmed.Fans.GetValueOrDefault(),
+            activeTemporaryFans,
+            activePersistentFans);
+        FanControlSettings profileFanControl = profile.FanControl
+            ?? FanControlSettings.FromLegacy(profile.Fans);
+        FanControlSettings selectedFanControl = resolvedFans.Source switch
+        {
+            SettingValueSource.PersistentOverride => persistentFanControl
+                ?? WithMode(profileFanControl, resolvedFans.Value),
+            SettingValueSource.TemporaryOverride => temporaryFanControl
+                ?? WithMode(profileFanControl, resolvedFans.Value),
+            _ => WithMode(profileFanControl, resolvedFans.Value),
+        };
+
         return new DesiredDeviceState(
             resolvedPerformance,
-            OverrideResolver.Resolve<FanMode>(profile.Fans, confirmed.Fans.GetValueOrDefault(), activeTemporaryFans, activePersistentFans),
+            resolvedFans,
             OverrideResolver.Resolve<LightingSettings>(profile.Lighting, confirmed.Lighting ?? profile.Lighting, allowLightingOverride ? temporaryLighting : null, allowLightingOverride ? persistentLighting : null),
             DesiredBattery)
         {
             CustomPerformance = customPerformance,
+            FanControl = selectedFanControl,
         };
     }
+
+    private static FanControlSettings WithMode(
+        FanControlSettings settings,
+        FanMode mode) => settings.Mode == mode
+            ? settings
+            : new FanControlSettings(
+                mode,
+                mode == FanMode.Maximum
+                    ? FanControlSettings.MaximumSpeedRpm
+                    : settings.FixedSpeedRpm,
+                settings.ManualCurve);
 
     private static bool IsPerformanceCompatibleWithSource(
         PerformancePreset performance,
@@ -228,7 +293,10 @@ public sealed class ProfileAutomationState
     private static bool IsFanCompatibleWithSource(FanMode fans, PowerSource source) =>
         source switch
         {
-            PowerSource.PluggedIn => fans is FanMode.Automatic or FanMode.Maximum,
+            PowerSource.PluggedIn => fans is FanMode.Automatic
+                or FanMode.Fixed
+                or FanMode.ManualCurve
+                or FanMode.Maximum,
             PowerSource.Battery => Enum.IsDefined(fans),
             PowerSource.UsbC => fans is FanMode.Automatic,
             _ => false,

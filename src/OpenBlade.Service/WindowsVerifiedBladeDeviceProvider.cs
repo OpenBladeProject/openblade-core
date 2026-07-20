@@ -627,6 +627,31 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
                     cancellationToken)
                 : RejectProductionWrite("The requested fan mode is not admitted.");
 
+        public Task SetFanControlAsync(
+            FanControlSettings value,
+            CancellationToken cancellationToken)
+        {
+            ArgumentNullException.ThrowIfNull(value);
+            return batteryFactory.Capabilities.FanModes.Contains(value.Mode)
+                ? ExecuteProductionWriteAsync(
+                    port => port.SetFanControlAsync(value, cancellationToken),
+                    cancellationToken)
+                : RejectProductionWrite("The requested fan control is not admitted.");
+        }
+
+        public Task SetFanTargetsAsync(
+            int fan1Rpm,
+            int fan2Rpm,
+            CancellationToken cancellationToken) =>
+            batteryFactory.Capabilities.FanModes.Contains(FanMode.ManualCurve)
+                ? ExecuteProductionWriteAsync(
+                    port => port.SetFanTargetsAsync(
+                        fan1Rpm,
+                        fan2Rpm,
+                        cancellationToken),
+                    cancellationToken)
+                : RejectProductionWrite("Manual fan targets are not admitted.");
+
         public Task SetChargeLimitAsync(
             BatteryPolicy value,
             CancellationToken cancellationToken)

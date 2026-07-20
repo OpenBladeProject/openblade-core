@@ -7,9 +7,9 @@ namespace OpenBlade.Contracts.Tests;
 public sealed class ServiceMessageContractTests
 {
     [Fact]
-    public void ProtocolConstants_AreClosedVersionFourteenAndRetainExactSizeLimit()
+    public void ProtocolConstants_AreClosedVersionSixteenAndRetainExactSizeLimit()
     {
-        Assert.Equal(15, OpenBladeIpc.ProtocolVersion);
+        Assert.Equal(16, OpenBladeIpc.ProtocolVersion);
         Assert.Equal("OpenBlade.Service.v2", OpenBladeIpc.PipeName);
         Assert.Equal(64 * 1024, OpenBladeIpc.MaximumMessageBytes);
         Assert.Equal(32 * 1024, OpenBladeIpc.MaximumDiagnosticArchiveBytes);
@@ -52,7 +52,7 @@ public sealed class ServiceMessageContractTests
             "ControllerDetectionWarning", "ExternalChanges", "Message",
             "Capabilities", "ConfirmedState", "Profiles", "DesiredState",
             "ActivePowerSource", "LiveReadings",
-            "PerformanceOverride", "FanOverride", "LightingOverride", "FullChargeOverride",
+            "PerformanceOverride", "FanOverride", "FanControlOverride", "LightingOverride", "FullChargeOverride",
             "Firmware", "ServiceVersion", "LightingRendererOwnership", "LightingSuppressions",
             "StartupAnimationEnabled", "FunctionKeyPrimary", "GamingModeEnabled",
         ];

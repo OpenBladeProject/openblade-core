@@ -22,6 +22,8 @@ public sealed record DesiredDeviceState(
     DesiredBatteryState Battery)
 {
     public CustomPerformanceSettings? CustomPerformance { get; init; }
+
+    public FanControlSettings? FanControl { get; init; }
 }
 
 public sealed record LiveReadings(

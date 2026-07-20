@@ -61,6 +61,23 @@ public interface IProductionBatteryPort : IAsyncDisposable
         FanMode value,
         CancellationToken cancellationToken);
 
+    Task SetFanControlAsync(
+        FanControlSettings value,
+        CancellationToken cancellationToken) => value.Mode is FanMode.Automatic or FanMode.Maximum
+            ? SetFanModeAsync(value.Mode, cancellationToken)
+            : Task.FromException(
+                new BladeWriteException(
+                    WriteSubmissionState.KnownNotApplied,
+                    "Adjustable fan control is unavailable."));
+
+    Task SetFanTargetsAsync(
+        int fan1Rpm,
+        int fan2Rpm,
+        CancellationToken cancellationToken) => Task.FromException(
+            new BladeWriteException(
+                WriteSubmissionState.KnownNotApplied,
+                "Manual fan targets are unavailable."));
+
     Task SetChargeLimitAsync(int percent, CancellationToken cancellationToken);
 
     Task SetProtectionOffAsync(CancellationToken cancellationToken);

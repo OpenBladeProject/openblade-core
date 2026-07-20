@@ -269,14 +269,15 @@ public sealed class ProductionBatteryPortTests
     }
 
     [Fact]
-    public void CompleteMaximumCommandSetAdmitsAutomaticAndMaximumOnly()
+    public void CompleteMaximumCommandSetAdmitsCapturedAdjustableFanModes()
     {
         DeviceCapabilities capabilities = ProductionBatteryPort.CreateCapabilities(
             Catalog(MaximumCapabilityFixtures()),
             NoTemporaryReadEvidence());
 
         Assert.True(capabilities.PerformancePresets.SetEquals([PerformancePreset.Balanced]));
-        Assert.True(capabilities.FanModes.SetEquals([FanMode.Automatic, FanMode.Maximum]));
+        Assert.True(capabilities.FanModes.SetEquals(
+            [FanMode.Automatic, FanMode.Fixed, FanMode.ManualCurve, FanMode.Maximum]));
         Assert.Empty(capabilities.LightingEffects);
     }
 
@@ -374,6 +375,53 @@ public sealed class ProductionBatteryPortTests
                 command.ClassId,
                 command.CommandId,
                 Convert.ToHexString(command.Arguments.Span))).ToArray());
+    }
+
+    [Fact]
+    public async Task FixedFanSetterBuildsCapturedTargetPayloadForBothChannels()
+    {
+        byte[] state1 = [0x01, 0x01, 0x00, 0x01];
+        byte[] state2 = [0x01, 0x02, 0x00, 0x01];
+        byte[] template1 = [0x01, 0x01, 0x36];
+        byte[] template2 = [0x01, 0x02, 0x36];
+        var session = new ScriptedSession(
+            Success([0x01, 0x01, 0x00, 0x00]),
+            Success([0x01, 0x02, 0x00, 0x00]),
+            Success(state1),
+            Success(state2),
+            Success([0x01, 0x01, 0x25]),
+            Success([0x01, 0x02, 0x25]));
+        await using var port = CreatePort(
+            session,
+            Catalog(
+                Fixture(ProductionBatteryPort.FanMaximumStateFirstAction, 0x0D, 0x02, state1),
+                Fixture(ProductionBatteryPort.FanMaximumStateSecondAction, 0x0D, 0x02, state2),
+                Fixture(ProductionBatteryPort.FanMaximumSpeedFirstAction, 0x0D, 0x01, template1),
+                Fixture(ProductionBatteryPort.FanMaximumSpeedSecondAction, 0x0D, 0x01, template2)));
+
+        await port.SetFanControlAsync(
+            new FanControlSettings(FanMode.Fixed, 3700, ManualFanCurve.Default),
+            default);
+
+        Assert.Equal(
+            ["01010000", "01020000", "01010001", "01020001", "010125", "010225"],
+            session.Commands.Select(command =>
+                Convert.ToHexString(command.Arguments.Span)).ToArray());
+    }
+
+    [Fact]
+    public async Task CurveTargetUpdateRefusesToReclaimAutomaticFirmwareState()
+    {
+        var session = new ScriptedSession(
+            Success([0x01, 0x01, 0x00, 0x00]),
+            Success([0x01, 0x02, 0x00, 0x00]));
+        await using var port = CreatePort(session, Catalog(MaximumCapabilityFixtures()));
+
+        BladeWriteException error = await Assert.ThrowsAsync<BladeWriteException>(
+            () => port.SetFanTargetsAsync(3000, 3200, default));
+
+        Assert.Equal(WriteSubmissionState.KnownNotApplied, error.SubmissionState);
+        Assert.Equal(2, session.Commands.Count);
     }
 
     [Fact]

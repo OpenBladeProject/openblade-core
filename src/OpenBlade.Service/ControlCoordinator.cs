@@ -116,26 +116,36 @@ public sealed class ControlCoordinator
             state => PerformanceMatches(state, value, customPerformance),
             token => device.SetPerformanceAsync(value, customPerformance, token),
             cancellationToken,
-            state => state.Fans == FanMode.Maximum
+            state => IsManualFanMode(state.Fans)
                 ? "Performance changes require Automatic fan mode."
                 : null);
 
     internal Task<ScopedApplyOutcome> ApplyFanOutcomeAsync(
         FanMode value,
-        CancellationToken cancellationToken) => ApplyScopedAsync(
+        CancellationToken cancellationToken) => ApplyFanControlOutcomeAsync(
+            FanControlSettings.FromLegacy(value),
+            cancellationToken);
+
+    internal Task<ScopedApplyOutcome> ApplyFanControlOutcomeAsync(
+        FanControlSettings value,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(value);
+        return ApplyScopedAsync(
             DeviceSubsystem.Fans,
             "Fans",
-            IsDefined(value),
-            capabilities => capabilities.FanModes.Contains(value),
-            state => state.Fans == value,
-            token => device.SetFanModeAsync(value, token),
+            IsDefined(value.Mode),
+            capabilities => capabilities.FanModes.Contains(value.Mode),
+            state => FanModeMatches(state.Fans, value.Mode),
+            token => device.SetFanControlAsync(value, token),
             cancellationToken,
-            value == FanMode.Maximum
+            IsManualFanMode(value.Mode)
                 ? state => state.Performance == PerformancePreset.Balanced
                     && state.Fans == FanMode.Automatic
                         ? null
-                        : "Maximum fan mode requires confirmed Balanced performance and Automatic fans."
+                        : "Fixed and manual fan control require confirmed Balanced performance and Automatic fans."
                 : null);
+    }
 
     internal Task<ScopedApplyOutcome> ApplyBatteryOutcomeAsync(
         BatteryPolicy value,
@@ -282,9 +292,14 @@ public sealed class ControlCoordinator
                 thermalCombinationSupported
                     && IsDefined(desired.Fans.Value)
                     && capabilities.FanModes.Contains(desired.Fans.Value),
-                initial.Fans == desired.Fans.Value,
-                token => device.SetFanModeAsync(desired.Fans.Value, token),
-                state => state.Fans == desired.Fans.Value),
+                FanModeMatches(initial.Fans, desired.Fans.Value),
+                token => device.SetFanControlAsync(
+                    desired.FanControl
+                        ?? FanControlSettings.FromLegacy(desired.Fans.Value),
+                    token),
+                state => FanModeMatches(state.Fans, desired.Fans.Value),
+                AcceptSetterCompletionWithoutReadback:
+                    desired.Fans.Value is FanMode.Fixed or FanMode.ManualCurve),
             [DeviceSubsystem.Battery] = new(
                 batteryPlan.Name,
                 batteryPlan.Supported,
@@ -310,7 +325,7 @@ public sealed class ControlCoordinator
         try
         {
             IReadOnlyList<DeviceSubsystem> orderedSubsystems =
-                initial.Fans == FanMode.Maximum
+                IsManualFanMode(initial.Fans)
                     && desired.Fans.Value == FanMode.Automatic
                     ? FansFirstOrderedSubsystems
                     : OrderedSubsystems;
@@ -1089,8 +1104,18 @@ public sealed class ControlCoordinator
         or (PerformancePreset.Performance, FanMode.Automatic)
         or (PerformancePreset.Custom, FanMode.Automatic)
         or (PerformancePreset.Balanced, FanMode.Maximum)
+        or (PerformancePreset.Balanced, FanMode.Fixed)
+        or (PerformancePreset.Balanced, FanMode.ManualCurve)
         or (PerformancePreset.BatterySaver, FanMode.Automatic)
         or (PerformancePreset.BatteryBalanced, FanMode.Automatic);
+
+    private static bool IsManualFanMode(FanMode? mode) => mode is
+        FanMode.Maximum or FanMode.Fixed or FanMode.ManualCurve;
+
+    private static bool FanModeMatches(FanMode? confirmed, FanMode desired) =>
+        desired == FanMode.Automatic
+            ? confirmed == FanMode.Automatic
+            : IsManualFanMode(desired) && IsManualFanMode(confirmed);
 
     private static bool PerformanceMatches(
         ConfirmedDeviceState state,
