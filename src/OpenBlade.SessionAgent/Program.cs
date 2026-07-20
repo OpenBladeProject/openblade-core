@@ -89,6 +89,12 @@ internal static class Program
                         "OpenBlade Reactive input failed: {0}",
                         exception.Message),
                     shortcutNotifications);
+                await using var ambient = new ServiceAmbientLightingLoop(
+                    new ServiceClient(),
+                    WindowsAmbientScreenSamplerFactory.Instance,
+                    exception => System.Diagnostics.Trace.TraceWarning(
+                        "OpenBlade Ambient Awareness failed: {0}",
+                        exception.Message));
                 var lightingIdlePolicy = new ServiceLightingIdlePolicyLoop(
                     new ServiceClient(),
                     new WindowsUserIdleTimeSource(),
@@ -99,11 +105,13 @@ internal static class Program
                 Task serverTask = server.RunAsync(lifetime.Token);
                 Task automationTask = automation.RunAsync(lifetime.Token);
                 Task reactiveTask = reactive.RunAsync(lifetime.Token);
+                Task ambientTask = ambient.RunAsync(lifetime.Token);
                 Task lightingIdleTask = lightingIdlePolicy.RunAsync(lifetime.Token);
                 Task completed = await Task.WhenAny(
                     serverTask,
                     automationTask,
                     reactiveTask,
+                    ambientTask,
                     lightingIdleTask).ConfigureAwait(false);
                 if (!lifetime.IsCancellationRequested)
                 {
@@ -116,6 +124,7 @@ internal static class Program
                             serverTask,
                             automationTask,
                             reactiveTask,
+                            ambientTask,
                             lightingIdleTask)
                         .ConfigureAwait(false);
                 }

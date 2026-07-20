@@ -70,6 +70,16 @@ public enum LightingEffect
     Wave,
     Wheel,
     Ripple,
+    AmbientAwareness,
+}
+
+public enum AmbientAwarenessRegion
+{
+    Full,
+    Left,
+    Top,
+    Right,
+    Bottom,
 }
 
 public enum LightingDirection
@@ -109,6 +119,7 @@ public enum LightingRendererOwnershipState
     Wheel,
     Faulted,
     Ripple,
+    AmbientAwareness,
 }
 
 public readonly record struct RgbColor(byte Red, byte Green, byte Blue);

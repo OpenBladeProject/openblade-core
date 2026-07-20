@@ -33,6 +33,7 @@
   <ItemGroup>
     <LightingImplementationSource Include="..\OpenBlade.Contracts\DeviceState.cs" />
     <LightingImplementationSource Include="..\OpenBlade.Contracts\Lighting.cs" />
+    <LightingImplementationSource Include="..\OpenBlade.Contracts\AmbientLightingFrame.cs" />
     <LightingImplementationSource Include="..\OpenBlade.Contracts\Profiles.cs" />
     <LightingImplementationSource Include="..\OpenBlade.Contracts\ReactiveKeyPulse.cs" />
     <LightingImplementationSource Include="BladeWriteException.cs" />

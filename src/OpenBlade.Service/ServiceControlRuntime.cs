@@ -66,6 +66,13 @@ public interface IServiceControlRuntime
                 ControlOperationStatus.Blocked,
                 "Reactive lighting input is unavailable."));
 
+    Task<ControlOperationResult> PushAmbientLightingFrameAsync(
+        AmbientLightingFrame frame,
+        CancellationToken token) => Task.FromResult(
+            new ControlOperationResult(
+                ControlOperationStatus.Blocked,
+                "Ambient Awareness input is unavailable."));
+
     Task<ControlOperationResult> ApplyOneShotLaptopControlAsync(
         ApplyOneShotLaptopControl value,
         CancellationToken token) => Task.FromResult(
@@ -759,6 +766,92 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 return new ControlOperationResult(
                     ControlOperationStatus.Failed,
                     "Reactive lighting input could not be applied.");
+            }
+        }
+        finally
+        {
+            operationGate.Release();
+        }
+    }
+
+    public async Task<ControlOperationResult> PushAmbientLightingFrameAsync(
+        AmbientLightingFrame frame,
+        CancellationToken token)
+    {
+        EnsureInitialized();
+        ArgumentNullException.ThrowIfNull(frame);
+        if (!frame.IsWellFormed())
+        {
+            return new ControlOperationResult(
+                ControlOperationStatus.Failed,
+                "The Ambient Awareness frame is invalid.");
+        }
+
+        await operationGate.WaitAsync(token).ConfigureAwait(false);
+        try
+        {
+            ServiceStatusSnapshot current = GetStatus();
+            if (!current.DeviceVerified
+                || current.WritesBlocked
+                || current.ActivePowerSource == PowerSource.ExternalUnknown)
+            {
+                return new ControlOperationResult(
+                    ControlOperationStatus.Blocked,
+                    "Ambient Awareness is blocked while laptop controls are unavailable.");
+            }
+
+            if (current.LightingRendererOwnership !=
+                LightingRendererOwnershipState.AmbientAwareness)
+            {
+                return new ControlOperationResult(
+                    ControlOperationStatus.Blocked,
+                    "Ambient Awareness is not currently active.");
+            }
+
+            IBladeDevice? device = null;
+            try
+            {
+                if (!deviceProvider.TryGetVerifiedDevice(out device))
+                {
+                    return new ControlOperationResult(
+                        ControlOperationStatus.Blocked,
+                        "Ambient Awareness is unavailable for this laptop.");
+                }
+
+                LightingRendererOwnershipState liveOwnership =
+                    await ReadLightingOwnershipAsync(device, token).ConfigureAwait(false);
+                PublishIfChanged(GetStatus() with
+                {
+                    LightingRendererOwnership = liveOwnership,
+                });
+                if (liveOwnership != LightingRendererOwnershipState.AmbientAwareness)
+                {
+                    return new ControlOperationResult(
+                        ControlOperationStatus.Blocked,
+                        "Ambient Awareness is not currently active.");
+                }
+
+                await device.PushAmbientLightingFrameAsync(frame.Copy(), token)
+                    .ConfigureAwait(false);
+                return new ControlOperationResult(
+                    ControlOperationStatus.Applied,
+                    "Ambient Awareness frame was applied.");
+            }
+            catch (OperationCanceledException) when (token.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch
+            {
+                if (device is not null)
+                {
+                    await PublishObservedLightingOwnershipAsync(
+                        device,
+                        CancellationToken.None).ConfigureAwait(false);
+                }
+                return new ControlOperationResult(
+                    ControlOperationStatus.Failed,
+                    "Ambient Awareness could not update the keyboard.");
             }
         }
         finally
@@ -3047,7 +3140,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         LightingRendererOwnershipState.Starlight or
         LightingRendererOwnershipState.Wave or
         LightingRendererOwnershipState.Wheel or
-        LightingRendererOwnershipState.Ripple;
+        LightingRendererOwnershipState.Ripple or
+        LightingRendererOwnershipState.AmbientAwareness;
 
     private static bool IsKeyTriggeredLightingOwnership(
         LightingRendererOwnershipState ownership) => ownership is
@@ -3105,6 +3199,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             LightingEffect.Wave => LightingRendererOwnershipState.Wave,
             LightingEffect.Wheel => LightingRendererOwnershipState.Wheel,
             LightingEffect.Ripple => LightingRendererOwnershipState.Ripple,
+            LightingEffect.AmbientAwareness => LightingRendererOwnershipState.AmbientAwareness,
             _ => LightingRendererOwnershipState.None,
         });
 

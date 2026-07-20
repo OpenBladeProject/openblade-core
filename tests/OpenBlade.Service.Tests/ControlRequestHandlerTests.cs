@@ -33,6 +33,11 @@ public sealed class ControlRequestHandlerTests
                 OpenBladeIpc.ProtocolVersion,
                 Guid.NewGuid(),
                 new ReactiveKeyPulse(77)),
+            new PushAmbientLightingFrameRequest(
+                OpenBladeIpc.ProtocolVersion,
+                Guid.NewGuid(),
+                new AmbientLightingFrame(
+                    new RgbColor[AmbientLightingFrame.SlotCount])),
             new SetBatteryPolicyRequest(
                 OpenBladeIpc.ProtocolVersion,
                 Guid.NewGuid(),
@@ -58,7 +63,7 @@ public sealed class ControlRequestHandlerTests
         [
             "GetStatus", "GetStatus", "UpdateProfiles", "SetPerformanceOverride",
             "CyclePerformanceShortcut", "SetFanOverride", "SetLightingOverride", "SetLightingSuppression",
-            "PulseReactiveKey", "SetBatteryPolicy",
+            "PulseReactiveKey", "PushAmbientLightingFrame", "SetBatteryPolicy",
             "SetBatteryProtection", "SetFullChargeOverride", "ApplyOneShotLaptopControl",
             "ExportDiagnostics", "Shutdown",
         ];
@@ -262,6 +267,14 @@ public sealed class ControlRequestHandlerTests
         {
             Assert.Equal(77, pulse.MatrixSlot);
             return Record("PulseReactiveKey");
+        }
+
+        public Task<ControlOperationResult> PushAmbientLightingFrameAsync(
+            AmbientLightingFrame frame,
+            CancellationToken token)
+        {
+            Assert.True(frame.IsWellFormed());
+            return Record("PushAmbientLightingFrame");
         }
 
         public Task<ControlOperationResult> SetBatteryPolicyAsync(BatteryPolicy value, CancellationToken token) =>

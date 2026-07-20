@@ -136,6 +136,15 @@ public sealed class ServiceClient : IServiceClient
                 pulse),
             token);
 
+    public Task<ControlOperationResult> PushAmbientLightingFrameAsync(
+        AmbientLightingFrame frame,
+        CancellationToken token) => SendMutationAsync(
+            new PushAmbientLightingFrameRequest(
+                OpenBladeIpc.ProtocolVersion,
+                Guid.NewGuid(),
+                frame),
+            token);
+
     public Task<ControlOperationResult> SetBatteryPolicyAsync(
         BatteryPolicy value,
         CancellationToken token) => SendMutationAsync(

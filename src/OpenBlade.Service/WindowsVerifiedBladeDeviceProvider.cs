@@ -699,6 +699,18 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
                 ? ExecuteProductionLightingPulseAsync(pulse, cancellationToken)
                 : RejectProductionWrite("Key-triggered lighting is not admitted.");
 
+        public Task PushAmbientLightingFrameAsync(
+            AmbientLightingFrame frame,
+            CancellationToken cancellationToken)
+        {
+            ArgumentNullException.ThrowIfNull(frame);
+            return frame.IsWellFormed()
+                && lightingFactory.Capabilities.LightingEffects.Contains(
+                    LightingEffect.AmbientAwareness)
+                    ? ExecuteProductionAmbientLightingFrameAsync(frame.Copy(), cancellationToken)
+                    : RejectProductionWrite("Ambient Awareness input is not admitted.");
+        }
+
         public async Task<LightingRendererOwnershipState>
             ReadLightingRendererOwnershipAsync(CancellationToken cancellationToken)
         {
@@ -977,6 +989,73 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
                 throw new BladeWriteException(
                     WriteSubmissionState.Indeterminate,
                     "The reactive lighting input outcome is indeterminate.",
+                    exception);
+            }
+            finally
+            {
+                hardwareOperationGate.Release();
+            }
+        }
+
+        private async Task ExecuteProductionAmbientLightingFrameAsync(
+            AmbientLightingFrame frame,
+            CancellationToken cancellationToken)
+        {
+            IProductionLightingPort? port = null;
+            try
+            {
+                await EnterHardwareOperationAsync(cancellationToken).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                throw new BladeWriteException(
+                    WriteSubmissionState.KnownNotApplied,
+                    "Ambient Awareness was canceled before a verified session opened.");
+            }
+            catch (ObjectDisposedException exception)
+            {
+                throw new BladeWriteException(
+                    WriteSubmissionState.KnownNotApplied,
+                    "Ambient Awareness was blocked because the device provider is closing.",
+                    exception);
+            }
+
+            try
+            {
+                port = await GetLightingPortCoreAsync(cancellationToken).ConfigureAwait(false);
+                if (port is null
+                    || !port.Capabilities.LightingEffects.Contains(
+                        LightingEffect.AmbientAwareness))
+                {
+                    throw new BladeWriteException(
+                        WriteSubmissionState.KnownNotApplied,
+                        "The lighting writer could not open an exact-device session.");
+                }
+
+                await port.PushAmbientLightingFrameAsync(frame, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+            catch (BladeWriteException exception)
+            {
+                if (exception.SubmissionState == WriteSubmissionState.Indeterminate)
+                {
+                    await ResetLightingPortCoreAsync(port).ConfigureAwait(false);
+                }
+
+                throw;
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw new BladeWriteException(
+                    WriteSubmissionState.Indeterminate,
+                    "Ambient Awareness was canceled after a verified session opened.");
+            }
+            catch (Exception exception)
+            {
+                await ResetLightingPortCoreAsync(port).ConfigureAwait(false);
+                throw new BladeWriteException(
+                    WriteSubmissionState.Indeterminate,
+                    "The Ambient Awareness input outcome is indeterminate.",
                     exception);
             }
             finally

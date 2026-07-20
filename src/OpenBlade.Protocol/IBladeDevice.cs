@@ -65,4 +65,11 @@ public interface IBladeDevice
             new BladeWriteException(
                 WriteSubmissionState.KnownNotApplied,
                 "Reactive lighting input is unavailable."));
+
+    Task PushAmbientLightingFrameAsync(
+        AmbientLightingFrame frame,
+        CancellationToken cancellationToken) => Task.FromException(
+            new BladeWriteException(
+                WriteSubmissionState.KnownNotApplied,
+                "Ambient Awareness input is unavailable."));
 }

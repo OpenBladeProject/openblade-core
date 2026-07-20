@@ -1776,6 +1776,25 @@ public sealed class MainViewModelTests
     }
 
     [Fact]
+    public async Task AmbientAwarenessDraftStoresTheSelectedScreenRegion()
+    {
+        await using var viewModel = new MainViewModel(
+            new FakeServiceClient(),
+            new RecordingDispatcher());
+
+        viewModel.LightingEffectEditor = LightingEffect.AmbientAwareness;
+        viewModel.LightingAmbientAwarenessRegionEditor = AmbientAwarenessRegion.Bottom;
+
+        Assert.True(viewModel.LightingShowsAmbientAwarenessRegion);
+        Assert.Equal(
+            AmbientAwarenessRegion.Bottom,
+            Assert.IsType<AmbientAwarenessLightingParameters>(
+                viewModel.LightingDraft.Parameters).Region);
+        Assert.Equal("Bottom", viewModel.SelectedAmbientAwarenessRegionOption?.Label);
+        Assert.True(LightingSettingsValidation.IsWellFormed(viewModel.LightingDraft));
+    }
+
+    [Fact]
     public async Task SelectingBreathingFromOffCreatesAVisibleDraft()
     {
         await using var viewModel = new MainViewModel(

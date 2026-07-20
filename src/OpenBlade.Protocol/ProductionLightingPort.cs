@@ -333,6 +333,55 @@ internal sealed class ProductionLightingPort : IProductionLightingPort
         }
     }
 
+    public async Task PushAmbientLightingFrameAsync(
+        AmbientLightingFrame frame,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(frame);
+        if (!frame.IsWellFormed())
+        {
+            throw KnownNotApplied("The Ambient Awareness frame is invalid.");
+        }
+
+        await EnterWriteAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            Pid02E0MatrixFrame matrixFrame;
+            lock (effectSync)
+            {
+                if (activeEffect is not Pid02E0AmbientAwarenessEffect ambient)
+                {
+                    throw KnownNotApplied(
+                        "Ambient Awareness input was rejected because its renderer is not active.");
+                }
+
+                ambient.Update(frame);
+                matrixFrame = ambient.RenderFrame(
+                    timeProvider.GetElapsedTime(effectStartedTimestamp));
+            }
+
+            try
+            {
+                await WriteMatrixCoreAsync(matrixFrame, cancellationToken).ConfigureAwait(false);
+            }
+            catch
+            {
+                lock (effectSync)
+                {
+                    activeEffect = null;
+                    activeKeyTriggeredEffect = null;
+                    lastDeliveredState = null;
+                }
+                SetOwnership(LightingRendererOwnershipState.Faulted);
+                throw;
+            }
+        }
+        finally
+        {
+            operationGate.Release();
+        }
+    }
+
     public async Task<LightingRendererOwnershipState> InvalidateAsync() =>
         await CloseAsync().ConfigureAwait(false);
 
@@ -632,6 +681,7 @@ internal sealed class ProductionLightingPort : IProductionLightingPort
                 Color(value.Color),
                 ReactiveFadeDuration(value.Duration)),
             RippleLightingParameters value => new Pid02E0RippleEffect(Color(value.Color)),
+            AmbientAwarenessLightingParameters => new Pid02E0AmbientAwarenessEffect(),
             TidalLightingParameters value => new Pid02E0TidalEffect(
                 Color(value.PrimaryColor),
                 Color(value.SecondaryColor),
@@ -953,6 +1003,7 @@ internal sealed class ProductionLightingPort : IProductionLightingPort
             LightingEffect.Wave => LightingRendererOwnershipState.Wave,
             LightingEffect.Wheel => LightingRendererOwnershipState.Wheel,
             LightingEffect.Ripple => LightingRendererOwnershipState.Ripple,
+            LightingEffect.AmbientAwareness => LightingRendererOwnershipState.AmbientAwareness,
             _ => throw new ArgumentOutOfRangeException(nameof(effect)),
         };
 

@@ -402,6 +402,31 @@ public sealed class ProductionLightingPortTests
     }
 
     [Fact]
+    public async Task AmbientAwareness_WritesOnlyTheTypedSessionSampleWhileOwned()
+    {
+        var session = new LightingSession(initialBrightness: 0xFF);
+        var writer = new MatrixWriter();
+        await using var port = CreatePort(session, writer, admitted: true);
+        await port.SetLightingAsync(
+            LightingSettingsFactory.AmbientAwareness(
+                AmbientAwarenessRegion.Right,
+                100),
+            default);
+        RgbColor[] colors = new RgbColor[AmbientLightingFrame.SlotCount];
+        colors[19] = new RgbColor(0x12, 0x34, 0x56);
+
+        await port.PushAmbientLightingFrameAsync(
+            new AmbientLightingFrame(colors),
+            default);
+
+        Assert.Equal(
+            LightingRendererOwnershipState.AmbientAwareness,
+            port.OwnershipState);
+        Assert.Equal(new MatrixRgb(0x12, 0x34, 0x56), writer.Reports[^1].Frame[19]);
+        Assert.Equal(MatrixRgb.Black, writer.Reports[^1].Frame[0]);
+    }
+
+    [Fact]
     public async Task KeyPulse_StartsRippleWhenLiveRendererIsRipple()
     {
         var session = new LightingSession(initialBrightness: 0xFF);

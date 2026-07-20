@@ -35,6 +35,10 @@ All notable changes to OpenBlade are documented in this file. The project follow
   regions: Full, Left, Top, Right, and Bottom. The capture confirms that region
   selection is host-side screen sampling followed by the shared matrix stream,
   not a firmware region command.
+- Ambient Awareness with Full screen, Left, Top, Right, and Bottom sampling.
+  The signed-in SessionAgent downsamples directly to the 17 by 6 keyboard grid;
+  only typed RGB colors cross IPC, and sampling stops when the effect is no
+  longer active.
 - A sanitized, hash-pinned five-second Tidal matrix oracle for both directions;
   raw USB captures remain local and are not distributed.
 - A sanitized, hash-pinned one-second Wave and Wheel matrix oracle covering all

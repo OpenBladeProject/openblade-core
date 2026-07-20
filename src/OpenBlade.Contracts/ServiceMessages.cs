@@ -24,6 +24,7 @@ public sealed record ControlOperationResult(ControlOperationStatus Status, strin
 [JsonDerivedType(typeof(SetLightingOverrideRequest), "setLightingOverride")]
 [JsonDerivedType(typeof(SetLightingSuppressionRequest), "setLightingSuppression")]
 [JsonDerivedType(typeof(PulseReactiveKeyRequest), "pulseReactiveKey")]
+[JsonDerivedType(typeof(PushAmbientLightingFrameRequest), "pushAmbientLightingFrame")]
 [JsonDerivedType(typeof(SetBatteryPolicyRequest), "setBatteryPolicy")]
 [JsonDerivedType(typeof(SetBatteryProtectionRequest), "setBatteryProtection")]
 [JsonDerivedType(typeof(SetFullChargeOverrideRequest), "setFullChargeOverride")]
@@ -87,6 +88,12 @@ public sealed record PulseReactiveKeyRequest(
     int Version,
     Guid RequestId,
     ReactiveKeyPulse Pulse)
+    : ServiceRequest(Version, RequestId);
+
+public sealed record PushAmbientLightingFrameRequest(
+    int Version,
+    Guid RequestId,
+    AmbientLightingFrame Frame)
     : ServiceRequest(Version, RequestId);
 
 public sealed record SetBatteryPolicyRequest(

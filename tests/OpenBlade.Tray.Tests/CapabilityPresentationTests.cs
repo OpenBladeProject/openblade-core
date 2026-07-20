@@ -1414,7 +1414,8 @@ public sealed class CapabilityPresentationTests
                 && Attribute(element, "Header") == "Advanced RGB values"));
         Assert.Contains("LightingPrimaryColorEditor", lightingXaml, StringComparison.Ordinal);
         Assert.Contains("LightingSecondaryColorEditor", lightingXaml, StringComparison.Ordinal);
-        Assert.DoesNotContain("Ambient", lightingXaml, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("Ambient Awareness screen region", lightingXaml, StringComparison.Ordinal);
+        Assert.Contains("Choose which part of the display colors the keyboard.", lightingXaml, StringComparison.Ordinal);
         Assert.DoesNotContain("Audio", lightingXaml, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("Fire", lightingXaml, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("Ripple", lightingXaml, StringComparison.OrdinalIgnoreCase);

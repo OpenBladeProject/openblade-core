@@ -41,6 +41,7 @@ public enum StarlightLightingDuration
 [JsonDerivedType(typeof(WaveLightingParameters), "wave")]
 [JsonDerivedType(typeof(WheelLightingParameters), "wheel")]
 [JsonDerivedType(typeof(RippleLightingParameters), "ripple")]
+[JsonDerivedType(typeof(AmbientAwarenessLightingParameters), "ambientAwareness")]
 public abstract record LightingEffectParameters;
 
 public sealed record OffLightingParameters : LightingEffectParameters;
@@ -82,6 +83,9 @@ public sealed record WheelLightingParameters(LightingRotationDirection Direction
     : LightingEffectParameters;
 
 public sealed record RippleLightingParameters(RgbColor Color)
+    : LightingEffectParameters;
+
+public sealed record AmbientAwarenessLightingParameters(AmbientAwarenessRegion Region)
     : LightingEffectParameters;
 
 public static class LightingSettingsFactory
@@ -252,6 +256,16 @@ public static class LightingSettingsFactory
         Parameters = new RippleLightingParameters(color),
     };
 
+    public static LightingSettings AmbientAwareness(
+        AmbientAwarenessRegion region,
+        byte brightness) => new(
+            LightingEffect.AmbientAwareness,
+            default,
+            brightness)
+        {
+            Parameters = new AmbientAwarenessLightingParameters(region),
+        };
+
     public static LightingSettings NormalizeLegacyOff(LightingSettings settings)
     {
         ArgumentNullException.ThrowIfNull(settings);
@@ -322,6 +336,9 @@ public static class LightingSettingsFactory
                 DefaultVisibleBrightness),
             RippleLightingParameters => Ripple(
                 visibleColor,
+                DefaultVisibleBrightness),
+            AmbientAwarenessLightingParameters ambient => AmbientAwareness(
+                ambient.Region,
                 DefaultVisibleBrightness),
             StarlightLightingParameters
             {
@@ -410,6 +427,8 @@ public static class LightingSettingsValidation
                 Enum.IsDefined(parameters.Direction) && settings.Color == default,
             (LightingEffect.Ripple, RippleLightingParameters parameters) =>
                 settings.Color == parameters.Color,
+            (LightingEffect.AmbientAwareness, AmbientAwarenessLightingParameters parameters) =>
+                Enum.IsDefined(parameters.Region) && settings.Color == default,
             _ => false,
         };
 

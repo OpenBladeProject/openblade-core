@@ -81,6 +81,11 @@ public sealed class ControlRequestHandler
             PulseReactiveKeyRequest pulse => Result(
                 request.RequestId,
                 await runtime.PulseReactiveKeyAsync(pulse.Pulse, cancellationToken)),
+            PushAmbientLightingFrameRequest ambient => Result(
+                request.RequestId,
+                await runtime.PushAmbientLightingFrameAsync(
+                    ambient.Frame,
+                    cancellationToken)),
             SetBatteryPolicyRequest set => Result(
                 request.RequestId,
                 await runtime.SetBatteryPolicyAsync(set.Value, cancellationToken)),

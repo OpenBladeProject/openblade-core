@@ -1026,6 +1026,28 @@
                                 </Border>
 
                                 <Border Style="{StaticResource SettingsRowStyle}"
+                                        Visibility="{x:Bind ViewModel.LightingShowsAmbientAwarenessRegion, Mode=OneWay}">
+                                    <Grid ColumnSpacing="20">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel Spacing="3" VerticalAlignment="Center">
+                                            <TextBlock Text="Screen region" Style="{StaticResource CardTitleStyle}" />
+                                            <TextBlock Text="Choose which part of the display colors the keyboard."
+                                                       Style="{StaticResource SecondaryTextStyle}" />
+                                        </StackPanel>
+                                        <ComboBox Grid.Column="1"
+                                                  MinWidth="150"
+                                                  Style="{StaticResource SettingsPickerStyle}"
+                                                  AutomationProperties.Name="Ambient Awareness screen region"
+                                                  ItemsSource="{x:Bind ViewModel.AvailableAmbientAwarenessRegionOptions}"
+                                                  DisplayMemberPath="Label"
+                                                  SelectedItem="{x:Bind ViewModel.SelectedAmbientAwarenessRegionOption, Mode=TwoWay}" />
+                                    </Grid>
+                                </Border>
+
+                                <Border Style="{StaticResource SettingsRowStyle}"
                                         Visibility="{x:Bind ViewModel.LightingShowsBreathingColorMode, Mode=OneWay}">
                                     <Grid ColumnSpacing="20">
                                         <Grid.ColumnDefinitions>

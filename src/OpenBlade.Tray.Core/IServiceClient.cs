@@ -75,6 +75,13 @@ public interface IServiceClient
                 ControlOperationStatus.Blocked,
                 "Reactive lighting input is unavailable."));
 
+    Task<ControlOperationResult> PushAmbientLightingFrameAsync(
+        AmbientLightingFrame frame,
+        CancellationToken token) => Task.FromResult(
+            new ControlOperationResult(
+                ControlOperationStatus.Blocked,
+                "Ambient Awareness input is unavailable."));
+
     Task<ControlOperationResult> SetBatteryPolicyAsync(
         BatteryPolicy value,
         CancellationToken token);

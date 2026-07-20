@@ -1,3 +1,5 @@
+using OpenBlade.Contracts;
+
 namespace OpenBlade.Protocol;
 
 /// <summary>
@@ -67,6 +69,52 @@ internal sealed class Pid02E0SpectrumEffect : IPid02E0LightingEffect
         double phase = Pid02E0LightingMath.CyclePhase(elapsed, cycleDuration);
         return Pid02E0MatrixRenderers.RenderSpectrumSample(
             Pid02E0LightingMath.SpectrumColor(phase));
+    }
+}
+
+/// <summary>
+/// Holds the latest keyboard-sized color sample supplied by the signed-in
+/// session. The service owns the HID stream; this renderer never captures the
+/// desktop or interprets screen coordinates.
+/// </summary>
+internal sealed class Pid02E0AmbientAwarenessEffect : IPid02E0LightingEffect
+{
+    private Pid02E0MatrixFrame frame =
+        Pid02E0MatrixLayout.RenderUniform(MatrixRgb.Black);
+
+    public TimeSpan? GetNextFrameDelay(TimeSpan elapsed)
+    {
+        Pid02E0LightingMath.ThrowIfNegative(elapsed);
+        return null;
+    }
+
+    public Pid02E0MatrixFrame RenderFrame(TimeSpan elapsed)
+    {
+        Pid02E0LightingMath.ThrowIfNegative(elapsed);
+        return new Pid02E0MatrixFrame(frame.ToArray());
+    }
+
+    internal void Update(AmbientLightingFrame value)
+    {
+        ArgumentNullException.ThrowIfNull(value);
+        if (!value.IsWellFormed())
+        {
+            throw new ArgumentException(
+                "The Ambient Awareness frame is invalid.",
+                nameof(value));
+        }
+
+        MatrixRgb[] slots = new MatrixRgb[Pid02E0MatrixFrame.SlotCount];
+        for (int slot = 0; slot < slots.Length; slot++)
+        {
+            RgbColor color = value.Slots[slot];
+            slots[slot] = new MatrixRgb(
+                color.Red,
+                color.Green,
+                color.Blue);
+        }
+
+        frame = new Pid02E0MatrixFrame(slots);
     }
 }
 

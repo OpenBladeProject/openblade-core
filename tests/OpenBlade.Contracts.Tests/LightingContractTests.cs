@@ -86,6 +86,9 @@ public sealed class LightingContractTests
                 LightingRotationDirection.Counterclockwise,
                 11),
             LightingSettingsFactory.Ripple(primary, 25),
+            LightingSettingsFactory.AmbientAwareness(
+                AmbientAwarenessRegion.Right,
+                24),
         ];
 
         Assert.All(settings, value =>
@@ -127,6 +130,9 @@ public sealed class LightingContractTests
             LightingRotationDirection.Counterclockwise,
             Assert.IsType<WheelLightingParameters>(settings[13].Parameters).Direction);
         Assert.Equal(primary, Assert.IsType<RippleLightingParameters>(settings[14].Parameters).Color);
+        Assert.Equal(
+            AmbientAwarenessRegion.Right,
+            Assert.IsType<AmbientAwarenessLightingParameters>(settings[15].Parameters).Region);
     }
 
     [Fact]
@@ -199,6 +205,11 @@ public sealed class LightingContractTests
             {
                 Parameters = new RippleLightingParameters(new RgbColor(4, 5, 6)),
             },
+            LightingSettingsFactory.AmbientAwareness(AmbientAwarenessRegion.Full, 50) with
+            {
+                Parameters = new AmbientAwarenessLightingParameters(
+                    (AmbientAwarenessRegion)999),
+            },
         ];
 
         Assert.All(invalid, value =>
@@ -230,6 +241,7 @@ public sealed class LightingContractTests
             LightingSettingsFactory.Wave(LightingDirection.Rightward, 0),
             LightingSettingsFactory.Wheel(LightingRotationDirection.Clockwise, 0),
             LightingSettingsFactory.Ripple(new RgbColor(1, 2, 3), 0),
+            LightingSettingsFactory.AmbientAwareness(AmbientAwarenessRegion.Full, 0),
         ];
 
         Assert.All(invisible, value =>

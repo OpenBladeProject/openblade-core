@@ -179,6 +179,8 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     private LightingDirection lightingDirectionEditor = LightingDirection.Rightward;
     private LightingRotationDirection lightingRotationDirectionEditor =
         LightingRotationDirection.Clockwise;
+    private AmbientAwarenessRegion lightingAmbientAwarenessRegionEditor =
+        AmbientAwarenessRegion.Full;
     private LogoLightingMode? logoLightingModeEditor;
     private bool lightingEditorDirty;
     private bool lightingTurnOffWithDisplayEditor;
@@ -1905,6 +1907,47 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         }
     }
 
+    public IReadOnlyList<AmbientAwarenessRegionOption>
+        AvailableAmbientAwarenessRegionOptions { get; } =
+        Enum.GetValues<AmbientAwarenessRegion>()
+            .Select(region => new AmbientAwarenessRegionOption(
+                region,
+                region == AmbientAwarenessRegion.Full ? "Full screen" : region.ToString()))
+            .ToArray();
+
+    public AmbientAwarenessRegion LightingAmbientAwarenessRegionEditor
+    {
+        get => lightingAmbientAwarenessRegionEditor;
+        set
+        {
+            if (!Enum.IsDefined(value))
+            {
+                return;
+            }
+
+            if (SetLightingEditorField(ref lightingAmbientAwarenessRegionEditor, value))
+            {
+                PropertyChanged?.Invoke(
+                    this,
+                    new PropertyChangedEventArgs(
+                        nameof(SelectedAmbientAwarenessRegionOption)));
+            }
+        }
+    }
+
+    public AmbientAwarenessRegionOption? SelectedAmbientAwarenessRegionOption
+    {
+        get => AvailableAmbientAwarenessRegionOptions.FirstOrDefault(
+            option => option.Region == LightingAmbientAwarenessRegionEditor);
+        set
+        {
+            if (value is not null)
+            {
+                LightingAmbientAwarenessRegionEditor = value.Region;
+            }
+        }
+    }
+
     public LogoLightingMode? LogoLightingModeEditor
     {
         get => logoLightingModeEditor;
@@ -1979,6 +2022,9 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
 
     public bool LightingShowsRotationDirection =>
         LightingEffectEditor == LightingEffect.Wheel;
+
+    public bool LightingShowsAmbientAwarenessRegion =>
+        LightingEffectEditor == LightingEffect.AmbientAwareness;
 
     public LightingSettings LightingDraft => CreateLightingDraft();
 
@@ -2823,7 +2869,12 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     private static LightingEffectOption CreateLightingEffectOption(LightingEffect effect) =>
         new(
             effect,
-            effect == LightingEffect.Spectrum ? "Spectrum Cycling" : effect.ToString());
+            effect switch
+            {
+                LightingEffect.Spectrum => "Spectrum Cycling",
+                LightingEffect.AmbientAwareness => "Ambient Awareness",
+                _ => effect.ToString(),
+            });
 
     private void NotifyActiveFanSelectionBinding()
     {
@@ -3816,6 +3867,14 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             ref lightingRotationDirectionEditor,
             rotationDirection,
             nameof(LightingRotationDirectionEditor));
+        AmbientAwarenessRegion ambientAwarenessRegion =
+            value.Parameters is AmbientAwarenessLightingParameters ambientAwareness
+                ? ambientAwareness.Region
+                : AmbientAwarenessRegion.Full;
+        SetField(
+            ref lightingAmbientAwarenessRegionEditor,
+            ambientAwarenessRegion,
+            nameof(LightingAmbientAwarenessRegionEditor));
         SetField(
             ref logoLightingModeEditor,
             value.LogoMode,
@@ -3827,6 +3886,9 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         PropertyChanged?.Invoke(
             this,
             new PropertyChangedEventArgs(nameof(SelectedLogoLightingModeOption)));
+        PropertyChanged?.Invoke(
+            this,
+            new PropertyChangedEventArgs(nameof(SelectedAmbientAwarenessRegionOption)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(LightingDraft)));
     }
 
@@ -4300,9 +4362,12 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             return "Off";
         }
 
-        string effect = lighting.Effect == LightingEffect.Spectrum
-            ? "Spectrum Cycling"
-            : lighting.Effect.ToString();
+        string effect = lighting.Effect switch
+        {
+            LightingEffect.Spectrum => "Spectrum Cycling",
+            LightingEffect.AmbientAwareness => "Ambient Awareness",
+            _ => lighting.Effect.ToString(),
+        };
         string details = lighting.Parameters switch
         {
             BreathingLightingParameters
@@ -4341,6 +4406,10 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
                 wave.Direction.ToString().ToLowerInvariant(),
             WheelLightingParameters wheel =>
                 FormatRotationDirection(wheel.Direction),
+            AmbientAwarenessLightingParameters ambient =>
+                ambient.Region == AmbientAwarenessRegion.Full
+                    ? "full screen"
+                    : ambient.Region.ToString().ToLowerInvariant(),
             _ when lighting.Effect == LightingEffect.Static => FormatColor(lighting.Color),
             _ => string.Empty,
         };
@@ -4411,6 +4480,12 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         { Effect: LightingEffect.Off } => "Off",
         { Effect: LightingEffect.Spectrum } => "Spectrum Cycling",
         {
+            Effect: LightingEffect.AmbientAwareness,
+            Parameters: AmbientAwarenessLightingParameters ambient,
+        } => ambient.Region == AmbientAwarenessRegion.Full
+            ? "Ambient Awareness, full screen"
+            : $"Ambient Awareness, {ambient.Region.ToString().ToLowerInvariant()}",
+        {
             Effect: LightingEffect.Breathing,
             Parameters: BreathingLightingParameters { ColorMode: BreathingColorMode.Dual },
         } => "Breathing, two colors",
@@ -4461,7 +4536,10 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     {
         { Effect: LightingEffect.Off } => "Not applicable",
         { Effect: LightingEffect.Spectrum } => "Automatic",
-        { Effect: LightingEffect.Wave or LightingEffect.Wheel } => "Automatic",
+        {
+            Effect: LightingEffect.Wave or LightingEffect.Wheel
+                or LightingEffect.AmbientAwareness,
+        } => "Automatic",
         {
             Parameters: BreathingLightingParameters { ColorMode: BreathingColorMode.Random },
         } => "Random",
@@ -4607,6 +4685,9 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             LightingEffect.Wheel => LightingSettingsFactory.Wheel(
                 LightingRotationDirectionEditor,
                 brightness),
+            LightingEffect.AmbientAwareness => LightingSettingsFactory.AmbientAwareness(
+                LightingAmbientAwarenessRegionEditor,
+                brightness),
             _ => new LightingSettings(LightingEffectEditor, default, brightness),
         };
         return keyboard with { LogoMode = LogoLightingModeEditor };
@@ -4745,6 +4826,9 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
                 brightness),
             LightingEffect.Wheel => LightingSettingsFactory.Wheel(
                 LightingRotationDirection.Clockwise,
+                brightness),
+            LightingEffect.AmbientAwareness => LightingSettingsFactory.AmbientAwareness(
+                AmbientAwarenessRegion.Full,
                 brightness),
             _ => new LightingSettings(effect, color, brightness),
         };
@@ -5284,10 +5368,17 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         PropertyChanged?.Invoke(
             this,
             new PropertyChangedEventArgs(nameof(LightingShowsRotationDirection)));
+        PropertyChanged?.Invoke(
+            this,
+            new PropertyChangedEventArgs(nameof(LightingShowsAmbientAwarenessRegion)));
     }
 
 }
 
 public sealed record LightingEffectOption(LightingEffect Effect, string Label);
+
+public sealed record AmbientAwarenessRegionOption(
+    AmbientAwarenessRegion Region,
+    string Label);
 
 public sealed record LogoLightingModeOption(LogoLightingMode? Mode, string Label);
