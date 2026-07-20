@@ -1,7 +1,9 @@
 # OpenBlade
 
-OpenBlade is a lightweight, standalone Synapse replacement targeting only the
-Razer Blade 16 RZ09-0581 with USB identity `1532:02E0` and BIOS `3.01`.
+OpenBlade is a lightweight, standalone Windows utility for Razer Blade laptops.
+Its capability system is designed for additional models, but the current
+release supports only the Razer Blade 16 RZ09-0581 with USB identity
+`1532:02E0` and BIOS `3.01`.
 
 ## Safety state
 
@@ -22,12 +24,12 @@ manual OpenBlade action may reclaim that control after a fresh readback.
 
 ## Live readings
 
-OpenBlade can show net battery power from Windows and independent Fan 1 and
-Fan 2 RPM values from a validated, read-only HID query on this exact device.
-Each reading degrades to unavailable when its source cannot be read. The user
-can choose an Off, 1-, 2-, 5-, or 10-second refresh interval; collection stops
-while the window is closed to the tray. OpenBlade does not collect CPU or GPU
-temperature and does not install a sensor kernel driver.
+OpenBlade can show net battery power from Windows, independent Fan 1 and Fan 2
+RPM values from a validated read-only HID query, firmware CPU temperature, and
+GPU temperature from signed NVIDIA NVML. Each reading degrades to unavailable
+when its source cannot be read. The user can choose an Off, 1-, 2-, 5-, or
+10-second refresh interval and which readings appear. OpenBlade does not install
+or redistribute a sensor kernel driver.
 
 ## Diagnostics
 
@@ -76,6 +78,14 @@ graceful shutdown from the exact installed tray and SessionAgent processes and
 waits for both to exit before removing binaries. The SessionAgent always starts
 at sign-in for profile automation; the Settings toggle independently controls
 whether the visible tray also starts at sign-in.
+
+Interactive lighting and performance shortcuts normally use Raw Input in the
+SessionAgent. An optional, signed input-only UIAccess companion extends that
+observation to elevated foreground applications such as Task Manager. Ordinary
+community and development bundles omit the companion and retain the normal
+SessionAgent implementation. See
+[UIAccess input agent](docs/uiaccess-input-agent.md) for the trust boundary,
+signing command, fallback behavior, and runtime acceptance checks.
 
 The Capture CLI is published separately to
 `artifacts\win-x64\OpenBlade.DeveloperTools`. It is a developer-only protocol

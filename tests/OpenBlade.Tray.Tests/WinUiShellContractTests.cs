@@ -316,6 +316,39 @@ public sealed class WinUiShellContractTests
     }
 
     [Fact]
+    public void ElevatedWindowInputUsesAnOptionalSignedInputOnlyUiAccessBroker()
+    {
+        string manifest = ReadRepositoryFile(
+            "src",
+            "OpenBlade.InputAgent",
+            "app.manifest");
+        string inputProgram = ReadRepositoryFile(
+            "src",
+            "OpenBlade.InputAgent",
+            "Program.cs");
+        string sessionProgram = ReadRepositoryFile(
+            "src",
+            "OpenBlade.SessionAgent",
+            "Program.cs");
+        string publish = ReadRepositoryFile("build", "Publish.ps1");
+        string validation = ReadRepositoryFile(
+            "build",
+            "PublishPayloadValidation.ps1");
+
+        Assert.Contains("level=\"asInvoker\" uiAccess=\"true\"", manifest, StringComparison.Ordinal);
+        Assert.Contains("WindowsUiAccessState.IsEnabled()", inputProgram, StringComparison.Ordinal);
+        Assert.Contains("ReadySignalingKeyboardSourceFactory", inputProgram, StringComparison.Ordinal);
+        Assert.DoesNotContain("WindowsDisplaySettingsController", inputProgram, StringComparison.Ordinal);
+        Assert.DoesNotContain("WindowsAmbientScreenSamplerFactory", inputProgram, StringComparison.Ordinal);
+        Assert.Contains("UiAccessInputKeyboardSourceFactory", sessionProgram, StringComparison.Ordinal);
+        Assert.Contains("WindowsReactiveKeyboardSourceFactory.Instance", sessionProgram, StringComparison.Ordinal);
+        Assert.Contains("UiAccessSigningCertificateThumbprint", publish, StringComparison.Ordinal);
+        Assert.Contains("signtool.exe", publish, StringComparison.Ordinal);
+        Assert.Contains("Get-AuthenticodeSignature", publish, StringComparison.Ordinal);
+        Assert.Contains("unsigned or invalid UIAccess input agent", validation, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void SelfContainedPublishRequiresAndCopiesWinUiCompiledResources()
     {
         string project = ReadRepositoryFile("src", "OpenBlade.Tray", "OpenBlade.Tray.csproj");

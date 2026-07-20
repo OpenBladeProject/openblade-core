@@ -439,6 +439,38 @@ try {
         -ExpectedError 'missing required session agent file' `
         -CaseName 'A missing required session agent executable'
 
+    $partialInputAgent = New-TestBundlePair `
+        -PermittedRoot $permittedRoot `
+        -CaseName 'partial-input-agent' `
+        -AssemblySources $assemblySources
+    Set-Content -LiteralPath (Join-Path $partialInputAgent.Payload 'OpenBlade.InputAgent.exe') `
+        -Value 'partial input agent' -NoNewline
+    Assert-RejectedAndPreserved `
+        -PermittedRoot $permittedRoot `
+        -StagingBundle $partialInputAgent.StagingBundle `
+        -ExistingBundle $partialInputAgent.ExistingBundle `
+        -ExpectedError 'incomplete UIAccess input agent' `
+        -CaseName 'A partial UIAccess input agent'
+
+    $unsignedInputAgent = New-TestBundlePair `
+        -PermittedRoot $permittedRoot `
+        -CaseName 'unsigned-input-agent' `
+        -AssemblySources $assemblySources
+    foreach ($inputAgentFile in @(
+            'OpenBlade.InputAgent.exe',
+            'OpenBlade.InputAgent.dll',
+            'OpenBlade.InputAgent.deps.json',
+            'OpenBlade.InputAgent.runtimeconfig.json')) {
+        Set-Content -LiteralPath (Join-Path $unsignedInputAgent.Payload $inputAgentFile) `
+            -Value 'unsigned input agent' -NoNewline
+    }
+    Assert-RejectedAndPreserved `
+        -PermittedRoot $permittedRoot `
+        -StagingBundle $unsignedInputAgent.StagingBundle `
+        -ExistingBundle $unsignedInputAgent.ExistingBundle `
+        -ExpectedError 'unsigned or invalid UIAccess input agent' `
+        -CaseName 'An unsigned UIAccess input agent'
+
     $missingTrayUi = New-TestBundlePair `
         -PermittedRoot $permittedRoot `
         -CaseName 'missing-tray-ui' `

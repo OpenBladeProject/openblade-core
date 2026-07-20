@@ -82,12 +82,18 @@ internal static class Program
                         exception => System.Diagnostics.Trace.TraceWarning(
                             "OpenBlade notification failed: {0}",
                             exception.Message));
+                Action<Exception> inputErrorHandler = exception =>
+                    System.Diagnostics.Trace.TraceWarning(
+                        "OpenBlade input observation failed: {0}",
+                        exception.Message);
+                var inputFactory = new UiAccessInputKeyboardSourceFactory(
+                    WindowsReactiveKeyboardSourceFactory.Instance,
+                    new WindowsUiAccessInputAgentLauncher(),
+                    errorHandler: inputErrorHandler);
                 await using var reactive = new ServiceReactiveLightingLoop(
                     new ServiceClient(),
-                    WindowsReactiveKeyboardSourceFactory.Instance,
-                    exception => System.Diagnostics.Trace.TraceWarning(
-                        "OpenBlade Reactive input failed: {0}",
-                        exception.Message),
+                    inputFactory,
+                    inputErrorHandler,
                     shortcutNotifications);
                 await using var ambient = new ServiceAmbientLightingLoop(
                     new ServiceClient(),

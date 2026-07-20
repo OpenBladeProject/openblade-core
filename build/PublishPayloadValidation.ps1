@@ -79,6 +79,32 @@ function Assert-ServicePublishPayload {
         }
     }
 
+    $optionalUiAccessInputAgentFiles = @(
+        'OpenBlade.InputAgent.exe',
+        'OpenBlade.InputAgent.dll',
+        'OpenBlade.InputAgent.deps.json',
+        'OpenBlade.InputAgent.runtimeconfig.json'
+    )
+    $presentUiAccessInputAgentFiles = @($optionalUiAccessInputAgentFiles | Where-Object {
+        Test-Path -LiteralPath (Join-Path $Payload $_) -PathType Leaf
+    })
+    if ($presentUiAccessInputAgentFiles.Count -ne 0 `
+        -and $presentUiAccessInputAgentFiles.Count -ne $optionalUiAccessInputAgentFiles.Count) {
+        throw 'OpenBlade production payload contains an incomplete UIAccess input agent.'
+    }
+    if ($presentUiAccessInputAgentFiles.Count -eq $optionalUiAccessInputAgentFiles.Count) {
+        $inputAgentExecutable = Join-Path $Payload 'OpenBlade.InputAgent.exe'
+        $inputAgentSignature = Get-AuthenticodeSignature -LiteralPath $inputAgentExecutable
+        if ($inputAgentSignature.Status -ne [System.Management.Automation.SignatureStatus]::Valid `
+            -or $null -eq $inputAgentSignature.SignerCertificate) {
+            throw 'OpenBlade production payload contains an unsigned or invalid UIAccess input agent.'
+        }
+
+        Assert-ManagedAssemblyIdentity `
+            -Path (Join-Path $Payload 'OpenBlade.InputAgent.dll') `
+            -ExpectedName 'OpenBlade.InputAgent'
+    }
+
     $requiredTrayUiFiles = @(
         'OpenBlade.Tray.pri',
         'App.xbf',

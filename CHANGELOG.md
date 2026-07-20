@@ -75,6 +75,11 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Added
 
+- Added an optional, input-only UIAccess companion for observing interactive
+  lighting keys and performance shortcuts while an elevated application has
+  focus. It is admitted to the installer payload only after Authenticode signing
+  and trusted timestamp validation; unsigned builds keep the existing
+  session-local Raw Input fallback.
 - JSON export for all saved AC, USB-C, and battery profiles from the Profiles
   page, including a portable schema version, OpenBlade version, and export time.
 - Short height-and-opacity transitions for conditional Power mode and fan-control

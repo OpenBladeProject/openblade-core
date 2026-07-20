@@ -26,7 +26,7 @@ internal sealed class NullPerformanceShortcutNotificationSink
     }
 }
 
-internal sealed class WindowsPerformanceShortcutNotificationSink
+public sealed class WindowsPerformanceShortcutNotificationSink
     : IPerformanceShortcutNotificationSink
 {
     private readonly AppNotificationManager manager;
@@ -49,7 +49,7 @@ internal sealed class WindowsPerformanceShortcutNotificationSink
         }
     }
 
-    internal static IPerformanceShortcutNotificationSink CreateBestEffort(
+    public static IPerformanceShortcutNotificationSink CreateBestEffort(
         Action<Exception>? errorHandler = null)
     {
         try

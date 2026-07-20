@@ -8,9 +8,9 @@ using OpenBlade.Tray;
 
 namespace OpenBlade.SessionAgent;
 
-internal sealed class WindowsReactiveKeyboardSourceFactory : IReactiveKeyboardSourceFactory
+public sealed class WindowsReactiveKeyboardSourceFactory : IReactiveKeyboardSourceFactory
 {
-    internal static WindowsReactiveKeyboardSourceFactory Instance { get; } = new();
+    public static WindowsReactiveKeyboardSourceFactory Instance { get; } = new();
 
     private WindowsReactiveKeyboardSourceFactory()
     {
