@@ -151,6 +151,9 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     private bool isStartupAnimationOperationInProgress;
     private bool isFunctionKeyOperationInProgress;
     private bool isGamingModeOperationInProgress;
+    private bool startupAnimationReadPending;
+    private bool functionKeyReadPending;
+    private bool gamingModeReadPending;
     private int fixedFanSpeedRpm = FanControlSettings.Default.FixedSpeedRpm;
     private bool useHigherFanTemperature = true;
     private IReadOnlyList<FanCurveEditorPoint> cpuFanCurveEditorPoints =
@@ -589,16 +592,11 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
                     BatteryPowerFlowLabel));
             }
 
-            string[] temperatures =
-            [
-                DashboardTelemetryEnabled(LiveReadingItemKind.CpuTemperature)
-                    ? $"CPU {CpuTemperatureValue}"
-                    : string.Empty,
-                DashboardTelemetryEnabled(LiveReadingItemKind.GpuTemperature)
-                    ? $"GPU {GpuTemperatureValue}"
-                    : string.Empty,
-            ];
-            string temperatureValue = JoinLiveReadingValues(temperatures);
+            string temperatureValue = FormatDashboardTemperatures(
+                DashboardTelemetryEnabled(LiveReadingItemKind.CpuTemperature),
+                CpuTemperatureValue,
+                DashboardTelemetryEnabled(LiveReadingItemKind.GpuTemperature),
+                GpuTemperatureValue);
             if (temperatureValue.Length > 0)
             {
                 groups.Add(new LiveReadingGroupDisplayItem(
@@ -611,7 +609,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             string fanValue = (showFan1, showFan2) switch
             {
                 (true, true) =>
-                    $"{Fan1RpmValue.Replace(" RPM", string.Empty, StringComparison.Ordinal)} · {Fan2RpmValue}",
+                    $"{Fan1RpmValue.Replace(" RPM", string.Empty, StringComparison.Ordinal)} / {Fan2RpmValue}",
                 (true, false) => Fan1RpmValue,
                 (false, true) => Fan2RpmValue,
                 _ => string.Empty,
@@ -1409,15 +1407,24 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
 
     public bool IsStartupAnimationFieldLoading =>
         isStartupAnimationOperationInProgress
-        || IsConnected && SupportsStartupAnimation && StartupAnimationEnabled is null;
+        || IsConnected && SupportsStartupAnimation && startupAnimationReadPending;
 
     public bool IsFunctionKeyFieldLoading =>
         isFunctionKeyOperationInProgress
-        || IsConnected && SupportsFunctionKeyPrimary && FunctionKeyPrimary is null;
+        || IsConnected && SupportsFunctionKeyPrimary && functionKeyReadPending;
 
     public bool IsGamingModeFieldLoading =>
         isGamingModeOperationInProgress
-        || IsConnected && SupportsGamingMode && GamingModeEnabled is null;
+        || IsConnected && SupportsGamingMode && gamingModeReadPending;
+
+    public bool CanEditStartupAnimation =>
+        CanMutate && SupportsStartupAnimation && !IsStartupAnimationFieldLoading;
+
+    public bool CanEditFunctionKeyPrimary =>
+        CanMutate && SupportsFunctionKeyPrimary && !IsFunctionKeyFieldLoading;
+
+    public bool CanEditGamingMode =>
+        CanMutate && SupportsGamingMode && !IsGamingModeFieldLoading;
 
     public FanControlSettings CurrentFanControlSettings => new(
         SelectedFanMode,
@@ -1652,8 +1659,8 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     {
         FunctionKeyPrimaryMode.FunctionKeys => "Function keys",
         FunctionKeyPrimaryMode.MultimediaKeys => "Media keys",
-        null => "Setâ€¦",
-        _ => "Setâ€¦",
+        null => "Checking",
+        _ => "Checking",
     };
 
     public bool SupportsGamingMode => Capabilities.OneShotLaptopControls.Contains(
@@ -2878,6 +2885,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         parameter is ApplyOneShotLaptopControl value
         && value.IsWellFormed()
         && !IsOneShotOperationInProgress(value.Control)
+        && !IsOneShotFieldLoading(value.Control)
         && CanMutate
         && latestStatus!.Capabilities!.OneShotLaptopControls.Contains(value.Control);
 
@@ -2886,6 +2894,14 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         OneShotLaptopControl.StartupAnimation => isStartupAnimationOperationInProgress,
         OneShotLaptopControl.FunctionKeyPrimary => isFunctionKeyOperationInProgress,
         OneShotLaptopControl.GamingMode => isGamingModeOperationInProgress,
+        _ => false,
+    };
+
+    private bool IsOneShotFieldLoading(OneShotLaptopControl control) => control switch
+    {
+        OneShotLaptopControl.StartupAnimation => IsStartupAnimationFieldLoading,
+        OneShotLaptopControl.FunctionKeyPrimary => IsFunctionKeyFieldLoading,
+        OneShotLaptopControl.GamingMode => IsGamingModeFieldLoading,
         _ => false,
     };
 
@@ -3200,9 +3216,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             ChargeLimitOptions = chargeLimits;
         }
         ConfirmedDeviceState? confirmed = status.ConfirmedState;
-        StartupAnimationEnabled = status.StartupAnimationEnabled;
-        FunctionKeyPrimary = status.FunctionKeyPrimary;
-        GamingModeEnabled = status.GamingModeEnabled;
+        UpdateOneShotReadbacks(status);
         SelectedPerformance = ResolvePresentedPerformance(status, confirmed, capabilities);
         SelectedFanMode = pendingFanControl?.Mode
             ?? ResolvePresentedFanMode(status, confirmed, capabilities);
@@ -5739,8 +5753,32 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     private bool DashboardTelemetryEnabled(LiveReadingItemKind kind) =>
         DashboardTelemetryItems.Any(option => option.Kind == kind && option.IsEnabled);
 
-    private static string JoinLiveReadingValues(IEnumerable<string> values) =>
-        string.Join(" · ", values.Where(value => !string.IsNullOrWhiteSpace(value)));
+    private static string FormatDashboardTemperatures(
+        bool showCpu,
+        string cpuValue,
+        bool showGpu,
+        string gpuValue)
+    {
+        if (!showCpu && !showGpu)
+        {
+            return string.Empty;
+        }
+
+        if (showCpu
+            && showGpu
+            && string.Equals(cpuValue, UnavailableLabel, StringComparison.Ordinal)
+            && string.Equals(gpuValue, UnavailableLabel, StringComparison.Ordinal))
+        {
+            return UnavailableLabel;
+        }
+
+        string[] values =
+        [
+            showCpu ? $"CPU {cpuValue}" : string.Empty,
+            showGpu ? $"GPU {gpuValue}" : string.Empty,
+        ];
+        return string.Join(" / ", values.Where(value => !string.IsNullOrWhiteSpace(value)));
+    }
 
     private static string LiveReadingLabel(LiveReadingItemKind kind) => kind switch
     {
@@ -6065,6 +6103,45 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         _ => "OpenBlade couldn’t complete that action. Check Troubleshooting for details.",
     };
 
+    private void UpdateOneShotReadbacks(ServiceStatusSnapshot status)
+    {
+        bool startupPending = SupportsStartupAnimation && status.StartupAnimationEnabled is null;
+        bool functionKeyPending = SupportsFunctionKeyPrimary && status.FunctionKeyPrimary is null;
+        bool gamingPending = SupportsGamingMode && status.GamingModeEnabled is null;
+        bool pendingChanged =
+            startupAnimationReadPending != startupPending
+            || functionKeyReadPending != functionKeyPending
+            || gamingModeReadPending != gamingPending;
+
+        startupAnimationReadPending = startupPending;
+        functionKeyReadPending = functionKeyPending;
+        gamingModeReadPending = gamingPending;
+
+        if (!SupportsStartupAnimation || status.StartupAnimationEnabled is not null
+            || StartupAnimationEnabled is null)
+        {
+            StartupAnimationEnabled = status.StartupAnimationEnabled;
+        }
+
+        if (!SupportsFunctionKeyPrimary || status.FunctionKeyPrimary is not null
+            || FunctionKeyPrimary is null)
+        {
+            FunctionKeyPrimary = status.FunctionKeyPrimary;
+        }
+
+        if (!SupportsGamingMode || status.GamingModeEnabled is not null
+            || GamingModeEnabled is null)
+        {
+            GamingModeEnabled = status.GamingModeEnabled;
+        }
+
+        if (pendingChanged)
+        {
+            NotifyFirmwareFieldLoadingState();
+            NotifyCommands();
+        }
+    }
+
     private void NotifyPresentationState()
     {
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsServiceUnavailable)));
@@ -6138,10 +6215,19 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             new PropertyChangedEventArgs(nameof(IsStartupAnimationFieldLoading)));
         PropertyChanged?.Invoke(
             this,
+            new PropertyChangedEventArgs(nameof(CanEditStartupAnimation)));
+        PropertyChanged?.Invoke(
+            this,
             new PropertyChangedEventArgs(nameof(IsFunctionKeyFieldLoading)));
         PropertyChanged?.Invoke(
             this,
+            new PropertyChangedEventArgs(nameof(CanEditFunctionKeyPrimary)));
+        PropertyChanged?.Invoke(
+            this,
             new PropertyChangedEventArgs(nameof(IsGamingModeFieldLoading)));
+        PropertyChanged?.Invoke(
+            this,
+            new PropertyChangedEventArgs(nameof(CanEditGamingMode)));
     }
 
     private TrayHoverLabelFormatResult BuildTrayHoverLabel() =>

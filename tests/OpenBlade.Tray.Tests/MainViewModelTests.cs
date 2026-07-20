@@ -1278,8 +1278,19 @@ public sealed class MainViewModelTests
                     OneShotLaptopControl.GamingMode,
                 },
             });
+        client.Publish(status);
+        await WaitUntilAsync(() => viewModel.SupportsFunctionKeyPrimary);
+
+        Assert.Equal("Checking", viewModel.FunctionKeyPrimaryStateLabel);
+        Assert.DoesNotContain("â", viewModel.FunctionKeyPrimaryStateLabel, StringComparison.Ordinal);
+        Assert.True(viewModel.IsFunctionKeyFieldLoading);
+        Assert.False(viewModel.CanEditFunctionKeyPrimary);
+        Assert.False(viewModel.ApplyOneShotLaptopControlCommand.CanExecute(
+            viewModel.FunctionKeysPrimaryAction));
+
         client.Publish(status with
         {
+            Revision = status.Revision + 1,
             StartupAnimationEnabled = true,
             FunctionKeyPrimary = FunctionKeyPrimaryMode.FunctionKeys,
             GamingModeEnabled = false,
@@ -1309,16 +1320,40 @@ public sealed class MainViewModelTests
         Assert.True(viewModel.StartupAnimationEnabled);
         Assert.True(viewModel.StartupAnimationToggleIsOn);
         Assert.Equal("Function keys", viewModel.FunctionKeyPrimaryStateLabel);
+        Assert.False(viewModel.IsFunctionKeyFieldLoading);
+        Assert.True(viewModel.CanEditFunctionKeyPrimary);
         Assert.False(viewModel.GamingModeToggleIsOn);
         var oneShot = new ApplyOneShotLaptopControl(
             OneShotLaptopControl.StartupAnimation,
             Enabled: false);
         Assert.True(viewModel.ApplyOneShotLaptopControlCommand.CanExecute(oneShot));
+        Assert.True(viewModel.ApplyOneShotLaptopControlCommand.CanExecute(
+            viewModel.MultimediaKeysPrimaryAction));
 
         await Assert.IsType<AsyncRelayCommand>(viewModel.ApplyOneShotLaptopControlCommand)
             .ExecuteAsync(oneShot);
 
         Assert.Equal(oneShot, client.OneShotLaptopControl);
+
+        client.Publish(status with
+        {
+            Revision = status.Revision + 2,
+            StartupAnimationEnabled = null,
+            FunctionKeyPrimary = null,
+            GamingModeEnabled = null,
+        });
+        await WaitUntilAsync(() => viewModel.IsFunctionKeyFieldLoading);
+
+        Assert.True(viewModel.IsStartupAnimationFieldLoading);
+        Assert.True(viewModel.IsGamingModeFieldLoading);
+        Assert.True(viewModel.StartupAnimationToggleIsOn);
+        Assert.Equal("Function keys", viewModel.FunctionKeyPrimaryStateLabel);
+        Assert.False(viewModel.GamingModeToggleIsOn);
+        Assert.False(viewModel.CanEditStartupAnimation);
+        Assert.False(viewModel.CanEditFunctionKeyPrimary);
+        Assert.False(viewModel.CanEditGamingMode);
+        Assert.False(viewModel.ApplyOneShotLaptopControlCommand.CanExecute(
+            viewModel.MultimediaKeysPrimaryAction));
     }
 
     [Fact]
@@ -2212,7 +2247,7 @@ public sealed class MainViewModelTests
             ["Battery", "Temperatures", "Fan 1 / Fan 2"],
             viewModel.VisibleDashboardTelemetryGroups.Select(item => item.Label));
         Assert.Equal(
-            "3,210 · 2,875 RPM",
+            "3,210 / 2,875 RPM",
             viewModel.VisibleDashboardTelemetryGroups.Single(
                 item => item.Label == "Fan 1 / Fan 2").Value);
         Assert.Contains(nameof(viewModel.BatteryPowerFlowLabel), changed);
@@ -2242,6 +2277,25 @@ public sealed class MainViewModelTests
         Assert.Contains(nameof(viewModel.Fan2RpmLabel), changed);
         Assert.Contains(nameof(viewModel.Fan1RpmValue), changed);
         Assert.Contains(nameof(viewModel.Fan2RpmValue), changed);
+    }
+
+    [Fact]
+    public async Task DashboardTelemetry_CollapsesUnavailableTemperatures()
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+
+        client.Publish(CreateStatus(verified: true, blocked: false) with
+        {
+            LiveReadings = new LiveReadings(null, 2200, 2100, null, null),
+        });
+        await WaitUntilAsync(() => viewModel.IsConnected);
+
+        LiveReadingGroupDisplayItem temperatures = Assert.Single(
+            viewModel.VisibleDashboardTelemetryGroups,
+            item => item.Label == "Temperatures");
+        Assert.Equal("Unavailable", temperatures.Value);
     }
 
     [Fact]

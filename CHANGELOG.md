@@ -7,6 +7,11 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Kept firmware-backed laptop behavior controls on their last known selection
+  while readback is loading, disabled them during the load, and removed a
+  mojibaked function-key fallback label.
+- Made dashboard live readings use consistent separators, collapse fully
+  unavailable temperatures to one label, and avoid a trailing item margin.
 - Added a telemetry-only observation path between ten-second full-state audits,
   avoiding repeated capability, firmware, and control-state reads on every
   visible refresh while still detecting settings changed elsewhere.

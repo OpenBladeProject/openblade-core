@@ -151,11 +151,23 @@ public sealed class WinUiShellContractTests
             xaml,
             StringComparison.Ordinal);
         Assert.Contains(
+            "IsEnabled=\"{x:Bind ViewModel.CanEditFunctionKeyPrimary, Mode=OneWay}\"",
+            xaml,
+            StringComparison.Ordinal);
+        Assert.Contains(
             "IsOn=\"{x:Bind ViewModel.GamingModeToggleIsOn, Mode=OneWay}\"",
             xaml,
             StringComparison.Ordinal);
         Assert.Contains(
+            "IsEnabled=\"{x:Bind ViewModel.CanEditGamingMode, Mode=OneWay}\"",
+            xaml,
+            StringComparison.Ordinal);
+        Assert.Contains(
             "IsOn=\"{x:Bind ViewModel.StartupAnimationToggleIsOn, Mode=OneWay}\"",
+            xaml,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "IsEnabled=\"{x:Bind ViewModel.CanEditStartupAnimation, Mode=OneWay}\"",
             xaml,
             StringComparison.Ordinal);
         Assert.Contains("Toggled=\"OnGamingModeToggled\"", xaml, StringComparison.Ordinal);
@@ -228,6 +240,19 @@ public sealed class WinUiShellContractTests
         Assert.Contains("Style=\"{StaticResource DestructiveButtonStyle}\"", xaml, StringComparison.Ordinal);
         Assert.Contains("SystemFillColorCriticalBrush", xaml, StringComparison.Ordinal);
         Assert.Contains("#47E10C", app, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void DashboardTelemetryUsesContainerSpacingWithoutTrailingItemMargin()
+    {
+        string xaml = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml");
+
+        Assert.Contains("x:Name=\"HeroReadings\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("ItemsStretch=\"None\"", xaml, StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            "<StackPanel Spacing=\"3\" Margin=\"0,0,22,0\">",
+            xaml,
+            StringComparison.Ordinal);
     }
 
     [Fact]

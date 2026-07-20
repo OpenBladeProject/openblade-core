@@ -490,7 +490,7 @@
                                             </ItemsRepeater.Layout>
                                             <ItemsRepeater.ItemTemplate>
                                                 <DataTemplate x:DataType="local:LiveReadingGroupDisplayItem">
-                                                    <StackPanel Spacing="3" Margin="0,0,22,0">
+                                                    <StackPanel Spacing="3">
                                                         <TextBlock Text="{x:Bind Label, Mode=OneTime}"
                                                                    Style="{StaticResource SecondaryTextStyle}" />
                                                         <TextBlock Text="{x:Bind Value, Mode=OneTime}"
@@ -1990,6 +1990,7 @@
                                             <DropDownButton Content="{x:Bind ViewModel.FunctionKeyPrimaryStateLabel, Mode=OneWay}"
                                                             HorizontalAlignment="Right"
                                                             VerticalAlignment="Center"
+                                                            IsEnabled="{x:Bind ViewModel.CanEditFunctionKeyPrimary, Mode=OneWay}"
                                                             AutomationProperties.Name="Set function key behavior">
                                                 <DropDownButton.Flyout>
                                                     <MenuFlyout>
@@ -2025,6 +2026,7 @@
                                                           HorizontalAlignment="Right"
                                                           VerticalAlignment="Center"
                                                           MinWidth="0"
+                                                          IsEnabled="{x:Bind ViewModel.CanEditGamingMode, Mode=OneWay}"
                                                           AutomationProperties.Name="Gaming Mode"
                                                           OffContent=""
                                                           OnContent=""
@@ -2053,6 +2055,7 @@
                                                           HorizontalAlignment="Right"
                                                           VerticalAlignment="Center"
                                                           MinWidth="0"
+                                                          IsEnabled="{x:Bind ViewModel.CanEditStartupAnimation, Mode=OneWay}"
                                                           AutomationProperties.Name="Startup animation"
                                                           OffContent=""
                                                           OnContent=""
