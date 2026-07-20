@@ -343,6 +343,8 @@ public sealed class WinUiShellContractTests
         Assert.Contains("UiAccessInputKeyboardSourceFactory", sessionProgram, StringComparison.Ordinal);
         Assert.Contains("WindowsReactiveKeyboardSourceFactory.Instance", sessionProgram, StringComparison.Ordinal);
         Assert.Contains("UiAccessSigningCertificateThumbprint", publish, StringComparison.Ordinal);
+        Assert.Contains("Resolve-SignToolPath", publish, StringComparison.Ordinal);
+        Assert.Contains("Windows Kits\\10\\bin", publish, StringComparison.Ordinal);
         Assert.Contains("signtool.exe", publish, StringComparison.Ordinal);
         Assert.Contains("Get-AuthenticodeSignature", publish, StringComparison.Ordinal);
         Assert.Contains("unsigned or invalid UIAccess input agent", validation, StringComparison.Ordinal);

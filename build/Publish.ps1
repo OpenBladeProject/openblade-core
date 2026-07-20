@@ -51,6 +51,36 @@ function Invoke-CheckedPublish {
     }
 }
 
+function Resolve-SignToolPath {
+    $pathCommand = Get-Command 'signtool.exe' -CommandType Application -ErrorAction SilentlyContinue
+    if ($null -ne $pathCommand) {
+        return $pathCommand.Source
+    }
+
+    $programFilesX86 = ${env:ProgramFiles(x86)}
+    if ([string]::IsNullOrWhiteSpace($programFilesX86)) {
+        $programFilesX86 = Join-Path $env:SystemDrive 'Program Files (x86)'
+    }
+
+    $windowsKitsBin = Join-Path $programFilesX86 'Windows Kits\10\bin'
+    if (Test-Path -LiteralPath $windowsKitsBin -PathType Container) {
+        $versionDirectories = @(Get-ChildItem -LiteralPath $windowsKitsBin -Directory |
+            Where-Object { $_.Name -match '^\d+\.\d+\.\d+\.\d+$' } |
+            Sort-Object { [version]$_.Name } -Descending)
+
+        foreach ($versionDirectory in $versionDirectories) {
+            foreach ($architecture in @('x64', 'x86', 'arm64')) {
+                $candidate = Join-Path $versionDirectory.FullName (Join-Path $architecture 'signtool.exe')
+                if (Test-Path -LiteralPath $candidate -PathType Leaf) {
+                    return $candidate
+                }
+            }
+        }
+    }
+
+    throw 'signtool.exe was not found. Install the Windows SDK or add signtool.exe to PATH before publishing the UIAccess input agent.'
+}
+
 function Publish-SignedUiAccessInputAgent {
     param([Parameter(Mandatory)][string]$Output)
 
@@ -83,7 +113,7 @@ function Publish-SignedUiAccessInputAgent {
         throw "OpenBlade UIAccess input-agent publish is missing: $executable"
     }
 
-    $signTool = Get-Command 'signtool.exe' -CommandType Application -ErrorAction Stop
+    $signTool = Resolve-SignToolPath
     $arguments = @('sign')
     if ([string]::Equals($UiAccessCertificateStore, 'LocalMachine', [StringComparison]::Ordinal)) {
         $arguments += '/sm'
@@ -95,7 +125,7 @@ function Publish-SignedUiAccessInputAgent {
         '/td', 'SHA256',
         $executable
     )
-    & $signTool.Source @arguments
+    & $signTool @arguments
     if ($LASTEXITCODE -ne 0) {
         throw "signtool failed with exit code $LASTEXITCODE for $executable"
     }
