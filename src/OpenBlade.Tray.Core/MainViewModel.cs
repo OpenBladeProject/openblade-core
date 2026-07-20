@@ -4545,8 +4545,13 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
 
     private void LoadLightingEditor(LightingSettings value)
     {
+        int brightness = value.Effect == LightingEffect.Off
+            ? 0
+            : value.Brightness == 0
+                ? DefaultLightingBrightness
+                : value.Brightness;
         SetField(ref lightingEffectEditor, value.Effect, nameof(LightingEffectEditor));
-        SetField(ref lightingBrightnessEditor, value.Brightness, nameof(LightingBrightnessEditor));
+        SetField(ref lightingBrightnessEditor, brightness, nameof(LightingBrightnessEditor));
         SetField(ref lightingRedEditor, (int)value.Color.Red, nameof(LightingRedEditor));
         SetField(ref lightingGreenEditor, (int)value.Color.Green, nameof(LightingGreenEditor));
         SetField(ref lightingBlueEditor, (int)value.Color.Blue, nameof(LightingBlueEditor));

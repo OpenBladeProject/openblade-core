@@ -1970,6 +1970,42 @@ public sealed class MainViewModelTests
     }
 
     [Fact]
+    public async Task VisibleLightingEditor_NormalizesZeroBrightnessToVisibleDefault()
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        ServiceStatusSnapshot initial = CreateStatus(
+            verified: true,
+            blocked: false,
+            capabilities: DeviceCapabilities.SafeTargetDefaults() with
+            {
+                LightingEffects = new HashSet<LightingEffect>(
+                    Enum.GetValues<LightingEffect>()),
+                ChargeLimits = ChargeLimits(),
+            });
+
+        client.Publish(initial with
+        {
+            ConfirmedState = initial.ConfirmedState! with
+            {
+                Lighting = LightingSettingsFactory.SpectrumCycling(0),
+            },
+            DesiredState = initial.DesiredState with
+            {
+                Lighting = new ResolvedSetting<LightingSettings>(
+                    LightingSettingsFactory.SpectrumCycling(0),
+                    SettingValueSource.PowerProfile),
+            },
+            LightingRendererOwnership = LightingRendererOwnershipState.Spectrum,
+        });
+        await WaitUntilAsync(() => viewModel.SelectedLighting.Effect == LightingEffect.Spectrum);
+
+        Assert.Equal(50, viewModel.LightingBrightnessEditor);
+        Assert.Equal(50, viewModel.LightingDraft.Brightness);
+    }
+
+    [Fact]
     public async Task SelectingHiddenDesiredEffectFromUnconfirmedStateAppliesVisibleDefault()
     {
         var client = new FakeServiceClient();
