@@ -149,6 +149,65 @@ public sealed class ReactiveKeyPulsePumpTests
     }
 
     [Fact]
+    public async Task Pump_RetriesAcceptedPulseAfterTransientSendFailure()
+    {
+        var delivered = new TaskCompletionSource(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        int attempts = 0;
+        var failures = new List<Exception>();
+        await using var pump = new ReactiveKeyPulsePump(
+            (pulse, _) =>
+            {
+                attempts++;
+                if (attempts == 1)
+                {
+                    throw new IOException("pipe reconnecting");
+                }
+
+                Assert.Equal(53, pulse.MatrixSlot);
+                delivered.TrySetResult();
+                return Task.CompletedTask;
+            },
+            errorHandler: failures.Add,
+            retryDelay: TimeSpan.Zero);
+
+        Assert.True(pump.TryEnqueue(new ReactiveKeyPulse(53)));
+
+        await delivered.Task.WaitAsync(TimeSpan.FromSeconds(2));
+        Assert.Equal(2, attempts);
+        Assert.Empty(failures);
+    }
+
+    [Fact]
+    public async Task Pump_ReportsOnceAfterBoundedRetryExhaustion()
+    {
+        var attemptsFinished = new TaskCompletionSource(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        int attempts = 0;
+        var failures = new List<Exception>();
+        await using var pump = new ReactiveKeyPulsePump(
+            (_, _) =>
+            {
+                attempts++;
+                if (attempts == 3)
+                {
+                    attemptsFinished.TrySetResult();
+                }
+
+                throw new InvalidOperationException("renderer inactive");
+            },
+            errorHandler: failures.Add,
+            retryDelay: TimeSpan.Zero);
+
+        Assert.True(pump.TryEnqueue(new ReactiveKeyPulse(71)));
+
+        await attemptsFinished.Task.WaitAsync(TimeSpan.FromSeconds(2));
+        await WaitUntilAsync(() => failures.Count == 1);
+        Assert.Equal(3, attempts);
+        Assert.Single(failures);
+    }
+
+    [Fact]
     public async Task Dispose_CancelsDeliveryAndRejectsNewPulses()
     {
         var started = new TaskCompletionSource(
@@ -222,6 +281,15 @@ public sealed class ReactiveKeyPulsePumpTests
         lock (sent)
         {
             Assert.Equal([19, 71], sent);
+        }
+    }
+
+    private static async Task WaitUntilAsync(Func<bool> condition)
+    {
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(2));
+        while (!condition())
+        {
+            await Task.Delay(10, timeout.Token);
         }
     }
 }

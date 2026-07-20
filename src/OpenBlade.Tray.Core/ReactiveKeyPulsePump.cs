@@ -11,10 +11,14 @@ namespace OpenBlade.Tray;
 public sealed class ReactiveKeyPulsePump : IAsyncDisposable
 {
     public const int DefaultCapacity = 256;
+    public const int DefaultMaxDeliveryAttempts = 3;
+    public static readonly TimeSpan DefaultRetryDelay = TimeSpan.FromMilliseconds(25);
 
     private readonly Func<ReactiveKeyPulse, CancellationToken, Task> sendAsync;
     private readonly Action<Exception>? errorHandler;
     private readonly int capacity;
+    private readonly int maxDeliveryAttempts;
+    private readonly TimeSpan retryDelay;
     private readonly Queue<ReactiveKeyPulse> pending = [];
     private readonly SemaphoreSlim signal = new(0);
     private readonly CancellationTokenSource lifetime = new();
@@ -26,16 +30,29 @@ public sealed class ReactiveKeyPulsePump : IAsyncDisposable
     public ReactiveKeyPulsePump(
         Func<ReactiveKeyPulse, CancellationToken, Task> sendAsync,
         int capacity = DefaultCapacity,
-        Action<Exception>? errorHandler = null)
+        Action<Exception>? errorHandler = null,
+        int maxDeliveryAttempts = DefaultMaxDeliveryAttempts,
+        TimeSpan? retryDelay = null)
     {
         this.sendAsync = sendAsync ?? throw new ArgumentNullException(nameof(sendAsync));
         if (capacity <= 0)
         {
             throw new ArgumentOutOfRangeException(nameof(capacity));
         }
+        if (maxDeliveryAttempts <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(maxDeliveryAttempts));
+        }
 
         this.capacity = capacity;
         this.errorHandler = errorHandler;
+        this.maxDeliveryAttempts = maxDeliveryAttempts;
+        this.retryDelay = retryDelay ?? DefaultRetryDelay;
+        if (this.retryDelay < TimeSpan.Zero)
+        {
+            throw new ArgumentOutOfRangeException(nameof(retryDelay));
+        }
+
         worker = RunAsync(lifetime.Token);
     }
 
@@ -115,9 +132,22 @@ public sealed class ReactiveKeyPulsePump : IAsyncDisposable
                 queued = pending.Dequeue();
             }
 
+            await SendWithBoundedRetryAsync(queued, cancellationToken)
+                .ConfigureAwait(false);
+        }
+    }
+
+    private async Task SendWithBoundedRetryAsync(
+        ReactiveKeyPulse queued,
+        CancellationToken cancellationToken)
+    {
+        Exception? lastFailure = null;
+        for (int attempt = 1; attempt <= maxDeliveryAttempts; attempt++)
+        {
             try
             {
                 await sendAsync(queued, cancellationToken).ConfigureAwait(false);
+                return;
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
@@ -125,8 +155,19 @@ public sealed class ReactiveKeyPulsePump : IAsyncDisposable
             }
             catch (Exception exception)
             {
-                errorHandler?.Invoke(exception);
+                lastFailure = exception;
+                if (attempt == maxDeliveryAttempts)
+                {
+                    break;
+                }
+
+                await Task.Delay(retryDelay, cancellationToken).ConfigureAwait(false);
             }
+        }
+
+        if (lastFailure is not null)
+        {
+            errorHandler?.Invoke(lastFailure);
         }
     }
 

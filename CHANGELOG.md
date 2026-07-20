@@ -25,6 +25,9 @@ All notable changes to OpenBlade are documented in this file. The project follow
 - Reused one ordered, idle-bounded IPC connection for Reactive and Ripple key
   bursts, discarded canceled exchanges before reuse, and kept the session Raw
   Input listener alive through transient status-stream failures.
+- Retried accepted Reactive and Ripple key pulses across brief service-send
+  failures instead of dropping the first pulse after a transient reconnect or
+  HID stall.
 - Preserved a healthy owned lighting renderer across temporary firmware-read
   failures so polling cannot flash the laptop unavailable or interrupt
   key-triggered effects.
