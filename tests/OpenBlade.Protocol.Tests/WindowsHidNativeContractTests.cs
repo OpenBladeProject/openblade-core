@@ -19,6 +19,8 @@ public sealed class WindowsHidNativeContractTests
         Assert.Equal(0x000B0192u, ReadConstant<uint>(type, "IoctlHidGetFeature"));
         Assert.Equal(997, ReadConstant<int>(type, "ErrorIoPending"));
         Assert.Equal(1168, ReadConstant<int>(type, "ErrorNotFound"));
+        Assert.Equal(122, ReadConstant<int>(type, "ErrorInsufficientBuffer"));
+        Assert.Equal(259, ReadConstant<int>(type, "ErrorNoMoreItems"));
 
         Assert.DoesNotContain(
             typeof(WindowsHidEnumerator).GetMethods(BindingFlags.Static | BindingFlags.NonPublic),
@@ -126,6 +128,21 @@ public sealed class WindowsHidNativeContractTests
             $"{separator}OpenBlade.Capture{separator}",
             candidateProbePath,
             StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void EnumerationSource_FailsClosedOnNonTerminalSetupApiErrors()
+    {
+        string source = File.ReadAllText(Path.Combine(
+            FindRepositoryRoot(),
+            "src",
+            "OpenBlade.Protocol",
+            "WindowsHidNative.cs"));
+
+        Assert.Contains("if (error == ErrorNoMoreItems)", source, StringComparison.Ordinal);
+        Assert.Contains("throw new Win32Exception(error);", source, StringComparison.Ordinal);
+        Assert.Contains("sizeError != ErrorInsufficientBuffer", source, StringComparison.Ordinal);
+        Assert.Contains("requiredSize < minimumSize", source, StringComparison.Ordinal);
     }
 
     [Fact]

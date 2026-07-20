@@ -104,6 +104,47 @@ public sealed class SessionDisplayServerTests
         Assert.True(connection.ReadCancellationObserved);
     }
 
+    [Fact]
+    public async Task ServeConnection_ClientDisconnectDuringResponseClosesOnlyThatConnection()
+    {
+        var dispatcher = new SessionDisplayRequestDispatcher(new RecordingApplier());
+        await using var owner = AcquireOwner();
+        await using var server = new SessionDisplayPipeServer(owner, dispatcher);
+        var request = new QueryDisplayRequest(
+            SessionDisplayIpc.ProtocolVersion,
+            Guid.NewGuid());
+        await using var requestBytes = new MemoryStream();
+        await SessionDisplayIpcCodec.WriteRequestAsync(requestBytes, request);
+        await using var connection = new DisconnectOnWriteStream(requestBytes.ToArray());
+
+        await server.ServeConnectionAsync(connection, CancellationToken.None);
+
+        Assert.True(connection.WriteAttempted);
+    }
+
+    [Fact]
+    public async Task ServeConnection_CancelsStalledDispatchWithoutStoppingServer()
+    {
+        var time = new ManualTimeProvider();
+        var applier = new BlockingQueryApplier();
+        var dispatcher = new SessionDisplayRequestDispatcher(applier);
+        await using var owner = AcquireOwner();
+        await using var server = new SessionDisplayPipeServer(owner, dispatcher, time);
+        var request = new QueryDisplayRequest(
+            SessionDisplayIpc.ProtocolVersion,
+            Guid.NewGuid());
+        await using var requestBytes = new MemoryStream();
+        await SessionDisplayIpcCodec.WriteRequestAsync(requestBytes, request);
+        await using var connection = new TestDuplexStream(requestBytes.ToArray());
+
+        Task serving = server.ServeConnectionAsync(connection, CancellationToken.None);
+        await applier.QueryStarted.Task.WaitAsync(TimeSpan.FromSeconds(2));
+        time.Advance(TimeSpan.FromSeconds(5));
+
+        await serving.WaitAsync(TimeSpan.FromSeconds(2));
+        Assert.True(applier.CancellationObserved);
+    }
+
     private static SessionAgentPipeOwner AcquireOwner()
     {
         SecurityIdentifier sid = WindowsIdentity.GetCurrent().User!;
@@ -184,6 +225,55 @@ public sealed class SessionDisplayServerTests
                     null)));
     }
 
+    private sealed class BlockingQueryApplier : IDisplayProfileApplier
+    {
+        public TaskCompletionSource QueryStarted { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public bool CancellationObserved { get; private set; }
+
+        public async Task<SessionDisplayExecutionResult> QueryAsync(
+            CancellationToken cancellationToken = default)
+        {
+            QueryStarted.TrySetResult();
+            try
+            {
+                await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+                throw new InvalidOperationException("The blocking query unexpectedly completed.");
+            }
+            catch (OperationCanceledException)
+            {
+                CancellationObserved = true;
+                throw;
+            }
+        }
+
+        public Task<SessionDisplayExecutionResult> SetRefreshRateAsync(
+            PowerSource expectedPowerSource,
+            string refreshRateKey,
+            CancellationToken cancellationToken = default) => throw new NotSupportedException();
+
+        public Task<SessionDisplayExecutionResult> SetHdrAsync(
+            PowerSource expectedPowerSource,
+            bool enabled,
+            CancellationToken cancellationToken = default) => throw new NotSupportedException();
+
+        public Task<SessionDisplayExecutionResult> SetColorProfileAsync(
+            PowerSource expectedPowerSource,
+            string colorProfileKey,
+            CancellationToken cancellationToken = default) => throw new NotSupportedException();
+
+        public Task<SessionDisplayExecutionResult> ApplyProfileAsync(
+            PowerSource expectedPowerSource,
+            DisplayProfileSettings settings,
+            CancellationToken cancellationToken = default) => throw new NotSupportedException();
+
+        public Task<SessionDisplayExecutionResult> ApplyProfileForTransitionAsync(
+            PowerSource expectedPowerSource,
+            long expectedGeneration,
+            DisplayProfileSettings settings,
+            CancellationToken cancellationToken) => throw new NotSupportedException();
+    }
+
     private sealed class TestDuplexStream(byte[] input) : Stream
     {
         private readonly MemoryStream reader = new(input, writable: false);
@@ -260,6 +350,51 @@ public sealed class SessionDisplayServerTests
         public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
         public override void SetLength(long value) => throw new NotSupportedException();
         public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+    }
+
+    private sealed class DisconnectOnWriteStream(byte[] input) : Stream
+    {
+        private readonly MemoryStream reader = new(input, writable: false);
+
+        public bool WriteAttempted { get; private set; }
+        public override bool CanRead => true;
+        public override bool CanSeek => false;
+        public override bool CanWrite => true;
+        public override long Length => throw new NotSupportedException();
+        public override long Position
+        {
+            get => throw new NotSupportedException();
+            set => throw new NotSupportedException();
+        }
+        public override int Read(byte[] buffer, int offset, int count) =>
+            reader.Read(buffer, offset, count);
+        public override ValueTask<int> ReadAsync(
+            Memory<byte> buffer,
+            CancellationToken token = default) => reader.ReadAsync(buffer, token);
+        public override void Flush() { }
+        public override Task FlushAsync(CancellationToken token) => Task.CompletedTask;
+        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+        public override void SetLength(long value) => throw new NotSupportedException();
+        public override void Write(byte[] buffer, int offset, int count)
+        {
+            WriteAttempted = true;
+            throw new IOException("The display client disconnected.");
+        }
+        public override ValueTask WriteAsync(
+            ReadOnlyMemory<byte> buffer,
+            CancellationToken token = default)
+        {
+            WriteAttempted = true;
+            return ValueTask.FromException(new IOException("The display client disconnected."));
+        }
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing)
+            {
+                reader.Dispose();
+            }
+            base.Dispose(disposing);
+        }
     }
 
     private sealed class ManualTimeProvider : TimeProvider

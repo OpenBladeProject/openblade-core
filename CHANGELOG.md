@@ -7,6 +7,18 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Added a telemetry-only observation path between ten-second full-state audits,
+  avoiding repeated capability, firmware, and control-state reads on every
+  visible refresh while still detecting settings changed elsewhere.
+- Applied separate bounded deadlines to display-agent connection, query,
+  mutation, and response phases, and contained client disconnects or stalls to
+  one connection so they cannot stop the other session-agent features.
+- Enforced an 800 by 600 DIP minimum window size without exceeding the current
+  display's usable work area at high scaling.
+- Serialized Reactive and Ripple failure-state publication with normal service
+  operations so concurrent status revisions cannot overwrite each other.
+- Rejected non-terminal SetupAPI enumeration failures and invalid HID detail
+  sizes instead of treating a partial device list as complete.
 - Reused one ordered, idle-bounded IPC connection for Reactive and Ripple key
   bursts, discarded canceled exchanges before reuse, and kept the session Raw
   Input listener alive through transient status-stream failures.

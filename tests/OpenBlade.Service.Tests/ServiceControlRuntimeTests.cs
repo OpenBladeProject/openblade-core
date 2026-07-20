@@ -3581,6 +3581,8 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         Assert.True(context.Runtime.GetStatus().DeviceVerified);
         Assert.Equal(1, context.Device.FanRpmReadCalls);
         Assert.Equal(1, temperatures.ReadCount);
+        int capabilityReads = context.Device.CapabilitiesReadCalls;
+        int stateReads = context.Device.StateReadCalls;
 
         context.Device.FanRpmFailure = new IOException("fan telemetry unavailable");
         await context.Runtime.ObserveAsync(includeLiveReadings: true, CancellationToken.None);
@@ -3594,6 +3596,38 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         Assert.Equal("Verified device state observed.", context.Runtime.GetStatus().Message);
         Assert.Equal(2, context.Device.FanRpmReadCalls);
         Assert.Equal(2, temperatures.ReadCount);
+        Assert.Equal(capabilityReads, context.Device.CapabilitiesReadCalls);
+        Assert.Equal(stateReads, context.Device.StateReadCalls);
+    }
+
+    [Fact]
+    public async Task LiveReadingsFastPath_DeviceMissForcesNextPollThroughFullObservation()
+    {
+        TestContext context = CreateContext(providerAvailable: true);
+        await context.Runtime.ObserveAsync(
+            includeLiveReadings: true,
+            CancellationToken.None);
+        int capabilityReads = context.Device.CapabilitiesReadCalls;
+
+        context.Provider.Available = false;
+        await context.Runtime.ObserveAsync(
+            includeLiveReadings: true,
+            CancellationToken.None);
+
+        Assert.True(context.Runtime.GetStatus().DeviceVerified);
+        Assert.False(context.Runtime.GetStatus().WritesBlocked);
+        Assert.Contains(
+            "temporary device-access failure",
+            context.Runtime.GetStatus().Message,
+            StringComparison.OrdinalIgnoreCase);
+
+        await context.Runtime.ObserveAsync(
+            includeLiveReadings: true,
+            CancellationToken.None);
+
+        Assert.False(context.Runtime.GetStatus().DeviceVerified);
+        Assert.True(context.Runtime.GetStatus().WritesBlocked);
+        Assert.Equal(capabilityReads, context.Device.CapabilitiesReadCalls);
     }
 
     [Fact]

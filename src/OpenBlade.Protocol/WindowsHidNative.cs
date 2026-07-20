@@ -58,6 +58,8 @@ internal sealed partial class WindowsHidNative : IHidCandidateNative, IOverlappe
     private const int ErrorIoPending = 997;
     private const int ErrorNotFound = 1168;
     private const int ErrorInvalidParameter = 87;
+    private const int ErrorInsufficientBuffer = 122;
+    private const int ErrorNoMoreItems = 259;
     private const uint Present = 0x00000002;
     private const uint DeviceInterface = 0x00000010;
     private readonly IWindowsHidKernel kernel;
@@ -342,17 +344,34 @@ internal sealed partial class WindowsHidNative : IHidCandidateNative, IOverlappe
             index,
             ref interfaceData))
         {
+            int error = Marshal.GetLastWin32Error();
             devicePath = null;
-            return false;
+            if (error == ErrorNoMoreItems)
+            {
+                return false;
+            }
+
+            throw new Win32Exception(error);
         }
 
-        _ = SetupDiGetDeviceInterfaceDetail(
+        bool sizeRead = SetupDiGetDeviceInterfaceDetail(
             deviceSet,
             ref interfaceData,
             IntPtr.Zero,
             0,
             out uint requiredSize,
             IntPtr.Zero);
+        int sizeError = Marshal.GetLastWin32Error();
+        uint minimumSize = checked((uint)(IntPtr.Size == 8 ? 8 : 6));
+        if (sizeRead
+            || sizeError != ErrorInsufficientBuffer
+            || requiredSize < minimumSize
+            || requiredSize > int.MaxValue)
+        {
+            throw new Win32Exception(
+                sizeError == 0 ? ErrorInvalidParameter : sizeError);
+        }
+
         IntPtr detail = Marshal.AllocHGlobal(checked((int)requiredSize));
         try
         {

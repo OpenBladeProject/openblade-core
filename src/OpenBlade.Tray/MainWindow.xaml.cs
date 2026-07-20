@@ -474,11 +474,17 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
             }
 
             SizeInt32 size = sender.Size;
+            DisplayArea displayArea = DisplayArea.GetFromWindowId(
+                sender.Id,
+                DisplayAreaFallback.Primary);
+            RectInt32 workArea = displayArea.WorkArea;
             PixelRect constrained = WindowPlacementPolicy.EnforceMinimumSize(
                 new PixelRect(0, 0, size.Width, size.Height),
                 MinimumWidthDip,
                 MinimumHeightDip,
-                checked((int)nativeDpi));
+                checked((int)nativeDpi),
+                workArea.Width,
+                workArea.Height);
             if (constrained.Width == size.Width && constrained.Height == size.Height)
             {
                 return;

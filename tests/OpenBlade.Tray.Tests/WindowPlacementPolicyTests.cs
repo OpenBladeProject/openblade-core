@@ -23,6 +23,20 @@ public sealed class WindowPlacementPolicyTests
     }
 
     [Fact]
+    public void EnforceMinimumSize_NeverExceedsUsableWorkArea()
+    {
+        PixelRect result = WindowPlacementPolicy.EnforceMinimumSize(
+            new PixelRect(10, 20, 600, 400),
+            800,
+            600,
+            192,
+            maximumWidth: 1200,
+            maximumHeight: 900);
+
+        Assert.Equal(new PixelRect(10, 20, 1200, 900), result);
+    }
+
+    [Fact]
     public void Center_ConvertsDipsThroughDpiAndCentersInsideWorkArea()
     {
         PixelRect result = WindowPlacementPolicy.Center(

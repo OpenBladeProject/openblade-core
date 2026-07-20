@@ -118,10 +118,9 @@ internal static class ProductionLightingEvidenceSource
         "OpenBladeLightingImplementationFingerprint";
 
     private const string ApprovedLightingImplementationFingerprintSha256 =
-        // Re-reviewed after host-rendered fades moved to a smoother 30 fps
-        // presentation cadence. The single matrix writer, transport, oracle,
-        // admitted commands, and captured effect timelines are unchanged.
-        "0989EBB1F519540288F9CE066D5D1D28BD214BF649047E1404EC356E27E249C8";
+        // Re-reviewed after SetupAPI enumeration was made fail-closed.
+        // Command bytes, effect timelines, and the single matrix writer are unchanged.
+        "F8415BB9467FE693B7CDFBF178706A015B470C69DDA24014400560ADAAF36568";
 
     private static readonly JsonSerializerOptions SerializerOptions =
         new(JsonSerializerDefaults.Web)

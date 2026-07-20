@@ -7,6 +7,8 @@ public sealed class SessionDisplayPipeServer : IAsyncDisposable
 {
     private static readonly TimeSpan FrameReadTimeout = TimeSpan.FromSeconds(2);
     private static readonly TimeSpan FrameWriteTimeout = TimeSpan.FromSeconds(2);
+    private static readonly TimeSpan QueryDispatchTimeout = TimeSpan.FromSeconds(5);
+    private static readonly TimeSpan MutationDispatchTimeout = TimeSpan.FromSeconds(30);
     private readonly SessionAgentPipeOwner owner;
     private readonly SessionDisplayRequestDispatcher dispatcher;
     private readonly TimeProvider timeProvider;
@@ -65,17 +67,53 @@ public sealed class SessionDisplayPipeServer : IAsyncDisposable
             return;
         }
 
-        SessionDisplayResponse response = await dispatcher.DispatchAsync(
-            request,
-            cancellationToken).ConfigureAwait(false);
-        using var deadline = new CancellationTokenSource(FrameWriteTimeout, timeProvider);
-        using CancellationTokenSource linked = CancellationTokenSource.CreateLinkedTokenSource(
+        SessionDisplayResponse response;
+        using (var dispatchDeadline = new CancellationTokenSource(
+            request is QueryDisplayRequest ? QueryDispatchTimeout : MutationDispatchTimeout,
+            timeProvider))
+        using (CancellationTokenSource dispatchToken =
+            CancellationTokenSource.CreateLinkedTokenSource(
+                cancellationToken,
+                dispatchDeadline.Token))
+        {
+            try
+            {
+                response = await dispatcher.DispatchAsync(
+                    request,
+                    dispatchToken.Token).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (
+                dispatchDeadline.IsCancellationRequested
+                && !cancellationToken.IsCancellationRequested)
+            {
+                // A stalled native display operation ends this request without
+                // terminating the session agent or blocking later clients.
+                return;
+            }
+        }
+
+        using var writeDeadline = new CancellationTokenSource(FrameWriteTimeout, timeProvider);
+        using CancellationTokenSource writeToken = CancellationTokenSource.CreateLinkedTokenSource(
             cancellationToken,
-            deadline.Token);
-        await SessionDisplayIpcCodec.WriteResponseAsync(
-            connection,
-            response,
-            linked.Token).ConfigureAwait(false);
+            writeDeadline.Token);
+        try
+        {
+            await SessionDisplayIpcCodec.WriteResponseAsync(
+                connection,
+                response,
+                writeToken.Token).ConfigureAwait(false);
+        }
+        catch (IOException)
+        {
+            // The client can close after submitting a valid request but before
+            // reading the reply. That ends only this connection, not the agent.
+        }
+        catch (OperationCanceledException) when (
+            writeDeadline.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
+        {
+            // A client that stops reading must not hold the display server or
+            // terminate the other session-agent features.
+        }
     }
 
     private async Task<SessionDisplayRequest> ReadRequestAsync(

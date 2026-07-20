@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using OpenBlade.Contracts;
 using OpenBlade.Protocol;
 
@@ -127,6 +128,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         typeof(ServiceControlRuntime).Assembly);
     private static readonly TimeSpan PowerTransitionAccessRetryDelay =
         TimeSpan.FromMilliseconds(750);
+    private static readonly TimeSpan FullObservationInterval = TimeSpan.FromSeconds(10);
     private static readonly ConfirmedDeviceState UnknownConfirmedState =
         new(null, null, null, null);
     private static readonly DeviceCapabilities UnavailableCapabilities =
@@ -160,6 +162,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
     private int? lastCurveFan2Rpm;
     private int consecutiveDeviceProbeFailures;
     private int consecutiveVerifiedAccessFailures;
+    private bool fullObservationCompleted;
+    private long lastFullObservationTimestamp;
 
     public ServiceControlRuntime(
         BatteryConfigurationStore store,
@@ -865,9 +869,21 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         {
             if (device is not null)
             {
-                await PublishObservedLightingOwnershipAsync(
-                    device,
-                    CancellationToken.None).ConfigureAwait(false);
+                // Successful pulses intentionally bypass the general operation
+                // gate for latency. A failure changes shared status, so merge
+                // that observation through the serialized state path instead
+                // of racing an unrelated observation or mutation publisher.
+                await operationGate.WaitAsync(token).ConfigureAwait(false);
+                try
+                {
+                    await PublishObservedLightingOwnershipAsync(
+                        device,
+                        token).ConfigureAwait(false);
+                }
+                finally
+                {
+                    operationGate.Release();
+                }
             }
             return new ControlOperationResult(
                 ControlOperationStatus.Failed,
@@ -1300,12 +1316,25 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             else
             {
                 bool powerSourceConfirmed = powerSource != PowerSource.ExternalUnknown;
-                await ObserveCoreAsync(
-                    PowerSourceForStatus(powerSource),
-                    powerSourceConfirmed,
+                PowerSource statusPowerSource = PowerSourceForStatus(powerSource);
+                if (CanUseObservationFastPath(
                     includeLiveReadings,
-                    batteryPowerFlow,
-                    cancellationToken);
+                    powerSourceConfirmed))
+                {
+                    await ObserveFastPathAsync(
+                        statusPowerSource,
+                        batteryPowerFlow,
+                        cancellationToken).ConfigureAwait(false);
+                }
+                else
+                {
+                    await ObserveCoreAsync(
+                        statusPowerSource,
+                        powerSourceConfirmed,
+                        includeLiveReadings,
+                        batteryPowerFlow,
+                        cancellationToken).ConfigureAwait(false);
+                }
             }
         }
         finally
@@ -2318,6 +2347,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         cancellationToken.ThrowIfCancellationRequested();
         if (!deviceAvailable)
         {
+            fullObservationCompleted = false;
             consecutiveVerifiedAccessFailures = 0;
             cancellationToken.ThrowIfCancellationRequested();
             if (GetStatus().DeviceVerified
@@ -2397,6 +2427,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             cancellationToken.ThrowIfCancellationRequested();
             ObserveAutomaticState(confirmed);
             consecutiveVerifiedAccessFailures = 0;
+            fullObservationCompleted = true;
+            lastFullObservationTimestamp = Stopwatch.GetTimestamp();
             PublishIfChanged(GetStatus() with
             {
                 DeviceVerified = true,
@@ -2444,6 +2476,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         }
         catch (Exception exception)
         {
+            fullObservationCompleted = false;
             cancellationToken.ThrowIfCancellationRequested();
             string message = $"Verified device access failed: {exception.Message}";
             ServiceStatusSnapshot current = GetStatus();
@@ -2471,6 +2504,92 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 ControlOperationStatus.Failed,
                 GetStatus().Message);
         }
+    }
+
+    private bool CanUseObservationFastPath(
+        bool includeLiveReadings,
+        bool powerSourceConfirmed)
+    {
+        ServiceStatusSnapshot current = GetStatus();
+        return includeLiveReadings
+            && powerSourceConfirmed
+            && current.DeviceVerified
+            && !current.WritesBlocked
+            && fullObservationCompleted
+            && Stopwatch.GetElapsedTime(lastFullObservationTimestamp)
+                < FullObservationInterval;
+    }
+
+    private async Task ObserveFastPathAsync(
+        PowerSource powerSource,
+        int? batteryPowerFlowMilliwatts,
+        CancellationToken cancellationToken)
+    {
+        ServiceStatusSnapshot current = GetStatus();
+        if (!deviceProvider.TryGetVerifiedDevice(out IBladeDevice device))
+        {
+            // Preserve the existing one-miss debounce, but force the next poll
+            // through the full observation path so stale availability and
+            // renderer ownership cannot survive until the audit interval.
+            fullObservationCompleted = false;
+            consecutiveVerifiedAccessFailures = 0;
+            if (current.DeviceVerified && ++consecutiveDeviceProbeFailures < 2)
+            {
+                PublishTransientDeviceProbeFailure(
+                    powerSource,
+                    new LiveReadings(batteryPowerFlowMilliwatts, null, null));
+            }
+            else
+            {
+                PublishObservationUnavailable(
+                    powerSource,
+                    new LiveReadings(batteryPowerFlowMilliwatts, null, null),
+                    "No verified PID 02E0 device is available.");
+            }
+            return;
+        }
+
+        consecutiveDeviceProbeFailures = 0;
+        FanRpmReadings? fans = null;
+        FanTemperatureReadings temperatures = default;
+        try
+        {
+            fans = await device.ReadFanRpmAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch
+        {
+            // Keep the confirmed control state while one optional sensor is unavailable.
+        }
+
+        try
+        {
+            temperatures = await fanTemperatureSource.ReadAsync(cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch
+        {
+            // Keep the confirmed control state while one optional sensor is unavailable.
+        }
+
+        cancellationToken.ThrowIfCancellationRequested();
+        PublishIfChanged(GetStatus() with
+        {
+            ActivePowerSource = powerSource,
+            LiveReadings = new LiveReadings(
+                batteryPowerFlowMilliwatts,
+                fans?.Selector1Rpm,
+                fans?.Selector2Rpm,
+                temperatures.CpuCelsius,
+                temperatures.GpuCelsius),
+        });
     }
 
     private static async Task<ConfirmedDeviceState> ReadObservedStateAsync(

@@ -11,18 +11,38 @@ public static class WindowPlacementPolicy
         PixelRect current,
         double minimumWidthDip,
         double minimumHeightDip,
-        int dpi)
+        int dpi) => EnforceMinimumSize(
+            current,
+            minimumWidthDip,
+            minimumHeightDip,
+            dpi,
+            int.MaxValue,
+            int.MaxValue);
+
+    public static PixelRect EnforceMinimumSize(
+        PixelRect current,
+        double minimumWidthDip,
+        double minimumHeightDip,
+        int dpi,
+        int maximumWidth,
+        int maximumHeight)
     {
         ValidateDip(minimumWidthDip, nameof(minimumWidthDip));
         ValidateDip(minimumHeightDip, nameof(minimumHeightDip));
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(dpi);
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(current.Width);
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(current.Height);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(maximumWidth);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(maximumHeight);
 
         return current with
         {
-            Width = Math.Max(current.Width, ScaleToPixels(minimumWidthDip, dpi)),
-            Height = Math.Max(current.Height, ScaleToPixels(minimumHeightDip, dpi)),
+            Width = Math.Min(
+                Math.Max(current.Width, ScaleToPixels(minimumWidthDip, dpi)),
+                maximumWidth),
+            Height = Math.Min(
+                Math.Max(current.Height, ScaleToPixels(minimumHeightDip, dpi)),
+                maximumHeight),
         };
     }
 

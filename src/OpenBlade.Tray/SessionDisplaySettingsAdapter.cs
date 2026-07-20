@@ -9,6 +9,8 @@ namespace OpenBlade.Tray;
 internal sealed class SessionDisplaySettingsAdapter : IDisplaySettingsAdapter
 {
     private static readonly TimeSpan ConnectionTimeout = TimeSpan.FromSeconds(2);
+    private static readonly TimeSpan QueryTimeout = TimeSpan.FromSeconds(8);
+    private static readonly TimeSpan MutationTimeout = TimeSpan.FromSeconds(35);
     private readonly string pipeName;
 
     internal SessionDisplaySettingsAdapter()
@@ -80,19 +82,27 @@ internal sealed class SessionDisplaySettingsAdapter : IDisplaySettingsAdapter
             pipeName,
             PipeDirection.InOut,
             PipeOptions.Asynchronous);
-        using var connectionDeadline = CancellationTokenSource.CreateLinkedTokenSource(
-            cancellationToken);
-        connectionDeadline.CancelAfter(ConnectionTimeout);
         try
         {
-            await pipe.ConnectAsync(connectionDeadline.Token).ConfigureAwait(false);
+            using (var connectionDeadline = CancellationTokenSource.CreateLinkedTokenSource(
+                cancellationToken))
+            {
+                connectionDeadline.CancelAfter(ConnectionTimeout);
+                await pipe.ConnectAsync(connectionDeadline.Token).ConfigureAwait(false);
+            }
+
+            using var exchangeDeadline = CancellationTokenSource.CreateLinkedTokenSource(
+                cancellationToken);
+            exchangeDeadline.CancelAfter(request is QueryDisplayRequest
+                ? QueryTimeout
+                : MutationTimeout);
             await SessionDisplayIpcCodec.WriteRequestAsync(
                 pipe,
                 request,
-                cancellationToken).ConfigureAwait(false);
+                exchangeDeadline.Token).ConfigureAwait(false);
             SessionDisplayResponse response = await SessionDisplayIpcCodec.ReadResponseAsync(
                 pipe,
-                cancellationToken).ConfigureAwait(false);
+                exchangeDeadline.Token).ConfigureAwait(false);
             if (response.RequestId != requestId)
             {
                 throw new InvalidDataException(
@@ -102,8 +112,7 @@ internal sealed class SessionDisplaySettingsAdapter : IDisplaySettingsAdapter
             return Map(response);
         }
         catch (OperationCanceledException) when (
-            !cancellationToken.IsCancellationRequested
-            && connectionDeadline.IsCancellationRequested)
+            !cancellationToken.IsCancellationRequested)
         {
             return Unavailable("The display session agent is not responding.");
         }
