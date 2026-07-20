@@ -90,6 +90,13 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Changed
 
+- Dashboard fan telemetry now presents the two channels as a clear
+  `Fan 1 / Fan 2` pair, profile comparisons name lighting triggers and outcomes
+  explicitly, and the taskbar hover list can omit the OpenBlade app name.
+- Fan mode changes remain visibly pending with a progress ring, and direct
+  Fixed Fan Speed to Manual Fan Curve transitions re-arm the captured manual
+  state before applying the new target.
+
 - Dashboard live readings now use three compact semantic groups for Battery,
   Temperatures, and Fans while retaining individual visibility controls.
 - Taskbar hover content exposes Power source and Power mode as separate,

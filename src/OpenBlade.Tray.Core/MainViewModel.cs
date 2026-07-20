@@ -136,6 +136,8 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     private CustomPerformanceLevel selectedCustomCpuLevel = CustomPerformanceLevel.Medium;
     private CustomPerformanceLevel selectedCustomGpuLevel = CustomPerformanceLevel.High;
     private FanMode selectedFanMode = FanMode.Automatic;
+    private FanControlSettings? pendingFanControl;
+    private bool isFanControlOperationInProgress;
     private int fixedFanSpeedRpm = FanControlSettings.Default.FixedSpeedRpm;
     private bool useHigherFanTemperature = true;
     private IReadOnlyList<FanCurveEditorPoint> cpuFanCurveEditorPoints =
@@ -594,14 +596,20 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             string fanValue = (showFan1, showFan2) switch
             {
                 (true, true) =>
-                    $"1: {Fan1RpmValue.Replace(" RPM", string.Empty, StringComparison.Ordinal)} · 2: {Fan2RpmValue}",
-                (true, false) => $"Fan 1 {Fan1RpmValue}",
-                (false, true) => $"Fan 2 {Fan2RpmValue}",
+                    $"{Fan1RpmValue.Replace(" RPM", string.Empty, StringComparison.Ordinal)} / {Fan2RpmValue}",
+                (true, false) => Fan1RpmValue,
+                (false, true) => Fan2RpmValue,
                 _ => string.Empty,
             };
             if (fanValue.Length > 0)
             {
-                groups.Add(new LiveReadingGroupDisplayItem("Fans", fanValue));
+                string label = (showFan1, showFan2) switch
+                {
+                    (true, true) => "Fan 1 / Fan 2",
+                    (true, false) => "Fan 1",
+                    _ => "Fan 2",
+                };
+                groups.Add(new LiveReadingGroupDisplayItem(label, fanValue));
             }
             return groups;
         }
@@ -1295,6 +1303,12 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
 
     public bool IsManualFanCurveVisible => SelectedFanMode == FanMode.ManualCurve;
 
+    public bool IsFanControlOperationInProgress
+    {
+        get => isFanControlOperationInProgress;
+        private set => SetField(ref isFanControlOperationInProgress, value);
+    }
+
     public FanControlSettings CurrentFanControlSettings => new(
         SelectedFanMode,
         FixedFanSpeedRpm,
@@ -1868,13 +1882,13 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     public string LightingDisplayOffPolicyPresentation =>
         GetPresentedProfile(SelectedProfileComparisonOption.Source)
             .EffectiveLightingPowerPolicy.TurnOffWhenDisplayTurnsOff
-            ? "Turn off with the display"
-            : "Keep on with the display off";
+            ? "Turn lighting off"
+            : "Keep lighting on";
 
     public string LightingIdlePolicyPresentation =>
         GetPresentedProfile(SelectedProfileComparisonOption.Source)
             .EffectiveLightingPowerPolicy.IdleTimeoutMinutes is int minutes
-            ? $"After {minutes.ToString(CultureInfo.CurrentCulture)} minutes"
+            ? $"{minutes.ToString(CultureInfo.CurrentCulture)} minutes"
             : "Never";
 
     public bool IsSelectedProfileActive =>
@@ -2993,9 +3007,11 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         FunctionKeyPrimary = status.FunctionKeyPrimary;
         GamingModeEnabled = status.GamingModeEnabled;
         SelectedPerformance = ResolvePresentedPerformance(status, confirmed, capabilities);
-        SelectedFanMode = ResolvePresentedFanMode(status, confirmed, capabilities);
+        SelectedFanMode = pendingFanControl?.Mode
+            ?? ResolvePresentedFanMode(status, confirmed, capabilities);
         LoadFanControlEditor(
-            status.FanControlOverride
+            pendingFanControl
+            ?? status.FanControlOverride
             ?? status.DesiredState.FanControl
             ?? FanControlSettings.FromLegacy(SelectedFanMode));
         PrepareLightingEditorForPowerSource(status.ActivePowerSource);
@@ -3393,31 +3409,51 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     private Task SetFanControlAsync(object? parameter, CancellationToken token) =>
         ApplyFanControlAsync((FanControlSettings)parameter!, token);
 
-    private Task ApplyFanControlAsync(
+    private async Task ApplyFanControlAsync(
         FanControlSettings requested,
         CancellationToken token)
     {
         PowerSource sourceAtStart = ActivePowerSource;
-        return RunOperationAsync(
-            cancellationToken => serviceClient.SetFanControlOverrideAsync(
-                new ManualOverride<FanMode>(
-                    requested.Mode,
-                    OverrideLifetime.UntilPowerSourceChange),
-                requested,
-                cancellationToken),
-            token,
-            result =>
-            {
-                if (result.Status == ControlOperationStatus.Applied)
+        FanControlSettings previous = CurrentFanControlSettings;
+        bool applied = false;
+        pendingFanControl = requested;
+        IsFanControlOperationInProgress = true;
+        SelectedFanMode = requested.Mode;
+        LoadFanControlEditor(requested);
+        try
+        {
+            await RunOperationAsync(
+                cancellationToken => serviceClient.SetFanControlOverrideAsync(
+                    new ManualOverride<FanMode>(
+                        requested.Mode,
+                        OverrideLifetime.UntilPowerSourceChange),
+                    requested,
+                    cancellationToken),
+                token,
+                result =>
                 {
-                    SelectedFanMode = requested.Mode;
-                    LoadFanControlEditor(requested);
-                    MarkActiveProfileDraft(
-                        sourceAtStart,
-                        fans: requested.Mode,
-                        fanControl: requested);
-                }
-            });
+                    if (result.Status == ControlOperationStatus.Applied)
+                    {
+                        applied = true;
+                        SelectedFanMode = requested.Mode;
+                        LoadFanControlEditor(requested);
+                        MarkActiveProfileDraft(
+                            sourceAtStart,
+                            fans: requested.Mode,
+                            fanControl: requested);
+                    }
+                });
+        }
+        finally
+        {
+            pendingFanControl = null;
+            IsFanControlOperationInProgress = false;
+            if (!applied)
+            {
+                SelectedFanMode = previous.Mode;
+                LoadFanControlEditor(previous);
+            }
+        }
     }
 
     private async Task SetLightingAsync(object? parameter, CancellationToken token)
@@ -4892,10 +4928,10 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
                 _ => "Use current",
             },
             profile.EffectiveLightingPowerPolicy.TurnOffWhenDisplayTurnsOff
-                ? "Turn off with the display"
-                : "Keep on with the display off",
+                ? "Turn lighting off"
+                : "Keep lighting on",
             profile.EffectiveLightingPowerPolicy.IdleTimeoutMinutes is int minutes
-                ? $"After {minutes.ToString(CultureInfo.CurrentCulture)} minutes"
+                ? $"{minutes.ToString(CultureInfo.CurrentCulture)} minutes"
                 : "Never",
             FormatDisplayRefreshRate(display.RefreshRateKey),
             display.HdrEnabled switch
@@ -5420,6 +5456,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     private static string TrayHoverLabelItemLabel(TrayHoverLabelItemKind kind) => kind switch
     {
         TrayHoverLabelItemKind.ActiveProfile => "Active profile",
+        TrayHoverLabelItemKind.AppName => "OpenBlade app name",
         TrayHoverLabelItemKind.PowerSource => "Power source",
         TrayHoverLabelItemKind.PowerMode => "Power mode",
         TrayHoverLabelItemKind.BatteryPower => "Battery power",
@@ -5578,6 +5615,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         HashSet<TrayHoverLabelItemKind> enabled = TrayHoverLabelItems
             .Where(option => option.IsEnabled)
             .Select(option => option.Kind)
+            .Where(kind => kind != TrayHoverLabelItemKind.AppName)
             .ToHashSet();
         TrayHoverLabelMode mode = enabled.SetEquals(
                 [

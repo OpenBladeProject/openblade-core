@@ -23,6 +23,7 @@ public enum TrayHoverLabelItemKind
     Fan2Speed,
     PowerSource,
     PowerMode,
+    AppName,
 }
 
 public sealed record TrayHoverLabelItemPreference(
@@ -116,6 +117,7 @@ public static class TelemetryPreferenceDefaults
 
     public static readonly TrayHoverLabelItemPreference[] TrayHoverItems =
     [
+        new(TrayHoverLabelItemKind.AppName, true),
         new(TrayHoverLabelItemKind.PowerSource, true),
         new(TrayHoverLabelItemKind.PowerMode, true),
         new(TrayHoverLabelItemKind.BatteryPower, true),
@@ -178,7 +180,20 @@ public static class TelemetryPreferenceDefaults
         {
             if (!supplied.Contains(fallback.Kind))
             {
-                normalized.Add(fallback with { IsEnabled = false });
+                TrayHoverLabelItemPreference migrated = fallback with
+                {
+                    // Preserve the existing label for users upgrading from a
+                    // preferences schema that predates the app-name option.
+                    IsEnabled = fallback.Kind == TrayHoverLabelItemKind.AppName,
+                };
+                if (fallback.Kind == TrayHoverLabelItemKind.AppName)
+                {
+                    normalized.Insert(0, migrated);
+                }
+                else
+                {
+                    normalized.Add(migrated);
+                }
             }
         }
         return normalized;
@@ -196,6 +211,7 @@ public static class TelemetryPreferenceDefaults
             {
                 IsEnabled = item.Kind switch
                 {
+                    TrayHoverLabelItemKind.AppName => true,
                     TrayHoverLabelItemKind.PowerSource => profile,
                     TrayHoverLabelItemKind.PowerMode => profile,
                     TrayHoverLabelItemKind.BatteryPower => power,

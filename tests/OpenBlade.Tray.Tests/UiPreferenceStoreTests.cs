@@ -69,6 +69,7 @@ public sealed class UiPreferenceStoreTests : IDisposable
             reloaded.EffectiveDashboardTelemetryItems);
         Assert.Equal(
             [
+                TrayHoverLabelItemKind.AppName,
                 TrayHoverLabelItemKind.GpuTemperature,
                 TrayHoverLabelItemKind.PowerSource,
                 TrayHoverLabelItemKind.PowerMode,
@@ -79,7 +80,7 @@ public sealed class UiPreferenceStoreTests : IDisposable
             ],
             reloaded.EffectiveTrayHoverLabelItems.Select(item => item.Kind));
         Assert.Equal(
-            [true, true, true, false, false, false, false],
+            [true, true, true, true, false, false, false, false],
             reloaded.EffectiveTrayHoverLabelItems.Select(item => item.IsEnabled));
         Assert.Equal("Dark", document.RootElement.GetProperty("theme").GetString());
         Assert.False(document.RootElement.TryGetProperty(
@@ -181,9 +182,12 @@ public sealed class UiPreferenceStoreTests : IDisposable
             powerEnabled,
             preferences.EffectiveTrayHoverLabelItems.Single(
                 item => item.Kind == TrayHoverLabelItemKind.BatteryPower).IsEnabled);
+        Assert.True(preferences.EffectiveTrayHoverLabelItems.Single(
+            item => item.Kind == TrayHoverLabelItemKind.AppName).IsEnabled);
         Assert.All(
             preferences.EffectiveTrayHoverLabelItems.Where(item =>
-                item.Kind is not TrayHoverLabelItemKind.PowerSource
+                item.Kind is not TrayHoverLabelItemKind.AppName
+                    and not TrayHoverLabelItemKind.PowerSource
                     and not TrayHoverLabelItemKind.PowerMode
                     and not TrayHoverLabelItemKind.BatteryPower),
             item => Assert.False(item.IsEnabled));

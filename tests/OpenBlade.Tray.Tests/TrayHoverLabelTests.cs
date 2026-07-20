@@ -83,6 +83,7 @@ public sealed class TrayHoverLabelTests
     {
         string result = TrayHoverLabelFormatter.Format(
             [
+                TrayHoverLabelItemKind.AppName,
                 TrayHoverLabelItemKind.GpuTemperature,
                 TrayHoverLabelItemKind.PowerSource,
                 TrayHoverLabelItemKind.PowerMode,
@@ -106,6 +107,7 @@ public sealed class TrayHoverLabelTests
     {
         string result = TrayHoverLabelFormatter.Format(
             [
+                TrayHoverLabelItemKind.AppName,
                 TrayHoverLabelItemKind.PowerSource,
                 TrayHoverLabelItemKind.PowerMode,
                 TrayHoverLabelItemKind.Fan1Speed,
@@ -124,5 +126,22 @@ public sealed class TrayHoverLabelTests
         Assert.StartsWith("OpenBlade · Battery · Battery Saver · Fan 1 2,300 RPM", result);
         Assert.DoesNotContain(new string('x', 10), result, StringComparison.Ordinal);
         Assert.InRange(result.Length, 1, TrayHoverLabelFormatter.MaximumLength);
+    }
+
+    [Fact]
+    public void Format_CanHideAppNameWithoutHidingSelectedDetails()
+    {
+        string result = TrayHoverLabelFormatter.Format(
+            [TrayHoverLabelItemKind.PowerSource, TrayHoverLabelItemKind.PowerMode],
+            isConnected: true,
+            PowerSource.PluggedIn,
+            PerformancePreset.Balanced,
+            "Not charging",
+            cpuTemperatureCelsius: null,
+            gpuTemperatureCelsius: null,
+            fan1Rpm: null,
+            fan2Rpm: null);
+
+        Assert.Equal("AC · Balanced", result);
     }
 }

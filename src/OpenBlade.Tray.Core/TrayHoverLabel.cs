@@ -30,14 +30,20 @@ public static class TrayHoverLabelFormatter
         int? fan2Rpm)
     {
         ArgumentNullException.ThrowIfNull(items);
-        if (!isConnected)
-        {
-            return "OpenBlade · Service unavailable";
-        }
-
-        string[] details = items
+        TrayHoverLabelItemKind[] selectedItems = items
             .Where(Enum.IsDefined)
             .Distinct()
+            .ToArray();
+        bool showAppName = selectedItems.Contains(TrayHoverLabelItemKind.AppName);
+        if (!isConnected)
+        {
+            return showAppName
+                ? "OpenBlade · Service unavailable"
+                : "Service unavailable";
+        }
+
+        string[] details = selectedItems
+            .Where(item => item != TrayHoverLabelItemKind.AppName)
             .Select(item => item switch
             {
                 TrayHoverLabelItemKind.ActiveProfile =>
@@ -57,17 +63,19 @@ public static class TrayHoverLabelFormatter
             .Where(value => !string.IsNullOrWhiteSpace(value))
             .ToArray();
 
-        string result = "OpenBlade";
+        string result = showAppName ? "OpenBlade" : string.Empty;
         foreach (string detail in details)
         {
-            string candidate = $"{result} · {detail}";
+            string candidate = string.IsNullOrEmpty(result)
+                ? detail
+                : $"{result} · {detail}";
             if (candidate.Length > MaximumLength)
             {
                 break;
             }
             result = candidate;
         }
-        return result;
+        return string.IsNullOrWhiteSpace(result) ? "OpenBlade" : result;
     }
 
     public static string Format(

@@ -554,15 +554,25 @@
                                         <TextBlock Text="Automatic is recommended for everyday use."
                                                    Style="{StaticResource SecondaryTextStyle}" />
                                     </StackPanel>
-                                    <ComboBox x:Name="DashboardFanModeSelector"
-                                              Grid.Column="1"
-                                              MinWidth="150"
-                                              HorizontalAlignment="Right"
-                                              AutomationProperties.Name="Fan mode"
-                                              IsEnabled="{x:Bind ViewModel.CanControlHardware, Mode=OneWay}"
-                                              ItemsSource="{x:Bind ViewModel.AvailableActiveFanModeOptions, Mode=OneWay}"
-                                              SelectedItem="{x:Bind ViewModel.SelectedFanModeOption, Mode=OneWay}"
-                                              SelectionChanged="OnDashboardFanModeSelectionChanged" />
+                                    <StackPanel Grid.Column="1"
+                                                Orientation="Horizontal"
+                                                Spacing="10"
+                                                HorizontalAlignment="Right"
+                                                VerticalAlignment="Center">
+                                        <ProgressRing Width="16"
+                                                      Height="16"
+                                                      IsActive="{x:Bind ViewModel.IsFanControlOperationInProgress, Mode=OneWay}"
+                                                      Visibility="{x:Bind ViewModel.IsFanControlOperationInProgress, Mode=OneWay}"
+                                                      AutomationProperties.Name="Applying fan mode" />
+                                        <ComboBox x:Name="DashboardFanModeSelector"
+                                                  MinWidth="150"
+                                                  HorizontalAlignment="Right"
+                                                  AutomationProperties.Name="Fan mode"
+                                                  IsEnabled="{x:Bind ViewModel.CanControlHardware, Mode=OneWay}"
+                                                  ItemsSource="{x:Bind ViewModel.AvailableActiveFanModeOptions, Mode=OneWay}"
+                                                  SelectedItem="{x:Bind ViewModel.SelectedFanModeOption, Mode=OneWay}"
+                                                  SelectionChanged="OnDashboardFanModeSelectionChanged" />
+                                    </StackPanel>
                                 </Grid>
                             </Border>
                             <Border Style="{StaticResource SettingsLastSubcardStyle}"
@@ -935,7 +945,7 @@
                                     <Border Style="{StaticResource SettingsRowStyle}">
                                         <Grid ColumnSpacing="16">
                                             <Grid.ColumnDefinitions><ColumnDefinition Width="150" /><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
-                                            <TextBlock Text="With the display" Style="{StaticResource CardTitleStyle}" />
+                                            <TextBlock Text="Display turns off" Style="{StaticResource CardTitleStyle}" />
                                             <TextBlock Grid.Column="1" Text="{x:Bind ViewModel.PluggedInProfilePresentation.LightingDisplayOff, Mode=OneWay}" TextWrapping="Wrap" />
                                             <TextBlock Grid.Column="2" Text="{x:Bind ViewModel.UsbCProfilePresentation.LightingDisplayOff, Mode=OneWay}" TextWrapping="Wrap" />
                                             <TextBlock Grid.Column="3" Text="{x:Bind ViewModel.BatteryProfilePresentation.LightingDisplayOff, Mode=OneWay}" TextWrapping="Wrap" />
@@ -944,7 +954,7 @@
                                     <Border Style="{StaticResource SettingsLastRowStyle}">
                                         <Grid ColumnSpacing="16">
                                             <Grid.ColumnDefinitions><ColumnDefinition Width="150" /><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
-                                            <TextBlock Text="After inactivity" Style="{StaticResource CardTitleStyle}" />
+                                            <TextBlock Text="Inactivity timeout" Style="{StaticResource CardTitleStyle}" />
                                             <TextBlock Grid.Column="1" Text="{x:Bind ViewModel.PluggedInProfilePresentation.LightingIdle, Mode=OneWay}" TextWrapping="Wrap" />
                                             <TextBlock Grid.Column="2" Text="{x:Bind ViewModel.UsbCProfilePresentation.LightingIdle, Mode=OneWay}" TextWrapping="Wrap" />
                                             <TextBlock Grid.Column="3" Text="{x:Bind ViewModel.BatteryProfilePresentation.LightingIdle, Mode=OneWay}" TextWrapping="Wrap" />
@@ -1034,10 +1044,10 @@
                                         <Grid ColumnSpacing="16"><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><TextBlock Text="Color profile" Style="{StaticResource CardTitleStyle}" /><TextBlock Grid.Column="1" Text="{x:Bind ViewModel.SelectedProfilePresentation.DisplayColorProfile, Mode=OneWay}" TextWrapping="Wrap" TextAlignment="Right" /></Grid>
                                     </Border>
                                     <Border Style="{StaticResource SettingsRowStyle}">
-                                        <Grid ColumnSpacing="16"><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><TextBlock Text="With the display" Style="{StaticResource CardTitleStyle}" /><TextBlock Grid.Column="1" Text="{x:Bind ViewModel.SelectedProfilePresentation.LightingDisplayOff, Mode=OneWay}" TextWrapping="Wrap" TextAlignment="Right" /></Grid>
+                                        <Grid ColumnSpacing="16"><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><TextBlock Text="Display turns off" Style="{StaticResource CardTitleStyle}" /><TextBlock Grid.Column="1" Text="{x:Bind ViewModel.SelectedProfilePresentation.LightingDisplayOff, Mode=OneWay}" TextWrapping="Wrap" TextAlignment="Right" /></Grid>
                                     </Border>
                                     <Border Style="{StaticResource SettingsLastRowStyle}">
-                                        <Grid ColumnSpacing="16"><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><TextBlock Text="After inactivity" Style="{StaticResource CardTitleStyle}" /><TextBlock Grid.Column="1" Text="{x:Bind ViewModel.SelectedProfilePresentation.LightingIdle, Mode=OneWay}" TextWrapping="Wrap" TextAlignment="Right" /></Grid>
+                                        <Grid ColumnSpacing="16"><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><TextBlock Text="Inactivity timeout" Style="{StaticResource CardTitleStyle}" /><TextBlock Grid.Column="1" Text="{x:Bind ViewModel.SelectedProfilePresentation.LightingIdle, Mode=OneWay}" TextWrapping="Wrap" TextAlignment="Right" /></Grid>
                                     </Border>
                                 </StackPanel>
                             </Border>
@@ -2027,7 +2037,7 @@
                                     </Grid.ColumnDefinitions>
                                     <StackPanel Spacing="3" VerticalAlignment="Center">
                                         <TextBlock Text="Taskbar hover label" Style="{StaticResource CardTitleStyle}" />
-                                        <TextBlock Text="Choose the profile and live details shown when you point at the tray icon."
+                                        <TextBlock Text="Choose whether to show the app name, profile, and live details when you point at the tray icon."
                                                    Style="{StaticResource SecondaryTextStyle}" />
                                     </StackPanel>
                                 </Grid>
