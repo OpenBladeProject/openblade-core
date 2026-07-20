@@ -3,9 +3,9 @@ namespace OpenBlade.Tray.Tests;
 public sealed class WindowPlacementPolicyTests
 {
     [Theory]
-    [InlineData(600, 400, 96, 720, 540)]
+    [InlineData(600, 400, 96, 800, 600)]
     [InlineData(900, 600, 96, 900, 600)]
-    [InlineData(900, 700, 144, 1080, 810)]
+    [InlineData(900, 700, 144, 1200, 900)]
     public void EnforceMinimumSize_ClampsEachDimensionInDpiAwarePixels(
         int width,
         int height,
@@ -15,8 +15,8 @@ public sealed class WindowPlacementPolicyTests
     {
         PixelRect result = WindowPlacementPolicy.EnforceMinimumSize(
             new PixelRect(10, 20, width, height),
-            720,
-            540,
+            800,
+            600,
             dpi);
 
         Assert.Equal(new PixelRect(10, 20, expectedWidth, expectedHeight), result);

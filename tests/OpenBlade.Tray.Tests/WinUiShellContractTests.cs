@@ -445,7 +445,9 @@ public sealed class WinUiShellContractTests
             "x:Key=\"NavigationViewSelectionIndicatorForeground\"",
             windowXaml,
             StringComparison.Ordinal);
-        Assert.Contains("MinimumWidthDip = 720", ReadRepositoryFile(
+        Assert.Contains("MinimumWidthDip = 800", ReadRepositoryFile(
+            "src", "OpenBlade.Tray", "MainWindow.xaml.cs"), StringComparison.Ordinal);
+        Assert.Contains("MinimumHeightDip = 600", ReadRepositoryFile(
             "src", "OpenBlade.Tray", "MainWindow.xaml.cs"), StringComparison.Ordinal);
 
         string appXaml = ReadRepositoryFile("src", "OpenBlade.Tray", "App.xaml");

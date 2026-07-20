@@ -22,7 +22,7 @@ All notable changes to OpenBlade are documented in this file. The project follow
   a different value.
 - Applied the OpenBlade application icon to every executable project.
 - Removed the glitchy long-distance navigation selection-indicator animation.
-- Enforced a 720 by 540 DIP minimum app-window size to protect responsive
+- Enforced an 800 by 600 DIP minimum app-window size to protect responsive
   layouts.
 
 ### Added
