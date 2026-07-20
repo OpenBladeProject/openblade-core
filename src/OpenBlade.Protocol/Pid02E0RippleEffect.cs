@@ -9,6 +9,7 @@ namespace OpenBlade.Protocol;
 internal sealed class Pid02E0RippleEffect : IPid02E0KeyTriggeredLightingEffect
 {
     internal static readonly TimeSpan Duration = TimeSpan.FromMilliseconds(800);
+    private static readonly TimeSpan CapturedBandInterval = TimeSpan.FromMilliseconds(50);
 
     private const int Columns = 17;
     private static readonly (double Inner, double Outer)[] CapturedBands =
@@ -64,7 +65,10 @@ internal sealed class Pid02E0RippleEffect : IPid02E0KeyTriggeredLightingEffect
             }
 
             TimeSpan age = elapsed - pulseAt.Value;
-            int step = (int)(age.Ticks / Pid02E0LightingTiming.AnimatedFrameInterval.Ticks);
+            // Rendering may run faster than the captured oracle cadence, but the
+            // calibrated spatial bands still advance on their original 50 ms
+            // timeline so smoothing does not speed up the effect.
+            int step = (int)(age.Ticks / CapturedBandInterval.Ticks);
             if ((uint)step >= CapturedBands.Length)
             {
                 continue;

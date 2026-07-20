@@ -306,6 +306,91 @@ public sealed class ServiceClientTests
     }
 
     [Fact]
+    public async Task ReactivePulseBurst_ReusesOneOrderedConnection()
+    {
+        string pipeName = NewPipeName();
+        using CancellationTokenSource timeout = new(TimeSpan.FromSeconds(5));
+        var observed = new List<ReactiveKeyPulse>();
+        Task server = RunReactivePulseBurstServerAsync(
+            pipeName,
+            expectedCount: 2,
+            observed,
+            timeout.Token);
+        int connectionAttempts = 0;
+        var client = new ServiceClient(
+            async token =>
+            {
+                connectionAttempts++;
+                var pipe = new NamedPipeClientStream(
+                    ".",
+                    pipeName,
+                    PipeDirection.InOut,
+                    PipeOptions.Asynchronous);
+                await pipe.ConnectAsync(token);
+                return pipe;
+            },
+            TimeProvider.System);
+
+        await client.PulseReactiveKeyAsync(new ReactiveKeyPulse(19), timeout.Token);
+        await client.PulseReactiveKeyAsync(new ReactiveKeyPulse(53), timeout.Token);
+        await server;
+
+        Assert.Equal(1, connectionAttempts);
+        Assert.Equal([19, 53], observed.Select(pulse => (int)pulse.MatrixSlot));
+    }
+
+    [Fact]
+    public async Task CanceledReactivePulse_DiscardsConnectionBeforeNextPulse()
+    {
+        string pipeName = NewPipeName();
+        using CancellationTokenSource timeout = new(TimeSpan.FromSeconds(5));
+        var blocked = new BlockingHandshakeStream();
+        Task server = RunServerAsync(
+            pipeName,
+            request => new ServiceResponse(
+                OpenBladeIpc.ProtocolVersion,
+                request.RequestId,
+                true,
+                null,
+                null,
+                new ControlOperationResult(ControlOperationStatus.Applied, "Applied")),
+            timeout.Token);
+        int connectionAttempts = 0;
+        var client = new ServiceClient(
+            async token =>
+            {
+                if (connectionAttempts++ == 0)
+                {
+                    return blocked;
+                }
+
+                var pipe = new NamedPipeClientStream(
+                    ".",
+                    pipeName,
+                    PipeDirection.InOut,
+                    PipeOptions.Asynchronous);
+                await pipe.ConnectAsync(token);
+                return pipe;
+            },
+            TimeProvider.System);
+        using var canceled = new CancellationTokenSource();
+        Task first = client.PulseReactiveKeyAsync(new ReactiveKeyPulse(19), canceled.Token);
+        await blocked.ReadStarted.Task.WaitAsync(timeout.Token);
+
+        canceled.Cancel();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => first);
+        Assert.True(blocked.Disposed);
+
+        ControlOperationResult second = await client.PulseReactiveKeyAsync(
+            new ReactiveKeyPulse(53),
+            timeout.Token);
+        await server;
+
+        Assert.Equal(ControlOperationStatus.Applied, second.Status);
+        Assert.Equal(2, connectionAttempts);
+    }
+
+    [Fact]
     public async Task MutationIoFailure_IsNeverRetried()
     {
         int attempts = 0;
@@ -622,6 +707,32 @@ public sealed class ServiceClientTests
                     null,
                     null,
                     new ControlOperationResult(ControlOperationStatus.Stored, "Stored")),
+                token);
+        }
+    }
+
+    private static async Task RunReactivePulseBurstServerAsync(
+        string pipeName,
+        int expectedCount,
+        List<ReactiveKeyPulse> observed,
+        CancellationToken token)
+    {
+        await using NamedPipeServerStream server = CreateServer(pipeName);
+        await server.WaitForConnectionAsync(token);
+        for (int index = 0; index < expectedCount; index++)
+        {
+            PulseReactiveKeyRequest request = Assert.IsType<PulseReactiveKeyRequest>(
+                await IpcMessageCodec.ReadRequestAsync(server, token));
+            observed.Add(request.Pulse);
+            await IpcMessageCodec.WriteServerFrameAsync(
+                server,
+                new ServiceResponse(
+                    OpenBladeIpc.ProtocolVersion,
+                    request.RequestId,
+                    true,
+                    null,
+                    null,
+                    new ControlOperationResult(ControlOperationStatus.Applied, "Applied")),
                 token);
         }
     }

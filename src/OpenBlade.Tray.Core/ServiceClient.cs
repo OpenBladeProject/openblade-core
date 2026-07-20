@@ -11,6 +11,8 @@ public sealed class ServiceClient : IServiceClient
     private static readonly TimeSpan MaximumReconnectDelay = TimeSpan.FromSeconds(5);
     private readonly Func<CancellationToken, ValueTask<Stream>> connectAsync;
     private readonly TimeProvider timeProvider;
+    private readonly SemaphoreSlim reactivePulseGate = new(1, 1);
+    private Stream? reactivePulseConnection;
 
     public ServiceClient()
         : this(OpenBladeIpc.PipeName)
@@ -135,14 +137,56 @@ public sealed class ServiceClient : IServiceClient
                 suppressed),
             token);
 
-    public Task<ControlOperationResult> PulseReactiveKeyAsync(
+    public async Task<ControlOperationResult> PulseReactiveKeyAsync(
         ReactiveKeyPulse pulse,
-        CancellationToken token) => SendMutationAsync(
-            new PulseReactiveKeyRequest(
-                OpenBladeIpc.ProtocolVersion,
-                Guid.NewGuid(),
-                pulse),
-            token);
+        CancellationToken token)
+    {
+        var request = new PulseReactiveKeyRequest(
+            OpenBladeIpc.ProtocolVersion,
+            Guid.NewGuid(),
+            pulse);
+        await reactivePulseGate.WaitAsync(token);
+        try
+        {
+            for (int attempt = 0; ; attempt++)
+            {
+                Stream connection = reactivePulseConnection ??= await connectAsync(token);
+                try
+                {
+                    ServiceResponse response = await SendOverConnectionAsync(
+                        connection,
+                        request,
+                        token);
+                    return response.Result
+                        ?? throw new InvalidDataException(
+                            "Service mutation response is missing its result body.");
+                }
+                catch (Exception exception) when (
+                    attempt == 0
+                    && !token.IsCancellationRequested
+                    && IsRetryableTransportFailure(exception))
+                {
+                    // The service intentionally expires an idle pulse burst.
+                    // Discard that stale pipe and retry this pulse once on a new
+                    // exact ACL-protected connection instead of dropping it.
+                    await ResetReactivePulseConnectionCoreAsync();
+                }
+                catch
+                {
+                    // A canceled or malformed exchange can leave a partial
+                    // request or a late response in this byte stream. It must
+                    // never be reused by the next pulse, whose request ID would
+                    // otherwise be matched against stale framing.
+                    await ResetReactivePulseConnectionCoreAsync();
+                    throw;
+                }
+            }
+        }
+        finally
+        {
+            reactivePulseGate.Release();
+        }
+    }
 
     public Task<ControlOperationResult> PushAmbientLightingFrameAsync(
         AmbientLightingFrame frame,
@@ -257,10 +301,47 @@ public sealed class ServiceClient : IServiceClient
         ServiceRequest request,
         CancellationToken token)
     {
+        await reactivePulseGate.WaitAsync(token);
+        try
+        {
+            // Only consecutive key-triggered pulses share a connection. Any
+            // ordinary request ends the burst so request classes can never be
+            // accidentally multiplexed onto the latency-sensitive channel.
+            await ResetReactivePulseConnectionCoreAsync();
+        }
+        finally
+        {
+            reactivePulseGate.Release();
+        }
+
         await using Stream connection = await connectAsync(token);
+        return await SendOverConnectionAsync(connection, request, token);
+    }
+
+    private static async Task<ServiceResponse> SendOverConnectionAsync(
+        Stream connection,
+        ServiceRequest request,
+        CancellationToken token)
+    {
         await IpcMessageCodec.WriteRequestAsync(connection, request, token);
         ServiceServerFrame frame = await IpcMessageCodec.ReadServerFrameAsync(connection, token);
         return ValidateResponse(frame, request);
+    }
+
+    private async ValueTask ResetReactivePulseConnectionCoreAsync()
+    {
+        Stream? connection = reactivePulseConnection;
+        reactivePulseConnection = null;
+        if (connection is not null)
+        {
+            try
+            {
+                await connection.DisposeAsync();
+            }
+            catch
+            {
+            }
+        }
     }
 
     private static ServiceResponse ValidateResponse(

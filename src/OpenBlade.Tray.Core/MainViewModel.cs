@@ -3212,6 +3212,17 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         if (!lightingEditorDirty)
         {
             LoadLightingEditor(SelectedLighting);
+            if (keyboardEffectUnconfirmed && LightingBrightnessEditor == 0)
+            {
+                // PID 02E0 reports brightness independently but cannot report
+                // its current matrix effect. Zero in this state means unknown,
+                // not that the lit keyboard is actually at zero percent. Start
+                // a newly selected visible effect at a neutral, visible level.
+                SetField(
+                    ref lightingBrightnessEditor,
+                    (int)DefaultLightingBrightness,
+                    nameof(LightingBrightnessEditor));
+            }
         }
         if (!chargeLimitEditorDirty)
         {

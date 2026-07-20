@@ -7,6 +7,14 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Reused one ordered, idle-bounded IPC connection for Reactive and Ripple key
+  bursts, discarded canceled exchanges before reuse, and kept the session Raw
+  Input listener alive through transient status-stream failures.
+- Preserved a healthy owned lighting renderer across temporary firmware-read
+  failures so polling cannot flash the laptop unavailable or interrupt
+  key-triggered effects.
+- Increased host-rendered fade cadence to 30 frames per second without changing
+  captured effect durations, and initialized unknown visible brightness at 50%.
 - Bounded session-agent display IPC reads and contained stalled or truncated
   frames to the individual client connection.
 - Enforced an end-to-end 100 ms deadline for Reactive and Ripple key pulses so

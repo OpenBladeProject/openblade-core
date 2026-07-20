@@ -91,7 +91,12 @@ public sealed class ServiceReactiveLightingLoop : IAsyncDisposable
                 }
                 catch (Exception exception)
                 {
-                    SetInputState(connected: false, keyTriggered: false);
+                    // The status stream is advisory for renderer ownership. A
+                    // transient pipe/read failure is not evidence that the
+                    // session-local Raw Input registration or the last observed
+                    // renderer stopped. Keep both until an authoritative status
+                    // replaces them; otherwise every retry creates a one-second
+                    // interval in which physical key presses are lost.
                     ReportFailure(exception);
                     await Task.Delay(FailureRetryDelay, cancellationToken).ConfigureAwait(false);
                 }

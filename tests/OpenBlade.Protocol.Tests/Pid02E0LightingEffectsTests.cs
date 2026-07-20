@@ -9,14 +9,19 @@ public sealed class Pid02E0LightingEffectsTests
     private static readonly MatrixRgb Green = new(0, 255, 0);
 
     [Fact]
-    public void Timing_UsesCapturedAnimationCadenceAndCycleDurations()
+    public void Timing_UsesSmoothAnimationCadenceAndCapturedCycleDurations()
     {
-        Assert.Equal(TimeSpan.FromMilliseconds(50), Pid02E0LightingTiming.AnimatedFrameInterval);
+        Assert.Equal(
+            TimeSpan.FromTicks(TimeSpan.TicksPerSecond / 30),
+            Pid02E0LightingTiming.AnimatedFrameInterval);
         Assert.Equal(TimeSpan.FromSeconds(5), Pid02E0LightingTiming.IdleKeepaliveInterval);
         Assert.Equal(TimeSpan.FromSeconds(1), Pid02E0LightingTiming.BreathingPlateauStreamDuration);
         Assert.Equal(TimeSpan.FromMilliseconds(37_708.802), Pid02E0LightingTiming.SpectrumCycle);
         Assert.Equal(TimeSpan.FromSeconds(7), Pid02E0LightingTiming.BreathingCycle);
-        Assert.Equal(20, 1 / Pid02E0LightingTiming.AnimatedFrameInterval.TotalSeconds);
+        Assert.Equal(
+            30,
+            1 / Pid02E0LightingTiming.AnimatedFrameInterval.TotalSeconds,
+            precision: 3);
     }
 
     [Fact]
@@ -95,12 +100,12 @@ public sealed class Pid02E0LightingEffectsTests
     }
 
     [Theory]
-    [InlineData(0, 0.05)]
-    [InlineData(1, 0.80)]
-    [InlineData(1.80, 0.05)]
-    [InlineData(3.50, 0.05)]
-    [InlineData(4.50, 0.80)]
-    [InlineData(5.30, 0.05)]
+    [InlineData(0, 0.0333333)]
+    [InlineData(1, 0.7833333)]
+    [InlineData(1.80, 0.0333333)]
+    [InlineData(3.50, 0.0333333)]
+    [InlineData(4.50, 0.7833333)]
+    [InlineData(5.30, 0.0333333)]
     public void Breathing_UsesCapturedRampCadenceAndSuppressesLatePlateauDuplicates(
         double elapsedSeconds,
         double expectedDelaySeconds)
@@ -411,7 +416,9 @@ public sealed class Pid02E0LightingEffectsTests
         Pid02E0MatrixFrame repeated = effect.RenderFrame(TimeSpan.FromSeconds(30));
         int lit = first.ToArray().Count(color => color != MatrixRgb.Black);
 
-        Assert.Equal(TimeSpan.FromMilliseconds(50), effect.GetNextFrameDelay(TimeSpan.Zero));
+        Assert.Equal(
+            Pid02E0LightingTiming.AnimatedFrameInterval,
+            effect.GetNextFrameDelay(TimeSpan.Zero));
         Assert.InRange(lit, 2, 20);
         AssertFramesEqual(first, repeated);
         AssertHolesBlack(first);

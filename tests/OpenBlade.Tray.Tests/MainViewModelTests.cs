@@ -1918,6 +1918,7 @@ public sealed class MainViewModelTests
             LightingRendererOwnership = LightingRendererOwnershipState.None,
         });
         await WaitUntilAsync(() => viewModel.IsKeyboardEffectUnconfirmed);
+        Assert.Equal(50, viewModel.LightingBrightnessEditor);
 
         viewModel.SelectedLightingEffectOption = viewModel.AvailableLightingEffectOptions
             .Single(option => option.Effect == LightingEffect.Starlight);

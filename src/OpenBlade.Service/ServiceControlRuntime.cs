@@ -825,8 +825,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         token.ThrowIfCancellationRequested();
         ServiceStatusSnapshot current = GetStatus();
         if (!current.DeviceVerified
-            || current.WritesBlocked
-            || current.ActivePowerSource == PowerSource.ExternalUnknown)
+            || current.ActivePowerSource == PowerSource.ExternalUnknown
+            || IsControllerPresenceUnsafe(current))
         {
             return new ControlOperationResult(
                 ControlOperationStatus.Blocked,
@@ -2839,10 +2839,22 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             FanControlOverride = Automation.FanControlOverride,
             LightingOverride = Automation.LightingOverride,
             FullChargeOverride = ResolveFullChargeOverride(current.ConfirmedState),
-            LightingRendererOwnership = LightingRendererOwnershipState.None,
-            StartupAnimationEnabled = null,
-            FunctionKeyPrimary = null,
-            GamingModeEnabled = null,
+            // A verified session read can fail while the independently-owned
+            // matrix renderer remains healthy. Preserve renderer ownership and
+            // the last confirmed one-shot states so status polling cannot create
+            // a false key-input dead zone or flash unrelated controls unknown.
+            LightingRendererOwnership = deviceVerified
+                ? current.LightingRendererOwnership
+                : LightingRendererOwnershipState.None,
+            StartupAnimationEnabled = deviceVerified
+                ? current.StartupAnimationEnabled
+                : null,
+            FunctionKeyPrimary = deviceVerified
+                ? current.FunctionKeyPrimary
+                : null,
+            GamingModeEnabled = deviceVerified
+                ? current.GamingModeEnabled
+                : null,
         });
     }
 

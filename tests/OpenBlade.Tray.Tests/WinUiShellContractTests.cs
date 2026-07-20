@@ -308,6 +308,7 @@ public sealed class WinUiShellContractTests
         Assert.Contains("WindowMessageInputDeviceChange", source, StringComparison.Ordinal);
         Assert.Contains("TryResolveTargetInputDevice", source, StringComparison.Ordinal);
         Assert.Contains("Rz09_0581ReactiveInputDevice", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("GetForegroundWindow", source, StringComparison.Ordinal);
         Assert.DoesNotContain("rawInput.Keyboard.VirtualKey", source, StringComparison.Ordinal);
         Assert.Contains("ServiceReactiveLightingLoop", agent, StringComparison.Ordinal);
         Assert.DoesNotContain("ReactiveKeyPulsePump", window, StringComparison.Ordinal);

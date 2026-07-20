@@ -80,6 +80,33 @@ public sealed class ServiceReactiveLightingLoopTests
     }
 
     [Fact]
+    public async Task StatusStreamFailure_PreservesLastKnownInputOwnershipDuringRetry()
+    {
+        var client = new WatchClient();
+        var factory = new RecordingSourceFactory();
+        var failures = new ConcurrentQueue<Exception>();
+        await using var loop = new ServiceReactiveLightingLoop(
+            client,
+            factory,
+            failures.Enqueue);
+        using var cancellation = new CancellationTokenSource();
+        Task running = loop.RunAsync(cancellation.Token);
+
+        client.Publish(Status(LightingRendererOwnershipState.Reactive));
+        await WaitUntilAsync(() => factory.CreateCount == 1);
+        RecordingSource source = factory.Last!;
+        client.FailWatch(new IOException("subscription interrupted"));
+        await WaitUntilAsync(() => failures.Count == 1);
+
+        Assert.False(source.Disposed);
+        source.Publish(new ReactiveKeyPulse(53));
+        await WaitUntilAsync(() => client.Pulses.Count == 1);
+
+        cancellation.Cancel();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => running);
+    }
+
+    [Fact]
     public async Task NotificationFailure_DoesNotFailTheAppliedShortcutLoop()
     {
         var client = new WatchClient();
@@ -259,6 +286,9 @@ public sealed class ServiceReactiveLightingLoopTests
 
         public void Reconnect() =>
             Assert.True(updates.Writer.TryWrite(new ServiceWatchUpdate.Reconnecting()));
+
+        public void FailWatch(Exception exception) =>
+            Assert.True(updates.Writer.TryComplete(exception));
 
         public async IAsyncEnumerable<ServiceWatchUpdate> WatchStatusAsync(
             [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken token)

@@ -107,28 +107,53 @@ public sealed class NamedPipeControlServer
         ArgumentNullException.ThrowIfNull(connection);
         try
         {
-            ServiceRequest request;
-            try
+            bool pulseBurst = false;
+            while (true)
             {
-                request = await ReadRequestAsync(connection, cancellationToken);
-            }
-            catch (Exception exception) when (exception is InvalidDataException or JsonException)
-            {
-                await WriteFrameAsync(
-                    connection,
-                    Failure(Guid.Empty, "IPC request is malformed."),
-                    cancellationToken);
-                return;
-            }
+                ServiceRequest request;
+                try
+                {
+                    request = await ReadRequestAsync(connection, cancellationToken);
+                }
+                catch (Exception exception) when (exception is InvalidDataException or JsonException)
+                {
+                    await WriteFrameAsync(
+                        connection,
+                        Failure(Guid.Empty, "IPC request is malformed."),
+                        cancellationToken);
+                    return;
+                }
 
-            if (request is SubscribeStatusRequest)
-            {
-                await ServeSubscriptionAsync(connection, request, cancellationToken);
-                return;
-            }
+                if (request is SubscribeStatusRequest)
+                {
+                    await ServeSubscriptionAsync(connection, request, cancellationToken);
+                    return;
+                }
 
-            ServiceResponse response = await handler.HandleAsync(request, cancellationToken);
-            await WriteFrameAsync(connection, response, cancellationToken);
+                if (pulseBurst && request is not PulseReactiveKeyRequest)
+                {
+                    await WriteFrameAsync(
+                        connection,
+                        Failure(
+                            request.RequestId,
+                            "A Reactive pulse connection accepts only Reactive pulse requests."),
+                        cancellationToken);
+                    return;
+                }
+
+                ServiceResponse response = await handler.HandleAsync(request, cancellationToken);
+                await WriteFrameAsync(connection, response, cancellationToken);
+                if (request is not PulseReactiveKeyRequest)
+                {
+                    return;
+                }
+                pulseBurst = true;
+
+                // Key-triggered effects are latency-sensitive and already
+                // serialized by the session agent. Keep only this request class
+                // on the connection, bounded by the normal two-second frame-read
+                // timeout, so a typing burst avoids one pipe handshake per key.
+            }
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {

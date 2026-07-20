@@ -21,7 +21,10 @@ internal interface IPid02E0KeyTriggeredLightingEffect : IPid02E0LightingEffect
 
 internal static class Pid02E0LightingTiming
 {
-    internal static readonly TimeSpan AnimatedFrameInterval = TimeSpan.FromMilliseconds(50);
+    // Thirty frames per second removes the visible stepping in fades while
+    // retaining one serialized feature-report writer for the keyboard matrix.
+    internal static readonly TimeSpan AnimatedFrameInterval = TimeSpan.FromTicks(
+        TimeSpan.TicksPerSecond / 30);
     internal static readonly TimeSpan IdleKeepaliveInterval = TimeSpan.FromSeconds(5);
     internal static readonly TimeSpan BreathingPlateauStreamDuration = TimeSpan.FromSeconds(1);
     // Mean of three complete Synapse cycles captured on RZ09-0581/PID 02E0:

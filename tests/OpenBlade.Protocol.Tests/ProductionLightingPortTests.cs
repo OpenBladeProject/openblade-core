@@ -483,10 +483,10 @@ public sealed class ProductionLightingPortTests
 
         TimeSpan? next = ProductionLightingPort.AdvanceFrameDeadline(
             effect,
-            currentDeadline: TimeSpan.FromMilliseconds(50),
+            currentDeadline: Pid02E0LightingTiming.AnimatedFrameInterval,
             observedAfterWrite: TimeSpan.FromMilliseconds(82));
 
-        Assert.Equal(TimeSpan.FromMilliseconds(100), next);
+        Assert.Equal(Pid02E0LightingTiming.AnimatedFrameInterval * 3, next);
     }
 
     [Fact]

@@ -289,6 +289,51 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     }
 
     [Fact]
+    public async Task VerifiedReadFailure_PreservesOwnedReactiveInput()
+    {
+        DeviceCapabilities capabilities = DeviceCapabilities.Unavailable() with
+        {
+            LightingEffects = new HashSet<LightingEffect>
+            {
+                LightingEffect.Off,
+                LightingEffect.Reactive,
+            },
+        };
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            profileValidator: ProfileSetValidator.CreateForLightingCapabilities(capabilities));
+        context.Device.Capabilities = capabilities;
+        context.Device.ConfirmedState = new ConfirmedDeviceState(null, null, null, null);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        await context.Runtime.SetLightingOverrideAsync(
+            new ManualOverride<LightingSettings>(
+                LightingSettingsFactory.Reactive(
+                    new RgbColor(0, 255, 0),
+                    77,
+                    ReactiveLightingDuration.Medium),
+                OverrideLifetime.UntilPowerSourceChange),
+            CancellationToken.None);
+
+        context.Device.ReadStateFailure = new IOException("temporary read failure");
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+
+        ServiceStatusSnapshot degraded = context.Runtime.GetStatus();
+        Assert.True(degraded.DeviceVerified);
+        Assert.True(degraded.WritesBlocked);
+        Assert.Equal(
+            LightingRendererOwnershipState.Reactive,
+            degraded.LightingRendererOwnership);
+
+        ControlOperationResult pulse = await context.Runtime.PulseReactiveKeyAsync(
+            new ReactiveKeyPulse(53),
+            CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Applied, pulse.Status);
+        Assert.Equal(1, context.Device.ReactivePulseCalls);
+    }
+
+    [Fact]
     public async Task KeyPulse_AcceptsOwnedRippleRenderer()
     {
         DeviceCapabilities capabilities = DeviceCapabilities.Unavailable() with

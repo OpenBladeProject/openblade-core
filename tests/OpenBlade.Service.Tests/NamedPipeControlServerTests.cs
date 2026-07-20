@@ -29,6 +29,36 @@ public sealed class NamedPipeControlServerTests
     }
 
     [Fact]
+    public async Task PulseBurst_AcceptsMultipleOrderedRequestsOnOneConnection()
+    {
+        TestServer context = CreateServer();
+        using CancellationTokenSource timeout = new(TimeSpan.FromSeconds(5));
+        Task serverTask = context.Server.ServeOnceAsync(timeout.Token);
+        NamedPipeClientStream client = await ConnectAsync(context.PipeName, timeout.Token);
+        try
+        {
+            foreach (byte slot in new byte[] { 19, 53 })
+            {
+                var request = new PulseReactiveKeyRequest(
+                    OpenBladeIpc.ProtocolVersion,
+                    Guid.NewGuid(),
+                    new ReactiveKeyPulse(slot));
+                await IpcMessageCodec.WriteRequestAsync(client, request, timeout.Token);
+                ServiceResponse response = Assert.IsType<ServiceResponse>(
+                    await IpcMessageCodec.ReadServerFrameAsync(client, timeout.Token));
+                Assert.True(response.Success);
+                Assert.Equal(request.RequestId, response.RequestId);
+            }
+        }
+        finally
+        {
+            await client.DisposeAsync();
+        }
+
+        await serverTask;
+    }
+
+    [Fact]
     public async Task ServeOnceAsync_ClaimsFirstPipeInstanceBeforeAcceptingClients()
     {
         TestServer context = CreateServer();
