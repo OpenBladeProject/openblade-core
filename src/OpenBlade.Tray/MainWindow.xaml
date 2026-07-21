@@ -1986,6 +1986,7 @@
                                         <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
                                             <ProgressRing Style="{StaticResource FirmwareProgressRingStyle}"
                                                           IsActive="{x:Bind ViewModel.IsFunctionKeyFieldLoading, Mode=OneWay}"
+                                                          Visibility="{x:Bind ViewModel.IsFunctionKeyFieldLoading, Mode=OneWay}"
                                                           AutomationProperties.Name="Reading or applying function key behavior" />
                                             <DropDownButton Content="{x:Bind ViewModel.FunctionKeyPrimaryStateLabel, Mode=OneWay}"
                                                             HorizontalAlignment="Right"
@@ -2021,6 +2022,7 @@
                                         <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
                                             <ProgressRing Style="{StaticResource FirmwareProgressRingStyle}"
                                                           IsActive="{x:Bind ViewModel.IsGamingModeFieldLoading, Mode=OneWay}"
+                                                          Visibility="{x:Bind ViewModel.IsGamingModeFieldLoading, Mode=OneWay}"
                                                           AutomationProperties.Name="Reading or applying Gaming Mode" />
                                             <ToggleSwitch x:Name="GamingModeToggle"
                                                           HorizontalAlignment="Right"
@@ -2050,6 +2052,7 @@
                                         <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
                                             <ProgressRing Style="{StaticResource FirmwareProgressRingStyle}"
                                                           IsActive="{x:Bind ViewModel.IsStartupAnimationFieldLoading, Mode=OneWay}"
+                                                          Visibility="{x:Bind ViewModel.IsStartupAnimationFieldLoading, Mode=OneWay}"
                                                           AutomationProperties.Name="Reading or applying startup animation" />
                                             <ToggleSwitch x:Name="StartupAnimationToggle"
                                                           HorizontalAlignment="Right"

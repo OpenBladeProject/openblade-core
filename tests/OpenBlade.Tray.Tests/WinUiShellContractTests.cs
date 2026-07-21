@@ -155,6 +155,10 @@ public sealed class WinUiShellContractTests
             xaml,
             StringComparison.Ordinal);
         Assert.Contains(
+            "Visibility=\"{x:Bind ViewModel.IsFunctionKeyFieldLoading, Mode=OneWay}\"",
+            xaml,
+            StringComparison.Ordinal);
+        Assert.Contains(
             "IsOn=\"{x:Bind ViewModel.GamingModeToggleIsOn, Mode=OneWay}\"",
             xaml,
             StringComparison.Ordinal);
@@ -163,11 +167,19 @@ public sealed class WinUiShellContractTests
             xaml,
             StringComparison.Ordinal);
         Assert.Contains(
+            "Visibility=\"{x:Bind ViewModel.IsGamingModeFieldLoading, Mode=OneWay}\"",
+            xaml,
+            StringComparison.Ordinal);
+        Assert.Contains(
             "IsOn=\"{x:Bind ViewModel.StartupAnimationToggleIsOn, Mode=OneWay}\"",
             xaml,
             StringComparison.Ordinal);
         Assert.Contains(
             "IsEnabled=\"{x:Bind ViewModel.CanEditStartupAnimation, Mode=OneWay}\"",
+            xaml,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "Visibility=\"{x:Bind ViewModel.IsStartupAnimationFieldLoading, Mode=OneWay}\"",
             xaml,
             StringComparison.Ordinal);
         Assert.Contains("Toggled=\"OnGamingModeToggled\"", xaml, StringComparison.Ordinal);

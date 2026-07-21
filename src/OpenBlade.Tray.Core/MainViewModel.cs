@@ -1409,16 +1409,22 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     }
 
     public bool IsStartupAnimationFieldLoading =>
-        isStartupAnimationOperationInProgress
-        || IsConnected && SupportsStartupAnimation && startupAnimationReadPending;
+        IsOneShotFirmwareFieldLoading(
+            OneShotLaptopControl.StartupAnimation,
+            isStartupAnimationOperationInProgress,
+            startupAnimationReadPending);
 
     public bool IsFunctionKeyFieldLoading =>
-        isFunctionKeyOperationInProgress
-        || IsConnected && SupportsFunctionKeyPrimary && functionKeyReadPending;
+        IsOneShotFirmwareFieldLoading(
+            OneShotLaptopControl.FunctionKeyPrimary,
+            isFunctionKeyOperationInProgress,
+            functionKeyReadPending);
 
     public bool IsGamingModeFieldLoading =>
-        isGamingModeOperationInProgress
-        || IsConnected && SupportsGamingMode && gamingModeReadPending;
+        IsOneShotFirmwareFieldLoading(
+            OneShotLaptopControl.GamingMode,
+            isGamingModeOperationInProgress,
+            gamingModeReadPending);
 
     public bool CanEditStartupAnimation =>
         CanMutate && SupportsStartupAnimation && !IsStartupAnimationFieldLoading;
@@ -2907,6 +2913,15 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         OneShotLaptopControl.GamingMode => IsGamingModeFieldLoading,
         _ => false,
     };
+
+    private bool IsOneShotFirmwareFieldLoading(
+        OneShotLaptopControl control,
+        bool operationInProgress,
+        bool readPending) =>
+        operationInProgress
+        || IsConnected
+        && latestStatus?.Capabilities?.OneShotLaptopControls.Contains(control) is true
+        && readPending;
 
     private bool MaximumFansAreEffectiveOrConfirmed() =>
         latestStatus is { } status
