@@ -11,7 +11,7 @@ public readonly record struct ReactiveKeyPulse
     public const byte MaximumMatrixSlot = 101;
 
     [JsonConstructor]
-    public ReactiveKeyPulse(byte matrixSlot)
+    public ReactiveKeyPulse(byte matrixSlot, long? observedTimestamp = null)
     {
         if (matrixSlot > MaximumMatrixSlot)
         {
@@ -19,7 +19,15 @@ public readonly record struct ReactiveKeyPulse
         }
 
         MatrixSlot = matrixSlot;
+        ObservedTimestamp = observedTimestamp;
     }
 
     public byte MatrixSlot { get; }
+
+    /// <summary>
+    /// Optional monotonic Stopwatch/TimeProvider timestamp captured when the
+    /// key packet was observed. Older clients may omit it; the service then
+    /// falls back to its render-loop wake timestamp.
+    /// </summary>
+    public long? ObservedTimestamp { get; }
 }

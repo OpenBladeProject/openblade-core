@@ -5,13 +5,17 @@ namespace OpenBlade.Contracts.Tests;
 public sealed class ReactiveKeyPulseTests
 {
     [Fact]
-    public void PulseCarriesOnlyAnAnonymousMatrixSlot()
+    public void PulseCarriesOnlyAnonymousMatrixSlotAndMonotonicTiming()
     {
-        var pulse = new ReactiveKeyPulse(77);
+        var pulse = new ReactiveKeyPulse(77, observedTimestamp: 12345);
 
         Assert.Equal(77, pulse.MatrixSlot);
+        Assert.Equal(12345, pulse.ObservedTimestamp);
         Assert.Equal(
-            [nameof(ReactiveKeyPulse.MatrixSlot)],
+            [
+                nameof(ReactiveKeyPulse.MatrixSlot),
+                nameof(ReactiveKeyPulse.ObservedTimestamp),
+            ],
             typeof(ReactiveKeyPulse)
                 .GetProperties()
                 .Where(property => property.GetMethod?.IsStatic == false)

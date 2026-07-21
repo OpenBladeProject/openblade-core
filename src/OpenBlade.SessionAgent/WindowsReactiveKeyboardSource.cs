@@ -356,10 +356,11 @@ internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
             return;
         }
 
-        publish(primary);
+        long observedTimestamp = Stopwatch.GetTimestamp();
+        publish(WithObservedTimestamp(primary, observedTimestamp));
         if (secondary is { } secondPulse)
         {
-            publish(secondPulse);
+            publish(WithObservedTimestamp(secondPulse, observedTimestamp));
         }
     }
 
@@ -409,10 +410,15 @@ internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
                 ref functionKeyPressed,
                 out ReactiveKeyPulse pulse))
             {
-                publish(pulse);
+                publish(WithObservedTimestamp(pulse, Stopwatch.GetTimestamp()));
             }
         }
     }
+
+    private static ReactiveKeyPulse WithObservedTimestamp(
+        ReactiveKeyPulse pulse,
+        long observedTimestamp) =>
+        new(pulse.MatrixSlot, observedTimestamp);
 
     private bool IsTargetInputDeviceCached(nint deviceHandle)
     {

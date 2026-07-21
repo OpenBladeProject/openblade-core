@@ -5,6 +5,7 @@ namespace OpenBlade.Protocol;
 internal sealed class ProductionLightingPort : IProductionLightingPort
 {
     private const int MaximumPendingKeyTriggeredPulses = 1024;
+    private const int PendingKeyTriggeredPulseTrimTarget = 256;
     private static readonly IReadOnlySet<LightingEffect> AdmittedEffects =
         new HashSet<LightingEffect>(Enum.GetValues<LightingEffect>());
 
@@ -315,16 +316,17 @@ internal sealed class ProductionLightingPort : IProductionLightingPort
 
             if (pendingKeyTriggeredPulses.Count >= MaximumPendingKeyTriggeredPulses)
             {
-                throw new BladeWriteException(
-                    WriteSubmissionState.KnownNotApplied,
-                    "Key-triggered lighting input was rejected because the renderer queue is full.");
+                while (pendingKeyTriggeredPulses.Count > PendingKeyTriggeredPulseTrimTarget)
+                {
+                    _ = pendingKeyTriggeredPulses.Dequeue();
+                }
             }
 
             pendingKeyTriggeredPulses.Enqueue(pulse);
 
             // A pulse is an in-memory renderer update, not a firmware operation.
-            // Timestamp it when the renderer consumes it so a slow matrix write
-            // cannot make an accepted pulse expire before its first visible frame.
+            // The session stamps Raw Input pulses when Windows delivers them;
+            // the renderer falls back to consume-time for old clients.
             streamWake.TrySetResult(true);
         }
 
@@ -813,7 +815,9 @@ internal sealed class ProductionLightingPort : IProductionLightingPort
                     {
                         while (pendingKeyTriggeredPulses.TryDequeue(out ReactiveKeyPulse pulse))
                         {
-                            keyTriggered.Pulse(pulse.MatrixSlot, elapsed);
+                            keyTriggered.Pulse(
+                                pulse.MatrixSlot,
+                                KeyPulseElapsedOrFallback(pulse, elapsed));
                         }
                     }
 
@@ -920,6 +924,42 @@ internal sealed class ProductionLightingPort : IProductionLightingPort
         }
         cancellationToken.ThrowIfCancellationRequested();
         return true;
+    }
+
+    private TimeSpan KeyPulseElapsedOrFallback(
+        ReactiveKeyPulse pulse,
+        TimeSpan fallbackElapsed)
+    {
+        if (pulse.ObservedTimestamp is not { } observedTimestamp)
+        {
+            return fallbackElapsed;
+        }
+
+        if (observedTimestamp <= effectStartedTimestamp)
+        {
+            return TimeSpan.Zero;
+        }
+
+        TimeSpan observedElapsed;
+        try
+        {
+            observedElapsed = timeProvider.GetElapsedTime(
+                effectStartedTimestamp,
+                observedTimestamp);
+        }
+        catch
+        {
+            return fallbackElapsed;
+        }
+
+        if (observedElapsed < TimeSpan.Zero)
+        {
+            return fallbackElapsed;
+        }
+
+        return observedElapsed > fallbackElapsed
+            ? fallbackElapsed
+            : observedElapsed;
     }
 
     private void SignalStreamCore()

@@ -4,9 +4,9 @@ namespace OpenBlade.Tray;
 
 /// <summary>
 /// Sends transient Reactive-lighting pulses sequentially on a bounded queue.
-/// Every accepted key press is retained in arrival order until delivered or
-/// the owning session is stopped. The pump accepts only data-minimized matrix
-/// slots, not translated text, virtual-key values, or app/window identity.
+/// Fresh key presses are preferred over stale backlog when delivery falls
+/// behind. The pump accepts only data-minimized matrix slots, not translated
+/// text, virtual-key values, or app/window identity.
 /// </summary>
 public sealed class ReactiveKeyPulsePump : IAsyncDisposable
 {
@@ -67,7 +67,11 @@ public sealed class ReactiveKeyPulsePump : IAsyncDisposable
 
             if (pending.Count >= capacity)
             {
-                return false;
+                int trimTarget = Math.Max(0, capacity / 4);
+                while (pending.Count > trimTarget)
+                {
+                    _ = pending.Dequeue();
+                }
             }
 
             pending.Enqueue(pulse);

@@ -501,6 +501,55 @@ public sealed class ProductionLightingPortTests
     }
 
     [Fact]
+    public async Task ReactivePulse_UsesObservedTimestampWithinRendererTimeline()
+    {
+        var session = new LightingSession(initialBrightness: 0xFF);
+        await using var port = CreatePort(session, new MatrixWriter(), admitted: true);
+        FieldInfo startedField = typeof(ProductionLightingPort).GetField(
+            "effectStartedTimestamp",
+            BindingFlags.Instance | BindingFlags.NonPublic)!;
+        MethodInfo elapsedMethod = typeof(ProductionLightingPort).GetMethod(
+            "KeyPulseElapsedOrFallback",
+            BindingFlags.Instance | BindingFlags.NonPublic)!;
+        long started = TimeProvider.System.GetTimestamp();
+        startedField.SetValue(port, started);
+        long observed = started + (TimeProvider.System.TimestampFrequency / 4);
+        TimeSpan fallback = TimeSpan.FromSeconds(1);
+
+        var elapsed = Assert.IsType<TimeSpan>(elapsedMethod.Invoke(
+            port,
+            [new ReactiveKeyPulse(19, observed), fallback]));
+
+        Assert.InRange(
+            elapsed,
+            TimeSpan.FromMilliseconds(240),
+            TimeSpan.FromMilliseconds(260));
+    }
+
+    [Fact]
+    public async Task ReactivePulse_ClampsFutureObservedTimestampToRenderTime()
+    {
+        var session = new LightingSession(initialBrightness: 0xFF);
+        await using var port = CreatePort(session, new MatrixWriter(), admitted: true);
+        FieldInfo startedField = typeof(ProductionLightingPort).GetField(
+            "effectStartedTimestamp",
+            BindingFlags.Instance | BindingFlags.NonPublic)!;
+        MethodInfo elapsedMethod = typeof(ProductionLightingPort).GetMethod(
+            "KeyPulseElapsedOrFallback",
+            BindingFlags.Instance | BindingFlags.NonPublic)!;
+        long started = TimeProvider.System.GetTimestamp();
+        startedField.SetValue(port, started);
+        long observed = started + (TimeProvider.System.TimestampFrequency * 5);
+        TimeSpan fallback = TimeSpan.FromMilliseconds(125);
+
+        var elapsed = Assert.IsType<TimeSpan>(elapsedMethod.Invoke(
+            port,
+            [new ReactiveKeyPulse(19, observed), fallback]));
+
+        Assert.Equal(fallback, elapsed);
+    }
+
+    [Fact]
     public void FrameDeadline_AdvancesFromScheduledTimeAndSkipsMissedFrames()
     {
         var effect = new Pid02E0SpectrumEffect(

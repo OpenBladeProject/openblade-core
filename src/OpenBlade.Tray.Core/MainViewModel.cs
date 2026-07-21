@@ -619,7 +619,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             string fanValue = (showFan1, showFan2) switch
             {
                 (true, true) =>
-                    $"Fan 1 {Fan1RpmValue} · Fan 2 {Fan2RpmValue}",
+                    $"{Fan1RpmValue} / {Fan2RpmValue}",
                 (true, false) => Fan1RpmValue,
                 (false, true) => Fan2RpmValue,
                 _ => string.Empty,

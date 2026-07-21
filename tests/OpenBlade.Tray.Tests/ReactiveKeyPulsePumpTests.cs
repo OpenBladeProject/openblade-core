@@ -6,7 +6,7 @@ namespace OpenBlade.Tray.Tests;
 public sealed class ReactiveKeyPulsePumpTests
 {
     [Fact]
-    public async Task Pump_IsSequentialBoundedAndPreservesRepeatedKeyPresses()
+    public async Task Pump_IsSequentialBoundedAndPrefersFreshInputWhenBacklogged()
     {
         var firstStarted = new TaskCompletionSource(
             TaskCreationOptions.RunContinuationsAsynchronously);
@@ -26,7 +26,7 @@ public sealed class ReactiveKeyPulsePumpTests
                 lock (sent)
                 {
                     sent.Add(pulse.MatrixSlot);
-                    if (sent.Count == 4)
+                    if (sent.Count == 2)
                     {
                         allSent.TrySetResult();
                     }
@@ -52,17 +52,17 @@ public sealed class ReactiveKeyPulsePumpTests
         Assert.True(pump.TryEnqueue(new ReactiveKeyPulse(36)));
         Assert.True(pump.TryEnqueue(new ReactiveKeyPulse(36)));
         Assert.True(pump.TryEnqueue(new ReactiveKeyPulse(53)));
-        Assert.False(pump.TryEnqueue(new ReactiveKeyPulse(71)));
+        Assert.True(pump.TryEnqueue(new ReactiveKeyPulse(71)));
 
         releaseFirst.TrySetResult();
         await allSent.Task.WaitAsync(TimeSpan.FromSeconds(2));
 
-        Assert.Equal([19, 36, 36, 53], sent);
+        Assert.Equal([19, 71], sent);
         Assert.Equal(1, maximumActive);
     }
 
     [Fact]
-    public async Task DefaultCapacity_MatchesRendererBacklogAndPreservesBurstInput()
+    public async Task DefaultCapacity_TrimsStaleBacklogAndAcceptsFreshInput()
     {
         var firstStarted = new TaskCompletionSource(
             TaskCreationOptions.RunContinuationsAsynchronously);
@@ -88,10 +88,13 @@ public sealed class ReactiveKeyPulsePumpTests
             Assert.True(pump.TryEnqueue(new ReactiveKeyPulse((byte)(index % 102))));
         }
 
-        Assert.False(pump.TryEnqueue(new ReactiveKeyPulse(7)));
+        Assert.True(pump.TryEnqueue(new ReactiveKeyPulse(7)));
 
         releaseFirst.TrySetResult();
-        await WaitUntilAsync(() => Volatile.Read(ref delivered) == ReactiveKeyPulsePump.DefaultCapacity + 1);
+        await WaitUntilAsync(() => Volatile.Read(ref delivered) >= 2);
+        Assert.True(
+            Volatile.Read(ref delivered) < ReactiveKeyPulsePump.DefaultCapacity,
+            "Backlog trimming should prevent replaying the whole stale burst.");
     }
 
     [Fact]

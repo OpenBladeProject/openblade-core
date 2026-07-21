@@ -2472,7 +2472,7 @@ public sealed class MainViewModelTests
             ["Battery", "Temperatures", "Fans"],
             viewModel.VisibleDashboardTelemetryGroups.Select(item => item.Label));
         Assert.Equal(
-            "Fan 1 3,210 RPM · Fan 2 2,875 RPM",
+            "3,210 RPM / 2,875 RPM",
             viewModel.VisibleDashboardTelemetryGroups.Single(
                 item => item.Label == "Fans").Value);
         Assert.Contains(nameof(viewModel.BatteryPowerFlowLabel), changed);
@@ -2639,7 +2639,9 @@ public sealed class MainViewModelTests
             ActivePowerSource = PowerSource.Battery,
             LiveReadings = new LiveReadings(-18_400, 2600, 2500),
         });
-        await WaitUntilAsync(() => viewModel.IsConnected);
+        await WaitUntilAsync(() => viewModel.TrayHoverLabelText.Contains(
+            "Using 18.4 W",
+            StringComparison.Ordinal));
 
         Assert.Equal(
             "OpenBlade · Battery · Balanced · Using 18.4 W",
