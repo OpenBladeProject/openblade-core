@@ -7,6 +7,9 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Kept OpenBlade's selected lighting effect visible while a write is pending
+  instead of replacing it with the external-effect placeholder after a periodic
+  firmware observation that cannot read the matrix effect.
 - Made Razer green (`#47E10C`) the default and recovery color for lighting
   effects when no explicit or confirmed color is available.
 - Kept advisory detections of other Razer software from blocking Reactive and

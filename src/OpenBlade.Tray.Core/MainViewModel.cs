@@ -3265,10 +3265,13 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             ?? status.DesiredState.FanControl
             ?? FanControlSettings.FromLegacy(SelectedFanMode));
         PrepareLightingEditorForPowerSource(status.ActivePowerSource);
-        if (!checkingLaptopConnection)
+        if (!checkingLaptopConnection
+            && !lightingEditorDirty
+            && !IsLightingOperationInProgress)
         {
             SetKeyboardEffectUnconfirmed(
                 confirmed?.Lighting is null
+                && status.LightingOverride is null
                 && status.LightingRendererOwnership is
                     LightingRendererOwnershipState.None or
                     LightingRendererOwnershipState.Faulted);
@@ -3822,9 +3825,17 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
                         && latestStatus is not null
                         && latestAcceptedRevision > revisionAtStart)
                     {
-                        LoadLightingEditor(
-                            latestStatus.ConfirmedState?.Lighting
-                            ?? latestStatus.DesiredState.Lighting.Value);
+                        LightingSettings? confirmedLighting =
+                            latestStatus.ConfirmedState?.Lighting;
+                        bool statusReflectsRequest = confirmedLighting is not null
+                            || latestStatus.LightingOverride?.Value == requested
+                            || latestStatus.DesiredState.Lighting.Value == requested;
+                        if (statusReflectsRequest)
+                        {
+                            LoadLightingEditor(
+                                confirmedLighting
+                                ?? latestStatus.DesiredState.Lighting.Value);
+                        }
                     }
                 },
                 token);

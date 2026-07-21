@@ -1943,6 +1943,100 @@ public sealed class MainViewModelTests
     }
 
     [Fact]
+    public async Task UnknownEffectStatusDuringLightingWriteDoesNotReplaceRequestedEffect()
+    {
+        var client = new FakeServiceClient { BlockMutations = true };
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        ServiceStatusSnapshot initial = CreateStatus(
+            verified: true,
+            blocked: false,
+            capabilities: DeviceCapabilities.SafeTargetDefaults() with
+            {
+                LightingEffects = new HashSet<LightingEffect>(
+                    Enum.GetValues<LightingEffect>()),
+                ChargeLimits = ChargeLimits(),
+            }) with
+        {
+            ConfirmedState = CreateStatus(
+                verified: true,
+                blocked: false).ConfirmedState! with { Lighting = null },
+            LightingRendererOwnership = LightingRendererOwnershipState.None,
+        };
+        client.Publish(initial);
+        await WaitUntilAsync(() => viewModel.IsKeyboardEffectUnconfirmed);
+
+        viewModel.LightingEffectEditor = LightingEffect.Static;
+        viewModel.LightingBrightnessEditor = 63;
+        viewModel.LightingPrimaryColorEditor = new RgbColor(0x47, 0xE1, 0x0C);
+        LightingSettings requested = viewModel.LightingDraft;
+        Task apply = Assert.IsType<AsyncRelayCommand>(viewModel.SetLightingCommand)
+            .ExecuteAsync(requested);
+        await client.MutationStarted.Task.WaitAsync(TimeSpan.FromSeconds(2));
+
+        client.Publish(initial with
+        {
+            Revision = initial.Revision + 1,
+            Message = "Periodic lighting observation",
+            LightingOverride = null,
+        });
+        await WaitUntilAsync(() =>
+            viewModel.ConnectionStatus == "Periodic lighting observation");
+
+        Assert.True(viewModel.IsLightingOperationInProgress);
+        Assert.False(viewModel.IsKeyboardEffectUnconfirmed);
+        Assert.Equal(LightingEffect.Static, viewModel.SelectedLightingEffectOption?.Effect);
+        Assert.Equal(requested, viewModel.LightingDraft);
+
+        client.CompleteMutation();
+        await apply;
+
+        Assert.False(viewModel.IsKeyboardEffectUnconfirmed);
+        Assert.Equal(LightingEffect.Static, viewModel.SelectedLightingEffectOption?.Effect);
+        Assert.Equal(requested, viewModel.LightingDraft);
+    }
+
+    [Fact]
+    public async Task ExplicitLightingOverrideKeepsNativeEffectConfirmedInUi()
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        LightingSettings requested = LightingSettingsFactory.Static(
+            new RgbColor(0x47, 0xE1, 0x0C),
+            63);
+        ServiceStatusSnapshot status = CreateStatus(
+            verified: true,
+            blocked: false,
+            capabilities: DeviceCapabilities.SafeTargetDefaults() with
+            {
+                LightingEffects = new HashSet<LightingEffect>(
+                    Enum.GetValues<LightingEffect>()),
+                ChargeLimits = ChargeLimits(),
+            });
+        client.Publish(status with
+        {
+            ConfirmedState = status.ConfirmedState! with { Lighting = null },
+            DesiredState = status.DesiredState with
+            {
+                Lighting = new ResolvedSetting<LightingSettings>(
+                    requested,
+                    SettingValueSource.TemporaryOverride),
+            },
+            LightingOverride = new ManualOverride<LightingSettings>(
+                requested,
+                OverrideLifetime.UntilPowerSourceChange),
+            LightingRendererOwnership = LightingRendererOwnershipState.None,
+        });
+        await WaitUntilAsync(() =>
+            viewModel.SelectedLightingEffectOption?.Effect == LightingEffect.Static);
+
+        Assert.False(viewModel.IsKeyboardEffectUnconfirmed);
+        Assert.Equal(LightingEffect.Static, viewModel.SelectedLightingEffectOption?.Effect);
+        Assert.Equal(requested, viewModel.LightingDraft);
+    }
+
+    [Fact]
     public async Task ExternalKeyboardEffectIsNotMisreportedAndLogoUsesFirmwareReadback()
     {
         var client = new FakeServiceClient();
@@ -1975,7 +2069,9 @@ public sealed class MainViewModelTests
             },
             LightingRendererOwnership = LightingRendererOwnershipState.None,
         });
-        await WaitUntilAsync(() => viewModel.IsConnected);
+        await WaitUntilAsync(() =>
+            viewModel.IsKeyboardEffectUnconfirmed
+            && viewModel.LogoLightingModeEditor == LogoLightingMode.Breathing);
 
         Assert.True(viewModel.IsKeyboardEffectUnconfirmed);
         Assert.Null(viewModel.SelectedLightingEffectOption);
