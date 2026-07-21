@@ -182,6 +182,19 @@ public sealed class WinUiShellContractTests
             "Visibility=\"{x:Bind ViewModel.IsStartupAnimationFieldLoading, Mode=OneWay}\"",
             xaml,
             StringComparison.Ordinal);
+        Assert.Contains("x:Name=\"FunctionKeyFirmwareLoadingSlot\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("x:Name=\"GamingModeFirmwareLoadingSlot\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("x:Name=\"StartupAnimationFirmwareLoadingSlot\"", xaml, StringComparison.Ordinal);
+        Assert.Equal(3, CountOccurrences(xaml, "FirmwareLoadingSlot\""));
+        Assert.True(
+            xaml.IndexOf("FunctionKeyFirmwareLoadingSlot", StringComparison.Ordinal)
+            < xaml.IndexOf("AutomationProperties.Name=\"Set function key behavior\"", StringComparison.Ordinal));
+        Assert.True(
+            xaml.IndexOf("GamingModeFirmwareLoadingSlot", StringComparison.Ordinal)
+            < xaml.IndexOf("x:Name=\"GamingModeToggle\"", StringComparison.Ordinal));
+        Assert.True(
+            xaml.IndexOf("StartupAnimationFirmwareLoadingSlot", StringComparison.Ordinal)
+            < xaml.IndexOf("x:Name=\"StartupAnimationToggle\"", StringComparison.Ordinal));
         Assert.Contains("Toggled=\"OnGamingModeToggled\"", xaml, StringComparison.Ordinal);
         Assert.Contains("Toggled=\"OnStartupAnimationToggled\"", xaml, StringComparison.Ordinal);
         Assert.DoesNotContain("Content=\"Set&#x2026;\"", xaml, StringComparison.Ordinal);

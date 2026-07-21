@@ -1990,10 +1990,15 @@
                                                        Style="{StaticResource SecondaryTextStyle}" />
                                         </StackPanel>
                                         <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
-                                            <ProgressRing Style="{StaticResource FirmwareProgressRingStyle}"
-                                                          IsActive="{x:Bind ViewModel.IsFunctionKeyFieldLoading, Mode=OneWay}"
-                                                          Visibility="{x:Bind ViewModel.IsFunctionKeyFieldLoading, Mode=OneWay}"
-                                                          AutomationProperties.Name="Reading or applying function key behavior" />
+                                            <Border x:Name="FunctionKeyFirmwareLoadingSlot"
+                                                    Width="16"
+                                                    Height="16"
+                                                    VerticalAlignment="Center">
+                                                <ProgressRing Style="{StaticResource FirmwareProgressRingStyle}"
+                                                              IsActive="{x:Bind ViewModel.IsFunctionKeyFieldLoading, Mode=OneWay}"
+                                                              Visibility="{x:Bind ViewModel.IsFunctionKeyFieldLoading, Mode=OneWay}"
+                                                              AutomationProperties.Name="Reading or applying function key behavior" />
+                                            </Border>
                                             <DropDownButton Content="{x:Bind ViewModel.FunctionKeyPrimaryStateLabel, Mode=OneWay}"
                                                             HorizontalAlignment="Right"
                                                             VerticalAlignment="Center"
@@ -2026,10 +2031,15 @@
                                                        Style="{StaticResource SecondaryTextStyle}" />
                                         </StackPanel>
                                         <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
-                                            <ProgressRing Style="{StaticResource FirmwareProgressRingStyle}"
-                                                          IsActive="{x:Bind ViewModel.IsGamingModeFieldLoading, Mode=OneWay}"
-                                                          Visibility="{x:Bind ViewModel.IsGamingModeFieldLoading, Mode=OneWay}"
-                                                          AutomationProperties.Name="Reading or applying Gaming Mode" />
+                                            <Border x:Name="GamingModeFirmwareLoadingSlot"
+                                                    Width="16"
+                                                    Height="16"
+                                                    VerticalAlignment="Center">
+                                                <ProgressRing Style="{StaticResource FirmwareProgressRingStyle}"
+                                                              IsActive="{x:Bind ViewModel.IsGamingModeFieldLoading, Mode=OneWay}"
+                                                              Visibility="{x:Bind ViewModel.IsGamingModeFieldLoading, Mode=OneWay}"
+                                                              AutomationProperties.Name="Reading or applying Gaming Mode" />
+                                            </Border>
                                             <ToggleSwitch x:Name="GamingModeToggle"
                                                           HorizontalAlignment="Right"
                                                           VerticalAlignment="Center"
@@ -2056,10 +2066,15 @@
                                                        Style="{StaticResource SecondaryTextStyle}" />
                                         </StackPanel>
                                         <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
-                                            <ProgressRing Style="{StaticResource FirmwareProgressRingStyle}"
-                                                          IsActive="{x:Bind ViewModel.IsStartupAnimationFieldLoading, Mode=OneWay}"
-                                                          Visibility="{x:Bind ViewModel.IsStartupAnimationFieldLoading, Mode=OneWay}"
-                                                          AutomationProperties.Name="Reading or applying startup animation" />
+                                            <Border x:Name="StartupAnimationFirmwareLoadingSlot"
+                                                    Width="16"
+                                                    Height="16"
+                                                    VerticalAlignment="Center">
+                                                <ProgressRing Style="{StaticResource FirmwareProgressRingStyle}"
+                                                              IsActive="{x:Bind ViewModel.IsStartupAnimationFieldLoading, Mode=OneWay}"
+                                                              Visibility="{x:Bind ViewModel.IsStartupAnimationFieldLoading, Mode=OneWay}"
+                                                              AutomationProperties.Name="Reading or applying startup animation" />
+                                            </Border>
                                             <ToggleSwitch x:Name="StartupAnimationToggle"
                                                           HorizontalAlignment="Right"
                                                           VerticalAlignment="Center"
