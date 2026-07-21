@@ -2650,7 +2650,8 @@ public sealed class MainViewModelTests
 
         client.Publish(CreateStatus(verified: false, blocked: true));
         await WaitUntilAsync(() =>
-            viewModel.ControlAccessStatus == "Laptop not found");
+            viewModel.ControlAccessStatus == "Laptop not found"
+            && viewModel.PerformanceSourceLabel == "Laptop not found");
         Assert.Equal("Laptop not found", viewModel.ProfileStateLabel);
         Assert.True(viewModel.IsReadinessError);
         Assert.False(viewModel.IsReadinessWarning);
@@ -2760,7 +2761,7 @@ public sealed class MainViewModelTests
         string performance = viewModel.ActivePerformanceLabel;
         string fans = viewModel.ActiveFanModeLabel;
 
-        client.Publish(CreateStatus(verified: true, blocked: true) with
+        client.Publish(CreateStatus(verified: true, blocked: false) with
         {
             Revision = 2,
             Message = "Checking the laptop connection after a temporary device-access failure.",
@@ -2769,6 +2770,22 @@ public sealed class MainViewModelTests
 
         Assert.Equal("Checking laptop", viewModel.ControlAccessStatus);
         Assert.True(viewModel.IsReadinessChecking);
+        Assert.False(viewModel.IsReadinessReady);
+        Assert.False(viewModel.IsReadinessWarning);
+        Assert.False(viewModel.IsReadinessError);
+        Assert.Equal(performance, viewModel.ActivePerformanceLabel);
+        Assert.Equal(fans, viewModel.ActiveFanModeLabel);
+
+        client.Publish(CreateStatus(verified: true, blocked: true) with
+        {
+            Revision = 3,
+            Message = "Refreshing laptop controls after a temporary device-access failure. Last read failed.",
+        });
+        await WaitUntilAsync(() => viewModel.ControlAccessStatus == "Checking laptop");
+
+        Assert.Equal("Checking laptop", viewModel.ProfileStateLabel);
+        Assert.True(viewModel.IsReadinessChecking);
+        Assert.False(viewModel.IsReadinessReady);
         Assert.False(viewModel.IsReadinessWarning);
         Assert.False(viewModel.IsReadinessError);
         Assert.Equal(performance, viewModel.ActivePerformanceLabel);

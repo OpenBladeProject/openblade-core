@@ -540,7 +540,9 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
 
     public string ControlAccessStatus
     {
-        get => controlAccessStatus;
+        get => IsConnected && latestStatus is { } status
+            ? FormatControlAccessStatus(status)
+            : controlAccessStatus;
         private set
         {
             if (controlAccessStatus == value)
@@ -812,6 +814,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
 
     public bool IsReadinessReady => IsConnected
         && latestStatus?.DeviceVerified == true
+        && !IsCheckingLaptopConnection(latestStatus)
         && (CanControlHardware || IsRetainedPowerSourceRecheck(latestStatus));
 
     public bool IsReadinessChecking => IsConnected
@@ -6046,10 +6049,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             return "Laptop not found";
         }
 
-        if (status.WritesBlocked
-            && status.Message.StartsWith(
-                "Checking the laptop connection",
-                StringComparison.OrdinalIgnoreCase))
+        if (IsCheckingLaptopConnection(status))
         {
             return "Checking laptop";
         }
@@ -6081,9 +6081,15 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             StringComparison.OrdinalIgnoreCase);
 
     private static bool IsCheckingLaptopConnection(ServiceStatusSnapshot? status) =>
-        status is { DeviceVerified: true, WritesBlocked: true }
-        && status.Message.StartsWith(
+        status is { DeviceVerified: true }
+        && IsTemporaryDeviceAccessMessage(status.Message);
+
+    private static bool IsTemporaryDeviceAccessMessage(string message) =>
+        message.StartsWith(
             "Checking the laptop connection",
+            StringComparison.OrdinalIgnoreCase)
+        || message.StartsWith(
+            "Refreshing laptop controls after a temporary device-access failure",
             StringComparison.OrdinalIgnoreCase);
 
     private static bool StatusMetadataEqual(
@@ -6208,6 +6214,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     private void NotifyPresentationState()
     {
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsServiceUnavailable)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ControlAccessStatus)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(CanEditFanControl)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(BatteryPowerFlowLabel)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Fan1RpmLabel)));
