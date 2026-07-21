@@ -13,6 +13,9 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Made the approved Tidal and Wave/Wheel oracle fixtures check out with their
+  required CRLF byte representation so their production hash gates and semantic
+  fingerprint also pass in fresh clones.
 - Prevented closed information banners from reserving empty vertical space,
   keeping the first section gap consistent across Dashboard, Lighting,
   Display, and Settings.
