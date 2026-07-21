@@ -2909,6 +2909,9 @@ public sealed class MainViewModelTests
         Assert.False(viewModel.IsReadinessReady);
         Assert.False(viewModel.IsReadinessWarning);
         Assert.False(viewModel.IsReadinessError);
+        Assert.False(viewModel.CanControlHardware);
+        Assert.False(viewModel.CanControlLighting);
+        Assert.False(viewModel.SetLightingCommand.CanExecute(viewModel.LightingDraft));
         Assert.Equal(performance, viewModel.ActivePerformanceLabel);
         Assert.Equal(fans, viewModel.ActiveFanModeLabel);
 
@@ -2924,6 +2927,9 @@ public sealed class MainViewModelTests
         Assert.False(viewModel.IsReadinessReady);
         Assert.False(viewModel.IsReadinessWarning);
         Assert.False(viewModel.IsReadinessError);
+        Assert.False(viewModel.CanControlHardware);
+        Assert.False(viewModel.CanControlLighting);
+        Assert.False(viewModel.SetLightingCommand.CanExecute(viewModel.LightingDraft));
         Assert.Equal(performance, viewModel.ActivePerformanceLabel);
         Assert.Equal(fans, viewModel.ActiveFanModeLabel);
 
@@ -2939,6 +2945,9 @@ public sealed class MainViewModelTests
         Assert.False(viewModel.IsReadinessReady);
         Assert.False(viewModel.IsReadinessWarning);
         Assert.False(viewModel.IsReadinessError);
+        Assert.False(viewModel.CanControlHardware);
+        Assert.False(viewModel.CanControlLighting);
+        Assert.False(viewModel.SetLightingCommand.CanExecute(viewModel.LightingDraft));
         Assert.Equal("Checking laptop", viewModel.PerformanceSourceLabel);
         Assert.Equal("Checking laptop", viewModel.FanSourceLabel);
         Assert.Equal("Checking laptop", viewModel.LightingSourceLabel);
@@ -2974,6 +2983,9 @@ public sealed class MainViewModelTests
         Assert.Equal("Checking laptop", viewModel.ControlAccessStatus);
         Assert.True(viewModel.IsReadinessChecking);
         Assert.False(viewModel.IsReadinessError);
+        Assert.False(viewModel.CanControlHardware);
+        Assert.False(viewModel.CanControlLighting);
+        Assert.False(viewModel.SetLightingCommand.CanExecute(viewModel.LightingDraft));
         Assert.Equal("Checking laptop", viewModel.PerformanceSourceLabel);
         Assert.Equal("Checking laptop", viewModel.FanSourceLabel);
         Assert.Equal("Checking laptop", viewModel.LightingSourceLabel);

@@ -2850,7 +2850,8 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             DeviceVerified: true,
             WritesBlocked: false,
             Capabilities: not null,
-        };
+        }
+        && !IsCheckingLaptopConnection(latestStatus);
 
     private bool HasConfirmedPowerSource => ActivePowerSource is
         PowerSource.PluggedIn or PowerSource.Battery or PowerSource.UsbC;
@@ -3191,8 +3192,10 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         }
 
         IsConnected = true;
+        bool checkingLaptopConnection = IsCheckingLaptopConnection(status);
         bool controllable = status.DeviceVerified
-            && !status.WritesBlocked;
+            && !status.WritesBlocked
+            && !checkingLaptopConnection;
         IsReadOnly = !controllable;
         CanControlHardware = controllable
             && status.ActivePowerSource != PowerSource.ExternalUnknown;
