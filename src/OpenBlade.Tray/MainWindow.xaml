@@ -1893,15 +1893,21 @@
                                               SelectedItem="{x:Bind ViewModel.SelectedLiveReadingsRefreshOption, Mode=TwoWay}" />
                                 </Grid>
                             </Border>
-                            <Border Style="{StaticResource SettingsSubcardStyle}">
-                                <StackPanel Spacing="8">
-                                    <StackPanel Spacing="3">
+                            <Border Style="{StaticResource SettingsRowStyle}">
+                                <Grid ColumnSpacing="20">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel Spacing="3" VerticalAlignment="Center">
                                         <TextBlock Text="Shown on Dashboard"
                                                    Style="{StaticResource CardTitleStyle}" />
                                         <TextBlock Text="Choose which live readings appear in the Dashboard summary."
                                                    Style="{StaticResource SecondaryTextStyle}" />
                                     </StackPanel>
-                                    <ItemsControl ItemsSource="{x:Bind ViewModel.DashboardTelemetryItems, Mode=OneWay}">
+                                    <ItemsControl Grid.Column="1"
+                                                  HorizontalAlignment="Right"
+                                                  ItemsSource="{x:Bind ViewModel.DashboardTelemetryItems, Mode=OneWay}">
                                         <ItemsControl.ItemsPanel>
                                             <ItemsPanelTemplate>
                                                 <ItemsWrapGrid Orientation="Horizontal"
@@ -1916,7 +1922,7 @@
                                             </DataTemplate>
                                         </ItemsControl.ItemTemplate>
                                     </ItemsControl>
-                                </StackPanel>
+                                </Grid>
                             </Border>
                             <Border Style="{StaticResource SettingsRowStyle}">
                                 <Grid ColumnSpacing="20">

@@ -246,12 +246,26 @@ public sealed class WinUiShellContractTests
 
         Assert.Contains("ViewModel.DashboardTelemetryItems", xaml, StringComparison.Ordinal);
         Assert.Contains("ViewModel.TrayHoverLabelItems", xaml, StringComparison.Ordinal);
+        Assert.Contains("ItemsControl Grid.Column=\"1\"", xaml, StringComparison.Ordinal);
         Assert.Contains("CanDragItems=\"True\"", xaml, StringComparison.Ordinal);
         Assert.Contains("CanReorderItems=\"True\"", xaml, StringComparison.Ordinal);
         Assert.Contains("ReorderMode=\"Enabled\"", xaml, StringComparison.Ordinal);
         Assert.Contains("Style=\"{StaticResource DestructiveButtonStyle}\"", xaml, StringComparison.Ordinal);
         Assert.Contains("SystemFillColorCriticalBrush", xaml, StringComparison.Ordinal);
         Assert.Contains("#47E10C", app, StringComparison.OrdinalIgnoreCase);
+
+        int dashboardSelector = xaml.IndexOf(
+            "Text=\"Shown on Dashboard\"",
+            StringComparison.Ordinal);
+        int previousSubcard = xaml.LastIndexOf(
+            "Style=\"{StaticResource SettingsSubcardStyle}\"",
+            dashboardSelector,
+            StringComparison.Ordinal);
+        int previousRow = xaml.LastIndexOf(
+            "Style=\"{StaticResource SettingsRowStyle}\"",
+            dashboardSelector,
+            StringComparison.Ordinal);
+        Assert.True(previousRow > previousSubcard);
     }
 
     [Fact]
@@ -319,7 +333,7 @@ public sealed class WinUiShellContractTests
         Assert.Equal(4, CountOccurrences(xaml, "Style=\"{StaticResource ActiveProfilePillTextStyle}\""));
         Assert.Contains("<TextBlock Text=\"Battery\" Style=\"{StaticResource CardTitleStyle}\" />", xaml, StringComparison.Ordinal);
         Assert.Contains("Text=\"Power mode\"", xaml, StringComparison.Ordinal);
-        Assert.Equal(3, CountOccurrences(xaml, "Style=\"{StaticResource SettingsSubcardStyle}\""));
+        Assert.Equal(2, CountOccurrences(xaml, "Style=\"{StaticResource SettingsSubcardStyle}\""));
         Assert.Equal(3, CountOccurrences(xaml, "Style=\"{StaticResource SettingsLastSubcardStyle}\""));
         Assert.Contains("<Setter Property=\"BorderThickness\" Value=\"0,1,0,0\" />", xaml, StringComparison.Ordinal);
         Assert.DoesNotContain("<Setter Property=\"Margin\" Value=\"16,0,16,14\" />", xaml, StringComparison.Ordinal);
