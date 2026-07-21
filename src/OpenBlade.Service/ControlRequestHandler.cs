@@ -75,6 +75,11 @@ public sealed class ControlRequestHandler
             SetLightingOverrideRequest set => Result(
                 request.RequestId,
                 await runtime.SetLightingOverrideAsync(set.Value, cancellationToken)),
+            SetExternalLightingOverridePolicyRequest set => Result(
+                request.RequestId,
+                await runtime.SetExternalLightingOverridePolicyAsync(
+                    set.Enabled,
+                    cancellationToken)),
             SetLightingSuppressionRequest set => Result(
                 request.RequestId,
                 await runtime.SetLightingSuppressionAsync(

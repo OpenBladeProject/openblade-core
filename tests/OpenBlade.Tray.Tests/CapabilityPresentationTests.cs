@@ -273,7 +273,7 @@ public sealed class CapabilityPresentationTests
             settings.Descendants().Count(element =>
                 Attribute(element, "Style") == "{StaticResource SettingsGroupStyle}"));
         Assert.Equal(
-            7,
+            8,
             settings.Descendants().Count(element =>
                 Attribute(element, "Style") == "{StaticResource SettingsRowStyle}"));
         Assert.Equal(
@@ -847,11 +847,15 @@ public sealed class CapabilityPresentationTests
         Assert.Empty(viewModel.AvailableLightingEffects);
         Assert.Empty(viewModel.AvailableLightingSettings);
         Assert.NotEmpty(viewModel.AvailableLightingEffectOptions);
+        Assert.Equal(LightingEffect.Off, viewModel.AvailableLightingEffectOptions[0].Effect);
         Assert.Equal(
             viewModel.AvailableLightingEffectOptions
+                .Skip(1)
                 .Select(option => option.Label)
                 .OrderBy(label => label, StringComparer.OrdinalIgnoreCase),
-            viewModel.AvailableLightingEffectOptions.Select(option => option.Label));
+            viewModel.AvailableLightingEffectOptions
+                .Skip(1)
+                .Select(option => option.Label));
         Assert.True(viewModel.IsLightingVisible);
         Assert.False(viewModel.HasLightingCapability);
         Assert.False(viewModel.CanControlLighting);
@@ -1381,11 +1385,15 @@ public sealed class CapabilityPresentationTests
             viewModel.CanControlHardware
             && viewModel.AvailableLightingEffectOptions.Count ==
                 Enum.GetValues<LightingEffect>().Length);
+        Assert.Equal(LightingEffect.Off, viewModel.AvailableLightingEffectOptions[0].Effect);
         Assert.Equal(
             viewModel.AvailableLightingEffectOptions
+                .Skip(1)
                 .Select(option => option.Label)
                 .OrderBy(label => label, StringComparer.OrdinalIgnoreCase),
-            viewModel.AvailableLightingEffectOptions.Select(option => option.Label));
+            viewModel.AvailableLightingEffectOptions
+                .Skip(1)
+                .Select(option => option.Label));
 
         viewModel.LightingBrightnessEditor = 64;
         viewModel.LightingRedEditor = 12;

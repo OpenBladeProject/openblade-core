@@ -252,6 +252,7 @@ public sealed class ServiceClientTests
                 new ManualOverride<FanMode>(FanMode.Maximum, OverrideLifetime.UntilPowerSourceChange),
                 timeout.Token),
             await client.SetLightingOverrideAsync(null, timeout.Token),
+            await client.SetExternalLightingOverridePolicyAsync(true, timeout.Token),
             await client.SetLightingSuppressionAsync(
                 LightingSuppressionReason.DisplayOff,
                 suppressed: true,
@@ -279,6 +280,8 @@ public sealed class ServiceClientTests
                 Assert.IsType<CyclePerformanceShortcutRequest>(request).Source),
             request => Assert.IsType<SetFanOverrideRequest>(request),
             request => Assert.IsType<SetLightingOverrideRequest>(request),
+            request => Assert.True(
+                Assert.IsType<SetExternalLightingOverridePolicyRequest>(request).Enabled),
             request =>
             {
                 SetLightingSuppressionRequest suppression =
@@ -302,7 +305,7 @@ public sealed class ServiceClientTests
             },
             request => Assert.IsType<ShutdownOpenBladeRequest>(request));
         Assert.All(observed, request => Assert.NotEqual(Guid.Empty, request.RequestId));
-        Assert.Equal(12, observed.Select(request => request.RequestId).Distinct().Count());
+        Assert.Equal(13, observed.Select(request => request.RequestId).Distinct().Count());
     }
 
     [Fact]
@@ -735,7 +738,7 @@ public sealed class ServiceClientTests
         List<ServiceRequest> observed,
         CancellationToken token)
     {
-        for (int index = 0; index < 12; index++)
+        for (int index = 0; index < 13; index++)
         {
             await using NamedPipeServerStream server = CreateServer(pipeName);
             await server.WaitForConnectionAsync(token);

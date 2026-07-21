@@ -20,7 +20,16 @@ OpenBlade never exposes a raw-command IPC endpoint.
 If a Razer/Synapse controller process is running, the service reports an
 advisory warning. OpenBlade observes confirmed device state and does not
 automatically overwrite a control that another controller changed. An explicit
-manual OpenBlade action may reclaim that control after a fresh readback.
+manual OpenBlade action may reclaim that control after a fresh readback. Users
+may opt in to always restoring OpenBlade's last lighting effect; this exception
+applies only to lighting and is disabled by default.
+
+## Profiles
+
+Saved AC, USB-C, and battery profiles can be exported and imported as JSON.
+Exports use a versioned envelope with an explicit `schemaVersion`; imports are
+routed through a schema-specific reader so future OpenBlade releases can migrate
+older profile structures without silently interpreting them as the current one.
 
 ## Live readings
 
@@ -94,7 +103,7 @@ Program Files.
 This repository contains only the application and tray `.ico` files required
 to build and run OpenBlade. Brand source files, alternate exports, and unused
 variants are maintained in
-[`boyuanx/openblade-branding`](https://github.com/boyuanx/openblade-branding).
+[`OSSBlade/openblade-branding`](https://github.com/OSSBlade/openblade-branding).
 
 ## Capture workflow
 

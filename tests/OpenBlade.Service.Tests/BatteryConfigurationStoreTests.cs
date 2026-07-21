@@ -54,6 +54,42 @@ public sealed class BatteryConfigurationStoreTests : IDisposable
         Assert.True(File.GetLastWriteTimeUtc(paths.Marker) >= File.GetLastWriteTimeUtc(paths.Preferences));
     }
 
+    [Fact]
+    public async Task SaveConfigurationAsync_RoundTripsLightingOwnershipPreferences()
+    {
+        Paths paths = CreatePaths();
+        BatteryConfigurationStore store = CreateStore(paths);
+        BatteryConfiguration initial = await store.LoadAsync(CancellationToken.None);
+        LightingSettings lastKnown = initial.Profiles.PluggedIn.Lighting;
+        var preferences = new BatteryAutomationPreferences(
+            ProtectionEnabled: true,
+            AlwaysOverrideExternalLightingChanges: true,
+            LastKnownLighting: lastKnown);
+
+        await store.SaveConfigurationAsync(
+            initial.Profiles,
+            preferences,
+            CancellationToken.None);
+        BatteryConfiguration loaded = await store.LoadAsync(CancellationToken.None);
+
+        Assert.Equal(preferences, loaded.Preferences);
+        using JsonDocument persisted = JsonDocument.Parse(
+            await File.ReadAllBytesAsync(paths.Preferences));
+        Assert.Equal(
+            ProfileStore.CurrentSchemaVersion,
+            persisted.RootElement.GetProperty("schemaVersion").GetInt32());
+        Assert.True(
+            persisted.RootElement.GetProperty("preferences")
+                .GetProperty("alwaysOverrideExternalLightingChanges")
+                .GetBoolean());
+        Assert.Equal(
+            (int)LightingEffect.Off,
+            persisted.RootElement.GetProperty("preferences")
+                .GetProperty("lastKnownLighting")
+                .GetProperty("effect")
+                .GetInt32());
+    }
+
     [Theory]
     [InlineData(0, PerformancePreset.BatterySaver)]
     [InlineData(1, PerformancePreset.BatteryBalanced)]

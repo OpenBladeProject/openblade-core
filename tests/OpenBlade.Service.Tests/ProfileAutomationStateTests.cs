@@ -269,6 +269,45 @@ public sealed class ProfileAutomationStateTests
     }
 
     [Fact]
+    public void Constructor_DoesNotPresentMatchingLastKnownLightingAsAnOverride()
+    {
+        ProfileSet profiles = ProfileDefaults.CreateSafeDefaults();
+        ProfileAutomationState state = new(
+            profiles,
+            new BatteryAutomationPreferences(
+                ProtectionEnabled: true,
+                LastKnownLighting: profiles.PluggedIn.Lighting),
+            PowerSource.PluggedIn);
+
+        Assert.Null(state.LightingOverride);
+        Assert.Equal(
+            SettingValueSource.PowerProfile,
+            state.Resolve(new ConfirmedDeviceState(null, null, null, null))
+                .Lighting.Source);
+    }
+
+    [Fact]
+    public void Constructor_RestoresDifferentLastKnownLightingUntilPowerSourceChanges()
+    {
+        LightingSettings lastKnown = LightingSettingsFactory.Static(
+            new RgbColor(71, 225, 12),
+            brightness: 50);
+        ProfileAutomationState state = new(
+            ProfileDefaults.CreateSafeDefaults(),
+            new BatteryAutomationPreferences(
+                ProtectionEnabled: true,
+                LastKnownLighting: lastKnown),
+            PowerSource.PluggedIn);
+
+        Assert.Equal(lastKnown, state.LightingOverride!.Value);
+        Assert.Equal(OverrideLifetime.UntilPowerSourceChange, state.LightingOverride.Lifetime);
+
+        state.ChangePowerSource(PowerSource.Battery);
+
+        Assert.Null(state.LightingOverride);
+    }
+
+    [Fact]
     public void ChargeToFull_IsAutomaticallyCancelledOnUnplug()
     {
         ProfileAutomationState state = CreateState(PowerSource.PluggedIn);

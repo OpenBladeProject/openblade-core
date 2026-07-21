@@ -2195,6 +2195,77 @@ public sealed class MainViewModelTests
     }
 
     [Fact]
+    public async Task LightingEffects_PutOffFirstThenSortTheRemainingLabels()
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        client.Publish(CreateStatus(
+            verified: true,
+            blocked: false,
+            capabilities: DeviceCapabilities.SafeTargetDefaults() with
+            {
+                LightingEffects = new HashSet<LightingEffect>(
+                    Enum.GetValues<LightingEffect>()),
+                ChargeLimits = ChargeLimits(),
+            }));
+        await WaitUntilAsync(() => viewModel.IsConnected);
+
+        Assert.Equal(LightingEffect.Off, viewModel.AvailableLightingEffectOptions[0].Effect);
+        string[] remaining = viewModel.AvailableLightingEffectOptions
+            .Skip(1)
+            .Select(option => option.Label)
+            .ToArray();
+        Assert.Equal(
+            remaining.OrderBy(label => label, StringComparer.OrdinalIgnoreCase),
+            remaining);
+    }
+
+    [Fact]
+    public async Task ImportProfiles_StoresAndLoadsEveryImportedEditor()
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        client.Publish(CreateStatus(verified: true, blocked: false));
+        await WaitUntilAsync(() => viewModel.IsConnected);
+        ProfileSet imported = ProfileDefaults.CreateSafeDefaults() with
+        {
+            BatteryPolicy = BatteryPolicy.Create(75),
+        };
+
+        bool accepted = await viewModel.ImportProfilesAsync(
+            imported,
+            CancellationToken.None);
+
+        Assert.True(accepted);
+        Assert.Equal(imported, client.LastProfiles);
+        Assert.Equal(imported, viewModel.Profiles);
+        Assert.False(viewModel.HasActiveProfileDraft);
+    }
+
+    [Fact]
+    public async Task ExternalLightingPolicy_ReflectsStatusAndSendsMutation()
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        client.Publish(CreateStatus(verified: true, blocked: false) with
+        {
+            AlwaysOverrideExternalLightingChanges = true,
+        });
+        await WaitUntilAsync(() => viewModel.AlwaysOverrideExternalLightingChanges);
+
+        bool accepted = await viewModel.SetExternalLightingOverridePolicyAsync(
+            false,
+            CancellationToken.None);
+
+        Assert.True(accepted);
+        Assert.False(viewModel.AlwaysOverrideExternalLightingChanges);
+        Assert.False(client.ExternalLightingOverridePolicy);
+    }
+
+    [Fact]
     public async Task SelectingEffectFromUnconfirmedZeroBrightnessUsesMatchingVisibleDefault()
     {
         var client = new FakeServiceClient();
@@ -4114,6 +4185,7 @@ public sealed class MainViewModelTests
         public ManualOverride<FanMode>? FanOverride { get; private set; }
         public FanControlSettings? LastFanControlSettings { get; private set; }
         public ManualOverride<LightingSettings>? LightingOverride { get; private set; }
+        public bool? ExternalLightingOverridePolicy { get; private set; }
         public bool? BatteryProtectionEnabled { get; private set; }
         public bool? FullChargeEnabled { get; private set; }
         public bool ShutdownRequested { get; private set; }
@@ -4248,6 +4320,14 @@ public sealed class MainViewModelTests
             MutationOperations.Add(value is null
                 ? "lighting:<clear>"
                 : $"lighting:{value.Value.Effect}");
+            return MutateAsync(token);
+        }
+
+        public Task<ControlOperationResult> SetExternalLightingOverridePolicyAsync(
+            bool enabled,
+            CancellationToken token)
+        {
+            ExternalLightingOverridePolicy = enabled;
             return MutateAsync(token);
         }
 

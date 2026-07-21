@@ -65,6 +65,13 @@ public interface IServiceClient
         ManualOverride<LightingSettings>? value,
         CancellationToken token);
 
+    Task<ControlOperationResult> SetExternalLightingOverridePolicyAsync(
+        bool enabled,
+        CancellationToken token) => Task.FromResult(
+            new ControlOperationResult(
+                ControlOperationStatus.Blocked,
+                "External lighting override policy is unavailable."));
+
     Task<ControlOperationResult> SetLightingSuppressionAsync(
         LightingSuppressionReason reason,
         bool suppressed,

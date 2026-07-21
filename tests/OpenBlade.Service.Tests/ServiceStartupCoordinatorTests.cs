@@ -21,7 +21,7 @@ public sealed class ServiceStartupCoordinatorTests : IDisposable
         bool started = await coordinator.InitializeAsync(CancellationToken.None);
 
         Assert.True(started);
-        Assert.Equal(["Initialize", "Observe"], runtime.Calls);
+        Assert.Equal(["Initialize", "Observe", "RestoreLighting"], runtime.Calls);
         Assert.Equal(1, runtime.ObserveCount);
         Assert.True(runtime.ProfileFileExistedDuringInitialize);
         Assert.Equal(PowerSource.PluggedIn, runtime.InitialPowerSource);
@@ -161,6 +161,12 @@ public sealed class ServiceStartupCoordinatorTests : IDisposable
             return ObserveFailure is null
                 ? Task.CompletedTask
                 : Task.FromException(ObserveFailure);
+        }
+
+        public Task RestoreLightingRendererAsync(CancellationToken cancellationToken)
+        {
+            Calls.Add("RestoreLighting");
+            return Task.CompletedTask;
         }
 
         public ServiceStatusSnapshot GetStatus() => throw new NotSupportedException();

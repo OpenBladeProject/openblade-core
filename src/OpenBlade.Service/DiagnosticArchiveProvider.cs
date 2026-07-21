@@ -364,6 +364,8 @@ public sealed class DiagnosticArchiveProvider : IDiagnosticArchiveProvider
             ["desired.lighting.source"] = status.DesiredState.Lighting.Source.ToString(),
             ["lighting.rendererOwnership"] =
                 status.LightingRendererOwnership.ToString(),
+            ["lighting.alwaysOverrideExternalChanges"] =
+                status.AlwaysOverrideExternalLightingChanges.ToString(),
             ["confirmed.performance"] = EnumOrUnavailable(confirmed?.Performance),
             ["confirmed.fans"] = EnumOrUnavailable(confirmed?.Fans),
             ["confirmed.battery.chargeLimitPercent"] = NumberOrUnavailable(

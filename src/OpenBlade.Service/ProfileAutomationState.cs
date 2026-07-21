@@ -50,6 +50,19 @@ public sealed class ProfileAutomationState
         persistentLighting = persistentOverrides.Lighting is { } lighting
             ? new ManualOverride<LightingSettings>(lighting, OverrideLifetime.Persistent)
             : null;
+        PowerProfile? activeProfile = powerSource switch
+        {
+            PowerSource.PluggedIn => profiles.PluggedIn,
+            PowerSource.Battery => profiles.Battery,
+            PowerSource.UsbC => profiles.UsbC,
+            _ => null,
+        };
+        temporaryLighting = preferences.LastKnownLighting is { } lastKnownLighting
+            && lastKnownLighting != activeProfile?.Lighting
+                ? new ManualOverride<LightingSettings>(
+                    lastKnownLighting,
+                    OverrideLifetime.UntilPowerSourceChange)
+                : null;
         desiredBattery = new DesiredBatteryState(
             profiles.BatteryPolicy,
             preferences.ProtectionEnabled,

@@ -14,6 +14,7 @@ public sealed class DiagnosticArchiveProviderTests
         var runtime = new SnapshotOnlyRuntime(CreateStatus() with
         {
             ControllerDetectionWarning = $"Enumeration warning: {secret}",
+            AlwaysOverrideExternalLightingChanges = true,
         });
         var history = new DiagnosticHistory();
         history.RecordSummary(ControlOperationStatus.Blocked, $"Blocked for {secret}");
@@ -84,6 +85,9 @@ public sealed class DiagnosticArchiveProviderTests
         Assert.Equal(
             FanMode.Automatic.ToString(),
             configuration.RootElement.GetProperty("profile.usbC.fans").GetString());
+        Assert.Equal(
+            bool.TrueString,
+            configuration.RootElement.GetProperty("lighting.alwaysOverrideExternalChanges").GetString());
         Assert.DoesNotContain(
             configuration.RootElement.EnumerateObject(),
             property => property.Name.StartsWith("telemetry.", StringComparison.Ordinal));

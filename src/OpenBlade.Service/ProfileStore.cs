@@ -8,10 +8,11 @@ public sealed record ProfileLoadResult(ProfileSet Profiles, bool RecoveredFromIn
 
 public sealed class ProfileStore(string path, ProfileSetValidator? validator = null)
 {
-    internal const int CurrentSchemaVersion = 5;
-    internal const int PreviousSchemaVersion = 4;
-    internal const int OlderSchemaVersion = 3;
-    internal const int OldestSupportedSchemaVersion = 2;
+    internal const int CurrentSchemaVersion = 6;
+    internal const int PreviousSchemaVersion = 5;
+    internal const int OlderSchemaVersion = 4;
+    internal const int OldestSupportedSchemaVersion = 3;
+    internal const int EarliestSupportedSchemaVersion = 2;
     internal const int LegacySchemaVersion = 1;
 
     internal static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web)
@@ -86,7 +87,8 @@ public sealed class ProfileStore(string path, ProfileSetValidator? validator = n
         if (schemaVersion is CurrentSchemaVersion
             or PreviousSchemaVersion
             or OlderSchemaVersion
-            or OldestSupportedSchemaVersion)
+            or OldestSupportedSchemaVersion
+            or EarliestSupportedSchemaVersion)
         {
             ProfileDocument? document = JsonSerializer.Deserialize<ProfileDocument>(
                 json,

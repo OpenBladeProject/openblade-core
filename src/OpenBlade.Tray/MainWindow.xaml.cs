@@ -42,6 +42,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
     private bool changingBatteryProtection;
     private bool changingGamingMode;
     private bool changingStartupAnimation;
+    private bool changingExternalLightingPolicy;
     private bool changingDisplaySettings;
     private bool chargeLimitCommitInProgress;
     private bool fanControlCommitInProgress;
@@ -539,6 +540,34 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
 
         StartMinimized = toggle.IsOn;
         QueuePreferenceSave();
+    }
+
+    private async void OnExternalLightingOverridePolicyToggled(
+        object sender,
+        RoutedEventArgs args)
+    {
+        if (changingExternalLightingPolicy
+            || Volatile.Read(ref disposed) != 0
+            || sender is not ToggleSwitch toggle
+            || toggle.IsOn == ViewModel.AlwaysOverrideExternalLightingChanges)
+        {
+            return;
+        }
+
+        changingExternalLightingPolicy = true;
+        toggle.IsEnabled = false;
+        try
+        {
+            await ViewModel.SetExternalLightingOverridePolicyAsync(
+                toggle.IsOn,
+                CancellationToken.None);
+        }
+        finally
+        {
+            toggle.IsOn = ViewModel.AlwaysOverrideExternalLightingChanges;
+            toggle.IsEnabled = true;
+            changingExternalLightingPolicy = false;
+        }
     }
 
     private async void OnGamingModeToggled(object sender, RoutedEventArgs args)
@@ -1402,6 +1431,59 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
                 XamlRoot = Root.XamlRoot,
                 Title = "Profiles could not be exported",
                 Content = "OpenBlade could not save the selected JSON file.",
+                CloseButtonText = "Close",
+                DefaultButton = ContentDialogButton.Close,
+            };
+            await failure.ShowAsync();
+        }
+    }
+
+    private async void OnImportProfiles(object sender, RoutedEventArgs args)
+    {
+        try
+        {
+            var picker = new FileOpenPicker(AppWindow.Id)
+            {
+                Title = "Import OpenBlade profiles",
+            };
+            picker.FileTypeFilter.Add(".json");
+
+            PickFileResult? result = await picker.PickSingleFileAsync();
+            if (result is null)
+            {
+                return;
+            }
+
+            ProfileSet profiles = ProfileExportSerializer.Deserialize(
+                await File.ReadAllTextAsync(result.Path));
+            var confirmation = new ContentDialog
+            {
+                XamlRoot = Root.XamlRoot,
+                Title = "Import profiles?",
+                Content = "This replaces the saved AC, USB-C, battery, and battery-protection profiles. Current hardware settings are not changed until you apply or switch profiles.",
+                PrimaryButtonText = "Import",
+                CloseButtonText = "Cancel",
+                DefaultButton = ContentDialogButton.Primary,
+            };
+            if (await confirmation.ShowAsync() != ContentDialogResult.Primary)
+            {
+                return;
+            }
+
+            if (!await ViewModel.ImportProfilesAsync(profiles, CancellationToken.None))
+            {
+                throw new InvalidDataException(
+                    "The imported profiles include settings that are unavailable on this laptop.");
+            }
+        }
+        catch (Exception exception)
+        {
+            Trace.TraceError("OpenBlade profile import failed: {0}", exception);
+            var failure = new ContentDialog
+            {
+                XamlRoot = Root.XamlRoot,
+                Title = "Profiles could not be imported",
+                Content = exception.Message,
                 CloseButtonText = "Close",
                 DefaultButton = ContentDialogButton.Close,
             };

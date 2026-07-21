@@ -22,6 +22,7 @@ public sealed record ControlOperationResult(ControlOperationStatus Status, strin
 [JsonDerivedType(typeof(CyclePerformanceShortcutRequest), "cyclePerformanceShortcut")]
 [JsonDerivedType(typeof(SetFanOverrideRequest), "setFanOverride")]
 [JsonDerivedType(typeof(SetLightingOverrideRequest), "setLightingOverride")]
+[JsonDerivedType(typeof(SetExternalLightingOverridePolicyRequest), "setExternalLightingOverridePolicy")]
 [JsonDerivedType(typeof(SetLightingSuppressionRequest), "setLightingSuppression")]
 [JsonDerivedType(typeof(PulseReactiveKeyRequest), "pulseReactiveKey")]
 [JsonDerivedType(typeof(PushAmbientLightingFrameRequest), "pushAmbientLightingFrame")]
@@ -78,6 +79,12 @@ public sealed record SetLightingOverrideRequest(
     int Version,
     Guid RequestId,
     ManualOverride<LightingSettings>? Value)
+    : ServiceRequest(Version, RequestId);
+
+public sealed record SetExternalLightingOverridePolicyRequest(
+    int Version,
+    Guid RequestId,
+    bool Enabled)
     : ServiceRequest(Version, RequestId);
 
 public sealed record SetLightingSuppressionRequest(
@@ -145,7 +152,8 @@ public sealed record ServiceStatusSnapshot(
     IReadOnlyList<LightingSuppressionReason>? LightingSuppressions = null,
     bool? StartupAnimationEnabled = null,
     FunctionKeyPrimaryMode? FunctionKeyPrimary = null,
-    bool? GamingModeEnabled = null)
+    bool? GamingModeEnabled = null,
+    bool AlwaysOverrideExternalLightingChanges = false)
 {
     public FanControlSettings? FanControlOverride { get; init; }
 }

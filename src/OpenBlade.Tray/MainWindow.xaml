@@ -893,13 +893,20 @@
                             </Grid.ColumnDefinitions>
                             <TextBlock Text="Profiles"
                                        Style="{StaticResource PageHeaderTitleStyle}" />
-                            <Button Grid.Column="1"
-                                    Content="Export profiles"
-                                    HorizontalAlignment="Right"
-                                    VerticalAlignment="Center"
-                                    Click="OnExportProfiles"
-                                    ToolTipService.ToolTip="Export saved profiles as JSON"
-                                    AutomationProperties.Name="Export profiles to JSON" />
+                            <StackPanel Grid.Column="1"
+                                        Orientation="Horizontal"
+                                        Spacing="8"
+                                        HorizontalAlignment="Right"
+                                        VerticalAlignment="Center">
+                                <Button Content="Import profiles"
+                                        Click="OnImportProfiles"
+                                        ToolTipService.ToolTip="Import saved profiles from JSON"
+                                        AutomationProperties.Name="Import profiles from JSON" />
+                                <Button Content="Export profiles"
+                                        Click="OnExportProfiles"
+                                        ToolTipService.ToolTip="Export saved profiles as JSON"
+                                        AutomationProperties.Name="Export profiles to JSON" />
+                            </StackPanel>
                         </Grid>
                         <TextBlock Text="These are the settings saved in each profile. Unsaved changes from Dashboard, Lighting, or Display appear here only after you save them."
                                    Style="{StaticResource SecondaryTextStyle}"
@@ -1871,7 +1878,11 @@
                             </TransitionCollection>
                         </StackPanel.Transitions>
 
-                        <TextBlock Text="Settings" Style="{StaticResource PageTitleStyle}" />
+                        <Grid x:Name="SettingsPageHeader"
+                              Margin="0,0,0,20">
+                            <TextBlock Text="Settings"
+                                       Style="{StaticResource PageHeaderTitleStyle}" />
+                        </Grid>
 
                         <TextBlock Text="Behavior" Style="{StaticResource SectionHeaderStyle}" Margin="0,0,0,10" />
                         <Border Style="{StaticResource SettingsGroupStyle}">
@@ -1953,7 +1964,7 @@
                                                   Toggled="OnStartAtSignInToggled" />
                                     </Grid>
                                 </Border>
-                                <Border Style="{StaticResource SettingsLastRowStyle}">
+                                <Border Style="{StaticResource SettingsRowStyle}">
                                     <Grid ColumnSpacing="20">
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="*" />
@@ -1974,6 +1985,30 @@
                                                       OffContent=""
                                                       OnContent=""
                                                       Toggled="OnStartMinimizedToggled" />
+                                    </Grid>
+                                </Border>
+                                <Border Style="{StaticResource SettingsLastRowStyle}">
+                                    <Grid ColumnSpacing="20">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel Spacing="3" VerticalAlignment="Center">
+                                            <TextBlock Text="Override external lighting changes"
+                                                       Style="{StaticResource CardTitleStyle}" />
+                                            <TextBlock Text="Reapply the last OpenBlade lighting effect even when another Razer app is running."
+                                                       Style="{StaticResource SecondaryTextStyle}"
+                                                       TextWrapping="Wrap" />
+                                        </StackPanel>
+                                        <ToggleSwitch Grid.Column="1"
+                                                      HorizontalAlignment="Right"
+                                                      VerticalAlignment="Center"
+                                                      MinWidth="0"
+                                                      AutomationProperties.Name="Always override external lighting changes"
+                                                      OffContent=""
+                                                      OnContent=""
+                                                      IsOn="{x:Bind ViewModel.AlwaysOverrideExternalLightingChanges, Mode=OneWay}"
+                                                      Toggled="OnExternalLightingOverridePolicyToggled" />
                                     </Grid>
                                 </Border>
                             </StackPanel>
@@ -2377,7 +2412,7 @@
                                             <TextBlock Text="Open GitHub Issues to report a bug or request an improvement." Style="{StaticResource SecondaryTextStyle}" />
                                         </StackPanel>
                                         <HyperlinkButton Grid.Column="1"
-                                                         NavigateUri="https://github.com/boyuanx/openblade-core/issues"
+                                                         NavigateUri="https://github.com/OSSBlade/openblade-core/issues"
                                                          Style="{StaticResource ExternalLinkButtonStyle}"
                                                          AutomationProperties.Name="Open GitHub Issues"
                                                          ToolTipService.ToolTip="Open GitHub Issues">
@@ -2393,7 +2428,7 @@
                                             <TextBlock Text="Read setup, usage, and compatibility information." Style="{StaticResource SecondaryTextStyle}" />
                                         </StackPanel>
                                         <HyperlinkButton Grid.Column="1"
-                                                         NavigateUri="https://github.com/boyuanx/openblade-core#readme"
+                                                         NavigateUri="https://github.com/OSSBlade/openblade-docs"
                                                          Style="{StaticResource ExternalLinkButtonStyle}"
                                                          AutomationProperties.Name="Open documentation"
                                                          ToolTipService.ToolTip="Open documentation">
@@ -2409,7 +2444,7 @@
                                             <TextBlock Text="See what changed in each OpenBlade build." Style="{StaticResource SecondaryTextStyle}" />
                                         </StackPanel>
                                         <HyperlinkButton Grid.Column="1"
-                                                         NavigateUri="https://github.com/boyuanx/openblade-core/blob/main/CHANGELOG.md"
+                                                         NavigateUri="https://github.com/OSSBlade/openblade-core/blob/main/CHANGELOG.md"
                                                          Style="{StaticResource ExternalLinkButtonStyle}"
                                                          AutomationProperties.Name="Open release notes"
                                                          ToolTipService.ToolTip="Open release notes">
@@ -2425,7 +2460,7 @@
                                             <TextBlock Text="View and contribute to OpenBlade on GitHub." Style="{StaticResource SecondaryTextStyle}" />
                                         </StackPanel>
                                         <HyperlinkButton Grid.Column="1"
-                                                         NavigateUri="https://github.com/boyuanx/openblade-core"
+                                                         NavigateUri="https://github.com/OSSBlade/openblade-core"
                                                          Style="{StaticResource ExternalLinkButtonStyle}"
                                                          AutomationProperties.Name="Open source code"
                                                          ToolTipService.ToolTip="Open source code">
@@ -2458,7 +2493,7 @@
                                             <TextBlock Text="OpenBlade service" Style="{StaticResource TroubleshootingLabelStyle}" />
                                             <Grid Grid.Column="1" ColumnSpacing="7">
                                                 <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
-                                                <Grid Width="8" Height="8" VerticalAlignment="Center">
+                                                <Grid Width="12" Height="12" VerticalAlignment="Center">
                                                     <Ellipse Style="{StaticResource TroubleshootingStatusDotStyle}" Fill="{ThemeResource SystemFillColorSuccessBrush}" Visibility="{x:Bind ViewModel.IsConnected, Mode=OneWay}" />
                                                     <Ellipse Style="{StaticResource TroubleshootingStatusDotStyle}" Fill="{ThemeResource SystemFillColorCriticalBrush}" Visibility="{x:Bind ViewModel.IsServiceUnavailable, Mode=OneWay}" />
                                                 </Grid>

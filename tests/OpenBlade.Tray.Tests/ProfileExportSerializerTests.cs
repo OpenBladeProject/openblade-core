@@ -47,4 +47,79 @@ public sealed class ProfileExportSerializerTests
             " ",
             DateTimeOffset.UtcNow));
     }
+
+    [Fact]
+    public void Deserialize_RoundTripsEveryProfile()
+    {
+        ProfileSet expected = ProfileDefaults.CreateSafeDefaults();
+        string json = ProfileExportSerializer.Serialize(
+            expected,
+            "0.1.0+abcdef0",
+            DateTimeOffset.UtcNow);
+
+        ProfileSet actual = ProfileExportSerializer.Deserialize(json);
+
+        Assert.Equal(expected, actual);
+    }
+
+    [Fact]
+    public void Deserialize_RejectsUnsupportedSchema()
+    {
+        string json = ProfileExportSerializer.Serialize(
+            ProfileDefaults.CreateSafeDefaults(),
+            "0.1.0+abcdef0",
+            DateTimeOffset.UtcNow).Replace(
+                "\"schemaVersion\": 1",
+                "\"schemaVersion\": 2",
+                StringComparison.Ordinal);
+
+        InvalidDataException exception = Assert.Throws<InvalidDataException>(
+            () => ProfileExportSerializer.Deserialize(json));
+
+        Assert.Contains("schema 2", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("newer version", exception.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void Deserialize_RejectsObsoleteSchemaThroughVersionDispatcher()
+    {
+        string json = ProfileExportSerializer.Serialize(
+            ProfileDefaults.CreateSafeDefaults(),
+            "0.1.0+abcdef0",
+            DateTimeOffset.UtcNow).Replace(
+                "\"schemaVersion\": 1",
+                "\"schemaVersion\": 0",
+                StringComparison.Ordinal);
+
+        InvalidDataException exception = Assert.Throws<InvalidDataException>(
+            () => ProfileExportSerializer.Deserialize(json));
+
+        Assert.Contains("schema 0", exception.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void Deserialize_RejectsNumericEnumValues()
+    {
+        string json = ProfileExportSerializer.Serialize(
+            ProfileDefaults.CreateSafeDefaults(),
+            "0.1.0+abcdef0",
+            DateTimeOffset.UtcNow).Replace(
+                "\"performance\": \"balanced\"",
+                "\"performance\": 999",
+                StringComparison.Ordinal);
+
+        Assert.Throws<InvalidDataException>(() =>
+            ProfileExportSerializer.Deserialize(json));
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("not json")]
+    [InlineData("{\"profiles\":{}}")]
+    [InlineData("{\"schemaVersion\":1,\"unexpected\":true}")]
+    public void Deserialize_RejectsInvalidDocuments(string json)
+    {
+        Assert.Throws<InvalidDataException>(() =>
+            ProfileExportSerializer.Deserialize(json));
+    }
 }

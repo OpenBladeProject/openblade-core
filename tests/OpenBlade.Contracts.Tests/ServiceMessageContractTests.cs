@@ -7,9 +7,9 @@ namespace OpenBlade.Contracts.Tests;
 public sealed class ServiceMessageContractTests
 {
     [Fact]
-    public void ProtocolConstants_AreClosedVersionSixteenAndRetainExactSizeLimit()
+    public void ProtocolConstants_AreClosedVersionSeventeenAndRetainExactSizeLimit()
     {
-        Assert.Equal(16, OpenBladeIpc.ProtocolVersion);
+        Assert.Equal(17, OpenBladeIpc.ProtocolVersion);
         Assert.Equal("OpenBlade.Service.v2", OpenBladeIpc.PipeName);
         Assert.Equal(64 * 1024, OpenBladeIpc.MaximumMessageBytes);
         Assert.Equal(32 * 1024, OpenBladeIpc.MaximumDiagnosticArchiveBytes);
@@ -29,6 +29,7 @@ public sealed class ServiceMessageContractTests
             (typeof(CyclePerformanceShortcutRequest), "cyclePerformanceShortcut"),
             (typeof(SetFanOverrideRequest), "setFanOverride"),
             (typeof(SetLightingOverrideRequest), "setLightingOverride"),
+            (typeof(SetExternalLightingOverridePolicyRequest), "setExternalLightingOverridePolicy"),
             (typeof(SetLightingSuppressionRequest), "setLightingSuppression"),
             (typeof(PulseReactiveKeyRequest), "pulseReactiveKey"),
             (typeof(PushAmbientLightingFrameRequest), "pushAmbientLightingFrame"),
@@ -55,6 +56,7 @@ public sealed class ServiceMessageContractTests
             "PerformanceOverride", "FanOverride", "FanControlOverride", "LightingOverride", "FullChargeOverride",
             "Firmware", "ServiceVersion", "LightingRendererOwnership", "LightingSuppressions",
             "StartupAnimationEnabled", "FunctionKeyPrimary", "GamingModeEnabled",
+            "AlwaysOverrideExternalLightingChanges",
         ];
 
         Assert.Equal(
@@ -68,6 +70,7 @@ public sealed class ServiceMessageContractTests
         Assert.Equal(typeof(bool?), typeof(ServiceStatusSnapshot).GetProperty("StartupAnimationEnabled")!.PropertyType);
         Assert.Equal(typeof(FunctionKeyPrimaryMode?), typeof(ServiceStatusSnapshot).GetProperty("FunctionKeyPrimary")!.PropertyType);
         Assert.Equal(typeof(bool?), typeof(ServiceStatusSnapshot).GetProperty("GamingModeEnabled")!.PropertyType);
+        Assert.Equal(typeof(bool), typeof(ServiceStatusSnapshot).GetProperty("AlwaysOverrideExternalLightingChanges")!.PropertyType);
     }
 
     [Fact]

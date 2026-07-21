@@ -5,11 +5,28 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ## [Unreleased]
 
+### Added
+
+- Added JSON profile import alongside export. Profile files use a versioned
+  envelope and schema-specific readers so future releases can add explicit
+  migrations without silently reinterpreting older structures.
+- Persisted the last successfully applied keyboard lighting effect and restore
+  it when the service starts. Other Razer software still wins by default; an
+  opt-in setting can make OpenBlade reapply external lighting changes.
+
 ### Changed
 
 - Moved protocol capture evidence and capture tooling to the
   `OSSBlade/openblade-captures` repository, included as the `captures`
   submodule.
+- Kept Off first in the lighting effect picker and sorted the remaining effects
+  alphabetically.
+- Updated project, documentation, issue, release-note, and branding links to
+  the OSSBlade GitHub organization.
+- Aligned the Settings header spacing with the Display and Lighting pages and
+  aligned the service and laptop status values in Troubleshooting.
+- Advanced the local configuration schema to version 6 and service IPC to
+  version 17 for persisted lighting ownership preferences.
 
 ### Fixed
 
@@ -445,5 +462,5 @@ All notable changes to OpenBlade are documented in this file. The project follow
 - Unrecognized external adapters remain read-only.
 - Unsupported or unverified controls remain unavailable rather than attempting arbitrary firmware commands.
 
-[Unreleased]: https://github.com/boyuanx/openblade-core/compare/v0.1.0...HEAD
-[0.1.0]: https://github.com/boyuanx/openblade-core/releases/tag/v0.1.0
+[Unreleased]: https://github.com/OSSBlade/openblade-core/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/OSSBlade/openblade-core/releases/tag/v0.1.0

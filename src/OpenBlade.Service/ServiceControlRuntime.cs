@@ -57,6 +57,13 @@ public interface IServiceControlRuntime
         ManualOverride<LightingSettings>? value,
         CancellationToken token);
 
+    Task<ControlOperationResult> SetExternalLightingOverridePolicyAsync(
+        bool enabled,
+        CancellationToken token) => Task.FromResult(
+            new ControlOperationResult(
+                ControlOperationStatus.Blocked,
+                "External lighting override policy is unavailable."));
+
     Task<ControlOperationResult> SetLightingSuppressionAsync(
         LightingSuppressionReason reason,
         bool suppressed,
@@ -150,6 +157,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
     private readonly ProfileSetValidator validator;
     private readonly object initializationGate = new();
     private ProfileAutomationState? automation;
+    private BatteryAutomationPreferences preferences =
+        new(ProtectionEnabled: true);
     private PersistentOverrideState persistentOverrides = PersistentOverrideState.Empty;
     private readonly ConfirmedStateDriftTracker driftTracker = new();
     private readonly HashSet<DeviceSubsystem> initialAutomaticComparisons = [];
@@ -353,7 +362,12 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 powerSource,
                 persistentOverrides);
             automation = initializedAutomation;
+            preferences = configuration.Preferences;
             this.persistentOverrides = persistentOverrides;
+            pendingLightingRestore = initializedAutomation
+                .Resolve(UnknownConfirmedState)
+                .Lighting
+                .Value;
             Volatile.Write(ref status, CreateInitialSnapshot(powerSource));
         }
     }
@@ -729,6 +743,72 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             normalized is null
                 ? "Lighting override was cleared."
                 : "Lighting override intent was stored.");
+    }
+
+    public async Task<ControlOperationResult> SetExternalLightingOverridePolicyAsync(
+        bool enabled,
+        CancellationToken token)
+    {
+        EnsureInitialized();
+        await operationGate.WaitAsync(token).ConfigureAwait(false);
+        try
+        {
+            BatteryAutomationPreferences staged = preferences with
+            {
+                AlwaysOverrideExternalLightingChanges = enabled,
+            };
+            await store.SaveConfigurationAsync(Automation.Profiles, staged, token)
+                .ConfigureAwait(false);
+            preferences = staged;
+            ServiceStatusSnapshot current = GetStatus();
+            PublishIfChanged(current with
+            {
+                AlwaysOverrideExternalLightingChanges = enabled,
+                Message = enabled
+                    ? "OpenBlade will reapply its last lighting effect after external changes."
+                    : "OpenBlade will yield lighting control when another Razer app is active.",
+            });
+
+            if (!enabled)
+            {
+                if (IsControllerPresenceUnsafe(GetStatus())
+                    && (IsExplicitLightingOwnership(GetStatus().LightingRendererOwnership)
+                        || lastOwnedLightingSettings is not null))
+                {
+                    await InvalidateLightingRendererCoreAsync(
+                        preserveForLifecycleRestore: true,
+                        token).ConfigureAwait(false);
+                }
+
+                return new ControlOperationResult(
+                    ControlOperationStatus.Stored,
+                    "External lighting changes will be preserved.");
+            }
+
+            driftTracker.AcknowledgeIntentionalWithoutReadback(DeviceSubsystem.Lighting);
+            PowerSource powerSource = PowerSourceForStatus(
+                await ResolveCurrentPowerSourceAsync(token).ConfigureAwait(false));
+            ControlOperationResult result = await ApplyScopedIntentAsync(
+                DeviceSubsystem.Lighting,
+                powerSource,
+                (coordinator, desired, cancellationToken) =>
+                    coordinator.ApplyLightingOutcomeAsync(
+                        desired.Lighting.Value,
+                        cancellationToken,
+                        forceWrite: true),
+                token).ConfigureAwait(false);
+            return result.Status == ControlOperationStatus.Failed
+                ? result with
+                {
+                    Message = "The preference was saved, but the last lighting effect could not be reapplied. "
+                        + result.Message,
+                }
+                : result;
+        }
+        finally
+        {
+            operationGate.Release();
+        }
     }
 
     public async Task<ControlOperationResult> SetLightingSuppressionAsync(
@@ -1537,23 +1617,46 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         await operationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
+            ServiceStatusSnapshot current = GetStatus();
             LightingSettings? requested = pendingLightingRestore;
-            pendingLightingRestore = null;
+            if (requested is null
+                && preferences.AlwaysOverrideExternalLightingChanges
+                && current.ExternalChanges.Contains(DeviceSubsystem.Lighting))
+            {
+                requested = preferences.LastKnownLighting
+                    ?? current.DesiredState.Lighting.Value;
+            }
             if (requested is null || lightingSuppressions.Count > 0)
             {
                 return;
             }
 
-            ServiceStatusSnapshot current = GetStatus();
-            if (IsExplicitLightingOwnership(current.LightingRendererOwnership))
+            pendingLightingRestore = null;
+            if (requested.Effect == LightingEffect.Off
+                && current.ConfirmedState?.Lighting is { } confirmedLighting
+                && LightingSettingsFactory.NormalizeLegacyOff(confirmedLighting)
+                    == LightingSettingsFactory.NormalizeLegacyOff(requested))
+            {
+                await TryPersistLastKnownLightingAsync(requested, cancellationToken)
+                    .ConfigureAwait(false);
+                return;
+            }
+
+            bool correctingExternalLightingChange =
+                preferences.AlwaysOverrideExternalLightingChanges
+                && current.ExternalChanges.Contains(DeviceSubsystem.Lighting);
+            if (IsExplicitLightingOwnership(current.LightingRendererOwnership)
+                && !correctingExternalLightingChange)
             {
                 // A power-source transition already established the destination
                 // profile's renderer. Never replace it with the pre-lifecycle one.
                 return;
             }
 
-            if (IsControllerPresenceUnsafe(current))
+            if (IsControllerPresenceUnsafe(current)
+                && !preferences.AlwaysOverrideExternalLightingChanges)
             {
+                pendingLightingRestore = requested;
                 const string blockedMessage =
                     "OpenBlade lighting was not restored because another Razer controller may be active.";
                 history.RecordSummary(ControlOperationStatus.Blocked, blockedMessage);
@@ -1592,7 +1695,10 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             try
             {
                 outcome = await new ControlCoordinator(device)
-                    .ApplyLightingOutcomeAsync(requested, cancellationToken)
+                    .ApplyLightingOutcomeAsync(
+                        requested,
+                        cancellationToken,
+                        forceWrite: preferences.AlwaysOverrideExternalLightingChanges)
                     .ConfigureAwait(false);
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -1623,6 +1729,9 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                     observed);
                 return;
             }
+
+            await TryPersistLastKnownLightingAsync(requested, cancellationToken)
+                .ConfigureAwait(false);
 
             const string message = "OpenBlade lighting was restored after the system lifecycle change.";
             history.RecordSubsystemResult(
@@ -1828,8 +1937,12 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 {
                     await store.SaveConfigurationAsync(
                         stagedProfiles,
-                        new BatteryAutomationPreferences(staged.ProtectionEnabled),
+                        preferences with { ProtectionEnabled = staged.ProtectionEnabled },
                         cancellationToken);
+                    preferences = preferences with
+                    {
+                        ProtectionEnabled = staged.ProtectionEnabled,
+                    };
                     Automation.CommitBatteryState(staged);
                 });
         }
@@ -1971,6 +2084,13 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 {
                     await commitIntent(token);
                 }
+
+                if (subsystem == DeviceSubsystem.Lighting)
+                {
+                    await TryPersistLastKnownLightingAsync(
+                        desired.Lighting.Value,
+                        token).ConfigureAwait(false);
+                }
             }
             catch (OperationCanceledException) when (token.IsCancellationRequested)
             {
@@ -2078,7 +2198,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         bool previouslyUnsafe = IsControllerPresenceUnsafe(before);
         RefreshControllerPresenceCore(cancellationToken, allowRecentObservation);
         ServiceStatusSnapshot current = GetStatus();
-        if (!IsControllerPresenceUnsafe(current))
+        if (!IsControllerPresenceUnsafe(current)
+            || preferences.AlwaysOverrideExternalLightingChanges)
         {
             controllerLightingRelinquishPending = false;
             return;
@@ -2086,8 +2207,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
 
         bool hasRendererState =
             IsExplicitLightingOwnership(current.LightingRendererOwnership)
-            || lastOwnedLightingSettings is not null
-            || pendingLightingRestore is not null;
+            || lastOwnedLightingSettings is not null;
         if (!previouslyUnsafe && hasRendererState)
         {
             controllerLightingRelinquishPending = true;
@@ -2099,7 +2219,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         }
 
         await InvalidateLightingRendererCoreAsync(
-            preserveForLifecycleRestore: false,
+            preserveForLifecycleRestore: true,
             cancellationToken).ConfigureAwait(false);
         controllerLightingRelinquishPending = false;
         string message = current.PotentialControllers.Count > 0
@@ -2258,6 +2378,12 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 or ControlResultStatus.Unchanged
                 ? desired.Lighting.Value
                 : null);
+        if (lightingResult.Status is ControlResultStatus.Applied
+            or ControlResultStatus.Unchanged)
+        {
+            await TryPersistLastKnownLightingAsync(desired.Lighting.Value, token)
+                .ConfigureAwait(false);
+        }
 
         history.RecordSubsystemResults(outcome.Results);
         string message = Summarize(outcome.Results);
@@ -2817,6 +2943,10 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         bool allowLightingWrite)
     {
         var exclusions = driftTracker.ExternalChanges.ToHashSet();
+        if (preferences.AlwaysOverrideExternalLightingChanges)
+        {
+            exclusions.Remove(DeviceSubsystem.Lighting);
+        }
         if (exclusions.Contains(DeviceSubsystem.Performance)
             || exclusions.Contains(DeviceSubsystem.Fans))
         {
@@ -3082,7 +3212,9 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             Firmware: firmwareVersionSource.Capture(),
             ServiceVersion: ServiceVersion,
             LightingRendererOwnership: LightingRendererOwnershipState.None,
-            LightingSuppressions: [])
+            LightingSuppressions: [],
+            AlwaysOverrideExternalLightingChanges:
+                preferences.AlwaysOverrideExternalLightingChanges)
         {
             FanControlOverride = Automation.FanControlOverride,
         };
@@ -3283,6 +3415,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         && left.StartupAnimationEnabled == right.StartupAnimationEnabled
         && left.FunctionKeyPrimary == right.FunctionKeyPrimary
         && left.GamingModeEnabled == right.GamingModeEnabled
+        && left.AlwaysOverrideExternalLightingChanges
+            == right.AlwaysOverrideExternalLightingChanges
         && left.LightingRendererOwnership == right.LightingRendererOwnership
         && (left.LightingSuppressions ?? []).SequenceEqual(
             right.LightingSuppressions ?? [])
@@ -3455,6 +3589,9 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             return;
         }
 
+        await TryPersistLastKnownLightingAsync(requested, cancellationToken)
+            .ConfigureAwait(false);
+
         const string message =
             "Keyboard lighting recovered after a transient renderer error.";
         history.RecordSubsystemResult(
@@ -3466,6 +3603,49 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             ExternalChanges = driftTracker.ExternalChanges,
             Message = message,
         });
+    }
+
+    private async Task PersistLastKnownLightingAsync(
+        LightingSettings lighting,
+        CancellationToken cancellationToken)
+    {
+        lighting = LightingSettingsFactory.NormalizeLegacyOff(lighting);
+        if (preferences.LastKnownLighting == lighting)
+        {
+            return;
+        }
+
+        BatteryAutomationPreferences staged = preferences with
+        {
+            LastKnownLighting = lighting,
+        };
+        validator.ValidatePreferences(staged);
+        await store.SaveConfigurationAsync(
+            Automation.Profiles,
+            staged,
+            cancellationToken).ConfigureAwait(false);
+        preferences = staged;
+    }
+
+    private async Task TryPersistLastKnownLightingAsync(
+        LightingSettings lighting,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            await PersistLastKnownLightingAsync(lighting, cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception exception)
+        {
+            history.RecordSummary(
+                ControlOperationStatus.Failed,
+                $"The last lighting effect could not be saved: {exception.Message}");
+        }
     }
 
     private void UpdateOwnedLightingSnapshot(
@@ -3538,10 +3718,11 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         LightingRendererOwnershipState.Reactive or
         LightingRendererOwnershipState.Ripple;
 
-    private static bool CanClaimLightingForAutomaticProfile(
+    private bool CanClaimLightingForAutomaticProfile(
         ServiceStatusSnapshot status) =>
-        status.PotentialControllers.Count == 0
-        && string.IsNullOrWhiteSpace(status.ControllerDetectionWarning);
+        preferences.AlwaysOverrideExternalLightingChanges
+        || status.PotentialControllers.Count == 0
+            && string.IsNullOrWhiteSpace(status.ControllerDetectionWarning);
 
     private static bool IsControllerPresenceUnsafe(ServiceStatusSnapshot status) =>
         status.PotentialControllers.Count > 0

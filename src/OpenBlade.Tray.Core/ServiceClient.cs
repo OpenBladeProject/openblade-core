@@ -128,6 +128,15 @@ public sealed class ServiceClient : IServiceClient
             new SetLightingOverrideRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid(), value),
             token);
 
+    public Task<ControlOperationResult> SetExternalLightingOverridePolicyAsync(
+        bool enabled,
+        CancellationToken token) => SendMutationAsync(
+            new SetExternalLightingOverridePolicyRequest(
+                OpenBladeIpc.ProtocolVersion,
+                Guid.NewGuid(),
+                enabled),
+            token);
+
     public Task<ControlOperationResult> SetLightingSuppressionAsync(
         LightingSuppressionReason reason,
         bool suppressed,

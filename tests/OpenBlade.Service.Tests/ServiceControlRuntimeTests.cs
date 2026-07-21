@@ -667,7 +667,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     [Theory]
     [InlineData(true, false)]
     [InlineData(false, true)]
-    public async Task PeriodicControllerRefresh_NewUnsafeStateRelinquishesOwnedLightingWithoutRestore(
+    public async Task PeriodicControllerRefresh_RestoresOwnedLightingAfterConflictClears(
         bool controllerRunning,
         bool detectionWarning)
     {
@@ -698,9 +698,9 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             CancellationToken.None);
         await context.Runtime.RestoreLightingRendererAsync(CancellationToken.None);
 
-        Assert.Equal(1, context.Device.LightingSetCalls);
+        Assert.Equal(2, context.Device.LightingSetCalls);
         Assert.Equal(
-            LightingRendererOwnershipState.None,
+            LightingRendererOwnershipState.Static,
             context.Runtime.GetStatus().LightingRendererOwnership);
     }
 
@@ -776,6 +776,81 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     }
 
     [Fact]
+    public async Task ExternalLightingOverridePolicy_ReclaimsAndKeepsLightingDuringConflict()
+    {
+        TestContext context = await CreateOwnedStaticLightingContextAsync();
+        context.Monitor.Current = new ControllerPresenceObservation(
+            ["RazerAppEngine"],
+            null);
+        await context.Runtime.RefreshPowerSourceClassificationAsync(
+            CancellationToken.None);
+        Assert.Equal(
+            LightingRendererOwnershipState.None,
+            context.Runtime.GetStatus().LightingRendererOwnership);
+
+        ControlOperationResult enabled =
+            await context.Runtime.SetExternalLightingOverridePolicyAsync(
+                true,
+                CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Applied, enabled.Status);
+        Assert.True(context.Runtime.GetStatus().AlwaysOverrideExternalLightingChanges);
+        Assert.Equal(2, context.Device.LightingSetCalls);
+        Assert.Equal(
+            LightingRendererOwnershipState.Static,
+            context.Runtime.GetStatus().LightingRendererOwnership);
+
+        await context.Runtime.RefreshPowerSourceClassificationAsync(
+            CancellationToken.None);
+
+        Assert.Equal(2, context.Device.LightingSetCalls);
+        Assert.Equal(
+            LightingRendererOwnershipState.Static,
+            context.Runtime.GetStatus().LightingRendererOwnership);
+        BatteryConfiguration saved = await context.Store.LoadAsync(CancellationToken.None);
+        Assert.True(saved.Preferences.AlwaysOverrideExternalLightingChanges);
+    }
+
+    [Fact]
+    public async Task Restart_RestoresPersistedLastKnownLighting()
+    {
+        TestContext original = await CreateOwnedStaticLightingContextAsync();
+        LightingSettings expected = original.Runtime.GetStatus().DesiredState.Lighting.Value;
+        BatteryConfiguration saved = await original.Store.LoadAsync(CancellationToken.None);
+        Assert.Equal(expected, saved.Preferences.LastKnownLighting);
+
+        DeviceCapabilities capabilities = DeviceCapabilities.Unavailable() with
+        {
+            LightingEffects = new HashSet<LightingEffect>
+            {
+                LightingEffect.Off,
+                LightingEffect.Static,
+            },
+        };
+        TestContext restarted = CreateContext(
+            providerAvailable: true,
+            profileValidator: ProfileSetValidator.CreateForLightingCapabilities(capabilities));
+        restarted.Device.Capabilities = DeviceCapabilities.SafeTargetDefaults() with
+        {
+            LightingEffects = capabilities.LightingEffects,
+        };
+        restarted.Device.ConfirmedState = new ConfirmedDeviceState(
+            PerformancePreset.Balanced,
+            FanMode.Automatic,
+            ConfirmedBattery(80),
+            null);
+
+        await restarted.Runtime.ObserveAsync(CancellationToken.None);
+        await restarted.Runtime.RestoreLightingRendererAsync(CancellationToken.None);
+
+        Assert.Equal(1, restarted.Device.LightingSetCalls);
+        Assert.Equal(expected, restarted.Device.ConfirmedState.Lighting);
+        Assert.Equal(
+            LightingRendererOwnershipState.Static,
+            restarted.Runtime.GetStatus().LightingRendererOwnership);
+    }
+
+    [Fact]
     public async Task LifecycleRestore_ControllerAlreadyPresent_DoesNotRestartRenderer()
     {
         TestContext context = await CreateOwnedStaticLightingContextAsync();
@@ -813,7 +888,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     }
 
     [Fact]
-    public async Task NewControllerConflict_CancelsPendingLifecycleRestore()
+    public async Task NewControllerConflict_DefersPendingLifecycleRestoreUntilConflictClears()
     {
         TestContext context = await CreateOwnedStaticLightingContextAsync();
         await context.Runtime.InvalidateLightingRendererAsync(CancellationToken.None);
@@ -828,9 +903,9 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             CancellationToken.None);
         await context.Runtime.RestoreLightingRendererAsync(CancellationToken.None);
 
-        Assert.Equal(1, context.Device.LightingSetCalls);
+        Assert.Equal(2, context.Device.LightingSetCalls);
         Assert.Equal(
-            LightingRendererOwnershipState.None,
+            LightingRendererOwnershipState.Static,
             context.Runtime.GetStatus().LightingRendererOwnership);
     }
 
@@ -2277,7 +2352,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     }
 
     [Fact]
-    public async Task Resume_WithoutPowerChangeObservesStateWithoutWrites()
+    public async Task Resume_WithoutPowerChangeRestoresLightingWithoutOtherWrites()
     {
         TestContext context = CreateWritableContext();
         var loop = new ServiceLifecycleRefreshLoop(
@@ -2290,9 +2365,12 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         ServiceStatusSnapshot status = context.Runtime.GetStatus();
         Assert.Equal(PowerSource.PluggedIn, status.ActivePowerSource);
         Assert.Equal(PerformancePreset.Balanced, status.ConfirmedState!.Performance);
-        Assert.Equal(1, context.Device.CapabilitiesReadCalls);
-        Assert.Equal(1, context.Device.StateReadCalls);
-        Assert.Equal(0, context.Device.TotalSetterCalls);
+        Assert.Equal(2, context.Device.CapabilitiesReadCalls);
+        Assert.Equal(3, context.Device.StateReadCalls);
+        Assert.Equal(0, context.Device.PerformanceSetCalls);
+        Assert.Equal(0, context.Device.FanSetCalls);
+        Assert.Equal(0, context.Device.BatterySetCalls);
+        Assert.Equal(1, context.Device.LightingSetCalls);
     }
 
     [Fact]

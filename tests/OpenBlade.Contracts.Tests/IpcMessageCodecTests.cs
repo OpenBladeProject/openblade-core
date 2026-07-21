@@ -90,6 +90,10 @@ public sealed class IpcMessageCodecTests
                     new RgbColor(78, 90, 123),
                     65),
                 OverrideLifetime.UntilPowerSourceChange)),
+        new SetExternalLightingOverridePolicyRequest(
+            OpenBladeIpc.ProtocolVersion,
+            Guid.NewGuid(),
+            Enabled: true),
         new SetLightingSuppressionRequest(
             OpenBladeIpc.ProtocolVersion,
             Guid.NewGuid(),
@@ -267,7 +271,7 @@ public sealed class IpcMessageCodecTests
             DesiredState = CreateStatus().DesiredState with { Battery = desired },
         };
 
-        Assert.Equal(16, OpenBladeIpc.ProtocolVersion);
+        Assert.Equal(17, OpenBladeIpc.ProtocolVersion);
         Assert.Equal(request, await RoundTripRequestAsync(request));
         ServiceStatusSnapshot roundTrip = await RoundTripStatusAsync(status);
         Assert.Equal([80], roundTrip.Capabilities!.ChargeLimits);
@@ -311,7 +315,7 @@ public sealed class IpcMessageCodecTests
 
         ServiceStatusSnapshot actual = await RoundTripStatusAsync(expected);
 
-        Assert.Equal(16, OpenBladeIpc.ProtocolVersion);
+        Assert.Equal(17, OpenBladeIpc.ProtocolVersion);
         AssertStatusEqual(expected, actual);
     }
 
@@ -931,5 +935,8 @@ public sealed class IpcMessageCodecTests
         Assert.Equal(expected.LightingOverride, actual.LightingOverride);
         Assert.Equal(expected.FullChargeOverride, actual.FullChargeOverride);
         Assert.Equal(expected.ServiceVersion, actual.ServiceVersion);
+        Assert.Equal(
+            expected.AlwaysOverrideExternalLightingChanges,
+            actual.AlwaysOverrideExternalLightingChanges);
     }
 }

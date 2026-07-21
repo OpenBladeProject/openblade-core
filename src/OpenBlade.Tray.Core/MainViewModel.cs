@@ -81,7 +81,8 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     private static readonly IReadOnlyList<LightingEffectOption> KnownLightingEffectOptions =
         KnownLightingEffects
             .Select(CreateLightingEffectOption)
-            .OrderBy(option => option.Label, StringComparer.OrdinalIgnoreCase)
+            .OrderBy(option => option.Effect == LightingEffect.Off ? 0 : 1)
+            .ThenBy(option => option.Label, StringComparer.OrdinalIgnoreCase)
             .ToArray();
 
     private static readonly IReadOnlyList<LogoLightingModeOption> KnownLogoLightingModeOptions =
@@ -127,6 +128,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     private string controllerDetectionWarningText = string.Empty;
     private bool hasExternalChanges;
     private string externalChangesText = string.Empty;
+    private bool alwaysOverrideExternalLightingChanges;
     private IReadOnlyList<PerformancePreset> availablePerformancePresets = [];
     private IReadOnlyList<PerformancePresetOption> availablePluggedInPerformanceOptions = [];
     private IReadOnlyList<PerformancePresetOption> availableBatteryPerformanceOptions = [];
@@ -937,6 +939,29 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     {
         get => externalChangesText;
         private set => SetField(ref externalChangesText, value);
+    }
+
+    public bool AlwaysOverrideExternalLightingChanges
+    {
+        get => alwaysOverrideExternalLightingChanges;
+        private set => SetField(ref alwaysOverrideExternalLightingChanges, value);
+    }
+
+    public async Task<bool> SetExternalLightingOverridePolicyAsync(
+        bool enabled,
+        CancellationToken cancellationToken)
+    {
+        bool accepted = await RunOperationAsync(
+            token => serviceClient.SetExternalLightingOverridePolicyAsync(enabled, token),
+            cancellationToken);
+        if (accepted)
+        {
+            await dispatcher.InvokeAsync(
+                () => AlwaysOverrideExternalLightingChanges = enabled,
+                cancellationToken);
+        }
+
+        return accepted;
     }
 
     public bool HasAttention => IsConnected
@@ -3225,6 +3250,8 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         ExternalChangesText = HasExternalChanges
             ? $"Changed outside OpenBlade: {string.Join(", ", externalChanges.Select(SubsystemLabel))}. Your saved profiles are unchanged. Automatic profile updates for these controls are paused until you change them in OpenBlade."
             : string.Empty;
+        AlwaysOverrideExternalLightingChanges =
+            status.AlwaysOverrideExternalLightingChanges;
         Profiles = status.Profiles;
         if (!lightingPowerPolicyEditorDirty)
         {
@@ -3451,7 +3478,8 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
                 : KnownLightingEffects;
         AvailableLightingEffectOptions = presentedLightingEffects
             .Select(CreateLightingEffectOption)
-            .OrderBy(option => option.Label, StringComparer.OrdinalIgnoreCase)
+            .OrderBy(option => option.Effect == LightingEffect.Off ? 0 : 1)
+            .ThenBy(option => option.Label, StringComparer.OrdinalIgnoreCase)
             .ToArray();
         PropertyChanged?.Invoke(
             this,
@@ -3552,6 +3580,36 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         catch (OperationCanceledException) when (lifetime.IsCancellationRequested)
         {
         }
+    }
+
+    public async Task<bool> ImportProfilesAsync(
+        ProfileSet profiles,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(profiles);
+        if (!TryGetSupportedProfileDraft(profiles, out ProfileSet validated))
+        {
+            return false;
+        }
+
+        bool accepted = await RunOperationAsync(
+            token => serviceClient.UpdateProfilesAsync(validated, token),
+            cancellationToken);
+        if (!accepted)
+        {
+            return false;
+        }
+
+        await dispatcher.InvokeAsync(
+            () =>
+            {
+                Profiles = validated;
+                ClearActiveProfileDraft();
+                SetProfileEditorsDirty(false);
+                LoadProfileEditors(validated);
+            },
+            cancellationToken);
+        return true;
     }
 
     private void MarkDisconnected(string message)
@@ -6214,6 +6272,8 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         && left.StartupAnimationEnabled == right.StartupAnimationEnabled
         && left.FunctionKeyPrimary == right.FunctionKeyPrimary
         && left.GamingModeEnabled == right.GamingModeEnabled
+        && left.AlwaysOverrideExternalLightingChanges
+            == right.AlwaysOverrideExternalLightingChanges
         && (left.LightingSuppressions ?? []).SequenceEqual(
             right.LightingSuppressions ?? [])
         && left.Firmware == right.Firmware

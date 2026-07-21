@@ -2,7 +2,10 @@ using OpenBlade.Contracts;
 
 namespace OpenBlade.Service;
 
-public sealed record BatteryAutomationPreferences(bool ProtectionEnabled);
+public sealed record BatteryAutomationPreferences(
+    bool ProtectionEnabled,
+    bool AlwaysOverrideExternalLightingChanges = false,
+    LightingSettings? LastKnownLighting = null);
 
 public sealed record BatteryConfiguration(
     ProfileSet Profiles,

@@ -65,6 +65,9 @@ public sealed class WinUiShellContractTests
 
         Assert.Contains("x:Name=\"ProfilesComparisonLayout\"", xaml, StringComparison.Ordinal);
         Assert.Contains("x:Name=\"ProfilesCompactLayout\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("Content=\"Import profiles\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("Click=\"OnImportProfiles\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("AutomationProperties.Name=\"Import profiles from JSON\"", xaml, StringComparison.Ordinal);
         Assert.Contains("ViewModel.PluggedInProfilePresentation.PowerMode", xaml, StringComparison.Ordinal);
         Assert.Contains("ViewModel.BatteryProfilePresentation.LightingEffect", xaml, StringComparison.Ordinal);
         Assert.Contains("ViewModel.UsbCProfilePresentation.DisplayColorProfile", xaml, StringComparison.Ordinal);
@@ -234,8 +237,10 @@ public sealed class WinUiShellContractTests
         Assert.DoesNotContain("DataTransferClipboard", window, StringComparison.Ordinal);
         Assert.Contains("AboutPage.Visibility = destination == \"about\"", window, StringComparison.Ordinal);
         Assert.Contains("MainNavigation.SelectedItem = AboutNavigationItem", window, StringComparison.Ordinal);
-        Assert.Contains("https://github.com/boyuanx/openblade-core/issues", xaml, StringComparison.Ordinal);
-        Assert.Contains("https://github.com/boyuanx/openblade-core/blob/main/CHANGELOG.md", xaml, StringComparison.Ordinal);
+        Assert.Contains("https://github.com/OSSBlade/openblade-core/issues", xaml, StringComparison.Ordinal);
+        Assert.Contains("https://github.com/OSSBlade/openblade-docs", xaml, StringComparison.Ordinal);
+        Assert.Contains("https://github.com/OSSBlade/openblade-core/blob/main/CHANGELOG.md", xaml, StringComparison.Ordinal);
+        Assert.Contains("https://github.com/OSSBlade/openblade-core\"", xaml, StringComparison.Ordinal);
         Assert.Contains("ms-appx:///Assets/Brand/OpenBlade.png", xaml, StringComparison.Ordinal);
         Assert.Contains("Glyph=\"&#xE8A7;\"", xaml, StringComparison.Ordinal);
         Assert.Contains("Style=\"{StaticResource IconActionButtonStyle}\"", xaml, StringComparison.Ordinal);
@@ -275,6 +280,16 @@ public sealed class WinUiShellContractTests
         Assert.Contains("Style=\"{StaticResource DestructiveButtonStyle}\"", xaml, StringComparison.Ordinal);
         Assert.Contains("SystemFillColorCriticalBrush", xaml, StringComparison.Ordinal);
         Assert.Contains("#47E10C", app, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("x:Name=\"SettingsPageHeader\"", xaml, StringComparison.Ordinal);
+        Assert.Equal(5, CountOccurrences(xaml, "Margin=\"0,0,0,20\""));
+        Assert.Contains(
+            "IsOn=\"{x:Bind ViewModel.AlwaysOverrideExternalLightingChanges, Mode=OneWay}\"",
+            xaml,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "Toggled=\"OnExternalLightingOverridePolicyToggled\"",
+            xaml,
+            StringComparison.Ordinal);
 
         int dashboardSelector = xaml.IndexOf(
             "Text=\"Shown on Dashboard\"",

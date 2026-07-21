@@ -84,6 +84,10 @@ public sealed class ProfileSetValidator(ProfileValidationPolicy policy)
     public void ValidatePreferences(BatteryAutomationPreferences preferences)
     {
         ArgumentNullException.ThrowIfNull(preferences);
+        if (preferences.LastKnownLighting is { } lighting)
+        {
+            ValidateLighting(lighting, "last-known");
+        }
     }
 
     public void ValidatePerformanceFanCombination(

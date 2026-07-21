@@ -24,6 +24,10 @@ public sealed class ControlRequestHandlerTests
             new SetFanOverrideRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid(),
                 new ManualOverride<FanMode>(FanMode.Maximum, OverrideLifetime.UntilPowerSourceChange)),
             new SetLightingOverrideRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid(), null),
+            new SetExternalLightingOverridePolicyRequest(
+                OpenBladeIpc.ProtocolVersion,
+                Guid.NewGuid(),
+                Enabled: true),
             new SetLightingSuppressionRequest(
                 OpenBladeIpc.ProtocolVersion,
                 Guid.NewGuid(),
@@ -62,7 +66,8 @@ public sealed class ControlRequestHandlerTests
         string[] expectedCalls =
         [
             "GetStatus", "GetStatus", "UpdateProfiles", "SetPerformanceOverride",
-            "CyclePerformanceShortcut", "SetFanOverride", "SetLightingOverride", "SetLightingSuppression",
+            "CyclePerformanceShortcut", "SetFanOverride", "SetLightingOverride",
+            "SetExternalLightingOverridePolicy", "SetLightingSuppression",
             "PulseReactiveKey", "PushAmbientLightingFrame", "SetBatteryPolicy",
             "SetBatteryProtection", "SetFullChargeOverride", "ApplyOneShotLaptopControl",
             "ExportDiagnostics", "Shutdown",
@@ -255,6 +260,14 @@ public sealed class ControlRequestHandlerTests
 
         public Task<ControlOperationResult> SetLightingOverrideAsync(ManualOverride<LightingSettings>? value, CancellationToken token) =>
             Record("SetLightingOverride");
+
+        public Task<ControlOperationResult> SetExternalLightingOverridePolicyAsync(
+            bool enabled,
+            CancellationToken token)
+        {
+            Assert.True(enabled);
+            return Record("SetExternalLightingOverridePolicy");
+        }
 
         public Task<ControlOperationResult> SetLightingSuppressionAsync(
             LightingSuppressionReason reason,
