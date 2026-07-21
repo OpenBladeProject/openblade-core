@@ -23,6 +23,7 @@ public sealed record SetupPaths
                 "The Startup folder must have a Start menu Programs parent.",
                 nameof(startupRoot));
         StartMenuFile = Path.Combine(programsRoot, "OpenBlade.lnk");
+        UninstallStartMenuFile = Path.Combine(programsRoot, "Uninstall OpenBlade.lnk");
     }
 
     public string ProgramFilesRoot { get; }
@@ -36,6 +37,7 @@ public sealed record SetupPaths
     public string SessionAgentStartupFile { get; }
     public string LegacyStartupFile { get; }
     public string StartMenuFile { get; }
+    public string UninstallStartMenuFile { get; }
 
     public static SetupPaths Create(
         string programFilesRoot,
@@ -46,6 +48,12 @@ public sealed record SetupPaths
             NormalizeKnownFolder(machineDataRoot, nameof(machineDataRoot)),
             NormalizeKnownFolder(userDataRoot, nameof(userDataRoot)),
             NormalizeKnownFolder(startupRoot, nameof(startupRoot)));
+
+    public static SetupPaths CreateDefault() => Create(
+        Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles),
+        Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
+        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+        Environment.GetFolderPath(Environment.SpecialFolder.Startup));
 
     public static bool IsExactOpenBladeDirectory(string candidate, string knownFolderRoot)
     {
@@ -97,6 +105,38 @@ public sealed record SetupPaths
             }
 
             return name.AsSpan(prefix.Length).IndexOfAnyExcept("0123456789abcdefABCDEF") < 0;
+        }
+        catch (ArgumentException)
+        {
+            return false;
+        }
+        catch (NotSupportedException)
+        {
+            return false;
+        }
+    }
+
+    public static bool IsExactUninstallRelayDirectory(string candidate, string programFilesRoot)
+    {
+        if (string.IsNullOrWhiteSpace(candidate) || string.IsNullOrWhiteSpace(programFilesRoot))
+        {
+            return false;
+        }
+
+        try
+        {
+            string root = NormalizeKnownFolder(programFilesRoot, nameof(programFilesRoot));
+            string actual = Path.TrimEndingDirectorySeparator(Path.GetFullPath(candidate));
+            if (!string.Equals(Path.GetDirectoryName(actual), root, StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+
+            const string prefix = "OpenBlade.uninstall.";
+            string name = Path.GetFileName(actual);
+            return name.Length == prefix.Length + 32
+                && name.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)
+                && name.AsSpan(prefix.Length).IndexOfAnyExcept("0123456789abcdefABCDEF") < 0;
         }
         catch (ArgumentException)
         {

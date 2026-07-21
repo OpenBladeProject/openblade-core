@@ -17,7 +17,9 @@ public sealed record SetupServiceInstallState(bool Existed, bool WasRunning);
 public sealed record SetupStartupInstallState(
     bool TrayShortcutExisted,
     bool SessionAgentShortcutExisted,
-    bool StartMenuShortcutExisted);
+    bool StartMenuShortcutExisted,
+    bool UninstallShortcutExisted = false,
+    bool UninstallRegistrationExisted = false);
 
 public sealed record SetupInstallLifecycleState(
     SetupServiceInstallState Service,
@@ -32,6 +34,7 @@ public interface ISetupPlatform
     Task RestoreServiceInstallStateAsync(
         SetupServiceInstallState priorState,
         CancellationToken cancellationToken);
+    Task InstallUninstallerAsync(CancellationToken cancellationToken);
     Task WriteAuthorizedUserSidAsync(string sid, CancellationToken cancellationToken);
     Task InstallServiceAsync(CancellationToken cancellationToken);
     Task VerifyServiceHealthAsync(CancellationToken cancellationToken);
@@ -41,6 +44,10 @@ public interface ISetupPlatform
     Task RemoveSessionAgentStartupShortcutAsync(CancellationToken cancellationToken);
     Task InstallStartMenuShortcutAsync(CancellationToken cancellationToken);
     Task RemoveStartMenuShortcutAsync(CancellationToken cancellationToken);
+    Task InstallUninstallShortcutAsync(CancellationToken cancellationToken);
+    Task RemoveUninstallShortcutAsync(CancellationToken cancellationToken);
+    Task InstallUninstallRegistrationAsync(CancellationToken cancellationToken);
+    Task RemoveUninstallRegistrationAsync(CancellationToken cancellationToken);
     Task RemoveServiceAsync(CancellationToken cancellationToken);
     Task StopTrayAsync(CancellationToken cancellationToken);
     Task StopSessionAgentAsync(CancellationToken cancellationToken);
@@ -78,15 +85,20 @@ public sealed class SetupCommandRunner(ISetupPlatform platform)
                 await platform.RemoveStartupShortcutAsync(cancellationToken);
                 await platform.RemoveSessionAgentStartupShortcutAsync(cancellationToken);
                 await platform.RemoveStartMenuShortcutAsync(cancellationToken);
+                await platform.RemoveUninstallShortcutAsync(cancellationToken);
+                await platform.RemoveUninstallRegistrationAsync(cancellationToken);
                 await platform.PrepareServiceForInstallAsync(cancellationToken);
                 await platform.StopTrayAsync(cancellationToken);
                 await platform.StopSessionAgentAsync(cancellationToken);
                 await transaction.ActivateAsync(cancellationToken);
+                await platform.InstallUninstallerAsync(cancellationToken);
                 await platform.WriteAuthorizedUserSidAsync(platform.CurrentUserSid, cancellationToken);
                 await platform.InstallServiceAsync(cancellationToken);
                 await platform.VerifyServiceHealthAsync(cancellationToken);
                 await platform.InstallSessionAgentStartupShortcutAsync(cancellationToken);
                 await platform.InstallStartMenuShortcutAsync(cancellationToken);
+                await platform.InstallUninstallShortcutAsync(cancellationToken);
+                await platform.InstallUninstallRegistrationAsync(cancellationToken);
                 if (!transaction.HadExistingInstall || priorLifecycle.Startup.TrayShortcutExisted)
                 {
                     await platform.InstallStartupShortcutAsync(cancellationToken);
@@ -111,6 +123,12 @@ public sealed class SetupCommandRunner(ISetupPlatform platform)
                         recoveryFailures);
                     await RecoverAsync(
                         () => platform.RemoveStartMenuShortcutAsync(recoveryToken),
+                        recoveryFailures);
+                    await RecoverAsync(
+                        () => platform.RemoveUninstallShortcutAsync(recoveryToken),
+                        recoveryFailures);
+                    await RecoverAsync(
+                        () => platform.RemoveUninstallRegistrationAsync(recoveryToken),
                         recoveryFailures);
                 }
 
@@ -163,6 +181,20 @@ public sealed class SetupCommandRunner(ISetupPlatform platform)
                             () => platform.InstallStartMenuShortcutAsync(recoveryToken),
                             recoveryFailures);
                     }
+
+                    if (priorLifecycle?.Startup is { UninstallShortcutExisted: true })
+                    {
+                        await RecoverAsync(
+                            () => platform.InstallUninstallShortcutAsync(recoveryToken),
+                            recoveryFailures);
+                    }
+
+                    if (priorLifecycle?.Startup is { UninstallRegistrationExisted: true })
+                    {
+                        await RecoverAsync(
+                            () => platform.InstallUninstallRegistrationAsync(recoveryToken),
+                            recoveryFailures);
+                    }
                 }
 
                 if (recoveryFailures.Count > 0)
@@ -175,13 +207,47 @@ public sealed class SetupCommandRunner(ISetupPlatform platform)
             }
         }
 
+        SetupInstallLifecycleState uninstallLifecycle =
+            await platform.CaptureInstallLifecycleStateAsync(cancellationToken);
         await platform.RemoveStartupShortcutAsync(cancellationToken);
         await platform.RemoveSessionAgentStartupShortcutAsync(cancellationToken);
         await platform.RemoveStartMenuShortcutAsync(cancellationToken);
         await platform.RemoveServiceAsync(cancellationToken);
         await platform.StopTrayAsync(cancellationToken);
         await platform.StopSessionAgentAsync(cancellationToken);
-        await platform.RemoveBinariesAsync(cancellationToken);
+        try
+        {
+            await platform.RemoveUninstallShortcutAsync(cancellationToken);
+            await platform.RemoveUninstallRegistrationAsync(cancellationToken);
+            await platform.RemoveBinariesAsync(cancellationToken);
+        }
+        catch (Exception failure)
+        {
+            List<Exception> recoveryFailures = [];
+            using CancellationTokenSource recoveryTimeout = new(TimeSpan.FromSeconds(30));
+            if (uninstallLifecycle.Startup.UninstallShortcutExisted)
+            {
+                await RecoverAsync(
+                    () => platform.InstallUninstallShortcutAsync(recoveryTimeout.Token),
+                    recoveryFailures);
+            }
+
+            if (uninstallLifecycle.Startup.UninstallRegistrationExisted)
+            {
+                await RecoverAsync(
+                    () => platform.InstallUninstallRegistrationAsync(recoveryTimeout.Token),
+                    recoveryFailures);
+            }
+
+            if (recoveryFailures.Count > 0)
+            {
+                throw new AggregateException([failure, .. recoveryFailures]);
+            }
+
+            ExceptionDispatchInfo.Capture(failure).Throw();
+            throw new InvalidOperationException("Unreachable uninstall recovery path.");
+        }
+
         if (command == SetupCommand.UninstallAndPurge)
         {
             await platform.RemoveDataAsync(cancellationToken);

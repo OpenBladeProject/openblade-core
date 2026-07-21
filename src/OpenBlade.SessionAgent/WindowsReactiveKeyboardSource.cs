@@ -38,6 +38,7 @@ internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
     private const uint WindowMessageClose = 0x0010;
     private const uint WindowMessageDestroy = 0x0002;
     private const uint RawInputCommand = 0x10000003;
+    private const uint RawInputHeaderCommand = 0x10000005;
     private const uint RawInputTypeKeyboard = 1;
     private const uint RawInputTypeHid = 2;
     private const uint RawInputDeviceInputSink = 0x00000100;
@@ -62,6 +63,8 @@ internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
         new(TaskCreationOptions.RunContinuationsAsynchronously);
     private readonly Thread messageThread;
     private readonly ConcurrentDictionary<nint, bool> targetDevices = new();
+    private nint rawInputBuffer;
+    private int rawInputBufferCapacity;
     private nint windowHandle;
     private uint messageThreadId;
     private bool functionKeyPressed;
@@ -201,6 +204,7 @@ internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
         }
         finally
         {
+            ReleaseRawInputBuffer();
             if (inputRegistered)
             {
                 try
@@ -278,60 +282,84 @@ internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
 
     private void ProcessRawInput(nint rawInputHandle)
     {
-        uint size = 0;
         uint headerSize = checked((uint)Marshal.SizeOf<RawInputHeader>());
-        uint sizingResult = GetRawInputData(
+        uint headerBytes = headerSize;
+        var header = new RawInputHeader();
+        uint headerResult = GetRawInputHeader(
             rawInputHandle,
-            RawInputCommand,
-            0,
-            ref size,
+            RawInputHeaderCommand,
+            ref header,
+            ref headerBytes,
             headerSize);
-        if (sizingResult == uint.MaxValue)
+        if (headerResult == uint.MaxValue)
         {
             throw new Win32Exception(Marshal.GetLastWin32Error());
         }
-        if (size < headerSize || size > MaximumRawInputBytes)
+        if (headerResult < headerSize
+            || headerBytes < headerSize
+            || header.Size < headerSize
+            || header.Size > MaximumRawInputBytes
+            || !IsTargetInputDeviceCached(header.Device))
         {
             return;
         }
 
-        nint buffer = Marshal.AllocHGlobal(checked((int)size));
-        try
+        uint size = header.Size;
+        nint buffer = EnsureRawInputBuffer(size);
+        uint receivedSize = size;
+        uint result = GetRawInputData(
+            rawInputHandle,
+            RawInputCommand,
+            buffer,
+            ref receivedSize,
+            headerSize);
+        if (result == uint.MaxValue)
         {
-            uint receivedSize = size;
-            uint result = GetRawInputData(
-                rawInputHandle,
-                RawInputCommand,
-                buffer,
-                ref receivedSize,
-                headerSize);
-            if (result == uint.MaxValue)
-            {
-                throw new Win32Exception(Marshal.GetLastWin32Error());
-            }
-            if (result < headerSize || receivedSize < headerSize)
-            {
-                return;
-            }
-
-            RawInputHeader header = Marshal.PtrToStructure<RawInputHeader>(buffer);
-            if (header.Size < headerSize
-                || header.Size > receivedSize
-                || !IsTargetInputDeviceCached(header.Device))
-            {
-                return;
-            }
-
-            if (header.Type == RawInputTypeKeyboard)
-            {
-                ProcessKeyboard(buffer, headerSize, receivedSize);
-            }
-            else if (header.Type == RawInputTypeHid)
-            {
-                ProcessHid(buffer, headerSize, receivedSize);
-            }
+            throw new Win32Exception(Marshal.GetLastWin32Error());
         }
-        finally
+        if (result < headerSize || receivedSize < headerSize)
+        {
+            return;
+        }
+
+        RawInputHeader receivedHeader = Marshal.PtrToStructure<RawInputHeader>(buffer);
+        if (receivedHeader.Size < headerSize
+            || receivedHeader.Size > receivedSize
+            || receivedHeader.Device != header.Device)
+        {
+            return;
+        }
+
+        if (receivedHeader.Type == RawInputTypeKeyboard)
+        {
+            ProcessKeyboard(buffer, headerSize, receivedSize);
+        }
+        else if (receivedHeader.Type == RawInputTypeHid)
+        {
+            ProcessHid(buffer, headerSize, receivedSize);
+        }
+    }
+
+    private nint EnsureRawInputBuffer(uint size)
+    {
+        int requested = checked((int)size);
+        if (rawInputBufferCapacity >= requested)
+        {
+            return rawInputBuffer;
+        }
+
+        rawInputBuffer = rawInputBuffer == 0
+            ? Marshal.AllocHGlobal(requested)
+            : Marshal.ReAllocHGlobal(rawInputBuffer, requested);
+        rawInputBufferCapacity = requested;
+        return rawInputBuffer;
+    }
+
+    private void ReleaseRawInputBuffer()
+    {
+        nint buffer = Interlocked.Exchange(ref rawInputBuffer, 0);
+        rawInputBufferCapacity = 0;
+        if (buffer != 0)
         {
             Marshal.FreeHGlobal(buffer);
         }
@@ -388,16 +416,20 @@ internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
         }
 
         nint reports = nint.Add(hid, rawHidHeaderSize);
-        byte[] report = new byte[checked((int)reportSize)];
+        Span<byte> report = stackalloc byte[3];
+        report.Clear();
+        int inspectedBytes = Math.Min(report.Length, checked((int)reportSize));
         for (uint index = 0; index < reportCount; index++)
         {
-            Marshal.Copy(
-                nint.Add(reports, checked((int)(index * reportSize))),
-                report,
-                0,
-                report.Length);
+            nint reportAddress = nint.Add(
+                reports,
+                checked((int)(index * reportSize)));
+            for (int offset = 0; offset < inspectedBytes; offset++)
+            {
+                report[offset] = Marshal.ReadByte(reportAddress, offset);
+            }
             if (Rz09_0581PerformanceShortcutRawHidInput.TryCreateTrigger(
-                report,
+                report[..inspectedBytes],
                 ref performanceFunctionKeyPressed,
                 ref dedicatedPerformanceButtonPressed,
                 ref functionPPressed,
@@ -406,7 +438,7 @@ internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
                 publishPerformanceShortcut(shortcut);
             }
             if (Rz09_0581ReactiveRawHidInput.TryCreatePulse(
-                report,
+                report[..inspectedBytes],
                 ref functionKeyPressed,
                 out ReactiveKeyPulse pulse))
             {
@@ -646,6 +678,17 @@ internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
         nint rawInputHandle,
         uint command,
         nint data,
+        ref uint size,
+        uint headerSize);
+
+    [DllImport(
+        "user32.dll",
+        EntryPoint = "GetRawInputData",
+        SetLastError = true)]
+    private static extern uint GetRawInputHeader(
+        nint rawInputHandle,
+        uint command,
+        ref RawInputHeader data,
         ref uint size,
         uint headerSize);
 

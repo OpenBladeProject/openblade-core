@@ -859,6 +859,8 @@ public sealed class SetupPayloadTransactionTests
             SetupServiceInstallState priorState,
             CancellationToken cancellationToken) => throw new NotSupportedException();
 
+        public Task InstallUninstallerAsync(CancellationToken cancellationToken) => throw new NotSupportedException();
+
         public Task WriteAuthorizedUserSidAsync(string sid, CancellationToken cancellationToken) =>
             throw new NotSupportedException();
 
@@ -870,6 +872,10 @@ public sealed class SetupPayloadTransactionTests
         public Task RemoveSessionAgentStartupShortcutAsync(CancellationToken cancellationToken) => throw new NotSupportedException();
         public Task InstallStartMenuShortcutAsync(CancellationToken cancellationToken) => throw new NotSupportedException();
         public Task RemoveStartMenuShortcutAsync(CancellationToken cancellationToken) => throw new NotSupportedException();
+        public Task InstallUninstallShortcutAsync(CancellationToken cancellationToken) => throw new NotSupportedException();
+        public Task RemoveUninstallShortcutAsync(CancellationToken cancellationToken) => throw new NotSupportedException();
+        public Task InstallUninstallRegistrationAsync(CancellationToken cancellationToken) => throw new NotSupportedException();
+        public Task RemoveUninstallRegistrationAsync(CancellationToken cancellationToken) => throw new NotSupportedException();
         public Task RemoveServiceAsync(CancellationToken cancellationToken) => throw new NotSupportedException();
         public Task StopTrayAsync(CancellationToken cancellationToken) => throw new NotSupportedException();
         public Task StopSessionAgentAsync(CancellationToken cancellationToken) => throw new NotSupportedException();

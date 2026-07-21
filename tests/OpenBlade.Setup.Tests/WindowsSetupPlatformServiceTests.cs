@@ -379,6 +379,93 @@ public sealed class WindowsSetupPlatformServiceTests
             removed);
     }
 
+    [Fact]
+    public async Task InstallUninstallShortcut_TargetsInstalledSetupAndPreservesProfilesByDefault()
+    {
+        RecordingShortcutWriter shortcutWriter = new();
+        WindowsSetupPlatform platform = new(new RecordingServiceControl(), shortcutWriter);
+
+        await platform.InstallUninstallShortcutAsync(CancellationToken.None);
+
+        ShortcutRequest request = Assert.Single(shortcutWriter.Requests);
+        Assert.EndsWith("Uninstall OpenBlade.lnk", request.ShortcutPath, StringComparison.OrdinalIgnoreCase);
+        Assert.EndsWith("OpenBlade.Setup.exe", request.TargetPath, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal("uninstall --interactive", request.Arguments);
+        Assert.Contains("keep saved profiles", request.Description, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(7, request.WindowStyle);
+    }
+
+    [Fact]
+    public async Task InstallUninstallRegistration_CreatesInstalledAppsEntryForInstalledSetup()
+    {
+        RecordingUninstallRegistration registration = new();
+        WindowsSetupPlatform platform = new(uninstallRegistration: registration);
+
+        await platform.InstallUninstallRegistrationAsync(CancellationToken.None);
+
+        UninstallRegistrationRequest request = Assert.Single(registration.Installs);
+        Assert.EndsWith(@"\OpenBlade", request.InstallLocation, StringComparison.OrdinalIgnoreCase);
+        Assert.EndsWith(@"\OpenBlade.Tray.exe", request.DisplayIcon, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("\\OpenBlade.Setup.exe\" uninstall --interactive", request.UninstallCommand, StringComparison.OrdinalIgnoreCase);
+        Assert.False(string.IsNullOrWhiteSpace(request.DisplayVersion));
+    }
+
+    [Fact]
+    public async Task InstallUninstaller_CopiesRunningSetupIntoActivatedInstallDirectory()
+    {
+        RecordingInstalledUninstallerWriter writer = new();
+        const string source = @"C:\Downloads\OpenBlade.Setup.exe";
+        WindowsSetupPlatform platform = new(
+            installedUninstallerWriter: writer,
+            setupExecutablePath: source);
+
+        await platform.InstallUninstallerAsync(CancellationToken.None);
+
+        InstalledUninstallerWriteRequest request = Assert.Single(writer.Requests);
+        Assert.Equal(source, request.SourceExecutable);
+        Assert.Equal(
+            Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles),
+                "OpenBlade",
+                "OpenBlade.Setup.exe"),
+            request.DestinationExecutable);
+    }
+
+    [Fact]
+    public async Task RemoveUninstallArtifacts_RemovesShortcutAndInstalledAppsEntry()
+    {
+        RecordingFileOperations files = new();
+        RecordingUninstallRegistration registration = new() { EntryExists = true };
+        WindowsSetupPlatform platform = new(
+            fileOperations: files,
+            uninstallRegistration: registration);
+
+        await platform.RemoveUninstallShortcutAsync(CancellationToken.None);
+        await platform.RemoveUninstallRegistrationAsync(CancellationToken.None);
+
+        Assert.EndsWith(
+            "Uninstall OpenBlade.lnk",
+            Assert.Single(files.DeletedFiles),
+            StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(1, registration.Removals);
+    }
+
+    [Fact]
+    public async Task CaptureInstallLifecycle_RecordsUninstallArtifactExistence()
+    {
+        RecordingFileOperations files = new() { FileExistsResult = true };
+        RecordingUninstallRegistration registration = new() { EntryExists = true };
+        WindowsSetupPlatform platform = new(
+            fileOperations: files,
+            uninstallRegistration: registration);
+
+        SetupInstallLifecycleState state =
+            await platform.CaptureInstallLifecycleStateAsync(CancellationToken.None);
+
+        Assert.True(state.Startup.UninstallShortcutExisted);
+        Assert.True(state.Startup.UninstallRegistrationExisted);
+    }
+
     [Theory]
     [InlineData("")]
     [InlineData("not-a-sid")]
@@ -553,6 +640,30 @@ public sealed class WindowsSetupPlatformServiceTests
         public bool FileExists(string path) => FileExistsResult;
 
         public void DeleteFile(string path) => DeletedFiles.Add(path);
+    }
+
+    private sealed class RecordingUninstallRegistration : IUninstallRegistration
+    {
+        public bool EntryExists { get; init; }
+        public List<UninstallRegistrationRequest> Installs { get; } = [];
+        public int Removals { get; private set; }
+
+        public bool Exists() => EntryExists;
+        public void Install(UninstallRegistrationRequest request) => Installs.Add(request);
+        public void Remove() => Removals++;
+    }
+
+    private sealed class RecordingInstalledUninstallerWriter : IInstalledUninstallerWriter
+    {
+        public List<InstalledUninstallerWriteRequest> Requests { get; } = [];
+
+        public Task WriteVerifiedAsync(
+            InstalledUninstallerWriteRequest request,
+            CancellationToken cancellationToken)
+        {
+            Requests.Add(request);
+            return Task.CompletedTask;
+        }
     }
 
     private sealed class RecordingHealthProbe : ISetupServiceHealthProbe

@@ -25,7 +25,6 @@ public sealed class ServiceLightingIdlePolicyLoopTests
 
         client.Publish(Status(new LightingPowerPolicy(false, 5)));
         await client.Delivered.Task.WaitAsync(cancellation.Token);
-        await delay.TickAsync(cancellation.Token);
         await WaitUntilAsync(() => client.Requests.Count == 1, cancellation.Token);
 
         Assert.Equal(
@@ -34,7 +33,6 @@ public sealed class ServiceLightingIdlePolicyLoopTests
 
         client.Publish(Status(new LightingPowerPolicy(false, 5)) with { Revision = 2 });
         await WaitUntilAsync(() => client.DeliveryCount == 2, cancellation.Token);
-        await delay.TickAsync(cancellation.Token);
         await Task.Delay(20, cancellation.Token);
         Assert.Single(client.Requests);
 
@@ -65,12 +63,122 @@ public sealed class ServiceLightingIdlePolicyLoopTests
 
         client.Publish(Status(LightingPowerPolicy.Disabled));
         await client.Delivered.Task.WaitAsync(cancellation.Token);
-        await delay.TickAsync(cancellation.Token);
         await WaitUntilAsync(() => client.Requests.Count == 1, cancellation.Token);
 
         Assert.Equal(
             (LightingSuppressionReason.UserIdle, false),
             client.Requests.Single());
+
+        await cancellation.CancelAsync();
+        await running;
+    }
+
+    [Fact]
+    public async Task ActivePolicySleepsUntilNearBoundaryInsteadOfPollingEverySecond()
+    {
+        var client = new WatchClient();
+        var idle = new FakeIdleTimeSource { Current = TimeSpan.FromMinutes(1) };
+        var delay = new RecordingDelay();
+        var loop = new ServiceLightingIdlePolicyLoop(
+            client,
+            idle,
+            delay: delay.DelayAsync);
+        using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        Task running = loop.RunAsync(cancellation.Token);
+
+        client.Publish(Status(new LightingPowerPolicy(false, 5)));
+        TimeSpan interval = await delay.NextIntervalAsync(cancellation.Token);
+
+        Assert.Equal(TimeSpan.FromMinutes(4), interval);
+        Assert.Equal(
+            (LightingSuppressionReason.UserIdle, false),
+            client.Requests.Single());
+
+        await cancellation.CancelAsync();
+        await running;
+    }
+
+    [Fact]
+    public async Task PolicyChangeInterruptsLongBoundarySleep()
+    {
+        var client = new WatchClient();
+        var idle = new FakeIdleTimeSource { Current = TimeSpan.FromMinutes(1) };
+        var delay = new RecordingDelay();
+        var loop = new ServiceLightingIdlePolicyLoop(
+            client,
+            idle,
+            delay: delay.DelayAsync);
+        using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        Task running = loop.RunAsync(cancellation.Token);
+
+        client.Publish(Status(new LightingPowerPolicy(false, 5)));
+        Assert.Equal(
+            TimeSpan.FromMinutes(4),
+            await delay.NextIntervalAsync(cancellation.Token));
+
+        client.Publish(Status(new LightingPowerPolicy(false, 2)) with { Revision = 2 });
+        await WaitUntilAsync(() => client.DeliveryCount == 2, cancellation.Token);
+
+        Assert.Equal(
+            TimeSpan.FromMinutes(1),
+            await delay.NextIntervalAsync(cancellation.Token));
+        await cancellation.CancelAsync();
+        await running;
+    }
+
+    [Fact]
+    public async Task IdleSourceFailureUsesRetryDelayInsteadOfHotSpinning()
+    {
+        var client = new WatchClient();
+        var idle = new ThrowingIdleTimeSource();
+        var delay = new RecordingDelay();
+        List<Exception> failures = [];
+        var loop = new ServiceLightingIdlePolicyLoop(
+            client,
+            idle,
+            failures.Add,
+            delay.DelayAsync);
+        using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        Task running = loop.RunAsync(cancellation.Token);
+
+        client.Publish(Status(new LightingPowerPolicy(false, 5)));
+
+        Assert.Equal(
+            TimeSpan.FromSeconds(5),
+            await delay.NextIntervalAsync(cancellation.Token));
+        Assert.Single(failures);
+        Assert.Equal(1, idle.ReadCount);
+
+        await cancellation.CancelAsync();
+        await running;
+    }
+
+    [Fact]
+    public async Task FailedSuppressionWriteUsesRetryDelayWhenPolicyIsDisabled()
+    {
+        var client = new WatchClient
+        {
+            SuppressionResult = new ControlOperationResult(
+                ControlOperationStatus.Failed,
+                "Synthetic write failure."),
+        };
+        var delay = new RecordingDelay();
+        List<Exception> failures = [];
+        var loop = new ServiceLightingIdlePolicyLoop(
+            client,
+            new FakeIdleTimeSource(),
+            failures.Add,
+            delay.DelayAsync);
+        using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        Task running = loop.RunAsync(cancellation.Token);
+
+        client.Publish(Status(LightingPowerPolicy.Disabled));
+
+        Assert.Equal(
+            TimeSpan.FromSeconds(5),
+            await delay.NextIntervalAsync(cancellation.Token));
+        Assert.Single(client.Requests);
+        Assert.Single(failures);
 
         await cancellation.CancelAsync();
         await running;
@@ -137,7 +245,6 @@ public sealed class ServiceLightingIdlePolicyLoopTests
 
         public async Task DelayAsync(TimeSpan delay, CancellationToken cancellationToken)
         {
-            Assert.Equal(TimeSpan.FromSeconds(1), delay);
             var wait = new TaskCompletionSource(
                 TaskCreationOptions.RunContinuationsAsynchronously);
             await waits.Writer.WriteAsync(wait, cancellationToken);
@@ -149,6 +256,31 @@ public sealed class ServiceLightingIdlePolicyLoopTests
             TaskCompletionSource wait = await waits.Reader.ReadAsync(cancellationToken);
             wait.TrySetResult();
         }
+    }
+
+    private sealed class ThrowingIdleTimeSource : IUserIdleTimeSource
+    {
+        public int ReadCount { get; private set; }
+
+        public TimeSpan? GetIdleTime()
+        {
+            ReadCount++;
+            throw new InvalidOperationException("Synthetic idle-source failure.");
+        }
+    }
+
+    private sealed class RecordingDelay
+    {
+        private readonly Channel<TimeSpan> intervals = Channel.CreateUnbounded<TimeSpan>();
+
+        public async Task DelayAsync(TimeSpan delay, CancellationToken cancellationToken)
+        {
+            await intervals.Writer.WriteAsync(delay, cancellationToken);
+            await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+        }
+
+        public ValueTask<TimeSpan> NextIntervalAsync(CancellationToken cancellationToken) =>
+            intervals.Reader.ReadAsync(cancellationToken);
     }
 
     private sealed class WatchClient : IServiceClient
@@ -164,6 +296,10 @@ public sealed class ServiceLightingIdlePolicyLoopTests
             TaskCreationOptions.RunContinuationsAsynchronously);
 
         public int DeliveryCount => Volatile.Read(ref deliveryCount);
+
+        public ControlOperationResult SuppressionResult { get; set; } = new(
+            ControlOperationStatus.Applied,
+            "Applied");
 
         public void Publish(ServiceStatusSnapshot status) => updates.Writer.TryWrite(
             new ServiceWatchUpdate.Connected(status));
@@ -186,9 +322,7 @@ public sealed class ServiceLightingIdlePolicyLoopTests
             CancellationToken token)
         {
             Requests.Enqueue((reason, suppressed));
-            return Task.FromResult(new ControlOperationResult(
-                ControlOperationStatus.Applied,
-                "Applied"));
+            return Task.FromResult(SuppressionResult);
         }
 
         public Task<ServiceStatusSnapshot> GetStatusAsync(CancellationToken token) =>

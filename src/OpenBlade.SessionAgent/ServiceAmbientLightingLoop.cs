@@ -14,6 +14,7 @@ public sealed class ServiceAmbientLightingLoop : IAsyncDisposable
     private static readonly TimeSpan FailureRetryDelay = TimeSpan.FromSeconds(1);
 
     private readonly IServiceClient serviceClient;
+    private readonly IServiceStatusWatcher statusWatcher;
     private readonly IAmbientScreenSamplerFactory samplerFactory;
     private readonly Action<Exception>? errorHandler;
     private readonly Func<TimeSpan, CancellationToken, Task> delay;
@@ -27,12 +28,14 @@ public sealed class ServiceAmbientLightingLoop : IAsyncDisposable
         IServiceClient serviceClient,
         IAmbientScreenSamplerFactory samplerFactory,
         Action<Exception>? errorHandler = null,
-        Func<TimeSpan, CancellationToken, Task>? delay = null)
+        Func<TimeSpan, CancellationToken, Task>? delay = null,
+        IServiceStatusWatcher? statusWatcher = null)
     {
         this.serviceClient = serviceClient
             ?? throw new ArgumentNullException(nameof(serviceClient));
         this.samplerFactory = samplerFactory
             ?? throw new ArgumentNullException(nameof(samplerFactory));
+        this.statusWatcher = statusWatcher ?? serviceClient;
         this.errorHandler = errorHandler;
         this.delay = delay ?? Task.Delay;
     }
@@ -46,7 +49,7 @@ public sealed class ServiceAmbientLightingLoop : IAsyncDisposable
                 cancellationToken.ThrowIfCancellationRequested();
                 try
                 {
-                    await foreach (ServiceWatchUpdate update in serviceClient
+                    await foreach (ServiceWatchUpdate update in statusWatcher
                         .WatchStatusAsync(cancellationToken)
                         .WithCancellation(cancellationToken)
                         .ConfigureAwait(false))

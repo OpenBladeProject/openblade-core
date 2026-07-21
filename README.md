@@ -81,12 +81,19 @@ application payload. The SessionAgent is the sole owner of current-user Windows
 display APIs, so saved display profiles continue to follow confirmed power-source
 changes after the visible tray exits. Run
 `OpenBlade.Setup.exe install` from an elevated terminal to install it. Use
-`OpenBlade.Setup.exe uninstall` to preserve profiles or
-`OpenBlade.Setup.exe uninstall --purge` to remove them. Uninstall requests a
-graceful shutdown from the exact installed tray and SessionAgent processes and
-waits for both to exit before removing binaries. The SessionAgent always starts
-at sign-in for profile automation; the Settings toggle independently controls
-whether the visible tray also starts at sign-in.
+Windows Settings > Apps > Installed apps or the **Uninstall OpenBlade** Start
+menu entry for a confirmation-based uninstall that preserves saved profiles and
+preferences. For automation, the installed
+`C:\Program Files\OpenBlade\OpenBlade.Setup.exe uninstall` command has the same
+preserving behavior. Pass `--purge` explicitly to remove saved data too.
+Uninstall requests a graceful shutdown from the exact installed tray and
+SessionAgent processes and waits for both to exit before removing binaries. If
+binary removal fails, Setup restores the Installed apps and Start menu retry
+entries. The SessionAgent always starts at sign-in for profile automation; the
+Settings toggle independently controls whether the visible tray also starts at
+sign-in. Setup copies its single-file executable into the activated install tree
+with write-through I/O, then verifies the installed length and SHA-256 before
+committing the installation.
 
 Interactive lighting and performance shortcuts use Raw Input in the
 SessionAgent. OpenBlade does not install a UIAccess helper or run the tray as

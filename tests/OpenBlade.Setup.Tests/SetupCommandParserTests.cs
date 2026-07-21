@@ -7,6 +7,7 @@ public sealed class SetupCommandParserTests
     [Theory]
     [InlineData(SetupCommand.Install, "install")]
     [InlineData(SetupCommand.Uninstall, "UNINSTALL")]
+    [InlineData(SetupCommand.Uninstall, "uninstall", "--INTERACTIVE")]
     [InlineData(SetupCommand.UninstallAndPurge, "uninstall", "--PURGE")]
     public void TryParse_RecognizesOnlySupportedCommands(SetupCommand expected, params string[] arguments)
     {
@@ -14,6 +15,14 @@ public sealed class SetupCommandParserTests
 
         Assert.True(parsed);
         Assert.Equal(expected, command);
+    }
+
+    [Fact]
+    public void InteractiveMarker_IsLimitedToExactUserFacingUninstallInvocation()
+    {
+        Assert.True(SetupCommandParser.IsInteractiveUninstall(["uninstall", "--interactive"]));
+        Assert.False(SetupCommandParser.IsInteractiveUninstall(["uninstall"]));
+        Assert.False(SetupCommandParser.IsInteractiveUninstall(["uninstall", "--purge"]));
     }
 
     [Theory]

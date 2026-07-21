@@ -236,6 +236,55 @@ function Assert-LightingValidationProtocolPair {
     }
 }
 
+function Assert-ProductionBundleFootprint {
+    param([Parameter(Mandatory)][string]$Bundle)
+
+    $setup = Join-Path $Bundle 'OpenBlade.Setup.exe'
+    if (-not (Test-Path -LiteralPath $setup -PathType Leaf)) {
+        throw "OpenBlade production bundle is missing the setup executable: $setup"
+    }
+
+    $unexpectedRootFiles = @(Get-ChildItem -LiteralPath $Bundle -File -ErrorAction Stop |
+        Where-Object { -not [string]::Equals(
+            $_.Name,
+            'OpenBlade.Setup.exe',
+            [StringComparison]::OrdinalIgnoreCase) })
+    if ($unexpectedRootFiles.Count -ne 0) {
+        throw "OpenBlade setup must publish as one compressed executable; unexpected root file '$($unexpectedRootFiles[0].Name)'."
+    }
+
+    $payload = Join-Path $Bundle 'payload'
+    $installedSetup = Join-Path $payload 'OpenBlade.Setup.exe'
+    if (Test-Path -LiteralPath $installedSetup -PathType Leaf) {
+        throw 'OpenBlade bundle must not pre-copy Setup into the payload; elevated setup installs its verified executable transactionally.'
+    }
+
+    $productionFiles = @(Get-ChildItem -LiteralPath $payload -File -Recurse -ErrorAction Stop)
+    $forbiddenFileNames = @(
+        'appsettings.Development.json',
+        'DirectML.dll',
+        'onnxruntime.dll',
+        'Microsoft.ML.OnnxRuntime.dll'
+    )
+    $forbidden = @($productionFiles | Where-Object {
+        $_.Extension.Equals('.pdb', [StringComparison]::OrdinalIgnoreCase) `
+            -or ($_.Name.EndsWith('.resources.dll', [StringComparison]::OrdinalIgnoreCase) `
+                -and -not [string]::Equals(
+                    $_.DirectoryName,
+                    $payload,
+                    [StringComparison]::OrdinalIgnoreCase)) `
+            -or [Linq.Enumerable]::Contains(
+                [string[]]$forbiddenFileNames,
+                [string]$_.Name,
+                [StringComparer]::OrdinalIgnoreCase) `
+            -or $_.Name.StartsWith('Microsoft.Windows.AI.', [StringComparison]::OrdinalIgnoreCase) `
+            -or $_.Name.StartsWith('Microsoft.Windows.Widgets', [StringComparison]::OrdinalIgnoreCase)
+    })
+    if ($forbidden.Count -ne 0) {
+        throw "OpenBlade production payload contains development or unused component file '$($forbidden[0].Name)'."
+    }
+}
+
 function Get-CanonicalPublishPath {
     param(
         [Parameter(Mandatory)][string]$Path,

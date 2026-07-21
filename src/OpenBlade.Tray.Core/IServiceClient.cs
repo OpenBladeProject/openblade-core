@@ -13,7 +13,12 @@ public abstract record ServiceWatchUpdate
     public sealed record Reconnecting : ServiceWatchUpdate;
 }
 
-public interface IServiceClient
+public interface IServiceStatusWatcher
+{
+    IAsyncEnumerable<ServiceWatchUpdate> WatchStatusAsync(CancellationToken token);
+}
+
+public interface IServiceClient : IServiceStatusWatcher
 {
     Task<ServiceStatusSnapshot> GetStatusAsync(CancellationToken token);
 
@@ -118,5 +123,4 @@ public interface IServiceClient
             ControlOperationStatus.Blocked,
             "OpenBlade shutdown is unavailable."));
 
-    IAsyncEnumerable<ServiceWatchUpdate> WatchStatusAsync(CancellationToken token);
 }

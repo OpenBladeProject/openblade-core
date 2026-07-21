@@ -25,6 +25,26 @@ public sealed class SetupPathsTests
         Assert.Equal(
             @"C:\Users\jack\AppData\Roaming\Microsoft\Windows\Start Menu\Programs\OpenBlade.lnk",
             paths.StartMenuFile);
+        Assert.Equal(
+            @"C:\Users\jack\AppData\Roaming\Microsoft\Windows\Start Menu\Programs\Uninstall OpenBlade.lnk",
+            paths.UninstallStartMenuFile);
+    }
+
+    [Theory]
+    [InlineData(@"C:\Program Files\OpenBlade.uninstall.0123456789abcdef0123456789abcdef")]
+    [InlineData(@"C:\Program Files\OPENBLADE.UNINSTALL.0123456789ABCDEF0123456789ABCDEF")]
+    public void ExactUninstallRelayDirectory_AcceptsGuardedSibling(string candidate)
+    {
+        Assert.True(SetupPaths.IsExactUninstallRelayDirectory(candidate, @"C:\Program Files"));
+    }
+
+    [Theory]
+    [InlineData(@"C:\Program Files\OpenBlade.uninstall.bad")]
+    [InlineData(@"C:\Program Files\OpenBlade.uninstall.0123456789abcdef0123456789abcdef\child")]
+    [InlineData(@"C:\Users\jack\OpenBlade.uninstall.0123456789abcdef0123456789abcdef")]
+    public void ExactUninstallRelayDirectory_RejectsUnexpectedPath(string candidate)
+    {
+        Assert.False(SetupPaths.IsExactUninstallRelayDirectory(candidate, @"C:\Program Files"));
     }
 
     [Theory]

@@ -5,7 +5,10 @@ namespace OpenBlade.Setup;
 public sealed record ShortcutRequest(
     string ShortcutPath,
     string TargetPath,
-    string WorkingDirectory);
+    string WorkingDirectory,
+    string? Arguments = null,
+    string Description = "OpenBlade",
+    int WindowStyle = 1);
 
 public interface IStartupShortcutWriter
 {
@@ -31,8 +34,9 @@ internal sealed class WindowsStartupShortcutWriter : IStartupShortcutWriter
             dynamic dynamicShortcut = shortcut;
             dynamicShortcut.TargetPath = request.TargetPath;
             dynamicShortcut.WorkingDirectory = request.WorkingDirectory;
-            dynamicShortcut.WindowStyle = 1;
-            dynamicShortcut.Description = "OpenBlade";
+            dynamicShortcut.Arguments = request.Arguments ?? string.Empty;
+            dynamicShortcut.WindowStyle = request.WindowStyle;
+            dynamicShortcut.Description = request.Description;
             dynamicShortcut.Save();
         }
         finally

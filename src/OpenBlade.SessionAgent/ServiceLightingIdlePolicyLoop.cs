@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using System.Runtime.InteropServices;
+using System.Threading.Channels;
 using OpenBlade.Contracts;
 using OpenBlade.Tray;
 
@@ -53,11 +54,20 @@ public sealed class WindowsUserIdleTimeSource : IUserIdleTimeSource
 public sealed class ServiceLightingIdlePolicyLoop
 {
     private static readonly TimeSpan PollInterval = TimeSpan.FromSeconds(1);
+    private static readonly TimeSpan UnavailableIdleRetryInterval = TimeSpan.FromSeconds(5);
 
     private readonly IServiceClient serviceClient;
+    private readonly IServiceStatusWatcher statusWatcher;
     private readonly IUserIdleTimeSource idleTimeSource;
     private readonly Func<TimeSpan, CancellationToken, Task> delay;
     private readonly Action<Exception>? errorHandler;
+    private readonly Channel<byte> policyChanges = Channel.CreateBounded<byte>(
+        new BoundedChannelOptions(1)
+        {
+            FullMode = BoundedChannelFullMode.DropOldest,
+            SingleReader = true,
+            SingleWriter = true,
+        });
     private LightingPowerPolicy currentPolicy = LightingPowerPolicy.Disabled;
     private int connected;
     private int lastSentState = -1;
@@ -66,12 +76,14 @@ public sealed class ServiceLightingIdlePolicyLoop
         IServiceClient serviceClient,
         IUserIdleTimeSource idleTimeSource,
         Action<Exception>? errorHandler = null,
-        Func<TimeSpan, CancellationToken, Task>? delay = null)
+        Func<TimeSpan, CancellationToken, Task>? delay = null,
+        IServiceStatusWatcher? statusWatcher = null)
     {
         this.serviceClient = serviceClient
             ?? throw new ArgumentNullException(nameof(serviceClient));
         this.idleTimeSource = idleTimeSource
             ?? throw new ArgumentNullException(nameof(idleTimeSource));
+        this.statusWatcher = statusWatcher ?? serviceClient;
         this.errorHandler = errorHandler;
         this.delay = delay ?? Task.Delay;
     }
@@ -100,7 +112,7 @@ public sealed class ServiceLightingIdlePolicyLoop
 
     private async Task WatchStatusAsync(CancellationToken cancellationToken)
     {
-        await foreach (ServiceWatchUpdate update in serviceClient
+        await foreach (ServiceWatchUpdate update in statusWatcher
             .WatchStatusAsync(cancellationToken)
             .WithCancellation(cancellationToken)
             .ConfigureAwait(false))
@@ -108,19 +120,27 @@ public sealed class ServiceLightingIdlePolicyLoop
             switch (update)
             {
                 case ServiceWatchUpdate.Connected connectedUpdate:
-                    Volatile.Write(
-                        ref currentPolicy,
+                    LightingPowerPolicy nextPolicy =
                         connectedUpdate.Status.Profiles.LightingPowerPolicyFor(
-                            connectedUpdate.Status.ActivePowerSource));
-                    if (Interlocked.Exchange(ref connected, 1) == 0)
+                            connectedUpdate.Status.ActivePowerSource);
+                    LightingPowerPolicy previousPolicy = Interlocked.Exchange(
+                        ref currentPolicy,
+                        nextPolicy);
+                    bool newlyConnected = Interlocked.Exchange(ref connected, 1) == 0;
+                    if (newlyConnected)
                     {
                         Interlocked.Exchange(ref lastSentState, -1);
+                    }
+                    if (newlyConnected || previousPolicy != nextPolicy)
+                    {
+                        SignalPolicyChanged();
                     }
                     break;
                 case ServiceWatchUpdate.Reconnecting:
                     Volatile.Write(ref connected, 0);
                     Volatile.Write(ref currentPolicy, LightingPowerPolicy.Disabled);
                     Interlocked.Exchange(ref lastSentState, -1);
+                    SignalPolicyChanged();
                     break;
             }
         }
@@ -130,10 +150,18 @@ public sealed class ServiceLightingIdlePolicyLoop
     {
         while (true)
         {
-            await delay(PollInterval, cancellationToken).ConfigureAwait(false);
             if (Volatile.Read(ref connected) == 0)
             {
+                _ = await policyChanges.Reader.ReadAsync(cancellationToken)
+                    .ConfigureAwait(false);
                 continue;
+            }
+
+            // This iteration is already reading the latest volatile policy.
+            // Consume the notification that woke it so the same notification
+            // cannot immediately cancel the newly calculated sleep interval.
+            while (policyChanges.Reader.TryRead(out _))
+            {
             }
 
             try
@@ -146,25 +174,40 @@ public sealed class ServiceLightingIdlePolicyLoop
                     && idle is { } elapsed
                     && elapsed >= TimeSpan.FromMinutes(minutes);
                 int requestedState = shouldSuppress ? 1 : 0;
-                if (Volatile.Read(ref lastSentState) == requestedState)
+                bool requestFailed = false;
+                if (Volatile.Read(ref lastSentState) != requestedState)
                 {
-                    continue;
+                    ControlOperationResult result = await serviceClient
+                        .SetLightingSuppressionAsync(
+                            LightingSuppressionReason.UserIdle,
+                            shouldSuppress,
+                            cancellationToken)
+                        .ConfigureAwait(false);
+                    if (result.Status is
+                        ControlOperationStatus.Applied or ControlOperationStatus.Stored)
+                    {
+                        Interlocked.Exchange(ref lastSentState, requestedState);
+                    }
+                    else
+                    {
+                        requestFailed = true;
+                        ReportFailure(new InvalidOperationException(result.Message));
+                    }
                 }
 
-                ControlOperationResult result = await serviceClient
-                    .SetLightingSuppressionAsync(
-                        LightingSuppressionReason.UserIdle,
-                        shouldSuppress,
-                        cancellationToken)
-                    .ConfigureAwait(false);
-                if (result.Status is
-                    ControlOperationStatus.Applied or ControlOperationStatus.Stored)
+                TimeSpan? nextEvaluation = requestFailed
+                    ? UnavailableIdleRetryInterval
+                    : NextEvaluationDelay(policy, idle, shouldSuppress);
+                if (nextEvaluation is null)
                 {
-                    Interlocked.Exchange(ref lastSentState, requestedState);
+                    _ = await policyChanges.Reader.ReadAsync(cancellationToken)
+                        .ConfigureAwait(false);
                 }
                 else
                 {
-                    ReportFailure(new InvalidOperationException(result.Message));
+                    await WaitForDelayOrPolicyChangeAsync(
+                        nextEvaluation.Value,
+                        cancellationToken).ConfigureAwait(false);
                 }
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -174,9 +217,69 @@ public sealed class ServiceLightingIdlePolicyLoop
             catch (Exception exception)
             {
                 ReportFailure(exception);
+                await WaitForDelayOrPolicyChangeAsync(
+                    UnavailableIdleRetryInterval,
+                    cancellationToken).ConfigureAwait(false);
             }
         }
     }
+
+    private static TimeSpan? NextEvaluationDelay(
+        LightingPowerPolicy policy,
+        TimeSpan? idle,
+        bool suppressed)
+    {
+        if (policy.IdleTimeoutMinutes is not int minutes)
+        {
+            return null;
+        }
+        if (idle is null)
+        {
+            return UnavailableIdleRetryInterval;
+        }
+        if (suppressed)
+        {
+            // Once the keyboard is off, keep the one-second activity response
+            // so the first user input restores it promptly.
+            return PollInterval;
+        }
+
+        TimeSpan remaining = TimeSpan.FromMinutes(minutes) - idle.Value;
+        return remaining <= PollInterval
+            ? PollInterval
+            : remaining;
+    }
+
+    private async Task WaitForDelayOrPolicyChangeAsync(
+        TimeSpan interval,
+        CancellationToken cancellationToken)
+    {
+        using var waitCancellation = CancellationTokenSource.CreateLinkedTokenSource(
+            cancellationToken);
+        Task intervalTask = delay(interval, waitCancellation.Token);
+        Task<bool> policyTask = policyChanges.Reader
+            .WaitToReadAsync(waitCancellation.Token)
+            .AsTask();
+        Task completed = await Task.WhenAny(intervalTask, policyTask).ConfigureAwait(false);
+        try
+        {
+            if (ReferenceEquals(completed, policyTask)
+                && await policyTask.ConfigureAwait(false))
+            {
+                while (policyChanges.Reader.TryRead(out _))
+                {
+                }
+            }
+            await waitCancellation.CancelAsync().ConfigureAwait(false);
+            await Task.WhenAll(intervalTask, policyTask).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (waitCancellation.IsCancellationRequested)
+        {
+        }
+        cancellationToken.ThrowIfCancellationRequested();
+    }
+
+    private void SignalPolicyChanged() => policyChanges.Writer.TryWrite(0);
 
     private void ReportFailure(Exception exception)
     {

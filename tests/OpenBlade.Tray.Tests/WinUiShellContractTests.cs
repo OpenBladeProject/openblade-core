@@ -305,6 +305,29 @@ public sealed class WinUiShellContractTests
         Assert.True(previousRow > previousSubcard);
     }
 
+    [Fact]
+    public void ProductionPublishRemainsSelfContainedWithoutLooseSetupRuntimeOrSymbols()
+    {
+        string publish = ReadRepositoryFile("build", "Publish.ps1");
+        string validation = ReadRepositoryFile("build", "PublishPayloadValidation.ps1");
+        string serviceProject = ReadRepositoryFile("src", "OpenBlade.Service", "OpenBlade.Service.csproj");
+
+        Assert.Contains("'--self-contained', 'true'", publish, StringComparison.Ordinal);
+        Assert.Contains("'--property:PublishTrimmed=false'", publish, StringComparison.Ordinal);
+        Assert.Contains("'--property:DebugType=None'", publish, StringComparison.Ordinal);
+        Assert.Contains("'--property:DebugSymbols=false'", publish, StringComparison.Ordinal);
+        Assert.Contains("'--property:SatelliteResourceLanguages=en-US'", publish, StringComparison.Ordinal);
+        Assert.Contains("'--property:PublishSingleFile=true'", publish, StringComparison.Ordinal);
+        Assert.Contains("'--property:EnableCompressionInSingleFile=true'", publish, StringComparison.Ordinal);
+        Assert.Contains("Assert-ProductionBundleFootprint", publish, StringComparison.Ordinal);
+        Assert.Contains("OpenBlade setup must publish as one compressed executable", validation, StringComparison.Ordinal);
+        Assert.Contains("must not pre-copy Setup into the payload", validation, StringComparison.Ordinal);
+        Assert.Contains("Microsoft.Windows.AI.", validation, StringComparison.Ordinal);
+        Assert.Contains("Microsoft.Windows.Widgets", validation, StringComparison.Ordinal);
+        Assert.Contains("appsettings.Development.json", validation, StringComparison.Ordinal);
+        Assert.Contains("CopyToPublishDirectory=\"Never\"", serviceProject, StringComparison.Ordinal);
+    }
+
     private static string SliceMethod(string source, string startMarker, string endMarker)
     {
         int start = source.IndexOf(startMarker, StringComparison.Ordinal);
@@ -421,6 +444,21 @@ public sealed class WinUiShellContractTests
         Assert.Contains("WindowMessageInputDeviceChange", source, StringComparison.Ordinal);
         Assert.Contains("TryResolveTargetInputDevice", source, StringComparison.Ordinal);
         Assert.Contains("Rz09_0581ReactiveInputDevice", source, StringComparison.Ordinal);
+        Assert.Contains("GetRawInputHeader", source, StringComparison.Ordinal);
+        Assert.Contains("EnsureRawInputBuffer", source, StringComparison.Ordinal);
+        Assert.Contains("stackalloc byte[3]", source, StringComparison.Ordinal);
+        Assert.Contains(
+            "!IsTargetInputDeviceCached(header.Device)",
+            source,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            "nint buffer = Marshal.AllocHGlobal(checked((int)size))",
+            source,
+            StringComparison.Ordinal);
+        Assert.True(
+            source.IndexOf("!IsTargetInputDeviceCached(header.Device)", StringComparison.Ordinal)
+                < source.IndexOf("EnsureRawInputBuffer(size)", StringComparison.Ordinal),
+            "Non-target Raw Input packets must be rejected before the full packet buffer is acquired.");
         Assert.DoesNotContain("GetForegroundWindow", source, StringComparison.Ordinal);
         Assert.DoesNotContain("rawInput.Keyboard.VirtualKey", source, StringComparison.Ordinal);
         Assert.Contains("ServiceReactiveLightingLoop", agent, StringComparison.Ordinal);
@@ -498,7 +536,8 @@ public sealed class WinUiShellContractTests
         Assert.Contains("<Content Update=\"Assets\\Brand\\OpenBlade.png\">", project, StringComparison.Ordinal);
         Assert.Contains("<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>", project, StringComparison.Ordinal);
         Assert.Contains("<CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>", project, StringComparison.Ordinal);
-        Assert.Contains("Include=\"Microsoft.WindowsAppSDK\" Version=\"2.2.0\"", project, StringComparison.Ordinal);
+        Assert.Contains("Include=\"Microsoft.WindowsAppSDK.WinUI\" Version=\"[2.2.1]\"", project, StringComparison.Ordinal);
+        Assert.DoesNotContain("Include=\"Microsoft.WindowsAppSDK\"", project, StringComparison.Ordinal);
         Assert.Contains("<ImportFrameworkWinFXTargets>true</ImportFrameworkWinFXTargets>", project, StringComparison.Ordinal);
         Assert.Contains("prevents the Windows Desktop SDK from sending WinUI XAML through the WPF compiler", project, StringComparison.Ordinal);
         Assert.DoesNotContain("UseWPF", project, StringComparison.OrdinalIgnoreCase);

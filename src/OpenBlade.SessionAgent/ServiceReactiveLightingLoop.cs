@@ -28,6 +28,7 @@ public sealed class ServiceReactiveLightingLoop : IAsyncDisposable
     private static readonly TimeSpan FailureRetryDelay = TimeSpan.FromSeconds(1);
 
     private readonly IServiceClient serviceClient;
+    private readonly IServiceStatusWatcher statusWatcher;
     private readonly IReactiveKeyboardSourceFactory sourceFactory;
     private readonly ReactiveKeyPulsePump pulsePump;
     private readonly PerformanceShortcutTriggerPump shortcutPump;
@@ -42,10 +43,12 @@ public sealed class ServiceReactiveLightingLoop : IAsyncDisposable
         IServiceClient serviceClient,
         IReactiveKeyboardSourceFactory sourceFactory,
         Action<Exception>? errorHandler = null,
-        IPerformanceShortcutNotificationSink? shortcutNotifications = null)
+        IPerformanceShortcutNotificationSink? shortcutNotifications = null,
+        IServiceStatusWatcher? statusWatcher = null)
     {
         this.serviceClient = serviceClient ?? throw new ArgumentNullException(nameof(serviceClient));
         this.sourceFactory = sourceFactory ?? throw new ArgumentNullException(nameof(sourceFactory));
+        this.statusWatcher = statusWatcher ?? serviceClient;
         this.errorHandler = errorHandler;
         this.shortcutNotifications = shortcutNotifications
             ?? NullPerformanceShortcutNotificationSink.Instance;
@@ -64,7 +67,7 @@ public sealed class ServiceReactiveLightingLoop : IAsyncDisposable
                 cancellationToken.ThrowIfCancellationRequested();
                 try
                 {
-                    await foreach (ServiceWatchUpdate update in serviceClient
+                    await foreach (ServiceWatchUpdate update in statusWatcher
                         .WatchStatusAsync(cancellationToken)
                         .WithCancellation(cancellationToken)
                         .ConfigureAwait(false))

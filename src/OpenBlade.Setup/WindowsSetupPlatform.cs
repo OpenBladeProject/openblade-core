@@ -1,3 +1,4 @@
+using System.Reflection;
 using System.Security.Principal;
 using OpenBlade.Contracts;
 
@@ -30,6 +31,9 @@ public sealed class WindowsSetupPlatform : ISetupPlatform
     private readonly ISetupFileOperations fileOperations;
     private readonly ISetupProcessOperations processOperations;
     private readonly IMachineDataDirectorySecurity machineDataDirectorySecurity;
+    private readonly IUninstallRegistration uninstallRegistration;
+    private readonly IInstalledUninstallerWriter installedUninstallerWriter;
+    private readonly string setupExecutablePath;
 
     public WindowsSetupPlatform(
         ISetupServiceControl? serviceControl = null,
@@ -41,13 +45,12 @@ public sealed class WindowsSetupPlatform : ISetupPlatform
         SetupPaths? paths = null,
         string? payloadDirectory = null,
         ISetupPayloadFileSystem? payloadFileSystem = null,
-        IMachineDataDirectorySecurity? machineDataDirectorySecurity = null)
+        IMachineDataDirectorySecurity? machineDataDirectorySecurity = null,
+        IUninstallRegistration? uninstallRegistration = null,
+        IInstalledUninstallerWriter? installedUninstallerWriter = null,
+        string? setupExecutablePath = null)
     {
-        this.paths = paths ?? SetupPaths.Create(
-            Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles),
-            Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
-            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            Environment.GetFolderPath(Environment.SpecialFolder.Startup));
+        this.paths = paths ?? SetupPaths.CreateDefault();
         this.payloadDirectory = payloadDirectory ?? Path.Combine(AppContext.BaseDirectory, "payload");
         this.payloadFileSystem = payloadFileSystem ?? new WindowsSetupPayloadFileSystem();
         this.serviceControl = serviceControl ?? new ScSetupServiceControl();
@@ -58,6 +61,12 @@ public sealed class WindowsSetupPlatform : ISetupPlatform
         this.processOperations = processOperations ?? new WindowsSetupProcessOperations();
         this.machineDataDirectorySecurity = machineDataDirectorySecurity
             ?? new WindowsMachineDataDirectorySecurity();
+        this.uninstallRegistration = uninstallRegistration ?? new WindowsUninstallRegistration();
+        this.installedUninstallerWriter = installedUninstallerWriter
+            ?? new VerifiedInstalledUninstallerWriter();
+        this.setupExecutablePath = setupExecutablePath
+            ?? Environment.ProcessPath
+            ?? throw new InvalidOperationException("The OpenBlade setup executable path is unavailable.");
     }
 
     public string CurrentUserSid => WindowsIdentity.GetCurrent().User?.Value
@@ -71,12 +80,16 @@ public sealed class WindowsSetupPlatform : ISetupPlatform
             || fileOperations.FileExists(paths.LegacyStartupFile);
         bool sessionAgentShortcutExisted = fileOperations.FileExists(paths.SessionAgentStartupFile);
         bool startMenuShortcutExisted = fileOperations.FileExists(paths.StartMenuFile);
+        bool uninstallShortcutExisted = fileOperations.FileExists(paths.UninstallStartMenuFile);
+        bool uninstallRegistrationExisted = uninstallRegistration.Exists();
         return new(
             new(state is not null, state == SetupServiceState.Running),
             new(
                 trayShortcutExisted,
                 sessionAgentShortcutExisted,
-                startMenuShortcutExisted));
+                startMenuShortcutExisted,
+                uninstallShortcutExisted,
+                uninstallRegistrationExisted));
     }
 
     public async Task PrepareServiceForInstallAsync(CancellationToken cancellationToken)
@@ -180,6 +193,13 @@ public sealed class WindowsSetupPlatform : ISetupPlatform
     public Task InstallServiceAsync(CancellationToken cancellationToken) =>
         ConfigureServiceAsync(startService: true, cancellationToken);
 
+    public Task InstallUninstallerAsync(CancellationToken cancellationToken) =>
+        installedUninstallerWriter.WriteVerifiedAsync(
+            new InstalledUninstallerWriteRequest(
+                setupExecutablePath,
+                Path.Combine(paths.InstallDirectory, "OpenBlade.Setup.exe")),
+            cancellationToken);
+
     private async Task ConfigureServiceAsync(
         bool startService,
         CancellationToken cancellationToken)
@@ -273,6 +293,53 @@ public sealed class WindowsSetupPlatform : ISetupPlatform
     {
         cancellationToken.ThrowIfCancellationRequested();
         fileOperations.DeleteFile(paths.StartMenuFile);
+        return Task.CompletedTask;
+    }
+
+    public Task InstallUninstallShortcutAsync(CancellationToken cancellationToken)
+    {
+        string setupExecutable = Path.Combine(paths.InstallDirectory, "OpenBlade.Setup.exe");
+        return shortcutWriter.CreateAsync(
+            new ShortcutRequest(
+                paths.UninstallStartMenuFile,
+                setupExecutable,
+                paths.InstallDirectory,
+                "uninstall --interactive",
+                "Uninstall OpenBlade and keep saved profiles",
+                WindowStyle: 7),
+            cancellationToken);
+    }
+
+    public Task RemoveUninstallShortcutAsync(CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        fileOperations.DeleteFile(paths.UninstallStartMenuFile);
+        return Task.CompletedTask;
+    }
+
+    public Task InstallUninstallRegistrationAsync(CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        string setupExecutable = Path.Combine(paths.InstallDirectory, "OpenBlade.Setup.exe");
+        string trayExecutable = Path.Combine(paths.InstallDirectory, "OpenBlade.Tray.exe");
+        string displayVersion = typeof(WindowsSetupPlatform).Assembly
+            .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?
+            .InformationalVersion
+            ?? typeof(WindowsSetupPlatform).Assembly.GetName().Version?.ToString()
+            ?? "0.0.0";
+        uninstallRegistration.Install(
+            new UninstallRegistrationRequest(
+                displayVersion,
+                paths.InstallDirectory,
+                trayExecutable,
+                $"\"{setupExecutable}\" uninstall --interactive"));
+        return Task.CompletedTask;
+    }
+
+    public Task RemoveUninstallRegistrationAsync(CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        uninstallRegistration.Remove();
         return Task.CompletedTask;
     }
 

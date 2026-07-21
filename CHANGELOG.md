@@ -7,14 +7,26 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Added
 
+- Added a shipped uninstaller to Windows Installed apps and the Start menu.
+  The user-facing path confirms removal and preserves profiles by default;
+  `uninstall --purge` remains an explicit command for deleting saved data. Setup
+  installs its single-file uninstaller transactionally and verifies its length
+  and SHA-256 instead of shipping a duplicate copy inside the payload.
 - Added JSON profile import alongside export. Profile files use a versioned
   envelope and schema-specific readers so future releases can add explicit
   migrations without silently reinterpreting older structures.
+
+### Changed
+
+- Reduced SessionAgent background work by sharing one bounded service-status
+  feed across display and lighting features, making idle-lighting checks
+  deadline-driven, and removing per-event allocations from the Raw Input path.
+- Reduced the self-contained Windows payload by publishing only the Windows App
+  SDK components OpenBlade uses and excluding development symbols, unused
+  managed satellite assemblies, and unused AI, ML, and Widgets components.
 - Persisted the last successfully applied keyboard lighting effect and restore
   it when the service starts. Other Razer software still wins by default; an
   opt-in setting can make OpenBlade reapply external lighting changes.
-
-### Changed
 
 - Moved protocol capture evidence and capture tooling to the
   `OSSBlade/openblade-captures` repository, included as the `captures`

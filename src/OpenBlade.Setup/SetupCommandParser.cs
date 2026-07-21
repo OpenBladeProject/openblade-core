@@ -25,6 +25,12 @@ public static class SetupCommandParser
             return true;
         }
 
+        if (IsInteractiveUninstall(arguments))
+        {
+            command = SetupCommand.Uninstall;
+            return true;
+        }
+
         if (arguments.Count == 2
             && string.Equals(arguments[0], "uninstall", StringComparison.OrdinalIgnoreCase)
             && string.Equals(arguments[1], "--purge", StringComparison.OrdinalIgnoreCase))
@@ -36,4 +42,9 @@ public static class SetupCommandParser
         command = default;
         return false;
     }
+
+    public static bool IsInteractiveUninstall(IReadOnlyList<string> arguments) =>
+        arguments.Count == 2
+        && string.Equals(arguments[0], "uninstall", StringComparison.OrdinalIgnoreCase)
+        && string.Equals(arguments[1], "--interactive", StringComparison.OrdinalIgnoreCase);
 }

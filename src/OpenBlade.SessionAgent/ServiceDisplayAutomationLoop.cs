@@ -6,14 +6,15 @@ namespace OpenBlade.SessionAgent;
 public sealed class ServiceDisplayAutomationLoop
 {
     private static readonly TimeSpan FailureRetryDelay = TimeSpan.FromSeconds(1);
-    private readonly IServiceClient serviceClient;
+    private readonly IServiceStatusWatcher statusWatcher;
     private readonly DisplayAutomationCoordinator coordinator;
 
     public ServiceDisplayAutomationLoop(
-        IServiceClient serviceClient,
+        IServiceStatusWatcher statusWatcher,
         DisplayAutomationCoordinator coordinator)
     {
-        this.serviceClient = serviceClient ?? throw new ArgumentNullException(nameof(serviceClient));
+        this.statusWatcher = statusWatcher
+            ?? throw new ArgumentNullException(nameof(statusWatcher));
         this.coordinator = coordinator ?? throw new ArgumentNullException(nameof(coordinator));
     }
 
@@ -24,7 +25,7 @@ public sealed class ServiceDisplayAutomationLoop
             cancellationToken.ThrowIfCancellationRequested();
             try
             {
-                await foreach (ServiceWatchUpdate update in serviceClient
+                await foreach (ServiceWatchUpdate update in statusWatcher
                     .WatchStatusAsync(cancellationToken)
                     .WithCancellation(cancellationToken)
                     .ConfigureAwait(false))

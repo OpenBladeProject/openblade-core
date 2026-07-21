@@ -32,9 +32,11 @@ public sealed class SetupCommandRunnerTests
         Assert.Equal(
             [
                 "payload-stage", "lifecycle-capture", "shortcut-remove", "agent-shortcut-remove", "start-menu-remove",
+                "uninstall-shortcut-remove", "uninstall-registration-remove",
                 "service-prepare", "tray-stop", "session-agent-stop",
-                "payload-activate", "sid:S-1-5-21-test", "service-install",
-                "service-health", "agent-shortcut-install", "start-menu-install", "shortcut-install", "payload-commit",
+                "payload-activate", "uninstaller-install", "sid:S-1-5-21-test", "service-install",
+                "service-health", "agent-shortcut-install", "start-menu-install",
+                "uninstall-shortcut-install", "uninstall-registration-install", "shortcut-install", "payload-commit",
             ],
             platform.Operations);
     }
@@ -102,6 +104,8 @@ public sealed class SetupCommandRunnerTests
     [InlineData("service-health")]
     [InlineData("shortcut-install")]
     [InlineData("start-menu-install")]
+    [InlineData("uninstall-shortcut-install")]
+    [InlineData("uninstall-registration-install")]
     public async Task Install_UpdatePostActivationFailure_RestoresOldTreeServiceAndShortcut(string failurePoint)
     {
         RecordingSetupPlatform platform = new()
@@ -121,7 +125,8 @@ public sealed class SetupCommandRunnerTests
         AssertEndsWith(
             platform.Operations,
             [
-                "shortcut-remove", "agent-shortcut-remove", "start-menu-remove", "service-prepare", "tray-stop",
+                "shortcut-remove", "agent-shortcut-remove", "start-menu-remove",
+                "uninstall-shortcut-remove", "uninstall-registration-remove", "service-prepare", "tray-stop",
                 "session-agent-stop", "payload-rollback", "service-restore",
                 "agent-shortcut-install", "shortcut-install", "start-menu-install",
             ]);
@@ -146,11 +151,39 @@ public sealed class SetupCommandRunnerTests
         AssertEndsWith(
             platform.Operations,
             [
-                "shortcut-remove", "agent-shortcut-remove", "start-menu-remove", "service-remove", "tray-stop",
+                "shortcut-remove", "agent-shortcut-remove", "start-menu-remove",
+                "uninstall-shortcut-remove", "uninstall-registration-remove", "service-remove", "tray-stop",
                 "session-agent-stop", "payload-rollback",
             ]);
         Assert.DoesNotContain("shortcut-install", platform.Operations);
         Assert.DoesNotContain("data-remove", platform.Operations);
+    }
+
+    [Theory]
+    [InlineData(false, "copy failed")]
+    [InlineData(true, "SHA-256 verification failed")]
+    public async Task Install_UninstallerCopyOrVerificationFailure_RollsBackActivatedPayload(
+        bool existingInstall,
+        string failureMessage)
+    {
+        RecordingSetupPlatform platform = new()
+        {
+            ServiceExists = existingInstall,
+            UninstallerFailure = failureMessage.Contains("SHA-256", StringComparison.Ordinal)
+                ? new InvalidDataException(failureMessage)
+                : new IOException(failureMessage),
+            Transaction = new RecordingPayloadTransaction(existingInstall),
+        };
+
+        Exception failure = await Assert.ThrowsAnyAsync<Exception>(
+            () => new SetupCommandRunner(platform).RunAsync(["install"], CancellationToken.None));
+
+        Assert.Equal(failureMessage, failure.Message);
+        Assert.Contains("payload-activate", platform.Operations);
+        Assert.Contains("uninstaller-install", platform.Operations);
+        Assert.Contains("payload-rollback", platform.Operations);
+        Assert.DoesNotContain("payload-commit", platform.Operations);
+        Assert.Equal(existingInstall, platform.Operations.Contains("service-restore"));
     }
 
     [Fact]
@@ -194,7 +227,8 @@ public sealed class SetupCommandRunnerTests
         AssertEndsWith(
             platform.Operations,
             [
-                "shortcut-remove", "agent-shortcut-remove", "start-menu-remove", "payload-rollback", "service-restore",
+                "shortcut-remove", "agent-shortcut-remove", "start-menu-remove",
+                "uninstall-shortcut-remove", "uninstall-registration-remove", "payload-rollback", "service-restore",
                 "agent-shortcut-install", "shortcut-install", "start-menu-install",
             ]);
         Assert.DoesNotContain("service-remove", platform.Operations);
@@ -368,7 +402,7 @@ public sealed class SetupCommandRunnerTests
 
         Assert.Equal(0, exitCode);
         Assert.Equal(
-            ["shortcut-remove", "agent-shortcut-remove", "start-menu-remove", "service-remove", "tray-stop", "session-agent-stop", "binaries-remove"],
+            ["lifecycle-capture", "shortcut-remove", "agent-shortcut-remove", "start-menu-remove", "service-remove", "tray-stop", "session-agent-stop", "uninstall-shortcut-remove", "uninstall-registration-remove", "binaries-remove"],
             platform.Operations);
         Assert.DoesNotContain("data-remove", platform.Operations);
     }
@@ -382,8 +416,28 @@ public sealed class SetupCommandRunnerTests
 
         Assert.Equal(0, exitCode);
         Assert.Equal(
-            ["shortcut-remove", "agent-shortcut-remove", "start-menu-remove", "service-remove", "tray-stop", "session-agent-stop", "binaries-remove", "data-remove"],
+            ["lifecycle-capture", "shortcut-remove", "agent-shortcut-remove", "start-menu-remove", "service-remove", "tray-stop", "session-agent-stop", "uninstall-shortcut-remove", "uninstall-registration-remove", "binaries-remove", "data-remove"],
             platform.Operations);
+    }
+
+    [Fact]
+    public async Task Uninstall_BinaryRemovalFailure_RestoresExistingRetryEntries()
+    {
+        RecordingSetupPlatform platform = new()
+        {
+            UninstallShortcutExisted = true,
+            UninstallRegistrationExisted = true,
+            FailurePoint = "binaries-remove",
+        };
+
+        InvalidOperationException failure = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => new SetupCommandRunner(platform).RunAsync(["uninstall"], CancellationToken.None));
+
+        Assert.Equal("binaries-remove failed", failure.Message);
+        AssertEndsWith(
+            platform.Operations,
+            ["uninstall-shortcut-remove", "uninstall-registration-remove", "binaries-remove",
+             "uninstall-shortcut-install", "uninstall-registration-install"]);
     }
 
     [Fact]
@@ -423,8 +477,11 @@ public sealed class SetupCommandRunnerTests
         public bool TrayShortcutExisted { get; init; } = true;
         public bool SessionAgentShortcutExisted { get; init; } = true;
         public bool StartMenuShortcutExisted { get; init; } = true;
+        public bool UninstallShortcutExisted { get; init; }
+        public bool UninstallRegistrationExisted { get; init; }
         public string? FailurePoint { get; set; }
         public CancellationTokenSource? Cancellation { get; init; }
+        public Exception? UninstallerFailure { get; init; }
         public RecordingPayloadTransaction Transaction { get; init; } = new(hadExistingInstall: false);
         private bool lifecycleInitialized;
         private bool serviceRegistered;
@@ -476,7 +533,9 @@ public sealed class SetupCommandRunnerTests
                 new(
                     trayShortcutPresent,
                     sessionAgentShortcutPresent,
-                    startMenuShortcutPresent)));
+                    startMenuShortcutPresent,
+                    UninstallShortcutExisted,
+                    UninstallRegistrationExisted)));
         }
 
         public Task PrepareServiceForInstallAsync(CancellationToken cancellationToken)
@@ -516,6 +575,14 @@ public sealed class SetupCommandRunnerTests
             return Task.CompletedTask;
         }
 
+        public Task InstallUninstallerAsync(CancellationToken cancellationToken)
+        {
+            Operations.Add("uninstaller-install");
+            return UninstallerFailure is null
+                ? Task.CompletedTask
+                : Task.FromException(UninstallerFailure);
+        }
+
         public Task InstallServiceAsync(CancellationToken cancellationToken)
         {
             serviceRegistered = true;
@@ -553,6 +620,14 @@ public sealed class SetupCommandRunnerTests
             startMenuShortcutPresent = false;
             return AddAsync("start-menu-remove", cancellationToken);
         }
+        public Task InstallUninstallShortcutAsync(CancellationToken cancellationToken) =>
+            AddAsync("uninstall-shortcut-install", cancellationToken);
+        public Task RemoveUninstallShortcutAsync(CancellationToken cancellationToken) =>
+            AddAsync("uninstall-shortcut-remove", cancellationToken);
+        public Task InstallUninstallRegistrationAsync(CancellationToken cancellationToken) =>
+            AddAsync("uninstall-registration-install", cancellationToken);
+        public Task RemoveUninstallRegistrationAsync(CancellationToken cancellationToken) =>
+            AddAsync("uninstall-registration-remove", cancellationToken);
         public Task RemoveServiceAsync(CancellationToken cancellationToken)
         {
             serviceRegistered = false;
@@ -569,7 +644,9 @@ public sealed class SetupCommandRunnerTests
         {
             Operations.Add(operation);
             if (Operations.Contains("payload-activate")
-                && operation is "shortcut-remove" or "agent-shortcut-remove" or "start-menu-remove" or "service-remove" or "tray-stop" or "session-agent-stop")
+                && operation is "shortcut-remove" or "agent-shortcut-remove" or "start-menu-remove"
+                    or "uninstall-shortcut-remove" or "uninstall-registration-remove"
+                    or "service-remove" or "tray-stop" or "session-agent-stop")
             {
                 CleanupTokens.Add(token);
             }

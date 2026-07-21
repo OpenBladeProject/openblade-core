@@ -74,8 +74,10 @@ internal static class Program
                     });
                 var dispatcher = new SessionDisplayRequestDispatcher(applier);
                 await using var server = new SessionDisplayPipeServer(acquiredOwner, dispatcher);
+                await using var statusFeed = new SharedServiceStatusFeed(
+                    new ServiceClient());
                 var automation = new ServiceDisplayAutomationLoop(
-                    new ServiceClient(),
+                    statusFeed,
                     coordinator);
                 using IPerformanceShortcutNotificationSink shortcutNotifications =
                     WindowsPerformanceShortcutNotificationSink.CreateBestEffort(
@@ -90,20 +92,24 @@ internal static class Program
                     new ServiceClient(),
                     WindowsReactiveKeyboardSourceFactory.Instance,
                     inputErrorHandler,
-                    shortcutNotifications);
+                    shortcutNotifications,
+                    statusFeed);
                 await using var ambient = new ServiceAmbientLightingLoop(
                     new ServiceClient(),
                     WindowsAmbientScreenSamplerFactory.Instance,
                     exception => System.Diagnostics.Trace.TraceWarning(
                         "OpenBlade Ambient Awareness failed: {0}",
-                        exception.Message));
+                        exception.Message),
+                    statusWatcher: statusFeed);
                 var lightingIdlePolicy = new ServiceLightingIdlePolicyLoop(
                     new ServiceClient(),
                     new WindowsUserIdleTimeSource(),
                     exception => System.Diagnostics.Trace.TraceWarning(
                         "OpenBlade lighting idle policy failed: {0}",
-                        exception.Message));
+                        exception.Message),
+                    statusWatcher: statusFeed);
 
+                Task statusFeedTask = statusFeed.RunAsync(lifetime.Token);
                 Task serverTask = server.RunAsync(lifetime.Token);
                 Task automationTask = automation.RunAsync(lifetime.Token);
                 Task reactiveTask = reactive.RunAsync(lifetime.Token);
@@ -111,6 +117,7 @@ internal static class Program
                 Task lightingIdleTask = lightingIdlePolicy.RunAsync(lifetime.Token);
                 Task completed = await Task.WhenAny(
                     serverTask,
+                    statusFeedTask,
                     automationTask,
                     reactiveTask,
                     ambientTask,
@@ -124,6 +131,7 @@ internal static class Program
                 {
                     await Task.WhenAll(
                             serverTask,
+                            statusFeedTask,
                             automationTask,
                             reactiveTask,
                             ambientTask,
