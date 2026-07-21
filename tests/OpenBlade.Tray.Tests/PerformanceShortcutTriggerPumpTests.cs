@@ -56,6 +56,33 @@ public sealed class PerformanceShortcutTriggerPumpTests
         Assert.Equal([PerformanceShortcutSource.DedicatedButton], sent.ToArray());
     }
 
+    [Fact]
+    public async Task ThrowingErrorHandlerDoesNotStopWorker()
+    {
+        var sent = new ConcurrentQueue<PerformanceShortcutSource>();
+        int attempts = 0;
+        await using var pump = new PerformanceShortcutTriggerPump(
+            (source, _) =>
+            {
+                attempts++;
+                if (source == PerformanceShortcutSource.DedicatedButton)
+                {
+                    throw new InvalidOperationException("service unavailable");
+                }
+
+                sent.Enqueue(source);
+                return Task.CompletedTask;
+            },
+            errorHandler: _ => throw new InvalidOperationException("logger unavailable"));
+
+        Assert.True(pump.TryEnqueue(PerformanceShortcutSource.DedicatedButton));
+        await WaitUntilAsync(() => attempts == 1);
+        Assert.True(pump.TryEnqueue(PerformanceShortcutSource.FunctionP));
+
+        await WaitUntilAsync(() => sent.Count == 1);
+        Assert.Equal([PerformanceShortcutSource.FunctionP], sent.ToArray());
+    }
+
     private static async Task WaitUntilAsync(Func<bool> condition)
     {
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(2));

@@ -208,6 +208,37 @@ public sealed class ReactiveKeyPulsePumpTests
     }
 
     [Fact]
+    public async Task ThrowingErrorHandler_DoesNotStopWorker()
+    {
+        var resumed = new TaskCompletionSource(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        int attempts = 0;
+        await using var pump = new ReactiveKeyPulsePump(
+            (pulse, _) =>
+            {
+                attempts++;
+                if (pulse.MatrixSlot == 19)
+                {
+                    throw new InvalidOperationException("renderer inactive");
+                }
+
+                Assert.Equal(36, pulse.MatrixSlot);
+                resumed.TrySetResult();
+                return Task.CompletedTask;
+            },
+            errorHandler: _ => throw new InvalidOperationException("logger unavailable"),
+            maxDeliveryAttempts: 1,
+            retryDelay: TimeSpan.Zero);
+
+        Assert.True(pump.TryEnqueue(new ReactiveKeyPulse(19)));
+        await WaitUntilAsync(() => attempts == 1);
+        Assert.True(pump.TryEnqueue(new ReactiveKeyPulse(36)));
+
+        await resumed.Task.WaitAsync(TimeSpan.FromSeconds(2));
+        Assert.Equal(2, attempts);
+    }
+
+    [Fact]
     public async Task Dispose_CancelsDeliveryAndRejectsNewPulses()
     {
         var started = new TaskCompletionSource(

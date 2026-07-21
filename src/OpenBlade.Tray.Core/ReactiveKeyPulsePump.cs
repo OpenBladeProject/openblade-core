@@ -167,7 +167,18 @@ public sealed class ReactiveKeyPulsePump : IAsyncDisposable
 
         if (lastFailure is not null)
         {
-            errorHandler?.Invoke(lastFailure);
+            ReportFailure(lastFailure);
+        }
+    }
+
+    private void ReportFailure(Exception exception)
+    {
+        try
+        {
+            errorHandler?.Invoke(exception);
+        }
+        catch
+        {
         }
     }
 

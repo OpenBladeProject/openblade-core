@@ -120,8 +120,19 @@ public sealed class PerformanceShortcutTriggerPump : IAsyncDisposable
             }
             catch (Exception exception)
             {
-                errorHandler?.Invoke(exception);
+                ReportFailure(exception);
             }
+        }
+    }
+
+    private void ReportFailure(Exception exception)
+    {
+        try
+        {
+            errorHandler?.Invoke(exception);
+        }
+        catch
+        {
         }
     }
 }
