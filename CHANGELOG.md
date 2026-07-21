@@ -5,6 +5,12 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ## [Unreleased]
 
+### Changed
+
+- Moved protocol capture evidence and capture tooling to the
+  `OSSBlade/openblade-captures` repository, included as the `captures`
+  submodule.
+
 ### Fixed
 
 - Sorted the Lighting page's effect picker alphabetically by its displayed

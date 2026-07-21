@@ -1,0 +1,3 @@
+[submodule "captures"]
+	path = captures
+	url = https://github.com/OSSBlade/openblade-captures.git

@@ -100,9 +100,13 @@ variants are maintained in
 
 Synapse may remain installed for other Razer devices and can be used as the
 protocol oracle while gathering captures. OpenBlade must not depend on it at
-runtime. After the USBPcap filter is active, follow
-[captures/README.md](captures/README.md) and capture exactly one UI operation at
-a time. The capture CLI exposes typed target checks, read-only queries, fixture
+runtime. Capture evidence and tooling are maintained in
+[OSSBlade/openblade-captures](https://github.com/OSSBlade/openblade-captures),
+which is included here as the `captures` submodule. Capture procedures are
+documented in
+[OSSBlade/openblade-docs](https://github.com/OSSBlade/openblade-docs).
+
+The capture CLI exposes typed target checks, read-only queries, fixture
 validation, and explicitly named reversible validation commands; it has no raw
 command mode:
 
@@ -111,7 +115,7 @@ dotnet run --project src/OpenBlade.Capture -- target
 dotnet run --project src/OpenBlade.Capture -- scan
 dotnet run --project src/OpenBlade.Capture -- query-fan-rpm
 dotnet run --project src/OpenBlade.Capture -- query-temporary-full-charge
-dotnet run --project src/OpenBlade.Capture -- validate captures/fixtures.json
+dotnet run --project src/OpenBlade.Capture -- validate path\to\fixtures.json
 ```
 
 Do not infer commands from older Blade models or admit partially validated
