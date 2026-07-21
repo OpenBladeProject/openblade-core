@@ -33,11 +33,21 @@ public sealed class UiAccessInputAgentBridgeTests
         var factory = new UiAccessInputKeyboardSourceFactory(
             fallback,
             new RecordingInputAgentLauncher(null));
+        var pulses = new List<ReactiveKeyPulse>();
+        var shortcuts = new List<PerformanceShortcutSource>();
 
-        using IReactiveKeyboardSource source = factory.Create(_ => { }, _ => { });
+        using IReactiveKeyboardSource source = factory.Create(
+            pulses.Add,
+            shortcuts.Add);
 
         Assert.Same(fallback.Source, source);
         Assert.Equal(1, fallback.CreateCount);
+
+        fallback.Source.Publish(new ReactiveKeyPulse(53));
+        fallback.Source.PublishPerformanceShortcut(PerformanceShortcutSource.DedicatedButton);
+
+        Assert.Equal(53, Assert.Single(pulses).MatrixSlot);
+        Assert.Equal(PerformanceShortcutSource.DedicatedButton, Assert.Single(shortcuts));
     }
 
     [Fact]
@@ -121,6 +131,8 @@ public sealed class UiAccessInputAgentBridgeTests
         public IReactiveKeyboardSource Create(Action<ReactiveKeyPulse> publish)
         {
             CreateCount++;
+            Source.PublishPulse = publish;
+            Source.PublishShortcut = _ => { };
             return Source;
         }
 
@@ -129,6 +141,8 @@ public sealed class UiAccessInputAgentBridgeTests
             Action<PerformanceShortcutSource> publishPerformanceShortcut)
         {
             CreateCount++;
+            Source.PublishPulse = publish;
+            Source.PublishShortcut = publishPerformanceShortcut;
             return Source;
         }
     }
@@ -136,6 +150,15 @@ public sealed class UiAccessInputAgentBridgeTests
     private sealed class RecordingKeyboardSource : IReactiveKeyboardSource
     {
         public Task Completion { get; } = Task.Delay(Timeout.InfiniteTimeSpan);
+
+        public Action<ReactiveKeyPulse> PublishPulse { get; set; } = _ => { };
+
+        public Action<PerformanceShortcutSource> PublishShortcut { get; set; } = _ => { };
+
+        public void Publish(ReactiveKeyPulse pulse) => PublishPulse(pulse);
+
+        public void PublishPerformanceShortcut(PerformanceShortcutSource source) =>
+            PublishShortcut(source);
 
         public void Dispose()
         {
