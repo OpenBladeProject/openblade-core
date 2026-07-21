@@ -228,7 +228,9 @@ public sealed class ServiceReactiveLightingLoop : IAsyncDisposable
 
         bool desiredKeyTriggered = status.DesiredState.Lighting.Value.Effect is
             LightingEffect.Reactive or LightingEffect.Ripple;
-        bool transientAvailability = desiredKeyTriggered
+        bool previouslyKeyTriggered = Volatile.Read(ref keyTriggeredActive) != 0;
+        bool transientAvailability = (desiredKeyTriggered
+            || previouslyKeyTriggered && IsTemporaryDeviceAccessStatus(status))
             && status.PotentialControllers.Count == 0
             && (!status.DeviceVerified || status.WritesBlocked)
             && status.LightingRendererOwnership != LightingRendererOwnershipState.Faulted;
@@ -239,12 +241,19 @@ public sealed class ServiceReactiveLightingLoop : IAsyncDisposable
             // validates every pulse against its current ownership before use.
             SetInputState(
                 connected: true,
-                keyTriggered: Volatile.Read(ref keyTriggeredActive) != 0);
+                keyTriggered: previouslyKeyTriggered);
             return;
         }
 
         SetInputState(connected: true, keyTriggered: false);
     }
+
+    private static bool IsTemporaryDeviceAccessStatus(ServiceStatusSnapshot status) =>
+        status.Message.StartsWith("Checking", StringComparison.OrdinalIgnoreCase)
+            && status.Message.Contains("laptop connection", StringComparison.OrdinalIgnoreCase)
+        || status.Message.StartsWith(
+            "Refreshing laptop controls after a temporary device-access failure",
+            StringComparison.OrdinalIgnoreCase);
 
     private async Task SendPulseAsync(
         ReactiveKeyPulse pulse,

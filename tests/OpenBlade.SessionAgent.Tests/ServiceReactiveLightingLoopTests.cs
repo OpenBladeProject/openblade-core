@@ -137,6 +137,34 @@ public sealed class ServiceReactiveLightingLoopTests
     }
 
     [Fact]
+    public async Task TemporaryAccessRefresh_PreservesPreviouslyActiveInputWhenDesiredStateIsStale()
+    {
+        var client = new WatchClient();
+        var factory = new RecordingSourceFactory();
+        await using var loop = new ServiceReactiveLightingLoop(client, factory);
+        using var cancellation = new CancellationTokenSource();
+        Task running = loop.RunAsync(cancellation.Token);
+
+        client.Publish(Status(LightingRendererOwnershipState.Reactive));
+        await WaitUntilAsync(() => factory.CreateCount == 1);
+
+        client.Publish(Status(LightingRendererOwnershipState.None) with
+        {
+            Revision = 2,
+            DeviceVerified = true,
+            WritesBlocked = true,
+            Message = "Refreshing laptop controls after a temporary device-access failure. Last read failed.",
+        });
+        await Task.Delay(25);
+
+        factory.Last!.Publish(new ReactiveKeyPulse(53));
+        await WaitUntilAsync(() => client.Pulses.Count == 1);
+
+        cancellation.Cancel();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => running);
+    }
+
+    [Fact]
     public async Task ExplicitEffectChange_ClearsReactiveInputOwnership()
     {
         var client = new WatchClient();
