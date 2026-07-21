@@ -7,6 +7,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Made Razer green (`#47E10C`) the default and recovery color for lighting
+  effects when no explicit or confirmed color is available.
 - Kept advisory detections of other Razer software from blocking Reactive and
   Ripple key input after OpenBlade has verified the laptop and owns the renderer.
 - Made dashboard telemetry columns resize within the hero card instead of

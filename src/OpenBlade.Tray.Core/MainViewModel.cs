@@ -5708,7 +5708,9 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     {
         if (LightingPrimaryColorEditor == default)
         {
-            SetLightingColorEditor(new RgbColor(0, 255, 0), secondary: false);
+            SetLightingColorEditor(
+                LightingSettingsFactory.DefaultVisibleColor,
+                secondary: false);
         }
         if (LightingSecondaryColorEditor == default)
         {

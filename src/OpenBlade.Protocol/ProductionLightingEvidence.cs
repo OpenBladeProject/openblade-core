@@ -118,10 +118,10 @@ internal static class ProductionLightingEvidenceSource
         "OpenBladeLightingImplementationFingerprint";
 
     private const string ApprovedLightingImplementationFingerprintSha256 =
-        // Re-reviewed after stale key pulses were capped at 75 ms of envelope
-        // age so delayed input remains visible. Command bytes, effect timelines,
-        // admission rules, and the single matrix writer are unchanged.
-        "9B08DBF3A7D715656EEC464D80CB3E49A9E1A8A385BC2E6EE1FCB40C524C45B9";
+        // Re-reviewed after the fallback color changed from cyan to Razer green.
+        // Command bytes, effect renderers, timelines, admission rules, and the
+        // single matrix writer are unchanged.
+        "1B92DBE71512D6C6BE7F277906D324DC84B14A6C5DB1B7197190565EFF70B3FF";
 
     private static readonly JsonSerializerOptions SerializerOptions =
         new(JsonSerializerDefaults.Web)

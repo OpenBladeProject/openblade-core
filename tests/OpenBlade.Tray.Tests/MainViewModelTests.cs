@@ -2083,6 +2083,22 @@ public sealed class MainViewModelTests
     }
 
     [Fact]
+    public async Task SelectingTidalFromOffSeedsRazerGreenAsPrimaryColor()
+    {
+        await using var viewModel = new MainViewModel(
+            new FakeServiceClient(),
+            new RecordingDispatcher());
+
+        viewModel.LightingEffectEditor = LightingEffect.Tidal;
+
+        Assert.Equal(
+            LightingSettingsFactory.DefaultVisibleColor,
+            viewModel.LightingPrimaryColorEditor);
+        Assert.Equal(new RgbColor(0, 0, 255), viewModel.LightingSecondaryColorEditor);
+        Assert.True(LightingSettingsValidation.IsWellFormed(viewModel.LightingDraft));
+    }
+
+    [Fact]
     public async Task SelectingEffectFromUnconfirmedZeroBrightnessUsesMatchingVisibleDefault()
     {
         var client = new FakeServiceClient();

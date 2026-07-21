@@ -91,7 +91,7 @@ public sealed record AmbientAwarenessLightingParameters(AmbientAwarenessRegion R
 public static class LightingSettingsFactory
 {
     public const byte DefaultVisibleBrightness = 100;
-    public static RgbColor DefaultVisibleColor { get; } = new(0, 170, 255);
+    public static RgbColor DefaultVisibleColor { get; } = new(0x47, 0xE1, 0x0C);
 
     public static LightingSettings Off() => new(
         LightingEffect.Off,

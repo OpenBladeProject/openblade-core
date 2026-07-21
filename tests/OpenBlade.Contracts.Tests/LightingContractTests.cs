@@ -4,6 +4,14 @@ namespace OpenBlade.Contracts.Tests;
 
 public sealed class LightingContractTests
 {
+    [Fact]
+    public void DefaultVisibleColorUsesRazerGreen()
+    {
+        Assert.Equal(
+            new RgbColor(0x47, 0xE1, 0x0C),
+            LightingSettingsFactory.DefaultVisibleColor);
+    }
+
     [Theory]
     [InlineData(1)]
     [InlineData(30)]
