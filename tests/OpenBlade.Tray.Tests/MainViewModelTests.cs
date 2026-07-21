@@ -2829,6 +2829,25 @@ public sealed class MainViewModelTests
         Assert.False(viewModel.IsReadinessError);
         Assert.Equal(performance, viewModel.ActivePerformanceLabel);
         Assert.Equal(fans, viewModel.ActiveFanModeLabel);
+
+        client.Publish(CreateStatus(verified: false, blocked: true) with
+        {
+            Revision = 4,
+            Message = "Checking the laptop connection after a temporary device-access failure.",
+        });
+        await WaitUntilAsync(() => viewModel.ControlAccessStatus == "Checking laptop");
+
+        Assert.Equal("Checking laptop", viewModel.ProfileStateLabel);
+        Assert.True(viewModel.IsReadinessChecking);
+        Assert.False(viewModel.IsReadinessReady);
+        Assert.False(viewModel.IsReadinessWarning);
+        Assert.False(viewModel.IsReadinessError);
+        Assert.Equal("Checking laptop", viewModel.PerformanceSourceLabel);
+        Assert.Equal("Checking laptop", viewModel.FanSourceLabel);
+        Assert.Equal("Checking laptop", viewModel.LightingSourceLabel);
+        Assert.Equal("Checking laptop", viewModel.BatterySourceLabel);
+        Assert.Equal(performance, viewModel.ActivePerformanceLabel);
+        Assert.Equal(fans, viewModel.ActiveFanModeLabel);
     }
 
     [Fact]

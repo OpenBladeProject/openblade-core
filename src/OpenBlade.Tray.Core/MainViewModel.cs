@@ -802,15 +802,15 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
 
     public string ProfileStateLabel => !IsConnected
         ? "Service unavailable"
-        : latestStatus?.DeviceVerified == false
-            ? "Laptop not found"
-            : IsCheckingLaptopConnection(latestStatus)
-                ? "Checking laptop"
-            : ActivePowerSource == PowerSource.ExternalUnknown
-                ? "Checking power source"
-                : CanControlHardware || IsRetainedPowerSourceRecheck(latestStatus)
-                    ? "Ready"
-                    : "Controls unavailable";
+        : IsCheckingLaptopConnection(latestStatus)
+            ? "Checking laptop"
+            : latestStatus?.DeviceVerified == false
+                ? "Laptop not found"
+                : ActivePowerSource == PowerSource.ExternalUnknown
+                    ? "Checking power source"
+                    : CanControlHardware || IsRetainedPowerSourceRecheck(latestStatus)
+                        ? "Ready"
+                        : "Controls unavailable";
 
     public bool IsReadinessReady => IsConnected
         && latestStatus?.DeviceVerified == true
@@ -818,9 +818,9 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         && (CanControlHardware || IsRetainedPowerSourceRecheck(latestStatus));
 
     public bool IsReadinessChecking => IsConnected
-        && latestStatus?.DeviceVerified == true
-        && (ActivePowerSource == PowerSource.ExternalUnknown
-            || IsCheckingLaptopConnection(latestStatus));
+        && (IsCheckingLaptopConnection(latestStatus)
+            || latestStatus?.DeviceVerified == true
+            && ActivePowerSource == PowerSource.ExternalUnknown);
 
     public bool IsReadinessWarning => IsConnected
         && latestStatus?.DeviceVerified == true
@@ -830,7 +830,8 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         && !CanControlHardware;
 
     public bool IsReadinessError => !IsConnected
-        || latestStatus?.DeviceVerified != true;
+        || (!IsCheckingLaptopConnection(latestStatus)
+            && latestStatus?.DeviceVerified != true);
 
     public string PerformanceSourceLabel
     {
@@ -3310,22 +3311,22 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         PerformanceSourceLabel = SourceLabel(
             DeviceSubsystem.Performance,
             confirmed?.Performance is not null,
-            status.DeviceVerified,
+            status,
             externalChanges);
         FanSourceLabel = SourceLabel(
             DeviceSubsystem.Fans,
             confirmed?.Fans is not null,
-            status.DeviceVerified,
+            status,
             externalChanges);
         LightingSourceLabel = SourceLabel(
             DeviceSubsystem.Lighting,
             confirmed?.Lighting is not null,
-            status.DeviceVerified,
+            status,
             externalChanges);
         BatterySourceLabel = FormatBatterySource(
             confirmed?.Battery,
             externalChanges.Contains(DeviceSubsystem.Battery),
-            status.DeviceVerified);
+            status);
         PerformancePreset[] performancePresets = capabilities.PerformancePresets
             .Where(Enum.IsDefined)
             .Order()
@@ -5726,9 +5727,11 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     private static string SourceLabel(
         DeviceSubsystem subsystem,
         bool confirmed,
-        bool deviceVerified,
+        ServiceStatusSnapshot status,
         IReadOnlyCollection<DeviceSubsystem> externalChanges) =>
-        !deviceVerified
+        IsCheckingLaptopConnection(status)
+            ? "Checking laptop"
+            : !status.DeviceVerified
             ? "Laptop not found"
             : externalChanges.Contains(subsystem)
             ? "Changed outside OpenBlade"
@@ -5739,9 +5742,13 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     private static string FormatBatterySource(
         ConfirmedBatteryState? battery,
         bool changedOutside,
-        bool deviceVerified)
+        ServiceStatusSnapshot status)
     {
-        if (!deviceVerified)
+        if (IsCheckingLaptopConnection(status))
+        {
+            return "Checking laptop";
+        }
+        if (!status.DeviceVerified)
         {
             return "Laptop not found";
         }
@@ -6047,14 +6054,14 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
 
     private static string FormatControlAccessStatus(ServiceStatusSnapshot status)
     {
-        if (!status.DeviceVerified)
-        {
-            return "Laptop not found";
-        }
-
         if (IsCheckingLaptopConnection(status))
         {
             return "Checking laptop";
+        }
+
+        if (!status.DeviceVerified)
+        {
+            return "Laptop not found";
         }
 
         if (status.ActivePowerSource == PowerSource.ExternalUnknown)
@@ -6084,7 +6091,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             StringComparison.OrdinalIgnoreCase);
 
     private static bool IsCheckingLaptopConnection(ServiceStatusSnapshot? status) =>
-        status is { DeviceVerified: true }
+        status is not null
         && IsTemporaryDeviceAccessMessage(status.Message);
 
     private static bool IsTemporaryDeviceAccessMessage(string message) =>
