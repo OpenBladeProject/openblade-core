@@ -4026,18 +4026,66 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         CancellationToken token)
     {
         ApplyOneShotLaptopControl requested = (ApplyOneShotLaptopControl)parameter!;
+        bool? previousStartupAnimation = StartupAnimationEnabled;
+        FunctionKeyPrimaryMode? previousFunctionKeyPrimary = FunctionKeyPrimary;
+        bool? previousGamingMode = GamingModeEnabled;
         SetOneShotOperationInProgress(requested.Control, true);
+        ApplyOneShotLaptopControlOptimistically(requested);
         try
         {
-            await RunOperationAsync(
+            bool accepted = await RunOperationAsync(
                 cancellationToken => serviceClient.ApplyOneShotLaptopControlAsync(
                     requested,
                     cancellationToken),
                 token);
+            if (!accepted)
+            {
+                RestoreOneShotLaptopControlPresentation(
+                    requested.Control,
+                    previousStartupAnimation,
+                    previousFunctionKeyPrimary,
+                    previousGamingMode);
+            }
         }
         finally
         {
             SetOneShotOperationInProgress(requested.Control, false);
+        }
+    }
+
+    private void ApplyOneShotLaptopControlOptimistically(ApplyOneShotLaptopControl requested)
+    {
+        switch (requested.Control)
+        {
+            case OneShotLaptopControl.StartupAnimation when requested.Enabled is { } startupEnabled:
+                StartupAnimationEnabled = startupEnabled;
+                break;
+            case OneShotLaptopControl.FunctionKeyPrimary when requested.FunctionKeyMode is { } functionKeyMode:
+                FunctionKeyPrimary = functionKeyMode;
+                break;
+            case OneShotLaptopControl.GamingMode when requested.Enabled is { } gamingEnabled:
+                GamingModeEnabled = gamingEnabled;
+                break;
+        }
+    }
+
+    private void RestoreOneShotLaptopControlPresentation(
+        OneShotLaptopControl control,
+        bool? previousStartupAnimation,
+        FunctionKeyPrimaryMode? previousFunctionKeyPrimary,
+        bool? previousGamingMode)
+    {
+        switch (control)
+        {
+            case OneShotLaptopControl.StartupAnimation:
+                StartupAnimationEnabled = previousStartupAnimation;
+                break;
+            case OneShotLaptopControl.FunctionKeyPrimary:
+                FunctionKeyPrimary = previousFunctionKeyPrimary;
+                break;
+            case OneShotLaptopControl.GamingMode:
+                GamingModeEnabled = previousGamingMode;
+                break;
         }
     }
 

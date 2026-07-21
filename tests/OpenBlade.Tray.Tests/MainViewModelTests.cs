@@ -1346,7 +1346,7 @@ public sealed class MainViewModelTests
 
         Assert.True(viewModel.IsStartupAnimationFieldLoading);
         Assert.True(viewModel.IsGamingModeFieldLoading);
-        Assert.True(viewModel.StartupAnimationToggleIsOn);
+        Assert.False(viewModel.StartupAnimationToggleIsOn);
         Assert.Equal("Function keys", viewModel.FunctionKeyPrimaryStateLabel);
         Assert.False(viewModel.GamingModeToggleIsOn);
         Assert.False(viewModel.CanEditStartupAnimation);
@@ -1354,6 +1354,98 @@ public sealed class MainViewModelTests
         Assert.False(viewModel.CanEditGamingMode);
         Assert.False(viewModel.ApplyOneShotLaptopControlCommand.CanExecute(
             viewModel.MultimediaKeysPrimaryAction));
+    }
+
+    [Fact]
+    public async Task OneShotFirmwareActionShowsRequestedValueWhileReadbackIsLoading()
+    {
+        var client = new FakeServiceClient { BlockMutations = true };
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        ServiceStatusSnapshot status = CreateStatus(
+            verified: true,
+            blocked: false,
+            capabilities: new DeviceCapabilities(
+                new HashSet<PerformancePreset> { PerformancePreset.Balanced },
+                new HashSet<FanMode> { FanMode.Automatic },
+                new HashSet<LightingEffect> { LightingEffect.Off },
+                ChargeLimits(),
+                SupportsBatteryProtectionOff: true,
+                SupportsTemporaryFullCharge: true)
+            {
+                OneShotLaptopControls = new HashSet<OneShotLaptopControl>
+                {
+                    OneShotLaptopControl.FunctionKeyPrimary,
+                },
+            }) with
+        {
+            FunctionKeyPrimary = FunctionKeyPrimaryMode.FunctionKeys,
+        };
+        client.Publish(status);
+        await WaitUntilAsync(() => viewModel.FunctionKeyPrimary == FunctionKeyPrimaryMode.FunctionKeys);
+
+        Task apply = Assert.IsType<AsyncRelayCommand>(viewModel.ApplyOneShotLaptopControlCommand)
+            .ExecuteAsync(viewModel.MultimediaKeysPrimaryAction);
+        await client.MutationStarted.Task;
+
+        Assert.True(viewModel.IsFunctionKeyFieldLoading);
+        Assert.False(viewModel.CanEditFunctionKeyPrimary);
+        Assert.Equal("Media keys", viewModel.FunctionKeyPrimaryStateLabel);
+        Assert.False(viewModel.ApplyOneShotLaptopControlCommand.CanExecute(
+            viewModel.FunctionKeysPrimaryAction));
+
+        client.Publish(status with
+        {
+            Revision = status.Revision + 1,
+            FunctionKeyPrimary = null,
+        });
+        await WaitUntilAsync(() => viewModel.IsFunctionKeyFieldLoading);
+
+        Assert.Equal("Media keys", viewModel.FunctionKeyPrimaryStateLabel);
+
+        client.CompleteMutation();
+        await apply;
+    }
+
+    [Fact]
+    public async Task OneShotFirmwareActionRestoresPreviousValueWhenRejected()
+    {
+        var client = new FakeServiceClient
+        {
+            NextResult = new ControlOperationResult(
+                ControlOperationStatus.Failed,
+                "Firmware rejected the request."),
+        };
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        ServiceStatusSnapshot status = CreateStatus(
+            verified: true,
+            blocked: false,
+            capabilities: new DeviceCapabilities(
+                new HashSet<PerformancePreset> { PerformancePreset.Balanced },
+                new HashSet<FanMode> { FanMode.Automatic },
+                new HashSet<LightingEffect> { LightingEffect.Off },
+                ChargeLimits(),
+                SupportsBatteryProtectionOff: true,
+                SupportsTemporaryFullCharge: true)
+            {
+                OneShotLaptopControls = new HashSet<OneShotLaptopControl>
+                {
+                    OneShotLaptopControl.FunctionKeyPrimary,
+                },
+            }) with
+        {
+            FunctionKeyPrimary = FunctionKeyPrimaryMode.FunctionKeys,
+        };
+        client.Publish(status);
+        await WaitUntilAsync(() => viewModel.FunctionKeyPrimary == FunctionKeyPrimaryMode.FunctionKeys);
+
+        await Assert.IsType<AsyncRelayCommand>(viewModel.ApplyOneShotLaptopControlCommand)
+            .ExecuteAsync(viewModel.MultimediaKeysPrimaryAction);
+
+        Assert.Equal("Function keys", viewModel.FunctionKeyPrimaryStateLabel);
+        Assert.False(viewModel.IsFunctionKeyFieldLoading);
+        Assert.True(viewModel.CanEditFunctionKeyPrimary);
     }
 
     [Fact]
