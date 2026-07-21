@@ -9,9 +9,7 @@ public sealed class WindowsShellThemeSource : ITrayIconThemeSource, IDisposable
     private const string PersonalizeRegistryPath =
         @"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize";
     private const string SystemUsesLightThemeValueName = "SystemUsesLightTheme";
-    private static readonly TimeSpan RefreshInterval = TimeSpan.FromSeconds(2);
-
-    private readonly DispatcherQueueTimer refreshTimer;
+    private readonly DispatcherQueue dispatcherQueue;
     private bool useLightTrayIconGlyphs;
     private int disposed;
 
@@ -19,12 +17,9 @@ public sealed class WindowsShellThemeSource : ITrayIconThemeSource, IDisposable
     {
         ArgumentNullException.ThrowIfNull(dispatcherQueue);
 
+        this.dispatcherQueue = dispatcherQueue;
         useLightTrayIconGlyphs = ReadUseLightTrayIconGlyphs();
-        refreshTimer = dispatcherQueue.CreateTimer();
-        refreshTimer.Interval = RefreshInterval;
-        refreshTimer.IsRepeating = true;
-        refreshTimer.Tick += OnRefreshTimerTick;
-        refreshTimer.Start();
+        SystemEvents.UserPreferenceChanged += OnUserPreferenceChanged;
     }
 
     public event EventHandler? TrayIconThemeChanged;
@@ -38,12 +33,26 @@ public sealed class WindowsShellThemeSource : ITrayIconThemeSource, IDisposable
             return;
         }
 
-        refreshTimer.Stop();
-        refreshTimer.Tick -= OnRefreshTimerTick;
+        SystemEvents.UserPreferenceChanged -= OnUserPreferenceChanged;
     }
 
-    private void OnRefreshTimerTick(DispatcherQueueTimer sender, object args)
+    private void OnUserPreferenceChanged(object sender, UserPreferenceChangedEventArgs args)
     {
+        if (Volatile.Read(ref disposed) != 0)
+        {
+            return;
+        }
+
+        dispatcherQueue.TryEnqueue(RefreshTheme);
+    }
+
+    private void RefreshTheme()
+    {
+        if (Volatile.Read(ref disposed) != 0)
+        {
+            return;
+        }
+
         bool next = ReadUseLightTrayIconGlyphs();
         if (next == useLightTrayIconGlyphs)
         {

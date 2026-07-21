@@ -611,9 +611,11 @@ public sealed class WinUiShellContractTests
             "WindowsShellThemeSource.cs");
         Assert.Contains("SystemUsesLightTheme", shellThemeSource, StringComparison.Ordinal);
         Assert.Contains("ShellThemeSelectionPolicy.ShouldUseLightTrayIconGlyphs", shellThemeSource, StringComparison.Ordinal);
-        Assert.Contains("dispatcherQueue.CreateTimer()", shellThemeSource, StringComparison.Ordinal);
+        Assert.Contains("SystemEvents.UserPreferenceChanged +=", shellThemeSource, StringComparison.Ordinal);
+        Assert.Contains("dispatcherQueue.TryEnqueue(RefreshTheme)", shellThemeSource, StringComparison.Ordinal);
         Assert.Contains("TrayIconThemeChanged?.Invoke", shellThemeSource, StringComparison.Ordinal);
-        Assert.Contains("refreshTimer.Tick -=", shellThemeSource, StringComparison.Ordinal);
+        Assert.Contains("SystemEvents.UserPreferenceChanged -=", shellThemeSource, StringComparison.Ordinal);
+        Assert.DoesNotContain("CreateTimer()", shellThemeSource, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -679,8 +681,8 @@ public sealed class WinUiShellContractTests
                     "Microsoft.Win32",
                     source,
                     StringComparison.Ordinal);
+                Assert.DoesNotContain("SystemEvents", source, StringComparison.Ordinal);
             }
-            Assert.DoesNotContain("SystemEvents", source, StringComparison.Ordinal);
             Assert.DoesNotContain("UISettings", source, StringComparison.Ordinal);
             Assert.DoesNotContain("ColorValuesChanged", source, StringComparison.Ordinal);
             Assert.DoesNotContain("Application.RequestedTheme", source, StringComparison.Ordinal);
