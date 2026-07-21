@@ -118,11 +118,10 @@ internal static class ProductionLightingEvidenceSource
         "OpenBladeLightingImplementationFingerprint";
 
     private const string ApprovedLightingImplementationFingerprintSha256 =
-        // Re-reviewed after key-triggered pulses began carrying optional
-        // monotonic observation timestamps and stale renderer backlog trimming.
-        // Command bytes, effect timelines, admission rules, and the single
-        // matrix writer are unchanged.
-        "FD5F00EA65556686984BE1DB6569D7700FE4122EC6E4D3CA86FE84CBCEB7475E";
+        // Re-reviewed after stale key pulses were capped at 75 ms of envelope
+        // age so delayed input remains visible. Command bytes, effect timelines,
+        // admission rules, and the single matrix writer are unchanged.
+        "9B08DBF3A7D715656EEC464D80CB3E49A9E1A8A385BC2E6EE1FCB40C524C45B9";
 
     private static readonly JsonSerializerOptions SerializerOptions =
         new(JsonSerializerDefaults.Web)

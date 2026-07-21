@@ -1150,7 +1150,8 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
 
     public bool CanControlLighting => CanControlHardware && HasLightingCapability;
 
-    public bool IsLightingControlUnavailable => !CanControlLighting;
+    public bool IsLightingControlUnavailable =>
+        !CanControlLighting && !IsCheckingLaptopConnection(latestStatus);
 
     public string LightingControlUnavailableMessage
     {
@@ -2015,25 +2016,25 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         FormatDisplayProfile(GetPresentedProfile(PowerSource.UsbC).Display);
 
     public ProfilePresentation PluggedInProfilePresentation =>
-        CreateProfilePresentation(GetPresentedProfile(PowerSource.PluggedIn));
+        CreateProfilePresentation(GetProfile(PowerSource.PluggedIn));
 
     public ProfilePresentation UsbCProfilePresentation =>
-        CreateProfilePresentation(GetPresentedProfile(PowerSource.UsbC));
+        CreateProfilePresentation(GetProfile(PowerSource.UsbC));
 
     public ProfilePresentation BatteryProfilePresentation =>
-        CreateProfilePresentation(GetPresentedProfile(PowerSource.Battery));
+        CreateProfilePresentation(GetProfile(PowerSource.Battery));
 
     public ProfilePresentation SelectedProfilePresentation =>
-        CreateProfilePresentation(GetPresentedProfile(SelectedProfileComparisonOption.Source));
+        CreateProfilePresentation(GetProfile(SelectedProfileComparisonOption.Source));
 
     public string LightingDisplayOffPolicyPresentation =>
-        GetPresentedProfile(SelectedProfileComparisonOption.Source)
+        GetProfile(SelectedProfileComparisonOption.Source)
             .EffectiveLightingPowerPolicy.TurnOffWhenDisplayTurnsOff
             ? "Turn lighting off"
             : "Keep lighting on";
 
     public string LightingIdlePolicyPresentation =>
-        GetPresentedProfile(SelectedProfileComparisonOption.Source)
+        GetProfile(SelectedProfileComparisonOption.Source)
             .EffectiveLightingPowerPolicy.IdleTimeoutMinutes is int minutes
             ? $"{minutes.ToString(CultureInfo.CurrentCulture)} minutes"
             : "Never";
@@ -3264,17 +3265,20 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             ?? status.DesiredState.FanControl
             ?? FanControlSettings.FromLegacy(SelectedFanMode));
         PrepareLightingEditorForPowerSource(status.ActivePowerSource);
-        SetKeyboardEffectUnconfirmed(
-            confirmed?.Lighting is null
-            && status.LightingRendererOwnership is
-                LightingRendererOwnershipState.None or
-                LightingRendererOwnershipState.Faulted);
+        if (!checkingLaptopConnection)
+        {
+            SetKeyboardEffectUnconfirmed(
+                confirmed?.Lighting is null
+                && status.LightingRendererOwnership is
+                    LightingRendererOwnershipState.None or
+                    LightingRendererOwnershipState.Faulted);
+        }
         SelectedLighting = confirmed?.Lighting ?? status.DesiredState.Lighting.Value;
         if (confirmed?.LogoLighting is { } confirmedLogo)
         {
             SelectedLighting = SelectedLighting with { LogoMode = confirmedLogo };
         }
-        if (!lightingEditorDirty)
+        if (!lightingEditorDirty && !checkingLaptopConnection)
         {
             LoadLightingEditor(SelectedLighting);
             if (keyboardEffectUnconfirmed && LightingBrightnessEditor == 0)
@@ -5644,7 +5648,8 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         {
             SetLightingEditorField(
                 ref lightingBrightnessEditor,
-                (int)DefaultLightingBrightness);
+                (int)DefaultLightingBrightness,
+                nameof(LightingBrightnessEditor));
         }
 
         bool selectedUsesColor = selected is LightingEffect.Static
@@ -6635,11 +6640,14 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             new PropertyChangedEventArgs(nameof(HasUnsavedProfileChanges)));
     }
 
-    private bool SetLightingColorField(ref int field, int value)
+    private bool SetLightingColorField(
+        ref int field,
+        int value,
+        [CallerMemberName] string? propertyName = null)
     {
         ArgumentOutOfRangeException.ThrowIfNegative(value);
         ArgumentOutOfRangeException.ThrowIfGreaterThan(value, 255);
-        return SetLightingEditorField(ref field, value);
+        return SetLightingEditorField(ref field, value, propertyName);
     }
 
     private void SetLightingColorEditor(RgbColor value, bool secondary)

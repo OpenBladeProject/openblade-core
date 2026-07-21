@@ -465,7 +465,7 @@
                                 <Border x:Name="HeroReadings"
                                         Grid.Row="1"
                                         Margin="0"
-                                        Padding="0"
+                                        Padding="0,14,0,0"
                                         BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
                                         BorderThickness="0,1,0,0"
                                         HorizontalAlignment="Stretch"
@@ -896,7 +896,7 @@
                                     ToolTipService.ToolTip="Export saved profiles as JSON"
                                     AutomationProperties.Name="Export profiles to JSON" />
                         </Grid>
-                        <TextBlock Text="OpenBlade switches between these settings when the power source changes. Change them from Dashboard, Lighting, or Display."
+                        <TextBlock Text="These are the settings saved in each profile. Unsaved changes from Dashboard, Lighting, or Display appear here only after you save them."
                                    Style="{StaticResource SecondaryTextStyle}"
                                    Margin="0,0,0,16" />
 
@@ -915,7 +915,7 @@
                                 <StackPanel Grid.Column="1" Spacing="4">
                                     <StackPanel Orientation="Horizontal" Spacing="7">
                                         <TextBlock Text="AC" Style="{StaticResource CardTitleStyle}" />
-                                        <TextBlock Text="Unsaved"
+                                        <TextBlock Text="Changes pending"
                                                    Style="{StaticResource DraftStatusTextStyle}"
                                                    Visibility="{x:Bind ViewModel.IsPluggedInProfileDraft, Mode=OneWay}" />
                                         <Border Style="{StaticResource ActiveProfilePillStyle}"
@@ -928,7 +928,7 @@
                                 <StackPanel Grid.Column="2" Spacing="4">
                                     <StackPanel Orientation="Horizontal" Spacing="7">
                                         <TextBlock Text="USB-C" Style="{StaticResource CardTitleStyle}" />
-                                        <TextBlock Text="Unsaved"
+                                        <TextBlock Text="Changes pending"
                                                    Style="{StaticResource DraftStatusTextStyle}"
                                                    Visibility="{x:Bind ViewModel.IsUsbCProfileDraft, Mode=OneWay}" />
                                         <Border Style="{StaticResource ActiveProfilePillStyle}"
@@ -941,7 +941,7 @@
                                 <StackPanel Grid.Column="3" Spacing="4">
                                     <StackPanel Orientation="Horizontal" Spacing="7">
                                         <TextBlock Text="Battery" Style="{StaticResource CardTitleStyle}" />
-                                        <TextBlock Text="Unsaved"
+                                        <TextBlock Text="Changes pending"
                                                    Style="{StaticResource DraftStatusTextStyle}"
                                                    Visibility="{x:Bind ViewModel.IsBatteryProfileDraft, Mode=OneWay}" />
                                         <Border Style="{StaticResource ActiveProfilePillStyle}"
@@ -1891,24 +1891,29 @@
                                 </Grid>
                             </Border>
                             <Border Style="{StaticResource SettingsRowStyle}">
-                                <Grid ColumnSpacing="20">
+                                <Grid ColumnSpacing="20" RowSpacing="12">
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="*" />
                                         <ColumnDefinition Width="Auto" />
                                     </Grid.ColumnDefinitions>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="Auto" />
+                                    </Grid.RowDefinitions>
                                     <StackPanel Spacing="3" VerticalAlignment="Center">
                                         <TextBlock Text="Shown on Dashboard"
                                                    Style="{StaticResource CardTitleStyle}" />
                                         <TextBlock Text="Choose which live readings appear in the Dashboard summary."
                                                    Style="{StaticResource SecondaryTextStyle}" />
                                     </StackPanel>
-                                    <ItemsControl Grid.Column="1"
-                                                  HorizontalAlignment="Right"
+                                    <ItemsControl Grid.Row="1"
+                                                  Grid.ColumnSpan="2"
+                                                  HorizontalAlignment="Stretch"
                                                   ItemsSource="{x:Bind ViewModel.DashboardTelemetryItems, Mode=OneWay}">
                                         <ItemsControl.ItemsPanel>
                                             <ItemsPanelTemplate>
                                                 <ItemsWrapGrid Orientation="Horizontal"
-                                                               ItemWidth="210"
+                                                               ItemWidth="190"
                                                                ItemHeight="40" />
                                             </ItemsPanelTemplate>
                                         </ItemsControl.ItemsPanel>

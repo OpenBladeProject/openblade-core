@@ -202,11 +202,11 @@ public sealed class MainViewModelTests
         Assert.Contains("Maximum", viewModel.PluggedInProfileThermalSummary);
         Assert.Contains("Static", viewModel.PluggedInProfileLightingSummary);
         Assert.Contains("drr-48-240", viewModel.PluggedInProfileDisplaySummary);
-        Assert.Equal("Balanced", viewModel.PluggedInProfilePresentation.PowerMode);
-        Assert.Equal("Maximum", viewModel.PluggedInProfilePresentation.Fans);
-        Assert.Equal("Static", viewModel.PluggedInProfilePresentation.LightingEffect);
-        Assert.Equal("Dynamic 48–240 Hz", viewModel.PluggedInProfilePresentation.DisplayRefreshRate);
-        Assert.Equal("sRGB", viewModel.PluggedInProfilePresentation.DisplayColorProfile);
+        Assert.Equal("Silent", viewModel.PluggedInProfilePresentation.PowerMode);
+        Assert.Equal("Automatic", viewModel.PluggedInProfilePresentation.Fans);
+        Assert.Equal("Off", viewModel.PluggedInProfilePresentation.LightingEffect);
+        Assert.Equal("Use current", viewModel.PluggedInProfilePresentation.DisplayRefreshRate);
+        Assert.Equal("Use current", viewModel.PluggedInProfilePresentation.DisplayColorProfile);
         Assert.Equal(PowerSource.PluggedIn, viewModel.SelectedProfileComparisonOption.Source);
         Assert.True(viewModel.IsSelectedProfileActive);
         Assert.True(viewModel.IsSelectedProfileDraft);
@@ -494,15 +494,18 @@ public sealed class MainViewModelTests
         viewModel.RecordDisplayProfileChange(PowerSource.PluggedIn, current);
 
         Assert.True(viewModel.HasActiveProfileDraft);
-        Assert.Equal("Dynamic 48–240 Hz", viewModel.PluggedInProfilePresentation.DisplayRefreshRate);
-        Assert.Equal("Off", viewModel.PluggedInProfilePresentation.DisplayHdr);
-        Assert.Equal("sRGB", viewModel.PluggedInProfilePresentation.DisplayColorProfile);
+        Assert.Equal("Use current", viewModel.PluggedInProfilePresentation.DisplayRefreshRate);
+        Assert.Equal("Use current", viewModel.PluggedInProfilePresentation.DisplayHdr);
+        Assert.Equal("Use current", viewModel.PluggedInProfilePresentation.DisplayColorProfile);
 
         await Assert.IsType<AsyncRelayCommand>(viewModel.SaveProfilesCommand)
             .ExecuteAsync(null);
 
         Assert.Equal(current, client.LastProfiles?.PluggedIn.Display);
         Assert.False(viewModel.HasActiveProfileDraft);
+        Assert.Equal("Dynamic 48–240 Hz", viewModel.PluggedInProfilePresentation.DisplayRefreshRate);
+        Assert.Equal("Off", viewModel.PluggedInProfilePresentation.DisplayHdr);
+        Assert.Equal("sRGB", viewModel.PluggedInProfilePresentation.DisplayColorProfile);
     }
 
     [Fact]
@@ -2063,6 +2066,8 @@ public sealed class MainViewModelTests
         await using var viewModel = new MainViewModel(
             new FakeServiceClient(),
             new RecordingDispatcher());
+        var changed = new List<string?>();
+        viewModel.PropertyChanged += (_, args) => changed.Add(args.PropertyName);
 
         Assert.Equal(LightingEffect.Off, viewModel.LightingEffectEditor);
         Assert.Equal(0, viewModel.LightingBrightnessEditor);
@@ -2070,6 +2075,7 @@ public sealed class MainViewModelTests
         viewModel.LightingEffectEditor = LightingEffect.Breathing;
 
         Assert.Equal(50, viewModel.LightingBrightnessEditor);
+        Assert.Contains(nameof(MainViewModel.LightingBrightnessEditor), changed);
         Assert.Equal(
             LightingSettingsFactory.DefaultVisibleColor,
             viewModel.LightingPrimaryColorEditor);
@@ -2947,14 +2953,38 @@ public sealed class MainViewModelTests
         var client = new FakeServiceClient();
         await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
         await viewModel.StartAsync();
-        client.Publish(CreateStatus(verified: true, blocked: false));
+        LightingSettings lighting = LightingSettingsFactory.Reactive(
+            new RgbColor(0, 170, 255),
+            64,
+            ReactiveLightingDuration.Medium);
+        ServiceStatusSnapshot baseline = CreateStatus(verified: true, blocked: false);
+        baseline = baseline with
+        {
+            ConfirmedState = baseline.ConfirmedState! with { Lighting = lighting },
+            DesiredState = baseline.DesiredState with
+            {
+                Lighting = new ResolvedSetting<LightingSettings>(
+                    lighting,
+                    SettingValueSource.TemporaryOverride),
+            },
+            LightingRendererOwnership = LightingRendererOwnershipState.Reactive,
+        };
+        client.Publish(baseline);
         await WaitUntilAsync(() => viewModel.IsConnected && viewModel.IsReadinessReady);
         string performance = viewModel.ActivePerformanceLabel;
         string fans = viewModel.ActiveFanModeLabel;
+        Assert.Equal(LightingEffect.Reactive, viewModel.LightingEffectEditor);
+        Assert.Equal(64, viewModel.LightingBrightnessEditor);
+        Assert.False(viewModel.IsKeyboardEffectUnconfirmed);
 
-        client.Publish(CreateStatus(verified: true, blocked: false) with
+        client.Publish(baseline with
         {
             Revision = 2,
+            DeviceVerified = false,
+            WritesBlocked = true,
+            Capabilities = DeviceCapabilities.Unavailable(),
+            ConfirmedState = baseline.ConfirmedState! with { Lighting = null },
+            LightingRendererOwnership = LightingRendererOwnershipState.None,
             Message = "Checking the laptop connection after a temporary device-access failure.",
         });
         await WaitUntilAsync(() =>
@@ -2971,9 +3001,13 @@ public sealed class MainViewModelTests
         Assert.False(viewModel.IsReadinessError);
         Assert.False(viewModel.CanControlHardware);
         Assert.False(viewModel.CanControlLighting);
+        Assert.False(viewModel.IsLightingControlUnavailable);
         Assert.False(viewModel.SetLightingCommand.CanExecute(viewModel.LightingDraft));
         Assert.Equal(performance, viewModel.ActivePerformanceLabel);
         Assert.Equal(fans, viewModel.ActiveFanModeLabel);
+        Assert.Equal(LightingEffect.Reactive, viewModel.LightingEffectEditor);
+        Assert.Equal(64, viewModel.LightingBrightnessEditor);
+        Assert.False(viewModel.IsKeyboardEffectUnconfirmed);
 
         client.Publish(CreateStatus(verified: true, blocked: true) with
         {

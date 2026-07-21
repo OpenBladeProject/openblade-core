@@ -501,7 +501,7 @@ public sealed class ProductionLightingPortTests
     }
 
     [Fact]
-    public async Task ReactivePulse_UsesObservedTimestampWithinRendererTimeline()
+    public async Task ReactivePulse_ClampsStaleObservedTimestampToVisibleEnvelope()
     {
         var session = new LightingSession(initialBrightness: 0xFF);
         await using var port = CreatePort(session, new MatrixWriter(), admitted: true);
@@ -522,8 +522,30 @@ public sealed class ProductionLightingPortTests
 
         Assert.InRange(
             elapsed,
-            TimeSpan.FromMilliseconds(240),
-            TimeSpan.FromMilliseconds(260));
+            TimeSpan.FromMilliseconds(920),
+            TimeSpan.FromMilliseconds(930));
+    }
+
+    [Fact]
+    public async Task ReactivePulse_UsesRenderTimeWhenObservedBeforeEffectStart()
+    {
+        var session = new LightingSession(initialBrightness: 0xFF);
+        await using var port = CreatePort(session, new MatrixWriter(), admitted: true);
+        FieldInfo startedField = typeof(ProductionLightingPort).GetField(
+            "effectStartedTimestamp",
+            BindingFlags.Instance | BindingFlags.NonPublic)!;
+        MethodInfo elapsedMethod = typeof(ProductionLightingPort).GetMethod(
+            "KeyPulseElapsedOrFallback",
+            BindingFlags.Instance | BindingFlags.NonPublic)!;
+        long started = TimeProvider.System.GetTimestamp();
+        startedField.SetValue(port, started);
+        TimeSpan fallback = TimeSpan.FromSeconds(2);
+
+        var elapsed = Assert.IsType<TimeSpan>(elapsedMethod.Invoke(
+            port,
+            [new ReactiveKeyPulse(19, started - 1), fallback]));
+
+        Assert.Equal(fallback, elapsed);
     }
 
     [Fact]

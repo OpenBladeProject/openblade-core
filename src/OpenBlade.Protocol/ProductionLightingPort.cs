@@ -6,6 +6,8 @@ internal sealed class ProductionLightingPort : IProductionLightingPort
 {
     private const int MaximumPendingKeyTriggeredPulses = 1024;
     private const int PendingKeyTriggeredPulseTrimTarget = 256;
+    private static readonly TimeSpan MaximumKeyPulsePreAge =
+        TimeSpan.FromMilliseconds(75);
     private static readonly IReadOnlySet<LightingEffect> AdmittedEffects =
         new HashSet<LightingEffect>(Enum.GetValues<LightingEffect>());
 
@@ -937,7 +939,7 @@ internal sealed class ProductionLightingPort : IProductionLightingPort
 
         if (observedTimestamp <= effectStartedTimestamp)
         {
-            return TimeSpan.Zero;
+            return fallbackElapsed;
         }
 
         TimeSpan observedElapsed;
@@ -957,8 +959,16 @@ internal sealed class ProductionLightingPort : IProductionLightingPort
             return fallbackElapsed;
         }
 
-        return observedElapsed > fallbackElapsed
-            ? fallbackElapsed
+        if (observedElapsed >= fallbackElapsed)
+        {
+            return fallbackElapsed;
+        }
+
+        TimeSpan earliestVisibleStart = fallbackElapsed > MaximumKeyPulsePreAge
+            ? fallbackElapsed - MaximumKeyPulsePreAge
+            : TimeSpan.Zero;
+        return observedElapsed < earliestVisibleStart
+            ? earliestVisibleStart
             : observedElapsed;
     }
 

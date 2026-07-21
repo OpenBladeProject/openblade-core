@@ -108,7 +108,8 @@ public sealed class WinUiShellContractTests
         Assert.DoesNotContain("Content=\"Save to profile\"", xaml, StringComparison.Ordinal);
         Assert.DoesNotContain("ToolTipService.ToolTip=\"Unsaved changes\"", xaml, StringComparison.Ordinal);
         Assert.DoesNotContain("AutomationProperties.Name=\"Unsaved changes\"", xaml, StringComparison.Ordinal);
-        Assert.Equal(4, CountOccurrences(xaml, "Text=\"Unsaved\""));
+        Assert.Equal(1, CountOccurrences(xaml, "Text=\"Unsaved\""));
+        Assert.Equal(3, CountOccurrences(xaml, "Text=\"Changes pending\""));
         Assert.Equal(4, CountOccurrences(
             xaml,
             "Style=\"{StaticResource DraftStatusTextStyle}\""));
@@ -267,7 +268,7 @@ public sealed class WinUiShellContractTests
 
         Assert.Contains("ViewModel.DashboardTelemetryItems", xaml, StringComparison.Ordinal);
         Assert.Contains("ViewModel.TrayHoverLabelItems", xaml, StringComparison.Ordinal);
-        Assert.Contains("ItemsControl Grid.Column=\"1\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("ItemsControl Grid.Row=\"1\"", xaml, StringComparison.Ordinal);
         Assert.Contains("CanDragItems=\"True\"", xaml, StringComparison.Ordinal);
         Assert.Contains("CanReorderItems=\"True\"", xaml, StringComparison.Ordinal);
         Assert.Contains("ReorderMode=\"Enabled\"", xaml, StringComparison.Ordinal);
@@ -304,9 +305,8 @@ public sealed class WinUiShellContractTests
         string xaml = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml");
 
         Assert.Contains("x:Name=\"HeroReadings\"", xaml, StringComparison.Ordinal);
-        Assert.Contains("Padding=\"0\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("Padding=\"0,14,0,0\"", xaml, StringComparison.Ordinal);
         Assert.DoesNotContain("Margin=\"0,18,0,0\"", xaml, StringComparison.Ordinal);
-        Assert.DoesNotContain("Padding=\"0,14,0,0\"", xaml, StringComparison.Ordinal);
         Assert.Contains("<StackLayout Orientation=\"Horizontal\"", xaml, StringComparison.Ordinal);
         Assert.Contains("Spacing=\"72\"", xaml, StringComparison.Ordinal);
         Assert.Contains("<StackPanel Spacing=\"3\" MinWidth=\"220\">", xaml, StringComparison.Ordinal);
@@ -317,6 +317,16 @@ public sealed class WinUiShellContractTests
             "<StackPanel Spacing=\"3\" Margin=\"0,0,22,0\">",
             xaml,
             StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void DashboardTelemetryPreferencesUseAConstrainedFullWidthRow()
+    {
+        string xaml = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml");
+
+        Assert.Contains("Grid.Row=\"1\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("Grid.ColumnSpan=\"2\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("ItemWidth=\"190\"", xaml, StringComparison.Ordinal);
     }
 
     [Fact]
