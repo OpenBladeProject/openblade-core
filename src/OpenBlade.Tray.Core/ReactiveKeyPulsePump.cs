@@ -10,7 +10,7 @@ namespace OpenBlade.Tray;
 /// </summary>
 public sealed class ReactiveKeyPulsePump : IAsyncDisposable
 {
-    public const int DefaultCapacity = 256;
+    public const int DefaultCapacity = 1024;
     public const int DefaultMaxDeliveryAttempts = 3;
     public static readonly TimeSpan DefaultRetryDelay = TimeSpan.FromMilliseconds(25);
 

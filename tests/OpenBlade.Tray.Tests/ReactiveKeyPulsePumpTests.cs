@@ -62,6 +62,39 @@ public sealed class ReactiveKeyPulsePumpTests
     }
 
     [Fact]
+    public async Task DefaultCapacity_MatchesRendererBacklogAndPreservesBurstInput()
+    {
+        var firstStarted = new TaskCompletionSource(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseFirst = new TaskCompletionSource(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        int delivered = 0;
+
+        await using var pump = new ReactiveKeyPulsePump(
+            async (pulse, token) =>
+            {
+                if (Interlocked.Increment(ref delivered) == 1)
+                {
+                    firstStarted.TrySetResult();
+                    await releaseFirst.Task.WaitAsync(token);
+                }
+            });
+
+        Assert.True(pump.TryEnqueue(new ReactiveKeyPulse(0)));
+        await firstStarted.Task.WaitAsync(TimeSpan.FromSeconds(2));
+
+        for (int index = 1; index < ReactiveKeyPulsePump.DefaultCapacity + 1; index++)
+        {
+            Assert.True(pump.TryEnqueue(new ReactiveKeyPulse((byte)(index % 102))));
+        }
+
+        Assert.False(pump.TryEnqueue(new ReactiveKeyPulse(7)));
+
+        releaseFirst.TrySetResult();
+        await WaitUntilAsync(() => Volatile.Read(ref delivered) == ReactiveKeyPulsePump.DefaultCapacity + 1);
+    }
+
+    [Fact]
     public async Task Pump_PreservesPendingPulseAcrossTransientDelay()
     {
         var firstStarted = new TaskCompletionSource(
