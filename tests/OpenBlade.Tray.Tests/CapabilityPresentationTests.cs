@@ -570,6 +570,8 @@ public sealed class CapabilityPresentationTests
         XElement hero = NamedElement(document, "Grid", "HeroLayout");
 
         Assert.Equal("1", Attribute(readings, "Grid.Row"));
+        Assert.Equal("0,18,0,0", Attribute(readings, "Margin"));
+        Assert.Equal("0,14,0,0", Attribute(readings, "Padding"));
         Assert.Null(Attribute(readings, "Grid.ColumnSpan"));
         Assert.DoesNotContain(
             hero.Elements(),
@@ -629,6 +631,7 @@ public sealed class CapabilityPresentationTests
             element => element.Name.LocalName == "StackPanel"
                 && Attribute(element, "Spacing") == "3"
                 && Attribute(element, "MinWidth") == "220");
+        Assert.Null(Attribute(valueContainer, "Margin"));
         Assert.Contains(valueContainer.Elements(), element =>
             element.Name.LocalName == "TextBlock"
             && Attribute(element, "TextWrapping") == "Wrap");
