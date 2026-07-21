@@ -508,6 +508,7 @@
 
                         <InfoBar x:Name="OperationErrorInfoBar"
                                  IsOpen="{x:Bind ViewModel.HasOperationFeedback, Mode=OneWay}"
+                                 Visibility="{x:Bind ViewModel.HasOperationFeedback, Mode=OneWay}"
                                  Message="{x:Bind ViewModel.OperationFeedbackMessage, Mode=OneWay}"
                                  Severity="Error"
                                  IsClosable="True"
@@ -1231,6 +1232,7 @@
                         <InfoBar x:Name="LightingUnavailableInfoBar"
                                  Margin="0,0,0,18"
                                  IsOpen="{x:Bind ViewModel.IsLightingControlUnavailable, Mode=OneWay}"
+                                 Visibility="{x:Bind ViewModel.IsLightingControlUnavailable, Mode=OneWay}"
                                  IsClosable="False"
                                  Severity="Informational"
                                  Title="Lighting controls unavailable"

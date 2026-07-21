@@ -13,6 +13,9 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Prevented closed information banners from reserving empty vertical space,
+  keeping the first section gap consistent across Dashboard, Lighting,
+  Display, and Settings.
 - Sorted the Lighting page's effect picker alphabetically by its displayed
   effect names.
 - Collapsed the dashboard's combined fan reading to one `Unavailable` label

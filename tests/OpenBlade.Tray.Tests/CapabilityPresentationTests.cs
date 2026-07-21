@@ -797,6 +797,12 @@ public sealed class CapabilityPresentationTests
         AssertStyleBasedOn(document, "SectionHeaderStyle", "{StaticResource SubtitleTextBlockStyle}");
         AssertStyleBasedOn(document, "CardTitleStyle", "{StaticResource BodyStrongTextBlockStyle}");
         AssertStyleBasedOn(document, "SecondaryTextStyle", "{StaticResource BodyTextBlockStyle}");
+        Assert.Equal(
+            "{x:Bind ViewModel.HasOperationFeedback, Mode=OneWay}",
+            Attribute(NamedElement(document, "InfoBar", "OperationErrorInfoBar"), "Visibility"));
+        Assert.Equal(
+            "{x:Bind ViewModel.IsLightingControlUnavailable, Mode=OneWay}",
+            Attribute(NamedElement(document, "InfoBar", "LightingUnavailableInfoBar"), "Visibility"));
         Assert.Contains("{StaticResource TitleLargeTextBlockStyle}", xaml, StringComparison.Ordinal);
         Assert.Contains("{StaticResource AccentButtonStyle}", xaml, StringComparison.Ordinal);
         Assert.Equal(
