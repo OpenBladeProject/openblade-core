@@ -300,7 +300,7 @@ public sealed class WinUiShellContractTests
     }
 
     [Fact]
-    public void DashboardTelemetryUsesResponsiveWrappingWithoutClipping()
+    public void DashboardTelemetryUsesResponsiveSingleRowWithoutClipping()
     {
         string xaml = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml");
 
@@ -308,9 +308,9 @@ public sealed class WinUiShellContractTests
         Assert.Contains("Padding=\"0,14,0,0\"", xaml, StringComparison.Ordinal);
         Assert.DoesNotContain("Margin=\"0,18,0,0\"", xaml, StringComparison.Ordinal);
         Assert.Contains("<UniformGridLayout Orientation=\"Horizontal\"", xaml, StringComparison.Ordinal);
-        Assert.Contains("MinItemWidth=\"200\"", xaml, StringComparison.Ordinal);
-        Assert.Contains("MinColumnSpacing=\"32\"", xaml, StringComparison.Ordinal);
-        Assert.Contains("MinRowSpacing=\"12\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("MinItemWidth=\"100\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("MinColumnSpacing=\"0\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("MaximumRowsOrColumns=\"3\"", xaml, StringComparison.Ordinal);
         Assert.Contains("ItemsStretch=\"Fill\"", xaml, StringComparison.Ordinal);
         Assert.Contains("<StackPanel Spacing=\"3\">", xaml, StringComparison.Ordinal);
         Assert.Contains("TextWrapping=\"Wrap\"", xaml, StringComparison.Ordinal);

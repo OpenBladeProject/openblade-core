@@ -9,8 +9,9 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 - Kept advisory detections of other Razer software from blocking Reactive and
   Ripple key input after OpenBlade has verified the laptop and owns the renderer.
-- Made dashboard telemetry columns resize and wrap within the hero card instead
-  of clipping the final reading at narrower window widths.
+- Made dashboard telemetry columns resize within the hero card instead of
+  clipping the final reading, and kept all three groups on one row at the
+  minimum window width by distributing the available space between them.
 - Used the same 50% visible-brightness fallback in shared profile and override
   recovery that the Lighting page uses for unconfirmed effects, preventing
   legacy zero-brightness visible effects from silently restoring at 100%.

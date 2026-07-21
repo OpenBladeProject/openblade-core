@@ -483,10 +483,10 @@
                                                        HorizontalAlignment="Stretch">
                                             <ItemsRepeater.Layout>
                                                 <UniformGridLayout Orientation="Horizontal"
-                                                                   MinItemWidth="200"
+                                                                   MinItemWidth="100"
                                                                    MinItemHeight="48"
-                                                                   MinColumnSpacing="32"
-                                                                   MinRowSpacing="12"
+                                                                   MinColumnSpacing="0"
+                                                                   MaximumRowsOrColumns="3"
                                                                    ItemsStretch="Fill" />
                                             </ItemsRepeater.Layout>
                                             <ItemsRepeater.ItemTemplate>

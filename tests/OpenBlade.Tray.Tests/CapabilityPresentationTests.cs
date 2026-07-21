@@ -590,14 +590,13 @@ public sealed class CapabilityPresentationTests
             readingsList.Descendants(),
             element => element.Name.LocalName == "UniformGridLayout");
         Assert.Equal("Horizontal", Attribute(telemetryLayout, "Orientation"));
-        Assert.Equal("200", Attribute(telemetryLayout, "MinItemWidth"));
-        Assert.Equal("32", Attribute(telemetryLayout, "MinColumnSpacing"));
-        Assert.Equal("12", Attribute(telemetryLayout, "MinRowSpacing"));
+        Assert.Equal("100", Attribute(telemetryLayout, "MinItemWidth"));
+        Assert.Equal("0", Attribute(telemetryLayout, "MinColumnSpacing"));
+        Assert.Equal("3", Attribute(telemetryLayout, "MaximumRowsOrColumns"));
         Assert.Equal("Fill", Attribute(telemetryLayout, "ItemsStretch"));
         Assert.DoesNotContain(
             readingsList.Descendants(),
-            element => element.Name.LocalName == "StackLayout"
-                || Attribute(element, "MaximumRowsOrColumns") == "3");
+            element => element.Name.LocalName == "StackLayout");
         Assert.Equal(
             "{x:Bind ViewModel.LiveReadingsRefreshToolTip, Mode=OneWay}",
             Attribute(readings, "AutomationProperties.HelpText"));
