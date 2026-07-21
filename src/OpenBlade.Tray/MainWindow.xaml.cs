@@ -608,7 +608,6 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
             return;
         }
 
-        toggle.IsEnabled = false;
         try
         {
             await command.ExecuteAsync(action);
@@ -621,7 +620,6 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
         finally
         {
             toggle.IsOn = currentState();
-            toggle.IsEnabled = true;
         }
     }
 

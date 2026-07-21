@@ -205,6 +205,14 @@ public sealed class WinUiShellContractTests
             xaml,
             StringComparison.Ordinal);
 
+        string window = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml.cs");
+        string firmwareToggleHelper = SliceMethod(
+            window,
+            "private async Task ApplyLaptopBehaviorToggleAsync(",
+            "private async void OnDashboardPerformanceChanged(");
+        Assert.DoesNotContain("toggle.IsEnabled = false;", firmwareToggleHelper, StringComparison.Ordinal);
+        Assert.DoesNotContain("toggle.IsEnabled = true;", firmwareToggleHelper, StringComparison.Ordinal);
+
         int functionKeys = xaml.IndexOf("AutomationProperties.Name=\"Set function key behavior\"", StringComparison.Ordinal);
         int gamingMode = xaml.IndexOf("x:Name=\"GamingModeToggle\"", StringComparison.Ordinal);
         int startupAnimation = xaml.IndexOf("x:Name=\"StartupAnimationToggle\"", StringComparison.Ordinal);
@@ -280,6 +288,15 @@ public sealed class WinUiShellContractTests
             dashboardSelector,
             StringComparison.Ordinal);
         Assert.True(previousRow > previousSubcard);
+    }
+
+    private static string SliceMethod(string source, string startMarker, string endMarker)
+    {
+        int start = source.IndexOf(startMarker, StringComparison.Ordinal);
+        Assert.True(start >= 0, $"Missing marker: {startMarker}");
+        int end = source.IndexOf(endMarker, start, StringComparison.Ordinal);
+        Assert.True(end > start, $"Missing marker: {endMarker}");
+        return source[start..end];
     }
 
     [Fact]
