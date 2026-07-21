@@ -24,15 +24,16 @@ public sealed class WinUiShellContractTests
             "Brand",
             "OpenBlade.ico")));
 
-        string[] publishedExecutableProjects =
+        string[] executableProjects =
         [
             "OpenBlade.Service",
             "OpenBlade.SessionAgent",
+            "OpenBlade.InputAgent",
             "OpenBlade.Tray",
             "OpenBlade.Capture",
             "OpenBlade.Setup",
         ];
-        foreach (string project in publishedExecutableProjects)
+        foreach (string project in executableProjects)
         {
             Assert.Contains(
                 $"src\\{project}\\{project}.csproj",
