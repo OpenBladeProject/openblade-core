@@ -571,7 +571,7 @@ public sealed class CapabilityPresentationTests
 
         Assert.Equal("1", Attribute(readings, "Grid.Row"));
         Assert.Equal("0", Attribute(readings, "Margin"));
-        Assert.Equal("0,14,0,0", Attribute(readings, "Padding"));
+        Assert.Equal("0", Attribute(readings, "Padding"));
         Assert.Null(Attribute(readings, "Grid.ColumnSpan"));
         Assert.DoesNotContain(
             hero.Elements(),
