@@ -2050,6 +2050,45 @@ public sealed class MainViewModelTests
         Assert.Equal((byte)50, lightingOverride.Value.Brightness);
     }
 
+    [Fact]
+    public async Task StoredLightingApplyStopsAutoRetryWithoutReloadingUnconfirmedFirmware()
+    {
+        var client = new FakeServiceClient
+        {
+            NextResult = new ControlOperationResult(
+                ControlOperationStatus.Stored,
+                "Lighting override saved without hardware."),
+        };
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        ServiceStatusSnapshot initial = CreateStatus(
+            verified: true,
+            blocked: false,
+            capabilities: DeviceCapabilities.SafeTargetDefaults() with
+            {
+                LightingEffects = new HashSet<LightingEffect>(
+                    Enum.GetValues<LightingEffect>()),
+                ChargeLimits = ChargeLimits(),
+            });
+        client.Publish(initial);
+        await WaitUntilAsync(() => viewModel.IsConnected);
+
+        viewModel.LightingEffectEditor = LightingEffect.Spectrum;
+        viewModel.LightingBrightnessEditor = 64;
+        LightingSettings requested = viewModel.LightingDraft;
+        Assert.True(viewModel.IsLightingApplyPending);
+
+        await Assert.IsType<AsyncRelayCommand>(viewModel.SetLightingCommand)
+            .ExecuteAsync(requested);
+
+        Assert.False(viewModel.IsLightingApplyPending);
+        Assert.Equal(requested, viewModel.LightingDraft);
+        Assert.True(viewModel.HasActiveProfileDraft);
+        ManualOverride<LightingSettings> lightingOverride =
+            Assert.IsType<ManualOverride<LightingSettings>>(client.LightingOverride);
+        Assert.Equal(requested, lightingOverride.Value);
+    }
+
     [Theory]
     [InlineData(PowerSource.Battery, false)]
     [InlineData(PowerSource.Battery, true)]

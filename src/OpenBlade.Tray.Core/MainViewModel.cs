@@ -3775,7 +3775,8 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
                 result =>
                 {
                     resultStatus = result.Status;
-                    if (result.Status == ControlOperationStatus.Applied)
+                    if (result.Status is ControlOperationStatus.Applied
+                        or ControlOperationStatus.Stored)
                     {
                         MarkActiveProfileDraft(sourceAtStart, lighting: requested);
                     }
@@ -3786,7 +3787,8 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             IsLightingOperationInProgress = false;
         }
 
-        if (resultStatus == ControlOperationStatus.Applied)
+        if (resultStatus is ControlOperationStatus.Applied
+            or ControlOperationStatus.Stored)
         {
             await dispatcher.InvokeAsync(
                 () =>
@@ -3796,7 +3798,8 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
                         return;
                     }
                     SetLightingEditorDirty(false);
-                    if (latestStatus is not null
+                    if (resultStatus == ControlOperationStatus.Applied
+                        && latestStatus is not null
                         && latestAcceptedRevision > revisionAtStart)
                     {
                         LoadLightingEditor(
