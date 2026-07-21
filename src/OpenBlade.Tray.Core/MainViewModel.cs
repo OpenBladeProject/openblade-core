@@ -81,6 +81,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     private static readonly IReadOnlyList<LightingEffectOption> KnownLightingEffectOptions =
         KnownLightingEffects
             .Select(CreateLightingEffectOption)
+            .OrderBy(option => option.Label, StringComparer.OrdinalIgnoreCase)
             .ToArray();
 
     private static readonly IReadOnlyList<LogoLightingModeOption> KnownLogoLightingModeOptions =
@@ -3450,6 +3451,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
                 : KnownLightingEffects;
         AvailableLightingEffectOptions = presentedLightingEffects
             .Select(CreateLightingEffectOption)
+            .OrderBy(option => option.Label, StringComparer.OrdinalIgnoreCase)
             .ToArray();
         PropertyChanged?.Invoke(
             this,

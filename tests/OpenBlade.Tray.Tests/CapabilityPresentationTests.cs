@@ -841,6 +841,11 @@ public sealed class CapabilityPresentationTests
         Assert.Empty(viewModel.AvailableLightingEffects);
         Assert.Empty(viewModel.AvailableLightingSettings);
         Assert.NotEmpty(viewModel.AvailableLightingEffectOptions);
+        Assert.Equal(
+            viewModel.AvailableLightingEffectOptions
+                .Select(option => option.Label)
+                .OrderBy(label => label, StringComparer.OrdinalIgnoreCase),
+            viewModel.AvailableLightingEffectOptions.Select(option => option.Label));
         Assert.True(viewModel.IsLightingVisible);
         Assert.False(viewModel.HasLightingCapability);
         Assert.False(viewModel.CanControlLighting);
@@ -1370,6 +1375,11 @@ public sealed class CapabilityPresentationTests
             viewModel.CanControlHardware
             && viewModel.AvailableLightingEffectOptions.Count ==
                 Enum.GetValues<LightingEffect>().Length);
+        Assert.Equal(
+            viewModel.AvailableLightingEffectOptions
+                .Select(option => option.Label)
+                .OrderBy(label => label, StringComparer.OrdinalIgnoreCase),
+            viewModel.AvailableLightingEffectOptions.Select(option => option.Label));
 
         viewModel.LightingBrightnessEditor = 64;
         viewModel.LightingRedEditor = 12;
