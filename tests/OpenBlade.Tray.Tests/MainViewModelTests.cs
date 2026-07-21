@@ -742,6 +742,42 @@ public sealed class MainViewModelTests
     }
 
     [Fact]
+    public async Task TroubleshootingElevatedInput_ReportsWhetherSignedHelperIsInstalled()
+    {
+        string directory = Path.Combine(
+            Path.GetTempPath(),
+            "OpenBlade.Tests",
+            Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(directory);
+        try
+        {
+            var client = new FakeServiceClient();
+            await using var missing = new MainViewModel(
+                client,
+                new RecordingDispatcher(),
+                new FakeDiagnosticArchiveSaver(),
+                new FakeStartupRegistration(false),
+                applicationBaseDirectory: directory);
+
+            Assert.Equal("Not installed", missing.TroubleshootingElevatedInputStatus);
+
+            File.WriteAllBytes(Path.Combine(directory, "OpenBlade.InputAgent.exe"), [0]);
+            await using var installed = new MainViewModel(
+                client,
+                new RecordingDispatcher(),
+                new FakeDiagnosticArchiveSaver(),
+                new FakeStartupRegistration(false),
+                applicationBaseDirectory: directory);
+
+            Assert.Equal("Installed", installed.TroubleshootingElevatedInputStatus);
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [Fact]
     public async Task ConfirmedValuesOverrideDesiredWithoutResettingSettingsDrafts()
     {
         var client = new FakeServiceClient();

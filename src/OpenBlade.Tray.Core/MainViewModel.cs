@@ -100,6 +100,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     private readonly IStartupRegistration startupRegistration;
     private readonly TimeProvider timeProvider;
     private readonly string uiVersion;
+    private readonly string applicationBaseDirectory;
     private readonly CancellationTokenSource lifetime = new();
     private readonly object startSync = new();
     private readonly AsyncRelayCommand[] commands;
@@ -286,7 +287,8 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         IDiagnosticArchiveSaver diagnosticArchiveSaver,
         IStartupRegistration startupRegistration,
         TimeProvider? timeProvider = null,
-        string? uiVersion = null)
+        string? uiVersion = null,
+        string? applicationBaseDirectory = null)
     {
         this.serviceClient = serviceClient ?? throw new ArgumentNullException(nameof(serviceClient));
         this.dispatcher = dispatcher ?? throw new ArgumentNullException(nameof(dispatcher));
@@ -298,6 +300,9 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         this.uiVersion = string.IsNullOrWhiteSpace(uiVersion)
             ? OpenBladeProductVersion.Read(typeof(MainViewModel).Assembly)
             : uiVersion.Trim();
+        this.applicationBaseDirectory = string.IsNullOrWhiteSpace(applicationBaseDirectory)
+            ? AppContext.BaseDirectory
+            : applicationBaseDirectory.Trim();
 
         DashboardTelemetryItems = new ObservableCollection<LiveReadingVisibilityOption>(
             TelemetryPreferenceDefaults.DashboardItems.Select(kind =>
@@ -1018,6 +1023,11 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     public string TroubleshootingControlsStatus => IsConnected
         ? ControlAccessStatus
         : "Unavailable";
+
+    public string TroubleshootingElevatedInputStatus =>
+        File.Exists(Path.Combine(applicationBaseDirectory, "OpenBlade.InputAgent.exe"))
+            ? "Installed"
+            : "Not installed";
 
     public string TroubleshootingOtherRazerSoftwareStatus
     {
