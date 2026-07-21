@@ -840,8 +840,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         token.ThrowIfCancellationRequested();
         ServiceStatusSnapshot current = GetStatus();
         if (!current.DeviceVerified
-            || current.ActivePowerSource == PowerSource.ExternalUnknown
-            || IsControllerPresenceUnsafe(current))
+            || current.ActivePowerSource == PowerSource.ExternalUnknown)
         {
             return new ControlOperationResult(
                 ControlOperationStatus.Blocked,

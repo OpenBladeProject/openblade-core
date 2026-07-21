@@ -289,6 +289,46 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     }
 
     [Fact]
+    public async Task ReactivePulse_ControllerAdvisoryDoesNotBlockOwnedRenderer()
+    {
+        DeviceCapabilities capabilities = DeviceCapabilities.Unavailable() with
+        {
+            LightingEffects = new HashSet<LightingEffect>
+            {
+                LightingEffect.Off,
+                LightingEffect.Reactive,
+            },
+        };
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            conflicts: ["RazerAppEngine"],
+            detectionFailure: "enumeration warning",
+            profileValidator: ProfileSetValidator.CreateForLightingCapabilities(capabilities));
+        context.Device.Capabilities = capabilities;
+        context.Device.ConfirmedState = new ConfirmedDeviceState(null, null, null, null);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        await context.Runtime.SetLightingOverrideAsync(
+            new ManualOverride<LightingSettings>(
+                LightingSettingsFactory.Reactive(
+                    new RgbColor(0, 255, 0),
+                    77,
+                    ReactiveLightingDuration.Medium),
+                OverrideLifetime.UntilPowerSourceChange),
+            CancellationToken.None);
+
+        ControlOperationResult result = await context.Runtime.PulseReactiveKeyAsync(
+            new ReactiveKeyPulse(53),
+            CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Applied, result.Status);
+        Assert.Equal(1, context.Device.ReactivePulseCalls);
+        Assert.Equal(["RazerAppEngine"], context.Runtime.GetStatus().PotentialControllers);
+        Assert.Equal(
+            "enumeration warning",
+            context.Runtime.GetStatus().ControllerDetectionWarning);
+    }
+
+    [Fact]
     public async Task AmbientFrame_DoesNotWaitBehindRuntimeFirmwareOperationGate()
     {
         DeviceCapabilities capabilities = DeviceCapabilities.Unavailable() with

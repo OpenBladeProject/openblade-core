@@ -586,15 +586,17 @@ public sealed class CapabilityPresentationTests
                 && Attribute(element, "ItemsSource")?.Contains(
                     "VisibleDashboardTelemetryGroups",
                     StringComparison.Ordinal) == true);
-        XElement stackLayout = Assert.Single(
+        XElement telemetryLayout = Assert.Single(
             readingsList.Descendants(),
-            element => element.Name.LocalName == "StackLayout");
-        Assert.Equal("Horizontal", Attribute(stackLayout, "Orientation"));
-        Assert.Equal("72", Attribute(stackLayout, "Spacing"));
+            element => element.Name.LocalName == "UniformGridLayout");
+        Assert.Equal("Horizontal", Attribute(telemetryLayout, "Orientation"));
+        Assert.Equal("200", Attribute(telemetryLayout, "MinItemWidth"));
+        Assert.Equal("32", Attribute(telemetryLayout, "MinColumnSpacing"));
+        Assert.Equal("12", Attribute(telemetryLayout, "MinRowSpacing"));
+        Assert.Equal("Fill", Attribute(telemetryLayout, "ItemsStretch"));
         Assert.DoesNotContain(
             readingsList.Descendants(),
-            element => element.Name.LocalName == "UniformGridLayout"
-                || Attribute(element, "MinItemHeight") == "52"
+            element => element.Name.LocalName == "StackLayout"
                 || Attribute(element, "MaximumRowsOrColumns") == "3");
         Assert.Equal(
             "{x:Bind ViewModel.LiveReadingsRefreshToolTip, Mode=OneWay}",
@@ -629,9 +631,9 @@ public sealed class CapabilityPresentationTests
         XElement valueContainer = Assert.Single(
             readingsList.Descendants(),
             element => element.Name.LocalName == "StackPanel"
-                && Attribute(element, "Spacing") == "3"
-                && Attribute(element, "MinWidth") == "220");
+                && Attribute(element, "Spacing") == "3");
         Assert.Null(Attribute(valueContainer, "Margin"));
+        Assert.Null(Attribute(valueContainer, "MinWidth"));
         Assert.Contains(valueContainer.Elements(), element =>
             element.Name.LocalName == "TextBlock"
             && Attribute(element, "TextWrapping") == "Wrap");
