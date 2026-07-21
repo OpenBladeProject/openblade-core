@@ -173,7 +173,7 @@ public sealed class ProfileStoreTests : IDisposable
 
         Assert.False(result.RecoveredFromInvalidFile);
         Assert.Equal(
-            LightingSettingsFactory.DefaultVisibleBrightness,
+            LegacyLightingVisibilityNormalizer.VisibleRecoveryBrightness,
             result.Profiles.PluggedIn.Lighting.Brightness);
         Assert.Equal(
             LightingSettingsFactory.DefaultVisibleColor,

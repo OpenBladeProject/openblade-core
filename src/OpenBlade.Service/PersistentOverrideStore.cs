@@ -223,8 +223,7 @@ public sealed class PersistentOverrideStore
             ? overrides
             : overrides with
             {
-                Lighting = LightingSettingsFactory.NormalizeLegacyInvisibleEffect(
-                    overrides.Lighting),
+                Lighting = LegacyLightingVisibilityNormalizer.Normalize(overrides.Lighting),
             };
 
     internal static PersistentOverrideState NormalizeLegacyFanControl(

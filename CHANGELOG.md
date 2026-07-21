@@ -7,6 +7,9 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Used the same 50% visible-brightness fallback in shared profile and override
+  recovery that the Lighting page uses for unconfirmed effects, preventing
+  legacy zero-brightness visible effects from silently restoring at 100%.
 - Kept firmware-backed laptop behavior controls on their last known selection
   while readback is loading, disabled them during the load, and removed a
   mojibaked function-key fallback label.

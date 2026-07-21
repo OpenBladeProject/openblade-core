@@ -166,8 +166,7 @@ public sealed class ProfileStore(string path, ProfileSetValidator? validator = n
     private static PowerProfile NormalizeLegacyLighting(PowerProfile profile) =>
         profile with
         {
-            Lighting = LightingSettingsFactory.NormalizeLegacyInvisibleEffect(
-                profile.Lighting),
+            Lighting = LegacyLightingVisibilityNormalizer.Normalize(profile.Lighting),
         };
 
     private static PowerProfile NormalizeLegacyDisplay(PowerProfile profile) =>

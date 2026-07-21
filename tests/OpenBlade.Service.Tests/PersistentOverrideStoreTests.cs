@@ -218,7 +218,7 @@ public sealed class PersistentOverrideStoreTests : IDisposable
         PersistentOverrideLoadResult loaded = await store.LoadAsync(CancellationToken.None);
 
         Assert.Equal(
-            LightingSettingsFactory.DefaultVisibleBrightness,
+            LegacyLightingVisibilityNormalizer.VisibleRecoveryBrightness,
             loaded.Overrides.Lighting?.Brightness);
         Assert.Equal(
             LightingSettingsFactory.DefaultVisibleColor,
