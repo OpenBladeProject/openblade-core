@@ -28,7 +28,6 @@ public sealed class WinUiShellContractTests
         [
             "OpenBlade.Service",
             "OpenBlade.SessionAgent",
-            "OpenBlade.InputAgent",
             "OpenBlade.Tray",
             "OpenBlade.Capture",
             "OpenBlade.Setup",
@@ -406,16 +405,8 @@ public sealed class WinUiShellContractTests
     }
 
     [Fact]
-    public void ElevatedWindowInputUsesAnOptionalSignedInputOnlyUiAccessBroker()
+    public void ElevatedWindowInputDoesNotShipAUiAccessBroker()
     {
-        string manifest = ReadRepositoryFile(
-            "src",
-            "OpenBlade.InputAgent",
-            "app.manifest");
-        string inputProgram = ReadRepositoryFile(
-            "src",
-            "OpenBlade.InputAgent",
-            "Program.cs");
         string sessionProgram = ReadRepositoryFile(
             "src",
             "OpenBlade.SessionAgent",
@@ -425,19 +416,22 @@ public sealed class WinUiShellContractTests
             "build",
             "PublishPayloadValidation.ps1");
 
-        Assert.Contains("level=\"asInvoker\" uiAccess=\"true\"", manifest, StringComparison.Ordinal);
-        Assert.Contains("WindowsUiAccessState.IsEnabled()", inputProgram, StringComparison.Ordinal);
-        Assert.Contains("ReadySignalingKeyboardSourceFactory", inputProgram, StringComparison.Ordinal);
-        Assert.DoesNotContain("WindowsDisplaySettingsController", inputProgram, StringComparison.Ordinal);
-        Assert.DoesNotContain("WindowsAmbientScreenSamplerFactory", inputProgram, StringComparison.Ordinal);
-        Assert.Contains("UiAccessInputKeyboardSourceFactory", sessionProgram, StringComparison.Ordinal);
         Assert.Contains("WindowsReactiveKeyboardSourceFactory.Instance", sessionProgram, StringComparison.Ordinal);
-        Assert.Contains("UiAccessSigningCertificateThumbprint", publish, StringComparison.Ordinal);
-        Assert.Contains("Resolve-SignToolPath", publish, StringComparison.Ordinal);
-        Assert.Contains("Windows Kits\\10\\bin", publish, StringComparison.Ordinal);
-        Assert.Contains("signtool.exe", publish, StringComparison.Ordinal);
-        Assert.Contains("Get-AuthenticodeSignature", publish, StringComparison.Ordinal);
-        Assert.Contains("unsigned or invalid UIAccess input agent", validation, StringComparison.Ordinal);
+        Assert.DoesNotContain("UiAccessInputKeyboardSourceFactory", sessionProgram, StringComparison.Ordinal);
+        Assert.DoesNotContain("OpenBlade.InputAgent.csproj", publish, StringComparison.Ordinal);
+        Assert.DoesNotContain("UiAccessSigningCertificateThumbprint", publish, StringComparison.Ordinal);
+        Assert.DoesNotContain("Resolve-SignToolPath", publish, StringComparison.Ordinal);
+        Assert.DoesNotContain("signtool.exe", publish, StringComparison.Ordinal);
+        Assert.DoesNotContain("Get-AuthenticodeSignature", publish, StringComparison.Ordinal);
+        Assert.Contains("must not contain the abandoned UIAccess input agent", validation, StringComparison.Ordinal);
+        Assert.False(File.Exists(RepositoryPath(
+            "src",
+            "OpenBlade.InputAgent",
+            "OpenBlade.InputAgent.csproj")));
+        Assert.False(File.Exists(RepositoryPath(
+            "tests",
+            "OpenBlade.InputAgent.Tests",
+            "OpenBlade.InputAgent.Tests.csproj")));
     }
 
     [Fact]

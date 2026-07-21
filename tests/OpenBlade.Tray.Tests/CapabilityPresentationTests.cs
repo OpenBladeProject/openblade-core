@@ -466,7 +466,6 @@ public sealed class CapabilityPresentationTests
                      "ViewModel.TroubleshootingServiceStatus",
                      "ViewModel.TroubleshootingPowerSourceStatus",
                      "ViewModel.TroubleshootingControlsStatus",
-                     "ViewModel.TroubleshootingElevatedInputStatus",
                      "ViewModel.TroubleshootingOtherRazerSoftwareStatus",
                      "ViewModel.TroubleshootingRecentErrorStatus",
                  })
@@ -493,7 +492,6 @@ public sealed class CapabilityPresentationTests
                      "OpenBlade service",
                      "Laptop behavior",
                      "Power source",
-                     "Elevated input helper",
                      "Other Razer software running",
                  })
         {

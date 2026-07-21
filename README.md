@@ -79,13 +79,10 @@ waits for both to exit before removing binaries. The SessionAgent always starts
 at sign-in for profile automation; the Settings toggle independently controls
 whether the visible tray also starts at sign-in.
 
-Interactive lighting and performance shortcuts normally use Raw Input in the
-SessionAgent. An optional, signed input-only UIAccess companion extends that
-observation to elevated foreground applications such as Task Manager. Ordinary
-community and development bundles omit the companion and retain the normal
-SessionAgent implementation. See
-[UIAccess input agent](docs/uiaccess-input-agent.md) for the trust boundary,
-signing command, fallback behavior, and runtime acceptance checks.
+Interactive lighting and performance shortcuts use Raw Input in the
+SessionAgent. OpenBlade does not install a UIAccess helper or run the tray as
+administrator, so Reactive, Ripple, and performance-shortcut input are not
+expected to react while Task Manager or another elevated application has focus.
 
 The Capture CLI is published separately to
 `artifacts\win-x64\OpenBlade.DeveloperTools`. It is a developer-only protocol

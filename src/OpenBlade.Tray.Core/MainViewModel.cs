@@ -1024,11 +1024,6 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         ? ControlAccessStatus
         : "Unavailable";
 
-    public string TroubleshootingElevatedInputStatus =>
-        File.Exists(Path.Combine(applicationBaseDirectory, "OpenBlade.InputAgent.exe"))
-            ? "Installed"
-            : "Not installed";
-
     public string TroubleshootingOtherRazerSoftwareStatus
     {
         get

@@ -2483,13 +2483,6 @@
                                     <Border Style="{StaticResource TroubleshootingSectionStyle}">
                                         <Grid ColumnSpacing="24">
                                             <Grid.ColumnDefinitions><ColumnDefinition Width="2*" /><ColumnDefinition Width="3*" /></Grid.ColumnDefinitions>
-                                            <TextBlock Text="Elevated input helper" Style="{StaticResource TroubleshootingLabelStyle}" />
-                                            <TextBlock Grid.Column="1" Text="{x:Bind ViewModel.TroubleshootingElevatedInputStatus, Mode=OneWay}" Style="{StaticResource TroubleshootingValueStyle}" />
-                                        </Grid>
-                                    </Border>
-                                    <Border Style="{StaticResource TroubleshootingSectionStyle}">
-                                        <Grid ColumnSpacing="24">
-                                            <Grid.ColumnDefinitions><ColumnDefinition Width="2*" /><ColumnDefinition Width="3*" /></Grid.ColumnDefinitions>
                                             <TextBlock Text="Other Razer software running" Style="{StaticResource TroubleshootingLabelStyle}" />
                                             <TextBlock Grid.Column="1" Text="{x:Bind ViewModel.TroubleshootingOtherRazerSoftwareStatus, Mode=OneWay}" Style="{StaticResource TroubleshootingValueStyle}" />
                                         </Grid>
