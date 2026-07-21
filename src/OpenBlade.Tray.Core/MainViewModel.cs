@@ -6143,9 +6143,8 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         && IsTemporaryDeviceAccessMessage(status.Message);
 
     private static bool IsTemporaryDeviceAccessMessage(string message) =>
-        message.StartsWith(
-            "Checking the laptop connection",
-            StringComparison.OrdinalIgnoreCase)
+        message.StartsWith("Checking", StringComparison.OrdinalIgnoreCase)
+            && message.Contains("laptop connection", StringComparison.OrdinalIgnoreCase)
         || message.StartsWith(
             "Refreshing laptop controls after a temporary device-access failure",
             StringComparison.OrdinalIgnoreCase);

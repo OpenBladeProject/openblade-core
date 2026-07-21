@@ -2897,7 +2897,12 @@ public sealed class MainViewModelTests
             Revision = 2,
             Message = "Checking the laptop connection after a temporary device-access failure.",
         });
-        await WaitUntilAsync(() => viewModel.ProfileStateLabel == "Checking laptop");
+        await WaitUntilAsync(() =>
+            viewModel.ProfileStateLabel == "Checking laptop"
+            && viewModel.PerformanceSourceLabel == "Checking laptop"
+            && viewModel.FanSourceLabel == "Checking laptop"
+            && viewModel.LightingSourceLabel == "Checking laptop"
+            && viewModel.BatterySourceLabel == "Checking laptop");
 
         Assert.Equal("Checking laptop", viewModel.ControlAccessStatus);
         Assert.True(viewModel.IsReadinessChecking);
@@ -2940,6 +2945,39 @@ public sealed class MainViewModelTests
         Assert.Equal("Checking laptop", viewModel.BatterySourceLabel);
         Assert.Equal(performance, viewModel.ActivePerformanceLabel);
         Assert.Equal(fans, viewModel.ActiveFanModeLabel);
+    }
+
+    [Fact]
+    public async Task GenericLaptopConnectionCheck_IsPresentedAsCheckingInsteadOfMissing()
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        ServiceStatusSnapshot status = CreateStatus(verified: true, blocked: false);
+        client.Publish(status);
+        await WaitUntilAsync(() => viewModel.ProfileStateLabel == "Ready");
+
+        client.Publish(status with
+        {
+            Revision = status.Revision + 1,
+            DeviceVerified = false,
+            WritesBlocked = true,
+            Message = "Checking laptop connection.",
+        });
+        await WaitUntilAsync(() =>
+            viewModel.ProfileStateLabel == "Checking laptop"
+            && viewModel.PerformanceSourceLabel == "Checking laptop"
+            && viewModel.FanSourceLabel == "Checking laptop"
+            && viewModel.LightingSourceLabel == "Checking laptop"
+            && viewModel.BatterySourceLabel == "Checking laptop");
+
+        Assert.Equal("Checking laptop", viewModel.ControlAccessStatus);
+        Assert.True(viewModel.IsReadinessChecking);
+        Assert.False(viewModel.IsReadinessError);
+        Assert.Equal("Checking laptop", viewModel.PerformanceSourceLabel);
+        Assert.Equal("Checking laptop", viewModel.FanSourceLabel);
+        Assert.Equal("Checking laptop", viewModel.LightingSourceLabel);
+        Assert.Equal("Checking laptop", viewModel.BatterySourceLabel);
     }
 
     [Fact]
