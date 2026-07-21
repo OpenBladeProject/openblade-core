@@ -2565,6 +2565,10 @@ public sealed class MainViewModelTests
         Assert.Equal("Unavailable", viewModel.Fan1RpmValue);
         Assert.Equal("Unavailable", viewModel.Fan2RpmValue);
         Assert.Equal(
+            "Unavailable",
+            viewModel.VisibleDashboardTelemetryGroups.Single(
+                item => item.Label == "Fans").Value);
+        Assert.Equal(
             "Live readings are unavailable while the OpenBlade service is not running.",
             viewModel.LiveReadingsRefreshToolTip);
 
@@ -2615,6 +2619,10 @@ public sealed class MainViewModelTests
         Assert.Contains("0 RPM", viewModel.Fan2RpmLabel, StringComparison.Ordinal);
         Assert.Equal("Unavailable", viewModel.Fan1RpmValue);
         Assert.Equal("0 RPM", viewModel.Fan2RpmValue);
+        Assert.Equal(
+            "Unavailable / 0 RPM",
+            viewModel.VisibleDashboardTelemetryGroups.Single(
+                item => item.Label == "Fans").Value);
         Assert.Contains(nameof(viewModel.BatteryPowerFlowLabel), changed);
         Assert.Contains(nameof(viewModel.Fan1RpmLabel), changed);
         Assert.Contains(nameof(viewModel.Fan2RpmLabel), changed);

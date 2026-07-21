@@ -7,6 +7,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Collapsed the dashboard's combined fan reading to one `Unavailable` label
+  when neither fan sensor has a value.
 - Kept OpenBlade's selected lighting effect visible while a write is pending
   instead of replacing it with the external-effect placeholder after a periodic
   firmware observation that cannot read the matrix effect.

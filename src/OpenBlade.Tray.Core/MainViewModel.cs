@@ -618,6 +618,8 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             bool showFan2 = DashboardTelemetryEnabled(LiveReadingItemKind.Fan2Speed);
             string fanValue = (showFan1, showFan2) switch
             {
+                (true, true) when LiveReadings?.Fan1Rpm is null
+                    && LiveReadings?.Fan2Rpm is null => UnavailableLabel,
                 (true, true) =>
                     $"{Fan1RpmValue} / {Fan2RpmValue}",
                 (true, false) => Fan1RpmValue,
