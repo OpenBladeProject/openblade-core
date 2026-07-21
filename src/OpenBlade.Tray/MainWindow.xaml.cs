@@ -19,7 +19,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
     private const double MinimumWidthDip = 800;
     private const double MinimumHeightDip = 600;
     private const double DashboardStackThresholdDip = 600;
-    private const double ProfilesStackThresholdDip = 760;
+    private const double ProfilesStackThresholdDip = 900;
     private static readonly TimeSpan ChargeLimitCommitDelay = TimeSpan.FromMilliseconds(400);
     private static readonly TimeSpan LightingCommitDelay = TimeSpan.FromMilliseconds(500);
     private static readonly TimeSpan DisplayRefreshInterval = TimeSpan.FromSeconds(2);

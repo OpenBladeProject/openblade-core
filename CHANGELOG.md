@@ -12,6 +12,9 @@ All notable changes to OpenBlade are documented in this file. The project follow
 - Made dashboard telemetry columns resize within the hero card instead of
   clipping the final reading, and kept all three groups on one row at the
   minimum window width by distributing the available space between them.
+- Switched the profile comparison to its compact presentation sooner and moved
+  pending-change labels below profile names so header badges cannot overlap the
+  neighboring profile column.
 - Used the same 50% visible-brightness fallback in shared profile and override
   recovery that the Lighting page uses for unconfirmed effects, preventing
   legacy zero-brightness visible effects from silently restoring at 100%.

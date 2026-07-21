@@ -919,41 +919,41 @@
                                 <StackPanel Grid.Column="1" Spacing="4">
                                     <StackPanel Orientation="Horizontal" Spacing="7">
                                         <TextBlock Text="AC" Style="{StaticResource CardTitleStyle}" />
-                                        <TextBlock Text="Changes pending"
-                                                   Style="{StaticResource DraftStatusTextStyle}"
-                                                   Visibility="{x:Bind ViewModel.IsPluggedInProfileDraft, Mode=OneWay}" />
                                         <Border Style="{StaticResource ActiveProfilePillStyle}"
                                                 Visibility="{x:Bind ViewModel.IsPluggedInProfileActive, Mode=OneWay}">
                                             <TextBlock Text="Active"
                                                        Style="{StaticResource ActiveProfilePillTextStyle}" />
                                         </Border>
                                     </StackPanel>
+                                    <TextBlock Text="Changes pending"
+                                               Style="{StaticResource DraftStatusTextStyle}"
+                                               Visibility="{x:Bind ViewModel.IsPluggedInProfileDraft, Mode=OneWay}" />
                                 </StackPanel>
                                 <StackPanel Grid.Column="2" Spacing="4">
                                     <StackPanel Orientation="Horizontal" Spacing="7">
                                         <TextBlock Text="USB-C" Style="{StaticResource CardTitleStyle}" />
-                                        <TextBlock Text="Changes pending"
-                                                   Style="{StaticResource DraftStatusTextStyle}"
-                                                   Visibility="{x:Bind ViewModel.IsUsbCProfileDraft, Mode=OneWay}" />
                                         <Border Style="{StaticResource ActiveProfilePillStyle}"
                                                 Visibility="{x:Bind ViewModel.IsUsbCProfileActive, Mode=OneWay}">
                                             <TextBlock Text="Active"
                                                        Style="{StaticResource ActiveProfilePillTextStyle}" />
                                         </Border>
                                     </StackPanel>
+                                    <TextBlock Text="Changes pending"
+                                               Style="{StaticResource DraftStatusTextStyle}"
+                                               Visibility="{x:Bind ViewModel.IsUsbCProfileDraft, Mode=OneWay}" />
                                 </StackPanel>
                                 <StackPanel Grid.Column="3" Spacing="4">
                                     <StackPanel Orientation="Horizontal" Spacing="7">
                                         <TextBlock Text="Battery" Style="{StaticResource CardTitleStyle}" />
-                                        <TextBlock Text="Changes pending"
-                                                   Style="{StaticResource DraftStatusTextStyle}"
-                                                   Visibility="{x:Bind ViewModel.IsBatteryProfileDraft, Mode=OneWay}" />
                                         <Border Style="{StaticResource ActiveProfilePillStyle}"
                                                 Visibility="{x:Bind ViewModel.IsBatteryProfileActive, Mode=OneWay}">
                                             <TextBlock Text="Active"
                                                        Style="{StaticResource ActiveProfilePillTextStyle}" />
                                         </Border>
                                     </StackPanel>
+                                    <TextBlock Text="Changes pending"
+                                               Style="{StaticResource DraftStatusTextStyle}"
+                                               Visibility="{x:Bind ViewModel.IsBatteryProfileDraft, Mode=OneWay}" />
                                 </StackPanel>
                             </Grid>
 

@@ -799,7 +799,7 @@ public sealed class WinUiShellContractTests
     {
         string source = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml.cs");
 
-        Assert.Contains("ProfilesStackThresholdDip = 760", source, StringComparison.Ordinal);
+        Assert.Contains("ProfilesStackThresholdDip = 900", source, StringComparison.Ordinal);
         Assert.Contains("Root.SizeChanged += OnRootSizeChanged", source, StringComparison.Ordinal);
         Assert.Contains("Root.SizeChanged -= OnRootSizeChanged", source, StringComparison.Ordinal);
         Assert.Contains("Root.FindName(\"ProfilesComparisonLayout\")", source, StringComparison.Ordinal);

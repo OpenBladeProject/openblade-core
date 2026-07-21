@@ -676,9 +676,29 @@ public sealed class CapabilityPresentationTests
         string xaml = ReadMainWindowXaml();
         XDocument document = XDocument.Parse(xaml);
 
-        _ = NamedElement(document, "StackPanel", "ProfilesComparisonLayout");
+        XElement comparisonProfiles = NamedElement(document, "StackPanel", "ProfilesComparisonLayout");
         XElement compactProfiles = NamedElement(document, "StackPanel", "ProfilesCompactLayout");
         Assert.Equal("Collapsed", Attribute(compactProfiles, "Visibility"));
+        XElement[] pendingLabels = comparisonProfiles.Descendants()
+            .Where(element => element.Name.LocalName == "TextBlock"
+                && Attribute(element, "Text") == "Changes pending")
+            .ToArray();
+        Assert.Equal(3, pendingLabels.Length);
+        Assert.All(pendingLabels, label =>
+        {
+            Assert.Equal("StackPanel", label.Parent?.Name.LocalName);
+            Assert.Null(Attribute(label.Parent!, "Orientation"));
+        });
+        XElement[] activeProfilePills = comparisonProfiles.Descendants()
+            .Where(element => element.Name.LocalName == "Border"
+                && Attribute(element, "Style") == "{StaticResource ActiveProfilePillStyle}")
+            .ToArray();
+        Assert.Equal(3, activeProfilePills.Length);
+        Assert.All(activeProfilePills, pill =>
+        {
+            Assert.Equal("StackPanel", pill.Parent?.Name.LocalName);
+            Assert.Equal("Horizontal", Attribute(pill.Parent!, "Orientation"));
+        });
         _ = NamedElement(document, "Grid", "Root");
         XElement profileStateBadge = NamedElement(document, "Button", "ProfileStateBadge");
         Assert.Equal(
