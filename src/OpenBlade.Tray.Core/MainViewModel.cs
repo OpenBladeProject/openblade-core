@@ -614,7 +614,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             string fanValue = (showFan1, showFan2) switch
             {
                 (true, true) =>
-                    $"{Fan1RpmValue.Replace(" RPM", string.Empty, StringComparison.Ordinal)} / {Fan2RpmValue}",
+                    $"Fan 1 {Fan1RpmValue} · Fan 2 {Fan2RpmValue}",
                 (true, false) => Fan1RpmValue,
                 (false, true) => Fan2RpmValue,
                 _ => string.Empty,
@@ -623,7 +623,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             {
                 string label = (showFan1, showFan2) switch
                 {
-                    (true, true) => "Fan 1 / Fan 2",
+                    (true, true) => "Fans",
                     (true, false) => "Fan 1",
                     _ => "Fan 2",
                 };

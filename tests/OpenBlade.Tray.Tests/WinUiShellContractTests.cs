@@ -288,6 +288,7 @@ public sealed class WinUiShellContractTests
 
         Assert.Contains("x:Name=\"HeroReadings\"", xaml, StringComparison.Ordinal);
         Assert.Contains("ItemsStretch=\"None\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("MinItemHeight=\"52\"", xaml, StringComparison.Ordinal);
         Assert.DoesNotContain(
             "<StackPanel Spacing=\"3\" Margin=\"0,0,22,0\">",
             xaml,

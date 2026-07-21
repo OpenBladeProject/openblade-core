@@ -589,10 +589,10 @@ public sealed class CapabilityPresentationTests
             element => element.Name.LocalName == "UniformGridLayout");
         Assert.Equal("Horizontal", Attribute(uniformGrid, "Orientation"));
         Assert.Equal("220", Attribute(uniformGrid, "MinItemWidth"));
+        Assert.Equal("52", Attribute(uniformGrid, "MinItemHeight"));
         Assert.Equal("3", Attribute(uniformGrid, "MaximumRowsOrColumns"));
         Assert.Equal("SpaceBetween", Attribute(uniformGrid, "ItemsJustification"));
         Assert.Equal("None", Attribute(uniformGrid, "ItemsStretch"));
-        Assert.Null(Attribute(uniformGrid, "MinItemHeight"));
         Assert.Equal(
             "{x:Bind ViewModel.LiveReadingsRefreshToolTip, Mode=OneWay}",
             Attribute(readings, "AutomationProperties.HelpText"));

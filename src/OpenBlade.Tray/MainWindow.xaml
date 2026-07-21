@@ -484,6 +484,7 @@
                                             <ItemsRepeater.Layout>
                                                 <UniformGridLayout Orientation="Horizontal"
                                                                    MinItemWidth="220"
+                                                                   MinItemHeight="52"
                                                                    MaximumRowsOrColumns="3"
                                                                    ItemsJustification="SpaceBetween"
                                                                    ItemsStretch="None" />

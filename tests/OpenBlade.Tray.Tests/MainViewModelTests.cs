@@ -2319,12 +2319,12 @@ public sealed class MainViewModelTests
         Assert.Equal("52 °C", viewModel.GpuTemperatureValue);
         Assert.Equal(3, viewModel.VisibleDashboardTelemetryGroups.Count);
         Assert.Equal(
-            ["Battery", "Temperatures", "Fan 1 / Fan 2"],
+            ["Battery", "Temperatures", "Fans"],
             viewModel.VisibleDashboardTelemetryGroups.Select(item => item.Label));
         Assert.Equal(
-            "3,210 / 2,875 RPM",
+            "Fan 1 3,210 RPM · Fan 2 2,875 RPM",
             viewModel.VisibleDashboardTelemetryGroups.Single(
-                item => item.Label == "Fan 1 / Fan 2").Value);
+                item => item.Label == "Fans").Value);
         Assert.Contains(nameof(viewModel.BatteryPowerFlowLabel), changed);
         Assert.Contains(nameof(viewModel.Fan1RpmLabel), changed);
         Assert.Contains(nameof(viewModel.Fan2RpmLabel), changed);
