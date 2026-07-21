@@ -570,7 +570,7 @@ public sealed class CapabilityPresentationTests
         XElement hero = NamedElement(document, "Grid", "HeroLayout");
 
         Assert.Equal("1", Attribute(readings, "Grid.Row"));
-        Assert.Equal("0,18,0,0", Attribute(readings, "Margin"));
+        Assert.Equal("0", Attribute(readings, "Margin"));
         Assert.Equal("0,14,0,0", Attribute(readings, "Padding"));
         Assert.Null(Attribute(readings, "Grid.ColumnSpan"));
         Assert.DoesNotContain(

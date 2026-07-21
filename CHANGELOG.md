@@ -16,7 +16,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 - Retained the last connected dashboard state during brief service reconnects
   so short named-pipe rotations do not flash controls unavailable.
 - Made dashboard live readings use consistent separators, collapse fully
-  unavailable temperatures to one label, and avoid a trailing item margin.
+  unavailable temperatures to one label, and avoid trailing or outer telemetry
+  footer margins.
 - Added a telemetry-only observation path between ten-second full-state audits,
   avoiding repeated capability, firmware, and control-state reads on every
   visible refresh while still detecting settings changed elsewhere.

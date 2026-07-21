@@ -464,7 +464,7 @@
                                 </StackPanel>
                                 <Border x:Name="HeroReadings"
                                         Grid.Row="1"
-                                        Margin="0,18,0,0"
+                                        Margin="0"
                                         Padding="0,14,0,0"
                                         BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
                                         BorderThickness="0,1,0,0"
