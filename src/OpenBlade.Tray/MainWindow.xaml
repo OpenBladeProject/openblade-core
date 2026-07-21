@@ -482,16 +482,12 @@
                                         <ItemsRepeater ItemsSource="{x:Bind ViewModel.VisibleDashboardTelemetryGroups, Mode=OneWay}"
                                                        HorizontalAlignment="Stretch">
                                             <ItemsRepeater.Layout>
-                                                <UniformGridLayout Orientation="Horizontal"
-                                                                   MinItemWidth="220"
-                                                                   MinItemHeight="52"
-                                                                   MaximumRowsOrColumns="3"
-                                                                   ItemsJustification="SpaceBetween"
-                                                                   ItemsStretch="None" />
+                                                <StackLayout Orientation="Horizontal"
+                                                             Spacing="72" />
                                             </ItemsRepeater.Layout>
                                             <ItemsRepeater.ItemTemplate>
                                                 <DataTemplate x:DataType="local:LiveReadingGroupDisplayItem">
-                                                    <StackPanel Spacing="3">
+                                                    <StackPanel Spacing="3" MinWidth="220">
                                                         <TextBlock Text="{x:Bind Label, Mode=OneTime}"
                                                                    Style="{StaticResource SecondaryTextStyle}" />
                                                         <TextBlock Text="{x:Bind Value, Mode=OneTime}"

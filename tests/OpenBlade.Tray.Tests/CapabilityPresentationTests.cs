@@ -584,15 +584,16 @@ public sealed class CapabilityPresentationTests
                 && Attribute(element, "ItemsSource")?.Contains(
                     "VisibleDashboardTelemetryGroups",
                     StringComparison.Ordinal) == true);
-        XElement uniformGrid = Assert.Single(
+        XElement stackLayout = Assert.Single(
             readingsList.Descendants(),
-            element => element.Name.LocalName == "UniformGridLayout");
-        Assert.Equal("Horizontal", Attribute(uniformGrid, "Orientation"));
-        Assert.Equal("220", Attribute(uniformGrid, "MinItemWidth"));
-        Assert.Equal("52", Attribute(uniformGrid, "MinItemHeight"));
-        Assert.Equal("3", Attribute(uniformGrid, "MaximumRowsOrColumns"));
-        Assert.Equal("SpaceBetween", Attribute(uniformGrid, "ItemsJustification"));
-        Assert.Equal("None", Attribute(uniformGrid, "ItemsStretch"));
+            element => element.Name.LocalName == "StackLayout");
+        Assert.Equal("Horizontal", Attribute(stackLayout, "Orientation"));
+        Assert.Equal("72", Attribute(stackLayout, "Spacing"));
+        Assert.DoesNotContain(
+            readingsList.Descendants(),
+            element => element.Name.LocalName == "UniformGridLayout"
+                || Attribute(element, "MinItemHeight") == "52"
+                || Attribute(element, "MaximumRowsOrColumns") == "3");
         Assert.Equal(
             "{x:Bind ViewModel.LiveReadingsRefreshToolTip, Mode=OneWay}",
             Attribute(readings, "AutomationProperties.HelpText"));
@@ -623,6 +624,14 @@ public sealed class CapabilityPresentationTests
         Assert.Contains(readingsList.Descendants(), element =>
             element.Name.LocalName == "TextBlock"
             && Attribute(element, "Text") == "{x:Bind Value, Mode=OneTime}");
+        XElement valueContainer = Assert.Single(
+            readingsList.Descendants(),
+            element => element.Name.LocalName == "StackPanel"
+                && Attribute(element, "Spacing") == "3"
+                && Attribute(element, "MinWidth") == "220");
+        Assert.Contains(valueContainer.Elements(), element =>
+            element.Name.LocalName == "TextBlock"
+            && Attribute(element, "TextWrapping") == "Wrap");
 
         string window = ReadTraySource("MainWindow.xaml.cs");
         Assert.DoesNotContain("Grid.SetRow(HeroReadings", window, StringComparison.Ordinal);

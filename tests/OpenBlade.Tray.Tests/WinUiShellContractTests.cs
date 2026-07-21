@@ -287,8 +287,12 @@ public sealed class WinUiShellContractTests
         string xaml = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml");
 
         Assert.Contains("x:Name=\"HeroReadings\"", xaml, StringComparison.Ordinal);
-        Assert.Contains("ItemsStretch=\"None\"", xaml, StringComparison.Ordinal);
-        Assert.Contains("MinItemHeight=\"52\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("<StackLayout Orientation=\"Horizontal\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("Spacing=\"72\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("<StackPanel Spacing=\"3\" MinWidth=\"220\">", xaml, StringComparison.Ordinal);
+        Assert.Contains("TextWrapping=\"Wrap\"", xaml, StringComparison.Ordinal);
+        Assert.DoesNotContain("MinItemHeight=\"52\"", xaml, StringComparison.Ordinal);
+        Assert.DoesNotContain("MaximumRowsOrColumns=\"3\"", xaml, StringComparison.Ordinal);
         Assert.DoesNotContain(
             "<StackPanel Spacing=\"3\" Margin=\"0,0,22,0\">",
             xaml,
