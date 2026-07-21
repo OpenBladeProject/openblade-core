@@ -1408,6 +1408,64 @@ public sealed class MainViewModelTests
     }
 
     [Fact]
+    public async Task TransientFirmwareRefreshKeepsCurrentOneShotSelectionsWhileLoading()
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        ServiceStatusSnapshot status = CreateStatus(
+            verified: true,
+            blocked: false,
+            capabilities: new DeviceCapabilities(
+                new HashSet<PerformancePreset> { PerformancePreset.Balanced },
+                new HashSet<FanMode> { FanMode.Automatic },
+                new HashSet<LightingEffect> { LightingEffect.Off },
+                ChargeLimits(),
+                SupportsBatteryProtectionOff: true,
+                SupportsTemporaryFullCharge: true)
+            {
+                OneShotLaptopControls = new HashSet<OneShotLaptopControl>
+                {
+                    OneShotLaptopControl.StartupAnimation,
+                    OneShotLaptopControl.FunctionKeyPrimary,
+                    OneShotLaptopControl.GamingMode,
+                },
+            }) with
+        {
+            StartupAnimationEnabled = true,
+            FunctionKeyPrimary = FunctionKeyPrimaryMode.MultimediaKeys,
+            GamingModeEnabled = true,
+        };
+        client.Publish(status);
+        await WaitUntilAsync(() => viewModel.FunctionKeyPrimary == FunctionKeyPrimaryMode.MultimediaKeys);
+
+        client.Publish(status with
+        {
+            Revision = status.Revision + 1,
+            Message = "Refreshing laptop controls after a temporary device-access failure.",
+            WritesBlocked = true,
+            Capabilities = DeviceCapabilities.Unavailable(),
+            StartupAnimationEnabled = null,
+            FunctionKeyPrimary = null,
+            GamingModeEnabled = null,
+        });
+        await WaitUntilAsync(() => viewModel.IsFunctionKeyFieldLoading);
+
+        Assert.True(viewModel.SupportsStartupAnimation);
+        Assert.True(viewModel.SupportsFunctionKeyPrimary);
+        Assert.True(viewModel.SupportsGamingMode);
+        Assert.True(viewModel.StartupAnimationToggleIsOn);
+        Assert.Equal("Media keys", viewModel.FunctionKeyPrimaryStateLabel);
+        Assert.True(viewModel.GamingModeToggleIsOn);
+        Assert.True(viewModel.IsStartupAnimationFieldLoading);
+        Assert.True(viewModel.IsFunctionKeyFieldLoading);
+        Assert.True(viewModel.IsGamingModeFieldLoading);
+        Assert.False(viewModel.CanEditStartupAnimation);
+        Assert.False(viewModel.CanEditFunctionKeyPrimary);
+        Assert.False(viewModel.CanEditGamingMode);
+    }
+
+    [Fact]
     public async Task OneShotFirmwareActionRestoresPreviousValueWhenRejected()
     {
         var client = new FakeServiceClient

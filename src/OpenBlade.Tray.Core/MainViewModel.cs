@@ -2925,7 +2925,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         bool readPending) =>
         operationInProgress
         || IsConnected
-        && latestStatus?.Capabilities?.OneShotLaptopControls.Contains(control) is true
+        && Capabilities.OneShotLaptopControls.Contains(control)
         && readPending;
 
     private bool MaximumFansAreEffectiveOrConfirmed() =>
@@ -3231,8 +3231,15 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         {
             LoadProfileEditors(status.Profiles);
         }
-        DeviceCapabilities capabilities = status.Capabilities
+        DeviceCapabilities incomingCapabilities = status.Capabilities
             ?? DeviceCapabilities.Unavailable();
+        DeviceCapabilities capabilities =
+            ShouldPreserveCapabilityPresentationDuringRefresh(
+                status,
+                previousStatus,
+                incomingCapabilities)
+                ? Capabilities
+                : incomingCapabilities;
         Capabilities = capabilities;
         int[] chargeLimits = HasBatteryCapability(capabilities)
             ? capabilities.ChargeLimits.Order().ToArray()
@@ -6270,6 +6277,25 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             NotifyCommands();
         }
     }
+
+    private bool ShouldPreserveCapabilityPresentationDuringRefresh(
+        ServiceStatusSnapshot status,
+        ServiceStatusSnapshot? previousStatus,
+        DeviceCapabilities incomingCapabilities) =>
+        previousStatus is not null
+        && IsCheckingLaptopConnection(status)
+        && HasAnyCapability(Capabilities)
+        && !HasAnyCapability(incomingCapabilities);
+
+    private static bool HasAnyCapability(DeviceCapabilities capabilities) =>
+        capabilities.PerformancePresets.Count > 0
+        || capabilities.FanModes.Count > 0
+        || capabilities.LightingEffects.Count > 0
+        || capabilities.ChargeLimits.Count > 0
+        || capabilities.SupportsBatteryProtectionOff
+        || capabilities.SupportsTemporaryFullCharge
+        || capabilities.LogoLightingModes.Count > 0
+        || capabilities.OneShotLaptopControls.Count > 0;
 
     private void NotifyPresentationState()
     {
