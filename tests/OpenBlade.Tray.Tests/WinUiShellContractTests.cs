@@ -319,6 +319,10 @@ public sealed class WinUiShellContractTests
         Assert.Contains("'--property:SatelliteResourceLanguages=en-US'", publish, StringComparison.Ordinal);
         Assert.Contains("'--property:PublishSingleFile=true'", publish, StringComparison.Ordinal);
         Assert.Contains("'--property:EnableCompressionInSingleFile=true'", publish, StringComparison.Ordinal);
+        Assert.Contains(
+            "'src\\OpenBlade.Capture\\OpenBlade.Capture.csproj') `\n        $stagingDeveloperTools $productionPublishArguments",
+            publish.Replace("\r\n", "\n", StringComparison.Ordinal),
+            StringComparison.Ordinal);
         Assert.Contains("Assert-ProductionBundleFootprint", publish, StringComparison.Ordinal);
         Assert.Contains("OpenBlade setup must publish as one compressed executable", validation, StringComparison.Ordinal);
         Assert.Contains("must not pre-copy Setup into the payload", validation, StringComparison.Ordinal);

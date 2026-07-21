@@ -77,7 +77,12 @@ try {
         $payload $productionPublishArguments
     Invoke-CheckedPublish (Join-Path $repository 'src\OpenBlade.Tray\OpenBlade.Tray.csproj') `
         $payload $productionPublishArguments
-    Invoke-CheckedPublish (Join-Path $repository 'src\OpenBlade.Capture\OpenBlade.Capture.csproj') $stagingDeveloperTools
+    # Protocol is shared by the installed service and the capture validator.
+    # Publish both with identical debug/satellite properties so a clean build
+    # cannot produce byte-different Protocol assemblies solely because one
+    # contains a portable-PDB debug directory.
+    Invoke-CheckedPublish (Join-Path $repository 'src\OpenBlade.Capture\OpenBlade.Capture.csproj') `
+        $stagingDeveloperTools $productionPublishArguments
     Invoke-CheckedPublish (Join-Path $repository 'src\OpenBlade.Setup\OpenBlade.Setup.csproj') `
         $stagingBundle ($productionPublishArguments + $setupPublishArguments)
 
