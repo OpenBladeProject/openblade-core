@@ -781,6 +781,7 @@ public sealed class WinUiShellContractTests
         Assert.Contains("App accent color", xaml, StringComparison.Ordinal);
         Assert.Contains("Windows accent", window, StringComparison.Ordinal);
         Assert.Contains("ColorValuesChanged +=", accentManager, StringComparison.Ordinal);
+        Assert.Contains("existing.Color = color", accentManager, StringComparison.Ordinal);
         Assert.Contains("#47E10C", ReadRepositoryFile(
             "src",
             "OpenBlade.Tray.Core",

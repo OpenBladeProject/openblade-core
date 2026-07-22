@@ -119,25 +119,51 @@ public sealed class AccentColorManager : IDisposable
         Color textOnAccent = ShouldUseDarkText(palette.Base)
             ? Color.FromArgb(255, 0, 0, 0)
             : Color.FromArgb(255, 255, 255, 255);
-        resources["AccentFillColorDefaultBrush"] = new SolidColorBrush(palette.Base);
-        resources["AccentFillColorSecondaryBrush"] = new SolidColorBrush(
+        SetBrushResource(resources, "AccentFillColorDefaultBrush", palette.Base);
+        SetBrushResource(
+            resources,
+            "AccentFillColorSecondaryBrush",
             WithAlpha(palette.Base, 230));
-        resources["AccentFillColorTertiaryBrush"] = new SolidColorBrush(
+        SetBrushResource(
+            resources,
+            "AccentFillColorTertiaryBrush",
             WithAlpha(palette.Base, 204));
-        resources["AccentFillColorSelectedTextBackgroundBrush"] =
-            new SolidColorBrush(palette.Base);
-        resources["AccentTextFillColorPrimaryBrush"] = new SolidColorBrush(palette.Base);
-        resources["AccentTextFillColorSecondaryBrush"] = new SolidColorBrush(
+        SetBrushResource(
+            resources,
+            "AccentFillColorSelectedTextBackgroundBrush",
+            palette.Base);
+        SetBrushResource(resources, "AccentTextFillColorPrimaryBrush", palette.Base);
+        SetBrushResource(
+            resources,
+            "AccentTextFillColorSecondaryBrush",
             WithAlpha(palette.Base, 230));
-        resources["AccentTextFillColorTertiaryBrush"] = new SolidColorBrush(
+        SetBrushResource(
+            resources,
+            "AccentTextFillColorTertiaryBrush",
             WithAlpha(palette.Base, 204));
-        resources["TextOnAccentFillColorPrimaryBrush"] = new SolidColorBrush(textOnAccent);
-        resources["TextOnAccentFillColorSecondaryBrush"] = new SolidColorBrush(
+        SetBrushResource(resources, "TextOnAccentFillColorPrimaryBrush", textOnAccent);
+        SetBrushResource(
+            resources,
+            "TextOnAccentFillColorSecondaryBrush",
             WithAlpha(textOnAccent, 179));
 
         root.InvalidateMeasure();
         root.InvalidateArrange();
         ColorChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    private static void SetBrushResource(
+        ResourceDictionary resources,
+        string key,
+        Color color)
+    {
+        if (resources[key] is SolidColorBrush existing)
+        {
+            existing.Color = color;
+            return;
+        }
+
+        resources[key] = new SolidColorBrush(color);
     }
 
     private static AccentPalette CreatePalette(Color color) => new(
