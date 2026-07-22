@@ -1383,6 +1383,16 @@
                                    AutomationProperties.Name="Profiles has unsaved changes" />
                     </NavigationViewItem.InfoBadge>
                 </NavigationViewItem>
+                <NavigationViewItem x:Name="DisplayNavigationItem" Content="Display" Tag="display">
+                    <NavigationViewItem.Icon>
+                        <FontIcon Glyph="&#xE7F4;" />
+                    </NavigationViewItem.Icon>
+                    <NavigationViewItem.InfoBadge>
+                        <InfoBadge Style="{StaticResource UnsavedNavigationBadgeStyle}"
+                                   Visibility="{x:Bind DisplayViewModel.CanSaveCurrentSettingsToProfile, Mode=OneWay}"
+                                   AutomationProperties.Name="Display has unsaved changes" />
+                    </NavigationViewItem.InfoBadge>
+                </NavigationViewItem>
                 <NavigationViewItem x:Name="LaptopNavigationItem"
                                     Content="Laptop"
                                     Tag="laptop">
@@ -1405,16 +1415,6 @@
                         <InfoBadge Style="{StaticResource UnsavedNavigationBadgeStyle}"
                                    Visibility="{x:Bind ViewModel.HasLightingProfileDraft, Mode=OneWay}"
                                    AutomationProperties.Name="Lighting has unsaved changes" />
-                    </NavigationViewItem.InfoBadge>
-                </NavigationViewItem>
-                <NavigationViewItem x:Name="DisplayNavigationItem" Content="Display" Tag="display">
-                    <NavigationViewItem.Icon>
-                        <FontIcon Glyph="&#xE7F4;" />
-                    </NavigationViewItem.Icon>
-                    <NavigationViewItem.InfoBadge>
-                        <InfoBadge Style="{StaticResource UnsavedNavigationBadgeStyle}"
-                                   Visibility="{x:Bind DisplayViewModel.CanSaveCurrentSettingsToProfile, Mode=OneWay}"
-                                   AutomationProperties.Name="Display has unsaved changes" />
                     </NavigationViewItem.InfoBadge>
                 </NavigationViewItem>
                 <NavigationViewItem x:Name="SettingsNavigationItem"

@@ -34,6 +34,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Changed
 
+- Moved Display above Laptop in the default left-navigation order and migrated
+  installations still using the former default while preserving custom orders.
 - Replaced the navigation-order popup with an inline reorderable Settings card
   and made both navigation and taskbar-hover editors collapsed by default.
 - Moved power mode, fan controls, and battery controls to the Laptop page while

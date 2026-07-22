@@ -18,10 +18,26 @@ public sealed class AppearancePreferenceTests
                 PrimaryNavigationItemKind.Settings,
                 PrimaryNavigationItemKind.Laptop,
                 PrimaryNavigationItemKind.Profiles,
-                PrimaryNavigationItemKind.Lighting,
                 PrimaryNavigationItemKind.Display,
+                PrimaryNavigationItemKind.Lighting,
             ],
             result);
+    }
+
+    [Fact]
+    public void NavigationNormalizationMigratesTheFormerDefaultOrder()
+    {
+        IReadOnlyList<PrimaryNavigationItemKind> result =
+            PrimaryNavigationPreferenceDefaults.Normalize(
+            [
+                PrimaryNavigationItemKind.Profiles,
+                PrimaryNavigationItemKind.Laptop,
+                PrimaryNavigationItemKind.Lighting,
+                PrimaryNavigationItemKind.Display,
+                PrimaryNavigationItemKind.Settings,
+            ]);
+
+        Assert.Equal(PrimaryNavigationPreferenceDefaults.Items, result);
     }
 
     [Theory]

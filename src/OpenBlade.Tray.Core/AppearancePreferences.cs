@@ -68,7 +68,7 @@ public sealed class PrimaryNavigationItemOption
 
 public static class PrimaryNavigationPreferenceDefaults
 {
-    public static IReadOnlyList<PrimaryNavigationItemKind> Items { get; } =
+    private static IReadOnlyList<PrimaryNavigationItemKind> LegacyItems { get; } =
     [
         PrimaryNavigationItemKind.Profiles,
         PrimaryNavigationItemKind.Laptop,
@@ -77,10 +77,26 @@ public static class PrimaryNavigationPreferenceDefaults
         PrimaryNavigationItemKind.Settings,
     ];
 
+    public static IReadOnlyList<PrimaryNavigationItemKind> Items { get; } =
+    [
+        PrimaryNavigationItemKind.Profiles,
+        PrimaryNavigationItemKind.Display,
+        PrimaryNavigationItemKind.Laptop,
+        PrimaryNavigationItemKind.Lighting,
+        PrimaryNavigationItemKind.Settings,
+    ];
+
     public static IReadOnlyList<PrimaryNavigationItemKind> Normalize(
         IReadOnlyList<PrimaryNavigationItemKind>? preferences)
     {
         if (preferences is null)
+        {
+            return Items;
+        }
+
+        // Move installations that still use the former default without
+        // replacing a navigation order the user customized.
+        if (preferences.SequenceEqual(LegacyItems))
         {
             return Items;
         }
