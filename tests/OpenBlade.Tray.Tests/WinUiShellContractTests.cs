@@ -857,6 +857,8 @@ public sealed class WinUiShellContractTests
         Assert.Contains("App accent color", xaml, StringComparison.Ordinal);
         Assert.Contains("OpenBlade green", window, StringComparison.Ordinal);
         Assert.DoesNotContain("Razer green", window, StringComparison.Ordinal);
+        Assert.DoesNotContain("OnResetAccentColor", xaml, StringComparison.Ordinal);
+        Assert.DoesNotContain("OnResetAccentColor", window, StringComparison.Ordinal);
         Assert.Contains("Windows accent", window, StringComparison.Ordinal);
         Assert.Contains("ColorValuesChanged +=", accentManager, StringComparison.Ordinal);
         Assert.Contains("existing.Color = color", accentManager, StringComparison.Ordinal);

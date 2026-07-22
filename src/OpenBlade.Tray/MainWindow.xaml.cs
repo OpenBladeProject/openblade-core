@@ -169,7 +169,6 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             accentColorMode = value.Mode;
             OnPropertyChanged(nameof(SelectedAccentColorOption));
             OnPropertyChanged(nameof(CustomAccentColorVisibility));
-            OnPropertyChanged(nameof(CanResetAccentColor));
             ApplyAccentColorAndQueueSave();
         }
     }
@@ -188,12 +187,6 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
     public Visibility CustomAccentColorVisibility => accentColorMode == AppAccentColorMode.Custom
         ? Visibility.Visible
         : Visibility.Collapsed;
-
-    public bool CanResetAccentColor => accentColorMode != AppAccentColorMode.RazerGreen
-        || !string.Equals(
-            customAccentColor,
-            AppAccentColorPreferenceDefaults.RazerGreenHex,
-            StringComparison.OrdinalIgnoreCase);
 
     public PerformancePreset SilentPreset { get; } = PerformancePreset.Silent;
 
@@ -524,7 +517,6 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         OnPropertyChanged(nameof(AccentColorSummary));
         OnPropertyChanged(nameof(AccentColorPreviewBrush));
         OnPropertyChanged(nameof(CustomAccentColorVisibility));
-        OnPropertyChanged(nameof(CanResetAccentColor));
     }
 
     private void OnPropertyChanged(string propertyName) =>
@@ -1906,14 +1898,6 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
 
         accentColorMode = AppAccentColorMode.Custom;
         customAccentColor = AccentColorManager.ToHexColor(picker.Color);
-        OnPropertyChanged(nameof(SelectedAccentColorOption));
-        ApplyAccentColorAndQueueSave();
-    }
-
-    private void OnResetAccentColor(object sender, RoutedEventArgs args)
-    {
-        accentColorMode = AppAccentColorMode.RazerGreen;
-        customAccentColor = AppAccentColorPreferenceDefaults.RazerGreenHex;
         OnPropertyChanged(nameof(SelectedAccentColorOption));
         ApplyAccentColorAndQueueSave();
     }

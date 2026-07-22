@@ -34,6 +34,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Changed
 
+- Removed the redundant Reset button from the app accent color setting. OpenBlade
+  green remains directly selectable from the accent picker.
 - Renamed the default accent's user-facing label from Razer green to OpenBlade
   green. Its `#47E10C` value and serialized preference remain unchanged.
 - Moved Display above Laptop in the default left-navigation order and migrated

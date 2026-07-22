@@ -2464,9 +2464,6 @@
                                                   ItemsSource="{x:Bind AccentColorOptions, Mode=OneWay}"
                                                   DisplayMemberPath="Label"
                                                   SelectedItem="{x:Bind SelectedAccentColorOption, Mode=TwoWay}" />
-                                        <Button Content="Reset"
-                                                IsEnabled="{x:Bind CanResetAccentColor, Mode=OneWay}"
-                                                Click="OnResetAccentColor" />
                                     </StackPanel>
                                 </Grid>
                             </Border>
