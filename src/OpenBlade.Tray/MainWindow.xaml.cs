@@ -61,6 +61,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
     private int dashboardPlacementGeneration;
     private ContentDialog? dashboardCustomizerDialog;
     private Action? dashboardCustomizerRefresh;
+    private Action? dashboardCustomizerApply;
     private Dictionary<DashboardCardKind, DashboardCardRegistration>
         dashboardCardRegistrations = [];
     private Dictionary<DashboardCardKind, NavigationViewItem> dashboardCardDestinations = [];
@@ -153,6 +154,11 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
     public bool StartMinimized { get; private set; }
 
     public ObservableCollection<DashboardCardOption> DashboardCards { get; } = [];
+
+    public event EventHandler? DashboardLayoutRestartRequested;
+
+    public ValueTask FlushPreferencesForRestartAsync() =>
+        preferenceSaveQueue.DisposeAsync();
 
     public PerformancePreset SilentPreset { get; } = PerformancePreset.Silent;
 
@@ -1572,10 +1578,12 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
         {
             dashboardCustomizerRefresh?.Invoke();
             await dashboardCustomizerDialog.ShowAsync();
+            ApplyDashboardCustomizerChanges();
             return;
         }
 
-        var cardList = new StackPanel { Spacing = 2 };
+        var editorCards = new ObservableCollection<DashboardCardOption>();
+        var cardList = new StackPanel { Spacing = 2, Width = 520 };
         AutomationProperties.SetName(cardList, "Dashboard cards");
         DashboardCardKind? draggedKind = null;
         double dragStartY = 0;
@@ -1599,13 +1607,14 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
         void RefreshEditor()
         {
             cardList.Children.Clear();
-            foreach (DashboardCardOption option in DashboardCards)
+            foreach (DashboardCardOption option in editorCards)
             {
                 var row = new Grid
                 {
                     ColumnSpacing = 10,
                     MinHeight = 58,
                     Padding = new Thickness(2, 6, 2, 6),
+                    Width = 520,
                 };
                 row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
                 row.ColumnDefinitions.Add(new ColumnDefinition());
@@ -1639,6 +1648,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
                 var isPinned = new Microsoft.UI.Xaml.Controls.CheckBox
                 {
                     IsChecked = option.IsPinned,
+                    Translation = new System.Numerics.Vector3(80, 0, 0),
                     VerticalAlignment = VerticalAlignment.Center,
                 };
                 AutomationProperties.SetName(isPinned, option.Label);
@@ -1687,7 +1697,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
 
                     double releaseY = pointerArgs.GetCurrentPoint(cardList).Position.Y;
                     draggedGrip?.ReleasePointerCapture(pointerArgs.Pointer);
-                    int sourceIndex = DashboardCards
+                    int sourceIndex = editorCards
                         .Select((item, index) => (item, index))
                         .First(pair => pair.item.Kind == sourceKind)
                         .index;
@@ -1709,7 +1719,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
                     EndPointerDrag();
                     if (sourceIndex != targetIndex)
                     {
-                        DashboardCards.Move(sourceIndex, targetIndex);
+                        editorCards.Move(sourceIndex, targetIndex);
                     }
 
                     RefreshEditor();
@@ -1720,10 +1730,56 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
             }
         }
 
-        RefreshEditor();
-        dashboardCustomizerRefresh = RefreshEditor;
+        void LoadEditorFromDashboard()
+        {
+            editorCards.Clear();
+            foreach (DashboardCardOption option in DashboardCards)
+            {
+                editorCards.Add(new DashboardCardOption(
+                    option.Kind,
+                    option.Label,
+                    option.Description,
+                    option.IsPinned));
+            }
 
-        var content = new StackPanel { Width = 400, Spacing = 10 };
+            RefreshEditor();
+        }
+
+        void ApplyEditorToDashboard()
+        {
+            changingDashboardCards = true;
+            try
+            {
+                for (int targetIndex = 0; targetIndex < editorCards.Count; targetIndex++)
+                {
+                    DashboardCardOption edited = editorCards[targetIndex];
+                    int currentIndex = DashboardCards
+                        .Select((option, index) => (option, index))
+                        .First(pair => pair.option.Kind == edited.Kind)
+                        .index;
+                    if (currentIndex != targetIndex)
+                    {
+                        DashboardCards.Move(currentIndex, targetIndex);
+                    }
+
+                    DashboardCards[targetIndex].IsPinned = edited.IsPinned;
+                }
+            }
+            finally
+            {
+                changingDashboardCards = false;
+            }
+
+            UpdateDisplayRefreshState();
+            QueuePreferenceSave();
+            DashboardLayoutRestartRequested?.Invoke(this, EventArgs.Empty);
+        }
+
+        LoadEditorFromDashboard();
+        dashboardCustomizerRefresh = LoadEditorFromDashboard;
+        dashboardCustomizerApply = ApplyEditorToDashboard;
+
+        var content = new StackPanel { Width = 520, Spacing = 10 };
         content.Children.Add(new TextBlock
         {
             Text = "Check cards to show. Drag them into the order you want.",
@@ -1734,6 +1790,8 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
         {
             Content = cardList,
             MaxHeight = 480,
+            HorizontalScrollMode = ScrollMode.Disabled,
+            HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
             VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
         });
 
@@ -1747,7 +1805,11 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
         };
         dashboardCustomizerDialog = dialog;
         await dialog.ShowAsync();
+        ApplyDashboardCustomizerChanges();
     }
+
+    private void ApplyDashboardCustomizerChanges() =>
+        dashboardCustomizerApply?.Invoke();
 
     private void ArrangeDashboardCards()
     {
@@ -1824,6 +1886,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
                     current.Children.Remove(placement.Element);
                 }
 
+                placement.Element.Visibility = Visibility.Visible;
                 group.Key.Children.Add(placement.Element);
             }
         }

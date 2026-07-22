@@ -7,6 +7,10 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Added
 
+- Added local tray crash reports under `%LocalAppData%\OpenBlade\Crashes` with
+  version, runtime, process context, exception details, and stack traces. The
+  reporter retains the newest 20 files and never suppresses the original
+  failure.
 - Added a customizable Dashboard card picker. Users can pin interactive power,
   fan, and battery cards plus compact links to other Laptop, Lighting, and
   Display controls and drag them into the preferred order; the selection and
@@ -53,6 +57,11 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Prevented the Dashboard customizer from crashing WinUI when the default card
+  is unchecked. Edits are now staged until Done, then the tray restarts cleanly
+  while the privileged service keeps running so every selected live card is
+  created in its final visual parent. Selection controls also align with the
+  dialog's right content edge.
 - Made the approved Tidal and Wave/Wheel oracle fixtures check out with their
   required CRLF byte representation so their production hash gates and semantic
   fingerprint also pass in fresh clones.
