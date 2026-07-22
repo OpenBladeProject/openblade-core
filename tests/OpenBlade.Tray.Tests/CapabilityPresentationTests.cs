@@ -16,8 +16,8 @@ public sealed class CapabilityPresentationTests
         [
             "{x:Bind ViewModel.HasThermalProfileDraft, Mode=OneWay}",
             "{x:Bind ViewModel.HasProfileEditorChanges, Mode=OneWay}",
-            "{x:Bind ViewModel.HasLaptopPageProfileDraft, Mode=OneWay}",
-            "{x:Bind ViewModel.HasLightingProfileDraft, Mode=OneWay}",
+            "{x:Bind ViewModel.HasLaptopPageProfileSaveOpportunity, Mode=OneWay}",
+            "{x:Bind ViewModel.HasLightingProfileSaveOpportunity, Mode=OneWay}",
             "{x:Bind DisplayViewModel.CanSaveCurrentSettingsToProfile, Mode=OneWay}",
         ];
         XElement[] badges = document.Descendants()

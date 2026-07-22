@@ -509,6 +509,98 @@ public sealed class MainViewModelTests
     }
 
     [Fact]
+    public async Task UnsetLogoMode_OffersAndSavesConfirmedCurrentValue()
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        ServiceStatusSnapshot status = CreateStatus(
+            verified: true,
+            blocked: false,
+            capabilities: DeviceCapabilities.SafeTargetDefaults() with
+            {
+                LightingEffects = new HashSet<LightingEffect>(
+                    Enum.GetValues<LightingEffect>()),
+                LogoLightingModes = new HashSet<LogoLightingMode>(
+                    Enum.GetValues<LogoLightingMode>()),
+                ChargeLimits = ChargeLimits(),
+            });
+        client.Publish(status with
+        {
+            ConfirmedState = status.ConfirmedState! with
+            {
+                LogoLighting = LogoLightingMode.Breathing,
+            },
+        });
+        await WaitUntilAsync(() =>
+            viewModel.LogoLightingModeEditor == LogoLightingMode.Breathing
+            && viewModel.CanControlLighting
+            && viewModel.HasLightingProfileSaveOpportunity);
+
+        Assert.Equal("Not set", viewModel.PluggedInProfilePresentation.LogoLighting);
+        Assert.False(viewModel.HasLightingProfileDraft);
+        Assert.True(viewModel.HasLightingProfileSaveOpportunity);
+        Assert.True(viewModel.CanControlHardware);
+        Assert.True(viewModel.CanControlLighting);
+        Assert.True(viewModel.SaveLightingProfileDraftCommand.CanExecute(null));
+
+        await Assert.IsType<AsyncRelayCommand>(viewModel.SaveLightingProfileDraftCommand)
+            .ExecuteAsync(null);
+
+        Assert.Equal(
+            LogoLightingMode.Breathing,
+            client.LastProfiles?.PluggedIn.Lighting.LogoMode);
+        Assert.False(viewModel.HasLightingProfileDraft);
+        Assert.False(viewModel.HasLightingProfileSaveOpportunity);
+    }
+
+    [Fact]
+    public async Task UnsetLaptopBehavior_OffersAndSavesKnownCurrentValues()
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        ServiceStatusSnapshot status = CreateStatus(
+            verified: true,
+            blocked: false,
+            capabilities: DeviceCapabilities.SafeTargetDefaults() with
+            {
+                OneShotLaptopControls = new HashSet<OneShotLaptopControl>(
+                    Enum.GetValues<OneShotLaptopControl>()),
+                ChargeLimits = ChargeLimits(),
+            });
+        client.Publish(status with
+        {
+            StartupAnimationEnabled = true,
+            FunctionKeyPrimary = FunctionKeyPrimaryMode.FunctionKeys,
+            GamingModeEnabled = false,
+        });
+        await WaitUntilAsync(() =>
+            viewModel.StartupAnimationEnabled is true
+            && viewModel.FunctionKeyPrimary == FunctionKeyPrimaryMode.FunctionKeys
+            && viewModel.GamingModeEnabled is false);
+
+        Assert.Equal(
+            "Not set",
+            viewModel.PluggedInProfilePresentation.StartupAnimation);
+        Assert.False(viewModel.HasLaptopPageProfileDraft);
+        Assert.True(viewModel.HasLaptopPageProfileSaveOpportunity);
+        Assert.True(viewModel.SaveLaptopProfileDraftCommand.CanExecute(null));
+
+        await Assert.IsType<AsyncRelayCommand>(viewModel.SaveLaptopProfileDraftCommand)
+            .ExecuteAsync(null);
+
+        Assert.Equal(
+            new LaptopBehaviorProfileSettings(
+                StartupAnimationEnabled: true,
+                FunctionKeyPrimary: FunctionKeyPrimaryMode.FunctionKeys,
+                GamingModeEnabled: false),
+            client.LastProfiles?.PluggedIn.LaptopBehavior);
+        Assert.False(viewModel.HasLaptopPageProfileDraft);
+        Assert.False(viewModel.HasLaptopPageProfileSaveOpportunity);
+    }
+
+    [Fact]
     public async Task DisplayDiscard_KeepsDraftWhenReadbackIsNotConfirmed()
     {
         var client = new FakeServiceClient();

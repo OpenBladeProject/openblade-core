@@ -92,6 +92,26 @@ public sealed class DisplaySettingsViewModelTests
     }
 
     [Fact]
+    public async Task PartiallyUnsetProfile_CanSaveKnownCurrentField()
+    {
+        var adapter = new FakeDisplaySettingsAdapter(
+            Snapshot(refreshKey: Fixed60.Key, hdr: false, colorKey: Native.Key));
+        await using var viewModel = CreateViewModel(adapter);
+        viewModel.ProfilePersistenceAvailable = true;
+        viewModel.ActiveProfileSettings = new DisplayProfileSettings(
+            Fixed60.Key,
+            false,
+            null);
+
+        await viewModel.RefreshAsync();
+
+        Assert.Equal(
+            "Current settings are not saved to this profile",
+            viewModel.ProfileRelationshipStatus);
+        Assert.True(viewModel.CanSaveCurrentSettingsToProfile);
+    }
+
+    [Fact]
     public async Task Changes_AreSerializedAndUseAdapterReadback()
     {
         var adapter = new FakeDisplaySettingsAdapter(

@@ -1401,7 +1401,7 @@
                     </NavigationViewItem.Icon>
                     <NavigationViewItem.InfoBadge>
                         <InfoBadge Style="{StaticResource UnsavedNavigationBadgeStyle}"
-                                   Visibility="{x:Bind ViewModel.HasLaptopPageProfileDraft, Mode=OneWay}"
+                                   Visibility="{x:Bind ViewModel.HasLaptopPageProfileSaveOpportunity, Mode=OneWay}"
                                    AutomationProperties.Name="Laptop has unsaved changes" />
                     </NavigationViewItem.InfoBadge>
                 </NavigationViewItem>
@@ -1413,7 +1413,7 @@
                     </NavigationViewItem.Icon>
                     <NavigationViewItem.InfoBadge>
                         <InfoBadge Style="{StaticResource UnsavedNavigationBadgeStyle}"
-                                   Visibility="{x:Bind ViewModel.HasLightingProfileDraft, Mode=OneWay}"
+                                   Visibility="{x:Bind ViewModel.HasLightingProfileSaveOpportunity, Mode=OneWay}"
                                    AutomationProperties.Name="Lighting has unsaved changes" />
                     </NavigationViewItem.InfoBadge>
                 </NavigationViewItem>
@@ -1465,13 +1465,14 @@
                                             Orientation="Horizontal"
                                             Spacing="8"
                                             VerticalAlignment="Center"
-                                            Visibility="{x:Bind ViewModel.HasLaptopPageProfileDraft, Mode=OneWay}">
+                                            Visibility="{x:Bind ViewModel.HasLaptopPageProfileSaveOpportunity, Mode=OneWay}">
                                     <TextBlock Text="Unsaved changes"
                                                Style="{StaticResource ProfileSaveStatusTextStyle}" />
                                     <Button Content="{x:Bind ViewModel.SaveToActiveProfileLabel, Mode=OneWay}"
                                             Style="{StaticResource ProfileSaveButtonStyle}"
                                             Command="{x:Bind ViewModel.SaveLaptopProfileDraftCommand}" />
                                     <Button Style="{StaticResource ProfileSaveOverflowButtonStyle}"
+                                            Visibility="{x:Bind ViewModel.HasLaptopPageProfileDraft, Mode=OneWay}"
                                             AutomationProperties.Name="More profile actions"
                                             ToolTipService.ToolTip="More profile actions">
                                         <FontIcon Glyph="&#xE712;" FontSize="16" />
@@ -2041,13 +2042,14 @@
                                         Orientation="Horizontal"
                                         Spacing="8"
                                         VerticalAlignment="Center"
-                                        Visibility="{x:Bind ViewModel.HasLaptopPageProfileDraft, Mode=OneWay}">
+                                        Visibility="{x:Bind ViewModel.HasLaptopPageProfileSaveOpportunity, Mode=OneWay}">
                                 <TextBlock Text="Unsaved changes"
                                            Style="{StaticResource ProfileSaveStatusTextStyle}" />
                                 <Button Content="{x:Bind ViewModel.SaveToActiveProfileLabel, Mode=OneWay}"
                                         Style="{StaticResource ProfileSaveButtonStyle}"
                                         Command="{x:Bind ViewModel.SaveLaptopProfileDraftCommand}" />
                                 <Button Style="{StaticResource ProfileSaveOverflowButtonStyle}"
+                                        Visibility="{x:Bind ViewModel.HasLaptopPageProfileDraft, Mode=OneWay}"
                                         AutomationProperties.Name="More profile actions"
                                         ToolTipService.ToolTip="More profile actions">
                                     <FontIcon Glyph="&#xE712;" FontSize="16" />
@@ -2139,7 +2141,7 @@
                                             Grid.Column="1"
                                             VerticalAlignment="Center"
                                             IsEnabled="{x:Bind ViewModel.CanControlLighting, Mode=OneWay}"
-                                            Visibility="{x:Bind ViewModel.HasLightingProfileDraft, Mode=OneWay}">
+                                            Visibility="{x:Bind ViewModel.HasLightingProfileSaveOpportunity, Mode=OneWay}">
                                 <StackPanel Orientation="Horizontal" Spacing="8">
                                 <TextBlock Text="Unsaved changes"
                                            Style="{StaticResource ProfileSaveStatusTextStyle}" />
@@ -2147,6 +2149,7 @@
                                         Style="{StaticResource ProfileSaveButtonStyle}"
                                         Command="{x:Bind ViewModel.SaveLightingProfileDraftCommand}" />
                                 <Button Style="{StaticResource ProfileSaveOverflowButtonStyle}"
+                                        Visibility="{x:Bind ViewModel.HasLightingProfileDraft, Mode=OneWay}"
                                         AutomationProperties.Name="More profile actions"
                                         ToolTipService.ToolTip="More profile actions">
                                     <FontIcon Glyph="&#xE712;" FontSize="16" />

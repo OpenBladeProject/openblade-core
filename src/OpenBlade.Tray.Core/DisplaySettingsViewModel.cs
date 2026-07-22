@@ -329,6 +329,7 @@ public sealed class DisplaySettingsViewModel : INotifyPropertyChanged, IAsyncDis
         && CanCaptureCurrentSettings
         && (HasPendingProfileChange
             || !ActiveProfileSettings.IsConfigured
+            || HasSaveableUnsetProfileField
             || !CurrentSettingsMatchActiveProfile);
 
     public string ProfileRelationshipStatus => !ProfilePersistenceAvailable
@@ -337,7 +338,7 @@ public sealed class DisplaySettingsViewModel : INotifyPropertyChanged, IAsyncDis
         ? "Unavailable"
         : HasPendingProfileChange
             ? "Temporary change not saved to this profile"
-            : !ActiveProfileSettings.IsConfigured
+            : !ActiveProfileSettings.IsConfigured || HasSaveableUnsetProfileField
                 ? "Current settings are not saved to this profile"
                 : CurrentSettingsMatchActiveProfile
                     ? "Matches saved profile"
@@ -352,6 +353,16 @@ public sealed class DisplaySettingsViewModel : INotifyPropertyChanged, IAsyncDis
             IsHdrSupported ? IsHdrEnabled : null,
             SelectedColorProfile?.Key)
         : DisplayProfileSettings.Unconfigured();
+
+    private bool HasSaveableUnsetProfileField =>
+        IsAvailable
+        && (ActiveProfileSettings.RefreshRateKey is null
+            && SelectedRefreshRate is not null
+            || !ActiveProfileSettings.HdrEnabled.HasValue
+            && IsHdrSupported
+            || ActiveProfileSettings.ColorProfileKey is null
+            && !IsHdrEnabled
+            && SelectedColorProfile is not null);
 
     private bool CurrentSettingsMatchActiveProfile =>
         ActiveProfileSettings.IsConfigured

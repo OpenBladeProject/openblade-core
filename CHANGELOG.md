@@ -69,6 +69,9 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Treat known current values for `Not set` profile fields as saveable changes.
+  Display, laptop behavior, and lid-logo pages now show the unsaved prompt and
+  profile save action, while unavailable or unsupported values remain ignored.
 - Made Fn+P performance switching use the Windows P-key scan code observed on
   the target laptop while continuing to track the separate firmware Fn report.
 - Kept tray hover telemetry updating while the main window is hidden, and

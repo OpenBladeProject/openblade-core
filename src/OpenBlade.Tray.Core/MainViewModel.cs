@@ -2021,11 +2021,17 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     public bool HasLightingProfileDraft => activeProfileDraftLighting is not null
         || activeProfileDraftLightingPowerPolicy is not null;
 
+    public bool HasLightingProfileSaveOpportunity =>
+        HasLightingProfileDraft || HasSaveableUnsetLightingProfileField;
+
     public bool HasDisplayProfileDraft => activeProfileDraftDisplay is not null;
 
     public bool HasLaptopProfileDraft => activeProfileDraftLaptopBehavior is not null;
 
     public bool HasLaptopPageProfileDraft => HasThermalProfileDraft || HasLaptopProfileDraft;
+
+    public bool HasLaptopPageProfileSaveOpportunity =>
+        HasLaptopPageProfileDraft || HasSaveableUnsetLaptopProfileField;
 
     public string ThermalProfileRelationshipStatus => ProfileRelationshipStatus(
         HasThermalProfileDraft,
@@ -4401,14 +4407,16 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     private bool CanSaveActiveProfileDraft(ProfileDraftGroup group) =>
         CanMutate
         && (group != ProfileDraftGroup.Lighting || CanControlLighting)
-        && HasActiveProfileDraftFor(group)
-        && activeProfileDraftSource == ActivePowerSource
-        && TryGetSupportedProfileDraft(CreateProfileSetWithActiveDraft(group), out _);
+        && (HasActiveProfileDraftFor(group)
+            && activeProfileDraftSource == ActivePowerSource
+            && TryGetSupportedProfileDraft(CreateProfileSetWithActiveDraft(group), out _)
+            || HasSaveableUnsetProfileField(group));
 
     private async Task SaveActiveProfileDraftAsync(
         ProfileDraftGroup group,
         CancellationToken token)
     {
+        CaptureSaveableUnsetProfileFields(group);
         if (!CanSaveActiveProfileDraft(group)
             || !TryGetSupportedProfileDraft(
                 CreateProfileSetWithActiveDraft(group),
@@ -5404,14 +5412,106 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         _ => false,
     };
 
+    private bool HasSaveableUnsetProfileField(ProfileDraftGroup group) => group switch
+    {
+        ProfileDraftGroup.Lighting => HasSaveableUnsetLightingProfileField,
+        ProfileDraftGroup.Laptop => HasSaveableUnsetLaptopProfileField,
+        _ => false,
+    };
+
+    private bool HasSaveableUnsetLightingProfileField
+    {
+        get
+        {
+            if (!HasConfirmedPowerSource
+                || LogoLightingModeEditor is not { } logoMode
+                || !Capabilities.LogoLightingModes.Contains(logoMode))
+            {
+                return false;
+            }
+
+            return GetProfile(ActivePowerSource).Lighting.LogoMode is null;
+        }
+    }
+
+    private bool HasSaveableUnsetLaptopProfileField
+    {
+        get
+        {
+            if (!HasConfirmedPowerSource)
+            {
+                return false;
+            }
+
+            LaptopBehaviorProfileSettings saved =
+                GetProfile(ActivePowerSource).EffectiveLaptopBehavior;
+            return saved.StartupAnimationEnabled is null
+                    && SupportsStartupAnimation
+                    && StartupAnimationEnabled.HasValue
+                || saved.FunctionKeyPrimary is null
+                    && SupportsFunctionKeyPrimary
+                    && FunctionKeyPrimary.HasValue
+                || saved.GamingModeEnabled is null
+                    && SupportsGamingMode
+                    && GamingModeEnabled.HasValue;
+        }
+    }
+
+    private void CaptureSaveableUnsetProfileFields(ProfileDraftGroup group)
+    {
+        if (!HasConfirmedPowerSource)
+        {
+            return;
+        }
+
+        PowerProfile saved = GetProfile(ActivePowerSource);
+        if (group == ProfileDraftGroup.Lighting
+            && saved.Lighting.LogoMode is null
+            && LogoLightingModeEditor is { } logoMode
+            && Capabilities.LogoLightingModes.Contains(logoMode))
+        {
+            LightingSettings draft = activeProfileDraftLighting ?? saved.Lighting;
+            MarkActiveProfileDraft(
+                ActivePowerSource,
+                lighting: draft with { LogoMode = logoMode });
+        }
+
+        if (group != ProfileDraftGroup.Laptop)
+        {
+            return;
+        }
+
+        LaptopBehaviorProfileSettings baseline = activeProfileDraftLaptopBehavior
+            ?? saved.EffectiveLaptopBehavior;
+        var draftBehavior = new LaptopBehaviorProfileSettings(
+            baseline.StartupAnimationEnabled
+                ?? (SupportsStartupAnimation ? StartupAnimationEnabled : null),
+            baseline.FunctionKeyPrimary
+                ?? (SupportsFunctionKeyPrimary ? FunctionKeyPrimary : null),
+            baseline.GamingModeEnabled
+                ?? (SupportsGamingMode ? GamingModeEnabled : null));
+        if (draftBehavior != baseline)
+        {
+            MarkActiveProfileDraft(
+                ActivePowerSource,
+                laptopBehavior: draftBehavior);
+        }
+    }
+
     private void NotifyActiveProfileDraft()
     {
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasActiveProfileDraft)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasThermalProfileDraft)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasLightingProfileDraft)));
+        PropertyChanged?.Invoke(
+            this,
+            new PropertyChangedEventArgs(nameof(HasLightingProfileSaveOpportunity)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasDisplayProfileDraft)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasLaptopProfileDraft)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasLaptopPageProfileDraft)));
+        PropertyChanged?.Invoke(
+            this,
+            new PropertyChangedEventArgs(nameof(HasLaptopPageProfileSaveOpportunity)));
         PropertyChanged?.Invoke(
             this,
             new PropertyChangedEventArgs(nameof(ThermalProfileRelationshipStatus)));
@@ -5488,6 +5588,12 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         PropertyChanged?.Invoke(
             this,
             new PropertyChangedEventArgs(nameof(LightingIdlePolicyPresentation)));
+        PropertyChanged?.Invoke(
+            this,
+            new PropertyChangedEventArgs(nameof(HasLightingProfileSaveOpportunity)));
+        PropertyChanged?.Invoke(
+            this,
+            new PropertyChangedEventArgs(nameof(HasLaptopPageProfileSaveOpportunity)));
         NotifySelectedProfilePresentation();
     }
 
