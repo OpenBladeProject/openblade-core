@@ -15,7 +15,7 @@ using WinRT.Interop;
 
 namespace OpenBlade.Tray;
 
-public sealed partial class MainWindow : Window, IAsyncDisposable
+public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyPropertyChanged
 {
     private const double InitialWidthDip = 840;
     private const double InitialHeightDip = 720;
@@ -64,6 +64,8 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
     private Action? dashboardCustomizerRefresh;
     private Action? dashboardCustomizerApply;
 
+    public event PropertyChangedEventHandler? PropertyChanged;
+
     public MainWindow()
     {
         dispatcherQueue = DispatcherQueue.GetForCurrentThread()
@@ -78,6 +80,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
             uiVersion: OpenBladeProductVersion.Read(typeof(MainWindow).Assembly));
         displaySettingsAdapter = new SessionDisplaySettingsAdapter();
         DisplayViewModel = new DisplaySettingsViewModel(displaySettingsAdapter);
+        DisplayViewModel.PropertyChanged += OnDisplayViewModelPropertyChanged;
         DisplayViewModel.UserSettingsChanged += OnDisplayUserSettingsChanged;
         ViewModel.SavedDisplayProfileRestoreRequested += OnSavedDisplayProfileRestoreRequested;
         visibleObservationLoop = new VisibleObservationLoop(ViewModel.ObserveStateAsync,
@@ -175,6 +178,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
         }
 
         ViewModel.PropertyChanged -= OnViewModelPropertyChanged;
+        DisplayViewModel.PropertyChanged -= OnDisplayViewModelPropertyChanged;
         DashboardCards.CollectionChanged -= OnDashboardCardsCollectionChanged;
         foreach (DashboardCardOption option in DashboardCards)
         {
@@ -296,6 +300,10 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
             return;
         }
 
+        PropertyChanged?.Invoke(
+            this,
+            new PropertyChangedEventArgs(nameof(ViewModel)));
+
         if (args.PropertyName == nameof(MainViewModel.Theme))
         {
             ThemePreference selectedTheme = ViewModel.Theme;
@@ -364,6 +372,18 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
             {
                 dispatcherQueue.TryEnqueue(ReturnToDashboard);
             }
+        }
+    }
+
+    private void OnDisplayViewModelPropertyChanged(
+        object? sender,
+        PropertyChangedEventArgs args)
+    {
+        if (Volatile.Read(ref disposed) == 0)
+        {
+            PropertyChanged?.Invoke(
+                this,
+                new PropertyChangedEventArgs(nameof(DisplayViewModel)));
         }
     }
 

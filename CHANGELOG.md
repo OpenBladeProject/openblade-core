@@ -57,6 +57,10 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Kept shared Dashboard card controls and their original Laptop, Lighting, and
+  Display page instances synchronized after service initialization, preventing
+  source-page controls from remaining disabled while the same Dashboard card
+  is available.
 - Prevented the Dashboard customizer from crashing WinUI when the default card
   is unchecked. Edits are staged until Done and applied in place using
   independent instances of shared live card templates, without reparenting

@@ -348,6 +348,19 @@ public sealed class WinUiShellContractTests
         Assert.Contains("DashboardFansCardTemplate", window, StringComparison.Ordinal);
         Assert.Contains("DashboardBatteryCardTemplate", window, StringComparison.Ordinal);
         Assert.DoesNotContain("Content = \"Open\"", window, StringComparison.Ordinal);
+        Assert.Contains("IAsyncDisposable, INotifyPropertyChanged", window, StringComparison.Ordinal);
+        Assert.Contains(
+            "DisplayViewModel.PropertyChanged += OnDisplayViewModelPropertyChanged",
+            window,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "new PropertyChangedEventArgs(nameof(ViewModel))",
+            window,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "new PropertyChangedEventArgs(nameof(DisplayViewModel))",
+            window,
+            StringComparison.Ordinal);
         Assert.Contains("child != DeviceStatusCard", window, StringComparison.Ordinal);
         Assert.Contains("option.Kind == DashboardCardKind.DeviceStatus", window, StringComparison.Ordinal);
         Assert.Contains("Grid.SetRow(DeviceStatusCard", window, StringComparison.Ordinal);
