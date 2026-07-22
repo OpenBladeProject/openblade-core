@@ -363,9 +363,32 @@ public sealed record PowerProfile(
     // fills this from the former ProfileSet-wide policy during migration.
     public LightingPowerPolicy? LightingPowerPolicy { get; init; }
 
+    // Optional so profiles written before laptop-behavior synchronization
+    // remain non-destructive. Null fields are deliberately left unchanged
+    // until the user saves a value for that power source.
+    public LaptopBehaviorProfileSettings? LaptopBehavior { get; init; }
+
     [System.Text.Json.Serialization.JsonIgnore]
     public LightingPowerPolicy EffectiveLightingPowerPolicy =>
         LightingPowerPolicy ?? OpenBlade.Contracts.LightingPowerPolicy.Disabled;
+
+    [System.Text.Json.Serialization.JsonIgnore]
+    public LaptopBehaviorProfileSettings EffectiveLaptopBehavior =>
+        LaptopBehavior ?? LaptopBehaviorProfileSettings.Unconfigured();
+}
+
+public sealed record LaptopBehaviorProfileSettings(
+    bool? StartupAnimationEnabled,
+    FunctionKeyPrimaryMode? FunctionKeyPrimary,
+    bool? GamingModeEnabled)
+{
+    public bool IsConfigured =>
+        StartupAnimationEnabled.HasValue
+        || FunctionKeyPrimary.HasValue
+        || GamingModeEnabled.HasValue;
+
+    public static LaptopBehaviorProfileSettings Unconfigured() =>
+        new(null, null, null);
 }
 
 public sealed record LightingPowerPolicy

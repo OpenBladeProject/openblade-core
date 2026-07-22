@@ -149,6 +149,7 @@ public sealed class ProfileSetValidator(ProfileValidationPolicy policy)
         ValidateCustomPerformance(profile, name);
         ValidateFanControl(profile, name);
         ValidateDisplay(profile.Display, name);
+        ValidateLaptopBehavior(profile.LaptopBehavior, name);
     }
 
     private static void ValidatePerformanceSource(
@@ -280,6 +281,17 @@ public sealed class ProfileSetValidator(ProfileValidationPolicy policy)
 
         ValidateDisplayKey(display.RefreshRateKey, name, "refresh rate");
         ValidateDisplayKey(display.ColorProfileKey, name, "color profile");
+    }
+
+    private static void ValidateLaptopBehavior(
+        LaptopBehaviorProfileSettings? behavior,
+        string name)
+    {
+        if (behavior?.FunctionKeyPrimary is { } functionKeyMode
+            && !Enum.IsDefined(functionKeyMode))
+        {
+            throw Invalid($"The {name} function key behavior is undefined.");
+        }
     }
 
     private static void ValidateDisplayKey(string? value, string name, string setting)

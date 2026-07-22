@@ -19,7 +19,7 @@ public sealed class ProfileExportSerializerTests
 
         using JsonDocument document = JsonDocument.Parse(json);
         JsonElement root = document.RootElement;
-        Assert.Equal(1, root.GetProperty("schemaVersion").GetInt32());
+        Assert.Equal(2, root.GetProperty("schemaVersion").GetInt32());
         Assert.Equal("0.1.0+abcdef0", root.GetProperty("applicationVersion").GetString());
         Assert.Equal(exportedAt, root.GetProperty("exportedAtUtc").GetDateTimeOffset());
         JsonElement exportedProfiles = root.GetProperty("profiles");
@@ -51,7 +51,17 @@ public sealed class ProfileExportSerializerTests
     [Fact]
     public void Deserialize_RoundTripsEveryProfile()
     {
-        ProfileSet expected = ProfileDefaults.CreateSafeDefaults();
+        ProfileSet defaults = ProfileDefaults.CreateSafeDefaults();
+        ProfileSet expected = defaults with
+        {
+            PluggedIn = defaults.PluggedIn with
+            {
+                LaptopBehavior = new LaptopBehaviorProfileSettings(
+                    StartupAnimationEnabled: true,
+                    FunctionKeyPrimary: FunctionKeyPrimaryMode.FunctionKeys,
+                    GamingModeEnabled: false),
+            },
+        };
         string json = ProfileExportSerializer.Serialize(
             expected,
             "0.1.0+abcdef0",
@@ -69,14 +79,14 @@ public sealed class ProfileExportSerializerTests
             ProfileDefaults.CreateSafeDefaults(),
             "0.1.0+abcdef0",
             DateTimeOffset.UtcNow).Replace(
-                "\"schemaVersion\": 1",
                 "\"schemaVersion\": 2",
+                "\"schemaVersion\": 3",
                 StringComparison.Ordinal);
 
         InvalidDataException exception = Assert.Throws<InvalidDataException>(
             () => ProfileExportSerializer.Deserialize(json));
 
-        Assert.Contains("schema 2", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("schema 3", exception.Message, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("newer version", exception.Message, StringComparison.OrdinalIgnoreCase);
     }
 
@@ -87,7 +97,7 @@ public sealed class ProfileExportSerializerTests
             ProfileDefaults.CreateSafeDefaults(),
             "0.1.0+abcdef0",
             DateTimeOffset.UtcNow).Replace(
-                "\"schemaVersion\": 1",
+                "\"schemaVersion\": 2",
                 "\"schemaVersion\": 0",
                 StringComparison.Ordinal);
 
@@ -95,6 +105,24 @@ public sealed class ProfileExportSerializerTests
             () => ProfileExportSerializer.Deserialize(json));
 
         Assert.Contains("schema 0", exception.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void Deserialize_Version1WithoutLaptopBehaviorMigratesAsUnconfigured()
+    {
+        string json = ProfileExportSerializer.Serialize(
+            ProfileDefaults.CreateSafeDefaults(),
+            "0.1.0+abcdef0",
+            DateTimeOffset.UtcNow).Replace(
+                "\"schemaVersion\": 2",
+                "\"schemaVersion\": 1",
+                StringComparison.Ordinal);
+
+        ProfileSet imported = ProfileExportSerializer.Deserialize(json);
+
+        Assert.False(imported.PluggedIn.EffectiveLaptopBehavior.IsConfigured);
+        Assert.False(imported.UsbC.EffectiveLaptopBehavior.IsConfigured);
+        Assert.False(imported.Battery.EffectiveLaptopBehavior.IsConfigured);
     }
 
     [Fact]

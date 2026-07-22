@@ -12,7 +12,7 @@ public sealed record ProfileExportDocument(
 
 public static class ProfileExportSerializer
 {
-    public const int CurrentSchemaVersion = 1;
+    public const int CurrentSchemaVersion = 2;
 
     private static readonly JsonSerializerOptions SerializerOptions =
         new(JsonSerializerDefaults.Web)
@@ -61,6 +61,7 @@ public static class ProfileExportSerializer
         return schemaVersion switch
         {
             1 => DeserializeVersion1(json),
+            2 => DeserializeVersion2(json),
             > CurrentSchemaVersion => throw new InvalidDataException(
                 $"Profile schema {schemaVersion} was created by a newer version of OpenBlade."),
             _ => throw new InvalidDataException(
@@ -96,6 +97,16 @@ public static class ProfileExportSerializer
     // its own DTO and migrate to ProfileSet before returning from Deserialize.
     private static ProfileSet DeserializeVersion1(string json)
     {
+        return DeserializeDocument(json).Profiles;
+    }
+
+    private static ProfileSet DeserializeVersion2(string json)
+    {
+        return DeserializeDocument(json).Profiles;
+    }
+
+    private static ProfileExportDocument DeserializeDocument(string json)
+    {
         ProfileExportDocument document;
         try
         {
@@ -114,7 +125,7 @@ public static class ProfileExportSerializer
             throw new InvalidDataException("The profile file does not contain profiles.");
         }
 
-        return document.Profiles;
+        return document;
     }
 
     private static InvalidDataException InvalidDocument(Exception exception) =>

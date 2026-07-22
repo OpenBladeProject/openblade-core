@@ -1691,6 +1691,88 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     }
 
     [Fact]
+    public async Task PowerTransition_AppliesDestinationLaptopBehaviorProfile()
+    {
+        TestContext context = CreateContext(providerAvailable: true);
+        DeviceCapabilities capabilities = DeviceCapabilities.SafeTargetDefaults() with
+        {
+            OneShotLaptopControls = new HashSet<OneShotLaptopControl>
+            {
+                OneShotLaptopControl.StartupAnimation,
+                OneShotLaptopControl.FunctionKeyPrimary,
+                OneShotLaptopControl.GamingMode,
+            },
+        };
+        context.Device.Capabilities = capabilities;
+        context.Device.ConfirmedState = new ConfirmedDeviceState(
+            PerformancePreset.Balanced,
+            FanMode.Automatic,
+            ConfirmedBattery(80),
+            ProfileDefaults.CreateSafeDefaults().PluggedIn.Lighting);
+        context.Device.StartupAnimationEnabled = false;
+        context.Device.FunctionKeyPrimary = FunctionKeyPrimaryMode.MultimediaKeys;
+        context.Device.GamingModeEnabled = true;
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+
+        ProfileSet profiles = ProfileDefaults.CreateSafeDefaults();
+        profiles = profiles with
+        {
+            Battery = profiles.Battery with
+            {
+                LaptopBehavior = new LaptopBehaviorProfileSettings(
+                    StartupAnimationEnabled: true,
+                    FunctionKeyPrimary: FunctionKeyPrimaryMode.FunctionKeys,
+                    GamingModeEnabled: false),
+            },
+        };
+        ControlOperationResult stored = await context.Runtime.UpdateProfilesAsync(
+            profiles,
+            CancellationToken.None);
+        Assert.Equal(ControlOperationStatus.Stored, stored.Status);
+
+        context.Telemetry.Current = CreateTelemetry(PowerSource.Battery);
+        await context.Runtime.HandlePowerSourceChangedAsync(CancellationToken.None);
+
+        Assert.Equal(3, context.Device.OneShotSetCalls);
+        Assert.True(context.Device.StartupAnimationEnabled);
+        Assert.Equal(
+            FunctionKeyPrimaryMode.FunctionKeys,
+            context.Device.FunctionKeyPrimary);
+        Assert.False(context.Device.GamingModeEnabled);
+        Assert.True(context.Runtime.GetStatus().StartupAnimationEnabled);
+        Assert.Equal(
+            FunctionKeyPrimaryMode.FunctionKeys,
+            context.Runtime.GetStatus().FunctionKeyPrimary);
+        Assert.False(context.Runtime.GetStatus().GamingModeEnabled);
+    }
+
+    [Fact]
+    public async Task PowerTransition_UnconfiguredLaptopBehaviorDoesNotWrite()
+    {
+        TestContext context = CreateContext(providerAvailable: true);
+        context.Device.Capabilities = DeviceCapabilities.SafeTargetDefaults() with
+        {
+            OneShotLaptopControls = new HashSet<OneShotLaptopControl>
+            {
+                OneShotLaptopControl.StartupAnimation,
+                OneShotLaptopControl.FunctionKeyPrimary,
+                OneShotLaptopControl.GamingMode,
+            },
+        };
+        context.Device.ConfirmedState = new ConfirmedDeviceState(
+            PerformancePreset.Balanced,
+            FanMode.Automatic,
+            ConfirmedBattery(80),
+            ProfileDefaults.CreateSafeDefaults().PluggedIn.Lighting);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+
+        context.Telemetry.Current = CreateTelemetry(PowerSource.Battery);
+        await context.Runtime.HandlePowerSourceChangedAsync(CancellationToken.None);
+
+        Assert.Equal(0, context.Device.OneShotSetCalls);
+    }
+
+    [Fact]
     public async Task PayloadValidationObservationFailure_RetriesOneReadAndRecovers()
     {
         TestContext context = CreateContext(providerAvailable: true);

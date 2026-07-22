@@ -43,7 +43,10 @@ public sealed record ProfilePresentation(
     string LightingIdle,
     string DisplayRefreshRate,
     string DisplayHdr,
-    string DisplayColorProfile);
+    string DisplayColorProfile,
+    string FunctionKeyBehavior,
+    string GamingMode,
+    string StartupAnimation);
 
 public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
 {
@@ -57,6 +60,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         Thermal,
         Lighting,
         Display,
+        Laptop,
     }
 
     private static readonly IReadOnlyList<ProfileComparisonOption> ComparisonOptions =
@@ -230,6 +234,8 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     private LightingSettings? activeProfileDraftLighting;
     private LightingPowerPolicy? activeProfileDraftLightingPowerPolicy;
     private DisplayProfileSettings? activeProfileDraftDisplay;
+    private LaptopBehaviorProfileSettings? activeProfileDraftLaptopBehavior;
+    private LaptopBehaviorProfileSettings? activeProfileOriginalLaptopBehavior;
     private DisplayProfileSettings? activeProfileOriginalDisplay;
     private ThemePreference theme = ThemePreference.FollowWindows;
     private LiveReadingsCadence liveReadingsRefreshCadence =
@@ -381,6 +387,12 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         DiscardDisplayProfileDraftCommand = CreateCommand(
             (_, token) => DiscardActiveProfileDraftAsync(ProfileDraftGroup.Display, token),
             _ => HasDisplayProfileDraft);
+        SaveLaptopProfileDraftCommand = CreateCommand(
+            (_, token) => SaveActiveProfileDraftAsync(ProfileDraftGroup.Laptop, token),
+            _ => CanSaveActiveProfileDraft(ProfileDraftGroup.Laptop));
+        DiscardLaptopProfileDraftCommand = CreateCommand(
+            (_, token) => DiscardActiveProfileDraftAsync(ProfileDraftGroup.Laptop, token),
+            _ => HasLaptopProfileDraft);
         ExportDiagnosticsCommand = CreateCommand(
             ExportDiagnosticsAsync,
             _ => Volatile.Read(ref disposed) == 0 && IsConnected);
@@ -413,6 +425,8 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             (AsyncRelayCommand)SaveLightingPowerPolicyCommand,
             (AsyncRelayCommand)SaveDisplayProfileDraftCommand,
             (AsyncRelayCommand)DiscardDisplayProfileDraftCommand,
+            (AsyncRelayCommand)SaveLaptopProfileDraftCommand,
+            (AsyncRelayCommand)DiscardLaptopProfileDraftCommand,
             (AsyncRelayCommand)ExportDiagnosticsCommand,
             (AsyncRelayCommand)SetStartAtSignInCommand,
             (AsyncRelayCommand)ApplyOneShotLaptopControlCommand,
@@ -2004,6 +2018,8 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
 
     public bool HasDisplayProfileDraft => activeProfileDraftDisplay is not null;
 
+    public bool HasLaptopProfileDraft => activeProfileDraftLaptopBehavior is not null;
+
     public string ThermalProfileRelationshipStatus => ProfileRelationshipStatus(
         HasThermalProfileDraft,
         PerformanceSourceLabel == "Changed outside OpenBlade"
@@ -2854,6 +2870,8 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     public ICommand SaveLightingPowerPolicyCommand { get; }
     public ICommand SaveDisplayProfileDraftCommand { get; }
     public ICommand DiscardDisplayProfileDraftCommand { get; }
+    public ICommand SaveLaptopProfileDraftCommand { get; }
+    public ICommand DiscardLaptopProfileDraftCommand { get; }
     public ICommand ExportDiagnosticsCommand { get; }
     public ICommand SetStartAtSignInCommand { get; }
     public ICommand ApplyOneShotLaptopControlCommand { get; }
@@ -4144,6 +4162,21 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
                     previousFunctionKeyPrimary,
                     previousGamingMode);
             }
+            else if (ActivePowerSource is PowerSource.PluggedIn
+                or PowerSource.Battery
+                or PowerSource.UsbC)
+            {
+                MarkActiveProfileDraft(
+                    ActivePowerSource,
+                    laptopBehavior: new LaptopBehaviorProfileSettings(
+                        StartupAnimationEnabled,
+                        FunctionKeyPrimary,
+                        GamingModeEnabled),
+                    previousLaptopBehavior: new LaptopBehaviorProfileSettings(
+                        previousStartupAnimation,
+                        previousFunctionKeyPrimary,
+                        previousGamingMode));
+            }
         }
         finally
         {
@@ -4346,7 +4379,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
 
         if (ActivePowerSource != source)
         {
-            await ReportDisplayRestoreSourceChangedAsync(token);
+            await ReportProfileRestoreSourceChangedAsync(token);
             return;
         }
 
@@ -4366,6 +4399,20 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
                 displayToRestore,
                 token);
         }
+        else if (group == ProfileDraftGroup.Laptop)
+        {
+            LaptopBehaviorProfileSettings saved = GetProfile(source).EffectiveLaptopBehavior;
+            LaptopBehaviorProfileSettings original = activeProfileOriginalLaptopBehavior
+                ?? LaptopBehaviorProfileSettings.Unconfigured();
+            var behaviorToRestore = new LaptopBehaviorProfileSettings(
+                saved.StartupAnimationEnabled ?? original.StartupAnimationEnabled,
+                saved.FunctionKeyPrimary ?? original.FunctionKeyPrimary,
+                saved.GamingModeEnabled ?? original.GamingModeEnabled);
+            restored = await RestoreSavedLaptopBehaviorAsync(
+                source,
+                behaviorToRestore,
+                token);
+        }
         else
         {
             restored = await ClearActiveProfileHardwareOverridesAsync(token, group);
@@ -4382,7 +4429,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         }
         else if (ActivePowerSource != source)
         {
-            await ReportDisplayRestoreSourceChangedAsync(token);
+            await ReportProfileRestoreSourceChangedAsync(token);
         }
     }
 
@@ -4396,7 +4443,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
 
         if (ActivePowerSource != source)
         {
-            await ReportDisplayRestoreSourceChangedAsync(token);
+            await ReportProfileRestoreSourceChangedAsync(token);
             return;
         }
 
@@ -4411,7 +4458,22 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         bool controlsRestored = await ClearActiveProfileHardwareOverridesAsync(token);
         bool displayRestored = activeProfileDraftDisplay is null
             || await RestoreSavedDisplayProfileAsync(source, displayToRestore, token);
-        if (controlsRestored && displayRestored && ActivePowerSource == source)
+        LaptopBehaviorProfileSettings savedLaptop = GetProfile(source).EffectiveLaptopBehavior;
+        LaptopBehaviorProfileSettings originalLaptop = activeProfileOriginalLaptopBehavior
+            ?? LaptopBehaviorProfileSettings.Unconfigured();
+        bool laptopRestored = activeProfileDraftLaptopBehavior is null
+            || await RestoreSavedLaptopBehaviorAsync(
+                source,
+                new LaptopBehaviorProfileSettings(
+                    savedLaptop.StartupAnimationEnabled
+                        ?? originalLaptop.StartupAnimationEnabled,
+                    savedLaptop.FunctionKeyPrimary ?? originalLaptop.FunctionKeyPrimary,
+                    savedLaptop.GamingModeEnabled ?? originalLaptop.GamingModeEnabled),
+                token);
+        if (controlsRestored
+            && displayRestored
+            && laptopRestored
+            && ActivePowerSource == source)
         {
             ClearActiveProfileDraft();
             LoadLightingPowerPolicyEditor(
@@ -4419,7 +4481,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         }
         else if (ActivePowerSource != source)
         {
-            await ReportDisplayRestoreSourceChangedAsync(token);
+            await ReportProfileRestoreSourceChangedAsync(token);
         }
     }
 
@@ -4479,7 +4541,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             {
                 if (ActivePowerSource != expectedPowerSource)
                 {
-                    await ReportDisplayRestoreSourceChangedAsync(token);
+                    await ReportProfileRestoreSourceChangedAsync(token);
                     return false;
                 }
 
@@ -4516,10 +4578,10 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         }
     }
 
-    private Task ReportDisplayRestoreSourceChangedAsync(CancellationToken token) =>
+    private Task ReportProfileRestoreSourceChangedAsync(CancellationToken token) =>
         dispatcher.InvokeAsync(
             () => OperationStatusMessage =
-                "Could not restore the saved display profile because the power source changed.",
+                "Could not restore the saved profile settings because the power source changed.",
             token);
 
     private bool TryGetSupportedProfileDraft(object? parameter, out ProfileSet draft)
@@ -4991,6 +5053,8 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             LightingPowerPolicy = activeProfileDraftLightingPowerPolicy
                 ?? profile.LightingPowerPolicy,
             Display = activeProfileDraftDisplay ?? profile.Display,
+            LaptopBehavior = activeProfileDraftLaptopBehavior
+                ?? profile.LaptopBehavior,
         };
     }
 
@@ -5033,6 +5097,11 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             ProfileDraftGroup.Display => saved with
             {
                 Display = activeProfileDraftDisplay ?? saved.Display,
+            },
+            ProfileDraftGroup.Laptop => saved with
+            {
+                LaptopBehavior = activeProfileDraftLaptopBehavior
+                    ?? saved.LaptopBehavior,
             },
             _ => throw new ArgumentOutOfRangeException(nameof(group)),
         };
@@ -5077,7 +5146,9 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         LightingSettings? lighting = null,
         LightingPowerPolicy? lightingPowerPolicy = null,
         DisplayProfileSettings? display = null,
-        DisplayProfileSettings? previousDisplay = null)
+        DisplayProfileSettings? previousDisplay = null,
+        LaptopBehaviorProfileSettings? laptopBehavior = null,
+        LaptopBehaviorProfileSettings? previousLaptopBehavior = null)
     {
         if (source != ActivePowerSource
             || source is not (PowerSource.PluggedIn or PowerSource.Battery or PowerSource.UsbC))
@@ -5095,11 +5166,18 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             activeProfileDraftLighting = null;
             activeProfileDraftLightingPowerPolicy = null;
             activeProfileDraftDisplay = null;
+            activeProfileDraftLaptopBehavior = null;
             activeProfileOriginalDisplay = previousDisplay;
+            activeProfileOriginalLaptopBehavior = previousLaptopBehavior;
         }
         else if (display is not null && activeProfileDraftDisplay is null)
         {
             activeProfileOriginalDisplay = previousDisplay;
+        }
+        else if (laptopBehavior is not null
+            && activeProfileDraftLaptopBehavior is null)
+        {
+            activeProfileOriginalLaptopBehavior = previousLaptopBehavior;
         }
 
         activeProfileDraftPerformance = performance ?? activeProfileDraftPerformance;
@@ -5111,6 +5189,8 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         activeProfileDraftLightingPowerPolicy = lightingPowerPolicy
             ?? activeProfileDraftLightingPowerPolicy;
         activeProfileDraftDisplay = display ?? activeProfileDraftDisplay;
+        activeProfileDraftLaptopBehavior = laptopBehavior
+            ?? activeProfileDraftLaptopBehavior;
 
         PowerProfile saved = GetProfile(source);
         if (activeProfileDraftPerformance == saved.Performance)
@@ -5148,13 +5228,25 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             activeProfileDraftDisplay = null;
             activeProfileOriginalDisplay = null;
         }
+        LaptopBehaviorProfileSettings savedLaptopBehavior =
+            saved.EffectiveLaptopBehavior;
+        LaptopBehaviorProfileSettings laptopBehaviorBaseline =
+            savedLaptopBehavior.IsConfigured
+                ? savedLaptopBehavior
+                : activeProfileOriginalLaptopBehavior ?? savedLaptopBehavior;
+        if (activeProfileDraftLaptopBehavior == laptopBehaviorBaseline)
+        {
+            activeProfileDraftLaptopBehavior = null;
+            activeProfileOriginalLaptopBehavior = null;
+        }
         if (activeProfileDraftPerformance is null
             && activeProfileDraftCustomPerformance is null
             && activeProfileDraftFans is null
             && activeProfileDraftFanControl is null
             && activeProfileDraftLighting is null
             && activeProfileDraftLightingPowerPolicy is null
-            && activeProfileDraftDisplay is null)
+            && activeProfileDraftDisplay is null
+            && activeProfileDraftLaptopBehavior is null)
         {
             activeProfileDraftSource = null;
         }
@@ -5177,7 +5269,9 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         activeProfileDraftLighting = null;
         activeProfileDraftLightingPowerPolicy = null;
         activeProfileDraftDisplay = null;
+        activeProfileDraftLaptopBehavior = null;
         activeProfileOriginalDisplay = null;
+        activeProfileOriginalLaptopBehavior = null;
         NotifyActiveProfileDraft();
     }
 
@@ -5199,13 +5293,18 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
                 activeProfileDraftDisplay = null;
                 activeProfileOriginalDisplay = null;
                 break;
+            case ProfileDraftGroup.Laptop:
+                activeProfileDraftLaptopBehavior = null;
+                activeProfileOriginalLaptopBehavior = null;
+                break;
             default:
                 throw new ArgumentOutOfRangeException(nameof(group));
         }
 
         if (!HasThermalProfileDraft
             && !HasLightingProfileDraft
-            && !HasDisplayProfileDraft)
+            && !HasDisplayProfileDraft
+            && !HasLaptopProfileDraft)
         {
             activeProfileDraftSource = null;
         }
@@ -5217,6 +5316,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         ProfileDraftGroup.Thermal => HasThermalProfileDraft,
         ProfileDraftGroup.Lighting => HasLightingProfileDraft,
         ProfileDraftGroup.Display => HasDisplayProfileDraft,
+        ProfileDraftGroup.Laptop => HasLaptopProfileDraft,
         _ => false,
     };
 
@@ -5226,6 +5326,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasThermalProfileDraft)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasLightingProfileDraft)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasDisplayProfileDraft)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasLaptopProfileDraft)));
         PropertyChanged?.Invoke(
             this,
             new PropertyChangedEventArgs(nameof(ThermalProfileRelationshipStatus)));
@@ -5464,8 +5565,23 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
                 false => "Off",
                 null => "Use current",
             },
-            FormatDisplayColorProfile(display.ColorProfileKey));
+            FormatDisplayColorProfile(display.ColorProfileKey),
+            profile.EffectiveLaptopBehavior.FunctionKeyPrimary switch
+            {
+                FunctionKeyPrimaryMode.FunctionKeys => "Function keys",
+                FunctionKeyPrimaryMode.MultimediaKeys => "Media keys",
+                _ => "Use current",
+            },
+            FormatOptionalToggle(profile.EffectiveLaptopBehavior.GamingModeEnabled),
+            FormatOptionalToggle(profile.EffectiveLaptopBehavior.StartupAnimationEnabled));
     }
+
+    private static string FormatOptionalToggle(bool? value) => value switch
+    {
+        true => "On",
+        false => "Off",
+        null => "Use current",
+    };
 
     private static string FormatFanControl(PowerProfile profile)
     {
@@ -6003,6 +6119,53 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             showGpu ? $"GPU {gpuValue}" : string.Empty,
         ];
         return string.Join(" / ", values.Where(value => !string.IsNullOrWhiteSpace(value)));
+    }
+
+    private async Task<bool> RestoreSavedLaptopBehaviorAsync(
+        PowerSource expectedPowerSource,
+        LaptopBehaviorProfileSettings settings,
+        CancellationToken token)
+    {
+        bool restored = true;
+        if (settings.FunctionKeyPrimary is { } functionKeyMode)
+        {
+            restored &= await RunOperationAsync(
+                cancellationToken => serviceClient.ApplyOneShotLaptopControlAsync(
+                    new ApplyOneShotLaptopControl(
+                        OneShotLaptopControl.FunctionKeyPrimary,
+                        FunctionKeyMode: functionKeyMode),
+                    cancellationToken),
+                token);
+        }
+        if (expectedPowerSource != ActivePowerSource)
+        {
+            return false;
+        }
+        if (settings.GamingModeEnabled is { } gamingModeEnabled)
+        {
+            restored &= await RunOperationAsync(
+                cancellationToken => serviceClient.ApplyOneShotLaptopControlAsync(
+                    new ApplyOneShotLaptopControl(
+                        OneShotLaptopControl.GamingMode,
+                        Enabled: gamingModeEnabled),
+                    cancellationToken),
+                token);
+        }
+        if (expectedPowerSource != ActivePowerSource)
+        {
+            return false;
+        }
+        if (settings.StartupAnimationEnabled is { } startupAnimationEnabled)
+        {
+            restored &= await RunOperationAsync(
+                cancellationToken => serviceClient.ApplyOneShotLaptopControlAsync(
+                    new ApplyOneShotLaptopControl(
+                        OneShotLaptopControl.StartupAnimation,
+                        Enabled: startupAnimationEnabled),
+                    cancellationToken),
+                token);
+        }
+        return restored && expectedPowerSource == ActivePowerSource;
     }
 
     private static string LiveReadingLabel(LiveReadingItemKind kind) => kind switch

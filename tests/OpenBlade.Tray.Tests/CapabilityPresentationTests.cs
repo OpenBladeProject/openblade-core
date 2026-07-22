@@ -16,6 +16,7 @@ public sealed class CapabilityPresentationTests
         [
             "{x:Bind ViewModel.HasThermalProfileDraft, Mode=OneWay}",
             "{x:Bind ViewModel.HasProfileEditorChanges, Mode=OneWay}",
+            "{x:Bind ViewModel.HasLaptopProfileDraft, Mode=OneWay}",
             "{x:Bind ViewModel.HasLightingProfileDraft, Mode=OneWay}",
             "{x:Bind DisplayViewModel.CanSaveCurrentSettingsToProfile, Mode=OneWay}",
         ];
@@ -171,10 +172,10 @@ public sealed class CapabilityPresentationTests
         Assert.DoesNotContain(xaml, "ViewModel.SetChargeLimitCommand", StringComparison.Ordinal);
         Assert.DoesNotContain(xaml, "ViewModel.KeepManualChangesUntilCleared", StringComparison.Ordinal);
         Assert.Equal(
-            6,
+            8,
             document.Descendants().Count(element => element.Name.LocalName == "VisualState"));
         Assert.Equal(
-            3,
+            4,
             document.Descendants().Count(element =>
                 element.Name.LocalName == "AdaptiveTrigger"
                 && Attribute(element, "MinWindowWidth") == "900"));

@@ -1338,6 +1338,19 @@ public sealed class MainViewModelTests
             .ExecuteAsync(oneShot);
 
         Assert.Equal(oneShot, client.OneShotLaptopControl);
+        Assert.True(viewModel.HasLaptopProfileDraft);
+        Assert.True(viewModel.SaveLaptopProfileDraftCommand.CanExecute(null));
+
+        await Assert.IsType<AsyncRelayCommand>(viewModel.SaveLaptopProfileDraftCommand)
+            .ExecuteAsync(null);
+
+        Assert.False(viewModel.HasLaptopProfileDraft);
+        Assert.Equal(
+            new LaptopBehaviorProfileSettings(
+                StartupAnimationEnabled: false,
+                FunctionKeyPrimary: FunctionKeyPrimaryMode.FunctionKeys,
+                GamingModeEnabled: false),
+            client.LastProfiles?.PluggedIn.LaptopBehavior);
 
         client.Publish(status with
         {

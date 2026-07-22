@@ -118,10 +118,10 @@ internal static class ProductionLightingEvidenceSource
         "OpenBladeLightingImplementationFingerprint";
 
     private const string ApprovedLightingImplementationFingerprintSha256 =
-        // Re-reviewed after the fallback color changed from cyan to Razer green.
-        // Command bytes, effect renderers, timelines, admission rules, and the
-        // single matrix writer are unchanged.
-        "1B92DBE71512D6C6BE7F277906D324DC84B14A6C5DB1B7197190565EFF70B3FF";
+        // Re-reviewed after PowerProfile gained optional laptop-behavior
+        // settings. LightingSettings, command bytes, effect renderers,
+        // timelines, admission rules, and the single matrix writer are unchanged.
+        "5DFBAC93C832BDE3E783395EED5C2FC04BF929E1ECAFA0CC00401DC98BD03EE7";
 
     private static readonly JsonSerializerOptions SerializerOptions =
         new(JsonSerializerDefaults.Web)

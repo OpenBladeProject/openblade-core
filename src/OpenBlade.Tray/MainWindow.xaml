@@ -270,6 +270,11 @@
                     <NavigationViewItem.Icon>
                         <FontIcon Glyph="&#xE770;" />
                     </NavigationViewItem.Icon>
+                    <NavigationViewItem.InfoBadge>
+                        <InfoBadge Style="{StaticResource UnsavedNavigationBadgeStyle}"
+                                   Visibility="{x:Bind ViewModel.HasLaptopProfileDraft, Mode=OneWay}"
+                                   AutomationProperties.Name="Laptop has unsaved changes" />
+                    </NavigationViewItem.InfoBadge>
                 </NavigationViewItem>
                 <NavigationViewItem x:Name="LightingNavigationItem"
                                     Content="Lighting"
@@ -1098,6 +1103,39 @@
                                     </Border>
                                 </StackPanel>
                             </Border>
+
+                            <TextBlock Text="Laptop behavior" Style="{StaticResource SectionHeaderStyle}" />
+                            <Border Style="{StaticResource SettingsGroupStyle}">
+                                <StackPanel>
+                                    <Border Style="{StaticResource SettingsRowStyle}">
+                                        <Grid ColumnSpacing="16">
+                                            <Grid.ColumnDefinitions><ColumnDefinition Width="150" /><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                                            <TextBlock Text="Function keys" Style="{StaticResource CardTitleStyle}" />
+                                            <TextBlock Grid.Column="1" Text="{x:Bind ViewModel.PluggedInProfilePresentation.FunctionKeyBehavior, Mode=OneWay}" TextWrapping="Wrap" />
+                                            <TextBlock Grid.Column="2" Text="{x:Bind ViewModel.UsbCProfilePresentation.FunctionKeyBehavior, Mode=OneWay}" TextWrapping="Wrap" />
+                                            <TextBlock Grid.Column="3" Text="{x:Bind ViewModel.BatteryProfilePresentation.FunctionKeyBehavior, Mode=OneWay}" TextWrapping="Wrap" />
+                                        </Grid>
+                                    </Border>
+                                    <Border Style="{StaticResource SettingsRowStyle}">
+                                        <Grid ColumnSpacing="16">
+                                            <Grid.ColumnDefinitions><ColumnDefinition Width="150" /><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                                            <TextBlock Text="Gaming mode" Style="{StaticResource CardTitleStyle}" />
+                                            <TextBlock Grid.Column="1" Text="{x:Bind ViewModel.PluggedInProfilePresentation.GamingMode, Mode=OneWay}" />
+                                            <TextBlock Grid.Column="2" Text="{x:Bind ViewModel.UsbCProfilePresentation.GamingMode, Mode=OneWay}" />
+                                            <TextBlock Grid.Column="3" Text="{x:Bind ViewModel.BatteryProfilePresentation.GamingMode, Mode=OneWay}" />
+                                        </Grid>
+                                    </Border>
+                                    <Border Style="{StaticResource SettingsLastRowStyle}">
+                                        <Grid ColumnSpacing="16">
+                                            <Grid.ColumnDefinitions><ColumnDefinition Width="150" /><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                                            <TextBlock Text="Startup animation" Style="{StaticResource CardTitleStyle}" />
+                                            <TextBlock Grid.Column="1" Text="{x:Bind ViewModel.PluggedInProfilePresentation.StartupAnimation, Mode=OneWay}" />
+                                            <TextBlock Grid.Column="2" Text="{x:Bind ViewModel.UsbCProfilePresentation.StartupAnimation, Mode=OneWay}" />
+                                            <TextBlock Grid.Column="3" Text="{x:Bind ViewModel.BatteryProfilePresentation.StartupAnimation, Mode=OneWay}" />
+                                        </Grid>
+                                    </Border>
+                                </StackPanel>
+                            </Border>
                         </StackPanel>
 
                         <StackPanel x:Name="ProfilesCompactLayout" Visibility="Collapsed">
@@ -1149,8 +1187,17 @@
                                     <Border Style="{StaticResource SettingsRowStyle}">
                                         <Grid ColumnSpacing="16"><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><TextBlock Text="Display turns off" Style="{StaticResource CardTitleStyle}" /><TextBlock Grid.Column="1" Text="{x:Bind ViewModel.SelectedProfilePresentation.LightingDisplayOff, Mode=OneWay}" TextWrapping="Wrap" TextAlignment="Right" /></Grid>
                                     </Border>
-                                    <Border Style="{StaticResource SettingsLastRowStyle}">
+                                    <Border Style="{StaticResource SettingsRowStyle}">
                                         <Grid ColumnSpacing="16"><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><TextBlock Text="Inactivity timeout" Style="{StaticResource CardTitleStyle}" /><TextBlock Grid.Column="1" Text="{x:Bind ViewModel.SelectedProfilePresentation.LightingIdle, Mode=OneWay}" TextWrapping="Wrap" TextAlignment="Right" /></Grid>
+                                    </Border>
+                                    <Border Style="{StaticResource SettingsRowStyle}">
+                                        <Grid ColumnSpacing="16"><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><TextBlock Text="Function keys" Style="{StaticResource CardTitleStyle}" /><TextBlock Grid.Column="1" Text="{x:Bind ViewModel.SelectedProfilePresentation.FunctionKeyBehavior, Mode=OneWay}" TextAlignment="Right" /></Grid>
+                                    </Border>
+                                    <Border Style="{StaticResource SettingsRowStyle}">
+                                        <Grid ColumnSpacing="16"><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><TextBlock Text="Gaming mode" Style="{StaticResource CardTitleStyle}" /><TextBlock Grid.Column="1" Text="{x:Bind ViewModel.SelectedProfilePresentation.GamingMode, Mode=OneWay}" /></Grid>
+                                    </Border>
+                                    <Border Style="{StaticResource SettingsLastRowStyle}">
+                                        <Grid ColumnSpacing="16"><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><TextBlock Text="Startup animation" Style="{StaticResource CardTitleStyle}" /><TextBlock Grid.Column="1" Text="{x:Bind ViewModel.SelectedProfilePresentation.StartupAnimation, Mode=OneWay}" /></Grid>
                                     </Border>
                                 </StackPanel>
                             </Border>
@@ -1172,9 +1219,71 @@
                             </TransitionCollection>
                         </StackPanel.Transitions>
 
-                        <Grid x:Name="LaptopPageHeader" Margin="0,0,0,20">
+                        <Grid x:Name="LaptopPageHeader"
+                              Margin="0,0,0,20"
+                              ColumnSpacing="16"
+                              RowSpacing="10">
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                            </Grid.RowDefinitions>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <VisualStateManager.VisualStateGroups>
+                                <VisualStateGroup>
+                                    <VisualState x:Name="LaptopHeaderWide">
+                                        <VisualState.StateTriggers>
+                                            <AdaptiveTrigger MinWindowWidth="900" />
+                                        </VisualState.StateTriggers>
+                                        <VisualState.Setters>
+                                            <Setter Target="LaptopProfileSaveActions.(Grid.Row)" Value="0" />
+                                            <Setter Target="LaptopProfileSaveActions.(Grid.Column)" Value="1" />
+                                            <Setter Target="LaptopProfileSaveActions.(Grid.ColumnSpan)" Value="1" />
+                                            <Setter Target="LaptopProfileSaveActions.HorizontalAlignment" Value="Right" />
+                                            <Setter Target="LaptopProfileSaveActions.Margin" Value="0,2,0,0" />
+                                        </VisualState.Setters>
+                                    </VisualState>
+                                    <VisualState x:Name="LaptopHeaderCompact">
+                                        <VisualState.StateTriggers>
+                                            <AdaptiveTrigger MinWindowWidth="0" />
+                                        </VisualState.StateTriggers>
+                                        <VisualState.Setters>
+                                            <Setter Target="LaptopProfileSaveActions.(Grid.Row)" Value="1" />
+                                            <Setter Target="LaptopProfileSaveActions.(Grid.Column)" Value="0" />
+                                            <Setter Target="LaptopProfileSaveActions.(Grid.ColumnSpan)" Value="2" />
+                                            <Setter Target="LaptopProfileSaveActions.HorizontalAlignment" Value="Left" />
+                                            <Setter Target="LaptopProfileSaveActions.Margin" Value="0,2,0,0" />
+                                        </VisualState.Setters>
+                                    </VisualState>
+                                </VisualStateGroup>
+                            </VisualStateManager.VisualStateGroups>
                             <TextBlock Text="Laptop"
                                        Style="{StaticResource PageHeaderTitleStyle}" />
+                            <StackPanel x:Name="LaptopProfileSaveActions"
+                                        Grid.Column="1"
+                                        Orientation="Horizontal"
+                                        Spacing="8"
+                                        VerticalAlignment="Center"
+                                        Visibility="{x:Bind ViewModel.HasLaptopProfileDraft, Mode=OneWay}">
+                                <TextBlock Text="Unsaved changes"
+                                           Style="{StaticResource ProfileSaveStatusTextStyle}" />
+                                <Button Content="{x:Bind ViewModel.SaveToActiveProfileLabel, Mode=OneWay}"
+                                        Style="{StaticResource ProfileSaveButtonStyle}"
+                                        Command="{x:Bind ViewModel.SaveLaptopProfileDraftCommand}" />
+                                <Button Style="{StaticResource ProfileSaveOverflowButtonStyle}"
+                                        AutomationProperties.Name="More profile actions"
+                                        ToolTipService.ToolTip="More profile actions">
+                                    <FontIcon Glyph="&#xE712;" FontSize="16" />
+                                    <Button.Flyout>
+                                        <MenuFlyout>
+                                            <MenuFlyoutItem Text="Use profile settings"
+                                                            Command="{x:Bind ViewModel.DiscardLaptopProfileDraftCommand}" />
+                                        </MenuFlyout>
+                                    </Button.Flyout>
+                                </Button>
+                            </StackPanel>
                         </Grid>
 
                         <TextBlock Text="Keyboard"

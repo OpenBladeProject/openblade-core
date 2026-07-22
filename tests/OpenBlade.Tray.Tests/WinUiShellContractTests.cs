@@ -88,23 +88,23 @@ public sealed class WinUiShellContractTests
         Assert.Contains("x:Name=\"DashboardPageHeader\"", xaml, StringComparison.Ordinal);
         Assert.Contains("x:Name=\"LightingPageHeader\"", xaml, StringComparison.Ordinal);
         Assert.Contains("x:Name=\"DisplayPageHeader\"", xaml, StringComparison.Ordinal);
-        Assert.Equal(3, CountOccurrences(
+        Assert.Equal(4, CountOccurrences(
             xaml,
             "Content=\"{x:Bind ViewModel.SaveToActiveProfileLabel, Mode=OneWay}\""));
-        Assert.Equal(3, CountOccurrences(xaml, "Text=\"Unsaved changes\""));
+        Assert.Equal(4, CountOccurrences(xaml, "Text=\"Unsaved changes\""));
         Assert.DoesNotContain("Text=\"Not saved\"", xaml, StringComparison.Ordinal);
-        Assert.Equal(3, CountOccurrences(xaml, "Text=\"Use profile settings\""));
-        Assert.Equal(3, CountOccurrences(
+        Assert.Equal(4, CountOccurrences(xaml, "Text=\"Use profile settings\""));
+        Assert.Equal(4, CountOccurrences(
             xaml,
             "Style=\"{StaticResource ProfileSaveStatusTextStyle}\""));
-        Assert.Equal(3, CountOccurrences(
+        Assert.Equal(4, CountOccurrences(
             xaml,
             "Style=\"{StaticResource ProfileSaveButtonStyle}\""));
-        Assert.Equal(3, CountOccurrences(
+        Assert.Equal(4, CountOccurrences(
             xaml,
             "Style=\"{StaticResource ProfileSaveOverflowButtonStyle}\""));
         Assert.Contains("<Setter Property=\"Height\" Value=\"32\" />", xaml, StringComparison.Ordinal);
-        Assert.Equal(6, CountOccurrences(xaml, "ProfileSaveActions.Margin\" Value=\"0,2,0,0\""));
+        Assert.Equal(8, CountOccurrences(xaml, "ProfileSaveActions.Margin\" Value=\"0,2,0,0\""));
         Assert.DoesNotContain("ViewModel.ThermalProfileRelationshipStatus", xaml, StringComparison.Ordinal);
         Assert.DoesNotContain("ViewModel.LightingProfileRelationshipStatus", xaml, StringComparison.Ordinal);
         Assert.DoesNotContain("DisplayViewModel.ProfileRelationshipStatus", xaml, StringComparison.Ordinal);

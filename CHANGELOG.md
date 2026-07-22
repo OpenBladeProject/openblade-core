@@ -15,6 +15,10 @@ All notable changes to OpenBlade are documented in this file. The project follow
 - Added JSON profile import alongside export. Profile files use a versioned
   envelope and schema-specific readers so future releases can add explicit
   migrations without silently reinterpreting older structures.
+- Added separate function-key behavior, Gaming mode, and startup-animation
+  settings to the AC, USB-C, and Battery profiles. Saved values are restored
+  during power-source and laptop lifecycle transitions; older profiles leave
+  these controls unchanged until the user explicitly saves them.
 
 ### Changed
 

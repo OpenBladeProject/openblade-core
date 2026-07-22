@@ -2268,6 +2268,14 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             confirmed = outcome.Readback;
         }
 
+        string? laptopBehaviorMessage = current.WritesBlocked
+            ? null
+            : await ApplyProfileLaptopBehaviorAsync(
+                device,
+                powerSource,
+                outcome.Capabilities ?? current.Capabilities,
+                token).ConfigureAwait(false);
+
         LightingRendererOwnershipState observedLightingOwnership =
             await PublishObservedLightingOwnershipAsync(device, token)
                 .ConfigureAwait(false);
@@ -2329,6 +2337,11 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
 
         history.RecordSubsystemResults(outcome.Results);
         string message = Summarize(outcome.Results);
+        if (!string.IsNullOrWhiteSpace(laptopBehaviorMessage))
+        {
+            message = $"{message} {laptopBehaviorMessage}";
+            history.RecordSummary(ControlOperationStatus.Failed, laptopBehaviorMessage);
+        }
         if (!preserveLiveReadings)
         {
             PublishIfChanged(GetStatus() with { LiveReadings = null });
@@ -2340,6 +2353,152 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             message,
             deviceVerified: !outcome.DeviceAccessFailed,
             writesBlocked: outcome.DeviceAccessFailed);
+    }
+
+    private async Task<string?> ApplyProfileLaptopBehaviorAsync(
+        IBladeDevice device,
+        PowerSource powerSource,
+        DeviceCapabilities? capabilities,
+        CancellationToken token)
+    {
+        LaptopBehaviorProfileSettings behavior = Automation.Profiles
+            .ForPowerSource(powerSource)
+            .EffectiveLaptopBehavior;
+        if (!behavior.IsConfigured)
+        {
+            return null;
+        }
+
+        var failures = new List<string>();
+        if (behavior.FunctionKeyPrimary is { } functionKeyMode)
+        {
+            await ApplyProfileLaptopControlAsync(
+                device,
+                capabilities,
+                new ApplyOneShotLaptopControl(
+                    OneShotLaptopControl.FunctionKeyPrimary,
+                    FunctionKeyMode: functionKeyMode),
+                failures,
+                token).ConfigureAwait(false);
+        }
+        if (behavior.GamingModeEnabled is { } gamingModeEnabled)
+        {
+            await ApplyProfileLaptopControlAsync(
+                device,
+                capabilities,
+                new ApplyOneShotLaptopControl(
+                    OneShotLaptopControl.GamingMode,
+                    Enabled: gamingModeEnabled),
+                failures,
+                token).ConfigureAwait(false);
+        }
+        if (behavior.StartupAnimationEnabled is { } startupAnimationEnabled)
+        {
+            await ApplyProfileLaptopControlAsync(
+                device,
+                capabilities,
+                new ApplyOneShotLaptopControl(
+                    OneShotLaptopControl.StartupAnimation,
+                    Enabled: startupAnimationEnabled),
+                failures,
+                token).ConfigureAwait(false);
+        }
+
+        return failures.Count == 0
+            ? null
+            : $"Laptop behavior could not be synchronized: {string.Join(" ", failures)}";
+    }
+
+    private async Task ApplyProfileLaptopControlAsync(
+        IBladeDevice device,
+        DeviceCapabilities? capabilities,
+        ApplyOneShotLaptopControl requested,
+        ICollection<string> failures,
+        CancellationToken token)
+    {
+        string label = requested.Control switch
+        {
+            OneShotLaptopControl.FunctionKeyPrimary => "Function key behavior",
+            OneShotLaptopControl.GamingMode => "Gaming mode",
+            OneShotLaptopControl.StartupAnimation => "Startup animation",
+            _ => "Unknown laptop control",
+        };
+        if (capabilities is null
+            || !capabilities.OneShotLaptopControls.Contains(requested.Control))
+        {
+            failures.Add($"{label} is unsupported.");
+            return;
+        }
+
+        ServiceStatusSnapshot current = GetStatus();
+        bool alreadyMatches = requested.Control switch
+        {
+            OneShotLaptopControl.FunctionKeyPrimary =>
+                current.FunctionKeyPrimary == requested.FunctionKeyMode,
+            OneShotLaptopControl.GamingMode =>
+                current.GamingModeEnabled == requested.Enabled,
+            OneShotLaptopControl.StartupAnimation =>
+                current.StartupAnimationEnabled == requested.Enabled,
+            _ => false,
+        };
+        if (alreadyMatches)
+        {
+            return;
+        }
+
+        try
+        {
+            await device.ApplyOneShotLaptopControlAsync(requested, token)
+                .ConfigureAwait(false);
+            switch (requested.Control)
+            {
+                case OneShotLaptopControl.FunctionKeyPrimary:
+                {
+                    FunctionKeyPrimaryMode? readback = await device
+                        .ReadFunctionKeyPrimaryAsync(token)
+                        .ConfigureAwait(false);
+                    if (readback != requested.FunctionKeyMode)
+                    {
+                        failures.Add($"{label} was not confirmed.");
+                        return;
+                    }
+                    PublishIfChanged(GetStatus() with { FunctionKeyPrimary = readback });
+                    break;
+                }
+                case OneShotLaptopControl.GamingMode:
+                {
+                    bool? readback = await device.ReadGamingModeAsync(token)
+                        .ConfigureAwait(false);
+                    if (readback != requested.Enabled)
+                    {
+                        failures.Add($"{label} was not confirmed.");
+                        return;
+                    }
+                    PublishIfChanged(GetStatus() with { GamingModeEnabled = readback });
+                    break;
+                }
+                case OneShotLaptopControl.StartupAnimation:
+                {
+                    bool? readback = await device.ReadStartupAnimationAsync(token)
+                        .ConfigureAwait(false);
+                    if (readback != requested.Enabled)
+                    {
+                        failures.Add($"{label} was not confirmed.");
+                        return;
+                    }
+                    PublishIfChanged(GetStatus() with { StartupAnimationEnabled = readback });
+                    break;
+                }
+            }
+        }
+        catch (OperationCanceledException) when (token.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch
+        {
+            failures.Add($"{label} could not be applied.");
+        }
     }
 
     private static bool ShouldRetryPowerTransitionAccess(
