@@ -151,7 +151,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
 
     public IReadOnlyList<AppAccentColorOption> AccentColorOptions { get; } =
     [
-        new(AppAccentColorMode.RazerGreen, "Razer green"),
+        new(AppAccentColorMode.RazerGreen, "OpenBlade green"),
         new(AppAccentColorMode.Windows, "Windows accent"),
         new(AppAccentColorMode.Custom, "Custom"),
     ];
@@ -176,10 +176,10 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
 
     public string AccentColorSummary => accentColorMode switch
     {
-        AppAccentColorMode.RazerGreen => "Razer green (#47E10C)",
+        AppAccentColorMode.RazerGreen => "OpenBlade green (#47E10C)",
         AppAccentColorMode.Windows => "Windows accent",
         AppAccentColorMode.Custom => $"Custom ({customAccentColor})",
-        _ => "Razer green (#47E10C)",
+        _ => "OpenBlade green (#47E10C)",
     };
 
     public Microsoft.UI.Xaml.Media.Brush AccentColorPreviewBrush =>

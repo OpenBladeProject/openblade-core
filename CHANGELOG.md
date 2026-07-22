@@ -34,6 +34,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Changed
 
+- Renamed the default accent's user-facing label from Razer green to OpenBlade
+  green. Its `#47E10C` value and serialized preference remain unchanged.
 - Moved Display above Laptop in the default left-navigation order and migrated
   installations still using the former default while preserving custom orders.
 - Replaced the navigation-order popup with an inline reorderable Settings card
@@ -97,7 +99,7 @@ All notable changes to OpenBlade are documented in this file. The project follow
 - Kept OpenBlade's selected lighting effect visible while a write is pending
   instead of replacing it with the external-effect placeholder after a periodic
   firmware observation that cannot read the matrix effect.
-- Made Razer green (`#47E10C`) the default and recovery color for lighting
+- Made OpenBlade green (`#47E10C`) the default and recovery color for lighting
   effects when no explicit or confirmed color is available.
 - Kept advisory detections of other Razer software from blocking Reactive and
   Ripple key input after OpenBlade has verified the laptop and owns the renderer.
@@ -337,7 +339,7 @@ All notable changes to OpenBlade are documented in this file. The project follow
 - Taskbar hover content is now a checked, draggable list, allowing users to
   choose and order the active profile, net battery power, temperatures, and
   individual fan speeds within the Windows tooltip length limit.
-- OpenBlade uses Razer green for the WinUI accent while reserving green, amber,
+- The UI uses OpenBlade green for its WinUI accent while reserving green, amber,
   and red status colors for ready, attention, and failure states.
 - Lighting edits apply automatically after a short debounce instead of requiring
   a separate Apply button, and newer edits are not cleared by an older in-flight
