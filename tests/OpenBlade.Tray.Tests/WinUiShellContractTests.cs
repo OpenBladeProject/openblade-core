@@ -151,39 +151,39 @@ public sealed class WinUiShellContractTests
         Assert.Contains("x:Name=\"GamingModeToggle\"", xaml, StringComparison.Ordinal);
         Assert.Contains("x:Name=\"StartupAnimationToggle\"", xaml, StringComparison.Ordinal);
         Assert.Contains(
-            "Content=\"{x:Bind ViewModel.FunctionKeyPrimaryStateLabel, Mode=OneWay}\"",
+            "Content=\"{x:Bind FunctionKeyPrimaryStateLabel, Mode=OneWay}\"",
             xaml,
             StringComparison.Ordinal);
         Assert.Contains(
-            "IsEnabled=\"{x:Bind ViewModel.CanEditFunctionKeyPrimary, Mode=OneWay}\"",
+            "IsEnabled=\"{x:Bind CanEditFunctionKeyPrimary, Mode=OneWay}\"",
             xaml,
             StringComparison.Ordinal);
         Assert.Contains(
-            "Visibility=\"{x:Bind ViewModel.IsFunctionKeyFieldLoading, Mode=OneWay}\"",
+            "Visibility=\"{x:Bind IsFunctionKeyFieldLoading, Mode=OneWay}\"",
             xaml,
             StringComparison.Ordinal);
         Assert.Contains(
-            "IsOn=\"{x:Bind ViewModel.GamingModeToggleIsOn, Mode=OneWay}\"",
+            "IsOn=\"{x:Bind GamingModeToggleIsOn, Mode=OneWay}\"",
             xaml,
             StringComparison.Ordinal);
         Assert.Contains(
-            "IsEnabled=\"{x:Bind ViewModel.CanEditGamingMode, Mode=OneWay}\"",
+            "IsEnabled=\"{x:Bind CanEditGamingMode, Mode=OneWay}\"",
             xaml,
             StringComparison.Ordinal);
         Assert.Contains(
-            "Visibility=\"{x:Bind ViewModel.IsGamingModeFieldLoading, Mode=OneWay}\"",
+            "Visibility=\"{x:Bind IsGamingModeFieldLoading, Mode=OneWay}\"",
             xaml,
             StringComparison.Ordinal);
         Assert.Contains(
-            "IsOn=\"{x:Bind ViewModel.StartupAnimationToggleIsOn, Mode=OneWay}\"",
+            "IsOn=\"{x:Bind StartupAnimationToggleIsOn, Mode=OneWay}\"",
             xaml,
             StringComparison.Ordinal);
         Assert.Contains(
-            "IsEnabled=\"{x:Bind ViewModel.CanEditStartupAnimation, Mode=OneWay}\"",
+            "IsEnabled=\"{x:Bind CanEditStartupAnimation, Mode=OneWay}\"",
             xaml,
             StringComparison.Ordinal);
         Assert.Contains(
-            "Visibility=\"{x:Bind ViewModel.IsStartupAnimationFieldLoading, Mode=OneWay}\"",
+            "Visibility=\"{x:Bind IsStartupAnimationFieldLoading, Mode=OneWay}\"",
             xaml,
             StringComparison.Ordinal);
         Assert.Contains("x:Name=\"FunctionKeyFirmwareLoadingSlot\"", xaml, StringComparison.Ordinal);
@@ -371,6 +371,74 @@ public sealed class WinUiShellContractTests
         Assert.DoesNotContain("DashboardLayoutRestartRequested", app, StringComparison.Ordinal);
         Assert.DoesNotContain("--restart-after=", app, StringComparison.Ordinal);
         Assert.DoesNotContain("WaitForDashboardRestartParent", app, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void EveryReusableDashboardCardBindsDirectlyToItsViewModel()
+    {
+        string xaml = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml");
+        string window = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml.cs");
+        string[] mainViewModelTemplates =
+        [
+            "DashboardPowerModeCardTemplate",
+            "DashboardFansCardTemplate",
+            "DashboardBatteryCardTemplate",
+            "DashboardKeyboardBehaviorCardTemplate",
+            "DashboardStartupAnimationCardTemplate",
+            "DashboardLightingCardTemplate",
+        ];
+
+        foreach (string templateKey in mainViewModelTemplates)
+        {
+            string template = SliceMethod(
+                xaml,
+                $"<DataTemplate x:Key=\"{templateKey}\"",
+                "</DataTemplate>");
+            Assert.Contains("x:DataType=\"local:MainViewModel\"", template, StringComparison.Ordinal);
+            Assert.DoesNotContain("x:Bind ViewModel.", template, StringComparison.Ordinal);
+            Assert.DoesNotContain("DataContext=\"{x:Bind ViewModel", template, StringComparison.Ordinal);
+        }
+
+        string displayTemplate = SliceMethod(
+            xaml,
+            "<DataTemplate x:Key=\"DashboardDisplayCardTemplate\"",
+            "</DataTemplate>");
+        Assert.Contains(
+            "x:DataType=\"local:DisplaySettingsViewModel\"",
+            displayTemplate,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain("x:Bind DisplayViewModel.", displayTemplate, StringComparison.Ordinal);
+        Assert.DoesNotContain("DataContext=\"{x:Bind ViewModel", displayTemplate, StringComparison.Ordinal);
+
+        string factory = SliceMethod(
+            window,
+            "private FrameworkElement CreateDashboardLiveCard",
+            "private void MoveCanonicalLaptopCardsIntoPlace");
+        Assert.Contains("? DisplayViewModel", factory, StringComparison.Ordinal);
+        Assert.Contains(": ViewModel", factory, StringComparison.Ordinal);
+        Assert.Contains("Content = content", factory, StringComparison.Ordinal);
+        Assert.DoesNotContain("Content = this", factory, StringComparison.Ordinal);
+
+        foreach (string cardName in new[]
+        {
+            "PowerModeCard",
+            "FansCard",
+            "BatteryCard",
+            "KeyboardBehaviorCard",
+            "StartupAnimationCard",
+            "LightingCard",
+        })
+        {
+            Assert.Contains(
+                $"x:Name=\"{cardName}\"\n                                        Content=\"{{x:Bind ViewModel}}\"",
+                xaml.Replace("\r\n", "\n", StringComparison.Ordinal),
+                StringComparison.Ordinal);
+        }
+
+        Assert.Contains(
+            "x:Name=\"DisplayCard\"\n                                        Content=\"{x:Bind DisplayViewModel}\"",
+            xaml.Replace("\r\n", "\n", StringComparison.Ordinal),
+            StringComparison.Ordinal);
     }
 
     [Fact]

@@ -2005,9 +2005,13 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
                 "The dashboard card does not have a live template."),
         };
 
+        object content = option.Kind == DashboardCardKind.Display
+            ? DisplayViewModel
+            : ViewModel;
+
         return new ContentControl
         {
-            Content = this,
+            Content = content,
             ContentTemplate = (DataTemplate)Root.Resources[templateKey],
             HorizontalContentAlignment = Microsoft.UI.Xaml.HorizontalAlignment.Stretch,
         };

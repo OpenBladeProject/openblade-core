@@ -63,9 +63,9 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
-- Bound the duplicated Dashboard Power mode, Fans, and Battery cards directly
-  to the live control model, preventing a Dashboard instance from retaining
-  hidden or disabled capability state after the Laptop-page instance updates.
+- Bound every duplicated Dashboard control card directly to its live view
+  model, preventing Dashboard instances from retaining stale visibility,
+  availability, selection, or loading state after their original page updates.
 - Kept the Power mode, Fans, and Battery controls visible and interactive while
   OpenBlade retains the last confirmed AC or USB-C classification during a
   transient adapter read. Each requested change still performs a fresh adapter

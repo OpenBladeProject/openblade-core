@@ -272,8 +272,8 @@
                                VerticalAlignment="Center" />
                 </Grid>
             </DataTemplate>
-            <DataTemplate x:Key="DashboardPowerModeCardTemplate" x:DataType="local:MainWindow">
-                        <StackPanel DataContext="{x:Bind ViewModel}">
+            <DataTemplate x:Key="DashboardPowerModeCardTemplate" x:DataType="local:MainViewModel">
+                        <StackPanel>
                         <TextBlock Text="Power mode"
                                    Style="{StaticResource SectionHeaderStyle}"
                                    Margin="0,0,0,10" />
@@ -362,8 +362,8 @@
                         </Border>
                         </StackPanel>
             </DataTemplate>
-            <DataTemplate x:Key="DashboardFansCardTemplate" x:DataType="local:MainWindow">
-                        <StackPanel DataContext="{x:Bind ViewModel}">
+            <DataTemplate x:Key="DashboardFansCardTemplate" x:DataType="local:MainViewModel">
+                        <StackPanel>
                         <TextBlock Text="Fans"
                                    Style="{StaticResource SectionHeaderStyle}"
                                    Margin="0,0,0,10" />
@@ -549,8 +549,8 @@
                         </Border>
                         </StackPanel>
             </DataTemplate>
-            <DataTemplate x:Key="DashboardBatteryCardTemplate" x:DataType="local:MainWindow">
-                        <StackPanel DataContext="{x:Bind ViewModel}">
+            <DataTemplate x:Key="DashboardBatteryCardTemplate" x:DataType="local:MainViewModel">
+                        <StackPanel>
                         <TextBlock Text="Battery"
                                    Style="{StaticResource SectionHeaderStyle}"
                                    Margin="0,0,0,10" />
@@ -651,17 +651,17 @@
                         </Border>
                         </StackPanel>
             </DataTemplate>
-            <DataTemplate x:Key="DashboardKeyboardBehaviorCardTemplate" x:DataType="local:MainWindow">
-                        <StackPanel DataContext="{x:Bind ViewModel}">
+            <DataTemplate x:Key="DashboardKeyboardBehaviorCardTemplate" x:DataType="local:MainViewModel">
+                        <StackPanel>
                         <TextBlock Text="Keyboard"
                                    Style="{StaticResource SectionHeaderStyle}"
                                    Margin="0,0,0,10"
-                                   Visibility="{x:Bind ViewModel.HasKeyboardLaptopControls, Mode=OneWay}" />
+                                   Visibility="{x:Bind HasKeyboardLaptopControls, Mode=OneWay}" />
                         <Border Style="{StaticResource SettingsGroupStyle}"
-                                Visibility="{x:Bind ViewModel.HasKeyboardLaptopControls, Mode=OneWay}">
+                                Visibility="{x:Bind HasKeyboardLaptopControls, Mode=OneWay}">
                             <StackPanel>
                                 <Border Style="{StaticResource SettingsRowStyle}"
-                                        Visibility="{x:Bind ViewModel.SupportsFunctionKeyPrimary, Mode=OneWay}">
+                                        Visibility="{x:Bind SupportsFunctionKeyPrimary, Mode=OneWay}">
                                     <Grid ColumnSpacing="20">
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="*" />
@@ -678,23 +678,23 @@
                                                     Height="16"
                                                     VerticalAlignment="Center">
                                                 <ProgressRing Style="{StaticResource FirmwareProgressRingStyle}"
-                                                              IsActive="{x:Bind ViewModel.IsFunctionKeyFieldLoading, Mode=OneWay}"
-                                                              Visibility="{x:Bind ViewModel.IsFunctionKeyFieldLoading, Mode=OneWay}"
+                                                              IsActive="{x:Bind IsFunctionKeyFieldLoading, Mode=OneWay}"
+                                                              Visibility="{x:Bind IsFunctionKeyFieldLoading, Mode=OneWay}"
                                                               AutomationProperties.Name="Reading or applying function key behavior" />
                                             </Border>
-                                            <DropDownButton Content="{x:Bind ViewModel.FunctionKeyPrimaryStateLabel, Mode=OneWay}"
+                                            <DropDownButton Content="{x:Bind FunctionKeyPrimaryStateLabel, Mode=OneWay}"
                                                             HorizontalAlignment="Right"
                                                             VerticalAlignment="Center"
-                                                            IsEnabled="{x:Bind ViewModel.CanEditFunctionKeyPrimary, Mode=OneWay}"
+                                                            IsEnabled="{x:Bind CanEditFunctionKeyPrimary, Mode=OneWay}"
                                                             AutomationProperties.Name="Set function key behavior">
                                                 <DropDownButton.Flyout>
                                                     <MenuFlyout>
                                                         <MenuFlyoutItem Text="Function keys"
-                                                                        Command="{x:Bind ViewModel.ApplyOneShotLaptopControlCommand}"
-                                                                        CommandParameter="{x:Bind ViewModel.FunctionKeysPrimaryAction}" />
+                                                                        Command="{x:Bind ApplyOneShotLaptopControlCommand}"
+                                                                        CommandParameter="{x:Bind FunctionKeysPrimaryAction}" />
                                                         <MenuFlyoutItem Text="Media keys"
-                                                                        Command="{x:Bind ViewModel.ApplyOneShotLaptopControlCommand}"
-                                                                        CommandParameter="{x:Bind ViewModel.MultimediaKeysPrimaryAction}" />
+                                                                        Command="{x:Bind ApplyOneShotLaptopControlCommand}"
+                                                                        CommandParameter="{x:Bind MultimediaKeysPrimaryAction}" />
                                                     </MenuFlyout>
                                                 </DropDownButton.Flyout>
                                             </DropDownButton>
@@ -702,7 +702,7 @@
                                     </Grid>
                                 </Border>
                                 <Border Style="{StaticResource SettingsLastRowStyle}"
-                                        Visibility="{x:Bind ViewModel.SupportsGamingMode, Mode=OneWay}">
+                                        Visibility="{x:Bind SupportsGamingMode, Mode=OneWay}">
                                     <Grid ColumnSpacing="20">
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="*" />
@@ -719,19 +719,19 @@
                                                     Height="16"
                                                     VerticalAlignment="Center">
                                                 <ProgressRing Style="{StaticResource FirmwareProgressRingStyle}"
-                                                              IsActive="{x:Bind ViewModel.IsGamingModeFieldLoading, Mode=OneWay}"
-                                                              Visibility="{x:Bind ViewModel.IsGamingModeFieldLoading, Mode=OneWay}"
+                                                              IsActive="{x:Bind IsGamingModeFieldLoading, Mode=OneWay}"
+                                                              Visibility="{x:Bind IsGamingModeFieldLoading, Mode=OneWay}"
                                                               AutomationProperties.Name="Reading or applying Gaming mode" />
                                             </Border>
                                             <ToggleSwitch x:Name="GamingModeToggle"
                                                           HorizontalAlignment="Right"
                                                           VerticalAlignment="Center"
                                                           MinWidth="0"
-                                                          IsEnabled="{x:Bind ViewModel.CanEditGamingMode, Mode=OneWay}"
+                                                          IsEnabled="{x:Bind CanEditGamingMode, Mode=OneWay}"
                                                           AutomationProperties.Name="Gaming mode"
                                                           OffContent=""
                                                           OnContent=""
-                                                          IsOn="{x:Bind ViewModel.GamingModeToggleIsOn, Mode=OneWay}"
+                                                          IsOn="{x:Bind GamingModeToggleIsOn, Mode=OneWay}"
                                                           Toggled="OnGamingModeToggled" />
                                         </StackPanel>
                                     </Grid>
@@ -740,14 +740,14 @@
                         </Border>
                         </StackPanel>
             </DataTemplate>
-            <DataTemplate x:Key="DashboardStartupAnimationCardTemplate" x:DataType="local:MainWindow">
-                        <StackPanel DataContext="{x:Bind ViewModel}">
+            <DataTemplate x:Key="DashboardStartupAnimationCardTemplate" x:DataType="local:MainViewModel">
+                        <StackPanel>
                         <TextBlock Text="Startup"
                                    Style="{StaticResource SectionHeaderStyle}"
                                    Margin="0,0,0,10"
-                                   Visibility="{x:Bind ViewModel.SupportsStartupAnimation, Mode=OneWay}" />
+                                   Visibility="{x:Bind SupportsStartupAnimation, Mode=OneWay}" />
                         <Border Style="{StaticResource SettingsGroupStyle}"
-                                Visibility="{x:Bind ViewModel.SupportsStartupAnimation, Mode=OneWay}">
+                                Visibility="{x:Bind SupportsStartupAnimation, Mode=OneWay}">
                             <Border Style="{StaticResource SettingsLastRowStyle}">
                                 <Grid ColumnSpacing="20">
                                     <Grid.ColumnDefinitions>
@@ -765,19 +765,19 @@
                                                 Height="16"
                                                 VerticalAlignment="Center">
                                             <ProgressRing Style="{StaticResource FirmwareProgressRingStyle}"
-                                                          IsActive="{x:Bind ViewModel.IsStartupAnimationFieldLoading, Mode=OneWay}"
-                                                          Visibility="{x:Bind ViewModel.IsStartupAnimationFieldLoading, Mode=OneWay}"
+                                                          IsActive="{x:Bind IsStartupAnimationFieldLoading, Mode=OneWay}"
+                                                          Visibility="{x:Bind IsStartupAnimationFieldLoading, Mode=OneWay}"
                                                           AutomationProperties.Name="Reading or applying startup animation" />
                                         </Border>
                                         <ToggleSwitch x:Name="StartupAnimationToggle"
                                                       HorizontalAlignment="Right"
                                                       VerticalAlignment="Center"
                                                       MinWidth="0"
-                                                      IsEnabled="{x:Bind ViewModel.CanEditStartupAnimation, Mode=OneWay}"
+                                                      IsEnabled="{x:Bind CanEditStartupAnimation, Mode=OneWay}"
                                                       AutomationProperties.Name="Startup animation"
                                                       OffContent=""
                                                       OnContent=""
-                                                      IsOn="{x:Bind ViewModel.StartupAnimationToggleIsOn, Mode=OneWay}"
+                                                      IsOn="{x:Bind StartupAnimationToggleIsOn, Mode=OneWay}"
                                                       Toggled="OnStartupAnimationToggled" />
                                     </StackPanel>
                                 </Grid>
@@ -785,19 +785,19 @@
                         </Border>
                         </StackPanel>
             </DataTemplate>
-            <DataTemplate x:Key="DashboardLightingCardTemplate" x:DataType="local:MainWindow">
-                        <StackPanel DataContext="{x:Bind ViewModel}">
+            <DataTemplate x:Key="DashboardLightingCardTemplate" x:DataType="local:MainViewModel">
+                        <StackPanel>
                         <InfoBar x:Name="LightingUnavailableInfoBar"
                                  Margin="0,0,0,18"
-                                 IsOpen="{x:Bind ViewModel.IsLightingControlUnavailable, Mode=OneWay}"
-                                 Visibility="{x:Bind ViewModel.IsLightingControlUnavailable, Mode=OneWay}"
+                                 IsOpen="{x:Bind IsLightingControlUnavailable, Mode=OneWay}"
+                                 Visibility="{x:Bind IsLightingControlUnavailable, Mode=OneWay}"
                                  IsClosable="False"
                                  Severity="Informational"
                                  Title="Lighting controls unavailable"
-                                 Message="{x:Bind ViewModel.LightingControlUnavailableMessage, Mode=OneWay}" />
+                                 Message="{x:Bind LightingControlUnavailableMessage, Mode=OneWay}" />
                         <ContentControl x:Name="LightingControls"
                                         HorizontalContentAlignment="Stretch"
-                                        IsEnabled="{x:Bind ViewModel.CanControlLighting, Mode=OneWay}">
+                                        IsEnabled="{x:Bind CanControlLighting, Mode=OneWay}">
                             <StackPanel>
                         <TextBlock Text="Keyboard"
                                    Style="{StaticResource SectionHeaderStyle}"
@@ -812,7 +812,7 @@
                                         </Grid.ColumnDefinitions>
                                         <StackPanel Spacing="3" VerticalAlignment="Center">
                                             <TextBlock Text="Effect" Style="{StaticResource CardTitleStyle}" />
-                                            <TextBlock Text="{x:Bind ViewModel.KeyboardEffectDescription, Mode=OneWay}"
+                                            <TextBlock Text="{x:Bind KeyboardEffectDescription, Mode=OneWay}"
                                                        Style="{StaticResource SecondaryTextStyle}" />
                                         </StackPanel>
                                         <ComboBox x:Name="LightingEffectPicker"
@@ -820,16 +820,16 @@
                                                   MinWidth="190"
                                                   Style="{StaticResource SettingsPickerStyle}"
                                                   AutomationProperties.Name="Keyboard lighting effect"
-                                                  ItemsSource="{x:Bind ViewModel.AvailableLightingEffectOptions, Mode=OneWay}"
+                                                  ItemsSource="{x:Bind AvailableLightingEffectOptions, Mode=OneWay}"
                                                   DisplayMemberPath="Label"
                                                   PlaceholderText="Current effect unavailable"
-                                                  SelectedItem="{x:Bind ViewModel.SelectedLightingEffectOption, Mode=TwoWay}" />
+                                                  SelectedItem="{x:Bind SelectedLightingEffectOption, Mode=TwoWay}" />
                                     </Grid>
                                 </Border>
 
                                 <Border Style="{StaticResource SettingsRowStyle}"
                                         Visibility="Collapsed"
-                                        local:AnimatedVisibility.IsVisible="{x:Bind ViewModel.LightingShowsBrightness, Mode=OneWay}">
+                                        local:AnimatedVisibility.IsVisible="{x:Bind LightingShowsBrightness, Mode=OneWay}">
                                     <Grid ColumnSpacing="20">
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="*" />
@@ -842,7 +842,7 @@
                                         </StackPanel>
                                         <StackPanel Grid.Column="1" Spacing="4">
                                             <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
-                                                <TextBlock Text="{x:Bind ViewModel.LightingBrightnessEditor, Mode=OneWay}"
+                                                <TextBlock Text="{x:Bind LightingBrightnessEditor, Mode=OneWay}"
                                                            Style="{StaticResource CardTitleStyle}" />
                                                 <TextBlock Text="%" Style="{StaticResource CardTitleStyle}" />
                                             </StackPanel>
@@ -860,7 +860,7 @@
 
                                 <Border Style="{StaticResource SettingsRowStyle}"
                                         Visibility="Collapsed"
-                                        local:AnimatedVisibility.IsVisible="{x:Bind ViewModel.LightingShowsAmbientAwarenessRegion, Mode=OneWay}">
+                                        local:AnimatedVisibility.IsVisible="{x:Bind LightingShowsAmbientAwarenessRegion, Mode=OneWay}">
                                     <Grid ColumnSpacing="20">
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="*" />
@@ -875,15 +875,15 @@
                                                   MinWidth="150"
                                                   Style="{StaticResource SettingsPickerStyle}"
                                                   AutomationProperties.Name="Ambient Awareness screen region"
-                                                  ItemsSource="{x:Bind ViewModel.AvailableAmbientAwarenessRegionOptions}"
+                                                  ItemsSource="{x:Bind AvailableAmbientAwarenessRegionOptions}"
                                                   DisplayMemberPath="Label"
-                                                  SelectedItem="{x:Bind ViewModel.SelectedAmbientAwarenessRegionOption, Mode=TwoWay}" />
+                                                  SelectedItem="{x:Bind SelectedAmbientAwarenessRegionOption, Mode=TwoWay}" />
                                     </Grid>
                                 </Border>
 
                                 <Border Style="{StaticResource SettingsRowStyle}"
                                         Visibility="Collapsed"
-                                        local:AnimatedVisibility.IsVisible="{x:Bind ViewModel.LightingShowsBreathingColorMode, Mode=OneWay}">
+                                        local:AnimatedVisibility.IsVisible="{x:Bind LightingShowsBreathingColorMode, Mode=OneWay}">
                                     <Grid ColumnSpacing="20">
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="*" />
@@ -898,14 +898,14 @@
                                                   MinWidth="150"
                                                   Style="{StaticResource SettingsPickerStyle}"
                                                   AutomationProperties.Name="Breathing color mode"
-                                                  ItemsSource="{x:Bind ViewModel.LightingBreathingColorModes}"
-                                                  SelectedItem="{x:Bind ViewModel.LightingBreathingColorModeEditor, Mode=TwoWay}" />
+                                                  ItemsSource="{x:Bind LightingBreathingColorModes}"
+                                                  SelectedItem="{x:Bind LightingBreathingColorModeEditor, Mode=TwoWay}" />
                                     </Grid>
                                 </Border>
 
                                 <Border Style="{StaticResource SettingsRowStyle}"
                                         Visibility="Collapsed"
-                                        local:AnimatedVisibility.IsVisible="{x:Bind ViewModel.LightingShowsStarlightColorMode, Mode=OneWay}">
+                                        local:AnimatedVisibility.IsVisible="{x:Bind LightingShowsStarlightColorMode, Mode=OneWay}">
                                     <Grid ColumnSpacing="20">
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="*" />
@@ -920,14 +920,14 @@
                                                   MinWidth="150"
                                                   Style="{StaticResource SettingsPickerStyle}"
                                                   AutomationProperties.Name="Starlight color mode"
-                                                  ItemsSource="{x:Bind ViewModel.LightingStarlightColorModes}"
-                                                  SelectedItem="{x:Bind ViewModel.LightingStarlightColorModeEditor, Mode=TwoWay}" />
+                                                  ItemsSource="{x:Bind LightingStarlightColorModes}"
+                                                  SelectedItem="{x:Bind LightingStarlightColorModeEditor, Mode=TwoWay}" />
                                     </Grid>
                                 </Border>
 
                                 <Border Style="{StaticResource SettingsRowStyle}"
                                         Visibility="Collapsed"
-                                        local:AnimatedVisibility.IsVisible="{x:Bind ViewModel.LightingShowsRandomColors, Mode=OneWay}">
+                                        local:AnimatedVisibility.IsVisible="{x:Bind LightingShowsRandomColors, Mode=OneWay}">
                                     <Grid ColumnSpacing="20">
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="*" />
@@ -941,13 +941,13 @@
                                         <ToggleSwitch Grid.Column="1"
                                                       VerticalAlignment="Center"
                                                       AutomationProperties.Name="Random Tidal colors"
-                                                      IsOn="{x:Bind ViewModel.LightingRandomColorsEditor, Mode=TwoWay}" />
+                                                      IsOn="{x:Bind LightingRandomColorsEditor, Mode=TwoWay}" />
                                     </Grid>
                                 </Border>
 
                                 <Border Style="{StaticResource SettingsRowStyle}"
                                         Visibility="Collapsed"
-                                        local:AnimatedVisibility.IsVisible="{x:Bind ViewModel.LightingShowsDirection, Mode=OneWay}">
+                                        local:AnimatedVisibility.IsVisible="{x:Bind LightingShowsDirection, Mode=OneWay}">
                                     <Grid ColumnSpacing="20">
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="*" />
@@ -962,15 +962,15 @@
                                                   MinWidth="150"
                                                   Style="{StaticResource SettingsPickerStyle}"
                                                   AutomationProperties.Name="Lighting direction"
-                                                  ItemsSource="{x:Bind ViewModel.LightingDirectionOptions, Mode=OneWay}"
+                                                  ItemsSource="{x:Bind LightingDirectionOptions, Mode=OneWay}"
                                                   DisplayMemberPath="Label"
-                                                  SelectedItem="{x:Bind ViewModel.SelectedLightingDirectionOption, Mode=TwoWay}" />
+                                                  SelectedItem="{x:Bind SelectedLightingDirectionOption, Mode=TwoWay}" />
                                     </Grid>
                                 </Border>
 
                                 <Border Style="{StaticResource SettingsRowStyle}"
                                         Visibility="Collapsed"
-                                        local:AnimatedVisibility.IsVisible="{x:Bind ViewModel.LightingShowsRotationDirection, Mode=OneWay}">
+                                        local:AnimatedVisibility.IsVisible="{x:Bind LightingShowsRotationDirection, Mode=OneWay}">
                                     <Grid ColumnSpacing="20">
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="*" />
@@ -985,23 +985,23 @@
                                                   MinWidth="170"
                                                   Style="{StaticResource SettingsPickerStyle}"
                                                   AutomationProperties.Name="Wheel rotation direction"
-                                                  ItemsSource="{x:Bind ViewModel.LightingRotationDirections}"
-                                                  SelectedItem="{x:Bind ViewModel.LightingRotationDirectionEditor, Mode=TwoWay}" />
+                                                  ItemsSource="{x:Bind LightingRotationDirections}"
+                                                  SelectedItem="{x:Bind LightingRotationDirectionEditor, Mode=TwoWay}" />
                                     </Grid>
                                 </Border>
 
                                 <Border Style="{StaticResource SettingsRowStyle}"
                                         Visibility="Collapsed"
-                                        local:AnimatedVisibility.IsVisible="{x:Bind ViewModel.LightingShowsPrimaryColor, Mode=OneWay}">
+                                        local:AnimatedVisibility.IsVisible="{x:Bind LightingShowsPrimaryColor, Mode=OneWay}">
                                     <Grid ColumnSpacing="20">
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="*" />
                                             <ColumnDefinition Width="Auto" />
                                         </Grid.ColumnDefinitions>
                                         <StackPanel Spacing="3" VerticalAlignment="Center">
-                                            <TextBlock Text="{x:Bind ViewModel.LightingPrimaryColorLabel, Mode=OneWay}"
+                                            <TextBlock Text="{x:Bind LightingPrimaryColorLabel, Mode=OneWay}"
                                                        Style="{StaticResource CardTitleStyle}" />
-                                            <TextBlock Text="{x:Bind ViewModel.LightingPrimaryColorDescription, Mode=OneWay}"
+                                            <TextBlock Text="{x:Bind LightingPrimaryColorDescription, Mode=OneWay}"
                                                        Style="{StaticResource SecondaryTextStyle}" />
                                         </StackPanel>
                                         <Button Grid.Column="1"
@@ -1022,7 +1022,7 @@
                                             <Button.Flyout>
                                                 <Flyout>
                                                     <ColorPicker MinWidth="320"
-                                                                 DataContext="{x:Bind ViewModel, Mode=OneWay}"
+                                                                 DataContext="{x:Bind Mode=OneWay}"
                                                                  IsAlphaEnabled="False"
                                                                  IsAlphaSliderVisible="False"
                                                                  IsAlphaTextInputVisible="False"
@@ -1037,7 +1037,7 @@
 
                                 <Border Style="{StaticResource SettingsRowStyle}"
                                         Visibility="Collapsed"
-                                        local:AnimatedVisibility.IsVisible="{x:Bind ViewModel.LightingShowsSecondaryColor, Mode=OneWay}">
+                                        local:AnimatedVisibility.IsVisible="{x:Bind LightingShowsSecondaryColor, Mode=OneWay}">
                                     <Grid ColumnSpacing="20">
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="*" />
@@ -1066,7 +1066,7 @@
                                             <Button.Flyout>
                                                 <Flyout>
                                                     <ColorPicker MinWidth="320"
-                                                                 DataContext="{x:Bind ViewModel, Mode=OneWay}"
+                                                                 DataContext="{x:Bind Mode=OneWay}"
                                                                  IsAlphaEnabled="False"
                                                                  IsAlphaSliderVisible="False"
                                                                  IsAlphaTextInputVisible="False"
@@ -1081,7 +1081,7 @@
 
                                 <Border Style="{StaticResource SettingsRowStyle}"
                                         Visibility="Collapsed"
-                                        local:AnimatedVisibility.IsVisible="{x:Bind ViewModel.LightingShowsReactiveDuration, Mode=OneWay}">
+                                        local:AnimatedVisibility.IsVisible="{x:Bind LightingShowsReactiveDuration, Mode=OneWay}">
                                     <Grid ColumnSpacing="20">
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="*" />
@@ -1096,14 +1096,14 @@
                                                   MinWidth="150"
                                                   Style="{StaticResource SettingsPickerStyle}"
                                                   AutomationProperties.Name="Reactive lighting duration"
-                                                  ItemsSource="{x:Bind ViewModel.LightingReactiveDurations}"
-                                                  SelectedItem="{x:Bind ViewModel.LightingReactiveDurationEditor, Mode=TwoWay}" />
+                                                  ItemsSource="{x:Bind LightingReactiveDurations}"
+                                                  SelectedItem="{x:Bind LightingReactiveDurationEditor, Mode=TwoWay}" />
                                     </Grid>
                                 </Border>
 
                                 <Border Style="{StaticResource SettingsRowStyle}"
                                         Visibility="Collapsed"
-                                        local:AnimatedVisibility.IsVisible="{x:Bind ViewModel.LightingShowsStarlightDuration, Mode=OneWay}">
+                                        local:AnimatedVisibility.IsVisible="{x:Bind LightingShowsStarlightDuration, Mode=OneWay}">
                                     <Grid ColumnSpacing="20">
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="*" />
@@ -1118,8 +1118,8 @@
                                                   MinWidth="150"
                                                   Style="{StaticResource SettingsPickerStyle}"
                                                   AutomationProperties.Name="Starlight lighting duration"
-                                                  ItemsSource="{x:Bind ViewModel.LightingStarlightDurations}"
-                                                  SelectedItem="{x:Bind ViewModel.LightingStarlightDurationEditor, Mode=TwoWay}" />
+                                                  ItemsSource="{x:Bind LightingStarlightDurations}"
+                                                  SelectedItem="{x:Bind LightingStarlightDurationEditor, Mode=TwoWay}" />
                                     </Grid>
                                 </Border>
 
@@ -1129,11 +1129,11 @@
                         <TextBlock Text="Laptop logo"
                                    Style="{StaticResource SectionHeaderStyle}"
                                    Margin="0,24,0,10"
-                                   Visibility="{x:Bind ViewModel.IsLogoLightingVisible, Mode=OneWay}" />
+                                   Visibility="{x:Bind IsLogoLightingVisible, Mode=OneWay}" />
                         <Border Style="{StaticResource SettingsGroupStyle}">
                             <StackPanel>
                                 <Border Style="{StaticResource SettingsLastRowStyle}"
-                                        Visibility="{x:Bind ViewModel.IsLogoLightingVisible, Mode=OneWay}">
+                                        Visibility="{x:Bind IsLogoLightingVisible, Mode=OneWay}">
                                     <Grid ColumnSpacing="20">
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="*" />
@@ -1148,9 +1148,9 @@
                                                   MinWidth="170"
                                                   Style="{StaticResource SettingsPickerStyle}"
                                                   AutomationProperties.Name="Laptop logo lighting"
-                                                  ItemsSource="{x:Bind ViewModel.AvailableLogoLightingModeOptions, Mode=OneWay}"
+                                                  ItemsSource="{x:Bind AvailableLogoLightingModeOptions, Mode=OneWay}"
                                                   DisplayMemberPath="Label"
-                                                  SelectedItem="{x:Bind ViewModel.SelectedLogoLightingModeOption, Mode=TwoWay}" />
+                                                  SelectedItem="{x:Bind SelectedLogoLightingModeOption, Mode=TwoWay}" />
                                     </Grid>
                                 </Border>
                             </StackPanel>
@@ -1181,7 +1181,7 @@
                                                       AutomationProperties.Name="Turn off keyboard lighting with the display"
                                                       OffContent=""
                                                       OnContent=""
-                                                      IsOn="{x:Bind ViewModel.LightingTurnOffWithDisplayEditor, Mode=TwoWay}" />
+                                                      IsOn="{x:Bind LightingTurnOffWithDisplayEditor, Mode=TwoWay}" />
                                     </Grid>
                                 </Border>
                                 <Border Style="{StaticResource SettingsRowStyle}">
@@ -1204,7 +1204,7 @@
                                                       AutomationProperties.Name="Turn off keyboard lighting after inactivity"
                                                       OffContent=""
                                                       OnContent=""
-                                                      IsOn="{x:Bind ViewModel.LightingIdleTimeoutEnabledEditor, Mode=TwoWay}" />
+                                                      IsOn="{x:Bind LightingIdleTimeoutEnabledEditor, Mode=TwoWay}" />
                                     </Grid>
                                 </Border>
                                 <Border Style="{StaticResource SettingsLastRowStyle}">
@@ -1230,7 +1230,7 @@
                                                    SmallChange="1"
                                                    LargeChange="5"
                                                    SpinButtonPlacementMode="Compact"
-                                                   IsEnabled="{x:Bind ViewModel.LightingIdleTimeoutEnabledEditor, Mode=OneWay}"
+                                                   IsEnabled="{x:Bind LightingIdleTimeoutEnabledEditor, Mode=OneWay}"
                                                    AutomationProperties.Name="Keyboard lighting inactivity timeout in minutes"
                                                    Value="{Binding LightingIdleTimeoutMinutesEditor, Mode=TwoWay, Converter={StaticResource Int32Double}}" />
                                     </Grid>
@@ -1241,8 +1241,8 @@
                         </ContentControl>
                         </StackPanel>
             </DataTemplate>
-            <DataTemplate x:Key="DashboardDisplayCardTemplate" x:DataType="local:MainWindow">
-                        <StackPanel DataContext="{x:Bind ViewModel}">
+            <DataTemplate x:Key="DashboardDisplayCardTemplate" x:DataType="local:DisplaySettingsViewModel">
+                        <StackPanel>
                         <TextBlock Text="Built-in display"
                                    Style="{StaticResource SectionHeaderStyle}"
                                    Margin="0,0,0,10" />
@@ -1265,10 +1265,10 @@
                                                   MinWidth="180"
                                                   Style="{StaticResource SettingsPickerStyle}"
                                                   AutomationProperties.Name="Display refresh rate"
-                                                  ItemsSource="{x:Bind DisplayViewModel.RefreshRateOptions, Mode=OneWay}"
+                                                  ItemsSource="{x:Bind RefreshRateOptions, Mode=OneWay}"
                                                   DisplayMemberPath="Label"
-                                                  SelectedItem="{x:Bind DisplayViewModel.SelectedRefreshRate, Mode=OneWay}"
-                                                  IsEnabled="{x:Bind DisplayViewModel.CanChangeRefreshRate, Mode=OneWay}"
+                                                  SelectedItem="{x:Bind SelectedRefreshRate, Mode=OneWay}"
+                                                  IsEnabled="{x:Bind CanChangeRefreshRate, Mode=OneWay}"
                                                   DropDownOpened="OnDisplayPickerOpened"
                                                   DropDownClosed="OnDisplayPickerClosed"
                                                   SelectionChanged="OnDisplayRefreshRateChanged" />
@@ -1294,8 +1294,8 @@
                                                       AutomationProperties.Name="Use HDR"
                                                       OffContent=""
                                                       OnContent=""
-                                                      IsOn="{x:Bind DisplayViewModel.IsHdrEnabled, Mode=OneWay}"
-                                                      IsEnabled="{x:Bind DisplayViewModel.CanChangeHdr, Mode=OneWay}"
+                                                      IsOn="{x:Bind IsHdrEnabled, Mode=OneWay}"
+                                                      IsEnabled="{x:Bind CanChangeHdr, Mode=OneWay}"
                                                       Toggled="OnDisplayHdrToggled" />
                                     </Grid>
                                 </Border>
@@ -1308,7 +1308,7 @@
                                         <StackPanel Spacing="3" VerticalAlignment="Center">
                                             <TextBlock Text="Color profile"
                                                        Style="{StaticResource CardTitleStyle}" />
-                                            <TextBlock Text="{x:Bind DisplayViewModel.ColorProfileDescription, Mode=OneWay}"
+                                            <TextBlock Text="{x:Bind ColorProfileDescription, Mode=OneWay}"
                                                        Style="{StaticResource SecondaryTextStyle}" />
                                         </StackPanel>
                                         <ComboBox x:Name="DisplayColorProfilePicker"
@@ -1316,10 +1316,10 @@
                                                   MinWidth="180"
                                                   Style="{StaticResource SettingsPickerStyle}"
                                                   AutomationProperties.Name="Display color profile"
-                                                  ItemsSource="{x:Bind DisplayViewModel.ColorProfileOptions, Mode=OneWay}"
+                                                  ItemsSource="{x:Bind ColorProfileOptions, Mode=OneWay}"
                                                   DisplayMemberPath="Label"
-                                                  SelectedItem="{x:Bind DisplayViewModel.SelectedColorProfile, Mode=OneWay}"
-                                                  IsEnabled="{x:Bind DisplayViewModel.CanChangeColorProfile, Mode=OneWay}"
+                                                  SelectedItem="{x:Bind SelectedColorProfile, Mode=OneWay}"
+                                                  IsEnabled="{x:Bind CanChangeColorProfile, Mode=OneWay}"
                                                   DropDownOpened="OnDisplayPickerOpened"
                                                   DropDownClosed="OnDisplayPickerClosed"
                                                   SelectionChanged="OnDisplayColorProfileChanged" />
@@ -1328,7 +1328,7 @@
                             </StackPanel>
                         </Border>
 
-                        <TextBlock Text="{x:Bind DisplayViewModel.StatusMessage, Mode=OneWay}"
+                        <TextBlock Text="{x:Bind StatusMessage, Mode=OneWay}"
                                    Style="{StaticResource SecondaryTextStyle}"
                                    Margin="0,2,0,0" />
                         </StackPanel>
@@ -1643,17 +1643,17 @@
                         </Border>
 
                         <ContentControl x:Name="PowerModeCard"
-                                        Content="{x:Bind}"
+                                        Content="{x:Bind ViewModel}"
                                         ContentTemplate="{StaticResource DashboardPowerModeCardTemplate}"
                                         HorizontalContentAlignment="Stretch" />
 
                         <ContentControl x:Name="FansCard"
-                                        Content="{x:Bind}"
+                                        Content="{x:Bind ViewModel}"
                                         ContentTemplate="{StaticResource DashboardFansCardTemplate}"
                                         HorizontalContentAlignment="Stretch" />
 
                         <ContentControl x:Name="BatteryCard"
-                                        Content="{x:Bind}"
+                                        Content="{x:Bind ViewModel}"
                                         ContentTemplate="{StaticResource DashboardBatteryCardTemplate}"
                                         HorizontalContentAlignment="Stretch" />
                     </StackPanel>
@@ -2063,12 +2063,12 @@
 
                         <StackPanel x:Name="LaptopCardsHost" Spacing="18">
                         <ContentControl x:Name="KeyboardBehaviorCard"
-                                        Content="{x:Bind}"
+                                        Content="{x:Bind ViewModel}"
                                         ContentTemplate="{StaticResource DashboardKeyboardBehaviorCardTemplate}"
                                         HorizontalContentAlignment="Stretch" />
 
                         <ContentControl x:Name="StartupAnimationCard"
-                                        Content="{x:Bind}"
+                                        Content="{x:Bind ViewModel}"
                                         ContentTemplate="{StaticResource DashboardStartupAnimationCardTemplate}"
                                         HorizontalContentAlignment="Stretch" />
                         </StackPanel>
@@ -2162,7 +2162,7 @@
                         </Grid>
                         <StackPanel x:Name="LightingCardsHost">
                         <ContentControl x:Name="LightingCard"
-                                        Content="{x:Bind}"
+                                        Content="{x:Bind ViewModel}"
                                         ContentTemplate="{StaticResource DashboardLightingCardTemplate}"
                                         HorizontalContentAlignment="Stretch" />
                         </StackPanel>
@@ -2257,7 +2257,7 @@
                         </Grid>
                         <StackPanel x:Name="DisplayCardsHost">
                         <ContentControl x:Name="DisplayCard"
-                                        Content="{x:Bind}"
+                                        Content="{x:Bind DisplayViewModel}"
                                         ContentTemplate="{StaticResource DashboardDisplayCardTemplate}"
                                         HorizontalContentAlignment="Stretch" />
                         </StackPanel>

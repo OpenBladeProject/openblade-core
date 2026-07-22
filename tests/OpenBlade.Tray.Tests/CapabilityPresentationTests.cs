@@ -271,10 +271,10 @@ public sealed class CapabilityPresentationTests
 
         XElement refresh = NamedElement(document, "ComboBox", "DisplayRefreshRatePicker");
         Assert.Equal(
-            "{x:Bind DisplayViewModel.RefreshRateOptions, Mode=OneWay}",
+            "{x:Bind RefreshRateOptions, Mode=OneWay}",
             Attribute(refresh, "ItemsSource"));
         Assert.Equal(
-            "{x:Bind DisplayViewModel.CanChangeRefreshRate, Mode=OneWay}",
+            "{x:Bind CanChangeRefreshRate, Mode=OneWay}",
             Attribute(refresh, "IsEnabled"));
         Assert.Equal("OnDisplayRefreshRateChanged", Attribute(refresh, "SelectionChanged"));
 
@@ -285,7 +285,7 @@ public sealed class CapabilityPresentationTests
 
         XElement color = NamedElement(document, "ComboBox", "DisplayColorProfilePicker");
         Assert.Equal(
-            "{x:Bind DisplayViewModel.CanChangeColorProfile, Mode=OneWay}",
+            "{x:Bind CanChangeColorProfile, Mode=OneWay}",
             Attribute(color, "IsEnabled"));
         Assert.Equal("OnDisplayColorProfileChanged", Attribute(color, "SelectionChanged"));
     }
@@ -877,7 +877,7 @@ public sealed class CapabilityPresentationTests
             "{x:Bind ViewModel.HasOperationFeedback, Mode=OneWay}",
             Attribute(NamedElement(document, "InfoBar", "OperationErrorInfoBar"), "Visibility"));
         Assert.Equal(
-            "{x:Bind ViewModel.IsLightingControlUnavailable, Mode=OneWay}",
+            "{x:Bind IsLightingControlUnavailable, Mode=OneWay}",
             Attribute(NamedElement(document, "InfoBar", "LightingUnavailableInfoBar"), "Visibility"));
         Assert.Contains("{StaticResource TitleLargeTextBlockStyle}", xaml, StringComparison.Ordinal);
         Assert.Contains("{StaticResource AccentButtonStyle}", xaml, StringComparison.Ordinal);
@@ -1629,16 +1629,16 @@ public sealed class CapabilityPresentationTests
         Assert.Null(Attribute(navigation, "Visibility"));
         Assert.Equal("Collapsed", Attribute(page, "Visibility"));
         Assert.Equal(
-            "{x:Bind ViewModel.CanControlLighting, Mode=OneWay}",
+            "{x:Bind CanControlLighting, Mode=OneWay}",
             Attribute(controls, "IsEnabled"));
         Assert.Equal(
-            "{x:Bind ViewModel.IsLightingControlUnavailable, Mode=OneWay}",
+            "{x:Bind IsLightingControlUnavailable, Mode=OneWay}",
             Attribute(infoBar, "IsOpen"));
         Assert.Equal(
-            "{x:Bind ViewModel.LightingControlUnavailableMessage, Mode=OneWay}",
+            "{x:Bind LightingControlUnavailableMessage, Mode=OneWay}",
             Attribute(infoBar, "Message"));
         Assert.Equal(
-            "{x:Bind ViewModel.AvailableLightingEffectOptions, Mode=OneWay}",
+            "{x:Bind AvailableLightingEffectOptions, Mode=OneWay}",
             Attribute(effectPicker, "ItemsSource"));
         Assert.All([displayOffToggle, idleTimeoutToggle], toggle =>
         {
