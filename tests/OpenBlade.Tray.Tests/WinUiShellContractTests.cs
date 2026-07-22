@@ -307,22 +307,28 @@ public sealed class WinUiShellContractTests
     }
 
     [Fact]
-    public void DashboardCustomizerUsesModelBackedDragReordering()
+    public void DashboardCustomizerUsesTheSameNativeListViewReorderingAsTaskbarHover()
     {
         string window = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml.cs");
+        string xaml = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml");
 
         Assert.Contains("new ObservableCollection<DashboardCardOption>()", window, StringComparison.Ordinal);
-        Assert.Contains("grip.PointerPressed +=", window, StringComparison.Ordinal);
-        Assert.Contains("grip.PointerMoved +=", window, StringComparison.Ordinal);
-        Assert.Contains("grip.PointerReleased +=", window, StringComparison.Ordinal);
-        Assert.Contains("grip.CapturePointer(pointerArgs.Pointer)", window, StringComparison.Ordinal);
-        Assert.Contains("editorCards.Move(sourceIndex, targetIndex)", window, StringComparison.Ordinal);
+        Assert.Contains("var cardList = new Microsoft.UI.Xaml.Controls.ListView", window, StringComparison.Ordinal);
+        Assert.Contains("CanDragItems = true", window, StringComparison.Ordinal);
+        Assert.Contains("CanReorderItems = true", window, StringComparison.Ordinal);
+        Assert.Contains("ReorderMode = ListViewReorderMode.Enabled", window, StringComparison.Ordinal);
+        Assert.Contains("AllowDrop = true", window, StringComparison.Ordinal);
+        Assert.Contains("DashboardCardOptionTemplate", window, StringComparison.Ordinal);
         Assert.Contains("ApplyDashboardCustomizerChanges()", window, StringComparison.Ordinal);
         Assert.Contains("HorizontalAlignment = Microsoft.UI.Xaml.HorizontalAlignment.Stretch", window, StringComparison.Ordinal);
         Assert.Contains("content = new StackPanel { Width = 520", window, StringComparison.Ordinal);
         Assert.Contains("HorizontalContentAlignment = Microsoft.UI.Xaml.HorizontalAlignment.Stretch", window, StringComparison.Ordinal);
         Assert.DoesNotContain("Translation = new System.Numerics.Vector3(80, 0, 0)", window, StringComparison.Ordinal);
-        Assert.Contains("HorizontalScrollMode = ScrollMode.Disabled", window, StringComparison.Ordinal);
+        Assert.DoesNotContain("grip.PointerMoved +=", window, StringComparison.Ordinal);
+        Assert.Contains("x:Key=\"DashboardCardOptionTemplate\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("<ColumnDefinition Width=\"*\" />", xaml, StringComparison.Ordinal);
+        Assert.Contains("<CheckBox Grid.Column=\"2\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("HorizontalAlignment=\"Right\"", xaml, StringComparison.Ordinal);
         Assert.Contains("RefreshDashboardCards();", window, StringComparison.Ordinal);
         Assert.Contains("Drag them into the order you want", window, StringComparison.Ordinal);
         Assert.DoesNotContain("CreateDashboardOrderButton", window, StringComparison.Ordinal);
@@ -330,12 +336,15 @@ public sealed class WinUiShellContractTests
     }
 
     [Fact]
-    public void DashboardCustomizationRefreshesOnlyIndependentDashboardPresentations()
+    public void DashboardCustomizationPreservesTheOriginalStatusCardWithoutRestarting()
     {
         string app = ReadRepositoryFile("src", "OpenBlade.Tray", "App.xaml.cs");
         string window = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml.cs");
 
         Assert.Contains("CreateDashboardPresentationCard(option)", window, StringComparison.Ordinal);
+        Assert.Contains("child != DeviceStatusCard", window, StringComparison.Ordinal);
+        Assert.Contains("option.Kind == DashboardCardKind.DeviceStatus", window, StringComparison.Ordinal);
+        Assert.Contains("Grid.SetRow(DeviceStatusCard", window, StringComparison.Ordinal);
         Assert.Contains("RefreshDashboardCards();", window, StringComparison.Ordinal);
         Assert.Contains("MoveCanonicalLaptopCardsIntoPlace();", window, StringComparison.Ordinal);
         Assert.DoesNotContain("CompleteDashboardArrangement", window, StringComparison.Ordinal);

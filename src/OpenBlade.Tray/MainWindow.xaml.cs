@@ -1567,156 +1567,21 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
         }
 
         var editorCards = new ObservableCollection<DashboardCardOption>();
-        var cardList = new StackPanel
+        var cardList = new Microsoft.UI.Xaml.Controls.ListView
         {
-            Spacing = 2,
+            ItemsSource = editorCards,
+            SelectionMode = ListViewSelectionMode.None,
+            CanDragItems = true,
+            CanReorderItems = true,
+            ReorderMode = ListViewReorderMode.Enabled,
+            AllowDrop = true,
+            MaxHeight = 480,
             HorizontalAlignment = Microsoft.UI.Xaml.HorizontalAlignment.Stretch,
+            HorizontalContentAlignment = Microsoft.UI.Xaml.HorizontalAlignment.Stretch,
+            ItemTemplate = (DataTemplate)Root.Resources["DashboardCardOptionTemplate"],
+            ItemContainerStyle = (Style)Root.Resources["DashboardReorderListItemStyle"],
         };
         AutomationProperties.SetName(cardList, "Dashboard cards");
-        DashboardCardKind? draggedKind = null;
-        double dragStartY = 0;
-        Grid? draggedRow = null;
-        FontIcon? draggedGrip = null;
-
-        void EndPointerDrag()
-        {
-            if (draggedRow is not null)
-            {
-                draggedRow.Opacity = 1;
-                draggedRow.Translation = System.Numerics.Vector3.Zero;
-                Canvas.SetZIndex(draggedRow, 0);
-            }
-
-            draggedKind = null;
-            draggedRow = null;
-            draggedGrip = null;
-        }
-
-        void RefreshEditor()
-        {
-            cardList.Children.Clear();
-            foreach (DashboardCardOption option in editorCards)
-            {
-                var row = new Grid
-                {
-                    ColumnSpacing = 10,
-                    MinHeight = 58,
-                    Padding = new Thickness(2, 6, 8, 6),
-                    HorizontalAlignment = Microsoft.UI.Xaml.HorizontalAlignment.Stretch,
-                };
-                row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-                row.ColumnDefinitions.Add(new ColumnDefinition());
-                row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-
-                var grip = new FontIcon
-                {
-                    Glyph = "\uE76F",
-                    FontSize = 14,
-                    Opacity = 0.72,
-                    VerticalAlignment = VerticalAlignment.Center,
-                };
-                AutomationProperties.SetName(grip, $"Drag {option.Label}");
-                row.Children.Add(grip);
-
-                var label = new StackPanel { Spacing = 2 };
-                label.Children.Add(new TextBlock
-                {
-                    Text = option.Label,
-                    FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
-                });
-                label.Children.Add(new TextBlock
-                {
-                    Text = option.Description,
-                    Style = (Style)Root.Resources["SecondaryTextStyle"],
-                    TextWrapping = TextWrapping.Wrap,
-                });
-                Grid.SetColumn(label, 1);
-                row.Children.Add(label);
-
-                var isPinned = new Microsoft.UI.Xaml.Controls.CheckBox
-                {
-                    IsChecked = option.IsPinned,
-                    HorizontalAlignment = Microsoft.UI.Xaml.HorizontalAlignment.Right,
-                    VerticalAlignment = VerticalAlignment.Center,
-                };
-                AutomationProperties.SetName(isPinned, option.Label);
-                isPinned.Checked += (_, _) => option.IsPinned = true;
-                isPinned.Unchecked += (_, _) => option.IsPinned = false;
-                Grid.SetColumn(isPinned, 2);
-                row.Children.Add(isPinned);
-
-                grip.PointerPressed += (_, pointerArgs) =>
-                {
-                    if (!pointerArgs.GetCurrentPoint(cardList).Properties.IsLeftButtonPressed)
-                    {
-                        return;
-                    }
-
-                    draggedKind = option.Kind;
-                    draggedRow = row;
-                    draggedGrip = grip;
-                    dragStartY = pointerArgs.GetCurrentPoint(cardList).Position.Y;
-                    row.Opacity = 0.72;
-                    Canvas.SetZIndex(row, 1);
-                    grip.CapturePointer(pointerArgs.Pointer);
-                    pointerArgs.Handled = true;
-                };
-                grip.PointerMoved += (_, pointerArgs) =>
-                {
-                    if (draggedRow != row
-                        || !pointerArgs.GetCurrentPoint(cardList).Properties.IsLeftButtonPressed)
-                    {
-                        return;
-                    }
-
-                    double currentY = pointerArgs.GetCurrentPoint(cardList).Position.Y;
-                    row.Translation = new System.Numerics.Vector3(
-                        0,
-                        (float)(currentY - dragStartY),
-                        0);
-                    pointerArgs.Handled = true;
-                };
-                grip.PointerReleased += (_, pointerArgs) =>
-                {
-                    if (draggedKind is not { } sourceKind || draggedRow != row)
-                    {
-                        return;
-                    }
-
-                    double releaseY = pointerArgs.GetCurrentPoint(cardList).Position.Y;
-                    draggedGrip?.ReleasePointerCapture(pointerArgs.Pointer);
-                    int sourceIndex = editorCards
-                        .Select((item, index) => (item, index))
-                        .First(pair => pair.item.Kind == sourceKind)
-                        .index;
-                    int targetIndex = cardList.Children.Count - 1;
-                    for (int index = 0; index < cardList.Children.Count; index++)
-                    {
-                        FrameworkElement candidate = (FrameworkElement)cardList.Children[index];
-                        double midpoint = candidate
-                            .TransformToVisual(cardList)
-                            .TransformPoint(new Windows.Foundation.Point())
-                            .Y + (candidate.ActualHeight / 2);
-                        if (releaseY < midpoint)
-                        {
-                            targetIndex = index;
-                            break;
-                        }
-                    }
-
-                    EndPointerDrag();
-                    if (sourceIndex != targetIndex)
-                    {
-                        editorCards.Move(sourceIndex, targetIndex);
-                    }
-
-                    RefreshEditor();
-                    pointerArgs.Handled = true;
-                };
-                grip.PointerCaptureLost += (_, _) => EndPointerDrag();
-                cardList.Children.Add(row);
-            }
-        }
 
         void LoadEditorFromDashboard()
         {
@@ -1730,7 +1595,6 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
                     option.IsPinned));
             }
 
-            RefreshEditor();
         }
 
         void ApplyEditorToDashboard()
@@ -1774,16 +1638,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
             Style = (Style)Root.Resources["SecondaryTextStyle"],
             TextWrapping = TextWrapping.Wrap,
         });
-        content.Children.Add(new ScrollViewer
-        {
-            Content = cardList,
-            MaxHeight = 480,
-            HorizontalAlignment = Microsoft.UI.Xaml.HorizontalAlignment.Stretch,
-            HorizontalContentAlignment = Microsoft.UI.Xaml.HorizontalAlignment.Stretch,
-            HorizontalScrollMode = ScrollMode.Disabled,
-            HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
-            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
-        });
+        content.Children.Add(cardList);
 
         var dialog = new ContentDialog
         {
@@ -1808,13 +1663,37 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
             return;
         }
 
-        DashboardCardHost.Children.Clear();
+        foreach (UIElement child in DashboardCardHost.Children
+                     .Where(child => child != DeviceStatusCard)
+                     .ToArray())
+        {
+            DashboardCardHost.Children.Remove(child);
+        }
+
+        DashboardCardHost.RowDefinitions.Clear();
+        DeviceStatusCard.Visibility = Visibility.Collapsed;
+        int row = 0;
         foreach (DashboardCardOption option in DashboardCards)
         {
-            if (option.IsPinned)
+            if (!option.IsPinned)
             {
-                DashboardCardHost.Children.Add(CreateDashboardPresentationCard(option));
+                continue;
             }
+
+            DashboardCardHost.RowDefinitions.Add(new RowDefinition
+            {
+                Height = GridLength.Auto,
+            });
+            if (option.Kind == DashboardCardKind.DeviceStatus)
+            {
+                Grid.SetRow(DeviceStatusCard, row++);
+                DeviceStatusCard.Visibility = Visibility.Visible;
+                continue;
+            }
+
+            Border presentation = CreateDashboardPresentationCard(option);
+            Grid.SetRow(presentation, row++);
+            DashboardCardHost.Children.Add(presentation);
         }
 
         DashboardEmptyState.Visibility = DashboardCards.Any(option => option.IsPinned)
@@ -1894,7 +1773,6 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
             return;
         }
 
-        DeviceStatusCard.Visibility = Visibility.Collapsed;
         foreach (FrameworkElement card in new[] { PowerModeCard, FansCard, BatteryCard })
         {
             if (card.Parent is Microsoft.UI.Xaml.Controls.Panel current)

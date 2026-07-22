@@ -214,6 +214,38 @@
             <Style x:Key="FanCurveItemContainerStyle" TargetType="ContentPresenter">
                 <Setter Property="HorizontalContentAlignment" Value="Stretch" />
             </Style>
+            <Style x:Key="DashboardReorderListItemStyle" TargetType="ListViewItem">
+                <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                <Setter Property="MinHeight" Value="58" />
+                <Setter Property="Padding" Value="0" />
+            </Style>
+            <DataTemplate x:Key="DashboardCardOptionTemplate"
+                          x:DataType="local:DashboardCardOption">
+                <Grid ColumnSpacing="10"
+                      Padding="2,6,8,6"
+                      HorizontalAlignment="Stretch">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <FontIcon Glyph="&#xE76F;"
+                              FontSize="14"
+                              Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                              VerticalAlignment="Center" />
+                    <StackPanel Grid.Column="1" Spacing="2">
+                        <TextBlock Text="{x:Bind Label, Mode=OneTime}"
+                                   Style="{StaticResource CardTitleStyle}" />
+                        <TextBlock Text="{x:Bind Description, Mode=OneTime}"
+                                   Style="{StaticResource SecondaryTextStyle}"
+                                   TextWrapping="Wrap" />
+                    </StackPanel>
+                    <CheckBox Grid.Column="2"
+                              IsChecked="{x:Bind IsPinned, Mode=TwoWay}"
+                              HorizontalAlignment="Right"
+                              VerticalAlignment="Center" />
+                </Grid>
+            </DataTemplate>
         </Grid.Resources>
 
         <TitleBar x:Name="AppTitleBar"
@@ -370,6 +402,7 @@
                             </StackPanel>
                         </Grid>
 
+                        <Grid x:Name="DashboardCardHost">
                         <Border x:Name="DeviceStatusCard"
                                 Style="{StaticResource CardStyle}"
                                 Padding="22">
@@ -493,6 +526,7 @@
                                 </Border>
                             </Grid>
                         </Border>
+                        </Grid>
 
                         <InfoBar x:Name="OperationErrorInfoBar"
                                  IsOpen="{x:Bind ViewModel.HasOperationFeedback, Mode=OneWay}"
@@ -503,7 +537,6 @@
                                  Margin="0,0,0,12"
                                  AutomationProperties.Name="Operation error" />
 
-                        <StackPanel x:Name="DashboardCardHost" Spacing="6" />
                         <Border x:Name="DashboardEmptyState"
                                 Style="{StaticResource CardStyle}"
                                 Padding="22"
