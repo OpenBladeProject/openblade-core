@@ -664,6 +664,76 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         Assert.Empty(context.Runtime.GetStatus().LightingSuppressions!);
     }
 
+    [Fact]
+    public async Task LightingPowerPolicy_ControllerAdvisoryDoesNotBlockConfiguredSuppression()
+    {
+        TestContext context = CreateWritableContext(
+            conflicts: ["Razer Elevation Service"]);
+        ProfileSet profiles = context.Runtime.GetStatus().Profiles with
+        {
+            PluggedIn = context.Runtime.GetStatus().Profiles.PluggedIn with
+            {
+                LightingPowerPolicy = new LightingPowerPolicy(
+                    turnOffWhenDisplayTurnsOff: true,
+                    idleTimeoutMinutes: null),
+            },
+        };
+        await context.Runtime.UpdateProfilesAsync(profiles, CancellationToken.None);
+        int writesBeforeSuppression = context.Device.LightingSetCalls;
+
+        ControlOperationResult result = await context.Runtime
+            .SetLightingSuppressionAsync(
+                LightingSuppressionReason.DisplayOff,
+                suppressed: true,
+                CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Applied, result.Status);
+        Assert.Equal(writesBeforeSuppression + 1, context.Device.LightingSetCalls);
+        Assert.Equal(LightingEffect.Off, context.Device.ConfirmedState.Lighting!.Effect);
+        Assert.Equal(
+            ["Razer Elevation Service"],
+            context.Runtime.GetStatus().PotentialControllers);
+        Assert.Equal(
+            [LightingSuppressionReason.DisplayOff],
+            context.Runtime.GetStatus().LightingSuppressions);
+    }
+
+    [Fact]
+    public async Task LightingPowerPolicy_ConfirmedExternalChangeStillBlocksSuppression()
+    {
+        TestContext context = CreateWritableContext();
+        ProfileSet profiles = context.Runtime.GetStatus().Profiles with
+        {
+            PluggedIn = context.Runtime.GetStatus().Profiles.PluggedIn with
+            {
+                LightingPowerPolicy = new LightingPowerPolicy(
+                    turnOffWhenDisplayTurnsOff: true,
+                    idleTimeoutMinutes: null),
+            },
+        };
+        await context.Runtime.UpdateProfilesAsync(profiles, CancellationToken.None);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        context.Device.ConfirmedState = context.Device.ConfirmedState with
+        {
+            Lighting = LightingSettingsFactory.Static(
+                new RgbColor(1, 2, 3),
+                brightness: 25),
+        };
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        int writesBeforeSuppression = context.Device.LightingSetCalls;
+
+        ControlOperationResult result = await context.Runtime
+            .SetLightingSuppressionAsync(
+                LightingSuppressionReason.DisplayOff,
+                suppressed: true,
+                CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Blocked, result.Status);
+        Assert.Equal(writesBeforeSuppression, context.Device.LightingSetCalls);
+        Assert.Equal([DeviceSubsystem.Lighting], context.Runtime.GetStatus().ExternalChanges);
+        Assert.Empty(context.Runtime.GetStatus().LightingSuppressions!);
+    }
+
     [Theory]
     [InlineData(true, false)]
     [InlineData(false, true)]

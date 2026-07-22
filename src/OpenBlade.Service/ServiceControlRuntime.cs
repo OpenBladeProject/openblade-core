@@ -853,12 +853,12 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                     "The external power adapter could not be classified; lighting power policy writes are blocked.",
                     preserveCurrentAvailability: true);
             }
-            if (IsControllerPresenceUnsafe(current)
-                || current.ExternalChanges.Contains(DeviceSubsystem.Lighting))
+            if (current.ExternalChanges.Contains(DeviceSubsystem.Lighting)
+                && !preferences.AlwaysOverrideExternalLightingChanges)
             {
                 return new ControlOperationResult(
                     ControlOperationStatus.Blocked,
-                    "Lighting power policy is paused while another controller or an external lighting change is present.");
+                    "Lighting power policy is paused because an external lighting change is present.");
             }
 
             if (Automation.ChangePowerSource(powerSource))
