@@ -302,7 +302,7 @@
                                                   MinWidth="150"
                                                   HorizontalAlignment="Right"
                                                   AutomationProperties.Name="Power mode"
-                                                  IsEnabled="{x:Bind ViewModel.CanControlHardware, Mode=OneWay}"
+                                                  IsEnabled="{x:Bind ViewModel.CanRequestHardwareControl, Mode=OneWay}"
                                                   ItemsSource="{x:Bind ViewModel.AvailableActivePerformanceOptions, Mode=OneWay}"
                                                   SelectedItem="{x:Bind ViewModel.SelectedPerformanceOption, Mode=OneWay}"
                                                   SelectionChanged="OnDashboardPerformanceChanged" />
@@ -327,7 +327,7 @@
                                               MinWidth="150"
                                               HorizontalAlignment="Right"
                                               AutomationProperties.Name="Custom CPU level"
-                                              IsEnabled="{x:Bind ViewModel.CanControlHardware, Mode=OneWay}"
+                                              IsEnabled="{x:Bind ViewModel.CanRequestHardwareControl, Mode=OneWay}"
                                               ItemsSource="{x:Bind ViewModel.AvailableCustomCpuLevels, Mode=OneWay}"
                                               SelectedItem="{x:Bind ViewModel.SelectedCustomCpuLevel, Mode=OneWay}"
                                               SelectionChanged="OnDashboardCustomCpuChanged" />
@@ -351,7 +351,7 @@
                                               MinWidth="150"
                                               HorizontalAlignment="Right"
                                               AutomationProperties.Name="Custom GPU level"
-                                              IsEnabled="{x:Bind ViewModel.CanControlHardware, Mode=OneWay}"
+                                              IsEnabled="{x:Bind ViewModel.CanRequestHardwareControl, Mode=OneWay}"
                                               ItemsSource="{x:Bind ViewModel.AvailableCustomGpuLevels, Mode=OneWay}"
                                               SelectedItem="{x:Bind ViewModel.SelectedCustomGpuLevel, Mode=OneWay}"
                                               SelectionChanged="OnDashboardCustomGpuChanged" />

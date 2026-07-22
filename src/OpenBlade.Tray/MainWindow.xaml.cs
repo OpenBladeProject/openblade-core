@@ -50,6 +50,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
     private bool changingDisplaySettings;
     private bool changingDashboardCards;
     private bool changingPrimaryNavigationItems;
+    private bool changingPrimaryNavigationOrder;
     private bool changingAccentColor;
     private bool dashboardCardsReady;
     private bool canonicalLaptopCardsPlaced;
@@ -1287,8 +1288,18 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         NavigationView sender,
         NavigationViewSelectionChangedEventArgs args)
     {
+        if (changingPrimaryNavigationOrder)
+        {
+            return;
+        }
+
         string destination = (args.SelectedItemContainer as NavigationViewItem)?.Tag as string
             ?? "home";
+        ApplyNavigationDestination(destination);
+    }
+
+    private void ApplyNavigationDestination(string destination)
+    {
         HomePage.Visibility = destination == "home"
             ? Visibility.Visible
             : Visibility.Collapsed;
@@ -1794,26 +1805,37 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
 
     private void ApplyPrimaryNavigationOrder()
     {
-        object? selectedItem = MainNavigation.SelectedItem;
-        for (int targetIndex = 0; targetIndex < PrimaryNavigationItems.Count; targetIndex++)
+        NavigationViewItem? selectedItem = MainNavigation.SelectedItem as NavigationViewItem;
+        string destination = selectedItem?.Tag as string ?? "home";
+        changingPrimaryNavigationOrder = true;
+        try
         {
-            NavigationViewItem item = GetPrimaryNavigationItem(
-                PrimaryNavigationItems[targetIndex].Kind);
-            int menuTargetIndex = targetIndex + 1;
-            int currentIndex = MainNavigation.MenuItems.IndexOf(item);
-            if (currentIndex < 0 || currentIndex == menuTargetIndex)
+            for (int targetIndex = 0; targetIndex < PrimaryNavigationItems.Count; targetIndex++)
             {
-                continue;
+                NavigationViewItem item = GetPrimaryNavigationItem(
+                    PrimaryNavigationItems[targetIndex].Kind);
+                int menuTargetIndex = targetIndex + 1;
+                int currentIndex = MainNavigation.MenuItems.IndexOf(item);
+                if (currentIndex < 0 || currentIndex == menuTargetIndex)
+                {
+                    continue;
+                }
+
+                MainNavigation.MenuItems.RemoveAt(currentIndex);
+                MainNavigation.MenuItems.Insert(menuTargetIndex, item);
             }
 
-            MainNavigation.MenuItems.RemoveAt(currentIndex);
-            MainNavigation.MenuItems.Insert(menuTargetIndex, item);
+            if (selectedItem is not null)
+            {
+                MainNavigation.SelectedItem = selectedItem;
+            }
+        }
+        finally
+        {
+            changingPrimaryNavigationOrder = false;
         }
 
-        if (selectedItem is not null)
-        {
-            MainNavigation.SelectedItem = selectedItem;
-        }
+        ApplyNavigationDestination(destination);
     }
 
     private NavigationViewItem GetPrimaryNavigationItem(PrimaryNavigationItemKind kind) =>

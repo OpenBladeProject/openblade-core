@@ -3293,6 +3293,46 @@ public sealed class MainViewModelTests
     }
 
     [Fact]
+    public async Task RetainedPowerSourceRecheck_KeepsKnownManualControlsAvailable()
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+
+        ServiceStatusSnapshot ready = CreateStatus(verified: true, blocked: false) with
+        {
+            ConfirmedState = CreateStatus(true, false).ConfirmedState! with
+            {
+                Performance = PerformancePreset.Balanced,
+                Fans = FanMode.Automatic,
+            },
+        };
+        client.Publish(ready);
+        await WaitUntilAsync(() => viewModel.CanControlHardware);
+
+        client.Publish(ready with
+        {
+            Revision = 2,
+            WritesBlocked = true,
+            Message = "Power adapter classification is temporarily unavailable; " +
+                "the last confirmed power source is retained and control writes are blocked.",
+            Capabilities = DeviceCapabilities.Unavailable(),
+        });
+        await WaitUntilAsync(() => viewModel.IsReadinessReady && !viewModel.CanControlHardware);
+
+        Assert.True(viewModel.CanRequestHardwareControl);
+        Assert.True(viewModel.IsPerformanceVisible);
+        Assert.True(viewModel.IsFanControlVisible);
+        Assert.NotEmpty(viewModel.AvailablePerformancePresets);
+        Assert.NotEmpty(viewModel.AvailableFanModes);
+        Assert.True(viewModel.SetPerformanceCommand.CanExecute(PerformancePreset.Balanced));
+        Assert.True(viewModel.SetFanModeCommand.CanExecute(FanMode.Automatic));
+        Assert.True(viewModel.CanChangeBatteryProtection);
+        Assert.True(viewModel.CanAdjustChargeLimit);
+        Assert.True(viewModel.ToggleFullChargeCommand.CanExecute(true));
+    }
+
+    [Fact]
     public async Task GenericLaptopConnectionCheck_IsPresentedAsCheckingInsteadOfMissing()
     {
         var client = new FakeServiceClient();

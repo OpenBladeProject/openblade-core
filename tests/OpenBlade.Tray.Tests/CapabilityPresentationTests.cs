@@ -120,6 +120,9 @@ public sealed class CapabilityPresentationTests
         Assert.Equal(
             "{x:Bind ViewModel.SelectedPerformanceOption, Mode=OneWay}",
             Attribute(performance, "SelectedItem"));
+        Assert.Equal(
+            "{x:Bind ViewModel.CanRequestHardwareControl, Mode=OneWay}",
+            Attribute(performance, "IsEnabled"));
         Assert.Equal("OnDashboardFanModeSelectionChanged", Attribute(fans, "SelectionChanged"));
         Assert.Equal(
             "{x:Bind ViewModel.AvailableActiveFanModeOptions, Mode=OneWay}",

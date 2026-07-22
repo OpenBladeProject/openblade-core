@@ -780,6 +780,8 @@ public sealed class WinUiShellContractTests
         Assert.Contains("ItemsSource=\"{x:Bind PrimaryNavigationItems, Mode=OneWay}\"", xaml, StringComparison.Ordinal);
         Assert.Contains("AutomationProperties.Name=\"Navigation menu pages\"", xaml, StringComparison.Ordinal);
         Assert.Contains("OnPrimaryNavigationItemsCollectionChanged", window, StringComparison.Ordinal);
+        Assert.Contains("changingPrimaryNavigationOrder", window, StringComparison.Ordinal);
+        Assert.Contains("ApplyNavigationDestination(destination)", window, StringComparison.Ordinal);
         Assert.DoesNotContain("OnCustomizeNavigation", window, StringComparison.Ordinal);
         Assert.DoesNotContain("Title = \"Customize navigation\"", window, StringComparison.Ordinal);
         Assert.Contains("x:Name=\"TaskbarHoverLabelExpander\"", xaml, StringComparison.Ordinal);

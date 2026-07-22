@@ -63,6 +63,11 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Kept the Power mode, Fans, and Battery controls visible and interactive while
+  OpenBlade retains the last confirmed AC or USB-C classification during a
+  transient adapter read. Each requested change still performs a fresh adapter
+  and exact-device check before writing. Reordering the selected Settings page
+  also no longer shows Dashboard content beneath the Settings navigation item.
 - Kept shared Dashboard card controls and their original Laptop, Lighting, and
   Display page instances synchronized after service initialization, preventing
   source-page controls from remaining disabled while the same Dashboard card

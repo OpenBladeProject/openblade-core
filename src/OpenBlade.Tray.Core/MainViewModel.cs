@@ -345,7 +345,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
                 && !IsLightingOperationInProgress
                 && CanMutate
                 && HasConfirmedPowerSource
-                && LightingSupported(value, latestStatus!.Capabilities!));
+                && LightingSupported(value, CommandCapabilities));
         SetChargeLimitCommand = CreateCommand(
             SetChargeLimitAsync,
             parameter => parameter is int value && CanSetChargeLimit(value));
@@ -497,6 +497,9 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             NotifyPresentationState();
         }
     }
+
+    public bool CanRequestHardwareControl => CanControlHardware
+        || IsRetainedPowerSourceRecheck(latestStatus);
 
     public string ConnectionStatus
     {
@@ -1190,7 +1193,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
 
     public bool HasLightingCapability => AvailableLightingEffects.Count > 0;
 
-    public bool CanControlLighting => CanControlHardware && HasLightingCapability;
+    public bool CanControlLighting => CanRequestHardwareControl && HasLightingCapability;
 
     public bool IsLightingControlUnavailable =>
         !CanControlLighting && !IsCheckingLaptopConnection(latestStatus);
@@ -1393,7 +1396,8 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         }
     }
 
-    public bool CanEditFanControl => CanControlHardware && !IsFanControlOperationInProgress;
+    public bool CanEditFanControl =>
+        CanRequestHardwareControl && !IsFanControlOperationInProgress;
 
     public bool IsPerformanceOperationInProgress
     {
@@ -2908,13 +2912,18 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         && latestStatus is
         {
             DeviceVerified: true,
-            WritesBlocked: false,
             Capabilities: not null,
         }
+        && (!latestStatus.WritesBlocked || IsRetainedPowerSourceRecheck(latestStatus))
         && !IsCheckingLaptopConnection(latestStatus);
 
     private bool HasConfirmedPowerSource => ActivePowerSource is
         PowerSource.PluggedIn or PowerSource.Battery or PowerSource.UsbC;
+
+    private DeviceCapabilities CommandCapabilities =>
+        IsRetainedPowerSourceRecheck(latestStatus)
+            ? Capabilities
+            : latestStatus?.Capabilities ?? DeviceCapabilities.Unavailable();
 
     private bool CanSetPerformance(object? parameter) =>
         parameter is PerformancePreset value
@@ -2922,7 +2931,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         && !IsPerformanceOperationInProgress
         && CanMutate
         && HasConfirmedPowerSource
-        && latestStatus!.Capabilities!.PerformancePresets.Contains(value)
+        && CommandCapabilities.PerformancePresets.Contains(value)
         && PerformancePresetPresentation.IsAvailable(ActivePowerSource, value)
         && !MaximumFansAreEffectiveOrConfirmed();
 
@@ -2942,7 +2951,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             || IsFanControlOperationInProgress
             || !CanMutate
             || !HasConfirmedPowerSource
-            || !latestStatus!.Capabilities!.FanModes.Contains(value))
+            || !CommandCapabilities.FanModes.Contains(value))
         {
             return false;
         }
@@ -2961,7 +2970,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         && !IsOneShotOperationInProgress(value.Control)
         && !IsOneShotFieldLoading(value.Control)
         && CanMutate
-        && latestStatus!.Capabilities!.OneShotLaptopControls.Contains(value.Control);
+        && CommandCapabilities.OneShotLaptopControls.Contains(value.Control);
 
     private bool IsOneShotOperationInProgress(OneShotLaptopControl control) => control switch
     {
@@ -3015,13 +3024,14 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             return false;
         }
 
+        DeviceCapabilities capabilities = CommandCapabilities;
+        ServiceStatusSnapshot? status = latestStatus;
         if (IsFullChargeOperationInProgress
             || !CanMutate
             || !HasConfirmedPowerSource
-            || latestStatus?.Capabilities is not { } capabilities
             || !HasBatteryCapability(capabilities)
             || !capabilities.SupportsTemporaryFullCharge
-            || latestStatus.ConfirmedState?.Battery is not
+            || status?.ConfirmedState?.Battery is not
             {
                 ProtectionEnabled: true,
                 ChargeLimitPercent: int currentLimit,
@@ -3041,13 +3051,14 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
 
     private bool CanToggleBatteryProtection(object? parameter)
     {
+        DeviceCapabilities capabilities = CommandCapabilities;
+        ServiceStatusSnapshot? status = latestStatus;
         if (parameter is not null
             || IsBatteryProtectionOperationInProgress
             || !CanMutate
             || !HasConfirmedPowerSource
-            || latestStatus?.Capabilities is not { } capabilities
             || !HasBatteryCapability(capabilities)
-            || latestStatus.ConfirmedState?.Battery is not
+            || status?.ConfirmedState?.Battery is not
             {
                 TemporaryFullCharge: false,
             } confirmed)
@@ -3055,7 +3066,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             return false;
         }
 
-        int storedLimit = latestStatus.DesiredState.Battery.ConfiguredPolicy
+        int storedLimit = status.DesiredState.Battery.ConfiguredPolicy
             .ChargeLimitPercent;
         if (!capabilities.ChargeLimits.Contains(storedLimit))
         {
@@ -3699,11 +3710,12 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
 
     private bool CanSetChargeLimit(int value)
     {
+        DeviceCapabilities capabilities = CommandCapabilities;
+        ServiceStatusSnapshot? status = latestStatus;
         if (IsChargeLimitOperationInProgress
             || !CanMutate
             || !HasConfirmedPowerSource
-            || latestStatus!.Capabilities is not { } capabilities
-            || latestStatus.ConfirmedState?.Battery is not
+            || status?.ConfirmedState?.Battery is not
             {
                 ProtectionEnabled: true,
                 ChargeLimitPercent: int currentLimit,
@@ -6554,7 +6566,8 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         ServiceStatusSnapshot? previousStatus,
         DeviceCapabilities incomingCapabilities) =>
         previousStatus is not null
-        && IsCheckingLaptopConnection(status)
+        && (IsCheckingLaptopConnection(status)
+            || IsRetainedPowerSourceRecheck(status))
         && HasAnyCapability(Capabilities)
         && !HasAnyCapability(incomingCapabilities);
 
@@ -6572,6 +6585,9 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     {
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsServiceUnavailable)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ControlAccessStatus)));
+        PropertyChanged?.Invoke(
+            this,
+            new PropertyChangedEventArgs(nameof(CanRequestHardwareControl)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(CanEditFanControl)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(BatteryPowerFlowLabel)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Fan1RpmLabel)));
