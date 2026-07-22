@@ -51,6 +51,69 @@ public sealed class FanCurveCalculatorTests
                 new FanTemperatureReadings(cpu, gpu)));
     }
 
+    [Fact]
+    public void InactiveGpuUsesCpuTemperatureWithoutFailSafe()
+    {
+        FanTargetSpeeds targets = FanCurveCalculator.Calculate(
+            ManualFanCurve.Default,
+            new FanTemperatureReadings(
+                CpuCelsius: 60,
+                GpuCelsius: null,
+                GpuInactive: true));
+
+        Assert.False(targets.FailSafe);
+        Assert.Equal(ManualFanCurve.Default.InterpolateCpu(60), targets.Fan1Rpm);
+        Assert.Equal(ManualFanCurve.Default.InterpolateGpu(60), targets.Fan2Rpm);
+    }
+
+    [Fact]
+    public async Task InactiveGpuDoesNotInvokeNvmlTemperatureReader()
+    {
+        int gpuReads = 0;
+        using var source = new SafeWindowsFanTemperatureSource(
+            new FixedGpuActivitySource(IsActive: false),
+            cpuTemperatureReader: () => 48,
+            gpuTemperatureReader: () =>
+            {
+                gpuReads++;
+                return 52;
+            });
+
+        FanTemperatureReadings readings = await source.ReadAsync(
+            includeCpu: true,
+            includeGpu: true,
+            CancellationToken.None);
+
+        Assert.Equal(48, readings.CpuCelsius);
+        Assert.Null(readings.GpuCelsius);
+        Assert.True(readings.GpuInactive);
+        Assert.Equal(0, gpuReads);
+    }
+
+    [Fact]
+    public async Task ActiveGpuInvokesNvmlTemperatureReader()
+    {
+        int gpuReads = 0;
+        using var source = new SafeWindowsFanTemperatureSource(
+            new FixedGpuActivitySource(IsActive: true),
+            cpuTemperatureReader: () => 48,
+            gpuTemperatureReader: () =>
+            {
+                gpuReads++;
+                return 52;
+            });
+
+        FanTemperatureReadings readings = await source.ReadAsync(
+            includeCpu: false,
+            includeGpu: true,
+            CancellationToken.None);
+
+        Assert.Null(readings.CpuCelsius);
+        Assert.Equal(52, readings.GpuCelsius);
+        Assert.False(readings.GpuInactive);
+        Assert.Equal(1, gpuReads);
+    }
+
     [Theory]
     [InlineData(2732, 0)]
     [InlineData(3010, 28)]
@@ -76,5 +139,10 @@ public sealed class FanCurveCalculatorTests
         Assert.Null(
             SafeWindowsFanTemperatureSource.WindowsThermalZone
                 .TryConvertHighPrecisionKelvin(value));
+    }
+
+    private sealed record FixedGpuActivitySource(bool IsActive) : IGpuActivitySource
+    {
+        bool IGpuActivitySource.IsActive() => IsActive;
     }
 }

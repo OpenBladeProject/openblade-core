@@ -4009,7 +4009,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     }
 
     [Fact]
-    public async Task Observe_BatterySaverDoesNotWakeTheDiscreteGpuForTemperature()
+    public async Task Observe_DelegatesProfileIndependentGpuActivityGateToTemperatureSource()
     {
         var temperatures = new FixedFanTemperatureSource(
             new FanTemperatureReadings(47, 52));
@@ -4022,9 +4022,9 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             LiveReadingSensors.CpuTemperature | LiveReadingSensors.GpuTemperature,
             CancellationToken.None);
 
-        Assert.Equal([(true, false)], temperatures.Requests);
+        Assert.Equal([(true, true)], temperatures.Requests);
         Assert.Equal(47, context.Runtime.GetStatus().LiveReadings!.CpuTemperatureCelsius);
-        Assert.Null(context.Runtime.GetStatus().LiveReadings!.GpuTemperatureCelsius);
+        Assert.Equal(52, context.Runtime.GetStatus().LiveReadings!.GpuTemperatureCelsius);
     }
 
     [Fact]

@@ -73,8 +73,9 @@ All notable changes to OpenBlade are documented in this file. The project follow
   the target laptop while continuing to track the separate firmware Fn report.
 - Kept tray hover telemetry updating while the main window is hidden, and
   request only the sensors actually shown by the Dashboard or hover label.
-  Battery Saver observations no longer initialize NVML and wake the discrete
-  GPU; missing or powered-down GPU temperatures are omitted from the UI.
+  OpenBlade now checks Windows' existing GPU-engine activity first in every
+  profile, initializes NVML only while the NVIDIA GPU is active, and omits
+  missing or powered-down GPU temperatures from the UI.
 - Bound every duplicated Dashboard control card directly to its live view
   model, preventing Dashboard instances from retaining stale visibility,
   availability, selection, or loading state after their original page updates.

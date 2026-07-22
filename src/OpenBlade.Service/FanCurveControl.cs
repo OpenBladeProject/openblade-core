@@ -5,7 +5,8 @@ namespace OpenBlade.Service;
 
 public readonly record struct FanTemperatureReadings(
     int? CpuCelsius,
-    int? GpuCelsius);
+    int? GpuCelsius,
+    bool GpuInactive = false);
 
 public readonly record struct FanTargetSpeeds(
     int Fan1Rpm,
@@ -19,8 +20,27 @@ public static class FanCurveCalculator
         FanTemperatureReadings temperatures)
     {
         ArgumentNullException.ThrowIfNull(curve);
-        if (temperatures.CpuCelsius is not int cpu
-            || temperatures.GpuCelsius is not int gpu)
+        if (temperatures.CpuCelsius is not int cpu)
+        {
+            return new FanTargetSpeeds(
+                FanControlSettings.MaximumSpeedRpm,
+                FanControlSettings.MaximumSpeedRpm,
+                FailSafe: true);
+        }
+
+        int gpu;
+        if (temperatures.GpuCelsius is int gpuTemperature)
+        {
+            gpu = gpuTemperature;
+        }
+        else if (temperatures.GpuInactive)
+        {
+            // A powered-down discrete GPU contributes no heat of its own. Use
+            // the CPU sensor for both curves so manual control remains safe
+            // without waking the GPU merely to obtain a temperature.
+            gpu = cpu;
+        }
+        else
         {
             return new FanTargetSpeeds(
                 FanControlSettings.MaximumSpeedRpm,
@@ -66,7 +86,8 @@ public interface IFanTemperatureSource
         FanTemperatureReadings readings = await ReadAsync(cancellationToken);
         return new FanTemperatureReadings(
             includeCpu ? readings.CpuCelsius : null,
-            includeGpu ? readings.GpuCelsius : null);
+            includeGpu ? readings.GpuCelsius : null,
+            includeGpu && readings.GpuInactive);
     }
 }
 
@@ -75,8 +96,33 @@ public interface IFanTemperatureSource
 // Zone Information counter set. This is a platform/CPU-side thermal input, not a
 // claim that Windows exposes the processor's per-core DTS values. NVML remains
 // the signed user-mode source for the NVIDIA GPU temperature.
-public sealed class SafeWindowsFanTemperatureSource : IFanTemperatureSource
+public sealed class SafeWindowsFanTemperatureSource : IFanTemperatureSource, IDisposable
 {
+    private readonly IGpuActivitySource gpuActivitySource;
+    private readonly Func<int?> cpuTemperatureReader;
+    private readonly Func<int?> gpuTemperatureReader;
+
+    public SafeWindowsFanTemperatureSource()
+        : this(
+            new WindowsGpuActivitySource(),
+            WindowsThermalZone.TryReadRazerEcTemperature,
+            NvidiaNvml.TryReadTemperature)
+    {
+    }
+
+    internal SafeWindowsFanTemperatureSource(
+        IGpuActivitySource gpuActivitySource,
+        Func<int?> cpuTemperatureReader,
+        Func<int?> gpuTemperatureReader)
+    {
+        this.gpuActivitySource = gpuActivitySource
+            ?? throw new ArgumentNullException(nameof(gpuActivitySource));
+        this.cpuTemperatureReader = cpuTemperatureReader
+            ?? throw new ArgumentNullException(nameof(cpuTemperatureReader));
+        this.gpuTemperatureReader = gpuTemperatureReader
+            ?? throw new ArgumentNullException(nameof(gpuTemperatureReader));
+    }
+
     public ValueTask<FanTemperatureReadings> ReadAsync(
         CancellationToken cancellationToken) => ReadAsync(
             includeCpu: true,
@@ -89,13 +135,23 @@ public sealed class SafeWindowsFanTemperatureSource : IFanTemperatureSource
         CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
+        bool gpuActive = includeGpu && gpuActivitySource.IsActive();
         return ValueTask.FromResult(new FanTemperatureReadings(
             CpuCelsius: includeCpu
-                ? WindowsThermalZone.TryReadRazerEcTemperature()
+                ? cpuTemperatureReader()
                 : null,
-            GpuCelsius: includeGpu
-                ? NvidiaNvml.TryReadTemperature()
-                : null));
+            GpuCelsius: gpuActive
+                ? gpuTemperatureReader()
+                : null,
+            GpuInactive: includeGpu && !gpuActive));
+    }
+
+    public void Dispose()
+    {
+        if (gpuActivitySource is IDisposable disposable)
+        {
+            disposable.Dispose();
+        }
     }
 
     internal static class WindowsThermalZone

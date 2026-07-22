@@ -1766,7 +1766,14 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         PublishIfChanged(current with { Message = message });
     }
 
-    public void Dispose() => operationGate.Dispose();
+    public void Dispose()
+    {
+        operationGate.Dispose();
+        if (fanTemperatureSource is IDisposable disposable)
+        {
+            disposable.Dispose();
+        }
+    }
 
     private async Task SetPerformanceOverrideCoreAsync(
         PerformanceOverride? value,
@@ -2706,11 +2713,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                     requestedLiveReadings,
                     LiveReadingSensors.CpuTemperature);
                 bool includeGpu = Requests(
-                        requestedLiveReadings,
-                        LiveReadingSensors.GpuTemperature)
-                    && ShouldReadGpuTemperature(
-                        powerSource,
-                        Automation.Resolve(confirmed).Performance.Value);
+                    requestedLiveReadings,
+                    LiveReadingSensors.GpuTemperature);
                 if (includeCpu || includeGpu)
                 {
                     try
@@ -2880,11 +2884,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             requestedLiveReadings,
             LiveReadingSensors.CpuTemperature);
         bool includeGpu = Requests(
-                requestedLiveReadings,
-                LiveReadingSensors.GpuTemperature)
-            && ShouldReadGpuTemperature(
-                powerSource,
-                current.DesiredState.Performance.Value);
+            requestedLiveReadings,
+            LiveReadingSensors.GpuTemperature);
         if (includeCpu || includeGpu)
         {
             try
@@ -2921,12 +2922,6 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
     private static bool Requests(
         LiveReadingSensors requested,
         LiveReadingSensors sensor) => (requested & sensor) != 0;
-
-    private static bool ShouldReadGpuTemperature(
-        PowerSource powerSource,
-        PerformancePreset performance) => powerSource != PowerSource.Battery
-        || performance is not PerformancePreset.Silent
-            and not PerformancePreset.BatterySaver;
 
     private static async Task<ConfirmedDeviceState> ReadObservedStateAsync(
         IBladeDevice device,
