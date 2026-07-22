@@ -967,6 +967,41 @@ public sealed class MainViewModelTests
     }
 
     [Fact]
+    public async Task ObservationRequestsOnlySensorsNeededByTheVisibleUiOrTray()
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        viewModel.ApplyTelemetryPreferences(
+            [LiveReadingItemKind.CpuTemperature, LiveReadingItemKind.GpuTemperature],
+            [
+                new(TrayHoverLabelItemKind.AppName, true),
+                new(TrayHoverLabelItemKind.BatteryPower, true),
+            ]);
+
+        client.PendingObservation = new TaskCompletionSource<ServiceStatusSnapshot>(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        Task visible = viewModel.ObserveStateAsync(CancellationToken.None);
+        client.PendingObservation.SetResult(CreateStatus(true, false));
+        await visible;
+
+        client.PendingObservation = new TaskCompletionSource<ServiceStatusSnapshot>(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        Task hidden = viewModel.ObserveTrayStateAsync(CancellationToken.None);
+        client.PendingObservation.SetResult(CreateStatus(true, false));
+        await hidden;
+
+        Assert.Equal(
+            [
+                LiveReadingSensors.BatteryPower
+                    | LiveReadingSensors.CpuTemperature
+                    | LiveReadingSensors.GpuTemperature,
+                LiveReadingSensors.BatteryPower,
+            ],
+            client.RequestedLiveReadings);
+    }
+
+    [Fact]
     public async Task LiveReadingsRefreshOptionsMapCadenceAndOffToTelemetryGate()
     {
         var client = new FakeServiceClient();
@@ -2768,7 +2803,7 @@ public sealed class MainViewModelTests
         LiveReadingGroupDisplayItem temperatures = Assert.Single(
             viewModel.VisibleDashboardTelemetryGroups,
             item => item.Label == "Temperatures");
-        Assert.Equal("Unavailable", temperatures.Value);
+        Assert.Equal("CPU Unavailable", temperatures.Value);
     }
 
     [Fact]
@@ -4266,6 +4301,7 @@ public sealed class MainViewModelTests
         public bool? LastExportLiveReadingsEnabled { get; private set; }
         public int ObservationCalls { get; private set; }
         public List<bool> IncludeLiveReadingsRequests { get; } = [];
+        public List<LiveReadingSensors> RequestedLiveReadings { get; } = [];
         public TaskCompletionSource<ServiceStatusSnapshot>? PendingObservation { get; set; }
         public TaskCompletionSource ObservationStarted { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public bool BlockMutations { get; init; }
@@ -4327,8 +4363,18 @@ public sealed class MainViewModelTests
             bool includeLiveReadings,
             CancellationToken cancellationToken)
         {
+            return ObserveStateAsync(
+                includeLiveReadings ? LiveReadingSensors.All : LiveReadingSensors.None,
+                cancellationToken);
+        }
+
+        public Task<ServiceStatusSnapshot> ObserveStateAsync(
+            LiveReadingSensors requestedLiveReadings,
+            CancellationToken cancellationToken)
+        {
             ObservationCalls++;
-            IncludeLiveReadingsRequests.Add(includeLiveReadings);
+            RequestedLiveReadings.Add(requestedLiveReadings);
+            IncludeLiveReadingsRequests.Add(requestedLiveReadings != LiveReadingSensors.None);
             ObservationStarted.TrySetResult();
             return PendingObservation is not null
                 ? PendingObservation.Task.WaitAsync(cancellationToken)

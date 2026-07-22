@@ -176,6 +176,7 @@ public partial class App : Microsoft.UI.Xaml.Application
 
         if (initialLaunch && mainWindow?.StartMinimized == true)
         {
+            mainWindow.StartHiddenObservation();
             return;
         }
 

@@ -51,7 +51,7 @@ public sealed class ControlRequestHandler
             GetStatusRequest or SubscribeStatusRequest => Status(request.RequestId),
             ObserveStateRequest observe => await ObserveStatusAsync(
                 observe.RequestId,
-                observe.IncludeLiveReadings,
+                observe.EffectiveLiveReadings,
                 cancellationToken),
             UpdateProfilesRequest update => Result(
                 request.RequestId,
@@ -129,10 +129,10 @@ public sealed class ControlRequestHandler
 
     private async Task<ServiceResponse> ObserveStatusAsync(
         Guid requestId,
-        bool includeLiveReadings,
+        LiveReadingSensors requestedLiveReadings,
         CancellationToken cancellationToken)
     {
-        await runtime.ObserveAsync(includeLiveReadings, cancellationToken);
+        await runtime.ObserveAsync(requestedLiveReadings, cancellationToken);
         return Status(requestId);
     }
 

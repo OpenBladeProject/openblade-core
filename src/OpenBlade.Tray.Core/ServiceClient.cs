@@ -50,12 +50,21 @@ public sealed class ServiceClient : IServiceClient
 
     public async Task<ServiceStatusSnapshot> ObserveStateAsync(
         bool includeLiveReadings,
+        CancellationToken cancellationToken) => await ObserveStateAsync(
+            includeLiveReadings ? LiveReadingSensors.All : LiveReadingSensors.None,
+            cancellationToken);
+
+    public async Task<ServiceStatusSnapshot> ObserveStateAsync(
+        LiveReadingSensors requestedLiveReadings,
         CancellationToken cancellationToken)
     {
         var request = new ObserveStateRequest(
             OpenBladeIpc.ProtocolVersion,
             Guid.NewGuid(),
-            includeLiveReadings);
+            requestedLiveReadings != LiveReadingSensors.None)
+        {
+            RequestedLiveReadings = requestedLiveReadings,
+        };
         ServiceResponse response = await SendOnceAsync(request, cancellationToken);
         return response.Status
             ?? throw new InvalidDataException(

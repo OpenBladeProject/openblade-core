@@ -247,6 +247,35 @@ public sealed class ReactiveKeyboardInputTests
     }
 
     [Fact]
+    public void RawKeyboard_FnPUsesTheWindowsPScanCodeObservedOnTargetHardware()
+    {
+        bool functionPPressed = false;
+
+        Assert.True(Rz09_0581PerformanceShortcutRawHidInput.TryCreateFunctionPTrigger(
+            0x19,
+            0,
+            functionKeyPressed: true,
+            ref functionPPressed,
+            out PerformanceShortcutSource source));
+        Assert.Equal(PerformanceShortcutSource.FunctionP, source);
+        Assert.True(functionPPressed);
+
+        Assert.False(Rz09_0581PerformanceShortcutRawHidInput.TryCreateFunctionPTrigger(
+            0x19,
+            0,
+            functionKeyPressed: true,
+            ref functionPPressed,
+            out _));
+        Assert.False(Rz09_0581PerformanceShortcutRawHidInput.TryCreateFunctionPTrigger(
+            0x19,
+            ReactiveRawKeyboardInput.KeyBreakFlag,
+            functionKeyPressed: true,
+            ref functionPPressed,
+            out _));
+        Assert.False(functionPPressed);
+    }
+
+    [Fact]
     public void RawHid_DedicatedButtonWhileFnHeldMatchesCapturedCombinedReport()
     {
         bool functionPressed = true;

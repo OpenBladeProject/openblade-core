@@ -33,6 +33,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
     private readonly UiPreferenceStore preferenceStore;
     private readonly UiPreferenceSaveQueue preferenceSaveQueue;
     private readonly VisibleObservationLoop visibleObservationLoop;
+    private readonly VisibleObservationLoop trayObservationLoop;
     private readonly SessionDisplaySettingsAdapter displaySettingsAdapter;
     private readonly DispatcherQueueTimer chargeLimitCommitTimer;
     private readonly DispatcherQueueTimer lightingCommitTimer;
@@ -62,6 +63,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
     private bool? dashboardIsStacked;
     private bool? profilesUseCompactLayout;
     private bool enforcingMinimumWindowSize;
+    private bool windowVisible;
     private int openDisplayPickerCount;
     private int disposed;
     private ContentDialog? dashboardCustomizerDialog;
@@ -93,6 +95,12 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         visibleObservationLoop = new VisibleObservationLoop(ViewModel.ObserveStateAsync,
             errorHandler: exception => Trace.TraceError(
                 "OpenBlade visible observation failed: {0}",
+                exception),
+            observationIntervalProvider: () =>
+                ViewModel.LiveReadingsObservationInterval);
+        trayObservationLoop = new VisibleObservationLoop(ViewModel.ObserveTrayStateAsync,
+            errorHandler: exception => Trace.TraceError(
+                "OpenBlade tray observation failed: {0}",
                 exception),
             observationIntervalProvider: () =>
                 ViewModel.LiveReadingsObservationInterval);
@@ -206,8 +214,19 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
 
     public void ShowAndActivate()
     {
+        windowVisible = true;
+        trayObservationLoop.Stop();
         visibleObservationLoop.StartOrWake();
+        UpdateDisplayRefreshState();
         AppWindow.Show(true);
+    }
+
+    public void StartHiddenObservation()
+    {
+        windowVisible = false;
+        visibleObservationLoop.Stop();
+        displayRefreshTimer.Stop();
+        trayObservationLoop.StartOrWake();
     }
 
     public async ValueTask DisposeAsync()
@@ -252,6 +271,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         accentColorManager.ColorChanged -= OnAccentColorChanged;
         accentColorManager.Dispose();
         await visibleObservationLoop.DisposeAsync();
+        await trayObservationLoop.DisposeAsync();
         await preferenceSaveQueue.DisposeAsync();
         await DisplayViewModel.DisposeAsync();
         await ViewModel.DisposeAsync();
@@ -412,9 +432,11 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             or nameof(MainViewModel.TrayHoverLabelPreferences))
         {
             QueuePreferenceSave();
-            if (args.PropertyName == nameof(MainViewModel.LiveReadingsRefreshCadence))
+            if (args.PropertyName is nameof(MainViewModel.LiveReadingsRefreshCadence)
+                or nameof(MainViewModel.EnabledDashboardTelemetryItems)
+                or nameof(MainViewModel.TrayHoverLabelPreferences))
             {
-                visibleObservationLoop.StartOrWake();
+                WakeActiveObservationLoop();
             }
         }
 
@@ -603,7 +625,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         if (WindowLifecyclePolicy.Decide(exitRequested) == WindowCloseDecision.Hide)
         {
             args.Cancel = true;
-            visibleObservationLoop.Stop();
+            StartHiddenObservation();
             AppWindow.Hide();
         }
     }
@@ -1359,9 +1381,10 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
 
     private void UpdateDisplayRefreshState()
     {
-        bool shouldRefresh = DisplayPage.Visibility == Visibility.Visible
-            || (HomePage.Visibility == Visibility.Visible
-                && IsDashboardCardPinned(DashboardCardKind.Display));
+        bool shouldRefresh = windowVisible
+            && (DisplayPage.Visibility == Visibility.Visible
+                || (HomePage.Visibility == Visibility.Visible
+                    && IsDashboardCardPinned(DashboardCardKind.Display)));
         if (shouldRefresh)
         {
             displayRefreshTimer.Start();
@@ -1369,6 +1392,18 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         else
         {
             displayRefreshTimer.Stop();
+        }
+    }
+
+    private void WakeActiveObservationLoop()
+    {
+        if (windowVisible)
+        {
+            visibleObservationLoop.StartOrWake();
+        }
+        else
+        {
+            trayObservationLoop.StartOrWake();
         }
     }
 

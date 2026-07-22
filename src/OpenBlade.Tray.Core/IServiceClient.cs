@@ -26,6 +26,12 @@ public interface IServiceClient : IServiceStatusWatcher
         bool includeLiveReadings,
         CancellationToken cancellationToken);
 
+    Task<ServiceStatusSnapshot> ObserveStateAsync(
+        LiveReadingSensors requestedLiveReadings,
+        CancellationToken cancellationToken) => ObserveStateAsync(
+            requestedLiveReadings != LiveReadingSensors.None,
+            cancellationToken);
+
     Task<DiagnosticArchive> ExportDiagnosticsAsync(
         bool liveReadingsEnabled,
         CancellationToken token);

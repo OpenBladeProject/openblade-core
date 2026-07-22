@@ -36,11 +36,31 @@ public abstract record ServiceRequest(int Version, Guid RequestId);
 public sealed record GetStatusRequest(int Version, Guid RequestId)
     : ServiceRequest(Version, RequestId);
 
+[Flags]
+public enum LiveReadingSensors
+{
+    None = 0,
+    BatteryPower = 1 << 0,
+    FanSpeeds = 1 << 1,
+    CpuTemperature = 1 << 2,
+    GpuTemperature = 1 << 3,
+    All = BatteryPower | FanSpeeds | CpuTemperature | GpuTemperature,
+}
+
 public sealed record ObserveStateRequest(
     int Version,
     Guid RequestId,
     bool IncludeLiveReadings)
-    : ServiceRequest(Version, RequestId);
+    : ServiceRequest(Version, RequestId)
+{
+    // Added as an optional property so older clients continue to request the
+    // original all-sensor observation when the property is absent.
+    public LiveReadingSensors RequestedLiveReadings { get; init; } = LiveReadingSensors.All;
+
+    public LiveReadingSensors EffectiveLiveReadings => IncludeLiveReadings
+        ? RequestedLiveReadings
+        : LiveReadingSensors.None;
+}
 
 public sealed record SubscribeStatusRequest(int Version, Guid RequestId)
     : ServiceRequest(Version, RequestId);

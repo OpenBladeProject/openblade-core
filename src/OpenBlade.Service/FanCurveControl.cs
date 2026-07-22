@@ -57,6 +57,17 @@ public static class FanCurveCalculator
 public interface IFanTemperatureSource
 {
     ValueTask<FanTemperatureReadings> ReadAsync(CancellationToken cancellationToken);
+
+    async ValueTask<FanTemperatureReadings> ReadAsync(
+        bool includeCpu,
+        bool includeGpu,
+        CancellationToken cancellationToken)
+    {
+        FanTemperatureReadings readings = await ReadAsync(cancellationToken);
+        return new FanTemperatureReadings(
+            includeCpu ? readings.CpuCelsius : null,
+            includeGpu ? readings.GpuCelsius : null);
+    }
 }
 
 // The exact target firmware exposes a Razer-specific ACPI thermal zone named
@@ -67,12 +78,24 @@ public interface IFanTemperatureSource
 public sealed class SafeWindowsFanTemperatureSource : IFanTemperatureSource
 {
     public ValueTask<FanTemperatureReadings> ReadAsync(
+        CancellationToken cancellationToken) => ReadAsync(
+            includeCpu: true,
+            includeGpu: true,
+            cancellationToken);
+
+    public ValueTask<FanTemperatureReadings> ReadAsync(
+        bool includeCpu,
+        bool includeGpu,
         CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
         return ValueTask.FromResult(new FanTemperatureReadings(
-            CpuCelsius: WindowsThermalZone.TryReadRazerEcTemperature(),
-            GpuCelsius: NvidiaNvml.TryReadTemperature()));
+            CpuCelsius: includeCpu
+                ? WindowsThermalZone.TryReadRazerEcTemperature()
+                : null,
+            GpuCelsius: includeGpu
+                ? NvidiaNvml.TryReadTemperature()
+                : null));
     }
 
     internal static class WindowsThermalZone

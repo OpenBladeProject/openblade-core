@@ -972,6 +972,7 @@ public sealed class WinUiShellContractTests
         string app = ReadRepositoryFile("src", "OpenBlade.Tray", "App.xaml.cs");
 
         Assert.Contains("new VisibleObservationLoop(ViewModel.ObserveStateAsync", window, StringComparison.Ordinal);
+        Assert.Contains("new VisibleObservationLoop(ViewModel.ObserveTrayStateAsync", window, StringComparison.Ordinal);
         Assert.DoesNotContain("AppWindow.Show(true)", app, StringComparison.Ordinal);
         int showMethod = window.IndexOf("public void ShowAndActivate()", StringComparison.Ordinal);
         int start = window.IndexOf("visibleObservationLoop.StartOrWake()", showMethod, StringComparison.Ordinal);
@@ -979,13 +980,16 @@ public sealed class WinUiShellContractTests
         Assert.True(showMethod >= 0 && start > showMethod && show > start);
 
         int closing = window.IndexOf("private void OnClosing", StringComparison.Ordinal);
-        int stop = window.IndexOf("visibleObservationLoop.Stop()", closing, StringComparison.Ordinal);
+        int stop = window.IndexOf("StartHiddenObservation()", closing, StringComparison.Ordinal);
         int hide = window.IndexOf("AppWindow.Hide()", closing, StringComparison.Ordinal);
         Assert.True(closing >= 0 && stop > closing && hide > stop);
 
+        Assert.Contains("mainWindow.StartHiddenObservation()", app, StringComparison.Ordinal);
+
         int disposeLoop = window.IndexOf("await visibleObservationLoop.DisposeAsync()", StringComparison.Ordinal);
+        int disposeTrayLoop = window.IndexOf("await trayObservationLoop.DisposeAsync()", StringComparison.Ordinal);
         int disposeViewModel = window.IndexOf("await ViewModel.DisposeAsync()", StringComparison.Ordinal);
-        Assert.True(disposeLoop >= 0 && disposeViewModel > disposeLoop);
+        Assert.True(disposeLoop >= 0 && disposeTrayLoop > disposeLoop && disposeViewModel > disposeTrayLoop);
     }
 
     [Fact]

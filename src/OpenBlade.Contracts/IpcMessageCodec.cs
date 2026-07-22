@@ -139,7 +139,8 @@ public static class IpcMessageCodec
         bool validBody = request switch
         {
             GetStatusRequest => true,
-            ObserveStateRequest => true,
+            ObserveStateRequest observe =>
+                (observe.RequestedLiveReadings & ~LiveReadingSensors.All) == 0,
             SubscribeStatusRequest => true,
             ExportDiagnosticsRequest => true,
             UpdateProfilesRequest update => update.Profiles is not null,

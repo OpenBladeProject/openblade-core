@@ -107,6 +107,12 @@ public interface IServiceControlRuntime
 
     Task ObserveAsync(bool includeLiveReadings, CancellationToken cancellationToken);
 
+    Task ObserveAsync(
+        LiveReadingSensors requestedLiveReadings,
+        CancellationToken cancellationToken) => ObserveAsync(
+            requestedLiveReadings != LiveReadingSensors.None,
+            cancellationToken);
+
     Task HandlePowerSourceChangedAsync(CancellationToken cancellationToken);
 
     Task RefreshPowerSourceClassificationAsync(CancellationToken cancellationToken) =>
@@ -1364,19 +1370,28 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         }
     }
 
-    public async Task ObserveAsync(
+    public Task ObserveAsync(
         bool includeLiveReadings,
+        CancellationToken cancellationToken) => ObserveAsync(
+            includeLiveReadings ? LiveReadingSensors.All : LiveReadingSensors.None,
+            cancellationToken);
+
+    public async Task ObserveAsync(
+        LiveReadingSensors requestedLiveReadings,
         CancellationToken cancellationToken)
     {
         EnsureInitialized();
         await operationGate.WaitAsync(cancellationToken);
         try
         {
+            bool includeLiveReadings = requestedLiveReadings != LiveReadingSensors.None;
             cancellationToken.ThrowIfCancellationRequested();
             PowerSource powerSource = await ResolveCurrentPowerSourceAsync(
                 cancellationToken,
                 allowCachedExternalClassification: includeLiveReadings);
-            int? batteryPowerFlow = includeLiveReadings
+            int? batteryPowerFlow = Requests(
+                requestedLiveReadings,
+                LiveReadingSensors.BatteryPower)
                 ? powerStateProvider.CaptureBatteryPowerFlowMilliwatts()
                 : null;
             bool sourceChanged = powerSource != PowerSource.ExternalUnknown
@@ -1402,6 +1417,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 {
                     await ObserveFastPathAsync(
                         statusPowerSource,
+                        requestedLiveReadings,
                         batteryPowerFlow,
                         cancellationToken).ConfigureAwait(false);
                 }
@@ -1410,7 +1426,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                     await ObserveCoreAsync(
                         statusPowerSource,
                         powerSourceConfirmed,
-                        includeLiveReadings,
+                        requestedLiveReadings,
                         batteryPowerFlow,
                         cancellationToken).ConfigureAwait(false);
                 }
@@ -1448,7 +1464,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 await ObserveCoreAsync(
                     PowerSourceForStatus(powerSource),
                     powerSourceConfirmed,
-                    includeLiveReadings: false,
+                    requestedLiveReadings: LiveReadingSensors.None,
                     batteryPowerFlowMilliwatts: null,
                     cancellationToken);
             }
@@ -2598,10 +2614,11 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
     private async Task ObserveCoreAsync(
         PowerSource powerSource,
         bool powerSourceConfirmed,
-        bool includeLiveReadings,
+        LiveReadingSensors requestedLiveReadings,
         int? batteryPowerFlowMilliwatts,
         CancellationToken cancellationToken)
     {
+        bool includeLiveReadings = requestedLiveReadings != LiveReadingSensors.None;
         bool deviceAvailable = deviceProvider.TryGetVerifiedDevice(out IBladeDevice device);
         cancellationToken.ThrowIfCancellationRequested();
         if (!deviceAvailable)
@@ -2669,29 +2686,48 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             FanTemperatureReadings temperatures = default;
             if (includeLiveReadings)
             {
-                try
+                if (Requests(requestedLiveReadings, LiveReadingSensors.FanSpeeds))
                 {
-                    fans = await device.ReadFanRpmAsync(cancellationToken);
+                    try
+                    {
+                        fans = await device.ReadFanRpmAsync(cancellationToken);
+                    }
+                    catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                    {
+                        throw;
+                    }
+                    catch
+                    {
+                        fans = null;
+                    }
                 }
-                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+
+                bool includeCpu = Requests(
+                    requestedLiveReadings,
+                    LiveReadingSensors.CpuTemperature);
+                bool includeGpu = Requests(
+                        requestedLiveReadings,
+                        LiveReadingSensors.GpuTemperature)
+                    && ShouldReadGpuTemperature(
+                        powerSource,
+                        Automation.Resolve(confirmed).Performance.Value);
+                if (includeCpu || includeGpu)
                 {
-                    throw;
-                }
-                catch
-                {
-                    fans = null;
-                }
-                try
-                {
-                    temperatures = await fanTemperatureSource.ReadAsync(cancellationToken);
-                }
-                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-                {
-                    throw;
-                }
-                catch
-                {
-                    temperatures = default;
+                    try
+                    {
+                        temperatures = await fanTemperatureSource.ReadAsync(
+                            includeCpu,
+                            includeGpu,
+                            cancellationToken);
+                    }
+                    catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                    {
+                        throw;
+                    }
+                    catch
+                    {
+                        temperatures = default;
+                    }
                 }
             }
             cancellationToken.ThrowIfCancellationRequested();
@@ -2792,6 +2828,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
 
     private async Task ObserveFastPathAsync(
         PowerSource powerSource,
+        LiveReadingSensors requestedLiveReadings,
         int? batteryPowerFlowMilliwatts,
         CancellationToken cancellationToken)
     {
@@ -2823,31 +2860,49 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         consecutiveDeviceProbeFailures = 0;
         FanRpmReadings? fans = null;
         FanTemperatureReadings temperatures = default;
-        try
+        if (Requests(requestedLiveReadings, LiveReadingSensors.FanSpeeds))
         {
-            fans = await device.ReadFanRpmAsync(cancellationToken).ConfigureAwait(false);
-        }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-        {
-            throw;
-        }
-        catch
-        {
-            // Keep the confirmed control state while one optional sensor is unavailable.
+            try
+            {
+                fans = await device.ReadFanRpmAsync(cancellationToken).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch
+            {
+                // Keep the confirmed control state while one optional sensor is unavailable.
+            }
         }
 
-        try
+        bool includeCpu = Requests(
+            requestedLiveReadings,
+            LiveReadingSensors.CpuTemperature);
+        bool includeGpu = Requests(
+                requestedLiveReadings,
+                LiveReadingSensors.GpuTemperature)
+            && ShouldReadGpuTemperature(
+                powerSource,
+                current.DesiredState.Performance.Value);
+        if (includeCpu || includeGpu)
         {
-            temperatures = await fanTemperatureSource.ReadAsync(cancellationToken)
-                .ConfigureAwait(false);
-        }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-        {
-            throw;
-        }
-        catch
-        {
-            // Keep the confirmed control state while one optional sensor is unavailable.
+            try
+            {
+                temperatures = await fanTemperatureSource.ReadAsync(
+                        includeCpu,
+                        includeGpu,
+                        cancellationToken)
+                    .ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch
+            {
+                // Keep the confirmed control state while one optional sensor is unavailable.
+            }
         }
 
         cancellationToken.ThrowIfCancellationRequested();
@@ -2862,6 +2917,16 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 temperatures.GpuCelsius),
         });
     }
+
+    private static bool Requests(
+        LiveReadingSensors requested,
+        LiveReadingSensors sensor) => (requested & sensor) != 0;
+
+    private static bool ShouldReadGpuTemperature(
+        PowerSource powerSource,
+        PerformancePreset performance) => powerSource != PowerSource.Battery
+        || performance is not PerformancePreset.Silent
+            and not PerformancePreset.BatterySaver;
 
     private static async Task<ConfirmedDeviceState> ReadObservedStateAsync(
         IBladeDevice device,

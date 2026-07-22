@@ -80,7 +80,11 @@ public static class TrayHoverLabelFormatter
                 TrayHoverLabelItemKind.PowerMode => PerformancePresetPresentation.Label(performance),
                 TrayHoverLabelItemKind.BatteryPower => batteryPowerFlow,
                 TrayHoverLabelItemKind.CpuTemperature => FormatTemperature("CPU", cpuTemperatureCelsius),
-                TrayHoverLabelItemKind.GpuTemperature => FormatTemperature("GPU", gpuTemperatureCelsius),
+                // A missing NVIDIA reading means the discrete GPU is unavailable
+                // or powered down. Omit it instead of implying a live sensor.
+                TrayHoverLabelItemKind.GpuTemperature => gpuTemperatureCelsius is int
+                    ? FormatTemperature("GPU", gpuTemperatureCelsius)
+                    : string.Empty,
                 TrayHoverLabelItemKind.Fan1Speed => FormatFan("Fan 1", fan1Rpm),
                 TrayHoverLabelItemKind.Fan2Speed => FormatFan("Fan 2", fan2Rpm),
                 _ => throw new ArgumentOutOfRangeException(nameof(items)),

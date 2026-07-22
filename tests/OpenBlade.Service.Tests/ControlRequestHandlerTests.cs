@@ -204,7 +204,10 @@ public sealed class ControlRequestHandlerTests
         var request = new ObserveStateRequest(
             OpenBladeIpc.ProtocolVersion,
             Guid.NewGuid(),
-            IncludeLiveReadings: true);
+            IncludeLiveReadings: true)
+        {
+            RequestedLiveReadings = LiveReadingSensors.BatteryPower,
+        };
 
         ServiceResponse response = await handler.HandleAsync(
             request,
@@ -213,6 +216,7 @@ public sealed class ControlRequestHandlerTests
         Assert.True(response.Success);
         Assert.Equal(["Observe", "GetStatus"], runtime.Calls);
         Assert.True(runtime.LastIncludeLiveReadings);
+        Assert.Equal(LiveReadingSensors.BatteryPower, runtime.LastRequestedLiveReadings);
         Assert.Equal(1, response.Status!.Revision);
         Assert.Null(response.Result);
     }
@@ -310,6 +314,8 @@ public sealed class ControlRequestHandlerTests
 
         public bool LastIncludeLiveReadings { get; private set; }
 
+        public LiveReadingSensors LastRequestedLiveReadings { get; private set; }
+
         public Task ObserveAsync(
             bool includeLiveReadings,
             CancellationToken cancellationToken)
@@ -318,6 +324,16 @@ public sealed class ControlRequestHandlerTests
             LastIncludeLiveReadings = includeLiveReadings;
             revision++;
             return Task.CompletedTask;
+        }
+
+        public Task ObserveAsync(
+            LiveReadingSensors requestedLiveReadings,
+            CancellationToken cancellationToken)
+        {
+            LastRequestedLiveReadings = requestedLiveReadings;
+            return ObserveAsync(
+                requestedLiveReadings != LiveReadingSensors.None,
+                cancellationToken);
         }
         public Task HandlePowerSourceChangedAsync(CancellationToken cancellationToken) => Task.CompletedTask;
         public Task RefreshControllerPresenceAsync(CancellationToken cancellationToken) => Task.CompletedTask;

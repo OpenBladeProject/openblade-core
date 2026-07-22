@@ -625,7 +625,8 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             string temperatureValue = FormatDashboardTemperatures(
                 DashboardTelemetryEnabled(LiveReadingItemKind.CpuTemperature),
                 CpuTemperatureValue,
-                DashboardTelemetryEnabled(LiveReadingItemKind.GpuTemperature),
+                DashboardTelemetryEnabled(LiveReadingItemKind.GpuTemperature)
+                    && LiveReadings?.GpuTemperatureCelsius is not null,
                 GpuTemperatureValue);
             if (temperatureValue.Length > 0)
             {
@@ -3121,30 +3122,38 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         }
     }
 
-    public async Task ObserveStateAsync(CancellationToken cancellationToken)
+    public Task ObserveStateAsync(CancellationToken cancellationToken) =>
+        ObserveStateAsync(trayOnly: false, cancellationToken);
+
+    public Task ObserveTrayStateAsync(CancellationToken cancellationToken) =>
+        ObserveStateAsync(trayOnly: true, cancellationToken);
+
+    private async Task ObserveStateAsync(
+        bool trayOnly,
+        CancellationToken cancellationToken)
     {
         ObservationRequestStamp stamp = default;
-        bool includeLiveReadings = false;
+        LiveReadingSensors requestedLiveReadings = LiveReadingSensors.None;
         await dispatcher.InvokeAsync(
             () =>
             {
                 stamp = new ObservationRequestStamp(
                     connectionGeneration,
                     subscriptionConnected);
-                includeLiveReadings = LiveReadingsEnabled;
+                requestedLiveReadings = ResolveRequestedLiveReadings(trayOnly);
             },
             cancellationToken);
 
         try
         {
             ServiceStatusSnapshot status = await serviceClient
-                .ObserveStateAsync(includeLiveReadings, cancellationToken);
+                .ObserveStateAsync(requestedLiveReadings, cancellationToken);
             await dispatcher.InvokeAsync(
                 () =>
                 {
                     bool accepted = ApplyObservedStatus(status, stamp);
                     if (accepted
-                        && includeLiveReadings
+                        && requestedLiveReadings != LiveReadingSensors.None
                         && LiveReadingsEnabled
                         && status.LiveReadings is not null)
                     {
@@ -3618,6 +3627,55 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         {
         }
     }
+
+    private LiveReadingSensors ResolveRequestedLiveReadings(bool trayOnly)
+    {
+        if (!LiveReadingsEnabled)
+        {
+            return LiveReadingSensors.None;
+        }
+
+        LiveReadingSensors requested = LiveReadingSensors.None;
+        if (!trayOnly)
+        {
+            foreach (LiveReadingVisibilityOption option in DashboardTelemetryItems)
+            {
+                if (option.IsEnabled)
+                {
+                    requested |= ToSensor(option.Kind);
+                }
+            }
+        }
+
+        foreach (TrayHoverLabelItemOption option in TrayHoverLabelItems)
+        {
+            if (option.IsEnabled)
+            {
+                requested |= ToSensor(option.Kind);
+            }
+        }
+        return requested;
+    }
+
+    private static LiveReadingSensors ToSensor(LiveReadingItemKind kind) => kind switch
+    {
+        LiveReadingItemKind.BatteryPower => LiveReadingSensors.BatteryPower,
+        LiveReadingItemKind.CpuTemperature => LiveReadingSensors.CpuTemperature,
+        LiveReadingItemKind.GpuTemperature => LiveReadingSensors.GpuTemperature,
+        LiveReadingItemKind.Fan1Speed or LiveReadingItemKind.Fan2Speed =>
+            LiveReadingSensors.FanSpeeds,
+        _ => LiveReadingSensors.None,
+    };
+
+    private static LiveReadingSensors ToSensor(TrayHoverLabelItemKind kind) => kind switch
+    {
+        TrayHoverLabelItemKind.BatteryPower => LiveReadingSensors.BatteryPower,
+        TrayHoverLabelItemKind.CpuTemperature => LiveReadingSensors.CpuTemperature,
+        TrayHoverLabelItemKind.GpuTemperature => LiveReadingSensors.GpuTemperature,
+        TrayHoverLabelItemKind.Fan1Speed or TrayHoverLabelItemKind.Fan2Speed =>
+            LiveReadingSensors.FanSpeeds,
+        _ => LiveReadingSensors.None,
+    };
 
     public async Task<bool> ImportProfilesAsync(
         ProfileSet profiles,

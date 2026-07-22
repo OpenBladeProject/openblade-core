@@ -3987,6 +3987,47 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     }
 
     [Fact]
+    public async Task Observe_BatteryOnlySkipsHidAndTemperatureSensors()
+    {
+        var temperatures = new FixedFanTemperatureSource(
+            new FanTemperatureReadings(47, 52));
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            fanTemperatureSource: temperatures);
+        context.Telemetry.Current = CreateTelemetry(PowerSource.PluggedIn) with
+        {
+            BatteryPowerFlowMilliwatts = 18_400,
+        };
+
+        await context.Runtime.ObserveAsync(
+            LiveReadingSensors.BatteryPower,
+            CancellationToken.None);
+
+        Assert.Equal(new LiveReadings(18_400, null, null), context.Runtime.GetStatus().LiveReadings);
+        Assert.Equal(0, context.Device.FanRpmReadCalls);
+        Assert.Equal(0, temperatures.ReadCount);
+    }
+
+    [Fact]
+    public async Task Observe_BatterySaverDoesNotWakeTheDiscreteGpuForTemperature()
+    {
+        var temperatures = new FixedFanTemperatureSource(
+            new FanTemperatureReadings(47, 52));
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            initialPowerSource: PowerSource.Battery,
+            fanTemperatureSource: temperatures);
+
+        await context.Runtime.ObserveAsync(
+            LiveReadingSensors.CpuTemperature | LiveReadingSensors.GpuTemperature,
+            CancellationToken.None);
+
+        Assert.Equal([(true, false)], temperatures.Requests);
+        Assert.Equal(47, context.Runtime.GetStatus().LiveReadings!.CpuTemperatureCelsius);
+        Assert.Null(context.Runtime.GetStatus().LiveReadings!.GpuTemperatureCelsius);
+    }
+
+    [Fact]
     public async Task LiveReadings_PersistAcrossScopedUpdateAndClearOnPowerOrDisabledObservation()
     {
         TestContext context = CreateContext(providerAvailable: true);
@@ -4783,12 +4824,27 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     {
         public int ReadCount { get; private set; }
 
+        public List<(bool IncludeCpu, bool IncludeGpu)> Requests { get; } = [];
+
         public ValueTask<FanTemperatureReadings> ReadAsync(
             CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
             ReadCount++;
             return ValueTask.FromResult(readings);
+        }
+
+        public ValueTask<FanTemperatureReadings> ReadAsync(
+            bool includeCpu,
+            bool includeGpu,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            ReadCount++;
+            Requests.Add((includeCpu, includeGpu));
+            return ValueTask.FromResult(new FanTemperatureReadings(
+                includeCpu ? readings.CpuCelsius : null,
+                includeGpu ? readings.GpuCelsius : null));
         }
     }
 

@@ -48,6 +48,7 @@ internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
     private const uint RawInputDeviceName = 0x20000007;
     private const int MaximumRawInputBytes = 64 * 1024;
     private const ushort GenericDesktopUsagePage = 0x0001;
+    private const ushort ConsumerUsagePage = 0x000C;
     private const ushort PageOnlyUsage = 0x0000;
     private static readonly nint MessageOnlyWindow = new(-3);
     private static readonly ConcurrentDictionary<nint, WindowsReactiveKeyboardSource>
@@ -375,6 +376,15 @@ internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
 
         RawKeyboard keyboard = Marshal.PtrToStructure<RawKeyboard>(
             nint.Add(buffer, checked((int)headerSize)));
+        if (Rz09_0581PerformanceShortcutRawHidInput.TryCreateFunctionPTrigger(
+            keyboard.MakeCode,
+            keyboard.Flags,
+            performanceFunctionKeyPressed,
+            ref functionPPressed,
+            out PerformanceShortcutSource shortcut))
+        {
+            publishPerformanceShortcut(shortcut);
+        }
         if (!ReactiveRawKeyboardInput.TryCreatePulses(
             keyboard.MakeCode,
             keyboard.Flags,
@@ -512,6 +522,13 @@ internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
             new()
             {
                 UsagePage = GenericDesktopUsagePage,
+                Usage = PageOnlyUsage,
+                Flags = flags | RawInputDevicePageOnly,
+                Target = target,
+            },
+            new()
+            {
+                UsagePage = ConsumerUsagePage,
                 Usage = PageOnlyUsage,
                 Flags = flags | RawInputDevicePageOnly,
                 Target = target,

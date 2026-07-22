@@ -51,7 +51,11 @@ public sealed class IpcMessageCodecTests
         new ObserveStateRequest(
             OpenBladeIpc.ProtocolVersion,
             Guid.NewGuid(),
-            IncludeLiveReadings: true),
+            IncludeLiveReadings: true)
+        {
+            RequestedLiveReadings = LiveReadingSensors.BatteryPower
+                | LiveReadingSensors.CpuTemperature,
+        },
         new SubscribeStatusRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid()),
         new ExportDiagnosticsRequest(
             OpenBladeIpc.ProtocolVersion,
@@ -168,6 +172,23 @@ public sealed class IpcMessageCodecTests
             OpenBladeIpc.ProtocolVersion,
             Guid.NewGuid(),
             (PerformanceShortcutSource)999);
+        using MemoryStream stream = new();
+
+        await Assert.ThrowsAsync<InvalidDataException>(() =>
+            IpcMessageCodec.WriteRequestAsync(stream, request, CancellationToken.None));
+        Assert.Equal(0, stream.Length);
+    }
+
+    [Fact]
+    public async Task ObserveStateRequest_RejectsUnknownSensorFlags()
+    {
+        var request = new ObserveStateRequest(
+            OpenBladeIpc.ProtocolVersion,
+            Guid.NewGuid(),
+            IncludeLiveReadings: true)
+        {
+            RequestedLiveReadings = (LiveReadingSensors)(1 << 10),
+        };
         using MemoryStream stream = new();
 
         await Assert.ThrowsAsync<InvalidDataException>(() =>
