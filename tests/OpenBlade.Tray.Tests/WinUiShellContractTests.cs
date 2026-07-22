@@ -307,6 +307,21 @@ public sealed class WinUiShellContractTests
     }
 
     [Fact]
+    public void DashboardCustomizerUsesModelBackedDragReordering()
+    {
+        string window = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml.cs");
+
+        Assert.Contains("grip.PointerPressed +=", window, StringComparison.Ordinal);
+        Assert.Contains("grip.PointerMoved +=", window, StringComparison.Ordinal);
+        Assert.Contains("grip.PointerReleased +=", window, StringComparison.Ordinal);
+        Assert.Contains("grip.CapturePointer(pointerArgs.Pointer)", window, StringComparison.Ordinal);
+        Assert.Contains("DashboardCards.Move(sourceIndex, targetIndex)", window, StringComparison.Ordinal);
+        Assert.Contains("Drag them into the order you want", window, StringComparison.Ordinal);
+        Assert.DoesNotContain("CreateDashboardOrderButton", window, StringComparison.Ordinal);
+        Assert.DoesNotContain("ObservableCollection<Grid>", window, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void ProductionPublishRemainsSelfContainedWithoutLooseSetupRuntimeOrSymbols()
     {
         string publish = ReadRepositoryFile("build", "Publish.ps1");

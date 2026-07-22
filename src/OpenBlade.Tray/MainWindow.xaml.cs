@@ -59,6 +59,8 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
     private bool enforcingMinimumWindowSize;
     private int disposed;
     private int dashboardPlacementGeneration;
+    private ContentDialog? dashboardCustomizerDialog;
+    private Action? dashboardCustomizerRefresh;
     private Dictionary<DashboardCardKind, DashboardCardRegistration>
         dashboardCardRegistrations = [];
     private Dictionary<DashboardCardKind, NavigationViewItem> dashboardCardDestinations = [];
@@ -1566,29 +1568,64 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
 
     private async void OnCustomizeDashboard(object sender, RoutedEventArgs args)
     {
-        var cardList = new StackPanel { Spacing = 4 };
+        if (dashboardCustomizerDialog is not null)
+        {
+            dashboardCustomizerRefresh?.Invoke();
+            await dashboardCustomizerDialog.ShowAsync();
+            return;
+        }
+
+        var cardList = new StackPanel { Spacing = 2 };
+        AutomationProperties.SetName(cardList, "Dashboard cards");
+        DashboardCardKind? draggedKind = null;
+        double dragStartY = 0;
+        Grid? draggedRow = null;
+        FontIcon? draggedGrip = null;
+
+        void EndPointerDrag()
+        {
+            if (draggedRow is not null)
+            {
+                draggedRow.Opacity = 1;
+                draggedRow.Translation = System.Numerics.Vector3.Zero;
+                Canvas.SetZIndex(draggedRow, 0);
+            }
+
+            draggedKind = null;
+            draggedRow = null;
+            draggedGrip = null;
+        }
 
         void RefreshEditor()
         {
             cardList.Children.Clear();
-            for (int index = 0; index < DashboardCards.Count; index++)
+            foreach (DashboardCardOption option in DashboardCards)
             {
-                DashboardCardOption option = DashboardCards[index];
                 var row = new Grid
                 {
-                    ColumnSpacing = 8,
-                    Padding = new Thickness(4, 6, 4, 6),
+                    ColumnSpacing = 10,
+                    MinHeight = 58,
+                    Padding = new Thickness(2, 6, 2, 6),
                 };
+                row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
                 row.ColumnDefinitions.Add(new ColumnDefinition());
                 row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-                row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-                row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
+                var grip = new FontIcon
+                {
+                    Glyph = "\uE76F",
+                    FontSize = 14,
+                    Opacity = 0.72,
+                    VerticalAlignment = VerticalAlignment.Center,
+                };
+                AutomationProperties.SetName(grip, $"Drag {option.Label}");
+                row.Children.Add(grip);
 
                 var label = new StackPanel { Spacing = 2 };
                 label.Children.Add(new TextBlock
                 {
                     Text = option.Label,
-                    Style = (Style)Root.Resources["CardTitleStyle"],
+                    FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
                 });
                 label.Children.Add(new TextBlock
                 {
@@ -1596,61 +1633,100 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
                     Style = (Style)Root.Resources["SecondaryTextStyle"],
                     TextWrapping = TextWrapping.Wrap,
                 });
+                Grid.SetColumn(label, 1);
                 row.Children.Add(label);
-
-                int currentIndex = index;
-                var moveUp = CreateDashboardOrderButton("\uE74A", "Move up", currentIndex > 0);
-                moveUp.Click += (_, _) =>
-                {
-                    DashboardCards.Move(currentIndex, currentIndex - 1);
-                    RefreshEditor();
-                };
-                Grid.SetColumn(moveUp, 1);
-                row.Children.Add(moveUp);
-
-                var moveDown = CreateDashboardOrderButton(
-                    "\uE74B",
-                    "Move down",
-                    currentIndex < DashboardCards.Count - 1);
-                moveDown.Click += (_, _) =>
-                {
-                    DashboardCards.Move(currentIndex, currentIndex + 1);
-                    RefreshEditor();
-                };
-                Grid.SetColumn(moveDown, 2);
-                row.Children.Add(moveDown);
 
                 var isPinned = new Microsoft.UI.Xaml.Controls.CheckBox
                 {
                     IsChecked = option.IsPinned,
                     VerticalAlignment = VerticalAlignment.Center,
                 };
-                AutomationProperties.SetName(isPinned, $"Show {option.Label} on Dashboard");
+                AutomationProperties.SetName(isPinned, option.Label);
                 isPinned.Checked += (_, _) => option.IsPinned = true;
                 isPinned.Unchecked += (_, _) => option.IsPinned = false;
-                Grid.SetColumn(isPinned, 3);
+                Grid.SetColumn(isPinned, 2);
                 row.Children.Add(isPinned);
+
+                grip.PointerPressed += (_, pointerArgs) =>
+                {
+                    if (!pointerArgs.GetCurrentPoint(cardList).Properties.IsLeftButtonPressed)
+                    {
+                        return;
+                    }
+
+                    draggedKind = option.Kind;
+                    draggedRow = row;
+                    draggedGrip = grip;
+                    dragStartY = pointerArgs.GetCurrentPoint(cardList).Position.Y;
+                    row.Opacity = 0.72;
+                    Canvas.SetZIndex(row, 1);
+                    grip.CapturePointer(pointerArgs.Pointer);
+                    pointerArgs.Handled = true;
+                };
+                grip.PointerMoved += (_, pointerArgs) =>
+                {
+                    if (draggedRow != row
+                        || !pointerArgs.GetCurrentPoint(cardList).Properties.IsLeftButtonPressed)
+                    {
+                        return;
+                    }
+
+                    double currentY = pointerArgs.GetCurrentPoint(cardList).Position.Y;
+                    row.Translation = new System.Numerics.Vector3(
+                        0,
+                        (float)(currentY - dragStartY),
+                        0);
+                    pointerArgs.Handled = true;
+                };
+                grip.PointerReleased += (_, pointerArgs) =>
+                {
+                    if (draggedKind is not { } sourceKind || draggedRow != row)
+                    {
+                        return;
+                    }
+
+                    double releaseY = pointerArgs.GetCurrentPoint(cardList).Position.Y;
+                    draggedGrip?.ReleasePointerCapture(pointerArgs.Pointer);
+                    int sourceIndex = DashboardCards
+                        .Select((item, index) => (item, index))
+                        .First(pair => pair.item.Kind == sourceKind)
+                        .index;
+                    int targetIndex = cardList.Children.Count - 1;
+                    for (int index = 0; index < cardList.Children.Count; index++)
+                    {
+                        FrameworkElement candidate = (FrameworkElement)cardList.Children[index];
+                        double midpoint = candidate
+                            .TransformToVisual(cardList)
+                            .TransformPoint(new Windows.Foundation.Point())
+                            .Y + (candidate.ActualHeight / 2);
+                        if (releaseY < midpoint)
+                        {
+                            targetIndex = index;
+                            break;
+                        }
+                    }
+
+                    EndPointerDrag();
+                    if (sourceIndex != targetIndex)
+                    {
+                        DashboardCards.Move(sourceIndex, targetIndex);
+                    }
+
+                    RefreshEditor();
+                    pointerArgs.Handled = true;
+                };
+                grip.PointerCaptureLost += (_, _) => EndPointerDrag();
                 cardList.Children.Add(row);
             }
         }
 
         RefreshEditor();
-        var reset = new Microsoft.UI.Xaml.Controls.Button
-        {
-            Content = "Reset to default",
-            HorizontalAlignment = Microsoft.UI.Xaml.HorizontalAlignment.Left,
-        };
-        reset.Click += (_, _) =>
-        {
-            ApplyDashboardPreferences(DashboardCardPreferenceDefaults.Cards);
-            QueuePreferenceSave();
-            RefreshEditor();
-        };
+        dashboardCustomizerRefresh = RefreshEditor;
 
-        var content = new StackPanel { Width = 430, Spacing = 12 };
+        var content = new StackPanel { Width = 400, Spacing = 10 };
         content.Children.Add(new TextBlock
         {
-            Text = "Choose the cards to show, then use the arrow buttons to arrange them.",
+            Text = "Check cards to show. Drag them into the order you want.",
             Style = (Style)Root.Resources["SecondaryTextStyle"],
             TextWrapping = TextWrapping.Wrap,
         });
@@ -1660,7 +1736,6 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
             MaxHeight = 480,
             VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
         });
-        content.Children.Add(reset);
 
         var dialog = new ContentDialog
         {
@@ -1670,26 +1745,8 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
             CloseButtonText = "Done",
             DefaultButton = ContentDialogButton.Close,
         };
+        dashboardCustomizerDialog = dialog;
         await dialog.ShowAsync();
-    }
-
-    private static Microsoft.UI.Xaml.Controls.Button CreateDashboardOrderButton(
-        string glyph,
-        string accessibleName,
-        bool isEnabled)
-    {
-        var button = new Microsoft.UI.Xaml.Controls.Button
-        {
-            Content = new FontIcon { Glyph = glyph, FontSize = 14 },
-            IsEnabled = isEnabled,
-            MinWidth = 36,
-            MinHeight = 36,
-            Padding = new Thickness(8),
-            VerticalAlignment = VerticalAlignment.Center,
-        };
-        AutomationProperties.SetName(button, accessibleName);
-        ToolTipService.SetToolTip(button, accessibleName);
-        return button;
     }
 
     private void ArrangeDashboardCards()

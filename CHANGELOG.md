@@ -9,8 +9,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 - Added a customizable Dashboard card picker. Users can pin interactive power,
   fan, and battery cards plus compact links to other Laptop, Lighting, and
-  Display controls, arrange them with accessible move buttons, and reset the
-  layout; the selection and order persist in UI preferences.
+  Display controls and drag them into the preferred order; the selection and
+  order persist in UI preferences.
 - Added a shipped uninstaller to Windows Installed apps and the Start menu.
   The user-facing path confirms removal and preserves profiles by default;
   `uninstall --purge` remains an explicit command for deleting saved data. Setup
