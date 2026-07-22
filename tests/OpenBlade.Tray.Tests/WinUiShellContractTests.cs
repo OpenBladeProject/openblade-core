@@ -318,31 +318,31 @@ public sealed class WinUiShellContractTests
         Assert.Contains("grip.CapturePointer(pointerArgs.Pointer)", window, StringComparison.Ordinal);
         Assert.Contains("editorCards.Move(sourceIndex, targetIndex)", window, StringComparison.Ordinal);
         Assert.Contains("ApplyDashboardCustomizerChanges()", window, StringComparison.Ordinal);
-        Assert.Contains("cardList = new StackPanel { Spacing = 2, Width = 520 }", window, StringComparison.Ordinal);
+        Assert.Contains("HorizontalAlignment = Microsoft.UI.Xaml.HorizontalAlignment.Stretch", window, StringComparison.Ordinal);
         Assert.Contains("content = new StackPanel { Width = 520", window, StringComparison.Ordinal);
-        Assert.Contains("Translation = new System.Numerics.Vector3(80, 0, 0)", window, StringComparison.Ordinal);
+        Assert.Contains("HorizontalContentAlignment = Microsoft.UI.Xaml.HorizontalAlignment.Stretch", window, StringComparison.Ordinal);
+        Assert.DoesNotContain("Translation = new System.Numerics.Vector3(80, 0, 0)", window, StringComparison.Ordinal);
         Assert.Contains("HorizontalScrollMode = ScrollMode.Disabled", window, StringComparison.Ordinal);
-        Assert.Contains("DashboardLayoutRestartRequested?.Invoke", window, StringComparison.Ordinal);
+        Assert.Contains("RefreshDashboardCards();", window, StringComparison.Ordinal);
         Assert.Contains("Drag them into the order you want", window, StringComparison.Ordinal);
         Assert.DoesNotContain("CreateDashboardOrderButton", window, StringComparison.Ordinal);
         Assert.DoesNotContain("ObservableCollection<Grid>", window, StringComparison.Ordinal);
     }
 
     [Fact]
-    public void DashboardCustomizationRestartsTheTrayInsteadOfReparentingLoadedControls()
+    public void DashboardCustomizationRefreshesOnlyIndependentDashboardPresentations()
     {
         string app = ReadRepositoryFile("src", "OpenBlade.Tray", "App.xaml.cs");
         string window = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml.cs");
 
-        Assert.Contains("DashboardLayoutRestartRequested +=", app, StringComparison.Ordinal);
-        Assert.Contains("await Task.Delay(TimeSpan.FromSeconds(1))", app, StringComparison.Ordinal);
-        Assert.Contains("await currentWindow.FlushPreferencesForRestartAsync()", app, StringComparison.Ordinal);
-        Assert.Contains("--restart-after=", app, StringComparison.Ordinal);
-        Assert.Contains("await ExitTrayAsync()", app, StringComparison.Ordinal);
-        Assert.Contains("WaitForDashboardRestartParent()", app, StringComparison.Ordinal);
-        Assert.Contains("Environment.Exit(0)", app, StringComparison.Ordinal);
-        Assert.Contains("DashboardLayoutRestartRequested?.Invoke", window, StringComparison.Ordinal);
-        Assert.DoesNotContain("RefreshDashboardAfterCustomization", window, StringComparison.Ordinal);
+        Assert.Contains("CreateDashboardPresentationCard(option)", window, StringComparison.Ordinal);
+        Assert.Contains("RefreshDashboardCards();", window, StringComparison.Ordinal);
+        Assert.Contains("MoveCanonicalLaptopCardsIntoPlace();", window, StringComparison.Ordinal);
+        Assert.DoesNotContain("CompleteDashboardArrangement", window, StringComparison.Ordinal);
+        Assert.DoesNotContain("DashboardLayoutRestartRequested", window, StringComparison.Ordinal);
+        Assert.DoesNotContain("DashboardLayoutRestartRequested", app, StringComparison.Ordinal);
+        Assert.DoesNotContain("--restart-after=", app, StringComparison.Ordinal);
+        Assert.DoesNotContain("WaitForDashboardRestartParent", app, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -860,7 +860,7 @@ public sealed class WinUiShellContractTests
         int setupShutdown = app.IndexOf("shutdownRegistration =", StringComparison.Ordinal);
         int trayIcon = app.IndexOf("trayIconHost =", StringComparison.Ordinal);
         int initialShow = app.LastIndexOf(
-            "ShowMainWindow(initialLaunch: !restartedDashboard);",
+            "ShowMainWindow(initialLaunch: true);",
             StringComparison.Ordinal);
         Assert.True(exitLifecycle >= 0 && exitLifecycle < initializationAwait);
         Assert.True(setupShutdown >= 0 && setupShutdown < initializationAwait);

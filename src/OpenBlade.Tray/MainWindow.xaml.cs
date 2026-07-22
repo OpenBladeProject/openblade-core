@@ -49,6 +49,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
     private bool changingDisplaySettings;
     private bool changingDashboardCards;
     private bool dashboardCardsReady;
+    private bool canonicalLaptopCardsPlaced;
     private bool chargeLimitCommitInProgress;
     private bool fanControlCommitInProgress;
     private bool lightingCommitInProgress;
@@ -58,12 +59,9 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
     private bool? profilesUseCompactLayout;
     private bool enforcingMinimumWindowSize;
     private int disposed;
-    private int dashboardPlacementGeneration;
     private ContentDialog? dashboardCustomizerDialog;
     private Action? dashboardCustomizerRefresh;
     private Action? dashboardCustomizerApply;
-    private Dictionary<DashboardCardKind, DashboardCardRegistration>
-        dashboardCardRegistrations = [];
     private Dictionary<DashboardCardKind, NavigationViewItem> dashboardCardDestinations = [];
 
     public MainWindow()
@@ -93,20 +91,11 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
         displayRefreshTimer.IsRepeating = true;
         displayRefreshTimer.Tick += OnDisplayRefreshTimerTick;
         InitializeComponent();
-        dashboardCardRegistrations = new Dictionary<
-            DashboardCardKind,
-            DashboardCardRegistration>
-        {
-            [DashboardCardKind.DeviceStatus] = new(
-                DeviceStatusCard,
-                DashboardUnpinnedCardsHost,
-                0),
-            [DashboardCardKind.PowerMode] = new(PowerModeCard, LaptopCardsHost, 0),
-            [DashboardCardKind.Fans] = new(FansCard, LaptopCardsHost, 1),
-            [DashboardCardKind.Battery] = new(BatteryCard, LaptopCardsHost, 2),
-        };
         dashboardCardDestinations = new Dictionary<DashboardCardKind, NavigationViewItem>
         {
+            [DashboardCardKind.PowerMode] = LaptopNavigationItem,
+            [DashboardCardKind.Fans] = LaptopNavigationItem,
+            [DashboardCardKind.Battery] = LaptopNavigationItem,
             [DashboardCardKind.KeyboardBehavior] = LaptopNavigationItem,
             [DashboardCardKind.StartupAnimation] = LaptopNavigationItem,
             [DashboardCardKind.Lighting] = LightingNavigationItem,
@@ -154,11 +143,6 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
     public bool StartMinimized { get; private set; }
 
     public ObservableCollection<DashboardCardOption> DashboardCards { get; } = [];
-
-    public event EventHandler? DashboardLayoutRestartRequested;
-
-    public ValueTask FlushPreferencesForRestartAsync() =>
-        preferenceSaveQueue.DisposeAsync();
 
     public PerformancePreset SilentPreset { get; } = PerformancePreset.Silent;
 
@@ -1216,7 +1200,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
                 DispatcherQueuePriority.Low,
                 () =>
                 {
-                    ArrangeDashboardCards();
+                    RefreshDashboardCards();
                     UpdateDashboardLayout();
                 });
         }
@@ -1540,7 +1524,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
             changingDashboardCards = false;
         }
 
-        ArrangeDashboardCards();
+        RefreshDashboardCards();
         UpdateDisplayRefreshState();
     }
 
@@ -1553,7 +1537,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
             return;
         }
 
-        ArrangeDashboardCards();
+        RefreshDashboardCards();
         UpdateDisplayRefreshState();
         QueuePreferenceSave();
     }
@@ -1567,7 +1551,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
             return;
         }
 
-        ArrangeDashboardCards();
+        RefreshDashboardCards();
         UpdateDisplayRefreshState();
         QueuePreferenceSave();
     }
@@ -1583,7 +1567,11 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
         }
 
         var editorCards = new ObservableCollection<DashboardCardOption>();
-        var cardList = new StackPanel { Spacing = 2, Width = 520 };
+        var cardList = new StackPanel
+        {
+            Spacing = 2,
+            HorizontalAlignment = Microsoft.UI.Xaml.HorizontalAlignment.Stretch,
+        };
         AutomationProperties.SetName(cardList, "Dashboard cards");
         DashboardCardKind? draggedKind = null;
         double dragStartY = 0;
@@ -1613,8 +1601,8 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
                 {
                     ColumnSpacing = 10,
                     MinHeight = 58,
-                    Padding = new Thickness(2, 6, 2, 6),
-                    Width = 520,
+                    Padding = new Thickness(2, 6, 8, 6),
+                    HorizontalAlignment = Microsoft.UI.Xaml.HorizontalAlignment.Stretch,
                 };
                 row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
                 row.ColumnDefinitions.Add(new ColumnDefinition());
@@ -1648,7 +1636,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
                 var isPinned = new Microsoft.UI.Xaml.Controls.CheckBox
                 {
                     IsChecked = option.IsPinned,
-                    Translation = new System.Numerics.Vector3(80, 0, 0),
+                    HorizontalAlignment = Microsoft.UI.Xaml.HorizontalAlignment.Right,
                     VerticalAlignment = VerticalAlignment.Center,
                 };
                 AutomationProperties.SetName(isPinned, option.Label);
@@ -1772,7 +1760,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
 
             UpdateDisplayRefreshState();
             QueuePreferenceSave();
-            DashboardLayoutRestartRequested?.Invoke(this, EventArgs.Empty);
+            RefreshDashboardCards();
         }
 
         LoadEditorFromDashboard();
@@ -1790,6 +1778,8 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
         {
             Content = cardList,
             MaxHeight = 480,
+            HorizontalAlignment = Microsoft.UI.Xaml.HorizontalAlignment.Stretch,
+            HorizontalContentAlignment = Microsoft.UI.Xaml.HorizontalAlignment.Stretch,
             HorizontalScrollMode = ScrollMode.Disabled,
             HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
             VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
@@ -1811,103 +1801,62 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
     private void ApplyDashboardCustomizerChanges() =>
         dashboardCustomizerApply?.Invoke();
 
-    private void ArrangeDashboardCards()
+    private void RefreshDashboardCards()
     {
         if (!dashboardCardsReady)
         {
             return;
         }
 
-        int generation = ++dashboardPlacementGeneration;
-        bool showPinnedCards = HomePage.Visibility == Visibility.Visible;
-        int dashboardIndex = 0;
-        var placements = new List<DashboardCardPlacement>(dashboardCardRegistrations.Count);
+        DashboardCardHost.Children.Clear();
         foreach (DashboardCardOption option in DashboardCards)
         {
-            bool placeOnDashboard = showPinnedCards && option.IsPinned;
-            if (dashboardCardRegistrations.TryGetValue(
-                    option.Kind,
-                    out DashboardCardRegistration? registration))
+            if (option.IsPinned)
             {
-                placements.Add(new DashboardCardPlacement(
-                    registration.Element,
-                    placeOnDashboard ? DashboardCardHost : registration.SourceHost,
-                    placeOnDashboard ? dashboardIndex++ : registration.SourceIndex));
-                continue;
-            }
-
-            if (placeOnDashboard
-                && dashboardCardDestinations.TryGetValue(
-                    option.Kind,
-                    out NavigationViewItem? destination))
-            {
-                placements.Add(new DashboardCardPlacement(
-                    CreateDashboardLinkCard(option, destination),
-                    DashboardCardHost,
-                    dashboardIndex++));
+                DashboardCardHost.Children.Add(CreateDashboardPresentationCard(option));
             }
         }
 
         DashboardEmptyState.Visibility = DashboardCards.Any(option => option.IsPinned)
             ? Visibility.Collapsed
             : Visibility.Visible;
-
-        foreach (DashboardCardRegistration registration in dashboardCardRegistrations.Values)
-        {
-            if (registration.Element.Parent is Microsoft.UI.Xaml.Controls.Panel current)
-            {
-                current.Children.Remove(registration.Element);
-            }
-        }
-
-        DashboardCardHost.Children.Clear();
-
-        dispatcherQueue.TryEnqueue(
-            DispatcherQueuePriority.Low,
-            () => CompleteDashboardArrangement(generation, placements));
     }
 
-    private void CompleteDashboardArrangement(
-        int generation,
-        IReadOnlyList<DashboardCardPlacement> placements)
+    private Border CreateDashboardPresentationCard(DashboardCardOption option)
     {
-        if (generation != dashboardPlacementGeneration || Volatile.Read(ref disposed) != 0)
+        string? summaryProperty = option.Kind switch
         {
-            return;
-        }
+            DashboardCardKind.DeviceStatus => nameof(MainViewModel.ProfileStateLabel),
+            DashboardCardKind.PowerMode => nameof(MainViewModel.ActivePerformanceLabel),
+            DashboardCardKind.Fans => nameof(MainViewModel.ActiveFanModeLabel),
+            DashboardCardKind.Battery => nameof(MainViewModel.CurrentBatterySettingLabel),
+            DashboardCardKind.KeyboardBehavior => nameof(MainViewModel.FunctionKeyPrimaryStateLabel),
+            _ => null,
+        };
 
-        foreach (IGrouping<StackPanel, DashboardCardPlacement> group in
-                 placements.GroupBy(placement => placement.Destination))
+        var summary = new TextBlock
         {
-            foreach (DashboardCardPlacement placement in group.OrderBy(placement => placement.Index))
+            Text = summaryProperty is null ? option.Description : null,
+            Style = (Style)Root.Resources["SecondaryTextStyle"],
+            TextWrapping = TextWrapping.Wrap,
+        };
+        if (summaryProperty is not null)
+        {
+            summary.SetBinding(TextBlock.TextProperty, new Microsoft.UI.Xaml.Data.Binding
             {
-                if (placement.Element.Parent is Microsoft.UI.Xaml.Controls.Panel current)
-                {
-                    current.Children.Remove(placement.Element);
-                }
-
-                placement.Element.Visibility = Visibility.Visible;
-                group.Key.Children.Add(placement.Element);
-            }
+                Source = ViewModel,
+                Path = new PropertyPath(summaryProperty),
+                Mode = Microsoft.UI.Xaml.Data.BindingMode.OneWay,
+            });
         }
-    }
 
-    private Border CreateDashboardLinkCard(
-        DashboardCardOption option,
-        NavigationViewItem destination)
-    {
         var label = new StackPanel { Spacing = 3 };
         label.Children.Add(new TextBlock
         {
             Text = option.Label,
             Style = (Style)Root.Resources["CardTitleStyle"],
         });
-        label.Children.Add(new TextBlock
-        {
-            Text = option.Description,
-            Style = (Style)Root.Resources["SecondaryTextStyle"],
-            TextWrapping = TextWrapping.Wrap,
-        });
+        label.Children.Add(summary);
 
         var open = new Microsoft.UI.Xaml.Controls.Button
         {
@@ -1915,7 +1864,14 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
             VerticalAlignment = VerticalAlignment.Center,
         };
         AutomationProperties.SetName(open, $"Open {option.Label}");
-        open.Click += (_, _) => MainNavigation.SelectedItem = destination;
+        if (option.Kind == DashboardCardKind.DeviceStatus)
+        {
+            open.Click += OnProfileStateBadgeClick;
+        }
+        else if (dashboardCardDestinations.TryGetValue(option.Kind, out NavigationViewItem? destination))
+        {
+            open.Click += (_, _) => MainNavigation.SelectedItem = destination;
+        }
 
         var layout = new Grid { ColumnSpacing = 20 };
         layout.ColumnDefinitions.Add(new ColumnDefinition());
@@ -1931,22 +1887,35 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
         };
     }
 
-    private void OnRootLoaded(object sender, RoutedEventArgs args)
+    private void MoveCanonicalLaptopCardsIntoPlace()
     {
-        dashboardCardsReady = true;
-        ArrangeDashboardCards();
-        UpdateDisplayRefreshState();
+        if (canonicalLaptopCardsPlaced)
+        {
+            return;
+        }
+
+        DeviceStatusCard.Visibility = Visibility.Collapsed;
+        foreach (FrameworkElement card in new[] { PowerModeCard, FansCard, BatteryCard })
+        {
+            if (card.Parent is Microsoft.UI.Xaml.Controls.Panel current)
+            {
+                current.Children.Remove(card);
+            }
+        }
+
+        LaptopCardsHost.Children.Insert(0, BatteryCard);
+        LaptopCardsHost.Children.Insert(0, FansCard);
+        LaptopCardsHost.Children.Insert(0, PowerModeCard);
+        canonicalLaptopCardsPlaced = true;
     }
 
-    private sealed record DashboardCardRegistration(
-        FrameworkElement Element,
-        StackPanel SourceHost,
-        int SourceIndex);
-
-    private sealed record DashboardCardPlacement(
-        FrameworkElement Element,
-        StackPanel Destination,
-        int Index);
+    private void OnRootLoaded(object sender, RoutedEventArgs args)
+    {
+        MoveCanonicalLaptopCardsIntoPlace();
+        dashboardCardsReady = true;
+        RefreshDashboardCards();
+        UpdateDisplayRefreshState();
+    }
 
     private async void OnImportProfiles(object sender, RoutedEventArgs args)
     {

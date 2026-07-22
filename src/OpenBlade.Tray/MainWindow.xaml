@@ -504,8 +504,6 @@
                                  AutomationProperties.Name="Operation error" />
 
                         <StackPanel x:Name="DashboardCardHost" Spacing="6" />
-                        <StackPanel x:Name="DashboardUnpinnedCardsHost"
-                                    Visibility="Collapsed" />
                         <Border x:Name="DashboardEmptyState"
                                 Style="{StaticResource CardStyle}"
                                 Padding="22"

@@ -19,8 +19,6 @@ public partial class App : Microsoft.UI.Xaml.Application
     private Task windowInitializationTask = Task.CompletedTask;
     private DispatcherQueue uiDispatcherQueue = null!;
     private int fatalCrashReported;
-    private int dashboardRestartInProgress;
-    private bool dashboardRestarting;
 
     public bool ExitRequested => exitLifecycle?.ExitRequested == true;
 
@@ -29,8 +27,6 @@ public partial class App : Microsoft.UI.Xaml.Application
         base.OnLaunched(args);
         RegisterCrashReporting();
         uiDispatcherQueue = DispatcherQueue.GetForCurrentThread();
-        bool restartedDashboard = WaitForDashboardRestartParent();
-
         string executablePath = Environment.ProcessPath
             ?? throw new InvalidOperationException("Tray executable path is unavailable.");
         string userSid = WindowsIdentity.GetCurrent().User?.Value
@@ -84,18 +80,14 @@ public partial class App : Microsoft.UI.Xaml.Application
                 },
                 DisposeViewModelAsync: async () =>
                 {
-                    if (!dashboardRestarting && mainWindow is not null)
+                    if (mainWindow is not null)
                     {
                         await mainWindow.DisposeAsync();
                     }
                 },
                 CloseWindow: () =>
                 {
-                    if (!dashboardRestarting)
-                    {
-                        mainWindow?.Close();
-                    }
-
+                    mainWindow?.Close();
                     mainWindow = null;
                 },
                 DisposeInstanceCoordinatorAsync: async () =>
@@ -106,15 +98,7 @@ public partial class App : Microsoft.UI.Xaml.Application
                         instanceCoordinator = null;
                     }
                 },
-                ExitApplication: () =>
-                {
-                    if (dashboardRestarting)
-                    {
-                        Environment.Exit(0);
-                    }
-
-                    Exit();
-                }),
+                ExitApplication: Exit),
             exception => Trace.TraceError(
                 "OpenBlade tray shutdown cleanup failed: {0}",
                 exception));
@@ -132,14 +116,12 @@ public partial class App : Microsoft.UI.Xaml.Application
 
         trayIconThemeSource = new WindowsShellThemeSource(uiDispatcherQueue);
         CreateTrayIconHost();
-        ShowMainWindow(initialLaunch: !restartedDashboard);
+        ShowMainWindow(initialLaunch: true);
     }
 
     private MainWindow CreateMainWindow()
     {
-        var window = new MainWindow();
-        window.DashboardLayoutRestartRequested += OnDashboardLayoutRestartRequested;
-        return window;
+        return new MainWindow();
     }
 
     private void CreateTrayIconHost()
@@ -157,81 +139,6 @@ public partial class App : Microsoft.UI.Xaml.Application
             trayMenuController,
             mainWindow.ViewModel,
             trayIconThemeSource);
-    }
-
-    private async void OnDashboardLayoutRestartRequested(object? sender, EventArgs args)
-    {
-        if (Interlocked.CompareExchange(ref dashboardRestartInProgress, 1, 0) != 0
-            || exitLifecycle is null
-            || exitLifecycle.ExitRequested)
-        {
-            return;
-        }
-
-        try
-        {
-            await Task.Delay(TimeSpan.FromSeconds(1));
-            if (exitLifecycle is null || exitLifecycle.ExitRequested)
-            {
-                return;
-            }
-
-            MainWindow? currentWindow = mainWindow;
-            string? executablePath = Environment.ProcessPath;
-            if (currentWindow is null || string.IsNullOrWhiteSpace(executablePath))
-            {
-                return;
-            }
-
-            await currentWindow.FlushPreferencesForRestartAsync();
-            dashboardRestarting = true;
-            var restart = new ProcessStartInfo
-            {
-                FileName = executablePath,
-                UseShellExecute = false,
-            };
-            restart.ArgumentList.Add($"--restart-after={Environment.ProcessId}");
-            using Process replacement = Process.Start(restart)
-                ?? throw new InvalidOperationException(
-                    "The replacement OpenBlade tray could not be started.");
-
-            await ExitTrayAsync();
-        }
-        catch (Exception exception)
-        {
-            dashboardRestarting = false;
-            Trace.TraceError("OpenBlade Dashboard restart failed: {0}", exception);
-            throw;
-        }
-        finally
-        {
-            Interlocked.Exchange(ref dashboardRestartInProgress, 0);
-        }
-    }
-
-    private static bool WaitForDashboardRestartParent()
-    {
-        const string prefix = "--restart-after=";
-        string? argument = Environment.GetCommandLineArgs()
-            .FirstOrDefault(value => value.StartsWith(prefix, StringComparison.Ordinal));
-        if (argument is null
-            || !int.TryParse(argument[prefix.Length..], out int parentProcessId)
-            || parentProcessId == Environment.ProcessId)
-        {
-            return false;
-        }
-
-        try
-        {
-            using Process parent = Process.GetProcessById(parentProcessId);
-            parent.WaitForExit(milliseconds: 15_000);
-        }
-        catch (ArgumentException)
-        {
-            // The previous tray has already exited.
-        }
-
-        return true;
     }
 
     public Task ExitTrayAsync()
