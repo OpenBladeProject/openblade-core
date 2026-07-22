@@ -1996,7 +1996,7 @@
                                         <StackPanel Spacing="3" VerticalAlignment="Center">
                                             <TextBlock Text="Override external lighting changes"
                                                        Style="{StaticResource CardTitleStyle}" />
-                                            <TextBlock Text="Reapply the last OpenBlade lighting effect even when another Razer app is running."
+                                            <TextBlock Text="Reapply the last OpenBlade lighting effect after OpenBlade confirms it was changed elsewhere."
                                                        Style="{StaticResource SecondaryTextStyle}"
                                                        TextWrapping="Wrap" />
                                         </StackPanel>

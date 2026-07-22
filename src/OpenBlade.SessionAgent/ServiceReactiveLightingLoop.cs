@@ -234,7 +234,6 @@ public sealed class ServiceReactiveLightingLoop : IAsyncDisposable
         bool previouslyKeyTriggered = Volatile.Read(ref keyTriggeredActive) != 0;
         bool transientAvailability = (desiredKeyTriggered
             || previouslyKeyTriggered && IsTemporaryDeviceAccessStatus(status))
-            && status.PotentialControllers.Count == 0
             && (!status.DeviceVerified || status.WritesBlocked)
             && status.LightingRendererOwnership != LightingRendererOwnershipState.Faulted;
         if (transientAvailability)

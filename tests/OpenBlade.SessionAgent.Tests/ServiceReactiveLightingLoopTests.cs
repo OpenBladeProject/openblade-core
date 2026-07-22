@@ -124,6 +124,7 @@ public sealed class ServiceReactiveLightingLoopTests
             Revision = 2,
             DeviceVerified = false,
             WritesBlocked = true,
+            PotentialControllers = ["RazerAppEngine"],
             Message = "Checking the laptop connection.",
             LightingRendererOwnership = LightingRendererOwnershipState.None,
         });
