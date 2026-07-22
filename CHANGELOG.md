@@ -69,6 +69,10 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Kept firmware picker selections visible across status refreshes. Fan-mode
+  options now retain a stable collection and the power and fan pickers bind to
+  enum values instead of transient option objects; unchanged lighting option
+  collections are retained as well.
 - Treat known current values for `Not set` profile fields as saveable changes.
   Display, laptop behavior, and lid-logo pages now show the unsaved prompt and
   profile save action, while unavailable or unsupported values remain ignored.

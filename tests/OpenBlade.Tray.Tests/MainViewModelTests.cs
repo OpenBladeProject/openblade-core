@@ -1835,8 +1835,12 @@ public sealed class MainViewModelTests
         await viewModel.StartAsync();
         ServiceStatusSnapshot initial = CreateStatus(verified: true, blocked: false);
         client.Publish(initial);
-        await WaitUntilAsync(() => viewModel.IsConnected);
+        await WaitUntilAsync(() => viewModel.AvailableActiveFanModeOptions.Count > 0);
         IReadOnlyList<FanMode> originalOptions = viewModel.AvailableFanModes;
+        IReadOnlyList<FanModeOption> originalPresentedOptions =
+            viewModel.AvailableActiveFanModeOptions;
+        FanModeOption originalSelection = Assert.IsType<FanModeOption>(
+            viewModel.SelectedFanModeOption);
 
         client.Publish(initial with
         {
@@ -1847,6 +1851,12 @@ public sealed class MainViewModelTests
             viewModel.ConnectionStatus == "Fan mode is already confirmed.");
 
         Assert.Same(originalOptions, viewModel.AvailableFanModes);
+        Assert.Same(originalPresentedOptions, viewModel.AvailableActiveFanModeOptions);
+        Assert.Same(originalSelection, viewModel.SelectedFanModeOption);
+        Assert.Same(
+            viewModel.SelectedFanModeOption,
+            viewModel.AvailableActiveFanModeOptions.Single(option =>
+                option.Value == viewModel.SelectedFanMode));
     }
 
     [Fact]

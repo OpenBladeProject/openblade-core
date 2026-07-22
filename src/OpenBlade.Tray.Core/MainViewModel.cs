@@ -139,6 +139,8 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     private IReadOnlyList<PerformancePresetOption> availableUsbCPerformanceOptions = [];
     private IReadOnlyList<FanMode> availableFanModes = [];
     private IReadOnlyList<FanMode> availableUsbCFanModes = [];
+    private IReadOnlyList<FanModeOption> availableFanModeOptions = [];
+    private IReadOnlyList<FanModeOption> availableUsbCFanModeOptions = [];
     private IReadOnlyList<LightingEffect> availableLightingEffects = [];
     private IReadOnlyList<LightingEffectOption> availableLightingEffectOptions =
         KnownLightingEffectOptions;
@@ -1146,9 +1148,13 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         };
 
     public IReadOnlyList<FanModeOption> AvailableActiveFanModeOptions =>
-        FanModePresentation.CreateOptions(
-            new HashSet<FanMode>(AvailableActiveFanModes),
-            ActivePowerSource != PowerSource.PluggedIn);
+        ActivePowerSource switch
+        {
+            PowerSource.PluggedIn => availableFanModeOptions,
+            PowerSource.Battery or PowerSource.UsbC => availableUsbCFanModeOptions,
+            PowerSource.ExternalUnknown => [],
+            _ => [],
+        };
 
     public FanModeOption? SelectedFanModeOption =>
         AvailableActiveFanModeOptions.FirstOrDefault(
@@ -3509,6 +3515,12 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             AvailableUsbCFanModes = fanModes.Contains(FanMode.Automatic)
                 ? [FanMode.Automatic]
                 : [];
+            var admittedFanModes = fanModes.ToHashSet();
+            availableFanModeOptions = FanModePresentation.CreateOptions(
+                admittedFanModes);
+            availableUsbCFanModeOptions = FanModePresentation.CreateOptions(
+                admittedFanModes,
+                automaticOnly: true);
             PropertyChanged?.Invoke(
                 this,
                 new PropertyChangedEventArgs(nameof(PluggedInFanModeEditor)));
@@ -3520,25 +3532,37 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
                 new PropertyChangedEventArgs(nameof(UsbCFanModeEditor)));
             NotifyActiveFanSelectionBinding();
         }
-        AvailableLightingEffects = capabilities.LightingEffects
+        LightingEffect[] lightingEffects = capabilities.LightingEffects
             .Where(Enum.IsDefined)
             .Order()
             .ToArray();
+        if (!AvailableLightingEffects.SequenceEqual(lightingEffects))
+        {
+            AvailableLightingEffects = lightingEffects;
+        }
         IReadOnlyList<LightingEffect> presentedLightingEffects =
             AvailableLightingEffects.Count > 0
                 ? AvailableLightingEffects
                 : KnownLightingEffects;
-        AvailableLightingEffectOptions = presentedLightingEffects
+        LightingEffectOption[] lightingEffectOptions = presentedLightingEffects
             .Select(CreateLightingEffectOption)
             .OrderBy(option => option.Effect == LightingEffect.Off ? 0 : 1)
             .ThenBy(option => option.Label, StringComparer.OrdinalIgnoreCase)
             .ToArray();
-        PropertyChanged?.Invoke(
-            this,
-            new PropertyChangedEventArgs(nameof(SelectedLightingEffectOption)));
-        AvailableLightingSettings = AvailableLightingEffects
+        if (!AvailableLightingEffectOptions.SequenceEqual(lightingEffectOptions))
+        {
+            AvailableLightingEffectOptions = lightingEffectOptions;
+            PropertyChanged?.Invoke(
+                this,
+                new PropertyChangedEventArgs(nameof(SelectedLightingEffectOption)));
+        }
+        LightingSettings[] lightingSettings = AvailableLightingEffects
             .Select(CreateLightingChoice)
             .ToArray();
+        if (!AvailableLightingSettings.SequenceEqual(lightingSettings))
+        {
+            AvailableLightingSettings = lightingSettings;
+        }
         LogoLightingMode[] admittedLogoLightingModes = capabilities.LogoLightingModes
             .Where(Enum.IsDefined)
             .Order()
@@ -3547,13 +3571,16 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             AvailableLightingEffects.Count == 0 && admittedLogoLightingModes.Length == 0
                 ? KnownLogoLightingModes
                 : admittedLogoLightingModes;
-        AvailableLogoLightingModeOptions =
-            presentedLogoLightingModes
-                .Select(mode => new LogoLightingModeOption(mode, mode.ToString()))
-                .ToArray();
-        PropertyChanged?.Invoke(
-            this,
-            new PropertyChangedEventArgs(nameof(SelectedLogoLightingModeOption)));
+        LogoLightingModeOption[] logoLightingModeOptions = presentedLogoLightingModes
+            .Select(mode => new LogoLightingModeOption(mode, mode.ToString()))
+            .ToArray();
+        if (!AvailableLogoLightingModeOptions.SequenceEqual(logoLightingModeOptions))
+        {
+            AvailableLogoLightingModeOptions = logoLightingModeOptions;
+            PropertyChanged?.Invoke(
+                this,
+                new PropertyChangedEventArgs(nameof(SelectedLogoLightingModeOption)));
+        }
         PropertyChanged?.Invoke(
             this,
             new PropertyChangedEventArgs(nameof(IsLogoLightingVisible)));

@@ -115,9 +115,10 @@ public sealed class CapabilityPresentationTests
         Assert.Equal(
             "{Binding AvailableActivePerformanceOptions}",
             Attribute(performance, "ItemsSource"));
+        Assert.Equal("Value", Attribute(performance, "SelectedValuePath"));
         Assert.Equal(
-            "{Binding SelectedPerformanceOption}",
-            Attribute(performance, "SelectedItem"));
+            "{Binding SelectedPerformance, Mode=OneWay}",
+            Attribute(performance, "SelectedValue"));
         Assert.Equal(
             "{Binding CanRequestHardwareControl}",
             Attribute(performance, "IsEnabled"));
@@ -132,9 +133,10 @@ public sealed class CapabilityPresentationTests
         Assert.Equal(
             "{Binding AvailableActiveFanModeOptions}",
             Attribute(fans, "ItemsSource"));
+        Assert.Equal("Value", Attribute(fans, "SelectedValuePath"));
         Assert.Equal(
-            "{Binding SelectedFanModeOption}",
-            Attribute(fans, "SelectedItem"));
+            "{Binding SelectedFanMode, Mode=OneWay}",
+            Attribute(fans, "SelectedValue"));
         Assert.Equal("{Binding CanEditFanControl}", Attribute(fans, "IsEnabled"));
         Assert.Equal(
             "{Binding IsFanControlVisible}",
