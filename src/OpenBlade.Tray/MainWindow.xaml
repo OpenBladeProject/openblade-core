@@ -280,7 +280,8 @@
                         <Border Style="{StaticResource SettingsGroupStyle}">
                             <StackPanel>
                             <Border Style="{StaticResource SettingsLastRowStyle}"
-                                    Visibility="{x:Bind ViewModel.IsPerformanceVisible, Mode=OneWay}">
+                                    Visibility="Collapsed"
+                                    local:AnimatedVisibility.IsVisible="{Binding IsPerformanceVisible}">
                                 <Grid ColumnSpacing="20">
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="*" />
@@ -296,22 +297,22 @@
                                                 Spacing="10"
                                                 VerticalAlignment="Center">
                                         <ProgressRing Style="{StaticResource FirmwareProgressRingStyle}"
-                                                      IsActive="{x:Bind ViewModel.IsPerformanceOperationInProgress, Mode=OneWay}"
+                                                      IsActive="{Binding IsPerformanceOperationInProgress}"
                                                       AutomationProperties.Name="Applying power mode" />
                                         <ComboBox x:Name="DashboardPerformanceSelector"
                                                   MinWidth="150"
                                                   HorizontalAlignment="Right"
                                                   AutomationProperties.Name="Power mode"
-                                                  IsEnabled="{x:Bind ViewModel.CanRequestHardwareControl, Mode=OneWay}"
-                                                  ItemsSource="{x:Bind ViewModel.AvailableActivePerformanceOptions, Mode=OneWay}"
-                                                  SelectedItem="{x:Bind ViewModel.SelectedPerformanceOption, Mode=OneWay}"
+                                                  IsEnabled="{Binding CanRequestHardwareControl}"
+                                                  ItemsSource="{Binding AvailableActivePerformanceOptions}"
+                                                  SelectedItem="{Binding SelectedPerformanceOption}"
                                                   SelectionChanged="OnDashboardPerformanceChanged" />
                                     </StackPanel>
                                 </Grid>
                             </Border>
                             <Border Style="{StaticResource SettingsSubcardStyle}"
                                     Visibility="Collapsed"
-                                    local:AnimatedVisibility.IsVisible="{x:Bind ViewModel.IsCustomPerformanceVisible, Mode=OneWay}">
+                                    local:AnimatedVisibility.IsVisible="{Binding IsCustomPerformanceVisible}">
                                 <Grid ColumnSpacing="20">
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="*" />
@@ -327,15 +328,15 @@
                                               MinWidth="150"
                                               HorizontalAlignment="Right"
                                               AutomationProperties.Name="Custom CPU level"
-                                              IsEnabled="{x:Bind ViewModel.CanRequestHardwareControl, Mode=OneWay}"
-                                              ItemsSource="{x:Bind ViewModel.AvailableCustomCpuLevels, Mode=OneWay}"
-                                              SelectedItem="{x:Bind ViewModel.SelectedCustomCpuLevel, Mode=OneWay}"
+                                              IsEnabled="{Binding CanRequestHardwareControl}"
+                                              ItemsSource="{Binding AvailableCustomCpuLevels}"
+                                              SelectedItem="{Binding SelectedCustomCpuLevel}"
                                               SelectionChanged="OnDashboardCustomCpuChanged" />
                                 </Grid>
                             </Border>
                             <Border Style="{StaticResource SettingsSubcardStyle}"
                                     Visibility="Collapsed"
-                                    local:AnimatedVisibility.IsVisible="{x:Bind ViewModel.IsCustomPerformanceVisible, Mode=OneWay}">
+                                    local:AnimatedVisibility.IsVisible="{Binding IsCustomPerformanceVisible}">
                                 <Grid ColumnSpacing="20">
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="*" />
@@ -351,9 +352,9 @@
                                               MinWidth="150"
                                               HorizontalAlignment="Right"
                                               AutomationProperties.Name="Custom GPU level"
-                                              IsEnabled="{x:Bind ViewModel.CanRequestHardwareControl, Mode=OneWay}"
-                                              ItemsSource="{x:Bind ViewModel.AvailableCustomGpuLevels, Mode=OneWay}"
-                                              SelectedItem="{x:Bind ViewModel.SelectedCustomGpuLevel, Mode=OneWay}"
+                                              IsEnabled="{Binding CanRequestHardwareControl}"
+                                              ItemsSource="{Binding AvailableCustomGpuLevels}"
+                                              SelectedItem="{Binding SelectedCustomGpuLevel}"
                                               SelectionChanged="OnDashboardCustomGpuChanged" />
                                 </Grid>
                             </Border>
@@ -369,7 +370,8 @@
                         <Border Style="{StaticResource SettingsGroupStyle}">
                             <StackPanel>
                             <Border Style="{StaticResource SettingsLastRowStyle}"
-                                    Visibility="{x:Bind ViewModel.IsFanControlVisible, Mode=OneWay}">
+                                    Visibility="Collapsed"
+                                    local:AnimatedVisibility.IsVisible="{Binding IsFanControlVisible}">
                                 <Grid ColumnSpacing="20">
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="*" />
@@ -387,23 +389,24 @@
                                                 VerticalAlignment="Center">
                                         <ProgressRing Width="16"
                                                       Height="16"
-                                                      IsActive="{x:Bind ViewModel.IsFanControlOperationInProgress, Mode=OneWay}"
-                                                      Visibility="{x:Bind ViewModel.IsFanControlOperationInProgress, Mode=OneWay}"
+                                                      IsActive="{Binding IsFanControlOperationInProgress}"
+                                                      Visibility="Collapsed"
+                                                      local:AnimatedVisibility.IsVisible="{Binding IsFanControlOperationInProgress}"
                                                       AutomationProperties.Name="Applying fan mode" />
                                         <ComboBox x:Name="DashboardFanModeSelector"
                                                   MinWidth="150"
                                                   HorizontalAlignment="Right"
                                                   AutomationProperties.Name="Fan mode"
-                                                  IsEnabled="{x:Bind ViewModel.CanEditFanControl, Mode=OneWay}"
-                                                  ItemsSource="{x:Bind ViewModel.AvailableActiveFanModeOptions, Mode=OneWay}"
-                                                  SelectedItem="{x:Bind ViewModel.SelectedFanModeOption, Mode=OneWay}"
+                                                  IsEnabled="{Binding CanEditFanControl}"
+                                                  ItemsSource="{Binding AvailableActiveFanModeOptions}"
+                                                  SelectedItem="{Binding SelectedFanModeOption}"
                                                   SelectionChanged="OnDashboardFanModeSelectionChanged" />
                                     </StackPanel>
                                 </Grid>
                             </Border>
                             <Border Style="{StaticResource SettingsLastSubcardStyle}"
                                     Visibility="Collapsed"
-                                    local:AnimatedVisibility.IsVisible="{x:Bind ViewModel.IsFixedFanSpeedVisible, Mode=OneWay}">
+                                    local:AnimatedVisibility.IsVisible="{Binding IsFixedFanSpeedVisible}">
                                 <Grid ColumnSpacing="20">
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="*" />
@@ -417,7 +420,7 @@
                                     <StackPanel Grid.Column="1" Spacing="4">
                                         <TextBlock HorizontalAlignment="Right"
                                                    Style="{StaticResource CardTitleStyle}">
-                                            <Run Text="{x:Bind ViewModel.FixedFanSpeedRpm, Mode=OneWay}" />
+                                            <Run Text="{Binding FixedFanSpeedRpm}" />
                                             <Run Text=" RPM" />
                                         </TextBlock>
                                         <Slider x:Name="FixedFanSpeedSlider"
@@ -428,7 +431,7 @@
                                                 LargeChange="500"
                                                 SnapsTo="StepValues"
                                                 IsThumbToolTipEnabled="True"
-                                                IsEnabled="{x:Bind ViewModel.CanEditFanControl, Mode=OneWay}"
+                                                IsEnabled="{Binding CanEditFanControl}"
                                                 AutomationProperties.Name="Fixed fan speed"
                                                 Value="{Binding FixedFanSpeedRpm, Mode=TwoWay, Converter={StaticResource Int32Double}}"
                                                 PointerCaptureLost="OnFixedFanSpeedCommit"
@@ -438,7 +441,7 @@
                             </Border>
                             <Border Style="{StaticResource SettingsLastSubcardStyle}"
                                     Visibility="Collapsed"
-                                    local:AnimatedVisibility.IsVisible="{x:Bind ViewModel.IsManualFanCurveVisible, Mode=OneWay}">
+                                    local:AnimatedVisibility.IsVisible="{Binding IsManualFanCurveVisible}">
                                 <StackPanel Spacing="12">
                                     <Grid ColumnSpacing="20">
                                         <Grid.ColumnDefinitions>
@@ -456,8 +459,8 @@
                                                       OffContent=""
                                                       OnContent=""
                                                       HorizontalAlignment="Right"
-                                                      IsEnabled="{x:Bind ViewModel.CanEditFanControl, Mode=OneWay}"
-                                                      IsOn="{x:Bind ViewModel.UseHigherFanTemperature, Mode=TwoWay}"
+                                                      IsEnabled="{Binding CanEditFanControl}"
+                                                      IsOn="{Binding UseHigherFanTemperature, Mode=TwoWay}"
                                                       Toggled="OnManualFanCurveSettingChanged" />
                                     </Grid>
                                     <Grid ColumnSpacing="20">
@@ -468,9 +471,9 @@
                                         <Expander Header="CPU curve"
                                                   IsExpanded="True"
                                                   HorizontalContentAlignment="Stretch">
-                                            <ItemsControl ItemsSource="{x:Bind ViewModel.CpuFanCurveEditorPoints, Mode=OneWay}"
+                                            <ItemsControl ItemsSource="{Binding CpuFanCurveEditorPoints}"
                                                           HorizontalContentAlignment="Stretch"
-                                                          IsEnabled="{x:Bind ViewModel.CanEditFanControl, Mode=OneWay}"
+                                                          IsEnabled="{Binding CanEditFanControl}"
                                                           ItemContainerStyle="{StaticResource FanCurveItemContainerStyle}">
                                                 <ItemsControl.ItemTemplate>
                                                     <DataTemplate x:DataType="local:FanCurveEditorPoint">
@@ -504,9 +507,9 @@
                                                   Header="GPU curve"
                                                   IsExpanded="True"
                                                   HorizontalContentAlignment="Stretch">
-                                            <ItemsControl ItemsSource="{x:Bind ViewModel.GpuFanCurveEditorPoints, Mode=OneWay}"
+                                            <ItemsControl ItemsSource="{Binding GpuFanCurveEditorPoints}"
                                                           HorizontalContentAlignment="Stretch"
-                                                          IsEnabled="{x:Bind ViewModel.CanEditFanControl, Mode=OneWay}"
+                                                          IsEnabled="{Binding CanEditFanControl}"
                                                           ItemContainerStyle="{StaticResource FanCurveItemContainerStyle}">
                                                 <ItemsControl.ItemTemplate>
                                                     <DataTemplate x:DataType="local:FanCurveEditorPoint">
@@ -566,7 +569,7 @@
                                     </StackPanel>
                                     <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
                                         <ProgressRing Style="{StaticResource FirmwareProgressRingStyle}"
-                                                      IsActive="{x:Bind ViewModel.IsBatteryProtectionOperationInProgress, Mode=OneWay}"
+                                                      IsActive="{Binding IsBatteryProtectionOperationInProgress}"
                                                       AutomationProperties.Name="Applying battery protection" />
                                         <ToggleSwitch x:Name="BatteryProtectionToggle"
                                                       HorizontalAlignment="Right"
@@ -574,8 +577,8 @@
                                                       AutomationProperties.Name="Battery protection"
                                                       OffContent=""
                                                       OnContent=""
-                                                      IsEnabled="{x:Bind ViewModel.CanChangeBatteryProtection, Mode=OneWay}"
-                                                      IsOn="{x:Bind ViewModel.BatteryProtectionEnabled, Mode=OneWay}"
+                                                      IsEnabled="{Binding CanChangeBatteryProtection}"
+                                                      IsOn="{Binding BatteryProtectionEnabled}"
                                                       Toggled="OnBatteryProtectionToggled" />
                                     </StackPanel>
                                 </Grid>
@@ -596,9 +599,9 @@
                                                 HorizontalAlignment="Stretch">
                                         <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8">
                                             <ProgressRing Style="{StaticResource FirmwareProgressRingStyle}"
-                                                          IsActive="{x:Bind ViewModel.IsChargeLimitOperationInProgress, Mode=OneWay}"
+                                                          IsActive="{Binding IsChargeLimitOperationInProgress}"
                                                           AutomationProperties.Name="Applying charge limit" />
-                                            <TextBlock Text="{x:Bind ViewModel.ChargeLimitPercent, Mode=OneWay}"
+                                            <TextBlock Text="{Binding ChargeLimitPercent}"
                                                        Style="{StaticResource CardTitleStyle}" />
                                             <TextBlock Text="%" Style="{StaticResource CardTitleStyle}" />
                                         </StackPanel>
@@ -611,7 +614,7 @@
                                                 LargeChange="5"
                                                 SnapsTo="StepValues"
                                                 IsThumbToolTipEnabled="True"
-                                                IsEnabled="{x:Bind ViewModel.CanAdjustChargeLimit, Mode=OneWay}"
+                                                IsEnabled="{Binding CanAdjustChargeLimit}"
                                                 AutomationProperties.Name="Charge limit"
                                                 Value="{Binding ChargeLimitPercent, Mode=TwoWay, Converter={StaticResource Int32Double}}"
                                                 PointerPressed="OnDashboardChargeLimitPointerPressed"
@@ -634,12 +637,12 @@
                                     </StackPanel>
                                     <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
                                         <ProgressRing Style="{StaticResource FirmwareProgressRingStyle}"
-                                                      IsActive="{x:Bind ViewModel.IsFullChargeOperationInProgress, Mode=OneWay}"
+                                                      IsActive="{Binding IsFullChargeOperationInProgress}"
                                                       AutomationProperties.Name="Applying temporary full charge" />
                                         <Button HorizontalAlignment="Right"
-                                                Content="{x:Bind ViewModel.FullChargeActionLabel, Mode=OneWay}"
-                                                Command="{x:Bind ViewModel.ToggleFullChargeCommand}"
-                                                CommandParameter="{x:Bind ViewModel.EnableFullChargeOverride, Mode=OneWay}"
+                                                Content="{Binding FullChargeActionLabel}"
+                                                Command="{Binding ToggleFullChargeCommand}"
+                                                CommandParameter="{Binding EnableFullChargeOverride}"
                                                 VerticalAlignment="Center" />
                                     </StackPanel>
                                 </Grid>

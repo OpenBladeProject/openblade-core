@@ -61,7 +61,7 @@ public sealed class CapabilityPresentationTests
             .Where(element => Attribute(element, "AnimatedVisibility.IsVisible") is not null)
             .ToArray();
 
-        Assert.Equal(15, animated.Length);
+        Assert.Equal(18, animated.Length);
         Assert.All(animated, element => Assert.Equal(
             "Collapsed",
             Attribute(element, "Visibility")));
@@ -103,9 +103,7 @@ public sealed class CapabilityPresentationTests
         XElement batteryProtection = NamedElement(document, "ToggleSwitch", "BatteryProtectionToggle");
         XElement temporaryFullCharge = Assert.Single(document.Descendants(), element =>
             element.Name.LocalName == "Button"
-            && Attribute(element, "Content")?.Contains(
-                "ViewModel.FullChargeActionLabel",
-                StringComparison.Ordinal) is true);
+            && Attribute(element, "Content") == "{Binding FullChargeActionLabel}");
         Assert.Equal("OnDashboardPerformanceChanged", Attribute(performance, "SelectionChanged"));
         Assert.Equal("Power mode", Attribute(performance, "AutomationProperties.Name"));
         Assert.Contains(document.Descendants(), element =>
@@ -115,21 +113,40 @@ public sealed class CapabilityPresentationTests
             element.Name.LocalName == "TextBlock"
             && Attribute(element, "Text") == "Performance");
         Assert.Equal(
-            "{x:Bind ViewModel.AvailableActivePerformanceOptions, Mode=OneWay}",
+            "{Binding AvailableActivePerformanceOptions}",
             Attribute(performance, "ItemsSource"));
         Assert.Equal(
-            "{x:Bind ViewModel.SelectedPerformanceOption, Mode=OneWay}",
+            "{Binding SelectedPerformanceOption}",
             Attribute(performance, "SelectedItem"));
         Assert.Equal(
-            "{x:Bind ViewModel.CanRequestHardwareControl, Mode=OneWay}",
+            "{Binding CanRequestHardwareControl}",
             Attribute(performance, "IsEnabled"));
+        Assert.Equal(
+            "{Binding IsPerformanceVisible}",
+            Attribute(
+                performance.Ancestors().First(element =>
+                    element.Name.LocalName == "Border"
+                    && Attribute(element, "AnimatedVisibility.IsVisible") is not null),
+                "AnimatedVisibility.IsVisible"));
         Assert.Equal("OnDashboardFanModeSelectionChanged", Attribute(fans, "SelectionChanged"));
         Assert.Equal(
-            "{x:Bind ViewModel.AvailableActiveFanModeOptions, Mode=OneWay}",
+            "{Binding AvailableActiveFanModeOptions}",
             Attribute(fans, "ItemsSource"));
         Assert.Equal(
-            "{x:Bind ViewModel.SelectedFanModeOption, Mode=OneWay}",
+            "{Binding SelectedFanModeOption}",
             Attribute(fans, "SelectedItem"));
+        Assert.Equal("{Binding CanEditFanControl}", Attribute(fans, "IsEnabled"));
+        Assert.Equal(
+            "{Binding IsFanControlVisible}",
+            Attribute(
+                fans.Ancestors().First(element =>
+                    element.Name.LocalName == "Border"
+                    && Attribute(element, "AnimatedVisibility.IsVisible") is not null),
+                "AnimatedVisibility.IsVisible"));
+        Assert.Equal(
+            "{Binding CanChangeBatteryProtection}",
+            Attribute(batteryProtection, "IsEnabled"));
+        Assert.Equal("{Binding CanAdjustChargeLimit}", Attribute(chargeLimit, "IsEnabled"));
         Assert.Equal(
             "OnDashboardChargeLimitPointerPressed",
             Attribute(chargeLimit, "PointerPressed"));
