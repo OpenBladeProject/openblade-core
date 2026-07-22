@@ -105,9 +105,10 @@ internal static class Program
                     new ServiceClient(),
                     new WindowsUserIdleTimeSource(),
                     exception => System.Diagnostics.Trace.TraceWarning(
-                        "OpenBlade lighting idle policy failed: {0}",
+                        "OpenBlade lighting power policy failed: {0}",
                         exception.Message),
-                    statusWatcher: statusFeed);
+                    statusWatcher: statusFeed,
+                    displayStateSource: new WindowsSessionDisplayStateSource());
 
                 Task statusFeedTask = statusFeed.RunAsync(lifetime.Token);
                 Task serverTask = server.RunAsync(lifetime.Token);

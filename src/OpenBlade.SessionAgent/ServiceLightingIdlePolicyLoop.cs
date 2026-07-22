@@ -47,9 +47,9 @@ public sealed class WindowsUserIdleTimeSource : IUserIdleTimeSource
 }
 
 /// <summary>
-/// Evaluates the captured Synapse idle-lighting rule in the signed-in user
-/// session, where GetLastInputInfo reflects the actual interactive desktop.
-/// Only a typed suppression reason crosses the service boundary.
+/// Evaluates display-off and idle-lighting rules in the signed-in user session,
+/// where both display status and GetLastInputInfo reflect the interactive
+/// desktop. Only typed suppression reasons cross the service boundary.
 /// </summary>
 public sealed class ServiceLightingIdlePolicyLoop
 {
@@ -59,6 +59,7 @@ public sealed class ServiceLightingIdlePolicyLoop
     private readonly IServiceClient serviceClient;
     private readonly IServiceStatusWatcher statusWatcher;
     private readonly IUserIdleTimeSource idleTimeSource;
+    private readonly IUserDisplayStateSource? displayStateSource;
     private readonly Func<TimeSpan, CancellationToken, Task> delay;
     private readonly Action<Exception>? errorHandler;
     private readonly Channel<byte> policyChanges = Channel.CreateBounded<byte>(
@@ -66,24 +67,28 @@ public sealed class ServiceLightingIdlePolicyLoop
         {
             FullMode = BoundedChannelFullMode.DropOldest,
             SingleReader = true,
-            SingleWriter = true,
+            SingleWriter = false,
         });
     private LightingPowerPolicy currentPolicy = LightingPowerPolicy.Disabled;
     private int connected;
-    private int lastSentState = -1;
+    private int displayOnState = -1;
+    private int lastSentIdleState = -1;
+    private int lastSentDisplayState = -1;
 
     public ServiceLightingIdlePolicyLoop(
         IServiceClient serviceClient,
         IUserIdleTimeSource idleTimeSource,
         Action<Exception>? errorHandler = null,
         Func<TimeSpan, CancellationToken, Task>? delay = null,
-        IServiceStatusWatcher? statusWatcher = null)
+        IServiceStatusWatcher? statusWatcher = null,
+        IUserDisplayStateSource? displayStateSource = null)
     {
         this.serviceClient = serviceClient
             ?? throw new ArgumentNullException(nameof(serviceClient));
         this.idleTimeSource = idleTimeSource
             ?? throw new ArgumentNullException(nameof(idleTimeSource));
         this.statusWatcher = statusWatcher ?? serviceClient;
+        this.displayStateSource = displayStateSource;
         this.errorHandler = errorHandler;
         this.delay = delay ?? Task.Delay;
     }
@@ -94,11 +99,14 @@ public sealed class ServiceLightingIdlePolicyLoop
             cancellationToken);
         Task watch = WatchStatusAsync(linked.Token);
         Task poll = PollAsync(linked.Token);
-        Task completed = await Task.WhenAny(watch, poll).ConfigureAwait(false);
+        Task display = displayStateSource is null
+            ? Task.Delay(Timeout.InfiniteTimeSpan, linked.Token)
+            : WatchDisplayStateAsync(linked.Token);
+        Task completed = await Task.WhenAny(watch, poll, display).ConfigureAwait(false);
         await linked.CancelAsync().ConfigureAwait(false);
         try
         {
-            await Task.WhenAll(watch, poll).ConfigureAwait(false);
+            await Task.WhenAll(watch, poll, display).ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (linked.IsCancellationRequested)
         {
@@ -129,7 +137,8 @@ public sealed class ServiceLightingIdlePolicyLoop
                     bool newlyConnected = Interlocked.Exchange(ref connected, 1) == 0;
                     if (newlyConnected)
                     {
-                        Interlocked.Exchange(ref lastSentState, -1);
+                        Interlocked.Exchange(ref lastSentIdleState, -1);
+                        Interlocked.Exchange(ref lastSentDisplayState, -1);
                     }
                     if (newlyConnected || previousPolicy != nextPolicy)
                     {
@@ -139,9 +148,44 @@ public sealed class ServiceLightingIdlePolicyLoop
                 case ServiceWatchUpdate.Reconnecting:
                     Volatile.Write(ref connected, 0);
                     Volatile.Write(ref currentPolicy, LightingPowerPolicy.Disabled);
-                    Interlocked.Exchange(ref lastSentState, -1);
+                    Interlocked.Exchange(ref lastSentIdleState, -1);
+                    Interlocked.Exchange(ref lastSentDisplayState, -1);
                     SignalPolicyChanged();
                     break;
+            }
+        }
+    }
+
+    private async Task WatchDisplayStateAsync(CancellationToken cancellationToken)
+    {
+        while (true)
+        {
+            try
+            {
+                await foreach (bool displayOn in displayStateSource!
+                    .WatchDisplayOnAsync(cancellationToken)
+                    .WithCancellation(cancellationToken)
+                    .ConfigureAwait(false))
+                {
+                    int encoded = displayOn ? 1 : 0;
+                    if (Interlocked.Exchange(ref displayOnState, encoded) != encoded)
+                    {
+                        SignalPolicyChanged();
+                    }
+                }
+
+                throw new InvalidOperationException(
+                    "The Windows session display-state watcher stopped unexpectedly.");
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                return;
+            }
+            catch (Exception exception)
+            {
+                ReportFailure(exception);
+                await Task.Delay(UnavailableIdleRetryInterval, cancellationToken)
+                    .ConfigureAwait(false);
             }
         }
     }
@@ -175,7 +219,7 @@ public sealed class ServiceLightingIdlePolicyLoop
                     && elapsed >= TimeSpan.FromMinutes(minutes);
                 int requestedState = shouldSuppress ? 1 : 0;
                 bool requestFailed = false;
-                if (Volatile.Read(ref lastSentState) != requestedState)
+                if (Volatile.Read(ref lastSentIdleState) != requestedState)
                 {
                     ControlOperationResult result = await serviceClient
                         .SetLightingSuppressionAsync(
@@ -186,12 +230,41 @@ public sealed class ServiceLightingIdlePolicyLoop
                     if (result.Status is
                         ControlOperationStatus.Applied or ControlOperationStatus.Stored)
                     {
-                        Interlocked.Exchange(ref lastSentState, requestedState);
+                        Interlocked.Exchange(ref lastSentIdleState, requestedState);
                     }
                     else
                     {
                         requestFailed = true;
                         ReportFailure(new InvalidOperationException(result.Message));
+                    }
+                }
+
+                int displayOn = Volatile.Read(ref displayOnState);
+                if (displayOn >= 0)
+                {
+                    bool shouldSuppressForDisplay =
+                        policy.TurnOffWhenDisplayTurnsOff && displayOn == 0;
+                    int requestedDisplayState = shouldSuppressForDisplay ? 1 : 0;
+                    if (Volatile.Read(ref lastSentDisplayState) != requestedDisplayState)
+                    {
+                        ControlOperationResult result = await serviceClient
+                            .SetLightingSuppressionAsync(
+                                LightingSuppressionReason.DisplayOff,
+                                shouldSuppressForDisplay,
+                                cancellationToken)
+                            .ConfigureAwait(false);
+                        if (result.Status is
+                            ControlOperationStatus.Applied or ControlOperationStatus.Stored)
+                        {
+                            Interlocked.Exchange(
+                                ref lastSentDisplayState,
+                                requestedDisplayState);
+                        }
+                        else
+                        {
+                            requestFailed = true;
+                            ReportFailure(new InvalidOperationException(result.Message));
+                        }
                     }
                 }
 

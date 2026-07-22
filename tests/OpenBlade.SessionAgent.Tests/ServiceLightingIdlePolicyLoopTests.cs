@@ -74,6 +74,60 @@ public sealed class ServiceLightingIdlePolicyLoopTests
     }
 
     [Fact]
+    public async Task SessionDisplayOffSuppressesAndDisplayOnRestores()
+    {
+        var client = new WatchClient();
+        var display = new FakeDisplayStateSource();
+        var loop = new ServiceLightingIdlePolicyLoop(
+            client,
+            new FakeIdleTimeSource(),
+            displayStateSource: display);
+        using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        Task running = loop.RunAsync(cancellation.Token);
+
+        client.Publish(Status(new LightingPowerPolicy(true, null)));
+        display.Publish(displayOn: false);
+        await WaitUntilAsync(
+            () => client.Requests.Any(request => request ==
+                (LightingSuppressionReason.DisplayOff, true)),
+            cancellation.Token);
+
+        display.Publish(displayOn: true);
+        await WaitUntilAsync(
+            () => client.Requests.Count(request => request.Reason ==
+                LightingSuppressionReason.DisplayOff) == 2,
+            cancellation.Token);
+
+        Assert.Equal(
+            [
+                (LightingSuppressionReason.DisplayOff, true),
+                (LightingSuppressionReason.DisplayOff, false),
+            ],
+            client.Requests.Where(request => request.Reason ==
+                LightingSuppressionReason.DisplayOff));
+
+        await cancellation.CancelAsync();
+        await running;
+    }
+
+    [Theory]
+    [InlineData(0u, false)]
+    [InlineData(1u, true)]
+    [InlineData(2u, true)]
+    public void SessionDisplayState_MapsOffOnAndDimmed(uint value, bool expected)
+    {
+        Assert.Equal(
+            expected,
+            WindowsSessionDisplayStateSource.ClassifyDisplayOn(value));
+    }
+
+    [Fact]
+    public void SessionDisplayState_IgnoresUnknownValues()
+    {
+        Assert.Null(WindowsSessionDisplayStateSource.ClassifyDisplayOn(3));
+    }
+
+    [Fact]
     public async Task ActivePolicySleepsUntilNearBoundaryInsteadOfPollingEverySecond()
     {
         var client = new WatchClient();
@@ -236,6 +290,17 @@ public sealed class ServiceLightingIdlePolicyLoopTests
         public TimeSpan? Current { get; set; }
 
         public TimeSpan? GetIdleTime() => Current;
+    }
+
+    private sealed class FakeDisplayStateSource : IUserDisplayStateSource
+    {
+        private readonly Channel<bool> updates = Channel.CreateUnbounded<bool>();
+
+        public void Publish(bool displayOn) => updates.Writer.TryWrite(displayOn);
+
+        public IAsyncEnumerable<bool> WatchDisplayOnAsync(
+            CancellationToken cancellationToken) =>
+            updates.Reader.ReadAllAsync(cancellationToken);
     }
 
     private sealed class ManualDelay

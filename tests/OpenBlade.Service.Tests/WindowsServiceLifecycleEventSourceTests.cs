@@ -161,7 +161,9 @@ public sealed class WindowsServiceLifecycleEventSourceTests
 
     [Theory]
     [InlineData(1u, 0u, ServiceLifecycleTrigger.DisplayOff)]
+    [InlineData(2u, 0u, ServiceLifecycleTrigger.DisplayOff)]
     [InlineData(0u, 1u, ServiceLifecycleTrigger.DisplayOn)]
+    [InlineData(0u, 2u, ServiceLifecycleTrigger.DisplayOn)]
     public void ConsoleDisplayTransition_MapsOffAndOnLifecycleBoundaries(
         uint previous,
         uint current,
@@ -180,7 +182,7 @@ public sealed class WindowsServiceLifecycleEventSourceTests
     [InlineData(0u, 0u)]
     [InlineData(2u, 1u)]
     [InlineData(1u, 2u)]
-    public void ConsoleDisplayTransition_IgnoresInitialDuplicateAndDimmedValues(
+    public void ConsoleDisplayTransition_IgnoresInitialDuplicateAndActiveStateChanges(
         uint? previous,
         uint current)
     {

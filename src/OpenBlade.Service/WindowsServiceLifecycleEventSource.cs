@@ -377,6 +377,7 @@ internal sealed class NativeWindowsLifecycleNotificationBackend
 {
     private const uint PowerMonitorOff = 0;
     private const uint PowerMonitorOn = 1;
+    private const uint PowerMonitorDimmed = 2;
 
     internal static ServiceLifecycleTrigger? ClassifySuspendResumeNotification(uint type) =>
         type switch
@@ -390,8 +391,10 @@ internal sealed class NativeWindowsLifecycleNotificationBackend
         uint? previous,
         uint current) => (previous, current) switch
         {
-            (PowerMonitorOn, PowerMonitorOff) => ServiceLifecycleTrigger.DisplayOff,
-            (PowerMonitorOff, PowerMonitorOn) => ServiceLifecycleTrigger.DisplayOn,
+            (not null and not PowerMonitorOff, PowerMonitorOff) =>
+                ServiceLifecycleTrigger.DisplayOff,
+            (PowerMonitorOff, PowerMonitorOn or PowerMonitorDimmed) =>
+                ServiceLifecycleTrigger.DisplayOn,
             _ => null,
         };
 
