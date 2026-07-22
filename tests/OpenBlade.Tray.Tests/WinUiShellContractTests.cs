@@ -343,7 +343,11 @@ public sealed class WinUiShellContractTests
         string app = ReadRepositoryFile("src", "OpenBlade.Tray", "App.xaml.cs");
         string window = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml.cs");
 
-        Assert.Contains("CreateDashboardPresentationCard(option)", window, StringComparison.Ordinal);
+        Assert.Contains("CreateDashboardLiveCard(option)", window, StringComparison.Ordinal);
+        Assert.Contains("DashboardPowerModeCardTemplate", window, StringComparison.Ordinal);
+        Assert.Contains("DashboardFansCardTemplate", window, StringComparison.Ordinal);
+        Assert.Contains("DashboardBatteryCardTemplate", window, StringComparison.Ordinal);
+        Assert.DoesNotContain("Content = \"Open\"", window, StringComparison.Ordinal);
         Assert.Contains("child != DeviceStatusCard", window, StringComparison.Ordinal);
         Assert.Contains("option.Kind == DashboardCardKind.DeviceStatus", window, StringComparison.Ordinal);
         Assert.Contains("Grid.SetRow(DeviceStatusCard", window, StringComparison.Ordinal);

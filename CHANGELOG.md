@@ -11,10 +11,10 @@ All notable changes to OpenBlade are documented in this file. The project follow
   version, runtime, process context, exception details, and stack traces. The
   reporter retains the newest 20 files and never suppresses the original
   failure.
-- Added a customizable Dashboard card picker. Users can pin interactive power,
-  fan, and battery cards plus compact links to other Laptop, Lighting, and
-  Display controls and drag them into the preferred order; the selection and
-  order persist in UI preferences.
+- Added a customizable Dashboard card picker. Users can pin full interactive
+  power, fan, battery, keyboard, startup, lighting, and display cards and drag
+  them into the preferred order; the selection and order persist in UI
+  preferences.
 - Added a shipped uninstaller to Windows Installed apps and the Start menu.
   The user-facing path confirms removal and preserves profiles by default;
   `uninstall --purge` remains an explicit command for deleting saved data. Setup
@@ -58,10 +58,12 @@ All notable changes to OpenBlade are documented in this file. The project follow
 ### Fixed
 
 - Prevented the Dashboard customizer from crashing WinUI when the default card
-  is unchecked. Edits are now staged until Done, then the tray restarts cleanly
-  while the privileged service keeps running so every selected live card is
-  created in its final visual parent. Selection controls also align with the
-  dialog's right content edge.
+  is unchecked. Edits are staged until Done and applied in place using
+  independent instances of shared live card templates, without reparenting
+  loaded controls or restarting the tray. Selection controls also align with
+  the dialog's right content edge.
+- Restored the visibility-optimized outlined application icon so the taskbar
+  glyph remains legible against a dark Windows taskbar.
 - Made the approved Tidal and Wave/Wheel oracle fixtures check out with their
   required CRLF byte representation so their production hash gates and semantic
   fingerprint also pass in fresh clones.

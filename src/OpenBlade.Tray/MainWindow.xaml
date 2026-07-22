@@ -248,310 +248,8 @@
                               VerticalAlignment="Center" />
                 </Grid>
             </DataTemplate>
-        </Grid.Resources>
-
-        <TitleBar x:Name="AppTitleBar"
-                  Grid.Row="0"
-                  Title="OpenBlade"
-                  Background="Transparent" />
-
-        <NavigationView x:Name="MainNavigation"
-                        Grid.Row="1"
-                        Background="Transparent"
-                        PaneDisplayMode="Auto"
-                        IsTitleBarAutoPaddingEnabled="False"
-                        IsBackButtonVisible="Collapsed"
-                        IsSettingsVisible="False"
-                        AlwaysShowHeader="False"
-                        SelectionChanged="OnNavigationSelectionChanged">
-            <NavigationView.Resources>
-                <!-- The stock indicator can be clipped while traveling between
-                     distant items. The selected Fluent background stays clear
-                     and changes immediately without that motion artifact. -->
-                <SolidColorBrush x:Key="NavigationViewSelectionIndicatorForeground"
-                                 Color="Transparent" />
-            </NavigationView.Resources>
-            <NavigationView.MenuItems>
-                <NavigationViewItem x:Name="HomeNavigationItem"
-                                    Content="Dashboard"
-                                    Tag="home"
-                                    IsSelected="True">
-                    <NavigationViewItem.Icon>
-                        <SymbolIcon Symbol="Home" />
-                    </NavigationViewItem.Icon>
-                    <NavigationViewItem.InfoBadge>
-                        <InfoBadge Style="{StaticResource UnsavedNavigationBadgeStyle}"
-                                   Visibility="{x:Bind ViewModel.HasThermalProfileDraft, Mode=OneWay}"
-                                   AutomationProperties.Name="Dashboard has unsaved changes" />
-                    </NavigationViewItem.InfoBadge>
-                </NavigationViewItem>
-                <NavigationViewItem x:Name="ProfilesNavigationItem" Tag="profiles">
-                    <NavigationViewItem.Icon>
-                        <SymbolIcon Symbol="Switch" />
-                    </NavigationViewItem.Icon>
-                    <NavigationViewItem.Content>
-                        <TextBlock Text="Profiles" />
-                    </NavigationViewItem.Content>
-                    <NavigationViewItem.InfoBadge>
-                        <InfoBadge Style="{StaticResource UnsavedNavigationBadgeStyle}"
-                                   Visibility="{x:Bind ViewModel.HasProfileEditorChanges, Mode=OneWay}"
-                                   AutomationProperties.Name="Profiles has unsaved changes" />
-                    </NavigationViewItem.InfoBadge>
-                </NavigationViewItem>
-                <NavigationViewItem x:Name="LaptopNavigationItem"
-                                    Content="Laptop"
-                                    Tag="laptop">
-                    <NavigationViewItem.Icon>
-                        <FontIcon Glyph="&#xE770;" />
-                    </NavigationViewItem.Icon>
-                    <NavigationViewItem.InfoBadge>
-                        <InfoBadge Style="{StaticResource UnsavedNavigationBadgeStyle}"
-                                   Visibility="{x:Bind ViewModel.HasLaptopPageProfileDraft, Mode=OneWay}"
-                                   AutomationProperties.Name="Laptop has unsaved changes" />
-                    </NavigationViewItem.InfoBadge>
-                </NavigationViewItem>
-                <NavigationViewItem x:Name="LightingNavigationItem"
-                                    Content="Lighting"
-                                    Tag="lighting">
-                    <NavigationViewItem.Icon>
-                        <FontIcon Glyph="&#xE781;" />
-                    </NavigationViewItem.Icon>
-                    <NavigationViewItem.InfoBadge>
-                        <InfoBadge Style="{StaticResource UnsavedNavigationBadgeStyle}"
-                                   Visibility="{x:Bind ViewModel.HasLightingProfileDraft, Mode=OneWay}"
-                                   AutomationProperties.Name="Lighting has unsaved changes" />
-                    </NavigationViewItem.InfoBadge>
-                </NavigationViewItem>
-                <NavigationViewItem x:Name="DisplayNavigationItem" Content="Display" Tag="display">
-                    <NavigationViewItem.Icon>
-                        <FontIcon Glyph="&#xE7F4;" />
-                    </NavigationViewItem.Icon>
-                    <NavigationViewItem.InfoBadge>
-                        <InfoBadge Style="{StaticResource UnsavedNavigationBadgeStyle}"
-                                   Visibility="{x:Bind DisplayViewModel.CanSaveCurrentSettingsToProfile, Mode=OneWay}"
-                                   AutomationProperties.Name="Display has unsaved changes" />
-                    </NavigationViewItem.InfoBadge>
-                </NavigationViewItem>
-                <NavigationViewItem x:Name="SettingsNavigationItem"
-                                    Content="Settings"
-                                    Tag="settings">
-                    <NavigationViewItem.Icon>
-                        <SymbolIcon Symbol="Setting" />
-                    </NavigationViewItem.Icon>
-                </NavigationViewItem>
-            </NavigationView.MenuItems>
-            <NavigationView.FooterMenuItems>
-                <NavigationViewItem x:Name="AboutNavigationItem"
-                                    Content="About"
-                                    Tag="about">
-                    <NavigationViewItem.Icon>
-                        <FontIcon Glyph="&#xE946;" />
-                    </NavigationViewItem.Icon>
-                </NavigationViewItem>
-            </NavigationView.FooterMenuItems>
-
-            <Grid HorizontalAlignment="Stretch">
-                <ScrollView x:Name="HomePage"
-                            HorizontalContentAlignment="Stretch"
-                            HorizontalScrollMode="Disabled"
-                            HorizontalScrollBarVisibility="Hidden"
-                            VerticalScrollMode="Enabled"
-                            VerticalScrollBarVisibility="Auto">
-                    <StackPanel Padding="28,20,28,28" HorizontalAlignment="Stretch">
-                        <StackPanel.Transitions>
-                            <TransitionCollection>
-                                <EntranceThemeTransition FromHorizontalOffset="20" />
-                            </TransitionCollection>
-                        </StackPanel.Transitions>
-
-                        <Grid x:Name="DashboardPageHeader"
-                              Margin="0,0,0,20"
-                              ColumnSpacing="16">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*" />
-                                <ColumnDefinition Width="Auto" />
-                            </Grid.ColumnDefinitions>
-                            <TextBlock Text="Dashboard" Style="{StaticResource PageHeaderTitleStyle}" />
-                            <StackPanel Grid.Column="1"
-                                        Orientation="Horizontal"
-                                        Spacing="8"
-                                        VerticalAlignment="Center">
-                                <StackPanel x:Name="DashboardProfileSaveActions"
-                                            Orientation="Horizontal"
-                                            Spacing="8"
-                                            VerticalAlignment="Center"
-                                            Visibility="{x:Bind ViewModel.HasLaptopPageProfileDraft, Mode=OneWay}">
-                                    <TextBlock Text="Unsaved changes"
-                                               Style="{StaticResource ProfileSaveStatusTextStyle}" />
-                                    <Button Content="{x:Bind ViewModel.SaveToActiveProfileLabel, Mode=OneWay}"
-                                            Style="{StaticResource ProfileSaveButtonStyle}"
-                                            Command="{x:Bind ViewModel.SaveLaptopProfileDraftCommand}" />
-                                    <Button Style="{StaticResource ProfileSaveOverflowButtonStyle}"
-                                            AutomationProperties.Name="More profile actions"
-                                            ToolTipService.ToolTip="More profile actions">
-                                        <FontIcon Glyph="&#xE712;" FontSize="16" />
-                                        <Button.Flyout>
-                                            <MenuFlyout>
-                                                <MenuFlyoutItem Text="Use profile settings"
-                                                                Command="{x:Bind ViewModel.DiscardLaptopProfileDraftCommand}" />
-                                            </MenuFlyout>
-                                        </Button.Flyout>
-                                    </Button>
-                                </StackPanel>
-                                <Button Content="Customize"
-                                        AutomationProperties.Name="Customize dashboard"
-                                        Click="OnCustomizeDashboard" />
-                            </StackPanel>
-                        </Grid>
-
-                        <Grid x:Name="DashboardCardHost">
-                        <Border x:Name="DeviceStatusCard"
-                                Style="{StaticResource CardStyle}"
-                                Padding="22">
-                            <Grid x:Name="HeroLayout" RowSpacing="12">
-                                <Grid.RowDefinitions>
-                                    <RowDefinition Height="Auto" />
-                                    <RowDefinition Height="Auto" />
-                                </Grid.RowDefinitions>
-                                <StackPanel Spacing="6">
-                                    <StackPanel Orientation="Horizontal" Spacing="8">
-                                        <TextBlock Text="{x:Bind ViewModel.ActivePowerSourceLabel, Mode=OneWay}"
-                                                   Style="{StaticResource SecondaryTextStyle}"
-                                                   VerticalAlignment="Center" />
-                                        <Button x:Name="ProfileStateBadge"
-                                                Style="{StaticResource StatusPillButtonStyle}"
-                                                Click="OnProfileStateBadgeClick"
-                                                AutomationProperties.Name="Open troubleshooting details"
-                                                ToolTipService.ToolTip="View device status">
-                                            <StackPanel Orientation="Horizontal" Spacing="6">
-                                                <Grid Width="12" Height="12" VerticalAlignment="Center">
-                                                    <Ellipse Width="8" Height="8"
-                                                             HorizontalAlignment="Center"
-                                                             VerticalAlignment="Center"
-                                                             Fill="{ThemeResource SystemFillColorSuccessBrush}"
-                                                             Visibility="{x:Bind ViewModel.IsReadinessReady, Mode=OneWay}" />
-                                                    <ProgressRing Width="12" Height="12"
-                                                                  IsActive="{x:Bind ViewModel.IsReadinessChecking, Mode=OneWay}"
-                                                                  Visibility="{x:Bind ViewModel.IsReadinessChecking, Mode=OneWay}" />
-                                                    <Ellipse Width="8" Height="8"
-                                                             HorizontalAlignment="Center"
-                                                             VerticalAlignment="Center"
-                                                             Fill="{ThemeResource SystemFillColorCautionBrush}"
-                                                             Visibility="{x:Bind ViewModel.IsReadinessWarning, Mode=OneWay}" />
-                                                    <Ellipse Width="8" Height="8"
-                                                             HorizontalAlignment="Center"
-                                                             VerticalAlignment="Center"
-                                                             Fill="{ThemeResource SystemFillColorCriticalBrush}"
-                                                             Visibility="{x:Bind ViewModel.IsReadinessError, Mode=OneWay}" />
-                                                </Grid>
-                                                <TextBlock Text="{x:Bind ViewModel.ProfileStateLabel, Mode=OneWay}"
-                                                           Style="{StaticResource StatusPillTextStyle}" />
-                                            </StackPanel>
-                                        </Button>
-                                        <Button x:Name="AttentionIndicator"
-                                                Style="{StaticResource StatusPillButtonStyle}"
-                                                Visibility="{x:Bind ViewModel.HasAttention, Mode=OneWay}"
-                                                AutomationProperties.Name="Show warning details"
-                                                ToolTipService.ToolTip="{x:Bind ViewModel.AttentionSummary, Mode=OneWay}">
-                                            <Button.Flyout>
-                                                <Flyout Placement="BottomEdgeAlignedLeft">
-                                                    <StackPanel MaxWidth="360" Spacing="6">
-                                                        <TextBlock Text="{x:Bind ViewModel.AttentionSummary, Mode=OneWay}"
-                                                                   Style="{StaticResource CardTitleStyle}" />
-                                                        <TextBlock Text="{x:Bind ViewModel.AttentionDetails, Mode=OneWay}"
-                                                                   Style="{StaticResource SecondaryTextStyle}"
-                                                                   TextWrapping="Wrap" />
-                                                    </StackPanel>
-                                                </Flyout>
-                                            </Button.Flyout>
-                                            <StackPanel Orientation="Horizontal" Spacing="6">
-                                                <Ellipse Width="8"
-                                                         Height="8"
-                                                         VerticalAlignment="Center"
-                                                         Fill="{ThemeResource SystemFillColorCautionBrush}" />
-                                                <TextBlock x:Name="AttentionIndicatorLabel"
-                                                           Text="{x:Bind ViewModel.AttentionBadgeLabel, Mode=OneWay}"
-                                                           Style="{StaticResource StatusPillTextStyle}" />
-                                            </StackPanel>
-                                        </Button>
-                                    </StackPanel>
-                                    <TextBlock Text="{x:Bind ViewModel.ActivePerformanceLabel, Mode=OneWay}"
-                                               Style="{StaticResource TitleLargeTextBlockStyle}" />
-                                    <StackPanel Orientation="Horizontal" Spacing="14">
-                                        <TextBlock Text="{x:Bind ViewModel.ActiveFanModeLabel, Mode=OneWay}"
-                                                   Style="{StaticResource BodyTextBlockStyle}" />
-                                        <TextBlock Text="{x:Bind ViewModel.CurrentBatterySettingLabel, Mode=OneWay}"
-                                                   Style="{StaticResource SecondaryTextStyle}"
-                                                   VerticalAlignment="Center" />
-                                    </StackPanel>
-                                </StackPanel>
-                                <Border x:Name="HeroReadings"
-                                        Grid.Row="1"
-                                        Margin="0"
-                                        Padding="0,14,0,0"
-                                        BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
-                                        BorderThickness="0,1,0,0"
-                                        HorizontalAlignment="Stretch"
-                                        AutomationProperties.HelpText="{x:Bind ViewModel.LiveReadingsRefreshToolTip, Mode=OneWay}"
-                                        Visibility="{x:Bind ViewModel.ShowDashboardLiveReadings, Mode=OneWay}">
-                                    <Grid Background="Transparent">
-                                        <ToolTipService.ToolTip>
-                                            <ToolTip>
-                                                <TextBlock MaxWidth="340"
-                                                           Text="{x:Bind ViewModel.LiveReadingsRefreshToolTip, Mode=OneWay}"
-                                                           TextWrapping="Wrap" />
-                                            </ToolTip>
-                                        </ToolTipService.ToolTip>
-                                        <ItemsRepeater ItemsSource="{x:Bind ViewModel.VisibleDashboardTelemetryGroups, Mode=OneWay}"
-                                                       HorizontalAlignment="Stretch">
-                                            <ItemsRepeater.Layout>
-                                                <UniformGridLayout Orientation="Horizontal"
-                                                                   MinItemWidth="100"
-                                                                   MinItemHeight="48"
-                                                                   MinColumnSpacing="0"
-                                                                   MaximumRowsOrColumns="3"
-                                                                   ItemsStretch="Fill" />
-                                            </ItemsRepeater.Layout>
-                                            <ItemsRepeater.ItemTemplate>
-                                                <DataTemplate x:DataType="local:LiveReadingGroupDisplayItem">
-                                                    <StackPanel Spacing="3">
-                                                        <TextBlock Text="{x:Bind Label, Mode=OneTime}"
-                                                                   Style="{StaticResource SecondaryTextStyle}" />
-                                                        <TextBlock Text="{x:Bind Value, Mode=OneTime}"
-                                                                   Style="{StaticResource CardTitleStyle}"
-                                                                   TextWrapping="Wrap" />
-                                                    </StackPanel>
-                                                </DataTemplate>
-                                            </ItemsRepeater.ItemTemplate>
-                                        </ItemsRepeater>
-                                    </Grid>
-                                </Border>
-                            </Grid>
-                        </Border>
-                        </Grid>
-
-                        <InfoBar x:Name="OperationErrorInfoBar"
-                                 IsOpen="{x:Bind ViewModel.HasOperationFeedback, Mode=OneWay}"
-                                 Visibility="{x:Bind ViewModel.HasOperationFeedback, Mode=OneWay}"
-                                 Message="{x:Bind ViewModel.OperationFeedbackMessage, Mode=OneWay}"
-                                 Severity="Error"
-                                 IsClosable="True"
-                                 Margin="0,0,0,12"
-                                 AutomationProperties.Name="Operation error" />
-
-                        <Border x:Name="DashboardEmptyState"
-                                Style="{StaticResource CardStyle}"
-                                Padding="22"
-                                Visibility="Collapsed">
-                            <StackPanel Spacing="6">
-                                <TextBlock Text="Your Dashboard is empty"
-                                           Style="{StaticResource CardTitleStyle}" />
-                                <TextBlock Text="Use Customize to add the cards you want to see here."
-                                           Style="{StaticResource SecondaryTextStyle}" />
-                            </StackPanel>
-                        </Border>
-
-                        <StackPanel x:Name="PowerModeCard">
+            <DataTemplate x:Key="DashboardPowerModeCardTemplate" x:DataType="local:MainWindow">
+                        <StackPanel DataContext="{x:Bind ViewModel}">
                         <TextBlock Text="Power mode"
                                    Style="{StaticResource SectionHeaderStyle}"
                                    Margin="0,0,0,10" />
@@ -638,8 +336,9 @@
                             </StackPanel>
                         </Border>
                         </StackPanel>
-
-                        <StackPanel x:Name="FansCard">
+            </DataTemplate>
+            <DataTemplate x:Key="DashboardFansCardTemplate" x:DataType="local:MainWindow">
+                        <StackPanel DataContext="{x:Bind ViewModel}">
                         <TextBlock Text="Fans"
                                    Style="{StaticResource SectionHeaderStyle}"
                                    Margin="0,0,0,10" />
@@ -822,8 +521,9 @@
                             </StackPanel>
                         </Border>
                         </StackPanel>
-
-                        <StackPanel x:Name="BatteryCard">
+            </DataTemplate>
+            <DataTemplate x:Key="DashboardBatteryCardTemplate" x:DataType="local:MainWindow">
+                        <StackPanel DataContext="{x:Bind ViewModel}">
                         <TextBlock Text="Battery"
                                    Style="{StaticResource SectionHeaderStyle}"
                                    Margin="0,0,0,10" />
@@ -923,413 +623,9 @@
                             </StackPanel>
                         </Border>
                         </StackPanel>
-                    </StackPanel>
-                </ScrollView>
-
-                <ScrollView x:Name="ProfilesPage"
-                            Visibility="Collapsed"
-                            HorizontalContentAlignment="Stretch"
-                            HorizontalScrollMode="Disabled"
-                            HorizontalScrollBarVisibility="Hidden"
-                            VerticalScrollMode="Enabled"
-                            VerticalScrollBarVisibility="Auto">
-                    <StackPanel Padding="28,20,28,28" HorizontalAlignment="Stretch">
-                        <StackPanel.Transitions>
-                            <TransitionCollection>
-                                <EntranceThemeTransition FromHorizontalOffset="20" />
-                            </TransitionCollection>
-                        </StackPanel.Transitions>
-
-                        <Grid Margin="0,0,0,20" ColumnSpacing="16">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*" />
-                                <ColumnDefinition Width="Auto" />
-                            </Grid.ColumnDefinitions>
-                            <TextBlock Text="Profiles"
-                                       Style="{StaticResource PageHeaderTitleStyle}" />
-                            <StackPanel Grid.Column="1"
-                                        Orientation="Horizontal"
-                                        Spacing="8"
-                                        HorizontalAlignment="Right"
-                                        VerticalAlignment="Center">
-                                <Button Content="Import profiles"
-                                        Click="OnImportProfiles"
-                                        ToolTipService.ToolTip="Import saved profiles from JSON"
-                                        AutomationProperties.Name="Import profiles from JSON" />
-                                <Button Content="Export profiles"
-                                        Click="OnExportProfiles"
-                                        ToolTipService.ToolTip="Export saved profiles as JSON"
-                                        AutomationProperties.Name="Export profiles to JSON" />
-                            </StackPanel>
-                        </Grid>
-                        <TextBlock Text="These are the settings saved in each profile. Unsaved changes from Laptop, Dashboard, Lighting, or Display appear here only after you save them."
-                                   Style="{StaticResource SecondaryTextStyle}"
-                                   Margin="0,0,0,16" />
-
-                        <StackPanel x:Name="ProfilesComparisonLayout">
-                            <Grid Margin="16,0,16,8" ColumnSpacing="16">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="150" />
-                                    <ColumnDefinition Width="*" />
-                                    <ColumnDefinition Width="*" />
-                                    <ColumnDefinition Width="*" />
-                                </Grid.ColumnDefinitions>
-                                <TextBlock Grid.Column="0"
-                                           Text="Setting"
-                                           Style="{StaticResource SecondaryTextStyle}"
-                                           VerticalAlignment="Center" />
-                                <StackPanel Grid.Column="1" Spacing="4">
-                                    <StackPanel Orientation="Horizontal" Spacing="7">
-                                        <TextBlock Text="AC" Style="{StaticResource CardTitleStyle}" />
-                                        <Border Style="{StaticResource ActiveProfilePillStyle}"
-                                                Visibility="{x:Bind ViewModel.IsPluggedInProfileActive, Mode=OneWay}">
-                                            <TextBlock Text="Active"
-                                                       Style="{StaticResource ActiveProfilePillTextStyle}" />
-                                        </Border>
-                                    </StackPanel>
-                                    <TextBlock Text="Changes pending"
-                                               Style="{StaticResource DraftStatusTextStyle}"
-                                               Visibility="{x:Bind ViewModel.IsPluggedInProfileDraft, Mode=OneWay}" />
-                                </StackPanel>
-                                <StackPanel Grid.Column="2" Spacing="4">
-                                    <StackPanel Orientation="Horizontal" Spacing="7">
-                                        <TextBlock Text="USB-C" Style="{StaticResource CardTitleStyle}" />
-                                        <Border Style="{StaticResource ActiveProfilePillStyle}"
-                                                Visibility="{x:Bind ViewModel.IsUsbCProfileActive, Mode=OneWay}">
-                                            <TextBlock Text="Active"
-                                                       Style="{StaticResource ActiveProfilePillTextStyle}" />
-                                        </Border>
-                                    </StackPanel>
-                                    <TextBlock Text="Changes pending"
-                                               Style="{StaticResource DraftStatusTextStyle}"
-                                               Visibility="{x:Bind ViewModel.IsUsbCProfileDraft, Mode=OneWay}" />
-                                </StackPanel>
-                                <StackPanel Grid.Column="3" Spacing="4">
-                                    <StackPanel Orientation="Horizontal" Spacing="7">
-                                        <TextBlock Text="Battery" Style="{StaticResource CardTitleStyle}" />
-                                        <Border Style="{StaticResource ActiveProfilePillStyle}"
-                                                Visibility="{x:Bind ViewModel.IsBatteryProfileActive, Mode=OneWay}">
-                                            <TextBlock Text="Active"
-                                                       Style="{StaticResource ActiveProfilePillTextStyle}" />
-                                        </Border>
-                                    </StackPanel>
-                                    <TextBlock Text="Changes pending"
-                                               Style="{StaticResource DraftStatusTextStyle}"
-                                               Visibility="{x:Bind ViewModel.IsBatteryProfileDraft, Mode=OneWay}" />
-                                </StackPanel>
-                            </Grid>
-
-                            <TextBlock Text="Power and cooling" Style="{StaticResource SectionHeaderStyle}" Margin="0,8,0,10" />
-                            <Border Style="{StaticResource SettingsGroupStyle}">
-                                <StackPanel>
-                                    <Border Style="{StaticResource SettingsRowStyle}">
-                                        <Grid ColumnSpacing="16">
-                                            <Grid.ColumnDefinitions>
-                                                <ColumnDefinition Width="150" />
-                                                <ColumnDefinition Width="*" />
-                                                <ColumnDefinition Width="*" />
-                                                <ColumnDefinition Width="*" />
-                                            </Grid.ColumnDefinitions>
-                                            <TextBlock Text="Power mode" Style="{StaticResource CardTitleStyle}" />
-                                            <TextBlock Grid.Column="1" Text="{x:Bind ViewModel.PluggedInProfilePresentation.PowerMode, Mode=OneWay}" TextWrapping="Wrap" />
-                                            <TextBlock Grid.Column="2" Text="{x:Bind ViewModel.UsbCProfilePresentation.PowerMode, Mode=OneWay}" TextWrapping="Wrap" />
-                                            <TextBlock Grid.Column="3" Text="{x:Bind ViewModel.BatteryProfilePresentation.PowerMode, Mode=OneWay}" TextWrapping="Wrap" />
-                                        </Grid>
-                                    </Border>
-                                    <Border Style="{StaticResource SettingsLastRowStyle}">
-                                        <Grid ColumnSpacing="16">
-                                            <Grid.ColumnDefinitions>
-                                                <ColumnDefinition Width="150" />
-                                                <ColumnDefinition Width="*" />
-                                                <ColumnDefinition Width="*" />
-                                                <ColumnDefinition Width="*" />
-                                            </Grid.ColumnDefinitions>
-                                            <TextBlock Text="Fans" Style="{StaticResource CardTitleStyle}" />
-                                            <TextBlock Grid.Column="1" Text="{x:Bind ViewModel.PluggedInProfilePresentation.Fans, Mode=OneWay}" TextWrapping="Wrap" />
-                                            <TextBlock Grid.Column="2" Text="{x:Bind ViewModel.UsbCProfilePresentation.Fans, Mode=OneWay}" TextWrapping="Wrap" />
-                                            <TextBlock Grid.Column="3" Text="{x:Bind ViewModel.BatteryProfilePresentation.Fans, Mode=OneWay}" TextWrapping="Wrap" />
-                                        </Grid>
-                                    </Border>
-                                </StackPanel>
-                            </Border>
-
-                            <TextBlock Text="Keyboard lighting" Style="{StaticResource SectionHeaderStyle}" />
-                            <Border Style="{StaticResource SettingsGroupStyle}">
-                                <StackPanel>
-                                    <Border Style="{StaticResource SettingsRowStyle}">
-                                        <Grid ColumnSpacing="16">
-                                            <Grid.ColumnDefinitions><ColumnDefinition Width="150" /><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
-                                            <TextBlock Text="Effect" Style="{StaticResource CardTitleStyle}" />
-                                            <TextBlock Grid.Column="1" Text="{x:Bind ViewModel.PluggedInProfilePresentation.LightingEffect, Mode=OneWay}" TextWrapping="Wrap" />
-                                            <TextBlock Grid.Column="2" Text="{x:Bind ViewModel.UsbCProfilePresentation.LightingEffect, Mode=OneWay}" TextWrapping="Wrap" />
-                                            <TextBlock Grid.Column="3" Text="{x:Bind ViewModel.BatteryProfilePresentation.LightingEffect, Mode=OneWay}" TextWrapping="Wrap" />
-                                        </Grid>
-                                    </Border>
-                                    <Border Style="{StaticResource SettingsRowStyle}">
-                                        <Grid ColumnSpacing="16">
-                                            <Grid.ColumnDefinitions><ColumnDefinition Width="150" /><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
-                                            <TextBlock Text="Brightness" Style="{StaticResource CardTitleStyle}" />
-                                            <TextBlock Grid.Column="1" Text="{x:Bind ViewModel.PluggedInProfilePresentation.LightingBrightness, Mode=OneWay}" TextWrapping="Wrap" />
-                                            <TextBlock Grid.Column="2" Text="{x:Bind ViewModel.UsbCProfilePresentation.LightingBrightness, Mode=OneWay}" TextWrapping="Wrap" />
-                                            <TextBlock Grid.Column="3" Text="{x:Bind ViewModel.BatteryProfilePresentation.LightingBrightness, Mode=OneWay}" TextWrapping="Wrap" />
-                                        </Grid>
-                                    </Border>
-                                    <Border Style="{StaticResource SettingsRowStyle}">
-                                        <Grid ColumnSpacing="16">
-                                            <Grid.ColumnDefinitions><ColumnDefinition Width="150" /><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
-                                            <TextBlock Text="Color" Style="{StaticResource CardTitleStyle}" />
-                                            <TextBlock Grid.Column="1" Text="{x:Bind ViewModel.PluggedInProfilePresentation.LightingColor, Mode=OneWay}" TextWrapping="Wrap" />
-                                            <TextBlock Grid.Column="2" Text="{x:Bind ViewModel.UsbCProfilePresentation.LightingColor, Mode=OneWay}" TextWrapping="Wrap" />
-                                            <TextBlock Grid.Column="3" Text="{x:Bind ViewModel.BatteryProfilePresentation.LightingColor, Mode=OneWay}" TextWrapping="Wrap" />
-                                        </Grid>
-                                    </Border>
-                                    <Border Style="{StaticResource SettingsRowStyle}">
-                                        <Grid ColumnSpacing="16">
-                                            <Grid.ColumnDefinitions><ColumnDefinition Width="150" /><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
-                                            <TextBlock Text="Laptop lid logo" Style="{StaticResource CardTitleStyle}" />
-                                            <TextBlock Grid.Column="1" Text="{x:Bind ViewModel.PluggedInProfilePresentation.LogoLighting, Mode=OneWay}" TextWrapping="Wrap" />
-                                            <TextBlock Grid.Column="2" Text="{x:Bind ViewModel.UsbCProfilePresentation.LogoLighting, Mode=OneWay}" TextWrapping="Wrap" />
-                                            <TextBlock Grid.Column="3" Text="{x:Bind ViewModel.BatteryProfilePresentation.LogoLighting, Mode=OneWay}" TextWrapping="Wrap" />
-                                        </Grid>
-                                    </Border>
-                                    <Border Style="{StaticResource SettingsRowStyle}">
-                                        <Grid ColumnSpacing="16">
-                                            <Grid.ColumnDefinitions><ColumnDefinition Width="150" /><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
-                                            <TextBlock Text="Display turns off" Style="{StaticResource CardTitleStyle}" />
-                                            <TextBlock Grid.Column="1" Text="{x:Bind ViewModel.PluggedInProfilePresentation.LightingDisplayOff, Mode=OneWay}" TextWrapping="Wrap" />
-                                            <TextBlock Grid.Column="2" Text="{x:Bind ViewModel.UsbCProfilePresentation.LightingDisplayOff, Mode=OneWay}" TextWrapping="Wrap" />
-                                            <TextBlock Grid.Column="3" Text="{x:Bind ViewModel.BatteryProfilePresentation.LightingDisplayOff, Mode=OneWay}" TextWrapping="Wrap" />
-                                        </Grid>
-                                    </Border>
-                                    <Border Style="{StaticResource SettingsLastRowStyle}">
-                                        <Grid ColumnSpacing="16">
-                                            <Grid.ColumnDefinitions><ColumnDefinition Width="150" /><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
-                                            <TextBlock Text="Inactivity timeout" Style="{StaticResource CardTitleStyle}" />
-                                            <TextBlock Grid.Column="1" Text="{x:Bind ViewModel.PluggedInProfilePresentation.LightingIdle, Mode=OneWay}" TextWrapping="Wrap" />
-                                            <TextBlock Grid.Column="2" Text="{x:Bind ViewModel.UsbCProfilePresentation.LightingIdle, Mode=OneWay}" TextWrapping="Wrap" />
-                                            <TextBlock Grid.Column="3" Text="{x:Bind ViewModel.BatteryProfilePresentation.LightingIdle, Mode=OneWay}" TextWrapping="Wrap" />
-                                        </Grid>
-                                    </Border>
-                                </StackPanel>
-                            </Border>
-
-                            <TextBlock Text="Display" Style="{StaticResource SectionHeaderStyle}" />
-                            <Border Style="{StaticResource SettingsGroupStyle}">
-                                <StackPanel>
-                                    <Border Style="{StaticResource SettingsRowStyle}">
-                                        <Grid ColumnSpacing="16">
-                                            <Grid.ColumnDefinitions><ColumnDefinition Width="150" /><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
-                                            <TextBlock Text="Refresh rate" Style="{StaticResource CardTitleStyle}" />
-                                            <TextBlock Grid.Column="1" Text="{x:Bind ViewModel.PluggedInProfilePresentation.DisplayRefreshRate, Mode=OneWay}" TextWrapping="Wrap" />
-                                            <TextBlock Grid.Column="2" Text="{x:Bind ViewModel.UsbCProfilePresentation.DisplayRefreshRate, Mode=OneWay}" TextWrapping="Wrap" />
-                                            <TextBlock Grid.Column="3" Text="{x:Bind ViewModel.BatteryProfilePresentation.DisplayRefreshRate, Mode=OneWay}" TextWrapping="Wrap" />
-                                        </Grid>
-                                    </Border>
-                                    <Border Style="{StaticResource SettingsRowStyle}">
-                                        <Grid ColumnSpacing="16">
-                                            <Grid.ColumnDefinitions><ColumnDefinition Width="150" /><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
-                                            <TextBlock Text="HDR" Style="{StaticResource CardTitleStyle}" />
-                                            <TextBlock Grid.Column="1" Text="{x:Bind ViewModel.PluggedInProfilePresentation.DisplayHdr, Mode=OneWay}" TextWrapping="Wrap" />
-                                            <TextBlock Grid.Column="2" Text="{x:Bind ViewModel.UsbCProfilePresentation.DisplayHdr, Mode=OneWay}" TextWrapping="Wrap" />
-                                            <TextBlock Grid.Column="3" Text="{x:Bind ViewModel.BatteryProfilePresentation.DisplayHdr, Mode=OneWay}" TextWrapping="Wrap" />
-                                        </Grid>
-                                    </Border>
-                                    <Border Style="{StaticResource SettingsRowStyle}">
-                                        <Grid ColumnSpacing="16">
-                                            <Grid.ColumnDefinitions><ColumnDefinition Width="150" /><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
-                                            <TextBlock Text="Color profile" Style="{StaticResource CardTitleStyle}" />
-                                            <TextBlock Grid.Column="1" Text="{x:Bind ViewModel.PluggedInProfilePresentation.DisplayColorProfile, Mode=OneWay}" TextWrapping="Wrap" />
-                                            <TextBlock Grid.Column="2" Text="{x:Bind ViewModel.UsbCProfilePresentation.DisplayColorProfile, Mode=OneWay}" TextWrapping="Wrap" />
-                                            <TextBlock Grid.Column="3" Text="{x:Bind ViewModel.BatteryProfilePresentation.DisplayColorProfile, Mode=OneWay}" TextWrapping="Wrap" />
-                                        </Grid>
-                                    </Border>
-                                </StackPanel>
-                            </Border>
-
-                            <TextBlock Text="Laptop behavior" Style="{StaticResource SectionHeaderStyle}" />
-                            <Border Style="{StaticResource SettingsGroupStyle}">
-                                <StackPanel>
-                                    <Border Style="{StaticResource SettingsRowStyle}">
-                                        <Grid ColumnSpacing="16">
-                                            <Grid.ColumnDefinitions><ColumnDefinition Width="150" /><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
-                                            <TextBlock Text="Function keys" Style="{StaticResource CardTitleStyle}" />
-                                            <TextBlock Grid.Column="1" Text="{x:Bind ViewModel.PluggedInProfilePresentation.FunctionKeyBehavior, Mode=OneWay}" TextWrapping="Wrap" />
-                                            <TextBlock Grid.Column="2" Text="{x:Bind ViewModel.UsbCProfilePresentation.FunctionKeyBehavior, Mode=OneWay}" TextWrapping="Wrap" />
-                                            <TextBlock Grid.Column="3" Text="{x:Bind ViewModel.BatteryProfilePresentation.FunctionKeyBehavior, Mode=OneWay}" TextWrapping="Wrap" />
-                                        </Grid>
-                                    </Border>
-                                    <Border Style="{StaticResource SettingsRowStyle}">
-                                        <Grid ColumnSpacing="16">
-                                            <Grid.ColumnDefinitions><ColumnDefinition Width="150" /><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
-                                            <TextBlock Text="Gaming mode" Style="{StaticResource CardTitleStyle}" />
-                                            <TextBlock Grid.Column="1" Text="{x:Bind ViewModel.PluggedInProfilePresentation.GamingMode, Mode=OneWay}" />
-                                            <TextBlock Grid.Column="2" Text="{x:Bind ViewModel.UsbCProfilePresentation.GamingMode, Mode=OneWay}" />
-                                            <TextBlock Grid.Column="3" Text="{x:Bind ViewModel.BatteryProfilePresentation.GamingMode, Mode=OneWay}" />
-                                        </Grid>
-                                    </Border>
-                                    <Border Style="{StaticResource SettingsLastRowStyle}">
-                                        <Grid ColumnSpacing="16">
-                                            <Grid.ColumnDefinitions><ColumnDefinition Width="150" /><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
-                                            <TextBlock Text="Startup animation" Style="{StaticResource CardTitleStyle}" />
-                                            <TextBlock Grid.Column="1" Text="{x:Bind ViewModel.PluggedInProfilePresentation.StartupAnimation, Mode=OneWay}" />
-                                            <TextBlock Grid.Column="2" Text="{x:Bind ViewModel.UsbCProfilePresentation.StartupAnimation, Mode=OneWay}" />
-                                            <TextBlock Grid.Column="3" Text="{x:Bind ViewModel.BatteryProfilePresentation.StartupAnimation, Mode=OneWay}" />
-                                        </Grid>
-                                    </Border>
-                                </StackPanel>
-                            </Border>
-                        </StackPanel>
-
-                        <StackPanel x:Name="ProfilesCompactLayout" Visibility="Collapsed">
-                            <ComboBox HorizontalAlignment="Stretch"
-                                      Margin="0,0,0,12"
-                                      ItemsSource="{x:Bind ViewModel.ProfileComparisonOptions}"
-                                      DisplayMemberPath="Label"
-                                      SelectedItem="{x:Bind ViewModel.SelectedProfileComparisonOption, Mode=TwoWay}"
-                                      AutomationProperties.Name="Profile to review" />
-                            <StackPanel Orientation="Horizontal" Spacing="8" Margin="4,0,0,10">
-                                <Border Style="{StaticResource ActiveProfilePillStyle}"
-                                        Visibility="{x:Bind ViewModel.IsSelectedProfileActive, Mode=OneWay}">
-                                    <TextBlock Text="Active"
-                                               Style="{StaticResource ActiveProfilePillTextStyle}" />
-                                </Border>
-                                <TextBlock Text="Unsaved"
-                                           Style="{StaticResource DraftStatusTextStyle}"
-                                           Visibility="{x:Bind ViewModel.IsSelectedProfileDraft, Mode=OneWay}" />
-                            </StackPanel>
-                            <Border Style="{StaticResource SettingsGroupStyle}">
-                                <StackPanel>
-                                    <Border Style="{StaticResource SettingsRowStyle}">
-                                        <Grid ColumnSpacing="16"><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><TextBlock Text="Power mode" Style="{StaticResource CardTitleStyle}" /><TextBlock Grid.Column="1" Text="{x:Bind ViewModel.SelectedProfilePresentation.PowerMode, Mode=OneWay}" /></Grid>
-                                    </Border>
-                                    <Border Style="{StaticResource SettingsRowStyle}">
-                                        <Grid ColumnSpacing="16"><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><TextBlock Text="Fans" Style="{StaticResource CardTitleStyle}" /><TextBlock Grid.Column="1" Text="{x:Bind ViewModel.SelectedProfilePresentation.Fans, Mode=OneWay}" /></Grid>
-                                    </Border>
-                                    <Border Style="{StaticResource SettingsRowStyle}">
-                                        <Grid ColumnSpacing="16"><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><TextBlock Text="Lighting effect" Style="{StaticResource CardTitleStyle}" /><TextBlock Grid.Column="1" Text="{x:Bind ViewModel.SelectedProfilePresentation.LightingEffect, Mode=OneWay}" TextWrapping="Wrap" TextAlignment="Right" /></Grid>
-                                    </Border>
-                                    <Border Style="{StaticResource SettingsRowStyle}">
-                                        <Grid ColumnSpacing="16"><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><TextBlock Text="Lighting brightness" Style="{StaticResource CardTitleStyle}" /><TextBlock Grid.Column="1" Text="{x:Bind ViewModel.SelectedProfilePresentation.LightingBrightness, Mode=OneWay}" /></Grid>
-                                    </Border>
-                                    <Border Style="{StaticResource SettingsRowStyle}">
-                                        <Grid ColumnSpacing="16"><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><TextBlock Text="Lighting color" Style="{StaticResource CardTitleStyle}" /><TextBlock Grid.Column="1" Text="{x:Bind ViewModel.SelectedProfilePresentation.LightingColor, Mode=OneWay}" TextWrapping="Wrap" TextAlignment="Right" /></Grid>
-                                    </Border>
-                                    <Border Style="{StaticResource SettingsRowStyle}">
-                                        <Grid ColumnSpacing="16"><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><TextBlock Text="Laptop lid logo" Style="{StaticResource CardTitleStyle}" /><TextBlock Grid.Column="1" Text="{x:Bind ViewModel.SelectedProfilePresentation.LogoLighting, Mode=OneWay}" /></Grid>
-                                    </Border>
-                                    <Border Style="{StaticResource SettingsRowStyle}">
-                                        <Grid ColumnSpacing="16"><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><TextBlock Text="Refresh rate" Style="{StaticResource CardTitleStyle}" /><TextBlock Grid.Column="1" Text="{x:Bind ViewModel.SelectedProfilePresentation.DisplayRefreshRate, Mode=OneWay}" /></Grid>
-                                    </Border>
-                                    <Border Style="{StaticResource SettingsRowStyle}">
-                                        <Grid ColumnSpacing="16"><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><TextBlock Text="HDR" Style="{StaticResource CardTitleStyle}" /><TextBlock Grid.Column="1" Text="{x:Bind ViewModel.SelectedProfilePresentation.DisplayHdr, Mode=OneWay}" /></Grid>
-                                    </Border>
-                                    <Border Style="{StaticResource SettingsRowStyle}">
-                                        <Grid ColumnSpacing="16"><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><TextBlock Text="Color profile" Style="{StaticResource CardTitleStyle}" /><TextBlock Grid.Column="1" Text="{x:Bind ViewModel.SelectedProfilePresentation.DisplayColorProfile, Mode=OneWay}" TextWrapping="Wrap" TextAlignment="Right" /></Grid>
-                                    </Border>
-                                    <Border Style="{StaticResource SettingsRowStyle}">
-                                        <Grid ColumnSpacing="16"><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><TextBlock Text="Display turns off" Style="{StaticResource CardTitleStyle}" /><TextBlock Grid.Column="1" Text="{x:Bind ViewModel.SelectedProfilePresentation.LightingDisplayOff, Mode=OneWay}" TextWrapping="Wrap" TextAlignment="Right" /></Grid>
-                                    </Border>
-                                    <Border Style="{StaticResource SettingsRowStyle}">
-                                        <Grid ColumnSpacing="16"><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><TextBlock Text="Inactivity timeout" Style="{StaticResource CardTitleStyle}" /><TextBlock Grid.Column="1" Text="{x:Bind ViewModel.SelectedProfilePresentation.LightingIdle, Mode=OneWay}" TextWrapping="Wrap" TextAlignment="Right" /></Grid>
-                                    </Border>
-                                    <Border Style="{StaticResource SettingsRowStyle}">
-                                        <Grid ColumnSpacing="16"><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><TextBlock Text="Function keys" Style="{StaticResource CardTitleStyle}" /><TextBlock Grid.Column="1" Text="{x:Bind ViewModel.SelectedProfilePresentation.FunctionKeyBehavior, Mode=OneWay}" TextAlignment="Right" /></Grid>
-                                    </Border>
-                                    <Border Style="{StaticResource SettingsRowStyle}">
-                                        <Grid ColumnSpacing="16"><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><TextBlock Text="Gaming mode" Style="{StaticResource CardTitleStyle}" /><TextBlock Grid.Column="1" Text="{x:Bind ViewModel.SelectedProfilePresentation.GamingMode, Mode=OneWay}" /></Grid>
-                                    </Border>
-                                    <Border Style="{StaticResource SettingsLastRowStyle}">
-                                        <Grid ColumnSpacing="16"><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><TextBlock Text="Startup animation" Style="{StaticResource CardTitleStyle}" /><TextBlock Grid.Column="1" Text="{x:Bind ViewModel.SelectedProfilePresentation.StartupAnimation, Mode=OneWay}" /></Grid>
-                                    </Border>
-                                </StackPanel>
-                            </Border>
-                        </StackPanel>
-                    </StackPanel>
-                </ScrollView>
-
-                <ScrollView x:Name="LaptopPage"
-                            Visibility="Collapsed"
-                            HorizontalContentAlignment="Stretch"
-                            HorizontalScrollMode="Disabled"
-                            HorizontalScrollBarVisibility="Hidden"
-                            VerticalScrollMode="Enabled"
-                            VerticalScrollBarVisibility="Auto">
-                    <StackPanel Padding="28,20,28,28" HorizontalAlignment="Stretch">
-                        <StackPanel.Transitions>
-                            <TransitionCollection>
-                                <EntranceThemeTransition FromHorizontalOffset="20" />
-                            </TransitionCollection>
-                        </StackPanel.Transitions>
-
-                        <Grid x:Name="LaptopPageHeader"
-                              Margin="0,0,0,20"
-                              ColumnSpacing="16"
-                              RowSpacing="10">
-                            <Grid.RowDefinitions>
-                                <RowDefinition Height="Auto" />
-                                <RowDefinition Height="Auto" />
-                            </Grid.RowDefinitions>
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*" />
-                                <ColumnDefinition Width="Auto" />
-                            </Grid.ColumnDefinitions>
-                            <VisualStateManager.VisualStateGroups>
-                                <VisualStateGroup>
-                                    <VisualState x:Name="LaptopHeaderWide">
-                                        <VisualState.StateTriggers>
-                                            <AdaptiveTrigger MinWindowWidth="900" />
-                                        </VisualState.StateTriggers>
-                                        <VisualState.Setters>
-                                            <Setter Target="LaptopProfileSaveActions.(Grid.Row)" Value="0" />
-                                            <Setter Target="LaptopProfileSaveActions.(Grid.Column)" Value="1" />
-                                            <Setter Target="LaptopProfileSaveActions.(Grid.ColumnSpan)" Value="1" />
-                                            <Setter Target="LaptopProfileSaveActions.HorizontalAlignment" Value="Right" />
-                                            <Setter Target="LaptopProfileSaveActions.Margin" Value="0,2,0,0" />
-                                        </VisualState.Setters>
-                                    </VisualState>
-                                    <VisualState x:Name="LaptopHeaderCompact">
-                                        <VisualState.StateTriggers>
-                                            <AdaptiveTrigger MinWindowWidth="0" />
-                                        </VisualState.StateTriggers>
-                                        <VisualState.Setters>
-                                            <Setter Target="LaptopProfileSaveActions.(Grid.Row)" Value="1" />
-                                            <Setter Target="LaptopProfileSaveActions.(Grid.Column)" Value="0" />
-                                            <Setter Target="LaptopProfileSaveActions.(Grid.ColumnSpan)" Value="2" />
-                                            <Setter Target="LaptopProfileSaveActions.HorizontalAlignment" Value="Left" />
-                                            <Setter Target="LaptopProfileSaveActions.Margin" Value="0,2,0,0" />
-                                        </VisualState.Setters>
-                                    </VisualState>
-                                </VisualStateGroup>
-                            </VisualStateManager.VisualStateGroups>
-                            <TextBlock Text="Laptop"
-                                       Style="{StaticResource PageHeaderTitleStyle}" />
-                            <StackPanel x:Name="LaptopProfileSaveActions"
-                                        Grid.Column="1"
-                                        Orientation="Horizontal"
-                                        Spacing="8"
-                                        VerticalAlignment="Center"
-                                        Visibility="{x:Bind ViewModel.HasLaptopPageProfileDraft, Mode=OneWay}">
-                                <TextBlock Text="Unsaved changes"
-                                           Style="{StaticResource ProfileSaveStatusTextStyle}" />
-                                <Button Content="{x:Bind ViewModel.SaveToActiveProfileLabel, Mode=OneWay}"
-                                        Style="{StaticResource ProfileSaveButtonStyle}"
-                                        Command="{x:Bind ViewModel.SaveLaptopProfileDraftCommand}" />
-                                <Button Style="{StaticResource ProfileSaveOverflowButtonStyle}"
-                                        AutomationProperties.Name="More profile actions"
-                                        ToolTipService.ToolTip="More profile actions">
-                                    <FontIcon Glyph="&#xE712;" FontSize="16" />
-                                    <Button.Flyout>
-                                        <MenuFlyout>
-                                            <MenuFlyoutItem Text="Use profile settings"
-                                                            Command="{x:Bind ViewModel.DiscardLaptopProfileDraftCommand}" />
-                                        </MenuFlyout>
-                                    </Button.Flyout>
-                                </Button>
-                            </StackPanel>
-                        </Grid>
-
-                        <StackPanel x:Name="LaptopCardsHost" Spacing="18">
-                        <StackPanel x:Name="KeyboardBehaviorCard">
+            </DataTemplate>
+            <DataTemplate x:Key="DashboardKeyboardBehaviorCardTemplate" x:DataType="local:MainWindow">
+                        <StackPanel DataContext="{x:Bind ViewModel}">
                         <TextBlock Text="Keyboard"
                                    Style="{StaticResource SectionHeaderStyle}"
                                    Margin="0,0,0,10"
@@ -1416,8 +712,9 @@
                             </StackPanel>
                         </Border>
                         </StackPanel>
-
-                        <StackPanel x:Name="StartupAnimationCard">
+            </DataTemplate>
+            <DataTemplate x:Key="DashboardStartupAnimationCardTemplate" x:DataType="local:MainWindow">
+                        <StackPanel DataContext="{x:Bind ViewModel}">
                         <TextBlock Text="Startup"
                                    Style="{StaticResource SectionHeaderStyle}"
                                    Margin="0,0,0,10"
@@ -1460,97 +757,9 @@
                             </Border>
                         </Border>
                         </StackPanel>
-                        </StackPanel>
-                    </StackPanel>
-                </ScrollView>
-
-                <ScrollView x:Name="LightingPage"
-                            Visibility="Collapsed"
-                            HorizontalContentAlignment="Stretch"
-                            HorizontalScrollMode="Disabled"
-                            HorizontalScrollBarVisibility="Hidden"
-                            VerticalScrollMode="Enabled"
-                            VerticalScrollBarVisibility="Auto">
-                    <StackPanel Padding="28,20,28,28" HorizontalAlignment="Stretch">
-                        <StackPanel.Transitions>
-                            <TransitionCollection>
-                                <EntranceThemeTransition FromHorizontalOffset="20" />
-                            </TransitionCollection>
-                        </StackPanel.Transitions>
-
-                        <Grid x:Name="LightingPageHeader"
-                              Margin="0,0,0,20"
-                              ColumnSpacing="16"
-                              RowSpacing="10">
-                            <Grid.RowDefinitions>
-                                <RowDefinition Height="Auto" />
-                                <RowDefinition Height="Auto" />
-                            </Grid.RowDefinitions>
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*" />
-                                <ColumnDefinition Width="Auto" />
-                            </Grid.ColumnDefinitions>
-                            <VisualStateManager.VisualStateGroups>
-                                <VisualStateGroup>
-                                    <VisualState x:Name="LightingHeaderWide">
-                                        <VisualState.StateTriggers>
-                                            <AdaptiveTrigger MinWindowWidth="900" />
-                                        </VisualState.StateTriggers>
-                                        <VisualState.Setters>
-                                            <Setter Target="LightingProfileSaveActions.(Grid.Row)" Value="0" />
-                                            <Setter Target="LightingProfileSaveActions.(Grid.Column)" Value="1" />
-                                            <Setter Target="LightingProfileSaveActions.(Grid.ColumnSpan)" Value="1" />
-                                            <Setter Target="LightingProfileSaveActions.HorizontalAlignment" Value="Right" />
-                                            <Setter Target="LightingProfileSaveActions.Margin" Value="0,2,0,0" />
-                                        </VisualState.Setters>
-                                    </VisualState>
-                                    <VisualState x:Name="LightingHeaderCompact">
-                                        <VisualState.StateTriggers>
-                                            <AdaptiveTrigger MinWindowWidth="0" />
-                                        </VisualState.StateTriggers>
-                                        <VisualState.Setters>
-                                            <Setter Target="LightingProfileSaveActions.(Grid.Row)" Value="1" />
-                                            <Setter Target="LightingProfileSaveActions.(Grid.Column)" Value="0" />
-                                            <Setter Target="LightingProfileSaveActions.(Grid.ColumnSpan)" Value="2" />
-                                            <Setter Target="LightingProfileSaveActions.HorizontalAlignment" Value="Left" />
-                                            <Setter Target="LightingProfileSaveActions.Margin" Value="0,2,0,0" />
-                                        </VisualState.Setters>
-                                    </VisualState>
-                                </VisualStateGroup>
-                            </VisualStateManager.VisualStateGroups>
-                            <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
-                                <TextBlock Text="Lighting" Style="{StaticResource PageHeaderTitleStyle}" />
-                                <ProgressRing Style="{StaticResource FirmwareProgressRingStyle}"
-                                              IsActive="{x:Bind ViewModel.IsLightingOperationInProgress, Mode=OneWay}"
-                                              AutomationProperties.Name="Applying lighting" />
-                            </StackPanel>
-                            <ContentControl x:Name="LightingProfileSaveActions"
-                                            Grid.Column="1"
-                                            VerticalAlignment="Center"
-                                            IsEnabled="{x:Bind ViewModel.CanControlLighting, Mode=OneWay}"
-                                            Visibility="{x:Bind ViewModel.HasLightingProfileDraft, Mode=OneWay}">
-                                <StackPanel Orientation="Horizontal" Spacing="8">
-                                <TextBlock Text="Unsaved changes"
-                                           Style="{StaticResource ProfileSaveStatusTextStyle}" />
-                                <Button Content="{x:Bind ViewModel.SaveToActiveProfileLabel, Mode=OneWay}"
-                                        Style="{StaticResource ProfileSaveButtonStyle}"
-                                        Command="{x:Bind ViewModel.SaveLightingProfileDraftCommand}" />
-                                <Button Style="{StaticResource ProfileSaveOverflowButtonStyle}"
-                                        AutomationProperties.Name="More profile actions"
-                                        ToolTipService.ToolTip="More profile actions">
-                                    <FontIcon Glyph="&#xE712;" FontSize="16" />
-                                    <Button.Flyout>
-                                        <MenuFlyout>
-                                            <MenuFlyoutItem Text="Use profile settings"
-                                                            Command="{x:Bind ViewModel.DiscardLightingProfileDraftCommand}" />
-                                        </MenuFlyout>
-                                    </Button.Flyout>
-                                </Button>
-                                </StackPanel>
-                            </ContentControl>
-                        </Grid>
-                        <StackPanel x:Name="LightingCardsHost">
-                        <StackPanel x:Name="LightingCard">
+            </DataTemplate>
+            <DataTemplate x:Key="DashboardLightingCardTemplate" x:DataType="local:MainWindow">
+                        <StackPanel DataContext="{x:Bind ViewModel}">
                         <InfoBar x:Name="LightingUnavailableInfoBar"
                                  Margin="0,0,0,18"
                                  IsOpen="{x:Bind ViewModel.IsLightingControlUnavailable, Mode=OneWay}"
@@ -2004,6 +1213,925 @@
                             </StackPanel>
                         </ContentControl>
                         </StackPanel>
+            </DataTemplate>
+            <DataTemplate x:Key="DashboardDisplayCardTemplate" x:DataType="local:MainWindow">
+                        <StackPanel DataContext="{x:Bind ViewModel}">
+                        <TextBlock Text="Built-in display"
+                                   Style="{StaticResource SectionHeaderStyle}"
+                                   Margin="0,0,0,10" />
+                        <Border Style="{StaticResource SettingsGroupStyle}">
+                            <StackPanel>
+                                <Border Style="{StaticResource SettingsRowStyle}">
+                                    <Grid ColumnSpacing="20">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel Spacing="3" VerticalAlignment="Center">
+                                            <TextBlock Text="Refresh rate"
+                                                       Style="{StaticResource CardTitleStyle}" />
+                                            <TextBlock Text="Choose a refresh rate reported by Windows or use dynamic refresh rate."
+                                                       Style="{StaticResource SecondaryTextStyle}" />
+                                        </StackPanel>
+                                        <ComboBox x:Name="DisplayRefreshRatePicker"
+                                                  Grid.Column="1"
+                                                  MinWidth="180"
+                                                  Style="{StaticResource SettingsPickerStyle}"
+                                                  AutomationProperties.Name="Display refresh rate"
+                                                  ItemsSource="{x:Bind DisplayViewModel.RefreshRateOptions, Mode=OneWay}"
+                                                  DisplayMemberPath="Label"
+                                                  SelectedItem="{x:Bind DisplayViewModel.SelectedRefreshRate, Mode=OneWay}"
+                                                  IsEnabled="{x:Bind DisplayViewModel.CanChangeRefreshRate, Mode=OneWay}"
+                                                  DropDownOpened="OnDisplayPickerOpened"
+                                                  DropDownClosed="OnDisplayPickerClosed"
+                                                  SelectionChanged="OnDisplayRefreshRateChanged" />
+                                    </Grid>
+                                </Border>
+                                <Border Style="{StaticResource SettingsRowStyle}">
+                                    <Grid ColumnSpacing="20">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel Spacing="3" VerticalAlignment="Center">
+                                            <TextBlock Text="Use HDR"
+                                                       Style="{StaticResource CardTitleStyle}" />
+                                            <TextBlock Text="Show a wider range of colors and brightness in supported content."
+                                                       Style="{StaticResource SecondaryTextStyle}" />
+                                        </StackPanel>
+                                        <ToggleSwitch x:Name="DisplayHdrToggle"
+                                                      Grid.Column="1"
+                                                      HorizontalAlignment="Right"
+                                                      VerticalAlignment="Center"
+                                                      MinWidth="0"
+                                                      AutomationProperties.Name="Use HDR"
+                                                      OffContent=""
+                                                      OnContent=""
+                                                      IsOn="{x:Bind DisplayViewModel.IsHdrEnabled, Mode=OneWay}"
+                                                      IsEnabled="{x:Bind DisplayViewModel.CanChangeHdr, Mode=OneWay}"
+                                                      Toggled="OnDisplayHdrToggled" />
+                                    </Grid>
+                                </Border>
+                                <Border Style="{StaticResource SettingsLastRowStyle}">
+                                    <Grid ColumnSpacing="20">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel Spacing="3" VerticalAlignment="Center">
+                                            <TextBlock Text="Color profile"
+                                                       Style="{StaticResource CardTitleStyle}" />
+                                            <TextBlock Text="{x:Bind DisplayViewModel.ColorProfileDescription, Mode=OneWay}"
+                                                       Style="{StaticResource SecondaryTextStyle}" />
+                                        </StackPanel>
+                                        <ComboBox x:Name="DisplayColorProfilePicker"
+                                                  Grid.Column="1"
+                                                  MinWidth="180"
+                                                  Style="{StaticResource SettingsPickerStyle}"
+                                                  AutomationProperties.Name="Display color profile"
+                                                  ItemsSource="{x:Bind DisplayViewModel.ColorProfileOptions, Mode=OneWay}"
+                                                  DisplayMemberPath="Label"
+                                                  SelectedItem="{x:Bind DisplayViewModel.SelectedColorProfile, Mode=OneWay}"
+                                                  IsEnabled="{x:Bind DisplayViewModel.CanChangeColorProfile, Mode=OneWay}"
+                                                  DropDownOpened="OnDisplayPickerOpened"
+                                                  DropDownClosed="OnDisplayPickerClosed"
+                                                  SelectionChanged="OnDisplayColorProfileChanged" />
+                                    </Grid>
+                                </Border>
+                            </StackPanel>
+                        </Border>
+
+                        <TextBlock Text="{x:Bind DisplayViewModel.StatusMessage, Mode=OneWay}"
+                                   Style="{StaticResource SecondaryTextStyle}"
+                                   Margin="0,2,0,0" />
+                        </StackPanel>
+            </DataTemplate>
+        </Grid.Resources>
+
+        <TitleBar x:Name="AppTitleBar"
+                  Grid.Row="0"
+                  Title="OpenBlade"
+                  Background="Transparent" />
+
+        <NavigationView x:Name="MainNavigation"
+                        Grid.Row="1"
+                        Background="Transparent"
+                        PaneDisplayMode="Auto"
+                        IsTitleBarAutoPaddingEnabled="False"
+                        IsBackButtonVisible="Collapsed"
+                        IsSettingsVisible="False"
+                        AlwaysShowHeader="False"
+                        SelectionChanged="OnNavigationSelectionChanged">
+            <NavigationView.Resources>
+                <!-- The stock indicator can be clipped while traveling between
+                     distant items. The selected Fluent background stays clear
+                     and changes immediately without that motion artifact. -->
+                <SolidColorBrush x:Key="NavigationViewSelectionIndicatorForeground"
+                                 Color="Transparent" />
+            </NavigationView.Resources>
+            <NavigationView.MenuItems>
+                <NavigationViewItem x:Name="HomeNavigationItem"
+                                    Content="Dashboard"
+                                    Tag="home"
+                                    IsSelected="True">
+                    <NavigationViewItem.Icon>
+                        <SymbolIcon Symbol="Home" />
+                    </NavigationViewItem.Icon>
+                    <NavigationViewItem.InfoBadge>
+                        <InfoBadge Style="{StaticResource UnsavedNavigationBadgeStyle}"
+                                   Visibility="{x:Bind ViewModel.HasThermalProfileDraft, Mode=OneWay}"
+                                   AutomationProperties.Name="Dashboard has unsaved changes" />
+                    </NavigationViewItem.InfoBadge>
+                </NavigationViewItem>
+                <NavigationViewItem x:Name="ProfilesNavigationItem" Tag="profiles">
+                    <NavigationViewItem.Icon>
+                        <SymbolIcon Symbol="Switch" />
+                    </NavigationViewItem.Icon>
+                    <NavigationViewItem.Content>
+                        <TextBlock Text="Profiles" />
+                    </NavigationViewItem.Content>
+                    <NavigationViewItem.InfoBadge>
+                        <InfoBadge Style="{StaticResource UnsavedNavigationBadgeStyle}"
+                                   Visibility="{x:Bind ViewModel.HasProfileEditorChanges, Mode=OneWay}"
+                                   AutomationProperties.Name="Profiles has unsaved changes" />
+                    </NavigationViewItem.InfoBadge>
+                </NavigationViewItem>
+                <NavigationViewItem x:Name="LaptopNavigationItem"
+                                    Content="Laptop"
+                                    Tag="laptop">
+                    <NavigationViewItem.Icon>
+                        <FontIcon Glyph="&#xE770;" />
+                    </NavigationViewItem.Icon>
+                    <NavigationViewItem.InfoBadge>
+                        <InfoBadge Style="{StaticResource UnsavedNavigationBadgeStyle}"
+                                   Visibility="{x:Bind ViewModel.HasLaptopPageProfileDraft, Mode=OneWay}"
+                                   AutomationProperties.Name="Laptop has unsaved changes" />
+                    </NavigationViewItem.InfoBadge>
+                </NavigationViewItem>
+                <NavigationViewItem x:Name="LightingNavigationItem"
+                                    Content="Lighting"
+                                    Tag="lighting">
+                    <NavigationViewItem.Icon>
+                        <FontIcon Glyph="&#xE781;" />
+                    </NavigationViewItem.Icon>
+                    <NavigationViewItem.InfoBadge>
+                        <InfoBadge Style="{StaticResource UnsavedNavigationBadgeStyle}"
+                                   Visibility="{x:Bind ViewModel.HasLightingProfileDraft, Mode=OneWay}"
+                                   AutomationProperties.Name="Lighting has unsaved changes" />
+                    </NavigationViewItem.InfoBadge>
+                </NavigationViewItem>
+                <NavigationViewItem x:Name="DisplayNavigationItem" Content="Display" Tag="display">
+                    <NavigationViewItem.Icon>
+                        <FontIcon Glyph="&#xE7F4;" />
+                    </NavigationViewItem.Icon>
+                    <NavigationViewItem.InfoBadge>
+                        <InfoBadge Style="{StaticResource UnsavedNavigationBadgeStyle}"
+                                   Visibility="{x:Bind DisplayViewModel.CanSaveCurrentSettingsToProfile, Mode=OneWay}"
+                                   AutomationProperties.Name="Display has unsaved changes" />
+                    </NavigationViewItem.InfoBadge>
+                </NavigationViewItem>
+                <NavigationViewItem x:Name="SettingsNavigationItem"
+                                    Content="Settings"
+                                    Tag="settings">
+                    <NavigationViewItem.Icon>
+                        <SymbolIcon Symbol="Setting" />
+                    </NavigationViewItem.Icon>
+                </NavigationViewItem>
+            </NavigationView.MenuItems>
+            <NavigationView.FooterMenuItems>
+                <NavigationViewItem x:Name="AboutNavigationItem"
+                                    Content="About"
+                                    Tag="about">
+                    <NavigationViewItem.Icon>
+                        <FontIcon Glyph="&#xE946;" />
+                    </NavigationViewItem.Icon>
+                </NavigationViewItem>
+            </NavigationView.FooterMenuItems>
+
+            <Grid HorizontalAlignment="Stretch">
+                <ScrollView x:Name="HomePage"
+                            HorizontalContentAlignment="Stretch"
+                            HorizontalScrollMode="Disabled"
+                            HorizontalScrollBarVisibility="Hidden"
+                            VerticalScrollMode="Enabled"
+                            VerticalScrollBarVisibility="Auto">
+                    <StackPanel Padding="28,20,28,28" HorizontalAlignment="Stretch">
+                        <StackPanel.Transitions>
+                            <TransitionCollection>
+                                <EntranceThemeTransition FromHorizontalOffset="20" />
+                            </TransitionCollection>
+                        </StackPanel.Transitions>
+
+                        <Grid x:Name="DashboardPageHeader"
+                              Margin="0,0,0,20"
+                              ColumnSpacing="16">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Text="Dashboard" Style="{StaticResource PageHeaderTitleStyle}" />
+                            <StackPanel Grid.Column="1"
+                                        Orientation="Horizontal"
+                                        Spacing="8"
+                                        VerticalAlignment="Center">
+                                <StackPanel x:Name="DashboardProfileSaveActions"
+                                            Orientation="Horizontal"
+                                            Spacing="8"
+                                            VerticalAlignment="Center"
+                                            Visibility="{x:Bind ViewModel.HasLaptopPageProfileDraft, Mode=OneWay}">
+                                    <TextBlock Text="Unsaved changes"
+                                               Style="{StaticResource ProfileSaveStatusTextStyle}" />
+                                    <Button Content="{x:Bind ViewModel.SaveToActiveProfileLabel, Mode=OneWay}"
+                                            Style="{StaticResource ProfileSaveButtonStyle}"
+                                            Command="{x:Bind ViewModel.SaveLaptopProfileDraftCommand}" />
+                                    <Button Style="{StaticResource ProfileSaveOverflowButtonStyle}"
+                                            AutomationProperties.Name="More profile actions"
+                                            ToolTipService.ToolTip="More profile actions">
+                                        <FontIcon Glyph="&#xE712;" FontSize="16" />
+                                        <Button.Flyout>
+                                            <MenuFlyout>
+                                                <MenuFlyoutItem Text="Use profile settings"
+                                                                Command="{x:Bind ViewModel.DiscardLaptopProfileDraftCommand}" />
+                                            </MenuFlyout>
+                                        </Button.Flyout>
+                                    </Button>
+                                </StackPanel>
+                                <Button Content="Customize"
+                                        AutomationProperties.Name="Customize dashboard"
+                                        Click="OnCustomizeDashboard" />
+                            </StackPanel>
+                        </Grid>
+
+                        <Grid x:Name="DashboardCardHost">
+                        <Border x:Name="DeviceStatusCard"
+                                Style="{StaticResource CardStyle}"
+                                Padding="22">
+                            <Grid x:Name="HeroLayout" RowSpacing="12">
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                </Grid.RowDefinitions>
+                                <StackPanel Spacing="6">
+                                    <StackPanel Orientation="Horizontal" Spacing="8">
+                                        <TextBlock Text="{x:Bind ViewModel.ActivePowerSourceLabel, Mode=OneWay}"
+                                                   Style="{StaticResource SecondaryTextStyle}"
+                                                   VerticalAlignment="Center" />
+                                        <Button x:Name="ProfileStateBadge"
+                                                Style="{StaticResource StatusPillButtonStyle}"
+                                                Click="OnProfileStateBadgeClick"
+                                                AutomationProperties.Name="Open troubleshooting details"
+                                                ToolTipService.ToolTip="View device status">
+                                            <StackPanel Orientation="Horizontal" Spacing="6">
+                                                <Grid Width="12" Height="12" VerticalAlignment="Center">
+                                                    <Ellipse Width="8" Height="8"
+                                                             HorizontalAlignment="Center"
+                                                             VerticalAlignment="Center"
+                                                             Fill="{ThemeResource SystemFillColorSuccessBrush}"
+                                                             Visibility="{x:Bind ViewModel.IsReadinessReady, Mode=OneWay}" />
+                                                    <ProgressRing Width="12" Height="12"
+                                                                  IsActive="{x:Bind ViewModel.IsReadinessChecking, Mode=OneWay}"
+                                                                  Visibility="{x:Bind ViewModel.IsReadinessChecking, Mode=OneWay}" />
+                                                    <Ellipse Width="8" Height="8"
+                                                             HorizontalAlignment="Center"
+                                                             VerticalAlignment="Center"
+                                                             Fill="{ThemeResource SystemFillColorCautionBrush}"
+                                                             Visibility="{x:Bind ViewModel.IsReadinessWarning, Mode=OneWay}" />
+                                                    <Ellipse Width="8" Height="8"
+                                                             HorizontalAlignment="Center"
+                                                             VerticalAlignment="Center"
+                                                             Fill="{ThemeResource SystemFillColorCriticalBrush}"
+                                                             Visibility="{x:Bind ViewModel.IsReadinessError, Mode=OneWay}" />
+                                                </Grid>
+                                                <TextBlock Text="{x:Bind ViewModel.ProfileStateLabel, Mode=OneWay}"
+                                                           Style="{StaticResource StatusPillTextStyle}" />
+                                            </StackPanel>
+                                        </Button>
+                                        <Button x:Name="AttentionIndicator"
+                                                Style="{StaticResource StatusPillButtonStyle}"
+                                                Visibility="{x:Bind ViewModel.HasAttention, Mode=OneWay}"
+                                                AutomationProperties.Name="Show warning details"
+                                                ToolTipService.ToolTip="{x:Bind ViewModel.AttentionSummary, Mode=OneWay}">
+                                            <Button.Flyout>
+                                                <Flyout Placement="BottomEdgeAlignedLeft">
+                                                    <StackPanel MaxWidth="360" Spacing="6">
+                                                        <TextBlock Text="{x:Bind ViewModel.AttentionSummary, Mode=OneWay}"
+                                                                   Style="{StaticResource CardTitleStyle}" />
+                                                        <TextBlock Text="{x:Bind ViewModel.AttentionDetails, Mode=OneWay}"
+                                                                   Style="{StaticResource SecondaryTextStyle}"
+                                                                   TextWrapping="Wrap" />
+                                                    </StackPanel>
+                                                </Flyout>
+                                            </Button.Flyout>
+                                            <StackPanel Orientation="Horizontal" Spacing="6">
+                                                <Ellipse Width="8"
+                                                         Height="8"
+                                                         VerticalAlignment="Center"
+                                                         Fill="{ThemeResource SystemFillColorCautionBrush}" />
+                                                <TextBlock x:Name="AttentionIndicatorLabel"
+                                                           Text="{x:Bind ViewModel.AttentionBadgeLabel, Mode=OneWay}"
+                                                           Style="{StaticResource StatusPillTextStyle}" />
+                                            </StackPanel>
+                                        </Button>
+                                    </StackPanel>
+                                    <TextBlock Text="{x:Bind ViewModel.ActivePerformanceLabel, Mode=OneWay}"
+                                               Style="{StaticResource TitleLargeTextBlockStyle}" />
+                                    <StackPanel Orientation="Horizontal" Spacing="14">
+                                        <TextBlock Text="{x:Bind ViewModel.ActiveFanModeLabel, Mode=OneWay}"
+                                                   Style="{StaticResource BodyTextBlockStyle}" />
+                                        <TextBlock Text="{x:Bind ViewModel.CurrentBatterySettingLabel, Mode=OneWay}"
+                                                   Style="{StaticResource SecondaryTextStyle}"
+                                                   VerticalAlignment="Center" />
+                                    </StackPanel>
+                                </StackPanel>
+                                <Border x:Name="HeroReadings"
+                                        Grid.Row="1"
+                                        Margin="0"
+                                        Padding="0,14,0,0"
+                                        BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                                        BorderThickness="0,1,0,0"
+                                        HorizontalAlignment="Stretch"
+                                        AutomationProperties.HelpText="{x:Bind ViewModel.LiveReadingsRefreshToolTip, Mode=OneWay}"
+                                        Visibility="{x:Bind ViewModel.ShowDashboardLiveReadings, Mode=OneWay}">
+                                    <Grid Background="Transparent">
+                                        <ToolTipService.ToolTip>
+                                            <ToolTip>
+                                                <TextBlock MaxWidth="340"
+                                                           Text="{x:Bind ViewModel.LiveReadingsRefreshToolTip, Mode=OneWay}"
+                                                           TextWrapping="Wrap" />
+                                            </ToolTip>
+                                        </ToolTipService.ToolTip>
+                                        <ItemsRepeater ItemsSource="{x:Bind ViewModel.VisibleDashboardTelemetryGroups, Mode=OneWay}"
+                                                       HorizontalAlignment="Stretch">
+                                            <ItemsRepeater.Layout>
+                                                <UniformGridLayout Orientation="Horizontal"
+                                                                   MinItemWidth="100"
+                                                                   MinItemHeight="48"
+                                                                   MinColumnSpacing="0"
+                                                                   MaximumRowsOrColumns="3"
+                                                                   ItemsStretch="Fill" />
+                                            </ItemsRepeater.Layout>
+                                            <ItemsRepeater.ItemTemplate>
+                                                <DataTemplate x:DataType="local:LiveReadingGroupDisplayItem">
+                                                    <StackPanel Spacing="3">
+                                                        <TextBlock Text="{x:Bind Label, Mode=OneTime}"
+                                                                   Style="{StaticResource SecondaryTextStyle}" />
+                                                        <TextBlock Text="{x:Bind Value, Mode=OneTime}"
+                                                                   Style="{StaticResource CardTitleStyle}"
+                                                                   TextWrapping="Wrap" />
+                                                    </StackPanel>
+                                                </DataTemplate>
+                                            </ItemsRepeater.ItemTemplate>
+                                        </ItemsRepeater>
+                                    </Grid>
+                                </Border>
+                            </Grid>
+                        </Border>
+                        </Grid>
+
+                        <InfoBar x:Name="OperationErrorInfoBar"
+                                 IsOpen="{x:Bind ViewModel.HasOperationFeedback, Mode=OneWay}"
+                                 Visibility="{x:Bind ViewModel.HasOperationFeedback, Mode=OneWay}"
+                                 Message="{x:Bind ViewModel.OperationFeedbackMessage, Mode=OneWay}"
+                                 Severity="Error"
+                                 IsClosable="True"
+                                 Margin="0,0,0,12"
+                                 AutomationProperties.Name="Operation error" />
+
+                        <Border x:Name="DashboardEmptyState"
+                                Style="{StaticResource CardStyle}"
+                                Padding="22"
+                                Visibility="Collapsed">
+                            <StackPanel Spacing="6">
+                                <TextBlock Text="Your Dashboard is empty"
+                                           Style="{StaticResource CardTitleStyle}" />
+                                <TextBlock Text="Use Customize to add the cards you want to see here."
+                                           Style="{StaticResource SecondaryTextStyle}" />
+                            </StackPanel>
+                        </Border>
+
+                        <ContentControl x:Name="PowerModeCard"
+                                        Content="{x:Bind}"
+                                        ContentTemplate="{StaticResource DashboardPowerModeCardTemplate}"
+                                        HorizontalContentAlignment="Stretch" />
+
+                        <ContentControl x:Name="FansCard"
+                                        Content="{x:Bind}"
+                                        ContentTemplate="{StaticResource DashboardFansCardTemplate}"
+                                        HorizontalContentAlignment="Stretch" />
+
+                        <ContentControl x:Name="BatteryCard"
+                                        Content="{x:Bind}"
+                                        ContentTemplate="{StaticResource DashboardBatteryCardTemplate}"
+                                        HorizontalContentAlignment="Stretch" />
+                    </StackPanel>
+                </ScrollView>
+
+                <ScrollView x:Name="ProfilesPage"
+                            Visibility="Collapsed"
+                            HorizontalContentAlignment="Stretch"
+                            HorizontalScrollMode="Disabled"
+                            HorizontalScrollBarVisibility="Hidden"
+                            VerticalScrollMode="Enabled"
+                            VerticalScrollBarVisibility="Auto">
+                    <StackPanel Padding="28,20,28,28" HorizontalAlignment="Stretch">
+                        <StackPanel.Transitions>
+                            <TransitionCollection>
+                                <EntranceThemeTransition FromHorizontalOffset="20" />
+                            </TransitionCollection>
+                        </StackPanel.Transitions>
+
+                        <Grid Margin="0,0,0,20" ColumnSpacing="16">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Text="Profiles"
+                                       Style="{StaticResource PageHeaderTitleStyle}" />
+                            <StackPanel Grid.Column="1"
+                                        Orientation="Horizontal"
+                                        Spacing="8"
+                                        HorizontalAlignment="Right"
+                                        VerticalAlignment="Center">
+                                <Button Content="Import profiles"
+                                        Click="OnImportProfiles"
+                                        ToolTipService.ToolTip="Import saved profiles from JSON"
+                                        AutomationProperties.Name="Import profiles from JSON" />
+                                <Button Content="Export profiles"
+                                        Click="OnExportProfiles"
+                                        ToolTipService.ToolTip="Export saved profiles as JSON"
+                                        AutomationProperties.Name="Export profiles to JSON" />
+                            </StackPanel>
+                        </Grid>
+                        <TextBlock Text="These are the settings saved in each profile. Unsaved changes from Laptop, Dashboard, Lighting, or Display appear here only after you save them."
+                                   Style="{StaticResource SecondaryTextStyle}"
+                                   Margin="0,0,0,16" />
+
+                        <StackPanel x:Name="ProfilesComparisonLayout">
+                            <Grid Margin="16,0,16,8" ColumnSpacing="16">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="150" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Grid.Column="0"
+                                           Text="Setting"
+                                           Style="{StaticResource SecondaryTextStyle}"
+                                           VerticalAlignment="Center" />
+                                <StackPanel Grid.Column="1" Spacing="4">
+                                    <StackPanel Orientation="Horizontal" Spacing="7">
+                                        <TextBlock Text="AC" Style="{StaticResource CardTitleStyle}" />
+                                        <Border Style="{StaticResource ActiveProfilePillStyle}"
+                                                Visibility="{x:Bind ViewModel.IsPluggedInProfileActive, Mode=OneWay}">
+                                            <TextBlock Text="Active"
+                                                       Style="{StaticResource ActiveProfilePillTextStyle}" />
+                                        </Border>
+                                    </StackPanel>
+                                    <TextBlock Text="Changes pending"
+                                               Style="{StaticResource DraftStatusTextStyle}"
+                                               Visibility="{x:Bind ViewModel.IsPluggedInProfileDraft, Mode=OneWay}" />
+                                </StackPanel>
+                                <StackPanel Grid.Column="2" Spacing="4">
+                                    <StackPanel Orientation="Horizontal" Spacing="7">
+                                        <TextBlock Text="USB-C" Style="{StaticResource CardTitleStyle}" />
+                                        <Border Style="{StaticResource ActiveProfilePillStyle}"
+                                                Visibility="{x:Bind ViewModel.IsUsbCProfileActive, Mode=OneWay}">
+                                            <TextBlock Text="Active"
+                                                       Style="{StaticResource ActiveProfilePillTextStyle}" />
+                                        </Border>
+                                    </StackPanel>
+                                    <TextBlock Text="Changes pending"
+                                               Style="{StaticResource DraftStatusTextStyle}"
+                                               Visibility="{x:Bind ViewModel.IsUsbCProfileDraft, Mode=OneWay}" />
+                                </StackPanel>
+                                <StackPanel Grid.Column="3" Spacing="4">
+                                    <StackPanel Orientation="Horizontal" Spacing="7">
+                                        <TextBlock Text="Battery" Style="{StaticResource CardTitleStyle}" />
+                                        <Border Style="{StaticResource ActiveProfilePillStyle}"
+                                                Visibility="{x:Bind ViewModel.IsBatteryProfileActive, Mode=OneWay}">
+                                            <TextBlock Text="Active"
+                                                       Style="{StaticResource ActiveProfilePillTextStyle}" />
+                                        </Border>
+                                    </StackPanel>
+                                    <TextBlock Text="Changes pending"
+                                               Style="{StaticResource DraftStatusTextStyle}"
+                                               Visibility="{x:Bind ViewModel.IsBatteryProfileDraft, Mode=OneWay}" />
+                                </StackPanel>
+                            </Grid>
+
+                            <TextBlock Text="Power and cooling" Style="{StaticResource SectionHeaderStyle}" Margin="0,8,0,10" />
+                            <Border Style="{StaticResource SettingsGroupStyle}">
+                                <StackPanel>
+                                    <Border Style="{StaticResource SettingsRowStyle}">
+                                        <Grid ColumnSpacing="16">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="150" />
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="*" />
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock Text="Power mode" Style="{StaticResource CardTitleStyle}" />
+                                            <TextBlock Grid.Column="1" Text="{x:Bind ViewModel.PluggedInProfilePresentation.PowerMode, Mode=OneWay}" TextWrapping="Wrap" />
+                                            <TextBlock Grid.Column="2" Text="{x:Bind ViewModel.UsbCProfilePresentation.PowerMode, Mode=OneWay}" TextWrapping="Wrap" />
+                                            <TextBlock Grid.Column="3" Text="{x:Bind ViewModel.BatteryProfilePresentation.PowerMode, Mode=OneWay}" TextWrapping="Wrap" />
+                                        </Grid>
+                                    </Border>
+                                    <Border Style="{StaticResource SettingsLastRowStyle}">
+                                        <Grid ColumnSpacing="16">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="150" />
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="*" />
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock Text="Fans" Style="{StaticResource CardTitleStyle}" />
+                                            <TextBlock Grid.Column="1" Text="{x:Bind ViewModel.PluggedInProfilePresentation.Fans, Mode=OneWay}" TextWrapping="Wrap" />
+                                            <TextBlock Grid.Column="2" Text="{x:Bind ViewModel.UsbCProfilePresentation.Fans, Mode=OneWay}" TextWrapping="Wrap" />
+                                            <TextBlock Grid.Column="3" Text="{x:Bind ViewModel.BatteryProfilePresentation.Fans, Mode=OneWay}" TextWrapping="Wrap" />
+                                        </Grid>
+                                    </Border>
+                                </StackPanel>
+                            </Border>
+
+                            <TextBlock Text="Keyboard lighting" Style="{StaticResource SectionHeaderStyle}" />
+                            <Border Style="{StaticResource SettingsGroupStyle}">
+                                <StackPanel>
+                                    <Border Style="{StaticResource SettingsRowStyle}">
+                                        <Grid ColumnSpacing="16">
+                                            <Grid.ColumnDefinitions><ColumnDefinition Width="150" /><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                                            <TextBlock Text="Effect" Style="{StaticResource CardTitleStyle}" />
+                                            <TextBlock Grid.Column="1" Text="{x:Bind ViewModel.PluggedInProfilePresentation.LightingEffect, Mode=OneWay}" TextWrapping="Wrap" />
+                                            <TextBlock Grid.Column="2" Text="{x:Bind ViewModel.UsbCProfilePresentation.LightingEffect, Mode=OneWay}" TextWrapping="Wrap" />
+                                            <TextBlock Grid.Column="3" Text="{x:Bind ViewModel.BatteryProfilePresentation.LightingEffect, Mode=OneWay}" TextWrapping="Wrap" />
+                                        </Grid>
+                                    </Border>
+                                    <Border Style="{StaticResource SettingsRowStyle}">
+                                        <Grid ColumnSpacing="16">
+                                            <Grid.ColumnDefinitions><ColumnDefinition Width="150" /><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                                            <TextBlock Text="Brightness" Style="{StaticResource CardTitleStyle}" />
+                                            <TextBlock Grid.Column="1" Text="{x:Bind ViewModel.PluggedInProfilePresentation.LightingBrightness, Mode=OneWay}" TextWrapping="Wrap" />
+                                            <TextBlock Grid.Column="2" Text="{x:Bind ViewModel.UsbCProfilePresentation.LightingBrightness, Mode=OneWay}" TextWrapping="Wrap" />
+                                            <TextBlock Grid.Column="3" Text="{x:Bind ViewModel.BatteryProfilePresentation.LightingBrightness, Mode=OneWay}" TextWrapping="Wrap" />
+                                        </Grid>
+                                    </Border>
+                                    <Border Style="{StaticResource SettingsRowStyle}">
+                                        <Grid ColumnSpacing="16">
+                                            <Grid.ColumnDefinitions><ColumnDefinition Width="150" /><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                                            <TextBlock Text="Color" Style="{StaticResource CardTitleStyle}" />
+                                            <TextBlock Grid.Column="1" Text="{x:Bind ViewModel.PluggedInProfilePresentation.LightingColor, Mode=OneWay}" TextWrapping="Wrap" />
+                                            <TextBlock Grid.Column="2" Text="{x:Bind ViewModel.UsbCProfilePresentation.LightingColor, Mode=OneWay}" TextWrapping="Wrap" />
+                                            <TextBlock Grid.Column="3" Text="{x:Bind ViewModel.BatteryProfilePresentation.LightingColor, Mode=OneWay}" TextWrapping="Wrap" />
+                                        </Grid>
+                                    </Border>
+                                    <Border Style="{StaticResource SettingsRowStyle}">
+                                        <Grid ColumnSpacing="16">
+                                            <Grid.ColumnDefinitions><ColumnDefinition Width="150" /><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                                            <TextBlock Text="Laptop lid logo" Style="{StaticResource CardTitleStyle}" />
+                                            <TextBlock Grid.Column="1" Text="{x:Bind ViewModel.PluggedInProfilePresentation.LogoLighting, Mode=OneWay}" TextWrapping="Wrap" />
+                                            <TextBlock Grid.Column="2" Text="{x:Bind ViewModel.UsbCProfilePresentation.LogoLighting, Mode=OneWay}" TextWrapping="Wrap" />
+                                            <TextBlock Grid.Column="3" Text="{x:Bind ViewModel.BatteryProfilePresentation.LogoLighting, Mode=OneWay}" TextWrapping="Wrap" />
+                                        </Grid>
+                                    </Border>
+                                    <Border Style="{StaticResource SettingsRowStyle}">
+                                        <Grid ColumnSpacing="16">
+                                            <Grid.ColumnDefinitions><ColumnDefinition Width="150" /><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                                            <TextBlock Text="Display turns off" Style="{StaticResource CardTitleStyle}" />
+                                            <TextBlock Grid.Column="1" Text="{x:Bind ViewModel.PluggedInProfilePresentation.LightingDisplayOff, Mode=OneWay}" TextWrapping="Wrap" />
+                                            <TextBlock Grid.Column="2" Text="{x:Bind ViewModel.UsbCProfilePresentation.LightingDisplayOff, Mode=OneWay}" TextWrapping="Wrap" />
+                                            <TextBlock Grid.Column="3" Text="{x:Bind ViewModel.BatteryProfilePresentation.LightingDisplayOff, Mode=OneWay}" TextWrapping="Wrap" />
+                                        </Grid>
+                                    </Border>
+                                    <Border Style="{StaticResource SettingsLastRowStyle}">
+                                        <Grid ColumnSpacing="16">
+                                            <Grid.ColumnDefinitions><ColumnDefinition Width="150" /><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                                            <TextBlock Text="Inactivity timeout" Style="{StaticResource CardTitleStyle}" />
+                                            <TextBlock Grid.Column="1" Text="{x:Bind ViewModel.PluggedInProfilePresentation.LightingIdle, Mode=OneWay}" TextWrapping="Wrap" />
+                                            <TextBlock Grid.Column="2" Text="{x:Bind ViewModel.UsbCProfilePresentation.LightingIdle, Mode=OneWay}" TextWrapping="Wrap" />
+                                            <TextBlock Grid.Column="3" Text="{x:Bind ViewModel.BatteryProfilePresentation.LightingIdle, Mode=OneWay}" TextWrapping="Wrap" />
+                                        </Grid>
+                                    </Border>
+                                </StackPanel>
+                            </Border>
+
+                            <TextBlock Text="Display" Style="{StaticResource SectionHeaderStyle}" />
+                            <Border Style="{StaticResource SettingsGroupStyle}">
+                                <StackPanel>
+                                    <Border Style="{StaticResource SettingsRowStyle}">
+                                        <Grid ColumnSpacing="16">
+                                            <Grid.ColumnDefinitions><ColumnDefinition Width="150" /><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                                            <TextBlock Text="Refresh rate" Style="{StaticResource CardTitleStyle}" />
+                                            <TextBlock Grid.Column="1" Text="{x:Bind ViewModel.PluggedInProfilePresentation.DisplayRefreshRate, Mode=OneWay}" TextWrapping="Wrap" />
+                                            <TextBlock Grid.Column="2" Text="{x:Bind ViewModel.UsbCProfilePresentation.DisplayRefreshRate, Mode=OneWay}" TextWrapping="Wrap" />
+                                            <TextBlock Grid.Column="3" Text="{x:Bind ViewModel.BatteryProfilePresentation.DisplayRefreshRate, Mode=OneWay}" TextWrapping="Wrap" />
+                                        </Grid>
+                                    </Border>
+                                    <Border Style="{StaticResource SettingsRowStyle}">
+                                        <Grid ColumnSpacing="16">
+                                            <Grid.ColumnDefinitions><ColumnDefinition Width="150" /><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                                            <TextBlock Text="HDR" Style="{StaticResource CardTitleStyle}" />
+                                            <TextBlock Grid.Column="1" Text="{x:Bind ViewModel.PluggedInProfilePresentation.DisplayHdr, Mode=OneWay}" TextWrapping="Wrap" />
+                                            <TextBlock Grid.Column="2" Text="{x:Bind ViewModel.UsbCProfilePresentation.DisplayHdr, Mode=OneWay}" TextWrapping="Wrap" />
+                                            <TextBlock Grid.Column="3" Text="{x:Bind ViewModel.BatteryProfilePresentation.DisplayHdr, Mode=OneWay}" TextWrapping="Wrap" />
+                                        </Grid>
+                                    </Border>
+                                    <Border Style="{StaticResource SettingsRowStyle}">
+                                        <Grid ColumnSpacing="16">
+                                            <Grid.ColumnDefinitions><ColumnDefinition Width="150" /><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                                            <TextBlock Text="Color profile" Style="{StaticResource CardTitleStyle}" />
+                                            <TextBlock Grid.Column="1" Text="{x:Bind ViewModel.PluggedInProfilePresentation.DisplayColorProfile, Mode=OneWay}" TextWrapping="Wrap" />
+                                            <TextBlock Grid.Column="2" Text="{x:Bind ViewModel.UsbCProfilePresentation.DisplayColorProfile, Mode=OneWay}" TextWrapping="Wrap" />
+                                            <TextBlock Grid.Column="3" Text="{x:Bind ViewModel.BatteryProfilePresentation.DisplayColorProfile, Mode=OneWay}" TextWrapping="Wrap" />
+                                        </Grid>
+                                    </Border>
+                                </StackPanel>
+                            </Border>
+
+                            <TextBlock Text="Laptop behavior" Style="{StaticResource SectionHeaderStyle}" />
+                            <Border Style="{StaticResource SettingsGroupStyle}">
+                                <StackPanel>
+                                    <Border Style="{StaticResource SettingsRowStyle}">
+                                        <Grid ColumnSpacing="16">
+                                            <Grid.ColumnDefinitions><ColumnDefinition Width="150" /><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                                            <TextBlock Text="Function keys" Style="{StaticResource CardTitleStyle}" />
+                                            <TextBlock Grid.Column="1" Text="{x:Bind ViewModel.PluggedInProfilePresentation.FunctionKeyBehavior, Mode=OneWay}" TextWrapping="Wrap" />
+                                            <TextBlock Grid.Column="2" Text="{x:Bind ViewModel.UsbCProfilePresentation.FunctionKeyBehavior, Mode=OneWay}" TextWrapping="Wrap" />
+                                            <TextBlock Grid.Column="3" Text="{x:Bind ViewModel.BatteryProfilePresentation.FunctionKeyBehavior, Mode=OneWay}" TextWrapping="Wrap" />
+                                        </Grid>
+                                    </Border>
+                                    <Border Style="{StaticResource SettingsRowStyle}">
+                                        <Grid ColumnSpacing="16">
+                                            <Grid.ColumnDefinitions><ColumnDefinition Width="150" /><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                                            <TextBlock Text="Gaming mode" Style="{StaticResource CardTitleStyle}" />
+                                            <TextBlock Grid.Column="1" Text="{x:Bind ViewModel.PluggedInProfilePresentation.GamingMode, Mode=OneWay}" />
+                                            <TextBlock Grid.Column="2" Text="{x:Bind ViewModel.UsbCProfilePresentation.GamingMode, Mode=OneWay}" />
+                                            <TextBlock Grid.Column="3" Text="{x:Bind ViewModel.BatteryProfilePresentation.GamingMode, Mode=OneWay}" />
+                                        </Grid>
+                                    </Border>
+                                    <Border Style="{StaticResource SettingsLastRowStyle}">
+                                        <Grid ColumnSpacing="16">
+                                            <Grid.ColumnDefinitions><ColumnDefinition Width="150" /><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                                            <TextBlock Text="Startup animation" Style="{StaticResource CardTitleStyle}" />
+                                            <TextBlock Grid.Column="1" Text="{x:Bind ViewModel.PluggedInProfilePresentation.StartupAnimation, Mode=OneWay}" />
+                                            <TextBlock Grid.Column="2" Text="{x:Bind ViewModel.UsbCProfilePresentation.StartupAnimation, Mode=OneWay}" />
+                                            <TextBlock Grid.Column="3" Text="{x:Bind ViewModel.BatteryProfilePresentation.StartupAnimation, Mode=OneWay}" />
+                                        </Grid>
+                                    </Border>
+                                </StackPanel>
+                            </Border>
+                        </StackPanel>
+
+                        <StackPanel x:Name="ProfilesCompactLayout" Visibility="Collapsed">
+                            <ComboBox HorizontalAlignment="Stretch"
+                                      Margin="0,0,0,12"
+                                      ItemsSource="{x:Bind ViewModel.ProfileComparisonOptions}"
+                                      DisplayMemberPath="Label"
+                                      SelectedItem="{x:Bind ViewModel.SelectedProfileComparisonOption, Mode=TwoWay}"
+                                      AutomationProperties.Name="Profile to review" />
+                            <StackPanel Orientation="Horizontal" Spacing="8" Margin="4,0,0,10">
+                                <Border Style="{StaticResource ActiveProfilePillStyle}"
+                                        Visibility="{x:Bind ViewModel.IsSelectedProfileActive, Mode=OneWay}">
+                                    <TextBlock Text="Active"
+                                               Style="{StaticResource ActiveProfilePillTextStyle}" />
+                                </Border>
+                                <TextBlock Text="Unsaved"
+                                           Style="{StaticResource DraftStatusTextStyle}"
+                                           Visibility="{x:Bind ViewModel.IsSelectedProfileDraft, Mode=OneWay}" />
+                            </StackPanel>
+                            <Border Style="{StaticResource SettingsGroupStyle}">
+                                <StackPanel>
+                                    <Border Style="{StaticResource SettingsRowStyle}">
+                                        <Grid ColumnSpacing="16"><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><TextBlock Text="Power mode" Style="{StaticResource CardTitleStyle}" /><TextBlock Grid.Column="1" Text="{x:Bind ViewModel.SelectedProfilePresentation.PowerMode, Mode=OneWay}" /></Grid>
+                                    </Border>
+                                    <Border Style="{StaticResource SettingsRowStyle}">
+                                        <Grid ColumnSpacing="16"><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><TextBlock Text="Fans" Style="{StaticResource CardTitleStyle}" /><TextBlock Grid.Column="1" Text="{x:Bind ViewModel.SelectedProfilePresentation.Fans, Mode=OneWay}" /></Grid>
+                                    </Border>
+                                    <Border Style="{StaticResource SettingsRowStyle}">
+                                        <Grid ColumnSpacing="16"><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><TextBlock Text="Lighting effect" Style="{StaticResource CardTitleStyle}" /><TextBlock Grid.Column="1" Text="{x:Bind ViewModel.SelectedProfilePresentation.LightingEffect, Mode=OneWay}" TextWrapping="Wrap" TextAlignment="Right" /></Grid>
+                                    </Border>
+                                    <Border Style="{StaticResource SettingsRowStyle}">
+                                        <Grid ColumnSpacing="16"><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><TextBlock Text="Lighting brightness" Style="{StaticResource CardTitleStyle}" /><TextBlock Grid.Column="1" Text="{x:Bind ViewModel.SelectedProfilePresentation.LightingBrightness, Mode=OneWay}" /></Grid>
+                                    </Border>
+                                    <Border Style="{StaticResource SettingsRowStyle}">
+                                        <Grid ColumnSpacing="16"><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><TextBlock Text="Lighting color" Style="{StaticResource CardTitleStyle}" /><TextBlock Grid.Column="1" Text="{x:Bind ViewModel.SelectedProfilePresentation.LightingColor, Mode=OneWay}" TextWrapping="Wrap" TextAlignment="Right" /></Grid>
+                                    </Border>
+                                    <Border Style="{StaticResource SettingsRowStyle}">
+                                        <Grid ColumnSpacing="16"><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><TextBlock Text="Laptop lid logo" Style="{StaticResource CardTitleStyle}" /><TextBlock Grid.Column="1" Text="{x:Bind ViewModel.SelectedProfilePresentation.LogoLighting, Mode=OneWay}" /></Grid>
+                                    </Border>
+                                    <Border Style="{StaticResource SettingsRowStyle}">
+                                        <Grid ColumnSpacing="16"><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><TextBlock Text="Refresh rate" Style="{StaticResource CardTitleStyle}" /><TextBlock Grid.Column="1" Text="{x:Bind ViewModel.SelectedProfilePresentation.DisplayRefreshRate, Mode=OneWay}" /></Grid>
+                                    </Border>
+                                    <Border Style="{StaticResource SettingsRowStyle}">
+                                        <Grid ColumnSpacing="16"><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><TextBlock Text="HDR" Style="{StaticResource CardTitleStyle}" /><TextBlock Grid.Column="1" Text="{x:Bind ViewModel.SelectedProfilePresentation.DisplayHdr, Mode=OneWay}" /></Grid>
+                                    </Border>
+                                    <Border Style="{StaticResource SettingsRowStyle}">
+                                        <Grid ColumnSpacing="16"><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><TextBlock Text="Color profile" Style="{StaticResource CardTitleStyle}" /><TextBlock Grid.Column="1" Text="{x:Bind ViewModel.SelectedProfilePresentation.DisplayColorProfile, Mode=OneWay}" TextWrapping="Wrap" TextAlignment="Right" /></Grid>
+                                    </Border>
+                                    <Border Style="{StaticResource SettingsRowStyle}">
+                                        <Grid ColumnSpacing="16"><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><TextBlock Text="Display turns off" Style="{StaticResource CardTitleStyle}" /><TextBlock Grid.Column="1" Text="{x:Bind ViewModel.SelectedProfilePresentation.LightingDisplayOff, Mode=OneWay}" TextWrapping="Wrap" TextAlignment="Right" /></Grid>
+                                    </Border>
+                                    <Border Style="{StaticResource SettingsRowStyle}">
+                                        <Grid ColumnSpacing="16"><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><TextBlock Text="Inactivity timeout" Style="{StaticResource CardTitleStyle}" /><TextBlock Grid.Column="1" Text="{x:Bind ViewModel.SelectedProfilePresentation.LightingIdle, Mode=OneWay}" TextWrapping="Wrap" TextAlignment="Right" /></Grid>
+                                    </Border>
+                                    <Border Style="{StaticResource SettingsRowStyle}">
+                                        <Grid ColumnSpacing="16"><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><TextBlock Text="Function keys" Style="{StaticResource CardTitleStyle}" /><TextBlock Grid.Column="1" Text="{x:Bind ViewModel.SelectedProfilePresentation.FunctionKeyBehavior, Mode=OneWay}" TextAlignment="Right" /></Grid>
+                                    </Border>
+                                    <Border Style="{StaticResource SettingsRowStyle}">
+                                        <Grid ColumnSpacing="16"><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><TextBlock Text="Gaming mode" Style="{StaticResource CardTitleStyle}" /><TextBlock Grid.Column="1" Text="{x:Bind ViewModel.SelectedProfilePresentation.GamingMode, Mode=OneWay}" /></Grid>
+                                    </Border>
+                                    <Border Style="{StaticResource SettingsLastRowStyle}">
+                                        <Grid ColumnSpacing="16"><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><TextBlock Text="Startup animation" Style="{StaticResource CardTitleStyle}" /><TextBlock Grid.Column="1" Text="{x:Bind ViewModel.SelectedProfilePresentation.StartupAnimation, Mode=OneWay}" /></Grid>
+                                    </Border>
+                                </StackPanel>
+                            </Border>
+                        </StackPanel>
+                    </StackPanel>
+                </ScrollView>
+
+                <ScrollView x:Name="LaptopPage"
+                            Visibility="Collapsed"
+                            HorizontalContentAlignment="Stretch"
+                            HorizontalScrollMode="Disabled"
+                            HorizontalScrollBarVisibility="Hidden"
+                            VerticalScrollMode="Enabled"
+                            VerticalScrollBarVisibility="Auto">
+                    <StackPanel Padding="28,20,28,28" HorizontalAlignment="Stretch">
+                        <StackPanel.Transitions>
+                            <TransitionCollection>
+                                <EntranceThemeTransition FromHorizontalOffset="20" />
+                            </TransitionCollection>
+                        </StackPanel.Transitions>
+
+                        <Grid x:Name="LaptopPageHeader"
+                              Margin="0,0,0,20"
+                              ColumnSpacing="16"
+                              RowSpacing="10">
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                            </Grid.RowDefinitions>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <VisualStateManager.VisualStateGroups>
+                                <VisualStateGroup>
+                                    <VisualState x:Name="LaptopHeaderWide">
+                                        <VisualState.StateTriggers>
+                                            <AdaptiveTrigger MinWindowWidth="900" />
+                                        </VisualState.StateTriggers>
+                                        <VisualState.Setters>
+                                            <Setter Target="LaptopProfileSaveActions.(Grid.Row)" Value="0" />
+                                            <Setter Target="LaptopProfileSaveActions.(Grid.Column)" Value="1" />
+                                            <Setter Target="LaptopProfileSaveActions.(Grid.ColumnSpan)" Value="1" />
+                                            <Setter Target="LaptopProfileSaveActions.HorizontalAlignment" Value="Right" />
+                                            <Setter Target="LaptopProfileSaveActions.Margin" Value="0,2,0,0" />
+                                        </VisualState.Setters>
+                                    </VisualState>
+                                    <VisualState x:Name="LaptopHeaderCompact">
+                                        <VisualState.StateTriggers>
+                                            <AdaptiveTrigger MinWindowWidth="0" />
+                                        </VisualState.StateTriggers>
+                                        <VisualState.Setters>
+                                            <Setter Target="LaptopProfileSaveActions.(Grid.Row)" Value="1" />
+                                            <Setter Target="LaptopProfileSaveActions.(Grid.Column)" Value="0" />
+                                            <Setter Target="LaptopProfileSaveActions.(Grid.ColumnSpan)" Value="2" />
+                                            <Setter Target="LaptopProfileSaveActions.HorizontalAlignment" Value="Left" />
+                                            <Setter Target="LaptopProfileSaveActions.Margin" Value="0,2,0,0" />
+                                        </VisualState.Setters>
+                                    </VisualState>
+                                </VisualStateGroup>
+                            </VisualStateManager.VisualStateGroups>
+                            <TextBlock Text="Laptop"
+                                       Style="{StaticResource PageHeaderTitleStyle}" />
+                            <StackPanel x:Name="LaptopProfileSaveActions"
+                                        Grid.Column="1"
+                                        Orientation="Horizontal"
+                                        Spacing="8"
+                                        VerticalAlignment="Center"
+                                        Visibility="{x:Bind ViewModel.HasLaptopPageProfileDraft, Mode=OneWay}">
+                                <TextBlock Text="Unsaved changes"
+                                           Style="{StaticResource ProfileSaveStatusTextStyle}" />
+                                <Button Content="{x:Bind ViewModel.SaveToActiveProfileLabel, Mode=OneWay}"
+                                        Style="{StaticResource ProfileSaveButtonStyle}"
+                                        Command="{x:Bind ViewModel.SaveLaptopProfileDraftCommand}" />
+                                <Button Style="{StaticResource ProfileSaveOverflowButtonStyle}"
+                                        AutomationProperties.Name="More profile actions"
+                                        ToolTipService.ToolTip="More profile actions">
+                                    <FontIcon Glyph="&#xE712;" FontSize="16" />
+                                    <Button.Flyout>
+                                        <MenuFlyout>
+                                            <MenuFlyoutItem Text="Use profile settings"
+                                                            Command="{x:Bind ViewModel.DiscardLaptopProfileDraftCommand}" />
+                                        </MenuFlyout>
+                                    </Button.Flyout>
+                                </Button>
+                            </StackPanel>
+                        </Grid>
+
+                        <StackPanel x:Name="LaptopCardsHost" Spacing="18">
+                        <ContentControl x:Name="KeyboardBehaviorCard"
+                                        Content="{x:Bind}"
+                                        ContentTemplate="{StaticResource DashboardKeyboardBehaviorCardTemplate}"
+                                        HorizontalContentAlignment="Stretch" />
+
+                        <ContentControl x:Name="StartupAnimationCard"
+                                        Content="{x:Bind}"
+                                        ContentTemplate="{StaticResource DashboardStartupAnimationCardTemplate}"
+                                        HorizontalContentAlignment="Stretch" />
+                        </StackPanel>
+                    </StackPanel>
+                </ScrollView>
+
+                <ScrollView x:Name="LightingPage"
+                            Visibility="Collapsed"
+                            HorizontalContentAlignment="Stretch"
+                            HorizontalScrollMode="Disabled"
+                            HorizontalScrollBarVisibility="Hidden"
+                            VerticalScrollMode="Enabled"
+                            VerticalScrollBarVisibility="Auto">
+                    <StackPanel Padding="28,20,28,28" HorizontalAlignment="Stretch">
+                        <StackPanel.Transitions>
+                            <TransitionCollection>
+                                <EntranceThemeTransition FromHorizontalOffset="20" />
+                            </TransitionCollection>
+                        </StackPanel.Transitions>
+
+                        <Grid x:Name="LightingPageHeader"
+                              Margin="0,0,0,20"
+                              ColumnSpacing="16"
+                              RowSpacing="10">
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                            </Grid.RowDefinitions>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <VisualStateManager.VisualStateGroups>
+                                <VisualStateGroup>
+                                    <VisualState x:Name="LightingHeaderWide">
+                                        <VisualState.StateTriggers>
+                                            <AdaptiveTrigger MinWindowWidth="900" />
+                                        </VisualState.StateTriggers>
+                                        <VisualState.Setters>
+                                            <Setter Target="LightingProfileSaveActions.(Grid.Row)" Value="0" />
+                                            <Setter Target="LightingProfileSaveActions.(Grid.Column)" Value="1" />
+                                            <Setter Target="LightingProfileSaveActions.(Grid.ColumnSpan)" Value="1" />
+                                            <Setter Target="LightingProfileSaveActions.HorizontalAlignment" Value="Right" />
+                                            <Setter Target="LightingProfileSaveActions.Margin" Value="0,2,0,0" />
+                                        </VisualState.Setters>
+                                    </VisualState>
+                                    <VisualState x:Name="LightingHeaderCompact">
+                                        <VisualState.StateTriggers>
+                                            <AdaptiveTrigger MinWindowWidth="0" />
+                                        </VisualState.StateTriggers>
+                                        <VisualState.Setters>
+                                            <Setter Target="LightingProfileSaveActions.(Grid.Row)" Value="1" />
+                                            <Setter Target="LightingProfileSaveActions.(Grid.Column)" Value="0" />
+                                            <Setter Target="LightingProfileSaveActions.(Grid.ColumnSpan)" Value="2" />
+                                            <Setter Target="LightingProfileSaveActions.HorizontalAlignment" Value="Left" />
+                                            <Setter Target="LightingProfileSaveActions.Margin" Value="0,2,0,0" />
+                                        </VisualState.Setters>
+                                    </VisualState>
+                                </VisualStateGroup>
+                            </VisualStateManager.VisualStateGroups>
+                            <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+                                <TextBlock Text="Lighting" Style="{StaticResource PageHeaderTitleStyle}" />
+                                <ProgressRing Style="{StaticResource FirmwareProgressRingStyle}"
+                                              IsActive="{x:Bind ViewModel.IsLightingOperationInProgress, Mode=OneWay}"
+                                              AutomationProperties.Name="Applying lighting" />
+                            </StackPanel>
+                            <ContentControl x:Name="LightingProfileSaveActions"
+                                            Grid.Column="1"
+                                            VerticalAlignment="Center"
+                                            IsEnabled="{x:Bind ViewModel.CanControlLighting, Mode=OneWay}"
+                                            Visibility="{x:Bind ViewModel.HasLightingProfileDraft, Mode=OneWay}">
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                <TextBlock Text="Unsaved changes"
+                                           Style="{StaticResource ProfileSaveStatusTextStyle}" />
+                                <Button Content="{x:Bind ViewModel.SaveToActiveProfileLabel, Mode=OneWay}"
+                                        Style="{StaticResource ProfileSaveButtonStyle}"
+                                        Command="{x:Bind ViewModel.SaveLightingProfileDraftCommand}" />
+                                <Button Style="{StaticResource ProfileSaveOverflowButtonStyle}"
+                                        AutomationProperties.Name="More profile actions"
+                                        ToolTipService.ToolTip="More profile actions">
+                                    <FontIcon Glyph="&#xE712;" FontSize="16" />
+                                    <Button.Flyout>
+                                        <MenuFlyout>
+                                            <MenuFlyoutItem Text="Use profile settings"
+                                                            Command="{x:Bind ViewModel.DiscardLightingProfileDraftCommand}" />
+                                        </MenuFlyout>
+                                    </Button.Flyout>
+                                </Button>
+                                </StackPanel>
+                            </ContentControl>
+                        </Grid>
+                        <StackPanel x:Name="LightingCardsHost">
+                        <ContentControl x:Name="LightingCard"
+                                        Content="{x:Bind}"
+                                        ContentTemplate="{StaticResource DashboardLightingCardTemplate}"
+                                        HorizontalContentAlignment="Stretch" />
                         </StackPanel>
                     </StackPanel>
                 </ScrollView>
@@ -2095,92 +2223,10 @@
                             </StackPanel>
                         </Grid>
                         <StackPanel x:Name="DisplayCardsHost">
-                        <StackPanel x:Name="DisplayCard">
-                        <TextBlock Text="Built-in display"
-                                   Style="{StaticResource SectionHeaderStyle}"
-                                   Margin="0,0,0,10" />
-                        <Border Style="{StaticResource SettingsGroupStyle}">
-                            <StackPanel>
-                                <Border Style="{StaticResource SettingsRowStyle}">
-                                    <Grid ColumnSpacing="20">
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="*" />
-                                            <ColumnDefinition Width="Auto" />
-                                        </Grid.ColumnDefinitions>
-                                        <StackPanel Spacing="3" VerticalAlignment="Center">
-                                            <TextBlock Text="Refresh rate"
-                                                       Style="{StaticResource CardTitleStyle}" />
-                                            <TextBlock Text="Choose a refresh rate reported by Windows or use dynamic refresh rate."
-                                                       Style="{StaticResource SecondaryTextStyle}" />
-                                        </StackPanel>
-                                        <ComboBox x:Name="DisplayRefreshRatePicker"
-                                                  Grid.Column="1"
-                                                  MinWidth="180"
-                                                  Style="{StaticResource SettingsPickerStyle}"
-                                                  AutomationProperties.Name="Display refresh rate"
-                                                  ItemsSource="{x:Bind DisplayViewModel.RefreshRateOptions, Mode=OneWay}"
-                                                  DisplayMemberPath="Label"
-                                                  SelectedItem="{x:Bind DisplayViewModel.SelectedRefreshRate, Mode=OneWay}"
-                                                  IsEnabled="{x:Bind DisplayViewModel.CanChangeRefreshRate, Mode=OneWay}"
-                                                  SelectionChanged="OnDisplayRefreshRateChanged" />
-                                    </Grid>
-                                </Border>
-                                <Border Style="{StaticResource SettingsRowStyle}">
-                                    <Grid ColumnSpacing="20">
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="*" />
-                                            <ColumnDefinition Width="Auto" />
-                                        </Grid.ColumnDefinitions>
-                                        <StackPanel Spacing="3" VerticalAlignment="Center">
-                                            <TextBlock Text="Use HDR"
-                                                       Style="{StaticResource CardTitleStyle}" />
-                                            <TextBlock Text="Show a wider range of colors and brightness in supported content."
-                                                       Style="{StaticResource SecondaryTextStyle}" />
-                                        </StackPanel>
-                                        <ToggleSwitch x:Name="DisplayHdrToggle"
-                                                      Grid.Column="1"
-                                                      HorizontalAlignment="Right"
-                                                      VerticalAlignment="Center"
-                                                      MinWidth="0"
-                                                      AutomationProperties.Name="Use HDR"
-                                                      OffContent=""
-                                                      OnContent=""
-                                                      IsOn="{x:Bind DisplayViewModel.IsHdrEnabled, Mode=OneWay}"
-                                                      IsEnabled="{x:Bind DisplayViewModel.CanChangeHdr, Mode=OneWay}"
-                                                      Toggled="OnDisplayHdrToggled" />
-                                    </Grid>
-                                </Border>
-                                <Border Style="{StaticResource SettingsLastRowStyle}">
-                                    <Grid ColumnSpacing="20">
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="*" />
-                                            <ColumnDefinition Width="Auto" />
-                                        </Grid.ColumnDefinitions>
-                                        <StackPanel Spacing="3" VerticalAlignment="Center">
-                                            <TextBlock Text="Color profile"
-                                                       Style="{StaticResource CardTitleStyle}" />
-                                            <TextBlock Text="{x:Bind DisplayViewModel.ColorProfileDescription, Mode=OneWay}"
-                                                       Style="{StaticResource SecondaryTextStyle}" />
-                                        </StackPanel>
-                                        <ComboBox x:Name="DisplayColorProfilePicker"
-                                                  Grid.Column="1"
-                                                  MinWidth="180"
-                                                  Style="{StaticResource SettingsPickerStyle}"
-                                                  AutomationProperties.Name="Display color profile"
-                                                  ItemsSource="{x:Bind DisplayViewModel.ColorProfileOptions, Mode=OneWay}"
-                                                  DisplayMemberPath="Label"
-                                                  SelectedItem="{x:Bind DisplayViewModel.SelectedColorProfile, Mode=OneWay}"
-                                                  IsEnabled="{x:Bind DisplayViewModel.CanChangeColorProfile, Mode=OneWay}"
-                                                  SelectionChanged="OnDisplayColorProfileChanged" />
-                                    </Grid>
-                                </Border>
-                            </StackPanel>
-                        </Border>
-
-                        <TextBlock Text="{x:Bind DisplayViewModel.StatusMessage, Mode=OneWay}"
-                                   Style="{StaticResource SecondaryTextStyle}"
-                                   Margin="0,2,0,0" />
-                        </StackPanel>
+                        <ContentControl x:Name="DisplayCard"
+                                        Content="{x:Bind}"
+                                        ContentTemplate="{StaticResource DashboardDisplayCardTemplate}"
+                                        HorizontalContentAlignment="Stretch" />
                         </StackPanel>
                     </StackPanel>
                 </ScrollView>

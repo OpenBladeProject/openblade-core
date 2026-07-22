@@ -58,11 +58,11 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
     private bool? dashboardIsStacked;
     private bool? profilesUseCompactLayout;
     private bool enforcingMinimumWindowSize;
+    private int openDisplayPickerCount;
     private int disposed;
     private ContentDialog? dashboardCustomizerDialog;
     private Action? dashboardCustomizerRefresh;
     private Action? dashboardCustomizerApply;
-    private Dictionary<DashboardCardKind, NavigationViewItem> dashboardCardDestinations = [];
 
     public MainWindow()
     {
@@ -91,16 +91,6 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
         displayRefreshTimer.IsRepeating = true;
         displayRefreshTimer.Tick += OnDisplayRefreshTimerTick;
         InitializeComponent();
-        dashboardCardDestinations = new Dictionary<DashboardCardKind, NavigationViewItem>
-        {
-            [DashboardCardKind.PowerMode] = LaptopNavigationItem,
-            [DashboardCardKind.Fans] = LaptopNavigationItem,
-            [DashboardCardKind.Battery] = LaptopNavigationItem,
-            [DashboardCardKind.KeyboardBehavior] = LaptopNavigationItem,
-            [DashboardCardKind.StartupAnimation] = LaptopNavigationItem,
-            [DashboardCardKind.Lighting] = LightingNavigationItem,
-            [DashboardCardKind.Display] = DisplayNavigationItem,
-        };
         DashboardCards.CollectionChanged += OnDashboardCardsCollectionChanged;
         if (OpenBladeIconAssets.ApplicationIconPath is { } applicationIconPath)
         {
@@ -743,9 +733,11 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
             return;
         }
 
-        await ApplyCustomPerformanceChangeAsync(new CustomPerformanceSettings(
-            selected,
-            ViewModel.SelectedCustomGpuLevel));
+        await ApplyCustomPerformanceChangeAsync(
+            new CustomPerformanceSettings(
+                selected,
+                ViewModel.SelectedCustomGpuLevel),
+            selector);
     }
 
     private async void OnDashboardCustomGpuChanged(
@@ -761,17 +753,19 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
             return;
         }
 
-        await ApplyCustomPerformanceChangeAsync(new CustomPerformanceSettings(
-            ViewModel.SelectedCustomCpuLevel,
-            selected));
+        await ApplyCustomPerformanceChangeAsync(
+            new CustomPerformanceSettings(
+                ViewModel.SelectedCustomCpuLevel,
+                selected),
+            selector);
     }
 
     private async Task ApplyCustomPerformanceChangeAsync(
-        CustomPerformanceSettings requested)
+        CustomPerformanceSettings requested,
+        Microsoft.UI.Xaml.Controls.ComboBox selector)
     {
         changingCustomPerformanceSelection = true;
-        DashboardCustomCpuSelector.IsEnabled = false;
-        DashboardCustomGpuSelector.IsEnabled = false;
+        selector.IsEnabled = false;
         try
         {
             if (ViewModel.SetCustomPerformanceCommand is AsyncRelayCommand command
@@ -786,10 +780,10 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
         }
         finally
         {
-            DashboardCustomCpuSelector.SelectedItem = ViewModel.SelectedCustomCpuLevel;
-            DashboardCustomGpuSelector.SelectedItem = ViewModel.SelectedCustomGpuLevel;
-            DashboardCustomCpuSelector.IsEnabled = ViewModel.CanControlHardware;
-            DashboardCustomGpuSelector.IsEnabled = ViewModel.CanControlHardware;
+            selector.SelectedItem = selector.Name == "DashboardCustomCpuSelector"
+                ? ViewModel.SelectedCustomCpuLevel
+                : ViewModel.SelectedCustomGpuLevel;
+            selector.IsEnabled = ViewModel.CanControlHardware;
             changingCustomPerformanceSelection = false;
         }
     }
@@ -1221,8 +1215,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
                 && !(HomePage.Visibility == Visibility.Visible
                     && IsDashboardCardPinned(DashboardCardKind.Display)))
             || DisplayViewModel.IsBusy
-            || DisplayRefreshRatePicker.IsDropDownOpen
-            || DisplayColorProfilePicker.IsDropDownOpen)
+            || openDisplayPickerCount > 0)
         {
             return;
         }
@@ -1266,6 +1259,12 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
         await RunDisplayOperationAsync(
             () => DisplayViewModel.SelectRefreshRateAsync(option));
     }
+
+    private void OnDisplayPickerOpened(object sender, object args) =>
+        openDisplayPickerCount++;
+
+    private void OnDisplayPickerClosed(object sender, object args) =>
+        openDisplayPickerCount = Math.Max(0, openDisplayPickerCount - 1);
 
     private async void OnDisplayHdrToggled(object sender, RoutedEventArgs args)
     {
@@ -1344,16 +1343,25 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
         DisplayProfileSettings settings,
         CancellationToken token)
     {
-        bool restored = await DisplayViewModel.ApplyProfileAsync(
-            expectedPowerSource,
-            settings,
-            token);
-        SynchronizeDisplayControls();
-        return restored;
+        bool wasChanging = changingDisplaySettings;
+        changingDisplaySettings = true;
+        try
+        {
+            return await DisplayViewModel.ApplyProfileAsync(
+                expectedPowerSource,
+                settings,
+                token);
+        }
+        finally
+        {
+            changingDisplaySettings = wasChanging;
+        }
     }
 
     private async Task RunDisplayOperationAsync(Func<Task> operation)
     {
+        bool wasChanging = changingDisplaySettings;
+        changingDisplaySettings = true;
         try
         {
             await operation();
@@ -1367,30 +1375,6 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
         catch (Exception exception)
         {
             Trace.TraceError("OpenBlade display operation failed: {0}", exception);
-        }
-        finally
-        {
-            SynchronizeDisplayControls();
-        }
-    }
-
-    private void SynchronizeDisplayControls()
-    {
-        bool wasChanging = changingDisplaySettings;
-        changingDisplaySettings = true;
-        try
-        {
-            if ((DisplayRefreshRatePicker.SelectedItem as DisplayRefreshRateOption)?.Key
-                != DisplayViewModel.SelectedRefreshRate?.Key)
-            {
-                DisplayRefreshRatePicker.SelectedItem = DisplayViewModel.SelectedRefreshRate;
-            }
-            DisplayHdrToggle.IsOn = DisplayViewModel.IsHdrEnabled;
-            if ((DisplayColorProfilePicker.SelectedItem as DisplayColorProfileOption)?.Key
-                != DisplayViewModel.SelectedColorProfile?.Key)
-            {
-                DisplayColorProfilePicker.SelectedItem = DisplayViewModel.SelectedColorProfile;
-            }
         }
         finally
         {
@@ -1692,7 +1676,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
                 continue;
             }
 
-            Border presentation = CreateDashboardPresentationCard(option);
+            FrameworkElement presentation = CreateDashboardLiveCard(option);
             Grid.SetRow(presentation, row++);
             DashboardCardHost.Children.Add(presentation);
         }
@@ -1702,68 +1686,28 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
             : Visibility.Visible;
     }
 
-    private Border CreateDashboardPresentationCard(DashboardCardOption option)
+    private FrameworkElement CreateDashboardLiveCard(DashboardCardOption option)
     {
-        string? summaryProperty = option.Kind switch
+        string templateKey = option.Kind switch
         {
-            DashboardCardKind.DeviceStatus => nameof(MainViewModel.ProfileStateLabel),
-            DashboardCardKind.PowerMode => nameof(MainViewModel.ActivePerformanceLabel),
-            DashboardCardKind.Fans => nameof(MainViewModel.ActiveFanModeLabel),
-            DashboardCardKind.Battery => nameof(MainViewModel.CurrentBatterySettingLabel),
-            DashboardCardKind.KeyboardBehavior => nameof(MainViewModel.FunctionKeyPrimaryStateLabel),
-            _ => null,
+            DashboardCardKind.PowerMode => "DashboardPowerModeCardTemplate",
+            DashboardCardKind.Fans => "DashboardFansCardTemplate",
+            DashboardCardKind.Battery => "DashboardBatteryCardTemplate",
+            DashboardCardKind.KeyboardBehavior => "DashboardKeyboardBehaviorCardTemplate",
+            DashboardCardKind.StartupAnimation => "DashboardStartupAnimationCardTemplate",
+            DashboardCardKind.Lighting => "DashboardLightingCardTemplate",
+            DashboardCardKind.Display => "DashboardDisplayCardTemplate",
+            _ => throw new ArgumentOutOfRangeException(
+                nameof(option),
+                option.Kind,
+                "The dashboard card does not have a live template."),
         };
 
-        var summary = new TextBlock
+        return new ContentControl
         {
-            Text = summaryProperty is null ? option.Description : null,
-            Style = (Style)Root.Resources["SecondaryTextStyle"],
-            TextWrapping = TextWrapping.Wrap,
-        };
-        if (summaryProperty is not null)
-        {
-            summary.SetBinding(TextBlock.TextProperty, new Microsoft.UI.Xaml.Data.Binding
-            {
-                Source = ViewModel,
-                Path = new PropertyPath(summaryProperty),
-                Mode = Microsoft.UI.Xaml.Data.BindingMode.OneWay,
-            });
-        }
-
-        var label = new StackPanel { Spacing = 3 };
-        label.Children.Add(new TextBlock
-        {
-            Text = option.Label,
-            Style = (Style)Root.Resources["CardTitleStyle"],
-        });
-        label.Children.Add(summary);
-
-        var open = new Microsoft.UI.Xaml.Controls.Button
-        {
-            Content = "Open",
-            VerticalAlignment = VerticalAlignment.Center,
-        };
-        AutomationProperties.SetName(open, $"Open {option.Label}");
-        if (option.Kind == DashboardCardKind.DeviceStatus)
-        {
-            open.Click += OnProfileStateBadgeClick;
-        }
-        else if (dashboardCardDestinations.TryGetValue(option.Kind, out NavigationViewItem? destination))
-        {
-            open.Click += (_, _) => MainNavigation.SelectedItem = destination;
-        }
-
-        var layout = new Grid { ColumnSpacing = 20 };
-        layout.ColumnDefinitions.Add(new ColumnDefinition());
-        layout.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        layout.Children.Add(label);
-        Grid.SetColumn(open, 1);
-        layout.Children.Add(open);
-
-        return new Border
-        {
-            Style = (Style)Root.Resources["CardStyle"],
-            Child = layout,
+            Content = this,
+            ContentTemplate = (DataTemplate)Root.Resources[templateKey],
+            HorizontalContentAlignment = Microsoft.UI.Xaml.HorizontalAlignment.Stretch,
         };
     }
 

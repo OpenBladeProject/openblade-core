@@ -188,11 +188,13 @@ public sealed class CapabilityPresentationTests
         Assert.Contains("x:Name=\"LightingCardsHost\"", xaml, StringComparison.Ordinal);
         Assert.Contains("x:Name=\"DisplayCardsHost\"", xaml, StringComparison.Ordinal);
         XElement home = NamedElement(document, "ScrollView", "HomePage");
+        XElement batteryTemplate = NamedTemplate(document, "DashboardBatteryCardTemplate");
+        XElement fansTemplate = NamedTemplate(document, "DashboardFansCardTemplate");
         _ = Assert.Single(
-            home.Descendants(),
+            batteryTemplate.Descendants(),
             element => element.Name.LocalName == "Slider"
                 && Attribute(element, "Name") == "DashboardChargeLimitSlider");
-        Assert.Contains(home.Descendants(), element =>
+        Assert.Contains(fansTemplate.Descendants(), element =>
             element.Name.LocalName == "Slider"
             && Attribute(element, "Name") == "FixedFanSpeedSlider"
             && Attribute(element, "Minimum") == "2000"
@@ -234,6 +236,7 @@ public sealed class CapabilityPresentationTests
     {
         XDocument document = XDocument.Parse(ReadMainWindowXaml());
         XElement display = NamedElement(document, "ScrollView", "DisplayPage");
+        XElement displayTemplate = NamedTemplate(document, "DashboardDisplayCardTemplate");
 
         Assert.Contains(document.Descendants(), element =>
             element.Name.LocalName == "NavigationViewItem"
@@ -241,9 +244,9 @@ public sealed class CapabilityPresentationTests
             && Attribute(element, "Tag") == "display");
         Assert.Equal(
             2,
-            display.Descendants().Count(element =>
+            displayTemplate.Descendants().Count(element =>
                 Attribute(element, "Style") == "{StaticResource SettingsRowStyle}"));
-        Assert.Single(display.Descendants(), element =>
+        Assert.Single(displayTemplate.Descendants(), element =>
             Attribute(element, "Style") == "{StaticResource SettingsLastRowStyle}");
 
         XElement refresh = NamedElement(document, "ComboBox", "DisplayRefreshRatePicker");
@@ -577,6 +580,16 @@ public sealed class CapabilityPresentationTests
             "NavigationViewItem",
             "LaptopNavigationItem");
         XElement laptop = NamedElement(document, "ScrollView", "LaptopPage");
+        XElement keyboardTemplate = NamedTemplate(
+            document,
+            "DashboardKeyboardBehaviorCardTemplate");
+        XElement startupTemplate = NamedTemplate(
+            document,
+            "DashboardStartupAnimationCardTemplate");
+        XElement[] laptopCardElements = keyboardTemplate
+            .Descendants()
+            .Concat(startupTemplate.Descendants())
+            .ToArray();
         XElement settings = NamedElement(document, "ScrollView", "SettingsPage");
 
         Assert.Equal("Laptop", Attribute(navigation, "Content"));
@@ -588,7 +601,7 @@ public sealed class CapabilityPresentationTests
                      "StartupAnimationToggle",
                  })
         {
-            Assert.Contains(laptop.Descendants(), element =>
+            Assert.Contains(laptopCardElements, element =>
                 Attribute(element, "Name") == controlName);
             Assert.DoesNotContain(settings.Descendants(), element =>
                 Attribute(element, "Name") == controlName);
@@ -1570,6 +1583,7 @@ public sealed class CapabilityPresentationTests
             "NavigationViewItem",
             "LightingNavigationItem");
         XElement page = NamedElement(document, "ScrollView", "LightingPage");
+        XElement lightingTemplate = NamedTemplate(document, "DashboardLightingCardTemplate");
         XElement effectPicker = NamedElement(document, "ComboBox", "LightingEffectPicker");
         XElement controls = NamedElement(document, "ContentControl", "LightingControls");
         XElement infoBar = NamedElement(document, "InfoBar", "LightingUnavailableInfoBar");
@@ -1612,7 +1626,7 @@ public sealed class CapabilityPresentationTests
         Assert.Equal("Right", Attribute(idleTimeoutNumberBox, "HorizontalAlignment"));
         Assert.Equal("Center", Attribute(idleTimeoutNumberBox, "VerticalAlignment"));
         Assert.Equal("Center", Attribute(idleTimeoutNumberBox, "VerticalContentAlignment"));
-        string lightingXaml = page.ToString();
+        string lightingXaml = lightingTemplate.ToString();
         Assert.Contains("Breathing colors", lightingXaml, StringComparison.Ordinal);
         Assert.Contains("Reactive duration", lightingXaml, StringComparison.Ordinal);
         Assert.Contains("Random colors", lightingXaml, StringComparison.Ordinal);
@@ -1620,7 +1634,7 @@ public sealed class CapabilityPresentationTests
         Assert.Contains("Wheel rotation direction", lightingXaml, StringComparison.Ordinal);
         Assert.Contains("Starlight colors", lightingXaml, StringComparison.Ordinal);
         Assert.Contains("Starlight duration", lightingXaml, StringComparison.Ordinal);
-        XElement[] colorPickers = page.Descendants()
+        XElement[] colorPickers = lightingTemplate.Descendants()
             .Where(element => element.Name.LocalName == "ColorPicker")
             .ToArray();
         Assert.Equal(2, colorPickers.Length);
@@ -1659,6 +1673,11 @@ public sealed class CapabilityPresentationTests
         string name) => Assert.Single(document.Descendants(), element =>
             element.Name.LocalName == elementName
             && Attribute(element, "Name") == name);
+
+    private static XElement NamedTemplate(XDocument document, string key) =>
+        Assert.Single(document.Descendants(), element =>
+            element.Name.LocalName == "DataTemplate"
+            && Attribute(element, "Key") == key);
 
     private static void AssertStyleBasedOn(
         XDocument document,
