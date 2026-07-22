@@ -236,6 +236,7 @@ public sealed class WinUiShellContractTests
         Assert.DoesNotContain("OnCopyVersionInformation", window, StringComparison.Ordinal);
         Assert.DoesNotContain("DataTransferClipboard", window, StringComparison.Ordinal);
         Assert.Contains("AboutPage.Visibility = destination == \"about\"", window, StringComparison.Ordinal);
+        Assert.Contains("LaptopPage.Visibility = destination == \"laptop\"", window, StringComparison.Ordinal);
         Assert.Contains("MainNavigation.SelectedItem = AboutNavigationItem", window, StringComparison.Ordinal);
         Assert.Contains("https://github.com/OSSBlade/openblade-core/issues", xaml, StringComparison.Ordinal);
         Assert.Contains("https://github.com/OSSBlade/openblade-docs", xaml, StringComparison.Ordinal);
@@ -281,7 +282,7 @@ public sealed class WinUiShellContractTests
         Assert.Contains("SystemFillColorCriticalBrush", xaml, StringComparison.Ordinal);
         Assert.Contains("#47E10C", app, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("x:Name=\"SettingsPageHeader\"", xaml, StringComparison.Ordinal);
-        Assert.Equal(5, CountOccurrences(xaml, "Margin=\"0,0,0,20\""));
+        Assert.Equal(6, CountOccurrences(xaml, "Margin=\"0,0,0,20\""));
         Assert.Contains(
             "IsOn=\"{x:Bind ViewModel.AlwaysOverrideExternalLightingChanges, Mode=OneWay}\"",
             xaml,

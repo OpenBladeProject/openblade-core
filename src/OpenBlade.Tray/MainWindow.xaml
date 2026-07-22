@@ -264,6 +264,13 @@
                                    AutomationProperties.Name="Profiles has unsaved changes" />
                     </NavigationViewItem.InfoBadge>
                 </NavigationViewItem>
+                <NavigationViewItem x:Name="LaptopNavigationItem"
+                                    Content="Laptop"
+                                    Tag="laptop">
+                    <NavigationViewItem.Icon>
+                        <FontIcon Glyph="&#xE770;" />
+                    </NavigationViewItem.Icon>
+                </NavigationViewItem>
                 <NavigationViewItem x:Name="LightingNavigationItem"
                                     Content="Lighting"
                                     Tag="lighting">
@@ -1151,6 +1158,153 @@
                     </StackPanel>
                 </ScrollView>
 
+                <ScrollView x:Name="LaptopPage"
+                            Visibility="Collapsed"
+                            HorizontalContentAlignment="Stretch"
+                            HorizontalScrollMode="Disabled"
+                            HorizontalScrollBarVisibility="Hidden"
+                            VerticalScrollMode="Enabled"
+                            VerticalScrollBarVisibility="Auto">
+                    <StackPanel Padding="28,20,28,28" HorizontalAlignment="Stretch">
+                        <StackPanel.Transitions>
+                            <TransitionCollection>
+                                <EntranceThemeTransition FromHorizontalOffset="20" />
+                            </TransitionCollection>
+                        </StackPanel.Transitions>
+
+                        <Grid x:Name="LaptopPageHeader" Margin="0,0,0,20">
+                            <TextBlock Text="Laptop"
+                                       Style="{StaticResource PageHeaderTitleStyle}" />
+                        </Grid>
+
+                        <TextBlock Text="Keyboard"
+                                   Style="{StaticResource SectionHeaderStyle}"
+                                   Visibility="{x:Bind ViewModel.HasKeyboardLaptopControls, Mode=OneWay}" />
+                        <Border Style="{StaticResource SettingsGroupStyle}"
+                                Visibility="{x:Bind ViewModel.HasKeyboardLaptopControls, Mode=OneWay}">
+                            <StackPanel>
+                                <Border Style="{StaticResource SettingsRowStyle}"
+                                        Visibility="{x:Bind ViewModel.SupportsFunctionKeyPrimary, Mode=OneWay}">
+                                    <Grid ColumnSpacing="20">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel Spacing="3" VerticalAlignment="Center">
+                                            <TextBlock Text="Function key behavior" Style="{StaticResource CardTitleStyle}" />
+                                            <TextBlock Text="Set whether F1 through F12 or media actions work without holding Fn."
+                                                       Style="{StaticResource SecondaryTextStyle}" />
+                                        </StackPanel>
+                                        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+                                            <Border x:Name="FunctionKeyFirmwareLoadingSlot"
+                                                    Width="16"
+                                                    Height="16"
+                                                    VerticalAlignment="Center">
+                                                <ProgressRing Style="{StaticResource FirmwareProgressRingStyle}"
+                                                              IsActive="{x:Bind ViewModel.IsFunctionKeyFieldLoading, Mode=OneWay}"
+                                                              Visibility="{x:Bind ViewModel.IsFunctionKeyFieldLoading, Mode=OneWay}"
+                                                              AutomationProperties.Name="Reading or applying function key behavior" />
+                                            </Border>
+                                            <DropDownButton Content="{x:Bind ViewModel.FunctionKeyPrimaryStateLabel, Mode=OneWay}"
+                                                            HorizontalAlignment="Right"
+                                                            VerticalAlignment="Center"
+                                                            IsEnabled="{x:Bind ViewModel.CanEditFunctionKeyPrimary, Mode=OneWay}"
+                                                            AutomationProperties.Name="Set function key behavior">
+                                                <DropDownButton.Flyout>
+                                                    <MenuFlyout>
+                                                        <MenuFlyoutItem Text="Function keys"
+                                                                        Command="{x:Bind ViewModel.ApplyOneShotLaptopControlCommand}"
+                                                                        CommandParameter="{x:Bind ViewModel.FunctionKeysPrimaryAction}" />
+                                                        <MenuFlyoutItem Text="Media keys"
+                                                                        Command="{x:Bind ViewModel.ApplyOneShotLaptopControlCommand}"
+                                                                        CommandParameter="{x:Bind ViewModel.MultimediaKeysPrimaryAction}" />
+                                                    </MenuFlyout>
+                                                </DropDownButton.Flyout>
+                                            </DropDownButton>
+                                        </StackPanel>
+                                    </Grid>
+                                </Border>
+                                <Border Style="{StaticResource SettingsLastRowStyle}"
+                                        Visibility="{x:Bind ViewModel.SupportsGamingMode, Mode=OneWay}">
+                                    <Grid ColumnSpacing="20">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel Spacing="3" VerticalAlignment="Center">
+                                            <TextBlock Text="Gaming mode" Style="{StaticResource CardTitleStyle}" />
+                                            <TextBlock Text="Turn Gaming mode on or off."
+                                                       Style="{StaticResource SecondaryTextStyle}" />
+                                        </StackPanel>
+                                        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+                                            <Border x:Name="GamingModeFirmwareLoadingSlot"
+                                                    Width="16"
+                                                    Height="16"
+                                                    VerticalAlignment="Center">
+                                                <ProgressRing Style="{StaticResource FirmwareProgressRingStyle}"
+                                                              IsActive="{x:Bind ViewModel.IsGamingModeFieldLoading, Mode=OneWay}"
+                                                              Visibility="{x:Bind ViewModel.IsGamingModeFieldLoading, Mode=OneWay}"
+                                                              AutomationProperties.Name="Reading or applying Gaming mode" />
+                                            </Border>
+                                            <ToggleSwitch x:Name="GamingModeToggle"
+                                                          HorizontalAlignment="Right"
+                                                          VerticalAlignment="Center"
+                                                          MinWidth="0"
+                                                          IsEnabled="{x:Bind ViewModel.CanEditGamingMode, Mode=OneWay}"
+                                                          AutomationProperties.Name="Gaming mode"
+                                                          OffContent=""
+                                                          OnContent=""
+                                                          IsOn="{x:Bind ViewModel.GamingModeToggleIsOn, Mode=OneWay}"
+                                                          Toggled="OnGamingModeToggled" />
+                                        </StackPanel>
+                                    </Grid>
+                                </Border>
+                            </StackPanel>
+                        </Border>
+
+                        <TextBlock Text="Startup"
+                                   Style="{StaticResource SectionHeaderStyle}"
+                                   Visibility="{x:Bind ViewModel.SupportsStartupAnimation, Mode=OneWay}" />
+                        <Border Style="{StaticResource SettingsGroupStyle}"
+                                Visibility="{x:Bind ViewModel.SupportsStartupAnimation, Mode=OneWay}">
+                            <Border Style="{StaticResource SettingsLastRowStyle}">
+                                <Grid ColumnSpacing="20">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel Spacing="3" VerticalAlignment="Center">
+                                        <TextBlock Text="Startup animation" Style="{StaticResource CardTitleStyle}" />
+                                        <TextBlock Text="Set whether the keyboard animation plays when the laptop starts."
+                                                   Style="{StaticResource SecondaryTextStyle}" />
+                                    </StackPanel>
+                                    <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+                                        <Border x:Name="StartupAnimationFirmwareLoadingSlot"
+                                                Width="16"
+                                                Height="16"
+                                                VerticalAlignment="Center">
+                                            <ProgressRing Style="{StaticResource FirmwareProgressRingStyle}"
+                                                          IsActive="{x:Bind ViewModel.IsStartupAnimationFieldLoading, Mode=OneWay}"
+                                                          Visibility="{x:Bind ViewModel.IsStartupAnimationFieldLoading, Mode=OneWay}"
+                                                          AutomationProperties.Name="Reading or applying startup animation" />
+                                        </Border>
+                                        <ToggleSwitch x:Name="StartupAnimationToggle"
+                                                      HorizontalAlignment="Right"
+                                                      VerticalAlignment="Center"
+                                                      MinWidth="0"
+                                                      IsEnabled="{x:Bind ViewModel.CanEditStartupAnimation, Mode=OneWay}"
+                                                      AutomationProperties.Name="Startup animation"
+                                                      OffContent=""
+                                                      OnContent=""
+                                                      IsOn="{x:Bind ViewModel.StartupAnimationToggleIsOn, Mode=OneWay}"
+                                                      Toggled="OnStartupAnimationToggled" />
+                                    </StackPanel>
+                                </Grid>
+                            </Border>
+                        </Border>
+                    </StackPanel>
+                </ScrollView>
+
                 <ScrollView x:Name="LightingPage"
                             Visibility="Collapsed"
                             HorizontalContentAlignment="Stretch"
@@ -2009,126 +2163,6 @@
                                                       OnContent=""
                                                       IsOn="{x:Bind ViewModel.AlwaysOverrideExternalLightingChanges, Mode=OneWay}"
                                                       Toggled="OnExternalLightingOverridePolicyToggled" />
-                                    </Grid>
-                                </Border>
-                            </StackPanel>
-                        </Border>
-
-                        <TextBlock Text="Laptop behavior"
-                                   Style="{StaticResource SectionHeaderStyle}"
-                                   Visibility="{x:Bind ViewModel.HasOneShotLaptopControls, Mode=OneWay}" />
-                        <Border Style="{StaticResource SettingsGroupStyle}"
-                                Visibility="{x:Bind ViewModel.HasOneShotLaptopControls, Mode=OneWay}">
-                            <StackPanel>
-                                <Border Style="{StaticResource SettingsRowStyle}"
-                                        Visibility="{x:Bind ViewModel.SupportsFunctionKeyPrimary, Mode=OneWay}">
-                                    <Grid ColumnSpacing="20">
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="*" />
-                                            <ColumnDefinition Width="Auto" />
-                                        </Grid.ColumnDefinitions>
-                                        <StackPanel Spacing="3" VerticalAlignment="Center">
-                                            <TextBlock Text="Function key behavior" Style="{StaticResource CardTitleStyle}" />
-                                            <TextBlock Text="Set whether F1 through F12 or media actions work without holding Fn."
-                                                       Style="{StaticResource SecondaryTextStyle}" />
-                                        </StackPanel>
-                                        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
-                                            <Border x:Name="FunctionKeyFirmwareLoadingSlot"
-                                                    Width="16"
-                                                    Height="16"
-                                                    VerticalAlignment="Center">
-                                                <ProgressRing Style="{StaticResource FirmwareProgressRingStyle}"
-                                                              IsActive="{x:Bind ViewModel.IsFunctionKeyFieldLoading, Mode=OneWay}"
-                                                              Visibility="{x:Bind ViewModel.IsFunctionKeyFieldLoading, Mode=OneWay}"
-                                                              AutomationProperties.Name="Reading or applying function key behavior" />
-                                            </Border>
-                                            <DropDownButton Content="{x:Bind ViewModel.FunctionKeyPrimaryStateLabel, Mode=OneWay}"
-                                                            HorizontalAlignment="Right"
-                                                            VerticalAlignment="Center"
-                                                            IsEnabled="{x:Bind ViewModel.CanEditFunctionKeyPrimary, Mode=OneWay}"
-                                                            AutomationProperties.Name="Set function key behavior">
-                                                <DropDownButton.Flyout>
-                                                    <MenuFlyout>
-                                                        <MenuFlyoutItem Text="Function keys"
-                                                                        Command="{x:Bind ViewModel.ApplyOneShotLaptopControlCommand}"
-                                                                        CommandParameter="{x:Bind ViewModel.FunctionKeysPrimaryAction}" />
-                                                        <MenuFlyoutItem Text="Media keys"
-                                                                        Command="{x:Bind ViewModel.ApplyOneShotLaptopControlCommand}"
-                                                                        CommandParameter="{x:Bind ViewModel.MultimediaKeysPrimaryAction}" />
-                                                    </MenuFlyout>
-                                                </DropDownButton.Flyout>
-                                            </DropDownButton>
-                                        </StackPanel>
-                                    </Grid>
-                                </Border>
-                                <Border Style="{StaticResource SettingsRowStyle}"
-                                        Visibility="{x:Bind ViewModel.SupportsGamingMode, Mode=OneWay}">
-                                    <Grid ColumnSpacing="20">
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="*" />
-                                            <ColumnDefinition Width="Auto" />
-                                        </Grid.ColumnDefinitions>
-                                        <StackPanel Spacing="3" VerticalAlignment="Center">
-                                            <TextBlock Text="Gaming Mode" Style="{StaticResource CardTitleStyle}" />
-                                            <TextBlock Text="Turn Gaming Mode on or off."
-                                                       Style="{StaticResource SecondaryTextStyle}" />
-                                        </StackPanel>
-                                        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
-                                            <Border x:Name="GamingModeFirmwareLoadingSlot"
-                                                    Width="16"
-                                                    Height="16"
-                                                    VerticalAlignment="Center">
-                                                <ProgressRing Style="{StaticResource FirmwareProgressRingStyle}"
-                                                              IsActive="{x:Bind ViewModel.IsGamingModeFieldLoading, Mode=OneWay}"
-                                                              Visibility="{x:Bind ViewModel.IsGamingModeFieldLoading, Mode=OneWay}"
-                                                              AutomationProperties.Name="Reading or applying Gaming Mode" />
-                                            </Border>
-                                            <ToggleSwitch x:Name="GamingModeToggle"
-                                                          HorizontalAlignment="Right"
-                                                          VerticalAlignment="Center"
-                                                          MinWidth="0"
-                                                          IsEnabled="{x:Bind ViewModel.CanEditGamingMode, Mode=OneWay}"
-                                                          AutomationProperties.Name="Gaming Mode"
-                                                          OffContent=""
-                                                          OnContent=""
-                                                          IsOn="{x:Bind ViewModel.GamingModeToggleIsOn, Mode=OneWay}"
-                                                          Toggled="OnGamingModeToggled" />
-                                        </StackPanel>
-                                    </Grid>
-                                </Border>
-                                <Border Style="{StaticResource SettingsLastRowStyle}"
-                                        Visibility="{x:Bind ViewModel.SupportsStartupAnimation, Mode=OneWay}">
-                                    <Grid ColumnSpacing="20">
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="*" />
-                                            <ColumnDefinition Width="Auto" />
-                                        </Grid.ColumnDefinitions>
-                                        <StackPanel Spacing="3" VerticalAlignment="Center">
-                                            <TextBlock Text="Startup animation" Style="{StaticResource CardTitleStyle}" />
-                                            <TextBlock Text="Set whether the keyboard animation plays when the laptop starts."
-                                                       Style="{StaticResource SecondaryTextStyle}" />
-                                        </StackPanel>
-                                        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
-                                            <Border x:Name="StartupAnimationFirmwareLoadingSlot"
-                                                    Width="16"
-                                                    Height="16"
-                                                    VerticalAlignment="Center">
-                                                <ProgressRing Style="{StaticResource FirmwareProgressRingStyle}"
-                                                              IsActive="{x:Bind ViewModel.IsStartupAnimationFieldLoading, Mode=OneWay}"
-                                                              Visibility="{x:Bind ViewModel.IsStartupAnimationFieldLoading, Mode=OneWay}"
-                                                              AutomationProperties.Name="Reading or applying startup animation" />
-                                            </Border>
-                                            <ToggleSwitch x:Name="StartupAnimationToggle"
-                                                          HorizontalAlignment="Right"
-                                                          VerticalAlignment="Center"
-                                                          MinWidth="0"
-                                                          IsEnabled="{x:Bind ViewModel.CanEditStartupAnimation, Mode=OneWay}"
-                                                          AutomationProperties.Name="Startup animation"
-                                                          OffContent=""
-                                                          OnContent=""
-                                                          IsOn="{x:Bind ViewModel.StartupAnimationToggleIsOn, Mode=OneWay}"
-                                                          Toggled="OnStartupAnimationToggled" />
-                                        </StackPanel>
                                     </Grid>
                                 </Border>
                             </StackPanel>

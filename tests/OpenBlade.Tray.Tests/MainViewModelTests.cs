@@ -1317,6 +1317,7 @@ public sealed class MainViewModelTests
         Assert.True(viewModel.SetLightingCommand.CanExecute(
             ProfileDefaults.CreateSafeDefaults().PluggedIn.Lighting));
         Assert.True(viewModel.HasOneShotLaptopControls);
+        Assert.True(viewModel.HasKeyboardLaptopControls);
         Assert.True(viewModel.SupportsStartupAnimation);
         Assert.True(viewModel.SupportsFunctionKeyPrimary);
         Assert.True(viewModel.SupportsGamingMode);

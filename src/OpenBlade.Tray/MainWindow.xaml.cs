@@ -1134,6 +1134,9 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
         ProfilesPage.Visibility = destination == "profiles"
             ? Visibility.Visible
             : Visibility.Collapsed;
+        LaptopPage.Visibility = destination == "laptop"
+            ? Visibility.Visible
+            : Visibility.Collapsed;
         LightingPage.Visibility = destination == "lighting" && ViewModel.IsLightingVisible
             ? Visibility.Visible
             : Visibility.Collapsed;

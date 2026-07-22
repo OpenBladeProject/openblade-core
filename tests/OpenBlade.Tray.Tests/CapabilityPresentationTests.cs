@@ -204,6 +204,7 @@ public sealed class CapabilityPresentationTests
                  {
                      "HomePage",
                      "ProfilesPage",
+                     "LaptopPage",
                      "LightingPage",
                      "DisplayPage",
                      "SettingsPage",
@@ -269,15 +270,15 @@ public sealed class CapabilityPresentationTests
         XElement about = NamedElement(document, "ScrollView", "AboutPage");
 
         Assert.Equal(
-            4,
+            3,
             settings.Descendants().Count(element =>
                 Attribute(element, "Style") == "{StaticResource SettingsGroupStyle}"));
         Assert.Equal(
-            8,
+            6,
             settings.Descendants().Count(element =>
                 Attribute(element, "Style") == "{StaticResource SettingsRowStyle}"));
         Assert.Equal(
-            3,
+            2,
             settings.Descendants().Count(element =>
                 Attribute(element, "Style") == "{StaticResource SettingsLastRowStyle}"));
 
@@ -562,6 +563,37 @@ public sealed class CapabilityPresentationTests
     }
 
     [Fact]
+    public void MainWindow_LaptopPageOwnsFirmwareWideLaptopBehavior()
+    {
+        XDocument document = XDocument.Parse(ReadMainWindowXaml());
+        XElement navigation = NamedElement(
+            document,
+            "NavigationViewItem",
+            "LaptopNavigationItem");
+        XElement laptop = NamedElement(document, "ScrollView", "LaptopPage");
+        XElement settings = NamedElement(document, "ScrollView", "SettingsPage");
+
+        Assert.Equal("Laptop", Attribute(navigation, "Content"));
+        Assert.Equal("laptop", Attribute(navigation, "Tag"));
+        foreach (string controlName in new[]
+                 {
+                     "FunctionKeyFirmwareLoadingSlot",
+                     "GamingModeToggle",
+                     "StartupAnimationToggle",
+                 })
+        {
+            Assert.Contains(laptop.Descendants(), element =>
+                Attribute(element, "Name") == controlName);
+            Assert.DoesNotContain(settings.Descendants(), element =>
+                Attribute(element, "Name") == controlName);
+        }
+
+        Assert.DoesNotContain(settings.Descendants(), element =>
+            element.Name.LocalName == "TextBlock"
+            && Attribute(element, "Text") == "Laptop behavior");
+    }
+
+    [Fact]
     public void Dashboard_HeroReadingsAreAFullWidthConfigurableFooter()
     {
         string xaml = ReadMainWindowXaml();
@@ -806,7 +838,7 @@ public sealed class CapabilityPresentationTests
         Assert.Contains("{StaticResource TitleLargeTextBlockStyle}", xaml, StringComparison.Ordinal);
         Assert.Contains("{StaticResource AccentButtonStyle}", xaml, StringComparison.Ordinal);
         Assert.Equal(
-            6,
+            7,
             document.Descendants().Count(element =>
                 element.Name.LocalName == "EntranceThemeTransition"));
     }

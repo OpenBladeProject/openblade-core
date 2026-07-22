@@ -1635,6 +1635,9 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
                 new PropertyChangedEventArgs(nameof(HasOneShotLaptopControls)));
             PropertyChanged?.Invoke(
                 this,
+                new PropertyChangedEventArgs(nameof(HasKeyboardLaptopControls)));
+            PropertyChanged?.Invoke(
+                this,
                 new PropertyChangedEventArgs(nameof(SupportsStartupAnimation)));
             PropertyChanged?.Invoke(
                 this,
@@ -1647,6 +1650,9 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     }
 
     public bool HasOneShotLaptopControls => Capabilities.OneShotLaptopControls.Count > 0;
+
+    public bool HasKeyboardLaptopControls =>
+        SupportsFunctionKeyPrimary || SupportsGamingMode;
 
     public bool SupportsStartupAnimation => Capabilities.OneShotLaptopControls.Contains(
         OneShotLaptopControl.StartupAnimation);
