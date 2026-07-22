@@ -248,6 +248,26 @@
                               VerticalAlignment="Center" />
                 </Grid>
             </DataTemplate>
+            <DataTemplate x:Key="NavigationItemOptionTemplate"
+                          x:DataType="local:PrimaryNavigationItemOption">
+                <Grid ColumnSpacing="12"
+                      Padding="6,8"
+                      MinWidth="420"
+                      HorizontalAlignment="Stretch">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+                    <FontIcon Glyph="&#xE76F;"
+                              FontSize="14"
+                              Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                              VerticalAlignment="Center" />
+                    <TextBlock Grid.Column="1"
+                               Text="{x:Bind Label, Mode=OneTime}"
+                               Style="{StaticResource CardTitleStyle}"
+                               VerticalAlignment="Center" />
+                </Grid>
+            </DataTemplate>
             <DataTemplate x:Key="DashboardPowerModeCardTemplate" x:DataType="local:MainWindow">
                         <StackPanel DataContext="{x:Bind ViewModel}">
                         <TextBlock Text="Power mode"
@@ -1463,6 +1483,12 @@
                         </Grid>
 
                         <Grid x:Name="DashboardCardHost">
+                        <Grid.ChildrenTransitions>
+                            <TransitionCollection>
+                                <AddDeleteThemeTransition />
+                                <RepositionThemeTransition IsStaggeringEnabled="False" />
+                            </TransitionCollection>
+                        </Grid.ChildrenTransitions>
                         <Border x:Name="DeviceStatusCard"
                                 Style="{StaticResource CardStyle}"
                                 Padding="22">
@@ -2402,6 +2428,76 @@
                                               ItemsSource="{x:Bind ViewModel.ThemeSelectionOptions, Mode=OneWay}"
                                               DisplayMemberPath="Label"
                                               SelectedItem="{x:Bind ViewModel.SelectedThemeOption, Mode=TwoWay}" />
+                                </Grid>
+                            </Border>
+                            <Border Style="{StaticResource SettingsRowStyle}">
+                                <Grid ColumnSpacing="20">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel Spacing="3" VerticalAlignment="Center">
+                                        <TextBlock Text="App accent color"
+                                                   Style="{StaticResource CardTitleStyle}" />
+                                        <TextBlock Text="Use OpenBlade green, the Windows accent, or a color you choose."
+                                                   Style="{StaticResource SecondaryTextStyle}" />
+                                    </StackPanel>
+                                    <StackPanel Grid.Column="1"
+                                                Orientation="Horizontal"
+                                                Spacing="8"
+                                                VerticalAlignment="Center">
+                                        <Ellipse Width="18"
+                                                 Height="18"
+                                                 Fill="{x:Bind AccentColorPreviewBrush, Mode=OneWay}"
+                                                 Stroke="{ThemeResource ControlStrokeColorDefaultBrush}"
+                                                 StrokeThickness="1" />
+                                        <ComboBox MinWidth="160"
+                                                  Style="{StaticResource SettingsPickerStyle}"
+                                                  AutomationProperties.Name="App accent color"
+                                                  ItemsSource="{x:Bind AccentColorOptions, Mode=OneWay}"
+                                                  DisplayMemberPath="Label"
+                                                  SelectedItem="{x:Bind SelectedAccentColorOption, Mode=TwoWay}" />
+                                        <Button Content="Reset"
+                                                IsEnabled="{x:Bind CanResetAccentColor, Mode=OneWay}"
+                                                Click="OnResetAccentColor" />
+                                    </StackPanel>
+                                </Grid>
+                            </Border>
+                            <Border Style="{StaticResource SettingsSubcardStyle}"
+                                    Visibility="{x:Bind CustomAccentColorVisibility, Mode=OneWay}">
+                                <Grid ColumnSpacing="20">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel Spacing="3" VerticalAlignment="Center">
+                                        <TextBlock Text="Custom color"
+                                                   Style="{StaticResource CardTitleStyle}" />
+                                        <TextBlock Text="{x:Bind AccentColorSummary, Mode=OneWay}"
+                                                   Style="{StaticResource SecondaryTextStyle}" />
+                                    </StackPanel>
+                                    <Button Grid.Column="1"
+                                            Content="Choose color"
+                                            VerticalAlignment="Center"
+                                            Click="OnChooseCustomAccentColor" />
+                                </Grid>
+                            </Border>
+                            <Border Style="{StaticResource SettingsRowStyle}">
+                                <Grid ColumnSpacing="20">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel Spacing="3" VerticalAlignment="Center">
+                                        <TextBlock Text="Navigation menu"
+                                                   Style="{StaticResource CardTitleStyle}" />
+                                        <TextBlock Text="Choose the order of pages in the left menu."
+                                                   Style="{StaticResource SecondaryTextStyle}" />
+                                    </StackPanel>
+                                    <Button Grid.Column="1"
+                                            Content="Customize"
+                                            VerticalAlignment="Center"
+                                            Click="OnCustomizeNavigation" />
                                 </Grid>
                             </Border>
                             <Border Style="{StaticResource SettingsRowStyle}">

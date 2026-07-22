@@ -22,7 +22,10 @@ public sealed record UiPreferences(
     bool StartMinimized = false,
     IReadOnlyList<LiveReadingItemKind>? DashboardTelemetryItems = null,
     IReadOnlyList<TrayHoverLabelItemPreference>? TrayHoverLabelItems = null,
-    IReadOnlyList<DashboardCardPreference>? DashboardCards = null)
+    IReadOnlyList<DashboardCardPreference>? DashboardCards = null,
+    IReadOnlyList<PrimaryNavigationItemKind>? PrimaryNavigationItems = null,
+    AppAccentColorMode AccentColorMode = AppAccentColorMode.RazerGreen,
+    string? CustomAccentColor = null)
 {
     public static UiPreferences Default { get; } = new(
         ThemePreference.FollowWindows,
@@ -32,7 +35,10 @@ public sealed record UiPreferences(
         StartMinimized: false,
         DashboardTelemetryItems: TelemetryPreferenceDefaults.DashboardItems,
         TrayHoverLabelItems: TelemetryPreferenceDefaults.TrayHoverItems,
-        DashboardCards: DashboardCardPreferenceDefaults.Cards);
+        DashboardCards: DashboardCardPreferenceDefaults.Cards,
+        PrimaryNavigationItems: PrimaryNavigationPreferenceDefaults.Items,
+        AccentColorMode: AppAccentColorMode.RazerGreen,
+        CustomAccentColor: AppAccentColorPreferenceDefaults.RazerGreenHex);
 
     public LiveReadingsCadence EffectiveLiveReadingsCadence =>
         !LiveReadingsEnabled
@@ -54,6 +60,17 @@ public sealed record UiPreferences(
 
     public IReadOnlyList<DashboardCardPreference> EffectiveDashboardCards =>
         DashboardCardPreferenceDefaults.Normalize(DashboardCards);
+
+    public IReadOnlyList<PrimaryNavigationItemKind> EffectivePrimaryNavigationItems =>
+        PrimaryNavigationPreferenceDefaults.Normalize(PrimaryNavigationItems);
+
+    public AppAccentColorMode EffectiveAccentColorMode =>
+        Enum.IsDefined(AccentColorMode)
+            ? AccentColorMode
+            : AppAccentColorMode.RazerGreen;
+
+    public string EffectiveCustomAccentColor =>
+        AppAccentColorPreferenceDefaults.NormalizeCustomColor(CustomAccentColor);
 }
 
 public sealed class UiPreferenceStore

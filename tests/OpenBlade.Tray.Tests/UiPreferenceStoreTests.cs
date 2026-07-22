@@ -34,6 +34,13 @@ public sealed class UiPreferenceStoreTests : IDisposable
         Assert.Equal(
             DashboardCardPreferenceDefaults.Cards,
             preferences.EffectiveDashboardCards);
+        Assert.Equal(
+            PrimaryNavigationPreferenceDefaults.Items,
+            preferences.EffectivePrimaryNavigationItems);
+        Assert.Equal(AppAccentColorMode.RazerGreen, preferences.EffectiveAccentColorMode);
+        Assert.Equal(
+            AppAccentColorPreferenceDefaults.RazerGreenHex,
+            preferences.EffectiveCustomAccentColor);
     }
 
     [Fact]
@@ -63,7 +70,15 @@ public sealed class UiPreferenceStoreTests : IDisposable
             [
                 new(DashboardCardKind.Battery, true),
                 new(DashboardCardKind.DeviceStatus, false),
-            ]));
+            ],
+            PrimaryNavigationItems:
+            [
+                PrimaryNavigationItemKind.Settings,
+                PrimaryNavigationItemKind.Display,
+                PrimaryNavigationItemKind.Laptop,
+            ],
+            AccentColorMode: AppAccentColorMode.Custom,
+            CustomAccentColor: "#123abc"));
 
         UiPreferences reloaded = await store.LoadAsync();
         using JsonDocument document = JsonDocument.Parse(await File.ReadAllTextAsync(path));
@@ -96,6 +111,17 @@ public sealed class UiPreferenceStoreTests : IDisposable
         Assert.Equal(
             [true, false],
             reloaded.EffectiveDashboardCards.Take(2).Select(item => item.IsPinned));
+        Assert.Equal(
+            [
+                PrimaryNavigationItemKind.Settings,
+                PrimaryNavigationItemKind.Display,
+                PrimaryNavigationItemKind.Laptop,
+                PrimaryNavigationItemKind.Profiles,
+                PrimaryNavigationItemKind.Lighting,
+            ],
+            reloaded.EffectivePrimaryNavigationItems);
+        Assert.Equal(AppAccentColorMode.Custom, reloaded.EffectiveAccentColorMode);
+        Assert.Equal("#123ABC", reloaded.EffectiveCustomAccentColor);
         Assert.Equal("Dark", document.RootElement.GetProperty("theme").GetString());
         Assert.False(document.RootElement.TryGetProperty(
             "keepManualChangesUntilCleared",
@@ -119,6 +145,32 @@ public sealed class UiPreferenceStoreTests : IDisposable
             "Battery",
             document.RootElement.GetProperty("dashboardCards")[0]
                 .GetProperty("kind").GetString());
+        Assert.Equal(
+            "Settings",
+            document.RootElement.GetProperty("primaryNavigationItems")[0].GetString());
+        Assert.Equal(
+            "Custom",
+            document.RootElement.GetProperty("accentColorMode").GetString());
+        Assert.Equal(
+            "#123abc",
+            document.RootElement.GetProperty("customAccentColor").GetString());
+    }
+
+    [Fact]
+    public async Task LoadAsync_InvalidCustomAccentFallsBackToRazerGreen()
+    {
+        Directory.CreateDirectory(directory);
+        string path = Path.Combine(directory, "preferences.json");
+        await File.WriteAllTextAsync(
+            path,
+            """{"theme":"Dark","accentColorMode":"Custom","customAccentColor":"not-a-color"}""");
+
+        UiPreferences preferences = await new UiPreferenceStore(path).LoadAsync();
+
+        Assert.Equal(AppAccentColorMode.Custom, preferences.EffectiveAccentColorMode);
+        Assert.Equal(
+            AppAccentColorPreferenceDefaults.RazerGreenHex,
+            preferences.EffectiveCustomAccentColor);
     }
 
     [Fact]

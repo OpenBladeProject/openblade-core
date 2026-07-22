@@ -29,6 +29,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
 
     private readonly DispatcherQueue dispatcherQueue;
     private readonly MicaBackdropHost micaBackdropHost;
+    private readonly AccentColorManager accentColorManager;
     private readonly UiPreferenceStore preferenceStore;
     private readonly UiPreferenceSaveQueue preferenceSaveQueue;
     private readonly VisibleObservationLoop visibleObservationLoop;
@@ -48,6 +49,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
     private bool changingExternalLightingPolicy;
     private bool changingDisplaySettings;
     private bool changingDashboardCards;
+    private bool changingAccentColor;
     private bool dashboardCardsReady;
     private bool canonicalLaptopCardsPlaced;
     private bool chargeLimitCommitInProgress;
@@ -63,6 +65,9 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
     private ContentDialog? dashboardCustomizerDialog;
     private Action? dashboardCustomizerRefresh;
     private Action? dashboardCustomizerApply;
+    private readonly Dictionary<DashboardCardKind, FrameworkElement> dashboardCardPresentations = [];
+    private AppAccentColorMode accentColorMode = AppAccentColorMode.RazerGreen;
+    private string customAccentColor = AppAccentColorPreferenceDefaults.RazerGreenHex;
 
     public event PropertyChangedEventHandler? PropertyChanged;
 
@@ -95,6 +100,8 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         displayRefreshTimer.Tick += OnDisplayRefreshTimerTick;
         InitializeComponent();
         DashboardCards.CollectionChanged += OnDashboardCardsCollectionChanged;
+        accentColorManager = new AccentColorManager(Root, dispatcherQueue);
+        accentColorManager.ColorChanged += OnAccentColorChanged;
         if (OpenBladeIconAssets.ApplicationIconPath is { } applicationIconPath)
         {
             AppWindow.SetIcon(applicationIconPath);
@@ -136,6 +143,54 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
     public bool StartMinimized { get; private set; }
 
     public ObservableCollection<DashboardCardOption> DashboardCards { get; } = [];
+
+    public ObservableCollection<PrimaryNavigationItemOption> PrimaryNavigationItems { get; } = [];
+
+    public IReadOnlyList<AppAccentColorOption> AccentColorOptions { get; } =
+    [
+        new(AppAccentColorMode.RazerGreen, "Razer green"),
+        new(AppAccentColorMode.Windows, "Windows accent"),
+        new(AppAccentColorMode.Custom, "Custom"),
+    ];
+
+    public AppAccentColorOption SelectedAccentColorOption
+    {
+        get => AccentColorOptions.Single(option => option.Mode == accentColorMode);
+        set
+        {
+            if (value is null || value.Mode == accentColorMode)
+            {
+                return;
+            }
+
+            accentColorMode = value.Mode;
+            OnPropertyChanged(nameof(SelectedAccentColorOption));
+            OnPropertyChanged(nameof(CustomAccentColorVisibility));
+            OnPropertyChanged(nameof(CanResetAccentColor));
+            ApplyAccentColorAndQueueSave();
+        }
+    }
+
+    public string AccentColorSummary => accentColorMode switch
+    {
+        AppAccentColorMode.RazerGreen => "Razer green (#47E10C)",
+        AppAccentColorMode.Windows => "Windows accent",
+        AppAccentColorMode.Custom => $"Custom ({customAccentColor})",
+        _ => "Razer green (#47E10C)",
+    };
+
+    public Microsoft.UI.Xaml.Media.Brush AccentColorPreviewBrush =>
+        new Microsoft.UI.Xaml.Media.SolidColorBrush(accentColorManager.CurrentColor);
+
+    public Visibility CustomAccentColorVisibility => accentColorMode == AppAccentColorMode.Custom
+        ? Visibility.Visible
+        : Visibility.Collapsed;
+
+    public bool CanResetAccentColor => accentColorMode != AppAccentColorMode.RazerGreen
+        || !string.Equals(
+            customAccentColor,
+            AppAccentColorPreferenceDefaults.RazerGreenHex,
+            StringComparison.OrdinalIgnoreCase);
 
     public PerformancePreset SilentPreset { get; } = PerformancePreset.Silent;
 
@@ -197,6 +252,8 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         displayRefreshTimer.Stop();
         displayRefreshTimer.Tick -= OnDisplayRefreshTimerTick;
         micaBackdropHost.Dispose();
+        accentColorManager.ColorChanged -= OnAccentColorChanged;
+        accentColorManager.Dispose();
         await visibleObservationLoop.DisposeAsync();
         await preferenceSaveQueue.DisposeAsync();
         await DisplayViewModel.DisposeAsync();
@@ -216,6 +273,10 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             TelemetryPreferenceDefaults.TrayHoverItems;
         IReadOnlyList<DashboardCardPreference> dashboardCards =
             DashboardCardPreferenceDefaults.Cards;
+        IReadOnlyList<PrimaryNavigationItemKind> primaryNavigationItems =
+            PrimaryNavigationPreferenceDefaults.Items;
+        AppAccentColorMode initialAccentColorMode = AppAccentColorMode.RazerGreen;
+        string initialCustomAccentColor = AppAccentColorPreferenceDefaults.RazerGreenHex;
         try
         {
             UiPreferences preferences = await preferenceStore.LoadAsync();
@@ -226,6 +287,9 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             dashboardTelemetryItems = preferences.EffectiveDashboardTelemetryItems;
             trayHoverLabelItems = preferences.EffectiveTrayHoverLabelItems;
             dashboardCards = preferences.EffectiveDashboardCards;
+            primaryNavigationItems = preferences.EffectivePrimaryNavigationItems;
+            initialAccentColorMode = preferences.EffectiveAccentColorMode;
+            initialCustomAccentColor = preferences.EffectiveCustomAccentColor;
             StartMinimized = preferences.StartMinimized;
         }
         catch (Exception exception)
@@ -245,6 +309,13 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         ViewModel.TrayHoverLabelMode = trayHoverLabelMode;
         ViewModel.ApplyTelemetryPreferences(dashboardTelemetryItems, trayHoverLabelItems);
         ApplyDashboardPreferences(dashboardCards);
+        ApplyPrimaryNavigationPreferences(primaryNavigationItems);
+        changingAccentColor = true;
+        accentColorMode = initialAccentColorMode;
+        customAccentColor = initialCustomAccentColor;
+        accentColorManager.Apply(accentColorMode, customAccentColor);
+        changingAccentColor = false;
+        NotifyAccentColorPropertiesChanged();
         StartMinimizedToggle.IsOn = StartMinimized;
         try
         {
@@ -426,23 +497,57 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             };
     }
 
+    private void ApplyAccentColorAndQueueSave()
+    {
+        if (Volatile.Read(ref disposed) != 0)
+        {
+            return;
+        }
+
+        accentColorManager.Apply(accentColorMode, customAccentColor);
+        NotifyAccentColorPropertiesChanged();
+        if (!changingAccentColor)
+        {
+            QueuePreferenceSave();
+        }
+    }
+
+    private void OnAccentColorChanged(object? sender, EventArgs args) =>
+        NotifyAccentColorPropertiesChanged();
+
+    private void NotifyAccentColorPropertiesChanged()
+    {
+        OnPropertyChanged(nameof(AccentColorSummary));
+        OnPropertyChanged(nameof(AccentColorPreviewBrush));
+        OnPropertyChanged(nameof(CustomAccentColorVisibility));
+        OnPropertyChanged(nameof(CanResetAccentColor));
+    }
+
+    private void OnPropertyChanged(string propertyName) =>
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
+
     private void QueuePreferenceSave()
     {
         try
         {
             preferenceSaveQueue.Enqueue(new UiPreferences(
-                ViewModel.Theme,
-                ViewModel.LiveReadingsEnabled,
-                ViewModel.TrayHoverLabelMode,
-                ViewModel.LiveReadingsRefreshCadence,
-                StartMinimized,
-                ViewModel.EnabledDashboardTelemetryItems,
-                ViewModel.TrayHoverLabelPreferences,
-                DashboardCards
+                Theme: ViewModel.Theme,
+                LiveReadingsEnabled: ViewModel.LiveReadingsEnabled,
+                TrayHoverLabelMode: ViewModel.TrayHoverLabelMode,
+                LiveReadingsRefreshCadence: ViewModel.LiveReadingsRefreshCadence,
+                StartMinimized: StartMinimized,
+                DashboardTelemetryItems: ViewModel.EnabledDashboardTelemetryItems,
+                TrayHoverLabelItems: ViewModel.TrayHoverLabelPreferences,
+                DashboardCards: DashboardCards
                     .Select(option => new DashboardCardPreference(
                         option.Kind,
                         option.IsPinned))
-                    .ToArray()));
+                    .ToArray(),
+                PrimaryNavigationItems: PrimaryNavigationItems
+                    .Select(option => option.Kind)
+                    .ToArray(),
+                AccentColorMode: accentColorMode,
+                CustomAccentColor: customAccentColor));
         }
         catch (ObjectDisposedException)
         {
@@ -1661,6 +1766,173 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
     private void ApplyDashboardCustomizerChanges() =>
         dashboardCustomizerApply?.Invoke();
 
+    private void ApplyPrimaryNavigationPreferences(
+        IReadOnlyList<PrimaryNavigationItemKind> preferences)
+    {
+        PrimaryNavigationItems.Clear();
+        foreach (PrimaryNavigationItemKind kind in
+                 PrimaryNavigationPreferenceDefaults.Normalize(preferences))
+        {
+            PrimaryNavigationItems.Add(new PrimaryNavigationItemOption(
+                kind,
+                GetPrimaryNavigationLabel(kind)));
+        }
+
+        ApplyPrimaryNavigationOrder();
+    }
+
+    private void ApplyPrimaryNavigationOrder()
+    {
+        object? selectedItem = MainNavigation.SelectedItem;
+        for (int targetIndex = 0; targetIndex < PrimaryNavigationItems.Count; targetIndex++)
+        {
+            NavigationViewItem item = GetPrimaryNavigationItem(
+                PrimaryNavigationItems[targetIndex].Kind);
+            int menuTargetIndex = targetIndex + 1;
+            int currentIndex = MainNavigation.MenuItems.IndexOf(item);
+            if (currentIndex < 0 || currentIndex == menuTargetIndex)
+            {
+                continue;
+            }
+
+            MainNavigation.MenuItems.RemoveAt(currentIndex);
+            MainNavigation.MenuItems.Insert(menuTargetIndex, item);
+        }
+
+        if (selectedItem is not null)
+        {
+            MainNavigation.SelectedItem = selectedItem;
+        }
+    }
+
+    private NavigationViewItem GetPrimaryNavigationItem(PrimaryNavigationItemKind kind) =>
+        kind switch
+        {
+            PrimaryNavigationItemKind.Profiles => ProfilesNavigationItem,
+            PrimaryNavigationItemKind.Laptop => LaptopNavigationItem,
+            PrimaryNavigationItemKind.Lighting => LightingNavigationItem,
+            PrimaryNavigationItemKind.Display => DisplayNavigationItem,
+            PrimaryNavigationItemKind.Settings => SettingsNavigationItem,
+            _ => throw new ArgumentOutOfRangeException(nameof(kind)),
+        };
+
+    private static string GetPrimaryNavigationLabel(PrimaryNavigationItemKind kind) =>
+        kind switch
+        {
+            PrimaryNavigationItemKind.Profiles => "Profiles",
+            PrimaryNavigationItemKind.Laptop => "Laptop",
+            PrimaryNavigationItemKind.Lighting => "Lighting",
+            PrimaryNavigationItemKind.Display => "Display",
+            PrimaryNavigationItemKind.Settings => "Settings",
+            _ => throw new ArgumentOutOfRangeException(nameof(kind)),
+        };
+
+    private async void OnCustomizeNavigation(object sender, RoutedEventArgs args)
+    {
+        var editorItems = new ObservableCollection<PrimaryNavigationItemOption>(
+            PrimaryNavigationItems.Select(item => new PrimaryNavigationItemOption(
+                item.Kind,
+                item.Label)));
+        var list = new Microsoft.UI.Xaml.Controls.ListView
+        {
+            ItemsSource = editorItems,
+            SelectionMode = ListViewSelectionMode.None,
+            CanDragItems = true,
+            CanReorderItems = true,
+            ReorderMode = ListViewReorderMode.Enabled,
+            AllowDrop = true,
+            MaxHeight = 420,
+            HorizontalAlignment = Microsoft.UI.Xaml.HorizontalAlignment.Stretch,
+            HorizontalContentAlignment = Microsoft.UI.Xaml.HorizontalAlignment.Stretch,
+            ItemTemplate = (DataTemplate)Root.Resources["NavigationItemOptionTemplate"],
+            ItemContainerStyle = (Style)Root.Resources["DashboardReorderListItemStyle"],
+        };
+        AutomationProperties.SetName(list, "Navigation menu pages");
+
+        var content = new StackPanel { Width = 460, Spacing = 10 };
+        content.Children.Add(new TextBlock
+        {
+            Text = "Drag pages into the order you want. Dashboard stays first and About stays last.",
+            Style = (Style)Root.Resources["SecondaryTextStyle"],
+            TextWrapping = TextWrapping.Wrap,
+        });
+        content.Children.Add(list);
+
+        var resetButton = new Microsoft.UI.Xaml.Controls.Button
+        {
+            Content = "Reset to default",
+            HorizontalAlignment = Microsoft.UI.Xaml.HorizontalAlignment.Left,
+        };
+        resetButton.Click += (_, _) =>
+        {
+            editorItems.Clear();
+            foreach (PrimaryNavigationItemKind kind in PrimaryNavigationPreferenceDefaults.Items)
+            {
+                editorItems.Add(new PrimaryNavigationItemOption(
+                    kind,
+                    GetPrimaryNavigationLabel(kind)));
+            }
+        };
+        content.Children.Add(resetButton);
+
+        var dialog = new ContentDialog
+        {
+            MinWidth = 500,
+            XamlRoot = Root.XamlRoot,
+            Title = "Customize navigation",
+            Content = content,
+            PrimaryButtonText = "Apply",
+            CloseButtonText = "Cancel",
+            DefaultButton = ContentDialogButton.Primary,
+        };
+        if (await dialog.ShowAsync() != ContentDialogResult.Primary)
+        {
+            return;
+        }
+
+        ApplyPrimaryNavigationPreferences(editorItems.Select(item => item.Kind).ToArray());
+        QueuePreferenceSave();
+    }
+
+    private async void OnChooseCustomAccentColor(object sender, RoutedEventArgs args)
+    {
+        var picker = new ColorPicker
+        {
+            Color = AccentColorManager.ParseHexColor(customAccentColor),
+            IsAlphaEnabled = false,
+            IsAlphaSliderVisible = false,
+            IsAlphaTextInputVisible = false,
+            IsColorChannelTextInputVisible = true,
+            IsHexInputVisible = true,
+        };
+        var dialog = new ContentDialog
+        {
+            XamlRoot = Root.XamlRoot,
+            Title = "Choose an accent color",
+            Content = picker,
+            PrimaryButtonText = "Use color",
+            CloseButtonText = "Cancel",
+            DefaultButton = ContentDialogButton.Primary,
+        };
+        if (await dialog.ShowAsync() != ContentDialogResult.Primary)
+        {
+            return;
+        }
+
+        accentColorMode = AppAccentColorMode.Custom;
+        customAccentColor = AccentColorManager.ToHexColor(picker.Color);
+        OnPropertyChanged(nameof(SelectedAccentColorOption));
+        ApplyAccentColorAndQueueSave();
+    }
+
+    private void OnResetAccentColor(object sender, RoutedEventArgs args)
+    {
+        accentColorMode = AppAccentColorMode.RazerGreen;
+        customAccentColor = AppAccentColorPreferenceDefaults.RazerGreenHex;
+        OnPropertyChanged(nameof(SelectedAccentColorOption));
+        ApplyAccentColorAndQueueSave();
+    }
+
     private void RefreshDashboardCards()
     {
         if (!dashboardCardsReady)
@@ -1668,42 +1940,67 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             return;
         }
 
-        foreach (UIElement child in DashboardCardHost.Children
-                     .Where(child => child != DeviceStatusCard)
+        FrameworkElement[] desiredCards = DashboardCards
+            .Where(option => option.IsPinned)
+            .Select(GetOrCreateDashboardCard)
+            .ToArray();
+        var desiredSet = desiredCards.ToHashSet();
+
+        foreach (FrameworkElement child in DashboardCardHost.Children
+                     .OfType<FrameworkElement>()
+                     .Where(child => !desiredSet.Contains(child))
                      .ToArray())
         {
             DashboardCardHost.Children.Remove(child);
         }
 
-        DashboardCardHost.RowDefinitions.Clear();
-        DeviceStatusCard.Visibility = Visibility.Collapsed;
-        int row = 0;
-        foreach (DashboardCardOption option in DashboardCards)
+        foreach (FrameworkElement card in desiredCards)
         {
-            if (!option.IsPinned)
+            if (!DashboardCardHost.Children.Contains(card))
             {
-                continue;
+                DashboardCardHost.Children.Add(card);
             }
+        }
 
+        for (int targetIndex = 0; targetIndex < desiredCards.Length; targetIndex++)
+        {
+            FrameworkElement card = desiredCards[targetIndex];
+            int currentIndex = DashboardCardHost.Children.IndexOf(card);
+            if (currentIndex >= 0 && currentIndex != targetIndex)
+            {
+                DashboardCardHost.Children.Move(
+                    checked((uint)currentIndex),
+                    checked((uint)targetIndex));
+            }
+        }
+
+        DashboardCardHost.RowDefinitions.Clear();
+        for (int row = 0; row < desiredCards.Length; row++)
+        {
             DashboardCardHost.RowDefinitions.Add(new RowDefinition
             {
                 Height = GridLength.Auto,
             });
-            if (option.Kind == DashboardCardKind.DeviceStatus)
-            {
-                Grid.SetRow(DeviceStatusCard, row++);
-                DeviceStatusCard.Visibility = Visibility.Visible;
-                continue;
-            }
-
-            FrameworkElement presentation = CreateDashboardLiveCard(option);
-            Grid.SetRow(presentation, row++);
-            DashboardCardHost.Children.Add(presentation);
+            Grid.SetRow(desiredCards[row], row);
         }
 
         DashboardEmptyState.Visibility = DashboardCards.Any(option => option.IsPinned)
             ? Visibility.Collapsed
             : Visibility.Visible;
+    }
+
+    private FrameworkElement GetOrCreateDashboardCard(DashboardCardOption option)
+    {
+        if (dashboardCardPresentations.TryGetValue(option.Kind, out FrameworkElement? card))
+        {
+            return card;
+        }
+
+        card = option.Kind == DashboardCardKind.DeviceStatus
+            ? DeviceStatusCard
+            : CreateDashboardLiveCard(option);
+        dashboardCardPresentations.Add(option.Kind, card);
+        return card;
     }
 
     private FrameworkElement CreateDashboardLiveCard(DashboardCardOption option)
@@ -1755,6 +2052,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
     private void OnRootLoaded(object sender, RoutedEventArgs args)
     {
         MoveCanonicalLaptopCardsIntoPlace();
+        dashboardCardPresentations[DashboardCardKind.DeviceStatus] = DeviceStatusCard;
         dashboardCardsReady = true;
         RefreshDashboardCards();
         UpdateDisplayRefreshState();

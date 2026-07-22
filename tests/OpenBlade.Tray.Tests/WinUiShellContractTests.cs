@@ -361,9 +361,9 @@ public sealed class WinUiShellContractTests
             "new PropertyChangedEventArgs(nameof(DisplayViewModel))",
             window,
             StringComparison.Ordinal);
-        Assert.Contains("child != DeviceStatusCard", window, StringComparison.Ordinal);
-        Assert.Contains("option.Kind == DashboardCardKind.DeviceStatus", window, StringComparison.Ordinal);
-        Assert.Contains("Grid.SetRow(DeviceStatusCard", window, StringComparison.Ordinal);
+        Assert.Contains("dashboardCardPresentations", window, StringComparison.Ordinal);
+        Assert.Contains("? DeviceStatusCard", window, StringComparison.Ordinal);
+        Assert.Contains("DashboardCardHost.Children.Move", window, StringComparison.Ordinal);
         Assert.Contains("RefreshDashboardCards();", window, StringComparison.Ordinal);
         Assert.Contains("MoveCanonicalLaptopCardsIntoPlace();", window, StringComparison.Ordinal);
         Assert.DoesNotContain("CompleteDashboardArrangement", window, StringComparison.Ordinal);
@@ -490,7 +490,7 @@ public sealed class WinUiShellContractTests
         Assert.Equal(4, CountOccurrences(xaml, "Style=\"{StaticResource ActiveProfilePillTextStyle}\""));
         Assert.Contains("<TextBlock Text=\"Battery\" Style=\"{StaticResource CardTitleStyle}\" />", xaml, StringComparison.Ordinal);
         Assert.Contains("Text=\"Power mode\"", xaml, StringComparison.Ordinal);
-        Assert.Equal(2, CountOccurrences(xaml, "Style=\"{StaticResource SettingsSubcardStyle}\""));
+        Assert.Equal(3, CountOccurrences(xaml, "Style=\"{StaticResource SettingsSubcardStyle}\""));
         Assert.Equal(3, CountOccurrences(xaml, "Style=\"{StaticResource SettingsLastSubcardStyle}\""));
         Assert.Contains("<Setter Property=\"BorderThickness\" Value=\"0,1,0,0\" />", xaml, StringComparison.Ordinal);
         Assert.DoesNotContain("<Setter Property=\"Margin\" Value=\"16,0,16,14\" />", xaml, StringComparison.Ordinal);
@@ -751,10 +751,40 @@ public sealed class WinUiShellContractTests
                     StringComparison.Ordinal);
                 Assert.DoesNotContain("SystemEvents", source, StringComparison.Ordinal);
             }
-            Assert.DoesNotContain("UISettings", source, StringComparison.Ordinal);
-            Assert.DoesNotContain("ColorValuesChanged", source, StringComparison.Ordinal);
+            if (!file.EndsWith(
+                    "AccentColorManager.cs",
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                Assert.DoesNotContain("UISettings", source, StringComparison.Ordinal);
+                Assert.DoesNotContain("ColorValuesChanged", source, StringComparison.Ordinal);
+            }
             Assert.DoesNotContain("Application.RequestedTheme", source, StringComparison.Ordinal);
         }
+    }
+
+    [Fact]
+    public void PersonalizationSupportsAnimatedDashboardNavigationOrderAndAccentColor()
+    {
+        string xaml = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml");
+        string window = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml.cs");
+        string accentManager = ReadRepositoryFile(
+            "src",
+            "OpenBlade.Tray",
+            "AccentColorManager.cs");
+
+        Assert.Contains("<AddDeleteThemeTransition", xaml, StringComparison.Ordinal);
+        Assert.Contains("<RepositionThemeTransition", xaml, StringComparison.Ordinal);
+        Assert.Contains("dashboardCardPresentations", window, StringComparison.Ordinal);
+        Assert.Contains("DashboardCardHost.Children.Move", window, StringComparison.Ordinal);
+        Assert.Contains("OnCustomizeNavigation", xaml, StringComparison.Ordinal);
+        Assert.Contains("CanReorderItems = true", window, StringComparison.Ordinal);
+        Assert.Contains("App accent color", xaml, StringComparison.Ordinal);
+        Assert.Contains("Windows accent", window, StringComparison.Ordinal);
+        Assert.Contains("ColorValuesChanged +=", accentManager, StringComparison.Ordinal);
+        Assert.Contains("#47E10C", ReadRepositoryFile(
+            "src",
+            "OpenBlade.Tray.Core",
+            "AppearancePreferences.cs"), StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]

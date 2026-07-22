@@ -15,6 +15,10 @@ All notable changes to OpenBlade are documented in this file. The project follow
   power, fan, battery, keyboard, startup, lighting, and display cards and drag
   them into the preferred order; the selection and order persist in UI
   preferences.
+- Added smooth Dashboard card add, remove, and reorder transitions without
+  recreating retained controls.
+- Added persistent left-navigation ordering plus app accent choices for Razer
+  green, the live Windows accent, and a custom RGB color.
 - Added a shipped uninstaller to Windows Installed apps and the Start menu.
   The user-facing path confirms removal and preserves profiles by default;
   `uninstall --purge` remains an explicit command for deleting saved data. Setup
