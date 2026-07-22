@@ -6,6 +6,7 @@ using System.Runtime.InteropServices;
 using Microsoft.UI.Dispatching;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.Windows.Storage.Pickers;
 using OpenBlade.Contracts;
@@ -47,6 +48,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
     private bool changingExternalLightingPolicy;
     private bool changingDisplaySettings;
     private bool changingDashboardCards;
+    private bool dashboardCardsReady;
     private bool chargeLimitCommitInProgress;
     private bool fanControlCommitInProgress;
     private bool lightingCommitInProgress;
@@ -56,8 +58,10 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
     private bool? profilesUseCompactLayout;
     private bool enforcingMinimumWindowSize;
     private int disposed;
+    private int dashboardPlacementGeneration;
     private Dictionary<DashboardCardKind, DashboardCardRegistration>
         dashboardCardRegistrations = [];
+    private Dictionary<DashboardCardKind, NavigationViewItem> dashboardCardDestinations = [];
 
     public MainWindow()
     {
@@ -97,16 +101,13 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
             [DashboardCardKind.PowerMode] = new(PowerModeCard, LaptopCardsHost, 0),
             [DashboardCardKind.Fans] = new(FansCard, LaptopCardsHost, 1),
             [DashboardCardKind.Battery] = new(BatteryCard, LaptopCardsHost, 2),
-            [DashboardCardKind.KeyboardBehavior] = new(
-                KeyboardBehaviorCard,
-                LaptopCardsHost,
-                3),
-            [DashboardCardKind.StartupAnimation] = new(
-                StartupAnimationCard,
-                LaptopCardsHost,
-                4),
-            [DashboardCardKind.Lighting] = new(LightingCard, LightingCardsHost, 0),
-            [DashboardCardKind.Display] = new(DisplayCard, DisplayCardsHost, 0),
+        };
+        dashboardCardDestinations = new Dictionary<DashboardCardKind, NavigationViewItem>
+        {
+            [DashboardCardKind.KeyboardBehavior] = LaptopNavigationItem,
+            [DashboardCardKind.StartupAnimation] = LaptopNavigationItem,
+            [DashboardCardKind.Lighting] = LightingNavigationItem,
+            [DashboardCardKind.Display] = DisplayNavigationItem,
         };
         DashboardCards.CollectionChanged += OnDashboardCardsCollectionChanged;
         if (OpenBladeIconAssets.ApplicationIconPath is { } applicationIconPath)
@@ -125,6 +126,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
         lightingCommitTimer.Tick += OnLightingCommitTimerTick;
         micaBackdropHost = new MicaBackdropHost(this, Root);
         Root.DataContext = ViewModel;
+        Root.Loaded += OnRootLoaded;
         Root.SizeChanged += OnRootSizeChanged;
         AppWindow.Changed += OnAppWindowChanged;
 
@@ -199,6 +201,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
         DisplayViewModel.UserSettingsChanged -= OnDisplayUserSettingsChanged;
         ViewModel.SavedDisplayProfileRestoreRequested -= OnSavedDisplayProfileRestoreRequested;
         AppWindow.Closing -= OnClosing;
+        Root.Loaded -= OnRootLoaded;
         Root.SizeChanged -= OnRootSizeChanged;
         AppWindow.Changed -= OnAppWindowChanged;
         chargeLimitCommitTimer.Stop();
@@ -1172,7 +1175,6 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
     {
         string destination = (args.SelectedItemContainer as NavigationViewItem)?.Tag as string
             ?? "home";
-        RestoreDashboardCardsToNativePages();
         HomePage.Visibility = destination == "home"
             ? Visibility.Visible
             : Visibility.Collapsed;
@@ -1562,69 +1564,269 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
         QueuePreferenceSave();
     }
 
-    private void OnDashboardCardsReordered(
-        ListViewBase sender,
-        DragItemsCompletedEventArgs args)
+    private async void OnCustomizeDashboard(object sender, RoutedEventArgs args)
     {
-        ArrangeDashboardCards();
-        UpdateDisplayRefreshState();
-        QueuePreferenceSave();
+        var cardList = new StackPanel { Spacing = 4 };
+
+        void RefreshEditor()
+        {
+            cardList.Children.Clear();
+            for (int index = 0; index < DashboardCards.Count; index++)
+            {
+                DashboardCardOption option = DashboardCards[index];
+                var row = new Grid
+                {
+                    ColumnSpacing = 8,
+                    Padding = new Thickness(4, 6, 4, 6),
+                };
+                row.ColumnDefinitions.Add(new ColumnDefinition());
+                row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+                row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+                row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
+                var label = new StackPanel { Spacing = 2 };
+                label.Children.Add(new TextBlock
+                {
+                    Text = option.Label,
+                    Style = (Style)Root.Resources["CardTitleStyle"],
+                });
+                label.Children.Add(new TextBlock
+                {
+                    Text = option.Description,
+                    Style = (Style)Root.Resources["SecondaryTextStyle"],
+                    TextWrapping = TextWrapping.Wrap,
+                });
+                row.Children.Add(label);
+
+                int currentIndex = index;
+                var moveUp = CreateDashboardOrderButton("\uE74A", "Move up", currentIndex > 0);
+                moveUp.Click += (_, _) =>
+                {
+                    DashboardCards.Move(currentIndex, currentIndex - 1);
+                    RefreshEditor();
+                };
+                Grid.SetColumn(moveUp, 1);
+                row.Children.Add(moveUp);
+
+                var moveDown = CreateDashboardOrderButton(
+                    "\uE74B",
+                    "Move down",
+                    currentIndex < DashboardCards.Count - 1);
+                moveDown.Click += (_, _) =>
+                {
+                    DashboardCards.Move(currentIndex, currentIndex + 1);
+                    RefreshEditor();
+                };
+                Grid.SetColumn(moveDown, 2);
+                row.Children.Add(moveDown);
+
+                var isPinned = new Microsoft.UI.Xaml.Controls.CheckBox
+                {
+                    IsChecked = option.IsPinned,
+                    VerticalAlignment = VerticalAlignment.Center,
+                };
+                AutomationProperties.SetName(isPinned, $"Show {option.Label} on Dashboard");
+                isPinned.Checked += (_, _) => option.IsPinned = true;
+                isPinned.Unchecked += (_, _) => option.IsPinned = false;
+                Grid.SetColumn(isPinned, 3);
+                row.Children.Add(isPinned);
+                cardList.Children.Add(row);
+            }
+        }
+
+        RefreshEditor();
+        var reset = new Microsoft.UI.Xaml.Controls.Button
+        {
+            Content = "Reset to default",
+            HorizontalAlignment = Microsoft.UI.Xaml.HorizontalAlignment.Left,
+        };
+        reset.Click += (_, _) =>
+        {
+            ApplyDashboardPreferences(DashboardCardPreferenceDefaults.Cards);
+            QueuePreferenceSave();
+            RefreshEditor();
+        };
+
+        var content = new StackPanel { Width = 430, Spacing = 12 };
+        content.Children.Add(new TextBlock
+        {
+            Text = "Choose the cards to show, then use the arrow buttons to arrange them.",
+            Style = (Style)Root.Resources["SecondaryTextStyle"],
+            TextWrapping = TextWrapping.Wrap,
+        });
+        content.Children.Add(new ScrollViewer
+        {
+            Content = cardList,
+            MaxHeight = 480,
+            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+        });
+        content.Children.Add(reset);
+
+        var dialog = new ContentDialog
+        {
+            XamlRoot = Root.XamlRoot,
+            Title = "Customize Dashboard",
+            Content = content,
+            CloseButtonText = "Done",
+            DefaultButton = ContentDialogButton.Close,
+        };
+        await dialog.ShowAsync();
     }
 
-    private void OnResetDashboardCards(object sender, RoutedEventArgs args)
+    private static Microsoft.UI.Xaml.Controls.Button CreateDashboardOrderButton(
+        string glyph,
+        string accessibleName,
+        bool isEnabled)
     {
-        ApplyDashboardPreferences(DashboardCardPreferenceDefaults.Cards);
-        QueuePreferenceSave();
+        var button = new Microsoft.UI.Xaml.Controls.Button
+        {
+            Content = new FontIcon { Glyph = glyph, FontSize = 14 },
+            IsEnabled = isEnabled,
+            MinWidth = 36,
+            MinHeight = 36,
+            Padding = new Thickness(8),
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+        AutomationProperties.SetName(button, accessibleName);
+        ToolTipService.SetToolTip(button, accessibleName);
+        return button;
     }
 
     private void ArrangeDashboardCards()
     {
-        RestoreDashboardCardsToNativePages();
-        if (HomePage.Visibility == Visibility.Visible)
+        if (!dashboardCardsReady)
         {
-            foreach (DashboardCardOption option in DashboardCards.Where(option => option.IsPinned))
+            return;
+        }
+
+        int generation = ++dashboardPlacementGeneration;
+        bool showPinnedCards = HomePage.Visibility == Visibility.Visible;
+        int dashboardIndex = 0;
+        var placements = new List<DashboardCardPlacement>(dashboardCardRegistrations.Count);
+        foreach (DashboardCardOption option in DashboardCards)
+        {
+            bool placeOnDashboard = showPinnedCards && option.IsPinned;
+            if (dashboardCardRegistrations.TryGetValue(
+                    option.Kind,
+                    out DashboardCardRegistration? registration))
             {
-                if (dashboardCardRegistrations.TryGetValue(option.Kind, out DashboardCardRegistration? card))
-                {
-                    MoveToPanel(card.Element, DashboardCardHost, DashboardCardHost.Children.Count);
-                }
+                placements.Add(new DashboardCardPlacement(
+                    registration.Element,
+                    placeOnDashboard ? DashboardCardHost : registration.SourceHost,
+                    placeOnDashboard ? dashboardIndex++ : registration.SourceIndex));
+                continue;
+            }
+
+            if (placeOnDashboard
+                && dashboardCardDestinations.TryGetValue(
+                    option.Kind,
+                    out NavigationViewItem? destination))
+            {
+                placements.Add(new DashboardCardPlacement(
+                    CreateDashboardLinkCard(option, destination),
+                    DashboardCardHost,
+                    dashboardIndex++));
             }
         }
 
         DashboardEmptyState.Visibility = DashboardCards.Any(option => option.IsPinned)
             ? Visibility.Collapsed
             : Visibility.Visible;
+
+        foreach (DashboardCardRegistration registration in dashboardCardRegistrations.Values)
+        {
+            if (registration.Element.Parent is Microsoft.UI.Xaml.Controls.Panel current)
+            {
+                current.Children.Remove(registration.Element);
+            }
+        }
+
+        DashboardCardHost.Children.Clear();
+
+        dispatcherQueue.TryEnqueue(
+            DispatcherQueuePriority.Low,
+            () => CompleteDashboardArrangement(generation, placements));
     }
 
-    private void RestoreDashboardCardsToNativePages()
+    private void CompleteDashboardArrangement(
+        int generation,
+        IReadOnlyList<DashboardCardPlacement> placements)
     {
-        foreach (IGrouping<StackPanel, DashboardCardRegistration> group in
-                 dashboardCardRegistrations.Values.GroupBy(card => card.SourceHost))
+        if (generation != dashboardPlacementGeneration || Volatile.Read(ref disposed) != 0)
         {
-            foreach (DashboardCardRegistration card in group.OrderBy(card => card.SourceIndex))
+            return;
+        }
+
+        foreach (IGrouping<StackPanel, DashboardCardPlacement> group in
+                 placements.GroupBy(placement => placement.Destination))
+        {
+            foreach (DashboardCardPlacement placement in group.OrderBy(placement => placement.Index))
             {
-                MoveToPanel(card.Element, card.SourceHost, card.SourceIndex);
+                if (placement.Element.Parent is Microsoft.UI.Xaml.Controls.Panel current)
+                {
+                    current.Children.Remove(placement.Element);
+                }
+
+                group.Key.Children.Add(placement.Element);
             }
         }
     }
 
-    private static void MoveToPanel(
-        FrameworkElement element,
-        StackPanel destination,
-        int index)
+    private Border CreateDashboardLinkCard(
+        DashboardCardOption option,
+        NavigationViewItem destination)
     {
-        if (element.Parent is Microsoft.UI.Xaml.Controls.Panel current)
+        var label = new StackPanel { Spacing = 3 };
+        label.Children.Add(new TextBlock
         {
-            current.Children.Remove(element);
-        }
+            Text = option.Label,
+            Style = (Style)Root.Resources["CardTitleStyle"],
+        });
+        label.Children.Add(new TextBlock
+        {
+            Text = option.Description,
+            Style = (Style)Root.Resources["SecondaryTextStyle"],
+            TextWrapping = TextWrapping.Wrap,
+        });
 
-        destination.Children.Insert(Math.Min(index, destination.Children.Count), element);
+        var open = new Microsoft.UI.Xaml.Controls.Button
+        {
+            Content = "Open",
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+        AutomationProperties.SetName(open, $"Open {option.Label}");
+        open.Click += (_, _) => MainNavigation.SelectedItem = destination;
+
+        var layout = new Grid { ColumnSpacing = 20 };
+        layout.ColumnDefinitions.Add(new ColumnDefinition());
+        layout.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        layout.Children.Add(label);
+        Grid.SetColumn(open, 1);
+        layout.Children.Add(open);
+
+        return new Border
+        {
+            Style = (Style)Root.Resources["CardStyle"],
+            Child = layout,
+        };
+    }
+
+    private void OnRootLoaded(object sender, RoutedEventArgs args)
+    {
+        dashboardCardsReady = true;
+        ArrangeDashboardCards();
+        UpdateDisplayRefreshState();
     }
 
     private sealed record DashboardCardRegistration(
         FrameworkElement Element,
         StackPanel SourceHost,
         int SourceIndex);
+
+    private sealed record DashboardCardPlacement(
+        FrameworkElement Element,
+        StackPanel Destination,
+        int Index);
 
     private async void OnImportProfiles(object sender, RoutedEventArgs args)
     {

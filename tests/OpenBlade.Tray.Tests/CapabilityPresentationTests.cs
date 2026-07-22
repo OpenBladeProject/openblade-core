@@ -182,8 +182,8 @@ public sealed class CapabilityPresentationTests
         Assert.DoesNotContain("BalancedChoice", xaml, StringComparison.Ordinal);
         Assert.DoesNotContain("BatteryActionColumn", xaml, StringComparison.Ordinal);
         Assert.DoesNotContain("ProfileChargeLimitEditor", xaml, StringComparison.Ordinal);
-        Assert.Contains("x:Name=\"DashboardCardPicker\"", xaml, StringComparison.Ordinal);
-        Assert.Contains("CanReorderItems=\"True\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("Click=\"OnCustomizeDashboard\"", xaml, StringComparison.Ordinal);
+        Assert.DoesNotContain("x:Name=\"DashboardCardPicker\"", xaml, StringComparison.Ordinal);
         Assert.Contains("x:Name=\"LaptopCardsHost\"", xaml, StringComparison.Ordinal);
         Assert.Contains("x:Name=\"LightingCardsHost\"", xaml, StringComparison.Ordinal);
         Assert.Contains("x:Name=\"DisplayCardsHost\"", xaml, StringComparison.Ordinal);

@@ -77,12 +77,12 @@ public static class DashboardCardPreferenceDefaults
             DashboardCardKind.PowerMode,
             "Power mode",
             "Choose the active power mode and custom CPU or GPU levels.",
-            true),
+            false),
         new(
             DashboardCardKind.Fans,
             "Fans",
             "Choose automatic, fixed, maximum, or manual fan control.",
-            true),
+            false),
         new(
             DashboardCardKind.Battery,
             "Battery",

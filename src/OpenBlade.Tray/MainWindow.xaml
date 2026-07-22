@@ -365,57 +365,8 @@
                                     </Button>
                                 </StackPanel>
                                 <Button Content="Customize"
-                                        AutomationProperties.Name="Customize dashboard">
-                                    <Button.Flyout>
-                                        <Flyout Placement="BottomEdgeAlignedRight">
-                                            <StackPanel Width="380" Spacing="12">
-                                                <TextBlock Text="Dashboard cards"
-                                                           Style="{StaticResource SubtitleTextBlockStyle}" />
-                                                <TextBlock Text="Choose what appears on Dashboard, then drag the cards into your preferred order."
-                                                           Style="{StaticResource SecondaryTextStyle}"
-                                                           TextWrapping="Wrap" />
-                                                <ListView x:Name="DashboardCardPicker"
-                                                          ItemsSource="{x:Bind DashboardCards, Mode=OneWay}"
-                                                          SelectionMode="None"
-                                                          CanDragItems="True"
-                                                          CanReorderItems="True"
-                                                          AllowDrop="True"
-                                                          ReorderMode="Enabled"
-                                                          DragItemsCompleted="OnDashboardCardsReordered">
-                                                    <ListView.ItemTemplate>
-                                                        <DataTemplate x:DataType="local:DashboardCardOption">
-                                                            <Grid ColumnSpacing="10" Padding="2,6">
-                                                                <Grid.ColumnDefinitions>
-                                                                    <ColumnDefinition Width="Auto" />
-                                                                    <ColumnDefinition Width="*" />
-                                                                    <ColumnDefinition Width="Auto" />
-                                                                </Grid.ColumnDefinitions>
-                                                                <FontIcon Glyph="&#xE700;"
-                                                                          FontSize="14"
-                                                                          VerticalAlignment="Center"
-                                                                          Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
-                                                                <StackPanel Grid.Column="1" Spacing="2">
-                                                                    <TextBlock Text="{x:Bind Label, Mode=OneTime}"
-                                                                               Style="{StaticResource CardTitleStyle}" />
-                                                                    <TextBlock Text="{x:Bind Description, Mode=OneTime}"
-                                                                               Style="{StaticResource SecondaryTextStyle}"
-                                                                               TextWrapping="Wrap" />
-                                                                </StackPanel>
-                                                                <CheckBox Grid.Column="2"
-                                                                          IsChecked="{x:Bind IsPinned, Mode=TwoWay}"
-                                                                          VerticalAlignment="Center"
-                                                                          AutomationProperties.Name="{x:Bind Label, Mode=OneTime}" />
-                                                            </Grid>
-                                                        </DataTemplate>
-                                                    </ListView.ItemTemplate>
-                                                </ListView>
-                                                <Button Content="Reset to default"
-                                                        HorizontalAlignment="Left"
-                                                        Click="OnResetDashboardCards" />
-                                            </StackPanel>
-                                        </Flyout>
-                                    </Button.Flyout>
-                                </Button>
+                                        AutomationProperties.Name="Customize dashboard"
+                                        Click="OnCustomizeDashboard" />
                             </StackPanel>
                         </Grid>
 
