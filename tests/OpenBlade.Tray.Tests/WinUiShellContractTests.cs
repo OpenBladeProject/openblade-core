@@ -321,12 +321,13 @@ public sealed class WinUiShellContractTests
         Assert.Contains("DashboardCardOptionTemplate", window, StringComparison.Ordinal);
         Assert.Contains("ApplyDashboardCustomizerChanges()", window, StringComparison.Ordinal);
         Assert.Contains("HorizontalAlignment = Microsoft.UI.Xaml.HorizontalAlignment.Stretch", window, StringComparison.Ordinal);
-        Assert.Contains("content = new StackPanel { Width = 520", window, StringComparison.Ordinal);
+        Assert.Contains("content = new StackPanel { Width = 600", window, StringComparison.Ordinal);
+        Assert.Contains("MinWidth = 640", window, StringComparison.Ordinal);
         Assert.Contains("HorizontalContentAlignment = Microsoft.UI.Xaml.HorizontalAlignment.Stretch", window, StringComparison.Ordinal);
         Assert.DoesNotContain("Translation = new System.Numerics.Vector3(80, 0, 0)", window, StringComparison.Ordinal);
         Assert.DoesNotContain("grip.PointerMoved +=", window, StringComparison.Ordinal);
         Assert.Contains("x:Key=\"DashboardCardOptionTemplate\"", xaml, StringComparison.Ordinal);
-        Assert.Contains("MinWidth=\"480\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("MinWidth=\"580\"", xaml, StringComparison.Ordinal);
         Assert.Contains("<ColumnDefinition Width=\"*\" />", xaml, StringComparison.Ordinal);
         Assert.Contains("<CheckBox Grid.Column=\"2\"", xaml, StringComparison.Ordinal);
         Assert.Contains("HorizontalAlignment=\"Right\"", xaml, StringComparison.Ordinal);

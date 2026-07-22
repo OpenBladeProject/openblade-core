@@ -223,7 +223,7 @@
                           x:DataType="local:DashboardCardOption">
                 <Grid ColumnSpacing="10"
                       Padding="2,6,8,6"
-                      MinWidth="480"
+                      MinWidth="580"
                       HorizontalAlignment="Stretch">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="Auto" />

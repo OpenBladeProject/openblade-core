@@ -1631,7 +1631,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
         dashboardCustomizerRefresh = LoadEditorFromDashboard;
         dashboardCustomizerApply = ApplyEditorToDashboard;
 
-        var content = new StackPanel { Width = 520, Spacing = 10 };
+        var content = new StackPanel { Width = 600, Spacing = 10 };
         content.Children.Add(new TextBlock
         {
             Text = "Check cards to show. Drag them into the order you want.",
@@ -1642,6 +1642,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
 
         var dialog = new ContentDialog
         {
+            MinWidth = 640,
             XamlRoot = Root.XamlRoot,
             Title = "Customize Dashboard",
             Content = content,
