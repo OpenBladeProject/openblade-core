@@ -326,6 +326,7 @@ public sealed class WinUiShellContractTests
         Assert.DoesNotContain("Translation = new System.Numerics.Vector3(80, 0, 0)", window, StringComparison.Ordinal);
         Assert.DoesNotContain("grip.PointerMoved +=", window, StringComparison.Ordinal);
         Assert.Contains("x:Key=\"DashboardCardOptionTemplate\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("MinWidth=\"480\"", xaml, StringComparison.Ordinal);
         Assert.Contains("<ColumnDefinition Width=\"*\" />", xaml, StringComparison.Ordinal);
         Assert.Contains("<CheckBox Grid.Column=\"2\"", xaml, StringComparison.Ordinal);
         Assert.Contains("HorizontalAlignment=\"Right\"", xaml, StringComparison.Ordinal);

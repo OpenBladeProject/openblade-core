@@ -223,6 +223,7 @@
                           x:DataType="local:DashboardCardOption">
                 <Grid ColumnSpacing="10"
                       Padding="2,6,8,6"
+                      MinWidth="480"
                       HorizontalAlignment="Stretch">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="Auto" />
@@ -242,6 +243,7 @@
                     </StackPanel>
                     <CheckBox Grid.Column="2"
                               IsChecked="{x:Bind IsPinned, Mode=TwoWay}"
+                              AutomationProperties.Name="{x:Bind Label, Mode=OneTime}"
                               HorizontalAlignment="Right"
                               VerticalAlignment="Center" />
                 </Grid>
