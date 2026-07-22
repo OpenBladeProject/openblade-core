@@ -82,7 +82,7 @@ public sealed class WinUiShellContractTests
         Assert.DoesNotContain("ViewModel.SaveProfilesCommand", xaml, StringComparison.Ordinal);
         Assert.DoesNotContain("Text=\"Current display\"", xaml, StringComparison.Ordinal);
         Assert.DoesNotContain("OnCaptureCurrentDisplaySettings", xaml, StringComparison.Ordinal);
-        Assert.Contains("ViewModel.SaveThermalProfileDraftCommand", xaml, StringComparison.Ordinal);
+        Assert.Contains("ViewModel.SaveLaptopProfileDraftCommand", xaml, StringComparison.Ordinal);
         Assert.Contains("ViewModel.SaveLightingProfileDraftCommand", xaml, StringComparison.Ordinal);
         Assert.Contains("DisplayViewModel.CanSaveCurrentSettingsToProfile", xaml, StringComparison.Ordinal);
         Assert.Contains("x:Name=\"DashboardPageHeader\"", xaml, StringComparison.Ordinal);
@@ -104,7 +104,7 @@ public sealed class WinUiShellContractTests
             xaml,
             "Style=\"{StaticResource ProfileSaveOverflowButtonStyle}\""));
         Assert.Contains("<Setter Property=\"Height\" Value=\"32\" />", xaml, StringComparison.Ordinal);
-        Assert.Equal(8, CountOccurrences(xaml, "ProfileSaveActions.Margin\" Value=\"0,2,0,0\""));
+        Assert.Equal(6, CountOccurrences(xaml, "ProfileSaveActions.Margin\" Value=\"0,2,0,0\""));
         Assert.DoesNotContain("ViewModel.ThermalProfileRelationshipStatus", xaml, StringComparison.Ordinal);
         Assert.DoesNotContain("ViewModel.LightingProfileRelationshipStatus", xaml, StringComparison.Ordinal);
         Assert.DoesNotContain("DisplayViewModel.ProfileRelationshipStatus", xaml, StringComparison.Ordinal);

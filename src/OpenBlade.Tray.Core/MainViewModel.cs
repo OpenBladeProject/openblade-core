@@ -392,7 +392,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             _ => CanSaveActiveProfileDraft(ProfileDraftGroup.Laptop));
         DiscardLaptopProfileDraftCommand = CreateCommand(
             (_, token) => DiscardActiveProfileDraftAsync(ProfileDraftGroup.Laptop, token),
-            _ => HasLaptopProfileDraft);
+            _ => HasLaptopPageProfileDraft);
         ExportDiagnosticsCommand = CreateCommand(
             ExportDiagnosticsAsync,
             _ => Volatile.Read(ref disposed) == 0 && IsConnected);
@@ -2019,6 +2019,8 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     public bool HasDisplayProfileDraft => activeProfileDraftDisplay is not null;
 
     public bool HasLaptopProfileDraft => activeProfileDraftLaptopBehavior is not null;
+
+    public bool HasLaptopPageProfileDraft => HasThermalProfileDraft || HasLaptopProfileDraft;
 
     public string ThermalProfileRelationshipStatus => ProfileRelationshipStatus(
         HasThermalProfileDraft,
@@ -4401,6 +4403,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         }
         else if (group == ProfileDraftGroup.Laptop)
         {
+            bool controlsRestored = await ClearActiveProfileHardwareOverridesAsync(token, group);
             LaptopBehaviorProfileSettings saved = GetProfile(source).EffectiveLaptopBehavior;
             LaptopBehaviorProfileSettings original = activeProfileOriginalLaptopBehavior
                 ?? LaptopBehaviorProfileSettings.Unconfigured();
@@ -4408,10 +4411,12 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
                 saved.StartupAnimationEnabled ?? original.StartupAnimationEnabled,
                 saved.FunctionKeyPrimary ?? original.FunctionKeyPrimary,
                 saved.GamingModeEnabled ?? original.GamingModeEnabled);
-            restored = await RestoreSavedLaptopBehaviorAsync(
-                source,
-                behaviorToRestore,
-                token);
+            bool behaviorRestored = activeProfileDraftLaptopBehavior is null
+                || await RestoreSavedLaptopBehaviorAsync(
+                    source,
+                    behaviorToRestore,
+                    token);
+            restored = controlsRestored && behaviorRestored;
         }
         else
         {
@@ -4490,7 +4495,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         ProfileDraftGroup? group = null)
     {
         bool restored = true;
-        if ((group is null or ProfileDraftGroup.Thermal)
+        if ((group is null or ProfileDraftGroup.Thermal or ProfileDraftGroup.Laptop)
             && activeProfileDraftPerformance is not null)
         {
             restored &= await RunOperationAsync(
@@ -4499,7 +4504,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
                     cancellationToken),
                 token);
         }
-        if ((group is null or ProfileDraftGroup.Thermal)
+        if ((group is null or ProfileDraftGroup.Thermal or ProfileDraftGroup.Laptop)
             && activeProfileDraftFans is not null)
         {
             restored &= await RunOperationAsync(
@@ -5100,6 +5105,11 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             },
             ProfileDraftGroup.Laptop => saved with
             {
+                Performance = activeProfileDraftPerformance ?? saved.Performance,
+                CustomPerformance = activeProfileDraftCustomPerformance
+                    ?? saved.CustomPerformance,
+                Fans = activeProfileDraftFans ?? saved.Fans,
+                FanControl = activeProfileDraftFanControl ?? saved.FanControl,
                 LaptopBehavior = activeProfileDraftLaptopBehavior
                     ?? saved.LaptopBehavior,
             },
@@ -5294,6 +5304,10 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
                 activeProfileOriginalDisplay = null;
                 break;
             case ProfileDraftGroup.Laptop:
+                activeProfileDraftPerformance = null;
+                activeProfileDraftCustomPerformance = null;
+                activeProfileDraftFans = null;
+                activeProfileDraftFanControl = null;
                 activeProfileDraftLaptopBehavior = null;
                 activeProfileOriginalLaptopBehavior = null;
                 break;
@@ -5316,7 +5330,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         ProfileDraftGroup.Thermal => HasThermalProfileDraft,
         ProfileDraftGroup.Lighting => HasLightingProfileDraft,
         ProfileDraftGroup.Display => HasDisplayProfileDraft,
-        ProfileDraftGroup.Laptop => HasLaptopProfileDraft,
+        ProfileDraftGroup.Laptop => HasLaptopPageProfileDraft,
         _ => false,
     };
 
@@ -5327,6 +5341,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasLightingProfileDraft)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasDisplayProfileDraft)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasLaptopProfileDraft)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasLaptopPageProfileDraft)));
         PropertyChanged?.Invoke(
             this,
             new PropertyChangedEventArgs(nameof(ThermalProfileRelationshipStatus)));
@@ -5530,7 +5545,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         {
             settings.Add(value.ColorProfileKey);
         }
-        return settings.Count == 0 ? "Use current settings" : string.Join(" | ", settings);
+        return settings.Count == 0 ? "Not set" : string.Join(" | ", settings);
     }
 
     private static ProfilePresentation CreateProfilePresentation(PowerProfile profile)
@@ -5549,8 +5564,8 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
                 LogoLightingMode.Static => "Static",
                 LogoLightingMode.Breathing => "Breathing",
                 LogoLightingMode.Off => "Off",
-                null => "Use current",
-                _ => "Use current",
+                null => "Not set",
+                _ => "Not set",
             },
             profile.EffectiveLightingPowerPolicy.TurnOffWhenDisplayTurnsOff
                 ? "Turn lighting off"
@@ -5563,14 +5578,14 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             {
                 true => "On",
                 false => "Off",
-                null => "Use current",
+                null => "Not set",
             },
             FormatDisplayColorProfile(display.ColorProfileKey),
             profile.EffectiveLaptopBehavior.FunctionKeyPrimary switch
             {
                 FunctionKeyPrimaryMode.FunctionKeys => "Function keys",
                 FunctionKeyPrimaryMode.MultimediaKeys => "Media keys",
-                _ => "Use current",
+                _ => "Not set",
             },
             FormatOptionalToggle(profile.EffectiveLaptopBehavior.GamingModeEnabled),
             FormatOptionalToggle(profile.EffectiveLaptopBehavior.StartupAnimationEnabled));
@@ -5580,7 +5595,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     {
         true => "On",
         false => "Off",
-        null => "Use current",
+        null => "Not set",
     };
 
     private static string FormatFanControl(PowerProfile profile)
@@ -5712,7 +5727,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     {
         if (string.IsNullOrWhiteSpace(key))
         {
-            return "Use current";
+            return "Not set";
         }
 
         string[] parts = key.Split('-', StringSplitOptions.RemoveEmptyEntries);
@@ -5738,7 +5753,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     {
         if (string.IsNullOrWhiteSpace(key))
         {
-            return "Use current";
+            return "Not set";
         }
 
         string fileName = Path.GetFileNameWithoutExtension(key);

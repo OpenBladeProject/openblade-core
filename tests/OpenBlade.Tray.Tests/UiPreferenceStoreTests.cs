@@ -31,6 +31,9 @@ public sealed class UiPreferenceStoreTests : IDisposable
         Assert.Equal(
             TelemetryPreferenceDefaults.TrayHoverItems,
             preferences.EffectiveTrayHoverLabelItems);
+        Assert.Equal(
+            DashboardCardPreferenceDefaults.Cards,
+            preferences.EffectiveDashboardCards);
     }
 
     [Fact]
@@ -55,6 +58,11 @@ public sealed class UiPreferenceStoreTests : IDisposable
                 new(TrayHoverLabelItemKind.GpuTemperature, true),
                 new(TrayHoverLabelItemKind.ActiveProfile, true),
                 new(TrayHoverLabelItemKind.BatteryPower, false),
+            ],
+            DashboardCards:
+            [
+                new(DashboardCardKind.Battery, true),
+                new(DashboardCardKind.DeviceStatus, false),
             ]));
 
         UiPreferences reloaded = await store.LoadAsync();
@@ -82,6 +90,12 @@ public sealed class UiPreferenceStoreTests : IDisposable
         Assert.Equal(
             [true, true, true, true, false, false, false, false],
             reloaded.EffectiveTrayHoverLabelItems.Select(item => item.IsEnabled));
+        Assert.Equal(
+            [DashboardCardKind.Battery, DashboardCardKind.DeviceStatus],
+            reloaded.EffectiveDashboardCards.Take(2).Select(item => item.Kind));
+        Assert.Equal(
+            [true, false],
+            reloaded.EffectiveDashboardCards.Take(2).Select(item => item.IsPinned));
         Assert.Equal("Dark", document.RootElement.GetProperty("theme").GetString());
         Assert.False(document.RootElement.TryGetProperty(
             "keepManualChangesUntilCleared",
@@ -100,6 +114,10 @@ public sealed class UiPreferenceStoreTests : IDisposable
         Assert.Equal(
             "GpuTemperature",
             document.RootElement.GetProperty("trayHoverLabelItems")[0]
+                .GetProperty("kind").GetString());
+        Assert.Equal(
+            "Battery",
+            document.RootElement.GetProperty("dashboardCards")[0]
                 .GetProperty("kind").GetString());
     }
 

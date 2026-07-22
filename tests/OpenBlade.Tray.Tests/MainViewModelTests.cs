@@ -205,8 +205,8 @@ public sealed class MainViewModelTests
         Assert.Equal("Silent", viewModel.PluggedInProfilePresentation.PowerMode);
         Assert.Equal("Automatic", viewModel.PluggedInProfilePresentation.Fans);
         Assert.Equal("Off", viewModel.PluggedInProfilePresentation.LightingEffect);
-        Assert.Equal("Use current", viewModel.PluggedInProfilePresentation.DisplayRefreshRate);
-        Assert.Equal("Use current", viewModel.PluggedInProfilePresentation.DisplayColorProfile);
+        Assert.Equal("Not set", viewModel.PluggedInProfilePresentation.DisplayRefreshRate);
+        Assert.Equal("Not set", viewModel.PluggedInProfilePresentation.DisplayColorProfile);
         Assert.Equal(PowerSource.PluggedIn, viewModel.SelectedProfileComparisonOption.Source);
         Assert.True(viewModel.IsSelectedProfileActive);
         Assert.True(viewModel.IsSelectedProfileDraft);
@@ -494,9 +494,9 @@ public sealed class MainViewModelTests
         viewModel.RecordDisplayProfileChange(PowerSource.PluggedIn, current);
 
         Assert.True(viewModel.HasActiveProfileDraft);
-        Assert.Equal("Use current", viewModel.PluggedInProfilePresentation.DisplayRefreshRate);
-        Assert.Equal("Use current", viewModel.PluggedInProfilePresentation.DisplayHdr);
-        Assert.Equal("Use current", viewModel.PluggedInProfilePresentation.DisplayColorProfile);
+        Assert.Equal("Not set", viewModel.PluggedInProfilePresentation.DisplayRefreshRate);
+        Assert.Equal("Not set", viewModel.PluggedInProfilePresentation.DisplayHdr);
+        Assert.Equal("Not set", viewModel.PluggedInProfilePresentation.DisplayColorProfile);
 
         await Assert.IsType<AsyncRelayCommand>(viewModel.SaveProfilesCommand)
             .ExecuteAsync(null);
@@ -2256,6 +2256,43 @@ public sealed class MainViewModelTests
         Assert.Equal(imported, client.LastProfiles);
         Assert.Equal(imported, viewModel.Profiles);
         Assert.False(viewModel.HasActiveProfileDraft);
+    }
+
+    [Fact]
+    public async Task LaptopPageProfileAction_SavesPowerAndCoolingChanges()
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        ServiceStatusSnapshot baseline = CreateStatus(
+            verified: true,
+            blocked: false,
+            capabilities: DeviceCapabilities.SafeTargetDefaults() with
+            {
+                LightingEffects = new HashSet<LightingEffect>(
+                    Enum.GetValues<LightingEffect>()),
+                ChargeLimits = ChargeLimits(),
+                OneShotLaptopControls = new HashSet<OneShotLaptopControl>(
+                    Enum.GetValues<OneShotLaptopControl>()),
+            });
+        client.Publish(baseline);
+        await WaitUntilAsync(() => viewModel.IsConnected);
+
+        await Assert.IsType<AsyncRelayCommand>(viewModel.SetPerformanceCommand)
+            .ExecuteAsync(PerformancePreset.Performance);
+
+        Assert.True(viewModel.HasThermalProfileDraft);
+        Assert.True(viewModel.HasLaptopPageProfileDraft);
+        Assert.True(viewModel.SaveLaptopProfileDraftCommand.CanExecute(null));
+
+        await Assert.IsType<AsyncRelayCommand>(viewModel.SaveLaptopProfileDraftCommand)
+            .ExecuteAsync(null);
+
+        Assert.Equal(PerformancePreset.Performance, viewModel.Profiles.PluggedIn.Performance);
+        Assert.Equal(PerformancePreset.Performance, client.LastProfiles?.PluggedIn.Performance);
+        Assert.Null(client.PerformanceOverride);
+        Assert.False(viewModel.HasThermalProfileDraft);
+        Assert.False(viewModel.HasLaptopPageProfileDraft);
     }
 
     [Fact]

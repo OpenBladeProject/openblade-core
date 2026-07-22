@@ -1,3 +1,5 @@
+using System.Collections.ObjectModel;
+using System.Collections.Specialized;
 using System.ComponentModel;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
@@ -44,6 +46,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
     private bool changingStartupAnimation;
     private bool changingExternalLightingPolicy;
     private bool changingDisplaySettings;
+    private bool changingDashboardCards;
     private bool chargeLimitCommitInProgress;
     private bool fanControlCommitInProgress;
     private bool lightingCommitInProgress;
@@ -53,6 +56,8 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
     private bool? profilesUseCompactLayout;
     private bool enforcingMinimumWindowSize;
     private int disposed;
+    private Dictionary<DashboardCardKind, DashboardCardRegistration>
+        dashboardCardRegistrations = [];
 
     public MainWindow()
     {
@@ -81,6 +86,29 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
         displayRefreshTimer.IsRepeating = true;
         displayRefreshTimer.Tick += OnDisplayRefreshTimerTick;
         InitializeComponent();
+        dashboardCardRegistrations = new Dictionary<
+            DashboardCardKind,
+            DashboardCardRegistration>
+        {
+            [DashboardCardKind.DeviceStatus] = new(
+                DeviceStatusCard,
+                DashboardUnpinnedCardsHost,
+                0),
+            [DashboardCardKind.PowerMode] = new(PowerModeCard, LaptopCardsHost, 0),
+            [DashboardCardKind.Fans] = new(FansCard, LaptopCardsHost, 1),
+            [DashboardCardKind.Battery] = new(BatteryCard, LaptopCardsHost, 2),
+            [DashboardCardKind.KeyboardBehavior] = new(
+                KeyboardBehaviorCard,
+                LaptopCardsHost,
+                3),
+            [DashboardCardKind.StartupAnimation] = new(
+                StartupAnimationCard,
+                LaptopCardsHost,
+                4),
+            [DashboardCardKind.Lighting] = new(LightingCard, LightingCardsHost, 0),
+            [DashboardCardKind.Display] = new(DisplayCard, DisplayCardsHost, 0),
+        };
+        DashboardCards.CollectionChanged += OnDashboardCardsCollectionChanged;
         if (OpenBladeIconAssets.ApplicationIconPath is { } applicationIconPath)
         {
             AppWindow.SetIcon(applicationIconPath);
@@ -119,6 +147,8 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
     public DisplaySettingsViewModel DisplayViewModel { get; }
 
     public bool StartMinimized { get; private set; }
+
+    public ObservableCollection<DashboardCardOption> DashboardCards { get; } = [];
 
     public PerformancePreset SilentPreset { get; } = PerformancePreset.Silent;
 
@@ -161,6 +191,11 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
         }
 
         ViewModel.PropertyChanged -= OnViewModelPropertyChanged;
+        DashboardCards.CollectionChanged -= OnDashboardCardsCollectionChanged;
+        foreach (DashboardCardOption option in DashboardCards)
+        {
+            option.PropertyChanged -= OnDashboardCardOptionChanged;
+        }
         DisplayViewModel.UserSettingsChanged -= OnDisplayUserSettingsChanged;
         ViewModel.SavedDisplayProfileRestoreRequested -= OnSavedDisplayProfileRestoreRequested;
         AppWindow.Closing -= OnClosing;
@@ -190,6 +225,8 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
             TelemetryPreferenceDefaults.DashboardItems;
         IReadOnlyList<TrayHoverLabelItemPreference> trayHoverLabelItems =
             TelemetryPreferenceDefaults.TrayHoverItems;
+        IReadOnlyList<DashboardCardPreference> dashboardCards =
+            DashboardCardPreferenceDefaults.Cards;
         try
         {
             UiPreferences preferences = await preferenceStore.LoadAsync();
@@ -199,6 +236,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
             trayHoverLabelMode = preferences.TrayHoverLabelMode;
             dashboardTelemetryItems = preferences.EffectiveDashboardTelemetryItems;
             trayHoverLabelItems = preferences.EffectiveTrayHoverLabelItems;
+            dashboardCards = preferences.EffectiveDashboardCards;
             StartMinimized = preferences.StartMinimized;
         }
         catch (Exception exception)
@@ -217,6 +255,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
         ViewModel.LiveReadingsRefreshCadence = liveReadingsRefreshCadence;
         ViewModel.TrayHoverLabelMode = trayHoverLabelMode;
         ViewModel.ApplyTelemetryPreferences(dashboardTelemetryItems, trayHoverLabelItems);
+        ApplyDashboardPreferences(dashboardCards);
         StartMinimizedToggle.IsOn = StartMinimized;
         try
         {
@@ -393,7 +432,12 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
                 ViewModel.LiveReadingsRefreshCadence,
                 StartMinimized,
                 ViewModel.EnabledDashboardTelemetryItems,
-                ViewModel.TrayHoverLabelPreferences));
+                ViewModel.TrayHoverLabelPreferences,
+                DashboardCards
+                    .Select(option => new DashboardCardPreference(
+                        option.Kind,
+                        option.IsPinned))
+                    .ToArray()));
         }
         catch (ObjectDisposedException)
         {
@@ -1128,6 +1172,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
     {
         string destination = (args.SelectedItemContainer as NavigationViewItem)?.Tag as string
             ?? "home";
+        RestoreDashboardCardsToNativePages();
         HomePage.Visibility = destination == "home"
             ? Visibility.Visible
             : Visibility.Collapsed;
@@ -1159,18 +1204,18 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
         {
             dispatcherQueue.TryEnqueue(
                 DispatcherQueuePriority.Low,
-                () => UpdateDashboardLayout());
+                () =>
+                {
+                    ArrangeDashboardCards();
+                    UpdateDashboardLayout();
+                });
         }
         else if (destination == "display")
         {
-            displayRefreshTimer.Start();
             _ = RefreshDisplaySettingsAsync();
         }
 
-        if (destination != "display")
-        {
-            displayRefreshTimer.Stop();
-        }
+        UpdateDisplayRefreshState();
     }
 
     private async void OnDisplayRefreshTimerTick(
@@ -1178,7 +1223,9 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
         object args)
     {
         if (Volatile.Read(ref disposed) != 0
-            || DisplayPage.Visibility != Visibility.Visible
+            || (DisplayPage.Visibility != Visibility.Visible
+                && !(HomePage.Visibility == Visibility.Visible
+                    && IsDashboardCardPinned(DashboardCardKind.Display)))
             || DisplayViewModel.IsBusy
             || DisplayRefreshRatePicker.IsDropDownOpen
             || DisplayColorProfilePicker.IsDropDownOpen)
@@ -1187,6 +1234,24 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
         }
 
         await RefreshDisplaySettingsAsync();
+    }
+
+    private bool IsDashboardCardPinned(DashboardCardKind kind) =>
+        DashboardCards.Any(option => option.Kind == kind && option.IsPinned);
+
+    private void UpdateDisplayRefreshState()
+    {
+        bool shouldRefresh = DisplayPage.Visibility == Visibility.Visible
+            || (HomePage.Visibility == Visibility.Visible
+                && IsDashboardCardPinned(DashboardCardKind.Display));
+        if (shouldRefresh)
+        {
+            displayRefreshTimer.Start();
+        }
+        else
+        {
+            displayRefreshTimer.Stop();
+        }
     }
 
     private async void OnDisplayRefreshRateChanged(
@@ -1440,6 +1505,126 @@ public sealed partial class MainWindow : Window, IAsyncDisposable
             await failure.ShowAsync();
         }
     }
+
+    private void ApplyDashboardPreferences(
+        IReadOnlyList<DashboardCardPreference> preferences)
+    {
+        changingDashboardCards = true;
+        try
+        {
+            foreach (DashboardCardOption option in DashboardCards)
+            {
+                option.PropertyChanged -= OnDashboardCardOptionChanged;
+            }
+
+            DashboardCards.Clear();
+            foreach (DashboardCardOption option in
+                     DashboardCardPreferenceDefaults.CreateOptions(preferences))
+            {
+                option.PropertyChanged += OnDashboardCardOptionChanged;
+                DashboardCards.Add(option);
+            }
+        }
+        finally
+        {
+            changingDashboardCards = false;
+        }
+
+        ArrangeDashboardCards();
+        UpdateDisplayRefreshState();
+    }
+
+    private void OnDashboardCardOptionChanged(
+        object? sender,
+        PropertyChangedEventArgs args)
+    {
+        if (changingDashboardCards || args.PropertyName != nameof(DashboardCardOption.IsPinned))
+        {
+            return;
+        }
+
+        ArrangeDashboardCards();
+        UpdateDisplayRefreshState();
+        QueuePreferenceSave();
+    }
+
+    private void OnDashboardCardsCollectionChanged(
+        object? sender,
+        NotifyCollectionChangedEventArgs args)
+    {
+        if (changingDashboardCards)
+        {
+            return;
+        }
+
+        ArrangeDashboardCards();
+        UpdateDisplayRefreshState();
+        QueuePreferenceSave();
+    }
+
+    private void OnDashboardCardsReordered(
+        ListViewBase sender,
+        DragItemsCompletedEventArgs args)
+    {
+        ArrangeDashboardCards();
+        UpdateDisplayRefreshState();
+        QueuePreferenceSave();
+    }
+
+    private void OnResetDashboardCards(object sender, RoutedEventArgs args)
+    {
+        ApplyDashboardPreferences(DashboardCardPreferenceDefaults.Cards);
+        QueuePreferenceSave();
+    }
+
+    private void ArrangeDashboardCards()
+    {
+        RestoreDashboardCardsToNativePages();
+        if (HomePage.Visibility == Visibility.Visible)
+        {
+            foreach (DashboardCardOption option in DashboardCards.Where(option => option.IsPinned))
+            {
+                if (dashboardCardRegistrations.TryGetValue(option.Kind, out DashboardCardRegistration? card))
+                {
+                    MoveToPanel(card.Element, DashboardCardHost, DashboardCardHost.Children.Count);
+                }
+            }
+        }
+
+        DashboardEmptyState.Visibility = DashboardCards.Any(option => option.IsPinned)
+            ? Visibility.Collapsed
+            : Visibility.Visible;
+    }
+
+    private void RestoreDashboardCardsToNativePages()
+    {
+        foreach (IGrouping<StackPanel, DashboardCardRegistration> group in
+                 dashboardCardRegistrations.Values.GroupBy(card => card.SourceHost))
+        {
+            foreach (DashboardCardRegistration card in group.OrderBy(card => card.SourceIndex))
+            {
+                MoveToPanel(card.Element, card.SourceHost, card.SourceIndex);
+            }
+        }
+    }
+
+    private static void MoveToPanel(
+        FrameworkElement element,
+        StackPanel destination,
+        int index)
+    {
+        if (element.Parent is Microsoft.UI.Xaml.Controls.Panel current)
+        {
+            current.Children.Remove(element);
+        }
+
+        destination.Children.Insert(Math.Min(index, destination.Children.Count), element);
+    }
+
+    private sealed record DashboardCardRegistration(
+        FrameworkElement Element,
+        StackPanel SourceHost,
+        int SourceIndex);
 
     private async void OnImportProfiles(object sender, RoutedEventArgs args)
     {

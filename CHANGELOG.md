@@ -7,6 +7,9 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Added
 
+- Added a customizable Dashboard card picker. Users can pin live cards from
+  Laptop, Lighting, and Display, drag them into a preferred order, and reset
+  the layout; the selection and order persist in UI preferences.
 - Added a shipped uninstaller to Windows Installed apps and the Start menu.
   The user-facing path confirms removal and preserves profiles by default;
   `uninstall --purge` remains an explicit command for deleting saved data. Setup
@@ -22,6 +25,9 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Changed
 
+- Moved power mode, fan controls, and battery controls to the Laptop page while
+  keeping the same live controls available as optional Dashboard cards. Profile
+  comparison cells now say `Not set` when a profile does not manage a setting.
 - Reduced SessionAgent background work by sharing one bounded service-status
   feed across display and lighting features, making idle-lighting checks
   deadline-driven, and removing per-event allocations from the Raw Input path.

@@ -16,7 +16,7 @@ public sealed class CapabilityPresentationTests
         [
             "{x:Bind ViewModel.HasThermalProfileDraft, Mode=OneWay}",
             "{x:Bind ViewModel.HasProfileEditorChanges, Mode=OneWay}",
-            "{x:Bind ViewModel.HasLaptopProfileDraft, Mode=OneWay}",
+            "{x:Bind ViewModel.HasLaptopPageProfileDraft, Mode=OneWay}",
             "{x:Bind ViewModel.HasLightingProfileDraft, Mode=OneWay}",
             "{x:Bind DisplayViewModel.CanSaveCurrentSettingsToProfile, Mode=OneWay}",
         ];
@@ -172,16 +172,21 @@ public sealed class CapabilityPresentationTests
         Assert.DoesNotContain(xaml, "ViewModel.SetChargeLimitCommand", StringComparison.Ordinal);
         Assert.DoesNotContain(xaml, "ViewModel.KeepManualChangesUntilCleared", StringComparison.Ordinal);
         Assert.Equal(
-            8,
+            6,
             document.Descendants().Count(element => element.Name.LocalName == "VisualState"));
         Assert.Equal(
-            4,
+            3,
             document.Descendants().Count(element =>
                 element.Name.LocalName == "AdaptiveTrigger"
                 && Attribute(element, "MinWindowWidth") == "900"));
         Assert.DoesNotContain("BalancedChoice", xaml, StringComparison.Ordinal);
         Assert.DoesNotContain("BatteryActionColumn", xaml, StringComparison.Ordinal);
         Assert.DoesNotContain("ProfileChargeLimitEditor", xaml, StringComparison.Ordinal);
+        Assert.Contains("x:Name=\"DashboardCardPicker\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("CanReorderItems=\"True\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("x:Name=\"LaptopCardsHost\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("x:Name=\"LightingCardsHost\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("x:Name=\"DisplayCardsHost\"", xaml, StringComparison.Ordinal);
         XElement home = NamedElement(document, "ScrollView", "HomePage");
         _ = Assert.Single(
             home.Descendants(),
@@ -960,7 +965,7 @@ public sealed class CapabilityPresentationTests
             blocked: false,
             conflicts: ["RazerAppEngine"],
             capabilities: DeviceCapabilities.SafeTargetDefaults()));
-        await WaitUntilAsync(() => viewModel.IsConnected);
+        await WaitUntilAsync(() => viewModel.HasControllerAdvisory);
         var controller = new TrayMenuController(viewModel, () => { }, () => { });
 
         Assert.True(controller.Find("Automatic").IsEnabled);
