@@ -49,6 +49,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
     private bool changingExternalLightingPolicy;
     private bool changingDisplaySettings;
     private bool changingDashboardCards;
+    private bool changingPrimaryNavigationItems;
     private bool changingAccentColor;
     private bool dashboardCardsReady;
     private bool canonicalLaptopCardsPlaced;
@@ -100,6 +101,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         displayRefreshTimer.Tick += OnDisplayRefreshTimerTick;
         InitializeComponent();
         DashboardCards.CollectionChanged += OnDashboardCardsCollectionChanged;
+        PrimaryNavigationItems.CollectionChanged += OnPrimaryNavigationItemsCollectionChanged;
         accentColorManager = new AccentColorManager(Root, dispatcherQueue);
         accentColorManager.ColorChanged += OnAccentColorChanged;
         if (OpenBladeIconAssets.ApplicationIconPath is { } applicationIconPath)
@@ -235,6 +237,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         ViewModel.PropertyChanged -= OnViewModelPropertyChanged;
         DisplayViewModel.PropertyChanged -= OnDisplayViewModelPropertyChanged;
         DashboardCards.CollectionChanged -= OnDashboardCardsCollectionChanged;
+        PrimaryNavigationItems.CollectionChanged -= OnPrimaryNavigationItemsCollectionChanged;
         foreach (DashboardCardOption option in DashboardCards)
         {
             option.PropertyChanged -= OnDashboardCardOptionChanged;
@@ -1769,13 +1772,21 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
     private void ApplyPrimaryNavigationPreferences(
         IReadOnlyList<PrimaryNavigationItemKind> preferences)
     {
-        PrimaryNavigationItems.Clear();
-        foreach (PrimaryNavigationItemKind kind in
-                 PrimaryNavigationPreferenceDefaults.Normalize(preferences))
+        changingPrimaryNavigationItems = true;
+        try
         {
-            PrimaryNavigationItems.Add(new PrimaryNavigationItemOption(
-                kind,
-                GetPrimaryNavigationLabel(kind)));
+            PrimaryNavigationItems.Clear();
+            foreach (PrimaryNavigationItemKind kind in
+                     PrimaryNavigationPreferenceDefaults.Normalize(preferences))
+            {
+                PrimaryNavigationItems.Add(new PrimaryNavigationItemOption(
+                    kind,
+                    GetPrimaryNavigationLabel(kind)));
+            }
+        }
+        finally
+        {
+            changingPrimaryNavigationItems = false;
         }
 
         ApplyPrimaryNavigationOrder();
@@ -1827,70 +1838,22 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             _ => throw new ArgumentOutOfRangeException(nameof(kind)),
         };
 
-    private async void OnCustomizeNavigation(object sender, RoutedEventArgs args)
+    private void OnPrimaryNavigationItemsCollectionChanged(
+        object? sender,
+        NotifyCollectionChangedEventArgs args)
     {
-        var editorItems = new ObservableCollection<PrimaryNavigationItemOption>(
-            PrimaryNavigationItems.Select(item => new PrimaryNavigationItemOption(
-                item.Kind,
-                item.Label)));
-        var list = new Microsoft.UI.Xaml.Controls.ListView
-        {
-            ItemsSource = editorItems,
-            SelectionMode = ListViewSelectionMode.None,
-            CanDragItems = true,
-            CanReorderItems = true,
-            ReorderMode = ListViewReorderMode.Enabled,
-            AllowDrop = true,
-            MaxHeight = 420,
-            HorizontalAlignment = Microsoft.UI.Xaml.HorizontalAlignment.Stretch,
-            HorizontalContentAlignment = Microsoft.UI.Xaml.HorizontalAlignment.Stretch,
-            ItemTemplate = (DataTemplate)Root.Resources["NavigationItemOptionTemplate"],
-            ItemContainerStyle = (Style)Root.Resources["DashboardReorderListItemStyle"],
-        };
-        AutomationProperties.SetName(list, "Navigation menu pages");
-
-        var content = new StackPanel { Width = 460, Spacing = 10 };
-        content.Children.Add(new TextBlock
-        {
-            Text = "Drag pages into the order you want. Dashboard stays first and About stays last.",
-            Style = (Style)Root.Resources["SecondaryTextStyle"],
-            TextWrapping = TextWrapping.Wrap,
-        });
-        content.Children.Add(list);
-
-        var resetButton = new Microsoft.UI.Xaml.Controls.Button
-        {
-            Content = "Reset to default",
-            HorizontalAlignment = Microsoft.UI.Xaml.HorizontalAlignment.Left,
-        };
-        resetButton.Click += (_, _) =>
-        {
-            editorItems.Clear();
-            foreach (PrimaryNavigationItemKind kind in PrimaryNavigationPreferenceDefaults.Items)
-            {
-                editorItems.Add(new PrimaryNavigationItemOption(
-                    kind,
-                    GetPrimaryNavigationLabel(kind)));
-            }
-        };
-        content.Children.Add(resetButton);
-
-        var dialog = new ContentDialog
-        {
-            MinWidth = 500,
-            XamlRoot = Root.XamlRoot,
-            Title = "Customize navigation",
-            Content = content,
-            PrimaryButtonText = "Apply",
-            CloseButtonText = "Cancel",
-            DefaultButton = ContentDialogButton.Primary,
-        };
-        if (await dialog.ShowAsync() != ContentDialogResult.Primary)
+        if (changingPrimaryNavigationItems)
         {
             return;
         }
 
-        ApplyPrimaryNavigationPreferences(editorItems.Select(item => item.Kind).ToArray());
+        ApplyPrimaryNavigationOrder();
+        QueuePreferenceSave();
+    }
+
+    private void OnResetNavigationOrder(object sender, RoutedEventArgs args)
+    {
+        ApplyPrimaryNavigationPreferences(PrimaryNavigationPreferenceDefaults.Items);
         QueuePreferenceSave();
     }
 

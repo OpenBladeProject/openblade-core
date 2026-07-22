@@ -490,7 +490,7 @@ public sealed class WinUiShellContractTests
         Assert.Equal(4, CountOccurrences(xaml, "Style=\"{StaticResource ActiveProfilePillTextStyle}\""));
         Assert.Contains("<TextBlock Text=\"Battery\" Style=\"{StaticResource CardTitleStyle}\" />", xaml, StringComparison.Ordinal);
         Assert.Contains("Text=\"Power mode\"", xaml, StringComparison.Ordinal);
-        Assert.Equal(3, CountOccurrences(xaml, "Style=\"{StaticResource SettingsSubcardStyle}\""));
+        Assert.Equal(4, CountOccurrences(xaml, "Style=\"{StaticResource SettingsSubcardStyle}\""));
         Assert.Equal(3, CountOccurrences(xaml, "Style=\"{StaticResource SettingsLastSubcardStyle}\""));
         Assert.Contains("<Setter Property=\"BorderThickness\" Value=\"0,1,0,0\" />", xaml, StringComparison.Ordinal);
         Assert.DoesNotContain("<Setter Property=\"Margin\" Value=\"16,0,16,14\" />", xaml, StringComparison.Ordinal);
@@ -776,8 +776,14 @@ public sealed class WinUiShellContractTests
         Assert.Contains("<RepositionThemeTransition", xaml, StringComparison.Ordinal);
         Assert.Contains("dashboardCardPresentations", window, StringComparison.Ordinal);
         Assert.Contains("DashboardCardHost.Children.Move", window, StringComparison.Ordinal);
-        Assert.Contains("OnCustomizeNavigation", xaml, StringComparison.Ordinal);
-        Assert.Contains("CanReorderItems = true", window, StringComparison.Ordinal);
+        Assert.Contains("x:Name=\"NavigationMenuExpander\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("ItemsSource=\"{x:Bind PrimaryNavigationItems, Mode=OneWay}\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("AutomationProperties.Name=\"Navigation menu pages\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("OnPrimaryNavigationItemsCollectionChanged", window, StringComparison.Ordinal);
+        Assert.DoesNotContain("OnCustomizeNavigation", window, StringComparison.Ordinal);
+        Assert.DoesNotContain("Title = \"Customize navigation\"", window, StringComparison.Ordinal);
+        Assert.Contains("x:Name=\"TaskbarHoverLabelExpander\"", xaml, StringComparison.Ordinal);
+        Assert.Equal(2, CountOccurrences(xaml, "IsExpanded=\"False\""));
         Assert.Contains("App accent color", xaml, StringComparison.Ordinal);
         Assert.Contains("Windows accent", window, StringComparison.Ordinal);
         Assert.Contains("ColorValuesChanged +=", accentManager, StringComparison.Ordinal);

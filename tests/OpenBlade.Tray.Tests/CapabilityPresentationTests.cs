@@ -283,9 +283,14 @@ public sealed class CapabilityPresentationTests
             settings.Descendants().Count(element =>
                 Attribute(element, "Style") == "{StaticResource SettingsGroupStyle}"));
         Assert.Equal(
-            8,
+            6,
             settings.Descendants().Count(element =>
                 Attribute(element, "Style") == "{StaticResource SettingsRowStyle}"));
+        Assert.Equal(
+            2,
+            settings.Descendants().Count(element =>
+                element.Name.LocalName == "Expander"
+                && Attribute(element, "IsExpanded") == "False"));
         Assert.Equal(
             2,
             settings.Descendants().Count(element =>

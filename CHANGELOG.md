@@ -34,6 +34,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Changed
 
+- Replaced the navigation-order popup with an inline reorderable Settings card
+  and made both navigation and taskbar-hover editors collapsed by default.
 - Moved power mode, fan controls, and battery controls to the Laptop page while
   keeping the same live controls available as optional Dashboard cards. Profile
   comparison cells now say `Not set` when a profile does not manage a setting.

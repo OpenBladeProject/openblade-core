@@ -219,6 +219,11 @@
                 <Setter Property="MinHeight" Value="58" />
                 <Setter Property="Padding" Value="0" />
             </Style>
+            <Style x:Key="SettingsReorderListItemStyle" TargetType="ListViewItem">
+                <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                <Setter Property="MinHeight" Value="42" />
+                <Setter Property="Padding" Value="0" />
+            </Style>
             <DataTemplate x:Key="DashboardCardOptionTemplate"
                           x:DataType="local:DashboardCardOption">
                 <Grid ColumnSpacing="10"
@@ -251,8 +256,7 @@
             <DataTemplate x:Key="NavigationItemOptionTemplate"
                           x:DataType="local:PrimaryNavigationItemOption">
                 <Grid ColumnSpacing="12"
-                      Padding="6,8"
-                      MinWidth="420"
+                      Padding="6,4"
                       HorizontalAlignment="Stretch">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="Auto" />
@@ -2482,97 +2486,115 @@
                                             Click="OnChooseCustomAccentColor" />
                                 </Grid>
                             </Border>
-                            <Border Style="{StaticResource SettingsRowStyle}">
-                                <Grid ColumnSpacing="20">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="*" />
-                                        <ColumnDefinition Width="Auto" />
-                                    </Grid.ColumnDefinitions>
-                                    <StackPanel Spacing="3" VerticalAlignment="Center">
-                                        <TextBlock Text="Navigation menu"
-                                                   Style="{StaticResource CardTitleStyle}" />
-                                        <TextBlock Text="Choose the order of pages in the left menu."
-                                                   Style="{StaticResource SecondaryTextStyle}" />
-                                    </StackPanel>
-                                    <Button Grid.Column="1"
-                                            Content="Customize"
-                                            VerticalAlignment="Center"
-                                            Click="OnCustomizeNavigation" />
-                                </Grid>
+                            <Border BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                                    BorderThickness="0,0,0,1">
+                                <Expander x:Name="NavigationMenuExpander"
+                                          Style="{StaticResource CardContentExpanderStyle}"
+                                          IsExpanded="False"
+                                          AutomationProperties.Name="Navigation menu order">
+                                    <Expander.Resources>
+                                        <SolidColorBrush x:Key="ExpanderHeaderBackground" Color="Transparent" />
+                                        <Thickness x:Key="ExpanderHeaderBorderThickness">0</Thickness>
+                                    </Expander.Resources>
+                                    <Expander.Header>
+                                        <StackPanel Spacing="3" Margin="0,14">
+                                            <TextBlock Text="Navigation menu"
+                                                       Style="{StaticResource CardTitleStyle}" />
+                                            <TextBlock Text="Choose the order of pages in the left menu."
+                                                       Style="{StaticResource SecondaryTextStyle}" />
+                                        </StackPanel>
+                                    </Expander.Header>
+                                    <Border Style="{StaticResource SettingsSubcardStyle}">
+                                        <StackPanel Spacing="8">
+                                            <TextBlock Text="Drag pages into the order you want. Dashboard stays first and About stays last."
+                                                       Style="{StaticResource SecondaryTextStyle}" />
+                                            <ListView ItemsSource="{x:Bind PrimaryNavigationItems, Mode=OneWay}"
+                                                      SelectionMode="None"
+                                                      CanDragItems="True"
+                                                      CanReorderItems="True"
+                                                      ReorderMode="Enabled"
+                                                      AllowDrop="True"
+                                                      ItemTemplate="{StaticResource NavigationItemOptionTemplate}"
+                                                      ItemContainerStyle="{StaticResource SettingsReorderListItemStyle}"
+                                                      AutomationProperties.Name="Navigation menu pages" />
+                                            <Button Content="Reset to default"
+                                                    HorizontalAlignment="Left"
+                                                    Click="OnResetNavigationOrder" />
+                                        </StackPanel>
+                                    </Border>
+                                </Expander>
                             </Border>
-                            <Border Style="{StaticResource SettingsRowStyle}">
-                                <Grid ColumnSpacing="20">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="*" />
-                                        <ColumnDefinition Width="Auto" />
-                                    </Grid.ColumnDefinitions>
-                                    <StackPanel Spacing="3" VerticalAlignment="Center">
+                            <Expander x:Name="TaskbarHoverLabelExpander"
+                                      Style="{StaticResource CardContentExpanderStyle}"
+                                      IsExpanded="False"
+                                      AutomationProperties.Name="Taskbar hover label settings">
+                                <Expander.Resources>
+                                    <SolidColorBrush x:Key="ExpanderHeaderBackground" Color="Transparent" />
+                                    <Thickness x:Key="ExpanderHeaderBorderThickness">0</Thickness>
+                                </Expander.Resources>
+                                <Expander.Header>
+                                    <StackPanel Spacing="3" Margin="0,14">
                                         <TextBlock Text="Taskbar hover label" Style="{StaticResource CardTitleStyle}" />
                                         <TextBlock Text="Choose whether to show the app name, profile, and live details when you point at the tray icon."
                                                    Style="{StaticResource SecondaryTextStyle}" />
                                     </StackPanel>
-                                </Grid>
-                            </Border>
-                            <Border Style="{StaticResource SettingsLastSubcardStyle}">
-                                <StackPanel Spacing="8">
-                                    <TextBlock Text="Check items to include. Drag them into the order you want."
-                                               Style="{StaticResource SecondaryTextStyle}" />
-                                    <ListView ItemsSource="{x:Bind ViewModel.TrayHoverLabelItems, Mode=OneWay}"
-                                              SelectionMode="None"
-                                              CanDragItems="True"
-                                              CanReorderItems="True"
-                                              ReorderMode="Enabled"
-                                              AllowDrop="True"
-                                              AutomationProperties.Name="Taskbar hover label contents">
-                                        <ListView.ItemContainerStyle>
-                                            <Style TargetType="ListViewItem">
-                                                <Setter Property="HorizontalContentAlignment" Value="Stretch" />
-                                                <Setter Property="MinHeight" Value="42" />
-                                            </Style>
-                                        </ListView.ItemContainerStyle>
-                                        <ListView.ItemTemplate>
-                                            <DataTemplate x:DataType="local:TrayHoverLabelItemOption">
-                                                <Grid ColumnSpacing="10">
-                                                    <Grid.ColumnDefinitions>
-                                                        <ColumnDefinition Width="Auto" />
-                                                        <ColumnDefinition Width="*" />
-                                                    </Grid.ColumnDefinitions>
-                                                    <FontIcon Glyph="&#xE76F;"
-                                                              FontSize="14"
-                                                              Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                                                              VerticalAlignment="Center" />
-                                                    <CheckBox Grid.Column="1"
-                                                              Content="{x:Bind Label, Mode=OneTime}"
-                                                              IsChecked="{x:Bind IsEnabled, Mode=TwoWay}"
-                                                              VerticalAlignment="Center" />
-                                                </Grid>
-                                            </DataTemplate>
-                                        </ListView.ItemTemplate>
-                                    </ListView>
-                                    <StackPanel Spacing="4" Margin="4,4,4,0">
-                                        <TextBlock Text="Preview"
-                                                   Style="{StaticResource CardTitleStyle}" />
-                                        <TextBlock Text="{x:Bind ViewModel.TrayHoverLabelText, Mode=OneWay}"
-                                                   Style="{StaticResource SecondaryTextStyle}"
-                                                   TextWrapping="Wrap" />
-                                        <Grid ColumnSpacing="8"
-                                              Visibility="{x:Bind ViewModel.HasTrayHoverLabelOverflow, Mode=OneWay}">
-                                            <Grid.ColumnDefinitions>
-                                                <ColumnDefinition Width="Auto" />
-                                                <ColumnDefinition Width="*" />
-                                            </Grid.ColumnDefinitions>
-                                            <Ellipse Width="8"
-                                                     Height="8"
-                                                     VerticalAlignment="Center"
-                                                     Fill="{ThemeResource SystemFillColorCautionBrush}" />
-                                            <TextBlock Grid.Column="1"
-                                                       Text="{x:Bind ViewModel.TrayHoverLabelOverflowMessage, Mode=OneWay}"
+                                </Expander.Header>
+                                <Border Style="{StaticResource SettingsLastSubcardStyle}">
+                                    <StackPanel Spacing="8">
+                                        <TextBlock Text="Check items to include. Drag them into the order you want."
+                                                   Style="{StaticResource SecondaryTextStyle}" />
+                                        <ListView ItemsSource="{x:Bind ViewModel.TrayHoverLabelItems, Mode=OneWay}"
+                                                  SelectionMode="None"
+                                                  CanDragItems="True"
+                                                  CanReorderItems="True"
+                                                  ReorderMode="Enabled"
+                                                  AllowDrop="True"
+                                                  ItemContainerStyle="{StaticResource SettingsReorderListItemStyle}"
+                                                  AutomationProperties.Name="Taskbar hover label contents">
+                                            <ListView.ItemTemplate>
+                                                <DataTemplate x:DataType="local:TrayHoverLabelItemOption">
+                                                    <Grid ColumnSpacing="10">
+                                                        <Grid.ColumnDefinitions>
+                                                            <ColumnDefinition Width="Auto" />
+                                                            <ColumnDefinition Width="*" />
+                                                        </Grid.ColumnDefinitions>
+                                                        <FontIcon Glyph="&#xE76F;"
+                                                                  FontSize="14"
+                                                                  Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                                                  VerticalAlignment="Center" />
+                                                        <CheckBox Grid.Column="1"
+                                                                  Content="{x:Bind Label, Mode=OneTime}"
+                                                                  IsChecked="{x:Bind IsEnabled, Mode=TwoWay}"
+                                                                  VerticalAlignment="Center" />
+                                                    </Grid>
+                                                </DataTemplate>
+                                            </ListView.ItemTemplate>
+                                        </ListView>
+                                        <StackPanel Spacing="4" Margin="4,4,4,0">
+                                            <TextBlock Text="Preview"
+                                                       Style="{StaticResource CardTitleStyle}" />
+                                            <TextBlock Text="{x:Bind ViewModel.TrayHoverLabelText, Mode=OneWay}"
                                                        Style="{StaticResource SecondaryTextStyle}"
                                                        TextWrapping="Wrap" />
-                                        </Grid>
+                                            <Grid ColumnSpacing="8"
+                                                  Visibility="{x:Bind ViewModel.HasTrayHoverLabelOverflow, Mode=OneWay}">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="Auto" />
+                                                    <ColumnDefinition Width="*" />
+                                                </Grid.ColumnDefinitions>
+                                                <Ellipse Width="8"
+                                                         Height="8"
+                                                         VerticalAlignment="Center"
+                                                         Fill="{ThemeResource SystemFillColorCautionBrush}" />
+                                                <TextBlock Grid.Column="1"
+                                                           Text="{x:Bind ViewModel.TrayHoverLabelOverflowMessage, Mode=OneWay}"
+                                                           Style="{StaticResource SecondaryTextStyle}"
+                                                           TextWrapping="Wrap" />
+                                            </Grid>
+                                        </StackPanel>
                                     </StackPanel>
-                                </StackPanel>
-                            </Border>
+                                </Border>
+                            </Expander>
                             </StackPanel>
                         </Border>
 
