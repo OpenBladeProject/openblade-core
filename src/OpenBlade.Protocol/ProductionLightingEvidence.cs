@@ -118,11 +118,11 @@ internal static class ProductionLightingEvidenceSource
         "OpenBladeLightingImplementationFingerprint";
 
     private const string ApprovedLightingImplementationFingerprintSha256 =
-        // Re-reviewed after restoring the independently validated Driver-mode
-        // lifecycle. Port creation acquires Driver mode with readback; periodic
-        // maintenance queries before rewriting after a firmware fallback. The
-        // added status read uses the same validated query and performs no write.
-        "22770F657F762FC75E6B7D92CA9F41FC61D353157E309DE062EDFAEA95D6F575";
+        // Re-reviewed after moving Wave, Wheel, and Tidal to the already
+        // admitted 30 FPS matrix cadence. Exact captured timestamps preserve
+        // their approved oracle frames; intermediate timestamps interpolate
+        // per-key RGB values without changing the HID command or report shape.
+        "DD2323A85F53CE4F7022550434EE0A9A93F9AA6248BB4A576866D456535151C9";
 
     private static readonly JsonSerializerOptions SerializerOptions =
         new(JsonSerializerDefaults.Web)

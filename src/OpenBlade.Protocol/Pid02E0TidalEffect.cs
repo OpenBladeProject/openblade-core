@@ -94,7 +94,7 @@ internal sealed class Pid02E0TidalEffect : IPid02E0LightingEffect
     public TimeSpan? GetNextFrameDelay(TimeSpan elapsed)
     {
         Pid02E0LightingMath.ThrowIfNegative(elapsed);
-        return Pid02E0TidalOracle.FrameInterval;
+        return Pid02E0LightingTiming.AnimatedFrameInterval;
     }
 
     public Pid02E0MatrixFrame RenderFrame(TimeSpan elapsed)
@@ -110,10 +110,7 @@ internal sealed class Pid02E0TidalEffect : IPid02E0LightingEffect
             (first, second) = randomColorSource!.ColorsForCycle(cycleIndex);
         }
 
-        int frameIndex = (int)(
-            (elapsed.Ticks % Pid02E0TidalOracle.CycleDuration.Ticks)
-            / Pid02E0TidalOracle.FrameInterval.Ticks);
-        return Pid02E0TidalOracle.Render(direction, frameIndex, first, second);
+        return Pid02E0TidalOracle.Render(direction, elapsed, first, second);
     }
 }
 
@@ -131,7 +128,7 @@ internal static class Pid02E0TidalOracle
 
     internal static Pid02E0MatrixFrame Render(
         LightingDirection direction,
-        int frameIndex,
+        TimeSpan elapsed,
         MatrixRgb primary,
         MatrixRgb secondary)
     {
@@ -139,29 +136,48 @@ internal static class Pid02E0TidalOracle
         {
             throw new ArgumentOutOfRangeException(nameof(direction));
         }
-        if ((uint)frameIndex >= FrameCount)
-        {
-            throw new ArgumentOutOfRangeException(nameof(frameIndex));
-        }
+        Pid02E0LightingMath.ThrowIfNegative(elapsed);
 
         short[] template = direction == LightingDirection.Leftward
             ? Templates.Value.Leftward
             : Templates.Value.Rightward;
+        double position = (elapsed.Ticks % CycleDuration.Ticks)
+            / (double)FrameInterval.Ticks;
+        int lowerFrame = (int)Math.Floor(position);
+        int upperFrame = (lowerFrame + 1) % FrameCount;
+        double fraction = position - lowerFrame;
         MatrixRgb[] slots = new MatrixRgb[Pid02E0MatrixFrame.SlotCount];
-        int offset = frameIndex * Pid02E0MatrixFrame.SlotCount;
+        int lowerOffset = lowerFrame * Pid02E0MatrixFrame.SlotCount;
+        int upperOffset = upperFrame * Pid02E0MatrixFrame.SlotCount;
         for (int slot = 0; slot < slots.Length; slot++)
         {
-            short value = template[offset + slot];
-            slots[slot] = value switch
-            {
-                > 0 => primary.Scale((byte)value),
-                < 0 => secondary.Scale((byte)-value),
-                _ => MatrixRgb.Black,
-            };
+            MatrixRgb lower = ColorForIntensity(
+                template[lowerOffset + slot],
+                primary,
+                secondary);
+            MatrixRgb upper = ColorForIntensity(
+                template[upperOffset + slot],
+                primary,
+                secondary);
+            slots[slot] = Pid02E0LightingMath.InterpolateColor(
+                lower,
+                upper,
+                fraction);
         }
 
         return new Pid02E0MatrixFrame(slots);
     }
+
+    private static MatrixRgb ColorForIntensity(
+        short value,
+        MatrixRgb primary,
+        MatrixRgb secondary) =>
+        value switch
+        {
+            > 0 => primary.Scale((byte)value),
+            < 0 => secondary.Scale((byte)-value),
+            _ => MatrixRgb.Black,
+        };
 
     private static OracleTemplates ReadTemplates()
     {

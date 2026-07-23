@@ -496,10 +496,23 @@ internal static class Pid02E0LightingMath
         MatrixRgb lower = SpectrumAnchors[lowerIndex];
         MatrixRgb upper = SpectrumAnchors[lowerIndex + 1];
 
+        return InterpolateColor(lower, upper, fraction);
+    }
+
+    internal static MatrixRgb InterpolateColor(
+        MatrixRgb from,
+        MatrixRgb to,
+        double fraction)
+    {
+        if (fraction is < 0 or > 1 || double.IsNaN(fraction))
+        {
+            throw new ArgumentOutOfRangeException(nameof(fraction));
+        }
+
         return new MatrixRgb(
-            Interpolate(lower.Red, upper.Red, fraction),
-            Interpolate(lower.Green, upper.Green, fraction),
-            Interpolate(lower.Blue, upper.Blue, fraction));
+            Interpolate(from.Red, to.Red, fraction),
+            Interpolate(from.Green, to.Green, fraction),
+            Interpolate(from.Blue, to.Blue, fraction));
     }
 
     private static byte Interpolate(byte from, byte to, double fraction) =>

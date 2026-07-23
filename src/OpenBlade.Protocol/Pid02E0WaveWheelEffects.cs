@@ -23,7 +23,7 @@ internal sealed class Pid02E0WaveEffect : IPid02E0LightingEffect
     public TimeSpan? GetNextFrameDelay(TimeSpan elapsed)
     {
         Pid02E0LightingMath.ThrowIfNegative(elapsed);
-        return Pid02E0WaveWheelOracle.FrameInterval;
+        return Pid02E0LightingTiming.AnimatedFrameInterval;
     }
 
     public Pid02E0MatrixFrame RenderFrame(TimeSpan elapsed)
@@ -32,7 +32,7 @@ internal sealed class Pid02E0WaveEffect : IPid02E0LightingEffect
         return Pid02E0WaveWheelOracle.Render(
             "Wave",
             direction.ToString(),
-            Pid02E0WaveWheelOracle.FrameIndex(elapsed));
+            elapsed);
     }
 }
 
@@ -53,7 +53,7 @@ internal sealed class Pid02E0WheelEffect : IPid02E0LightingEffect
     public TimeSpan? GetNextFrameDelay(TimeSpan elapsed)
     {
         Pid02E0LightingMath.ThrowIfNegative(elapsed);
-        return Pid02E0WaveWheelOracle.FrameInterval;
+        return Pid02E0LightingTiming.AnimatedFrameInterval;
     }
 
     public Pid02E0MatrixFrame RenderFrame(TimeSpan elapsed)
@@ -62,7 +62,7 @@ internal sealed class Pid02E0WheelEffect : IPid02E0LightingEffect
         return Pid02E0WaveWheelOracle.Render(
             "Wheel",
             direction.ToString(),
-            Pid02E0WaveWheelOracle.FrameIndex(elapsed));
+            elapsed);
     }
 }
 
@@ -83,28 +83,35 @@ internal static class Pid02E0WaveWheelOracle
     private static readonly Lazy<IReadOnlyDictionary<string, MatrixRgb[]>> Templates =
         new(ReadTemplates);
 
-    internal static int FrameIndex(TimeSpan elapsed) => (int)(
-        (elapsed.Ticks % CycleDuration.Ticks) / FrameInterval.Ticks);
-
     internal static Pid02E0MatrixFrame Render(
         string effect,
         string direction,
-        int frameIndex)
+        TimeSpan elapsed)
     {
-        if ((uint)frameIndex >= FrameCount)
-        {
-            throw new ArgumentOutOfRangeException(nameof(frameIndex));
-        }
+        Pid02E0LightingMath.ThrowIfNegative(elapsed);
 
         if (!Templates.Value.TryGetValue(Key(effect, direction), out MatrixRgb[]? template))
         {
             throw new ArgumentOutOfRangeException(nameof(direction));
         }
 
-        return new Pid02E0MatrixFrame(
-            template.AsSpan(
-                frameIndex * Pid02E0MatrixFrame.SlotCount,
-                Pid02E0MatrixFrame.SlotCount));
+        double position = (elapsed.Ticks % CycleDuration.Ticks)
+            / (double)FrameInterval.Ticks;
+        int lowerFrame = (int)Math.Floor(position);
+        int upperFrame = (lowerFrame + 1) % FrameCount;
+        double fraction = position - lowerFrame;
+        int lowerOffset = lowerFrame * Pid02E0MatrixFrame.SlotCount;
+        int upperOffset = upperFrame * Pid02E0MatrixFrame.SlotCount;
+        MatrixRgb[] slots = new MatrixRgb[Pid02E0MatrixFrame.SlotCount];
+        for (int slot = 0; slot < slots.Length; slot++)
+        {
+            slots[slot] = Pid02E0LightingMath.InterpolateColor(
+                template[lowerOffset + slot],
+                template[upperOffset + slot],
+                fraction);
+        }
+
+        return new Pid02E0MatrixFrame(slots);
     }
 
     private static IReadOnlyDictionary<string, MatrixRgb[]> ReadTemplates()

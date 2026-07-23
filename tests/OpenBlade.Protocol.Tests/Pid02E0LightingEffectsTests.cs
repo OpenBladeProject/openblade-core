@@ -366,7 +366,7 @@ public sealed class Pid02E0LightingEffectsTests
     }
 
     [Fact]
-    public void Tidal_LoopsAtFiveSecondsAndAdvancesEveryFiftyMilliseconds()
+    public void Tidal_LoopsAtFiveSecondsAndInterpolatesCapturedFramesAtThirtyFps()
     {
         var effect = new Pid02E0TidalEffect(
             Green,
@@ -374,13 +374,17 @@ public sealed class Pid02E0LightingEffectsTests
             randomColors: false,
             LightingDirection.Rightward);
 
-        Assert.Equal(TimeSpan.FromMilliseconds(50), effect.GetNextFrameDelay(TimeSpan.Zero));
+        Assert.Equal(
+            Pid02E0LightingTiming.AnimatedFrameInterval,
+            effect.GetNextFrameDelay(TimeSpan.Zero));
         AssertFramesEqual(
             effect.RenderFrame(TimeSpan.Zero),
             effect.RenderFrame(TimeSpan.FromSeconds(5)));
-        Assert.NotEqual(
-            effect.RenderFrame(TimeSpan.Zero).ToArray(),
-            effect.RenderFrame(TimeSpan.FromMilliseconds(50)).ToArray());
+        AssertInterpolatedFrame(
+            effect.RenderFrame(TimeSpan.Zero),
+            effect.RenderFrame(TimeSpan.FromMilliseconds(50)),
+            effect.RenderFrame(TimeSpan.FromMilliseconds(25)),
+            0.5);
     }
 
     [Fact]
@@ -480,10 +484,17 @@ public sealed class Pid02E0LightingEffectsTests
         Pid02E0MatrixFrame right = rightward.RenderFrame(TimeSpan.FromMilliseconds(240));
         Pid02E0MatrixFrame left = leftward.RenderFrame(TimeSpan.FromMilliseconds(240));
 
-        Assert.Equal(TimeSpan.FromMilliseconds(40), rightward.GetNextFrameDelay(TimeSpan.Zero));
+        Assert.Equal(
+            Pid02E0LightingTiming.AnimatedFrameInterval,
+            rightward.GetNextFrameDelay(TimeSpan.Zero));
         AssertFramesEqual(
             rightward.RenderFrame(TimeSpan.Zero),
             rightward.RenderFrame(TimeSpan.FromSeconds(1)));
+        AssertInterpolatedFrame(
+            rightward.RenderFrame(TimeSpan.Zero),
+            rightward.RenderFrame(TimeSpan.FromMilliseconds(40)),
+            rightward.RenderFrame(TimeSpan.FromMilliseconds(20)),
+            0.5);
         Assert.NotEqual(right.ToArray(), left.ToArray());
         AssertHolesBlack(right);
         AssertHolesBlack(left);
@@ -505,6 +516,14 @@ public sealed class Pid02E0LightingEffectsTests
         AssertFramesEqual(
             clockwise.RenderFrame(TimeSpan.Zero),
             clockwise.RenderFrame(TimeSpan.FromSeconds(1)));
+        Assert.Equal(
+            Pid02E0LightingTiming.AnimatedFrameInterval,
+            clockwise.GetNextFrameDelay(TimeSpan.Zero));
+        AssertInterpolatedFrame(
+            clockwise.RenderFrame(TimeSpan.Zero),
+            clockwise.RenderFrame(TimeSpan.FromMilliseconds(40)),
+            clockwise.RenderFrame(TimeSpan.FromMilliseconds(20)),
+            0.5);
         Assert.NotEqual(clockwiseFrame.ToArray(), counterclockwiseFrame.ToArray());
         AssertHolesBlack(clockwiseFrame);
         AssertHolesBlack(counterclockwiseFrame);
@@ -559,6 +578,20 @@ public sealed class Pid02E0LightingEffectsTests
     private static void AssertFramesEqual(Pid02E0MatrixFrame expected, Pid02E0MatrixFrame actual)
     {
         Assert.Equal(expected.ToArray(), actual.ToArray());
+    }
+
+    private static void AssertInterpolatedFrame(
+        Pid02E0MatrixFrame lower,
+        Pid02E0MatrixFrame upper,
+        Pid02E0MatrixFrame actual,
+        double fraction)
+    {
+        for (int slot = 0; slot < Pid02E0MatrixFrame.SlotCount; slot++)
+        {
+            Assert.Equal(
+                Pid02E0LightingMath.InterpolateColor(lower[slot], upper[slot], fraction),
+                actual[slot]);
+        }
     }
 
     private static void AssertUniform(Pid02E0MatrixFrame frame, MatrixRgb color)

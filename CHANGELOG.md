@@ -69,6 +69,9 @@ All notable changes to OpenBlade are documented in this file. The project follow
 - Made Ambient Awareness smoother during motion by matching the 30 FPS matrix
   renderer cadence, then reducing static-screen sampling to 5 FPS after roughly
   half a second without a color change.
+- Increased Wave, Wheel, and Tidal playback to 30 FPS by interpolating per-key
+  RGB values between their captured source frames while preserving the original
+  cycle timing and direction templates.
 - Promoted `Use profile settings` from an overflow menu to a page-header action
   on Dashboard, Laptop, Lighting, and Display whenever the current page differs
   from its active profile, including settings changed outside OpenBlade. Page
