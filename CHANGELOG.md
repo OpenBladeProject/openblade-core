@@ -66,6 +66,9 @@ All notable changes to OpenBlade are documented in this file. The project follow
   page is open or the window is hidden. Tray-hover readings continue updating,
   and the Dashboard refreshes once with the latest values when it becomes
   visible.
+- Made Ambient Awareness smoother during motion by matching the 30 FPS matrix
+  renderer cadence, then reducing static-screen sampling to 5 FPS after roughly
+  half a second without a color change.
 - Promoted `Use profile settings` from an overflow menu to a page-header action
   on Dashboard, Laptop, Lighting, and Display whenever the current page differs
   from its active profile, including settings changed outside OpenBlade. Page

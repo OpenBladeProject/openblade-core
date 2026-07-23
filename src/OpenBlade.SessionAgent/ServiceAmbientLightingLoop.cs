@@ -236,9 +236,14 @@ public sealed class ServiceAmbientLightingLoop : IAsyncDisposable
 
 internal sealed class AmbientFrameCadence
 {
-    internal const int StaticFrameThreshold = 20;
-    internal static readonly TimeSpan ActiveInterval = TimeSpan.FromMilliseconds(50);
-    internal static readonly TimeSpan StaticInterval = TimeSpan.FromMilliseconds(100);
+    // Match the matrix renderer's proven 30 FPS cadence while the sampled
+    // colors are changing. After roughly half a second without a change,
+    // reduce captures to 5 FPS; the next changed sample immediately restores
+    // the active cadence.
+    internal const int StaticFrameThreshold = 15;
+    internal static readonly TimeSpan ActiveInterval = TimeSpan.FromTicks(
+        TimeSpan.TicksPerSecond / 30);
+    internal static readonly TimeSpan StaticInterval = TimeSpan.FromMilliseconds(200);
 
     private int unchangedFrames;
 
