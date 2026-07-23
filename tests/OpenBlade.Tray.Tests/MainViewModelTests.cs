@@ -298,6 +298,41 @@ public sealed class MainViewModelTests
     }
 
     [Fact]
+    public async Task UseLightingProfileSettings_RestoresConfirmedExternalDifferenceWithoutDraft()
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        ServiceStatusSnapshot baseline = CreateStatus(
+            verified: true,
+            blocked: false,
+            capabilities: DeviceCapabilities.SafeTargetDefaults() with
+            {
+                LightingEffects = new HashSet<LightingEffect>(
+                    Enum.GetValues<LightingEffect>()),
+            });
+        LightingSettings external = LightingSettingsFactory.Static(
+            new RgbColor(12, 34, 56),
+            brightness: 67);
+        client.Publish(baseline with
+        {
+            ConfirmedState = baseline.ConfirmedState! with { Lighting = external },
+            ExternalChanges = [DeviceSubsystem.Lighting],
+        });
+        await WaitUntilAsync(() => viewModel.IsConnected);
+
+        Assert.False(viewModel.HasLightingProfileDraft);
+        Assert.True(viewModel.HasLightingProfileDifference);
+        Assert.True(viewModel.DiscardLightingProfileDraftCommand.CanExecute(null));
+
+        await Assert.IsType<AsyncRelayCommand>(viewModel.DiscardLightingProfileDraftCommand)
+            .ExecuteAsync(null);
+
+        Assert.Contains("lighting:<clear>", client.MutationOperations);
+        Assert.False(viewModel.HasLightingProfileDifference);
+    }
+
+    [Fact]
     public async Task SaveLightingProfileDraft_PersistsVisibleSelectionBeforeClearingOverride()
     {
         var client = new FakeServiceClient();

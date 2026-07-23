@@ -398,13 +398,13 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             _ => CanSaveActiveProfileDraft(ProfileDraftGroup.Thermal));
         DiscardThermalProfileDraftCommand = CreateCommand(
             (_, token) => DiscardActiveProfileDraftAsync(ProfileDraftGroup.Thermal, token),
-            _ => HasThermalProfileDraft);
+            _ => HasThermalProfileDifference);
         SaveLightingProfileDraftCommand = CreateCommand(
             (_, token) => SaveActiveProfileDraftAsync(ProfileDraftGroup.Lighting, token),
             _ => CanSaveActiveProfileDraft(ProfileDraftGroup.Lighting));
         DiscardLightingProfileDraftCommand = CreateCommand(
             (_, token) => DiscardActiveProfileDraftAsync(ProfileDraftGroup.Lighting, token),
-            _ => HasLightingProfileDraft);
+            _ => HasLightingProfileDifference);
         SaveLightingPowerPolicyCommand = CreateCommand(
             SaveLightingPowerPolicyAsync,
             CanSaveLightingPowerPolicy);
@@ -419,7 +419,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             _ => CanSaveActiveProfileDraft(ProfileDraftGroup.Laptop));
         DiscardLaptopProfileDraftCommand = CreateCommand(
             (_, token) => DiscardActiveProfileDraftAsync(ProfileDraftGroup.Laptop, token),
-            _ => HasLaptopPageProfileDraft);
+            _ => HasLaptopPageProfileDifference);
         ExportDiagnosticsCommand = CreateCommand(
             ExportDiagnosticsAsync,
             _ => Volatile.Read(ref disposed) == 0 && IsConnected);
@@ -2152,6 +2152,15 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     public bool HasLightingProfileSaveOpportunity =>
         HasLightingProfileDraft || HasSaveableUnsetLightingProfileField;
 
+    public bool HasLightingProfileDifference =>
+        HasConfirmedPowerSource
+        && (HasLightingHardwareProfileDifference
+            || GetProfile(ActivePowerSource).EffectiveLightingPowerPolicy
+                != (activeProfileDraftLightingPowerPolicy ?? LightingPowerPolicyDraft));
+
+    public bool HasLightingProfileActionOpportunity =>
+        HasLightingProfileSaveOpportunity || HasLightingProfileDifference;
+
     public bool HasDisplayProfileDraft => activeProfileDraftDisplay is not null;
 
     public bool HasLaptopProfileDraft => activeProfileDraftLaptopBehavior is not null;
@@ -2160,6 +2169,18 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
 
     public bool HasLaptopPageProfileSaveOpportunity =>
         HasLaptopPageProfileDraft || HasSaveableUnsetLaptopProfileField;
+
+    public bool HasThermalProfileDifference =>
+        HasConfirmedPowerSource && HasThermalProfileDifferenceCore;
+
+    public bool HasLaptopBehaviorProfileDifference =>
+        HasConfirmedPowerSource && HasLaptopBehaviorProfileDifferenceCore;
+
+    public bool HasLaptopPageProfileDifference =>
+        HasThermalProfileDifference || HasLaptopBehaviorProfileDifference;
+
+    public bool HasLaptopPageProfileActionOpportunity =>
+        HasLaptopPageProfileSaveOpportunity || HasLaptopPageProfileDifference;
 
     public string ThermalProfileRelationshipStatus => ProfileRelationshipStatus(
         HasThermalProfileDraft,
@@ -2272,6 +2293,35 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             powerSource,
             display: settings,
             previousDisplay: previousSettings);
+    }
+
+    public async Task UseActiveDisplayProfileSettingsAsync(
+        CancellationToken token = default)
+    {
+        token.ThrowIfCancellationRequested();
+        if (ActivePowerSource is not (
+                PowerSource.PluggedIn or PowerSource.Battery or PowerSource.UsbC))
+        {
+            return;
+        }
+
+        PowerSource source = ActivePowerSource;
+        DisplayProfileSettings saved =
+            GetProfile(source).Display ?? DisplayProfileSettings.Unconfigured();
+        if (!saved.IsConfigured)
+        {
+            return;
+        }
+
+        bool restored = await RestoreSavedDisplayProfileAsync(source, saved, token);
+        if (restored && ActivePowerSource == source)
+        {
+            ClearActiveProfileDraft(ProfileDraftGroup.Display);
+        }
+        else if (ActivePowerSource != source)
+        {
+            await ReportProfileRestoreSourceChangedAsync(token);
+        }
     }
 
     public LightingEffect LightingEffectEditor
@@ -4618,17 +4668,14 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         CancellationToken token)
     {
         token.ThrowIfCancellationRequested();
-        if (!HasActiveProfileDraftFor(group)
-            || activeProfileDraftSource is not { } source)
+        if (!HasProfileDifferenceFor(group)
+            || ActivePowerSource is not (
+                PowerSource.PluggedIn or PowerSource.Battery or PowerSource.UsbC))
         {
             return;
         }
 
-        if (ActivePowerSource != source)
-        {
-            await ReportProfileRestoreSourceChangedAsync(token);
-            return;
-        }
+        PowerSource source = ActivePowerSource;
 
         bool restored;
         if (group == ProfileDraftGroup.Display)
@@ -4648,7 +4695,11 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         }
         else if (group == ProfileDraftGroup.Laptop)
         {
-            bool controlsRestored = await ClearActiveProfileHardwareOverridesAsync(token, group);
+            bool controlsRestored = !HasThermalProfileDifference
+                || await ClearActiveProfileHardwareOverridesAsync(
+                    token,
+                    group,
+                    force: true);
             LaptopBehaviorProfileSettings saved = GetProfile(source).EffectiveLaptopBehavior;
             LaptopBehaviorProfileSettings original = activeProfileOriginalLaptopBehavior
                 ?? LaptopBehaviorProfileSettings.Unconfigured();
@@ -4656,16 +4707,27 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
                 saved.StartupAnimationEnabled ?? original.StartupAnimationEnabled,
                 saved.FunctionKeyPrimary ?? original.FunctionKeyPrimary,
                 saved.GamingModeEnabled ?? original.GamingModeEnabled);
-            bool behaviorRestored = activeProfileDraftLaptopBehavior is null
+            bool behaviorRestored = !HasLaptopBehaviorProfileDifference
                 || await RestoreSavedLaptopBehaviorAsync(
                     source,
                     behaviorToRestore,
                     token);
             restored = controlsRestored && behaviorRestored;
         }
+        else if (group == ProfileDraftGroup.Lighting)
+        {
+            restored = !HasLightingHardwareProfileDifference
+                || await ClearActiveProfileHardwareOverridesAsync(
+                    token,
+                    group,
+                    force: true);
+        }
         else
         {
-            restored = await ClearActiveProfileHardwareOverridesAsync(token, group);
+            restored = await ClearActiveProfileHardwareOverridesAsync(
+                token,
+                group,
+                force: true);
         }
 
         if (restored && ActivePowerSource == source)
@@ -4673,6 +4735,11 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             ClearActiveProfileDraft(group);
             if (group == ProfileDraftGroup.Lighting)
             {
+                LightingSettings savedLighting = GetProfile(source).Lighting;
+                LoadLightingEditor(
+                    savedLighting.LogoMode is null
+                        ? savedLighting with { LogoMode = LogoLightingModeEditor }
+                        : savedLighting);
                 LoadLightingPowerPolicyEditor(
                     GetProfile(source).EffectiveLightingPowerPolicy);
             }
@@ -4737,11 +4804,12 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
 
     private async Task<bool> ClearActiveProfileHardwareOverridesAsync(
         CancellationToken token,
-        ProfileDraftGroup? group = null)
+        ProfileDraftGroup? group = null,
+        bool force = false)
     {
         bool restored = true;
         if ((group is null or ProfileDraftGroup.Thermal or ProfileDraftGroup.Laptop)
-            && activeProfileDraftPerformance is not null)
+            && (force || activeProfileDraftPerformance is not null))
         {
             restored &= await RunOperationAsync(
                 cancellationToken => serviceClient.SetPerformanceOverrideAsync(
@@ -4750,7 +4818,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
                 token);
         }
         if ((group is null or ProfileDraftGroup.Thermal or ProfileDraftGroup.Laptop)
-            && activeProfileDraftFans is not null)
+            && (force || activeProfileDraftFans is not null))
         {
             restored &= await RunOperationAsync(
                 cancellationToken => serviceClient.SetFanOverrideAsync(
@@ -4759,7 +4827,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
                 token);
         }
         if ((group is null or ProfileDraftGroup.Lighting)
-            && activeProfileDraftLighting is not null)
+            && (force || activeProfileDraftLighting is not null))
         {
             restored &= await RunOperationAsync(
                 cancellationToken => serviceClient.SetLightingOverrideAsync(
@@ -5579,6 +5647,122 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         _ => false,
     };
 
+    private bool HasProfileDifferenceFor(ProfileDraftGroup group) => group switch
+    {
+        ProfileDraftGroup.Thermal => HasThermalProfileDifference,
+        ProfileDraftGroup.Lighting => HasLightingProfileDifference,
+        ProfileDraftGroup.Display => HasDisplayProfileDraft,
+        ProfileDraftGroup.Laptop => HasLaptopPageProfileDifference,
+        _ => false,
+    };
+
+    private bool HasThermalProfileDifferenceCore
+    {
+        get
+        {
+            PowerProfile saved = GetProfile(ActivePowerSource);
+            PerformancePreset currentPerformance =
+                activeProfileDraftPerformance ?? SelectedPerformance;
+            if (saved.Performance != currentPerformance)
+            {
+                return true;
+            }
+
+            if (saved.Performance == PerformancePreset.Custom)
+            {
+                CustomPerformanceSettings savedCustom =
+                    saved.CustomPerformance ?? CustomPerformanceSettings.Default;
+                CustomPerformanceSettings currentCustom =
+                    activeProfileDraftCustomPerformance
+                    ?? new CustomPerformanceSettings(
+                        SelectedCustomCpuLevel,
+                        SelectedCustomGpuLevel)
+                    {
+                        GpuClockOffsets = savedCustom.GpuClockOffsets is null
+                            ? null
+                            : CurrentGpuClockOffsets,
+                    };
+                if (savedCustom.Cpu != currentCustom.Cpu
+                    || savedCustom.Gpu != currentCustom.Gpu
+                    || savedCustom.GpuClockOffsets is not null
+                    && savedCustom.GpuClockOffsets != currentCustom.GpuClockOffsets)
+                {
+                    return true;
+                }
+            }
+
+            FanControlSettings savedFans =
+                saved.FanControl ?? FanControlSettings.FromLegacy(saved.Fans);
+            FanControlSettings currentFans = activeProfileDraftFanControl
+                ?? CurrentFanControlSettings;
+            return !FanControlSettingsMatch(savedFans, currentFans);
+        }
+    }
+
+    private bool HasLaptopBehaviorProfileDifferenceCore
+    {
+        get
+        {
+            LaptopBehaviorProfileSettings saved =
+                GetProfile(ActivePowerSource).EffectiveLaptopBehavior;
+            LaptopBehaviorProfileSettings current =
+                activeProfileDraftLaptopBehavior
+                ?? new LaptopBehaviorProfileSettings(
+                    StartupAnimationEnabled,
+                    FunctionKeyPrimary,
+                    GamingModeEnabled);
+            return ConfiguredValueDiffers(
+                    saved.StartupAnimationEnabled,
+                    current.StartupAnimationEnabled)
+                || ConfiguredValueDiffers(
+                    saved.FunctionKeyPrimary,
+                    current.FunctionKeyPrimary)
+                || ConfiguredValueDiffers(
+                    saved.GamingModeEnabled,
+                    current.GamingModeEnabled);
+        }
+    }
+
+    private bool HasLightingHardwareProfileDifference
+    {
+        get
+        {
+            PowerProfile saved = GetProfile(ActivePowerSource);
+            LightingSettings current = activeProfileDraftLighting ?? LightingDraft;
+            bool keyboardDiffers = (activeProfileDraftLighting is not null
+                    || !IsKeyboardEffectUnconfirmed)
+                && LightingSettingsFactory.NormalizeLegacyOff(
+                    saved.Lighting with { LogoMode = null })
+                    != LightingSettingsFactory.NormalizeLegacyOff(
+                        current with { LogoMode = null });
+            bool logoDiffers = saved.Lighting.LogoMode is { } savedLogo
+                && current.LogoMode is { } currentLogo
+                && savedLogo != currentLogo;
+            return keyboardDiffers || logoDiffers;
+        }
+    }
+
+    private static bool ConfiguredValueDiffers<T>(T? saved, T? current)
+        where T : struct =>
+        saved.HasValue && current.HasValue && !saved.Value.Equals(current.Value);
+
+    private static bool FanControlSettingsMatch(
+        FanControlSettings saved,
+        FanControlSettings current)
+    {
+        if (saved.Mode != current.Mode)
+        {
+            return false;
+        }
+
+        return saved.Mode switch
+        {
+            FanMode.Fixed => saved.FixedSpeedRpm == current.FixedSpeedRpm,
+            FanMode.ManualCurve => saved.ManualCurve.Equals(current.ManualCurve),
+            _ => true,
+        };
+    }
+
     private bool HasSaveableUnsetProfileField(ProfileDraftGroup group) => group switch
     {
         ProfileDraftGroup.Lighting => HasSaveableUnsetLightingProfileField,
@@ -5673,12 +5857,18 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         PropertyChanged?.Invoke(
             this,
             new PropertyChangedEventArgs(nameof(HasLightingProfileSaveOpportunity)));
+        PropertyChanged?.Invoke(
+            this,
+            new PropertyChangedEventArgs(nameof(HasLightingProfileActionOpportunity)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasDisplayProfileDraft)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasLaptopProfileDraft)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasLaptopPageProfileDraft)));
         PropertyChanged?.Invoke(
             this,
             new PropertyChangedEventArgs(nameof(HasLaptopPageProfileSaveOpportunity)));
+        PropertyChanged?.Invoke(
+            this,
+            new PropertyChangedEventArgs(nameof(HasLaptopPageProfileActionOpportunity)));
         PropertyChanged?.Invoke(
             this,
             new PropertyChangedEventArgs(nameof(ThermalProfileRelationshipStatus)));
@@ -5761,6 +5951,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         PropertyChanged?.Invoke(
             this,
             new PropertyChangedEventArgs(nameof(HasLaptopPageProfileSaveOpportunity)));
+        NotifyProfileDifferenceState();
         NotifySelectedProfilePresentation();
     }
 
@@ -6359,6 +6550,29 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         PropertyChanged?.Invoke(
             this,
             new PropertyChangedEventArgs(nameof(CanChangeBatteryProtection)));
+        NotifyProfileDifferenceState();
+    }
+
+    private void NotifyProfileDifferenceState()
+    {
+        PropertyChanged?.Invoke(
+            this,
+            new PropertyChangedEventArgs(nameof(HasThermalProfileDifference)));
+        PropertyChanged?.Invoke(
+            this,
+            new PropertyChangedEventArgs(nameof(HasLaptopBehaviorProfileDifference)));
+        PropertyChanged?.Invoke(
+            this,
+            new PropertyChangedEventArgs(nameof(HasLaptopPageProfileDifference)));
+        PropertyChanged?.Invoke(
+            this,
+            new PropertyChangedEventArgs(nameof(HasLaptopPageProfileActionOpportunity)));
+        PropertyChanged?.Invoke(
+            this,
+            new PropertyChangedEventArgs(nameof(HasLightingProfileDifference)));
+        PropertyChanged?.Invoke(
+            this,
+            new PropertyChangedEventArgs(nameof(HasLightingProfileActionOpportunity)));
     }
 
     private static string SourceLabel(

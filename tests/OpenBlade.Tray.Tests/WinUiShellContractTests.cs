@@ -94,6 +94,17 @@ public sealed class WinUiShellContractTests
         Assert.DoesNotContain("Text=\"Unsaved changes\"", xaml, StringComparison.Ordinal);
         Assert.DoesNotContain("Text=\"Not saved\"", xaml, StringComparison.Ordinal);
         Assert.Equal(4, CountOccurrences(xaml, "Content=\"Use profile settings\""));
+        Assert.Equal(2, CountOccurrences(
+            xaml,
+            "Visibility=\"{x:Bind ViewModel.HasLaptopPageProfileDifference, Mode=OneWay}\""));
+        Assert.Contains(
+            "Visibility=\"{x:Bind ViewModel.HasLightingProfileDifference, Mode=OneWay}\"",
+            xaml,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "Visibility=\"{x:Bind DisplayViewModel.HasProfileDifference, Mode=OneWay}\"",
+            xaml,
+            StringComparison.Ordinal);
         Assert.DoesNotContain(
             "Style=\"{StaticResource ProfileSaveStatusTextStyle}\"",
             xaml,
@@ -101,9 +112,9 @@ public sealed class WinUiShellContractTests
         Assert.Equal(4, CountOccurrences(
             xaml,
             "Style=\"{StaticResource ProfileSaveButtonStyle}\""));
-        Assert.Equal(4, CountOccurrences(
+        Assert.True(CountOccurrences(
             xaml,
-            "Style=\"{StaticResource ProfileRestoreButtonStyle}\""));
+            "Style=\"{StaticResource PageHeaderSecondaryButtonStyle}\"") >= 8);
         Assert.DoesNotContain(
             "Style=\"{StaticResource ProfileSaveOverflowButtonStyle}\"",
             xaml,

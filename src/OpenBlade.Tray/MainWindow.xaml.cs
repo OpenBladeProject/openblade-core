@@ -1693,6 +1693,13 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         }
     }
 
+    private async void OnUseDisplayProfileSettings(
+        object sender,
+        RoutedEventArgs args)
+    {
+        await ViewModel.UseActiveDisplayProfileSettingsAsync();
+    }
+
     private async Task<bool> OnSavedDisplayProfileRestoreRequested(
         PowerSource expectedPowerSource,
         DisplayProfileSettings settings,

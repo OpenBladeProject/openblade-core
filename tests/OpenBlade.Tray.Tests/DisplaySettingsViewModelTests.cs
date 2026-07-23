@@ -73,6 +73,7 @@ public sealed class DisplaySettingsViewModelTests
 
         Assert.Equal("Matches saved profile", viewModel.ProfileRelationshipStatus);
         Assert.False(viewModel.CanSaveCurrentSettingsToProfile);
+        Assert.False(viewModel.HasProfileDifference);
 
         adapter.SetExternalState(Snapshot(
             refreshKey: Fixed240.Key,
@@ -82,6 +83,7 @@ public sealed class DisplaySettingsViewModelTests
 
         Assert.Equal("Different from saved profile", viewModel.ProfileRelationshipStatus);
         Assert.True(viewModel.CanSaveCurrentSettingsToProfile);
+        Assert.True(viewModel.HasProfileDifference);
 
         viewModel.HasPendingProfileChange = true;
 

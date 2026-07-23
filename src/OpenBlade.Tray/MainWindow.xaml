@@ -156,7 +156,7 @@
                 <Setter Property="VerticalAlignment" Value="Center" />
                 <Setter Property="VerticalContentAlignment" Value="Center" />
             </Style>
-            <Style x:Key="ProfileRestoreButtonStyle"
+            <Style x:Key="PageHeaderSecondaryButtonStyle"
                    TargetType="Button"
                    BasedOn="{StaticResource DefaultButtonStyle}">
                 <Setter Property="MinHeight" Value="32" />
@@ -1586,16 +1586,18 @@
                                             Orientation="Horizontal"
                                             Spacing="8"
                                             VerticalAlignment="Center"
-                                            Visibility="{x:Bind ViewModel.HasLaptopPageProfileSaveOpportunity, Mode=OneWay}">
+                                            Visibility="{x:Bind ViewModel.HasLaptopPageProfileActionOpportunity, Mode=OneWay}">
                                     <Button Content="{x:Bind ViewModel.SaveToActiveProfileLabel, Mode=OneWay}"
                                             Style="{StaticResource ProfileSaveButtonStyle}"
+                                            Visibility="{x:Bind ViewModel.HasLaptopPageProfileSaveOpportunity, Mode=OneWay}"
                                             Command="{x:Bind ViewModel.SaveLaptopProfileDraftCommand}" />
                                     <Button Content="Use profile settings"
-                                            Style="{StaticResource ProfileRestoreButtonStyle}"
-                                            Visibility="{x:Bind ViewModel.HasLaptopPageProfileDraft, Mode=OneWay}"
+                                            Style="{StaticResource PageHeaderSecondaryButtonStyle}"
+                                            Visibility="{x:Bind ViewModel.HasLaptopPageProfileDifference, Mode=OneWay}"
                                             Command="{x:Bind ViewModel.DiscardLaptopProfileDraftCommand}" />
                                 </StackPanel>
                                 <Button Content="Customize"
+                                        Style="{StaticResource PageHeaderSecondaryButtonStyle}"
                                         AutomationProperties.Name="Customize dashboard"
                                         Click="OnCustomizeDashboard" />
                             </StackPanel>
@@ -2178,16 +2180,18 @@
                             <StackPanel x:Name="LaptopProfileSaveActions"
                                         Orientation="Horizontal"
                                         Spacing="8"
-                                        Visibility="{x:Bind ViewModel.HasLaptopPageProfileSaveOpportunity, Mode=OneWay}">
+                                        Visibility="{x:Bind ViewModel.HasLaptopPageProfileActionOpportunity, Mode=OneWay}">
                                 <Button Content="{x:Bind ViewModel.SaveToActiveProfileLabel, Mode=OneWay}"
                                         Style="{StaticResource ProfileSaveButtonStyle}"
+                                        Visibility="{x:Bind ViewModel.HasLaptopPageProfileSaveOpportunity, Mode=OneWay}"
                                         Command="{x:Bind ViewModel.SaveLaptopProfileDraftCommand}" />
                                 <Button Content="Use profile settings"
-                                        Style="{StaticResource ProfileRestoreButtonStyle}"
-                                        Visibility="{x:Bind ViewModel.HasLaptopPageProfileDraft, Mode=OneWay}"
+                                        Style="{StaticResource PageHeaderSecondaryButtonStyle}"
+                                        Visibility="{x:Bind ViewModel.HasLaptopPageProfileDifference, Mode=OneWay}"
                                         Command="{x:Bind ViewModel.DiscardLaptopProfileDraftCommand}" />
                             </StackPanel>
                             <Button Content="Customize"
+                                    Style="{StaticResource PageHeaderSecondaryButtonStyle}"
                                     Tag="Laptop"
                                     Click="OnCustomizePageSections"
                                     AutomationProperties.Name="Customize Laptop page" />
@@ -2337,18 +2341,20 @@
                             <ContentControl x:Name="LightingProfileSaveActions"
                                             VerticalAlignment="Center"
                                             IsEnabled="{x:Bind ViewModel.CanControlLighting, Mode=OneWay}"
-                                            Visibility="{x:Bind ViewModel.HasLightingProfileSaveOpportunity, Mode=OneWay}">
+                                            Visibility="{x:Bind ViewModel.HasLightingProfileActionOpportunity, Mode=OneWay}">
                                 <StackPanel Orientation="Horizontal" Spacing="8">
                                 <Button Content="{x:Bind ViewModel.SaveToActiveProfileLabel, Mode=OneWay}"
                                         Style="{StaticResource ProfileSaveButtonStyle}"
+                                        Visibility="{x:Bind ViewModel.HasLightingProfileSaveOpportunity, Mode=OneWay}"
                                         Command="{x:Bind ViewModel.SaveLightingProfileDraftCommand}" />
                                 <Button Content="Use profile settings"
-                                        Style="{StaticResource ProfileRestoreButtonStyle}"
-                                        Visibility="{x:Bind ViewModel.HasLightingProfileDraft, Mode=OneWay}"
+                                        Style="{StaticResource PageHeaderSecondaryButtonStyle}"
+                                        Visibility="{x:Bind ViewModel.HasLightingProfileDifference, Mode=OneWay}"
                                         Command="{x:Bind ViewModel.DiscardLightingProfileDraftCommand}" />
                                 </StackPanel>
                             </ContentControl>
                             <Button Content="Customize"
+                                    Style="{StaticResource PageHeaderSecondaryButtonStyle}"
                                     Tag="Lighting"
                                     Click="OnCustomizePageSections"
                                     AutomationProperties.Name="Customize Lighting page" />
@@ -2437,11 +2443,12 @@
                                         IsEnabled="{x:Bind DisplayViewModel.CanSaveCurrentSettingsToProfile, Mode=OneWay}"
                                         Click="OnSaveCurrentDisplaySettingsToProfile" />
                                 <Button Content="Use profile settings"
-                                        Style="{StaticResource ProfileRestoreButtonStyle}"
-                                        Visibility="{x:Bind ViewModel.HasDisplayProfileDraft, Mode=OneWay}"
-                                        Command="{x:Bind ViewModel.DiscardDisplayProfileDraftCommand}" />
+                                        Style="{StaticResource PageHeaderSecondaryButtonStyle}"
+                                        Visibility="{x:Bind DisplayViewModel.HasProfileDifference, Mode=OneWay}"
+                                        Click="OnUseDisplayProfileSettings" />
                             </StackPanel>
                             <Button Content="Customize"
+                                    Style="{StaticResource PageHeaderSecondaryButtonStyle}"
                                     Tag="Display"
                                     Click="OnCustomizePageSections"
                                     AutomationProperties.Name="Customize Display page" />
@@ -2481,6 +2488,7 @@
                                        Style="{StaticResource PageHeaderTitleStyle}" />
                             <Button Grid.Column="1"
                                     Content="Customize"
+                                    Style="{StaticResource PageHeaderSecondaryButtonStyle}"
                                     Tag="Settings"
                                     Click="OnCustomizePageSections"
                                     AutomationProperties.Name="Customize Settings page" />
@@ -2866,6 +2874,7 @@
                             <TextBlock Text="About" Style="{StaticResource PageHeaderTitleStyle}" />
                             <Button Grid.Column="1"
                                     Content="Customize"
+                                    Style="{StaticResource PageHeaderSecondaryButtonStyle}"
                                     Tag="About"
                                     Click="OnCustomizePageSections"
                                     AutomationProperties.Name="Customize About page" />

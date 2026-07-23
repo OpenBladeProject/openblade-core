@@ -332,6 +332,13 @@ public sealed class DisplaySettingsViewModel : INotifyPropertyChanged, IAsyncDis
             || HasSaveableUnsetProfileField
             || !CurrentSettingsMatchActiveProfile);
 
+    public bool HasProfileDifference =>
+        ProfilePersistenceAvailable
+        && HasConfirmedPowerSource
+        && IsAvailable
+        && ActiveProfileSettings.IsConfigured
+        && !CurrentSettingsMatchActiveProfile;
+
     public string ProfileRelationshipStatus => !ProfilePersistenceAvailable
         || !HasConfirmedPowerSource
         || !IsAvailable
@@ -714,6 +721,7 @@ public sealed class DisplaySettingsViewModel : INotifyPropertyChanged, IAsyncDis
     {
         OnPropertyChanged(nameof(ProfileRelationshipStatus));
         OnPropertyChanged(nameof(CanSaveCurrentSettingsToProfile));
+        OnPropertyChanged(nameof(HasProfileDifference));
     }
 
     private bool SetField<T>(ref T field, T value, [CallerMemberName] string? name = null)
