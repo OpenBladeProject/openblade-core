@@ -136,10 +136,17 @@ public sealed class ServiceCompositionTests
             descriptor => descriptor.ServiceType == typeof(IProductionLightingPortFactory)
                 && descriptor.ImplementationFactory is not null
                 && descriptor.Lifetime == ServiceLifetime.Singleton);
+        Assert.Contains(
+            services,
+            descriptor => descriptor.ServiceType == typeof(IGpuClockOffsetController)
+                && descriptor.ImplementationFactory is not null
+                && descriptor.Lifetime == ServiceLifetime.Singleton);
 
         using ServiceProvider provider = services.BuildServiceProvider();
         Assert.IsAssignableFrom<IFanRpmQueryRunFactory>(
             provider.GetRequiredService<IFanRpmQueryRunFactory>());
+        Assert.IsType<NvidiaGpuClockOffsetController>(
+            provider.GetRequiredService<IGpuClockOffsetController>());
         IVerifiedBladeDeviceProvider[] registrations =
             provider.GetServices<IVerifiedBladeDeviceProvider>().ToArray();
         Assert.Collection(

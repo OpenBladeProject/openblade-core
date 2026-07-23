@@ -42,12 +42,15 @@ internal static class ServiceComposition
                 provider.GetRequiredService<IProductionLightingPortFactory>()));
         services.AddSingleton<IFanRpmQueryRunFactory>(_ =>
             BatteryValidationFactory.CreateWindowsFanRpmQuery());
+        services.AddSingleton<IGpuClockOffsetController>(_ =>
+            new NvidiaGpuClockOffsetController());
         services.AddSingleton<IVerifiedBladeDeviceProvider>(provider =>
             new WindowsVerifiedBladeDeviceProvider(
                 WindowsVerifiedBladeDeviceProvider.ProductionProbeFactory,
                 provider.GetRequiredService<IProductionBatteryPortFactory>(),
                 provider.GetRequiredService<IFanRpmQueryRunFactory>(),
-                provider.GetRequiredService<IProductionLightingPortFactory>()));
+                provider.GetRequiredService<IProductionLightingPortFactory>(),
+                provider.GetRequiredService<IGpuClockOffsetController>()));
         return services;
     }
 
