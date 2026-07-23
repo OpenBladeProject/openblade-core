@@ -142,29 +142,6 @@ public sealed class ReactiveKeyboardInputTests
     }
 
     [Fact]
-    public void RawHid_FnMakeEmitsOnePulseUntilRelease()
-    {
-        bool pressed = false;
-
-        Assert.True(Rz09_0581ReactiveRawHidInput.TryCreatePulse(
-            [0x04, 0x0A, 0x00, 0x00],
-            ref pressed,
-            out ReactiveKeyPulse pulse));
-        Assert.Equal(87, pulse.MatrixSlot);
-        Assert.True(pressed);
-
-        Assert.False(Rz09_0581ReactiveRawHidInput.TryCreatePulse(
-            [0x04, 0x0A, 0x00, 0x00],
-            ref pressed,
-            out _));
-        Assert.False(Rz09_0581ReactiveRawHidInput.TryCreatePulse(
-            [0x04, 0x00, 0x00, 0x00],
-            ref pressed,
-            out _));
-        Assert.False(pressed);
-    }
-
-    [Fact]
     public void RawHid_DedicatedPerformanceButtonEmitsOncePerPress()
     {
         bool functionPressed = false;

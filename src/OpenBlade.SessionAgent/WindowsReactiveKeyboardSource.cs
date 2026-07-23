@@ -68,7 +68,6 @@ internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
     private int rawInputBufferCapacity;
     private nint windowHandle;
     private uint messageThreadId;
-    private bool functionKeyPressed;
     private bool performanceFunctionKeyPressed;
     private bool dedicatedPerformanceButtonPressed;
     private bool functionPPressed;
@@ -447,13 +446,10 @@ internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
             {
                 publishPerformanceShortcut(shortcut);
             }
-            if (Rz09_0581ReactiveRawHidInput.TryCreatePulse(
-                report[..inspectedBytes],
-                ref functionKeyPressed,
-                out ReactiveKeyPulse pulse))
-            {
-                publish(WithObservedTimestamp(pulse, Stopwatch.GetTimestamp()));
-            }
+            // Fn-layer highlighting is composed by the keyboard firmware. The
+            // PID 02E0 capture shows no changed host matrix frame on Fn make;
+            // converting it to a single-slot Reactive pulse instead replaces
+            // the firmware overlay with an incorrect host-rendered frame.
         }
     }
 

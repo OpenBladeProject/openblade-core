@@ -167,44 +167,6 @@ public static class ReactiveRawKeyboardInput
 }
 
 /// <summary>
-/// Reduces the Blade's model-specific MI_01 HID packet for the Fn key to a
-/// matrix pulse. The report contains no text or application identity.
-/// </summary>
-public static class Rz09_0581ReactiveRawHidInput
-{
-    internal const byte FunctionReportId = 0x04;
-    internal const byte FunctionPressedValue = 0x0A;
-
-    public static bool TryCreatePulse(
-        ReadOnlySpan<byte> report,
-        ref bool functionKeyPressed,
-        out ReactiveKeyPulse pulse)
-    {
-        pulse = default;
-        if (report.Length < 2 || report[0] != FunctionReportId)
-        {
-            return false;
-        }
-
-        bool pressed = report[1] == FunctionPressedValue;
-        if (!pressed)
-        {
-            functionKeyPressed = false;
-            return false;
-        }
-
-        if (functionKeyPressed)
-        {
-            return false;
-        }
-
-        functionKeyPressed = true;
-        pulse = new ReactiveKeyPulse(87);
-        return true;
-    }
-}
-
-/// <summary>
 /// Recognizes only the two performance shortcut report sequences captured from
 /// the RZ09-0581 MI_01 collection. The parser emits a source identity and keeps
 /// no key text, foreground-app, or user activity history.
