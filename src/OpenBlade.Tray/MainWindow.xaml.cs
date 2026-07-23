@@ -8,6 +8,7 @@ using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Media.Animation;
 using Microsoft.Windows.Storage.Pickers;
 using OpenBlade.Contracts;
 using Windows.Graphics;
@@ -50,6 +51,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
     private bool changingExternalLightingPolicy;
     private bool changingDisplaySettings;
     private bool changingDashboardCards;
+    private bool changingPageSections;
     private bool changingPrimaryNavigationItems;
     private bool changingPrimaryNavigationOrder;
     private bool changingSpecialKeyBindings;
@@ -71,6 +73,11 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
     private Action? dashboardCustomizerRefresh;
     private Action? dashboardCustomizerApply;
     private readonly Dictionary<DashboardCardKind, FrameworkElement> dashboardCardPresentations = [];
+    private readonly Dictionary<CustomizablePageKind, ObservableCollection<PageSectionOption>>
+        pageSections = [];
+    private readonly Dictionary<CustomizablePageKind, Microsoft.UI.Xaml.Controls.Panel>
+        pageSectionHosts = [];
+    private readonly Dictionary<PageSectionKind, FrameworkElement> pageSectionPresentations = [];
     private AppAccentColorMode accentColorMode = AppAccentColorMode.RazerGreen;
     private string customAccentColor = AppAccentColorPreferenceDefaults.RazerGreenHex;
 
@@ -258,6 +265,14 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         {
             option.PropertyChanged -= OnDashboardCardOptionChanged;
         }
+        foreach (ObservableCollection<PageSectionOption> sections in pageSections.Values)
+        {
+            sections.CollectionChanged -= OnPageSectionsCollectionChanged;
+            foreach (PageSectionOption section in sections)
+            {
+                section.PropertyChanged -= OnPageSectionOptionChanged;
+            }
+        }
         foreach (SpecialKeyBindingViewModel binding in SpecialKeyBindings)
         {
             binding.PropertyChanged -= OnSpecialKeyBindingChanged;
@@ -301,6 +316,8 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             PrimaryNavigationPreferenceDefaults.Items;
         IReadOnlyList<SpecialKeyBindingPreference> specialKeyBindings =
             SpecialKeyBindingDefaults.Bindings;
+        IReadOnlyList<PageLayoutPreference> pageLayouts =
+            PageLayoutPreferenceDefaults.Layouts;
         AppAccentColorMode initialAccentColorMode = AppAccentColorMode.RazerGreen;
         string initialCustomAccentColor = AppAccentColorPreferenceDefaults.RazerGreenHex;
         try
@@ -315,6 +332,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             dashboardCards = preferences.EffectiveDashboardCards;
             primaryNavigationItems = preferences.EffectivePrimaryNavigationItems;
             specialKeyBindings = preferences.EffectiveSpecialKeyBindings;
+            pageLayouts = preferences.EffectivePageLayouts;
             initialAccentColorMode = preferences.EffectiveAccentColorMode;
             initialCustomAccentColor = preferences.EffectiveCustomAccentColor;
             StartMinimized = preferences.StartMinimized;
@@ -336,6 +354,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         ViewModel.TrayHoverLabelMode = trayHoverLabelMode;
         ViewModel.ApplyTelemetryPreferences(dashboardTelemetryItems, trayHoverLabelItems);
         ApplyDashboardPreferences(dashboardCards);
+        ApplyPageLayoutPreferences(pageLayouts);
         ApplyPrimaryNavigationPreferences(primaryNavigationItems);
         ApplySpecialKeyBindingPreferences(specialKeyBindings);
         changingAccentColor = true;
@@ -579,6 +598,16 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
                 CustomAccentColor: customAccentColor,
                 SpecialKeyBindings: SpecialKeyBindings
                     .Select(binding => binding.ToPreference())
+                    .ToArray(),
+                PageLayouts: pageSections
+                    .OrderBy(pair => pair.Key)
+                    .Select(pair => new PageLayoutPreference(
+                        pair.Key,
+                        pair.Value
+                            .Select(section => new PageSectionPreference(
+                                section.Kind,
+                                section.IsVisible))
+                            .ToArray()))
                     .ToArray()));
         }
         catch (ObjectDisposedException)
@@ -860,7 +889,6 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             return;
         }
 
-        selector.IsEnabled = false;
         try
         {
             await command.ExecuteAsync(selected.Value);
@@ -872,7 +900,6 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         finally
         {
             selector.SelectedItem = ViewModel.SelectedPerformanceOption;
-            selector.IsEnabled = true;
             changingPerformanceSelection = false;
         }
     }
@@ -922,7 +949,6 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         Microsoft.UI.Xaml.Controls.ComboBox selector)
     {
         changingCustomPerformanceSelection = true;
-        selector.IsEnabled = false;
         try
         {
             if (ViewModel.SetCustomPerformanceCommand is AsyncRelayCommand command
@@ -940,7 +966,6 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             selector.SelectedItem = selector.Name == "DashboardCustomCpuSelector"
                 ? ViewModel.SelectedCustomCpuLevel
                 : ViewModel.SelectedCustomGpuLevel;
-            selector.IsEnabled = ViewModel.CanControlHardware;
             changingCustomPerformanceSelection = false;
         }
     }
@@ -967,7 +992,6 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             return;
         }
 
-        selector.IsEnabled = false;
         try
         {
             await command.ExecuteAsync(selected.Value);
@@ -979,7 +1003,6 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         finally
         {
             selector.SelectedItem = ViewModel.SelectedFanModeOption;
-            selector.IsEnabled = true;
             changingFanSelection = false;
         }
     }
@@ -1287,7 +1310,6 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         }
 
         changingBatteryProtection = true;
-        toggle.IsEnabled = false;
         try
         {
             await command.ExecuteAsync(null);
@@ -1299,7 +1321,6 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         finally
         {
             SynchronizeBatteryProtectionToggle(toggle);
-            toggle.IsEnabled = true;
             changingBatteryProtection = false;
         }
     }
@@ -1389,6 +1410,16 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             dispatcherQueue.TryEnqueue(
                 DispatcherQueuePriority.Low,
                 () => UpdateProfilesLayout());
+        }
+        else if (destination == "lighting")
+        {
+            dispatcherQueue.TryEnqueue(
+                DispatcherQueuePriority.Low,
+                () =>
+                {
+                    LightingCard.UpdateLayout();
+                    TryRegisterLightingPageSections();
+                });
         }
         else if (destination == "home")
         {
@@ -1766,22 +1797,6 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         }
 
         var editorCards = new ObservableCollection<DashboardCardOption>();
-        var cardList = new Microsoft.UI.Xaml.Controls.ListView
-        {
-            ItemsSource = editorCards,
-            SelectionMode = ListViewSelectionMode.None,
-            CanDragItems = true,
-            CanReorderItems = true,
-            ReorderMode = ListViewReorderMode.Enabled,
-            AllowDrop = true,
-            MaxHeight = 480,
-            HorizontalAlignment = Microsoft.UI.Xaml.HorizontalAlignment.Stretch,
-            HorizontalContentAlignment = Microsoft.UI.Xaml.HorizontalAlignment.Stretch,
-            ItemTemplate = (DataTemplate)Root.Resources["DashboardCardOptionTemplate"],
-            ItemContainerStyle = (Style)Root.Resources["DashboardReorderListItemStyle"],
-        };
-        AutomationProperties.SetName(cardList, "Dashboard cards");
-
         void LoadEditorFromDashboard()
         {
             editorCards.Clear();
@@ -1801,20 +1816,11 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             changingDashboardCards = true;
             try
             {
-                for (int targetIndex = 0; targetIndex < editorCards.Count; targetIndex++)
-                {
-                    DashboardCardOption edited = editorCards[targetIndex];
-                    int currentIndex = DashboardCards
-                        .Select((option, index) => (option, index))
-                        .First(pair => pair.option.Kind == edited.Kind)
-                        .index;
-                    if (currentIndex != targetIndex)
-                    {
-                        DashboardCards.Move(currentIndex, targetIndex);
-                    }
-
-                    DashboardCards[targetIndex].IsPinned = edited.IsPinned;
-                }
+                ApplyCustomizedOrder(
+                    DashboardCards,
+                    editorCards,
+                    option => option.Kind,
+                    (current, edited) => current.IsPinned = edited.IsPinned);
             }
             finally
             {
@@ -1830,24 +1836,12 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         dashboardCustomizerRefresh = LoadEditorFromDashboard;
         dashboardCustomizerApply = ApplyEditorToDashboard;
 
-        var content = new StackPanel { Width = 600, Spacing = 10 };
-        content.Children.Add(new TextBlock
-        {
-            Text = "Check cards to show. Drag them into the order you want.",
-            Style = (Style)Root.Resources["SecondaryTextStyle"],
-            TextWrapping = TextWrapping.Wrap,
-        });
-        content.Children.Add(cardList);
-
-        var dialog = new ContentDialog
-        {
-            MinWidth = 640,
-            XamlRoot = Root.XamlRoot,
-            Title = "Customize Dashboard",
-            Content = content,
-            CloseButtonText = "Done",
-            DefaultButton = ContentDialogButton.Close,
-        };
+        ContentDialog dialog = CreateCustomizationDialog(
+            "Customize Dashboard",
+            "Dashboard cards",
+            "Check cards to show. Drag them into the order you want.",
+            editorCards,
+            "DashboardCardOptionTemplate");
         dashboardCustomizerDialog = dialog;
         await dialog.ShowAsync();
         ApplyDashboardCustomizerChanges();
@@ -1855,6 +1849,269 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
 
     private void ApplyDashboardCustomizerChanges() =>
         dashboardCustomizerApply?.Invoke();
+
+    private void ApplyPageLayoutPreferences(
+        IReadOnlyList<PageLayoutPreference> preferences)
+    {
+        changingPageSections = true;
+        try
+        {
+            foreach (ObservableCollection<PageSectionOption> sections in pageSections.Values)
+            {
+                sections.CollectionChanged -= OnPageSectionsCollectionChanged;
+                foreach (PageSectionOption section in sections)
+                {
+                    section.PropertyChanged -= OnPageSectionOptionChanged;
+                }
+            }
+
+            pageSections.Clear();
+            foreach (PageLayoutPreference layout in
+                     PageLayoutPreferenceDefaults.Normalize(preferences))
+            {
+                var sections = new ObservableCollection<PageSectionOption>(
+                    PageLayoutPreferenceDefaults.CreateOptions(
+                        layout.Page,
+                        layout.Sections));
+                sections.CollectionChanged += OnPageSectionsCollectionChanged;
+                foreach (PageSectionOption section in sections)
+                {
+                    section.PropertyChanged += OnPageSectionOptionChanged;
+                }
+
+                pageSections.Add(layout.Page, sections);
+            }
+        }
+        finally
+        {
+            changingPageSections = false;
+        }
+
+        RefreshAllPageSections();
+    }
+
+    private void OnPageSectionOptionChanged(
+        object? sender,
+        PropertyChangedEventArgs args)
+    {
+        if (changingPageSections
+            || args.PropertyName != nameof(PageSectionOption.IsVisible)
+            || sender is not PageSectionOption option)
+        {
+            return;
+        }
+
+        CustomizablePageKind page = pageSections
+            .First(pair => pair.Value.Contains(option))
+            .Key;
+        RefreshPageSections(page);
+        QueuePreferenceSave();
+    }
+
+    private void OnPageSectionsCollectionChanged(
+        object? sender,
+        NotifyCollectionChangedEventArgs args)
+    {
+        if (changingPageSections
+            || sender is not ObservableCollection<PageSectionOption> sections)
+        {
+            return;
+        }
+
+        CustomizablePageKind page = pageSections
+            .First(pair => ReferenceEquals(pair.Value, sections))
+            .Key;
+        RefreshPageSections(page);
+        QueuePreferenceSave();
+    }
+
+    private async void OnCustomizePageSections(object sender, RoutedEventArgs args)
+    {
+        if (sender is not FrameworkElement element
+            || element.Tag is not string pageName
+            || !Enum.TryParse(pageName, ignoreCase: false, out CustomizablePageKind page)
+            || (page == CustomizablePageKind.Lighting
+                && !TryRegisterLightingPageSections())
+            || !pageSections.TryGetValue(
+                page,
+                out ObservableCollection<PageSectionOption>? currentSections))
+        {
+            return;
+        }
+
+        var editorSections = new ObservableCollection<PageSectionOption>(
+            currentSections.Select(section => new PageSectionOption(
+                section.Kind,
+                section.Label,
+                section.Description,
+                section.IsVisible)));
+        ContentDialog dialog = CreateCustomizationDialog(
+            $"Customize {GetCustomizablePageLabel(page)}",
+            $"{page} page sections",
+            "Check sections to show. Drag them into the order you want.",
+            editorSections,
+            "PageSectionOptionTemplate");
+        await dialog.ShowAsync();
+
+        changingPageSections = true;
+        try
+        {
+            ApplyCustomizedOrder(
+                currentSections,
+                editorSections,
+                section => section.Kind,
+                (current, edited) => current.IsVisible = edited.IsVisible);
+        }
+        finally
+        {
+            changingPageSections = false;
+        }
+
+        RefreshPageSections(page);
+        QueuePreferenceSave();
+    }
+
+    private ContentDialog CreateCustomizationDialog<T>(
+        string title,
+        string automationName,
+        string instructions,
+        ObservableCollection<T> items,
+        string itemTemplateKey)
+    {
+        var reorderList = new Microsoft.UI.Xaml.Controls.ListView
+        {
+            ItemsSource = items,
+            SelectionMode = ListViewSelectionMode.None,
+            CanDragItems = true,
+            CanReorderItems = true,
+            ReorderMode = ListViewReorderMode.Enabled,
+            AllowDrop = true,
+            MaxHeight = 480,
+            HorizontalAlignment = Microsoft.UI.Xaml.HorizontalAlignment.Stretch,
+            HorizontalContentAlignment = Microsoft.UI.Xaml.HorizontalAlignment.Stretch,
+            ItemTemplate = (DataTemplate)Root.Resources[itemTemplateKey],
+            ItemContainerStyle = (Style)Root.Resources["DashboardReorderListItemStyle"],
+        };
+        AutomationProperties.SetName(reorderList, automationName);
+
+        var content = new StackPanel { Width = 600, Spacing = 10 };
+        content.Children.Add(new TextBlock
+        {
+            Text = instructions,
+            Style = (Style)Root.Resources["SecondaryTextStyle"],
+            TextWrapping = TextWrapping.Wrap,
+        });
+        content.Children.Add(reorderList);
+
+        return new ContentDialog
+        {
+            MinWidth = 640,
+            XamlRoot = Root.XamlRoot,
+            Title = title,
+            Content = content,
+            CloseButtonText = "Done",
+            DefaultButton = ContentDialogButton.Close,
+        };
+    }
+
+    private static void ApplyCustomizedOrder<TOption, TKey>(
+        ObservableCollection<TOption> currentItems,
+        IReadOnlyList<TOption> editedItems,
+        Func<TOption, TKey> keySelector,
+        Action<TOption, TOption> applyState)
+        where TKey : notnull
+    {
+        for (int targetIndex = 0; targetIndex < editedItems.Count; targetIndex++)
+        {
+            TOption edited = editedItems[targetIndex];
+            TKey key = keySelector(edited);
+            int currentIndex = currentItems
+                .Select((item, index) => (item, index))
+                .First(pair => EqualityComparer<TKey>.Default.Equals(
+                    keySelector(pair.item),
+                    key))
+                .index;
+            if (currentIndex != targetIndex)
+            {
+                currentItems.Move(currentIndex, targetIndex);
+            }
+
+            applyState(currentItems[targetIndex], edited);
+        }
+    }
+
+    private static string GetCustomizablePageLabel(CustomizablePageKind page) =>
+        page switch
+        {
+            CustomizablePageKind.Profiles => "Profiles",
+            CustomizablePageKind.Display => "Display",
+            CustomizablePageKind.Laptop => "Laptop",
+            CustomizablePageKind.Lighting => "Lighting",
+            CustomizablePageKind.Settings => "Settings",
+            CustomizablePageKind.About => "About",
+            _ => throw new ArgumentOutOfRangeException(nameof(page), page, null),
+        };
+
+    private void RefreshAllPageSections()
+    {
+        foreach (CustomizablePageKind page in pageSections.Keys)
+        {
+            RefreshPageSections(page);
+        }
+    }
+
+    private void RefreshPageSections(CustomizablePageKind page)
+    {
+        if (!pageSectionHosts.TryGetValue(
+                page,
+                out Microsoft.UI.Xaml.Controls.Panel? host)
+            || !pageSections.TryGetValue(
+                page,
+                out ObservableCollection<PageSectionOption>? sections))
+        {
+            return;
+        }
+
+        FrameworkElement[] desiredSections = sections
+            .Where(section => section.IsVisible)
+            .Select(section => pageSectionPresentations[section.Kind])
+            .ToArray();
+        var desiredSet = desiredSections.ToHashSet();
+
+        foreach (FrameworkElement child in host.Children
+                     .OfType<FrameworkElement>()
+                     .Where(child => !desiredSet.Contains(child))
+                     .ToArray())
+        {
+            host.Children.Remove(child);
+        }
+
+        foreach (FrameworkElement section in desiredSections)
+        {
+            if (section.Parent is Microsoft.UI.Xaml.Controls.Panel currentParent
+                && !ReferenceEquals(currentParent, host))
+            {
+                currentParent.Children.Remove(section);
+            }
+
+            if (!host.Children.Contains(section))
+            {
+                host.Children.Add(section);
+            }
+        }
+
+        for (int targetIndex = 0; targetIndex < desiredSections.Length; targetIndex++)
+        {
+            FrameworkElement section = desiredSections[targetIndex];
+            int currentIndex = host.Children.IndexOf(section);
+            if (currentIndex >= 0 && currentIndex != targetIndex)
+            {
+                host.Children.Move(
+                    checked((uint)currentIndex),
+                    checked((uint)targetIndex));
+            }
+        }
+    }
 
     private void ApplyPrimaryNavigationPreferences(
         IReadOnlyList<PrimaryNavigationItemKind> preferences)
@@ -2109,10 +2366,128 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
     private void OnRootLoaded(object sender, RoutedEventArgs args)
     {
         MoveCanonicalLaptopCardsIntoPlace();
+        RegisterPageSections();
         dashboardCardPresentations[DashboardCardKind.DeviceStatus] = DeviceStatusCard;
         dashboardCardsReady = true;
         RefreshDashboardCards();
+        RefreshAllPageSections();
         UpdateDisplayRefreshState();
+    }
+
+    private void RegisterPageSections()
+    {
+        pageSectionHosts[CustomizablePageKind.Profiles] = ProfilesSectionHost;
+        pageSectionHosts[CustomizablePageKind.Display] = DisplayCardsHost;
+        pageSectionHosts[CustomizablePageKind.Laptop] = LaptopCardsHost;
+        pageSectionHosts[CustomizablePageKind.Settings] = SettingsSectionHost;
+        pageSectionHosts[CustomizablePageKind.About] = AboutSectionHost;
+        foreach (Microsoft.UI.Xaml.Controls.Panel host in pageSectionHosts.Values)
+        {
+            ConfigureSectionHostTransitions(host);
+        }
+
+        pageSectionPresentations[PageSectionKind.ProfilesComparison] =
+            ProfilesComparisonSection;
+        pageSectionPresentations[PageSectionKind.DisplayControls] = DisplayCard;
+        pageSectionPresentations[PageSectionKind.LaptopPowerMode] = PowerModeCard;
+        pageSectionPresentations[PageSectionKind.LaptopFans] = FansCard;
+        pageSectionPresentations[PageSectionKind.LaptopBattery] = BatteryCard;
+        pageSectionPresentations[PageSectionKind.LaptopKeyboardBehavior] =
+            KeyboardBehaviorCard;
+        pageSectionPresentations[PageSectionKind.LaptopStartupAnimation] =
+            StartupAnimationCard;
+        pageSectionPresentations[PageSectionKind.LaptopShortcutKeys] =
+            ShortcutKeysSection;
+        pageSectionPresentations[PageSectionKind.SettingsBehavior] =
+            SettingsBehaviorSection;
+        pageSectionPresentations[PageSectionKind.SettingsAppearance] =
+            SettingsAppearanceSection;
+        pageSectionPresentations[PageSectionKind.SettingsShutdown] =
+            SettingsShutdownSection;
+        pageSectionPresentations[PageSectionKind.AboutOverview] =
+            AboutOverviewSection;
+        pageSectionPresentations[PageSectionKind.AboutVersions] =
+            AboutVersionsSection;
+        pageSectionPresentations[PageSectionKind.AboutDeviceInformation] =
+            AboutDeviceInformationSection;
+        pageSectionPresentations[PageSectionKind.AboutSupport] =
+            AboutSupportSection;
+        pageSectionPresentations[PageSectionKind.AboutTroubleshooting] =
+            AboutTroubleshootingSection;
+        TryRegisterLightingPageSections();
+    }
+
+    private bool TryRegisterLightingPageSections()
+    {
+        if (pageSectionHosts.ContainsKey(CustomizablePageKind.Lighting))
+        {
+            return true;
+        }
+
+        LightingCard.ApplyTemplate();
+        StackPanel? host = FindDescendant<StackPanel>(
+            LightingCard,
+            "LightingSectionHost");
+        StackPanel? keyboard = FindDescendant<StackPanel>(
+            LightingCard,
+            "LightingKeyboardSection");
+        StackPanel? logo = FindDescendant<StackPanel>(
+            LightingCard,
+            "LightingLogoSection");
+        StackPanel? powerSaving = FindDescendant<StackPanel>(
+            LightingCard,
+            "LightingPowerSavingSection");
+        if (host is null || keyboard is null || logo is null || powerSaving is null)
+        {
+            return false;
+        }
+
+        pageSectionHosts[CustomizablePageKind.Lighting] = host;
+        ConfigureSectionHostTransitions(host);
+        pageSectionPresentations[PageSectionKind.LightingKeyboard] = keyboard;
+        pageSectionPresentations[PageSectionKind.LightingLogo] = logo;
+        pageSectionPresentations[PageSectionKind.LightingPowerSaving] = powerSaving;
+        RefreshPageSections(CustomizablePageKind.Lighting);
+        return true;
+    }
+
+    private static void ConfigureSectionHostTransitions(
+        Microsoft.UI.Xaml.Controls.Panel host)
+    {
+        host.ChildrenTransitions =
+        [
+            new AddDeleteThemeTransition(),
+            new RepositionThemeTransition
+            {
+                IsStaggeringEnabled = false,
+            },
+        ];
+    }
+
+    private static TElement? FindDescendant<TElement>(
+        DependencyObject root,
+        string name)
+        where TElement : FrameworkElement
+    {
+        int childCount = Microsoft.UI.Xaml.Media.VisualTreeHelper.GetChildrenCount(root);
+        for (int index = 0; index < childCount; index++)
+        {
+            DependencyObject child =
+                Microsoft.UI.Xaml.Media.VisualTreeHelper.GetChild(root, index);
+            if (child is TElement element
+                && string.Equals(element.Name, name, StringComparison.Ordinal))
+            {
+                return element;
+            }
+
+            TElement? descendant = FindDescendant<TElement>(child, name);
+            if (descendant is not null)
+            {
+                return descendant;
+            }
+        }
+
+        return null;
     }
 
     private async void OnImportProfiles(object sender, RoutedEventArgs args)

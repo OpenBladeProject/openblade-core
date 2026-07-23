@@ -238,6 +238,71 @@ public sealed class DisplaySettingsViewModelTests
     }
 
     [Fact]
+    public async Task FailedUnavailableRefresh_PreservesLastKnownDisplayState()
+    {
+        var adapter = new FakeDisplaySettingsAdapter(
+            Snapshot(refreshKey: Fixed240.Key, hdr: true, colorKey: Native.Key));
+        await using var viewModel = CreateViewModel(adapter);
+        await viewModel.RefreshAsync();
+        IReadOnlyList<DisplayRefreshRateOption> refreshOptions =
+            viewModel.RefreshRateOptions;
+        IReadOnlyList<DisplayColorProfileOption> colorOptions =
+            viewModel.ColorProfileOptions;
+        adapter.SetExternalState(new DisplaySettingsSnapshot(
+            IsAvailable: false,
+            RefreshRateOptions: [],
+            SelectedRefreshRateKey: null,
+            IsHdrSupported: false,
+            IsHdrEnabled: false,
+            ColorProfileOptions: [],
+            SelectedColorProfileKey: null,
+            StatusMessage: "The display session agent is not responding.",
+            OperationSucceeded: false));
+
+        await viewModel.RefreshAsync();
+
+        Assert.True(viewModel.IsAvailable);
+        Assert.True(viewModel.IsHdrSupported);
+        Assert.True(viewModel.IsHdrEnabled);
+        Assert.Equal(Fixed240.Key, viewModel.SelectedRefreshRate?.Key);
+        Assert.Equal(Native.Key, viewModel.SelectedColorProfile?.Key);
+        Assert.Same(refreshOptions, viewModel.RefreshRateOptions);
+        Assert.Same(colorOptions, viewModel.ColorProfileOptions);
+        Assert.Equal(
+            "The display session agent is not responding.",
+            viewModel.StatusMessage);
+    }
+
+    [Fact]
+    public async Task SuccessfulUnavailableRefresh_ClearsLastKnownDisplayState()
+    {
+        var adapter = new FakeDisplaySettingsAdapter(
+            Snapshot(refreshKey: Fixed240.Key, hdr: true, colorKey: Native.Key));
+        await using var viewModel = CreateViewModel(adapter);
+        await viewModel.RefreshAsync();
+        adapter.SetExternalState(new DisplaySettingsSnapshot(
+            IsAvailable: false,
+            RefreshRateOptions: [],
+            SelectedRefreshRateKey: null,
+            IsHdrSupported: false,
+            IsHdrEnabled: false,
+            ColorProfileOptions: [],
+            SelectedColorProfileKey: null,
+            StatusMessage: "No built-in display is available."));
+
+        await viewModel.RefreshAsync();
+
+        Assert.False(viewModel.IsAvailable);
+        Assert.False(viewModel.IsHdrSupported);
+        Assert.False(viewModel.IsHdrEnabled);
+        Assert.Null(viewModel.SelectedRefreshRate);
+        Assert.Null(viewModel.SelectedColorProfile);
+        Assert.Empty(viewModel.RefreshRateOptions);
+        Assert.Empty(viewModel.ColorProfileOptions);
+        Assert.Equal("No built-in display is available.", viewModel.StatusMessage);
+    }
+
+    [Fact]
     public async Task ApplyProfile_UsesReadbackAndDoesNotRaiseUserProfileDraft()
     {
         var adapter = new FakeDisplaySettingsAdapter(

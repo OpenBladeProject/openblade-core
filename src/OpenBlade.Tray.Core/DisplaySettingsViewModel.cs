@@ -391,6 +391,11 @@ public sealed class DisplaySettingsViewModel : INotifyPropertyChanged, IAsyncDis
 
         await RunSerializedAsync(adapter.GetStateAsync, token, showBusy: false);
 
+        if (!IsAvailable)
+        {
+            return;
+        }
+
         bool refreshChanged = hadPriorState &&
             !string.Equals(previousRefreshRate, SelectedRefreshRate?.Key, StringComparison.Ordinal);
         bool colorChanged = hadPriorState &&
@@ -620,6 +625,13 @@ public sealed class DisplaySettingsViewModel : INotifyPropertyChanged, IAsyncDis
     private void Apply(DisplaySettingsSnapshot state)
     {
         ArgumentNullException.ThrowIfNull(state);
+        if (IsAvailable && !state.OperationSucceeded && !state.IsAvailable)
+        {
+            StatusMessage = state.StatusMessage
+                ?? "Display settings could not be refreshed.";
+            return;
+        }
+
         RefreshRateOptions = StableOptionCollection.ReuseEquivalent(
             RefreshRateOptions,
             state.RefreshRateOptions ?? []);

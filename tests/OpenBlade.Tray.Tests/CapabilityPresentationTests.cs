@@ -119,8 +119,17 @@ public sealed class CapabilityPresentationTests
             "{Binding SelectedPerformanceOption, Mode=OneWay}",
             Attribute(performance, "SelectedItem"));
         Assert.Equal(
-            "{Binding CanRequestHardwareControl}",
+            "{Binding CanEditPerformance}",
             Attribute(performance, "IsEnabled"));
+        Assert.All(
+            new[]
+            {
+                NamedElement(document, "ComboBox", "DashboardCustomCpuSelector"),
+                NamedElement(document, "ComboBox", "DashboardCustomGpuSelector"),
+            },
+            selector => Assert.Equal(
+                "{Binding CanEditPerformance}",
+                Attribute(selector, "IsEnabled")));
         Assert.Equal(
             "{Binding IsPerformanceVisible}",
             Attribute(
@@ -144,8 +153,11 @@ public sealed class CapabilityPresentationTests
                     && Attribute(element, "AnimatedVisibility.IsVisible") is not null),
                 "AnimatedVisibility.IsVisible"));
         Assert.Equal(
-            "{Binding CanChangeBatteryProtection}",
+            "{x:Bind CanChangeBatteryProtection, Mode=OneWay}",
             Attribute(batteryProtection, "IsEnabled"));
+        Assert.Equal(
+            "{x:Bind BatteryProtectionEnabled, Mode=OneWay}",
+            Attribute(batteryProtection, "IsOn"));
         Assert.Equal("{Binding CanAdjustChargeLimit}", Attribute(chargeLimit, "IsEnabled"));
         Assert.Equal(
             "OnDashboardChargeLimitPointerPressed",

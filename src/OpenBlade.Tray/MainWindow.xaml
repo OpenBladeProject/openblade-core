@@ -253,6 +253,35 @@
                               VerticalAlignment="Center" />
                 </Grid>
             </DataTemplate>
+            <DataTemplate x:Key="PageSectionOptionTemplate"
+                          x:DataType="local:PageSectionOption">
+                <Grid ColumnSpacing="10"
+                      Padding="2,6,8,6"
+                      MinWidth="580"
+                      HorizontalAlignment="Stretch">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <FontIcon Glyph="&#xE76F;"
+                              FontSize="14"
+                              Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                              VerticalAlignment="Center" />
+                    <StackPanel Grid.Column="1" Spacing="2">
+                        <TextBlock Text="{x:Bind Label, Mode=OneTime}"
+                                   Style="{StaticResource CardTitleStyle}" />
+                        <TextBlock Text="{x:Bind Description, Mode=OneTime}"
+                                   Style="{StaticResource SecondaryTextStyle}"
+                                   TextWrapping="Wrap" />
+                    </StackPanel>
+                    <CheckBox Grid.Column="2"
+                              IsChecked="{x:Bind IsVisible, Mode=TwoWay}"
+                              AutomationProperties.Name="{x:Bind Label, Mode=OneTime}"
+                              HorizontalAlignment="Right"
+                              VerticalAlignment="Center" />
+                </Grid>
+            </DataTemplate>
             <DataTemplate x:Key="NavigationItemOptionTemplate"
                           x:DataType="local:PrimaryNavigationItemOption">
                 <Grid ColumnSpacing="12"
@@ -303,7 +332,7 @@
                                                   MinWidth="150"
                                                   HorizontalAlignment="Right"
                                                   AutomationProperties.Name="Power mode"
-                                                  IsEnabled="{Binding CanRequestHardwareControl}"
+                                                  IsEnabled="{Binding CanEditPerformance}"
                                                   ItemsSource="{Binding AvailableActivePerformanceOptions}"
                                                   SelectedItem="{Binding SelectedPerformanceOption, Mode=OneWay}"
                                                   local:StableComboBoxSelection.Anchor="{Binding SelectedPerformanceOption, Mode=OneWay}"
@@ -329,7 +358,7 @@
                                               MinWidth="150"
                                               HorizontalAlignment="Right"
                                               AutomationProperties.Name="Custom CPU level"
-                                              IsEnabled="{Binding CanRequestHardwareControl}"
+                                              IsEnabled="{Binding CanEditPerformance}"
                                               ItemsSource="{Binding AvailableCustomCpuLevels}"
                                               SelectedItem="{Binding SelectedCustomCpuLevel}"
                                               local:StableComboBoxSelection.Anchor="{Binding SelectedCustomCpuLevel, Mode=OneWay}"
@@ -354,7 +383,7 @@
                                               MinWidth="150"
                                               HorizontalAlignment="Right"
                                               AutomationProperties.Name="Custom GPU level"
-                                              IsEnabled="{Binding CanRequestHardwareControl}"
+                                              IsEnabled="{Binding CanEditPerformance}"
                                               ItemsSource="{Binding AvailableCustomGpuLevels}"
                                               SelectedItem="{Binding SelectedCustomGpuLevel}"
                                               local:StableComboBoxSelection.Anchor="{Binding SelectedCustomGpuLevel, Mode=OneWay}"
@@ -581,8 +610,8 @@
                                                       AutomationProperties.Name="Battery protection"
                                                       OffContent=""
                                                       OnContent=""
-                                                      IsEnabled="{Binding CanChangeBatteryProtection}"
-                                                      IsOn="{Binding BatteryProtectionEnabled}"
+                                                      IsEnabled="{x:Bind CanChangeBatteryProtection, Mode=OneWay}"
+                                                      IsOn="{x:Bind BatteryProtectionEnabled, Mode=OneWay}"
                                                       Toggled="OnBatteryProtectionToggled" />
                                     </StackPanel>
                                 </Grid>
@@ -802,7 +831,8 @@
                         <ContentControl x:Name="LightingControls"
                                         HorizontalContentAlignment="Stretch"
                                         IsEnabled="{x:Bind CanControlLighting, Mode=OneWay}">
-                            <StackPanel>
+                            <StackPanel x:Name="LightingSectionHost">
+                        <StackPanel x:Name="LightingKeyboardSection">
                         <TextBlock Text="Keyboard"
                                    Style="{StaticResource SectionHeaderStyle}"
                                    Margin="0,0,0,10" />
@@ -1137,11 +1167,13 @@
 
                             </StackPanel>
                         </Border>
+                        </StackPanel>
 
+                        <StackPanel x:Name="LightingLogoSection"
+                                    Visibility="{x:Bind IsLogoLightingVisible, Mode=OneWay}">
                         <TextBlock Text="Laptop logo"
                                    Style="{StaticResource SectionHeaderStyle}"
-                                   Margin="0,24,0,10"
-                                   Visibility="{x:Bind IsLogoLightingVisible, Mode=OneWay}" />
+                                   Margin="0,24,0,10" />
                         <Border Style="{StaticResource SettingsGroupStyle}">
                             <StackPanel>
                                 <Border Style="{StaticResource SettingsLastRowStyle}"
@@ -1168,7 +1200,9 @@
                                 </Border>
                             </StackPanel>
                         </Border>
+                        </StackPanel>
 
+                        <StackPanel x:Name="LightingPowerSavingSection">
                         <TextBlock Text="Switch off lighting"
                                    Style="{StaticResource SectionHeaderStyle}"
                                    Margin="0,24,0,10" />
@@ -1250,6 +1284,7 @@
                                 </Border>
                             </StackPanel>
                         </Border>
+                        </StackPanel>
                             </StackPanel>
                         </ContentControl>
                         </StackPanel>
@@ -1709,8 +1744,14 @@
                                         Click="OnExportProfiles"
                                         ToolTipService.ToolTip="Export saved profiles as JSON"
                                         AutomationProperties.Name="Export profiles to JSON" />
+                                <Button Content="Customize"
+                                        Tag="Profiles"
+                                        Click="OnCustomizePageSections"
+                                        AutomationProperties.Name="Customize Profiles page" />
                             </StackPanel>
                         </Grid>
+                        <StackPanel x:Name="ProfilesSectionHost">
+                        <StackPanel x:Name="ProfilesComparisonSection">
                         <TextBlock Text="These are the settings saved in each profile. Unsaved changes from Laptop, Dashboard, Lighting, or Display appear here only after you save them."
                                    Style="{StaticResource SecondaryTextStyle}"
                                    Margin="0,0,0,16" />
@@ -1994,6 +2035,8 @@
                                 </StackPanel>
                             </Border>
                         </StackPanel>
+                        </StackPanel>
+                        </StackPanel>
                     </StackPanel>
                 </ScrollView>
 
@@ -2030,11 +2073,11 @@
                                             <AdaptiveTrigger MinWindowWidth="900" />
                                         </VisualState.StateTriggers>
                                         <VisualState.Setters>
-                                            <Setter Target="LaptopProfileSaveActions.(Grid.Row)" Value="0" />
-                                            <Setter Target="LaptopProfileSaveActions.(Grid.Column)" Value="1" />
-                                            <Setter Target="LaptopProfileSaveActions.(Grid.ColumnSpan)" Value="1" />
-                                            <Setter Target="LaptopProfileSaveActions.HorizontalAlignment" Value="Right" />
-                                            <Setter Target="LaptopProfileSaveActions.Margin" Value="0,2,0,0" />
+                                            <Setter Target="LaptopHeaderActions.(Grid.Row)" Value="0" />
+                                            <Setter Target="LaptopHeaderActions.(Grid.Column)" Value="1" />
+                                            <Setter Target="LaptopHeaderActions.(Grid.ColumnSpan)" Value="1" />
+                                            <Setter Target="LaptopHeaderActions.HorizontalAlignment" Value="Right" />
+                                            <Setter Target="LaptopHeaderActions.Margin" Value="0,2,0,0" />
                                         </VisualState.Setters>
                                     </VisualState>
                                     <VisualState x:Name="LaptopHeaderCompact">
@@ -2042,22 +2085,25 @@
                                             <AdaptiveTrigger MinWindowWidth="0" />
                                         </VisualState.StateTriggers>
                                         <VisualState.Setters>
-                                            <Setter Target="LaptopProfileSaveActions.(Grid.Row)" Value="1" />
-                                            <Setter Target="LaptopProfileSaveActions.(Grid.Column)" Value="0" />
-                                            <Setter Target="LaptopProfileSaveActions.(Grid.ColumnSpan)" Value="2" />
-                                            <Setter Target="LaptopProfileSaveActions.HorizontalAlignment" Value="Left" />
-                                            <Setter Target="LaptopProfileSaveActions.Margin" Value="0,2,0,0" />
+                                            <Setter Target="LaptopHeaderActions.(Grid.Row)" Value="1" />
+                                            <Setter Target="LaptopHeaderActions.(Grid.Column)" Value="0" />
+                                            <Setter Target="LaptopHeaderActions.(Grid.ColumnSpan)" Value="2" />
+                                            <Setter Target="LaptopHeaderActions.HorizontalAlignment" Value="Left" />
+                                            <Setter Target="LaptopHeaderActions.Margin" Value="0,2,0,0" />
                                         </VisualState.Setters>
                                     </VisualState>
                                 </VisualStateGroup>
                             </VisualStateManager.VisualStateGroups>
                             <TextBlock Text="Laptop"
                                        Style="{StaticResource PageHeaderTitleStyle}" />
-                            <StackPanel x:Name="LaptopProfileSaveActions"
+                            <StackPanel x:Name="LaptopHeaderActions"
                                         Grid.Column="1"
                                         Orientation="Horizontal"
                                         Spacing="8"
-                                        VerticalAlignment="Center"
+                                        VerticalAlignment="Center">
+                            <StackPanel x:Name="LaptopProfileSaveActions"
+                                        Orientation="Horizontal"
+                                        Spacing="8"
                                         Visibility="{x:Bind ViewModel.HasLaptopPageProfileSaveOpportunity, Mode=OneWay}">
                                 <TextBlock Text="Unsaved changes"
                                            Style="{StaticResource ProfileSaveStatusTextStyle}" />
@@ -2077,6 +2123,11 @@
                                     </Button.Flyout>
                                 </Button>
                             </StackPanel>
+                            <Button Content="Customize"
+                                    Tag="Laptop"
+                                    Click="OnCustomizePageSections"
+                                    AutomationProperties.Name="Customize Laptop page" />
+                            </StackPanel>
                         </Grid>
 
                         <StackPanel x:Name="LaptopCardsHost" Spacing="18">
@@ -2090,7 +2141,7 @@
                                         ContentTemplate="{StaticResource DashboardStartupAnimationCardTemplate}"
                                         HorizontalContentAlignment="Stretch" />
 
-                        <StackPanel>
+                        <StackPanel x:Name="ShortcutKeysSection">
                             <TextBlock Text="Shortcut keys"
                                        Style="{StaticResource SectionHeaderStyle}"
                                        Margin="0,0,0,10" />
@@ -2190,11 +2241,11 @@
                                             <AdaptiveTrigger MinWindowWidth="900" />
                                         </VisualState.StateTriggers>
                                         <VisualState.Setters>
-                                            <Setter Target="LightingProfileSaveActions.(Grid.Row)" Value="0" />
-                                            <Setter Target="LightingProfileSaveActions.(Grid.Column)" Value="1" />
-                                            <Setter Target="LightingProfileSaveActions.(Grid.ColumnSpan)" Value="1" />
-                                            <Setter Target="LightingProfileSaveActions.HorizontalAlignment" Value="Right" />
-                                            <Setter Target="LightingProfileSaveActions.Margin" Value="0,2,0,0" />
+                                            <Setter Target="LightingHeaderActions.(Grid.Row)" Value="0" />
+                                            <Setter Target="LightingHeaderActions.(Grid.Column)" Value="1" />
+                                            <Setter Target="LightingHeaderActions.(Grid.ColumnSpan)" Value="1" />
+                                            <Setter Target="LightingHeaderActions.HorizontalAlignment" Value="Right" />
+                                            <Setter Target="LightingHeaderActions.Margin" Value="0,2,0,0" />
                                         </VisualState.Setters>
                                     </VisualState>
                                     <VisualState x:Name="LightingHeaderCompact">
@@ -2202,11 +2253,11 @@
                                             <AdaptiveTrigger MinWindowWidth="0" />
                                         </VisualState.StateTriggers>
                                         <VisualState.Setters>
-                                            <Setter Target="LightingProfileSaveActions.(Grid.Row)" Value="1" />
-                                            <Setter Target="LightingProfileSaveActions.(Grid.Column)" Value="0" />
-                                            <Setter Target="LightingProfileSaveActions.(Grid.ColumnSpan)" Value="2" />
-                                            <Setter Target="LightingProfileSaveActions.HorizontalAlignment" Value="Left" />
-                                            <Setter Target="LightingProfileSaveActions.Margin" Value="0,2,0,0" />
+                                            <Setter Target="LightingHeaderActions.(Grid.Row)" Value="1" />
+                                            <Setter Target="LightingHeaderActions.(Grid.Column)" Value="0" />
+                                            <Setter Target="LightingHeaderActions.(Grid.ColumnSpan)" Value="2" />
+                                            <Setter Target="LightingHeaderActions.HorizontalAlignment" Value="Left" />
+                                            <Setter Target="LightingHeaderActions.Margin" Value="0,2,0,0" />
                                         </VisualState.Setters>
                                     </VisualState>
                                 </VisualStateGroup>
@@ -2217,8 +2268,12 @@
                                               IsActive="{x:Bind ViewModel.IsLightingOperationInProgress, Mode=OneWay}"
                                               AutomationProperties.Name="Applying lighting" />
                             </StackPanel>
+                            <StackPanel x:Name="LightingHeaderActions"
+                                        Grid.Column="1"
+                                        Orientation="Horizontal"
+                                        Spacing="8"
+                                        VerticalAlignment="Center">
                             <ContentControl x:Name="LightingProfileSaveActions"
-                                            Grid.Column="1"
                                             VerticalAlignment="Center"
                                             IsEnabled="{x:Bind ViewModel.CanControlLighting, Mode=OneWay}"
                                             Visibility="{x:Bind ViewModel.HasLightingProfileSaveOpportunity, Mode=OneWay}">
@@ -2242,6 +2297,11 @@
                                 </Button>
                                 </StackPanel>
                             </ContentControl>
+                            <Button Content="Customize"
+                                    Tag="Lighting"
+                                    Click="OnCustomizePageSections"
+                                    AutomationProperties.Name="Customize Lighting page" />
+                            </StackPanel>
                         </Grid>
                         <StackPanel x:Name="LightingCardsHost">
                         <ContentControl x:Name="LightingCard"
@@ -2285,11 +2345,11 @@
                                             <AdaptiveTrigger MinWindowWidth="900" />
                                         </VisualState.StateTriggers>
                                         <VisualState.Setters>
-                                            <Setter Target="DisplayProfileSaveActions.(Grid.Row)" Value="0" />
-                                            <Setter Target="DisplayProfileSaveActions.(Grid.Column)" Value="1" />
-                                            <Setter Target="DisplayProfileSaveActions.(Grid.ColumnSpan)" Value="1" />
-                                            <Setter Target="DisplayProfileSaveActions.HorizontalAlignment" Value="Right" />
-                                            <Setter Target="DisplayProfileSaveActions.Margin" Value="0,2,0,0" />
+                                            <Setter Target="DisplayHeaderActions.(Grid.Row)" Value="0" />
+                                            <Setter Target="DisplayHeaderActions.(Grid.Column)" Value="1" />
+                                            <Setter Target="DisplayHeaderActions.(Grid.ColumnSpan)" Value="1" />
+                                            <Setter Target="DisplayHeaderActions.HorizontalAlignment" Value="Right" />
+                                            <Setter Target="DisplayHeaderActions.Margin" Value="0,2,0,0" />
                                         </VisualState.Setters>
                                     </VisualState>
                                     <VisualState x:Name="DisplayHeaderCompact">
@@ -2297,11 +2357,11 @@
                                             <AdaptiveTrigger MinWindowWidth="0" />
                                         </VisualState.StateTriggers>
                                         <VisualState.Setters>
-                                            <Setter Target="DisplayProfileSaveActions.(Grid.Row)" Value="1" />
-                                            <Setter Target="DisplayProfileSaveActions.(Grid.Column)" Value="0" />
-                                            <Setter Target="DisplayProfileSaveActions.(Grid.ColumnSpan)" Value="2" />
-                                            <Setter Target="DisplayProfileSaveActions.HorizontalAlignment" Value="Left" />
-                                            <Setter Target="DisplayProfileSaveActions.Margin" Value="0,2,0,0" />
+                                            <Setter Target="DisplayHeaderActions.(Grid.Row)" Value="1" />
+                                            <Setter Target="DisplayHeaderActions.(Grid.Column)" Value="0" />
+                                            <Setter Target="DisplayHeaderActions.(Grid.ColumnSpan)" Value="2" />
+                                            <Setter Target="DisplayHeaderActions.HorizontalAlignment" Value="Left" />
+                                            <Setter Target="DisplayHeaderActions.Margin" Value="0,2,0,0" />
                                         </VisualState.Setters>
                                     </VisualState>
                                 </VisualStateGroup>
@@ -2312,11 +2372,14 @@
                                               IsActive="{x:Bind DisplayViewModel.IsBusy, Mode=OneWay}"
                                               AutomationProperties.Name="Applying display setting" />
                             </StackPanel>
-                            <StackPanel x:Name="DisplayProfileSaveActions"
+                            <StackPanel x:Name="DisplayHeaderActions"
                                         Grid.Column="1"
                                         Orientation="Horizontal"
                                         Spacing="8"
-                                        VerticalAlignment="Center"
+                                        VerticalAlignment="Center">
+                            <StackPanel x:Name="DisplayProfileSaveActions"
+                                        Orientation="Horizontal"
+                                        Spacing="8"
                                         Visibility="{x:Bind DisplayViewModel.CanSaveCurrentSettingsToProfile, Mode=OneWay}">
                                 <TextBlock Text="Unsaved changes"
                                            Style="{StaticResource ProfileSaveStatusTextStyle}" />
@@ -2336,6 +2399,11 @@
                                         </MenuFlyout>
                                     </Button.Flyout>
                                 </Button>
+                            </StackPanel>
+                            <Button Content="Customize"
+                                    Tag="Display"
+                                    Click="OnCustomizePageSections"
+                                    AutomationProperties.Name="Customize Display page" />
                             </StackPanel>
                         </Grid>
                         <StackPanel x:Name="DisplayCardsHost">
@@ -2362,11 +2430,23 @@
                         </StackPanel.Transitions>
 
                         <Grid x:Name="SettingsPageHeader"
-                              Margin="0,0,0,20">
+                              Margin="0,0,0,20"
+                              ColumnSpacing="16">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
                             <TextBlock Text="Settings"
                                        Style="{StaticResource PageHeaderTitleStyle}" />
+                            <Button Grid.Column="1"
+                                    Content="Customize"
+                                    Tag="Settings"
+                                    Click="OnCustomizePageSections"
+                                    AutomationProperties.Name="Customize Settings page" />
                         </Grid>
 
+                        <StackPanel x:Name="SettingsSectionHost">
+                        <StackPanel x:Name="SettingsBehaviorSection">
                         <TextBlock Text="Behavior" Style="{StaticResource SectionHeaderStyle}" Margin="0,0,0,10" />
                         <Border Style="{StaticResource SettingsGroupStyle}">
                             <StackPanel>
@@ -2497,7 +2577,9 @@
                                 </Border>
                             </StackPanel>
                         </Border>
+                        </StackPanel>
 
+                        <StackPanel x:Name="SettingsAppearanceSection">
                         <TextBlock Text="Appearance" Style="{StaticResource SectionHeaderStyle}" />
                         <Border Style="{StaticResource SettingsGroupStyle}">
                             <StackPanel>
@@ -2683,7 +2765,9 @@
                             </Expander>
                             </StackPanel>
                         </Border>
+                        </StackPanel>
 
+                        <StackPanel x:Name="SettingsShutdownSection">
                         <TextBlock Text="Shutdown" Style="{StaticResource SectionHeaderStyle}" />
                         <Border Style="{StaticResource SettingsGroupStyle}">
                             <Border Style="{StaticResource SettingsLastRowStyle}">
@@ -2713,6 +2797,8 @@
                                 </Grid>
                             </Border>
                         </Border>
+                        </StackPanel>
+                        </StackPanel>
 
                     </StackPanel>
                 </ScrollView>
@@ -2731,8 +2817,21 @@
                             </TransitionCollection>
                         </StackPanel.Transitions>
 
-                        <TextBlock Text="About" Style="{StaticResource PageTitleStyle}" />
+                        <Grid Margin="0,0,0,20" ColumnSpacing="16">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Text="About" Style="{StaticResource PageHeaderTitleStyle}" />
+                            <Button Grid.Column="1"
+                                    Content="Customize"
+                                    Tag="About"
+                                    Click="OnCustomizePageSections"
+                                    AutomationProperties.Name="Customize About page" />
+                        </Grid>
 
+                        <StackPanel x:Name="AboutSectionHost">
+                        <StackPanel x:Name="AboutOverviewSection">
                         <Border Style="{StaticResource CardStyle}" Padding="22">
                             <Grid ColumnSpacing="18">
                                 <Grid.ColumnDefinitions>
@@ -2753,7 +2852,9 @@
                                 </StackPanel>
                             </Grid>
                         </Border>
+                        </StackPanel>
 
+                        <StackPanel x:Name="AboutVersionsSection">
                         <TextBlock Text="Versions" Style="{StaticResource SectionHeaderStyle}" />
                         <Border Style="{StaticResource SettingsGroupStyle}">
                             <StackPanel>
@@ -2778,7 +2879,9 @@
                                 </Border>
                             </StackPanel>
                         </Border>
+                        </StackPanel>
 
+                        <StackPanel x:Name="AboutDeviceInformationSection">
                         <TextBlock Text="Device information" Style="{StaticResource SectionHeaderStyle}" />
                         <Border Style="{StaticResource SettingsGroupStyle}">
                             <StackPanel>
@@ -2835,7 +2938,9 @@
                                 </Border>
                             </StackPanel>
                         </Border>
+                        </StackPanel>
 
+                        <StackPanel x:Name="AboutSupportSection">
                         <TextBlock Text="Support" Style="{StaticResource SectionHeaderStyle}" />
                         <Border Style="{StaticResource SettingsGroupStyle}">
                             <StackPanel>
@@ -2921,7 +3026,9 @@
                                 </Border>
                             </StackPanel>
                         </Border>
+                        </StackPanel>
 
+                        <StackPanel x:Name="AboutTroubleshootingSection">
                         <TextBlock Text="Troubleshooting" Style="{StaticResource SectionHeaderStyle}" />
                         <Border Style="{StaticResource SettingsGroupStyle}">
                             <Expander x:Name="TroubleshootingExpander"
@@ -2994,6 +3101,8 @@
                                 </StackPanel>
                             </Expander>
                         </Border>
+                        </StackPanel>
+                        </StackPanel>
                     </StackPanel>
                 </ScrollView>
             </Grid>

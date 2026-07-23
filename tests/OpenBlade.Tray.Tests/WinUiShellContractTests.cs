@@ -104,7 +104,7 @@ public sealed class WinUiShellContractTests
             xaml,
             "Style=\"{StaticResource ProfileSaveOverflowButtonStyle}\""));
         Assert.Contains("<Setter Property=\"Height\" Value=\"32\" />", xaml, StringComparison.Ordinal);
-        Assert.Equal(6, CountOccurrences(xaml, "ProfileSaveActions.Margin\" Value=\"0,2,0,0\""));
+        Assert.Equal(6, CountOccurrences(xaml, "HeaderActions.Margin\" Value=\"0,2,0,0\""));
         Assert.DoesNotContain("ViewModel.ThermalProfileRelationshipStatus", xaml, StringComparison.Ordinal);
         Assert.DoesNotContain("ViewModel.LightingProfileRelationshipStatus", xaml, StringComparison.Ordinal);
         Assert.DoesNotContain("DisplayViewModel.ProfileRelationshipStatus", xaml, StringComparison.Ordinal);
@@ -224,6 +224,24 @@ public sealed class WinUiShellContractTests
     }
 
     [Fact]
+    public void FirmwareControlHandlers_DoNotOverrideBoundAvailability()
+    {
+        string window = ReadRepositoryFile(
+            "src",
+            "OpenBlade.Tray",
+            "MainWindow.xaml.cs");
+        string hardwareHandlers = SliceMethod(
+            window,
+            "private async void OnDashboardPerformanceChanged(",
+            "private void OnNavigationSelectionChanged(");
+
+        Assert.DoesNotContain(
+            ".IsEnabled =",
+            hardwareHandlers,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void AboutPageOwnsSupportAndUsesBorderlessIconActions()
     {
         string xaml = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml");
@@ -282,7 +300,7 @@ public sealed class WinUiShellContractTests
         Assert.Contains("SystemFillColorCriticalBrush", xaml, StringComparison.Ordinal);
         Assert.Contains("#47E10C", app, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("x:Name=\"SettingsPageHeader\"", xaml, StringComparison.Ordinal);
-        Assert.Equal(6, CountOccurrences(xaml, "Margin=\"0,0,0,20\""));
+        Assert.Equal(7, CountOccurrences(xaml, "Margin=\"0,0,0,20\""));
         Assert.Contains(
             "IsOn=\"{x:Bind ViewModel.AlwaysOverrideExternalLightingChanges, Mode=OneWay}\"",
             xaml,
@@ -313,7 +331,8 @@ public sealed class WinUiShellContractTests
         string xaml = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml");
 
         Assert.Contains("new ObservableCollection<DashboardCardOption>()", window, StringComparison.Ordinal);
-        Assert.Contains("var cardList = new Microsoft.UI.Xaml.Controls.ListView", window, StringComparison.Ordinal);
+        Assert.Contains("CreateCustomizationDialog(", window, StringComparison.Ordinal);
+        Assert.Contains("var reorderList = new Microsoft.UI.Xaml.Controls.ListView", window, StringComparison.Ordinal);
         Assert.Contains("CanDragItems = true", window, StringComparison.Ordinal);
         Assert.Contains("CanReorderItems = true", window, StringComparison.Ordinal);
         Assert.Contains("ReorderMode = ListViewReorderMode.Enabled", window, StringComparison.Ordinal);

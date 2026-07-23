@@ -3509,6 +3509,63 @@ public sealed class MainViewModelTests
         Assert.True(viewModel.ToggleFullChargeCommand.CanExecute(true));
     }
 
+    [Theory]
+    [InlineData("performance")]
+    [InlineData("fans")]
+    [InlineData("battery")]
+    public async Task HardwareEditorAvailability_RemainsModelOwnedWhenAccessChangesMidWrite(
+        string operation)
+    {
+        var client = new FakeServiceClient { BlockMutations = true };
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        ServiceStatusSnapshot initial = CreateStatus(verified: true, blocked: false);
+        client.Publish(initial);
+        await WaitUntilAsync(() => viewModel.CanControlHardware);
+
+        Task apply = operation switch
+        {
+            "performance" => Assert.IsType<AsyncRelayCommand>(
+                    viewModel.SetPerformanceCommand)
+                .ExecuteAsync(PerformancePreset.Performance),
+            "fans" => Assert.IsType<AsyncRelayCommand>(
+                    viewModel.SetFanModeCommand)
+                .ExecuteAsync(FanMode.Automatic),
+            "battery" => Assert.IsType<AsyncRelayCommand>(
+                    viewModel.ToggleBatteryProtectionCommand)
+                .ExecuteAsync(null),
+            _ => throw new InvalidOperationException(),
+        };
+        await client.MutationStarted.Task.WaitAsync(TimeSpan.FromSeconds(2));
+
+        if (operation == "performance")
+        {
+            Assert.False(viewModel.CanEditPerformance);
+        }
+        if (operation == "fans")
+        {
+            Assert.False(viewModel.CanEditFanControl);
+        }
+        if (operation == "battery")
+        {
+            Assert.False(viewModel.CanChangeBatteryProtection);
+        }
+
+        client.Publish(initial with
+        {
+            Revision = initial.Revision + 1,
+            WritesBlocked = true,
+            Message = "Controls unavailable",
+        });
+        await WaitUntilAsync(() => !viewModel.CanControlHardware);
+        client.CompleteMutation();
+        await apply;
+
+        Assert.False(viewModel.CanEditPerformance);
+        Assert.False(viewModel.CanEditFanControl);
+        Assert.False(viewModel.CanChangeBatteryProtection);
+    }
+
     [Fact]
     public async Task GenericLaptopConnectionCheck_IsPresentedAsCheckingInsteadOfMissing()
     {

@@ -1427,6 +1427,9 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     public bool CanEditFanControl =>
         CanRequestHardwareControl && !IsFanControlOperationInProgress;
 
+    public bool CanEditPerformance =>
+        CanRequestHardwareControl && !IsPerformanceOperationInProgress;
+
     public bool IsPerformanceOperationInProgress
     {
         get => isPerformanceOperationInProgress;
@@ -1436,6 +1439,9 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             {
                 SetField(ref isPerformanceOperationInProgress, value);
                 NotifyCommands();
+                PropertyChanged?.Invoke(
+                    this,
+                    new PropertyChangedEventArgs(nameof(CanEditPerformance)));
             }
         }
     }
@@ -6807,6 +6813,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         PropertyChanged?.Invoke(
             this,
             new PropertyChangedEventArgs(nameof(CanRequestHardwareControl)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(CanEditPerformance)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(CanEditFanControl)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(BatteryPowerFlowLabel)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Fan1RpmLabel)));
