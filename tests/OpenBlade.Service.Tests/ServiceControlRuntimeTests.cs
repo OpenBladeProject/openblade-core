@@ -33,6 +33,46 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     }
 
     [Fact]
+    public async Task MaintainDriverMode_RecoversStalePortOncePerFailureStreak()
+    {
+        TestContext context = CreateContext(providerAvailable: true);
+        context.Device.DriverModeActive = true;
+
+        await context.Runtime.MaintainDriverModeAsync(CancellationToken.None);
+        Assert.True(context.Runtime.GetStatus().KeyboardDriverModeActive);
+
+        context.Device.DriverModeReadFailures.Enqueue(new IOException("stale port"));
+        await context.Runtime.MaintainDriverModeAsync(CancellationToken.None);
+
+        Assert.True(context.Runtime.GetStatus().KeyboardDriverModeActive);
+        Assert.Equal(1, context.Provider.InvalidationCount);
+        Assert.Equal(3, context.Device.DriverModeReadCalls);
+
+        context.Device.DriverModeReadFailures.Enqueue(new IOException("stale port"));
+        context.Device.DriverModeReadFailures.Enqueue(new IOException("fresh port failed"));
+        await Assert.ThrowsAsync<IOException>(() =>
+            context.Runtime.MaintainDriverModeAsync(CancellationToken.None));
+
+        Assert.Null(context.Runtime.GetStatus().KeyboardDriverModeActive);
+        Assert.Equal(2, context.Provider.InvalidationCount);
+
+        context.Device.DriverModeReadFailures.Enqueue(new IOException("still failed"));
+        await Assert.ThrowsAsync<IOException>(() =>
+            context.Runtime.MaintainDriverModeAsync(CancellationToken.None));
+
+        Assert.Null(context.Runtime.GetStatus().KeyboardDriverModeActive);
+        Assert.Equal(2, context.Provider.InvalidationCount);
+
+        await context.Runtime.MaintainDriverModeAsync(CancellationToken.None);
+        Assert.True(context.Runtime.GetStatus().KeyboardDriverModeActive);
+
+        context.Device.DriverModeReadFailures.Enqueue(new IOException("new failure streak"));
+        await context.Runtime.MaintainDriverModeAsync(CancellationToken.None);
+        Assert.Equal(3, context.Provider.InvalidationCount);
+        Assert.True(context.Runtime.GetStatus().KeyboardDriverModeActive);
+    }
+
+    [Fact]
     public async Task BeforeInitialize_StatusAndMutationAccessAreRejectedWithoutHardwareAccess()
     {
         TestContext context = CreateContext(providerAvailable: true, initialize: false);
@@ -5143,6 +5183,8 @@ public sealed class ServiceControlRuntimeTests : IDisposable
 
         public bool? DriverModeActive { get; set; }
 
+        public Queue<Exception> DriverModeReadFailures { get; } = new();
+
         public int DriverModeEnsureCalls { get; private set; }
 
         public int DriverModeReadCalls { get; private set; }
@@ -5243,6 +5285,10 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         {
             cancellationToken.ThrowIfCancellationRequested();
             DriverModeReadCalls++;
+            if (DriverModeReadFailures.TryDequeue(out Exception? failure))
+            {
+                return Task.FromException<bool?>(failure);
+            }
             return Task.FromResult(DriverModeActive);
         }
 

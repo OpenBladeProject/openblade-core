@@ -118,11 +118,11 @@ internal static class ProductionLightingEvidenceSource
         "OpenBladeLightingImplementationFingerprint";
 
     private const string ApprovedLightingImplementationFingerprintSha256 =
-        // Re-reviewed after moving Wave, Wheel, and Tidal to the already
-        // admitted 30 FPS matrix cadence. Exact captured timestamps preserve
-        // their approved oracle frames; intermediate timestamps interpolate
-        // per-key RGB values without changing the HID command or report shape.
-        "DD2323A85F53CE4F7022550434EE0A9A93F9AA6248BB4A576866D456535151C9";
+        // Re-reviewed after serializing command-interface and matrix-interface
+        // feature reports inside the admitted lighting port. The report bytes,
+        // semantic commands, frame cadence, and validated device scope are
+        // unchanged; only concurrent submission to firmware is prevented.
+        "CA3776BD2AE0534AD1B2DFCA3C675CD42D6E8A12F45D3C348C87ECE7456FB862";
 
     private static readonly JsonSerializerOptions SerializerOptions =
         new(JsonSerializerDefaults.Web)

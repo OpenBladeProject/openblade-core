@@ -301,17 +301,31 @@ public sealed class ServiceReactiveLightingLoop : IAsyncDisposable
 
     private void ApplyAuthoritativeStatus(ServiceStatusSnapshot status)
     {
-        Interlocked.Exchange(
-            ref functionKeyPrimaryMode,
-            status.FunctionKeyPrimary is { } primaryMode
-                ? (int)primaryMode
-                : -1);
-        Interlocked.Exchange(
-            ref driverModeActive,
-            status.KeyboardDriverModeActive == true ? 1 : 0);
-        if (status.KeyboardDriverModeActive != true)
+        if (!status.DeviceVerified)
         {
+            Interlocked.Exchange(ref functionKeyPrimaryMode, -1);
+            Interlocked.Exchange(ref driverModeActive, 0);
             functionRowActionPump?.ClearPending();
+        }
+        else
+        {
+            // A verified laptop can briefly report either readback as unknown
+            // while the service replaces a stale HID command session. Preserve
+            // the last confirmed translation state through that gap; explicit
+            // false or a verified-device loss still disables interception.
+            if (status.FunctionKeyPrimary is { } primaryMode)
+            {
+                Interlocked.Exchange(ref functionKeyPrimaryMode, (int)primaryMode);
+            }
+
+            if (status.KeyboardDriverModeActive is { } active)
+            {
+                Interlocked.Exchange(ref driverModeActive, active ? 1 : 0);
+                if (!active)
+                {
+                    functionRowActionPump?.ClearPending();
+                }
+            }
         }
 
         bool ownedKeyTriggered = status.LightingRendererOwnership is

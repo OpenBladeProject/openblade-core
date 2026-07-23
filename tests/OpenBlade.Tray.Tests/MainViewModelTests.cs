@@ -3482,9 +3482,31 @@ public sealed class MainViewModelTests
         Assert.Equal("Unavailable", viewModel.AboutMcuVersionStatus);
         Assert.Equal("98.3.5c.40.3d", viewModel.AboutVbiosVersionStatus);
 
+        var driverStatusChanges = new List<string?>();
+        viewModel.PropertyChanged += (_, args) =>
+        {
+            if (args.PropertyName
+                == nameof(MainViewModel.TroubleshootingKeyboardDriverModeStatus))
+            {
+                driverStatusChanges.Add(args.PropertyName);
+            }
+        };
         client.Publish(CreateStatus(verified: true, blocked: false) with
         {
             Revision = 4,
+            KeyboardDriverModeActive = null,
+        });
+        await WaitUntilAsync(() =>
+            viewModel.TroubleshootingKeyboardDriverModeStatus == "Unknown"
+            && driverStatusChanges.Contains(
+                nameof(MainViewModel.TroubleshootingKeyboardDriverModeStatus)));
+        Assert.Contains(
+            nameof(MainViewModel.TroubleshootingKeyboardDriverModeStatus),
+            driverStatusChanges);
+
+        client.Publish(CreateStatus(verified: true, blocked: false) with
+        {
+            Revision = 5,
             ActivePowerSource = PowerSource.ExternalUnknown,
         });
         await WaitUntilAsync(() =>

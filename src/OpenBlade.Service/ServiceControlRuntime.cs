@@ -182,6 +182,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
     private int? lastCurveFan2Rpm;
     private int consecutiveDeviceProbeFailures;
     private int consecutiveVerifiedAccessFailures;
+    private bool driverModePortRecoveryAttempted;
     private bool fullObservationCompleted;
     private long lastFullObservationTimestamp;
     private bool controllerPresenceObserved;
@@ -1551,6 +1552,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         {
             if (!deviceProvider.TryGetVerifiedDevice(out IBladeDevice device))
             {
+                driverModePortRecoveryAttempted = false;
                 PublishIfChanged(GetStatus() with { KeyboardDriverModeActive = null });
                 return;
             }
@@ -1559,14 +1561,60 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             {
                 bool? active = await device.MaintainDriverModeAsync(cancellationToken)
                     .ConfigureAwait(false);
+                driverModePortRecoveryAttempted = false;
                 PublishIfChanged(GetStatus() with
                 {
                     KeyboardDriverModeActive = active,
                 });
             }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
             catch
             {
                 PublishIfChanged(GetStatus() with { KeyboardDriverModeActive = null });
+
+                if (!driverModePortRecoveryAttempted)
+                {
+                    driverModePortRecoveryAttempted = true;
+                    try
+                    {
+                        // A control-interface failure can leave the independently
+                        // running matrix renderer healthy while its command session
+                        // is no longer usable. Retire that port once, preserve its
+                        // owned lighting for the periodic restore step, and confirm
+                        // Driver mode through a fresh exact-device session.
+                        await InvalidateLightingRendererCoreAsync(
+                            preserveForLifecycleRestore: true,
+                            cancellationToken).ConfigureAwait(false);
+                        if (deviceProvider.TryGetVerifiedDevice(
+                                out IBladeDevice recoveredDevice))
+                        {
+                            bool? recovered = await recoveredDevice
+                                .MaintainDriverModeAsync(cancellationToken)
+                                .ConfigureAwait(false);
+                            driverModePortRecoveryAttempted = false;
+                            PublishIfChanged(GetStatus() with
+                            {
+                                KeyboardDriverModeActive = recovered,
+                            });
+                            return;
+                        }
+                    }
+                    catch (OperationCanceledException)
+                        when (cancellationToken.IsCancellationRequested)
+                    {
+                        throw;
+                    }
+                    catch
+                    {
+                        // Keep the state unknown and let the normal observation
+                        // cadence retry. Do not repeatedly recycle the renderer
+                        // during one continuous failure streak.
+                    }
+                }
+
                 throw;
             }
         }

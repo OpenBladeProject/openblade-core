@@ -72,6 +72,12 @@ All notable changes to OpenBlade are documented in this file. The project follow
 - Increased Wave, Wheel, and Tidal playback to 30 FPS by interpolating per-key
   RGB values between their captured source frames while preserving the original
   cycle timing and direction templates.
+- Media-key translation now survives transient keyboard Driver-mode read
+  failures, recovers one stale HID session per failure streak, and reports an
+  unknown Driver-mode state accurately in Troubleshooting.
+- Keyboard command reports and animated-lighting matrix reports are now
+  serialized so periodic Driver-mode verification cannot collide with a frame
+  write.
 - Promoted `Use profile settings` from an overflow menu to a page-header action
   on Dashboard, Laptop, Lighting, and Display whenever the current page differs
   from its active profile, including settings changed outside OpenBlade. Page

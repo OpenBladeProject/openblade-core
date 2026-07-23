@@ -17,6 +17,7 @@ internal sealed class ProductionLightingPort : IProductionLightingPort
     private readonly TimeProvider timeProvider;
     private readonly TimeSpan exchangeTimeout;
     private readonly SemaphoreSlim operationGate = new(1, 1);
+    private readonly SemaphoreSlim featureIoGate = new(1, 1);
     private readonly object effectSync = new();
     private readonly object lifecycleSync = new();
     private TaskCompletionSource<bool> streamWake = NewStreamWake();
@@ -479,6 +480,7 @@ internal sealed class ProductionLightingPort : IProductionLightingPort
             }
 
             await actor.DisposeAsync().ConfigureAwait(false);
+            featureIoGate.Dispose();
             lock (lifecycleSync)
             {
                 disposed = true;
@@ -703,11 +705,21 @@ internal sealed class ProductionLightingPort : IProductionLightingPort
         RazerCommandSpec command,
         CancellationToken cancellationToken)
     {
-        HidSessionResult<ReadOnlyMemory<byte>> result = await session.ExecuteAsync(
-            command,
-            () => TransactionIdAssignment.Valid(AllocateCommandTransaction()),
-            exchangeTimeout,
-            cancellationToken).ConfigureAwait(false);
+        await featureIoGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        HidSessionResult<ReadOnlyMemory<byte>> result;
+        try
+        {
+            result = await session.ExecuteAsync(
+                command,
+                () => TransactionIdAssignment.Valid(AllocateCommandTransaction()),
+                exchangeTimeout,
+                cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            featureIoGate.Release();
+        }
+
         if (result.Failure is null)
         {
             return result.Value;
@@ -727,11 +739,21 @@ internal sealed class ProductionLightingPort : IProductionLightingPort
         RazerCommandSpec command,
         CancellationToken cancellationToken)
     {
-        HidSessionResult<ReadOnlyMemory<byte>> result = await session.ExecuteAsync(
-            command,
-            () => TransactionIdAssignment.Valid(AllocateCommandTransaction()),
-            exchangeTimeout,
-            cancellationToken).ConfigureAwait(false);
+        await featureIoGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        HidSessionResult<ReadOnlyMemory<byte>> result;
+        try
+        {
+            result = await session.ExecuteAsync(
+                command,
+                () => TransactionIdAssignment.Valid(AllocateCommandTransaction()),
+                exchangeTimeout,
+                cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            featureIoGate.Release();
+        }
+
         if (result.Failure is null)
         {
             return result.Value;
@@ -767,9 +789,19 @@ internal sealed class ProductionLightingPort : IProductionLightingPort
             throw KnownNotApplied("The matrix writer is not admitted.");
         }
 
-        HidSessionResult<HidUnit> result = await matrixWriter.WriteAsync(
-            new Pid02E0MatrixReport(AllocateMatrixTransaction(), frame),
-            cancellationToken).ConfigureAwait(false);
+        await featureIoGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        HidSessionResult<HidUnit> result;
+        try
+        {
+            result = await matrixWriter.WriteAsync(
+                new Pid02E0MatrixReport(AllocateMatrixTransaction(), frame),
+                cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            featureIoGate.Release();
+        }
+
         if (result.Failure is null)
         {
             return;

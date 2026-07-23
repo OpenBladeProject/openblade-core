@@ -1110,7 +1110,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         {
             true => "Loaded",
             false => "Not loaded",
-            _ => "Unavailable",
+            _ => "Unknown",
         };
 
     public string TroubleshootingOtherRazerSoftwareStatus
@@ -7062,6 +7062,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         && left.StartupAnimationEnabled == right.StartupAnimationEnabled
         && left.FunctionKeyPrimary == right.FunctionKeyPrimary
         && left.GamingModeEnabled == right.GamingModeEnabled
+        && left.KeyboardDriverModeActive == right.KeyboardDriverModeActive
         && left.AlwaysOverrideExternalLightingChanges
             == right.AlwaysOverrideExternalLightingChanges
         && (left.LightingSuppressions ?? []).SequenceEqual(

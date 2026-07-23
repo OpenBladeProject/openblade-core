@@ -137,6 +137,35 @@ public sealed class ProductionLightingPortTests
     }
 
     [Fact]
+    public async Task DriverModeReadWaitsForInFlightMatrixFeatureWrite()
+    {
+        var session = new LightingSession(initialBrightness: 0xFF)
+        {
+            DeviceMode = RazerDeviceMode.Driver,
+        };
+        var writer = new MatrixWriter();
+        await using var port = CreatePort(session, writer, admitted: true);
+        await port.SetLightingAsync(
+            LightingSettingsFactory.SpectrumCycling(brightness: 100),
+            default);
+
+        int initialWrites = writer.Reports.Count;
+        int initialCommands = session.Commands.Count;
+        writer.BlockNextWrite();
+        await writer.WaitForWriteCountAsync(initialWrites + 1, TimeSpan.FromSeconds(2));
+
+        Task<bool?> read = port.ReadDriverModeAsync(default);
+        await Task.Delay(100);
+
+        Assert.False(read.IsCompleted);
+        Assert.Equal(initialCommands, session.Commands.Count);
+
+        writer.ReleaseBlockedWrite();
+        Assert.True(await read.WaitAsync(TimeSpan.FromSeconds(2)));
+        Assert.Equal(initialCommands + 1, session.Commands.Count);
+    }
+
+    [Fact]
     public async Task ProductionFactory_AcquiresValidatedDriverMode()
     {
         var session = new LightingSession(initialBrightness: 0xC5)
