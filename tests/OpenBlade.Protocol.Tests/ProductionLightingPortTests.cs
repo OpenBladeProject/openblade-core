@@ -51,6 +51,93 @@ public sealed class ProductionLightingPortTests
             TestBuildIdentity()));
     }
 
+    [Fact]
+    public async Task DriverModeLifecycle_AcquiresVerifiedModeAndRestoresOwnedBaseline()
+    {
+        var session = new LightingSession(initialBrightness: 0xC5)
+        {
+            DeviceMode = RazerDeviceMode.Normal,
+        };
+        var port = CreatePort(session, new MatrixWriter(), admitted: true);
+
+        await port.AcquireDriverModeAsync(default);
+
+        Assert.Equal(RazerDeviceMode.Driver, session.DeviceMode);
+        Assert.Equal(
+            [
+                (0x00, 0x84, "0000"),
+                (0x00, 0x04, "0300"),
+                (0x00, 0x84, "0000"),
+            ],
+            session.Commands.Select(CommandTuple).ToArray());
+
+        await port.DisposeAsync();
+
+        Assert.Equal(RazerDeviceMode.Normal, session.DeviceMode);
+        Assert.Equal(
+            [
+                (0x00, 0x84, "0000"),
+                (0x00, 0x04, "0300"),
+                (0x00, 0x84, "0000"),
+                (0x00, 0x84, "0000"),
+                (0x00, 0x04, "0000"),
+                (0x00, 0x84, "0000"),
+            ],
+            session.Commands.Select(CommandTuple).ToArray());
+    }
+
+    [Fact]
+    public async Task DriverModeLifecycle_DoesNotClaimOrRestoreExistingDriverMode()
+    {
+        var session = new LightingSession(initialBrightness: 0xC5)
+        {
+            DeviceMode = RazerDeviceMode.Driver,
+        };
+        var port = CreatePort(session, new MatrixWriter(), admitted: true);
+
+        await port.AcquireDriverModeAsync(default);
+        await port.DisposeAsync();
+
+        Assert.Equal(RazerDeviceMode.Driver, session.DeviceMode);
+        Assert.Equal(
+            [(0x00, 0x84, "0000")],
+            session.Commands.Select(CommandTuple).ToArray());
+    }
+
+    [Fact]
+    public async Task ProductionFactory_AcquiresDriverModeBeforeReturningPort()
+    {
+        var session = new LightingSession(initialBrightness: 0xC5)
+        {
+            DeviceMode = RazerDeviceMode.Normal,
+        };
+        var factory = new ProductionLightingFactory(
+            admitted: true,
+            static () => new ValidationRunContext(),
+            _ => new LightingActorFactory(session),
+            static () => new HidSessionResult<IPid02E0MatrixFeatureWriter>(
+                new MatrixWriter(),
+                null),
+            TimeProvider.System,
+            TimeSpan.FromSeconds(1),
+            TimeSpan.FromSeconds(1),
+            new PendingDisposalRegistry());
+
+        HidSessionResult<IProductionLightingPort> opened = await factory.OpenAsync(default);
+
+        Assert.Null(opened.Failure);
+        Assert.NotNull(opened.Value);
+        Assert.Equal(RazerDeviceMode.Driver, session.DeviceMode);
+        Assert.Equal(
+            [
+                (0x00, 0x84, "0000"),
+                (0x00, 0x04, "0300"),
+                (0x00, 0x84, "0000"),
+            ],
+            session.Commands.Select(CommandTuple).ToArray());
+        await opened.Value!.DisposeAsync();
+    }
+
     [Theory]
     [InlineData(true, 0x00, LogoLightingMode.Off)]
     [InlineData(false, 0x00, LogoLightingMode.Static)]
@@ -1010,6 +1097,12 @@ public sealed class ProductionLightingPortTests
             TimeProvider.System,
             TimeSpan.FromSeconds(1));
 
+    private static (int ClassId, int CommandId, string Arguments) CommandTuple(
+        RazerCommandSpec command) => (
+            command.ClassId,
+            command.CommandId,
+            Convert.ToHexString(command.Arguments.Span));
+
     private static async Task WaitUntilAsync(Func<bool> predicate, TimeSpan timeout)
     {
         using var cancellation = new CancellationTokenSource(timeout);
@@ -1037,7 +1130,9 @@ public sealed class ProductionLightingPortTests
 
         internal HidSessionResult<ReadOnlyMemory<byte>>? TransitionFailure { get; set; }
 
-        internal byte[] Transition84Response { get; set; } = [0x03, 0x00];
+        internal byte[]? Transition84Response { get; set; }
+
+        internal RazerDeviceMode DeviceMode { get; set; } = RazerDeviceMode.Driver;
 
         public RazerCommandSessionDisposition Disposition { get; private set; } =
             RazerCommandSessionDisposition.Healthy;
@@ -1082,7 +1177,9 @@ public sealed class ProductionLightingPortTests
                 (0x03, 0x00) => SetLogoState(command.Arguments.Span),
                 (0x03, 0x02) => SetLogoEffect(command.Arguments.Span),
                 (0x00, 0x86) => [0x01, 0x00, 0x00],
-                (0x00, 0x84) => Transition84Response,
+                (0x00, 0x04) => SetDeviceMode(command.Arguments.Span),
+                (0x00, 0x84) => Transition84Response
+                    ?? DeviceModeProtocol.CreateSetArguments(DeviceMode),
                 (0x03, 0x0A) => [0x05, 0x00],
                 _ => throw new InvalidOperationException(),
             };
@@ -1130,6 +1227,34 @@ public sealed class ProductionLightingPortTests
         {
             LogoEffect = arguments[2];
             return arguments.ToArray();
+        }
+
+        private byte[] SetDeviceMode(ReadOnlySpan<byte> arguments)
+        {
+            if (!DeviceModeProtocol.TryDecodeQuery(arguments, out RazerDeviceMode mode))
+            {
+                throw new InvalidOperationException();
+            }
+
+            DeviceMode = mode;
+            return arguments.ToArray();
+        }
+    }
+
+    private sealed class LightingActorFactory(LightingSession session)
+        : IValidationActorFactory
+    {
+        public ValueTask<HidSessionResult<ValidationActor>> OpenAsync(
+            ValidationRunContext context)
+        {
+            _ = context;
+            return ValueTask.FromResult(
+                new HidSessionResult<ValidationActor>(
+                    new ValidationActor(
+                        session,
+                        new BatteryCommands(),
+                        new TemporaryCommands()),
+                    null));
         }
     }
 

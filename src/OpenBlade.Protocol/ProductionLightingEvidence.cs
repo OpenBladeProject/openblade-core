@@ -121,7 +121,7 @@ internal static class ProductionLightingEvidenceSource
         // Re-reviewed after identifying 00/84 as the read-only device-mode
         // query. The accepted 00 00 and 03 00 replies and wire order are
         // unchanged; 02 00 now fails at the command payload validator.
-        "59936FD44C47D2B651DCFCA6F86BE11916F0944C79D2081EC806995767AF7598";
+        "1B5641ECC8B250EE71EF2C5B830BB4170A737B63DEB28A4D0D2F13F098BD2E03";
 
     private static readonly JsonSerializerOptions SerializerOptions =
         new(JsonSerializerDefaults.Web)

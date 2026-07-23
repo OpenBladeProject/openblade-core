@@ -30,6 +30,7 @@ internal sealed class ProductionLightingPort : IProductionLightingPort
     private int nextCommandTransaction = 1;
     private int nextMatrixTransaction = 1;
     private int ownershipState;
+    private bool ownsDriverMode;
     private bool closing;
     private bool disposed;
     private Task<LightingRendererOwnershipState>? closeTask;
@@ -391,6 +392,50 @@ internal sealed class ProductionLightingPort : IProductionLightingPort
     public async ValueTask DisposeAsync() =>
         _ = await CloseAsync().ConfigureAwait(false);
 
+    internal async Task AcquireDriverModeAsync(CancellationToken cancellationToken)
+    {
+        await EnterAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            RazerDeviceMode current = await QueryDeviceModeCoreAsync(cancellationToken)
+                .ConfigureAwait(false);
+            if (current == RazerDeviceMode.Driver)
+            {
+                return;
+            }
+
+            // Driver mode enables the validated extended Fn layer and distinct
+            // M1-M5 input reports. Mark the transition as ours before submission
+            // so an indeterminate reply still receives a conservative cleanup.
+            ownsDriverMode = true;
+            try
+            {
+                await SetDeviceModeCoreAsync(
+                    RazerDeviceMode.Driver,
+                    cancellationToken).ConfigureAwait(false);
+            }
+            catch (BladeWriteException exception)
+                when (exception.SubmissionState == WriteSubmissionState.KnownNotApplied)
+            {
+                ownsDriverMode = false;
+                throw;
+            }
+
+            RazerDeviceMode confirmed = await QueryDeviceModeCoreAsync(cancellationToken)
+                .ConfigureAwait(false);
+            if (confirmed != RazerDeviceMode.Driver)
+            {
+                throw new BladeWriteException(
+                    WriteSubmissionState.Indeterminate,
+                    "Driver mode did not match independent readback.");
+            }
+        }
+        finally
+        {
+            operationGate.Release();
+        }
+    }
+
     private Task<LightingRendererOwnershipState> CloseAsync()
     {
         lock (lifecycleSync)
@@ -408,6 +453,7 @@ internal sealed class ProductionLightingPort : IProductionLightingPort
             await StopStreamCoreAsync().ConfigureAwait(false);
             LightingRendererOwnershipState observed = OwnershipState;
             SetOwnership(LightingRendererOwnershipState.None);
+            await TryRestoreOwnedDeviceModeCoreAsync().ConfigureAwait(false);
             if (matrixWriter is not null)
             {
                 await matrixWriter.DisposeAsync().ConfigureAwait(false);
@@ -556,6 +602,71 @@ internal sealed class ProductionLightingPort : IProductionLightingPort
         await ExecuteWriteCoreAsync(
             Spec(0x03, 0x0A, [0x05, 0x00], [0x05, 0x00]),
             cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task<RazerDeviceMode> QueryDeviceModeCoreAsync(
+        CancellationToken cancellationToken)
+    {
+        ReadOnlyMemory<byte> response = await ExecuteReadCoreAsync(
+            new RazerCommandSpec(
+                DeviceModeProtocol.OperationClass,
+                DeviceModeProtocol.QueryOperationId,
+                DeviceModeProtocol.QueryArguments.ToArray(),
+                2,
+                payload => DeviceModeProtocol.TryDecodeQuery(payload.Span, out _)),
+            cancellationToken).ConfigureAwait(false);
+        if (!DeviceModeProtocol.TryDecodeQuery(response.Span, out RazerDeviceMode mode))
+        {
+            throw new IOException("Device-mode response was malformed.");
+        }
+
+        return mode;
+    }
+
+    private async Task SetDeviceModeCoreAsync(
+        RazerDeviceMode mode,
+        CancellationToken cancellationToken)
+    {
+        byte[] arguments = DeviceModeProtocol.CreateSetArguments(mode);
+        await ExecuteWriteCoreAsync(
+            new RazerCommandSpec(
+                DeviceModeProtocol.OperationClass,
+                DeviceModeProtocol.SetOperationId,
+                arguments,
+                arguments.Length,
+                payload => DeviceModeProtocol.TryDecodeSet(payload.Span, mode)),
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task TryRestoreOwnedDeviceModeCoreAsync()
+    {
+        if (!ownsDriverMode)
+        {
+            return;
+        }
+
+        try
+        {
+            // Never overwrite a mode another controller already changed.
+            if (await QueryDeviceModeCoreAsync(CancellationToken.None).ConfigureAwait(false)
+                == RazerDeviceMode.Driver)
+            {
+                await SetDeviceModeCoreAsync(
+                    RazerDeviceMode.Normal,
+                    CancellationToken.None).ConfigureAwait(false);
+                _ = await QueryDeviceModeCoreAsync(CancellationToken.None)
+                    .ConfigureAwait(false);
+            }
+        }
+        catch
+        {
+            // Closing must still release both HID handles. This bounded cleanup
+            // is never retried in a background fight with another controller.
+        }
+        finally
+        {
+            ownsDriverMode = false;
+        }
     }
 
     private static RazerCommandSpec Spec(
