@@ -40,6 +40,14 @@ internal static class GetterCandidateProbeFactory
             ExchangeTimeout,
             CleanupTimeout);
 
+    internal static IDeviceModeValidationRunner CreateDeviceModeValidationWindows() =>
+        new DeviceModeValidationRunner(
+            static () => new ValidationRunContext(),
+            CreateStrictActorFactory(),
+            TimeProvider.System,
+            ExchangeTimeout,
+            CleanupTimeout);
+
     private static IValidationActorFactory CreateStrictActorFactory()
     {
         var native = new WindowsHidNative();
