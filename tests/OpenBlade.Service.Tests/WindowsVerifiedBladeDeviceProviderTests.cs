@@ -580,7 +580,8 @@ public sealed class WindowsVerifiedBladeDeviceProviderTests
     public async Task LightingWriter_IsOpenedOnceKeptAliveAndDisposedWithProvider()
     {
         var lightingPort = new FakeLightingPort();
-        var lightingFactory = new FakeLightingFactory(lightingPort);
+        var replacementPort = new FakeLightingPort();
+        var lightingFactory = new FakeLightingFactory(lightingPort, replacementPort);
         var provider = new WindowsVerifiedBladeDeviceProvider(
             () => Probe(BatteryValidationProbeClassification.Ready),
             Adapt(new FakeQueryFactory()),
@@ -610,12 +611,15 @@ public sealed class WindowsVerifiedBladeDeviceProviderTests
             await provider.InvalidateLightingRendererAsync(default);
         Assert.Equal(LightingRendererOwnershipState.Reactive, invalidated);
         Assert.Equal(1, lightingPort.DisposeCount);
+        Assert.Equal(2, lightingFactory.OpenCount);
+        Assert.Equal(0, replacementPort.DisposeCount);
         Assert.Equal(
             LightingRendererOwnershipState.None,
             await device.ReadLightingRendererOwnershipAsync(default));
 
         provider.Dispose();
         Assert.Equal(1, lightingPort.DisposeCount);
+        Assert.Equal(1, replacementPort.DisposeCount);
     }
 
     [Fact]
@@ -760,7 +764,8 @@ public sealed class WindowsVerifiedBladeDeviceProviderTests
     public async Task InvalidateLightingRenderer_ReturnsLiveFaultBeforeRetiringPort()
     {
         var lightingPort = new FakeLightingPort();
-        var lightingFactory = new FakeLightingFactory(lightingPort);
+        var replacementPort = new FakeLightingPort();
+        var lightingFactory = new FakeLightingFactory(lightingPort, replacementPort);
         using var provider = new WindowsVerifiedBladeDeviceProvider(
             () => Probe(BatteryValidationProbeClassification.Ready),
             Adapt(new FakeQueryFactory()),
@@ -777,6 +782,8 @@ public sealed class WindowsVerifiedBladeDeviceProviderTests
 
         Assert.Equal(LightingRendererOwnershipState.Faulted, invalidated);
         Assert.Equal(1, lightingPort.DisposeCount);
+        Assert.Equal(2, lightingFactory.OpenCount);
+        Assert.Equal(0, replacementPort.DisposeCount);
         Assert.Equal(
             LightingRendererOwnershipState.None,
             await device.ReadLightingRendererOwnershipAsync(default));

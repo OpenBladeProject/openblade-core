@@ -905,7 +905,16 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
                 lightingPort = null;
                 try
                 {
-                    return await current.InvalidateAsync().ConfigureAwait(false);
+                    LightingRendererOwnershipState observed =
+                        await current.InvalidateAsync().ConfigureAwait(false);
+
+                    // Renderer invalidation is not a request to disable the
+                    // firmware function layer. Open a fresh exact-device port
+                    // immediately so its verified startup lifecycle reacquires
+                    // Driver mode even when no lighting effect is restored.
+                    _ = await GetLightingPortCoreAsync(cancellationToken)
+                        .ConfigureAwait(false);
+                    return observed;
                 }
                 catch
                 {

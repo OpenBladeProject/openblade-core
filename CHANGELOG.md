@@ -80,7 +80,9 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 - Fixed the extended Fn layer and performance key after service startup by
   acquiring the validated firmware Driver mode with readback and restoring an
-  OpenBlade-owned Normal-mode baseline on clean shutdown.
+  OpenBlade-owned Normal-mode baseline on clean shutdown. Renderer invalidation
+  now opens a fresh verified session so lighting lifecycle events cannot
+  silently disable M1 through M5 while the service remains active.
 - Validated keyboard-shortcut and website values before M1 through M5 override
   their normal behavior. Incomplete or invalid actions now show a validation
   message and leave the physical key's default action intact.
