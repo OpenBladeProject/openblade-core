@@ -153,14 +153,31 @@ public sealed class ProductionLightingFactory : IProductionLightingPortFactory
             return Failure(HidSessionFailureKind.Canceled);
         }
 
-        return new(
-            new ProductionLightingPort(
-                actor,
-                matrixWriter,
-                admitted,
-                timeProvider,
-                exchangeTimeout),
-            null);
+        var port = new ProductionLightingPort(
+            actor,
+            matrixWriter,
+            admitted,
+            timeProvider,
+            exchangeTimeout);
+        if (admitted)
+        {
+            try
+            {
+                await port.EnsureDriverModeAsync(cancellationToken).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                await port.DisposeAsync().ConfigureAwait(false);
+                return Failure(HidSessionFailureKind.Canceled);
+            }
+            catch
+            {
+                await port.DisposeAsync().ConfigureAwait(false);
+                return Failure(HidSessionFailureKind.ProtocolFailure);
+            }
+        }
+
+        return new(port, null);
     }
 
     private static IProductionLightingPortFactory CreateWindows(

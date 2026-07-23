@@ -18,8 +18,6 @@ public sealed class WindowsHardwareAccessGuardTests
 
     public static TheoryData<string> KnownProcessAliases => new()
     {
-        "GameManagerService3",
-        "razer_elevation_service",
         "RazerAppEngine",
         "razerwdl",
     };
@@ -30,11 +28,15 @@ public sealed class WindowsHardwareAccessGuardTests
         "Razer Chroma SDK Server",
         "Razer Chroma SDK Service",
         "Razer Chroma Stream Server",
-        "Razer Elevation Service",
-        "Razer Game Manager Service 3",
         "RGS",
         "Razer Gaming Services Updater",
         "Razer Synapse Service",
+    };
+
+    public static TheoryData<string> NonControllerRazerServices => new()
+    {
+        "Razer Elevation Service",
+        "Razer Game Manager Service 3",
     };
 
     [Theory]
@@ -63,6 +65,20 @@ public sealed class WindowsHardwareAccessGuardTests
         Assert.False(result.Safe);
         Assert.Equal([alias], result.Conflicts);
         Assert.Null(result.DetectionFailure);
+    }
+
+    [Theory]
+    [MemberData(nameof(NonControllerRazerServices))]
+    public void Check_IgnoresRazerSupportServicesThatDoNotControlTheLaptop(string alias)
+    {
+        WindowsHardwareAccessGuard guard = CreateGuard(
+            [],
+            [new WindowsServiceSnapshot(alias, alias, WindowsServiceState.Running)]);
+
+        HardwareAccessDecision result = guard.Check();
+
+        Assert.True(result.Safe);
+        Assert.Empty(result.Conflicts);
     }
 
     [Theory]
@@ -149,13 +165,13 @@ public sealed class WindowsHardwareAccessGuardTests
     public void Check_ReturnsDeduplicatedConflictsInDeterministicOrdinalOrder()
     {
         WindowsHardwareAccessGuard guard = CreateGuard(
-            ["razerwdl", "RazerAppEngine", "GameManagerService3", "RAZERAPPENGINE"],
+            ["razerwdl", "RazerAppEngine", "RAZERAPPENGINE"],
             []);
 
         HardwareAccessDecision result = guard.Check();
 
         Assert.Equal(
-            ["GameManagerService3", "RazerAppEngine", "razerwdl"],
+            ["RazerAppEngine", "razerwdl"],
             result.Conflicts);
     }
 

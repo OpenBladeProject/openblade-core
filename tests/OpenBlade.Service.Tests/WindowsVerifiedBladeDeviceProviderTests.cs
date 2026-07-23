@@ -684,6 +684,25 @@ public sealed class WindowsVerifiedBladeDeviceProviderTests
     }
 
     [Fact]
+    public async Task EnsureDriverMode_ReusesTheSerializedLightingPort()
+    {
+        var lightingPort = new FakeLightingPort();
+        var lightingFactory = new FakeLightingFactory(lightingPort);
+        using var provider = new WindowsVerifiedBladeDeviceProvider(
+            () => Probe(BatteryValidationProbeClassification.Ready),
+            Adapt(new FakeQueryFactory()),
+            UnavailableFanRpmFactory(),
+            lightingFactory);
+        Assert.True(provider.TryGetVerifiedDevice(out IBladeDevice device));
+
+        await device.EnsureDriverModeAsync(default);
+        await device.EnsureDriverModeAsync(default);
+
+        Assert.Equal(1, lightingFactory.OpenCount);
+        Assert.Equal(2, lightingPort.DriverModeEnsureCount);
+    }
+
+    [Fact]
     public async Task OwnedAmbientRenderer_ReusesPortWithoutProbeOrHardwareObservationGate()
     {
         int probeCount = 0;
@@ -1086,7 +1105,15 @@ public sealed class WindowsVerifiedBladeDeviceProviderTests
 
         public int DisposeCount { get; private set; }
 
+        public int DriverModeEnsureCount { get; private set; }
+
         public Exception? ReadFailure { get; init; }
+
+        public Task EnsureDriverModeAsync(CancellationToken cancellationToken)
+        {
+            DriverModeEnsureCount++;
+            return Task.CompletedTask;
+        }
 
         public Task<LightingSettings?> ReadStateAsync(CancellationToken cancellationToken) =>
             ReadFailure is null

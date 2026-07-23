@@ -21,16 +21,12 @@ public sealed class WindowsControllerPresenceMonitor(
 {
     private static readonly HashSet<string> KnownControllers = new(StringComparer.OrdinalIgnoreCase)
     {
-        "GameManagerService3",
-        "razer_elevation_service",
         "RazerAppEngine",
         "razerwdl",
         "Razer Chroma SDK Diagnostic Service",
         "Razer Chroma SDK Server",
         "Razer Chroma SDK Service",
         "Razer Chroma Stream Server",
-        "Razer Elevation Service",
-        "Razer Game Manager Service 3",
         "RGS",
         "Razer Gaming Services Updater",
         "Razer Synapse Service",

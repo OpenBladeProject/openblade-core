@@ -392,7 +392,7 @@ internal sealed class ProductionLightingPort : IProductionLightingPort
     public async ValueTask DisposeAsync() =>
         _ = await CloseAsync().ConfigureAwait(false);
 
-    internal async Task AcquireDriverModeAsync(CancellationToken cancellationToken)
+    public async Task EnsureDriverModeAsync(CancellationToken cancellationToken)
     {
         await EnterAsync(cancellationToken).ConfigureAwait(false);
         try

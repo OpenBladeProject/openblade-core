@@ -60,7 +60,7 @@ public sealed class ProductionLightingPortTests
         };
         var port = CreatePort(session, new MatrixWriter(), admitted: true);
 
-        await port.AcquireDriverModeAsync(default);
+        await port.EnsureDriverModeAsync(default);
 
         Assert.Equal(RazerDeviceMode.Driver, session.DeviceMode);
         Assert.Equal(
@@ -95,7 +95,7 @@ public sealed class ProductionLightingPortTests
         };
         var port = CreatePort(session, new MatrixWriter(), admitted: true);
 
-        await port.AcquireDriverModeAsync(default);
+        await port.EnsureDriverModeAsync(default);
         await port.DisposeAsync();
 
         Assert.Equal(RazerDeviceMode.Driver, session.DeviceMode);
@@ -105,7 +105,35 @@ public sealed class ProductionLightingPortTests
     }
 
     [Fact]
-    public async Task ProductionFactory_DoesNotApplyValidatedDeviceModePrimitive()
+    public async Task DriverModeLifecycle_ReacquiresModeAfterFirmwareFallsBackToNormal()
+    {
+        var session = new LightingSession(initialBrightness: 0xC5)
+        {
+            DeviceMode = RazerDeviceMode.Driver,
+        };
+        var port = CreatePort(session, new MatrixWriter(), admitted: true);
+
+        await port.EnsureDriverModeAsync(default);
+        session.DeviceMode = RazerDeviceMode.Normal;
+        await port.EnsureDriverModeAsync(default);
+
+        Assert.Equal(RazerDeviceMode.Driver, session.DeviceMode);
+        Assert.Equal(
+            [
+                (0x00, 0x84, "0000"),
+                (0x00, 0x84, "0000"),
+                (0x00, 0x04, "0300"),
+                (0x00, 0x84, "0000"),
+            ],
+            session.Commands.Select(CommandTuple).ToArray());
+
+        await port.DisposeAsync();
+
+        Assert.Equal(RazerDeviceMode.Normal, session.DeviceMode);
+    }
+
+    [Fact]
+    public async Task ProductionFactory_AcquiresValidatedDriverMode()
     {
         var session = new LightingSession(initialBrightness: 0xC5)
         {
@@ -127,8 +155,14 @@ public sealed class ProductionLightingPortTests
 
         Assert.Null(opened.Failure);
         Assert.NotNull(opened.Value);
-        Assert.Equal(RazerDeviceMode.Normal, session.DeviceMode);
-        Assert.Empty(session.Commands);
+        Assert.Equal(RazerDeviceMode.Driver, session.DeviceMode);
+        Assert.Equal(
+            [
+                (0x00, 0x84, "0000"),
+                (0x00, 0x04, "0300"),
+                (0x00, 0x84, "0000"),
+            ],
+            session.Commands.Select(CommandTuple).ToArray());
         await opened.Value!.DisposeAsync();
     }
 

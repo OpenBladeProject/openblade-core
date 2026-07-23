@@ -120,6 +120,9 @@ public interface IServiceControlRuntime
 
     Task RefreshControllerPresenceAsync(CancellationToken cancellationToken);
 
+    Task MaintainDriverModeAsync(CancellationToken cancellationToken) =>
+        Task.CompletedTask;
+
     Task InvalidateLightingRendererAsync(CancellationToken cancellationToken) =>
         Task.CompletedTask;
 
@@ -1541,6 +1544,25 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         try
         {
             RefreshControllerPresenceCore(cancellationToken);
+        }
+        finally
+        {
+            operationGate.Release();
+        }
+    }
+
+    public async Task MaintainDriverModeAsync(CancellationToken cancellationToken)
+    {
+        EnsureInitialized();
+        await operationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            if (!deviceProvider.TryGetVerifiedDevice(out IBladeDevice device))
+            {
+                return;
+            }
+
+            await device.EnsureDriverModeAsync(cancellationToken).ConfigureAwait(false);
         }
         finally
         {

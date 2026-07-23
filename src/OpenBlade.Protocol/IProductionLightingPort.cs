@@ -12,6 +12,13 @@ public interface IProductionLightingPort : IAsyncDisposable
 
     LightingRendererOwnershipState OwnershipState { get; }
 
+    /// <summary>
+    /// Verifies that the firmware is in Driver mode and restores it when the
+    /// device has fallen back to Normal mode.
+    /// </summary>
+    Task EnsureDriverModeAsync(CancellationToken cancellationToken) =>
+        Task.CompletedTask;
+
     Task<LightingSettings?> ReadStateAsync(CancellationToken cancellationToken);
 
     Task<LogoLightingMode?> ReadLogoStateAsync(CancellationToken cancellationToken) =>

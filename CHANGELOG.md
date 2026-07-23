@@ -89,10 +89,13 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
-- Removed the unsafe always-on firmware Driver-mode policy after it could leave
-  the function row's media actions unavailable. The independently validated
-  device-mode primitive remains capture-only until OpenBlade can preserve the
-  complete keyboard behavior and recover reliably from interrupted shutdown.
+- Restored the validated firmware Driver-mode lifecycle required by the
+  extended Fn layer, performance key, and M1 through M5. OpenBlade verifies the
+  mode when opening the device, rechecks it every 15 seconds, and writes only
+  after a confirmed fallback to Normal mode.
+- Stopped identifying Razer Elevation Service and Razer Game Manager Service 3
+  as potential laptop controllers. Synapse and Chroma components that can
+  compete for the same controls remain visible as conflicts.
 - Fixed performance-key notifications in the self-contained Session Agent by
   including the Microsoft-signed Windows App Runtime notification resource that
   `AppNotificationManager` loads during registration.

@@ -6,8 +6,6 @@ public sealed class WindowsControllerPresenceMonitorTests
 {
     public static TheoryData<string> KnownProcessAliases => new()
     {
-        "GameManagerService3",
-        "razer_elevation_service",
         "RazerAppEngine",
         "razerwdl",
     };
@@ -18,11 +16,15 @@ public sealed class WindowsControllerPresenceMonitorTests
         "Razer Chroma SDK Server",
         "Razer Chroma SDK Service",
         "Razer Chroma Stream Server",
-        "Razer Elevation Service",
-        "Razer Game Manager Service 3",
         "RGS",
         "Razer Gaming Services Updater",
         "Razer Synapse Service",
+    };
+
+    public static TheoryData<string> NonControllerRazerServices => new()
+    {
+        "Razer Elevation Service",
+        "Razer Game Manager Service 3",
     };
 
     [Theory]
@@ -48,6 +50,20 @@ public sealed class WindowsControllerPresenceMonitorTests
         ControllerPresenceObservation result = monitor.Observe();
 
         Assert.Equal([alias], result.PotentialControllers);
+    }
+
+    [Theory]
+    [MemberData(nameof(NonControllerRazerServices))]
+    public void Observe_IgnoresRazerSupportServicesThatDoNotControlTheLaptop(string alias)
+    {
+        WindowsControllerPresenceMonitor monitor = CreateMonitor(
+            [],
+            [new WindowsServiceSnapshot(alias, alias, WindowsServiceState.Running)]);
+
+        ControllerPresenceObservation result = monitor.Observe();
+
+        Assert.Empty(result.PotentialControllers);
+        Assert.Null(result.DetectionWarning);
     }
 
     [Theory]

@@ -33,6 +33,7 @@ public sealed class ServicePeriodicObservationLoop
             try
             {
                 await runtime.RefreshPowerSourceClassificationAsync(stoppingToken);
+                await runtime.MaintainDriverModeAsync(stoppingToken);
                 await runtime.RestoreLightingRendererAsync(stoppingToken);
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)

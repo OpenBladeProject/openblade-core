@@ -118,10 +118,10 @@ internal static class ProductionLightingEvidenceSource
         "OpenBladeLightingImplementationFingerprint";
 
     private const string ApprovedLightingImplementationFingerprintSha256 =
-        // Re-reviewed after removing automatic Driver-mode acquisition from
-        // production lighting-port creation. This narrows device writes while
-        // leaving the admitted lighting commands and wire format unchanged.
-        "339FB295D0AAFA43D1D48971EF44A66AE477EC014607AD290A5555EFD87BC36E";
+        // Re-reviewed after restoring the independently validated Driver-mode
+        // lifecycle. Port creation acquires Driver mode with readback; periodic
+        // maintenance queries before rewriting after a firmware fallback.
+        "06351F13A017304CDF2835B66A7E7308796D1B2CDA54737C4A11FB5DE5D9F5FE";
 
     private static readonly JsonSerializerOptions SerializerOptions =
         new(JsonSerializerDefaults.Web)

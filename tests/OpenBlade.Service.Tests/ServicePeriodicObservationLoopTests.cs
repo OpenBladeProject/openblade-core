@@ -24,6 +24,7 @@ public sealed class ServicePeriodicObservationLoopTests
 
         Assert.Equal(ServicePeriodicObservationLoop.ObservationInterval, requestedDelay);
         Assert.Equal(1, runtime.RefreshCalls);
+        Assert.Equal(1, runtime.DriverModeMaintenanceCalls);
         Assert.Equal(1, runtime.RestoreCalls);
     }
 
@@ -31,6 +32,7 @@ public sealed class ServicePeriodicObservationLoopTests
         : IServiceControlRuntime
     {
         public int RefreshCalls { get; private set; }
+        public int DriverModeMaintenanceCalls { get; private set; }
         public int RestoreCalls { get; private set; }
 
         public ServiceStatusSnapshot GetStatus() => throw new NotSupportedException();
@@ -74,6 +76,12 @@ public sealed class ServicePeriodicObservationLoopTests
         {
             RestoreCalls++;
             cancellation.Cancel();
+            return Task.CompletedTask;
+        }
+
+        public Task MaintainDriverModeAsync(CancellationToken cancellationToken)
+        {
+            DriverModeMaintenanceCalls++;
             return Task.CompletedTask;
         }
 
