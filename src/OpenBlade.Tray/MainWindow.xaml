@@ -176,35 +176,80 @@
             </Style>
             <ControlTemplate x:Key="CardActionButtonTemplate"
                              TargetType="Button">
-                <Grid Background="Transparent">
+                <Border x:Name="CardActionBackground"
+                        Background="{TemplateBinding Background}"
+                        CornerRadius="{TemplateBinding CornerRadius}">
                     <ContentPresenter Content="{TemplateBinding Content}"
                                       ContentTemplate="{TemplateBinding ContentTemplate}"
                                       HorizontalContentAlignment="{TemplateBinding HorizontalContentAlignment}"
                                       VerticalContentAlignment="{TemplateBinding VerticalContentAlignment}"
+                                      Padding="{TemplateBinding Padding}"
                                       Foreground="{TemplateBinding Foreground}" />
-                </Grid>
+                    <VisualStateManager.VisualStateGroups>
+                        <VisualStateGroup x:Name="CommonStates">
+                            <VisualState x:Name="Normal" />
+                            <VisualState x:Name="PointerOver">
+                                <VisualState.Setters>
+                                    <Setter Target="CardActionBackground.Background"
+                                            Value="{ThemeResource SubtleFillColorSecondaryBrush}" />
+                                </VisualState.Setters>
+                            </VisualState>
+                            <VisualState x:Name="Pressed">
+                                <VisualState.Setters>
+                                    <Setter Target="CardActionBackground.Background"
+                                            Value="{ThemeResource SubtleFillColorTertiaryBrush}" />
+                                </VisualState.Setters>
+                            </VisualState>
+                            <VisualState x:Name="Disabled">
+                                <VisualState.Setters>
+                                    <Setter Target="CardActionBackground.Opacity" Value="0.4" />
+                                </VisualState.Setters>
+                            </VisualState>
+                        </VisualStateGroup>
+                    </VisualStateManager.VisualStateGroups>
+                </Border>
             </ControlTemplate>
             <ControlTemplate x:Key="CardActionHyperlinkButtonTemplate"
                              TargetType="HyperlinkButton">
-                <Grid Background="Transparent">
+                <Border x:Name="CardActionBackground"
+                        Background="{TemplateBinding Background}"
+                        CornerRadius="{TemplateBinding CornerRadius}">
                     <ContentPresenter Content="{TemplateBinding Content}"
                                       ContentTemplate="{TemplateBinding ContentTemplate}"
                                       HorizontalContentAlignment="{TemplateBinding HorizontalContentAlignment}"
                                       VerticalContentAlignment="{TemplateBinding VerticalContentAlignment}"
+                                      Padding="{TemplateBinding Padding}"
                                       Foreground="{TemplateBinding Foreground}" />
-                </Grid>
+                    <VisualStateManager.VisualStateGroups>
+                        <VisualStateGroup x:Name="CommonStates">
+                            <VisualState x:Name="Normal" />
+                            <VisualState x:Name="PointerOver">
+                                <VisualState.Setters>
+                                    <Setter Target="CardActionBackground.Background"
+                                            Value="{ThemeResource SubtleFillColorSecondaryBrush}" />
+                                </VisualState.Setters>
+                            </VisualState>
+                            <VisualState x:Name="Pressed">
+                                <VisualState.Setters>
+                                    <Setter Target="CardActionBackground.Background"
+                                            Value="{ThemeResource SubtleFillColorTertiaryBrush}" />
+                                </VisualState.Setters>
+                            </VisualState>
+                            <VisualState x:Name="Disabled">
+                                <VisualState.Setters>
+                                    <Setter Target="CardActionBackground.Opacity" Value="0.4" />
+                                </VisualState.Setters>
+                            </VisualState>
+                        </VisualStateGroup>
+                    </VisualStateManager.VisualStateGroups>
+                </Border>
             </ControlTemplate>
             <Style x:Key="ExternalLinkButtonStyle" TargetType="HyperlinkButton">
-                <Setter Property="Width"
-                        Value="{ThemeResource ExpanderChevronButtonSize}" />
-                <Setter Property="Height"
-                        Value="{ThemeResource ExpanderChevronButtonSize}" />
-                <Setter Property="Margin" Value="0,0,-8,0" />
-                <Setter Property="Padding" Value="0" />
-                <Setter Property="HorizontalAlignment" Value="Right" />
-                <Setter Property="VerticalAlignment" Value="Center" />
-                <Setter Property="HorizontalContentAlignment" Value="Center" />
-                <Setter Property="VerticalContentAlignment" Value="Center" />
+                <Setter Property="Padding" Value="16,14" />
+                <Setter Property="HorizontalAlignment" Value="Stretch" />
+                <Setter Property="VerticalAlignment" Value="Stretch" />
+                <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                <Setter Property="VerticalContentAlignment" Value="Stretch" />
                 <Setter Property="UseSystemFocusVisuals" Value="True" />
                 <Setter Property="Foreground" Value="{ThemeResource TextFillColorPrimaryBrush}" />
                 <Setter Property="Background" Value="Transparent" />
@@ -213,16 +258,11 @@
                         Value="{StaticResource CardActionHyperlinkButtonTemplate}" />
             </Style>
             <Style x:Key="IconActionButtonStyle" TargetType="Button">
-                <Setter Property="Width"
-                        Value="{ThemeResource ExpanderChevronButtonSize}" />
-                <Setter Property="Height"
-                        Value="{ThemeResource ExpanderChevronButtonSize}" />
-                <Setter Property="Margin" Value="0,0,-8,0" />
-                <Setter Property="Padding" Value="0" />
-                <Setter Property="HorizontalAlignment" Value="Right" />
-                <Setter Property="VerticalAlignment" Value="Center" />
-                <Setter Property="HorizontalContentAlignment" Value="Center" />
-                <Setter Property="VerticalContentAlignment" Value="Center" />
+                <Setter Property="Padding" Value="16,14" />
+                <Setter Property="HorizontalAlignment" Value="Stretch" />
+                <Setter Property="VerticalAlignment" Value="Stretch" />
+                <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                <Setter Property="VerticalContentAlignment" Value="Stretch" />
                 <Setter Property="UseSystemFocusVisuals" Value="True" />
                 <Setter Property="Foreground" Value="{ThemeResource TextFillColorPrimaryBrush}" />
                 <Setter Property="Background" Value="Transparent" />
@@ -3038,90 +3078,97 @@
                         <TextBlock Text="Support" Style="{StaticResource SectionHeaderStyle}" />
                         <Border Style="{StaticResource SettingsGroupStyle}">
                             <StackPanel>
-                                <Border Style="{StaticResource SettingsRowStyle}">
+                                <Border Style="{StaticResource SettingsRowStyle}" Padding="0">
+                                    <Button Style="{StaticResource IconActionButtonStyle}"
+                                            CornerRadius="8,8,0,0"
+                                            Command="{x:Bind ViewModel.ExportDiagnosticsCommand}"
+                                            AutomationProperties.Name="Export diagnostics"
+                                            ToolTipService.ToolTip="Export diagnostics">
                                     <Grid ColumnSpacing="20">
                                         <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
                                         <StackPanel Spacing="3">
                                             <TextBlock Text="Export diagnostics" Style="{StaticResource CardTitleStyle}" />
                                             <TextBlock Text="Save logs and system details with sensitive information removed." Style="{StaticResource SecondaryTextStyle}" />
                                         </StackPanel>
-                                        <Button Grid.Column="1"
-                                                Style="{StaticResource IconActionButtonStyle}"
-                                                Command="{x:Bind ViewModel.ExportDiagnosticsCommand}"
-                                                AutomationProperties.Name="Export diagnostics"
-                                                ToolTipService.ToolTip="Export diagnostics">
-                                            <FontIcon Glyph="&#xE896;"
-                                                      Style="{StaticResource CardActionIconStyle}" />
-                                        </Button>
+                                        <FontIcon Grid.Column="1"
+                                                  Glyph="&#xE896;"
+                                                  VerticalAlignment="Center"
+                                                  Style="{StaticResource CardActionIconStyle}" />
                                     </Grid>
+                                    </Button>
                                 </Border>
-                                <Border Style="{StaticResource SettingsRowStyle}">
+                                <Border Style="{StaticResource SettingsRowStyle}" Padding="0">
+                                    <HyperlinkButton NavigateUri="https://github.com/OSSBlade/openblade-core/issues"
+                                                     Style="{StaticResource ExternalLinkButtonStyle}"
+                                                     AutomationProperties.Name="Open GitHub Issues"
+                                                     ToolTipService.ToolTip="Open GitHub Issues">
                                     <Grid ColumnSpacing="20">
                                         <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
                                         <StackPanel Spacing="3">
                                             <TextBlock Text="Report a problem" Style="{StaticResource CardTitleStyle}" />
                                             <TextBlock Text="Open GitHub Issues to report a bug or request an improvement." Style="{StaticResource SecondaryTextStyle}" />
                                         </StackPanel>
-                                        <HyperlinkButton Grid.Column="1"
-                                                         NavigateUri="https://github.com/OSSBlade/openblade-core/issues"
-                                                         Style="{StaticResource ExternalLinkButtonStyle}"
-                                                         AutomationProperties.Name="Open GitHub Issues"
-                                                         ToolTipService.ToolTip="Open GitHub Issues">
-                                            <FontIcon Glyph="&#xE8A7;"
-                                                      Style="{StaticResource CardActionIconStyle}" />
-                                        </HyperlinkButton>
+                                        <FontIcon Grid.Column="1"
+                                                  Glyph="&#xE8A7;"
+                                                  VerticalAlignment="Center"
+                                                  Style="{StaticResource CardActionIconStyle}" />
                                     </Grid>
+                                    </HyperlinkButton>
                                 </Border>
-                                <Border Style="{StaticResource SettingsRowStyle}">
+                                <Border Style="{StaticResource SettingsRowStyle}" Padding="0">
+                                    <HyperlinkButton NavigateUri="https://github.com/OSSBlade/openblade-docs"
+                                                     Style="{StaticResource ExternalLinkButtonStyle}"
+                                                     AutomationProperties.Name="Open documentation"
+                                                     ToolTipService.ToolTip="Open documentation">
                                     <Grid ColumnSpacing="20">
                                         <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
                                         <StackPanel Spacing="3">
                                             <TextBlock Text="Documentation" Style="{StaticResource CardTitleStyle}" />
                                             <TextBlock Text="Read setup, usage, and compatibility information." Style="{StaticResource SecondaryTextStyle}" />
                                         </StackPanel>
-                                        <HyperlinkButton Grid.Column="1"
-                                                         NavigateUri="https://github.com/OSSBlade/openblade-docs"
-                                                         Style="{StaticResource ExternalLinkButtonStyle}"
-                                                         AutomationProperties.Name="Open documentation"
-                                                         ToolTipService.ToolTip="Open documentation">
-                                            <FontIcon Glyph="&#xE8A7;"
-                                                      Style="{StaticResource CardActionIconStyle}" />
-                                        </HyperlinkButton>
+                                        <FontIcon Grid.Column="1"
+                                                  Glyph="&#xE8A7;"
+                                                  VerticalAlignment="Center"
+                                                  Style="{StaticResource CardActionIconStyle}" />
                                     </Grid>
+                                    </HyperlinkButton>
                                 </Border>
-                                <Border Style="{StaticResource SettingsRowStyle}">
+                                <Border Style="{StaticResource SettingsRowStyle}" Padding="0">
+                                    <HyperlinkButton NavigateUri="https://github.com/OSSBlade/openblade-core/blob/main/CHANGELOG.md"
+                                                     Style="{StaticResource ExternalLinkButtonStyle}"
+                                                     AutomationProperties.Name="Open release notes"
+                                                     ToolTipService.ToolTip="Open release notes">
                                     <Grid ColumnSpacing="20">
                                         <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
                                         <StackPanel Spacing="3">
                                             <TextBlock Text="Release notes" Style="{StaticResource CardTitleStyle}" />
                                             <TextBlock Text="See what changed in each OpenBlade build." Style="{StaticResource SecondaryTextStyle}" />
                                         </StackPanel>
-                                        <HyperlinkButton Grid.Column="1"
-                                                         NavigateUri="https://github.com/OSSBlade/openblade-core/blob/main/CHANGELOG.md"
-                                                         Style="{StaticResource ExternalLinkButtonStyle}"
-                                                         AutomationProperties.Name="Open release notes"
-                                                         ToolTipService.ToolTip="Open release notes">
-                                            <FontIcon Glyph="&#xE8A7;"
-                                                      Style="{StaticResource CardActionIconStyle}" />
-                                        </HyperlinkButton>
+                                        <FontIcon Grid.Column="1"
+                                                  Glyph="&#xE8A7;"
+                                                  VerticalAlignment="Center"
+                                                  Style="{StaticResource CardActionIconStyle}" />
                                     </Grid>
+                                    </HyperlinkButton>
                                 </Border>
-                                <Border Style="{StaticResource SettingsLastRowStyle}">
+                                <Border Style="{StaticResource SettingsLastRowStyle}" Padding="0">
+                                    <HyperlinkButton NavigateUri="https://github.com/OSSBlade/openblade-core"
+                                                     Style="{StaticResource ExternalLinkButtonStyle}"
+                                                     CornerRadius="0,0,8,8"
+                                                     AutomationProperties.Name="Open source code"
+                                                     ToolTipService.ToolTip="Open source code">
                                     <Grid ColumnSpacing="20">
                                         <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
                                         <StackPanel Spacing="3">
                                             <TextBlock Text="Source code" Style="{StaticResource CardTitleStyle}" />
                                             <TextBlock Text="View and contribute to OpenBlade on GitHub." Style="{StaticResource SecondaryTextStyle}" />
                                         </StackPanel>
-                                        <HyperlinkButton Grid.Column="1"
-                                                         NavigateUri="https://github.com/OSSBlade/openblade-core"
-                                                         Style="{StaticResource ExternalLinkButtonStyle}"
-                                                         AutomationProperties.Name="Open source code"
-                                                         ToolTipService.ToolTip="Open source code">
-                                            <FontIcon Glyph="&#xE8A7;"
-                                                      Style="{StaticResource CardActionIconStyle}" />
-                                        </HyperlinkButton>
+                                        <FontIcon Grid.Column="1"
+                                                  Glyph="&#xE8A7;"
+                                                  VerticalAlignment="Center"
+                                                  Style="{StaticResource CardActionIconStyle}" />
                                     </Grid>
+                                    </HyperlinkButton>
                                 </Border>
                             </StackPanel>
                         </Border>

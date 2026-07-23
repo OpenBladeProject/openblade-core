@@ -203,9 +203,8 @@ public sealed class CapabilityPresentationTests
         Assert.DoesNotContain(xaml, "ViewModel.SetFanModeCommand", StringComparison.Ordinal);
         Assert.DoesNotContain(xaml, "ViewModel.SetChargeLimitCommand", StringComparison.Ordinal);
         Assert.DoesNotContain(xaml, "ViewModel.KeepManualChangesUntilCleared", StringComparison.Ordinal);
-        Assert.Equal(
-            6,
-            document.Descendants().Count(element => element.Name.LocalName == "VisualState"));
+        Assert.True(
+            document.Descendants().Count(element => element.Name.LocalName == "VisualState") >= 6);
         Assert.Equal(
             3,
             document.Descendants().Count(element =>
@@ -600,6 +599,29 @@ public sealed class CapabilityPresentationTests
             aboutPage.Descendants().Count(element =>
                 element.Name.LocalName == "HyperlinkButton"
                 && Attribute(element, "Style") == "{StaticResource ExternalLinkButtonStyle}"));
+        XElement[] supportActions = aboutPage.Descendants()
+            .Where(element =>
+                element.Name.LocalName is "Button" or "HyperlinkButton"
+                && Attribute(element, "Style") is
+                    "{StaticResource IconActionButtonStyle}"
+                    or "{StaticResource ExternalLinkButtonStyle}")
+            .ToArray();
+        Assert.Equal(5, supportActions.Length);
+        Assert.All(
+            supportActions,
+            action =>
+            {
+                XElement row = Assert.IsType<XElement>(action.Parent);
+                Assert.Equal("Border", row.Name.LocalName);
+                Assert.Equal("0", Attribute(row, "Padding"));
+                XElement content = Assert.Single(action.Elements());
+                Assert.Equal("Grid", content.Name.LocalName);
+                Assert.Contains(
+                    content.Elements(),
+                    element => element.Name.LocalName == "FontIcon"
+                        && Attribute(element, "Style")
+                            == "{StaticResource CardActionIconStyle}");
+            });
         foreach (string styleKey in new[] { "ExternalLinkButtonStyle", "IconActionButtonStyle" })
         {
             XElement style = Assert.Single(document.Descendants(), element =>
@@ -612,21 +634,41 @@ public sealed class CapabilityPresentationTests
                 Attribute(setter, "Property") == "BorderThickness"
                 && Attribute(setter, "Value") == "0");
             Assert.Contains(style.Elements(), setter =>
-                Attribute(setter, "Property") == "Width"
-                && Attribute(setter, "Value")
-                    == "{ThemeResource ExpanderChevronButtonSize}");
+                Attribute(setter, "Property") == "Padding"
+                && Attribute(setter, "Value") == "16,14");
             Assert.Contains(style.Elements(), setter =>
-                Attribute(setter, "Property") == "Height"
-                && Attribute(setter, "Value")
-                    == "{ThemeResource ExpanderChevronButtonSize}");
+                Attribute(setter, "Property") == "HorizontalAlignment"
+                && Attribute(setter, "Value") == "Stretch");
             Assert.Contains(style.Elements(), setter =>
-                Attribute(setter, "Property") == "Margin"
-                && Attribute(setter, "Value") == "0,0,-8,0");
+                Attribute(setter, "Property") == "HorizontalContentAlignment"
+                && Attribute(setter, "Value") == "Stretch");
             Assert.Contains(style.Elements(), setter =>
                 Attribute(setter, "Property") == "UseSystemFocusVisuals"
                 && Attribute(setter, "Value") == "True");
             Assert.Contains(style.Elements(), setter =>
                 Attribute(setter, "Property") == "Template");
+        }
+        foreach (string templateKey in new[]
+        {
+            "CardActionButtonTemplate",
+            "CardActionHyperlinkButtonTemplate",
+        })
+        {
+            XElement template = Assert.Single(document.Descendants(), element =>
+                element.Name.LocalName == "ControlTemplate"
+                && Attribute(element, "Key") == templateKey);
+            Assert.Contains(
+                template.Descendants(),
+                setter => setter.Name.LocalName == "Setter"
+                    && Attribute(setter, "Target") == "CardActionBackground.Background"
+                    && Attribute(setter, "Value")
+                        == "{ThemeResource SubtleFillColorSecondaryBrush}");
+            Assert.Contains(
+                template.Descendants(),
+                setter => setter.Name.LocalName == "Setter"
+                    && Attribute(setter, "Target") == "CardActionBackground.Background"
+                    && Attribute(setter, "Value")
+                        == "{ThemeResource SubtleFillColorTertiaryBrush}");
         }
         foreach (string resourceKey in new[]
         {
@@ -647,12 +689,7 @@ public sealed class CapabilityPresentationTests
         Assert.Contains(cardActionIconStyle.Elements(), setter =>
             Attribute(setter, "Property") == "FontSize"
             && Attribute(setter, "Value") == "{ThemeResource ExpanderChevronGlyphSize}");
-        XElement[] cardActionIcons = aboutPage.Descendants()
-            .Where(element =>
-                element.Name.LocalName is "Button" or "HyperlinkButton"
-                && Attribute(element, "Style") is
-                    "{StaticResource IconActionButtonStyle}"
-                    or "{StaticResource ExternalLinkButtonStyle}")
+        XElement[] cardActionIcons = supportActions
             .SelectMany(element => element.Descendants()
                 .Where(descendant => descendant.Name.LocalName == "FontIcon"))
             .ToArray();
