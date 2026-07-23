@@ -82,11 +82,10 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
-- Fixed the extended Fn layer and performance key after service startup by
-  acquiring the validated firmware Driver mode with readback and restoring an
-  OpenBlade-owned Normal-mode baseline on clean shutdown. Renderer invalidation
-  now opens a fresh verified session so lighting lifecycle events cannot
-  silently disable M1 through M5 while the service remains active.
+- Removed the unsafe always-on firmware Driver-mode policy after it could leave
+  the function row's media actions unavailable. The independently validated
+  device-mode primitive remains capture-only until OpenBlade can preserve the
+  complete keyboard behavior and recover reliably from interrupted shutdown.
 - Fixed performance-key notifications in the self-contained Session Agent by
   including the Microsoft-signed Windows App Runtime notification resource that
   `AppNotificationManager` loads during registration.

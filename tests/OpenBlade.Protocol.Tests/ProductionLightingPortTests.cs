@@ -105,7 +105,7 @@ public sealed class ProductionLightingPortTests
     }
 
     [Fact]
-    public async Task ProductionFactory_AcquiresDriverModeBeforeReturningPort()
+    public async Task ProductionFactory_DoesNotApplyValidatedDeviceModePrimitive()
     {
         var session = new LightingSession(initialBrightness: 0xC5)
         {
@@ -127,14 +127,8 @@ public sealed class ProductionLightingPortTests
 
         Assert.Null(opened.Failure);
         Assert.NotNull(opened.Value);
-        Assert.Equal(RazerDeviceMode.Driver, session.DeviceMode);
-        Assert.Equal(
-            [
-                (0x00, 0x84, "0000"),
-                (0x00, 0x04, "0300"),
-                (0x00, 0x84, "0000"),
-            ],
-            session.Commands.Select(CommandTuple).ToArray());
+        Assert.Equal(RazerDeviceMode.Normal, session.DeviceMode);
+        Assert.Empty(session.Commands);
         await opened.Value!.DisposeAsync();
     }
 

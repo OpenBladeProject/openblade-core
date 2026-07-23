@@ -118,10 +118,10 @@ internal static class ProductionLightingEvidenceSource
         "OpenBladeLightingImplementationFingerprint";
 
     private const string ApprovedLightingImplementationFingerprintSha256 =
-        // Re-reviewed after identifying 00/84 as the read-only device-mode
-        // query. The accepted 00 00 and 03 00 replies and wire order are
-        // unchanged; 02 00 now fails at the command payload validator.
-        "1B5641ECC8B250EE71EF2C5B830BB4170A737B63DEB28A4D0D2F13F098BD2E03";
+        // Re-reviewed after removing automatic Driver-mode acquisition from
+        // production lighting-port creation. This narrows device writes while
+        // leaving the admitted lighting commands and wire format unchanged.
+        "339FB295D0AAFA43D1D48971EF44A66AE477EC014607AD290A5555EFD87BC36E";
 
     private static readonly JsonSerializerOptions SerializerOptions =
         new(JsonSerializerDefaults.Web)
