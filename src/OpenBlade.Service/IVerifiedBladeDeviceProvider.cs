@@ -7,6 +7,9 @@ public interface IVerifiedBladeDeviceProvider
 {
     bool TryGetVerifiedDevice(out IBladeDevice device);
 
+    bool TryGetRecentlyVerifiedReadOnlyDevice(out IBladeDevice device) =>
+        TryGetVerifiedDevice(out device);
+
     bool TryGetOwnedKeyTriggeredLightingDevice(out IBladeDevice device) =>
         TryGetVerifiedDevice(out device);
 

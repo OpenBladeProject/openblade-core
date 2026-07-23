@@ -3861,7 +3861,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     }
 
     [Fact]
-    public async Task Refresh_PublishesOnlyWhenSnapshotContentChanges()
+    public async Task Refresh_StoresTelemetryOnlyChangesWithoutBroadcastingThem()
     {
         TestContext context = CreateContext(providerAvailable: false);
 
@@ -3876,7 +3876,8 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             includeLiveReadings: true,
             CancellationToken.None);
 
-        Assert.Single(context.Hub.Published);
+        Assert.Empty(context.Hub.Published);
+        Assert.Equal(-19_500, context.Runtime.GetStatus().LiveReadings?.BatteryPowerFlowMilliwatts);
         Assert.Equal(1, context.Runtime.GetStatus().Revision);
     }
 

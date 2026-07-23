@@ -9,7 +9,6 @@ namespace OpenBlade.SessionAgent;
 /// </summary>
 public sealed class ServiceAmbientLightingLoop : IAsyncDisposable
 {
-    private static readonly TimeSpan FrameInterval = TimeSpan.FromMilliseconds(50);
     private static readonly TimeSpan KeepaliveInterval = TimeSpan.FromSeconds(5);
     private static readonly TimeSpan FailureRetryDelay = TimeSpan.FromSeconds(1);
 
@@ -163,7 +162,8 @@ public sealed class ServiceAmbientLightingLoop : IAsyncDisposable
         CancellationToken cancellationToken)
     {
         using IAmbientScreenSampler sampler = samplerFactory.Create();
-        RgbColor[]? previous = null;
+        IReadOnlyList<RgbColor>? previous = null;
+        var cadence = new AmbientFrameCadence();
         DateTimeOffset lastSent = DateTimeOffset.MinValue;
         while (true)
         {
@@ -172,7 +172,7 @@ public sealed class ServiceAmbientLightingLoop : IAsyncDisposable
             {
                 AmbientLightingFrame frame = sampler.Capture(region);
                 DateTimeOffset now = DateTimeOffset.UtcNow;
-                bool changed = previous is null || !frame.Slots.SequenceEqual(previous);
+                bool changed = previous is null || !FramesEqual(frame.Slots, previous);
                 if (changed || now - lastSent >= KeepaliveInterval)
                 {
                     ControlOperationResult result = await serviceClient
@@ -183,11 +183,12 @@ public sealed class ServiceAmbientLightingLoop : IAsyncDisposable
                         throw new InvalidOperationException(result.Message);
                     }
 
-                    previous = frame.Slots.ToArray();
+                    previous = frame.Slots;
                     lastSent = now;
                 }
 
-                await delay(FrameInterval, cancellationToken).ConfigureAwait(false);
+                await delay(cadence.RecordFrame(changed), cancellationToken)
+                    .ConfigureAwait(false);
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
@@ -210,5 +211,48 @@ public sealed class ServiceAmbientLightingLoop : IAsyncDisposable
         catch
         {
         }
+    }
+
+    private static bool FramesEqual(
+        IReadOnlyList<RgbColor> left,
+        IReadOnlyList<RgbColor> right)
+    {
+        if (left.Count != right.Count)
+        {
+            return false;
+        }
+
+        for (int index = 0; index < left.Count; index++)
+        {
+            if (left[index] != right[index])
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+}
+
+internal sealed class AmbientFrameCadence
+{
+    internal const int StaticFrameThreshold = 20;
+    internal static readonly TimeSpan ActiveInterval = TimeSpan.FromMilliseconds(50);
+    internal static readonly TimeSpan StaticInterval = TimeSpan.FromMilliseconds(100);
+
+    private int unchangedFrames;
+
+    internal TimeSpan RecordFrame(bool changed)
+    {
+        if (changed)
+        {
+            unchangedFrames = 0;
+            return ActiveInterval;
+        }
+
+        unchangedFrames = Math.Min(StaticFrameThreshold, unchangedFrames + 1);
+        return unchangedFrames >= StaticFrameThreshold
+            ? StaticInterval
+            : ActiveInterval;
     }
 }

@@ -158,7 +158,7 @@ public sealed class VisibleObservationLoop : IAsyncDisposable
             try
             {
                 TimeSpan interval = observationIntervalProvider();
-                if (interval <= TimeSpan.Zero || interval == Timeout.InfiniteTimeSpan)
+                if (interval <= TimeSpan.Zero && interval != Timeout.InfiniteTimeSpan)
                 {
                     interval = DefaultObservationInterval;
                 }

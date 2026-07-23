@@ -1068,7 +1068,7 @@ public sealed class MainViewModelTests
     }
 
     [Fact]
-    public async Task DirectObservationRequestsLiveReadingsOnlyWhenEnabled()
+    public async Task DirectObservationSkipsServiceCallWhenLiveReadingsAreDisabled()
     {
         var client = new FakeServiceClient();
         await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
@@ -1080,17 +1080,10 @@ public sealed class MainViewModelTests
         client.PendingObservation.SetResult(CreateStatus(true, false));
         await enabledRequest;
 
-        client.PendingObservation = new TaskCompletionSource<ServiceStatusSnapshot>(
-            TaskCreationOptions.RunContinuationsAsynchronously);
         viewModel.LiveReadingsEnabled = false;
-        Task disabledRequest = viewModel.ObserveStateAsync(CancellationToken.None);
-        client.PendingObservation.SetResult(CreateStatus(true, false) with
-        {
-            LiveReadings = new LiveReadings(-15_000, 2500, 2600),
-        });
-        await disabledRequest;
+        await viewModel.ObserveStateAsync(CancellationToken.None);
 
-        Assert.Equal([true, false], client.IncludeLiveReadingsRequests);
+        Assert.Equal([true], client.IncludeLiveReadingsRequests);
         Assert.Null(viewModel.LiveReadings);
     }
 
@@ -1154,7 +1147,12 @@ public sealed class MainViewModelTests
             viewModel.LiveReadingsRefreshOptions.Single(
                 option => option.Cadence == LiveReadingsCadence.Off);
         Assert.False(viewModel.LiveReadingsEnabled);
-        Assert.Equal(TimeSpan.FromSeconds(5), viewModel.LiveReadingsObservationInterval);
+        Assert.Equal(Timeout.InfiniteTimeSpan, viewModel.LiveReadingsObservationInterval);
+
+        int observationsBeforeDisabledCheck = client.RequestedLiveReadings.Count;
+        await viewModel.ObserveStateAsync(CancellationToken.None);
+        await viewModel.ObserveTrayStateAsync(CancellationToken.None);
+        Assert.Equal(observationsBeforeDisabledCheck, client.RequestedLiveReadings.Count);
     }
 
     [Fact]

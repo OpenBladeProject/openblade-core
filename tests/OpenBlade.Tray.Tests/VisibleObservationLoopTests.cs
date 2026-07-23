@@ -48,6 +48,27 @@ public sealed class VisibleObservationLoopTests
     }
 
     [Fact]
+    public async Task InfiniteIntervalWaitsForExplicitWakeWithoutPeriodicPolling()
+    {
+        var delay = new ManualDelay();
+        int calls = 0;
+        await using var loop = new VisibleObservationLoop(
+            _ => { Interlocked.Increment(ref calls); return Task.CompletedTask; },
+            delay.WaitAsync,
+            observationIntervalProvider: () => Timeout.InfiniteTimeSpan);
+
+        loop.StartOrWake();
+        await WaitUntilAsync(() => calls == 1 && delay.WaitingCount == 1);
+        Assert.Equal(Timeout.InfiniteTimeSpan, delay.LastDelay);
+
+        await Task.Delay(20);
+        Assert.Equal(1, calls);
+
+        loop.StartOrWake();
+        await WaitUntilAsync(() => calls == 2);
+    }
+
+    [Fact]
     public async Task WakeDuringObservationCoalescesOneNonOverlappingFollowUp()
     {
         var delay = new ManualDelay();

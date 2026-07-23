@@ -10,7 +10,7 @@ namespace OpenBlade.Service;
 public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDeviceProvider, IDisposable
 {
     private static readonly TimeSpan RecentReadyProbeGracePeriod =
-        TimeSpan.FromSeconds(5);
+        TimeSpan.FromSeconds(15);
 
     internal static Func<BatteryValidationProbeResult> ProductionProbeFactory { get; } =
         BatteryValidationFactory.ProbeWindowsForService;
@@ -97,6 +97,10 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
             return TryGetRecentlyVerifiedDevice(out verifiedDevice);
         }
     }
+
+    public bool TryGetRecentlyVerifiedReadOnlyDevice(out IBladeDevice verifiedDevice) =>
+        TryGetRecentlyVerifiedDevice(out verifiedDevice)
+            || TryGetVerifiedDevice(out verifiedDevice);
 
     private bool TryGetRecentlyVerifiedDevice(out IBladeDevice verifiedDevice)
     {

@@ -396,15 +396,15 @@ public sealed class WinUiShellContractTests
         Assert.Contains("DashboardBatteryCardTemplate", window, StringComparison.Ordinal);
         Assert.DoesNotContain("Content = \"Open\"", window, StringComparison.Ordinal);
         Assert.Contains("IAsyncDisposable, INotifyPropertyChanged", window, StringComparison.Ordinal);
-        Assert.Contains(
+        Assert.DoesNotContain(
             "DisplayViewModel.PropertyChanged += OnDisplayViewModelPropertyChanged",
             window,
             StringComparison.Ordinal);
-        Assert.Contains(
+        Assert.DoesNotContain(
             "new PropertyChangedEventArgs(nameof(ViewModel))",
             window,
             StringComparison.Ordinal);
-        Assert.Contains(
+        Assert.DoesNotContain(
             "new PropertyChangedEventArgs(nameof(DisplayViewModel))",
             window,
             StringComparison.Ordinal);

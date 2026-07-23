@@ -146,7 +146,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         TimeSpan.FromMilliseconds(750);
     private static readonly TimeSpan FullObservationInterval = TimeSpan.FromSeconds(10);
     private static readonly TimeSpan FastPathControllerPresenceInterval =
-        TimeSpan.FromSeconds(2);
+        TimeSpan.FromSeconds(15);
     private const int ObservationFailureThreshold = 3;
     private static readonly ConfirmedDeviceState UnknownConfirmedState =
         new(null, null, null, null);
@@ -2865,7 +2865,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         CancellationToken cancellationToken)
     {
         ServiceStatusSnapshot current = GetStatus();
-        if (!deviceProvider.TryGetVerifiedDevice(out IBladeDevice device))
+        if (!deviceProvider.TryGetRecentlyVerifiedReadOnlyDevice(out IBladeDevice device))
         {
             // Preserve the existing one-miss debounce, but force the next poll
             // through the full observation path so stale availability and
@@ -3575,7 +3575,13 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
 
         ServiceStatusSnapshot published = candidate with { Revision = previous.Revision + 1 };
         Volatile.Write(ref status, published);
-        subscriptionHub.Publish(published);
+        bool telemetryOnly = Equivalent(
+            previous,
+            candidate with { LiveReadings = previous.LiveReadings });
+        if (!telemetryOnly)
+        {
+            subscriptionHub.Publish(published);
+        }
     }
 
     private static bool Equivalent(ServiceStatusSnapshot left, ServiceStatusSnapshot right) =>

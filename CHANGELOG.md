@@ -56,6 +56,12 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Changed
 
+- Reduced foreground CPU use by letting WinUI update only the bindings whose
+  underlying values changed instead of invalidating every page binding for each
+  service update. Disabled live readings no longer poll the service, telemetry
+  changes no longer fan out to unrelated Session Agent features, read-only
+  observations reuse recent exact-device admission, and Ambient Awareness
+  reduces capture frequency only after the sampled screen remains static.
 - Promoted `Use profile settings` from an overflow menu to a page-header action
   on Dashboard, Laptop, Lighting, and Display whenever the current page differs
   from its active profile, including settings changed outside OpenBlade. Page

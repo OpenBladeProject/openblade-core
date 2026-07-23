@@ -2916,7 +2916,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     public TimeSpan LiveReadingsObservationInterval =>
         LiveReadingsRefreshCadence switch
         {
-            LiveReadingsCadence.Off => TimeSpan.FromSeconds(5),
+            LiveReadingsCadence.Off => Timeout.InfiniteTimeSpan,
             LiveReadingsCadence.EverySecond => TimeSpan.FromSeconds(1),
             LiveReadingsCadence.EveryTwoSeconds => TimeSpan.FromSeconds(2),
             LiveReadingsCadence.EveryFiveSeconds => TimeSpan.FromSeconds(5),
@@ -3321,6 +3321,10 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
                 requestedLiveReadings = ResolveRequestedLiveReadings(trayOnly);
             },
             cancellationToken);
+        if (requestedLiveReadings == LiveReadingSensors.None)
+        {
+            return;
+        }
 
         try
         {

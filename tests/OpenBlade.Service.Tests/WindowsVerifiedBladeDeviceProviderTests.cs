@@ -103,6 +103,30 @@ public sealed class WindowsVerifiedBladeDeviceProviderTests
         Assert.Equal(0, factory.OpenCount);
     }
 
+    [Fact]
+    public void ReadOnlyAdmissionReusesRecentIdentityButNormalAdmissionProbesAgain()
+    {
+        int probeCount = 0;
+        var factory = new FakeQueryFactory();
+        using var provider = new WindowsVerifiedBladeDeviceProvider(
+            () =>
+            {
+                probeCount++;
+                return Probe(BatteryValidationProbeClassification.Ready);
+            },
+            Adapt(factory),
+            UnavailableFanRpmFactory());
+
+        Assert.True(provider.TryGetVerifiedDevice(out IBladeDevice first));
+        Assert.True(provider.TryGetRecentlyVerifiedReadOnlyDevice(out IBladeDevice cached));
+        Assert.Same(first, cached);
+        Assert.Equal(1, probeCount);
+
+        Assert.True(provider.TryGetVerifiedDevice(out IBladeDevice freshlyVerified));
+        Assert.Same(first, freshlyVerified);
+        Assert.Equal(2, probeCount);
+    }
+
     [Theory]
     [InlineData(BatteryValidationProbeClassification.HostIdentityBlocked)]
     [InlineData(BatteryValidationProbeClassification.ConflictBlocked)]
