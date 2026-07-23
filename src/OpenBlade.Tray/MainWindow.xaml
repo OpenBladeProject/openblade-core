@@ -306,6 +306,7 @@
                                                   IsEnabled="{Binding CanRequestHardwareControl}"
                                                   ItemsSource="{Binding AvailableActivePerformanceOptions}"
                                                   SelectedItem="{Binding SelectedPerformanceOption, Mode=OneWay}"
+                                                  local:StableComboBoxSelection.Anchor="{Binding SelectedPerformanceOption, Mode=OneWay}"
                                                   SelectionChanged="OnDashboardPerformanceChanged" />
                                     </StackPanel>
                                 </Grid>
@@ -331,6 +332,7 @@
                                               IsEnabled="{Binding CanRequestHardwareControl}"
                                               ItemsSource="{Binding AvailableCustomCpuLevels}"
                                               SelectedItem="{Binding SelectedCustomCpuLevel}"
+                                              local:StableComboBoxSelection.Anchor="{Binding SelectedCustomCpuLevel, Mode=OneWay}"
                                               SelectionChanged="OnDashboardCustomCpuChanged" />
                                 </Grid>
                             </Border>
@@ -355,6 +357,7 @@
                                               IsEnabled="{Binding CanRequestHardwareControl}"
                                               ItemsSource="{Binding AvailableCustomGpuLevels}"
                                               SelectedItem="{Binding SelectedCustomGpuLevel}"
+                                              local:StableComboBoxSelection.Anchor="{Binding SelectedCustomGpuLevel, Mode=OneWay}"
                                               SelectionChanged="OnDashboardCustomGpuChanged" />
                                 </Grid>
                             </Border>
@@ -400,6 +403,7 @@
                                                   IsEnabled="{Binding CanEditFanControl}"
                                                   ItemsSource="{Binding AvailableActiveFanModeOptions}"
                                                   SelectedItem="{Binding SelectedFanModeOption, Mode=OneWay}"
+                                                  local:StableComboBoxSelection.Anchor="{Binding SelectedFanModeOption, Mode=OneWay}"
                                                   SelectionChanged="OnDashboardFanModeSelectionChanged" />
                                     </StackPanel>
                                 </Grid>
@@ -823,7 +827,8 @@
                                                   ItemsSource="{x:Bind AvailableLightingEffectOptions, Mode=OneWay}"
                                                   DisplayMemberPath="Label"
                                                   PlaceholderText="Current effect unavailable"
-                                                  SelectedItem="{x:Bind SelectedLightingEffectOption, Mode=TwoWay}" />
+                                                  SelectedItem="{x:Bind SelectedLightingEffectOption, Mode=TwoWay}"
+                                                  local:StableComboBoxSelection.Anchor="{x:Bind SelectedLightingEffectOption, Mode=OneWay}" />
                                     </Grid>
                                 </Border>
 
@@ -877,7 +882,8 @@
                                                   AutomationProperties.Name="Ambient Awareness screen region"
                                                   ItemsSource="{x:Bind AvailableAmbientAwarenessRegionOptions}"
                                                   DisplayMemberPath="Label"
-                                                  SelectedItem="{x:Bind SelectedAmbientAwarenessRegionOption, Mode=TwoWay}" />
+                                                  SelectedItem="{x:Bind SelectedAmbientAwarenessRegionOption, Mode=TwoWay}"
+                                                  local:StableComboBoxSelection.Anchor="{x:Bind SelectedAmbientAwarenessRegionOption, Mode=OneWay}" />
                                     </Grid>
                                 </Border>
 
@@ -899,7 +905,8 @@
                                                   Style="{StaticResource SettingsPickerStyle}"
                                                   AutomationProperties.Name="Breathing color mode"
                                                   ItemsSource="{x:Bind LightingBreathingColorModes}"
-                                                  SelectedItem="{x:Bind LightingBreathingColorModeEditor, Mode=TwoWay}" />
+                                                  SelectedItem="{x:Bind LightingBreathingColorModeEditor, Mode=TwoWay}"
+                                                  local:StableComboBoxSelection.Anchor="{x:Bind LightingBreathingColorModeEditor, Mode=OneWay}" />
                                     </Grid>
                                 </Border>
 
@@ -921,7 +928,8 @@
                                                   Style="{StaticResource SettingsPickerStyle}"
                                                   AutomationProperties.Name="Starlight color mode"
                                                   ItemsSource="{x:Bind LightingStarlightColorModes}"
-                                                  SelectedItem="{x:Bind LightingStarlightColorModeEditor, Mode=TwoWay}" />
+                                                  SelectedItem="{x:Bind LightingStarlightColorModeEditor, Mode=TwoWay}"
+                                                  local:StableComboBoxSelection.Anchor="{x:Bind LightingStarlightColorModeEditor, Mode=OneWay}" />
                                     </Grid>
                                 </Border>
 
@@ -964,7 +972,8 @@
                                                   AutomationProperties.Name="Lighting direction"
                                                   ItemsSource="{x:Bind LightingDirectionOptions, Mode=OneWay}"
                                                   DisplayMemberPath="Label"
-                                                  SelectedItem="{x:Bind SelectedLightingDirectionOption, Mode=TwoWay}" />
+                                                  SelectedItem="{x:Bind SelectedLightingDirectionOption, Mode=TwoWay}"
+                                                  local:StableComboBoxSelection.Anchor="{x:Bind SelectedLightingDirectionOption, Mode=OneWay}" />
                                     </Grid>
                                 </Border>
 
@@ -986,7 +995,8 @@
                                                   Style="{StaticResource SettingsPickerStyle}"
                                                   AutomationProperties.Name="Wheel rotation direction"
                                                   ItemsSource="{x:Bind LightingRotationDirections}"
-                                                  SelectedItem="{x:Bind LightingRotationDirectionEditor, Mode=TwoWay}" />
+                                                  SelectedItem="{x:Bind LightingRotationDirectionEditor, Mode=TwoWay}"
+                                                  local:StableComboBoxSelection.Anchor="{x:Bind LightingRotationDirectionEditor, Mode=OneWay}" />
                                     </Grid>
                                 </Border>
 
@@ -1097,7 +1107,8 @@
                                                   Style="{StaticResource SettingsPickerStyle}"
                                                   AutomationProperties.Name="Reactive lighting duration"
                                                   ItemsSource="{x:Bind LightingReactiveDurations}"
-                                                  SelectedItem="{x:Bind LightingReactiveDurationEditor, Mode=TwoWay}" />
+                                                  SelectedItem="{x:Bind LightingReactiveDurationEditor, Mode=TwoWay}"
+                                                  local:StableComboBoxSelection.Anchor="{x:Bind LightingReactiveDurationEditor, Mode=OneWay}" />
                                     </Grid>
                                 </Border>
 
@@ -1119,7 +1130,8 @@
                                                   Style="{StaticResource SettingsPickerStyle}"
                                                   AutomationProperties.Name="Starlight lighting duration"
                                                   ItemsSource="{x:Bind LightingStarlightDurations}"
-                                                  SelectedItem="{x:Bind LightingStarlightDurationEditor, Mode=TwoWay}" />
+                                                  SelectedItem="{x:Bind LightingStarlightDurationEditor, Mode=TwoWay}"
+                                                  local:StableComboBoxSelection.Anchor="{x:Bind LightingStarlightDurationEditor, Mode=OneWay}" />
                                     </Grid>
                                 </Border>
 
@@ -1150,7 +1162,8 @@
                                                   AutomationProperties.Name="Laptop logo lighting"
                                                   ItemsSource="{x:Bind AvailableLogoLightingModeOptions, Mode=OneWay}"
                                                   DisplayMemberPath="Label"
-                                                  SelectedItem="{x:Bind SelectedLogoLightingModeOption, Mode=TwoWay}" />
+                                                  SelectedItem="{x:Bind SelectedLogoLightingModeOption, Mode=TwoWay}"
+                                                  local:StableComboBoxSelection.Anchor="{x:Bind SelectedLogoLightingModeOption, Mode=OneWay}" />
                                     </Grid>
                                 </Border>
                             </StackPanel>
@@ -1268,6 +1281,7 @@
                                                   ItemsSource="{x:Bind RefreshRateOptions, Mode=OneWay}"
                                                   DisplayMemberPath="Label"
                                                   SelectedItem="{x:Bind SelectedRefreshRate, Mode=OneWay}"
+                                                  local:StableComboBoxSelection.Anchor="{x:Bind SelectedRefreshRate, Mode=OneWay}"
                                                   IsEnabled="{x:Bind CanChangeRefreshRate, Mode=OneWay}"
                                                   DropDownOpened="OnDisplayPickerOpened"
                                                   DropDownClosed="OnDisplayPickerClosed"
@@ -1319,6 +1333,7 @@
                                                   ItemsSource="{x:Bind ColorProfileOptions, Mode=OneWay}"
                                                   DisplayMemberPath="Label"
                                                   SelectedItem="{x:Bind SelectedColorProfile, Mode=OneWay}"
+                                                  local:StableComboBoxSelection.Anchor="{x:Bind SelectedColorProfile, Mode=OneWay}"
                                                   IsEnabled="{x:Bind CanChangeColorProfile, Mode=OneWay}"
                                                   DropDownOpened="OnDisplayPickerOpened"
                                                   DropDownClosed="OnDisplayPickerClosed"
@@ -1920,6 +1935,7 @@
                                       ItemsSource="{x:Bind ViewModel.ProfileComparisonOptions}"
                                       DisplayMemberPath="Label"
                                       SelectedItem="{x:Bind ViewModel.SelectedProfileComparisonOption, Mode=TwoWay}"
+                                      local:StableComboBoxSelection.Anchor="{x:Bind ViewModel.SelectedProfileComparisonOption, Mode=OneWay}"
                                       AutomationProperties.Name="Profile to review" />
                             <StackPanel Orientation="Horizontal" Spacing="8" Margin="4,0,0,10">
                                 <Border Style="{StaticResource ActiveProfilePillStyle}"
@@ -2307,7 +2323,8 @@
                                               AutomationProperties.Name="Live readings refresh interval"
                                               ItemsSource="{x:Bind ViewModel.LiveReadingsRefreshOptions, Mode=OneWay}"
                                               DisplayMemberPath="Label"
-                                              SelectedItem="{x:Bind ViewModel.SelectedLiveReadingsRefreshOption, Mode=TwoWay}" />
+                                              SelectedItem="{x:Bind ViewModel.SelectedLiveReadingsRefreshOption, Mode=TwoWay}"
+                                              local:StableComboBoxSelection.Anchor="{x:Bind ViewModel.SelectedLiveReadingsRefreshOption, Mode=OneWay}" />
                                 </Grid>
                             </Border>
                             <Border Style="{StaticResource SettingsRowStyle}">
@@ -2437,7 +2454,8 @@
                                               AutomationProperties.Name="App theme"
                                               ItemsSource="{x:Bind ViewModel.ThemeSelectionOptions, Mode=OneWay}"
                                               DisplayMemberPath="Label"
-                                              SelectedItem="{x:Bind ViewModel.SelectedThemeOption, Mode=TwoWay}" />
+                                              SelectedItem="{x:Bind ViewModel.SelectedThemeOption, Mode=TwoWay}"
+                                              local:StableComboBoxSelection.Anchor="{x:Bind ViewModel.SelectedThemeOption, Mode=OneWay}" />
                                 </Grid>
                             </Border>
                             <Border Style="{StaticResource SettingsRowStyle}">
@@ -2466,7 +2484,8 @@
                                                   AutomationProperties.Name="App accent color"
                                                   ItemsSource="{x:Bind AccentColorOptions, Mode=OneWay}"
                                                   DisplayMemberPath="Label"
-                                                  SelectedItem="{x:Bind SelectedAccentColorOption, Mode=TwoWay}" />
+                                                  SelectedItem="{x:Bind SelectedAccentColorOption, Mode=TwoWay}"
+                                                  local:StableComboBoxSelection.Anchor="{x:Bind SelectedAccentColorOption, Mode=OneWay}" />
                                     </StackPanel>
                                 </Grid>
                             </Border>

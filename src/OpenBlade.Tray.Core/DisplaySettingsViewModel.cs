@@ -620,7 +620,7 @@ public sealed class DisplaySettingsViewModel : INotifyPropertyChanged, IAsyncDis
     private void Apply(DisplaySettingsSnapshot state)
     {
         ArgumentNullException.ThrowIfNull(state);
-        RefreshRateOptions = ReuseWhenValueEqual(
+        RefreshRateOptions = StableOptionCollection.ReuseEquivalent(
             RefreshRateOptions,
             state.RefreshRateOptions ?? []);
         SelectedRefreshRate = RefreshRateOptions.FirstOrDefault(
@@ -628,7 +628,7 @@ public sealed class DisplaySettingsViewModel : INotifyPropertyChanged, IAsyncDis
                 option.Key,
                 state.SelectedRefreshRateKey,
                 StringComparison.Ordinal));
-        ColorProfileOptions = ReuseWhenValueEqual(
+        ColorProfileOptions = StableOptionCollection.ReuseEquivalent(
             ColorProfileOptions,
             state.ColorProfileOptions ?? []);
         SelectedColorProfile = ColorProfileOptions.FirstOrDefault(
@@ -687,27 +687,6 @@ public sealed class DisplaySettingsViewModel : INotifyPropertyChanged, IAsyncDis
         }
 
         return details.Count == 0 ? "Display available" : string.Join(" · ", details);
-    }
-
-    private static IReadOnlyList<T> ReuseWhenValueEqual<T>(
-        IReadOnlyList<T> current,
-        IReadOnlyList<T> incoming)
-    {
-        if (current.Count != incoming.Count)
-        {
-            return incoming;
-        }
-
-        EqualityComparer<T> comparer = EqualityComparer<T>.Default;
-        for (int index = 0; index < current.Count; index++)
-        {
-            if (!comparer.Equals(current[index], incoming[index]))
-            {
-                return incoming;
-            }
-        }
-
-        return current;
     }
 
     private void NotifyControlStateChanged()

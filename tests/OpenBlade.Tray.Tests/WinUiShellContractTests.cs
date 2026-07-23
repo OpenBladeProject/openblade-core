@@ -550,6 +550,25 @@ public sealed class WinUiShellContractTests
     }
 
     [Fact]
+    public void StableComboBoxSelection_ReplaysTheViewModelAnchorAfterSourceChanges()
+    {
+        string source = ReadRepositoryFile(
+            "src",
+            "OpenBlade.Tray",
+            "StableComboBoxSelection.cs");
+
+        Assert.Contains("ItemsControl.ItemsSourceProperty", source, StringComparison.Ordinal);
+        Assert.Contains("comboBox.SelectionChanged += OnSelectionChanged", source, StringComparison.Ordinal);
+        Assert.Contains("comboBox.Loaded += OnLoaded", source, StringComparison.Ordinal);
+        Assert.Contains("QueueReconcile(comboBox, state)", source, StringComparison.Ordinal);
+        Assert.Contains("TryFindEquivalentItem", source, StringComparison.Ordinal);
+        Assert.Contains(
+            "ReferenceEquals(item, anchor) || Equals(item, anchor)",
+            source,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void ActiveProfileAndNestedControlStylesHaveSingleSemanticRoles()
     {
         string xaml = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml");

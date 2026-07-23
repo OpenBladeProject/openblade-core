@@ -224,6 +224,24 @@ public sealed class CapabilityPresentationTests
     }
 
     [Fact]
+    public void EveryOptionPicker_HasAStableSelectionAnchor()
+    {
+        XDocument document = XDocument.Parse(ReadMainWindowXaml());
+        XElement[] optionPickers = document.Descendants()
+            .Where(element =>
+                element.Name.LocalName == "ComboBox"
+                && Attribute(element, "ItemsSource") is not null)
+            .ToArray();
+
+        Assert.NotEmpty(optionPickers);
+        Assert.All(optionPickers, picker =>
+        {
+            Assert.NotNull(Attribute(picker, "SelectedItem"));
+            Assert.NotNull(Attribute(picker, "StableComboBoxSelection.Anchor"));
+        });
+    }
+
+    [Fact]
     public void MainWindow_UsesInteractionTrackerScrollViewsWithEdgeAlignedPadding()
     {
         XDocument document = XDocument.Parse(ReadMainWindowXaml());

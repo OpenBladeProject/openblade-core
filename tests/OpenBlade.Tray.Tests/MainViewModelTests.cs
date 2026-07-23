@@ -1870,6 +1870,10 @@ public sealed class MainViewModelTests
         await WaitUntilAsync(() => viewModel.IsConnected);
         IReadOnlyList<PerformancePreset> originalOptions =
             viewModel.AvailablePerformancePresets;
+        IReadOnlyList<PerformancePresetOption> originalPresentedOptions =
+            viewModel.AvailableActivePerformanceOptions;
+        PerformancePresetOption originalSelection = Assert.IsType<PerformancePresetOption>(
+            viewModel.SelectedPerformanceOption);
 
         client.Publish(initial with
         {
@@ -1880,6 +1884,42 @@ public sealed class MainViewModelTests
             viewModel.ConnectionStatus == "Performance mode is already confirmed.");
 
         Assert.Same(originalOptions, viewModel.AvailablePerformancePresets);
+        Assert.Same(
+            originalPresentedOptions,
+            viewModel.AvailableActivePerformanceOptions);
+        Assert.Same(originalSelection, viewModel.SelectedPerformanceOption);
+        Assert.Same(
+            viewModel.SelectedPerformanceOption,
+            viewModel.AvailableActivePerformanceOptions.Single(option =>
+                option.Value == viewModel.SelectedPerformance));
+    }
+
+    [Fact]
+    public async Task ConditionalPickerOptionGetters_ReturnStableCollections()
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+
+        IReadOnlyList<CustomPerformanceLevel> cpuOptions =
+            viewModel.AvailableCustomCpuLevels;
+        IReadOnlyList<CustomPerformanceLevel> gpuOptions =
+            viewModel.AvailableCustomGpuLevels;
+        IReadOnlyList<LightingDirectionOption> standardDirections =
+            viewModel.LightingDirectionOptions;
+
+        Assert.Same(cpuOptions, viewModel.AvailableCustomCpuLevels);
+        Assert.Same(gpuOptions, viewModel.AvailableCustomGpuLevels);
+        Assert.Same(standardDirections, viewModel.LightingDirectionOptions);
+
+        viewModel.LightingEffectEditor = LightingEffect.Tidal;
+        IReadOnlyList<LightingDirectionOption> tidalDirections =
+            viewModel.LightingDirectionOptions;
+
+        Assert.NotSame(standardDirections, tidalDirections);
+        Assert.Same(tidalDirections, viewModel.LightingDirectionOptions);
+
+        viewModel.LightingEffectEditor = LightingEffect.Wave;
+        Assert.Same(standardDirections, viewModel.LightingDirectionOptions);
     }
 
     [Fact]

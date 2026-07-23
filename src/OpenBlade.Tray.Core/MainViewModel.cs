@@ -94,6 +94,27 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             .Select(mode => new LogoLightingModeOption(mode, mode.ToString()))
             .ToArray();
 
+    private static readonly IReadOnlyList<CustomPerformanceLevel> AllCustomPerformanceLevels =
+        Enum.GetValues<CustomPerformanceLevel>();
+
+    private static readonly IReadOnlyList<CustomPerformanceLevel> NonHighCustomPerformanceLevels =
+    [
+        CustomPerformanceLevel.Low,
+        CustomPerformanceLevel.Medium,
+    ];
+
+    private static readonly IReadOnlyList<LightingDirectionOption> StandardLightingDirectionOptions =
+    [
+        new(LightingDirection.Leftward, "Leftward"),
+        new(LightingDirection.Rightward, "Rightward"),
+    ];
+
+    private static readonly IReadOnlyList<LightingDirectionOption> TidalLightingDirectionOptions =
+    [
+        new(LightingDirection.Leftward, "Outward"),
+        new(LightingDirection.Rightward, "Inward"),
+    ];
+
     private static readonly RazerBladeModelInfo TargetLaptop =
         RazerBladeModelCatalog.Find(RazerBladeModelCatalog.OpenBladeTargetModelNumber)
         ?? throw new InvalidOperationException("The supported laptop is missing from the model catalog.");
@@ -1315,13 +1336,13 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
 
     public IReadOnlyList<CustomPerformanceLevel> AvailableCustomCpuLevels =>
         SelectedCustomGpuLevel == CustomPerformanceLevel.High
-            ? [CustomPerformanceLevel.Low, CustomPerformanceLevel.Medium]
-            : Enum.GetValues<CustomPerformanceLevel>();
+            ? NonHighCustomPerformanceLevels
+            : AllCustomPerformanceLevels;
 
     public IReadOnlyList<CustomPerformanceLevel> AvailableCustomGpuLevels =>
         SelectedCustomCpuLevel == CustomPerformanceLevel.High
-            ? [CustomPerformanceLevel.Low, CustomPerformanceLevel.Medium]
-            : Enum.GetValues<CustomPerformanceLevel>();
+            ? NonHighCustomPerformanceLevels
+            : AllCustomPerformanceLevels;
 
     public FanMode SelectedFanMode
     {
@@ -2418,16 +2439,8 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
 
     public IReadOnlyList<LightingDirectionOption> LightingDirectionOptions =>
         LightingEffectEditor == LightingEffect.Tidal
-            ?
-            [
-                new(LightingDirection.Leftward, "Outward"),
-                new(LightingDirection.Rightward, "Inward"),
-            ]
-            :
-            [
-                new(LightingDirection.Leftward, "Leftward"),
-                new(LightingDirection.Rightward, "Rightward"),
-            ];
+            ? TidalLightingDirectionOptions
+            : StandardLightingDirectionOptions;
 
     public LightingDirectionOption SelectedLightingDirectionOption
     {
@@ -3460,29 +3473,35 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         }
         var admittedPerformancePresets = performancePresets.ToHashSet();
         IReadOnlyList<PerformancePresetOption> pluggedInOptions =
-            PerformancePresetPresentation.CreateOptions(
-                PowerSource.PluggedIn,
-                admittedPerformancePresets);
+            StableOptionCollection.ReuseEquivalent(
+                AvailablePluggedInPerformanceOptions,
+                PerformancePresetPresentation.CreateOptions(
+                    PowerSource.PluggedIn,
+                    admittedPerformancePresets));
         IReadOnlyList<PerformancePresetOption> batteryOptions =
-            PerformancePresetPresentation.CreateOptions(
-                PowerSource.Battery,
-                admittedPerformancePresets);
+            StableOptionCollection.ReuseEquivalent(
+                AvailableBatteryPerformanceOptions,
+                PerformancePresetPresentation.CreateOptions(
+                    PowerSource.Battery,
+                    admittedPerformancePresets));
         IReadOnlyList<PerformancePresetOption> usbCOptions =
-            PerformancePresetPresentation.CreateOptions(
-                PowerSource.UsbC,
-                admittedPerformancePresets);
+            StableOptionCollection.ReuseEquivalent(
+                AvailableUsbCPerformanceOptions,
+                PerformancePresetPresentation.CreateOptions(
+                    PowerSource.UsbC,
+                    admittedPerformancePresets));
         bool performanceOptionsChanged = false;
-        if (!AvailablePluggedInPerformanceOptions.SequenceEqual(pluggedInOptions))
+        if (!ReferenceEquals(AvailablePluggedInPerformanceOptions, pluggedInOptions))
         {
             AvailablePluggedInPerformanceOptions = pluggedInOptions;
             performanceOptionsChanged = true;
         }
-        if (!AvailableBatteryPerformanceOptions.SequenceEqual(batteryOptions))
+        if (!ReferenceEquals(AvailableBatteryPerformanceOptions, batteryOptions))
         {
             AvailableBatteryPerformanceOptions = batteryOptions;
             performanceOptionsChanged = true;
         }
-        if (!AvailableUsbCPerformanceOptions.SequenceEqual(usbCOptions))
+        if (!ReferenceEquals(AvailableUsbCPerformanceOptions, usbCOptions))
         {
             AvailableUsbCPerformanceOptions = usbCOptions;
             performanceOptionsChanged = true;
@@ -3516,11 +3535,14 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
                 ? [FanMode.Automatic]
                 : [];
             var admittedFanModes = fanModes.ToHashSet();
-            availableFanModeOptions = FanModePresentation.CreateOptions(
-                admittedFanModes);
-            availableUsbCFanModeOptions = FanModePresentation.CreateOptions(
-                admittedFanModes,
-                automaticOnly: true);
+            availableFanModeOptions = StableOptionCollection.ReuseEquivalent(
+                availableFanModeOptions,
+                FanModePresentation.CreateOptions(admittedFanModes));
+            availableUsbCFanModeOptions = StableOptionCollection.ReuseEquivalent(
+                availableUsbCFanModeOptions,
+                FanModePresentation.CreateOptions(
+                    admittedFanModes,
+                    automaticOnly: true));
             PropertyChanged?.Invoke(
                 this,
                 new PropertyChangedEventArgs(nameof(PluggedInFanModeEditor)));
@@ -3544,12 +3566,15 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             AvailableLightingEffects.Count > 0
                 ? AvailableLightingEffects
                 : KnownLightingEffects;
-        LightingEffectOption[] lightingEffectOptions = presentedLightingEffects
-            .Select(CreateLightingEffectOption)
-            .OrderBy(option => option.Effect == LightingEffect.Off ? 0 : 1)
-            .ThenBy(option => option.Label, StringComparer.OrdinalIgnoreCase)
-            .ToArray();
-        if (!AvailableLightingEffectOptions.SequenceEqual(lightingEffectOptions))
+        IReadOnlyList<LightingEffectOption> lightingEffectOptions =
+            StableOptionCollection.ReuseEquivalent(
+                AvailableLightingEffectOptions,
+                presentedLightingEffects
+                    .Select(CreateLightingEffectOption)
+                    .OrderBy(option => option.Effect == LightingEffect.Off ? 0 : 1)
+                    .ThenBy(option => option.Label, StringComparer.OrdinalIgnoreCase)
+                    .ToArray());
+        if (!ReferenceEquals(AvailableLightingEffectOptions, lightingEffectOptions))
         {
             AvailableLightingEffectOptions = lightingEffectOptions;
             PropertyChanged?.Invoke(
@@ -3571,10 +3596,13 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             AvailableLightingEffects.Count == 0 && admittedLogoLightingModes.Length == 0
                 ? KnownLogoLightingModes
                 : admittedLogoLightingModes;
-        LogoLightingModeOption[] logoLightingModeOptions = presentedLogoLightingModes
-            .Select(mode => new LogoLightingModeOption(mode, mode.ToString()))
-            .ToArray();
-        if (!AvailableLogoLightingModeOptions.SequenceEqual(logoLightingModeOptions))
+        IReadOnlyList<LogoLightingModeOption> logoLightingModeOptions =
+            StableOptionCollection.ReuseEquivalent(
+                AvailableLogoLightingModeOptions,
+                presentedLogoLightingModes
+                    .Select(mode => new LogoLightingModeOption(mode, mode.ToString()))
+                    .ToArray());
+        if (!ReferenceEquals(AvailableLogoLightingModeOptions, logoLightingModeOptions))
         {
             AvailableLogoLightingModeOptions = logoLightingModeOptions;
             PropertyChanged?.Invoke(
