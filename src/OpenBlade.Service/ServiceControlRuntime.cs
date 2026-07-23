@@ -2131,8 +2131,11 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         ConfirmedDeviceState? confirmed = cachedConfirmed;
         if (outcome.Readback is not null)
         {
-            driftTracker.Observe(outcome.Readback);
-            confirmed = outcome.Readback;
+            confirmed = MergeScopedReadback(
+                subsystem,
+                cachedConfirmed,
+                outcome.Readback);
+            driftTracker.Observe(confirmed);
         }
 
         if (subsystem == DeviceSubsystem.Lighting)
@@ -2598,6 +2601,23 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         {
             failures.Add($"{label} could not be applied.");
         }
+    }
+
+    private static ConfirmedDeviceState MergeScopedReadback(
+        DeviceSubsystem subsystem,
+        ConfirmedDeviceState? cached,
+        ConfirmedDeviceState readback)
+    {
+        if (cached is null || subsystem != DeviceSubsystem.Lighting)
+        {
+            return readback;
+        }
+
+        return cached with
+        {
+            Lighting = readback.Lighting,
+            LogoLighting = readback.LogoLighting,
+        };
     }
 
     private static bool ShouldRetryPowerTransitionAccess(

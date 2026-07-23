@@ -389,6 +389,32 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
             }
         }
 
+        public async Task<ConfirmedDeviceState> ReadLightingStateAsync(
+            CancellationToken cancellationToken)
+        {
+            await EnterHardwareOperationAsync(cancellationToken).ConfigureAwait(false);
+            try
+            {
+                LightingSettings? lighting =
+                    await ReadLightingStateCoreAsync(cancellationToken).ConfigureAwait(false);
+                LogoLightingMode? logo =
+                    await ReadLogoLightingStateCoreAsync(cancellationToken)
+                        .ConfigureAwait(false);
+                return new ConfirmedDeviceState(
+                    Performance: null,
+                    Fans: null,
+                    Battery: null,
+                    Lighting: lighting)
+                {
+                    LogoLighting = logo,
+                };
+            }
+            finally
+            {
+                hardwareOperationGate.Release();
+            }
+        }
+
         private async Task<ConfirmedDeviceState> ReadBatteryStateOnceAsync(
             CancellationToken cancellationToken)
         {

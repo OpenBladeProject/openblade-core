@@ -175,7 +175,7 @@ public sealed class ControlCoordinatorTests
     public async Task Lighting_PostSetterReadFailure_KeepsValidatedWriteApplied()
     {
         RecordingBladeDevice device = CreateMismatchedDevice();
-        device.ReadStateFailureOnCall = 2;
+        device.ReadLightingStateFailureOnCall = 2;
         var coordinator = new ControlCoordinator(device);
 
         ScopedApplyOutcome outcome = await coordinator.ApplyLightingOutcomeAsync(
@@ -187,6 +187,43 @@ public sealed class ControlCoordinatorTests
         Assert.False(outcome.ReadbackMatched);
         Assert.False(outcome.DeviceAccessFailed);
         Assert.Equal(1, device.LightingSetCalls);
+    }
+
+    [Fact]
+    public async Task Lighting_BatteryStateFailureDoesNotBlockIndependentLightingWrite()
+    {
+        RecordingBladeDevice device = CreateMismatchedDevice();
+        device.ReadStateFailureOnCall = 1;
+        var coordinator = new ControlCoordinator(device);
+
+        ScopedApplyOutcome outcome = await coordinator.ApplyLightingOutcomeAsync(
+            TargetLighting,
+            CancellationToken.None);
+
+        Assert.Equal(ControlResultStatus.Applied, outcome.Result.Status);
+        Assert.True(outcome.WriteAttempted);
+        Assert.True(outcome.ReadbackMatched);
+        Assert.Equal(0, device.StateReadCalls);
+        Assert.Equal(2, device.LightingStateReadCalls);
+        Assert.Equal(1, device.LightingSetCalls);
+    }
+
+    [Fact]
+    public async Task Lighting_IndependentPreWriteReadFailureBlocksSetter()
+    {
+        RecordingBladeDevice device = CreateMismatchedDevice();
+        device.ReadLightingStateFailureOnCall = 1;
+        var coordinator = new ControlCoordinator(device);
+
+        ScopedApplyOutcome outcome = await coordinator.ApplyLightingOutcomeAsync(
+            TargetLighting,
+            CancellationToken.None);
+
+        Assert.Equal(ControlResultStatus.Failed, outcome.Result.Status);
+        Assert.False(outcome.WriteAttempted);
+        Assert.False(outcome.ReadbackMatched);
+        Assert.Equal(1, device.LightingStateReadCalls);
+        Assert.Equal(0, device.LightingSetCalls);
     }
 
     [Fact]
@@ -307,7 +344,10 @@ public sealed class ControlCoordinatorTests
         ControlResult result = await ApplyScopedAsync(coordinator, subsystem);
 
         Assert.Equal(ControlResultStatus.Applied, result.Status);
-        Assert.Equal(["Capabilities", "State", setterCall, "State"], device.Calls);
+        string stateCall = subsystem == DeviceSubsystem.Lighting
+            ? "LightingState"
+            : "State";
+        Assert.Equal(["Capabilities", stateCall, setterCall, stateCall], device.Calls);
         Assert.Equal(1, device.TotalSetterCalls);
     }
 
@@ -324,7 +364,12 @@ public sealed class ControlCoordinatorTests
         ControlResult result = await ApplyScopedAsync(coordinator, subsystem);
 
         Assert.Equal(ControlResultStatus.Unchanged, result.Status);
-        Assert.Equal(["Capabilities", "State"], device.Calls);
+        Assert.Equal(
+            [
+                "Capabilities",
+                subsystem == DeviceSubsystem.Lighting ? "LightingState" : "State",
+            ],
+            device.Calls);
         Assert.Equal(0, device.TotalSetterCalls);
     }
 
@@ -1112,6 +1157,8 @@ public sealed class ControlCoordinatorTests
 
         public int? ReadStateFailureOnCall { get; set; }
 
+        public int? ReadLightingStateFailureOnCall { get; set; }
+
         public Exception? PerformanceFailure { get; set; }
 
         public Exception? FanFailure { get; set; }
@@ -1133,6 +1180,8 @@ public sealed class ControlCoordinatorTests
         public int LightingSetCalls { get; private set; }
 
         public int StateReadCalls { get; private set; }
+
+        public int LightingStateReadCalls { get; private set; }
 
         public int TotalSetterCalls => PerformanceSetCalls
             + GpuClockSetCalls
@@ -1158,6 +1207,20 @@ public sealed class ControlCoordinatorTests
             }
 
             AfterReadState?.Invoke(StateReadCalls);
+            return Task.FromResult(State);
+        }
+
+        public Task<ConfirmedDeviceState> ReadLightingStateAsync(
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            Calls.Add("LightingState");
+            LightingStateReadCalls++;
+            if (ReadLightingStateFailureOnCall == LightingStateReadCalls)
+            {
+                throw new IOException("lighting readback failed");
+            }
+
             return Task.FromResult(State);
         }
 

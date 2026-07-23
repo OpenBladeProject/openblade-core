@@ -8,6 +8,10 @@ public interface IBladeDevice
 
     Task<ConfirmedDeviceState> ReadStateAsync(CancellationToken cancellationToken);
 
+    Task<ConfirmedDeviceState> ReadLightingStateAsync(
+        CancellationToken cancellationToken) =>
+        ReadStateAsync(cancellationToken);
+
     Task<FanRpmReadings?> ReadFanRpmAsync(CancellationToken cancellationToken);
 
     Task<AdapterPowerState> ReadAdapterPowerStateAsync(

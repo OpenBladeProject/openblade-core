@@ -213,6 +213,36 @@ public sealed class FunctionRowActionExecutorTests
                 direction));
     }
 
+    [Fact]
+    public void SelectAdjacentLevel_DensePanelUsesVisibleTenPointStep()
+    {
+        byte[] levels = Enumerable.Range(0, 101).Select(value => (byte)value).ToArray();
+
+        Assert.Equal(
+            (byte)82,
+            WmiDisplayBrightnessController.SelectAdjacentLevel(92, levels, -1));
+        Assert.Equal(
+            (byte)100,
+            WmiDisplayBrightnessController.SelectAdjacentLevel(92, levels, 1));
+    }
+
+    [Theory]
+    [InlineData(5, new byte[] { 0, 1, 2, 3, 4, 5, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100 }, -1, 0)]
+    [InlineData(96, new byte[] { 0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 96, 97, 98, 99, 100 }, 1, 100)]
+    public void SelectAdjacentLevel_NearBoundaryUsesLastSupportedLevel(
+        byte current,
+        byte[] levels,
+        int direction,
+        byte expected)
+    {
+        Assert.Equal(
+            expected,
+            WmiDisplayBrightnessController.SelectAdjacentLevel(
+                current,
+                levels,
+                direction));
+    }
+
     [Theory]
     [InlineData(0, -1)]
     [InlineData(100, 1)]

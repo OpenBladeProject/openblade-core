@@ -264,7 +264,8 @@ public sealed class ControlCoordinator
             cancellationToken,
             acceptSetterCompletionWithoutReadback: value.Effect != LightingEffect.Off,
             setterCompletionEvidence: state => LogoMatches(state, value),
-            forceWrite: forceWrite);
+            forceWrite: forceWrite,
+            stateReader: device.ReadLightingStateAsync);
 
     internal async Task<FullTransitionApplyOutcome> ApplyDesiredStateOutcomeAsync(
         DesiredDeviceState desired,
@@ -700,7 +701,8 @@ public sealed class ControlCoordinator
         bool acceptSetterCompletionWithoutReadback = false,
         Func<ConfirmedDeviceState, bool>? setterCompletionEvidence = null,
         bool forceWrite = false,
-        Func<ConfirmedDeviceState, CancellationToken, Task>? stateAwareSetter = null)
+        Func<ConfirmedDeviceState, CancellationToken, Task>? stateAwareSetter = null,
+        Func<CancellationToken, Task<ConfirmedDeviceState>>? stateReader = null)
     {
         if (!valid)
         {
@@ -717,6 +719,8 @@ public sealed class ControlCoordinator
         bool setterCompleted = false;
         DeviceCapabilities? capabilities = null;
         ConfirmedDeviceState? initial = null;
+        Func<CancellationToken, Task<ConfirmedDeviceState>> readState =
+            stateReader ?? device.ReadStateAsync;
         try
         {
             capabilities = await device.ReadCapabilitiesAsync(cancellationToken);
@@ -732,7 +736,7 @@ public sealed class ControlCoordinator
                     DeviceAccessFailed: false);
             }
 
-            initial = await device.ReadStateAsync(cancellationToken);
+            initial = await readState(cancellationToken);
             cancellationToken.ThrowIfCancellationRequested();
             if (!forceWrite && matches(initial))
             {
@@ -764,7 +768,7 @@ public sealed class ControlCoordinator
                 : stateAwareSetter(initial, cancellationToken));
             setterCompleted = true;
             cancellationToken.ThrowIfCancellationRequested();
-            ConfirmedDeviceState final = await device.ReadStateAsync(cancellationToken);
+            ConfirmedDeviceState final = await readState(cancellationToken);
             cancellationToken.ThrowIfCancellationRequested();
             if (matches(final))
             {

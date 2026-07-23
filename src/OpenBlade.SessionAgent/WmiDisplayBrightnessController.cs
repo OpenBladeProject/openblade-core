@@ -4,12 +4,14 @@ namespace OpenBlade.SessionAgent;
 
 /// <summary>
 /// Adjusts the built-in panel through Windows' monitor-brightness WMI provider.
-/// The provider supplies the display's discrete supported levels, so OpenBlade
-/// does not hardcode a percentage step that the panel may reject.
+/// The provider supplies the display's discrete supported levels. OpenBlade
+/// moves by a visible ten-percentage-point step, then selects the first
+/// supported level at or beyond that target in the requested direction.
 /// </summary>
 public sealed class WmiDisplayBrightnessController : IDisplayBrightnessController
 {
     private const string WmiNamespace = @"root\wmi";
+    private const byte BrightnessStep = 10;
 
     public Task<bool> AdjustAsync(
         int direction,
@@ -43,9 +45,28 @@ public sealed class WmiDisplayBrightnessController : IDisplayBrightnessControlle
             .Distinct()
             .Order()
             .ToArray();
-        return direction < 0
-            ? levels.Where(level => level < current).Select<byte, byte?>(level => level).LastOrDefault()
-            : levels.Where(level => level > current).Select<byte, byte?>(level => level).FirstOrDefault();
+        if (direction < 0)
+        {
+            byte target = (byte)Math.Max(byte.MinValue, current - BrightnessStep);
+            return levels
+                .Where(level => level < current && level <= target)
+                .Select<byte, byte?>(level => level)
+                .LastOrDefault()
+                ?? levels
+                    .Where(level => level < current)
+                    .Select<byte, byte?>(level => level)
+                    .FirstOrDefault();
+        }
+
+        byte upperTarget = (byte)Math.Min(100, current + BrightnessStep);
+        return levels
+            .Where(level => level > current && level >= upperTarget)
+            .Select<byte, byte?>(level => level)
+            .FirstOrDefault()
+            ?? levels
+                .Where(level => level > current)
+                .Select<byte, byte?>(level => level)
+                .LastOrDefault();
     }
 
     private static bool AdjustCore(

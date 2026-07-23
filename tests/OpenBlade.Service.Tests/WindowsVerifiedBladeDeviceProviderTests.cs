@@ -287,6 +287,33 @@ public sealed class WindowsVerifiedBladeDeviceProviderTests
     }
 
     [Fact]
+    public async Task ReadLightingState_DoesNotOpenBatteryPort()
+    {
+        var batteryFactory = new FakeQueryFactory();
+        var lightingPort = new FakeLightingPort();
+        var lightingFactory = new FakeLightingFactory(lightingPort);
+        using var provider = new WindowsVerifiedBladeDeviceProvider(
+            () => Probe(BatteryValidationProbeClassification.Ready),
+            Adapt(batteryFactory),
+            UnavailableFanRpmFactory(),
+            lightingFactory);
+        Assert.True(provider.TryGetVerifiedDevice(out IBladeDevice device));
+        LightingSettings expected = LightingSettingsFactory.Static(
+            new RgbColor(0x47, 0xE1, 0x0C),
+            50);
+        await device.SetLightingAsync(expected, default);
+
+        ConfirmedDeviceState state = await device.ReadLightingStateAsync(default);
+
+        Assert.Equal(expected, state.Lighting);
+        Assert.Null(state.Battery);
+        Assert.Null(state.Performance);
+        Assert.Null(state.Fans);
+        Assert.Equal(0, batteryFactory.OpenCount);
+        Assert.Equal(1, lightingFactory.OpenCount);
+    }
+
+    [Fact]
     public async Task DisposeWhileProbeIsBlocked_PreventsStaleDevicePublication()
     {
         using var probeStarted = new ManualResetEventSlim();

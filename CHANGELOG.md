@@ -7,8 +7,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Added
 
-- About now lists the installed app, Session Agent, Windows service, and
-  installer build versions, including each component's commit hash.
+- About now lists the installed app, Session Agent, and Service build
+  versions, including each component's commit hash.
 - Added a session-local function-row bridge for validated RZ09-0581 Driver
   mode. It reconstructs volume, playback, Project, Print Screen, built-in
   display brightness, and keyboard brightness behavior while preserving the
@@ -135,6 +135,10 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Made F8 and F9 move the built-in display by a visible 10 percentage points
+  while still selecting only brightness levels reported by Windows.
+- Kept keyboard-brightness writes independent from battery readback failures.
+  Lighting still validates its own state before and after every write.
 - Fixed the performance shortcut being ignored after OpenBlade detected an
   external performance or fan change. Pressing the dedicated performance key
   or Fn+P now explicitly selects the next mode while preserving unrelated
