@@ -3788,14 +3788,12 @@ public sealed class MainViewModelTests
             new FakeStartupRegistration(false),
             uiVersion: "2.0.0",
             sessionAgentVersion: "1.8.0",
-            installedServiceVersion: "1.6.0",
-            setupVersion: "1.7.0");
+            installedServiceVersion: "1.6.0");
         await viewModel.StartAsync();
 
         Assert.Equal("2.0.0", viewModel.AboutUiVersionStatus);
         Assert.Equal("1.8.0", viewModel.AboutSessionAgentVersionStatus);
         Assert.Equal("1.6.0", viewModel.AboutServiceVersionStatus);
-        Assert.Equal("1.7.0", viewModel.AboutSetupVersionStatus);
 
         client.Publish(CreateStatus(verified: true, blocked: false) with
         {
@@ -3818,11 +3816,9 @@ public sealed class MainViewModelTests
             new FakeDiagnosticArchiveSaver(),
             new FakeStartupRegistration(false),
             uiVersion: "2.0.0",
-            sessionAgentVersion: " ",
-            setupVersion: null);
+            sessionAgentVersion: " ");
 
         Assert.Equal("Unavailable", viewModel.AboutSessionAgentVersionStatus);
-        Assert.Equal("Unavailable", viewModel.AboutSetupVersionStatus);
     }
 
     [Fact]

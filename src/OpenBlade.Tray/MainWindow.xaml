@@ -3011,24 +3011,14 @@
                                                    AutomationProperties.Name="OpenBlade Session Agent version" />
                                     </Grid>
                                 </Border>
-                                <Border Style="{StaticResource SettingsRowStyle}">
+                                <Border Style="{StaticResource SettingsLastRowStyle}">
                                     <Grid ColumnSpacing="24">
                                         <Grid.ColumnDefinitions><ColumnDefinition Width="2*" /><ColumnDefinition Width="3*" /></Grid.ColumnDefinitions>
-                                        <TextBlock Text="Windows service" Style="{StaticResource CardTitleStyle}" />
+                                        <TextBlock Text="Service" Style="{StaticResource CardTitleStyle}" />
                                         <TextBlock Grid.Column="1"
                                                    Text="{x:Bind ViewModel.AboutServiceVersionStatus, Mode=OneWay}"
                                                    Style="{StaticResource TroubleshootingValueStyle}"
                                                    AutomationProperties.Name="OpenBlade service version" />
-                                    </Grid>
-                                </Border>
-                                <Border Style="{StaticResource SettingsLastRowStyle}">
-                                    <Grid ColumnSpacing="24">
-                                        <Grid.ColumnDefinitions><ColumnDefinition Width="2*" /><ColumnDefinition Width="3*" /></Grid.ColumnDefinitions>
-                                        <TextBlock Text="Installer" Style="{StaticResource CardTitleStyle}" />
-                                        <TextBlock Grid.Column="1"
-                                                   Text="{x:Bind ViewModel.AboutSetupVersionStatus, Mode=OneWay}"
-                                                   Style="{StaticResource TroubleshootingValueStyle}"
-                                                   AutomationProperties.Name="OpenBlade installer version" />
                                     </Grid>
                                 </Border>
                             </StackPanel>

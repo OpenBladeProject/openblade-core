@@ -130,7 +130,6 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     private readonly string uiVersion;
     private readonly string sessionAgentVersion;
     private readonly string installedServiceVersion;
-    private readonly string setupVersion;
     private readonly string applicationBaseDirectory;
     private readonly CancellationTokenSource lifetime = new();
     private readonly object startSync = new();
@@ -330,7 +329,6 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         string? uiVersion = null,
         string? sessionAgentVersion = null,
         string? installedServiceVersion = null,
-        string? setupVersion = null,
         string? applicationBaseDirectory = null)
     {
         this.serviceClient = serviceClient ?? throw new ArgumentNullException(nameof(serviceClient));
@@ -345,7 +343,6 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             : uiVersion.Trim();
         this.sessionAgentVersion = ComponentVersionValue(sessionAgentVersion);
         this.installedServiceVersion = ComponentVersionValue(installedServiceVersion);
-        this.setupVersion = ComponentVersionValue(setupVersion);
         this.applicationBaseDirectory = string.IsNullOrWhiteSpace(applicationBaseDirectory)
             ? AppContext.BaseDirectory
             : applicationBaseDirectory.Trim();
@@ -1085,8 +1082,6 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         !IsConnected || string.IsNullOrWhiteSpace(latestStatus?.ServiceVersion)
             ? installedServiceVersion
             : latestStatus.ServiceVersion.Trim();
-
-    public string AboutSetupVersionStatus => setupVersion;
 
     public string AboutDetectedLaptopStatus => !IsConnected
         ? "Unavailable"

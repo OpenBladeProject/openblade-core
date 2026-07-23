@@ -104,9 +104,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             sessionAgentVersion: InstalledComponentVersion.ReadSibling(
                 "OpenBlade.SessionAgent.exe"),
             installedServiceVersion: InstalledComponentVersion.ReadSibling(
-                "OpenBlade.Service.exe"),
-            setupVersion: InstalledComponentVersion.ReadSibling(
-                "OpenBlade.Setup.exe"));
+                "OpenBlade.Service.exe"));
         displaySettingsAdapter = new SessionDisplaySettingsAdapter();
         DisplayViewModel = new DisplaySettingsViewModel(displaySettingsAdapter);
         DisplayViewModel.UserSettingsChanged += OnDisplayUserSettingsChanged;
