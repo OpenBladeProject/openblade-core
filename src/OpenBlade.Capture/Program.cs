@@ -73,6 +73,35 @@ if (args.Length == 1 && args[0].Equals("query-display", StringComparison.Ordinal
     return state.IsAvailable ? 0 : 3;
 }
 
+if (args.Length == 1 && args[0].Equals(
+    "probe-gpu-clock-offsets",
+    StringComparison.OrdinalIgnoreCase))
+{
+    return GpuClockOffsetProbeCommand.Run(
+        new NvidiaNvmlGpuClockOffsetProbe(),
+        Console.Out);
+}
+
+if (args.Length is 1 or 2 && args[0].Equals(
+    "probe-special-keys",
+    StringComparison.OrdinalIgnoreCase))
+{
+    int seconds = args.Length == 2 && int.TryParse(args[1], out int parsedSeconds)
+        ? parsedSeconds
+        : 30;
+    try
+    {
+        return new SpecialKeyInputProbe(Console.Out).Run(TimeSpan.FromSeconds(seconds));
+    }
+    catch (Exception exception) when (
+        exception is System.ComponentModel.Win32Exception
+        or ArgumentOutOfRangeException)
+    {
+        Console.Error.WriteLine($"Special-key probe failed: {exception.Message}");
+        return 2;
+    }
+}
+
 if (args.Length > 0 && args[0].Equals("probe-battery", StringComparison.OrdinalIgnoreCase))
 {
     var command = new BatteryProbeCommand(BatteryValidationFactory.ProbeWindows, Console.Out);
@@ -215,6 +244,8 @@ Console.WriteLine("  OpenBlade.Capture target");
 Console.WriteLine("  OpenBlade.Capture scan");
 Console.WriteLine("  OpenBlade.Capture scan-all");
 Console.WriteLine("  OpenBlade.Capture query-display");
+Console.WriteLine("  OpenBlade.Capture probe-gpu-clock-offsets");
+Console.WriteLine("  OpenBlade.Capture probe-special-keys [seconds]");
 Console.WriteLine("  OpenBlade.Capture validate <fixtures.json>");
 Console.WriteLine("  OpenBlade.Capture probe-battery");
 Console.WriteLine("  OpenBlade.Capture query-battery");
