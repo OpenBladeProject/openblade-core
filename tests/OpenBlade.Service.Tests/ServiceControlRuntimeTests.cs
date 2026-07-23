@@ -2667,6 +2667,67 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     }
 
     [Fact]
+    public async Task PerformanceShortcut_ExplicitlyReclaimsExternalPerformanceChange()
+    {
+        TestContext context = CreateWritableContext();
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        context.Device.ConfirmedState = context.Device.ConfirmedState with
+        {
+            Performance = PerformancePreset.Performance,
+        };
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        Assert.Equal(
+            [DeviceSubsystem.Performance],
+            context.Runtime.GetStatus().ExternalChanges);
+
+        ControlOperationResult result = await context.Runtime
+            .CyclePerformanceShortcutAsync(
+                PerformanceShortcutSource.DedicatedButton,
+                CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Applied, result.Status);
+        Assert.Equal(
+            "The performance button selected Custom.",
+            result.Message);
+        Assert.Equal(
+            PerformancePreset.Custom,
+            context.Runtime.GetStatus().ConfirmedState!.Performance);
+        Assert.Equal(
+            PerformancePreset.Custom,
+            context.Runtime.GetStatus().PerformanceOverride!.Value);
+        Assert.Empty(context.Runtime.GetStatus().ExternalChanges);
+    }
+
+    [Fact]
+    public async Task PerformanceShortcut_DoesNotClaimUnrelatedExternalFanChange()
+    {
+        TestContext context = CreateWritableContext();
+        context.Device.ConfirmedState = context.Device.ConfirmedState with
+        {
+            Fans = FanMode.Maximum,
+        };
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        context.Device.ConfirmedState = context.Device.ConfirmedState with
+        {
+            Fans = FanMode.Automatic,
+        };
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        Assert.Equal(
+            [DeviceSubsystem.Fans],
+            context.Runtime.GetStatus().ExternalChanges);
+
+        ControlOperationResult result = await context.Runtime
+            .CyclePerformanceShortcutAsync(
+                PerformanceShortcutSource.DedicatedButton,
+                CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Applied, result.Status);
+        Assert.Equal(
+            [DeviceSubsystem.Fans],
+            context.Runtime.GetStatus().ExternalChanges);
+    }
+
+    [Fact]
     public async Task PerformanceShortcut_IsNoOpOnUsbCWhereOnlyBalancedIsAdmitted()
     {
         TestContext context = CreateContext(

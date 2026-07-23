@@ -100,6 +100,10 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Fixed the performance shortcut being ignored after OpenBlade detected an
+  external performance or fan change. Pressing the dedicated performance key
+  or Fn+P now explicitly selects the next mode while preserving unrelated
+  external-change warnings.
 - Restored the validated firmware Driver-mode lifecycle required by the
   extended Fn layer, performance key, and M1 through M5. OpenBlade verifies the
   mode when opening the device, rechecks it every 15 seconds, and writes only

@@ -513,18 +513,6 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             }
 
             ServiceStatusSnapshot current = GetStatus();
-            if (current.ExternalChanges.Contains(DeviceSubsystem.Performance)
-                || current.ExternalChanges.Contains(DeviceSubsystem.Fans))
-            {
-                const string conflictMessage =
-                    "The performance shortcut is paused because an external performance or fan change is present.";
-                history.RecordSummary(ControlOperationStatus.Blocked, conflictMessage);
-                PublishIfChanged(current with { Message = conflictMessage });
-                return new ControlOperationResult(
-                    ControlOperationStatus.Blocked,
-                    conflictMessage);
-            }
-
             IReadOnlyList<PerformancePreset> cycle = PerformanceShortcutCycle(
                 powerSource,
                 current.Capabilities?.PerformancePresets);
@@ -539,9 +527,13 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                     unavailableMessage);
             }
 
-            PerformancePreset currentPreset = Automation
-                .Resolve(current.ConfirmedState ?? UnknownConfirmedState)
-                .Performance.Value;
+            PerformancePreset currentPreset =
+                current.ExternalChanges.Contains(DeviceSubsystem.Performance)
+                    && current.ConfirmedState?.Performance is { } observedPreset
+                    ? observedPreset
+                    : Automation
+                        .Resolve(current.ConfirmedState ?? UnknownConfirmedState)
+                        .Performance.Value;
             int currentIndex = -1;
             for (int index = 0; index < cycle.Count; index++)
             {
