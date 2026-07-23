@@ -1498,10 +1498,16 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         if (changingSpecialKeyBindings
             || sender is not Microsoft.UI.Xaml.Controls.ComboBox
             {
-                DataContext: SpecialKeyBindingViewModel binding,
+                Tag: SpecialKeySlot slot,
                 SelectedItem: SpecialKeyActionOption selectedAction,
-            }
-            || binding.SelectedAction == selectedAction)
+            })
+        {
+            return;
+        }
+
+        SpecialKeyBindingViewModel? binding = SpecialKeyBindings
+            .FirstOrDefault(candidate => candidate.Slot == slot);
+        if (binding is null || binding.SelectedAction == selectedAction)
         {
             return;
         }

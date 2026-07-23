@@ -2244,6 +2244,7 @@
                                                                   SelectedItem="{x:Bind SelectedAction, Mode=OneWay}"
                                                                   local:StableComboBoxSelection.Anchor="{x:Bind SelectedAction, Mode=OneWay}"
                                                                   SelectionChanged="OnSpecialKeyActionSelectionChanged"
+                                                                  Tag="{x:Bind Slot}"
                                                                   AutomationProperties.Name="{x:Bind SlotLabel}" />
                                                     </Grid>
                                                     <Grid Visibility="{x:Bind ValueEditorVisibility, Mode=OneWay}"

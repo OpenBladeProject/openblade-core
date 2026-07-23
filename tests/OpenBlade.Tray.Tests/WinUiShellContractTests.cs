@@ -1124,6 +1124,10 @@ public sealed class WinUiShellContractTests
             "SelectionChanged=\"OnSpecialKeyActionSelectionChanged\"",
             xaml,
             StringComparison.Ordinal);
+        Assert.Contains(
+            "Tag=\"{x:Bind Slot}\"",
+            xaml,
+            StringComparison.Ordinal);
         Assert.DoesNotContain(
             "Text=\"{x:Bind PhysicalKeyLabel}\"",
             xaml,
