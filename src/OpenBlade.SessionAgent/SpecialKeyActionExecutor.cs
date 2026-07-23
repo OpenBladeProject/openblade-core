@@ -218,6 +218,7 @@ public sealed class WindowsSpecialKeyInputSender : ISpecialKeyInputSender
 {
     private const uint InputMouse = 0;
     private const uint InputKeyboard = 1;
+    private const uint KeyEventExtendedKey = 0x0001;
     private const uint KeyEventKeyUp = 0x0002;
     private const uint KeyEventUnicode = 0x0004;
     private const uint MouseLeftDown = 0x0002;
@@ -468,7 +469,11 @@ public sealed class WindowsSpecialKeyInputSender : ISpecialKeyInputSender
         Type = InputKeyboard,
         Data = new InputUnion
         {
-            Keyboard = new KeyboardInput { VirtualKey = key },
+            Keyboard = new KeyboardInput
+            {
+                VirtualKey = key,
+                Flags = IsExtendedKey(key) ? KeyEventExtendedKey : 0,
+            },
         },
     };
 
@@ -480,10 +485,16 @@ public sealed class WindowsSpecialKeyInputSender : ISpecialKeyInputSender
             Keyboard = new KeyboardInput
             {
                 VirtualKey = key,
-                Flags = KeyEventKeyUp,
+                Flags = KeyEventKeyUp
+                    | (IsExtendedKey(key) ? KeyEventExtendedKey : 0),
             },
         },
     };
+
+    private static bool IsExtendedKey(ushort key) => key is
+        0x21 or 0x22 or 0x23 or 0x24
+        or 0x25 or 0x26 or 0x27 or 0x28
+        or 0x2D or 0x2E;
 
     private static NativeInput Unicode(char character, bool keyUp) => new()
     {

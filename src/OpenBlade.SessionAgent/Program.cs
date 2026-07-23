@@ -78,7 +78,11 @@ internal static class Program
                     Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
                     "OpenBlade",
                     "preferences.json");
-                var specialKeyBindings = new SpecialKeyBindingSource(preferencesPath);
+                var specialKeyBindings = new SpecialKeyBindingSource(
+                    preferencesPath,
+                    exception => System.Diagnostics.Trace.TraceWarning(
+                        "OpenBlade shortcut preference refresh failed: {0}",
+                        exception.Message));
                 var specialKeyExecutor = new SpecialKeyActionExecutor(
                     specialKeyBindings,
                     new ServiceClient(),
