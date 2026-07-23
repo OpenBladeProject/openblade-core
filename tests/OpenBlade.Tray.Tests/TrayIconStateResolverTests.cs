@@ -10,6 +10,7 @@ public sealed class TrayIconStateResolverTests
             { PowerSource.PluggedIn, PerformancePreset.Balanced, TrayIconState.AcBalanced },
             { PowerSource.PluggedIn, PerformancePreset.Silent, TrayIconState.AcSilent },
             { PowerSource.PluggedIn, PerformancePreset.Performance, TrayIconState.AcPerformance },
+            { PowerSource.PluggedIn, PerformancePreset.Custom, TrayIconState.AcCustom },
             { PowerSource.UsbC, PerformancePreset.Balanced, TrayIconState.UsbCBalanced },
             { PowerSource.Battery, PerformancePreset.Balanced, TrayIconState.BatteryBalanced },
             { PowerSource.Battery, PerformancePreset.BatteryBalanced, TrayIconState.BatteryBalanced },

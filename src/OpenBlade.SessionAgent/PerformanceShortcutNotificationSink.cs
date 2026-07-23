@@ -1,11 +1,38 @@
 using Microsoft.Windows.AppNotifications;
 using Microsoft.Windows.AppNotifications.Builder;
+using OpenBlade.Contracts;
+using OpenBlade.Tray;
 
 namespace OpenBlade.SessionAgent;
 
 public interface IPerformanceShortcutNotificationSink : IDisposable
 {
     void ShowApplied(string message);
+}
+
+public static class PerformanceShortcutNotificationText
+{
+    private const string SelectedMarker = " selected ";
+
+    public static string FormatAppliedBody(string serviceMessage)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(serviceMessage);
+
+        int markerIndex = serviceMessage.LastIndexOf(
+            SelectedMarker,
+            StringComparison.Ordinal);
+        if (markerIndex < 0)
+        {
+            return serviceMessage;
+        }
+
+        string selectedValue = serviceMessage[
+            (markerIndex + SelectedMarker.Length)..].TrimEnd('.');
+        return Enum.TryParse(selectedValue, ignoreCase: false, out PerformancePreset preset)
+            && Enum.IsDefined(preset)
+                ? $"Current mode: {PerformancePresetPresentation.Label(preset)}"
+                : serviceMessage;
+    }
 }
 
 internal sealed class NullPerformanceShortcutNotificationSink
@@ -74,7 +101,7 @@ public sealed class WindowsPerformanceShortcutNotificationSink
         {
             AppNotification notification = new AppNotificationBuilder()
                 .AddText("Performance mode changed")
-                .AddText(message)
+                .AddText(PerformanceShortcutNotificationText.FormatAppliedBody(message))
                 .BuildNotification();
             manager.Show(notification);
         }

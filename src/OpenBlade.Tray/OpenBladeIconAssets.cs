@@ -8,6 +8,7 @@ public static class OpenBladeIconAssets
             [TrayIconState.AcBalanced] = "ac-balanced",
             [TrayIconState.AcSilent] = "ac-silent",
             [TrayIconState.AcPerformance] = "ac-performance",
+            [TrayIconState.AcCustom] = "ac-custom",
             [TrayIconState.UsbCBalanced] = "usb-c-balanced",
             [TrayIconState.BatteryBalanced] = "battery-balanced",
             [TrayIconState.BatterySaver] = "battery-saver",

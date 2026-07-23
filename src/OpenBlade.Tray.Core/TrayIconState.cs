@@ -8,6 +8,7 @@ public enum TrayIconState
     AcBalanced,
     AcSilent,
     AcPerformance,
+    AcCustom,
     UsbCBalanced,
     BatteryBalanced,
     BatterySaver,
@@ -37,6 +38,8 @@ public static class TrayIconStateResolver
                 TrayIconState.AcSilent,
             (PowerSource.PluggedIn, PerformancePreset.Performance) =>
                 TrayIconState.AcPerformance,
+            (PowerSource.PluggedIn, PerformancePreset.Custom) =>
+                TrayIconState.AcCustom,
             (PowerSource.UsbC, PerformancePreset.Balanced) =>
                 TrayIconState.UsbCBalanced,
             (PowerSource.Battery, PerformancePreset.Balanced) =>
