@@ -1495,8 +1495,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         object sender,
         SelectionChangedEventArgs args)
     {
-        if (changingSpecialKeyBindings
-            || sender is not Microsoft.UI.Xaml.Controls.ComboBox
+        if (sender is not Microsoft.UI.Xaml.Controls.ComboBox
             {
                 SelectedItem: SpecialKeyActionOption selectedAction,
             } comboBox
@@ -1513,25 +1512,30 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         }
 
         binding.SelectedAction = selectedAction;
+        QueuePreferenceSave();
     }
 
     private static bool TryResolveSpecialKeySlot(
         Microsoft.UI.Xaml.Controls.ComboBox comboBox,
         out SpecialKeySlot slot)
     {
+        string automationName =
+            Microsoft.UI.Xaml.Automation.AutomationProperties.GetName(comboBox);
+        if (Enum.TryParse(automationName, ignoreCase: true, out slot))
+        {
+            return true;
+        }
+
         if (comboBox.Tag is SpecialKeySlot typedSlot)
         {
             slot = typedSlot;
             return true;
         }
 
-        string? slotName = comboBox.Tag?.ToString();
-        if (string.IsNullOrWhiteSpace(slotName))
-        {
-            slotName = Microsoft.UI.Xaml.Automation.AutomationProperties.GetName(comboBox);
-        }
-
-        return Enum.TryParse(slotName, ignoreCase: true, out slot);
+        return Enum.TryParse(
+            comboBox.Tag?.ToString(),
+            ignoreCase: true,
+            out slot);
     }
 
     private void ApplyNavigationDestination(string destination)

@@ -1153,6 +1153,10 @@ public sealed class WinUiShellContractTests
             window,
             StringComparison.Ordinal);
         Assert.Contains(
+            "binding.SelectedAction = selectedAction;\n        QueuePreferenceSave();",
+            window.ReplaceLineEndings("\n"),
+            StringComparison.Ordinal);
+        Assert.Contains(
             "TryResolveSpecialKeySlot(comboBox, out SpecialKeySlot slot)",
             window,
             StringComparison.Ordinal);
