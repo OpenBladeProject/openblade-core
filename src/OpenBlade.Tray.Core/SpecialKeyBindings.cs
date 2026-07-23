@@ -113,7 +113,33 @@ public static class SpecialKeyBindingDefaults
     {
         SpecialKeyAction normalized = Normalize(action);
         return normalized.Kind != SpecialKeyActionKind.Default
-            && (!RequiresValue(normalized.Kind)
-                || !string.IsNullOrWhiteSpace(normalized.Value));
+            && string.IsNullOrEmpty(GetValidationMessage(normalized));
+    }
+
+    public static string GetValidationMessage(SpecialKeyAction action)
+    {
+        SpecialKeyAction normalized = Normalize(action);
+        if (RequiresValue(normalized.Kind)
+            && string.IsNullOrWhiteSpace(normalized.Value))
+        {
+            return "Enter a value for this action.";
+        }
+
+        if (normalized.Kind == SpecialKeyActionKind.KeyboardShortcut
+            && !SpecialKeyShortcutParser.TryParse(
+                normalized.Value,
+                out string shortcutValidationMessage))
+        {
+            return shortcutValidationMessage;
+        }
+
+        if (normalized.Kind == SpecialKeyActionKind.OpenWebsite
+            && (!Uri.TryCreate(normalized.Value, UriKind.Absolute, out Uri? uri)
+                || uri.Scheme is not ("http" or "https")))
+        {
+            return "Enter a complete http or https address.";
+        }
+
+        return string.Empty;
     }
 }

@@ -51,8 +51,29 @@ public sealed class SpecialKeyBindingTests
             new SpecialKeyAction(
                 SpecialKeyActionKind.KeyboardShortcut,
                 "Ctrl+Shift+M")));
+        Assert.False(SpecialKeyBindingDefaults.OverridesDefaultBehavior(
+            new SpecialKeyAction(
+                SpecialKeyActionKind.KeyboardShortcut,
+                "Ctrl+NoSuchKey")));
+        Assert.False(SpecialKeyBindingDefaults.OverridesDefaultBehavior(
+            new SpecialKeyAction(
+                SpecialKeyActionKind.OpenWebsite,
+                "not a website")));
         Assert.True(SpecialKeyBindingDefaults.OverridesDefaultBehavior(
             new SpecialKeyAction(SpecialKeyActionKind.Disabled)));
+    }
+
+    [Theory]
+    [InlineData(SpecialKeyActionKind.KeyboardShortcut, "Ctrl+NoSuchKey")]
+    [InlineData(SpecialKeyActionKind.OpenWebsite, "file:///C:/Windows")]
+    public void Validation_RejectsValuesThatCannotRun(
+        SpecialKeyActionKind kind,
+        string value)
+    {
+        string message = SpecialKeyBindingDefaults.GetValidationMessage(
+            new SpecialKeyAction(kind, value));
+
+        Assert.NotEmpty(message);
     }
 
     [Fact]

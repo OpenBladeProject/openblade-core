@@ -9,15 +9,15 @@ public sealed class SpecialKeyActionExecutorTests
     public void ParseShortcut_ParsesModifiersFunctionAndNavigationKeys()
     {
         (ushort key, ushort[] modifiers) =
-            WindowsSpecialKeyInputSender.ParseShortcut("Ctrl+Shift+M");
+            SpecialKeyShortcutParser.Parse("Ctrl+Shift+M");
         Assert.Equal(0x4D, key);
         Assert.Equal([0x11, 0x10], modifiers);
 
-        (key, modifiers) = WindowsSpecialKeyInputSender.ParseShortcut("Alt+F12");
+        (key, modifiers) = SpecialKeyShortcutParser.Parse("Alt+F12");
         Assert.Equal(0x7B, key);
         Assert.Equal([0x12], modifiers);
 
-        (key, modifiers) = WindowsSpecialKeyInputSender.ParseShortcut("Page Up");
+        (key, modifiers) = SpecialKeyShortcutParser.Parse("Page Up");
         Assert.Equal(0x21, key);
         Assert.Empty(modifiers);
     }
@@ -30,7 +30,7 @@ public sealed class SpecialKeyActionExecutorTests
     public void ParseShortcut_RejectsInvalidValues(string value)
     {
         Assert.ThrowsAny<Exception>(
-            () => WindowsSpecialKeyInputSender.ParseShortcut(value));
+            () => SpecialKeyShortcutParser.Parse(value));
     }
 
     [Fact]

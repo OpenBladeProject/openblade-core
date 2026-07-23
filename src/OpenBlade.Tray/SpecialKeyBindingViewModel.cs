@@ -142,11 +142,8 @@ public sealed class SpecialKeyBindingViewModel : INotifyPropertyChanged
         _ => string.Empty,
     };
 
-    public string ValidationMessage =>
-        SpecialKeyBindingDefaults.RequiresValue(SelectedAction.Kind)
-            && string.IsNullOrWhiteSpace(Value)
-                ? "Enter a value for this action."
-                : string.Empty;
+    public string ValidationMessage => SpecialKeyBindingDefaults.GetValidationMessage(
+        new SpecialKeyAction(SelectedAction.Kind, Value));
 
     public Visibility ValidationMessageVisibility =>
         string.IsNullOrEmpty(ValidationMessage)

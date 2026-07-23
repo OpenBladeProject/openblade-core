@@ -78,6 +78,9 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Validated keyboard-shortcut and website values before M1 through M5 override
+  their normal behavior. Incomplete or invalid actions now show a validation
+  message and leave the physical key's default action intact.
 - Kept every option picker selection visible across initialization and status
   refreshes with a shared selection anchor. Equivalent option collections are
   now reused centrally, and conditional Custom-performance and lighting
