@@ -3179,16 +3179,34 @@
                         <Border Style="{StaticResource SettingsGroupStyle}">
                             <Expander x:Name="TroubleshootingExpander"
                                       Style="{StaticResource CardContentExpanderStyle}"
+                                      PointerEntered="OnTroubleshootingHeaderPointerEntered"
+                                      PointerMoved="OnTroubleshootingHeaderPointerMoved"
+                                      PointerExited="OnTroubleshootingHeaderPointerExited"
+                                      PointerPressed="OnTroubleshootingHeaderPointerPressed"
+                                      PointerReleased="OnTroubleshootingHeaderPointerReleased"
+                                      PointerCanceled="OnTroubleshootingHeaderPointerCanceled"
+                                      PointerCaptureLost="OnTroubleshootingHeaderPointerCanceled"
                                       AutomationProperties.Name="Troubleshooting details">
                                 <Expander.Resources>
                                     <SolidColorBrush x:Key="ExpanderHeaderBackground" Color="Transparent" />
                                     <Thickness x:Key="ExpanderHeaderBorderThickness">0</Thickness>
                                 </Expander.Resources>
                                 <Expander.Header>
-                                    <StackPanel Spacing="3" Margin="0,14,0,14">
-                                        <TextBlock Text="Service and device status" Style="{StaticResource CardTitleStyle}" />
-                                        <TextBlock Text="View live connection and control details." Style="{StaticResource SecondaryTextStyle}" />
-                                    </StackPanel>
+                                    <Grid x:Name="TroubleshootingHeaderSurface"
+                                          Margin="-16,0,-60,0">
+                                        <Border x:Name="TroubleshootingHeaderHoverBackground"
+                                                Background="{ThemeResource SubtleFillColorSecondaryBrush}"
+                                                CornerRadius="8"
+                                                Opacity="0" />
+                                        <Border x:Name="TroubleshootingHeaderPressedBackground"
+                                                Background="{ThemeResource SubtleFillColorTertiaryBrush}"
+                                                CornerRadius="8"
+                                                Opacity="0" />
+                                        <StackPanel Spacing="3" Margin="16,14,60,14">
+                                            <TextBlock Text="Service and device status" Style="{StaticResource CardTitleStyle}" />
+                                            <TextBlock Text="View live connection and control details." Style="{StaticResource SecondaryTextStyle}" />
+                                        </StackPanel>
+                                    </Grid>
                                 </Expander.Header>
                                 <StackPanel>
                                     <Border Style="{StaticResource TroubleshootingSectionStyle}">

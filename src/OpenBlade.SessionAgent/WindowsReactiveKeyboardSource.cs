@@ -80,6 +80,7 @@ internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
     private const uint WindowMessageKeyUp = 0x0101;
     private const uint WindowMessageSystemKeyDown = 0x0104;
     private const uint WindowMessageSystemKeyUp = 0x0105;
+    private const ushort RawKeyboardBreakFlag = 0x0001;
     private const uint VirtualKeyPageUp = 0x21;
     private const uint VirtualKeyPageDown = 0x22;
     private const int MaximumRawInputBytes = 64 * 1024;
@@ -87,6 +88,8 @@ internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
     private const ushort ConsumerUsagePage = 0x000C;
     private const ushort PageOnlyUsage = 0x0000;
     private static readonly nint MessageOnlyWindow = new(-3);
+    private static readonly long HookObservationMaximumAge =
+        Math.Max(1, Stopwatch.Frequency / 2);
     private static readonly ConcurrentDictionary<nint, WindowsReactiveKeyboardSource>
         Sources = new();
     private static readonly WindowProcedure WindowProcedureCallback = ProcessWindowMessage;
@@ -102,6 +105,7 @@ internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
     private readonly Func<FunctionKeyPrimaryMode?> readFunctionKeyPrimaryMode;
     private readonly Func<bool> isDriverModeActive;
     private readonly Rz09_0581FunctionRowInputState functionRowInput = new();
+    private readonly LowLevelKeyboardHookHealthTracker hookHealth = new();
     private readonly string windowClassName = $"OpenBlade.Reactive.{Guid.NewGuid():N}";
     private readonly TaskCompletionSource initialization =
         new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -398,6 +402,10 @@ internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
             {
                 bool keyDown = windowParameter is
                     WindowMessageKeyDown or WindowMessageSystemKeyDown;
+                owner.hookHealth.Record(
+                    input.ScanCode,
+                    keyDown,
+                    Stopwatch.GetTimestamp());
                 if (owner.functionRowInput.Process(
                     input.ScanCode,
                     keyDown,
@@ -522,6 +530,28 @@ internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
 
         RawKeyboard keyboard = Marshal.PtrToStructure<RawKeyboard>(
             nint.Add(buffer, checked((int)headerSize)));
+        bool keyDown = (keyboard.Flags & RawKeyboardBreakFlag) == 0;
+        bool observedByHook = hookHealth.Consume(
+            keyboard.MakeCode,
+            keyDown,
+            Stopwatch.GetTimestamp(),
+            HookObservationMaximumAge);
+        if (!observedByHook
+            && Rz09_0581FunctionRowMediaInput.TryOverride(
+                keyboard.MakeCode,
+                keyDown,
+                performanceFunctionKeyPressed,
+                readFunctionKeyPrimaryMode(),
+                isDriverModeActive(),
+                out FunctionRowAction? recoveredAction))
+        {
+            if (recoveredAction is { } action)
+            {
+                publishFunctionRowAction(action);
+            }
+
+            ReinstallKeyboardHook();
+        }
         if (Rz09_0581PerformanceShortcutRawHidInput.TryCreateFunctionPTrigger(
             keyboard.MakeCode,
             keyboard.Flags,
@@ -615,6 +645,32 @@ internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
             // converting it to a single-slot Reactive pulse instead replaces
             // the firmware overlay with an incorrect host-rendered frame.
         }
+    }
+
+    private void ReinstallKeyboardHook()
+    {
+        nint previous = Interlocked.Exchange(ref keyboardHook, 0);
+        if (previous != 0)
+        {
+            _ = UnhookWindowsHookEx(previous);
+        }
+
+        nint replacement = SetWindowsHookEx(
+            LowLevelKeyboardHook,
+            KeyboardProcedureCallback,
+            GetModuleHandle(null),
+            0);
+        if (replacement == 0)
+        {
+            throw new Win32Exception(
+                Marshal.GetLastWin32Error(),
+                "Unable to restore the function-row keyboard hook.");
+        }
+
+        hookHealth.Clear();
+        keyboardHook = replacement;
+        Trace.TraceWarning(
+            "OpenBlade restored a missing function-row keyboard hook from target-device Raw Input.");
     }
 
     private static ReactiveKeyPulse WithObservedTimestamp(

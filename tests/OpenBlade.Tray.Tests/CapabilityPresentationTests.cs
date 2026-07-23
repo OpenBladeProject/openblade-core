@@ -525,6 +525,38 @@ public sealed class CapabilityPresentationTests
             Attribute(
                 troubleshooting.Ancestors().First(element => element.Name.LocalName == "Border"),
                 "Style"));
+        foreach ((string attribute, string handler) in new[]
+        {
+            ("PointerEntered", "OnTroubleshootingHeaderPointerEntered"),
+            ("PointerMoved", "OnTroubleshootingHeaderPointerMoved"),
+            ("PointerExited", "OnTroubleshootingHeaderPointerExited"),
+            ("PointerPressed", "OnTroubleshootingHeaderPointerPressed"),
+            ("PointerReleased", "OnTroubleshootingHeaderPointerReleased"),
+            ("PointerCanceled", "OnTroubleshootingHeaderPointerCanceled"),
+            ("PointerCaptureLost", "OnTroubleshootingHeaderPointerCanceled"),
+        })
+        {
+            Assert.Equal(handler, Attribute(troubleshooting, attribute));
+        }
+        XElement troubleshootingHeaderSurface = NamedElement(
+            document,
+            "Grid",
+            "TroubleshootingHeaderSurface");
+        Assert.Equal("-16,0,-60,0", Attribute(troubleshootingHeaderSurface, "Margin"));
+        foreach ((string name, string background) in new[]
+        {
+            (
+                "TroubleshootingHeaderHoverBackground",
+                "{ThemeResource SubtleFillColorSecondaryBrush}"),
+            (
+                "TroubleshootingHeaderPressedBackground",
+                "{ThemeResource SubtleFillColorTertiaryBrush}"),
+        })
+        {
+            XElement layer = NamedElement(document, "Border", name);
+            Assert.Equal(background, Attribute(layer, "Background"));
+            Assert.Equal("0", Attribute(layer, "Opacity"));
+        }
         foreach (string property in new[]
                  {
                      "ViewModel.TroubleshootingServiceStatus",
@@ -866,7 +898,12 @@ public sealed class CapabilityPresentationTests
 
         Assert.Equal("Transparent", Attribute(background, "Color"));
         Assert.Equal("0", borderThickness.Value.Trim());
-        Assert.Equal("0,14,0,14", Attribute(header, "Margin"));
+        Assert.Equal("TroubleshootingHeaderSurface", Attribute(header, "Name"));
+        Assert.Equal("-16,0,-60,0", Attribute(header, "Margin"));
+        XElement content = Assert.Single(
+            header.Elements(),
+            element => element.Name.LocalName == "StackPanel");
+        Assert.Equal("16,14,60,14", Attribute(content, "Margin"));
     }
 
     [Fact]

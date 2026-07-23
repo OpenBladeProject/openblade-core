@@ -59,6 +59,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
     private bool changingPrimaryNavigationOrder;
     private bool changingSpecialKeyBindings;
     private bool changingAccentColor;
+    private bool troubleshootingHeaderPointerPressed;
     private bool dashboardCardsReady;
     private bool canonicalLaptopCardsPlaced;
     private bool chargeLimitCommitInProgress;
@@ -1439,6 +1440,76 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         string destination = (args.SelectedItemContainer as NavigationViewItem)?.Tag as string
             ?? "home";
         ApplyNavigationDestination(destination);
+    }
+
+    private void OnTroubleshootingHeaderPointerEntered(
+        object sender,
+        Microsoft.UI.Xaml.Input.PointerRoutedEventArgs args) =>
+        UpdateTroubleshootingHeaderPointerState(args);
+
+    private void OnTroubleshootingHeaderPointerMoved(
+        object sender,
+        Microsoft.UI.Xaml.Input.PointerRoutedEventArgs args) =>
+        UpdateTroubleshootingHeaderPointerState(args);
+
+    private void OnTroubleshootingHeaderPointerExited(
+        object sender,
+        Microsoft.UI.Xaml.Input.PointerRoutedEventArgs args)
+    {
+        troubleshootingHeaderPointerPressed = false;
+        SetTroubleshootingHeaderPointerVisual(hovered: false, pressed: false);
+    }
+
+    private void OnTroubleshootingHeaderPointerPressed(
+        object sender,
+        Microsoft.UI.Xaml.Input.PointerRoutedEventArgs args)
+    {
+        troubleshootingHeaderPointerPressed = IsPointerOverTroubleshootingHeader(args);
+        UpdateTroubleshootingHeaderPointerState(args);
+    }
+
+    private void OnTroubleshootingHeaderPointerReleased(
+        object sender,
+        Microsoft.UI.Xaml.Input.PointerRoutedEventArgs args)
+    {
+        troubleshootingHeaderPointerPressed = false;
+        UpdateTroubleshootingHeaderPointerState(args);
+    }
+
+    private void OnTroubleshootingHeaderPointerCanceled(
+        object sender,
+        Microsoft.UI.Xaml.Input.PointerRoutedEventArgs args)
+    {
+        troubleshootingHeaderPointerPressed = false;
+        SetTroubleshootingHeaderPointerVisual(hovered: false, pressed: false);
+    }
+
+    private void UpdateTroubleshootingHeaderPointerState(
+        Microsoft.UI.Xaml.Input.PointerRoutedEventArgs args)
+    {
+        bool hovered = IsPointerOverTroubleshootingHeader(args);
+        SetTroubleshootingHeaderPointerVisual(
+            hovered,
+            pressed: hovered && troubleshootingHeaderPointerPressed);
+    }
+
+    private bool IsPointerOverTroubleshootingHeader(
+        Microsoft.UI.Xaml.Input.PointerRoutedEventArgs args)
+    {
+        double pointerY = args
+            .GetCurrentPoint(TroubleshootingExpander)
+            .Position
+            .Y;
+        return pointerY >= 0
+            && pointerY <= TroubleshootingHeaderSurface.ActualHeight;
+    }
+
+    private void SetTroubleshootingHeaderPointerVisual(
+        bool hovered,
+        bool pressed)
+    {
+        TroubleshootingHeaderHoverBackground.Opacity = hovered && !pressed ? 1 : 0;
+        TroubleshootingHeaderPressedBackground.Opacity = pressed ? 1 : 0;
     }
 
     private void ApplySpecialKeyBindingPreferences(
