@@ -8,6 +8,7 @@ using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Controls.Primitives;
 using Microsoft.UI.Xaml.Media.Animation;
 using Microsoft.Windows.Storage.Pickers;
 using OpenBlade.Contracts;
@@ -26,6 +27,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
     private const double ProfilesStackThresholdDip = 900;
     private static readonly TimeSpan ChargeLimitCommitDelay = TimeSpan.FromMilliseconds(400);
     private static readonly TimeSpan LightingCommitDelay = TimeSpan.FromMilliseconds(500);
+    private static readonly TimeSpan GpuClockOffsetCommitDelay = TimeSpan.FromMilliseconds(500);
     private static readonly TimeSpan DisplayRefreshInterval = TimeSpan.FromSeconds(2);
 
     private readonly DispatcherQueue dispatcherQueue;
@@ -38,6 +40,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
     private readonly SessionDisplaySettingsAdapter displaySettingsAdapter;
     private readonly DispatcherQueueTimer chargeLimitCommitTimer;
     private readonly DispatcherQueueTimer lightingCommitTimer;
+    private readonly DispatcherQueueTimer gpuClockOffsetCommitTimer;
     private readonly DispatcherQueueTimer displayRefreshTimer;
     private readonly object initializationSync = new();
     private Task? initializationTask;
@@ -61,6 +64,8 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
     private bool chargeLimitCommitInProgress;
     private bool fanControlCommitInProgress;
     private bool lightingCommitInProgress;
+    private bool gpuClockOffsetCommitInProgress;
+    private GpuClockOffsetSettings? pendingGpuClockOffsets;
     private bool chargeLimitPointerInteraction;
     private int? pendingChargeLimitPercent;
     private bool? dashboardIsStacked;
@@ -135,6 +140,10 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         lightingCommitTimer.Interval = LightingCommitDelay;
         lightingCommitTimer.IsRepeating = false;
         lightingCommitTimer.Tick += OnLightingCommitTimerTick;
+        gpuClockOffsetCommitTimer = dispatcherQueue.CreateTimer();
+        gpuClockOffsetCommitTimer.Interval = GpuClockOffsetCommitDelay;
+        gpuClockOffsetCommitTimer.IsRepeating = false;
+        gpuClockOffsetCommitTimer.Tick += OnGpuClockOffsetCommitTimerTick;
         micaBackdropHost = new MicaBackdropHost(this, Root);
         Root.DataContext = ViewModel;
         Root.Loaded += OnRootLoaded;
@@ -287,6 +296,8 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         chargeLimitCommitTimer.Tick -= OnChargeLimitCommitTimerTick;
         lightingCommitTimer.Stop();
         lightingCommitTimer.Tick -= OnLightingCommitTimerTick;
+        gpuClockOffsetCommitTimer.Stop();
+        gpuClockOffsetCommitTimer.Tick -= OnGpuClockOffsetCommitTimerTick;
         displayRefreshTimer.Stop();
         displayRefreshTimer.Tick -= OnDisplayRefreshTimerTick;
         micaBackdropHost.Dispose();
@@ -920,7 +931,10 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         await ApplyCustomPerformanceChangeAsync(
             new CustomPerformanceSettings(
                 selected,
-                ViewModel.SelectedCustomGpuLevel),
+                ViewModel.SelectedCustomGpuLevel)
+            {
+                GpuClockOffsets = ViewModel.CurrentGpuClockOffsets,
+            },
             selector);
     }
 
@@ -940,8 +954,103 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         await ApplyCustomPerformanceChangeAsync(
             new CustomPerformanceSettings(
                 ViewModel.SelectedCustomCpuLevel,
-                selected),
+                selected)
+            {
+                GpuClockOffsets = ViewModel.CurrentGpuClockOffsets,
+            },
             selector);
+    }
+
+    private void OnGpuCoreClockOffsetChanged(
+        object sender,
+        RangeBaseValueChangedEventArgs args)
+    {
+        ScheduleGpuClockOffsetCommit(
+            coreMegahertz: checked((int)Math.Round(args.NewValue)),
+            memoryMegahertz: pendingGpuClockOffsets?.MemoryMegahertz
+                ?? ViewModel.GpuMemoryClockOffsetMegahertz);
+    }
+
+    private void OnGpuMemoryClockOffsetChanged(
+        object sender,
+        RangeBaseValueChangedEventArgs args)
+    {
+        ScheduleGpuClockOffsetCommit(
+            coreMegahertz: pendingGpuClockOffsets?.CoreMegahertz
+                ?? ViewModel.GpuCoreClockOffsetMegahertz,
+            memoryMegahertz: checked((int)Math.Round(args.NewValue)));
+    }
+
+    private void ScheduleGpuClockOffsetCommit(
+        int coreMegahertz,
+        int memoryMegahertz)
+    {
+        if (Volatile.Read(ref disposed) != 0
+            || !ViewModel.IsGpuClockTuningAvailable)
+        {
+            return;
+        }
+
+        var requested = new GpuClockOffsetSettings(
+            coreMegahertz,
+            memoryMegahertz);
+        if (ViewModel.GpuClockOffsetCapabilities?.Supports(requested) != true)
+        {
+            return;
+        }
+
+        if (requested == ViewModel.CurrentGpuClockOffsets)
+        {
+            pendingGpuClockOffsets = null;
+            gpuClockOffsetCommitTimer.Stop();
+            return;
+        }
+
+        pendingGpuClockOffsets = requested;
+        gpuClockOffsetCommitTimer.Stop();
+        gpuClockOffsetCommitTimer.Start();
+    }
+
+    private async void OnGpuClockOffsetCommitTimerTick(
+        DispatcherQueueTimer sender,
+        object args)
+    {
+        sender.Stop();
+        if (gpuClockOffsetCommitInProgress
+            || pendingGpuClockOffsets is not { } requested
+            || !ViewModel.IsGpuClockTuningAvailable)
+        {
+            return;
+        }
+
+        pendingGpuClockOffsets = null;
+        gpuClockOffsetCommitInProgress = true;
+        try
+        {
+            var custom = new CustomPerformanceSettings(
+                ViewModel.SelectedCustomCpuLevel,
+                ViewModel.SelectedCustomGpuLevel)
+            {
+                GpuClockOffsets = requested,
+            };
+            if (ViewModel.SetCustomPerformanceCommand is AsyncRelayCommand command
+                && command.CanExecute(custom))
+            {
+                await command.ExecuteAsync(custom);
+            }
+        }
+        catch (Exception exception)
+        {
+            Trace.TraceError("OpenBlade GPU clock-offset change failed: {0}", exception);
+        }
+        finally
+        {
+            gpuClockOffsetCommitInProgress = false;
+            if (pendingGpuClockOffsets is not null)
+            {
+                sender.Start();
+            }
+        }
     }
 
     private async Task ApplyCustomPerformanceChangeAsync(

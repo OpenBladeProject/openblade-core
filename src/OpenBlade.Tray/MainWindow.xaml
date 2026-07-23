@@ -383,6 +383,80 @@
                                               SelectionChanged="OnDashboardCustomGpuChanged" />
                                 </Grid>
                             </Border>
+                            <Border Style="{StaticResource SettingsSubcardStyle}"
+                                    Visibility="Collapsed"
+                                    local:AnimatedVisibility.IsVisible="{Binding IsCustomPerformanceVisible}">
+                                <Grid ColumnSpacing="20">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel Spacing="3" VerticalAlignment="Center">
+                                        <TextBlock Text="GPU core clock offset"
+                                                   Style="{StaticResource CardTitleStyle}" />
+                                        <TextBlock Text="Uses the range reported by the NVIDIA driver."
+                                                   Style="{StaticResource SecondaryTextStyle}" />
+                                    </StackPanel>
+                                    <StackPanel Grid.Column="1"
+                                                Width="320"
+                                                Spacing="4"
+                                                VerticalAlignment="Center">
+                                        <TextBlock HorizontalAlignment="Right"
+                                                   Style="{StaticResource CardTitleStyle}">
+                                            <Run Text="{Binding Value, ElementName=GpuCoreClockOffsetSlider}" />
+                                            <Run Text=" MHz" />
+                                        </TextBlock>
+                                        <Slider x:Name="GpuCoreClockOffsetSlider"
+                                                Minimum="{Binding GpuCoreClockOffsetMinimum}"
+                                                Maximum="{Binding GpuCoreClockOffsetMaximum}"
+                                                Value="{Binding GpuCoreClockOffsetMegahertz, Mode=OneWay}"
+                                                StepFrequency="5"
+                                                SmallChange="5"
+                                                LargeChange="50"
+                                                SnapsTo="StepValues"
+                                                IsEnabled="{Binding CanEditGpuClockTuning}"
+                                                AutomationProperties.Name="GPU core clock offset"
+                                                ValueChanged="OnGpuCoreClockOffsetChanged" />
+                                    </StackPanel>
+                                </Grid>
+                            </Border>
+                            <Border Style="{StaticResource SettingsSubcardStyle}"
+                                    Visibility="Collapsed"
+                                    local:AnimatedVisibility.IsVisible="{Binding IsCustomPerformanceVisible}">
+                                <Grid ColumnSpacing="20">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel Spacing="3" VerticalAlignment="Center">
+                                        <TextBlock Text="GPU memory clock offset"
+                                                   Style="{StaticResource CardTitleStyle}" />
+                                        <TextBlock Text="Applied only while Custom mode is active."
+                                                   Style="{StaticResource SecondaryTextStyle}" />
+                                    </StackPanel>
+                                    <StackPanel Grid.Column="1"
+                                                Width="320"
+                                                Spacing="4"
+                                                VerticalAlignment="Center">
+                                        <TextBlock HorizontalAlignment="Right"
+                                                   Style="{StaticResource CardTitleStyle}">
+                                            <Run Text="{Binding Value, ElementName=GpuMemoryClockOffsetSlider}" />
+                                            <Run Text=" MHz" />
+                                        </TextBlock>
+                                        <Slider x:Name="GpuMemoryClockOffsetSlider"
+                                                Minimum="{Binding GpuMemoryClockOffsetMinimum}"
+                                                Maximum="{Binding GpuMemoryClockOffsetMaximum}"
+                                                Value="{Binding GpuMemoryClockOffsetMegahertz, Mode=OneWay}"
+                                                StepFrequency="5"
+                                                SmallChange="5"
+                                                LargeChange="50"
+                                                SnapsTo="StepValues"
+                                                IsEnabled="{Binding CanEditGpuClockTuning}"
+                                                AutomationProperties.Name="GPU memory clock offset"
+                                                ValueChanged="OnGpuMemoryClockOffsetChanged" />
+                                    </StackPanel>
+                                </Grid>
+                            </Border>
                             </StackPanel>
                         </Border>
                         </StackPanel>
@@ -1817,6 +1891,20 @@
                                             <TextBlock Grid.Column="3" Text="{x:Bind ViewModel.BatteryProfilePresentation.PowerMode, Mode=OneWay}" TextWrapping="Wrap" />
                                         </Grid>
                                     </Border>
+                                    <Border Style="{StaticResource SettingsRowStyle}">
+                                        <Grid ColumnSpacing="16">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="150" />
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="*" />
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock Text="GPU tuning" Style="{StaticResource CardTitleStyle}" />
+                                            <TextBlock Grid.Column="1" Text="{x:Bind ViewModel.PluggedInProfilePresentation.GpuTuning, Mode=OneWay}" TextWrapping="Wrap" />
+                                            <TextBlock Grid.Column="2" Text="{x:Bind ViewModel.UsbCProfilePresentation.GpuTuning, Mode=OneWay}" TextWrapping="Wrap" />
+                                            <TextBlock Grid.Column="3" Text="{x:Bind ViewModel.BatteryProfilePresentation.GpuTuning, Mode=OneWay}" TextWrapping="Wrap" />
+                                        </Grid>
+                                    </Border>
                                     <Border Style="{StaticResource SettingsLastRowStyle}">
                                         <Grid ColumnSpacing="16">
                                             <Grid.ColumnDefinitions>
@@ -1983,6 +2071,9 @@
                                 <StackPanel>
                                     <Border Style="{StaticResource SettingsRowStyle}">
                                         <Grid ColumnSpacing="16"><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><TextBlock Text="Power mode" Style="{StaticResource CardTitleStyle}" /><TextBlock Grid.Column="1" Text="{x:Bind ViewModel.SelectedProfilePresentation.PowerMode, Mode=OneWay}" /></Grid>
+                                    </Border>
+                                    <Border Style="{StaticResource SettingsRowStyle}">
+                                        <Grid ColumnSpacing="16"><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><TextBlock Text="GPU tuning" Style="{StaticResource CardTitleStyle}" /><TextBlock Grid.Column="1" Text="{x:Bind ViewModel.SelectedProfilePresentation.GpuTuning, Mode=OneWay}" TextWrapping="Wrap" TextAlignment="Right" /></Grid>
                                     </Border>
                                     <Border Style="{StaticResource SettingsRowStyle}">
                                         <Grid ColumnSpacing="16"><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><TextBlock Text="Fans" Style="{StaticResource CardTitleStyle}" /><TextBlock Grid.Column="1" Text="{x:Bind ViewModel.SelectedProfilePresentation.Fans, Mode=OneWay}" /></Grid>

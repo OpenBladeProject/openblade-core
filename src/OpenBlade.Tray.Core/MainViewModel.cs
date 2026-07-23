@@ -34,6 +34,7 @@ public sealed record LightingDirectionOption(
 
 public sealed record ProfilePresentation(
     string PowerMode,
+    string GpuTuning,
     string Fans,
     string LightingEffect,
     string LightingBrightness,
@@ -173,6 +174,9 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     private PerformancePreset selectedPerformance = PerformancePreset.Balanced;
     private CustomPerformanceLevel selectedCustomCpuLevel = CustomPerformanceLevel.Medium;
     private CustomPerformanceLevel selectedCustomGpuLevel = CustomPerformanceLevel.High;
+    private GpuClockOffsetCapabilities? gpuClockOffsetCapabilities;
+    private int gpuCoreClockOffsetMegahertz;
+    private int gpuMemoryClockOffsetMegahertz;
     private FanMode selectedFanMode = FanMode.Automatic;
     private FanControlSettings? pendingFanControl;
     private bool isFanControlOperationInProgress;
@@ -799,6 +803,12 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
                 new PropertyChangedEventArgs(nameof(IsCustomPerformanceVisible)));
             PropertyChanged?.Invoke(
                 this,
+                new PropertyChangedEventArgs(nameof(IsGpuClockTuningAvailable)));
+            PropertyChanged?.Invoke(
+                this,
+                new PropertyChangedEventArgs(nameof(CanEditGpuClockTuning)));
+            PropertyChanged?.Invoke(
+                this,
                 new PropertyChangedEventArgs(nameof(ActiveSavedDisplayProfile)));
             PropertyChanged?.Invoke(
                 this,
@@ -1285,6 +1295,12 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             PropertyChanged?.Invoke(
                 this,
                 new PropertyChangedEventArgs(nameof(IsCustomPerformanceVisible)));
+            PropertyChanged?.Invoke(
+                this,
+                new PropertyChangedEventArgs(nameof(IsGpuClockTuningAvailable)));
+            PropertyChanged?.Invoke(
+                this,
+                new PropertyChangedEventArgs(nameof(CanEditGpuClockTuning)));
             NotifyTrayHoverLabel();
         }
     }
@@ -1299,6 +1315,70 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         ActivePowerSource == PowerSource.PluggedIn
         && SelectedPerformance == PerformancePreset.Custom
         && AvailablePerformancePresets.Contains(PerformancePreset.Custom);
+
+    public bool IsGpuClockTuningAvailable =>
+        IsCustomPerformanceVisible
+        && GpuClockOffsetCapabilities?.IsWellFormed == true;
+
+    public GpuClockOffsetCapabilities? GpuClockOffsetCapabilities
+    {
+        get => gpuClockOffsetCapabilities;
+        private set
+        {
+            if (gpuClockOffsetCapabilities == value)
+            {
+                return;
+            }
+
+            SetField(ref gpuClockOffsetCapabilities, value);
+            PropertyChanged?.Invoke(
+                this,
+                new PropertyChangedEventArgs(nameof(IsGpuClockTuningAvailable)));
+            PropertyChanged?.Invoke(
+                this,
+                new PropertyChangedEventArgs(nameof(CanEditGpuClockTuning)));
+            PropertyChanged?.Invoke(
+                this,
+                new PropertyChangedEventArgs(nameof(GpuCoreClockOffsetMinimum)));
+            PropertyChanged?.Invoke(
+                this,
+                new PropertyChangedEventArgs(nameof(GpuCoreClockOffsetMaximum)));
+            PropertyChanged?.Invoke(
+                this,
+                new PropertyChangedEventArgs(nameof(GpuMemoryClockOffsetMinimum)));
+            PropertyChanged?.Invoke(
+                this,
+                new PropertyChangedEventArgs(nameof(GpuMemoryClockOffsetMaximum)));
+        }
+    }
+
+    public int GpuCoreClockOffsetMegahertz
+    {
+        get => gpuCoreClockOffsetMegahertz;
+        private set => SetField(ref gpuCoreClockOffsetMegahertz, value);
+    }
+
+    public int GpuMemoryClockOffsetMegahertz
+    {
+        get => gpuMemoryClockOffsetMegahertz;
+        private set => SetField(ref gpuMemoryClockOffsetMegahertz, value);
+    }
+
+    public int GpuCoreClockOffsetMinimum =>
+        GpuClockOffsetCapabilities?.Core.MinimumMegahertz ?? 0;
+
+    public int GpuCoreClockOffsetMaximum =>
+        GpuClockOffsetCapabilities?.Core.MaximumMegahertz ?? 0;
+
+    public int GpuMemoryClockOffsetMinimum =>
+        GpuClockOffsetCapabilities?.Memory.MinimumMegahertz ?? 0;
+
+    public int GpuMemoryClockOffsetMaximum =>
+        GpuClockOffsetCapabilities?.Memory.MaximumMegahertz ?? 0;
+
+    public GpuClockOffsetSettings CurrentGpuClockOffsets => new(
+        GpuCoreClockOffsetMegahertz,
+        GpuMemoryClockOffsetMegahertz);
 
     public CustomPerformanceLevel SelectedCustomCpuLevel
     {
@@ -1430,6 +1510,9 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     public bool CanEditPerformance =>
         CanRequestHardwareControl && !IsPerformanceOperationInProgress;
 
+    public bool CanEditGpuClockTuning =>
+        CanEditPerformance && IsGpuClockTuningAvailable;
+
     public bool IsPerformanceOperationInProgress
     {
         get => isPerformanceOperationInProgress;
@@ -1442,6 +1525,9 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
                 PropertyChanged?.Invoke(
                     this,
                     new PropertyChangedEventArgs(nameof(CanEditPerformance)));
+                PropertyChanged?.Invoke(
+                    this,
+                    new PropertyChangedEventArgs(nameof(CanEditGpuClockTuning)));
             }
         }
     }
@@ -2970,6 +3056,8 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     private bool CanSetCustomPerformance(object? parameter) =>
         parameter is CustomPerformanceSettings value
         && CustomPerformanceSettings.IsWellFormed(value)
+        && (value.GpuClockOffsets is null
+            || GpuClockOffsetCapabilities?.Supports(value.GpuClockOffsets) == true)
         && IsCustomPerformanceVisible
         && !IsPerformanceOperationInProgress
         && CanMutate
@@ -3420,6 +3508,15 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
                     ?? CustomPerformanceSettings.Default;
         SelectedCustomCpuLevel = customPerformance.Cpu;
         SelectedCustomGpuLevel = customPerformance.Gpu;
+        GpuClockOffsetCapabilities = confirmed?.Performance == PerformancePreset.Custom
+            ? confirmed.GpuClockOffsets
+            : null;
+        GpuClockOffsetSettings presentedGpuOffsets =
+            customPerformance.GpuClockOffsets
+            ?? GpuClockOffsetCapabilities?.Current
+            ?? GpuClockOffsetSettings.Default;
+        GpuCoreClockOffsetMegahertz = presentedGpuOffsets.CoreMegahertz;
+        GpuMemoryClockOffsetMegahertz = presentedGpuOffsets.MemoryMegahertz;
         TrayIconState = TrayIconStateResolver.Resolve(
             isConnected: true,
             status.DeviceVerified,
@@ -5790,6 +5887,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         DisplayProfileSettings display = profile.Display ?? DisplayProfileSettings.Unconfigured();
         return new ProfilePresentation(
             FormatPerformanceProfile(profile),
+            FormatGpuClockOffsets(profile),
             FormatFanControl(profile),
             FormatLightingEffect(profile.Lighting),
             profile.Lighting.Effect == LightingEffect.Off
@@ -5858,6 +5956,19 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         }
             ? $"Custom, CPU {custom.Cpu}, GPU {custom.Gpu}"
             : PerformancePresetPresentation.Label(profile.Performance);
+
+    private static string FormatGpuClockOffsets(PowerProfile profile) =>
+        profile is
+        {
+            Performance: PerformancePreset.Custom,
+            CustomPerformance.GpuClockOffsets: { } offsets,
+        }
+            ? $"Core {FormatSignedMegahertz(offsets.CoreMegahertz)}, "
+                + $"memory {FormatSignedMegahertz(offsets.MemoryMegahertz)}"
+            : "Not set";
+
+    private static string FormatSignedMegahertz(int value) =>
+        $"{value.ToString("+0;-0;0", CultureInfo.CurrentCulture)} MHz";
 
     private static string FormatLightingEffect(LightingSettings lighting) => lighting switch
     {
@@ -6814,6 +6925,9 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             this,
             new PropertyChangedEventArgs(nameof(CanRequestHardwareControl)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(CanEditPerformance)));
+        PropertyChanged?.Invoke(
+            this,
+            new PropertyChangedEventArgs(nameof(CanEditGpuClockTuning)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(CanEditFanControl)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(BatteryPowerFlowLabel)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Fan1RpmLabel)));

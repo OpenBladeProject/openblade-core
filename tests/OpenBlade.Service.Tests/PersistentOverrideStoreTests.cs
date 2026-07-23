@@ -61,13 +61,44 @@ public sealed class PersistentOverrideStoreTests : IDisposable
             null,
             new CustomPerformanceSettings(
                 CustomPerformanceLevel.High,
-                CustomPerformanceLevel.Medium));
+                CustomPerformanceLevel.Medium)
+            {
+                GpuClockOffsets = new GpuClockOffsetSettings(125, 500),
+            });
 
         await store.SaveAsync(expected, CancellationToken.None);
         PersistentOverrideLoadResult loaded = await store.LoadAsync(CancellationToken.None);
 
         Assert.False(loaded.Recovered);
         Assert.Equal(expected, loaded.Overrides);
+    }
+
+    [Fact]
+    public async Task Load_SchemaThreeDoesNotInventGpuClockOffsets()
+    {
+        string path = Path.Combine(directory, "manual-overrides.json");
+        Directory.CreateDirectory(directory);
+        await File.WriteAllTextAsync(path, """
+            {
+              "schemaVersion": 3,
+              "overrides": {
+                "performance": 5,
+                "fans": null,
+                "lighting": null,
+                "customPerformance": {
+                  "cpu": 2,
+                  "gpu": 1
+                },
+                "fanControl": null
+              }
+            }
+            """);
+
+        PersistentOverrideLoadResult loaded = await new PersistentOverrideStore(path)
+            .LoadAsync(CancellationToken.None);
+
+        Assert.False(loaded.Recovered);
+        Assert.Null(loaded.Overrides.CustomPerformance?.GpuClockOffsets);
     }
 
     [Fact]

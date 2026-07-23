@@ -7,6 +7,10 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Added
 
+- Added NVIDIA GPU core and memory clock offsets to Custom power mode. OpenBlade
+  reads the supported ranges from the installed NVIDIA driver, applies changes
+  through NVML, confirms readback, and saves explicit offsets in profiles,
+  overrides, imports, and exports.
 - Added persistent M1 through M5 Fn-layer bindings on the Laptop page. The
   always-running Session Agent can execute keyboard shortcuts, mouse and media
   actions, microphone mute, app or website launch, text entry, and OpenBlade
@@ -77,8 +81,9 @@ All notable changes to OpenBlade are documented in this file. The project follow
   the OSSBlade GitHub organization.
 - Aligned the Settings header spacing with the Display and Lighting pages and
   aligned the service and laptop status values in Troubleshooting.
-- Advanced the local configuration schema to version 6 and service IPC to
-  version 17 for persisted lighting ownership preferences.
+- Advanced the local configuration schema to version 7, profile export schema
+  to version 3, persistent override schema to version 4, and service IPC to
+  version 18 for GPU clock-offset settings and readback capabilities.
 
 ### Fixed
 

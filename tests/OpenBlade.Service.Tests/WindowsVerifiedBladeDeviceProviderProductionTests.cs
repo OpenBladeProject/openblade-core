@@ -7,6 +7,166 @@ namespace OpenBlade.Service.Tests;
 public sealed class WindowsVerifiedBladeDeviceProviderProductionTests
 {
     [Fact]
+    public async Task ReadCustomPerformance_MergesNvmlClockOffsetsIntoConfirmedState()
+    {
+        DeviceCapabilities capabilities = ThermalCapabilities(
+            new HashSet<PerformancePreset> { PerformancePreset.Custom },
+            new HashSet<FanMode> { FanMode.Automatic });
+        var custom = new CustomPerformanceSettings(
+            CustomPerformanceLevel.High,
+            CustomPerformanceLevel.Medium);
+        var port = new FakeProductionPort(
+            capabilities,
+            BatteryValidationSetting.Limit80,
+            temporary: null,
+            performanceFan: new ProductionPerformanceFanState(
+                PerformancePreset.Custom,
+                FanMode.Automatic)
+            {
+                CustomPerformance = custom,
+            });
+        var gpu = new FakeGpuClockOffsetController();
+        using var provider = ReadyProvider(
+            new FakeProductionFactory(capabilities, port),
+            gpu);
+        provider.TryGetVerifiedDevice(out IBladeDevice device);
+
+        ConfirmedDeviceState state = await device.ReadStateAsync(default);
+        GpuClockOffsetCapabilities expected = Assert.IsType<GpuClockOffsetCapabilities>(
+            gpu.Capabilities);
+
+        Assert.Equal(1, gpu.QueryCount);
+        Assert.Equal(expected, state.GpuClockOffsets);
+        Assert.Equal(expected.Current, state.CustomPerformance?.GpuClockOffsets);
+    }
+
+    [Fact]
+    public async Task ReadBalancedPerformance_DoesNotWakeGpuForClockOffsetQuery()
+    {
+        DeviceCapabilities capabilities = ThermalCapabilities(
+            new HashSet<PerformancePreset> { PerformancePreset.Balanced },
+            new HashSet<FanMode> { FanMode.Automatic });
+        var port = new FakeProductionPort(
+            capabilities,
+            BatteryValidationSetting.Limit80,
+            temporary: null,
+            performanceFan: new ProductionPerformanceFanState(
+                PerformancePreset.Balanced,
+                FanMode.Automatic));
+        var gpu = new FakeGpuClockOffsetController();
+        using var provider = ReadyProvider(
+            new FakeProductionFactory(capabilities, port),
+            gpu);
+        provider.TryGetVerifiedDevice(out IBladeDevice device);
+
+        _ = await device.ReadStateAsync(default);
+
+        Assert.Equal(0, gpu.QueryCount);
+    }
+
+    [Fact]
+    public async Task SetCustomPerformance_PreflightsThenAppliesFirmwareAndGpuOffsets()
+    {
+        DeviceCapabilities capabilities = ThermalCapabilities(
+            new HashSet<PerformancePreset> { PerformancePreset.Custom },
+            new HashSet<FanMode> { FanMode.Automatic });
+        var port = new FakeProductionPort(
+            capabilities,
+            BatteryValidationSetting.Limit80,
+            temporary: null);
+        var gpu = new FakeGpuClockOffsetController();
+        var requested = new CustomPerformanceSettings(
+            CustomPerformanceLevel.High,
+            CustomPerformanceLevel.Medium)
+        {
+            GpuClockOffsets = new GpuClockOffsetSettings(125, 500),
+        };
+        using var provider = ReadyProvider(
+            new FakeProductionFactory(capabilities, port),
+            gpu);
+        provider.TryGetVerifiedDevice(out IBladeDevice device);
+
+        await device.SetPerformanceAsync(
+            PerformancePreset.Custom,
+            requested,
+            default);
+
+        Assert.Equal(1, gpu.QueryCount);
+        Assert.Equal(1, port.SetCustomPerformanceCount);
+        Assert.Equal(requested, port.LastCustomPerformance);
+        Assert.Equal([requested.GpuClockOffsets], gpu.Writes);
+    }
+
+    [Fact]
+    public async Task SetCustomPerformance_UnavailableGpuTuningRejectsBeforeFirmwareWrite()
+    {
+        DeviceCapabilities capabilities = ThermalCapabilities(
+            new HashSet<PerformancePreset> { PerformancePreset.Custom },
+            new HashSet<FanMode> { FanMode.Automatic });
+        var port = new FakeProductionPort(
+            capabilities,
+            BatteryValidationSetting.Limit80,
+            temporary: null);
+        var gpu = new FakeGpuClockOffsetController { Capabilities = null };
+        var requested = new CustomPerformanceSettings(
+            CustomPerformanceLevel.High,
+            CustomPerformanceLevel.Medium)
+        {
+            GpuClockOffsets = new GpuClockOffsetSettings(125, 500),
+        };
+        using var provider = ReadyProvider(
+            new FakeProductionFactory(capabilities, port),
+            gpu);
+        provider.TryGetVerifiedDevice(out IBladeDevice device);
+
+        BladeWriteException error = await Assert.ThrowsAsync<BladeWriteException>(() =>
+            device.SetPerformanceAsync(
+                PerformancePreset.Custom,
+                requested,
+                default));
+
+        Assert.Equal(WriteSubmissionState.KnownNotApplied, error.SubmissionState);
+        Assert.Equal(0, port.SetCustomPerformanceCount);
+        Assert.Empty(gpu.Writes);
+    }
+
+    [Fact]
+    public async Task SetCustomPerformance_GpuWriteFailureReportsPartialOperationAsIndeterminate()
+    {
+        DeviceCapabilities capabilities = ThermalCapabilities(
+            new HashSet<PerformancePreset> { PerformancePreset.Custom },
+            new HashSet<FanMode> { FanMode.Automatic });
+        var port = new FakeProductionPort(
+            capabilities,
+            BatteryValidationSetting.Limit80,
+            temporary: null);
+        var gpu = new FakeGpuClockOffsetController { FailWrites = true };
+        var requested = new CustomPerformanceSettings(
+            CustomPerformanceLevel.High,
+            CustomPerformanceLevel.Medium)
+        {
+            GpuClockOffsets = new GpuClockOffsetSettings(125, 500),
+        };
+        using var provider = ReadyProvider(
+            new FakeProductionFactory(capabilities, port),
+            gpu);
+        provider.TryGetVerifiedDevice(out IBladeDevice device);
+
+        BladeWriteException error = await Assert.ThrowsAsync<BladeWriteException>(() =>
+            device.SetPerformanceAsync(
+                PerformancePreset.Custom,
+                requested,
+                default));
+
+        Assert.Equal(1, port.SetCustomPerformanceCount);
+        Assert.Equal(WriteSubmissionState.Indeterminate, error.SubmissionState);
+        Assert.Contains(
+            "Custom power mode was applied",
+            error.Message,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task EmptyCatalogProviderRetainsProtectionReadAndNeverFabricatesTemporaryFalse()
     {
         var capabilityPort = new FakeProductionPort(
@@ -680,10 +840,12 @@ public sealed class WindowsVerifiedBladeDeviceProviderProductionTests
     }
 
     private static WindowsVerifiedBladeDeviceProvider ReadyProvider(
-        IProductionBatteryPortFactory factory) => new(
+        IProductionBatteryPortFactory factory,
+        IGpuClockOffsetController? gpuClockOffsets = null) => new(
             () => Probe(BatteryValidationProbeClassification.Ready),
             factory,
-            new UnavailableFanRpmFactory());
+            new UnavailableFanRpmFactory(),
+            gpuClockOffsets: gpuClockOffsets);
 
     private static DeviceCapabilities BatteryCapabilities(
         IReadOnlySet<int> limits,
@@ -832,8 +994,10 @@ public sealed class WindowsVerifiedBladeDeviceProviderProductionTests
         public int McuVersionQueryCount { get; private set; }
         public int StartupAnimationQueryCount { get; private set; }
         public int SetPerformanceCount { get; private set; }
+        public int SetCustomPerformanceCount { get; private set; }
         public int SetFanModeCount { get; private set; }
         public PerformancePreset? LastPerformance { get; private set; }
+        public CustomPerformanceSettings? LastCustomPerformance { get; private set; }
         public FanMode? LastFanMode { get; private set; }
         public int SetLimitCount { get; private set; }
         public int SetProtectionOffCount { get; private set; }
@@ -910,6 +1074,16 @@ public sealed class WindowsVerifiedBladeDeviceProviderProductionTests
             return WriteFailure is null ? Task.CompletedTask : Task.FromException(WriteFailure);
         }
 
+        public Task SetCustomPerformanceAsync(
+            CustomPerformanceSettings value,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            SetCustomPerformanceCount++;
+            LastCustomPerformance = value;
+            return WriteFailure is null ? Task.CompletedTask : Task.FromException(WriteFailure);
+        }
+
         public Task SetFanModeAsync(FanMode value, CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -950,6 +1124,37 @@ public sealed class WindowsVerifiedBladeDeviceProviderProductionTests
         {
             DisposeCount++;
             return ValueTask.CompletedTask;
+        }
+    }
+
+    private sealed class FakeGpuClockOffsetController : IGpuClockOffsetController
+    {
+        public GpuClockOffsetCapabilities? Capabilities { get; set; } = new(
+            "Test NVIDIA GPU",
+            new GpuClockOffsetRange(-1000, 1000, 0),
+            new GpuClockOffsetRange(-2000, 6000, 0));
+
+        public int QueryCount { get; private set; }
+
+        public List<GpuClockOffsetSettings> Writes { get; } = [];
+
+        public bool FailWrites { get; init; }
+
+        public GpuClockOffsetCapabilities? Query()
+        {
+            QueryCount++;
+            return Capabilities;
+        }
+
+        public void Set(GpuClockOffsetSettings settings)
+        {
+            Writes.Add(settings);
+            if (FailWrites)
+            {
+                throw new BladeWriteException(
+                    WriteSubmissionState.KnownNotApplied,
+                    "NVML write failed.");
+            }
         }
     }
 }

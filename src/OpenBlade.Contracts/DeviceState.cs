@@ -47,7 +47,47 @@ public sealed record ConfirmedDeviceState(
 {
     public CustomPerformanceSettings? CustomPerformance { get; init; }
 
+    public GpuClockOffsetCapabilities? GpuClockOffsets { get; init; }
+
     public LogoLightingMode? LogoLighting { get; init; }
+}
+
+public sealed record GpuClockOffsetRange(
+    int MinimumMegahertz,
+    int MaximumMegahertz,
+    int CurrentMegahertz)
+{
+    public bool IsWellFormed =>
+        MinimumMegahertz >= GpuClockOffsetSettings.MinimumAbsoluteOffsetMegahertz
+        && MaximumMegahertz <= GpuClockOffsetSettings.MaximumAbsoluteOffsetMegahertz
+        && MinimumMegahertz <= MaximumMegahertz
+        && CurrentMegahertz >= MinimumMegahertz
+        && CurrentMegahertz <= MaximumMegahertz;
+}
+
+public sealed record GpuClockOffsetCapabilities(
+    string DeviceName,
+    GpuClockOffsetRange Core,
+    GpuClockOffsetRange Memory)
+{
+    public GpuClockOffsetSettings Current => new(
+        Core.CurrentMegahertz,
+        Memory.CurrentMegahertz);
+
+    public bool IsWellFormed =>
+        !string.IsNullOrWhiteSpace(DeviceName)
+        && DeviceName.Length <= 128
+        && Core is not null
+        && Core.IsWellFormed
+        && Memory is not null
+        && Memory.IsWellFormed;
+
+    public bool Supports(GpuClockOffsetSettings settings) =>
+        GpuClockOffsetSettings.IsWellFormed(settings)
+        && settings.CoreMegahertz >= Core.MinimumMegahertz
+        && settings.CoreMegahertz <= Core.MaximumMegahertz
+        && settings.MemoryMegahertz >= Memory.MinimumMegahertz
+        && settings.MemoryMegahertz <= Memory.MaximumMegahertz;
 }
 
 public sealed record FirmwareVersions(

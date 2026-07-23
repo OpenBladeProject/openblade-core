@@ -179,6 +179,7 @@ public sealed class BatteryConfigurationStore
         if (marker is null || marker.SchemaVersion is not (
                 ProfileStore.LegacySchemaVersion
                 or ProfileStore.EarliestSupportedSchemaVersion
+                or ProfileStore.EarlierSupportedSchemaVersion
                 or ProfileStore.OldestSupportedSchemaVersion
                 or ProfileStore.OlderSchemaVersion
                 or ProfileStore.PreviousSchemaVersion

@@ -1182,7 +1182,12 @@ public sealed class ControlCoordinator
         CustomPerformanceSettings? customPerformance) =>
         state.Performance == performance
         && (performance != PerformancePreset.Custom
-            || state.CustomPerformance == customPerformance);
+            || state.CustomPerformance is { } confirmed
+                && customPerformance is { } desired
+                && confirmed.Cpu == desired.Cpu
+                && confirmed.Gpu == desired.Gpu
+                && (desired.GpuClockOffsets is null
+                    || state.GpuClockOffsets?.Current == desired.GpuClockOffsets));
 
     private static bool IsThermalSubsystem(DeviceSubsystem subsystem) =>
         subsystem is DeviceSubsystem.Performance or DeviceSubsystem.Fans;

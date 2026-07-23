@@ -17,6 +17,43 @@ public enum CustomPerformanceLevel
     High,
 }
 
+public sealed record GpuClockOffsetSettings
+{
+    public const int MinimumAbsoluteOffsetMegahertz = -10_000;
+    public const int MaximumAbsoluteOffsetMegahertz = 10_000;
+
+    public GpuClockOffsetSettings(
+        int coreMegahertz,
+        int memoryMegahertz)
+    {
+        if (!IsWellFormed(coreMegahertz, memoryMegahertz))
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(coreMegahertz),
+                "GPU clock offsets exceed the supported contract bounds.");
+        }
+
+        CoreMegahertz = coreMegahertz;
+        MemoryMegahertz = memoryMegahertz;
+    }
+
+    public int CoreMegahertz { get; }
+
+    public int MemoryMegahertz { get; }
+
+    public static GpuClockOffsetSettings Default { get; } = new(0, 0);
+
+    public static bool IsWellFormed(GpuClockOffsetSettings? value) =>
+        value is not null
+        && IsWellFormed(value.CoreMegahertz, value.MemoryMegahertz);
+
+    private static bool IsWellFormed(int coreMegahertz, int memoryMegahertz) =>
+        coreMegahertz is
+            >= MinimumAbsoluteOffsetMegahertz and <= MaximumAbsoluteOffsetMegahertz
+        && memoryMegahertz is
+            >= MinimumAbsoluteOffsetMegahertz and <= MaximumAbsoluteOffsetMegahertz;
+}
+
 public sealed record CustomPerformanceSettings
 {
     public CustomPerformanceSettings(
@@ -41,8 +78,13 @@ public sealed record CustomPerformanceSettings
         CustomPerformanceLevel.Medium,
         CustomPerformanceLevel.High);
 
+    public GpuClockOffsetSettings? GpuClockOffsets { get; init; }
+
     public static bool IsWellFormed(CustomPerformanceSettings? value) =>
-        value is not null && IsWellFormed(value.Cpu, value.Gpu);
+        value is not null
+        && IsWellFormed(value.Cpu, value.Gpu)
+        && (value.GpuClockOffsets is null
+            || GpuClockOffsetSettings.IsWellFormed(value.GpuClockOffsets));
 
     private static bool IsWellFormed(
         CustomPerformanceLevel cpu,

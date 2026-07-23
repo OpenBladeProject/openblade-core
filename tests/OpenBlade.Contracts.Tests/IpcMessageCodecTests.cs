@@ -292,12 +292,71 @@ public sealed class IpcMessageCodecTests
             DesiredState = CreateStatus().DesiredState with { Battery = desired },
         };
 
-        Assert.Equal(17, OpenBladeIpc.ProtocolVersion);
+        Assert.Equal(18, OpenBladeIpc.ProtocolVersion);
         Assert.Equal(request, await RoundTripRequestAsync(request));
         ServiceStatusSnapshot roundTrip = await RoundTripStatusAsync(status);
         Assert.Equal([80], roundTrip.Capabilities!.ChargeLimits);
         Assert.Equal(desired, roundTrip.DesiredState.Battery);
         Assert.Equal(confirmed, roundTrip.ConfirmedState!.Battery);
+    }
+
+    [Fact]
+    public async Task VersionEighteenGpuClockOffsets_RoundTripExactShape()
+    {
+        var offsets = new GpuClockOffsetSettings(125, 500);
+        var capabilities = new GpuClockOffsetCapabilities(
+            "NVIDIA GeForce RTX 5090 Laptop GPU",
+            new GpuClockOffsetRange(-1000, 1000, offsets.CoreMegahertz),
+            new GpuClockOffsetRange(-2000, 6000, offsets.MemoryMegahertz));
+        ServiceStatusSnapshot status = CreateStatus() with
+        {
+            ConfirmedState = new ConfirmedDeviceState(
+                PerformancePreset.Custom,
+                FanMode.Automatic,
+                null,
+                null)
+            {
+                CustomPerformance = new CustomPerformanceSettings(
+                    CustomPerformanceLevel.High,
+                    CustomPerformanceLevel.Medium)
+                {
+                    GpuClockOffsets = offsets,
+                },
+                GpuClockOffsets = capabilities,
+            },
+        };
+
+        ServiceStatusSnapshot actual = await RoundTripStatusAsync(status);
+
+        Assert.Equal(capabilities, actual.ConfirmedState?.GpuClockOffsets);
+        Assert.Equal(offsets, actual.ConfirmedState?.CustomPerformance?.GpuClockOffsets);
+    }
+
+    [Fact]
+    public async Task VersionEighteenStatus_RejectsMalformedGpuClockOffsetRange()
+    {
+        ServiceServerFrame frame = new ServiceStatusEvent(
+            OpenBladeIpc.ProtocolVersion,
+            CreateStatus() with
+            {
+                ConfirmedState = new ConfirmedDeviceState(
+                    PerformancePreset.Custom,
+                    FanMode.Automatic,
+                    null,
+                    null)
+                {
+                    CustomPerformance = CustomPerformanceSettings.Default,
+                    GpuClockOffsets = new GpuClockOffsetCapabilities(
+                        "NVIDIA GPU",
+                        new GpuClockOffsetRange(100, -100, 0),
+                        new GpuClockOffsetRange(-2000, 6000, 0)),
+                },
+            });
+        using MemoryStream stream = FrameJson(
+            JsonSerializer.Serialize<ServiceServerFrame>(frame));
+
+        await Assert.ThrowsAsync<InvalidDataException>(() =>
+            IpcMessageCodec.ReadServerFrameAsync(stream, CancellationToken.None));
     }
 
     [Theory]
@@ -336,7 +395,7 @@ public sealed class IpcMessageCodecTests
 
         ServiceStatusSnapshot actual = await RoundTripStatusAsync(expected);
 
-        Assert.Equal(17, OpenBladeIpc.ProtocolVersion);
+        Assert.Equal(18, OpenBladeIpc.ProtocolVersion);
         AssertStatusEqual(expected, actual);
     }
 

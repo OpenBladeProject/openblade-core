@@ -28,6 +28,47 @@ public sealed class CustomPerformanceContractTests
     }
 
     [Fact]
+    public void Settings_AcceptsOptionalGpuClockOffsets()
+    {
+        var offsets = new GpuClockOffsetSettings(125, 500);
+        var settings = new CustomPerformanceSettings(
+            CustomPerformanceLevel.High,
+            CustomPerformanceLevel.Medium)
+        {
+            GpuClockOffsets = offsets,
+        };
+
+        Assert.True(CustomPerformanceSettings.IsWellFormed(settings));
+        Assert.Equal(offsets, settings.GpuClockOffsets);
+    }
+
+    [Theory]
+    [InlineData(-10001, 0)]
+    [InlineData(10001, 0)]
+    [InlineData(0, -10001)]
+    [InlineData(0, 10001)]
+    public void GpuClockOffsets_RejectValuesOutsideContractBounds(
+        int coreMegahertz,
+        int memoryMegahertz)
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            new GpuClockOffsetSettings(coreMegahertz, memoryMegahertz));
+    }
+
+    [Fact]
+    public void GpuClockOffsetCapabilities_ValidateAndEnforceDriverRanges()
+    {
+        var capabilities = new GpuClockOffsetCapabilities(
+            "NVIDIA GPU",
+            new GpuClockOffsetRange(-1000, 1000, 0),
+            new GpuClockOffsetRange(-2000, 6000, 0));
+
+        Assert.True(capabilities.IsWellFormed);
+        Assert.True(capabilities.Supports(new GpuClockOffsetSettings(1000, 6000)));
+        Assert.False(capabilities.Supports(new GpuClockOffsetSettings(1001, 0)));
+    }
+
+    [Fact]
     public void PerformanceOverride_RequiresLevelsOnlyForCustom()
     {
         Assert.True(new PerformanceOverride(

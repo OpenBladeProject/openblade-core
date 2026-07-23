@@ -35,7 +35,8 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
             ProductionProbeFactory,
             ProductionPortFactory(),
             ProductionFanRpmFactory(),
-            ProductionLightingPortFactory())
+            ProductionLightingPortFactory(),
+            new NvidiaGpuClockOffsetController())
     {
     }
 
@@ -43,13 +44,15 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
         Func<BatteryValidationProbeResult> probe,
         IProductionBatteryPortFactory batteryFactory,
         IFanRpmQueryRunFactory fanRpmFactory,
-        IProductionLightingPortFactory? lightingFactory = null)
+        IProductionLightingPortFactory? lightingFactory = null,
+        IGpuClockOffsetController? gpuClockOffsets = null)
     {
         this.probe = probe ?? throw new ArgumentNullException(nameof(probe));
         device = new SerializedBladeDevice(
             batteryFactory ?? throw new ArgumentNullException(nameof(batteryFactory)),
             fanRpmFactory ?? throw new ArgumentNullException(nameof(fanRpmFactory)),
-            lightingFactory ?? UnavailableProductionLightingFactory.Instance);
+            lightingFactory ?? UnavailableProductionLightingFactory.Instance,
+            gpuClockOffsets ?? UnavailableGpuClockOffsetController.Instance);
     }
 
     public bool TryGetVerifiedDevice(out IBladeDevice verifiedDevice)
@@ -204,6 +207,7 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
         private readonly IProductionBatteryPortFactory batteryFactory;
         private readonly IFanRpmQueryRunFactory fanRpmFactory;
         private readonly IProductionLightingPortFactory lightingFactory;
+        private readonly IGpuClockOffsetController gpuClockOffsets;
         private readonly object lifecycleSync = new();
         private readonly SemaphoreSlim hardwareOperationGate = new(1, 1);
         private bool closing;
@@ -248,11 +252,13 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
         internal SerializedBladeDevice(
             IProductionBatteryPortFactory batteryFactory,
             IFanRpmQueryRunFactory fanRpmFactory,
-            IProductionLightingPortFactory lightingFactory)
+            IProductionLightingPortFactory lightingFactory,
+            IGpuClockOffsetController gpuClockOffsets)
         {
             this.batteryFactory = batteryFactory;
             this.fanRpmFactory = fanRpmFactory;
             this.lightingFactory = lightingFactory;
+            this.gpuClockOffsets = gpuClockOffsets;
         }
 
         public async Task<DeviceCapabilities> ReadCapabilitiesAsync(
@@ -410,6 +416,19 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
                 ProductionPerformanceFanState performanceFan =
                     await port.QueryPerformanceFanStateAsync(cancellationToken)
                         .ConfigureAwait(false);
+                GpuClockOffsetCapabilities? gpuOffsets =
+                    performanceFan.Performance == PerformancePreset.Custom
+                        ? gpuClockOffsets.Query()
+                        : null;
+                CustomPerformanceSettings? customPerformance =
+                    performanceFan.CustomPerformance;
+                if (customPerformance is not null && gpuOffsets is not null)
+                {
+                    customPerformance = customPerformance with
+                    {
+                        GpuClockOffsets = gpuOffsets.Current,
+                    };
+                }
                 LightingSettings? lighting =
                     await ReadLightingStateCoreAsync(cancellationToken).ConfigureAwait(false);
                 LogoLightingMode? logo =
@@ -421,7 +440,8 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
                     battery,
                     lighting)
                 {
-                    CustomPerformance = performanceFan.CustomPerformance,
+                    CustomPerformance = customPerformance,
+                    GpuClockOffsets = gpuOffsets,
                     LogoLighting = logo,
                 };
             }
@@ -733,20 +753,62 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
                 customPerformance: null,
                 cancellationToken);
 
-        public Task SetPerformanceAsync(
+        public async Task SetPerformanceAsync(
             PerformancePreset value,
             CustomPerformanceSettings? customPerformance,
-            CancellationToken cancellationToken) =>
-            batteryFactory.Capabilities.PerformancePresets.Contains(value)
-                && (value == PerformancePreset.Custom
-                    ? CustomPerformanceSettings.IsWellFormed(customPerformance)
-                    : customPerformance is null)
-                ? ExecuteProductionWriteAsync(
-                    port => value == PerformancePreset.Custom
-                        ? port.SetCustomPerformanceAsync(customPerformance!, cancellationToken)
-                        : port.SetPerformanceAsync(value, cancellationToken),
-                    cancellationToken)
-                : RejectProductionWrite("The requested performance preset is not admitted.");
+            CancellationToken cancellationToken)
+        {
+            if (!batteryFactory.Capabilities.PerformancePresets.Contains(value)
+                || (value == PerformancePreset.Custom
+                    ? !CustomPerformanceSettings.IsWellFormed(customPerformance)
+                    : customPerformance is not null))
+            {
+                await RejectProductionWrite(
+                    "The requested performance preset is not admitted.")
+                    .ConfigureAwait(false);
+                return;
+            }
+
+            if (value == PerformancePreset.Custom
+                && customPerformance?.GpuClockOffsets is { } preflightOffsets)
+            {
+                GpuClockOffsetCapabilities? capabilities = gpuClockOffsets.Query();
+                if (capabilities is null || !capabilities.Supports(preflightOffsets))
+                {
+                    await RejectProductionWrite(
+                        capabilities is null
+                            ? "GPU clock tuning is unavailable."
+                            : "The requested GPU clock offsets are outside the ranges reported by the NVIDIA driver.")
+                        .ConfigureAwait(false);
+                    return;
+                }
+            }
+
+            await ExecuteProductionWriteAsync(
+                port => value == PerformancePreset.Custom
+                    ? port.SetCustomPerformanceAsync(customPerformance!, cancellationToken)
+                    : port.SetPerformanceAsync(value, cancellationToken),
+                cancellationToken).ConfigureAwait(false);
+
+            if (value == PerformancePreset.Custom
+                && customPerformance?.GpuClockOffsets is { } appliedOffsets)
+            {
+                try
+                {
+                    // The firmware power mode has already been committed. Complete
+                    // the paired NVML operation even if shutdown cancellation raced
+                    // with the successful HID write.
+                    gpuClockOffsets.Set(appliedOffsets);
+                }
+                catch (BladeWriteException exception)
+                {
+                    throw new BladeWriteException(
+                        WriteSubmissionState.Indeterminate,
+                        $"Custom power mode was applied, but GPU clock tuning failed. {exception.Message}",
+                        exception);
+                }
+            }
+        }
 
         public Task SetFanModeAsync(
             FanMode value,

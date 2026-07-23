@@ -203,6 +203,7 @@ public sealed class MainViewModelTests
         Assert.Contains("Static", viewModel.PluggedInProfileLightingSummary);
         Assert.Contains("drr-48-240", viewModel.PluggedInProfileDisplaySummary);
         Assert.Equal("Silent", viewModel.PluggedInProfilePresentation.PowerMode);
+        Assert.Equal("Not set", viewModel.PluggedInProfilePresentation.GpuTuning);
         Assert.Equal("Automatic", viewModel.PluggedInProfilePresentation.Fans);
         Assert.Equal("Off", viewModel.PluggedInProfilePresentation.LightingEffect);
         Assert.Equal("Not set", viewModel.PluggedInProfilePresentation.DisplayRefreshRate);
@@ -1777,6 +1778,69 @@ public sealed class MainViewModelTests
         Assert.Equal(requested, client.PerformanceOverride.CustomPerformance);
         Assert.Equal(OverrideLifetime.UntilPowerSourceChange, client.PerformanceOverride.Lifetime);
         Assert.True(viewModel.HasThermalProfileDraft);
+    }
+
+    [Fact]
+    public async Task GpuClockTuning_UsesDriverRangesAndSendsTypedCustomOverride()
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        var current = new GpuClockOffsetSettings(0, 0);
+        var gpuCapabilities = new GpuClockOffsetCapabilities(
+            "NVIDIA GeForce RTX 5090 Laptop GPU",
+            new GpuClockOffsetRange(-1000, 1000, current.CoreMegahertz),
+            new GpuClockOffsetRange(-2000, 6000, current.MemoryMegahertz));
+        ServiceStatusSnapshot baseline = CreateStatus(verified: true, blocked: false);
+        client.Publish(baseline with
+        {
+            ConfirmedState = baseline.ConfirmedState! with
+            {
+                Performance = PerformancePreset.Custom,
+                CustomPerformance = new CustomPerformanceSettings(
+                    CustomPerformanceLevel.Medium,
+                    CustomPerformanceLevel.High)
+                {
+                    GpuClockOffsets = current,
+                },
+                GpuClockOffsets = gpuCapabilities,
+            },
+            DesiredState = baseline.DesiredState with
+            {
+                Performance = new ResolvedSetting<PerformancePreset>(
+                    PerformancePreset.Custom,
+                    SettingValueSource.PowerProfile),
+                CustomPerformance = new CustomPerformanceSettings(
+                    CustomPerformanceLevel.Medium,
+                    CustomPerformanceLevel.High)
+                {
+                    GpuClockOffsets = current,
+                },
+            },
+        });
+        await WaitUntilAsync(() => viewModel.IsGpuClockTuningAvailable);
+
+        Assert.Equal(-1000, viewModel.GpuCoreClockOffsetMinimum);
+        Assert.Equal(1000, viewModel.GpuCoreClockOffsetMaximum);
+        Assert.Equal(-2000, viewModel.GpuMemoryClockOffsetMinimum);
+        Assert.Equal(6000, viewModel.GpuMemoryClockOffsetMaximum);
+        var requested = new CustomPerformanceSettings(
+            CustomPerformanceLevel.Medium,
+            CustomPerformanceLevel.High)
+        {
+            GpuClockOffsets = new GpuClockOffsetSettings(125, 500),
+        };
+        Assert.True(viewModel.SetCustomPerformanceCommand.CanExecute(requested));
+        Assert.False(viewModel.SetCustomPerformanceCommand.CanExecute(
+            requested with
+            {
+                GpuClockOffsets = new GpuClockOffsetSettings(1001, 500),
+            }));
+
+        await Assert.IsType<AsyncRelayCommand>(viewModel.SetCustomPerformanceCommand)
+            .ExecuteAsync(requested);
+
+        Assert.Equal(requested, client.PerformanceOverride?.CustomPerformance);
     }
 
     [Fact]

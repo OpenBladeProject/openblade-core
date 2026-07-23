@@ -43,7 +43,8 @@ internal sealed record LegacyPersistentOverrideDocument(
 
 public sealed class PersistentOverrideStore
 {
-    private const int CurrentSchemaVersion = 3;
+    private const int CurrentSchemaVersion = 4;
+    private const int SchemaThreeVersion = 3;
     private const int SchemaTwoVersion = 2;
     private const int LegacySchemaVersion = 1;
     private static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web)
@@ -171,7 +172,7 @@ public sealed class PersistentOverrideStore
 
 
         PersistentOverrideState overrides;
-        if (schemaVersion == CurrentSchemaVersion)
+        if (schemaVersion is CurrentSchemaVersion or SchemaThreeVersion)
         {
             PersistentOverrideDocument? document =
                 JsonSerializer.Deserialize<PersistentOverrideDocument>(json, SerializerOptions);

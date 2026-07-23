@@ -16,7 +16,20 @@ public sealed class ProfileStoreTests : IDisposable
     {
         string path = Path.Combine(_directory, "profiles.json");
         ProfileStore store = new(path);
-        ProfileSet expected = ProfileDefaults.CreateSafeDefaults();
+        ProfileSet defaults = ProfileDefaults.CreateSafeDefaults();
+        ProfileSet expected = defaults with
+        {
+            PluggedIn = defaults.PluggedIn with
+            {
+                Performance = PerformancePreset.Custom,
+                CustomPerformance = new CustomPerformanceSettings(
+                    CustomPerformanceLevel.High,
+                    CustomPerformanceLevel.Medium)
+                {
+                    GpuClockOffsets = new GpuClockOffsetSettings(125, 500),
+                },
+            },
+        };
 
         await store.SaveAsync(expected, CancellationToken.None);
         ProfileLoadResult result = await store.LoadAsync(CancellationToken.None);
@@ -24,6 +37,28 @@ public sealed class ProfileStoreTests : IDisposable
         Assert.False(result.RecoveredFromInvalidFile);
         Assert.Equal(expected, result.Profiles);
         Assert.False(File.Exists(path + ".tmp"));
+    }
+
+    [Fact]
+    public async Task Load_PreviousSchemaDoesNotInventGpuClockOffsets()
+    {
+        Directory.CreateDirectory(_directory);
+        string path = Path.Combine(_directory, "profiles.json");
+        ProfileSet defaults = ProfileDefaults.CreateSafeDefaults();
+        await File.WriteAllBytesAsync(
+            path,
+            JsonSerializer.SerializeToUtf8Bytes(
+                new ProfileDocument(ProfileStore.PreviousSchemaVersion, defaults),
+                ProfileStore.SerializerOptions));
+
+        ProfileLoadResult result = await new ProfileStore(path).LoadAsync(
+            CancellationToken.None);
+
+        Assert.False(result.RecoveredFromInvalidFile);
+        Assert.Null(result.Profiles.PluggedIn.CustomPerformance?.GpuClockOffsets);
+        Assert.Contains(
+            $"\"schemaVersion\": {ProfileStore.CurrentSchemaVersion}",
+            await File.ReadAllTextAsync(path));
     }
 
     [Fact]
