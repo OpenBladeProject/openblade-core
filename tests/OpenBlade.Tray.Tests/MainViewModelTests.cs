@@ -3786,11 +3786,16 @@ public sealed class MainViewModelTests
             new RecordingDispatcher(),
             new FakeDiagnosticArchiveSaver(),
             new FakeStartupRegistration(false),
-            uiVersion: "2.0.0");
+            uiVersion: "2.0.0",
+            sessionAgentVersion: "1.8.0",
+            installedServiceVersion: "1.6.0",
+            setupVersion: "1.7.0");
         await viewModel.StartAsync();
 
         Assert.Equal("2.0.0", viewModel.AboutUiVersionStatus);
-        Assert.Equal("Unavailable", viewModel.AboutServiceVersionStatus);
+        Assert.Equal("1.8.0", viewModel.AboutSessionAgentVersionStatus);
+        Assert.Equal("1.6.0", viewModel.AboutServiceVersionStatus);
+        Assert.Equal("1.7.0", viewModel.AboutSetupVersionStatus);
 
         client.Publish(CreateStatus(verified: true, blocked: false) with
         {
@@ -3801,7 +3806,23 @@ public sealed class MainViewModelTests
 
         client.PublishReconnecting();
         await WaitUntilAsync(() => !viewModel.IsConnected);
-        Assert.Equal("Unavailable", viewModel.AboutServiceVersionStatus);
+        Assert.Equal("1.6.0", viewModel.AboutServiceVersionStatus);
+    }
+
+    [Fact]
+    public void AboutVersions_UseUnavailableForMissingInstalledComponents()
+    {
+        var viewModel = new MainViewModel(
+            new FakeServiceClient(),
+            new RecordingDispatcher(),
+            new FakeDiagnosticArchiveSaver(),
+            new FakeStartupRegistration(false),
+            uiVersion: "2.0.0",
+            sessionAgentVersion: " ",
+            setupVersion: null);
+
+        Assert.Equal("Unavailable", viewModel.AboutSessionAgentVersionStatus);
+        Assert.Equal("Unavailable", viewModel.AboutSetupVersionStatus);
     }
 
     [Fact]

@@ -128,6 +128,9 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     private readonly IStartupRegistration startupRegistration;
     private readonly TimeProvider timeProvider;
     private readonly string uiVersion;
+    private readonly string sessionAgentVersion;
+    private readonly string installedServiceVersion;
+    private readonly string setupVersion;
     private readonly string applicationBaseDirectory;
     private readonly CancellationTokenSource lifetime = new();
     private readonly object startSync = new();
@@ -325,6 +328,9 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         IStartupRegistration startupRegistration,
         TimeProvider? timeProvider = null,
         string? uiVersion = null,
+        string? sessionAgentVersion = null,
+        string? installedServiceVersion = null,
+        string? setupVersion = null,
         string? applicationBaseDirectory = null)
     {
         this.serviceClient = serviceClient ?? throw new ArgumentNullException(nameof(serviceClient));
@@ -337,6 +343,9 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         this.uiVersion = string.IsNullOrWhiteSpace(uiVersion)
             ? OpenBladeProductVersion.Read(typeof(MainViewModel).Assembly)
             : uiVersion.Trim();
+        this.sessionAgentVersion = ComponentVersionValue(sessionAgentVersion);
+        this.installedServiceVersion = ComponentVersionValue(installedServiceVersion);
+        this.setupVersion = ComponentVersionValue(setupVersion);
         this.applicationBaseDirectory = string.IsNullOrWhiteSpace(applicationBaseDirectory)
             ? AppContext.BaseDirectory
             : applicationBaseDirectory.Trim();
@@ -1070,10 +1079,14 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
 
     public string AboutUiVersionStatus => uiVersion;
 
+    public string AboutSessionAgentVersionStatus => sessionAgentVersion;
+
     public string AboutServiceVersionStatus =>
         !IsConnected || string.IsNullOrWhiteSpace(latestStatus?.ServiceVersion)
-            ? "Unavailable"
+            ? installedServiceVersion
             : latestStatus.ServiceVersion.Trim();
+
+    public string AboutSetupVersionStatus => setupVersion;
 
     public string AboutDetectedLaptopStatus => !IsConnected
         ? "Unavailable"
@@ -1088,6 +1101,9 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     public string AboutMcuVersionStatus => FirmwareValue(latestStatus?.Firmware?.McuVersion);
 
     public string AboutVbiosVersionStatus => FirmwareValue(latestStatus?.Firmware?.VbiosVersion);
+
+    private static string ComponentVersionValue(string? value) =>
+        string.IsNullOrWhiteSpace(value) ? "Unavailable" : value.Trim();
 
     public string TroubleshootingPowerSourceStatus => !IsConnected
         ? "Unavailable"

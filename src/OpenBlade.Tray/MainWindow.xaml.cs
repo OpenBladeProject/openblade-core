@@ -100,7 +100,13 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             new WinUiDispatcher(dispatcherQueue),
             new DiagnosticArchiveSaver(new WinUiDiagnosticArchiveDestination(AppWindow.Id)),
             new WindowsStartupRegistration(),
-            uiVersion: OpenBladeProductVersion.Read(typeof(MainWindow).Assembly));
+            uiVersion: OpenBladeProductVersion.Read(typeof(MainWindow).Assembly),
+            sessionAgentVersion: InstalledComponentVersion.ReadSibling(
+                "OpenBlade.SessionAgent.exe"),
+            installedServiceVersion: InstalledComponentVersion.ReadSibling(
+                "OpenBlade.Service.exe"),
+            setupVersion: InstalledComponentVersion.ReadSibling(
+                "OpenBlade.Setup.exe"));
         displaySettingsAdapter = new SessionDisplaySettingsAdapter();
         DisplayViewModel = new DisplaySettingsViewModel(displaySettingsAdapter);
         DisplayViewModel.UserSettingsChanged += OnDisplayUserSettingsChanged;

@@ -620,7 +620,9 @@ public sealed class CapabilityPresentationTests
                 && Attribute(element, "Text") == section);
         }
         Assert.Contains("ViewModel.AboutUiVersionStatus", aboutPage.ToString(), StringComparison.Ordinal);
+        Assert.Contains("ViewModel.AboutSessionAgentVersionStatus", aboutPage.ToString(), StringComparison.Ordinal);
         Assert.Contains("ViewModel.AboutServiceVersionStatus", aboutPage.ToString(), StringComparison.Ordinal);
+        Assert.Contains("ViewModel.AboutSetupVersionStatus", aboutPage.ToString(), StringComparison.Ordinal);
         Assert.DoesNotContain("Supported laptop", aboutPage.ToString(), StringComparison.Ordinal);
         Assert.DoesNotContain("Relationship to Razer", aboutPage.ToString(), StringComparison.Ordinal);
         Assert.Contains("Independent open-source project; not affiliated with Razer.", aboutPage.ToString(), StringComparison.Ordinal);
