@@ -1152,6 +1152,14 @@ public sealed class WinUiShellContractTests
             "binding.SelectedAction = selectedAction;",
             window,
             StringComparison.Ordinal);
+        Assert.Contains(
+            "TryResolveSpecialKeySlot(comboBox, out SpecialKeySlot slot)",
+            window,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "AutomationProperties.GetName(comboBox)",
+            window,
+            StringComparison.Ordinal);
     }
 
     [Fact]

@@ -1498,9 +1498,9 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         if (changingSpecialKeyBindings
             || sender is not Microsoft.UI.Xaml.Controls.ComboBox
             {
-                Tag: SpecialKeySlot slot,
                 SelectedItem: SpecialKeyActionOption selectedAction,
-            })
+            } comboBox
+            || !TryResolveSpecialKeySlot(comboBox, out SpecialKeySlot slot))
         {
             return;
         }
@@ -1513,6 +1513,25 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         }
 
         binding.SelectedAction = selectedAction;
+    }
+
+    private static bool TryResolveSpecialKeySlot(
+        Microsoft.UI.Xaml.Controls.ComboBox comboBox,
+        out SpecialKeySlot slot)
+    {
+        if (comboBox.Tag is SpecialKeySlot typedSlot)
+        {
+            slot = typedSlot;
+            return true;
+        }
+
+        string? slotName = comboBox.Tag?.ToString();
+        if (string.IsNullOrWhiteSpace(slotName))
+        {
+            slotName = Microsoft.UI.Xaml.Automation.AutomationProperties.GetName(comboBox);
+        }
+
+        return Enum.TryParse(slotName, ignoreCase: true, out slot);
     }
 
     private void ApplyNavigationDestination(string destination)
