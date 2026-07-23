@@ -612,6 +612,31 @@ public sealed class CapabilityPresentationTests
                 Attribute(setter, "Property") == "BorderThickness"
                 && Attribute(setter, "Value") == "0");
         }
+        XElement cardActionIconStyle = Assert.Single(document.Descendants(), element =>
+            element.Name.LocalName == "Style"
+            && Attribute(element, "Key") == "CardActionIconStyle");
+        Assert.Contains(cardActionIconStyle.Elements(), setter =>
+            Attribute(setter, "Property") == "FontSize"
+            && Attribute(setter, "Value") == "{ThemeResource ExpanderChevronGlyphSize}");
+        XElement[] cardActionIcons = aboutPage.Descendants()
+            .Where(element =>
+                element.Name.LocalName is "Button" or "HyperlinkButton"
+                && Attribute(element, "Style") is
+                    "{StaticResource IconActionButtonStyle}"
+                    or "{StaticResource ExternalLinkButtonStyle}")
+            .SelectMany(element => element.Descendants()
+                .Where(descendant => descendant.Name.LocalName == "FontIcon"))
+            .ToArray();
+        Assert.Equal(5, cardActionIcons.Length);
+        Assert.All(
+            cardActionIcons,
+            icon =>
+            {
+                Assert.Equal(
+                    "{StaticResource CardActionIconStyle}",
+                    Attribute(icon, "Style"));
+                Assert.Null(Attribute(icon, "FontSize"));
+            });
         Assert.Contains(
             "Save logs and system details with sensitive information removed.",
             xaml,

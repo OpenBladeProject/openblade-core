@@ -190,6 +190,10 @@
                 <Setter Property="Background" Value="Transparent" />
                 <Setter Property="BorderThickness" Value="0" />
             </Style>
+            <Style x:Key="CardActionIconStyle" TargetType="FontIcon">
+                <Setter Property="FontSize"
+                        Value="{ThemeResource ExpanderChevronGlyphSize}" />
+            </Style>
             <Style x:Key="DestructiveButtonStyle"
                    TargetType="Button"
                    BasedOn="{StaticResource DefaultButtonStyle}">
@@ -3006,7 +3010,8 @@
                                                 Command="{x:Bind ViewModel.ExportDiagnosticsCommand}"
                                                 AutomationProperties.Name="Export diagnostics"
                                                 ToolTipService.ToolTip="Export diagnostics">
-                                            <FontIcon Glyph="&#xE896;" FontSize="16" />
+                                            <FontIcon Glyph="&#xE896;"
+                                                      Style="{StaticResource CardActionIconStyle}" />
                                         </Button>
                                     </Grid>
                                 </Border>
@@ -3022,7 +3027,8 @@
                                                          Style="{StaticResource ExternalLinkButtonStyle}"
                                                          AutomationProperties.Name="Open GitHub Issues"
                                                          ToolTipService.ToolTip="Open GitHub Issues">
-                                            <FontIcon Glyph="&#xE8A7;" FontSize="16" />
+                                            <FontIcon Glyph="&#xE8A7;"
+                                                      Style="{StaticResource CardActionIconStyle}" />
                                         </HyperlinkButton>
                                     </Grid>
                                 </Border>
@@ -3038,7 +3044,8 @@
                                                          Style="{StaticResource ExternalLinkButtonStyle}"
                                                          AutomationProperties.Name="Open documentation"
                                                          ToolTipService.ToolTip="Open documentation">
-                                            <FontIcon Glyph="&#xE8A7;" FontSize="16" />
+                                            <FontIcon Glyph="&#xE8A7;"
+                                                      Style="{StaticResource CardActionIconStyle}" />
                                         </HyperlinkButton>
                                     </Grid>
                                 </Border>
@@ -3054,7 +3061,8 @@
                                                          Style="{StaticResource ExternalLinkButtonStyle}"
                                                          AutomationProperties.Name="Open release notes"
                                                          ToolTipService.ToolTip="Open release notes">
-                                            <FontIcon Glyph="&#xE8A7;" FontSize="16" />
+                                            <FontIcon Glyph="&#xE8A7;"
+                                                      Style="{StaticResource CardActionIconStyle}" />
                                         </HyperlinkButton>
                                     </Grid>
                                 </Border>
@@ -3070,7 +3078,8 @@
                                                          Style="{StaticResource ExternalLinkButtonStyle}"
                                                          AutomationProperties.Name="Open source code"
                                                          ToolTipService.ToolTip="Open source code">
-                                            <FontIcon Glyph="&#xE8A7;" FontSize="16" />
+                                            <FontIcon Glyph="&#xE8A7;"
+                                                      Style="{StaticResource CardActionIconStyle}" />
                                         </HyperlinkButton>
                                     </Grid>
                                 </Border>
