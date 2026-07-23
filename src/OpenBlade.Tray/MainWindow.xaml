@@ -1809,10 +1809,6 @@
                                         Click="OnExportProfiles"
                                         ToolTipService.ToolTip="Export saved profiles as JSON"
                                         AutomationProperties.Name="Export profiles to JSON" />
-                                <Button Content="Customize"
-                                        Tag="Profiles"
-                                        Click="OnCustomizePageSections"
-                                        AutomationProperties.Name="Customize Profiles page" />
                             </StackPanel>
                         </Grid>
                         <StackPanel x:Name="ProfilesSectionHost">
@@ -2236,21 +2232,18 @@
                                                             <ColumnDefinition Width="*" />
                                                             <ColumnDefinition Width="280" />
                                                         </Grid.ColumnDefinitions>
-                                                        <StackPanel Spacing="3"
-                                                                    VerticalAlignment="Center">
-                                                            <TextBlock Text="{x:Bind SlotLabel}"
-                                                                       Style="{StaticResource CardTitleStyle}" />
-                                                            <TextBlock Text="{x:Bind PhysicalKeyLabel}"
-                                                                       Style="{StaticResource SecondaryTextStyle}" />
-                                                        </StackPanel>
+                                                        <TextBlock Text="{x:Bind SlotLabel}"
+                                                                   Style="{StaticResource CardTitleStyle}"
+                                                                   VerticalAlignment="Center" />
                                                         <ComboBox Grid.Column="1"
                                                                   MinWidth="200"
                                                                   HorizontalAlignment="Stretch"
                                                                   VerticalAlignment="Center"
                                                                   ItemsSource="{x:Bind AvailableActions}"
                                                                   DisplayMemberPath="Label"
-                                                                  SelectedItem="{x:Bind SelectedAction, Mode=TwoWay}"
+                                                                  SelectedItem="{x:Bind SelectedAction, Mode=OneWay}"
                                                                   local:StableComboBoxSelection.Anchor="{x:Bind SelectedAction, Mode=OneWay}"
+                                                                  SelectionChanged="OnSpecialKeyActionSelectionChanged"
                                                                   AutomationProperties.Name="{x:Bind SlotLabel}" />
                                                     </Grid>
                                                     <Grid Visibility="{x:Bind ValueEditorVisibility, Mode=OneWay}"

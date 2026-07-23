@@ -58,16 +58,6 @@ public sealed class SpecialKeyBindingViewModel : INotifyPropertyChanged
 
     public string SlotLabel => Slot.ToString();
 
-    public string PhysicalKeyLabel => Slot switch
-    {
-        SpecialKeySlot.M1 => "Page Up",
-        SpecialKeySlot.M2 => "Page Down",
-        SpecialKeySlot.M3 => "Gaming mode",
-        SpecialKeySlot.M4 => "Power mode",
-        SpecialKeySlot.M5 => "Microphone mute",
-        _ => string.Empty,
-    };
-
     public SpecialKeyActionOption SelectedAction
     {
         get => selectedAction;

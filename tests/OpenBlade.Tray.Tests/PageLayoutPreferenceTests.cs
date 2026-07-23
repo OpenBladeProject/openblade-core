@@ -133,7 +133,8 @@ public sealed class PageLayoutPreferenceTests
         string window = File.ReadAllText(
             Path.Combine(repositoryRoot, "src", "OpenBlade.Tray", "MainWindow.xaml.cs"));
 
-        foreach (string page in Enum.GetNames<CustomizablePageKind>())
+        foreach (string page in Enum.GetNames<CustomizablePageKind>()
+                     .Where(page => page != nameof(CustomizablePageKind.Profiles)))
         {
             Assert.Contains($"Tag=\"{page}\"", xaml, StringComparison.Ordinal);
             Assert.Contains(
@@ -141,6 +142,10 @@ public sealed class PageLayoutPreferenceTests
                 xaml,
                 StringComparison.Ordinal);
         }
+        Assert.DoesNotContain(
+            "AutomationProperties.Name=\"Customize Profiles page\"",
+            xaml,
+            StringComparison.Ordinal);
 
         Assert.Contains("x:Key=\"PageSectionOptionTemplate\"", xaml, StringComparison.Ordinal);
         foreach (string elementName in new[]

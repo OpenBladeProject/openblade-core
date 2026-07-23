@@ -1117,7 +1117,15 @@ public sealed class WinUiShellContractTests
             xaml,
             StringComparison.Ordinal);
         Assert.Contains(
-            "SelectedItem=\"{x:Bind SelectedAction, Mode=TwoWay}\"",
+            "SelectedItem=\"{x:Bind SelectedAction, Mode=OneWay}\"",
+            xaml,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "SelectionChanged=\"OnSpecialKeyActionSelectionChanged\"",
+            xaml,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            "Text=\"{x:Bind PhysicalKeyLabel}\"",
             xaml,
             StringComparison.Ordinal);
         Assert.Contains(
@@ -1134,6 +1142,10 @@ public sealed class WinUiShellContractTests
             StringComparison.Ordinal);
         Assert.Contains(
             ".Select(binding => binding.ToPreference())",
+            window,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "binding.SelectedAction = selectedAction;",
             window,
             StringComparison.Ordinal);
     }

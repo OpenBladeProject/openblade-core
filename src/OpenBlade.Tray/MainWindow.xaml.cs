@@ -1491,6 +1491,24 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         }
     }
 
+    private void OnSpecialKeyActionSelectionChanged(
+        object sender,
+        SelectionChangedEventArgs args)
+    {
+        if (changingSpecialKeyBindings
+            || sender is not Microsoft.UI.Xaml.Controls.ComboBox
+            {
+                DataContext: SpecialKeyBindingViewModel binding,
+                SelectedItem: SpecialKeyActionOption selectedAction,
+            }
+            || binding.SelectedAction == selectedAction)
+        {
+            return;
+        }
+
+        binding.SelectedAction = selectedAction;
+    }
+
     private void ApplyNavigationDestination(string destination)
     {
         HomePage.Visibility = destination == "home"
