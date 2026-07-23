@@ -103,7 +103,13 @@ public sealed class UiPreferenceStore
 
         try
         {
-            await using FileStream stream = File.OpenRead(path);
+            await using FileStream stream = new(
+                path,
+                FileMode.Open,
+                FileAccess.Read,
+                FileShare.ReadWrite | FileShare.Delete,
+                bufferSize: 4096,
+                FileOptions.Asynchronous | FileOptions.SequentialScan);
             UiPreferences? preferences = await JsonSerializer.DeserializeAsync<UiPreferences>(
                 stream,
                 SerializerOptions,

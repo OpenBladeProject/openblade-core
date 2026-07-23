@@ -60,7 +60,9 @@ internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
     private const int LowLevelKeyboardHook = 13;
     private const uint LowLevelInjectedFlag = 0x00000010;
     private const uint WindowMessageKeyDown = 0x0100;
+    private const uint WindowMessageKeyUp = 0x0101;
     private const uint WindowMessageSystemKeyDown = 0x0104;
+    private const uint WindowMessageSystemKeyUp = 0x0105;
     private const uint VirtualKeyPageUp = 0x21;
     private const uint VirtualKeyPageDown = 0x22;
     private const int MaximumRawInputBytes = 64 * 1024;
@@ -354,7 +356,11 @@ internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
         WindowsReactiveKeyboardSource? owner = Volatile.Read(ref keyboardHookOwner);
         if (code >= 0
             && owner is not null
-            && windowParameter is WindowMessageKeyDown or WindowMessageSystemKeyDown)
+            && windowParameter is
+                WindowMessageKeyDown or
+                WindowMessageKeyUp or
+                WindowMessageSystemKeyDown or
+                WindowMessageSystemKeyUp)
         {
             LowLevelKeyboardInput input =
                 Marshal.PtrToStructure<LowLevelKeyboardInput>(messageParameter);
