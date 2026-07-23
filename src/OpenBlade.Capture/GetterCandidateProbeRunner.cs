@@ -32,6 +32,14 @@ internal static class GetterCandidateProbeFactory
             ExchangeTimeout,
             CleanupTimeout);
 
+    internal static IGetterCandidateProbeRunner CreateDeviceModeWindows() =>
+        new DeviceModeQueryRunner(
+            static () => new ValidationRunContext(),
+            CreateStrictActorFactory(),
+            TimeProvider.System,
+            ExchangeTimeout,
+            CleanupTimeout);
+
     private static IValidationActorFactory CreateStrictActorFactory()
     {
         var native = new WindowsHidNative();
@@ -217,4 +225,32 @@ internal sealed class GamingModeGetterCandidateProbeRunner : GetterCandidateProb
 
     protected override RazerCommandSpec CreateFixedCommand() =>
         new(0x00, 0x88, [0x00, 0x00, 0x00, 0x00], expectedPayloadLength: 4);
+}
+
+internal sealed class DeviceModeQueryRunner : GetterCandidateProbeRunner
+{
+    internal DeviceModeQueryRunner(
+        Func<ValidationRunContext> createContext,
+        IValidationActorFactory actorFactory,
+        TimeProvider timeProvider,
+        TimeSpan exchangeTimeout,
+        TimeSpan cleanupTimeout,
+        PendingDisposalRegistry? pendingDisposals = null)
+        : base(
+            createContext,
+            actorFactory,
+            timeProvider,
+            exchangeTimeout,
+            cleanupTimeout,
+            pendingDisposals)
+    {
+    }
+
+    protected override RazerCommandSpec CreateFixedCommand() =>
+        new(
+            DeviceModeProtocol.OperationClass,
+            DeviceModeProtocol.QueryOperationId,
+            DeviceModeProtocol.QueryArguments.ToArray(),
+            expectedPayloadLength: 2,
+            payload => DeviceModeProtocol.TryDecodeQuery(payload.Span, out _));
 }

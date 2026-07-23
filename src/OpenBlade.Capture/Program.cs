@@ -181,6 +181,16 @@ if (args.Length > 0 && args[0].Equals(
 }
 
 if (args.Length > 0 && args[0].Equals(
+    "query-device-mode",
+    StringComparison.OrdinalIgnoreCase))
+{
+    IGetterCandidateProbeRunner runner =
+        GetterCandidateProbeFactory.CreateDeviceModeWindows();
+    var command = new DeviceModeQueryCommand(runner.RunAsync, Console.Out);
+    return await command.RunAsync(args[1..], CancellationToken.None);
+}
+
+if (args.Length > 0 && args[0].Equals(
     "validate-performance-fan",
     StringComparison.OrdinalIgnoreCase))
 {

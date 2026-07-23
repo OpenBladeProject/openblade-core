@@ -45,6 +45,7 @@
     <LightingImplementationSource Include="HidHandleIdentity.cs" />
     <LightingImplementationSource Include="HidSessionResult.cs" />
     <LightingImplementationSource Include="IProductionLightingPort.cs" />
+    <LightingImplementationSource Include="DeviceModeProtocol.cs" />
     <LightingImplementationSource Include="LightingBrightnessProtocol.cs" />
     <LightingImplementationSource Include="LogoLightingProtocol.cs" />
     <LightingImplementationSource Include="NativeOperationState.cs" />

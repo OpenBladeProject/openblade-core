@@ -118,10 +118,10 @@ internal static class ProductionLightingEvidenceSource
         "OpenBladeLightingImplementationFingerprint";
 
     private const string ApprovedLightingImplementationFingerprintSha256 =
-        // Re-reviewed after PowerProfile gained optional laptop-behavior
-        // settings. LightingSettings, command bytes, effect renderers,
-        // timelines, admission rules, and the single matrix writer are unchanged.
-        "5DFBAC93C832BDE3E783395EED5C2FC04BF929E1ECAFA0CC00401DC98BD03EE7";
+        // Re-reviewed after identifying 00/84 as the read-only device-mode
+        // query. The accepted 00 00 and 03 00 replies and wire order are
+        // unchanged; 02 00 now fails at the command payload validator.
+        "59936FD44C47D2B651DCFCA6F86BE11916F0944C79D2081EC806995767AF7598";
 
     private static readonly JsonSerializerOptions SerializerOptions =
         new(JsonSerializerDefaults.Web)

@@ -191,3 +191,114 @@ internal sealed class GamingModeGetterCandidateProbeCommand(
         RequestPayloadHex: "00000000",
         ExpectedPayloadLength: 4);
 }
+
+internal sealed class DeviceModeQueryCommand(
+    Func<CancellationToken, Task<HidSessionResult<GetterCandidateProbeSnapshot>>> run,
+    TextWriter output,
+    Func<Action, IDisposable>? registerCancellation = null)
+{
+    internal const int UsageExitCode = 1;
+    internal const int QueryFailureExitCode = 2;
+    internal const int CanceledExitCode = 4;
+
+    internal async Task<int> RunAsync(
+        IReadOnlyList<string> arguments,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(arguments);
+        if (arguments.Count != 0)
+        {
+            await output.WriteLineAsync("Usage: OpenBlade.Capture query-device-mode")
+                .ConfigureAwait(false);
+            return UsageExitCode;
+        }
+
+        using CancellationTokenSource commandCancellation =
+            CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        using IDisposable registration = (registerCancellation
+            ?? RegisterConsoleCancellation)(() => Cancel(commandCancellation));
+        try
+        {
+            HidSessionResult<GetterCandidateProbeSnapshot> result =
+                await run(commandCancellation.Token).ConfigureAwait(false);
+            commandCancellation.Token.ThrowIfCancellationRequested();
+
+            RazerDeviceMode? mode = null;
+            if (result.Value is not null
+                && TryDecodeMode(result.Value.ResponsePayloadHex, out RazerDeviceMode decoded))
+            {
+                mode = decoded;
+            }
+
+            await output.WriteLineAsync($"Mode={mode?.ToString() ?? "Unavailable"}")
+                .ConfigureAwait(false);
+            await output.WriteLineAsync(
+                $"ResponsePayload={result.Value?.ResponsePayloadHex ?? "Unavailable"}")
+                .ConfigureAwait(false);
+            await output.WriteLineAsync($"Failure={result.Failure?.ToString() ?? "None"}")
+                .ConfigureAwait(false);
+            await output.WriteLineAsync(
+                $"FailurePhase={result.Diagnostic?.Phase.ToString() ?? "None"}")
+                .ConfigureAwait(false);
+            await output.WriteLineAsync(
+                $"ProtocolValidation=" +
+                $"{result.Diagnostic?.ProtocolValidationFailure?.ToString() ?? "None"}")
+                .ConfigureAwait(false);
+
+            return result.Failure is null && mode is not null
+                ? 0
+                : QueryFailureExitCode;
+        }
+        catch (OperationCanceledException) when (commandCancellation.IsCancellationRequested)
+        {
+            await output.WriteLineAsync("Canceled=True").ConfigureAwait(false);
+            return CanceledExitCode;
+        }
+    }
+
+    private static IDisposable RegisterConsoleCancellation(Action cancel)
+    {
+        ConsoleCancelEventHandler handler = (_, eventArgs) =>
+        {
+            eventArgs.Cancel = true;
+            cancel();
+        };
+        Console.CancelKeyPress += handler;
+        return new DeviceModeCancellationRegistration(handler);
+    }
+
+    private static void Cancel(CancellationTokenSource source)
+    {
+        try { source.Cancel(); } catch (ObjectDisposedException) { }
+    }
+
+    private static bool TryDecodeMode(string payloadHex, out RazerDeviceMode mode)
+    {
+        mode = default;
+        try
+        {
+            return DeviceModeProtocol.TryDecodeQuery(
+                Convert.FromHexString(payloadHex),
+                out mode);
+        }
+        catch (FormatException)
+        {
+            return false;
+        }
+    }
+
+    private sealed class DeviceModeCancellationRegistration(
+        ConsoleCancelEventHandler handler) : IDisposable
+    {
+        private ConsoleCancelEventHandler? handler = handler;
+
+        public void Dispose()
+        {
+            ConsoleCancelEventHandler? current = Interlocked.Exchange(ref handler, null);
+            if (current is not null)
+            {
+                Console.CancelKeyPress -= current;
+            }
+        }
+    }
+}

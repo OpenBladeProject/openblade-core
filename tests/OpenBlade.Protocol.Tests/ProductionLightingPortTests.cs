@@ -269,7 +269,7 @@ public sealed class ProductionLightingPortTests
                 default));
 
         Assert.Equal(
-            "The lighting command 00/84 returned 0200.",
+            "The lighting command 00/84 failed (ProtocolFailure, PayloadValidator).",
             error.Message);
         Assert.DoesNotContain(
             session.Commands,
@@ -1086,7 +1086,24 @@ public sealed class ProductionLightingPortTests
                 (0x03, 0x0A) => [0x05, 0x00],
                 _ => throw new InvalidOperationException(),
             };
-            Assert.True(command.PayloadValidator?.Invoke(response) ?? true);
+            if (command.PayloadValidator?.Invoke(response) == false)
+            {
+                return Task.FromResult(
+                    new HidSessionResult<ReadOnlyMemory<byte>>(
+                        default,
+                        HidSessionFailureKind.ProtocolFailure)
+                    {
+                        Diagnostic = new(
+                            HidSessionFailurePhase.ProtocolValidation,
+                            HidSessionFailureKind.ProtocolFailure,
+                            null,
+                            0)
+                        {
+                            ProtocolValidationFailure =
+                                HidProtocolValidationFailure.PayloadValidator,
+                        },
+                    });
+            }
             return Task.FromResult(
                 new HidSessionResult<ReadOnlyMemory<byte>>(response, null));
         }

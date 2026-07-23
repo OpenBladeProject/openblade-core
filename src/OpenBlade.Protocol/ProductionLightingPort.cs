@@ -536,19 +536,21 @@ internal sealed class ProductionLightingPort : IProductionLightingPort
             Spec(0x00, 0x86, [0x00, 0x00, 0x00], [0x01, 0x00, 0x00]),
             cancellationToken).ConfigureAwait(false);
         ReadOnlyMemory<byte> transitionState = await ExecuteWriteCoreAsync(
-            new RazerCommandSpec(0x00, 0x84, [0x00, 0x00], 2),
+            new RazerCommandSpec(
+                DeviceModeProtocol.OperationClass,
+                DeviceModeProtocol.QueryOperationId,
+                DeviceModeProtocol.QueryArguments.ToArray(),
+                2,
+                payload => DeviceModeProtocol.TryDecodeQuery(payload.Span, out _)),
             cancellationToken).ConfigureAwait(false);
-        // Synapse capture returned 03 00, while the bounded exact-device
-        // OpenBlade validation returned 00 00 with the same successful,
-        // fully validated response envelope. Treat only those two observed
-        // states as acknowledgements; the operation's meaning remains
-        // unresolved and every other payload stays fail-closed.
-        if (!transitionState.Span.SequenceEqual(new byte[] { 0x03, 0x00 })
-            && !transitionState.Span.SequenceEqual(new byte[] { 0x00, 0x00 }))
+        // This read-only query returned Driver mode (03 00) in the Synapse
+        // capture and Normal mode (00 00) in the bounded OpenBlade run.
+        // Factory mode (02 00) is deliberately not admitted.
+        if (!DeviceModeProtocol.TryDecodeQuery(transitionState.Span, out _))
         {
             throw new BladeWriteException(
                 WriteSubmissionState.Indeterminate,
-                $"The lighting command 00/84 returned " +
+                $"The device-mode query 00/84 returned " +
                 $"{Convert.ToHexString(transitionState.Span)}.");
         }
         await ExecuteWriteCoreAsync(
