@@ -56,8 +56,9 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Changed
 
-- Matched all About-page card action glyphs to the native WinUI expander
-  chevron size for consistent download, external-link, and expand actions.
+- Matched all About-page card actions to the native WinUI expander chevron
+  size and alignment, with borderless pointer and pressed states across
+  download, external-link, and expand actions.
 - Reduced foreground CPU use by letting WinUI update only the bindings whose
   underlying values changed instead of invalidating every page binding for each
   service update. Disabled live readings no longer poll the service, telemetry

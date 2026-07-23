@@ -611,6 +611,35 @@ public sealed class CapabilityPresentationTests
             Assert.Contains(style.Elements(), setter =>
                 Attribute(setter, "Property") == "BorderThickness"
                 && Attribute(setter, "Value") == "0");
+            Assert.Contains(style.Elements(), setter =>
+                Attribute(setter, "Property") == "Width"
+                && Attribute(setter, "Value")
+                    == "{ThemeResource ExpanderChevronButtonSize}");
+            Assert.Contains(style.Elements(), setter =>
+                Attribute(setter, "Property") == "Height"
+                && Attribute(setter, "Value")
+                    == "{ThemeResource ExpanderChevronButtonSize}");
+            Assert.Contains(style.Elements(), setter =>
+                Attribute(setter, "Property") == "Margin"
+                && Attribute(setter, "Value") == "0,0,-8,0");
+            Assert.Contains(style.Elements(), setter =>
+                Attribute(setter, "Property") == "UseSystemFocusVisuals"
+                && Attribute(setter, "Value") == "True");
+            Assert.Contains(style.Elements(), setter =>
+                Attribute(setter, "Property") == "Template");
+        }
+        foreach (string resourceKey in new[]
+        {
+            "ExpanderChevronPointerOverBackground",
+            "ExpanderChevronPressedBackground",
+            "ExpanderChevronBorderPointerOverBrush",
+            "ExpanderChevronBorderPressedBrush",
+        })
+        {
+            XElement brush = Assert.Single(document.Descendants(), element =>
+                element.Name.LocalName == "SolidColorBrush"
+                && Attribute(element, "Key") == resourceKey);
+            Assert.Equal("Transparent", Attribute(brush, "Color"));
         }
         XElement cardActionIconStyle = Assert.Single(document.Descendants(), element =>
             element.Name.LocalName == "Style"

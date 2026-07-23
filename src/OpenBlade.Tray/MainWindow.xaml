@@ -107,6 +107,14 @@
                 <Setter Property="Background" Value="Transparent" />
                 <Setter Property="BorderThickness" Value="0" />
             </Style>
+            <SolidColorBrush x:Key="ExpanderChevronPointerOverBackground"
+                             Color="Transparent" />
+            <SolidColorBrush x:Key="ExpanderChevronPressedBackground"
+                             Color="Transparent" />
+            <SolidColorBrush x:Key="ExpanderChevronBorderPointerOverBrush"
+                             Color="Transparent" />
+            <SolidColorBrush x:Key="ExpanderChevronBorderPressedBrush"
+                             Color="Transparent" />
             <Style x:Key="TroubleshootingSectionStyle" TargetType="Border">
                 <Setter Property="BorderBrush" Value="{ThemeResource CardStrokeColorDefaultBrush}" />
                 <Setter Property="BorderThickness" Value="0,1,0,0" />
@@ -166,29 +174,61 @@
                 <Setter Property="VerticalAlignment" Value="Center" />
                 <Setter Property="VerticalContentAlignment" Value="Center" />
             </Style>
+            <ControlTemplate x:Key="CardActionButtonTemplate"
+                             TargetType="Button">
+                <Grid Background="Transparent">
+                    <ContentPresenter Content="{TemplateBinding Content}"
+                                      ContentTemplate="{TemplateBinding ContentTemplate}"
+                                      HorizontalContentAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                      VerticalContentAlignment="{TemplateBinding VerticalContentAlignment}"
+                                      Foreground="{TemplateBinding Foreground}" />
+                </Grid>
+            </ControlTemplate>
+            <ControlTemplate x:Key="CardActionHyperlinkButtonTemplate"
+                             TargetType="HyperlinkButton">
+                <Grid Background="Transparent">
+                    <ContentPresenter Content="{TemplateBinding Content}"
+                                      ContentTemplate="{TemplateBinding ContentTemplate}"
+                                      HorizontalContentAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                      VerticalContentAlignment="{TemplateBinding VerticalContentAlignment}"
+                                      Foreground="{TemplateBinding Foreground}" />
+                </Grid>
+            </ControlTemplate>
             <Style x:Key="ExternalLinkButtonStyle" TargetType="HyperlinkButton">
-                <Setter Property="Width" Value="40" />
-                <Setter Property="Height" Value="40" />
+                <Setter Property="Width"
+                        Value="{ThemeResource ExpanderChevronButtonSize}" />
+                <Setter Property="Height"
+                        Value="{ThemeResource ExpanderChevronButtonSize}" />
+                <Setter Property="Margin" Value="0,0,-8,0" />
                 <Setter Property="Padding" Value="0" />
                 <Setter Property="HorizontalAlignment" Value="Right" />
                 <Setter Property="VerticalAlignment" Value="Center" />
                 <Setter Property="HorizontalContentAlignment" Value="Center" />
                 <Setter Property="VerticalContentAlignment" Value="Center" />
+                <Setter Property="UseSystemFocusVisuals" Value="True" />
                 <Setter Property="Foreground" Value="{ThemeResource TextFillColorPrimaryBrush}" />
                 <Setter Property="Background" Value="Transparent" />
                 <Setter Property="BorderThickness" Value="0" />
+                <Setter Property="Template"
+                        Value="{StaticResource CardActionHyperlinkButtonTemplate}" />
             </Style>
             <Style x:Key="IconActionButtonStyle" TargetType="Button">
-                <Setter Property="Width" Value="40" />
-                <Setter Property="Height" Value="40" />
+                <Setter Property="Width"
+                        Value="{ThemeResource ExpanderChevronButtonSize}" />
+                <Setter Property="Height"
+                        Value="{ThemeResource ExpanderChevronButtonSize}" />
+                <Setter Property="Margin" Value="0,0,-8,0" />
                 <Setter Property="Padding" Value="0" />
                 <Setter Property="HorizontalAlignment" Value="Right" />
                 <Setter Property="VerticalAlignment" Value="Center" />
                 <Setter Property="HorizontalContentAlignment" Value="Center" />
                 <Setter Property="VerticalContentAlignment" Value="Center" />
+                <Setter Property="UseSystemFocusVisuals" Value="True" />
                 <Setter Property="Foreground" Value="{ThemeResource TextFillColorPrimaryBrush}" />
                 <Setter Property="Background" Value="Transparent" />
                 <Setter Property="BorderThickness" Value="0" />
+                <Setter Property="Template"
+                        Value="{StaticResource CardActionButtonTemplate}" />
             </Style>
             <Style x:Key="CardActionIconStyle" TargetType="FontIcon">
                 <Setter Property="FontSize"
