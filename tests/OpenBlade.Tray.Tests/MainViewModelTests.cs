@@ -319,7 +319,7 @@ public sealed class MainViewModelTests
             ConfirmedState = baseline.ConfirmedState! with { Lighting = external },
             ExternalChanges = [DeviceSubsystem.Lighting],
         });
-        await WaitUntilAsync(() => viewModel.IsConnected);
+        await WaitUntilAsync(() => viewModel.HasLightingProfileDifference);
 
         Assert.False(viewModel.HasLightingProfileDraft);
         Assert.True(viewModel.HasLightingProfileDifference);
@@ -3072,6 +3072,7 @@ public sealed class MainViewModelTests
 
         client.Publish(update);
         await WaitUntilAsync(() => viewModel.LiveReadings == update.LiveReadings);
+        await WaitUntilAsync(() => changed.Contains(nameof(viewModel.TrayHoverLabelText)));
 
         Assert.Contains(nameof(viewModel.LiveReadings), changed);
         Assert.Contains(nameof(viewModel.BatteryPowerFlowLabel), changed);
@@ -3082,6 +3083,53 @@ public sealed class MainViewModelTests
         Assert.DoesNotContain(nameof(viewModel.TroubleshootingServiceStatus), changed);
         Assert.DoesNotContain(nameof(viewModel.AboutDetectedLaptopStatus), changed);
         Assert.DoesNotContain(nameof(viewModel.CanAdjustChargeLimit), changed);
+    }
+
+    [Fact]
+    public async Task HiddenDashboard_DoesNotRebuildTelemetryPresentation()
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        ServiceStatusSnapshot baseline = CreateStatus(verified: true, blocked: false) with
+        {
+            Revision = 10,
+            LiveReadings = new LiveReadings(-18_000, 2400, 2300, 46, 51),
+        };
+        client.Publish(baseline);
+        await WaitUntilAsync(() => viewModel.LiveReadings == baseline.LiveReadings);
+
+        viewModel.SetDashboardTelemetryPresentationActive(false);
+        var changed = new HashSet<string>();
+        viewModel.PropertyChanged += (_, args) => changed.Add(args.PropertyName!);
+        ServiceStatusSnapshot update = baseline with
+        {
+            Revision = 11,
+            LiveReadings = new LiveReadings(-18_500, 2450, 2350, 47, 52),
+        };
+
+        client.Publish(update);
+        await WaitUntilAsync(() => viewModel.LiveReadings == update.LiveReadings);
+        await WaitUntilAsync(() => changed.Contains(nameof(viewModel.TrayHoverLabelText)));
+
+        Assert.Contains(nameof(viewModel.LiveReadings), changed);
+        Assert.Contains(nameof(viewModel.TrayHoverLabelText), changed);
+        Assert.DoesNotContain(nameof(viewModel.BatteryPowerFlowLabel), changed);
+        Assert.DoesNotContain(nameof(viewModel.Fan1RpmValue), changed);
+        Assert.DoesNotContain(nameof(viewModel.Fan2RpmValue), changed);
+        Assert.DoesNotContain(nameof(viewModel.CpuTemperatureValue), changed);
+        Assert.DoesNotContain(nameof(viewModel.GpuTemperatureValue), changed);
+        Assert.DoesNotContain(nameof(viewModel.VisibleDashboardTelemetryGroups), changed);
+
+        changed.Clear();
+        viewModel.SetDashboardTelemetryPresentationActive(true);
+
+        Assert.Contains(nameof(viewModel.BatteryPowerFlowLabel), changed);
+        Assert.Contains(nameof(viewModel.Fan1RpmValue), changed);
+        Assert.Contains(nameof(viewModel.Fan2RpmValue), changed);
+        Assert.Contains(nameof(viewModel.CpuTemperatureValue), changed);
+        Assert.Contains(nameof(viewModel.GpuTemperatureValue), changed);
+        Assert.Contains(nameof(viewModel.VisibleDashboardTelemetryGroups), changed);
     }
 
     [Fact]

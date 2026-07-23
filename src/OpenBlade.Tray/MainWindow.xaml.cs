@@ -233,6 +233,8 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
     public void ShowAndActivate()
     {
         windowVisible = true;
+        ViewModel.SetDashboardTelemetryPresentationActive(
+            HomePage.Visibility == Visibility.Visible);
         trayObservationLoop.Stop();
         visibleObservationLoop.StartOrWake();
         UpdateDisplayRefreshState();
@@ -242,6 +244,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
     public void StartHiddenObservation()
     {
         windowVisible = false;
+        ViewModel.SetDashboardTelemetryPresentationActive(false);
         visibleObservationLoop.Stop();
         displayRefreshTimer.Stop();
         trayObservationLoop.StartOrWake();
@@ -1496,6 +1499,8 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         AboutPage.Visibility = destination == "about"
             ? Visibility.Visible
             : Visibility.Collapsed;
+        ViewModel.SetDashboardTelemetryPresentationActive(
+            windowVisible && destination == "home");
         if (destination == "profiles")
         {
             dispatcherQueue.TryEnqueue(

@@ -62,6 +62,10 @@ All notable changes to OpenBlade are documented in this file. The project follow
   changes no longer fan out to unrelated Session Agent features, read-only
   observations reuse recent exact-device admission, and Ambient Awareness
   reduces capture frequency only after the sampled screen remains static.
+- Stopped rebuilding the collapsed Dashboard telemetry repeater while another
+  page is open or the window is hidden. Tray-hover readings continue updating,
+  and the Dashboard refreshes once with the latest values when it becomes
+  visible.
 - Promoted `Use profile settings` from an overflow menu to a page-header action
   on Dashboard, Laptop, Lighting, and Display whenever the current page differs
   from its active profile, including settings changed outside OpenBlade. Page

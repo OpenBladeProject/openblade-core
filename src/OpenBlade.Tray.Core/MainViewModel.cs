@@ -208,6 +208,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     private DeviceCapabilities capabilities = DeviceCapabilities.Unavailable();
     private PowerSource activePowerSource = PowerSource.PluggedIn;
     private LiveReadings? liveReadings;
+    private bool dashboardTelemetryPresentationActive = true;
     private DateTimeOffset? lastLiveReadingsRefreshAt;
     private PerformanceOverride? performanceOverride;
     private ManualOverride<FanMode>? fanOverride;
@@ -1903,17 +1904,25 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
 
             liveReadings = value;
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(LiveReadings)));
-            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(BatteryPowerFlowLabel)));
-            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Fan1RpmLabel)));
-            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Fan2RpmLabel)));
-            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Fan1RpmValue)));
-            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Fan2RpmValue)));
-            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(CpuTemperatureValue)));
-            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(GpuTemperatureValue)));
+            NotifyDashboardTelemetryValuesChanged();
+            NotifyTrayHoverLabel();
+        }
+    }
+
+    public void SetDashboardTelemetryPresentationActive(bool active)
+    {
+        if (dashboardTelemetryPresentationActive == active)
+        {
+            return;
+        }
+
+        dashboardTelemetryPresentationActive = active;
+        if (active)
+        {
+            NotifyDashboardTelemetryValuesChanged();
             PropertyChanged?.Invoke(
                 this,
-                new PropertyChangedEventArgs(nameof(VisibleDashboardTelemetryGroups)));
-            NotifyTrayHoverLabel();
+                new PropertyChangedEventArgs(nameof(ShowDashboardLiveReadings)));
         }
     }
 
@@ -6880,12 +6889,34 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         PropertyChanged?.Invoke(
             this,
             new PropertyChangedEventArgs(nameof(EnabledDashboardTelemetryItems)));
+        if (dashboardTelemetryPresentationActive)
+        {
+            PropertyChanged?.Invoke(
+                this,
+                new PropertyChangedEventArgs(nameof(VisibleDashboardTelemetryGroups)));
+            PropertyChanged?.Invoke(
+                this,
+                new PropertyChangedEventArgs(nameof(ShowDashboardLiveReadings)));
+        }
+    }
+
+    private void NotifyDashboardTelemetryValuesChanged()
+    {
+        if (!dashboardTelemetryPresentationActive)
+        {
+            return;
+        }
+
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(BatteryPowerFlowLabel)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Fan1RpmLabel)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Fan2RpmLabel)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Fan1RpmValue)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Fan2RpmValue)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(CpuTemperatureValue)));
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(GpuTemperatureValue)));
         PropertyChanged?.Invoke(
             this,
             new PropertyChangedEventArgs(nameof(VisibleDashboardTelemetryGroups)));
-        PropertyChanged?.Invoke(
-            this,
-            new PropertyChangedEventArgs(nameof(ShowDashboardLiveReadings)));
     }
 
     private void NotifyTrayHoverPreferencesChanged()
@@ -7156,14 +7187,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             this,
             new PropertyChangedEventArgs(nameof(CanEditGpuClockTuning)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(CanEditFanControl)));
-        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(BatteryPowerFlowLabel)));
-        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Fan1RpmLabel)));
-        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Fan2RpmLabel)));
-        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(CpuTemperatureValue)));
-        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(GpuTemperatureValue)));
-        PropertyChanged?.Invoke(
-            this,
-            new PropertyChangedEventArgs(nameof(VisibleDashboardTelemetryGroups)));
+        NotifyDashboardTelemetryValuesChanged();
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(LiveReadingsRefreshToolTip)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ActivePerformanceLabel)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ActiveFanModeLabel)));
