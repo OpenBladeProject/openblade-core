@@ -87,6 +87,95 @@ public sealed class SpecialKeyActionExecutorTests
         Assert.Empty(input.MediaActions);
     }
 
+    [Theory]
+    [InlineData(SpecialKeyActionKind.MouseLeftClick)]
+    [InlineData(SpecialKeyActionKind.MouseRightClick)]
+    [InlineData(SpecialKeyActionKind.MouseMiddleClick)]
+    [InlineData(SpecialKeyActionKind.MouseBack)]
+    [InlineData(SpecialKeyActionKind.MouseForward)]
+    [InlineData(SpecialKeyActionKind.MouseDoubleClick)]
+    [InlineData(SpecialKeyActionKind.MouseScrollUp)]
+    [InlineData(SpecialKeyActionKind.MouseScrollDown)]
+    public async Task ExecuteAsync_MouseActionUsesConfiguredAction(
+        SpecialKeyActionKind action)
+    {
+        var input = new RecordingInputSender();
+        var executor = CreateExecutor(action, input);
+
+        await executor.ExecuteAsync(SpecialKeySlot.M2, CancellationToken.None);
+
+        Assert.Equal([action], input.MouseActions);
+    }
+
+    [Theory]
+    [InlineData(SpecialKeyActionKind.MediaPreviousTrack)]
+    [InlineData(SpecialKeyActionKind.MediaPlayPause)]
+    [InlineData(SpecialKeyActionKind.MediaNextTrack)]
+    [InlineData(SpecialKeyActionKind.VolumeMute)]
+    [InlineData(SpecialKeyActionKind.VolumeDown)]
+    [InlineData(SpecialKeyActionKind.VolumeUp)]
+    public async Task ExecuteAsync_MediaActionUsesConfiguredAction(
+        SpecialKeyActionKind action)
+    {
+        var input = new RecordingInputSender();
+        var executor = CreateExecutor(action, input);
+
+        await executor.ExecuteAsync(SpecialKeySlot.M2, CancellationToken.None);
+
+        Assert.Equal([action], input.MediaActions);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_TextUsesConfiguredValue()
+    {
+        var input = new RecordingInputSender();
+        var executor = CreateExecutor(
+            SpecialKeyActionKind.TypeText,
+            input,
+            "OpenBlade");
+
+        await executor.ExecuteAsync(SpecialKeySlot.M2, CancellationToken.None);
+
+        Assert.Equal(["OpenBlade"], input.Text);
+    }
+
+    [Theory]
+    [InlineData(SpecialKeyActionKind.LaunchApplication, "notepad.exe", false)]
+    [InlineData(SpecialKeyActionKind.OpenWebsite, "https://ossblade.org", true)]
+    public async Task ExecuteAsync_LaunchUsesConfiguredTargetAndAddressPolicy(
+        SpecialKeyActionKind action,
+        string target,
+        bool requireWebAddress)
+    {
+        var input = new RecordingInputSender();
+        var executor = CreateExecutor(action, input, target);
+
+        await executor.ExecuteAsync(SpecialKeySlot.M2, CancellationToken.None);
+
+        Assert.Equal([(target, requireWebAddress)], input.Launches);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_MicrophoneMuteUsesInputSender()
+    {
+        var input = new RecordingInputSender();
+        var executor = CreateExecutor(SpecialKeyActionKind.MicrophoneMute, input);
+
+        await executor.ExecuteAsync(SpecialKeySlot.M2, CancellationToken.None);
+
+        Assert.Equal(1, input.MicrophoneMuteCount);
+    }
+
+    private static SpecialKeyActionExecutor CreateExecutor(
+        SpecialKeyActionKind action,
+        RecordingInputSender input,
+        string? value = null) => new(
+            new FixedBindings(
+                SpecialKeySlot.M2,
+                new SpecialKeyAction(action, value)),
+            new RecordingServiceClient(),
+            input);
+
     private sealed class FixedBindings : ISpecialKeyBindingSource
     {
         private readonly SpecialKeySlot slot;
@@ -111,27 +200,24 @@ public sealed class SpecialKeyActionExecutorTests
     private sealed class RecordingInputSender : ISpecialKeyInputSender
     {
         public List<string> Shortcuts { get; } = [];
+        public List<string> Text { get; } = [];
+        public List<SpecialKeyActionKind> MouseActions { get; } = [];
         public List<SpecialKeyActionKind> MediaActions { get; } = [];
+        public List<(string Target, bool RequireWebAddress)> Launches { get; } = [];
+        public int MicrophoneMuteCount { get; private set; }
 
         public void SendKeyboardShortcut(string shortcut) => Shortcuts.Add(shortcut);
 
-        public void SendText(string text)
-        {
-        }
+        public void SendText(string text) => Text.Add(text);
 
-        public void SendMouseAction(SpecialKeyActionKind action)
-        {
-        }
+        public void SendMouseAction(SpecialKeyActionKind action) => MouseActions.Add(action);
 
         public void SendMediaAction(SpecialKeyActionKind action) => MediaActions.Add(action);
 
-        public void ToggleMicrophoneMute()
-        {
-        }
+        public void ToggleMicrophoneMute() => MicrophoneMuteCount++;
 
-        public void Launch(string target, bool requireWebAddress)
-        {
-        }
+        public void Launch(string target, bool requireWebAddress) =>
+            Launches.Add((target, requireWebAddress));
     }
 
     private sealed class RecordingServiceClient : IServiceClient
