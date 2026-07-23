@@ -91,12 +91,13 @@ public sealed class WinUiShellContractTests
         Assert.Equal(4, CountOccurrences(
             xaml,
             "Content=\"{x:Bind ViewModel.SaveToActiveProfileLabel, Mode=OneWay}\""));
-        Assert.Equal(4, CountOccurrences(xaml, "Text=\"Unsaved changes\""));
+        Assert.DoesNotContain("Text=\"Unsaved changes\"", xaml, StringComparison.Ordinal);
         Assert.DoesNotContain("Text=\"Not saved\"", xaml, StringComparison.Ordinal);
         Assert.Equal(4, CountOccurrences(xaml, "Text=\"Use profile settings\""));
-        Assert.Equal(4, CountOccurrences(
+        Assert.DoesNotContain(
+            "Style=\"{StaticResource ProfileSaveStatusTextStyle}\"",
             xaml,
-            "Style=\"{StaticResource ProfileSaveStatusTextStyle}\""));
+            StringComparison.Ordinal);
         Assert.Equal(4, CountOccurrences(
             xaml,
             "Style=\"{StaticResource ProfileSaveButtonStyle}\""));

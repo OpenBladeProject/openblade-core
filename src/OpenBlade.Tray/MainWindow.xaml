@@ -140,13 +140,6 @@
                 <Setter Property="Foreground" Value="{ThemeResource TextFillColorSecondaryBrush}" />
                 <Setter Property="TextWrapping" Value="Wrap" />
             </Style>
-            <Style x:Key="ProfileSaveStatusTextStyle"
-                   TargetType="TextBlock"
-                   BasedOn="{StaticResource SecondaryTextStyle}">
-                <Setter Property="FontSize" Value="14" />
-                <Setter Property="LineHeight" Value="20" />
-                <Setter Property="VerticalAlignment" Value="Center" />
-            </Style>
             <Style x:Key="DraftStatusTextStyle"
                    TargetType="TextBlock"
                    BasedOn="{StaticResource CaptionTextBlockStyle}">
@@ -1509,15 +1502,13 @@
                             <TextBlock Text="Dashboard" Style="{StaticResource PageHeaderTitleStyle}" />
                             <StackPanel Grid.Column="1"
                                         Orientation="Horizontal"
-                                        Spacing="8"
+                                        Spacing="12"
                                         VerticalAlignment="Center">
                                 <StackPanel x:Name="DashboardProfileSaveActions"
                                             Orientation="Horizontal"
-                                            Spacing="8"
+                                            Spacing="4"
                                             VerticalAlignment="Center"
                                             Visibility="{x:Bind ViewModel.HasLaptopPageProfileSaveOpportunity, Mode=OneWay}">
-                                    <TextBlock Text="Unsaved changes"
-                                               Style="{StaticResource ProfileSaveStatusTextStyle}" />
                                     <Button Content="{x:Bind ViewModel.SaveToActiveProfileLabel, Mode=OneWay}"
                                             Style="{StaticResource ProfileSaveButtonStyle}"
                                             Command="{x:Bind ViewModel.SaveLaptopProfileDraftCommand}" />
@@ -2099,14 +2090,12 @@
                             <StackPanel x:Name="LaptopHeaderActions"
                                         Grid.Column="1"
                                         Orientation="Horizontal"
-                                        Spacing="8"
+                                        Spacing="12"
                                         VerticalAlignment="Center">
                             <StackPanel x:Name="LaptopProfileSaveActions"
                                         Orientation="Horizontal"
-                                        Spacing="8"
+                                        Spacing="4"
                                         Visibility="{x:Bind ViewModel.HasLaptopPageProfileSaveOpportunity, Mode=OneWay}">
-                                <TextBlock Text="Unsaved changes"
-                                           Style="{StaticResource ProfileSaveStatusTextStyle}" />
                                 <Button Content="{x:Bind ViewModel.SaveToActiveProfileLabel, Mode=OneWay}"
                                         Style="{StaticResource ProfileSaveButtonStyle}"
                                         Command="{x:Bind ViewModel.SaveLaptopProfileDraftCommand}" />
@@ -2271,15 +2260,13 @@
                             <StackPanel x:Name="LightingHeaderActions"
                                         Grid.Column="1"
                                         Orientation="Horizontal"
-                                        Spacing="8"
+                                        Spacing="12"
                                         VerticalAlignment="Center">
                             <ContentControl x:Name="LightingProfileSaveActions"
                                             VerticalAlignment="Center"
                                             IsEnabled="{x:Bind ViewModel.CanControlLighting, Mode=OneWay}"
                                             Visibility="{x:Bind ViewModel.HasLightingProfileSaveOpportunity, Mode=OneWay}">
-                                <StackPanel Orientation="Horizontal" Spacing="8">
-                                <TextBlock Text="Unsaved changes"
-                                           Style="{StaticResource ProfileSaveStatusTextStyle}" />
+                                <StackPanel Orientation="Horizontal" Spacing="4">
                                 <Button Content="{x:Bind ViewModel.SaveToActiveProfileLabel, Mode=OneWay}"
                                         Style="{StaticResource ProfileSaveButtonStyle}"
                                         Command="{x:Bind ViewModel.SaveLightingProfileDraftCommand}" />
@@ -2375,14 +2362,12 @@
                             <StackPanel x:Name="DisplayHeaderActions"
                                         Grid.Column="1"
                                         Orientation="Horizontal"
-                                        Spacing="8"
+                                        Spacing="12"
                                         VerticalAlignment="Center">
                             <StackPanel x:Name="DisplayProfileSaveActions"
                                         Orientation="Horizontal"
-                                        Spacing="8"
+                                        Spacing="4"
                                         Visibility="{x:Bind DisplayViewModel.CanSaveCurrentSettingsToProfile, Mode=OneWay}">
-                                <TextBlock Text="Unsaved changes"
-                                           Style="{StaticResource ProfileSaveStatusTextStyle}" />
                                 <Button Content="{x:Bind ViewModel.SaveToActiveProfileLabel, Mode=OneWay}"
                                         Style="{StaticResource ProfileSaveButtonStyle}"
                                         IsEnabled="{x:Bind DisplayViewModel.CanSaveCurrentSettingsToProfile, Mode=OneWay}"
