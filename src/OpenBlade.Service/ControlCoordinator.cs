@@ -118,7 +118,13 @@ public sealed class ControlCoordinator
             cancellationToken,
             state => IsManualFanMode(state.Fans)
                 ? "Performance changes require Automatic fan mode."
-                : null);
+                : null,
+            stateAwareSetter: (state, token) =>
+                CanApplyGpuClockOffsetsOnly(state, value, customPerformance)
+                    ? device.SetGpuClockOffsetsAsync(
+                        customPerformance!.GpuClockOffsets!,
+                        token)
+                    : device.SetPerformanceAsync(value, customPerformance, token));
 
     internal Task<ScopedApplyOutcome> ApplyFanOutcomeAsync(
         FanMode value,
@@ -325,7 +331,21 @@ public sealed class ControlCoordinator
                 state => PerformanceMatches(
                     state,
                     desired.Performance.Value,
-                    desired.CustomPerformance)),
+                    desired.CustomPerformance))
+            {
+                StateAwareSetter = (state, token) =>
+                    CanApplyGpuClockOffsetsOnly(
+                        state,
+                        desired.Performance.Value,
+                        desired.CustomPerformance)
+                        ? device.SetGpuClockOffsetsAsync(
+                            desired.CustomPerformance!.GpuClockOffsets!,
+                            token)
+                        : device.SetPerformanceAsync(
+                            desired.Performance.Value,
+                            desired.CustomPerformance,
+                            token),
+            },
             [DeviceSubsystem.Fans] = new(
                 "Fans",
                 thermalCombinationSupported
@@ -411,7 +431,9 @@ public sealed class ControlCoordinator
                 attempted.Add(subsystem);
                 try
                 {
-                    await pending.Setter(cancellationToken);
+                    await (pending.StateAwareSetter is null
+                        ? pending.Setter(cancellationToken)
+                        : pending.StateAwareSetter(initial, cancellationToken));
                     provisional[subsystem] = Indeterminate(pending.Name, null);
                 }
                 catch (BladeWriteException exception)
@@ -677,7 +699,8 @@ public sealed class ControlCoordinator
         Func<ConfirmedDeviceState, string?>? initialStateBlockReason = null,
         bool acceptSetterCompletionWithoutReadback = false,
         Func<ConfirmedDeviceState, bool>? setterCompletionEvidence = null,
-        bool forceWrite = false)
+        bool forceWrite = false,
+        Func<ConfirmedDeviceState, CancellationToken, Task>? stateAwareSetter = null)
     {
         if (!valid)
         {
@@ -736,7 +759,9 @@ public sealed class ControlCoordinator
 
             cancellationToken.ThrowIfCancellationRequested();
             writeAttempted = true;
-            await setter(cancellationToken);
+            await (stateAwareSetter is null
+                ? setter(cancellationToken)
+                : stateAwareSetter(initial, cancellationToken));
             setterCompleted = true;
             cancellationToken.ThrowIfCancellationRequested();
             ConfirmedDeviceState final = await device.ReadStateAsync(cancellationToken);
@@ -1189,6 +1214,17 @@ public sealed class ControlCoordinator
                 && (desired.GpuClockOffsets is null
                     || state.GpuClockOffsets?.Current == desired.GpuClockOffsets));
 
+    private static bool CanApplyGpuClockOffsetsOnly(
+        ConfirmedDeviceState state,
+        PerformancePreset performance,
+        CustomPerformanceSettings? customPerformance) =>
+        performance == PerformancePreset.Custom
+        && customPerformance?.GpuClockOffsets is not null
+        && state.Performance == PerformancePreset.Custom
+        && state.CustomPerformance is { } confirmed
+        && confirmed.Cpu == customPerformance.Cpu
+        && confirmed.Gpu == customPerformance.Gpu;
+
     private static bool IsThermalSubsystem(DeviceSubsystem subsystem) =>
         subsystem is DeviceSubsystem.Performance or DeviceSubsystem.Fans;
 
@@ -1198,7 +1234,14 @@ public sealed class ControlCoordinator
         bool InitiallyMatching,
         Func<CancellationToken, Task> Setter,
         Func<ConfirmedDeviceState, bool> Matches,
-        bool AcceptSetterCompletionWithoutReadback = false);
+        bool AcceptSetterCompletionWithoutReadback = false)
+    {
+        public Func<ConfirmedDeviceState, CancellationToken, Task>? StateAwareSetter
+        {
+            get;
+            init;
+        }
+    }
 
     private sealed record BatteryOperationPlan(
         string Name,

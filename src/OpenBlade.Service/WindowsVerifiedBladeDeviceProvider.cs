@@ -810,6 +810,64 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
             }
         }
 
+        public async Task SetGpuClockOffsetsAsync(
+            GpuClockOffsetSettings value,
+            CancellationToken cancellationToken)
+        {
+            ArgumentNullException.ThrowIfNull(value);
+            if (!GpuClockOffsetSettings.IsWellFormed(value))
+            {
+                throw new BladeWriteException(
+                    WriteSubmissionState.KnownNotApplied,
+                    "GPU clock offsets are invalid.");
+            }
+
+            try
+            {
+                await EnterHardwareOperationAsync(cancellationToken).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                throw new BladeWriteException(
+                    WriteSubmissionState.KnownNotApplied,
+                    "GPU clock tuning was canceled before the operation started.");
+            }
+            catch (ObjectDisposedException exception)
+            {
+                throw new BladeWriteException(
+                    WriteSubmissionState.KnownNotApplied,
+                    "GPU clock tuning was blocked because the device provider is closing.",
+                    exception);
+            }
+
+            try
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                GpuClockOffsetCapabilities? capabilities = gpuClockOffsets.Query();
+                if (capabilities is null || !capabilities.Supports(value))
+                {
+                    throw new BladeWriteException(
+                        WriteSubmissionState.KnownNotApplied,
+                        capabilities is null
+                            ? "GPU clock tuning is unavailable."
+                            : "The requested GPU clock offsets are outside the ranges reported by the NVIDIA driver.");
+                }
+
+                cancellationToken.ThrowIfCancellationRequested();
+                gpuClockOffsets.Set(value);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw new BladeWriteException(
+                    WriteSubmissionState.KnownNotApplied,
+                    "GPU clock tuning was canceled before the NVIDIA write started.");
+            }
+            finally
+            {
+                hardwareOperationGate.Release();
+            }
+        }
+
         public Task SetFanModeAsync(
             FanMode value,
             CancellationToken cancellationToken) =>

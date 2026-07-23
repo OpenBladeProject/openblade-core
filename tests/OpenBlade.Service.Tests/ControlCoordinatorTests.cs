@@ -390,6 +390,103 @@ public sealed class ControlCoordinatorTests
     }
 
     [Fact]
+    public async Task ScopedCustomPerformance_ClockOnlyChangeSkipsFirmwareWrite()
+    {
+        var currentLevels = new CustomPerformanceSettings(
+            CustomPerformanceLevel.High,
+            CustomPerformanceLevel.Medium)
+        {
+            GpuClockOffsets = new GpuClockOffsetSettings(0, 0),
+        };
+        var requestedLevels = currentLevels with
+        {
+            GpuClockOffsets = new GpuClockOffsetSettings(5, 0),
+        };
+        RecordingBladeDevice device = CreateMismatchedDevice();
+        device.State = device.State with
+        {
+            Performance = PerformancePreset.Custom,
+            Fans = FanMode.Automatic,
+            CustomPerformance = currentLevels,
+            GpuClockOffsets = new GpuClockOffsetCapabilities(
+                "Test NVIDIA GPU",
+                new GpuClockOffsetRange(-1000, 1000, 0),
+                new GpuClockOffsetRange(-2000, 6000, 0)),
+        };
+        var coordinator = new ControlCoordinator(device);
+
+        ScopedApplyOutcome outcome = await coordinator.ApplyPerformanceOutcomeAsync(
+            PerformancePreset.Custom,
+            requestedLevels,
+            CancellationToken.None);
+
+        Assert.Equal(ControlResultStatus.Applied, outcome.Result.Status);
+        Assert.True(outcome.ReadbackMatched);
+        Assert.Equal(0, device.PerformanceSetCalls);
+        Assert.Equal(1, device.GpuClockSetCalls);
+        Assert.Equal(
+            ["Capabilities", "State", "SetGpuClockOffsets", "State"],
+            device.Calls);
+    }
+
+    [Fact]
+    public async Task FullReconcile_ClockOnlyChangeSkipsFirmwareWrite()
+    {
+        var currentLevels = new CustomPerformanceSettings(
+            CustomPerformanceLevel.High,
+            CustomPerformanceLevel.Medium)
+        {
+            GpuClockOffsets = new GpuClockOffsetSettings(0, 0),
+        };
+        var requestedLevels = currentLevels with
+        {
+            GpuClockOffsets = new GpuClockOffsetSettings(5, 0),
+        };
+        RecordingBladeDevice device = CreateMatchingDevice();
+        device.State = device.State with
+        {
+            Performance = PerformancePreset.Custom,
+            Fans = FanMode.Automatic,
+            CustomPerformance = currentLevels,
+            GpuClockOffsets = new GpuClockOffsetCapabilities(
+                "Test NVIDIA GPU",
+                new GpuClockOffsetRange(-1000, 1000, 0),
+                new GpuClockOffsetRange(-2000, 6000, 0)),
+        };
+        device.Capabilities = device.Capabilities with
+        {
+            PerformancePresets = new HashSet<PerformancePreset>
+            {
+                PerformancePreset.Custom,
+            },
+            FanModes = new HashSet<FanMode> { FanMode.Automatic },
+        };
+        var desired = new DesiredDeviceState(
+            new ResolvedSetting<PerformancePreset>(
+                PerformancePreset.Custom,
+                SettingValueSource.PowerProfile),
+            new ResolvedSetting<FanMode>(
+                FanMode.Automatic,
+                SettingValueSource.PowerProfile),
+            new ResolvedSetting<LightingSettings>(
+                TargetLighting,
+                SettingValueSource.PowerProfile),
+            new DesiredBatteryState(BatteryPolicy.Create(75), true, false))
+        {
+            CustomPerformance = requestedLevels,
+        };
+        var coordinator = new ControlCoordinator(device);
+
+        FullTransitionApplyOutcome outcome =
+            await coordinator.ApplyDesiredStateOutcomeAsync(desired, default);
+
+        Assert.Equal(ControlResultStatus.Applied, outcome.Results.Performance.Status);
+        Assert.Equal(0, device.PerformanceSetCalls);
+        Assert.Equal(1, device.GpuClockSetCalls);
+        Assert.Equal(requestedLevels.GpuClockOffsets, device.State.GpuClockOffsets?.Current);
+    }
+
+    [Fact]
     public async Task ScopedMaximumFans_RequireConfirmedBalancedAutomaticState()
     {
         RecordingBladeDevice device = CreateMismatchedDevice();
@@ -1027,6 +1124,8 @@ public sealed class ControlCoordinatorTests
 
         public int PerformanceSetCalls { get; private set; }
 
+        public int GpuClockSetCalls { get; private set; }
+
         public int FanSetCalls { get; private set; }
 
         public int BatterySetCalls { get; private set; }
@@ -1036,6 +1135,7 @@ public sealed class ControlCoordinatorTests
         public int StateReadCalls { get; private set; }
 
         public int TotalSetterCalls => PerformanceSetCalls
+            + GpuClockSetCalls
             + FanSetCalls
             + BatterySetCalls
             + LightingSetCalls;
@@ -1110,6 +1210,44 @@ public sealed class ControlCoordinatorTests
                     CustomPerformance = value == PerformancePreset.Custom
                         ? customPerformance
                         : null,
+                };
+            }
+
+            AfterSetter?.Invoke(DeviceSubsystem.Performance);
+            return Task.CompletedTask;
+        }
+
+        public Task SetGpuClockOffsetsAsync(
+            GpuClockOffsetSettings value,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            Calls.Add("SetGpuClockOffsets");
+            GpuClockSetCalls++;
+            if (PerformanceFailure is not null)
+            {
+                throw PerformanceFailure;
+            }
+
+            if (ShouldConfirm(DeviceSubsystem.Performance)
+                && State.GpuClockOffsets is { } capabilities)
+            {
+                State = State with
+                {
+                    CustomPerformance = State.CustomPerformance is { } custom
+                        ? custom with { GpuClockOffsets = value }
+                        : null,
+                    GpuClockOffsets = capabilities with
+                    {
+                        Core = capabilities.Core with
+                        {
+                            CurrentMegahertz = value.CoreMegahertz,
+                        },
+                        Memory = capabilities.Memory with
+                        {
+                            CurrentMegahertz = value.MemoryMegahertz,
+                        },
+                    },
                 };
             }
 

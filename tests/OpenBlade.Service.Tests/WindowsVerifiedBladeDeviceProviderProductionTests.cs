@@ -167,6 +167,25 @@ public sealed class WindowsVerifiedBladeDeviceProviderProductionTests
     }
 
     [Fact]
+    public async Task SetGpuClockOffsets_PreflightsAndWritesWithoutOpeningFirmwarePort()
+    {
+        DeviceCapabilities capabilities = ThermalCapabilities(
+            new HashSet<PerformancePreset> { PerformancePreset.Custom },
+            new HashSet<FanMode> { FanMode.Automatic });
+        var factory = new FakeProductionFactory(capabilities);
+        var gpu = new FakeGpuClockOffsetController();
+        var requested = new GpuClockOffsetSettings(5, 0);
+        using var provider = ReadyProvider(factory, gpu);
+        provider.TryGetVerifiedDevice(out IBladeDevice device);
+
+        await device.SetGpuClockOffsetsAsync(requested, default);
+
+        Assert.Equal(1, gpu.QueryCount);
+        Assert.Equal([requested], gpu.Writes);
+        Assert.Equal(0, factory.OpenCount);
+    }
+
+    [Fact]
     public async Task EmptyCatalogProviderRetainsProtectionReadAndNeverFabricatesTemporaryFalse()
     {
         var capabilityPort = new FakeProductionPort(

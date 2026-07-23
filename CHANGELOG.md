@@ -51,6 +51,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Changed
 
+- GPU clock-only adjustments in Custom mode now bypass redundant Blade firmware
+  writes and update only the NVIDIA clock offsets.
 - Removed the redundant Reset button from the app accent color setting. OpenBlade
   green remains directly selectable from the accent picker.
 - Renamed the default accent's user-facing label from Razer green to OpenBlade

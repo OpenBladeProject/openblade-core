@@ -38,6 +38,13 @@ public interface IBladeDevice
                     "Custom performance is unavailable."))
             : SetPerformanceAsync(value, cancellationToken);
 
+    Task SetGpuClockOffsetsAsync(
+        GpuClockOffsetSettings value,
+        CancellationToken cancellationToken) => Task.FromException(
+            new BladeWriteException(
+                WriteSubmissionState.KnownNotApplied,
+                "GPU clock tuning is unavailable."));
+
     Task SetFanModeAsync(FanMode value, CancellationToken cancellationToken);
 
     Task SetFanControlAsync(
