@@ -1491,53 +1491,6 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         }
     }
 
-    private void OnSpecialKeyActionSelectionChanged(
-        object sender,
-        SelectionChangedEventArgs args)
-    {
-        if (sender is not Microsoft.UI.Xaml.Controls.ComboBox
-            {
-                SelectedItem: SpecialKeyActionOption selectedAction,
-            } comboBox
-            || !TryResolveSpecialKeySlot(comboBox, out SpecialKeySlot slot))
-        {
-            return;
-        }
-
-        SpecialKeyBindingViewModel? binding = SpecialKeyBindings
-            .FirstOrDefault(candidate => candidate.Slot == slot);
-        if (binding is null || binding.SelectedAction == selectedAction)
-        {
-            return;
-        }
-
-        binding.SelectedAction = selectedAction;
-        QueuePreferenceSave();
-    }
-
-    private static bool TryResolveSpecialKeySlot(
-        Microsoft.UI.Xaml.Controls.ComboBox comboBox,
-        out SpecialKeySlot slot)
-    {
-        string automationName =
-            Microsoft.UI.Xaml.Automation.AutomationProperties.GetName(comboBox);
-        if (Enum.TryParse(automationName, ignoreCase: true, out slot))
-        {
-            return true;
-        }
-
-        if (comboBox.Tag is SpecialKeySlot typedSlot)
-        {
-            slot = typedSlot;
-            return true;
-        }
-
-        return Enum.TryParse(
-            comboBox.Tag?.ToString(),
-            ignoreCase: true,
-            out slot);
-    }
-
     private void ApplyNavigationDestination(string destination)
     {
         HomePage.Visibility = destination == "home"
