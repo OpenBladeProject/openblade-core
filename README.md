@@ -12,10 +12,11 @@ available only when that exact operation has a sanitized capture fixture that
 passed decoding, interactive application, response validation, and restoration
 and whose bytes are embedded and hash-trusted in the application. Stateful and
 automatic controls additionally require independent readback. Setter-only
-Startup animation, Function key behavior, and Gaming Mode commands are exposed
-solely as explicit one-shot actions: OpenBlade never labels them as current
-firmware state, saves them in profiles, or reapplies them automatically.
-OpenBlade never exposes a raw-command IPC endpoint.
+controls are exposed solely as explicit one-shot actions. Startup animation,
+Function key behavior, and Gaming Mode have validated readback on the current
+target, so OpenBlade can show their confirmed values, save them per profile, and
+restore them during profile transitions. OpenBlade never exposes a raw-command
+IPC endpoint.
 
 If a Razer/Synapse controller process is running, the service reports an
 advisory warning. OpenBlade observes confirmed device state and does not
@@ -62,6 +63,10 @@ numbers, and configured local identity/path tokens are excluded or redacted.
 ## Build and test
 
 Requires Windows 11 and the .NET 10 SDK.
+
+Repository structure, safety constraints, and change workflow are documented in
+[AGENTS.md](AGENTS.md). Product, schema, IPC, and commit-message policy is in
+[VERSIONING.md](VERSIONING.md).
 
 ```powershell
 dotnet restore OpenBlade.slnx
