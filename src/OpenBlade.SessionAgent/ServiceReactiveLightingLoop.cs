@@ -78,6 +78,11 @@ public sealed class ServiceReactiveLightingLoop : IAsyncDisposable
 
     public async Task RunAsync(CancellationToken cancellationToken)
     {
+        // Raw Input is session-local and is also responsible for user-configured
+        // M1-M5 actions that do not require the service. Start it immediately
+        // rather than making ordinary key bindings depend on the first service
+        // status message.
+        SetInputState(connected: true, keyTriggered: false);
         try
         {
             while (true)
@@ -105,6 +110,10 @@ public sealed class ServiceReactiveLightingLoop : IAsyncDisposable
                                 break;
                         }
                     }
+
+                    cancellationToken.ThrowIfCancellationRequested();
+                    throw new IOException(
+                        "The service status subscription ended unexpectedly.");
                 }
                 catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
                 {

@@ -302,7 +302,7 @@ public sealed class ServiceReactiveLightingLoopTests
     }
 
     [Fact]
-    public async Task ConfiguredSpecialKey_UsesTheSharedInputSource()
+    public async Task ConfiguredSpecialKey_WorksBeforeTheServiceConnects()
     {
         var client = new WatchClient();
         var factory = new RecordingSourceFactory();
@@ -319,7 +319,6 @@ public sealed class ServiceReactiveLightingLoopTests
         using var cancellation = new CancellationTokenSource();
         Task running = loop.RunAsync(cancellation.Token);
 
-        client.Publish(Status(LightingRendererOwnershipState.Static));
         await WaitUntilAsync(() => factory.CreateCount == 1);
         Assert.True(factory.Last!.ShouldOverrideSpecialKey(SpecialKeySlot.M3));
         Assert.False(factory.Last.ShouldOverrideSpecialKey(SpecialKeySlot.M2));
