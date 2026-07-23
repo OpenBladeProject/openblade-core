@@ -2,6 +2,39 @@ $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.IO.Compression
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 
+function Get-WindowsAppRuntimeVersionFromAssets {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][string]$AssetsPath
+    )
+
+    if (-not (Test-Path -LiteralPath $AssetsPath -PathType Leaf)) {
+        throw "Windows App Runtime package assets are missing: $AssetsPath"
+    }
+
+    try {
+        $assets = Get-Content -Raw -LiteralPath $AssetsPath | ConvertFrom-Json
+    }
+    catch {
+        throw "Windows App Runtime package assets are invalid: $AssetsPath. $($_.Exception.Message)"
+    }
+
+    $prefix = 'Microsoft.WindowsAppSDK.Runtime/'
+    $runtimePackages = @($assets.libraries.PSObject.Properties | Where-Object {
+        $_.Name.StartsWith($prefix, [StringComparison]::Ordinal)
+    })
+    if ($runtimePackages.Count -ne 1) {
+        throw "Package assets must contain exactly one Microsoft.WindowsAppSDK.Runtime entry."
+    }
+
+    $version = $runtimePackages[0].Name.Substring($prefix.Length)
+    if ([string]::IsNullOrWhiteSpace($version)) {
+        throw "The Microsoft.WindowsAppSDK.Runtime package version is empty."
+    }
+
+    return $version
+}
+
 function Add-WindowsAppRuntimeNotificationResource {
     [CmdletBinding()]
     param(

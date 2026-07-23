@@ -61,6 +61,17 @@ try {
     $payload = Join-Path $testRoot 'payload'
     New-Item -ItemType Directory -Path $payload -Force | Out-Null
     New-TestRuntimePackage -Root $packageRoot -Version '2.2.0'
+    $assets = Join-Path $testRoot 'project.assets.json'
+    @{
+        libraries = @{
+            'Microsoft.WindowsAppSDK.Runtime/2.2.0' = @{
+                type = 'package'
+            }
+        }
+    } | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $assets -Encoding UTF8
+    Assert-True (
+        (Get-WindowsAppRuntimeVersionFromAssets -AssetsPath $assets) -eq '2.2.0') `
+        'The Windows App Runtime version was not read from NuGet package assets.'
 
     Add-WindowsAppRuntimeNotificationResource `
         -Payload $payload `
