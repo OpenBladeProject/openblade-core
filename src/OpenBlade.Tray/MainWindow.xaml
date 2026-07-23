@@ -156,6 +156,16 @@
                 <Setter Property="VerticalAlignment" Value="Center" />
                 <Setter Property="VerticalContentAlignment" Value="Center" />
             </Style>
+            <Style x:Key="ProfileRestoreButtonStyle"
+                   TargetType="Button"
+                   BasedOn="{StaticResource DefaultButtonStyle}">
+                <Setter Property="MinHeight" Value="32" />
+                <Setter Property="Height" Value="32" />
+                <Setter Property="Padding" Value="14,0" />
+                <Setter Property="FontSize" Value="14" />
+                <Setter Property="VerticalAlignment" Value="Center" />
+                <Setter Property="VerticalContentAlignment" Value="Center" />
+            </Style>
             <Style x:Key="ExternalLinkButtonStyle" TargetType="HyperlinkButton">
                 <Setter Property="Width" Value="40" />
                 <Setter Property="Height" Value="40" />
@@ -179,12 +189,6 @@
                 <Setter Property="Foreground" Value="{ThemeResource TextFillColorPrimaryBrush}" />
                 <Setter Property="Background" Value="Transparent" />
                 <Setter Property="BorderThickness" Value="0" />
-            </Style>
-            <Style x:Key="ProfileSaveOverflowButtonStyle"
-                   TargetType="Button"
-                   BasedOn="{StaticResource IconActionButtonStyle}">
-                <Setter Property="Width" Value="32" />
-                <Setter Property="Height" Value="32" />
             </Style>
             <Style x:Key="DestructiveButtonStyle"
                    TargetType="Button"
@@ -1580,24 +1584,16 @@
                                         VerticalAlignment="Center">
                                 <StackPanel x:Name="DashboardProfileSaveActions"
                                             Orientation="Horizontal"
-                                            Spacing="4"
+                                            Spacing="8"
                                             VerticalAlignment="Center"
                                             Visibility="{x:Bind ViewModel.HasLaptopPageProfileSaveOpportunity, Mode=OneWay}">
                                     <Button Content="{x:Bind ViewModel.SaveToActiveProfileLabel, Mode=OneWay}"
                                             Style="{StaticResource ProfileSaveButtonStyle}"
                                             Command="{x:Bind ViewModel.SaveLaptopProfileDraftCommand}" />
-                                    <Button Style="{StaticResource ProfileSaveOverflowButtonStyle}"
+                                    <Button Content="Use profile settings"
+                                            Style="{StaticResource ProfileRestoreButtonStyle}"
                                             Visibility="{x:Bind ViewModel.HasLaptopPageProfileDraft, Mode=OneWay}"
-                                            AutomationProperties.Name="More profile actions"
-                                            ToolTipService.ToolTip="More profile actions">
-                                        <FontIcon Glyph="&#xE712;" FontSize="16" />
-                                        <Button.Flyout>
-                                            <MenuFlyout>
-                                                <MenuFlyoutItem Text="Use profile settings"
-                                                                Command="{x:Bind ViewModel.DiscardLaptopProfileDraftCommand}" />
-                                            </MenuFlyout>
-                                        </Button.Flyout>
-                                    </Button>
+                                            Command="{x:Bind ViewModel.DiscardLaptopProfileDraftCommand}" />
                                 </StackPanel>
                                 <Button Content="Customize"
                                         AutomationProperties.Name="Customize dashboard"
@@ -2181,23 +2177,15 @@
                                         VerticalAlignment="Center">
                             <StackPanel x:Name="LaptopProfileSaveActions"
                                         Orientation="Horizontal"
-                                        Spacing="4"
+                                        Spacing="8"
                                         Visibility="{x:Bind ViewModel.HasLaptopPageProfileSaveOpportunity, Mode=OneWay}">
                                 <Button Content="{x:Bind ViewModel.SaveToActiveProfileLabel, Mode=OneWay}"
                                         Style="{StaticResource ProfileSaveButtonStyle}"
                                         Command="{x:Bind ViewModel.SaveLaptopProfileDraftCommand}" />
-                                <Button Style="{StaticResource ProfileSaveOverflowButtonStyle}"
+                                <Button Content="Use profile settings"
+                                        Style="{StaticResource ProfileRestoreButtonStyle}"
                                         Visibility="{x:Bind ViewModel.HasLaptopPageProfileDraft, Mode=OneWay}"
-                                        AutomationProperties.Name="More profile actions"
-                                        ToolTipService.ToolTip="More profile actions">
-                                    <FontIcon Glyph="&#xE712;" FontSize="16" />
-                                    <Button.Flyout>
-                                        <MenuFlyout>
-                                            <MenuFlyoutItem Text="Use profile settings"
-                                                            Command="{x:Bind ViewModel.DiscardLaptopProfileDraftCommand}" />
-                                        </MenuFlyout>
-                                    </Button.Flyout>
-                                </Button>
+                                        Command="{x:Bind ViewModel.DiscardLaptopProfileDraftCommand}" />
                             </StackPanel>
                             <Button Content="Customize"
                                     Tag="Laptop"
@@ -2350,22 +2338,14 @@
                                             VerticalAlignment="Center"
                                             IsEnabled="{x:Bind ViewModel.CanControlLighting, Mode=OneWay}"
                                             Visibility="{x:Bind ViewModel.HasLightingProfileSaveOpportunity, Mode=OneWay}">
-                                <StackPanel Orientation="Horizontal" Spacing="4">
+                                <StackPanel Orientation="Horizontal" Spacing="8">
                                 <Button Content="{x:Bind ViewModel.SaveToActiveProfileLabel, Mode=OneWay}"
                                         Style="{StaticResource ProfileSaveButtonStyle}"
                                         Command="{x:Bind ViewModel.SaveLightingProfileDraftCommand}" />
-                                <Button Style="{StaticResource ProfileSaveOverflowButtonStyle}"
+                                <Button Content="Use profile settings"
+                                        Style="{StaticResource ProfileRestoreButtonStyle}"
                                         Visibility="{x:Bind ViewModel.HasLightingProfileDraft, Mode=OneWay}"
-                                        AutomationProperties.Name="More profile actions"
-                                        ToolTipService.ToolTip="More profile actions">
-                                    <FontIcon Glyph="&#xE712;" FontSize="16" />
-                                    <Button.Flyout>
-                                        <MenuFlyout>
-                                            <MenuFlyoutItem Text="Use profile settings"
-                                                            Command="{x:Bind ViewModel.DiscardLightingProfileDraftCommand}" />
-                                        </MenuFlyout>
-                                    </Button.Flyout>
-                                </Button>
+                                        Command="{x:Bind ViewModel.DiscardLightingProfileDraftCommand}" />
                                 </StackPanel>
                             </ContentControl>
                             <Button Content="Customize"
@@ -2450,24 +2430,16 @@
                                         VerticalAlignment="Center">
                             <StackPanel x:Name="DisplayProfileSaveActions"
                                         Orientation="Horizontal"
-                                        Spacing="4"
+                                        Spacing="8"
                                         Visibility="{x:Bind DisplayViewModel.CanSaveCurrentSettingsToProfile, Mode=OneWay}">
                                 <Button Content="{x:Bind ViewModel.SaveToActiveProfileLabel, Mode=OneWay}"
                                         Style="{StaticResource ProfileSaveButtonStyle}"
                                         IsEnabled="{x:Bind DisplayViewModel.CanSaveCurrentSettingsToProfile, Mode=OneWay}"
                                         Click="OnSaveCurrentDisplaySettingsToProfile" />
-                                <Button Style="{StaticResource ProfileSaveOverflowButtonStyle}"
+                                <Button Content="Use profile settings"
+                                        Style="{StaticResource ProfileRestoreButtonStyle}"
                                         Visibility="{x:Bind ViewModel.HasDisplayProfileDraft, Mode=OneWay}"
-                                        AutomationProperties.Name="More profile actions"
-                                        ToolTipService.ToolTip="More profile actions">
-                                    <FontIcon Glyph="&#xE712;" FontSize="16" />
-                                    <Button.Flyout>
-                                        <MenuFlyout>
-                                            <MenuFlyoutItem Text="Use profile settings"
-                                                            Command="{x:Bind ViewModel.DiscardDisplayProfileDraftCommand}" />
-                                        </MenuFlyout>
-                                    </Button.Flyout>
-                                </Button>
+                                        Command="{x:Bind ViewModel.DiscardDisplayProfileDraftCommand}" />
                             </StackPanel>
                             <Button Content="Customize"
                                     Tag="Display"
@@ -3118,11 +3090,13 @@
                                         <Grid ColumnSpacing="24">
                                             <Grid.ColumnDefinitions><ColumnDefinition Width="2*" /><ColumnDefinition Width="3*" /></Grid.ColumnDefinitions>
                                             <TextBlock Text="OpenBlade service" Style="{StaticResource TroubleshootingLabelStyle}" />
-                                            <Grid Grid.Column="1" ColumnSpacing="7">
+                                            <Grid Grid.Column="1">
                                                 <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
-                                                <Grid Width="12" Height="12" VerticalAlignment="Center">
-                                                    <Ellipse Style="{StaticResource TroubleshootingStatusDotStyle}" Fill="{ThemeResource SystemFillColorSuccessBrush}" Visibility="{x:Bind ViewModel.IsConnected, Mode=OneWay}" />
-                                                    <Ellipse Style="{StaticResource TroubleshootingStatusDotStyle}" Fill="{ThemeResource SystemFillColorCriticalBrush}" Visibility="{x:Bind ViewModel.IsServiceUnavailable, Mode=OneWay}" />
+                                                <Grid VerticalAlignment="Center">
+                                                    <Ellipse Style="{StaticResource TroubleshootingStatusDotStyle}"
+                                                             Fill="{ThemeResource SystemFillColorCriticalBrush}"
+                                                             Margin="0,0,7,0"
+                                                             Visibility="{x:Bind ViewModel.IsServiceUnavailable, Mode=OneWay}" />
                                                 </Grid>
                                                 <TextBlock Grid.Column="1" Text="{x:Bind ViewModel.TroubleshootingServiceStatus, Mode=OneWay}" Style="{StaticResource TroubleshootingValueStyle}" />
                                             </Grid>
@@ -3132,15 +3106,21 @@
                                         <Grid ColumnSpacing="24">
                                             <Grid.ColumnDefinitions><ColumnDefinition Width="2*" /><ColumnDefinition Width="3*" /></Grid.ColumnDefinitions>
                                             <TextBlock Text="Laptop behavior" Style="{StaticResource TroubleshootingLabelStyle}" />
-                                            <Grid Grid.Column="1" ColumnSpacing="7">
+                                            <Grid Grid.Column="1">
                                                 <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
-                                                <Grid Width="12" Height="12" VerticalAlignment="Center">
-                                                    <Ellipse Style="{StaticResource TroubleshootingStatusDotStyle}" Fill="{ThemeResource SystemFillColorSuccessBrush}" Visibility="{x:Bind ViewModel.IsReadinessReady, Mode=OneWay}" />
+                                                <Grid VerticalAlignment="Center">
                                                     <ProgressRing Width="12" Height="12"
+                                                                  Margin="0,0,7,0"
                                                                   IsActive="{x:Bind ViewModel.IsReadinessChecking, Mode=OneWay}"
                                                                   Visibility="{x:Bind ViewModel.IsReadinessChecking, Mode=OneWay}" />
-                                                    <Ellipse Style="{StaticResource TroubleshootingStatusDotStyle}" Fill="{ThemeResource SystemFillColorCautionBrush}" Visibility="{x:Bind ViewModel.IsReadinessWarning, Mode=OneWay}" />
-                                                    <Ellipse Style="{StaticResource TroubleshootingStatusDotStyle}" Fill="{ThemeResource SystemFillColorCriticalBrush}" Visibility="{x:Bind ViewModel.IsReadinessError, Mode=OneWay}" />
+                                                    <Ellipse Style="{StaticResource TroubleshootingStatusDotStyle}"
+                                                             Fill="{ThemeResource SystemFillColorCautionBrush}"
+                                                             Margin="0,0,7,0"
+                                                             Visibility="{x:Bind ViewModel.IsReadinessWarning, Mode=OneWay}" />
+                                                    <Ellipse Style="{StaticResource TroubleshootingStatusDotStyle}"
+                                                             Fill="{ThemeResource SystemFillColorCriticalBrush}"
+                                                             Margin="0,0,7,0"
+                                                             Visibility="{x:Bind ViewModel.IsReadinessError, Mode=OneWay}" />
                                                 </Grid>
                                                 <TextBlock Grid.Column="1" Text="{x:Bind ViewModel.TroubleshootingControlsStatus, Mode=OneWay}" Style="{StaticResource TroubleshootingValueStyle}" />
                                             </Grid>

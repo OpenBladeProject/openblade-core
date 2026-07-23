@@ -56,6 +56,9 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Changed
 
+- Promoted `Use profile settings` from an overflow menu to a visible page-header
+  action on Dashboard, Laptop, Lighting, and Display. Healthy Troubleshooting
+  rows now use plain status text while warning and error indicators remain.
 - GPU clock-only adjustments in Custom mode now bypass redundant Blade firmware
   writes and update only the NVIDIA clock offsets.
 - Removed the redundant Reset button from the app accent color setting. OpenBlade

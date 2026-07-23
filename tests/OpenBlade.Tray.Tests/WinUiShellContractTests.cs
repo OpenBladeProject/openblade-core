@@ -93,7 +93,7 @@ public sealed class WinUiShellContractTests
             "Content=\"{x:Bind ViewModel.SaveToActiveProfileLabel, Mode=OneWay}\""));
         Assert.DoesNotContain("Text=\"Unsaved changes\"", xaml, StringComparison.Ordinal);
         Assert.DoesNotContain("Text=\"Not saved\"", xaml, StringComparison.Ordinal);
-        Assert.Equal(4, CountOccurrences(xaml, "Text=\"Use profile settings\""));
+        Assert.Equal(4, CountOccurrences(xaml, "Content=\"Use profile settings\""));
         Assert.DoesNotContain(
             "Style=\"{StaticResource ProfileSaveStatusTextStyle}\"",
             xaml,
@@ -103,7 +103,23 @@ public sealed class WinUiShellContractTests
             "Style=\"{StaticResource ProfileSaveButtonStyle}\""));
         Assert.Equal(4, CountOccurrences(
             xaml,
-            "Style=\"{StaticResource ProfileSaveOverflowButtonStyle}\""));
+            "Style=\"{StaticResource ProfileRestoreButtonStyle}\""));
+        Assert.DoesNotContain(
+            "Style=\"{StaticResource ProfileSaveOverflowButtonStyle}\"",
+            xaml,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            "AutomationProperties.Name=\"More profile actions\"",
+            xaml,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            "Fill=\"{ThemeResource SystemFillColorSuccessBrush}\" Visibility=\"{x:Bind ViewModel.IsConnected, Mode=OneWay}\"",
+            xaml,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            "Fill=\"{ThemeResource SystemFillColorSuccessBrush}\" Visibility=\"{x:Bind ViewModel.IsReadinessReady, Mode=OneWay}\"",
+            xaml,
+            StringComparison.Ordinal);
         Assert.Contains("<Setter Property=\"Height\" Value=\"32\" />", xaml, StringComparison.Ordinal);
         Assert.Equal(6, CountOccurrences(xaml, "HeaderActions.Margin\" Value=\"0,2,0,0\""));
         Assert.DoesNotContain("ViewModel.ThermalProfileRelationshipStatus", xaml, StringComparison.Ordinal);
