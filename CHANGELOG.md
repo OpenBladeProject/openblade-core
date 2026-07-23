@@ -64,6 +64,9 @@ All notable changes to OpenBlade are documented in this file. The project follow
   row. If Windows silently removes the session keyboard hook while firmware
   Driver mode remains loaded, OpenBlade completes the current media action and
   reinstalls the missing hook without resetting laptop controls.
+- Kept function-row media translation active through transient firmware
+  readback gaps by falling back to the active profile's saved function-key
+  behavior.
 - Reduced foreground CPU use by letting WinUI update only the bindings whose
   underlying values changed instead of invalidating every page binding for each
   service update. Disabled live readings no longer poll the service, telemetry

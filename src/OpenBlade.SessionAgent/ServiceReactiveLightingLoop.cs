@@ -311,9 +311,15 @@ public sealed class ServiceReactiveLightingLoop : IAsyncDisposable
         {
             // A verified laptop can briefly report either readback as unknown
             // while the service replaces a stale HID command session. Preserve
-            // the last confirmed translation state through that gap; explicit
-            // false or a verified-device loss still disables interception.
-            if (status.FunctionKeyPrimary is { } primaryMode)
+            // the last confirmed translation state through that gap. A newly
+            // started Agent has no last readback to preserve, so use the active
+            // profile's saved behavior until firmware readback recovers. Without
+            // that fallback, Driver mode remains loaded but F1-F12 translation
+            // silently stays disabled after a transient device-verification loss.
+            FunctionKeyPrimaryMode? effectivePrimaryMode =
+                status.FunctionKeyPrimary
+                ?? FunctionKeyPrimaryFromActiveProfile(status);
+            if (effectivePrimaryMode is { } primaryMode)
             {
                 Interlocked.Exchange(ref functionKeyPrimaryMode, (int)primaryMode);
             }
@@ -356,6 +362,21 @@ public sealed class ServiceReactiveLightingLoop : IAsyncDisposable
         }
 
         SetInputState(connected: true, keyTriggered: false);
+    }
+
+    private static FunctionKeyPrimaryMode? FunctionKeyPrimaryFromActiveProfile(
+        ServiceStatusSnapshot status)
+    {
+        if (status.ActivePowerSource is not (
+            PowerSource.PluggedIn or PowerSource.Battery or PowerSource.UsbC))
+        {
+            return null;
+        }
+
+        return status.Profiles
+            .ForPowerSource(status.ActivePowerSource)
+            .EffectiveLaptopBehavior
+            .FunctionKeyPrimary;
     }
 
     private FunctionKeyPrimaryMode? ReadFunctionKeyPrimaryMode()

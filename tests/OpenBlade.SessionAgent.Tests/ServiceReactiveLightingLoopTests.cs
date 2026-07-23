@@ -429,6 +429,55 @@ public sealed class ServiceReactiveLightingLoopTests
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => running);
     }
 
+    [Fact]
+    public async Task UnknownReadbackUsesActiveProfileAfterDeviceVerificationRecovers()
+    {
+        var client = new WatchClient();
+        var factory = new RecordingSourceFactory();
+        await using var loop = new ServiceReactiveLightingLoop(client, factory);
+        using var cancellation = new CancellationTokenSource();
+        Task running = loop.RunAsync(cancellation.Token);
+
+        await WaitUntilAsync(() => factory.CreateCount == 1);
+        client.Publish(Status(LightingRendererOwnershipState.Static) with
+        {
+            DeviceVerified = false,
+            FunctionKeyPrimary = null,
+            KeyboardDriverModeActive = null,
+        });
+        await WaitUntilAsync(
+            () => factory.Last!.ReadFunctionKeyPrimaryMode() is null
+                && !factory.Last.IsDriverModeActive());
+
+        ServiceStatusSnapshot recovered = Status(
+            LightingRendererOwnershipState.Static);
+        recovered = recovered with
+        {
+            Revision = 2,
+            FunctionKeyPrimary = null,
+            KeyboardDriverModeActive = true,
+            Profiles = recovered.Profiles with
+            {
+                PluggedIn = recovered.Profiles.PluggedIn with
+                {
+                    LaptopBehavior = new LaptopBehaviorProfileSettings(
+                        StartupAnimationEnabled: null,
+                        FunctionKeyPrimary: FunctionKeyPrimaryMode.MultimediaKeys,
+                        GamingModeEnabled: null),
+                },
+            },
+        };
+        client.Publish(recovered);
+
+        await WaitUntilAsync(
+            () => factory.Last!.ReadFunctionKeyPrimaryMode()
+                    == FunctionKeyPrimaryMode.MultimediaKeys
+                && factory.Last.IsDriverModeActive());
+
+        cancellation.Cancel();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => running);
+    }
+
     private static ServiceStatusSnapshot Status(LightingRendererOwnershipState ownership)
     {
         ProfileSet profiles = ProfileDefaults.CreateSafeDefaults();
