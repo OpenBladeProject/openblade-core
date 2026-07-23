@@ -394,7 +394,7 @@
                                     <StackPanel Spacing="3" VerticalAlignment="Center">
                                         <TextBlock Text="GPU core clock offset"
                                                    Style="{StaticResource CardTitleStyle}" />
-                                        <TextBlock Text="Uses the range reported by the NVIDIA driver."
+                                        <TextBlock Text="Adjust the GPU core clock relative to its default."
                                                    Style="{StaticResource SecondaryTextStyle}" />
                                     </StackPanel>
                                     <StackPanel Grid.Column="1"
@@ -431,7 +431,7 @@
                                     <StackPanel Spacing="3" VerticalAlignment="Center">
                                         <TextBlock Text="GPU memory clock offset"
                                                    Style="{StaticResource CardTitleStyle}" />
-                                        <TextBlock Text="Applied only while Custom mode is active."
+                                        <TextBlock Text="Adjust the GPU memory clock relative to its default."
                                                    Style="{StaticResource SecondaryTextStyle}" />
                                     </StackPanel>
                                     <StackPanel Grid.Column="1"
