@@ -70,7 +70,8 @@ function Assert-ServicePublishPayload {
         'OpenBlade.SessionAgent.exe',
         'OpenBlade.SessionAgent.dll',
         'OpenBlade.SessionAgent.deps.json',
-        'OpenBlade.SessionAgent.runtimeconfig.json'
+        'OpenBlade.SessionAgent.runtimeconfig.json',
+        'Microsoft.WindowsAppRuntime.Insights.Resource.dll'
     )
     foreach ($requiredSessionAgentFile in $requiredSessionAgentFiles) {
         $requiredPath = Join-Path $Payload $requiredSessionAgentFile

@@ -26,6 +26,10 @@ All notable changes to OpenBlade are documented in this file. The project follow
   preferences.
 - Added smooth Dashboard card add, remove, and reorder transitions without
   recreating retained controls.
+- Added persistent, page-specific section customization to Profiles, Display,
+  Laptop, Lighting, Settings, and About. Each page keeps its header fixed while
+  users hide or drag its content sections into a preferred order without
+  reloading the window.
 - Added persistent left-navigation ordering plus app accent choices for Razer
   green, the live Windows accent, and a custom RGB color.
 - Added a shipped uninstaller to Windows Installed apps and the Start menu.
@@ -83,6 +87,9 @@ All notable changes to OpenBlade are documented in this file. The project follow
   OpenBlade-owned Normal-mode baseline on clean shutdown. Renderer invalidation
   now opens a fresh verified session so lighting lifecycle events cannot
   silently disable M1 through M5 while the service remains active.
+- Fixed performance-key notifications in the self-contained Session Agent by
+  including the Microsoft-signed Windows App Runtime notification resource that
+  `AppNotificationManager` loads during registration.
 - Validated keyboard-shortcut and website values before M1 through M5 override
   their normal behavior. Incomplete or invalid actions now show a validation
   message and leave the physical key's default action intact.

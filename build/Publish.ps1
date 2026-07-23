@@ -8,6 +8,7 @@ $ErrorActionPreference = 'Stop'
 $repository = Split-Path -Parent $PSScriptRoot
 $artifacts = [IO.Path]::GetFullPath((Join-Path $repository 'artifacts'))
 . (Join-Path $PSScriptRoot 'PublishPayloadValidation.ps1')
+. (Join-Path $PSScriptRoot 'WindowsAppRuntimeNotificationResource.ps1')
 
 & (Join-Path $PSScriptRoot 'Verify-Branding.ps1') -Repository $repository
 if ($LASTEXITCODE -ne 0) {
@@ -75,6 +76,18 @@ try {
         $payload $productionPublishArguments
     Invoke-CheckedPublish (Join-Path $repository 'src\OpenBlade.SessionAgent\OpenBlade.SessionAgent.csproj') `
         $payload $productionPublishArguments
+    $sessionAgentManifest = Get-Content -Raw -LiteralPath (
+        Join-Path $payload 'OpenBlade.SessionAgent.deps.json') | ConvertFrom-Json
+    $windowsAppRuntime = Get-UniqueManifestPackageProperty `
+        -Object $sessionAgentManifest.libraries `
+        -PackageName 'Microsoft.WindowsAppSDK.Runtime' `
+        -Context 'Windows App Runtime library entry'
+    Add-WindowsAppRuntimeNotificationResource `
+        -Payload $payload `
+        -RuntimeVersion (
+            Get-ManifestPackageVersion `
+                -PropertyName $windowsAppRuntime.Name `
+                -PackageName 'Microsoft.WindowsAppSDK.Runtime')
     Invoke-CheckedPublish (Join-Path $repository 'src\OpenBlade.Tray\OpenBlade.Tray.csproj') `
         $payload $productionPublishArguments
     # Protocol is shared by the installed service and the capture validator.

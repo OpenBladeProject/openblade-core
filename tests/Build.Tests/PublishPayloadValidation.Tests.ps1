@@ -143,7 +143,8 @@ function Write-ValidServicePayload {
             'OpenBlade.SessionAgent.exe',
             'OpenBlade.SessionAgent.dll',
             'OpenBlade.SessionAgent.deps.json',
-            'OpenBlade.SessionAgent.runtimeconfig.json')) {
+            'OpenBlade.SessionAgent.runtimeconfig.json',
+            'Microsoft.WindowsAppRuntime.Insights.Resource.dll')) {
         Set-Content -LiteralPath (Join-Path $Payload $sessionAgentFile) `
             -Value 'session agent payload' -NoNewline
     }
