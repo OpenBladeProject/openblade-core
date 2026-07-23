@@ -83,10 +83,15 @@ internal static class Program
                     exception => System.Diagnostics.Trace.TraceWarning(
                         "OpenBlade shortcut preference refresh failed: {0}",
                         exception.Message));
+                var specialKeyInput = new WindowsSpecialKeyInputSender();
                 var specialKeyExecutor = new SpecialKeyActionExecutor(
                     specialKeyBindings,
                     new ServiceClient(),
-                    new WindowsSpecialKeyInputSender());
+                    specialKeyInput);
+                var functionRowActions = new FunctionRowActionExecutor(
+                    new ServiceClient(),
+                    specialKeyInput,
+                    new WmiDisplayBrightnessController());
                 await using var statusFeed = new SharedServiceStatusFeed(
                     new ServiceClient());
                 var automation = new ServiceDisplayAutomationLoop(
@@ -108,7 +113,8 @@ internal static class Program
                     shortcutNotifications,
                     statusFeed,
                     specialKeyBindings.OverridesDefaultBehavior,
-                    specialKeyExecutor.ExecuteAsync);
+                    specialKeyExecutor.ExecuteAsync,
+                    functionRowActions.ExecuteAsync);
                 await using var ambient = new ServiceAmbientLightingLoop(
                     new ServiceClient(),
                     WindowsAmbientScreenSamplerFactory.Instance,

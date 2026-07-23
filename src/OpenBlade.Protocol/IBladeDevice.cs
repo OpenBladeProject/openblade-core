@@ -29,6 +29,15 @@ public interface IBladeDevice
     Task EnsureDriverModeAsync(CancellationToken cancellationToken) =>
         Task.CompletedTask;
 
+    Task<bool?> ReadDriverModeAsync(CancellationToken cancellationToken) =>
+        Task.FromResult<bool?>(null);
+
+    async Task<bool?> MaintainDriverModeAsync(CancellationToken cancellationToken)
+    {
+        await EnsureDriverModeAsync(cancellationToken).ConfigureAwait(false);
+        return await ReadDriverModeAsync(cancellationToken).ConfigureAwait(false);
+    }
+
     Task SetPerformanceAsync(PerformancePreset value, CancellationToken cancellationToken);
 
     Task SetPerformanceAsync(

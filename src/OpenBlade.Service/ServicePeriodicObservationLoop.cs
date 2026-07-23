@@ -30,20 +30,51 @@ public sealed class ServicePeriodicObservationLoop
         while (!stoppingToken.IsCancellationRequested)
         {
             await delay(ObservationInterval, stoppingToken);
-            try
-            {
-                await runtime.RefreshPowerSourceClassificationAsync(stoppingToken);
-                await runtime.MaintainDriverModeAsync(stoppingToken);
-                await runtime.RestoreLightingRendererAsync(stoppingToken);
-            }
-            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+            if (!await RunStepAsync(
+                runtime.RefreshPowerSourceClassificationAsync,
+                "power-source classification",
+                stoppingToken))
             {
                 return;
             }
-            catch (Exception exception)
+            if (!await RunStepAsync(
+                runtime.MaintainDriverModeAsync,
+                "keyboard Driver mode",
+                stoppingToken))
             {
-                logger.LogError(exception, "Periodic service state observation failed.");
+                return;
             }
+            if (!await RunStepAsync(
+                runtime.RestoreLightingRendererAsync,
+                "lighting renderer",
+                stoppingToken))
+            {
+                return;
+            }
+        }
+    }
+
+    private async Task<bool> RunStepAsync(
+        Func<CancellationToken, Task> step,
+        string name,
+        CancellationToken stoppingToken)
+    {
+        try
+        {
+            await step(stoppingToken);
+            return true;
+        }
+        catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+        {
+            return false;
+        }
+        catch (Exception exception)
+        {
+            logger.LogError(
+                exception,
+                "Periodic {ObservationStep} maintenance failed.",
+                name);
+            return true;
         }
     }
 }

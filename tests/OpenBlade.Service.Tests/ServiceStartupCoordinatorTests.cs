@@ -21,7 +21,9 @@ public sealed class ServiceStartupCoordinatorTests : IDisposable
         bool started = await coordinator.InitializeAsync(CancellationToken.None);
 
         Assert.True(started);
-        Assert.Equal(["Initialize", "Observe", "RestoreLighting"], runtime.Calls);
+        Assert.Equal(
+            ["Initialize", "Observe", "MaintainDriverMode", "RestoreLighting"],
+            runtime.Calls);
         Assert.Equal(1, runtime.ObserveCount);
         Assert.True(runtime.ProfileFileExistedDuringInitialize);
         Assert.Equal(PowerSource.PluggedIn, runtime.InitialPowerSource);
@@ -166,6 +168,12 @@ public sealed class ServiceStartupCoordinatorTests : IDisposable
         public Task RestoreLightingRendererAsync(CancellationToken cancellationToken)
         {
             Calls.Add("RestoreLighting");
+            return Task.CompletedTask;
+        }
+
+        public Task MaintainDriverModeAsync(CancellationToken cancellationToken)
+        {
+            Calls.Add("MaintainDriverMode");
             return Task.CompletedTask;
         }
 

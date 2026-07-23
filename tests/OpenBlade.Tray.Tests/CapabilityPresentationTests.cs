@@ -531,6 +531,7 @@ public sealed class CapabilityPresentationTests
                      "ViewModel.TroubleshootingServiceStatus",
                      "ViewModel.TroubleshootingPowerSourceStatus",
                      "ViewModel.TroubleshootingControlsStatus",
+                     "ViewModel.TroubleshootingKeyboardDriverModeStatus",
                      "ViewModel.TroubleshootingOtherRazerSoftwareStatus",
                      "ViewModel.TroubleshootingRecentErrorStatus",
                  })
@@ -556,6 +557,7 @@ public sealed class CapabilityPresentationTests
                  {
                      "OpenBlade service",
                      "Laptop behavior",
+                     "Keyboard driver mode",
                      "Power source",
                      "Other Razer software running",
                  })

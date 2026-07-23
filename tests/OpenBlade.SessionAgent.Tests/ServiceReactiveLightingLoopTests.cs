@@ -331,6 +331,56 @@ public sealed class ServiceReactiveLightingLoopTests
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => running);
     }
 
+    [Fact]
+    public async Task AuthoritativeStatusControlsFunctionRowTranslation()
+    {
+        var client = new WatchClient();
+        var factory = new RecordingSourceFactory();
+        var delivered = new ConcurrentQueue<FunctionRowAction>();
+        await using var loop = new ServiceReactiveLightingLoop(
+            client,
+            factory,
+            executeFunctionRowActionAsync: (action, _) =>
+            {
+                delivered.Enqueue(action);
+                return Task.CompletedTask;
+            });
+        using var cancellation = new CancellationTokenSource();
+        Task running = loop.RunAsync(cancellation.Token);
+
+        await WaitUntilAsync(() => factory.CreateCount == 1);
+        Assert.Null(factory.Last!.ReadFunctionKeyPrimaryMode());
+        Assert.False(factory.Last.IsDriverModeActive());
+
+        client.Publish(Status(LightingRendererOwnershipState.Static) with
+        {
+            FunctionKeyPrimary = FunctionKeyPrimaryMode.MultimediaKeys,
+            KeyboardDriverModeActive = true,
+        });
+        await WaitUntilAsync(
+            () => factory.Last.ReadFunctionKeyPrimaryMode()
+                == FunctionKeyPrimaryMode.MultimediaKeys
+                && factory.Last.IsDriverModeActive());
+
+        factory.Last.PublishFunctionRowAction(FunctionRowAction.VolumeMute);
+        await WaitUntilAsync(() => delivered.Count == 1);
+        Assert.Equal(FunctionRowAction.VolumeMute, Assert.Single(delivered));
+
+        client.Publish(Status(LightingRendererOwnershipState.Static) with
+        {
+            Revision = 2,
+            FunctionKeyPrimary = FunctionKeyPrimaryMode.FunctionKeys,
+            KeyboardDriverModeActive = false,
+        });
+        await WaitUntilAsync(
+            () => factory.Last.ReadFunctionKeyPrimaryMode()
+                == FunctionKeyPrimaryMode.FunctionKeys
+                && !factory.Last.IsDriverModeActive());
+
+        cancellation.Cancel();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => running);
+    }
+
     private static ServiceStatusSnapshot Status(LightingRendererOwnershipState ownership)
     {
         ProfileSet profiles = ProfileDefaults.CreateSafeDefaults();
@@ -413,6 +463,26 @@ public sealed class ServiceReactiveLightingLoopTests
                 publishSpecialKey,
                 shouldOverrideSpecialKey);
         }
+
+        public IReactiveKeyboardSource Create(
+            Action<ReactiveKeyPulse> publish,
+            Action<PerformanceShortcutSource> publishPerformanceShortcut,
+            Action<SpecialKeySlot> publishSpecialKey,
+            Func<SpecialKeySlot, bool> shouldOverrideSpecialKey,
+            Action<FunctionRowAction> publishFunctionRowAction,
+            Func<FunctionKeyPrimaryMode?> readFunctionKeyPrimaryMode,
+            Func<bool> isDriverModeActive)
+        {
+            CreateCount++;
+            return Last = new RecordingSource(
+                publish,
+                publishPerformanceShortcut,
+                publishSpecialKey,
+                shouldOverrideSpecialKey,
+                publishFunctionRowAction,
+                readFunctionKeyPrimaryMode,
+                isDriverModeActive);
+        }
     }
 
     private sealed class RecordingSource : IReactiveKeyboardSource
@@ -423,17 +493,26 @@ public sealed class ServiceReactiveLightingLoopTests
         private readonly Action<PerformanceShortcutSource> publishPerformanceShortcut;
         private readonly Action<SpecialKeySlot> publishSpecialKey;
         private readonly Func<SpecialKeySlot, bool> shouldOverrideSpecialKey;
+        private readonly Action<FunctionRowAction> publishFunctionRowAction;
+        private readonly Func<FunctionKeyPrimaryMode?> readFunctionKeyPrimaryMode;
+        private readonly Func<bool> isDriverModeActive;
 
         public RecordingSource(
             Action<ReactiveKeyPulse> publish,
             Action<PerformanceShortcutSource> publishPerformanceShortcut,
             Action<SpecialKeySlot>? publishSpecialKey = null,
-            Func<SpecialKeySlot, bool>? shouldOverrideSpecialKey = null)
+            Func<SpecialKeySlot, bool>? shouldOverrideSpecialKey = null,
+            Action<FunctionRowAction>? publishFunctionRowAction = null,
+            Func<FunctionKeyPrimaryMode?>? readFunctionKeyPrimaryMode = null,
+            Func<bool>? isDriverModeActive = null)
         {
             this.publish = publish;
             this.publishPerformanceShortcut = publishPerformanceShortcut;
             this.publishSpecialKey = publishSpecialKey ?? (_ => { });
             this.shouldOverrideSpecialKey = shouldOverrideSpecialKey ?? (_ => false);
+            this.publishFunctionRowAction = publishFunctionRowAction ?? (_ => { });
+            this.readFunctionKeyPrimaryMode = readFunctionKeyPrimaryMode ?? (() => null);
+            this.isDriverModeActive = isDriverModeActive ?? (() => false);
         }
 
         public bool Disposed { get; private set; }
@@ -449,6 +528,14 @@ public sealed class ServiceReactiveLightingLoopTests
 
         public bool ShouldOverrideSpecialKey(SpecialKeySlot slot) =>
             shouldOverrideSpecialKey(slot);
+
+        public void PublishFunctionRowAction(FunctionRowAction action) =>
+            publishFunctionRowAction(action);
+
+        public FunctionKeyPrimaryMode? ReadFunctionKeyPrimaryMode() =>
+            readFunctionKeyPrimaryMode();
+
+        public bool IsDriverModeActive() => isDriverModeActive();
 
         public void Fail(Exception exception) => completion.TrySetException(exception);
 

@@ -34,6 +34,23 @@ public sealed class WindowsReactiveKeyboardSourceFactory : IReactiveKeyboardSour
             publishPerformanceShortcut,
             publishSpecialKey,
             shouldOverrideSpecialKey);
+
+    public IReactiveKeyboardSource Create(
+        Action<ReactiveKeyPulse> publish,
+        Action<PerformanceShortcutSource> publishPerformanceShortcut,
+        Action<SpecialKeySlot> publishSpecialKey,
+        Func<SpecialKeySlot, bool> shouldOverrideSpecialKey,
+        Action<FunctionRowAction> publishFunctionRowAction,
+        Func<FunctionKeyPrimaryMode?> readFunctionKeyPrimaryMode,
+        Func<bool> isDriverModeActive) =>
+        new WindowsReactiveKeyboardSource(
+            publish,
+            publishPerformanceShortcut,
+            publishSpecialKey,
+            shouldOverrideSpecialKey,
+            publishFunctionRowAction,
+            readFunctionKeyPrimaryMode,
+            isDriverModeActive);
 }
 
 /// <summary>
@@ -81,6 +98,10 @@ internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
     private readonly Action<PerformanceShortcutSource> publishPerformanceShortcut;
     private readonly Action<SpecialKeySlot> publishSpecialKey;
     private readonly Func<SpecialKeySlot, bool> shouldOverrideSpecialKey;
+    private readonly Action<FunctionRowAction> publishFunctionRowAction;
+    private readonly Func<FunctionKeyPrimaryMode?> readFunctionKeyPrimaryMode;
+    private readonly Func<bool> isDriverModeActive;
+    private readonly Rz09_0581FunctionRowInputState functionRowInput = new();
     private readonly string windowClassName = $"OpenBlade.Reactive.{Guid.NewGuid():N}";
     private readonly TaskCompletionSource initialization =
         new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -106,7 +127,10 @@ internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
             publish,
             publishPerformanceShortcut,
             _ => { },
-            _ => false)
+            _ => false,
+            _ => { },
+            () => null,
+            () => false)
     {
     }
 
@@ -114,7 +138,10 @@ internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
         Action<ReactiveKeyPulse> publish,
         Action<PerformanceShortcutSource> publishPerformanceShortcut,
         Action<SpecialKeySlot> publishSpecialKey,
-        Func<SpecialKeySlot, bool> shouldOverrideSpecialKey)
+        Func<SpecialKeySlot, bool> shouldOverrideSpecialKey,
+        Action<FunctionRowAction>? publishFunctionRowAction = null,
+        Func<FunctionKeyPrimaryMode?>? readFunctionKeyPrimaryMode = null,
+        Func<bool>? isDriverModeActive = null)
     {
         this.publish = publish ?? throw new ArgumentNullException(nameof(publish));
         this.publishPerformanceShortcut = publishPerformanceShortcut
@@ -123,6 +150,9 @@ internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
             ?? throw new ArgumentNullException(nameof(publishSpecialKey));
         this.shouldOverrideSpecialKey = shouldOverrideSpecialKey
             ?? throw new ArgumentNullException(nameof(shouldOverrideSpecialKey));
+        this.publishFunctionRowAction = publishFunctionRowAction ?? (_ => { });
+        this.readFunctionKeyPrimaryMode = readFunctionKeyPrimaryMode ?? (() => null);
+        this.isDriverModeActive = isDriverModeActive ?? (() => false);
         messageThread = new Thread(RunMessageWindow)
         {
             IsBackground = true,
@@ -364,6 +394,25 @@ internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
         {
             LowLevelKeyboardInput input =
                 Marshal.PtrToStructure<LowLevelKeyboardInput>(messageParameter);
+            if ((input.Flags & LowLevelInjectedFlag) == 0)
+            {
+                bool keyDown = windowParameter is
+                    WindowMessageKeyDown or WindowMessageSystemKeyDown;
+                if (owner.functionRowInput.Process(
+                    input.ScanCode,
+                    keyDown,
+                    owner.performanceFunctionKeyPressed,
+                    owner.readFunctionKeyPrimaryMode(),
+                    owner.isDriverModeActive(),
+                    out FunctionRowAction? action))
+                {
+                    if (action is { } triggered)
+                    {
+                        owner.publishFunctionRowAction(triggered);
+                    }
+                    return 1;
+                }
+            }
             if ((input.Flags & LowLevelInjectedFlag) == 0
                 && owner.performanceFunctionKeyPressed
                 && (input.VirtualKey == VirtualKeyPageUp

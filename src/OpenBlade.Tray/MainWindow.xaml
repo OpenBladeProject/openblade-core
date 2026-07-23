@@ -3149,6 +3149,15 @@
                                     <Border Style="{StaticResource TroubleshootingSectionStyle}">
                                         <Grid ColumnSpacing="24">
                                             <Grid.ColumnDefinitions><ColumnDefinition Width="2*" /><ColumnDefinition Width="3*" /></Grid.ColumnDefinitions>
+                                            <TextBlock Text="Keyboard driver mode" Style="{StaticResource TroubleshootingLabelStyle}" />
+                                            <TextBlock Grid.Column="1"
+                                                       Text="{x:Bind ViewModel.TroubleshootingKeyboardDriverModeStatus, Mode=OneWay}"
+                                                       Style="{StaticResource TroubleshootingValueStyle}" />
+                                        </Grid>
+                                    </Border>
+                                    <Border Style="{StaticResource TroubleshootingSectionStyle}">
+                                        <Grid ColumnSpacing="24">
+                                            <Grid.ColumnDefinitions><ColumnDefinition Width="2*" /><ColumnDefinition Width="3*" /></Grid.ColumnDefinitions>
                                             <TextBlock Text="Power source" Style="{StaticResource TroubleshootingLabelStyle}" />
                                             <TextBlock Grid.Column="1" Text="{x:Bind ViewModel.TroubleshootingPowerSourceStatus, Mode=OneWay}" Style="{StaticResource TroubleshootingValueStyle}" />
                                         </Grid>

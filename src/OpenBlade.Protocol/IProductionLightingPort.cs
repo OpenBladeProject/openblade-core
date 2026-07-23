@@ -19,6 +19,24 @@ public interface IProductionLightingPort : IAsyncDisposable
     Task EnsureDriverModeAsync(CancellationToken cancellationToken) =>
         Task.CompletedTask;
 
+    /// <summary>
+    /// Reads whether the firmware is currently in Driver mode. A null result
+    /// means the mode is not available from this lighting port.
+    /// </summary>
+    Task<bool?> ReadDriverModeAsync(CancellationToken cancellationToken) =>
+        Task.FromResult<bool?>(null);
+
+    /// <summary>
+    /// Restores Driver mode when necessary and returns the confirmed result.
+    /// Implementations can combine the ensure and readback into one serialized
+    /// transaction sequence instead of querying the firmware twice.
+    /// </summary>
+    async Task<bool?> MaintainDriverModeAsync(CancellationToken cancellationToken)
+    {
+        await EnsureDriverModeAsync(cancellationToken).ConfigureAwait(false);
+        return await ReadDriverModeAsync(cancellationToken).ConfigureAwait(false);
+    }
+
     Task<LightingSettings?> ReadStateAsync(CancellationToken cancellationToken);
 
     Task<LogoLightingMode?> ReadLogoStateAsync(CancellationToken cancellationToken) =>

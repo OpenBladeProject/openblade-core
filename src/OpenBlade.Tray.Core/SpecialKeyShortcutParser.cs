@@ -21,6 +21,7 @@ public static class SpecialKeyShortcutParser
             ["Down"] = 0x28,
             ["Insert"] = 0x2D,
             ["Delete"] = 0x2E,
+            ["PrintScreen"] = 0x2C,
         };
 
     public static (ushort Key, ushort[] Modifiers) Parse(string shortcut)

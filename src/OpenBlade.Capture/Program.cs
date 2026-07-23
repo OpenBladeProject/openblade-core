@@ -82,16 +82,33 @@ if (args.Length == 1 && args[0].Equals(
         Console.Out);
 }
 
-if (args.Length is 1 or 2 && args[0].Equals(
+if (args.Length is >= 1 and <= 3 && args[0].Equals(
     "probe-special-keys",
     StringComparison.OrdinalIgnoreCase))
 {
-    int seconds = args.Length == 2 && int.TryParse(args[1], out int parsedSeconds)
+    int seconds = args.Length >= 2 && int.TryParse(args[1], out int parsedSeconds)
         ? parsedSeconds
         : 30;
     try
     {
-        return new SpecialKeyInputProbe(Console.Out).Run(TimeSpan.FromSeconds(seconds));
+        if (args.Length < 3)
+        {
+            return new SpecialKeyInputProbe(Console.Out).Run(
+                TimeSpan.FromSeconds(seconds));
+        }
+
+        string outputPath = Path.GetFullPath(args[2]);
+        await using var outputStream = new FileStream(
+            outputPath,
+            FileMode.Create,
+            FileAccess.Write,
+            FileShare.Read);
+        await using var outputWriter = new StreamWriter(outputStream)
+        {
+            AutoFlush = true,
+        };
+        return new SpecialKeyInputProbe(outputWriter).Run(
+            TimeSpan.FromSeconds(seconds));
     }
     catch (Exception exception) when (
         exception is System.ComponentModel.Win32Exception
@@ -268,7 +285,7 @@ Console.WriteLine("  OpenBlade.Capture scan");
 Console.WriteLine("  OpenBlade.Capture scan-all");
 Console.WriteLine("  OpenBlade.Capture query-display");
 Console.WriteLine("  OpenBlade.Capture probe-gpu-clock-offsets");
-Console.WriteLine("  OpenBlade.Capture probe-special-keys [seconds]");
+Console.WriteLine("  OpenBlade.Capture probe-special-keys [seconds] [output-file]");
 Console.WriteLine("  OpenBlade.Capture validate <fixtures.json>");
 Console.WriteLine("  OpenBlade.Capture probe-battery");
 Console.WriteLine("  OpenBlade.Capture query-battery");

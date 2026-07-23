@@ -61,12 +61,14 @@ public sealed class ProductionLightingPortTests
         var port = CreatePort(session, new MatrixWriter(), admitted: true);
 
         await port.EnsureDriverModeAsync(default);
+        Assert.True(await port.ReadDriverModeAsync(default));
 
         Assert.Equal(RazerDeviceMode.Driver, session.DeviceMode);
         Assert.Equal(
             [
                 (0x00, 0x84, "0000"),
                 (0x00, 0x04, "0300"),
+                (0x00, 0x84, "0000"),
                 (0x00, 0x84, "0000"),
             ],
             session.Commands.Select(CommandTuple).ToArray());
@@ -78,6 +80,7 @@ public sealed class ProductionLightingPortTests
             [
                 (0x00, 0x84, "0000"),
                 (0x00, 0x04, "0300"),
+                (0x00, 0x84, "0000"),
                 (0x00, 0x84, "0000"),
                 (0x00, 0x84, "0000"),
                 (0x00, 0x04, "0000"),
@@ -96,11 +99,12 @@ public sealed class ProductionLightingPortTests
         var port = CreatePort(session, new MatrixWriter(), admitted: true);
 
         await port.EnsureDriverModeAsync(default);
+        Assert.True(await port.ReadDriverModeAsync(default));
         await port.DisposeAsync();
 
         Assert.Equal(RazerDeviceMode.Driver, session.DeviceMode);
         Assert.Equal(
-            [(0x00, 0x84, "0000")],
+            [(0x00, 0x84, "0000"), (0x00, 0x84, "0000")],
             session.Commands.Select(CommandTuple).ToArray());
     }
 

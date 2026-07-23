@@ -1103,6 +1103,15 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         ? ControlAccessStatus
         : "Unavailable";
 
+    public string TroubleshootingKeyboardDriverModeStatus => !IsConnected
+        ? "Unavailable"
+        : latestStatus?.KeyboardDriverModeActive switch
+        {
+            true => "Loaded",
+            false => "Not loaded",
+            _ => "Unavailable",
+        };
+
     public string TroubleshootingOtherRazerSoftwareStatus
     {
         get
@@ -6968,6 +6977,10 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         PropertyChanged?.Invoke(
             this,
             new PropertyChangedEventArgs(nameof(TroubleshootingControlsStatus)));
+        PropertyChanged?.Invoke(
+            this,
+            new PropertyChangedEventArgs(
+                nameof(TroubleshootingKeyboardDriverModeStatus)));
         PropertyChanged?.Invoke(
             this,
             new PropertyChangedEventArgs(nameof(TroubleshootingOtherRazerSoftwareStatus)));

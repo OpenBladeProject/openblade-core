@@ -392,7 +392,11 @@ internal sealed class ProductionLightingPort : IProductionLightingPort
     public async ValueTask DisposeAsync() =>
         _ = await CloseAsync().ConfigureAwait(false);
 
-    public async Task EnsureDriverModeAsync(CancellationToken cancellationToken)
+    public async Task EnsureDriverModeAsync(CancellationToken cancellationToken) =>
+        _ = await MaintainDriverModeAsync(cancellationToken).ConfigureAwait(false);
+
+    public async Task<bool?> MaintainDriverModeAsync(
+        CancellationToken cancellationToken)
     {
         await EnterAsync(cancellationToken).ConfigureAwait(false);
         try
@@ -401,7 +405,7 @@ internal sealed class ProductionLightingPort : IProductionLightingPort
                 .ConfigureAwait(false);
             if (current == RazerDeviceMode.Driver)
             {
-                return;
+                return true;
             }
 
             // Driver mode enables the validated extended Fn layer and distinct
@@ -429,6 +433,21 @@ internal sealed class ProductionLightingPort : IProductionLightingPort
                     WriteSubmissionState.Indeterminate,
                     "Driver mode did not match independent readback.");
             }
+            return true;
+        }
+        finally
+        {
+            operationGate.Release();
+        }
+    }
+
+    public async Task<bool?> ReadDriverModeAsync(CancellationToken cancellationToken)
+    {
+        await EnterAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            return await QueryDeviceModeCoreAsync(cancellationToken).ConfigureAwait(false)
+                == RazerDeviceMode.Driver;
         }
         finally
         {

@@ -120,8 +120,9 @@ internal static class ProductionLightingEvidenceSource
     private const string ApprovedLightingImplementationFingerprintSha256 =
         // Re-reviewed after restoring the independently validated Driver-mode
         // lifecycle. Port creation acquires Driver mode with readback; periodic
-        // maintenance queries before rewriting after a firmware fallback.
-        "06351F13A017304CDF2835B66A7E7308796D1B2CDA54737C4A11FB5DE5D9F5FE";
+        // maintenance queries before rewriting after a firmware fallback. The
+        // added status read uses the same validated query and performs no write.
+        "22770F657F762FC75E6B7D92CA9F41FC61D353157E309DE062EDFAEA95D6F575";
 
     private static readonly JsonSerializerOptions SerializerOptions =
         new(JsonSerializerDefaults.Web)

@@ -28,12 +28,33 @@ public sealed class ServicePeriodicObservationLoopTests
         Assert.Equal(1, runtime.RestoreCalls);
     }
 
+    [Fact]
+    public async Task RunAsync_PowerRefreshFailureDoesNotSkipDriverModeMaintenance()
+    {
+        using var cancellation = new CancellationTokenSource();
+        var runtime = new RecordingRuntime(cancellation)
+        {
+            RefreshFailure = new IOException("adapter query failed"),
+        };
+        var loop = new ServicePeriodicObservationLoop(
+            runtime,
+            NullLogger.Instance,
+            (_, _) => Task.CompletedTask);
+
+        await loop.RunAsync(cancellation.Token);
+
+        Assert.Equal(1, runtime.RefreshCalls);
+        Assert.Equal(1, runtime.DriverModeMaintenanceCalls);
+        Assert.Equal(1, runtime.RestoreCalls);
+    }
+
     private sealed class RecordingRuntime(CancellationTokenSource cancellation)
         : IServiceControlRuntime
     {
         public int RefreshCalls { get; private set; }
         public int DriverModeMaintenanceCalls { get; private set; }
         public int RestoreCalls { get; private set; }
+        public Exception? RefreshFailure { get; init; }
 
         public ServiceStatusSnapshot GetStatus() => throw new NotSupportedException();
 
@@ -69,7 +90,9 @@ public sealed class ServicePeriodicObservationLoopTests
             CancellationToken cancellationToken)
         {
             RefreshCalls++;
-            return Task.CompletedTask;
+            return RefreshFailure is null
+                ? Task.CompletedTask
+                : Task.FromException(RefreshFailure);
         }
 
         public Task RestoreLightingRendererAsync(CancellationToken cancellationToken)

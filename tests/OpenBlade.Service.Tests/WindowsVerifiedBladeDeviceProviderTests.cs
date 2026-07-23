@@ -697,9 +697,11 @@ public sealed class WindowsVerifiedBladeDeviceProviderTests
 
         await device.EnsureDriverModeAsync(default);
         await device.EnsureDriverModeAsync(default);
+        Assert.True(await device.ReadDriverModeAsync(default));
 
         Assert.Equal(1, lightingFactory.OpenCount);
         Assert.Equal(2, lightingPort.DriverModeEnsureCount);
+        Assert.Equal(1, lightingPort.DriverModeReadCount);
     }
 
     [Fact]
@@ -1107,12 +1109,20 @@ public sealed class WindowsVerifiedBladeDeviceProviderTests
 
         public int DriverModeEnsureCount { get; private set; }
 
+        public int DriverModeReadCount { get; private set; }
+
         public Exception? ReadFailure { get; init; }
 
         public Task EnsureDriverModeAsync(CancellationToken cancellationToken)
         {
             DriverModeEnsureCount++;
             return Task.CompletedTask;
+        }
+
+        public Task<bool?> ReadDriverModeAsync(CancellationToken cancellationToken)
+        {
+            DriverModeReadCount++;
+            return Task.FromResult<bool?>(true);
         }
 
         public Task<LightingSettings?> ReadStateAsync(CancellationToken cancellationToken) =>

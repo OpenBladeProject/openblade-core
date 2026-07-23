@@ -15,6 +15,24 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         Guid.NewGuid().ToString("N"));
 
     [Fact]
+    public async Task MaintainDriverMode_PublishesConfirmedStateAndClearsItWhenUnavailable()
+    {
+        TestContext context = CreateContext(providerAvailable: true);
+        context.Device.DriverModeActive = true;
+
+        await context.Runtime.MaintainDriverModeAsync(CancellationToken.None);
+
+        Assert.True(context.Runtime.GetStatus().KeyboardDriverModeActive);
+        Assert.Equal(1, context.Device.DriverModeEnsureCalls);
+        Assert.Equal(1, context.Device.DriverModeReadCalls);
+
+        context.Provider.Available = false;
+        await context.Runtime.MaintainDriverModeAsync(CancellationToken.None);
+
+        Assert.Null(context.Runtime.GetStatus().KeyboardDriverModeActive);
+    }
+
+    [Fact]
     public async Task BeforeInitialize_StatusAndMutationAccessAreRejectedWithoutHardwareAccess()
     {
         TestContext context = CreateContext(providerAvailable: true, initialize: false);
@@ -5061,6 +5079,12 @@ public sealed class ServiceControlRuntimeTests : IDisposable
 
         public bool? GamingModeEnabled { get; set; }
 
+        public bool? DriverModeActive { get; set; }
+
+        public int DriverModeEnsureCalls { get; private set; }
+
+        public int DriverModeReadCalls { get; private set; }
+
         public int OneShotSetCalls { get; private set; }
 
         public ApplyOneShotLaptopControl? LastOneShotLaptopControl { get; private set; }
@@ -5144,6 +5168,20 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             TotalCalls++;
             McuVersionReadCalls++;
             return Task.FromResult<string?>(McuVersion);
+        }
+
+        public Task EnsureDriverModeAsync(CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            DriverModeEnsureCalls++;
+            return Task.CompletedTask;
+        }
+
+        public Task<bool?> ReadDriverModeAsync(CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            DriverModeReadCalls++;
+            return Task.FromResult(DriverModeActive);
         }
 
         public Task SetPerformanceAsync(PerformancePreset value, CancellationToken cancellationToken)

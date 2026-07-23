@@ -23,6 +23,20 @@ public interface IReactiveKeyboardSourceFactory
         Action<SpecialKeySlot> publishSpecialKey,
         Func<SpecialKeySlot, bool> shouldOverrideSpecialKey) =>
         Create(publish, publishPerformanceShortcut);
+
+    IReactiveKeyboardSource Create(
+        Action<ReactiveKeyPulse> publish,
+        Action<PerformanceShortcutSource> publishPerformanceShortcut,
+        Action<SpecialKeySlot> publishSpecialKey,
+        Func<SpecialKeySlot, bool> shouldOverrideSpecialKey,
+        Action<FunctionRowAction> publishFunctionRowAction,
+        Func<FunctionKeyPrimaryMode?> readFunctionKeyPrimaryMode,
+        Func<bool> isDriverModeActive) =>
+        Create(
+            publish,
+            publishPerformanceShortcut,
+            publishSpecialKey,
+            shouldOverrideSpecialKey);
 }
 
 /// <summary>
@@ -43,9 +57,12 @@ public sealed class ServiceReactiveLightingLoop : IAsyncDisposable
     private readonly Func<SpecialKeySlot, bool> shouldOverrideSpecialKey;
     private readonly IPerformanceShortcutNotificationSink shortcutNotifications;
     private readonly Action<Exception>? errorHandler;
+    private readonly FunctionRowActionPump? functionRowActionPump;
     private IReactiveKeyboardSource? source;
     private int inputConnected;
     private int keyTriggeredActive;
+    private int functionKeyPrimaryMode = -1;
+    private int driverModeActive;
     private int disposed;
 
     public ServiceReactiveLightingLoop(
@@ -55,7 +72,8 @@ public sealed class ServiceReactiveLightingLoop : IAsyncDisposable
         IPerformanceShortcutNotificationSink? shortcutNotifications = null,
         IServiceStatusWatcher? statusWatcher = null,
         Func<SpecialKeySlot, bool>? shouldOverrideSpecialKey = null,
-        Func<SpecialKeySlot, CancellationToken, Task>? executeSpecialKeyAsync = null)
+        Func<SpecialKeySlot, CancellationToken, Task>? executeSpecialKeyAsync = null,
+        Func<FunctionRowAction, CancellationToken, Task>? executeFunctionRowActionAsync = null)
     {
         this.serviceClient = serviceClient ?? throw new ArgumentNullException(nameof(serviceClient));
         this.sourceFactory = sourceFactory ?? throw new ArgumentNullException(nameof(sourceFactory));
@@ -68,6 +86,12 @@ public sealed class ServiceReactiveLightingLoop : IAsyncDisposable
             SendPerformanceShortcutAsync,
             errorHandler: ReportFailure);
         this.shouldOverrideSpecialKey = shouldOverrideSpecialKey ?? (_ => false);
+        if (executeFunctionRowActionAsync is not null)
+        {
+            functionRowActionPump = new FunctionRowActionPump(
+                executeFunctionRowActionAsync,
+                errorHandler: ReportFailure);
+        }
         if (executeSpecialKeyAsync is not null)
         {
             specialKeyPump = new SpecialKeyTriggerPump(
@@ -152,6 +176,10 @@ public sealed class ServiceReactiveLightingLoop : IAsyncDisposable
         {
             await specialKeyPump.DisposeAsync().ConfigureAwait(false);
         }
+        if (functionRowActionPump is not null)
+        {
+            await functionRowActionPump.DisposeAsync().ConfigureAwait(false);
+        }
     }
 
     private void SetInputState(bool connected, bool keyTriggered)
@@ -170,6 +198,7 @@ public sealed class ServiceReactiveLightingLoop : IAsyncDisposable
             pulsePump.ClearPending();
             shortcutPump.ClearPending();
             specialKeyPump?.ClearPending();
+            functionRowActionPump?.ClearPending();
             return;
         }
 
@@ -206,7 +235,18 @@ public sealed class ServiceReactiveLightingLoop : IAsyncDisposable
                             "Special-key input could not keep up and skipped a button press."));
                     }
                 },
-                shouldOverrideSpecialKey);
+                shouldOverrideSpecialKey,
+                action =>
+                {
+                    if (functionRowActionPump is null
+                        || !functionRowActionPump.TryEnqueue(action))
+                    {
+                        ReportFailure(new InvalidOperationException(
+                            "Function-row input could not keep up and skipped a key press."));
+                    }
+                },
+                ReadFunctionKeyPrimaryMode,
+                () => Volatile.Read(ref driverModeActive) != 0);
             if (Volatile.Read(ref disposed) != 0
                 || Interlocked.CompareExchange(ref source, created, null) is not null)
             {
@@ -261,6 +301,19 @@ public sealed class ServiceReactiveLightingLoop : IAsyncDisposable
 
     private void ApplyAuthoritativeStatus(ServiceStatusSnapshot status)
     {
+        Interlocked.Exchange(
+            ref functionKeyPrimaryMode,
+            status.FunctionKeyPrimary is { } primaryMode
+                ? (int)primaryMode
+                : -1);
+        Interlocked.Exchange(
+            ref driverModeActive,
+            status.KeyboardDriverModeActive == true ? 1 : 0);
+        if (status.KeyboardDriverModeActive != true)
+        {
+            functionRowActionPump?.ClearPending();
+        }
+
         bool ownedKeyTriggered = status.LightingRendererOwnership is
             LightingRendererOwnershipState.Reactive or
             LightingRendererOwnershipState.Ripple;
@@ -289,6 +342,14 @@ public sealed class ServiceReactiveLightingLoop : IAsyncDisposable
         }
 
         SetInputState(connected: true, keyTriggered: false);
+    }
+
+    private FunctionKeyPrimaryMode? ReadFunctionKeyPrimaryMode()
+    {
+        int value = Volatile.Read(ref functionKeyPrimaryMode);
+        return Enum.IsDefined(typeof(FunctionKeyPrimaryMode), value)
+            ? (FunctionKeyPrimaryMode)value
+            : null;
     }
 
     private static bool IsTemporaryDeviceAccessStatus(ServiceStatusSnapshot status) =>

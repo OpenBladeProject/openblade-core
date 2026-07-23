@@ -7,6 +7,11 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Added
 
+- Added a session-local function-row bridge for validated RZ09-0581 Driver
+  mode. It reconstructs volume, playback, Project, Print Screen, built-in
+  display brightness, and keyboard brightness behavior while preserving the
+  configured Function keys or Multimedia keys primary layer.
+- Added the confirmed keyboard Driver-mode state to Troubleshooting.
 - Added NVIDIA GPU core and memory clock offsets to Custom power mode. OpenBlade
   reads the supported ranges from the installed NVIDIA driver, applies changes
   through NVML, confirms readback, and saves explicit offsets in profiles,
@@ -85,7 +90,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
   aligned the service and laptop status values in Troubleshooting.
 - Advanced the local configuration schema to version 7, profile export schema
   to version 3, persistent override schema to version 4, and service IPC to
-  version 18 for GPU clock-offset settings and readback capabilities.
+  version 19 for GPU clock-offset settings, readback capabilities, and
+  keyboard Driver-mode status.
 
 ### Fixed
 
@@ -93,6 +99,9 @@ All notable changes to OpenBlade are documented in this file. The project follow
   extended Fn layer, performance key, and M1 through M5. OpenBlade verifies the
   mode when opening the device, rechecks it every 15 seconds, and writes only
   after a confirmed fallback to Normal mode.
+- Restored media and brightness-key behavior while firmware Driver mode is
+  active. Key-down suppression is latched through key-up, continuous controls
+  repeat normally, and one-shot actions ignore keyboard auto-repeat.
 - Stopped identifying Razer Elevation Service and Razer Game Manager Service 3
   as potential laptop controllers. Synapse and Chroma components that can
   compete for the same controls remain visible as conflicts.

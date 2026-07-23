@@ -292,7 +292,7 @@ public sealed class IpcMessageCodecTests
             DesiredState = CreateStatus().DesiredState with { Battery = desired },
         };
 
-        Assert.Equal(18, OpenBladeIpc.ProtocolVersion);
+        Assert.Equal(19, OpenBladeIpc.ProtocolVersion);
         Assert.Equal(request, await RoundTripRequestAsync(request));
         ServiceStatusSnapshot roundTrip = await RoundTripStatusAsync(status);
         Assert.Equal([80], roundTrip.Capabilities!.ChargeLimits);
@@ -395,7 +395,7 @@ public sealed class IpcMessageCodecTests
 
         ServiceStatusSnapshot actual = await RoundTripStatusAsync(expected);
 
-        Assert.Equal(18, OpenBladeIpc.ProtocolVersion);
+        Assert.Equal(19, OpenBladeIpc.ProtocolVersion);
         AssertStatusEqual(expected, actual);
     }
 
@@ -983,7 +983,8 @@ public sealed class IpcMessageCodecTests
             LightingOverride: null,
             FullChargeOverride: false,
             Firmware: null,
-            ServiceVersion: "0.1.0-test");
+            ServiceVersion: "0.1.0-test",
+            KeyboardDriverModeActive: true);
     }
 
     private static void AssertStatusEqual(
@@ -1015,6 +1016,9 @@ public sealed class IpcMessageCodecTests
         Assert.Equal(expected.LightingOverride, actual.LightingOverride);
         Assert.Equal(expected.FullChargeOverride, actual.FullChargeOverride);
         Assert.Equal(expected.ServiceVersion, actual.ServiceVersion);
+        Assert.Equal(
+            expected.KeyboardDriverModeActive,
+            actual.KeyboardDriverModeActive);
         Assert.Equal(
             expected.AlwaysOverrideExternalLightingChanges,
             actual.AlwaysOverrideExternalLightingChanges);

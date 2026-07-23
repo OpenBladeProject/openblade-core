@@ -1559,10 +1559,24 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         {
             if (!deviceProvider.TryGetVerifiedDevice(out IBladeDevice device))
             {
+                PublishIfChanged(GetStatus() with { KeyboardDriverModeActive = null });
                 return;
             }
 
-            await device.EnsureDriverModeAsync(cancellationToken).ConfigureAwait(false);
+            try
+            {
+                bool? active = await device.MaintainDriverModeAsync(cancellationToken)
+                    .ConfigureAwait(false);
+                PublishIfChanged(GetStatus() with
+                {
+                    KeyboardDriverModeActive = active,
+                });
+            }
+            catch
+            {
+                PublishIfChanged(GetStatus() with { KeyboardDriverModeActive = null });
+                throw;
+            }
         }
         finally
         {
@@ -3335,6 +3349,9 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             GamingModeEnabled = deviceVerified
                 ? current.GamingModeEnabled
                 : null,
+            KeyboardDriverModeActive = deviceVerified
+                ? current.KeyboardDriverModeActive
+                : null,
         });
     }
 
@@ -3479,6 +3496,9 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             GamingModeEnabled = deviceVerified
                 ? current.GamingModeEnabled
                 : null,
+            KeyboardDriverModeActive = deviceVerified
+                ? current.KeyboardDriverModeActive
+                : null,
         });
     }
 
@@ -3592,6 +3612,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         && left.StartupAnimationEnabled == right.StartupAnimationEnabled
         && left.FunctionKeyPrimary == right.FunctionKeyPrimary
         && left.GamingModeEnabled == right.GamingModeEnabled
+        && left.KeyboardDriverModeActive == right.KeyboardDriverModeActive
         && left.AlwaysOverrideExternalLightingChanges
             == right.AlwaysOverrideExternalLightingChanges
         && left.LightingRendererOwnership == right.LightingRendererOwnership

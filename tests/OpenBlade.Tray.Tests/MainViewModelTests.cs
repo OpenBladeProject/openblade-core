@@ -3322,6 +3322,9 @@ public sealed class MainViewModelTests
         Assert.Equal("OpenBlade service isn’t running", viewModel.ControlAccessStatus);
         Assert.True(viewModel.IsReadinessError);
         Assert.Equal("Unavailable", viewModel.TroubleshootingServiceStatus);
+        Assert.Equal(
+            "Unavailable",
+            viewModel.TroubleshootingKeyboardDriverModeStatus);
         Assert.Matches("^0\\.1\\.0\\+[0-9a-f]{8}$", viewModel.AboutUiVersionStatus);
         Assert.Equal("Unavailable", viewModel.AboutServiceVersionStatus);
         Assert.Equal("Unavailable", viewModel.AboutDetectedLaptopStatus);
@@ -3381,6 +3384,7 @@ public sealed class MainViewModelTests
         {
             Revision = 3,
             Firmware = new FirmwareVersions("3.01", "1.04", "Unavailable", "98.3.5c.40.3d"),
+            KeyboardDriverModeActive = true,
         });
         await WaitUntilAsync(() =>
             viewModel.ControlAccessStatus == "Ready"
@@ -3390,6 +3394,7 @@ public sealed class MainViewModelTests
         Assert.False(viewModel.IsReadinessWarning);
         Assert.Equal("AC", viewModel.TroubleshootingPowerSourceStatus);
         Assert.Equal("None", viewModel.TroubleshootingOtherRazerSoftwareStatus);
+        Assert.Equal("Loaded", viewModel.TroubleshootingKeyboardDriverModeStatus);
         Assert.Equal("Razer Blade 16 (2026), RZ09-0581", viewModel.AboutDetectedLaptopStatus);
         Assert.Equal("3.01", viewModel.AboutBiosVersionStatus);
         Assert.Equal("1.04", viewModel.AboutEcVersionStatus);
@@ -3428,6 +3433,9 @@ public sealed class MainViewModelTests
         Assert.Null(viewModel.LiveReadings);
         Assert.True(viewModel.IsReadinessError);
         Assert.Equal("Unavailable", viewModel.TroubleshootingServiceStatus);
+        Assert.Equal(
+            "Unavailable",
+            viewModel.TroubleshootingKeyboardDriverModeStatus);
     }
 
     [Fact]

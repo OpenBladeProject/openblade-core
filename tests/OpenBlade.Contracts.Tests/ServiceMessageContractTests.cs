@@ -9,7 +9,7 @@ public sealed class ServiceMessageContractTests
     [Fact]
     public void ProtocolConstants_AreClosedVersionSeventeenAndRetainExactSizeLimit()
     {
-        Assert.Equal(18, OpenBladeIpc.ProtocolVersion);
+        Assert.Equal(19, OpenBladeIpc.ProtocolVersion);
         Assert.Equal("OpenBlade.Service.v2", OpenBladeIpc.PipeName);
         Assert.Equal(64 * 1024, OpenBladeIpc.MaximumMessageBytes);
         Assert.Equal(32 * 1024, OpenBladeIpc.MaximumDiagnosticArchiveBytes);
@@ -56,7 +56,7 @@ public sealed class ServiceMessageContractTests
             "PerformanceOverride", "FanOverride", "FanControlOverride", "LightingOverride", "FullChargeOverride",
             "Firmware", "ServiceVersion", "LightingRendererOwnership", "LightingSuppressions",
             "StartupAnimationEnabled", "FunctionKeyPrimary", "GamingModeEnabled",
-            "AlwaysOverrideExternalLightingChanges",
+            "AlwaysOverrideExternalLightingChanges", "KeyboardDriverModeActive",
         ];
 
         Assert.Equal(
@@ -71,6 +71,7 @@ public sealed class ServiceMessageContractTests
         Assert.Equal(typeof(FunctionKeyPrimaryMode?), typeof(ServiceStatusSnapshot).GetProperty("FunctionKeyPrimary")!.PropertyType);
         Assert.Equal(typeof(bool?), typeof(ServiceStatusSnapshot).GetProperty("GamingModeEnabled")!.PropertyType);
         Assert.Equal(typeof(bool), typeof(ServiceStatusSnapshot).GetProperty("AlwaysOverrideExternalLightingChanges")!.PropertyType);
+        Assert.Equal(typeof(bool?), typeof(ServiceStatusSnapshot).GetProperty("KeyboardDriverModeActive")!.PropertyType);
     }
 
     [Fact]
