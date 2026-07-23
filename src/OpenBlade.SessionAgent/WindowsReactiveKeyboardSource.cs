@@ -23,13 +23,24 @@ public sealed class WindowsReactiveKeyboardSourceFactory : IReactiveKeyboardSour
         Action<ReactiveKeyPulse> publish,
         Action<PerformanceShortcutSource> publishPerformanceShortcut) =>
         new WindowsReactiveKeyboardSource(publish, publishPerformanceShortcut);
+
+    public IReactiveKeyboardSource Create(
+        Action<ReactiveKeyPulse> publish,
+        Action<PerformanceShortcutSource> publishPerformanceShortcut,
+        Action<SpecialKeySlot> publishSpecialKey,
+        Func<SpecialKeySlot, bool> shouldOverrideSpecialKey) =>
+        new WindowsReactiveKeyboardSource(
+            publish,
+            publishPerformanceShortcut,
+            publishSpecialKey,
+            shouldOverrideSpecialKey);
 }
 
 /// <summary>
 /// Session-local, message-only Raw Input window shared by Reactive lighting and
-/// the two captured performance shortcuts. The callbacks emit only anonymous
-/// matrix slots or a typed shortcut source, never translated text, virtual-key
-/// values, window titles, or foreground-process information.
+/// the captured Fn-layer shortcuts. The callbacks emit only anonymous matrix
+/// slots or typed shortcut identities, never translated text, window titles,
+/// or foreground-process information.
 /// </summary>
 internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
 {
@@ -46,6 +57,12 @@ internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
     private const uint RawInputDevicePageOnly = 0x00000020;
     private const uint RawInputDeviceRemove = 0x00000001;
     private const uint RawInputDeviceName = 0x20000007;
+    private const int LowLevelKeyboardHook = 13;
+    private const uint LowLevelInjectedFlag = 0x00000010;
+    private const uint WindowMessageKeyDown = 0x0100;
+    private const uint WindowMessageSystemKeyDown = 0x0104;
+    private const uint VirtualKeyPageUp = 0x21;
+    private const uint VirtualKeyPageDown = 0x22;
     private const int MaximumRawInputBytes = 64 * 1024;
     private const ushort GenericDesktopUsagePage = 0x0001;
     private const ushort ConsumerUsagePage = 0x000C;
@@ -54,9 +71,14 @@ internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
     private static readonly ConcurrentDictionary<nint, WindowsReactiveKeyboardSource>
         Sources = new();
     private static readonly WindowProcedure WindowProcedureCallback = ProcessWindowMessage;
+    private static readonly LowLevelKeyboardProcedure KeyboardProcedureCallback =
+        ProcessLowLevelKeyboard;
+    private static WindowsReactiveKeyboardSource? keyboardHookOwner;
 
     private readonly Action<ReactiveKeyPulse> publish;
     private readonly Action<PerformanceShortcutSource> publishPerformanceShortcut;
+    private readonly Action<SpecialKeySlot> publishSpecialKey;
+    private readonly Func<SpecialKeySlot, bool> shouldOverrideSpecialKey;
     private readonly string windowClassName = $"OpenBlade.Reactive.{Guid.NewGuid():N}";
     private readonly TaskCompletionSource initialization =
         new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -71,15 +93,34 @@ internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
     private bool performanceFunctionKeyPressed;
     private bool dedicatedPerformanceButtonPressed;
     private bool functionPPressed;
+    private readonly bool[] specialKeyPressed = new bool[5];
+    private nint keyboardHook;
     private int disposed;
 
     internal WindowsReactiveKeyboardSource(
         Action<ReactiveKeyPulse> publish,
         Action<PerformanceShortcutSource> publishPerformanceShortcut)
+        : this(
+            publish,
+            publishPerformanceShortcut,
+            _ => { },
+            _ => false)
+    {
+    }
+
+    internal WindowsReactiveKeyboardSource(
+        Action<ReactiveKeyPulse> publish,
+        Action<PerformanceShortcutSource> publishPerformanceShortcut,
+        Action<SpecialKeySlot> publishSpecialKey,
+        Func<SpecialKeySlot, bool> shouldOverrideSpecialKey)
     {
         this.publish = publish ?? throw new ArgumentNullException(nameof(publish));
         this.publishPerformanceShortcut = publishPerformanceShortcut
             ?? throw new ArgumentNullException(nameof(publishPerformanceShortcut));
+        this.publishSpecialKey = publishSpecialKey
+            ?? throw new ArgumentNullException(nameof(publishSpecialKey));
+        this.shouldOverrideSpecialKey = shouldOverrideSpecialKey
+            ?? throw new ArgumentNullException(nameof(shouldOverrideSpecialKey));
         messageThread = new Thread(RunMessageWindow)
         {
             IsBackground = true,
@@ -173,6 +214,23 @@ internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
             Sources[created] = this;
             RegisterRawInput(created, RawInputDeviceInputSink | RawInputDeviceNotify);
             inputRegistered = true;
+            if (Interlocked.CompareExchange(ref keyboardHookOwner, this, null) is not null)
+            {
+                throw new InvalidOperationException(
+                    "A special-key keyboard hook is already active in this session agent.");
+            }
+            keyboardHook = SetWindowsHookEx(
+                LowLevelKeyboardHook,
+                KeyboardProcedureCallback,
+                module,
+                0);
+            if (keyboardHook == 0)
+            {
+                Interlocked.CompareExchange(ref keyboardHookOwner, null, this);
+                throw new Win32Exception(
+                    Marshal.GetLastWin32Error(),
+                    "Unable to observe shared Fn-layer keys.");
+            }
             initialization.TrySetResult();
 
             while (true)
@@ -204,6 +262,14 @@ internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
         }
         finally
         {
+            nint hook = Interlocked.Exchange(ref keyboardHook, 0);
+            if (hook != 0 && !UnhookWindowsHookEx(hook))
+            {
+                Trace.TraceWarning(
+                    "Special-key keyboard hook cleanup failed: {0}",
+                    Marshal.GetLastWin32Error());
+            }
+            Interlocked.CompareExchange(ref keyboardHookOwner, null, this);
             ReleaseRawInputBuffer();
             if (inputRegistered)
             {
@@ -278,6 +344,32 @@ internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
         }
 
         return DefWindowProc(window, message, windowParameter, messageParameter);
+    }
+
+    private static nint ProcessLowLevelKeyboard(
+        int code,
+        nuint windowParameter,
+        nint messageParameter)
+    {
+        WindowsReactiveKeyboardSource? owner = Volatile.Read(ref keyboardHookOwner);
+        if (code >= 0
+            && owner is not null
+            && windowParameter is WindowMessageKeyDown or WindowMessageSystemKeyDown)
+        {
+            LowLevelKeyboardInput input =
+                Marshal.PtrToStructure<LowLevelKeyboardInput>(messageParameter);
+            if ((input.Flags & LowLevelInjectedFlag) == 0
+                && owner.performanceFunctionKeyPressed
+                && (input.VirtualKey == VirtualKeyPageUp
+                    && owner.shouldOverrideSpecialKey(SpecialKeySlot.M1)
+                    || input.VirtualKey == VirtualKeyPageDown
+                    && owner.shouldOverrideSpecialKey(SpecialKeySlot.M2)))
+            {
+                return 1;
+            }
+        }
+
+        return CallNextHookEx(0, code, windowParameter, messageParameter);
     }
 
     private void ProcessRawInput(nint rawInputHandle)
@@ -437,6 +529,23 @@ internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
             {
                 report[offset] = Marshal.ReadByte(reportAddress, offset);
             }
+            bool specialTriggered = Rz09_0581SpecialKeyRawHidInput.TryCreateTrigger(
+                report[..inspectedBytes],
+                ref performanceFunctionKeyPressed,
+                specialKeyPressed,
+                out SpecialKeySlot specialKey);
+            bool overrideSpecialKey = specialTriggered
+                && shouldOverrideSpecialKey(specialKey);
+            if (overrideSpecialKey)
+            {
+                publishSpecialKey(specialKey);
+            }
+            if (specialTriggered
+                && specialKey == SpecialKeySlot.M4
+                && overrideSpecialKey)
+            {
+                continue;
+            }
             if (Rz09_0581PerformanceShortcutRawHidInput.TryCreateTrigger(
                 report[..inspectedBytes],
                 ref performanceFunctionKeyPressed,
@@ -570,6 +679,16 @@ internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
         internal uint ExtraInformation;
     }
 
+    [StructLayout(LayoutKind.Sequential)]
+    private struct LowLevelKeyboardInput
+    {
+        internal uint VirtualKey;
+        internal uint ScanCode;
+        internal uint Flags;
+        internal uint Time;
+        internal nuint ExtraInfo;
+    }
+
     [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
     private struct WindowClass
     {
@@ -609,6 +728,11 @@ internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
     private delegate nint WindowProcedure(
         nint window,
         uint message,
+        nuint windowParameter,
+        nint messageParameter);
+
+    private delegate nint LowLevelKeyboardProcedure(
+        int code,
         nuint windowParameter,
         nint messageParameter);
 
@@ -671,6 +795,23 @@ internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
 
     [DllImport("user32.dll")]
     private static extern void PostQuitMessage(int exitCode);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern nint SetWindowsHookEx(
+        int hookId,
+        LowLevelKeyboardProcedure procedure,
+        nint module,
+        uint threadId);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern bool UnhookWindowsHookEx(nint hook);
+
+    [DllImport("user32.dll")]
+    private static extern nint CallNextHookEx(
+        nint hook,
+        int code,
+        nuint windowParameter,
+        nint messageParameter);
 
     [DllImport("user32.dll")]
     private static extern nint DefWindowProc(

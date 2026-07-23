@@ -52,6 +52,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
     private bool changingDashboardCards;
     private bool changingPrimaryNavigationItems;
     private bool changingPrimaryNavigationOrder;
+    private bool changingSpecialKeyBindings;
     private bool changingAccentColor;
     private bool dashboardCardsReady;
     private bool canonicalLaptopCardsPlaced;
@@ -157,6 +158,8 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
 
     public ObservableCollection<PrimaryNavigationItemOption> PrimaryNavigationItems { get; } = [];
 
+    public ObservableCollection<SpecialKeyBindingViewModel> SpecialKeyBindings { get; } = [];
+
     public IReadOnlyList<AppAccentColorOption> AccentColorOptions { get; } =
     [
         new(AppAccentColorMode.RazerGreen, "OpenBlade green"),
@@ -255,6 +258,10 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         {
             option.PropertyChanged -= OnDashboardCardOptionChanged;
         }
+        foreach (SpecialKeyBindingViewModel binding in SpecialKeyBindings)
+        {
+            binding.PropertyChanged -= OnSpecialKeyBindingChanged;
+        }
         DisplayViewModel.UserSettingsChanged -= OnDisplayUserSettingsChanged;
         ViewModel.SavedDisplayProfileRestoreRequested -= OnSavedDisplayProfileRestoreRequested;
         AppWindow.Closing -= OnClosing;
@@ -292,6 +299,8 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             DashboardCardPreferenceDefaults.Cards;
         IReadOnlyList<PrimaryNavigationItemKind> primaryNavigationItems =
             PrimaryNavigationPreferenceDefaults.Items;
+        IReadOnlyList<SpecialKeyBindingPreference> specialKeyBindings =
+            SpecialKeyBindingDefaults.Bindings;
         AppAccentColorMode initialAccentColorMode = AppAccentColorMode.RazerGreen;
         string initialCustomAccentColor = AppAccentColorPreferenceDefaults.RazerGreenHex;
         try
@@ -305,6 +314,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             trayHoverLabelItems = preferences.EffectiveTrayHoverLabelItems;
             dashboardCards = preferences.EffectiveDashboardCards;
             primaryNavigationItems = preferences.EffectivePrimaryNavigationItems;
+            specialKeyBindings = preferences.EffectiveSpecialKeyBindings;
             initialAccentColorMode = preferences.EffectiveAccentColorMode;
             initialCustomAccentColor = preferences.EffectiveCustomAccentColor;
             StartMinimized = preferences.StartMinimized;
@@ -327,6 +337,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         ViewModel.ApplyTelemetryPreferences(dashboardTelemetryItems, trayHoverLabelItems);
         ApplyDashboardPreferences(dashboardCards);
         ApplyPrimaryNavigationPreferences(primaryNavigationItems);
+        ApplySpecialKeyBindingPreferences(specialKeyBindings);
         changingAccentColor = true;
         accentColorMode = initialAccentColorMode;
         customAccentColor = initialCustomAccentColor;
@@ -565,7 +576,10 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
                     .Select(option => option.Kind)
                     .ToArray(),
                 AccentColorMode: accentColorMode,
-                CustomAccentColor: customAccentColor));
+                CustomAccentColor: customAccentColor,
+                SpecialKeyBindings: SpecialKeyBindings
+                    .Select(binding => binding.ToPreference())
+                    .ToArray()));
         }
         catch (ObjectDisposedException)
         {
@@ -1310,6 +1324,41 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         string destination = (args.SelectedItemContainer as NavigationViewItem)?.Tag as string
             ?? "home";
         ApplyNavigationDestination(destination);
+    }
+
+    private void ApplySpecialKeyBindingPreferences(
+        IReadOnlyList<SpecialKeyBindingPreference> preferences)
+    {
+        changingSpecialKeyBindings = true;
+        try
+        {
+            foreach (SpecialKeyBindingViewModel existing in SpecialKeyBindings)
+            {
+                existing.PropertyChanged -= OnSpecialKeyBindingChanged;
+            }
+            SpecialKeyBindings.Clear();
+            foreach (SpecialKeyBindingPreference preference in
+                     SpecialKeyBindingDefaults.Normalize(preferences))
+            {
+                var binding = new SpecialKeyBindingViewModel(preference);
+                binding.PropertyChanged += OnSpecialKeyBindingChanged;
+                SpecialKeyBindings.Add(binding);
+            }
+        }
+        finally
+        {
+            changingSpecialKeyBindings = false;
+        }
+    }
+
+    private void OnSpecialKeyBindingChanged(
+        object? sender,
+        PropertyChangedEventArgs args)
+    {
+        if (!changingSpecialKeyBindings)
+        {
+            QueuePreferenceSave();
+        }
     }
 
     private void ApplyNavigationDestination(string destination)

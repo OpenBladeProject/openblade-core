@@ -16,6 +16,13 @@ public interface IReactiveKeyboardSourceFactory
         Action<ReactiveKeyPulse> publish,
         Action<PerformanceShortcutSource> publishPerformanceShortcut) =>
         Create(publish);
+
+    IReactiveKeyboardSource Create(
+        Action<ReactiveKeyPulse> publish,
+        Action<PerformanceShortcutSource> publishPerformanceShortcut,
+        Action<SpecialKeySlot> publishSpecialKey,
+        Func<SpecialKeySlot, bool> shouldOverrideSpecialKey) =>
+        Create(publish, publishPerformanceShortcut);
 }
 
 /// <summary>
@@ -32,6 +39,8 @@ public sealed class ServiceReactiveLightingLoop : IAsyncDisposable
     private readonly IReactiveKeyboardSourceFactory sourceFactory;
     private readonly ReactiveKeyPulsePump pulsePump;
     private readonly PerformanceShortcutTriggerPump shortcutPump;
+    private readonly SpecialKeyTriggerPump? specialKeyPump;
+    private readonly Func<SpecialKeySlot, bool> shouldOverrideSpecialKey;
     private readonly IPerformanceShortcutNotificationSink shortcutNotifications;
     private readonly Action<Exception>? errorHandler;
     private IReactiveKeyboardSource? source;
@@ -44,7 +53,9 @@ public sealed class ServiceReactiveLightingLoop : IAsyncDisposable
         IReactiveKeyboardSourceFactory sourceFactory,
         Action<Exception>? errorHandler = null,
         IPerformanceShortcutNotificationSink? shortcutNotifications = null,
-        IServiceStatusWatcher? statusWatcher = null)
+        IServiceStatusWatcher? statusWatcher = null,
+        Func<SpecialKeySlot, bool>? shouldOverrideSpecialKey = null,
+        Func<SpecialKeySlot, CancellationToken, Task>? executeSpecialKeyAsync = null)
     {
         this.serviceClient = serviceClient ?? throw new ArgumentNullException(nameof(serviceClient));
         this.sourceFactory = sourceFactory ?? throw new ArgumentNullException(nameof(sourceFactory));
@@ -56,6 +67,13 @@ public sealed class ServiceReactiveLightingLoop : IAsyncDisposable
         shortcutPump = new PerformanceShortcutTriggerPump(
             SendPerformanceShortcutAsync,
             errorHandler: ReportFailure);
+        this.shouldOverrideSpecialKey = shouldOverrideSpecialKey ?? (_ => false);
+        if (executeSpecialKeyAsync is not null)
+        {
+            specialKeyPump = new SpecialKeyTriggerPump(
+                executeSpecialKeyAsync,
+                errorHandler: ReportFailure);
+        }
     }
 
     public async Task RunAsync(CancellationToken cancellationToken)
@@ -121,6 +139,10 @@ public sealed class ServiceReactiveLightingLoop : IAsyncDisposable
         SetInputState(connected: false, keyTriggered: false);
         await pulsePump.DisposeAsync().ConfigureAwait(false);
         await shortcutPump.DisposeAsync().ConfigureAwait(false);
+        if (specialKeyPump is not null)
+        {
+            await specialKeyPump.DisposeAsync().ConfigureAwait(false);
+        }
     }
 
     private void SetInputState(bool connected, bool keyTriggered)
@@ -138,6 +160,7 @@ public sealed class ServiceReactiveLightingLoop : IAsyncDisposable
             previous?.Dispose();
             pulsePump.ClearPending();
             shortcutPump.ClearPending();
+            specialKeyPump?.ClearPending();
             return;
         }
 
@@ -165,7 +188,16 @@ public sealed class ServiceReactiveLightingLoop : IAsyncDisposable
                         ReportFailure(new InvalidOperationException(
                             "Performance shortcut input could not keep up and skipped a button press."));
                     }
-                });
+                },
+                specialKey =>
+                {
+                    if (specialKeyPump is null || !specialKeyPump.TryEnqueue(specialKey))
+                    {
+                        ReportFailure(new InvalidOperationException(
+                            "Special-key input could not keep up and skipped a button press."));
+                    }
+                },
+                shouldOverrideSpecialKey);
             if (Volatile.Read(ref disposed) != 0
                 || Interlocked.CompareExchange(ref source, created, null) is not null)
             {

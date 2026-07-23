@@ -301,6 +301,37 @@ public sealed class ServiceReactiveLightingLoopTests
         Assert.Empty(failures);
     }
 
+    [Fact]
+    public async Task ConfiguredSpecialKey_UsesTheSharedInputSource()
+    {
+        var client = new WatchClient();
+        var factory = new RecordingSourceFactory();
+        var delivered = new ConcurrentQueue<SpecialKeySlot>();
+        await using var loop = new ServiceReactiveLightingLoop(
+            client,
+            factory,
+            shouldOverrideSpecialKey: slot => slot == SpecialKeySlot.M3,
+            executeSpecialKeyAsync: (slot, _) =>
+            {
+                delivered.Enqueue(slot);
+                return Task.CompletedTask;
+            });
+        using var cancellation = new CancellationTokenSource();
+        Task running = loop.RunAsync(cancellation.Token);
+
+        client.Publish(Status(LightingRendererOwnershipState.Static));
+        await WaitUntilAsync(() => factory.CreateCount == 1);
+        Assert.True(factory.Last!.ShouldOverrideSpecialKey(SpecialKeySlot.M3));
+        Assert.False(factory.Last.ShouldOverrideSpecialKey(SpecialKeySlot.M2));
+
+        factory.Last.PublishSpecialKey(SpecialKeySlot.M3);
+        await WaitUntilAsync(() => delivered.Count == 1);
+        Assert.Equal(SpecialKeySlot.M3, Assert.Single(delivered));
+
+        cancellation.Cancel();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => running);
+    }
+
     private static ServiceStatusSnapshot Status(LightingRendererOwnershipState ownership)
     {
         ProfileSet profiles = ProfileDefaults.CreateSafeDefaults();
@@ -369,15 +400,42 @@ public sealed class ServiceReactiveLightingLoopTests
             CreateCount++;
             return Last = new RecordingSource(publish, publishPerformanceShortcut);
         }
+
+        public IReactiveKeyboardSource Create(
+            Action<ReactiveKeyPulse> publish,
+            Action<PerformanceShortcutSource> publishPerformanceShortcut,
+            Action<SpecialKeySlot> publishSpecialKey,
+            Func<SpecialKeySlot, bool> shouldOverrideSpecialKey)
+        {
+            CreateCount++;
+            return Last = new RecordingSource(
+                publish,
+                publishPerformanceShortcut,
+                publishSpecialKey,
+                shouldOverrideSpecialKey);
+        }
     }
 
-    private sealed class RecordingSource(
-        Action<ReactiveKeyPulse> publish,
-        Action<PerformanceShortcutSource> publishPerformanceShortcut)
-        : IReactiveKeyboardSource
+    private sealed class RecordingSource : IReactiveKeyboardSource
     {
         private readonly TaskCompletionSource completion =
             new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly Action<ReactiveKeyPulse> publish;
+        private readonly Action<PerformanceShortcutSource> publishPerformanceShortcut;
+        private readonly Action<SpecialKeySlot> publishSpecialKey;
+        private readonly Func<SpecialKeySlot, bool> shouldOverrideSpecialKey;
+
+        public RecordingSource(
+            Action<ReactiveKeyPulse> publish,
+            Action<PerformanceShortcutSource> publishPerformanceShortcut,
+            Action<SpecialKeySlot>? publishSpecialKey = null,
+            Func<SpecialKeySlot, bool>? shouldOverrideSpecialKey = null)
+        {
+            this.publish = publish;
+            this.publishPerformanceShortcut = publishPerformanceShortcut;
+            this.publishSpecialKey = publishSpecialKey ?? (_ => { });
+            this.shouldOverrideSpecialKey = shouldOverrideSpecialKey ?? (_ => false);
+        }
 
         public bool Disposed { get; private set; }
 
@@ -387,6 +445,11 @@ public sealed class ServiceReactiveLightingLoopTests
 
         public void PublishPerformanceShortcut(PerformanceShortcutSource source) =>
             publishPerformanceShortcut(source);
+
+        public void PublishSpecialKey(SpecialKeySlot slot) => publishSpecialKey(slot);
+
+        public bool ShouldOverrideSpecialKey(SpecialKeySlot slot) =>
+            shouldOverrideSpecialKey(slot);
 
         public void Fail(Exception exception) => completion.TrySetException(exception);
 

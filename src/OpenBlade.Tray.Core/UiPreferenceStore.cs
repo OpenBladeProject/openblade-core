@@ -25,7 +25,8 @@ public sealed record UiPreferences(
     IReadOnlyList<DashboardCardPreference>? DashboardCards = null,
     IReadOnlyList<PrimaryNavigationItemKind>? PrimaryNavigationItems = null,
     AppAccentColorMode AccentColorMode = AppAccentColorMode.RazerGreen,
-    string? CustomAccentColor = null)
+    string? CustomAccentColor = null,
+    IReadOnlyList<SpecialKeyBindingPreference>? SpecialKeyBindings = null)
 {
     public static UiPreferences Default { get; } = new(
         ThemePreference.FollowWindows,
@@ -38,7 +39,8 @@ public sealed record UiPreferences(
         DashboardCards: DashboardCardPreferenceDefaults.Cards,
         PrimaryNavigationItems: PrimaryNavigationPreferenceDefaults.Items,
         AccentColorMode: AppAccentColorMode.RazerGreen,
-        CustomAccentColor: AppAccentColorPreferenceDefaults.RazerGreenHex);
+        CustomAccentColor: AppAccentColorPreferenceDefaults.RazerGreenHex,
+        SpecialKeyBindings: SpecialKeyBindingDefaults.Bindings);
 
     public LiveReadingsCadence EffectiveLiveReadingsCadence =>
         !LiveReadingsEnabled
@@ -71,6 +73,9 @@ public sealed record UiPreferences(
 
     public string EffectiveCustomAccentColor =>
         AppAccentColorPreferenceDefaults.NormalizeCustomColor(CustomAccentColor);
+
+    public IReadOnlyList<SpecialKeyBindingPreference> EffectiveSpecialKeyBindings =>
+        SpecialKeyBindingDefaults.Normalize(SpecialKeyBindings);
 }
 
 public sealed class UiPreferenceStore

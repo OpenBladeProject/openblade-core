@@ -41,6 +41,12 @@ public sealed class UiPreferenceStoreTests : IDisposable
         Assert.Equal(
             AppAccentColorPreferenceDefaults.RazerGreenHex,
             preferences.EffectiveCustomAccentColor);
+        Assert.Equal(
+            Enum.GetValues<SpecialKeySlot>(),
+            preferences.EffectiveSpecialKeyBindings.Select(binding => binding.Slot));
+        Assert.All(
+            preferences.EffectiveSpecialKeyBindings,
+            binding => Assert.Equal(SpecialKeyActionKind.Default, binding.Action.Kind));
     }
 
     [Fact]
@@ -78,7 +84,18 @@ public sealed class UiPreferenceStoreTests : IDisposable
                 PrimaryNavigationItemKind.Laptop,
             ],
             AccentColorMode: AppAccentColorMode.Custom,
-            CustomAccentColor: "#123abc"));
+            CustomAccentColor: "#123abc",
+            SpecialKeyBindings:
+            [
+                new(
+                    SpecialKeySlot.M1,
+                    new SpecialKeyAction(
+                        SpecialKeyActionKind.KeyboardShortcut,
+                        "Ctrl+Shift+M")),
+                new(
+                    SpecialKeySlot.M4,
+                    new SpecialKeyAction(SpecialKeyActionKind.Disabled)),
+            ]));
 
         UiPreferences reloaded = await store.LoadAsync();
         using JsonDocument document = JsonDocument.Parse(await File.ReadAllTextAsync(path));
@@ -122,6 +139,15 @@ public sealed class UiPreferenceStoreTests : IDisposable
             reloaded.EffectivePrimaryNavigationItems);
         Assert.Equal(AppAccentColorMode.Custom, reloaded.EffectiveAccentColorMode);
         Assert.Equal("#123ABC", reloaded.EffectiveCustomAccentColor);
+        Assert.Equal(
+            SpecialKeyActionKind.KeyboardShortcut,
+            reloaded.EffectiveSpecialKeyBindings[(int)SpecialKeySlot.M1].Action.Kind);
+        Assert.Equal(
+            "Ctrl+Shift+M",
+            reloaded.EffectiveSpecialKeyBindings[(int)SpecialKeySlot.M1].Action.Value);
+        Assert.Equal(
+            SpecialKeyActionKind.Disabled,
+            reloaded.EffectiveSpecialKeyBindings[(int)SpecialKeySlot.M4].Action.Kind);
         Assert.Equal("Dark", document.RootElement.GetProperty("theme").GetString());
         Assert.False(document.RootElement.TryGetProperty(
             "keepManualChangesUntilCleared",
@@ -154,6 +180,10 @@ public sealed class UiPreferenceStoreTests : IDisposable
         Assert.Equal(
             "#123abc",
             document.RootElement.GetProperty("customAccentColor").GetString());
+        Assert.Equal(
+            "M1",
+            document.RootElement.GetProperty("specialKeyBindings")[0]
+                .GetProperty("slot").GetString());
     }
 
     [Fact]

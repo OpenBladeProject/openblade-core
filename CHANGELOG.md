@@ -7,6 +7,15 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Added
 
+- Added persistent M1 through M5 Fn-layer bindings on the Laptop page. The
+  always-running Session Agent can execute keyboard shortcuts, mouse and media
+  actions, microphone mute, app or website launch, text entry, and OpenBlade
+  power, Gaming mode, or lighting actions while preserving each key's default
+  behavior until the user overrides it.
+- Added repository guidance for future contributors and AI agents, including a
+  codebase map, hardware-safety boundaries, component deployment rules,
+  Semantic Versioning, schema and IPC migration policy, and Conventional
+  Commit formatting.
 - Added local tray crash reports under `%LocalAppData%\OpenBlade\Crashes` with
   version, runtime, process context, exception details, and stack traces. The
   reporter retains the newest 20 files and never suppresses the original

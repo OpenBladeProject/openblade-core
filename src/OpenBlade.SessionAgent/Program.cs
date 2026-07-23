@@ -74,6 +74,15 @@ internal static class Program
                     });
                 var dispatcher = new SessionDisplayRequestDispatcher(applier);
                 await using var server = new SessionDisplayPipeServer(acquiredOwner, dispatcher);
+                string preferencesPath = Path.Combine(
+                    Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                    "OpenBlade",
+                    "preferences.json");
+                var specialKeyBindings = new SpecialKeyBindingSource(preferencesPath);
+                var specialKeyExecutor = new SpecialKeyActionExecutor(
+                    specialKeyBindings,
+                    new ServiceClient(),
+                    new WindowsSpecialKeyInputSender());
                 await using var statusFeed = new SharedServiceStatusFeed(
                     new ServiceClient());
                 var automation = new ServiceDisplayAutomationLoop(
@@ -93,7 +102,9 @@ internal static class Program
                     WindowsReactiveKeyboardSourceFactory.Instance,
                     inputErrorHandler,
                     shortcutNotifications,
-                    statusFeed);
+                    statusFeed,
+                    specialKeyBindings.OverridesDefaultBehavior,
+                    specialKeyExecutor.ExecuteAsync);
                 await using var ambient = new ServiceAmbientLightingLoop(
                     new ServiceClient(),
                     WindowsAmbientScreenSamplerFactory.Instance,
@@ -111,6 +122,7 @@ internal static class Program
                     displayStateSource: new WindowsSessionDisplayStateSource());
 
                 Task statusFeedTask = statusFeed.RunAsync(lifetime.Token);
+                Task specialKeyBindingsTask = specialKeyBindings.RunAsync(lifetime.Token);
                 Task serverTask = server.RunAsync(lifetime.Token);
                 Task automationTask = automation.RunAsync(lifetime.Token);
                 Task reactiveTask = reactive.RunAsync(lifetime.Token);
@@ -119,6 +131,7 @@ internal static class Program
                 Task completed = await Task.WhenAny(
                     serverTask,
                     statusFeedTask,
+                    specialKeyBindingsTask,
                     automationTask,
                     reactiveTask,
                     ambientTask,
@@ -133,6 +146,7 @@ internal static class Program
                     await Task.WhenAll(
                             serverTask,
                             statusFeedTask,
+                            specialKeyBindingsTask,
                             automationTask,
                             reactiveTask,
                             ambientTask,

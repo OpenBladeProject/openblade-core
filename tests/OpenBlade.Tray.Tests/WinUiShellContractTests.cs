@@ -1086,6 +1086,39 @@ public sealed class WinUiShellContractTests
     }
 
     [Fact]
+    public void LaptopPageHostsPersistentSpecialKeyBindings()
+    {
+        string xaml = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml");
+        string window = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml.cs");
+
+        Assert.Contains("Text=\"Shortcut keys\"", xaml, StringComparison.Ordinal);
+        Assert.Contains(
+            "ItemsSource=\"{x:Bind SpecialKeyBindings, Mode=OneWay}\"",
+            xaml,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "SelectedItem=\"{x:Bind SelectedAction, Mode=TwoWay}\"",
+            xaml,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "Text=\"{x:Bind Value, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}\"",
+            xaml,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "public ObservableCollection<SpecialKeyBindingViewModel> SpecialKeyBindings",
+            window,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "ApplySpecialKeyBindingPreferences(specialKeyBindings)",
+            window,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            ".Select(binding => binding.ToPreference())",
+            window,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void DiagnosticDestinationUsesWindowOwnedWindowsAppSdkPicker()
     {
         string source = ReadRepositoryFile(

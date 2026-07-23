@@ -2089,6 +2089,70 @@
                                         Content="{x:Bind ViewModel}"
                                         ContentTemplate="{StaticResource DashboardStartupAnimationCardTemplate}"
                                         HorizontalContentAlignment="Stretch" />
+
+                        <StackPanel>
+                            <TextBlock Text="Shortcut keys"
+                                       Style="{StaticResource SectionHeaderStyle}"
+                                       Margin="0,0,0,10" />
+                            <Border Style="{StaticResource SettingsGroupStyle}">
+                                <ItemsRepeater ItemsSource="{x:Bind SpecialKeyBindings, Mode=OneWay}">
+                                    <ItemsRepeater.ItemTemplate>
+                                        <DataTemplate x:DataType="local:SpecialKeyBindingViewModel">
+                                            <Border Style="{StaticResource SettingsRowStyle}">
+                                                <StackPanel Spacing="12">
+                                                    <Grid ColumnSpacing="20">
+                                                        <Grid.ColumnDefinitions>
+                                                            <ColumnDefinition Width="*" />
+                                                            <ColumnDefinition Width="280" />
+                                                        </Grid.ColumnDefinitions>
+                                                        <StackPanel Spacing="3"
+                                                                    VerticalAlignment="Center">
+                                                            <TextBlock Text="{x:Bind SlotLabel}"
+                                                                       Style="{StaticResource CardTitleStyle}" />
+                                                            <TextBlock Text="{x:Bind PhysicalKeyLabel}"
+                                                                       Style="{StaticResource SecondaryTextStyle}" />
+                                                        </StackPanel>
+                                                        <ComboBox Grid.Column="1"
+                                                                  MinWidth="200"
+                                                                  HorizontalAlignment="Stretch"
+                                                                  VerticalAlignment="Center"
+                                                                  ItemsSource="{x:Bind AvailableActions}"
+                                                                  DisplayMemberPath="Label"
+                                                                  SelectedItem="{x:Bind SelectedAction, Mode=TwoWay}"
+                                                                  local:StableComboBoxSelection.Anchor="{x:Bind SelectedAction, Mode=OneWay}"
+                                                                  AutomationProperties.Name="{x:Bind SlotLabel}" />
+                                                    </Grid>
+                                                    <Grid Visibility="{x:Bind ValueEditorVisibility, Mode=OneWay}"
+                                                          ColumnSpacing="20">
+                                                        <Grid.ColumnDefinitions>
+                                                            <ColumnDefinition Width="*" />
+                                                            <ColumnDefinition Width="280" />
+                                                        </Grid.ColumnDefinitions>
+                                                        <TextBlock Text="{x:Bind ValueLabel, Mode=OneWay}"
+                                                                   Style="{StaticResource SecondaryTextStyle}"
+                                                                   VerticalAlignment="Center" />
+                                                        <StackPanel Grid.Column="1" Spacing="4">
+                                                            <TextBox Text="{x:Bind Value, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                                                     PlaceholderText="{x:Bind ValuePlaceholder, Mode=OneWay}"
+                                                                     MaxLength="2048"
+                                                                     AutomationProperties.Name="{x:Bind ValueLabel, Mode=OneWay}" />
+                                                            <TextBlock Text="{x:Bind ValidationMessage, Mode=OneWay}"
+                                                                       Visibility="{x:Bind ValidationMessageVisibility, Mode=OneWay}"
+                                                                       Foreground="{ThemeResource SystemFillColorCriticalBrush}"
+                                                                       Style="{StaticResource CaptionTextBlockStyle}"
+                                                                       TextWrapping="Wrap" />
+                                                        </StackPanel>
+                                                    </Grid>
+                                                </StackPanel>
+                                            </Border>
+                                        </DataTemplate>
+                                    </ItemsRepeater.ItemTemplate>
+                                </ItemsRepeater>
+                            </Border>
+                            <TextBlock Text="M1 through M5 are the Fn-layer actions on Page Up, Page Down, Gaming mode, Power mode, and Microphone mute. Default preserves the laptop's normal behavior."
+                                       Style="{StaticResource SecondaryTextStyle}"
+                                       Margin="2,10,2,0" />
+                        </StackPanel>
                         </StackPanel>
                     </StackPanel>
                 </ScrollView>
