@@ -305,8 +305,7 @@
                                                   AutomationProperties.Name="Power mode"
                                                   IsEnabled="{Binding CanRequestHardwareControl}"
                                                   ItemsSource="{Binding AvailableActivePerformanceOptions}"
-                                                  SelectedValuePath="Value"
-                                                  SelectedValue="{Binding SelectedPerformance, Mode=OneWay}"
+                                                  SelectedItem="{Binding SelectedPerformanceOption, Mode=OneWay}"
                                                   SelectionChanged="OnDashboardPerformanceChanged" />
                                     </StackPanel>
                                 </Grid>
@@ -400,8 +399,7 @@
                                                   AutomationProperties.Name="Fan mode"
                                                   IsEnabled="{Binding CanEditFanControl}"
                                                   ItemsSource="{Binding AvailableActiveFanModeOptions}"
-                                                  SelectedValuePath="Value"
-                                                  SelectedValue="{Binding SelectedFanMode, Mode=OneWay}"
+                                                  SelectedItem="{Binding SelectedFanModeOption, Mode=OneWay}"
                                                   SelectionChanged="OnDashboardFanModeSelectionChanged" />
                                     </StackPanel>
                                 </Grid>
