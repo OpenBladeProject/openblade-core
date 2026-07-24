@@ -69,6 +69,61 @@ public sealed class SpecialKeyActionExecutorTests
     }
 
     [Fact]
+    public async Task ExecuteAsync_DefaultM3PreservesGamingModeToggle()
+    {
+        var client = new RecordingServiceClient
+        {
+            GamingModeEnabled = false,
+        };
+        var executor = new SpecialKeyActionExecutor(
+            new FixedBindings(
+                SpecialKeySlot.M3,
+                new SpecialKeyAction(SpecialKeyActionKind.Default)),
+            client,
+            new RecordingInputSender());
+
+        await executor.ExecuteAsync(SpecialKeySlot.M3, CancellationToken.None);
+
+        Assert.True(client.GamingModeEnabled);
+        Assert.Equal(1, client.GamingModeWrites);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_DefaultM5PreservesMicrophoneMute()
+    {
+        var input = new RecordingInputSender();
+        var executor = new SpecialKeyActionExecutor(
+            new FixedBindings(
+                SpecialKeySlot.M5,
+                new SpecialKeyAction(SpecialKeyActionKind.Default)),
+            new RecordingServiceClient(),
+            input);
+
+        await executor.ExecuteAsync(SpecialKeySlot.M5, CancellationToken.None);
+
+        Assert.Equal(1, input.MicrophoneMuteCount);
+    }
+
+    [Fact]
+    public void ShouldHandleInDriverMode_HandlesDefaultsWithoutFirmwareFallback()
+    {
+        var defaultAction = new SpecialKeyAction(SpecialKeyActionKind.Default);
+
+        Assert.True(SpecialKeyBindingSource.ShouldHandleInDriverMode(
+            SpecialKeySlot.M3,
+            defaultAction));
+        Assert.True(SpecialKeyBindingSource.ShouldHandleInDriverMode(
+            SpecialKeySlot.M5,
+            defaultAction));
+        Assert.False(SpecialKeyBindingSource.ShouldHandleInDriverMode(
+            SpecialKeySlot.M4,
+            defaultAction));
+        Assert.True(SpecialKeyBindingSource.ShouldHandleInDriverMode(
+            SpecialKeySlot.M1,
+            new SpecialKeyAction(SpecialKeyActionKind.Disabled)));
+    }
+
+    [Fact]
     public async Task ExecuteAsync_DisabledDoesNothing()
     {
         var client = new RecordingServiceClient();
@@ -192,9 +247,9 @@ public sealed class SpecialKeyActionExecutorTests
                 ? action
                 : new SpecialKeyAction(SpecialKeyActionKind.Default);
 
-        public bool OverridesDefaultBehavior(SpecialKeySlot requested) =>
+        public bool ShouldHandleInDriverMode(SpecialKeySlot requested) =>
             requested == slot
-            && SpecialKeyBindingDefaults.OverridesDefaultBehavior(action);
+            && SpecialKeyBindingSource.ShouldHandleInDriverMode(requested, action);
     }
 
     private sealed class RecordingInputSender : ISpecialKeyInputSender
@@ -223,6 +278,8 @@ public sealed class SpecialKeyActionExecutorTests
     private sealed class RecordingServiceClient : IServiceClient
     {
         public int PerformanceCycles { get; private set; }
+        public int GamingModeWrites { get; private set; }
+        public bool? GamingModeEnabled { get; set; }
 
         public Task<ControlOperationResult> CyclePerformanceShortcutAsync(
             PerformanceShortcutSource source,
@@ -235,7 +292,19 @@ public sealed class SpecialKeyActionExecutorTests
         }
 
         public Task<ServiceStatusSnapshot> GetStatusAsync(CancellationToken token) =>
-            throw new NotSupportedException();
+            Task.FromResult(CreateStatus(GamingModeEnabled));
+
+        public Task<ControlOperationResult> ApplyOneShotLaptopControlAsync(
+            ApplyOneShotLaptopControl value,
+            CancellationToken token)
+        {
+            Assert.Equal(OneShotLaptopControl.GamingMode, value.Control);
+            GamingModeEnabled = value.Enabled;
+            GamingModeWrites++;
+            return Task.FromResult(new ControlOperationResult(
+                ControlOperationStatus.Applied,
+                "Applied."));
+        }
 
         public Task<ServiceStatusSnapshot> ObserveStateAsync(
             bool includeLiveReadings,
@@ -289,5 +358,39 @@ public sealed class SpecialKeyActionExecutorTests
             bool enabled,
             CancellationToken token) =>
             throw new NotSupportedException();
+
+        private static ServiceStatusSnapshot CreateStatus(bool? gamingModeEnabled)
+        {
+            ProfileSet profiles = ProfileDefaults.CreateSafeDefaults();
+            return new ServiceStatusSnapshot(
+                Revision: 1,
+                DeviceVerified: true,
+                WritesBlocked: false,
+                PotentialControllers: [],
+                ControllerDetectionWarning: null,
+                ExternalChanges: [],
+                Message: "Ready",
+                Capabilities: DeviceCapabilities.Unavailable(),
+                ConfirmedState: null,
+                Profiles: profiles,
+                DesiredState: new DesiredDeviceState(
+                    new ResolvedSetting<PerformancePreset>(
+                        profiles.PluggedIn.Performance,
+                        SettingValueSource.PowerProfile),
+                    new ResolvedSetting<FanMode>(
+                        profiles.PluggedIn.Fans,
+                        SettingValueSource.PowerProfile),
+                    new ResolvedSetting<LightingSettings>(
+                        profiles.PluggedIn.Lighting,
+                        SettingValueSource.PowerProfile),
+                    new DesiredBatteryState(profiles.BatteryPolicy, true, false)),
+                ActivePowerSource: PowerSource.PluggedIn,
+                LiveReadings: null,
+                PerformanceOverride: null,
+                FanOverride: null,
+                LightingOverride: null,
+                FullChargeOverride: false,
+                GamingModeEnabled: gamingModeEnabled);
+        }
     }
 }

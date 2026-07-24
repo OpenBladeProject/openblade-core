@@ -6,7 +6,7 @@ public interface ISpecialKeyBindingSource
 {
     SpecialKeyAction GetAction(SpecialKeySlot slot);
 
-    bool OverridesDefaultBehavior(SpecialKeySlot slot);
+    bool ShouldHandleInDriverMode(SpecialKeySlot slot);
 }
 
 public sealed class SpecialKeyBindingSource : ISpecialKeyBindingSource
@@ -40,8 +40,18 @@ public sealed class SpecialKeyBindingSource : ISpecialKeyBindingSource
         return snapshot[(int)slot].Action;
     }
 
-    public bool OverridesDefaultBehavior(SpecialKeySlot slot) =>
-        SpecialKeyBindingDefaults.OverridesDefaultBehavior(GetAction(slot));
+    public bool ShouldHandleInDriverMode(SpecialKeySlot slot) =>
+        ShouldHandleInDriverMode(slot, GetAction(slot));
+
+    internal static bool ShouldHandleInDriverMode(
+        SpecialKeySlot slot,
+        SpecialKeyAction action)
+    {
+        SpecialKeyAction normalized = SpecialKeyBindingDefaults.Normalize(action);
+        return (slot is SpecialKeySlot.M3 or SpecialKeySlot.M5
+                && normalized.Kind == SpecialKeyActionKind.Default)
+            || SpecialKeyBindingDefaults.OverridesDefaultBehavior(normalized);
+    }
 
     public async Task RunAsync(CancellationToken cancellationToken)
     {

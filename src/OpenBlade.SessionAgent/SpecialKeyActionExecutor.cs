@@ -50,9 +50,17 @@ public sealed class SpecialKeyActionExecutor : ISpecialKeyActionExecutor
         switch (action.Kind)
         {
             case SpecialKeyActionKind.Default:
-                if (slot == SpecialKeySlot.M4)
+                if (slot == SpecialKeySlot.M3)
+                {
+                    await ToggleGamingModeAsync(cancellationToken).ConfigureAwait(false);
+                }
+                else if (slot == SpecialKeySlot.M4)
                 {
                     await CyclePowerModeAsync(cancellationToken).ConfigureAwait(false);
+                }
+                else if (slot == SpecialKeySlot.M5)
+                {
+                    input.ToggleMicrophoneMute();
                 }
                 return;
             case SpecialKeyActionKind.Disabled:

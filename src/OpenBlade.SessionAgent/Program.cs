@@ -112,7 +112,7 @@ internal static class Program
                     inputErrorHandler,
                     shortcutNotifications,
                     statusFeed,
-                    specialKeyBindings.OverridesDefaultBehavior,
+                    specialKeyBindings.ShouldHandleInDriverMode,
                     specialKeyExecutor.ExecuteAsync,
                     functionRowActions.ExecuteAsync);
                 await using var ambient = new ServiceAmbientLightingLoop(

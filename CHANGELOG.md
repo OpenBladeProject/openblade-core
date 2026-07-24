@@ -58,6 +58,9 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Changed
 
+- Restored the built-in M3 Gaming mode and M5 microphone-mute actions while
+  keyboard Driver mode is active. Default bindings now invoke their native
+  behavior through the Session Agent instead of silently discarding the keys.
 - Made About-page action rows fully clickable with a subtle Windows Settings
   hover and pressed highlight. The Troubleshooting expander uses the same
   full-card interaction treatment, and all trailing glyphs share the native
