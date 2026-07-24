@@ -427,7 +427,7 @@ public sealed class WindowsDisplayBrightnessOsd : IDisplayBrightnessOsd
         int iconLeft = checked((int)Math.Round(7 * scale));
         int iconRight = checked((int)Math.Round(36 * scale));
         int trackLeft = checked((int)Math.Round(43 * scale));
-        int trackRight = checked((int)Math.Round(152 * scale));
+        int trackRight = checked((int)Math.Round(156 * scale));
         int trackTop = checked((int)Math.Round(21 * scale));
         int trackHeight = Math.Max(3, checked((int)Math.Round(4 * scale)));
 
@@ -497,7 +497,7 @@ public sealed class WindowsDisplayBrightnessOsd : IDisplayBrightnessOsd
         }
 
         nint valueFont = CreateFont(
-            -checked((int)Math.Round(13 * scale)),
+            -checked((int)Math.Round(14 * scale)),
             0,
             0,
             0,
@@ -515,9 +515,9 @@ public sealed class WindowsDisplayBrightnessOsd : IDisplayBrightnessOsd
             ? 0
             : SelectObject(deviceContext, valueFont);
         var valueBounds = new Rectangle(
-            checked((int)Math.Round(155 * scale)),
+            checked((int)Math.Round(161 * scale)),
             0,
-            checked((int)Math.Round(173 * scale)),
+            checked((int)Math.Round(185 * scale)),
             client.Bottom);
         _ = DrawText(
             deviceContext,
