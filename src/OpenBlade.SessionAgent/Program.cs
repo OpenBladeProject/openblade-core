@@ -12,6 +12,9 @@ internal static class Program
     [STAThread]
     private static int Main()
     {
+        using IDisposable traceLogRegistration = PersistentTraceLog.RegisterDefault(
+            "OpenBlade.SessionAgent",
+            OpenBladeProductVersion.Read(typeof(Program).Assembly));
         try
         {
             return RunAsync().GetAwaiter().GetResult();

@@ -10,6 +10,7 @@ namespace OpenBlade.Tray;
 public partial class App : Microsoft.UI.Xaml.Application
 {
     private CrashReportWriter? crashReportWriter;
+    private IDisposable? traceLogRegistration;
     private EventWaitHandle? shutdownEvent;
     private RegisteredWaitHandle? shutdownRegistration;
     private TrayInstanceCoordinator? instanceCoordinator;
@@ -29,6 +30,9 @@ public partial class App : Microsoft.UI.Xaml.Application
     {
         base.OnLaunched(args);
         RegisterCrashReporting();
+        traceLogRegistration ??= PersistentTraceLog.RegisterDefault(
+            "OpenBlade.Tray",
+            OpenBladeProductVersion.Read(typeof(App).Assembly));
         uiDispatcherQueue = DispatcherQueue.GetForCurrentThread();
         string executablePath = Environment.ProcessPath
             ?? throw new InvalidOperationException("Tray executable path is unavailable.");
@@ -106,7 +110,12 @@ public partial class App : Microsoft.UI.Xaml.Application
                         instanceCoordinator = null;
                     }
                 },
-                ExitApplication: Exit),
+                ExitApplication: () =>
+                {
+                    traceLogRegistration?.Dispose();
+                    traceLogRegistration = null;
+                    Exit();
+                }),
             exception => Trace.TraceError(
                 "OpenBlade tray shutdown cleanup failed: {0}",
                 exception));

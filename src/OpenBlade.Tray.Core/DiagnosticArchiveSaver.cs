@@ -27,11 +27,25 @@ public interface IDiagnosticArchiveSaver
         CancellationToken token);
 }
 
-public sealed class DiagnosticArchiveSaver(IDiagnosticArchiveDestination destination)
-    : IDiagnosticArchiveSaver
+public sealed class DiagnosticArchiveSaver : IDiagnosticArchiveSaver
 {
-    private readonly IDiagnosticArchiveDestination destination = destination
-        ?? throw new ArgumentNullException(nameof(destination));
+    private readonly IDiagnosticArchiveDestination destination;
+    private readonly string userModeLogDirectory;
+
+    public DiagnosticArchiveSaver(IDiagnosticArchiveDestination destination)
+        : this(destination, PersistentTraceLog.DefaultLogDirectory)
+    {
+    }
+
+    public DiagnosticArchiveSaver(
+        IDiagnosticArchiveDestination destination,
+        string userModeLogDirectory)
+    {
+        this.destination = destination
+            ?? throw new ArgumentNullException(nameof(destination));
+        ArgumentException.ThrowIfNullOrWhiteSpace(userModeLogDirectory);
+        this.userModeLogDirectory = userModeLogDirectory;
+    }
 
     public async Task<DiagnosticArchiveSaveResult> SaveAsync(
         DiagnosticArchive archive,
@@ -68,6 +82,10 @@ public sealed class DiagnosticArchiveSaver(IDiagnosticArchiveDestination destina
             $".{Path.GetFileName(destinationPath)}.{Guid.NewGuid():N}.tmp");
         try
         {
+            byte[] archiveBytes = UserModeDiagnosticLogAppender.TryAppendLogs(
+                archive.ZipBytes,
+                userModeLogDirectory,
+                token);
             await using (var stream = new FileStream(
                 temporaryPath,
                 FileMode.CreateNew,
@@ -76,7 +94,7 @@ public sealed class DiagnosticArchiveSaver(IDiagnosticArchiveDestination destina
                 bufferSize: 4096,
                 FileOptions.Asynchronous | FileOptions.WriteThrough))
             {
-                await stream.WriteAsync(archive.ZipBytes, token);
+                await stream.WriteAsync(archiveBytes, token);
                 await stream.FlushAsync(token);
                 token.ThrowIfCancellationRequested();
                 stream.Flush(flushToDisk: true);

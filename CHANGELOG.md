@@ -7,6 +7,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Added
 
+- Added bounded, redacted persistent logs for non-fatal Tray and Session Agent
+  failures. Diagnostic exports now include both user-mode log histories.
 - Added a compact, non-activating Windows-style flyout for built-in display
   brightness changes made with the laptop function keys.
 - About now lists the installed app, Session Agent, and Service build

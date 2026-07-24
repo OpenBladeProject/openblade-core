@@ -1,3 +1,4 @@
+using System.IO.Compression;
 using OpenBlade.Contracts;
 using OpenBlade.Tray;
 
@@ -121,8 +122,53 @@ public sealed class DiagnosticArchiveSaverTests
         }
     }
 
+    [Fact]
+    public async Task SaveAsync_AppendsBoundedUserModeLogsToValidArchive()
+    {
+        string directory = CreateTemporaryDirectory();
+        string logs = Path.Combine(directory, "logs");
+        Directory.CreateDirectory(logs);
+        await File.WriteAllTextAsync(
+            Path.Combine(logs, "OpenBlade.Tray.log"),
+            "redacted tray warning");
+        string path = Path.Combine(directory, "diagnostics.zip");
+        try
+        {
+            var saver = new DiagnosticArchiveSaver(
+                new StubDestination(path),
+                logs);
+
+            await saver.SaveAsync(CreateValidArchive(), CancellationToken.None);
+
+            using ZipArchive archive = ZipFile.OpenRead(path);
+            Assert.NotNull(archive.GetEntry("versions.json"));
+            ZipArchiveEntry log = Assert.Single(
+                archive.Entries,
+                entry => entry.FullName == "user-mode-logs/OpenBlade.Tray.log");
+            using var reader = new StreamReader(log.Open());
+            Assert.Equal("redacted tray warning", await reader.ReadToEndAsync());
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
     private static DiagnosticArchive CreateArchive() =>
         new("OpenBlade-diagnostics.zip", ArchiveBytes);
+
+    private static DiagnosticArchive CreateValidArchive()
+    {
+        using var output = new MemoryStream();
+        using (var archive = new ZipArchive(output, ZipArchiveMode.Create, leaveOpen: true))
+        {
+            ZipArchiveEntry entry = archive.CreateEntry("versions.json");
+            using var writer = new StreamWriter(entry.Open());
+            writer.Write("{}");
+        }
+
+        return new DiagnosticArchive("OpenBlade-diagnostics.zip", output.ToArray());
+    }
 
     private static string CreateTemporaryDirectory()
     {
