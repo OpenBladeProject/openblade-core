@@ -180,8 +180,8 @@ public sealed class FunctionRowActionExecutorTests
     }
 
     [Theory]
-    [InlineData(0, 0, 1920, 1040, 96, 800, 896, 320, 72)]
-    [InlineData(-1920, 0, 0, 1400, 144, -1200, 1184, 480, 108)]
+    [InlineData(0, 0, 1920, 1040, 96, 862, 922, 196, 46)]
+    [InlineData(-1920, 0, 0, 1400, 144, -1107, 1223, 294, 69)]
     public void BrightnessOsdBounds_CenterAboveActiveMonitorTaskbar(
         int left,
         int top,
@@ -208,6 +208,18 @@ public sealed class FunctionRowActionExecutorTests
                 expectedWidth,
                 expectedHeight),
             actual);
+    }
+
+    [Fact]
+    public void BrightnessOsdAccent_LightensTheWindowsAccentForDarkFlyout()
+    {
+        uint windowsBlue = 0x00D47800; // COLORREF for RGB(0, 120, 212).
+
+        uint actual = WindowsDisplayBrightnessOsd.BlendWithWhite(
+            windowsBlue,
+            whitePercent: 65);
+
+        Assert.Equal(0x00EFCFA5u, actual);
     }
 
     private static FunctionRowActionExecutor CreateExecutor(

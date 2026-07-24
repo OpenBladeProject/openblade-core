@@ -53,6 +53,7 @@ public sealed class WindowsDisplayBrightnessOsd : IDisplayBrightnessOsd
     private const int TransparentBackgroundMode = 1;
     private const int NullPen = 8;
     private const uint DrawTextCenter = 0x00000001;
+    private const uint DrawTextRight = 0x00000002;
     private const uint DrawTextVerticalCenter = 0x00000004;
     private const uint DrawTextSingleLine = 0x00000020;
     private const uint DrawTextNoPrefix = 0x00000800;
@@ -152,8 +153,8 @@ public sealed class WindowsDisplayBrightnessOsd : IDisplayBrightnessOsd
         uint dpi)
     {
         double scale = Math.Max(1d, dpi / 96d);
-        int width = checked((int)Math.Round(320 * scale));
-        int height = checked((int)Math.Round(72 * scale));
+        int width = checked((int)Math.Round(196 * scale));
+        int height = checked((int)Math.Round(46 * scale));
         int bottomMargin = checked((int)Math.Round(72 * scale));
         int x = workLeft + Math.Max(0, (workRight - workLeft - width) / 2);
         int y = Math.Max(workTop, workBottom - height - bottomMargin);
@@ -194,8 +195,8 @@ public sealed class WindowsDisplayBrightnessOsd : IDisplayBrightnessOsd
                 PopupStyle,
                 0,
                 0,
-                320,
-                72,
+                196,
+                46,
                 0,
                 0,
                 module,
@@ -311,8 +312,8 @@ public sealed class WindowsDisplayBrightnessOsd : IDisplayBrightnessOsd
             monitorInfo.WorkArea.Bottom,
             dpi == 0 ? 96u : dpi);
         int cornerDiameter = Math.Max(
-            12,
-            checked((int)Math.Round(14 * Math.Max(1d, dpi / 96d))));
+            8,
+            checked((int)Math.Round(10 * Math.Max(1d, dpi / 96d))));
         nint region = CreateRoundRectRgn(
             0,
             0,
@@ -408,17 +409,16 @@ public sealed class WindowsDisplayBrightnessOsd : IDisplayBrightnessOsd
         Rectangle client,
         byte brightness)
     {
-        double scale = Math.Max(1d, (client.Bottom - client.Top) / 72d);
-        int iconLeft = checked((int)Math.Round(18 * scale));
-        int iconRight = checked((int)Math.Round(62 * scale));
-        int trackLeft = checked((int)Math.Round(78 * scale));
-        int trackRight = checked((int)Math.Round(294 * scale));
-        int trackTop = checked((int)Math.Round(32 * scale));
-        int trackHeight = Math.Max(4, checked((int)Math.Round(5 * scale)));
-        int radius = Math.Max(8, checked((int)Math.Round(9 * scale)));
+        double scale = Math.Max(1d, (client.Bottom - client.Top) / 46d);
+        int iconLeft = checked((int)Math.Round(11 * scale));
+        int iconRight = checked((int)Math.Round(40 * scale));
+        int trackLeft = checked((int)Math.Round(47 * scale));
+        int trackRight = checked((int)Math.Round(156 * scale));
+        int trackTop = checked((int)Math.Round(21 * scale));
+        int trackHeight = Math.Max(3, checked((int)Math.Round(4 * scale)));
 
         nint iconFont = CreateFont(
-            -checked((int)Math.Round(24 * scale)),
+            -checked((int)Math.Round(17 * scale)),
             0,
             0,
             0,
@@ -470,6 +470,7 @@ public sealed class WindowsDisplayBrightnessOsd : IDisplayBrightnessOsd
             ColorRef(104, 104, 104));
         int trackWidth = trackRight - trackLeft;
         int progress = checked((int)Math.Round(trackWidth * brightness / 100d));
+        uint activeColor = BlendWithWhite(GetSysColor(ColorHighlight), 65);
         if (progress > 0)
         {
             DrawRoundedBar(
@@ -478,22 +479,49 @@ public sealed class WindowsDisplayBrightnessOsd : IDisplayBrightnessOsd
                 trackTop,
                 trackLeft + Math.Max(trackHeight, progress),
                 trackTop + trackHeight,
-                GetSysColor(ColorHighlight));
+                activeColor);
         }
 
-        int thumbCenter = trackLeft + progress;
-        nint thumbBrush = CreateSolidBrush(GetSysColor(ColorHighlight));
-        nint oldBrush = SelectObject(deviceContext, thumbBrush);
-        nint oldPen = SelectObject(deviceContext, GetStockObject(NullPen));
-        _ = Ellipse(
+        nint valueFont = CreateFont(
+            -checked((int)Math.Round(13 * scale)),
+            0,
+            0,
+            0,
+            400,
+            0,
+            0,
+            0,
+            1,
+            0,
+            0,
+            4,
+            0,
+            "Segoe UI");
+        nint previousValueFont = valueFont == 0
+            ? 0
+            : SelectObject(deviceContext, valueFont);
+        var valueBounds = new Rectangle(
+            checked((int)Math.Round(161 * scale)),
+            0,
+            checked((int)Math.Round(185 * scale)),
+            client.Bottom);
+        _ = DrawText(
             deviceContext,
-            thumbCenter - radius,
-            trackTop + (trackHeight / 2) - radius,
-            thumbCenter + radius,
-            trackTop + (trackHeight / 2) + radius);
-        _ = SelectObject(deviceContext, oldPen);
-        _ = SelectObject(deviceContext, oldBrush);
-        _ = DeleteObject(thumbBrush);
+            brightness.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            -1,
+            ref valueBounds,
+            DrawTextRight
+                | DrawTextVerticalCenter
+                | DrawTextSingleLine
+                | DrawTextNoPrefix);
+        if (previousValueFont != 0)
+        {
+            _ = SelectObject(deviceContext, previousValueFont);
+        }
+        if (valueFont != 0)
+        {
+            _ = DeleteObject(valueFont);
+        }
     }
 
     private static void DrawRoundedBar(
@@ -542,7 +570,7 @@ public sealed class WindowsDisplayBrightnessOsd : IDisplayBrightnessOsd
             DwmWindowCornerPreference,
             ref corners,
             sizeof(int));
-        if (!SetLayeredWindowAttributes(window, 0, 245, LayeredAlpha))
+        if (!SetLayeredWindowAttributes(window, 0, 255, LayeredAlpha))
         {
             throw new Win32Exception(
                 Marshal.GetLastWin32Error(),
@@ -578,6 +606,20 @@ public sealed class WindowsDisplayBrightnessOsd : IDisplayBrightnessOsd
 
     private static uint ColorRef(byte red, byte green, byte blue) =>
         (uint)(red | green << 8 | blue << 16);
+
+    internal static uint BlendWithWhite(uint color, int whitePercent)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegative(whitePercent);
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(whitePercent, 100);
+        int colorPercent = 100 - whitePercent;
+        byte red = checked((byte)(
+            ((color & 0xFF) * colorPercent + 255 * whitePercent) / 100));
+        byte green = checked((byte)(
+            (((color >> 8) & 0xFF) * colorPercent + 255 * whitePercent) / 100));
+        byte blue = checked((byte)(
+            (((color >> 16) & 0xFF) * colorPercent + 255 * whitePercent) / 100));
+        return ColorRef(red, green, blue);
+    }
 
     private static void Report(Action<Exception>? errorHandler, Exception exception)
     {
@@ -858,14 +900,6 @@ public sealed class WindowsDisplayBrightnessOsd : IDisplayBrightnessOsd
         int bottom,
         int ellipseWidth,
         int ellipseHeight);
-
-    [DllImport("gdi32.dll")]
-    private static extern bool Ellipse(
-        nint deviceContext,
-        int left,
-        int top,
-        int right,
-        int bottom);
 
     [DllImport("gdi32.dll", CharSet = CharSet.Unicode)]
     private static extern nint CreateFont(
