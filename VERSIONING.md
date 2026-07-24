@@ -29,7 +29,9 @@ The UI and service display their own built assembly versions. If a change does
 not touch a component, preserve its installed binary instead of rebuilding it
 merely to change the embedded commit hash. In particular, tray-only releases
 must use the tray-only deployment path and leave the service and Session Agent
-files and versions unchanged.
+files and versions unchanged. The tray-only path is valid only when shared
+Contracts and both IPC protocol versions are unchanged; otherwise publish and
+install all coordinated components together.
 
 ## Service IPC
 

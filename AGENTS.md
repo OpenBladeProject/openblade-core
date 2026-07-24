@@ -46,7 +46,9 @@ The current production target is the Razer Blade 16 RZ09-0581, USB
    tray may exit without disabling profile automation, display automation,
    interactive lighting, or configured special keys.
 3. UI-only work must not rebuild, replace, or advance the installed service or
-   Session Agent. Use the tray-only deployment path and verify protected hashes.
+   Session Agent. Use the tray-only deployment path only when shared Contracts
+   and both IPC versions are unchanged, and verify protected hashes. Any shared
+   contract or IPC change requires a coordinated full install.
 4. A temporary read, pipe, or enumeration failure is not proof that the laptop
    disappeared. Preserve last confirmed presentation through bounded retries,
    but perform fresh identity and safety checks before every write.
