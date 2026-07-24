@@ -94,9 +94,10 @@ internal static class Program
                         "OpenBlade shortcut preference refresh failed: {0}",
                         exception.Message));
                 var specialKeyInput = new WindowsSpecialKeyInputSender();
+                await using var specialKeyServiceClient = new ServiceClient();
                 var specialKeyExecutor = new SpecialKeyActionExecutor(
                     specialKeyBindings,
-                    new ServiceClient(),
+                    specialKeyServiceClient,
                     specialKeyInput);
                 using IDisplayBrightnessOsd displayBrightnessOsd =
                     WindowsTrayBrightnessOsdNotifier.CreateBestEffort(
@@ -104,13 +105,15 @@ internal static class Program
                         exception => System.Diagnostics.Trace.TraceWarning(
                             "OpenBlade brightness OSD notification failed: {0}",
                             exception.Message));
+                await using var functionRowServiceClient = new ServiceClient();
                 var functionRowActions = new FunctionRowActionExecutor(
-                    new ServiceClient(),
+                    functionRowServiceClient,
                     specialKeyInput,
                     new WmiDisplayBrightnessController(),
                     displayBrightnessOsd);
+                await using var statusServiceClient = new ServiceClient();
                 await using var statusFeed = new SharedServiceStatusFeed(
-                    new ServiceClient());
+                    statusServiceClient);
                 var automation = new ServiceDisplayAutomationLoop(
                     statusFeed,
                     coordinator);
@@ -124,8 +127,9 @@ internal static class Program
                     System.Diagnostics.Trace.TraceWarning(
                         "OpenBlade input observation failed: {0}",
                         exception.Message);
+                await using var reactiveServiceClient = new ServiceClient();
                 await using var reactive = new ServiceReactiveLightingLoop(
-                    new ServiceClient(),
+                    reactiveServiceClient,
                     WindowsReactiveKeyboardSourceFactory.Instance,
                     inputErrorHandler,
                     shortcutNotifications,
@@ -134,15 +138,17 @@ internal static class Program
                     specialKeyExecutor.ExecuteAsync,
                     specialKeyExecutor.ExecuteDefaultAsync,
                     functionRowActions.ExecuteAsync);
+                await using var ambientServiceClient = new ServiceClient();
                 await using var ambient = new ServiceAmbientLightingLoop(
-                    new ServiceClient(),
+                    ambientServiceClient,
                     WindowsAmbientScreenSamplerFactory.Instance,
                     exception => System.Diagnostics.Trace.TraceWarning(
                         "OpenBlade Ambient Awareness failed: {0}",
                         exception.Message),
                     statusWatcher: statusFeed);
+                await using var lightingIdleServiceClient = new ServiceClient();
                 var lightingIdlePolicy = new ServiceLightingIdlePolicyLoop(
-                    new ServiceClient(),
+                    lightingIdleServiceClient,
                     new WindowsUserIdleTimeSource(),
                     exception => System.Diagnostics.Trace.TraceWarning(
                         "OpenBlade lighting power policy failed: {0}",

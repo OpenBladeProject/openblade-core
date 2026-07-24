@@ -67,6 +67,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 - Made service disconnections observable within two seconds instead of allowing
   a missing named pipe to leave the tray displaying stale connected state.
+- Closed the Tray and Session Agent's persistent service connections
+  deterministically during process shutdown.
 - Made keyboard-brightness keys match Synapse's captured firmware cadence.
   OpenBlade now keeps the exact raw brightness level in the verified lighting
   session and sends one validated `0x10` step per keypress instead of reading

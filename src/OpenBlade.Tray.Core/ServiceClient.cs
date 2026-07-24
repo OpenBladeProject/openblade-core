@@ -5,7 +5,7 @@ using OpenBlade.Contracts;
 
 namespace OpenBlade.Tray;
 
-public sealed class ServiceClient : IServiceClient
+public sealed class ServiceClient : IServiceClient, IAsyncDisposable
 {
     private const int ConnectionTimeoutMilliseconds = 2000;
     private static readonly TimeSpan InitialReconnectDelay = TimeSpan.FromMilliseconds(250);
@@ -16,6 +16,7 @@ public sealed class ServiceClient : IServiceClient
     private readonly SemaphoreSlim ambientFrameGate = new(1, 1);
     private Stream? reactivePulseConnection;
     private Stream? ambientFrameConnection;
+    private int disposed;
 
     public ServiceClient()
         : this(OpenBladeIpc.PipeName)
@@ -186,6 +187,7 @@ public sealed class ServiceClient : IServiceClient
         ReactiveKeyPulse pulse,
         CancellationToken token)
     {
+        ObjectDisposedException.ThrowIf(Volatile.Read(ref disposed) != 0, this);
         var request = new PulseReactiveKeyRequest(
             OpenBladeIpc.ProtocolVersion,
             Guid.NewGuid(),
@@ -193,6 +195,7 @@ public sealed class ServiceClient : IServiceClient
         await reactivePulseGate.WaitAsync(token);
         try
         {
+            ObjectDisposedException.ThrowIf(Volatile.Read(ref disposed) != 0, this);
             for (int attempt = 0; ; attempt++)
             {
                 Stream connection = reactivePulseConnection ??= await connectAsync(token);
@@ -237,6 +240,7 @@ public sealed class ServiceClient : IServiceClient
         AmbientLightingFrame frame,
         CancellationToken token)
     {
+        ObjectDisposedException.ThrowIf(Volatile.Read(ref disposed) != 0, this);
         var request = new PushAmbientLightingFrameRequest(
             OpenBladeIpc.ProtocolVersion,
             Guid.NewGuid(),
@@ -244,6 +248,7 @@ public sealed class ServiceClient : IServiceClient
         await ambientFrameGate.WaitAsync(token);
         try
         {
+            ObjectDisposedException.ThrowIf(Volatile.Read(ref disposed) != 0, this);
             for (int attempt = 0; ; attempt++)
             {
                 Stream connection = ambientFrameConnection ??= await connectAsync(token);
@@ -318,9 +323,11 @@ public sealed class ServiceClient : IServiceClient
     public async IAsyncEnumerable<ServiceWatchUpdate> WatchStatusAsync(
         [EnumeratorCancellation] CancellationToken token)
     {
+        ObjectDisposedException.ThrowIf(Volatile.Read(ref disposed) != 0, this);
         TimeSpan reconnectDelay = InitialReconnectDelay;
         while (true)
         {
+            ObjectDisposedException.ThrowIf(Volatile.Read(ref disposed) != 0, this);
             token.ThrowIfCancellationRequested();
             SubscriptionOpenResult openResult = await OpenSubscriptionAsync(token);
             if (openResult.TransportFailed)
@@ -381,9 +388,11 @@ public sealed class ServiceClient : IServiceClient
         ServiceRequest request,
         CancellationToken token)
     {
+        ObjectDisposedException.ThrowIf(Volatile.Read(ref disposed) != 0, this);
         await reactivePulseGate.WaitAsync(token);
         try
         {
+            ObjectDisposedException.ThrowIf(Volatile.Read(ref disposed) != 0, this);
             // Only consecutive key-triggered pulses share a connection. Any
             // ordinary request ends the burst so request classes can never be
             // accidentally multiplexed onto the latency-sensitive channel.
@@ -397,6 +406,7 @@ public sealed class ServiceClient : IServiceClient
         await ambientFrameGate.WaitAsync(token);
         try
         {
+            ObjectDisposedException.ThrowIf(Volatile.Read(ref disposed) != 0, this);
             await ResetAmbientFrameConnectionCoreAsync();
         }
         finally
@@ -406,6 +416,34 @@ public sealed class ServiceClient : IServiceClient
 
         await using Stream connection = await connectAsync(token);
         return await SendOverConnectionAsync(connection, request, token);
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (Interlocked.Exchange(ref disposed, 1) != 0)
+        {
+            return;
+        }
+
+        await reactivePulseGate.WaitAsync(CancellationToken.None).ConfigureAwait(false);
+        try
+        {
+            await ResetReactivePulseConnectionCoreAsync().ConfigureAwait(false);
+        }
+        finally
+        {
+            reactivePulseGate.Release();
+        }
+
+        await ambientFrameGate.WaitAsync(CancellationToken.None).ConfigureAwait(false);
+        try
+        {
+            await ResetAmbientFrameConnectionCoreAsync().ConfigureAwait(false);
+        }
+        finally
+        {
+            ambientFrameGate.Release();
+        }
     }
 
     private static async Task<ServiceResponse> SendOverConnectionAsync(

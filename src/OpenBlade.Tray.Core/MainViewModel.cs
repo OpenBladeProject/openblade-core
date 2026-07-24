@@ -3454,6 +3454,14 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             {
             }
         }
+        if (serviceClient is IAsyncDisposable asyncDisposableClient)
+        {
+            await asyncDisposableClient.DisposeAsync();
+        }
+        else if (serviceClient is IDisposable disposableClient)
+        {
+            disposableClient.Dispose();
+        }
         lifetime.Dispose();
     }
 

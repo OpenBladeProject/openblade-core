@@ -411,6 +411,47 @@ public sealed class ServiceClientTests
     }
 
     [Fact]
+    public async Task DisposeAsync_ClosesPersistentStreamingConnections()
+    {
+        string reactivePipeName = NewPipeName();
+        string ambientPipeName = NewPipeName();
+        using CancellationTokenSource timeout = new(TimeSpan.FromSeconds(5));
+        Task firstServer = RunPersistentStreamingServerAsync(
+            reactivePipeName,
+            timeout.Token);
+        Task secondServer = RunPersistentStreamingServerAsync(
+            ambientPipeName,
+            timeout.Token);
+        int connections = 0;
+        var client = new ServiceClient(
+            async token =>
+            {
+                string pipeName = Interlocked.Increment(ref connections) == 1
+                    ? reactivePipeName
+                    : ambientPipeName;
+                var pipe = new NamedPipeClientStream(
+                    ".",
+                    pipeName,
+                    PipeDirection.InOut,
+                    PipeOptions.Asynchronous);
+                await pipe.ConnectAsync(token);
+                return pipe;
+            },
+            TimeProvider.System);
+        var slots = new RgbColor[AmbientLightingFrame.SlotCount];
+
+        await client.PulseReactiveKeyAsync(new ReactiveKeyPulse(19), timeout.Token);
+        await client.PushAmbientLightingFrameAsync(
+            new AmbientLightingFrame(slots),
+            timeout.Token);
+
+        await client.DisposeAsync();
+        await Task.WhenAll(firstServer, secondServer);
+        await Assert.ThrowsAsync<ObjectDisposedException>(
+            () => client.GetStatusAsync(timeout.Token));
+    }
+
+    [Fact]
     public async Task CanceledReactivePulse_DiscardsConnectionBeforeNextPulse()
     {
         string pipeName = NewPipeName();
@@ -873,6 +914,29 @@ public sealed class ServiceClientTests
                     new ControlOperationResult(ControlOperationStatus.Applied, "Applied")),
                 token);
         }
+    }
+
+    private static async Task RunPersistentStreamingServerAsync(
+        string pipeName,
+        CancellationToken token)
+    {
+        await using NamedPipeServerStream server = CreateServer(pipeName);
+        await server.WaitForConnectionAsync(token);
+        ServiceRequest request = await IpcMessageCodec.ReadRequestAsync(server, token);
+        Assert.True(request is PulseReactiveKeyRequest or PushAmbientLightingFrameRequest);
+        await IpcMessageCodec.WriteServerFrameAsync(
+            server,
+            new ServiceResponse(
+                OpenBladeIpc.ProtocolVersion,
+                request.RequestId,
+                true,
+                null,
+                null,
+                new ControlOperationResult(ControlOperationStatus.Applied, "Applied")),
+            token);
+
+        byte[] buffer = new byte[1];
+        Assert.Equal(0, await server.ReadAsync(buffer, token));
     }
 
     private static async Task RunServerAsync(
