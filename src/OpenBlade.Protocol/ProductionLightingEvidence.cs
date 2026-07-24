@@ -118,11 +118,10 @@ internal static class ProductionLightingEvidenceSource
         "OpenBladeLightingImplementationFingerprint";
 
     private const string ApprovedLightingImplementationFingerprintSha256 =
-        // Re-reviewed after adding the explicit service-shutdown transition
-        // from Driver mode to Normal mode. It stops the owned frame stream,
-        // uses the already validated 00/04 mode command, and requires an
-        // independent Normal-mode readback before hardware handles close.
-        "5D79ABACAF86CAA9FF0FBA0B56511DC21D9C7FD58D77F13A6C41E7E761A8D5CF";
+        // Re-reviewed after adding a host-only Gaming-mode key policy to the
+        // shared profile contract. The profile shape changed, but the admitted
+        // lighting commands, renderers, matrix reports, and device scope did not.
+        "1A46F7809432D0185E79551FDC74B5C83C485F736BADA13E21C91586D920FF8F";
 
     private static readonly JsonSerializerOptions SerializerOptions =
         new(JsonSerializerDefaults.Web)
