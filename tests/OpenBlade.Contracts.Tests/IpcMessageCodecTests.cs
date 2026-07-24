@@ -739,6 +739,34 @@ public sealed class IpcMessageCodecTests
         InvalidDataException exception = await Assert.ThrowsAsync<InvalidDataException>(() =>
             IpcMessageCodec.ReadRequestAsync(stream, CancellationToken.None));
 
+        // Deliberate tripwire: every future protocol bump must revisit the
+        // explicitly incompatible v21/v22 deployment boundary.
+        Assert.Equal(22, OpenBladeIpc.ProtocolVersion);
+        Assert.Equal("IPC protocol version is unsupported.", exception.Message);
+    }
+
+    [Fact]
+    public async Task ReadServerFrameAsync_RejectsVersionTwentyOnePeer()
+    {
+        Guid requestId = Guid.NewGuid();
+        using MemoryStream stream = FrameJson(
+            $$"""
+              {
+                "frame":"response",
+                "version":21,
+                "requestId":"{{requestId}}",
+                "success":false,
+                "error":"IPC protocol version is unsupported.",
+                "status":null,
+                "result":null,
+                "archive":null
+              }
+              """);
+
+        InvalidDataException exception = await Assert.ThrowsAsync<InvalidDataException>(() =>
+            IpcMessageCodec.ReadServerFrameAsync(stream, CancellationToken.None));
+
+        // Keep this symmetric with ReadRequestAsync_RejectsVersionTwentyOnePeer.
         Assert.Equal(22, OpenBladeIpc.ProtocolVersion);
         Assert.Equal("IPC protocol version is unsupported.", exception.Message);
     }
