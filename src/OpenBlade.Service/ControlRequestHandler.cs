@@ -66,6 +66,13 @@ public sealed class ControlRequestHandler
                 await runtime.CyclePerformanceShortcutAsync(
                     cycle.Source,
                     cancellationToken)),
+            SetPerformanceShortcutPreviewRequest preview => Result(
+                request.RequestId,
+                await runtime.SetPerformanceShortcutPreviewAsync(
+                    preview.SessionId,
+                    preview.Generation,
+                    preview.Preset,
+                    cancellationToken)),
             SetFanOverrideRequest set => Result(
                 request.RequestId,
                 await runtime.SetFanControlOverrideAsync(

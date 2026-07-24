@@ -55,6 +55,12 @@ public sealed class ServiceReactiveLightingLoopTests
             await Task.Delay(50);
             Assert.Empty(notifications.FailureMessages);
         }
+        await WaitUntilAsync(() => client.PerformancePreviews.Count == 2);
+        Assert.Equal(
+            PerformancePreset.Silent,
+            client.PerformancePreviews.First().Preset);
+        Assert.Null(client.PerformancePreviews.Last().Preset);
+        Assert.Equal(shouldShowFailure ? 1 : 0, client.ObservationCount);
 
         cancellation.Cancel();
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => running);
@@ -138,6 +144,41 @@ public sealed class ServiceReactiveLightingLoopTests
             PerformancePreset.Custom,
             Assert.Single(client.PerformanceSelections).Value);
         Assert.Empty(client.PerformanceShortcuts);
+
+        cancellation.Cancel();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => running);
+    }
+
+    [Fact]
+    public async Task Dispose_DiscardsQueuedPreviewBeforeItCanReachFirmware()
+    {
+        var client = new WatchClient();
+        var factory = new RecordingSourceFactory();
+        var notifications = new RecordingNotificationSink();
+        await using var loop = new ServiceReactiveLightingLoop(
+            client,
+            factory,
+            shortcutNotifications: notifications,
+            performanceShortcutQuietPeriod: TimeSpan.FromSeconds(5));
+        using var cancellation = new CancellationTokenSource();
+        Task running = loop.RunAsync(cancellation.Token);
+
+        ServiceStatusSnapshot status = Status(LightingRendererOwnershipState.Static) with
+        {
+            KeyboardDriverModeActive = true,
+        };
+        client.Publish(status);
+        await WaitUntilAsync(() => factory.CreateCount == 1);
+        await WaitUntilAsync(() => factory.Last!.IsDriverModeActive());
+        factory.Last!.PublishPerformanceShortcut(PerformanceShortcutSource.FunctionP);
+        await WaitUntilAsync(() => notifications.Selected.Count == 1);
+        await WaitUntilAsync(() => client.PerformancePreviews.Count == 1);
+
+        await loop.DisposeAsync();
+        await WaitUntilAsync(() => client.PerformancePreviews.Count == 2);
+        Assert.Null(client.PerformancePreviews.Last().Preset);
+        await Task.Delay(200);
+        Assert.Empty(client.PerformanceSelections);
 
         cancellation.Cancel();
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => running);
@@ -609,6 +650,54 @@ public sealed class ServiceReactiveLightingLoopTests
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => running);
     }
 
+    [Fact]
+    public async Task GamingModeKeyPolicy_IsActiveOnlyWhileGamingModeIsOn()
+    {
+        var client = new WatchClient();
+        var factory = new RecordingSourceFactory();
+        await using var loop = new ServiceReactiveLightingLoop(client, factory);
+        using var cancellation = new CancellationTokenSource();
+        Task running = loop.RunAsync(cancellation.Token);
+
+        ServiceStatusSnapshot enabled = Status(
+            LightingRendererOwnershipState.Static);
+        enabled = enabled with
+        {
+            GamingModeEnabled = true,
+            Profiles = enabled.Profiles with
+            {
+                PluggedIn = enabled.Profiles.PluggedIn with
+                {
+                    LaptopBehavior = new LaptopBehaviorProfileSettings(
+                        StartupAnimationEnabled: null,
+                        FunctionKeyPrimary: null,
+                        GamingModeEnabled: true)
+                    {
+                        GamingModeKeyPolicy = new GamingModeKeyPolicy(
+                            BlockWindowsKey: true,
+                            BlockAltTab: true),
+                    },
+                },
+            },
+        };
+        client.Publish(enabled);
+        await WaitUntilAsync(
+            () => factory.Last?.ReadGamingModeKeyPolicy()
+                == new GamingModeKeyPolicy(true, true));
+
+        client.Publish(enabled with
+        {
+            Revision = 2,
+            GamingModeEnabled = false,
+        });
+        await WaitUntilAsync(
+            () => factory.Last?.ReadGamingModeKeyPolicy()
+                == GamingModeKeyPolicy.Disabled);
+
+        cancellation.Cancel();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => running);
+    }
+
     private static ServiceStatusSnapshot Status(LightingRendererOwnershipState ownership)
     {
         ProfileSet profiles = ProfileDefaults.CreateSafeDefaults();
@@ -721,6 +810,30 @@ public sealed class ServiceReactiveLightingLoopTests
             Action<SpecialKeySlot> publishDefaultLaptopKey,
             Action<FunctionRowAction> publishFunctionRowAction,
             Func<FunctionKeyPrimaryMode?> readFunctionKeyPrimaryMode,
+            Func<bool> isDriverModeActive,
+            Func<GamingModeKeyPolicy> readGamingModeKeyPolicy)
+        {
+            CreateCount++;
+            return Last = new RecordingSource(
+                publish,
+                publishPerformanceShortcut,
+                publishSpecialKey,
+                shouldOverrideSpecialKey,
+                publishDefaultLaptopKey,
+                publishFunctionRowAction,
+                readFunctionKeyPrimaryMode,
+                isDriverModeActive,
+                readGamingModeKeyPolicy);
+        }
+
+        public IReactiveKeyboardSource Create(
+            Action<ReactiveKeyPulse> publish,
+            Action<PerformanceShortcutSource> publishPerformanceShortcut,
+            Action<SpecialKeySlot> publishSpecialKey,
+            Func<SpecialKeySlot, bool> shouldOverrideSpecialKey,
+            Action<SpecialKeySlot> publishDefaultLaptopKey,
+            Action<FunctionRowAction> publishFunctionRowAction,
+            Func<FunctionKeyPrimaryMode?> readFunctionKeyPrimaryMode,
             Func<bool> isDriverModeActive)
         {
             CreateCount++;
@@ -748,6 +861,7 @@ public sealed class ServiceReactiveLightingLoopTests
         private readonly Action<FunctionRowAction> publishFunctionRowAction;
         private readonly Func<FunctionKeyPrimaryMode?> readFunctionKeyPrimaryMode;
         private readonly Func<bool> isDriverModeActive;
+        private readonly Func<GamingModeKeyPolicy> readGamingModeKeyPolicy;
 
         public RecordingSource(
             Action<ReactiveKeyPulse> publish,
@@ -757,7 +871,8 @@ public sealed class ServiceReactiveLightingLoopTests
             Action<SpecialKeySlot>? publishDefaultLaptopKey = null,
             Action<FunctionRowAction>? publishFunctionRowAction = null,
             Func<FunctionKeyPrimaryMode?>? readFunctionKeyPrimaryMode = null,
-            Func<bool>? isDriverModeActive = null)
+            Func<bool>? isDriverModeActive = null,
+            Func<GamingModeKeyPolicy>? readGamingModeKeyPolicy = null)
         {
             this.publish = publish;
             this.publishPerformanceShortcut = publishPerformanceShortcut;
@@ -767,6 +882,8 @@ public sealed class ServiceReactiveLightingLoopTests
             this.publishFunctionRowAction = publishFunctionRowAction ?? (_ => { });
             this.readFunctionKeyPrimaryMode = readFunctionKeyPrimaryMode ?? (() => null);
             this.isDriverModeActive = isDriverModeActive ?? (() => false);
+            this.readGamingModeKeyPolicy =
+                readGamingModeKeyPolicy ?? (() => GamingModeKeyPolicy.Disabled);
         }
 
         public bool Disposed { get; private set; }
@@ -794,6 +911,9 @@ public sealed class ServiceReactiveLightingLoopTests
 
         public bool IsDriverModeActive() => isDriverModeActive();
 
+        public GamingModeKeyPolicy ReadGamingModeKeyPolicy() =>
+            readGamingModeKeyPolicy();
+
         public void Fail(Exception exception) => completion.TrySetException(exception);
 
         public void Dispose()
@@ -812,6 +932,11 @@ public sealed class ServiceReactiveLightingLoopTests
         public ConcurrentQueue<PerformanceShortcutSource> PerformanceShortcuts { get; } = new();
 
         public ConcurrentQueue<PerformanceOverride> PerformanceSelections { get; } = new();
+
+        public ConcurrentQueue<(Guid SessionId, long Generation, PerformancePreset? Preset)>
+            PerformancePreviews { get; } = new();
+
+        public int ObservationCount { get; private set; }
 
         public ControlOperationResult PerformanceShortcutResult { get; init; } = new(
             ControlOperationStatus.Applied,
@@ -856,7 +981,11 @@ public sealed class ServiceReactiveLightingLoopTests
 
         public Task<ServiceStatusSnapshot> ObserveStateAsync(
             bool includeLiveReadings,
-            CancellationToken cancellationToken) => throw new NotSupportedException();
+            CancellationToken cancellationToken)
+        {
+            ObservationCount++;
+            return Task.FromResult(Status(LightingRendererOwnershipState.Static));
+        }
 
         public Task<DiagnosticArchive> ExportDiagnosticsAsync(
             bool liveReadingsEnabled,
@@ -894,6 +1023,18 @@ public sealed class ServiceReactiveLightingLoopTests
             PerformanceShortcuts.Enqueue(source);
             return PerformanceShortcutCompletion?.Task
                 ?? Task.FromResult(PerformanceShortcutResult);
+        }
+
+        public Task<ControlOperationResult> SetPerformanceShortcutPreviewAsync(
+            Guid sessionId,
+            long generation,
+            PerformancePreset? preset,
+            CancellationToken token)
+        {
+            PerformancePreviews.Enqueue((sessionId, generation, preset));
+            return Task.FromResult(new ControlOperationResult(
+                ControlOperationStatus.Stored,
+                "Stored"));
         }
 
         public Task<ControlOperationResult> SetFanOverrideAsync(

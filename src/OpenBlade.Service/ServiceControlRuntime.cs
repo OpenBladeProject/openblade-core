@@ -44,6 +44,15 @@ public interface IServiceControlRuntime
                 ControlOperationStatus.Blocked,
                 "Performance shortcuts are unavailable."));
 
+    Task<ControlOperationResult> SetPerformanceShortcutPreviewAsync(
+        Guid sessionId,
+        long generation,
+        PerformancePreset? preset,
+        CancellationToken token) => Task.FromResult(
+            new ControlOperationResult(
+                ControlOperationStatus.Blocked,
+                "Performance shortcut previews are unavailable."));
+
     Task<ControlOperationResult> SetFanOverrideAsync(
         ManualOverride<FanMode>? value,
         CancellationToken token);
@@ -177,6 +186,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
     private readonly SemaphoreSlim operationGate = new(1, 1);
     private readonly ProfileSetValidator validator;
     private readonly object initializationGate = new();
+    private readonly object statusPublishGate = new();
     private ProfileAutomationState? automation;
     private BatteryAutomationPreferences preferences =
         new(ProtectionEnabled: true);
@@ -1624,6 +1634,80 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         {
             operationGate.Release();
         }
+    }
+
+    public Task<ControlOperationResult> SetPerformanceShortcutPreviewAsync(
+        Guid sessionId,
+        long generation,
+        PerformancePreset? preset,
+        CancellationToken token)
+    {
+        EnsureInitialized();
+        token.ThrowIfCancellationRequested();
+        if (sessionId == Guid.Empty
+            || generation <= 0
+            || preset is { } value && !Enum.IsDefined(value))
+        {
+            return Task.FromResult(RecordRejectedIntent(
+                new ArgumentOutOfRangeException(nameof(generation))));
+        }
+
+        bool newerPreviewActive = false;
+        bool previewChanged = false;
+        if (preset is null)
+        {
+            PublishStatusUpdate(current =>
+            {
+                PerformanceShortcutPreview? existing =
+                    current.PerformanceShortcutPreview;
+                if (existing is null
+                    || existing.SessionId != sessionId
+                    || existing.Generation != generation)
+                {
+                    newerPreviewActive = true;
+                    return current;
+                }
+
+                previewChanged = true;
+                return current with { PerformanceShortcutPreview = null };
+            });
+            return Task.FromResult(new ControlOperationResult(
+                ControlOperationStatus.Stored,
+                previewChanged
+                    ? "Performance shortcut preview was cleared."
+                    : "A newer performance shortcut preview is already active."));
+        }
+
+        PublishStatusUpdate(current =>
+        {
+            PerformanceShortcutPreview? existing =
+                current.PerformanceShortcutPreview;
+            if (existing is
+                {
+                    SessionId: var existingSession,
+                    Generation: var existingGeneration,
+                }
+                && existingSession == sessionId
+                && existingGeneration > generation)
+            {
+                newerPreviewActive = true;
+                return current;
+            }
+
+            previewChanged = true;
+            return current with
+            {
+                PerformanceShortcutPreview = new PerformanceShortcutPreview(
+                    sessionId,
+                    generation,
+                    preset.Value),
+            };
+        });
+        return Task.FromResult(new ControlOperationResult(
+            ControlOperationStatus.Stored,
+            newerPreviewActive && !previewChanged
+                ? "A newer performance shortcut preview is already active."
+                : "Performance shortcut preview was published."));
     }
 
     public async Task<ControlOperationResult> PrepareForShutdownAsync(
@@ -3705,22 +3789,41 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         _ = Automation;
     }
 
-    private void PublishIfChanged(ServiceStatusSnapshot candidate)
+    private void PublishIfChanged(
+        ServiceStatusSnapshot candidate,
+        bool retainPerformanceShortcutPreview = true)
+        => PublishStatusUpdate(previous => retainPerformanceShortcutPreview
+            ? candidate with
+            {
+                PerformanceShortcutPreview =
+                    previous.PerformanceShortcutPreview,
+            }
+            : candidate);
+
+    private void PublishStatusUpdate(
+        Func<ServiceStatusSnapshot, ServiceStatusSnapshot> update)
     {
-        ServiceStatusSnapshot previous = GetStatus();
-        if (Equivalent(previous, candidate))
+        ServiceStatusSnapshot? published = null;
+        bool publishToSubscribers = false;
+        lock (statusPublishGate)
         {
-            return;
+            ServiceStatusSnapshot previous = GetStatus();
+            ServiceStatusSnapshot candidate = update(previous);
+            if (Equivalent(previous, candidate))
+            {
+                return;
+            }
+
+            published = candidate with { Revision = previous.Revision + 1 };
+            Volatile.Write(ref status, published);
+            publishToSubscribers = !Equivalent(
+                previous,
+                candidate with { LiveReadings = previous.LiveReadings });
         }
 
-        ServiceStatusSnapshot published = candidate with { Revision = previous.Revision + 1 };
-        Volatile.Write(ref status, published);
-        bool telemetryOnly = Equivalent(
-            previous,
-            candidate with { LiveReadings = previous.LiveReadings });
-        if (!telemetryOnly)
+        if (publishToSubscribers)
         {
-            subscriptionHub.Publish(published);
+            subscriptionHub.Publish(published!);
         }
     }
 
@@ -3743,6 +3846,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         && left.ActivePowerSource == right.ActivePowerSource
         && left.LiveReadings == right.LiveReadings
         && left.PerformanceOverride == right.PerformanceOverride
+        && left.PerformanceShortcutPreview == right.PerformanceShortcutPreview
         && left.FanOverride == right.FanOverride
         && left.FanControlOverride == right.FanControlOverride
         && left.LightingOverride == right.LightingOverride

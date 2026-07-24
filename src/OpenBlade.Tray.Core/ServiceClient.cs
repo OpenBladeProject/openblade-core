@@ -117,6 +117,19 @@ public sealed class ServiceClient : IServiceClient
                 source),
             token);
 
+    public Task<ControlOperationResult> SetPerformanceShortcutPreviewAsync(
+        Guid sessionId,
+        long generation,
+        PerformancePreset? preset,
+        CancellationToken token) => SendMutationAsync(
+            new SetPerformanceShortcutPreviewRequest(
+                OpenBladeIpc.ProtocolVersion,
+                Guid.NewGuid(),
+                sessionId,
+                generation,
+                preset),
+            token);
+
     public Task<ControlOperationResult> SetFanOverrideAsync(
         ManualOverride<FanMode>? value,
         CancellationToken token) => SetFanControlOverrideAsync(value, null, token);

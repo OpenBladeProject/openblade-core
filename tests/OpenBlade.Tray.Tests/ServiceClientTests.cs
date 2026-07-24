@@ -238,6 +238,7 @@ public sealed class ServiceClientTests
         Task server = RunMutationServersAsync(pipeName, observed, timeout.Token);
         IServiceClient client = new ServiceClient(pipeName);
         ProfileSet profiles = ProfileDefaults.CreateSafeDefaults();
+        Guid shortcutSessionId = Guid.NewGuid();
 
         ControlOperationResult[] results =
         [
@@ -247,6 +248,11 @@ public sealed class ServiceClientTests
                 timeout.Token),
             await client.CyclePerformanceShortcutAsync(
                 PerformanceShortcutSource.DedicatedButton,
+                timeout.Token),
+            await client.SetPerformanceShortcutPreviewAsync(
+                shortcutSessionId,
+                generation: 3,
+                PerformancePreset.Performance,
                 timeout.Token),
             await client.SetFanOverrideAsync(
                 new ManualOverride<FanMode>(FanMode.Maximum, OverrideLifetime.UntilPowerSourceChange),
@@ -278,6 +284,14 @@ public sealed class ServiceClientTests
             request => Assert.Equal(
                 PerformanceShortcutSource.DedicatedButton,
                 Assert.IsType<CyclePerformanceShortcutRequest>(request).Source),
+            request =>
+            {
+                SetPerformanceShortcutPreviewRequest preview =
+                    Assert.IsType<SetPerformanceShortcutPreviewRequest>(request);
+                Assert.Equal(shortcutSessionId, preview.SessionId);
+                Assert.Equal(3, preview.Generation);
+                Assert.Equal(PerformancePreset.Performance, preview.Preset);
+            },
             request => Assert.IsType<SetFanOverrideRequest>(request),
             request => Assert.IsType<SetLightingOverrideRequest>(request),
             request => Assert.True(
@@ -305,7 +319,7 @@ public sealed class ServiceClientTests
             },
             request => Assert.IsType<ShutdownOpenBladeRequest>(request));
         Assert.All(observed, request => Assert.NotEqual(Guid.Empty, request.RequestId));
-        Assert.Equal(13, observed.Select(request => request.RequestId).Distinct().Count());
+        Assert.Equal(14, observed.Select(request => request.RequestId).Distinct().Count());
     }
 
     [Fact]
@@ -738,7 +752,7 @@ public sealed class ServiceClientTests
         List<ServiceRequest> observed,
         CancellationToken token)
     {
-        for (int index = 0; index < 13; index++)
+        for (int index = 0; index < 14; index++)
         {
             await using NamedPipeServerStream server = CreateServer(pipeName);
             await server.WaitForConnectionAsync(token);

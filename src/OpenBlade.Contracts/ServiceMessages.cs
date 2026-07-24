@@ -20,6 +20,7 @@ public sealed record ControlOperationResult(ControlOperationStatus Status, strin
 [JsonDerivedType(typeof(UpdateProfilesRequest), "updateProfiles")]
 [JsonDerivedType(typeof(SetPerformanceOverrideRequest), "setPerformanceOverride")]
 [JsonDerivedType(typeof(CyclePerformanceShortcutRequest), "cyclePerformanceShortcut")]
+[JsonDerivedType(typeof(SetPerformanceShortcutPreviewRequest), "setPerformanceShortcutPreview")]
 [JsonDerivedType(typeof(SetFanOverrideRequest), "setFanOverride")]
 [JsonDerivedType(typeof(SetLightingOverrideRequest), "setLightingOverride")]
 [JsonDerivedType(typeof(SetExternalLightingOverridePolicyRequest), "setExternalLightingOverridePolicy")]
@@ -85,6 +86,19 @@ public sealed record CyclePerformanceShortcutRequest(
     Guid RequestId,
     PerformanceShortcutSource Source)
     : ServiceRequest(Version, RequestId);
+
+public sealed record SetPerformanceShortcutPreviewRequest(
+    int Version,
+    Guid RequestId,
+    Guid SessionId,
+    long Generation,
+    PerformancePreset? Preset)
+    : ServiceRequest(Version, RequestId);
+
+public sealed record PerformanceShortcutPreview(
+    Guid SessionId,
+    long Generation,
+    PerformancePreset Preset);
 
 public sealed record SetFanOverrideRequest(
     int Version,
@@ -177,6 +191,8 @@ public sealed record ServiceStatusSnapshot(
     bool? KeyboardDriverModeActive = null)
 {
     public FanControlSettings? FanControlOverride { get; init; }
+
+    public PerformanceShortcutPreview? PerformanceShortcutPreview { get; init; }
 }
 
 [JsonPolymorphic(TypeDiscriminatorPropertyName = "frame")]

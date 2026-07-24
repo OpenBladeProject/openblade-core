@@ -889,7 +889,7 @@
                                         </StackPanel>
                                     </Grid>
                                 </Border>
-                                <Border Style="{StaticResource SettingsLastRowStyle}"
+                                <Border Style="{StaticResource SettingsRowStyle}"
                                         Visibility="{x:Bind SupportsGamingMode, Mode=OneWay}">
                                     <Grid ColumnSpacing="20">
                                         <Grid.ColumnDefinitions>
@@ -922,6 +922,56 @@
                                                           IsOn="{x:Bind GamingModeToggleIsOn, Mode=OneWay}"
                                                           Toggled="OnGamingModeToggled" />
                                         </StackPanel>
+                                    </Grid>
+                                </Border>
+                                <Border Style="{StaticResource SettingsSubcardStyle}"
+                                        Visibility="{x:Bind SupportsGamingMode, Mode=OneWay}">
+                                    <Grid ColumnSpacing="20">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel Spacing="3" VerticalAlignment="Center">
+                                            <TextBlock Text="Block the Windows key"
+                                                       Style="{StaticResource CardTitleStyle}" />
+                                            <TextBlock Text="Prevent the Start menu from opening while Gaming mode is on."
+                                                       Style="{StaticResource SecondaryTextStyle}" />
+                                        </StackPanel>
+                                        <ToggleSwitch Grid.Column="1"
+                                                      HorizontalAlignment="Right"
+                                                      VerticalAlignment="Center"
+                                                      MinWidth="0"
+                                                      IsEnabled="{x:Bind CanEditGamingModeKeyPolicy, Mode=OneWay}"
+                                                      AutomationProperties.Name="Block the Windows key in Gaming mode"
+                                                      OffContent=""
+                                                      OnContent=""
+                                                      IsOn="{x:Bind BlockWindowsKeyInGamingMode, Mode=OneWay}"
+                                                      Toggled="OnBlockWindowsKeyInGamingModeToggled" />
+                                    </Grid>
+                                </Border>
+                                <Border Style="{StaticResource SettingsLastSubcardStyle}"
+                                        Visibility="{x:Bind SupportsGamingMode, Mode=OneWay}">
+                                    <Grid ColumnSpacing="20">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel Spacing="3" VerticalAlignment="Center">
+                                            <TextBlock Text="Block Alt+Tab"
+                                                       Style="{StaticResource CardTitleStyle}" />
+                                            <TextBlock Text="Prevent switching to another app while Gaming mode is on."
+                                                       Style="{StaticResource SecondaryTextStyle}" />
+                                        </StackPanel>
+                                        <ToggleSwitch Grid.Column="1"
+                                                      HorizontalAlignment="Right"
+                                                      VerticalAlignment="Center"
+                                                      MinWidth="0"
+                                                      IsEnabled="{x:Bind CanEditGamingModeKeyPolicy, Mode=OneWay}"
+                                                      AutomationProperties.Name="Block Alt+Tab in Gaming mode"
+                                                      OffContent=""
+                                                      OnContent=""
+                                                      IsOn="{x:Bind BlockAltTabInGamingMode, Mode=OneWay}"
+                                                      Toggled="OnBlockAltTabInGamingModeToggled" />
                                     </Grid>
                                 </Border>
                             </StackPanel>
@@ -2114,6 +2164,24 @@
                                             <TextBlock Grid.Column="3" Text="{x:Bind ViewModel.BatteryProfilePresentation.GamingMode, Mode=OneWay}" />
                                         </Grid>
                                     </Border>
+                                    <Border Style="{StaticResource SettingsRowStyle}">
+                                        <Grid ColumnSpacing="16">
+                                            <Grid.ColumnDefinitions><ColumnDefinition Width="150" /><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                                            <TextBlock Text="Block Windows key" Style="{StaticResource CardTitleStyle}" />
+                                            <TextBlock Grid.Column="1" Text="{x:Bind ViewModel.PluggedInProfilePresentation.GamingModeWindowsKey, Mode=OneWay}" />
+                                            <TextBlock Grid.Column="2" Text="{x:Bind ViewModel.UsbCProfilePresentation.GamingModeWindowsKey, Mode=OneWay}" />
+                                            <TextBlock Grid.Column="3" Text="{x:Bind ViewModel.BatteryProfilePresentation.GamingModeWindowsKey, Mode=OneWay}" />
+                                        </Grid>
+                                    </Border>
+                                    <Border Style="{StaticResource SettingsRowStyle}">
+                                        <Grid ColumnSpacing="16">
+                                            <Grid.ColumnDefinitions><ColumnDefinition Width="150" /><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                                            <TextBlock Text="Block Alt+Tab" Style="{StaticResource CardTitleStyle}" />
+                                            <TextBlock Grid.Column="1" Text="{x:Bind ViewModel.PluggedInProfilePresentation.GamingModeAltTab, Mode=OneWay}" />
+                                            <TextBlock Grid.Column="2" Text="{x:Bind ViewModel.UsbCProfilePresentation.GamingModeAltTab, Mode=OneWay}" />
+                                            <TextBlock Grid.Column="3" Text="{x:Bind ViewModel.BatteryProfilePresentation.GamingModeAltTab, Mode=OneWay}" />
+                                        </Grid>
+                                    </Border>
                                     <Border Style="{StaticResource SettingsLastRowStyle}">
                                         <Grid ColumnSpacing="16">
                                             <Grid.ColumnDefinitions><ColumnDefinition Width="150" /><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
@@ -2188,6 +2256,12 @@
                                     </Border>
                                     <Border Style="{StaticResource SettingsRowStyle}">
                                         <Grid ColumnSpacing="16"><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><TextBlock Text="Gaming mode" Style="{StaticResource CardTitleStyle}" /><TextBlock Grid.Column="1" Text="{x:Bind ViewModel.SelectedProfilePresentation.GamingMode, Mode=OneWay}" /></Grid>
+                                    </Border>
+                                    <Border Style="{StaticResource SettingsRowStyle}">
+                                        <Grid ColumnSpacing="16"><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><TextBlock Text="Block Windows key" Style="{StaticResource CardTitleStyle}" /><TextBlock Grid.Column="1" Text="{x:Bind ViewModel.SelectedProfilePresentation.GamingModeWindowsKey, Mode=OneWay}" /></Grid>
+                                    </Border>
+                                    <Border Style="{StaticResource SettingsRowStyle}">
+                                        <Grid ColumnSpacing="16"><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><TextBlock Text="Block Alt+Tab" Style="{StaticResource CardTitleStyle}" /><TextBlock Grid.Column="1" Text="{x:Bind ViewModel.SelectedProfilePresentation.GamingModeAltTab, Mode=OneWay}" /></Grid>
                                     </Border>
                                     <Border Style="{StaticResource SettingsLastRowStyle}">
                                         <Grid ColumnSpacing="16"><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions><TextBlock Text="Startup animation" Style="{StaticResource CardTitleStyle}" /><TextBlock Grid.Column="1" Text="{x:Bind ViewModel.SelectedProfilePresentation.StartupAnimation, Mode=OneWay}" /></Grid>

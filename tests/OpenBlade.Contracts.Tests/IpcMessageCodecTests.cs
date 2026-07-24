@@ -75,6 +75,12 @@ public sealed class IpcMessageCodecTests
             OpenBladeIpc.ProtocolVersion,
             Guid.NewGuid(),
             PerformanceShortcutSource.FunctionP),
+        new SetPerformanceShortcutPreviewRequest(
+            OpenBladeIpc.ProtocolVersion,
+            Guid.NewGuid(),
+            Guid.NewGuid(),
+            Generation: 4,
+            PerformancePreset.Performance),
         new SetFanOverrideRequest(
             OpenBladeIpc.ProtocolVersion,
             Guid.NewGuid(),
@@ -172,6 +178,28 @@ public sealed class IpcMessageCodecTests
             OpenBladeIpc.ProtocolVersion,
             Guid.NewGuid(),
             (PerformanceShortcutSource)999);
+        using MemoryStream stream = new();
+
+        await Assert.ThrowsAsync<InvalidDataException>(() =>
+            IpcMessageCodec.WriteRequestAsync(stream, request, CancellationToken.None));
+        Assert.Equal(0, stream.Length);
+    }
+
+    [Theory]
+    [InlineData("", 1, (int)PerformancePreset.Performance)]
+    [InlineData("50c08f46-0a13-4df1-a921-4391891abdf0", 0, (int)PerformancePreset.Performance)]
+    [InlineData("50c08f46-0a13-4df1-a921-4391891abdf0", 1, 999)]
+    public async Task PerformanceShortcutPreviewRequest_RejectsInvalidIdentityOrPreset(
+        string sessionId,
+        long generation,
+        int preset)
+    {
+        var request = new SetPerformanceShortcutPreviewRequest(
+            OpenBladeIpc.ProtocolVersion,
+            Guid.NewGuid(),
+            string.IsNullOrEmpty(sessionId) ? Guid.Empty : Guid.Parse(sessionId),
+            generation,
+            (PerformancePreset)preset);
         using MemoryStream stream = new();
 
         await Assert.ThrowsAsync<InvalidDataException>(() =>
@@ -292,7 +320,7 @@ public sealed class IpcMessageCodecTests
             DesiredState = CreateStatus().DesiredState with { Battery = desired },
         };
 
-        Assert.Equal(19, OpenBladeIpc.ProtocolVersion);
+        Assert.Equal(20, OpenBladeIpc.ProtocolVersion);
         Assert.Equal(request, await RoundTripRequestAsync(request));
         ServiceStatusSnapshot roundTrip = await RoundTripStatusAsync(status);
         Assert.Equal([80], roundTrip.Capabilities!.ChargeLimits);
@@ -395,7 +423,7 @@ public sealed class IpcMessageCodecTests
 
         ServiceStatusSnapshot actual = await RoundTripStatusAsync(expected);
 
-        Assert.Equal(19, OpenBladeIpc.ProtocolVersion);
+        Assert.Equal(20, OpenBladeIpc.ProtocolVersion);
         AssertStatusEqual(expected, actual);
     }
 
@@ -1012,6 +1040,9 @@ public sealed class IpcMessageCodecTests
         Assert.Equal(expected.ActivePowerSource, actual.ActivePowerSource);
         Assert.Equal(expected.LiveReadings, actual.LiveReadings);
         Assert.Equal(expected.PerformanceOverride, actual.PerformanceOverride);
+        Assert.Equal(
+            expected.PerformanceShortcutPreview,
+            actual.PerformanceShortcutPreview);
         Assert.Equal(expected.FanOverride, actual.FanOverride);
         Assert.Equal(expected.LightingOverride, actual.LightingOverride);
         Assert.Equal(expected.FullChargeOverride, actual.FullChargeOverride);

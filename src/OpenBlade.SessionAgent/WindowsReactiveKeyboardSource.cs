@@ -61,6 +61,27 @@ public sealed class WindowsReactiveKeyboardSourceFactory : IReactiveKeyboardSour
         Action<SpecialKeySlot> publishDefaultLaptopKey,
         Action<FunctionRowAction> publishFunctionRowAction,
         Func<FunctionKeyPrimaryMode?> readFunctionKeyPrimaryMode,
+        Func<bool> isDriverModeActive,
+        Func<GamingModeKeyPolicy> readGamingModeKeyPolicy) =>
+        new WindowsReactiveKeyboardSource(
+            publish,
+            publishPerformanceShortcut,
+            publishSpecialKey,
+            shouldOverrideSpecialKey,
+            publishDefaultLaptopKey,
+            publishFunctionRowAction,
+            readFunctionKeyPrimaryMode,
+            isDriverModeActive,
+            readGamingModeKeyPolicy);
+
+    public IReactiveKeyboardSource Create(
+        Action<ReactiveKeyPulse> publish,
+        Action<PerformanceShortcutSource> publishPerformanceShortcut,
+        Action<SpecialKeySlot> publishSpecialKey,
+        Func<SpecialKeySlot, bool> shouldOverrideSpecialKey,
+        Action<SpecialKeySlot> publishDefaultLaptopKey,
+        Action<FunctionRowAction> publishFunctionRowAction,
+        Func<FunctionKeyPrimaryMode?> readFunctionKeyPrimaryMode,
         Func<bool> isDriverModeActive) =>
         new WindowsReactiveKeyboardSource(
             publish,
@@ -96,6 +117,7 @@ internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
     private const uint RawInputDeviceName = 0x20000007;
     private const int LowLevelKeyboardHook = 13;
     private const uint LowLevelInjectedFlag = 0x00000010;
+    private const uint LowLevelAltDownFlag = 0x00000020;
     private const uint WindowMessageKeyDown = 0x0100;
     private const uint WindowMessageKeyUp = 0x0101;
     private const uint WindowMessageSystemKeyDown = 0x0104;
@@ -125,7 +147,9 @@ internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
     private readonly Action<FunctionRowAction> publishFunctionRowAction;
     private readonly Func<FunctionKeyPrimaryMode?> readFunctionKeyPrimaryMode;
     private readonly Func<bool> isDriverModeActive;
+    private readonly Func<GamingModeKeyPolicy> readGamingModeKeyPolicy;
     private readonly Rz09_0581FunctionRowInputState functionRowInput = new();
+    private readonly GamingModeKeyBlockState gamingModeKeyBlockState = new();
     private readonly LowLevelKeyboardHookHealthTracker hookHealth = new();
     private readonly string windowClassName = $"OpenBlade.Reactive.{Guid.NewGuid():N}";
     private readonly TaskCompletionSource initialization =
@@ -158,7 +182,8 @@ internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
             _ => { },
             _ => { },
             () => null,
-            () => false)
+            () => false,
+            () => GamingModeKeyPolicy.Disabled)
     {
     }
 
@@ -170,7 +195,8 @@ internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
         Action<SpecialKeySlot>? publishDefaultLaptopKey = null,
         Action<FunctionRowAction>? publishFunctionRowAction = null,
         Func<FunctionKeyPrimaryMode?>? readFunctionKeyPrimaryMode = null,
-        Func<bool>? isDriverModeActive = null)
+        Func<bool>? isDriverModeActive = null,
+        Func<GamingModeKeyPolicy>? readGamingModeKeyPolicy = null)
     {
         this.publish = publish ?? throw new ArgumentNullException(nameof(publish));
         this.publishPerformanceShortcut = publishPerformanceShortcut
@@ -183,6 +209,8 @@ internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
         this.publishFunctionRowAction = publishFunctionRowAction ?? (_ => { });
         this.readFunctionKeyPrimaryMode = readFunctionKeyPrimaryMode ?? (() => null);
         this.isDriverModeActive = isDriverModeActive ?? (() => false);
+        this.readGamingModeKeyPolicy =
+            readGamingModeKeyPolicy ?? (() => GamingModeKeyPolicy.Disabled);
         messageThread = new Thread(RunMessageWindow)
         {
             IsBackground = true,
@@ -432,6 +460,14 @@ internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
                     input.ScanCode,
                     keyDown,
                     Stopwatch.GetTimestamp());
+                if (owner.gamingModeKeyBlockState.ShouldSuppress(
+                    input.VirtualKey,
+                    keyDown,
+                    owner.readGamingModeKeyPolicy(),
+                    altContext: (input.Flags & LowLevelAltDownFlag) != 0))
+                {
+                    return 1;
+                }
                 if (owner.functionRowInput.Process(
                     input.ScanCode,
                     keyDown,

@@ -55,6 +55,26 @@ public interface IReactiveKeyboardSourceFactory
             publishFunctionRowAction,
             readFunctionKeyPrimaryMode,
             isDriverModeActive);
+
+    IReactiveKeyboardSource Create(
+        Action<ReactiveKeyPulse> publish,
+        Action<PerformanceShortcutSource> publishPerformanceShortcut,
+        Action<SpecialKeySlot> publishSpecialKey,
+        Func<SpecialKeySlot, bool> shouldOverrideSpecialKey,
+        Action<SpecialKeySlot> publishDefaultLaptopKey,
+        Action<FunctionRowAction> publishFunctionRowAction,
+        Func<FunctionKeyPrimaryMode?> readFunctionKeyPrimaryMode,
+        Func<bool> isDriverModeActive,
+        Func<GamingModeKeyPolicy> readGamingModeKeyPolicy) =>
+        Create(
+            publish,
+            publishPerformanceShortcut,
+            publishSpecialKey,
+            shouldOverrideSpecialKey,
+            publishDefaultLaptopKey,
+            publishFunctionRowAction,
+            readFunctionKeyPrimaryMode,
+            isDriverModeActive);
 }
 
 /// <summary>
@@ -78,6 +98,8 @@ public sealed class ServiceReactiveLightingLoop : IAsyncDisposable
     private readonly Action<Exception>? errorHandler;
     private readonly FunctionRowActionPump? functionRowActionPump;
     private readonly object performanceShortcutStateSync = new();
+    private readonly SemaphoreSlim performanceShortcutPreviewGate = new(1, 1);
+    private readonly Guid performanceShortcutSessionId = Guid.NewGuid();
     private IReactiveKeyboardSource? source;
     private ServiceStatusSnapshot? latestStatus;
     private PerformancePreset? optimisticPerformancePreset;
@@ -87,6 +109,7 @@ public sealed class ServiceReactiveLightingLoop : IAsyncDisposable
     private int keyTriggeredActive;
     private int functionKeyPrimaryMode = -1;
     private int driverModeActive;
+    private int gamingModeKeyPolicyBits;
     private int disposed;
 
     public ServiceReactiveLightingLoop(
@@ -233,7 +256,7 @@ public sealed class ServiceReactiveLightingLoop : IAsyncDisposable
             IReactiveKeyboardSource? previous = Interlocked.Exchange(ref source, null);
             previous?.Dispose();
             pulsePump.ClearPending();
-            shortcutPump.ClearPending();
+            CancelPendingPerformanceShortcut();
             specialKeyPump?.ClearPending();
             defaultLaptopKeyPump?.ClearPending();
             functionRowActionPump?.ClearPending();
@@ -286,7 +309,8 @@ public sealed class ServiceReactiveLightingLoop : IAsyncDisposable
                     }
                 },
                 ReadFunctionKeyPrimaryMode,
-                () => Volatile.Read(ref driverModeActive) != 0);
+                () => Volatile.Read(ref driverModeActive) != 0,
+                ReadGamingModeKeyPolicy);
             if (Volatile.Read(ref disposed) != 0
                 || Interlocked.CompareExchange(ref source, created, null) is not null)
             {
@@ -355,6 +379,7 @@ public sealed class ServiceReactiveLightingLoop : IAsyncDisposable
             Interlocked.Exchange(ref functionKeyPrimaryMode, -1);
             Interlocked.Exchange(ref driverModeActive, 0);
             functionRowActionPump?.ClearPending();
+            Interlocked.Exchange(ref gamingModeKeyPolicyBits, 0);
         }
         else
         {
@@ -381,6 +406,23 @@ public sealed class ServiceReactiveLightingLoop : IAsyncDisposable
                     functionRowActionPump?.ClearPending();
                 }
             }
+
+            LaptopBehaviorProfileSettings behavior =
+                status.ActivePowerSource is
+                    PowerSource.PluggedIn or PowerSource.Battery or PowerSource.UsbC
+                    ? status.Profiles
+                        .ForPowerSource(status.ActivePowerSource)
+                        .EffectiveLaptopBehavior
+                    : LaptopBehaviorProfileSettings.Unconfigured();
+            bool gamingModeActive =
+                status.GamingModeEnabled ?? behavior.GamingModeEnabled is true;
+            GamingModeKeyPolicy policy = gamingModeActive
+                ? behavior.EffectiveGamingModeKeyPolicy
+                : GamingModeKeyPolicy.Disabled;
+            Interlocked.Exchange(
+                ref gamingModeKeyPolicyBits,
+                (policy.BlockWindowsKey ? 1 : 0)
+                | (policy.BlockAltTab ? 2 : 0));
         }
 
         bool ownedKeyTriggered = status.LightingRendererOwnership is
@@ -436,6 +478,14 @@ public sealed class ServiceReactiveLightingLoop : IAsyncDisposable
             : null;
     }
 
+    private GamingModeKeyPolicy ReadGamingModeKeyPolicy()
+    {
+        int bits = Volatile.Read(ref gamingModeKeyPolicyBits);
+        return new GamingModeKeyPolicy(
+            BlockWindowsKey: (bits & 1) != 0,
+            BlockAltTab: (bits & 2) != 0);
+    }
+
     private static bool IsTemporaryDeviceAccessStatus(ServiceStatusSnapshot status) =>
         status.Message.StartsWith("Checking", StringComparison.OrdinalIgnoreCase)
             && status.Message.Contains("laptop connection", StringComparison.OrdinalIgnoreCase)
@@ -461,6 +511,10 @@ public sealed class ServiceReactiveLightingLoop : IAsyncDisposable
         PerformanceShortcutIntent intent = BeginPerformanceShortcut(source);
         if (intent.Target is { } selected)
         {
+            _ = PublishPerformanceShortcutPreviewAsync(
+                intent.Generation,
+                selected,
+                CancellationToken.None);
             try
             {
                 shortcutNotifications.ShowSelected(selected);
@@ -473,9 +527,29 @@ public sealed class ServiceReactiveLightingLoop : IAsyncDisposable
 
         if (!shortcutPump.TryEnqueue(intent))
         {
-            _ = CompletePerformanceShortcut(intent.Generation, applied: false);
+            CancelPerformanceShortcut(intent);
             ReportFailure(new InvalidOperationException(
                 "Performance shortcut input could not be queued."));
+        }
+    }
+
+    private void CancelPendingPerformanceShortcut()
+    {
+        if (shortcutPump.ClearPending() is { } discarded)
+        {
+            CancelPerformanceShortcut(discarded);
+        }
+    }
+
+    private void CancelPerformanceShortcut(PerformanceShortcutIntent intent)
+    {
+        _ = CompletePerformanceShortcut(intent.Generation, applied: false);
+        if (intent.Target is not null)
+        {
+            _ = PublishPerformanceShortcutPreviewAsync(
+                intent.Generation,
+                preset: null,
+                CancellationToken.None);
         }
     }
 
@@ -484,6 +558,7 @@ public sealed class ServiceReactiveLightingLoop : IAsyncDisposable
         CancellationToken cancellationToken)
     {
         ControlOperationResult result;
+        bool refreshConfirmedState = false;
         try
         {
             result = intent.Target is { } selected
@@ -493,6 +568,7 @@ public sealed class ServiceReactiveLightingLoop : IAsyncDisposable
                 : await serviceClient.CyclePerformanceShortcutAsync(
                     intent.Source,
                     cancellationToken).ConfigureAwait(false);
+            refreshConfirmedState = result.Status != ControlOperationStatus.Applied;
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -501,11 +577,24 @@ public sealed class ServiceReactiveLightingLoop : IAsyncDisposable
         }
         catch (Exception exception)
         {
+            refreshConfirmedState = true;
             if (CompletePerformanceShortcut(intent.Generation, applied: false))
             {
                 TryShowPerformanceShortcutFailure(exception.Message);
             }
             throw;
+        }
+        finally
+        {
+            if (refreshConfirmedState)
+            {
+                await RefreshConfirmedPerformanceAfterFailureAsync()
+                    .ConfigureAwait(false);
+            }
+            await PublishPerformanceShortcutPreviewAsync(
+                intent.Generation,
+                preset: null,
+                CancellationToken.None).ConfigureAwait(false);
         }
         bool latestIntent = CompletePerformanceShortcut(
             intent.Generation,
@@ -539,6 +628,66 @@ public sealed class ServiceReactiveLightingLoop : IAsyncDisposable
             {
                 ReportFailure(exception);
             }
+        }
+    }
+
+    private async Task RefreshConfirmedPerformanceAfterFailureAsync()
+    {
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        try
+        {
+            await serviceClient.ObserveStateAsync(
+                    LiveReadingSensors.None,
+                    timeout.Token)
+                .ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (timeout.IsCancellationRequested)
+        {
+        }
+        catch (Exception exception)
+        {
+            ReportFailure(exception);
+        }
+    }
+
+    private async Task PublishPerformanceShortcutPreviewAsync(
+        long generation,
+        PerformancePreset? preset,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            await performanceShortcutPreviewGate.WaitAsync(cancellationToken)
+                .ConfigureAwait(false);
+            try
+            {
+                ControlOperationResult result = await serviceClient
+                    .SetPerformanceShortcutPreviewAsync(
+                        performanceShortcutSessionId,
+                        generation,
+                        preset,
+                        cancellationToken)
+                    .ConfigureAwait(false);
+                if (result.Status is ControlOperationStatus.Failed
+                    or ControlOperationStatus.Blocked)
+                {
+                    throw new InvalidOperationException(result.Message);
+                }
+            }
+            finally
+            {
+                performanceShortcutPreviewGate.Release();
+            }
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+        }
+        catch (ObjectDisposedException) when (Volatile.Read(ref disposed) != 0)
+        {
+        }
+        catch (Exception exception)
+        {
+            ReportFailure(exception);
         }
     }
 

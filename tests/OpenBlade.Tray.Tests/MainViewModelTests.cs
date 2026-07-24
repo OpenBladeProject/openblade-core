@@ -3326,6 +3326,38 @@ public sealed class MainViewModelTests
     }
 
     [Fact]
+    public async Task TrayIcon_UsesQueuedPerformanceThenReturnsToConfirmedMode()
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        Guid sessionId = Guid.NewGuid();
+        ServiceStatusSnapshot status = CreateStatus(verified: true, blocked: false);
+
+        client.Publish(status with
+        {
+            PerformanceShortcutPreview = new PerformanceShortcutPreview(
+                sessionId,
+                1,
+                PerformancePreset.Performance),
+        });
+        await WaitUntilAsync(
+            () => viewModel.SelectedPerformance == PerformancePreset.Performance);
+
+        Assert.Equal(TrayIconState.AcPerformance, viewModel.TrayIconState);
+
+        client.Publish(status with
+        {
+            Revision = status.Revision + 1,
+            PerformanceShortcutPreview = null,
+        });
+        await WaitUntilAsync(
+            () => viewModel.SelectedPerformance == PerformancePreset.Balanced);
+
+        Assert.Equal(TrayIconState.AcBalanced, viewModel.TrayIconState);
+    }
+
+    [Fact]
     public async Task Status_FormatsZeroBatteryFlowForCurrentPowerSource()
     {
         var client = new FakeServiceClient();

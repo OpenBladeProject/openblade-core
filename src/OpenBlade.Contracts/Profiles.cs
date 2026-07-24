@@ -424,13 +424,27 @@ public sealed record LaptopBehaviorProfileSettings(
     FunctionKeyPrimaryMode? FunctionKeyPrimary,
     bool? GamingModeEnabled)
 {
+    // Optional for compatibility with profiles written before host-side Gaming
+    // mode key blocking was configurable.
+    public GamingModeKeyPolicy? GamingModeKeyPolicy { get; init; }
+
+    [System.Text.Json.Serialization.JsonIgnore]
+    public GamingModeKeyPolicy EffectiveGamingModeKeyPolicy =>
+        GamingModeKeyPolicy ?? OpenBlade.Contracts.GamingModeKeyPolicy.Disabled;
+
     public bool IsConfigured =>
         StartupAnimationEnabled.HasValue
         || FunctionKeyPrimary.HasValue
-        || GamingModeEnabled.HasValue;
+        || GamingModeEnabled.HasValue
+        || GamingModeKeyPolicy is not null;
 
     public static LaptopBehaviorProfileSettings Unconfigured() =>
         new(null, null, null);
+}
+
+public sealed record GamingModeKeyPolicy(bool BlockWindowsKey, bool BlockAltTab)
+{
+    public static GamingModeKeyPolicy Disabled { get; } = new(false, false);
 }
 
 public sealed record LightingPowerPolicy

@@ -2723,6 +2723,56 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     }
 
     [Fact]
+    public async Task PerformanceShortcutPreview_OnlyMatchingLatestIntentCanClearIt()
+    {
+        TestContext context = CreateWritableContext();
+        Guid sessionId = Guid.NewGuid();
+
+        await context.Runtime.SetPerformanceShortcutPreviewAsync(
+            sessionId,
+            generation: 1,
+            PerformancePreset.Silent,
+            CancellationToken.None);
+        await context.Runtime.SetPerformanceShortcutPreviewAsync(
+            sessionId,
+            generation: 2,
+            PerformancePreset.Performance,
+            CancellationToken.None);
+        await context.Runtime.SetPerformanceShortcutPreviewAsync(
+            sessionId,
+            generation: 1,
+            preset: null,
+            CancellationToken.None);
+
+        Assert.Equal(
+            new PerformanceShortcutPreview(
+                sessionId,
+                2,
+                PerformancePreset.Performance),
+            context.Runtime.GetStatus().PerformanceShortcutPreview);
+
+        context.Monitor.Current = new ControllerPresenceObservation(
+            ["RazerAppEngine"],
+            null);
+        await context.Runtime.RefreshControllerPresenceAsync(CancellationToken.None);
+        Assert.Equal(
+            new PerformanceShortcutPreview(
+                sessionId,
+                2,
+                PerformancePreset.Performance),
+            context.Runtime.GetStatus().PerformanceShortcutPreview);
+
+        await context.Runtime.SetPerformanceShortcutPreviewAsync(
+            sessionId,
+            generation: 2,
+            preset: null,
+            CancellationToken.None);
+
+        Assert.Null(context.Runtime.GetStatus().PerformanceShortcutPreview);
+        Assert.Equal(0, context.Device.PerformanceSetCalls);
+    }
+
+    [Fact]
     public async Task PerformanceShortcut_OnBatteryUsesBalancedAndBatterySaverCycle()
     {
         TestContext context = CreateContext(

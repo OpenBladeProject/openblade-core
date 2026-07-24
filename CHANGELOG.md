@@ -57,6 +57,9 @@ All notable changes to OpenBlade are documented in this file. The project follow
   settings to the AC, USB-C, and Battery profiles. Saved values are restored
   during power-source and laptop lifecycle transitions; older profiles leave
   these controls unchanged until the user explicitly saves them.
+- Added per-profile Gaming mode options to block the Windows key and Alt+Tab.
+  The always-running Session Agent applies the selected policy only while
+  Gaming mode is active.
 
 ### Changed
 
@@ -67,6 +70,10 @@ All notable changes to OpenBlade are documented in this file. The project follow
   mode from the latest authoritative service state, shows the Windows notification
   before the firmware write finishes, and follows with a failure notification
   if the service cannot apply the selection.
+- Made the tray icon follow the performance mode currently queued by the
+  performance key. If the write is rejected or fails, OpenBlade refreshes the
+  firmware state before removing the preview so the icon returns to the
+  confirmed mode.
 - Made About-page action rows fully clickable with a subtle Windows Settings
   hover and pressed highlight. The Troubleshooting expander uses the same
   full-card interaction treatment, and all trailing glyphs share the native

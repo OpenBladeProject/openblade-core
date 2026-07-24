@@ -76,12 +76,14 @@ public sealed class PerformanceShortcutTriggerPump : IAsyncDisposable
         return true;
     }
 
-    public void ClearPending()
+    public PerformanceShortcutIntent? ClearPending()
     {
         lock (sync)
         {
+            PerformanceShortcutIntent? discarded = pending;
             pending = null;
             pendingRevision++;
+            return discarded;
         }
     }
 

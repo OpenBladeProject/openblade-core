@@ -951,6 +951,40 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             selector);
     }
 
+    private void OnBlockWindowsKeyInGamingModeToggled(
+        object sender,
+        RoutedEventArgs args)
+    {
+        if (Volatile.Read(ref disposed) != 0
+            || sender is not ToggleSwitch toggle
+            || toggle.IsOn == ViewModel.BlockWindowsKeyInGamingMode)
+        {
+            return;
+        }
+
+        ViewModel.SetGamingModeKeyPolicy(
+            toggle.IsOn,
+            ViewModel.BlockAltTabInGamingMode);
+        toggle.IsOn = ViewModel.BlockWindowsKeyInGamingMode;
+    }
+
+    private void OnBlockAltTabInGamingModeToggled(
+        object sender,
+        RoutedEventArgs args)
+    {
+        if (Volatile.Read(ref disposed) != 0
+            || sender is not ToggleSwitch toggle
+            || toggle.IsOn == ViewModel.BlockAltTabInGamingMode)
+        {
+            return;
+        }
+
+        ViewModel.SetGamingModeKeyPolicy(
+            ViewModel.BlockWindowsKeyInGamingMode,
+            toggle.IsOn);
+        toggle.IsOn = ViewModel.BlockAltTabInGamingMode;
+    }
+
     private void OnGpuCoreClockOffsetChanged(
         object sender,
         RangeBaseValueChangedEventArgs args)

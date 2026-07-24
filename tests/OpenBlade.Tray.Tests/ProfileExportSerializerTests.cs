@@ -19,7 +19,7 @@ public sealed class ProfileExportSerializerTests
 
         using JsonDocument document = JsonDocument.Parse(json);
         JsonElement root = document.RootElement;
-        Assert.Equal(3, root.GetProperty("schemaVersion").GetInt32());
+        Assert.Equal(4, root.GetProperty("schemaVersion").GetInt32());
         Assert.Equal("0.1.0+abcdef0", root.GetProperty("applicationVersion").GetString());
         Assert.Equal(exportedAt, root.GetProperty("exportedAtUtc").GetDateTimeOffset());
         JsonElement exportedProfiles = root.GetProperty("profiles");
@@ -66,7 +66,12 @@ public sealed class ProfileExportSerializerTests
                 LaptopBehavior = new LaptopBehaviorProfileSettings(
                     StartupAnimationEnabled: true,
                     FunctionKeyPrimary: FunctionKeyPrimaryMode.FunctionKeys,
-                    GamingModeEnabled: false),
+                    GamingModeEnabled: false)
+                {
+                    GamingModeKeyPolicy = new GamingModeKeyPolicy(
+                        BlockWindowsKey: true,
+                        BlockAltTab: true),
+                },
             },
         };
         string json = ProfileExportSerializer.Serialize(
@@ -86,14 +91,14 @@ public sealed class ProfileExportSerializerTests
             ProfileDefaults.CreateSafeDefaults(),
             "0.1.0+abcdef0",
             DateTimeOffset.UtcNow).Replace(
-                "\"schemaVersion\": 3",
                 "\"schemaVersion\": 4",
+                "\"schemaVersion\": 5",
                 StringComparison.Ordinal);
 
         InvalidDataException exception = Assert.Throws<InvalidDataException>(
             () => ProfileExportSerializer.Deserialize(json));
 
-        Assert.Contains("schema 4", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("schema 5", exception.Message, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("newer version", exception.Message, StringComparison.OrdinalIgnoreCase);
     }
 
@@ -104,7 +109,7 @@ public sealed class ProfileExportSerializerTests
             ProfileDefaults.CreateSafeDefaults(),
             "0.1.0+abcdef0",
             DateTimeOffset.UtcNow).Replace(
-                "\"schemaVersion\": 3",
+                "\"schemaVersion\": 4",
                 "\"schemaVersion\": 0",
                 StringComparison.Ordinal);
 
@@ -121,7 +126,7 @@ public sealed class ProfileExportSerializerTests
             ProfileDefaults.CreateSafeDefaults(),
             "0.1.0+abcdef0",
             DateTimeOffset.UtcNow).Replace(
-                "\"schemaVersion\": 3",
+                "\"schemaVersion\": 4",
                 "\"schemaVersion\": 1",
                 StringComparison.Ordinal);
 

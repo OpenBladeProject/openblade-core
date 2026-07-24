@@ -228,6 +228,14 @@ public sealed class WinUiShellContractTests
             xaml.IndexOf("StartupAnimationFirmwareLoadingSlot", StringComparison.Ordinal)
             < xaml.IndexOf("x:Name=\"StartupAnimationToggle\"", StringComparison.Ordinal));
         Assert.Contains("Toggled=\"OnGamingModeToggled\"", xaml, StringComparison.Ordinal);
+        Assert.Contains(
+            "Toggled=\"OnBlockWindowsKeyInGamingModeToggled\"",
+            xaml,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "Toggled=\"OnBlockAltTabInGamingModeToggled\"",
+            xaml,
+            StringComparison.Ordinal);
         Assert.Contains("Toggled=\"OnStartupAnimationToggled\"", xaml, StringComparison.Ordinal);
         Assert.DoesNotContain("Content=\"Set&#x2026;\"", xaml, StringComparison.Ordinal);
         Assert.DoesNotContain("Content=\"Change\"", xaml, StringComparison.Ordinal);
@@ -624,8 +632,8 @@ public sealed class WinUiShellContractTests
         Assert.Equal(4, CountOccurrences(xaml, "Style=\"{StaticResource ActiveProfilePillTextStyle}\""));
         Assert.Contains("<TextBlock Text=\"Battery\" Style=\"{StaticResource CardTitleStyle}\" />", xaml, StringComparison.Ordinal);
         Assert.Contains("Text=\"Power mode\"", xaml, StringComparison.Ordinal);
-        Assert.Equal(6, CountOccurrences(xaml, "Style=\"{StaticResource SettingsSubcardStyle}\""));
-        Assert.Equal(3, CountOccurrences(xaml, "Style=\"{StaticResource SettingsLastSubcardStyle}\""));
+        Assert.Equal(7, CountOccurrences(xaml, "Style=\"{StaticResource SettingsSubcardStyle}\""));
+        Assert.Equal(4, CountOccurrences(xaml, "Style=\"{StaticResource SettingsLastSubcardStyle}\""));
         Assert.Contains("<Setter Property=\"BorderThickness\" Value=\"0,1,0,0\" />", xaml, StringComparison.Ordinal);
         Assert.DoesNotContain("<Setter Property=\"Margin\" Value=\"16,0,16,14\" />", xaml, StringComparison.Ordinal);
         Assert.DoesNotContain("Text=\"On battery\"", xaml, StringComparison.Ordinal);

@@ -47,6 +47,8 @@ public sealed record ProfilePresentation(
     string DisplayColorProfile,
     string FunctionKeyBehavior,
     string GamingMode,
+    string GamingModeWindowsKey,
+    string GamingModeAltTab,
     string StartupAnimation);
 
 public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
@@ -820,6 +822,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             PropertyChanged?.Invoke(
                 this,
                 new PropertyChangedEventArgs(nameof(SaveToActiveProfileLabel)));
+            NotifyGamingModeKeyPolicy();
             NotifyActiveFanSelectionBinding();
             PropertyChanged?.Invoke(
                 this,
@@ -1804,6 +1807,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             PropertyChanged?.Invoke(
                 this,
                 new PropertyChangedEventArgs(nameof(SupportsGamingMode)));
+            NotifyGamingModeKeyPolicy();
             NotifyFirmwareFieldLoadingState();
         }
     }
@@ -1902,6 +1906,45 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     }
 
     public bool GamingModeToggleIsOn => GamingModeEnabled is true;
+
+    public bool BlockWindowsKeyInGamingMode =>
+        CurrentGamingModeKeyPolicy.BlockWindowsKey;
+
+    public bool BlockAltTabInGamingMode =>
+        CurrentGamingModeKeyPolicy.BlockAltTab;
+
+    public bool CanEditGamingModeKeyPolicy =>
+        CanMutate && SupportsGamingMode && HasConfirmedPowerSource;
+
+    public void SetGamingModeKeyPolicy(bool blockWindowsKey, bool blockAltTab)
+    {
+        if (!CanEditGamingModeKeyPolicy)
+        {
+            return;
+        }
+
+        PowerSource source = ActivePowerSource;
+        LaptopBehaviorProfileSettings saved =
+            GetProfile(source).EffectiveLaptopBehavior;
+        LaptopBehaviorProfileSettings current =
+            activeProfileDraftLaptopBehavior ?? saved;
+        MarkActiveProfileDraft(
+            source,
+            laptopBehavior: current with
+            {
+                GamingModeKeyPolicy = new GamingModeKeyPolicy(
+                    blockWindowsKey,
+                    blockAltTab),
+            },
+            previousLaptopBehavior: saved);
+    }
+
+    private GamingModeKeyPolicy CurrentGamingModeKeyPolicy =>
+        ActivePowerSource is PowerSource.PluggedIn or PowerSource.Battery or PowerSource.UsbC
+            ? (activeProfileDraftLaptopBehavior
+                    ?? GetProfile(ActivePowerSource).EffectiveLaptopBehavior)
+                .EffectiveGamingModeKeyPolicy
+            : GamingModeKeyPolicy.Disabled;
 
     public LiveReadings? LiveReadings
     {
@@ -2016,6 +2059,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
 
             SetField(ref profiles, value);
             NotifyProfileSummaries();
+            NotifyGamingModeKeyPolicy();
         }
     }
 
@@ -4490,11 +4534,21 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
                     laptopBehavior: new LaptopBehaviorProfileSettings(
                         StartupAnimationEnabled,
                         FunctionKeyPrimary,
-                        GamingModeEnabled),
+                        GamingModeEnabled)
+                    {
+                        GamingModeKeyPolicy = GetPresentedProfile(ActivePowerSource)
+                            .EffectiveLaptopBehavior
+                            .GamingModeKeyPolicy,
+                    },
                     previousLaptopBehavior: new LaptopBehaviorProfileSettings(
                         previousStartupAnimation,
                         previousFunctionKeyPrimary,
-                        previousGamingMode));
+                        previousGamingMode)
+                    {
+                        GamingModeKeyPolicy = GetProfile(ActivePowerSource)
+                            .EffectiveLaptopBehavior
+                            .GamingModeKeyPolicy,
+                    });
             }
         }
         finally
@@ -4730,7 +4784,11 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             var behaviorToRestore = new LaptopBehaviorProfileSettings(
                 saved.StartupAnimationEnabled ?? original.StartupAnimationEnabled,
                 saved.FunctionKeyPrimary ?? original.FunctionKeyPrimary,
-                saved.GamingModeEnabled ?? original.GamingModeEnabled);
+                saved.GamingModeEnabled ?? original.GamingModeEnabled)
+            {
+                GamingModeKeyPolicy =
+                    saved.GamingModeKeyPolicy ?? original.GamingModeKeyPolicy,
+            };
             bool behaviorRestored = !HasLaptopBehaviorProfileDifference
                 || await RestoreSavedLaptopBehaviorAsync(
                     source,
@@ -4809,7 +4867,12 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
                     savedLaptop.StartupAnimationEnabled
                         ?? originalLaptop.StartupAnimationEnabled,
                     savedLaptop.FunctionKeyPrimary ?? originalLaptop.FunctionKeyPrimary,
-                    savedLaptop.GamingModeEnabled ?? originalLaptop.GamingModeEnabled),
+                    savedLaptop.GamingModeEnabled ?? originalLaptop.GamingModeEnabled)
+                {
+                    GamingModeKeyPolicy =
+                        savedLaptop.GamingModeKeyPolicy
+                        ?? originalLaptop.GamingModeKeyPolicy,
+                },
                 token);
         if (controlsRestored
             && displayRestored
@@ -5734,7 +5797,10 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
                 ?? new LaptopBehaviorProfileSettings(
                     StartupAnimationEnabled,
                     FunctionKeyPrimary,
-                    GamingModeEnabled);
+                    GamingModeEnabled)
+                {
+                    GamingModeKeyPolicy = saved.GamingModeKeyPolicy,
+                };
             return ConfiguredValueDiffers(
                     saved.StartupAnimationEnabled,
                     current.StartupAnimationEnabled)
@@ -5743,7 +5809,8 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
                     current.FunctionKeyPrimary)
                 || ConfiguredValueDiffers(
                     saved.GamingModeEnabled,
-                    current.GamingModeEnabled);
+                    current.GamingModeEnabled)
+                || saved.GamingModeKeyPolicy != current.GamingModeKeyPolicy;
         }
     }
 
@@ -5864,7 +5931,10 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             baseline.FunctionKeyPrimary
                 ?? (SupportsFunctionKeyPrimary ? FunctionKeyPrimary : null),
             baseline.GamingModeEnabled
-                ?? (SupportsGamingMode ? GamingModeEnabled : null));
+                ?? (SupportsGamingMode ? GamingModeEnabled : null))
+        {
+            GamingModeKeyPolicy = baseline.GamingModeKeyPolicy,
+        };
         if (draftBehavior != baseline)
         {
             MarkActiveProfileDraft(
@@ -5912,8 +5982,22 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         PropertyChanged?.Invoke(
             this,
             new PropertyChangedEventArgs(nameof(PendingActiveProfileSummary)));
+        NotifyGamingModeKeyPolicy();
         NotifyProfileSummaries();
         NotifyCommands();
+    }
+
+    private void NotifyGamingModeKeyPolicy()
+    {
+        PropertyChanged?.Invoke(
+            this,
+            new PropertyChangedEventArgs(nameof(BlockWindowsKeyInGamingMode)));
+        PropertyChanged?.Invoke(
+            this,
+            new PropertyChangedEventArgs(nameof(BlockAltTabInGamingMode)));
+        PropertyChanged?.Invoke(
+            this,
+            new PropertyChangedEventArgs(nameof(CanEditGamingModeKeyPolicy)));
     }
 
     private void NotifyProfileSummaries()
@@ -6147,6 +6231,18 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
                 _ => "Not set",
             },
             FormatOptionalToggle(profile.EffectiveLaptopBehavior.GamingModeEnabled),
+            FormatOptionalToggle(
+                profile.EffectiveLaptopBehavior.GamingModeKeyPolicy is null
+                    ? null
+                    : profile.EffectiveLaptopBehavior
+                        .EffectiveGamingModeKeyPolicy
+                        .BlockWindowsKey),
+            FormatOptionalToggle(
+                profile.EffectiveLaptopBehavior.GamingModeKeyPolicy is null
+                    ? null
+                    : profile.EffectiveLaptopBehavior
+                        .EffectiveGamingModeKeyPolicy
+                        .BlockAltTab),
             FormatOptionalToggle(profile.EffectiveLaptopBehavior.StartupAnimationEnabled));
     }
 
@@ -7073,6 +7169,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         && left.StartupAnimationEnabled == right.StartupAnimationEnabled
         && left.FunctionKeyPrimary == right.FunctionKeyPrimary
         && left.GamingModeEnabled == right.GamingModeEnabled
+        && left.PerformanceShortcutPreview == right.PerformanceShortcutPreview
         && left.KeyboardDriverModeActive == right.KeyboardDriverModeActive
         && left.AlwaysOverrideExternalLightingChanges
             == right.AlwaysOverrideExternalLightingChanges
@@ -7199,6 +7296,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             this,
             new PropertyChangedEventArgs(nameof(CanEditGpuClockTuning)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(CanEditFanControl)));
+        NotifyGamingModeKeyPolicy();
         NotifyDashboardTelemetryValuesChanged();
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(LiveReadingsRefreshToolTip)));
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ActivePerformanceLabel)));
@@ -7409,6 +7507,15 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         ConfirmedDeviceState? confirmed,
         DeviceCapabilities capabilities)
     {
+        if (status.PerformanceShortcutPreview is { } preview
+            && capabilities.PerformancePresets.Contains(preview.Preset)
+            && PerformancePresetPresentation.IsAvailable(
+                status.ActivePowerSource,
+                preview.Preset))
+        {
+            return preview.Preset;
+        }
+
         PerformancePreset desired = status.DesiredState.Performance.Value;
         if (confirmed?.Performance is not { } observed)
         {

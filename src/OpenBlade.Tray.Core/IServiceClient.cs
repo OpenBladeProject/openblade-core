@@ -63,6 +63,15 @@ public interface IServiceClient : IServiceStatusWatcher
                 ControlOperationStatus.Blocked,
                 "Performance shortcuts are unavailable."));
 
+    Task<ControlOperationResult> SetPerformanceShortcutPreviewAsync(
+        Guid sessionId,
+        long generation,
+        PerformancePreset? preset,
+        CancellationToken token) => Task.FromResult(
+            new ControlOperationResult(
+                ControlOperationStatus.Blocked,
+                "Performance shortcut previews are unavailable."));
+
     Task<ControlOperationResult> SetFanOverrideAsync(
         ManualOverride<FanMode>? value,
         CancellationToken token);

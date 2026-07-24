@@ -28,6 +28,15 @@ public sealed class ProfileStoreTests : IDisposable
                 {
                     GpuClockOffsets = new GpuClockOffsetSettings(125, 500),
                 },
+                LaptopBehavior = new LaptopBehaviorProfileSettings(
+                    StartupAnimationEnabled: true,
+                    FunctionKeyPrimary: FunctionKeyPrimaryMode.FunctionKeys,
+                    GamingModeEnabled: true)
+                {
+                    GamingModeKeyPolicy = new GamingModeKeyPolicy(
+                        BlockWindowsKey: true,
+                        BlockAltTab: true),
+                },
             },
         };
 
@@ -56,6 +65,11 @@ public sealed class ProfileStoreTests : IDisposable
 
         Assert.False(result.RecoveredFromInvalidFile);
         Assert.Null(result.Profiles.PluggedIn.CustomPerformance?.GpuClockOffsets);
+        Assert.Equal(
+            GamingModeKeyPolicy.Disabled,
+            result.Profiles.PluggedIn
+                .EffectiveLaptopBehavior
+                .EffectiveGamingModeKeyPolicy);
         Assert.Contains(
             $"\"schemaVersion\": {ProfileStore.CurrentSchemaVersion}",
             await File.ReadAllTextAsync(path));

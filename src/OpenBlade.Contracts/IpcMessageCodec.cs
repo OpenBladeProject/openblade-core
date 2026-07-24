@@ -7,7 +7,7 @@ namespace OpenBlade.Contracts;
 
 public static class OpenBladeIpc
 {
-    public const int ProtocolVersion = 19;
+    public const int ProtocolVersion = 20;
     public const int MaximumMessageBytes = 64 * 1024;
     public const int MaximumDiagnosticArchiveBytes = 32 * 1024;
     public const string PipeName = "OpenBlade.Service.v2";
@@ -148,6 +148,10 @@ public static class IpcMessageCodec
                 set.Value is null
                 || set.Value.IsWellFormed(),
             CyclePerformanceShortcutRequest cycle => Enum.IsDefined(cycle.Source),
+            SetPerformanceShortcutPreviewRequest preview =>
+                preview.SessionId != Guid.Empty
+                && preview.Generation > 0
+                && (preview.Preset is null || Enum.IsDefined(preview.Preset.Value)),
             SetFanOverrideRequest set =>
                 set.Value is null
                     ? set.Settings is null
@@ -258,6 +262,10 @@ public static class IpcMessageCodec
                         != gpuClockOffsets.Current)
             || status.PerformanceOverride is { } performanceOverride
                 && !performanceOverride.IsWellFormed()
+            || status.PerformanceShortcutPreview is { } preview
+                && (preview.SessionId == Guid.Empty
+                    || preview.Generation <= 0
+                    || !Enum.IsDefined(preview.Preset))
             || !Enum.IsDefined(status.ActivePowerSource)
             || !Enum.IsDefined(status.LightingRendererOwnership)
             || status.FunctionKeyPrimary is { } functionKeyPrimary

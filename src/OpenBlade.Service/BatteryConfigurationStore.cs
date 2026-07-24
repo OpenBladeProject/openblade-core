@@ -183,6 +183,7 @@ public sealed class BatteryConfigurationStore
                 or ProfileStore.OldestSupportedSchemaVersion
                 or ProfileStore.OlderSchemaVersion
                 or ProfileStore.PreviousSchemaVersion
+                or ProfileStore.AncientSupportedSchemaVersion
                 or ProfileStore.CurrentSchemaVersion))
         {
             throw new InvalidDataException("The battery configuration marker is unsupported.");
