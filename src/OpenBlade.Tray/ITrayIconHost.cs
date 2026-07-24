@@ -9,7 +9,8 @@ public enum TrayNotificationSeverity
 public sealed record TrayNotification(
     string Title,
     string Body,
-    TrayNotificationSeverity Severity);
+    TrayNotificationSeverity Severity,
+    string? LogoAssetRelativePath = null);
 
 public interface ITrayIconHost : IDisposable
 {

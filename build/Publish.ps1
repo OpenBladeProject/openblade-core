@@ -76,14 +76,14 @@ try {
         $payload $productionPublishArguments
     Invoke-CheckedPublish (Join-Path $repository 'src\OpenBlade.SessionAgent\OpenBlade.SessionAgent.csproj') `
         $payload $productionPublishArguments
-    $sessionAgentAssets = Join-Path $repository (
-        'src\OpenBlade.SessionAgent\obj\project.assets.json')
+    Invoke-CheckedPublish (Join-Path $repository 'src\OpenBlade.Tray\OpenBlade.Tray.csproj') `
+        $payload $productionPublishArguments
+    $trayAssets = Join-Path $repository (
+        'src\OpenBlade.Tray\obj\project.assets.json')
     Add-WindowsAppRuntimeNotificationResource `
         -Payload $payload `
         -RuntimeVersion (
-            Get-WindowsAppRuntimeVersionFromAssets -AssetsPath $sessionAgentAssets)
-    Invoke-CheckedPublish (Join-Path $repository 'src\OpenBlade.Tray\OpenBlade.Tray.csproj') `
-        $payload $productionPublishArguments
+            Get-WindowsAppRuntimeVersionFromAssets -AssetsPath $trayAssets)
     # Protocol is shared by the installed service and the capture validator.
     # Publish both with identical debug/satellite properties so a clean build
     # cannot produce byte-different Protocol assemblies solely because one

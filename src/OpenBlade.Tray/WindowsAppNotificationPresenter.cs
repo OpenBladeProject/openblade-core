@@ -6,20 +6,21 @@ namespace OpenBlade.Tray;
 internal sealed class WindowsAppNotificationPresenter : IDisposable
 {
     private readonly AppNotificationManager manager;
-    private readonly Uri? logoUri;
+    private readonly string brandDirectory;
+    private readonly Uri? defaultLogoUri;
     private readonly Action<Exception>? errorHandler;
     private int disposed;
 
     private WindowsAppNotificationPresenter(Action<Exception>? errorHandler)
     {
         this.errorHandler = errorHandler;
-        string logoPath = Path.Combine(
+        brandDirectory = Path.Combine(
             AppContext.BaseDirectory,
             "Assets",
-            "Brand",
-            "OpenBlade.png");
-        logoUri = File.Exists(logoPath)
-            ? new Uri(logoPath)
+            "Brand");
+        string defaultLogoPath = Path.Combine(brandDirectory, "OpenBlade.png");
+        defaultLogoUri = File.Exists(defaultLogoPath)
+            ? new Uri(defaultLogoPath)
             : null;
 
         manager = AppNotificationManager.Default;
@@ -62,6 +63,8 @@ internal sealed class WindowsAppNotificationPresenter : IDisposable
             var builder = new AppNotificationBuilder()
                 .AddText(notification.Title)
                 .AddText(notification.Body);
+            Uri? logoUri = ResolveLogoUri(notification.LogoAssetRelativePath)
+                ?? defaultLogoUri;
             if (logoUri is not null)
             {
                 builder.SetAppLogoOverride(logoUri);
@@ -75,6 +78,26 @@ internal sealed class WindowsAppNotificationPresenter : IDisposable
             Report(errorHandler, exception);
             return false;
         }
+    }
+
+    private Uri? ResolveLogoUri(string? relativePath)
+    {
+        if (string.IsNullOrWhiteSpace(relativePath))
+        {
+            return null;
+        }
+
+        string brandRoot = Path.GetFullPath(brandDirectory)
+            .TrimEnd(Path.DirectorySeparatorChar)
+            + Path.DirectorySeparatorChar;
+        string candidate = Path.GetFullPath(
+            Path.Combine(brandDirectory, relativePath));
+        return candidate.StartsWith(
+                brandRoot,
+                StringComparison.OrdinalIgnoreCase)
+            && File.Exists(candidate)
+            ? new Uri(candidate)
+            : null;
     }
 
     public void Dispose()

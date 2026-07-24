@@ -189,10 +189,17 @@ public partial class App : Microsoft.UI.Xaml.Application
             string body = signal.Preset is { } preset
                 ? $"Current mode: {PerformancePresetPresentation.Label(preset)}"
                 : "The performance mode changed.";
+            string? logoAssetRelativePath = signal.Preset is { } selectedPreset
+                ? PerformanceNotificationIconAsset.Resolve(
+                    mainWindow?.ViewModel.ActivePowerSource
+                        ?? PowerSource.ExternalUnknown,
+                    selectedPreset)
+                : null;
             notification = new TrayNotification(
                 "Performance mode changed",
                 body,
-                TrayNotificationSeverity.Information);
+                TrayNotificationSeverity.Information,
+                logoAssetRelativePath);
         }
 
         trayIconHost.ShowNotification(notification);
