@@ -426,9 +426,9 @@ public sealed class WindowsDisplayBrightnessOsd : IDisplayBrightnessOsd
         byte brightness)
     {
         double scale = Math.Max(1d, (client.Bottom - client.Top) / 46d);
-        int iconLeft = checked((int)Math.Round(7 * scale));
-        int iconRight = checked((int)Math.Round(36 * scale));
-        int trackLeft = checked((int)Math.Round(43.5 * scale));
+        int iconLeft = checked((int)Math.Round(8 * scale));
+        int iconRight = checked((int)Math.Round(37 * scale));
+        int trackLeft = checked((int)Math.Round(43 * scale));
         int trackRight = checked((int)Math.Round(154 * scale));
         int trackTop = checked((int)Math.Round(20.5 * scale));
         int trackHeight = Math.Max(
@@ -485,7 +485,7 @@ public sealed class WindowsDisplayBrightnessOsd : IDisplayBrightnessOsd
             trackTop,
             trackRight,
             trackTop + trackHeight,
-            ColorRef(104, 104, 104));
+            ColorRef(159, 159, 159));
         int trackWidth = trackRight - trackLeft;
         int progress = checked((int)Math.Round(trackWidth * brightness / 100d));
         uint activeColor = GetFlyoutAccentColor();
@@ -518,11 +518,14 @@ public sealed class WindowsDisplayBrightnessOsd : IDisplayBrightnessOsd
         nint previousValueFont = valueFont == 0
             ? 0
             : SelectObject(deviceContext, valueFont);
+        int valueVerticalOffset = Math.Max(
+            1,
+            checked((int)Math.Round(0.5 * scale)));
         var valueBounds = new Rectangle(
-            checked((int)Math.Round(159 * scale)),
-            0,
-            checked((int)Math.Round(184 * scale)),
-            client.Bottom);
+            checked((int)Math.Round(155 * scale)),
+            -valueVerticalOffset,
+            checked((int)Math.Round(180.5 * scale)),
+            client.Bottom - valueVerticalOffset);
         _ = DrawText(
             deviceContext,
             brightness.ToString(System.Globalization.CultureInfo.InvariantCulture),
