@@ -45,8 +45,8 @@ public sealed class WindowsDisplayBrightnessOsd : IDisplayBrightnessOsdPresenter
     private const uint WindowMessageTimer = 0x0113;
     private const uint WindowMessageDpiChanged = 0x02E0;
     private const nuint HideTimerId = 1;
-    private const uint HideDelayMilliseconds = 2500;
-    internal const double SlideDurationMilliseconds = 167;
+    internal const uint HideDelayMilliseconds = 2000;
+    internal const double SlideDurationMilliseconds = 250;
     private const uint ExtendedStyle = 0x00000008 // WS_EX_TOPMOST
         | 0x00000020 // WS_EX_TRANSPARENT
         | 0x00000080 // WS_EX_TOOLWINDOW

@@ -239,9 +239,10 @@ public sealed class FunctionRowActionExecutorTests
     }
 
     [Fact]
-    public void BrightnessOsdMotion_UsesWindowsDirectFlyoutDuration()
+    public void BrightnessOsdMotion_UsesDeliberateTransitionAndShortHold()
     {
-        Assert.Equal(167, WindowsDisplayBrightnessOsd.SlideDurationMilliseconds);
+        Assert.Equal(250, WindowsDisplayBrightnessOsd.SlideDurationMilliseconds);
+        Assert.Equal(2000u, WindowsDisplayBrightnessOsd.HideDelayMilliseconds);
     }
 
     private static FunctionRowActionExecutor CreateExecutor(
