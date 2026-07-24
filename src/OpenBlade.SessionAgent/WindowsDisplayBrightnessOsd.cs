@@ -62,6 +62,8 @@ public sealed class WindowsDisplayBrightnessOsd : IDisplayBrightnessOsd
     private const int DwmWindowCornerPreference = 33;
     private const int DwmRoundCorners = 2;
     private const int ColorHighlight = 13;
+    private const string AccentPaletteRegistryPath =
+        @"HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Explorer\Accent";
     private static readonly nint PerMonitorAwareV2 = new(-4);
     private static readonly ConcurrentDictionary<nint, WindowsDisplayBrightnessOsd>
         Instances = new();
@@ -426,10 +428,12 @@ public sealed class WindowsDisplayBrightnessOsd : IDisplayBrightnessOsd
         double scale = Math.Max(1d, (client.Bottom - client.Top) / 46d);
         int iconLeft = checked((int)Math.Round(7 * scale));
         int iconRight = checked((int)Math.Round(36 * scale));
-        int trackLeft = checked((int)Math.Round(43 * scale));
-        int trackRight = checked((int)Math.Round(156 * scale));
-        int trackTop = checked((int)Math.Round(21 * scale));
-        int trackHeight = Math.Max(3, checked((int)Math.Round(4 * scale)));
+        int trackLeft = checked((int)Math.Round(43.5 * scale));
+        int trackRight = checked((int)Math.Round(154 * scale));
+        int trackTop = checked((int)Math.Round(20.5 * scale));
+        int trackHeight = Math.Max(
+            4,
+            checked((int)Math.Round(4.5 * scale)));
 
         nint iconFont = CreateFont(
             -checked((int)Math.Round(17 * scale)),
@@ -443,7 +447,7 @@ public sealed class WindowsDisplayBrightnessOsd : IDisplayBrightnessOsd
             1,
             0,
             0,
-            5,
+            4,
             0,
             "Segoe Fluent Icons");
         nint previousFont = iconFont == 0
@@ -484,7 +488,7 @@ public sealed class WindowsDisplayBrightnessOsd : IDisplayBrightnessOsd
             ColorRef(104, 104, 104));
         int trackWidth = trackRight - trackLeft;
         int progress = checked((int)Math.Round(trackWidth * brightness / 100d));
-        uint activeColor = BlendWithWhite(GetSysColor(ColorHighlight), 70);
+        uint activeColor = GetFlyoutAccentColor();
         if (progress > 0)
         {
             DrawRoundedBar(
@@ -508,16 +512,16 @@ public sealed class WindowsDisplayBrightnessOsd : IDisplayBrightnessOsd
             1,
             0,
             0,
-            5,
+            4,
             0,
             "Segoe UI Variable Text");
         nint previousValueFont = valueFont == 0
             ? 0
             : SelectObject(deviceContext, valueFont);
         var valueBounds = new Rectangle(
-            checked((int)Math.Round(161 * scale)),
+            checked((int)Math.Round(159 * scale)),
             0,
-            checked((int)Math.Round(185 * scale)),
+            checked((int)Math.Round(184 * scale)),
             client.Bottom);
         _ = DrawText(
             deviceContext,
@@ -633,6 +637,46 @@ public sealed class WindowsDisplayBrightnessOsd : IDisplayBrightnessOsd
         byte blue = checked((byte)(
             (((color >> 16) & 0xFF) * colorPercent + 255 * whitePercent) / 100));
         return ColorRef(red, green, blue);
+    }
+
+    internal static uint ResolveFlyoutAccentColor(
+        byte[]? accentPalette,
+        uint fallbackHighlight)
+    {
+        if (accentPalette is { Length: >= 7 })
+        {
+            // Windows' flyouts use AccentLight2, stored as the second RGBA
+            // entry in the current user's accent palette.
+            return ColorRef(
+                accentPalette[4],
+                accentPalette[5],
+                accentPalette[6]);
+        }
+
+        return BlendWithWhite(fallbackHighlight, whitePercent: 70);
+    }
+
+    private static uint GetFlyoutAccentColor()
+    {
+        uint fallbackHighlight = GetSysColor(ColorHighlight);
+        try
+        {
+            return ResolveFlyoutAccentColor(
+                Microsoft.Win32.Registry.GetValue(
+                    AccentPaletteRegistryPath,
+                    "AccentPalette",
+                    null) as byte[],
+                fallbackHighlight);
+        }
+        catch (Exception exception) when (
+            exception is IOException
+                or System.Security.SecurityException
+                or UnauthorizedAccessException)
+        {
+            return ResolveFlyoutAccentColor(
+                accentPalette: null,
+                fallbackHighlight);
+        }
     }
 
     private static void Report(Action<Exception>? errorHandler, Exception exception)

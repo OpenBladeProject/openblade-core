@@ -222,6 +222,22 @@ public sealed class FunctionRowActionExecutorTests
         Assert.Equal(0x00F2D6B2u, actual);
     }
 
+    [Fact]
+    public void BrightnessOsdAccent_UsesWindowsAccentLight2PaletteEntry()
+    {
+        byte[] accentPalette =
+        [
+            0xC9, 0xE6, 0xF1, 0,
+            0xA7, 0xC5, 0xDE, 0,
+        ];
+
+        uint actual = WindowsDisplayBrightnessOsd.ResolveFlyoutAccentColor(
+            accentPalette,
+            fallbackHighlight: 0x00D47800);
+
+        Assert.Equal(0x00DEC5A7u, actual);
+    }
+
     private static FunctionRowActionExecutor CreateExecutor(
         RecordingServiceClient? client = null,
         RecordingInputSender? input = null,
