@@ -62,6 +62,7 @@ public sealed class WindowsDisplayBrightnessOsd : IDisplayBrightnessOsd
     private const int DwmWindowCornerPreference = 33;
     private const int DwmRoundCorners = 2;
     private const int ColorHighlight = 13;
+    private static readonly nint PerMonitorAwareV2 = new(-4);
     private static readonly ConcurrentDictionary<nint, WindowsDisplayBrightnessOsd>
         Instances = new();
     private static readonly WindowProcedure WindowProcedureCallback = ProcessWindowMessage;
@@ -153,7 +154,7 @@ public sealed class WindowsDisplayBrightnessOsd : IDisplayBrightnessOsd
         uint dpi)
     {
         double scale = Math.Max(1d, dpi / 96d);
-        int width = checked((int)Math.Round(196 * scale));
+        int width = checked((int)Math.Round(194 * scale));
         int height = checked((int)Math.Round(46 * scale));
         int bottomMargin = checked((int)Math.Round(72 * scale));
         int x = workLeft + Math.Max(0, (workRight - workLeft - width) / 2);
@@ -164,9 +165,18 @@ public sealed class WindowsDisplayBrightnessOsd : IDisplayBrightnessOsd
     private void RunMessageWindow()
     {
         nint module = 0;
+        nint previousDpiContext = 0;
         bool classRegistered = false;
         try
         {
+            previousDpiContext = SetThreadDpiAwarenessContext(PerMonitorAwareV2);
+            if (previousDpiContext == 0)
+            {
+                throw new Win32Exception(
+                    Marshal.GetLastWin32Error(),
+                    "Unable to enable crisp per-monitor rendering for the brightness OSD.");
+            }
+
             module = GetModuleHandle(null);
             if (module == 0)
             {
@@ -195,7 +205,7 @@ public sealed class WindowsDisplayBrightnessOsd : IDisplayBrightnessOsd
                 PopupStyle,
                 0,
                 0,
-                196,
+                194,
                 46,
                 0,
                 0,
@@ -245,6 +255,10 @@ public sealed class WindowsDisplayBrightnessOsd : IDisplayBrightnessOsd
             if (classRegistered)
             {
                 _ = UnregisterClass(windowClassName, module);
+            }
+            if (previousDpiContext != 0)
+            {
+                _ = SetThreadDpiAwarenessContext(previousDpiContext);
             }
 
             initialization.TrySetException(
@@ -312,8 +326,8 @@ public sealed class WindowsDisplayBrightnessOsd : IDisplayBrightnessOsd
             monitorInfo.WorkArea.Bottom,
             dpi == 0 ? 96u : dpi);
         int cornerDiameter = Math.Max(
-            8,
-            checked((int)Math.Round(10 * Math.Max(1d, dpi / 96d))));
+            10,
+            checked((int)Math.Round(14 * Math.Max(1d, dpi / 96d))));
         nint region = CreateRoundRectRgn(
             0,
             0,
@@ -410,10 +424,10 @@ public sealed class WindowsDisplayBrightnessOsd : IDisplayBrightnessOsd
         byte brightness)
     {
         double scale = Math.Max(1d, (client.Bottom - client.Top) / 46d);
-        int iconLeft = checked((int)Math.Round(11 * scale));
-        int iconRight = checked((int)Math.Round(40 * scale));
-        int trackLeft = checked((int)Math.Round(47 * scale));
-        int trackRight = checked((int)Math.Round(156 * scale));
+        int iconLeft = checked((int)Math.Round(7 * scale));
+        int iconRight = checked((int)Math.Round(36 * scale));
+        int trackLeft = checked((int)Math.Round(43 * scale));
+        int trackRight = checked((int)Math.Round(152 * scale));
         int trackTop = checked((int)Math.Round(21 * scale));
         int trackHeight = Math.Max(3, checked((int)Math.Round(4 * scale)));
 
@@ -429,7 +443,7 @@ public sealed class WindowsDisplayBrightnessOsd : IDisplayBrightnessOsd
             1,
             0,
             0,
-            4,
+            5,
             0,
             "Segoe Fluent Icons");
         nint previousFont = iconFont == 0
@@ -470,7 +484,7 @@ public sealed class WindowsDisplayBrightnessOsd : IDisplayBrightnessOsd
             ColorRef(104, 104, 104));
         int trackWidth = trackRight - trackLeft;
         int progress = checked((int)Math.Round(trackWidth * brightness / 100d));
-        uint activeColor = BlendWithWhite(GetSysColor(ColorHighlight), 65);
+        uint activeColor = BlendWithWhite(GetSysColor(ColorHighlight), 70);
         if (progress > 0)
         {
             DrawRoundedBar(
@@ -494,16 +508,16 @@ public sealed class WindowsDisplayBrightnessOsd : IDisplayBrightnessOsd
             1,
             0,
             0,
-            4,
+            5,
             0,
-            "Segoe UI");
+            "Segoe UI Variable Text");
         nint previousValueFont = valueFont == 0
             ? 0
             : SelectObject(deviceContext, valueFont);
         var valueBounds = new Rectangle(
-            checked((int)Math.Round(161 * scale)),
+            checked((int)Math.Round(155 * scale)),
             0,
-            checked((int)Math.Round(185 * scale)),
+            checked((int)Math.Round(173 * scale)),
             client.Bottom);
         _ = DrawText(
             deviceContext,
@@ -718,6 +732,9 @@ public sealed class WindowsDisplayBrightnessOsd : IDisplayBrightnessOsd
 
     [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
     private static extern ushort RegisterClassEx(ref WindowClass windowClass);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern nint SetThreadDpiAwarenessContext(nint dpiContext);
 
     [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
     private static extern bool UnregisterClass(string className, nint instance);

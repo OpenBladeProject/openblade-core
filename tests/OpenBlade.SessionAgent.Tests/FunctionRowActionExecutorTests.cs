@@ -180,8 +180,8 @@ public sealed class FunctionRowActionExecutorTests
     }
 
     [Theory]
-    [InlineData(0, 0, 1920, 1040, 96, 862, 922, 196, 46)]
-    [InlineData(-1920, 0, 0, 1400, 144, -1107, 1223, 294, 69)]
+    [InlineData(0, 0, 1920, 1040, 96, 863, 922, 194, 46)]
+    [InlineData(-1920, 0, 0, 1400, 144, -1106, 1223, 291, 69)]
     public void BrightnessOsdBounds_CenterAboveActiveMonitorTaskbar(
         int left,
         int top,
@@ -217,9 +217,9 @@ public sealed class FunctionRowActionExecutorTests
 
         uint actual = WindowsDisplayBrightnessOsd.BlendWithWhite(
             windowsBlue,
-            whitePercent: 65);
+            whitePercent: 70);
 
-        Assert.Equal(0x00EFCFA5u, actual);
+        Assert.Equal(0x00F2D6B2u, actual);
     }
 
     private static FunctionRowActionExecutor CreateExecutor(
