@@ -115,7 +115,7 @@ public sealed class NamedPipeControlServerTests
                 var request = new PushAmbientLightingFrameRequest(
                     OpenBladeIpc.ProtocolVersion,
                     Guid.NewGuid(),
-                    new AmbientLightingFrame(colors));
+                    new AmbientLightingFrame(colors).ToRgbBytes());
                 await IpcMessageCodec.WriteRequestAsync(client, request, timeout.Token);
                 ServiceResponse response = Assert.IsType<ServiceResponse>(
                     await IpcMessageCodec.ReadServerFrameAsync(client, timeout.Token));

@@ -105,7 +105,7 @@ public sealed class ControlRequestHandler
             PushAmbientLightingFrameRequest ambient => Result(
                 request.RequestId,
                 await runtime.PushAmbientLightingFrameAsync(
-                    ambient.Frame,
+                    AmbientLightingFrame.FromRgbBytes(ambient.RgbBytes),
                     cancellationToken)),
             SetBatteryPolicyRequest set => Result(
                 request.RequestId,

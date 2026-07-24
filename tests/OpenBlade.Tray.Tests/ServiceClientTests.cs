@@ -902,7 +902,7 @@ public sealed class ServiceClientTests
             PushAmbientLightingFrameRequest request =
                 Assert.IsType<PushAmbientLightingFrameRequest>(
                     await IpcMessageCodec.ReadRequestAsync(server, token));
-            observed.Add(request.Frame);
+            observed.Add(AmbientLightingFrame.FromRgbBytes(request.RgbBytes));
             await IpcMessageCodec.WriteServerFrameAsync(
                 server,
                 new ServiceResponse(

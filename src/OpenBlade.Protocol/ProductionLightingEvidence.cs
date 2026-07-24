@@ -118,10 +118,10 @@ internal static class ProductionLightingEvidenceSource
         "OpenBladeLightingImplementationFingerprint";
 
     private const string ApprovedLightingImplementationFingerprintSha256 =
-        // Re-reviewed after the 2026-07-23 Synapse brightness capture confirmed
-        // one 03/03 write per keypress with a raw 0x10 step. The optimized path
-        // reuses the already-admitted setter and retains exact-device admission.
-        "0A34DE0405DB0C84B19334F00236FDEAA236A92A88B69F55898340D28C45AA7F";
+        // Re-reviewed after compacting the user-mode Ambient IPC representation.
+        // The exact captured envelopes remain byte-for-byte identical; feature
+        // report encoding now writes directly into its final report buffer.
+        "4F34539C3EB65FD7EF4046FD2119C21B9A203337841A90F898398FB51B75135E";
 
     private static readonly JsonSerializerOptions SerializerOptions =
         new(JsonSerializerDefaults.Web)

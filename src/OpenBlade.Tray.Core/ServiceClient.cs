@@ -244,7 +244,7 @@ public sealed class ServiceClient : IServiceClient, IAsyncDisposable
         var request = new PushAmbientLightingFrameRequest(
             OpenBladeIpc.ProtocolVersion,
             Guid.NewGuid(),
-            frame);
+            frame.ToRgbBytes());
         await ambientFrameGate.WaitAsync(token);
         try
         {

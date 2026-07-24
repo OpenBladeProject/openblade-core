@@ -16,28 +16,31 @@ public sealed class IpcMessageCodecTests
         var expected = new PushAmbientLightingFrameRequest(
             OpenBladeIpc.ProtocolVersion,
             Guid.NewGuid(),
-            new AmbientLightingFrame(colors));
+            new AmbientLightingFrame(colors).ToRgbBytes());
         using MemoryStream stream = new();
 
         await IpcMessageCodec.WriteRequestAsync(stream, expected, CancellationToken.None);
+        Assert.True(stream.Length < 700, $"Compact ambient request was {stream.Length} bytes.");
         stream.Position = 0;
         var actual = Assert.IsType<PushAmbientLightingFrameRequest>(
             await IpcMessageCodec.ReadRequestAsync(stream, CancellationToken.None));
 
         Assert.Equal(expected.RequestId, actual.RequestId);
-        Assert.Equal(colors, actual.Frame.Slots);
-        Assert.True(actual.Frame.IsWellFormed());
+        Assert.Equal(expected.RgbBytes, actual.RgbBytes);
+        AmbientLightingFrame actualFrame = AmbientLightingFrame.FromRgbBytes(actual.RgbBytes);
+        Assert.Equal(colors, actualFrame.Slots);
+        Assert.True(actualFrame.IsWellFormed());
     }
 
     [Fact]
     public async Task AmbientLightingFrameRequest_RejectsColorInLayoutHole()
     {
-        RgbColor[] colors = new RgbColor[AmbientLightingFrame.SlotCount];
-        colors[0] = new RgbColor(1, 0, 0);
+        byte[] bytes = new byte[AmbientLightingFrame.RgbByteCount];
+        bytes[0] = 1;
         var request = new PushAmbientLightingFrameRequest(
             OpenBladeIpc.ProtocolVersion,
             Guid.NewGuid(),
-            new AmbientLightingFrame(colors));
+            bytes);
         using MemoryStream stream = new();
 
         await Assert.ThrowsAsync<InvalidDataException>(() =>
@@ -325,7 +328,7 @@ public sealed class IpcMessageCodecTests
             DesiredState = CreateStatus().DesiredState with { Battery = desired },
         };
 
-        Assert.Equal(21, OpenBladeIpc.ProtocolVersion);
+        Assert.Equal(22, OpenBladeIpc.ProtocolVersion);
         Assert.Equal(request, await RoundTripRequestAsync(request));
         ServiceStatusSnapshot roundTrip = await RoundTripStatusAsync(status);
         Assert.Equal([80], roundTrip.Capabilities!.ChargeLimits);
@@ -428,7 +431,7 @@ public sealed class IpcMessageCodecTests
 
         ServiceStatusSnapshot actual = await RoundTripStatusAsync(expected);
 
-        Assert.Equal(21, OpenBladeIpc.ProtocolVersion);
+        Assert.Equal(22, OpenBladeIpc.ProtocolVersion);
         AssertStatusEqual(expected, actual);
     }
 

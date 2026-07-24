@@ -1,3 +1,5 @@
+using OpenBlade.Contracts;
+
 namespace OpenBlade.Protocol;
 
 /// <summary>
@@ -50,15 +52,9 @@ internal sealed class Pid02E0MatrixFrame
 /// </summary>
 internal static class Pid02E0MatrixLayout
 {
-    private static readonly int[] CapturedHoleSlotsValue =
-        [0, 17, 31, 34, 48, 51, 64, 65, 68, 70, 81, 82, 85, 89, 92, 93];
-
-    private static readonly IReadOnlyList<int> CapturedHoleSlotsReadOnly =
-        Array.AsReadOnly(CapturedHoleSlotsValue);
-
     private static readonly bool[] HoleMask = CreateHoleMask();
 
-    internal static IReadOnlyList<int> CapturedHoleSlots => CapturedHoleSlotsReadOnly;
+    internal static IReadOnlyList<int> CapturedHoleSlots => AmbientLightingFrame.LayoutHoleSlots;
 
     internal static bool IsHole(int slot)
     {
@@ -84,7 +80,7 @@ internal static class Pid02E0MatrixLayout
     private static bool[] CreateHoleMask()
     {
         bool[] mask = new bool[Pid02E0MatrixFrame.SlotCount];
-        foreach (int slot in CapturedHoleSlotsValue)
+        foreach (int slot in AmbientLightingFrame.LayoutHoleSlots)
         {
             mask[slot] = true;
         }
@@ -116,9 +112,31 @@ internal static class Pid02E0MatrixReportCodec
 
     internal static byte[] EncodeEnvelope(Pid02E0MatrixReport report)
     {
-        ArgumentNullException.ThrowIfNull(report.Frame);
-
         byte[] envelope = new byte[EnvelopeLength];
+        EncodeEnvelope(report, envelope);
+        return envelope;
+    }
+
+    internal static byte[] EncodeFeatureReportBuffer(Pid02E0MatrixReport report)
+    {
+        byte[] buffer = new byte[FeatureReportBufferLength];
+        buffer[0] = ReportId;
+        EncodeEnvelope(report, buffer.AsSpan(1));
+        return buffer;
+    }
+
+    private static void EncodeEnvelope(Pid02E0MatrixReport report, Span<byte> envelope)
+    {
+        ArgumentNullException.ThrowIfNull(report.Frame);
+        if (envelope.Length != EnvelopeLength)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(envelope),
+                envelope.Length,
+                $"A PID 02E0 matrix envelope must contain exactly {EnvelopeLength} bytes.");
+        }
+
+        envelope.Clear();
         envelope[0] = (byte)RazerCommandStatus.New;
         envelope[1] = report.TransactionId;
         envelope[4] = 0x01;
@@ -140,15 +158,6 @@ internal static class Pid02E0MatrixReportCodec
         }
 
         envelope[ChecksumOffset] = CalculateChecksum(envelope);
-        return envelope;
-    }
-
-    internal static byte[] EncodeFeatureReportBuffer(Pid02E0MatrixReport report)
-    {
-        byte[] buffer = new byte[FeatureReportBufferLength];
-        buffer[0] = ReportId;
-        EncodeEnvelope(report).CopyTo(buffer, 1);
-        return buffer;
     }
 
     internal static Pid02E0MatrixReport DecodeEnvelope(ReadOnlySpan<byte> envelope)

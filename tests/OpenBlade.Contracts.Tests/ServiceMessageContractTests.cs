@@ -7,9 +7,9 @@ namespace OpenBlade.Contracts.Tests;
 public sealed class ServiceMessageContractTests
 {
     [Fact]
-    public void ProtocolConstants_AreClosedVersionTwentyOneAndRetainExactSizeLimit()
+    public void ProtocolConstants_AreClosedVersionTwentyTwoAndRetainExactSizeLimit()
     {
-        Assert.Equal(21, OpenBladeIpc.ProtocolVersion);
+        Assert.Equal(22, OpenBladeIpc.ProtocolVersion);
         Assert.Equal("OpenBlade.Service.v2", OpenBladeIpc.PipeName);
         Assert.Equal(64 * 1024, OpenBladeIpc.MaximumMessageBytes);
         Assert.Equal(32 * 1024, OpenBladeIpc.MaximumDiagnosticArchiveBytes);
@@ -149,14 +149,14 @@ public sealed class ServiceMessageContractTests
     private static void AssertSafeSurface(
         Type type,
         HashSet<Type> visited,
-        bool allowDiagnosticArchiveBytes = false)
+        bool allowBoundedTypedBytes = false)
     {
         type = Nullable.GetUnderlyingType(type) ?? type;
         if (type.IsArray)
         {
             if (type.GetElementType() == typeof(byte))
             {
-                Assert.True(allowDiagnosticArchiveBytes);
+                Assert.True(allowBoundedTypedBytes);
                 return;
             }
             AssertSafeSurface(type.GetElementType()!, visited);
@@ -189,9 +189,11 @@ public sealed class ServiceMessageContractTests
             AssertSafeSurface(
                 property.PropertyType,
                 visited,
-                allowDiagnosticArchiveBytes:
-                    type == typeof(DiagnosticArchive)
-                    && property.Name == nameof(DiagnosticArchive.ZipBytes));
+                allowBoundedTypedBytes:
+                    (type == typeof(DiagnosticArchive)
+                        && property.Name == nameof(DiagnosticArchive.ZipBytes))
+                    || (type == typeof(PushAmbientLightingFrameRequest)
+                        && property.Name == nameof(PushAmbientLightingFrameRequest.RgbBytes)));
         }
 
         foreach (JsonDerivedTypeAttribute derived in type.GetCustomAttributes<JsonDerivedTypeAttribute>())

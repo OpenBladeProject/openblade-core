@@ -46,7 +46,7 @@ public sealed class ControlRequestHandlerTests
                 OpenBladeIpc.ProtocolVersion,
                 Guid.NewGuid(),
                 new AmbientLightingFrame(
-                    new RgbColor[AmbientLightingFrame.SlotCount])),
+                    new RgbColor[AmbientLightingFrame.SlotCount]).ToRgbBytes()),
             new SetBatteryPolicyRequest(
                 OpenBladeIpc.ProtocolVersion,
                 Guid.NewGuid(),

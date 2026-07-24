@@ -145,7 +145,7 @@ public sealed record PulseReactiveKeyRequest(
 public sealed record PushAmbientLightingFrameRequest(
     int Version,
     Guid RequestId,
-    AmbientLightingFrame Frame)
+    byte[] RgbBytes)
     : ServiceRequest(Version, RequestId);
 
 public sealed record SetBatteryPolicyRequest(

@@ -67,6 +67,11 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Changed
 
+- Reduced each host-rendered Ambient Awareness IPC request from thousands of
+  bytes to one compact Base64 RGB payload inside the existing typed JSON
+  envelope. The Service and protocol codec now share one captured keyboard
+  layout mask, and feature-report encoding avoids a redundant buffer
+  allocation.
 - Made service disconnections observable within two seconds instead of allowing
   a missing named pipe to leave the tray displaying stale connected state.
 - Closed the Tray and Session Agent's persistent service connections
