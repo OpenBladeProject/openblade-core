@@ -91,6 +91,13 @@ public interface IBladeDevice
 
     Task SetLightingAsync(LightingSettings value, CancellationToken cancellationToken);
 
+    Task<byte> StepKeyboardBrightnessAsync(
+        KeyboardBrightnessDirection direction,
+        CancellationToken cancellationToken) => Task.FromException<byte>(
+            new BladeWriteException(
+                WriteSubmissionState.KnownNotApplied,
+                "Keyboard brightness stepping is unavailable."));
+
     Task ApplyOneShotLaptopControlAsync(
         ApplyOneShotLaptopControl value,
         CancellationToken cancellationToken) => Task.FromException(

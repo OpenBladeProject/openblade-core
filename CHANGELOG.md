@@ -63,6 +63,10 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Changed
 
+- Made keyboard-brightness keys match Synapse's captured firmware cadence.
+  OpenBlade now keeps the exact raw brightness level in the verified lighting
+  session and sends one validated `0x10` step per keypress instead of reading
+  full service state and reapplying the complete lighting effect each time.
 - Separated the non-Fn Game mode, performance mode, and microphone-mute reports
   from the customizable Fn-layer M3, M4, and M5 reports. Their normal actions
   now keep working in keyboard Driver mode without changing Fn-layer bindings.

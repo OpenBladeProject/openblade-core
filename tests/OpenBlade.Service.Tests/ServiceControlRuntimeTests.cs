@@ -411,6 +411,51 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     }
 
     [Fact]
+    public async Task KeyboardBrightnessStep_UsesDedicatedDevicePathAndUpdatesOverride()
+    {
+        DeviceCapabilities capabilities = DeviceCapabilities.Unavailable() with
+        {
+            LightingEffects = new HashSet<LightingEffect>
+            {
+                LightingEffect.Off,
+                LightingEffect.Static,
+            },
+        };
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            profileValidator: ProfileSetValidator.CreateForLightingCapabilities(
+                capabilities));
+        context.Device.Capabilities = capabilities;
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        _ = await context.Runtime.SetLightingOverrideAsync(
+            new ManualOverride<LightingSettings>(
+                LightingSettingsFactory.Static(
+                    LightingSettingsFactory.DefaultVisibleColor,
+                    brightness: 50),
+                OverrideLifetime.UntilPowerSourceChange),
+            CancellationToken.None);
+        int fullLightingWrites = context.Device.LightingSetCalls;
+        context.Device.NextKeyboardBrightness = 44;
+
+        ControlOperationResult result = await context.Runtime.StepKeyboardBrightnessAsync(
+            KeyboardBrightnessDirection.Decrease,
+            OverrideLifetime.UntilPowerSourceChange,
+            CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Applied, result.Status);
+        Assert.Equal(
+            [KeyboardBrightnessDirection.Decrease],
+            context.Device.KeyboardBrightnessSteps);
+        Assert.Equal(fullLightingWrites, context.Device.LightingSetCalls);
+        Assert.Equal(
+            44,
+            context.Runtime.GetStatus().DesiredState.Lighting.Value.Brightness);
+        Assert.Equal(
+            OverrideLifetime.UntilPowerSourceChange,
+            context.Runtime.GetStatus().LightingOverride?.Lifetime);
+    }
+
+    [Fact]
     public async Task ReactivePulse_ControllerAdvisoryDoesNotBlockOwnedRenderer()
     {
         DeviceCapabilities capabilities = DeviceCapabilities.Unavailable() with
@@ -5241,6 +5286,10 @@ public sealed class ServiceControlRuntimeTests : IDisposable
 
         public int LightingSetCalls { get; private set; }
 
+        public List<KeyboardBrightnessDirection> KeyboardBrightnessSteps { get; } = [];
+
+        public byte NextKeyboardBrightness { get; set; } = 50;
+
         public int ReactivePulseCalls { get; private set; }
 
         public int AmbientFrameCalls { get; private set; }
@@ -5559,6 +5608,20 @@ public sealed class ServiceControlRuntimeTests : IDisposable
 
             AfterSetter?.Invoke(DeviceSubsystem.Lighting);
             return Task.CompletedTask;
+        }
+
+        public Task<byte> StepKeyboardBrightnessAsync(
+            KeyboardBrightnessDirection direction,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            KeyboardBrightnessSteps.Add(direction);
+            if (LightingFailure is not null)
+            {
+                return Task.FromException<byte>(LightingFailure);
+            }
+
+            return Task.FromResult(NextKeyboardBrightness);
         }
 
         public Task ApplyOneShotLaptopControlAsync(

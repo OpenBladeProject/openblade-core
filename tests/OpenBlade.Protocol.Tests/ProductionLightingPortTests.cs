@@ -457,6 +457,80 @@ public sealed class ProductionLightingPortTests
     }
 
     [Fact]
+    public async Task BrightnessStep_UsesCapturedRawStepAndOneWriteAfterCacheWarmup()
+    {
+        var session = new LightingSession(initialBrightness: 0xC0);
+        await using var port = CreatePort(session, new MatrixWriter(), admitted: true);
+        _ = await port.ReadStateAsync(default);
+        session.Commands.Clear();
+
+        byte down = await port.StepBrightnessAsync(
+            KeyboardBrightnessDirection.Decrease,
+            default);
+        byte up = await port.StepBrightnessAsync(
+            KeyboardBrightnessDirection.Increase,
+            default);
+
+        Assert.Equal(69, down);
+        Assert.Equal(75, up);
+        Assert.Equal(
+            [
+                (0x03, 0x03, "0105B0"),
+                (0x03, 0x03, "0105C0"),
+            ],
+            session.Commands.Select(CommandTuple).ToArray());
+    }
+
+    [Fact]
+    public async Task BrightnessStep_QueriesOnlyWhenRawCacheIsUnknown()
+    {
+        var session = new LightingSession(initialBrightness: 0xC0);
+        await using var port = CreatePort(session, new MatrixWriter(), admitted: true);
+
+        _ = await port.StepBrightnessAsync(
+            KeyboardBrightnessDirection.Decrease,
+            default);
+        _ = await port.StepBrightnessAsync(
+            KeyboardBrightnessDirection.Decrease,
+            default);
+
+        Assert.Equal(
+            [
+                (0x03, 0x83, "010500"),
+                (0x03, 0x03, "0105B0"),
+                (0x03, 0x03, "0105A0"),
+            ],
+            session.Commands.Select(CommandTuple).ToArray());
+    }
+
+    [Fact]
+    public async Task BrightnessStep_FailedWriteInvalidatesRawCache()
+    {
+        var session = new LightingSession(initialBrightness: 0xC0);
+        await using var port = CreatePort(session, new MatrixWriter(), admitted: true);
+        _ = await port.ReadStateAsync(default);
+        session.Commands.Clear();
+        session.FailBrightnessSetOnCall = 1;
+
+        await Assert.ThrowsAsync<BladeWriteException>(() =>
+            port.StepBrightnessAsync(
+                KeyboardBrightnessDirection.Decrease,
+                default));
+        session.FailBrightnessSetOnCall = null;
+        _ = await port.StepBrightnessAsync(
+            KeyboardBrightnessDirection.Decrease,
+            default);
+
+        Assert.Equal(
+            [
+                (0x03, 0x03, "0105B0"),
+                (0x03, 0x83, "010500"),
+                (0x03, 0x03, "0105B0"),
+            ],
+            session.Commands.Select(CommandTuple).ToArray());
+    }
+
+    [Fact]
     public async Task TransitionFailureReportsSanitizedCommandAndValidationCategory()
     {
         var session = new LightingSession(initialBrightness: 0xC5)

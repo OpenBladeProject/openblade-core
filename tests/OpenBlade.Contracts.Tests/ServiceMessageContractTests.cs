@@ -7,9 +7,9 @@ namespace OpenBlade.Contracts.Tests;
 public sealed class ServiceMessageContractTests
 {
     [Fact]
-    public void ProtocolConstants_AreClosedVersionTwentyAndRetainExactSizeLimit()
+    public void ProtocolConstants_AreClosedVersionTwentyOneAndRetainExactSizeLimit()
     {
-        Assert.Equal(20, OpenBladeIpc.ProtocolVersion);
+        Assert.Equal(21, OpenBladeIpc.ProtocolVersion);
         Assert.Equal("OpenBlade.Service.v2", OpenBladeIpc.PipeName);
         Assert.Equal(64 * 1024, OpenBladeIpc.MaximumMessageBytes);
         Assert.Equal(32 * 1024, OpenBladeIpc.MaximumDiagnosticArchiveBytes);
@@ -30,6 +30,7 @@ public sealed class ServiceMessageContractTests
             (typeof(SetPerformanceShortcutPreviewRequest), "setPerformanceShortcutPreview"),
             (typeof(SetFanOverrideRequest), "setFanOverride"),
             (typeof(SetLightingOverrideRequest), "setLightingOverride"),
+            (typeof(StepKeyboardBrightnessRequest), "stepKeyboardBrightness"),
             (typeof(SetExternalLightingOverridePolicyRequest), "setExternalLightingOverridePolicy"),
             (typeof(SetLightingSuppressionRequest), "setLightingSuppression"),
             (typeof(PulseReactiveKeyRequest), "pulseReactiveKey"),

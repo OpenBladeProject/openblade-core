@@ -150,6 +150,17 @@ public sealed class ServiceClient : IServiceClient
             new SetLightingOverrideRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid(), value),
             token);
 
+    public Task<ControlOperationResult> StepKeyboardBrightnessAsync(
+        KeyboardBrightnessDirection direction,
+        OverrideLifetime lifetime,
+        CancellationToken token) => SendMutationAsync(
+            new StepKeyboardBrightnessRequest(
+                OpenBladeIpc.ProtocolVersion,
+                Guid.NewGuid(),
+                direction,
+                lifetime),
+            token);
+
     public Task<ControlOperationResult> SetExternalLightingOverridePolicyAsync(
         bool enabled,
         CancellationToken token) => SendMutationAsync(

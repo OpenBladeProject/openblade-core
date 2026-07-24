@@ -53,6 +53,18 @@ public interface IProductionLightingPort : IAsyncDisposable
         LightingSettings settings,
         CancellationToken cancellationToken);
 
+    /// <summary>
+    /// Changes brightness by the firmware-native step and returns the resulting
+    /// UI percentage. Implementations may use a cached raw level, but must
+    /// invalidate it when the write outcome is not confirmed.
+    /// </summary>
+    Task<byte> StepBrightnessAsync(
+        KeyboardBrightnessDirection direction,
+        CancellationToken cancellationToken) => Task.FromException<byte>(
+            new BladeWriteException(
+                WriteSubmissionState.KnownNotApplied,
+                "Keyboard brightness stepping is unavailable."));
+
     Task PulseReactiveKeyAsync(
         ReactiveKeyPulse pulse,
         CancellationToken cancellationToken);

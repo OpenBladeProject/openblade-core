@@ -54,121 +54,27 @@ public sealed class FunctionRowActionExecutorTests
         Assert.Equal([expectedDirection], display.Directions);
     }
 
-    [Fact]
-    public async Task KeyboardBrightnessDown_PreservesEffectParametersAndLogo()
-    {
-        LightingSettings current = LightingSettingsFactory.Reactive(
-            new RgbColor(12, 34, 56),
-            brightness: 55,
-            ReactiveLightingDuration.Long) with
-        {
-            LogoMode = LogoLightingMode.Breathing,
-        };
-        var client = new RecordingServiceClient(Status(current));
-        var executor = CreateExecutor(client: client);
-
-        await executor.ExecuteAsync(
-            FunctionRowAction.KeyboardBrightnessDown,
-            CancellationToken.None);
-
-        ManualOverride<LightingSettings> applied =
-            Assert.Single(client.LightingOverrides)!;
-        Assert.Equal(45, applied.Value.Brightness);
-        Assert.Equal(current.Effect, applied.Value.Effect);
-        Assert.Equal(current.Color, applied.Value.Color);
-        Assert.Equal(current.Parameters, applied.Value.Parameters);
-        Assert.Equal(current.LogoMode, applied.Value.LogoMode);
-        Assert.Equal(OverrideLifetime.UntilPowerSourceChange, applied.Lifetime);
-    }
-
-    [Fact]
-    public async Task KeyboardBrightnessDown_AtFirstStepTurnsKeyboardOff()
-    {
-        LightingSettings current = LightingSettingsFactory.Static(
-            new RgbColor(12, 34, 56),
-            brightness: 10) with
-        {
-            LogoMode = LogoLightingMode.Static,
-        };
-        var client = new RecordingServiceClient(Status(current));
-        var executor = CreateExecutor(client: client);
-
-        await executor.ExecuteAsync(
-            FunctionRowAction.KeyboardBrightnessDown,
-            CancellationToken.None);
-
-        LightingSettings applied = Assert.Single(client.LightingOverrides)!.Value;
-        Assert.Equal(LightingEffect.Off, applied.Effect);
-        Assert.Equal(0, applied.Brightness);
-        Assert.Equal(current.LogoMode, applied.LogoMode);
-    }
-
-    [Fact]
-    public async Task KeyboardBrightnessUp_FromOffUsesActiveProfileEffectAtFirstStep()
-    {
-        LightingSettings profileLighting = LightingSettingsFactory.BreathingSingle(
-            new RgbColor(1, 2, 3),
-            brightness: 70) with
-        {
-            LogoMode = LogoLightingMode.Breathing,
-        };
-        var client = new RecordingServiceClient(
-            Status(LightingSettingsFactory.Off(), profileLighting));
-        var executor = CreateExecutor(client: client);
-
-        await executor.ExecuteAsync(
-            FunctionRowAction.KeyboardBrightnessUp,
-            CancellationToken.None);
-
-        LightingSettings applied = Assert.Single(client.LightingOverrides)!.Value;
-        Assert.Equal(LightingEffect.Breathing, applied.Effect);
-        Assert.Equal(10, applied.Brightness);
-        Assert.Equal(profileLighting.Color, applied.Color);
-        Assert.Equal(profileLighting.Parameters, applied.Parameters);
-        Assert.Equal(profileLighting.LogoMode, applied.LogoMode);
-    }
-
-    [Fact]
-    public async Task KeyboardBrightnessDownThenUp_RestoresRememberedEffect()
-    {
-        LightingSettings visible = LightingSettingsFactory.Ripple(
-            new RgbColor(9, 8, 7),
-            brightness: 10);
-        var client = new RecordingServiceClient(Status(visible));
-        var executor = CreateExecutor(client: client);
-
-        await executor.ExecuteAsync(
-            FunctionRowAction.KeyboardBrightnessDown,
-            CancellationToken.None);
-        client.Status = Status(Assert.Single(client.LightingOverrides)!.Value);
-        client.LightingOverrides.Clear();
-
-        await executor.ExecuteAsync(
-            FunctionRowAction.KeyboardBrightnessUp,
-            CancellationToken.None);
-
-        LightingSettings applied = Assert.Single(client.LightingOverrides)!.Value;
-        Assert.Equal(LightingEffect.Ripple, applied.Effect);
-        Assert.Equal(10, applied.Brightness);
-        Assert.Equal(visible.Parameters, applied.Parameters);
-    }
-
     [Theory]
-    [InlineData(FunctionRowAction.KeyboardBrightnessDown)]
-    [InlineData(FunctionRowAction.KeyboardBrightnessUp)]
-    public async Task KeyboardBrightness_AtBoundaryDoesNotSendRedundantOverride(
-        FunctionRowAction action)
+    [InlineData(
+        FunctionRowAction.KeyboardBrightnessDown,
+        KeyboardBrightnessDirection.Decrease)]
+    [InlineData(
+        FunctionRowAction.KeyboardBrightnessUp,
+        KeyboardBrightnessDirection.Increase)]
+    public async Task KeyboardBrightness_UsesDedicatedServiceStepWithoutStatusRead(
+        FunctionRowAction action,
+        KeyboardBrightnessDirection expectedDirection)
     {
-        LightingSettings current = action == FunctionRowAction.KeyboardBrightnessDown
-            ? LightingSettingsFactory.Off()
-            : LightingSettingsFactory.Static(
-                LightingSettingsFactory.DefaultVisibleColor,
-                brightness: 100);
-        var client = new RecordingServiceClient(Status(current));
+        var client = new RecordingServiceClient(
+            Status(LightingSettingsFactory.SpectrumCycling(50)));
         var executor = CreateExecutor(client: client);
 
         await executor.ExecuteAsync(action, CancellationToken.None);
 
+        Assert.Equal(
+            [(expectedDirection, OverrideLifetime.UntilPowerSourceChange)],
+            client.KeyboardBrightnessSteps);
+        Assert.Equal(0, client.GetStatusCalls);
         Assert.Empty(client.LightingOverrides);
     }
 
@@ -341,18 +247,33 @@ public sealed class FunctionRowActionExecutorTests
         }
 
         public ServiceStatusSnapshot Status { get; set; }
+        public int GetStatusCalls { get; private set; }
         public List<ManualOverride<LightingSettings>?> LightingOverrides { get; } = [];
+        public List<(KeyboardBrightnessDirection Direction, OverrideLifetime Lifetime)>
+            KeyboardBrightnessSteps { get; } = [];
         public ControlOperationResult LightingResult { get; set; } =
             new(ControlOperationStatus.Applied, "Applied.");
 
-        public Task<ServiceStatusSnapshot> GetStatusAsync(CancellationToken token) =>
-            Task.FromResult(Status);
+        public Task<ServiceStatusSnapshot> GetStatusAsync(CancellationToken token)
+        {
+            GetStatusCalls++;
+            return Task.FromResult(Status);
+        }
 
         public Task<ControlOperationResult> SetLightingOverrideAsync(
             ManualOverride<LightingSettings>? value,
             CancellationToken token)
         {
             LightingOverrides.Add(value);
+            return Task.FromResult(LightingResult);
+        }
+
+        public Task<ControlOperationResult> StepKeyboardBrightnessAsync(
+            KeyboardBrightnessDirection direction,
+            OverrideLifetime lifetime,
+            CancellationToken token)
+        {
+            KeyboardBrightnessSteps.Add((direction, lifetime));
             return Task.FromResult(LightingResult);
         }
 

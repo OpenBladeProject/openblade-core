@@ -100,6 +100,11 @@ public sealed class IpcMessageCodecTests
                     new RgbColor(78, 90, 123),
                     65),
                 OverrideLifetime.UntilPowerSourceChange)),
+        new StepKeyboardBrightnessRequest(
+            OpenBladeIpc.ProtocolVersion,
+            Guid.NewGuid(),
+            KeyboardBrightnessDirection.Decrease,
+            OverrideLifetime.UntilPowerSourceChange),
         new SetExternalLightingOverridePolicyRequest(
             OpenBladeIpc.ProtocolVersion,
             Guid.NewGuid(),
@@ -320,7 +325,7 @@ public sealed class IpcMessageCodecTests
             DesiredState = CreateStatus().DesiredState with { Battery = desired },
         };
 
-        Assert.Equal(20, OpenBladeIpc.ProtocolVersion);
+        Assert.Equal(21, OpenBladeIpc.ProtocolVersion);
         Assert.Equal(request, await RoundTripRequestAsync(request));
         ServiceStatusSnapshot roundTrip = await RoundTripStatusAsync(status);
         Assert.Equal([80], roundTrip.Capabilities!.ChargeLimits);
@@ -423,7 +428,7 @@ public sealed class IpcMessageCodecTests
 
         ServiceStatusSnapshot actual = await RoundTripStatusAsync(expected);
 
-        Assert.Equal(20, OpenBladeIpc.ProtocolVersion);
+        Assert.Equal(21, OpenBladeIpc.ProtocolVersion);
         AssertStatusEqual(expected, actual);
     }
 

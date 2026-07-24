@@ -118,10 +118,10 @@ internal static class ProductionLightingEvidenceSource
         "OpenBladeLightingImplementationFingerprint";
 
     private const string ApprovedLightingImplementationFingerprintSha256 =
-        // Re-reviewed after adding a host-only Gaming-mode key policy to the
-        // shared profile contract. The profile shape changed, but the admitted
-        // lighting commands, renderers, matrix reports, and device scope did not.
-        "1A46F7809432D0185E79551FDC74B5C83C485F736BADA13E21C91586D920FF8F";
+        // Re-reviewed after the 2026-07-23 Synapse brightness capture confirmed
+        // one 03/03 write per keypress with a raw 0x10 step. The optimized path
+        // reuses the already-admitted setter and retains exact-device admission.
+        "0A34DE0405DB0C84B19334F00236FDEAA236A92A88B69F55898340D28C45AA7F";
 
     private static readonly JsonSerializerOptions SerializerOptions =
         new(JsonSerializerDefaults.Web)

@@ -996,6 +996,21 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
             return ExecuteProductionLightingWriteAsync(value, cancellationToken);
         }
 
+        public Task<byte> StepKeyboardBrightnessAsync(
+            KeyboardBrightnessDirection direction,
+            CancellationToken cancellationToken)
+        {
+            if (!Enum.IsDefined(direction))
+            {
+                return Task.FromException<byte>(
+                    new ArgumentOutOfRangeException(nameof(direction)));
+            }
+
+            return ExecuteProductionKeyboardBrightnessStepAsync(
+                direction,
+                cancellationToken);
+        }
+
         public Task PulseReactiveKeyAsync(
             ReactiveKeyPulse pulse,
             CancellationToken cancellationToken) =>
@@ -1297,6 +1312,71 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
                 throw new BladeWriteException(
                     WriteSubmissionState.Indeterminate,
                     "The lighting write outcome is indeterminate.",
+                    exception);
+            }
+            finally
+            {
+                hardwareOperationGate.Release();
+            }
+        }
+
+        private async Task<byte> ExecuteProductionKeyboardBrightnessStepAsync(
+            KeyboardBrightnessDirection direction,
+            CancellationToken cancellationToken)
+        {
+            IProductionLightingPort? port = null;
+            try
+            {
+                await EnterHardwareOperationAsync(cancellationToken).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                throw new BladeWriteException(
+                    WriteSubmissionState.KnownNotApplied,
+                    "The keyboard brightness change was canceled before a verified session opened.");
+            }
+            catch (ObjectDisposedException exception)
+            {
+                throw new BladeWriteException(
+                    WriteSubmissionState.KnownNotApplied,
+                    "The keyboard brightness change was blocked because the device provider is closing.",
+                    exception);
+            }
+
+            try
+            {
+                port = await GetLightingPortCoreAsync(cancellationToken).ConfigureAwait(false);
+                if (port is null || port.Capabilities.LightingEffects.Count == 0)
+                {
+                    throw new BladeWriteException(
+                        WriteSubmissionState.KnownNotApplied,
+                        "The lighting writer could not open an exact-device session.");
+                }
+
+                return await port.StepBrightnessAsync(direction, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+            catch (BladeWriteException exception)
+            {
+                if (exception.SubmissionState == WriteSubmissionState.Indeterminate)
+                {
+                    await ResetLightingPortCoreAsync(port).ConfigureAwait(false);
+                }
+
+                throw;
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw new BladeWriteException(
+                    WriteSubmissionState.Indeterminate,
+                    "The keyboard brightness change was canceled after a verified session opened.");
+            }
+            catch (Exception exception)
+            {
+                await ResetLightingPortCoreAsync(port).ConfigureAwait(false);
+                throw new BladeWriteException(
+                    WriteSubmissionState.Indeterminate,
+                    "The keyboard brightness change outcome is indeterminate.",
                     exception);
             }
             finally

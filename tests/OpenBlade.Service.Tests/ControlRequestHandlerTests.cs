@@ -24,6 +24,11 @@ public sealed class ControlRequestHandlerTests
             new SetFanOverrideRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid(),
                 new ManualOverride<FanMode>(FanMode.Maximum, OverrideLifetime.UntilPowerSourceChange)),
             new SetLightingOverrideRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid(), null),
+            new StepKeyboardBrightnessRequest(
+                OpenBladeIpc.ProtocolVersion,
+                Guid.NewGuid(),
+                KeyboardBrightnessDirection.Increase,
+                OverrideLifetime.UntilPowerSourceChange),
             new SetExternalLightingOverridePolicyRequest(
                 OpenBladeIpc.ProtocolVersion,
                 Guid.NewGuid(),
@@ -67,6 +72,7 @@ public sealed class ControlRequestHandlerTests
         [
             "GetStatus", "GetStatus", "UpdateProfiles", "SetPerformanceOverride",
             "CyclePerformanceShortcut", "SetFanOverride", "SetLightingOverride",
+            "StepKeyboardBrightness",
             "SetExternalLightingOverridePolicy", "SetLightingSuppression",
             "PulseReactiveKey", "PushAmbientLightingFrame", "SetBatteryPolicy",
             "SetBatteryProtection", "SetFullChargeOverride", "ApplyOneShotLaptopControl",
@@ -264,6 +270,16 @@ public sealed class ControlRequestHandlerTests
 
         public Task<ControlOperationResult> SetLightingOverrideAsync(ManualOverride<LightingSettings>? value, CancellationToken token) =>
             Record("SetLightingOverride");
+
+        public Task<ControlOperationResult> StepKeyboardBrightnessAsync(
+            KeyboardBrightnessDirection direction,
+            OverrideLifetime lifetime,
+            CancellationToken token)
+        {
+            Assert.Equal(KeyboardBrightnessDirection.Increase, direction);
+            Assert.Equal(OverrideLifetime.UntilPowerSourceChange, lifetime);
+            return Record("StepKeyboardBrightness");
+        }
 
         public Task<ControlOperationResult> SetExternalLightingOverridePolicyAsync(
             bool enabled,

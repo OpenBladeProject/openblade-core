@@ -4,6 +4,7 @@ namespace OpenBlade.Protocol;
 
 internal sealed class ProductionLightingPort : IProductionLightingPort
 {
+    private const byte KeyboardBrightnessRawStep = 0x10;
     private const int MaximumPendingKeyTriggeredPulses = 1024;
     private const int PendingKeyTriggeredPulseTrimTarget = 256;
     private static readonly TimeSpan MaximumKeyPulsePreAge =
@@ -28,6 +29,7 @@ internal sealed class ProductionLightingPort : IProductionLightingPort
     private readonly Queue<ReactiveKeyPulse> pendingKeyTriggeredPulses = [];
     private long effectStartedTimestamp;
     private LightingSettings? lastDeliveredState;
+    private byte? lastKnownBrightnessRaw;
     private int nextCommandTransaction = 1;
     private int nextMatrixTransaction = 1;
     private int ownershipState;
@@ -294,6 +296,67 @@ internal sealed class ProductionLightingPort : IProductionLightingPort
         }
     }
 
+    public async Task<byte> StepBrightnessAsync(
+        KeyboardBrightnessDirection direction,
+        CancellationToken cancellationToken)
+    {
+        if (!Enum.IsDefined(direction))
+        {
+            throw new ArgumentOutOfRangeException(nameof(direction));
+        }
+
+        await EnterWriteAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            byte baseline = lastKnownBrightnessRaw
+                ?? await QueryBrightnessRawCoreAsync(cancellationToken).ConfigureAwait(false);
+            byte requested = direction == KeyboardBrightnessDirection.Increase
+                ? (byte)Math.Min(byte.MaxValue, baseline + KeyboardBrightnessRawStep)
+                : (byte)Math.Max(byte.MinValue, baseline - KeyboardBrightnessRawStep);
+            if (requested == baseline)
+            {
+                return checked((byte)LightingBrightnessProtocol.RawToPercent(requested));
+            }
+
+            await SetBrightnessFastCoreAsync(requested, cancellationToken)
+                .ConfigureAwait(false);
+
+            byte resultingPercent = checked(
+                (byte)LightingBrightnessProtocol.RawToPercent(requested));
+            if (requested == 0)
+            {
+                await StopStreamCoreAsync().ConfigureAwait(false);
+                lock (effectSync)
+                {
+                    activeEffect = null;
+                    activeKeyTriggeredEffect = null;
+                    pendingKeyTriggeredPulses.Clear();
+                    lastDeliveredState = LightingSettingsFactory.Off();
+                }
+                SetOwnership(LightingRendererOwnershipState.None);
+            }
+            else
+            {
+                lock (effectSync)
+                {
+                    if (lastDeliveredState is { Effect: not LightingEffect.Off } current)
+                    {
+                        lastDeliveredState = current with
+                        {
+                            Brightness = resultingPercent,
+                        };
+                    }
+                }
+            }
+
+            return resultingPercent;
+        }
+        finally
+        {
+            operationGate.Release();
+        }
+    }
+
     public Task PulseReactiveKeyAsync(
         ReactiveKeyPulse pulse,
         CancellationToken cancellationToken)
@@ -544,10 +607,11 @@ internal sealed class ProductionLightingPort : IProductionLightingPort
             throw new IOException("Lighting brightness response was malformed.");
         }
 
+        lastKnownBrightnessRaw = raw;
         return raw;
     }
 
-    private async Task SetBrightnessAndVerifyCoreAsync(
+    private async Task SetBrightnessFastCoreAsync(
         byte raw,
         CancellationToken cancellationToken)
     {
@@ -558,7 +622,23 @@ internal sealed class ProductionLightingPort : IProductionLightingPort
             arguments,
             3,
             payload => LightingBrightnessProtocol.TryDecodeSet(payload.Span, raw));
-        await ExecuteWriteCoreAsync(command, cancellationToken).ConfigureAwait(false);
+        try
+        {
+            await ExecuteWriteCoreAsync(command, cancellationToken).ConfigureAwait(false);
+            lastKnownBrightnessRaw = raw;
+        }
+        catch
+        {
+            lastKnownBrightnessRaw = null;
+            throw;
+        }
+    }
+
+    private async Task SetBrightnessAndVerifyCoreAsync(
+        byte raw,
+        CancellationToken cancellationToken)
+    {
+        await SetBrightnessFastCoreAsync(raw, cancellationToken).ConfigureAwait(false);
         byte confirmed = await QueryBrightnessRawCoreAsync(cancellationToken).ConfigureAwait(false);
         if (confirmed != raw)
         {

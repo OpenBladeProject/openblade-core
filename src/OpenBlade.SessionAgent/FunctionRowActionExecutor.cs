@@ -14,12 +14,9 @@ public interface IDisplayBrightnessController
 /// </summary>
 public sealed class FunctionRowActionExecutor
 {
-    private const byte KeyboardBrightnessStep = 10;
-
     private readonly IServiceClient serviceClient;
     private readonly ISpecialKeyInputSender input;
     private readonly IDisplayBrightnessController displayBrightness;
-    private LightingSettings? lastVisibleLighting;
 
     public FunctionRowActionExecutor(
         IServiceClient serviceClient,
@@ -92,99 +89,13 @@ public sealed class FunctionRowActionExecutor
         int direction,
         CancellationToken cancellationToken)
     {
-        ServiceStatusSnapshot status = await serviceClient.GetStatusAsync(cancellationToken)
-            .ConfigureAwait(false);
-        LightingSettings current = status.DesiredState.Lighting.Value;
-        if (current.Effect != LightingEffect.Off && current.Brightness > 0)
-        {
-            lastVisibleLighting = current;
-        }
-
-        LightingSettings next;
-        if (direction < 0)
-        {
-            if (current.Effect == LightingEffect.Off || current.Brightness == 0)
-            {
-                return;
-            }
-
-            if (current.Brightness <= KeyboardBrightnessStep)
-            {
-                next = LightingSettingsFactory.Off() with
-                {
-                    LogoMode = current.LogoMode,
-                };
-            }
-            else
-            {
-                next = current with
-                {
-                    Brightness = (byte)(current.Brightness - KeyboardBrightnessStep),
-                };
-                lastVisibleLighting = next;
-            }
-        }
-        else
-        {
-            if (current.Effect != LightingEffect.Off && current.Brightness >= 100)
-            {
-                return;
-            }
-
-            if (current.Effect == LightingEffect.Off || current.Brightness == 0)
-            {
-                LightingSettings baseline = ResolveVisibleBaseline(status);
-                next = baseline with
-                {
-                    Brightness = KeyboardBrightnessStep,
-                    LogoMode = current.LogoMode ?? baseline.LogoMode,
-                };
-            }
-            else
-            {
-                next = current with
-                {
-                    Brightness = (byte)Math.Min(
-                        100,
-                        current.Brightness + KeyboardBrightnessStep),
-                };
-            }
-            lastVisibleLighting = next;
-        }
-
-        ControlOperationResult result = await serviceClient.SetLightingOverrideAsync(
-            new ManualOverride<LightingSettings>(
-                next,
-                OverrideLifetime.UntilPowerSourceChange),
+        ControlOperationResult result = await serviceClient.StepKeyboardBrightnessAsync(
+            direction < 0
+                ? KeyboardBrightnessDirection.Decrease
+                : KeyboardBrightnessDirection.Increase,
+            OverrideLifetime.UntilPowerSourceChange,
             cancellationToken).ConfigureAwait(false);
         EnsureAccepted(result);
-    }
-
-    private LightingSettings ResolveVisibleBaseline(ServiceStatusSnapshot status)
-    {
-        if (lastVisibleLighting is
-            {
-                Effect: not LightingEffect.Off,
-                Brightness: > 0,
-            } remembered)
-        {
-            return remembered;
-        }
-
-        if (status.ActivePowerSource is not PowerSource.ExternalUnknown)
-        {
-            LightingSettings profile = status.Profiles
-                .ForPowerSource(status.ActivePowerSource)
-                .Lighting;
-            if (profile.Effect != LightingEffect.Off && profile.Brightness > 0)
-            {
-                return profile;
-            }
-        }
-
-        return LightingSettingsFactory.Static(
-            LightingSettingsFactory.DefaultVisibleColor,
-            KeyboardBrightnessStep);
     }
 
     private static void EnsureAccepted(ControlOperationResult result)

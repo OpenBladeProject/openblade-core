@@ -85,6 +85,14 @@ public interface IServiceClient : IServiceStatusWatcher
         ManualOverride<LightingSettings>? value,
         CancellationToken token);
 
+    Task<ControlOperationResult> StepKeyboardBrightnessAsync(
+        KeyboardBrightnessDirection direction,
+        OverrideLifetime lifetime,
+        CancellationToken token) => Task.FromResult(
+            new ControlOperationResult(
+                ControlOperationStatus.Blocked,
+                "Keyboard brightness stepping is unavailable."));
+
     Task<ControlOperationResult> SetExternalLightingOverridePolicyAsync(
         bool enabled,
         CancellationToken token) => Task.FromResult(

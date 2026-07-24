@@ -370,6 +370,12 @@ public enum LightingRendererOwnershipState
     AmbientAwareness,
 }
 
+public enum KeyboardBrightnessDirection
+{
+    Decrease,
+    Increase,
+}
+
 public readonly record struct RgbColor(byte Red, byte Green, byte Blue);
 
 public sealed record LightingSettings(
