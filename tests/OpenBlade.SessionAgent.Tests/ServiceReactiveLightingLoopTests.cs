@@ -29,7 +29,8 @@ public sealed class ServiceReactiveLightingLoopTests
             client,
             factory,
             failures.Add,
-            notifications);
+            notifications,
+            performanceShortcutQuietPeriod: TimeSpan.FromMilliseconds(25));
         using var cancellation = new CancellationTokenSource();
         Task running = loop.RunAsync(cancellation.Token);
 
@@ -40,7 +41,7 @@ public sealed class ServiceReactiveLightingLoopTests
         await WaitUntilAsync(() => factory.CreateCount == 1);
         await WaitUntilAsync(() => factory.Last!.IsDriverModeActive());
         factory.Last!.PublishPerformanceShortcut(PerformanceShortcutSource.FunctionP);
-        await WaitUntilAsync(() => client.PerformanceShortcuts.Count == 1);
+        await WaitUntilAsync(() => client.PerformanceSelections.Count == 1);
         await WaitUntilAsync(() => notifications.Selected.Count == 1);
         Assert.Equal(PerformancePreset.Silent, Assert.Single(notifications.Selected));
         Assert.Empty(notifications.AppliedMessages);
@@ -73,7 +74,8 @@ public sealed class ServiceReactiveLightingLoopTests
         await using var loop = new ServiceReactiveLightingLoop(
             client,
             factory,
-            shortcutNotifications: notifications);
+            shortcutNotifications: notifications,
+            performanceShortcutQuietPeriod: TimeSpan.FromMilliseconds(25));
         using var cancellation = new CancellationTokenSource();
         Task running = loop.RunAsync(cancellation.Token);
 
@@ -92,7 +94,50 @@ public sealed class ServiceReactiveLightingLoopTests
         completion.SetResult(new ControlOperationResult(
             ControlOperationStatus.Applied,
             "The performance button selected Silent."));
-        await WaitUntilAsync(() => client.PerformanceShortcuts.Count == 1);
+        await WaitUntilAsync(() => client.PerformanceSelections.Count == 1);
+
+        cancellation.Cancel();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => running);
+    }
+
+    [Fact]
+    public async Task RapidPerformancePressesNotifyEachSelectionButWriteOnlyFinalMode()
+    {
+        var client = new WatchClient();
+        var factory = new RecordingSourceFactory();
+        var notifications = new RecordingNotificationSink();
+        await using var loop = new ServiceReactiveLightingLoop(
+            client,
+            factory,
+            shortcutNotifications: notifications,
+            performanceShortcutQuietPeriod: TimeSpan.FromMilliseconds(40));
+        using var cancellation = new CancellationTokenSource();
+        Task running = loop.RunAsync(cancellation.Token);
+
+        client.Publish(Status(LightingRendererOwnershipState.Static) with
+        {
+            KeyboardDriverModeActive = true,
+        });
+        await WaitUntilAsync(() => factory.CreateCount == 1);
+        await WaitUntilAsync(() => factory.Last!.IsDriverModeActive());
+
+        factory.Last!.PublishPerformanceShortcut(PerformanceShortcutSource.DedicatedButton);
+        factory.Last.PublishPerformanceShortcut(PerformanceShortcutSource.DedicatedButton);
+        factory.Last.PublishPerformanceShortcut(PerformanceShortcutSource.DedicatedButton);
+
+        await WaitUntilAsync(() => notifications.Selected.Count == 3);
+        await WaitUntilAsync(() => client.PerformanceSelections.Count == 1);
+        Assert.Equal(
+            [
+                PerformancePreset.Silent,
+                PerformancePreset.Performance,
+                PerformancePreset.Custom,
+            ],
+            notifications.Selected.ToArray());
+        Assert.Equal(
+            PerformancePreset.Custom,
+            Assert.Single(client.PerformanceSelections).Value);
+        Assert.Empty(client.PerformanceShortcuts);
 
         cancellation.Cancel();
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => running);
@@ -275,14 +320,16 @@ public sealed class ServiceReactiveLightingLoopTests
             client,
             factory,
             failures.Enqueue,
-            new ThrowingNotificationSink());
+            new ThrowingNotificationSink(),
+            performanceShortcutQuietPeriod: TimeSpan.FromMilliseconds(25));
         using var cancellation = new CancellationTokenSource();
         Task running = loop.RunAsync(cancellation.Token);
 
         client.Publish(Status(LightingRendererOwnershipState.Static));
         await WaitUntilAsync(() => factory.CreateCount == 1);
         factory.Last!.PublishPerformanceShortcut(PerformanceShortcutSource.DedicatedButton);
-        await WaitUntilAsync(() => client.PerformanceShortcuts.Count == 1);
+        await WaitUntilAsync(
+            () => client.PerformanceSelections.Count + client.PerformanceShortcuts.Count == 1);
         await WaitUntilAsync(() => failures.Count == 1);
 
         Assert.True(failures.TryDequeue(out Exception? failure));
@@ -301,7 +348,8 @@ public sealed class ServiceReactiveLightingLoopTests
         await using var loop = new ServiceReactiveLightingLoop(
             client,
             factory,
-            failures.Add);
+            failures.Add,
+            performanceShortcutQuietPeriod: TimeSpan.FromMilliseconds(25));
         using var cancellation = new CancellationTokenSource();
         Task running = loop.RunAsync(cancellation.Token);
 
@@ -326,7 +374,7 @@ public sealed class ServiceReactiveLightingLoopTests
         Assert.Single(client.Pulses);
 
         first.PublishPerformanceShortcut(PerformanceShortcutSource.DedicatedButton);
-        await WaitUntilAsync(() => client.PerformanceShortcuts.Count == 1);
+        await WaitUntilAsync(() => client.PerformanceSelections.Count == 1);
 
         client.Publish(Status(LightingRendererOwnershipState.Reactive) with { Revision = 4 });
         await Task.Delay(25);
@@ -763,6 +811,8 @@ public sealed class ServiceReactiveLightingLoopTests
 
         public ConcurrentQueue<PerformanceShortcutSource> PerformanceShortcuts { get; } = new();
 
+        public ConcurrentQueue<PerformanceOverride> PerformanceSelections { get; } = new();
+
         public ControlOperationResult PerformanceShortcutResult { get; init; } = new(
             ControlOperationStatus.Applied,
             "Applied");
@@ -818,7 +868,24 @@ public sealed class ServiceReactiveLightingLoopTests
 
         public Task<ControlOperationResult> SetPerformanceOverrideAsync(
             ManualOverride<PerformancePreset>? value,
-            CancellationToken token) => throw new NotSupportedException();
+            CancellationToken token) => SetPerformanceConfigurationOverrideAsync(
+                value is null
+                    ? null
+                    : new PerformanceOverride(value.Value, value.Lifetime),
+                token);
+
+        public Task<ControlOperationResult> SetPerformanceConfigurationOverrideAsync(
+            PerformanceOverride? value,
+            CancellationToken token)
+        {
+            if (value is not null)
+            {
+                PerformanceSelections.Enqueue(value);
+            }
+
+            return PerformanceShortcutCompletion?.Task
+                ?? Task.FromResult(PerformanceShortcutResult);
+        }
 
         public Task<ControlOperationResult> CyclePerformanceShortcutAsync(
             PerformanceShortcutSource source,

@@ -81,6 +81,7 @@ public sealed class ServiceReactiveLightingLoop : IAsyncDisposable
     private IReactiveKeyboardSource? source;
     private ServiceStatusSnapshot? latestStatus;
     private PerformancePreset? optimisticPerformancePreset;
+    private long performanceShortcutGeneration;
     private bool performanceShortcutInFlight;
     private int inputConnected;
     private int keyTriggeredActive;
@@ -97,7 +98,8 @@ public sealed class ServiceReactiveLightingLoop : IAsyncDisposable
         Func<SpecialKeySlot, bool>? shouldOverrideSpecialKey = null,
         Func<SpecialKeySlot, CancellationToken, Task>? executeSpecialKeyAsync = null,
         Func<SpecialKeySlot, CancellationToken, Task>? executeDefaultLaptopKeyAsync = null,
-        Func<FunctionRowAction, CancellationToken, Task>? executeFunctionRowActionAsync = null)
+        Func<FunctionRowAction, CancellationToken, Task>? executeFunctionRowActionAsync = null,
+        TimeSpan? performanceShortcutQuietPeriod = null)
     {
         this.serviceClient = serviceClient ?? throw new ArgumentNullException(nameof(serviceClient));
         this.sourceFactory = sourceFactory ?? throw new ArgumentNullException(nameof(sourceFactory));
@@ -108,6 +110,7 @@ public sealed class ServiceReactiveLightingLoop : IAsyncDisposable
         pulsePump = new ReactiveKeyPulsePump(SendPulseAsync, errorHandler: ReportFailure);
         shortcutPump = new PerformanceShortcutTriggerPump(
             SendPerformanceShortcutAsync,
+            performanceShortcutQuietPeriod,
             errorHandler: ReportFailure);
         this.shouldOverrideSpecialKey = shouldOverrideSpecialKey ?? (_ => false);
         if (executeFunctionRowActionAsync is not null)
@@ -254,14 +257,7 @@ public sealed class ServiceReactiveLightingLoop : IAsyncDisposable
                             "Key-triggered lighting input could not keep up and skipped a key press."));
                     }
                 },
-                shortcut =>
-                {
-                    if (!shortcutPump.TryEnqueue(shortcut))
-                    {
-                        ReportFailure(new InvalidOperationException(
-                            "Performance shortcut input could not keep up and skipped a button press."));
-                    }
-                },
+                QueuePerformanceShortcut,
                 specialKey =>
                 {
                     if (specialKeyPump is null || !specialKeyPump.TryEnqueue(specialKey))
@@ -460,12 +456,10 @@ public sealed class ServiceReactiveLightingLoop : IAsyncDisposable
         }
     }
 
-    private async Task SendPerformanceShortcutAsync(
-        PerformanceShortcutSource source,
-        CancellationToken cancellationToken)
+    private void QueuePerformanceShortcut(PerformanceShortcutSource source)
     {
-        PerformancePreset? predicted = BeginPerformanceShortcut();
-        if (predicted is { } selected)
+        PerformanceShortcutIntent intent = BeginPerformanceShortcut(source);
+        if (intent.Target is { } selected)
         {
             try
             {
@@ -477,45 +471,64 @@ public sealed class ServiceReactiveLightingLoop : IAsyncDisposable
             }
         }
 
+        if (!shortcutPump.TryEnqueue(intent))
+        {
+            _ = CompletePerformanceShortcut(intent.Generation, applied: false);
+            ReportFailure(new InvalidOperationException(
+                "Performance shortcut input could not be queued."));
+        }
+    }
+
+    private async Task SendPerformanceShortcutAsync(
+        PerformanceShortcutIntent intent,
+        CancellationToken cancellationToken)
+    {
         ControlOperationResult result;
         try
         {
-            result = await serviceClient
-                .CyclePerformanceShortcutAsync(source, cancellationToken)
-                .ConfigureAwait(false);
+            result = intent.Target is { } selected
+                ? await serviceClient.SetPerformanceConfigurationOverrideAsync(
+                    CreatePerformanceShortcutOverride(intent, selected),
+                    cancellationToken).ConfigureAwait(false)
+                : await serviceClient.CyclePerformanceShortcutAsync(
+                    intent.Source,
+                    cancellationToken).ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
-            CompletePerformanceShortcut(applied: false);
+            _ = CompletePerformanceShortcut(intent.Generation, applied: false);
             throw;
         }
         catch (Exception exception)
         {
-            CompletePerformanceShortcut(applied: false);
-            TryShowPerformanceShortcutFailure(exception.Message);
+            if (CompletePerformanceShortcut(intent.Generation, applied: false))
+            {
+                TryShowPerformanceShortcutFailure(exception.Message);
+            }
             throw;
         }
-        CompletePerformanceShortcut(result.Status == ControlOperationStatus.Applied);
+        bool latestIntent = CompletePerformanceShortcut(
+            intent.Generation,
+            result.Status == ControlOperationStatus.Applied);
         if (result.Status == ControlOperationStatus.Failed)
         {
-            TryShowPerformanceShortcutFailure(result.Message);
+            if (latestIntent)
+            {
+                TryShowPerformanceShortcutFailure(result.Message);
+            }
             throw new InvalidOperationException(result.Message);
         }
 
         if (result.Status != ControlOperationStatus.Applied)
         {
-            if (predicted is not null)
+            if (latestIntent && intent.Target is not null)
             {
                 TryShowPerformanceShortcutFailure(result.Message);
             }
             return;
         }
 
-        bool predictionMatched = predicted is { } expected
-            && PerformanceShortcutNotificationText.TryGetSelectedPreset(
-                result.Message,
-                out PerformancePreset applied)
-            && applied == expected;
+        bool predictionMatched = intent.Target is not null;
         if (!predictionMatched)
         {
             try
@@ -529,15 +542,17 @@ public sealed class ServiceReactiveLightingLoop : IAsyncDisposable
         }
     }
 
-    private PerformancePreset? BeginPerformanceShortcut()
+    private PerformanceShortcutIntent BeginPerformanceShortcut(
+        PerformanceShortcutSource source)
     {
         lock (performanceShortcutStateSync)
         {
+            long generation = ++performanceShortcutGeneration;
             performanceShortcutInFlight = true;
             ServiceStatusSnapshot? status = latestStatus;
             if (status is null || !status.DeviceVerified || status.WritesBlocked)
             {
-                return null;
+                return new PerformanceShortcutIntent(source, null, null, generation);
             }
 
             PerformancePreset current = optimisticPerformancePreset
@@ -551,23 +566,65 @@ public sealed class ServiceReactiveLightingLoop : IAsyncDisposable
                 current,
                 out PerformancePreset next))
             {
-                return null;
+                return new PerformanceShortcutIntent(
+                    source,
+                    status.ActivePowerSource,
+                    null,
+                    generation);
             }
 
             optimisticPerformancePreset = next;
-            return next;
+            return new PerformanceShortcutIntent(
+                source,
+                status.ActivePowerSource,
+                next,
+                generation);
         }
     }
 
-    private void CompletePerformanceShortcut(bool applied)
+    private PerformanceOverride CreatePerformanceShortcutOverride(
+        PerformanceShortcutIntent intent,
+        PerformancePreset selected)
     {
         lock (performanceShortcutStateSync)
         {
+            ServiceStatusSnapshot status = latestStatus
+                ?? throw new InvalidOperationException(
+                    "The current laptop state is unavailable.");
+            if (intent.PowerSource is { } expectedPowerSource
+                && status.ActivePowerSource != expectedPowerSource)
+            {
+                throw new InvalidOperationException(
+                    "The power source changed before the selected mode could be applied.");
+            }
+
+            CustomPerformanceSettings? custom = selected == PerformancePreset.Custom
+                ? status.Profiles.PluggedIn.CustomPerformance
+                    ?? CustomPerformanceSettings.Default
+                : null;
+            return new PerformanceOverride(
+                selected,
+                OverrideLifetime.UntilPowerSourceChange,
+                custom);
+        }
+    }
+
+    private bool CompletePerformanceShortcut(long generation, bool applied)
+    {
+        lock (performanceShortcutStateSync)
+        {
+            if (generation != performanceShortcutGeneration)
+            {
+                return false;
+            }
+
             performanceShortcutInFlight = false;
             if (!applied)
             {
                 optimisticPerformancePreset = null;
             }
+
+            return true;
         }
     }
 

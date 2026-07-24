@@ -2,67 +2,86 @@ using OpenBlade.Contracts;
 
 namespace OpenBlade.Tray;
 
+public sealed record PerformanceShortcutIntent(
+    PerformanceShortcutSource Source,
+    PowerSource? PowerSource,
+    PerformancePreset? Target,
+    long Generation);
+
 /// <summary>
-/// Sends physical performance-shortcut presses sequentially. The small bounded
-/// queue preserves deliberate presses while preventing a faulty input source
-/// from creating an unbounded control backlog.
+/// Coalesces physical performance-shortcut presses. Selection feedback is
+/// published before enqueueing; only the final intent after a short quiet
+/// period reaches the comparatively slow firmware path.
 /// </summary>
 public sealed class PerformanceShortcutTriggerPump : IAsyncDisposable
 {
-    public const int DefaultCapacity = 8;
+    public static readonly TimeSpan DefaultQuietPeriod = TimeSpan.FromMilliseconds(1250);
 
-    private readonly Func<PerformanceShortcutSource, CancellationToken, Task> sendAsync;
+    private readonly Func<PerformanceShortcutIntent, CancellationToken, Task> sendAsync;
     private readonly Action<Exception>? errorHandler;
-    private readonly int capacity;
-    private readonly Queue<PerformanceShortcutSource> pending = [];
+    private readonly TimeSpan quietPeriod;
     private readonly SemaphoreSlim signal = new(0);
     private readonly CancellationTokenSource lifetime = new();
     private readonly object sync = new();
     private readonly Task worker;
+    private PerformanceShortcutIntent? pending;
+    private long pendingRevision;
     private bool accepting = true;
     private int disposed;
 
     public PerformanceShortcutTriggerPump(
-        Func<PerformanceShortcutSource, CancellationToken, Task> sendAsync,
-        int capacity = DefaultCapacity,
+        Func<PerformanceShortcutIntent, CancellationToken, Task> sendAsync,
+        TimeSpan? quietPeriod = null,
         Action<Exception>? errorHandler = null)
     {
         this.sendAsync = sendAsync ?? throw new ArgumentNullException(nameof(sendAsync));
-        if (capacity <= 0)
+        this.quietPeriod = quietPeriod ?? DefaultQuietPeriod;
+        if (this.quietPeriod < TimeSpan.Zero)
         {
-            throw new ArgumentOutOfRangeException(nameof(capacity));
+            throw new ArgumentOutOfRangeException(nameof(quietPeriod));
         }
 
-        this.capacity = capacity;
         this.errorHandler = errorHandler;
         worker = RunAsync(lifetime.Token);
     }
 
-    public bool TryEnqueue(PerformanceShortcutSource source)
+    public bool TryEnqueue(PerformanceShortcutIntent intent)
     {
-        if (!Enum.IsDefined(source))
+        if (!Enum.IsDefined(intent.Source)
+            || intent.Generation <= 0
+            || intent.PowerSource is { } powerSource && !Enum.IsDefined(powerSource)
+            || intent.Target is { } target && !Enum.IsDefined(target))
         {
             return false;
         }
 
+        bool wakeWorker;
         lock (sync)
         {
-            if (!accepting || pending.Count >= capacity)
+            if (!accepting)
             {
                 return false;
             }
 
-            pending.Enqueue(source);
-            signal.Release();
-            return true;
+            wakeWorker = pending is null;
+            pending = intent;
+            pendingRevision++;
         }
+
+        if (wakeWorker)
+        {
+            signal.Release();
+        }
+
+        return true;
     }
 
     public void ClearPending()
     {
         lock (sync)
         {
-            pending.Clear();
+            pending = null;
+            pendingRevision++;
         }
     }
 
@@ -76,7 +95,8 @@ public sealed class PerformanceShortcutTriggerPump : IAsyncDisposable
         lock (sync)
         {
             accepting = false;
-            pending.Clear();
+            pending = null;
+            pendingRevision++;
         }
 
         lifetime.Cancel();
@@ -98,21 +118,16 @@ public sealed class PerformanceShortcutTriggerPump : IAsyncDisposable
         while (true)
         {
             await signal.WaitAsync(cancellationToken).ConfigureAwait(false);
-            PerformanceShortcutSource source;
-            lock (sync)
+            PerformanceShortcutIntent? intent = await TakeAfterQuietPeriodAsync(
+                cancellationToken).ConfigureAwait(false);
+            if (intent is null)
             {
-                if (pending.Count == 0)
-                {
-                    cancellationToken.ThrowIfCancellationRequested();
-                    continue;
-                }
-
-                source = pending.Dequeue();
+                continue;
             }
 
             try
             {
-                await sendAsync(source, cancellationToken).ConfigureAwait(false);
+                await sendAsync(intent, cancellationToken).ConfigureAwait(false);
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
@@ -121,6 +136,42 @@ public sealed class PerformanceShortcutTriggerPump : IAsyncDisposable
             catch (Exception exception)
             {
                 ReportFailure(exception);
+            }
+        }
+    }
+
+    private async Task<PerformanceShortcutIntent?> TakeAfterQuietPeriodAsync(
+        CancellationToken cancellationToken)
+    {
+        while (true)
+        {
+            long observedRevision;
+            lock (sync)
+            {
+                if (pending is null)
+                {
+                    return null;
+                }
+
+                observedRevision = pendingRevision;
+            }
+
+            await Task.Delay(quietPeriod, cancellationToken).ConfigureAwait(false);
+
+            lock (sync)
+            {
+                if (pending is null)
+                {
+                    return null;
+                }
+                if (observedRevision != pendingRevision)
+                {
+                    continue;
+                }
+
+                PerformanceShortcutIntent intent = pending;
+                pending = null;
+                return intent;
             }
         }
     }
