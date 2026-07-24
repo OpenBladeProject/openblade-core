@@ -7,6 +7,7 @@ namespace OpenBlade.Tray;
 
 public sealed class ServiceClient : IServiceClient
 {
+    private const int ConnectionTimeoutMilliseconds = 2000;
     private static readonly TimeSpan InitialReconnectDelay = TimeSpan.FromMilliseconds(250);
     private static readonly TimeSpan MaximumReconnectDelay = TimeSpan.FromSeconds(5);
     private readonly Func<CancellationToken, ValueTask<Stream>> connectAsync;
@@ -538,7 +539,7 @@ public sealed class ServiceClient : IServiceClient
     }
 
     private static bool IsRetryableTransportFailure(Exception exception) =>
-        exception is IOException && exception is not InvalidDataException;
+        exception is IOException or TimeoutException;
 
     private sealed record SubscriptionOpenResult(
         Stream? Connection,
@@ -560,7 +561,7 @@ public sealed class ServiceClient : IServiceClient
             PipeOptions.Asynchronous);
         try
         {
-            await pipe.ConnectAsync(token);
+            await pipe.ConnectAsync(ConnectionTimeoutMilliseconds, token);
             return pipe;
         }
         catch

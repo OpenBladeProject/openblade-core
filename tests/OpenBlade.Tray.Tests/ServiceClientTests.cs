@@ -552,6 +552,46 @@ public sealed class ServiceClientTests
     }
 
     [Fact]
+    public async Task WatchStatusAsync_MissingPipeYieldsReconnectingWithinBoundedTime()
+    {
+        var time = new FakeTimeProvider();
+        using CancellationTokenSource timeout = new(TimeSpan.FromSeconds(5));
+        var client = new ServiceClient(NewPipeName(), time);
+        await using IAsyncEnumerator<ServiceWatchUpdate> reader =
+            client.WatchStatusAsync(timeout.Token).GetAsyncEnumerator();
+
+        Assert.True(await reader.MoveNextAsync());
+        Assert.IsType<ServiceWatchUpdate.Reconnecting>(reader.Current);
+        Assert.Empty(time.Delays);
+    }
+
+    [Fact]
+    public async Task WatchStatusAsync_ConnectTimeoutIsRetryable()
+    {
+        var time = new FakeTimeProvider();
+        int attempts = 0;
+        var client = new ServiceClient(
+            _ =>
+            {
+                attempts++;
+                throw new TimeoutException("offline");
+            },
+            time);
+        using CancellationTokenSource cancellation = new();
+        await using IAsyncEnumerator<ServiceWatchUpdate> reader =
+            client.WatchStatusAsync(cancellation.Token).GetAsyncEnumerator();
+
+        Assert.True(await reader.MoveNextAsync());
+        Assert.IsType<ServiceWatchUpdate.Reconnecting>(reader.Current);
+        Task<bool> next = reader.MoveNextAsync().AsTask();
+        await WaitUntilAsync(() => time.Delays.Count == 1);
+
+        cancellation.Cancel();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => next);
+        Assert.Equal(1, attempts);
+    }
+
+    [Fact]
     public async Task CancellationDuringSubscriptionHandshake_DisposesAcquiredStream()
     {
         var stream = new BlockingHandshakeStream();
