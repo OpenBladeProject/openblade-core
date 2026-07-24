@@ -96,10 +96,16 @@ internal static class Program
                     specialKeyBindings,
                     new ServiceClient(),
                     specialKeyInput);
+                using IDisplayBrightnessOsd displayBrightnessOsd =
+                    WindowsDisplayBrightnessOsd.CreateBestEffort(
+                        exception => System.Diagnostics.Trace.TraceWarning(
+                            "OpenBlade brightness OSD failed: {0}",
+                            exception.Message));
                 var functionRowActions = new FunctionRowActionExecutor(
                     new ServiceClient(),
                     specialKeyInput,
-                    new WmiDisplayBrightnessController());
+                    new WmiDisplayBrightnessController(),
+                    displayBrightnessOsd);
                 await using var statusFeed = new SharedServiceStatusFeed(
                     new ServiceClient());
                 var automation = new ServiceDisplayAutomationLoop(

@@ -7,6 +7,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Added
 
+- Added a compact, non-activating Windows-style flyout for built-in display
+  brightness changes made with the laptop function keys.
 - About now lists the installed app, Session Agent, and Service build
   versions, including each component's commit hash.
 - Added a session-local function-row bridge for validated RZ09-0581 Driver

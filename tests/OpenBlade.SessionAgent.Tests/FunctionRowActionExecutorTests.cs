@@ -47,11 +47,30 @@ public sealed class FunctionRowActionExecutorTests
         int expectedDirection)
     {
         var display = new RecordingDisplayBrightnessController();
-        var executor = CreateExecutor(display: display);
+        var osd = new RecordingDisplayBrightnessOsd();
+        var executor = CreateExecutor(display: display, osd: osd);
 
         await executor.ExecuteAsync(action, CancellationToken.None);
 
         Assert.Equal([expectedDirection], display.Directions);
+        Assert.Equal([display.NextBrightness!.Value], osd.Values);
+    }
+
+    [Fact]
+    public async Task DisplayBrightnessUnavailable_DoesNotShowOsd()
+    {
+        var display = new RecordingDisplayBrightnessController
+        {
+            NextBrightness = null,
+        };
+        var osd = new RecordingDisplayBrightnessOsd();
+        var executor = CreateExecutor(display: display, osd: osd);
+
+        await executor.ExecuteAsync(
+            FunctionRowAction.DisplayBrightnessUp,
+            CancellationToken.None);
+
+        Assert.Empty(osd.Values);
     }
 
     [Theory]
@@ -160,13 +179,46 @@ public sealed class FunctionRowActionExecutorTests
             direction));
     }
 
+    [Theory]
+    [InlineData(0, 0, 1920, 1040, 96, 800, 896, 320, 72)]
+    [InlineData(-1920, 0, 0, 1400, 144, -1200, 1184, 480, 108)]
+    public void BrightnessOsdBounds_CenterAboveActiveMonitorTaskbar(
+        int left,
+        int top,
+        int right,
+        int bottom,
+        uint dpi,
+        int expectedX,
+        int expectedY,
+        int expectedWidth,
+        int expectedHeight)
+    {
+        DisplayBrightnessOsdBounds actual =
+            WindowsDisplayBrightnessOsd.CalculateBounds(
+                left,
+                top,
+                right,
+                bottom,
+                dpi);
+
+        Assert.Equal(
+            new DisplayBrightnessOsdBounds(
+                expectedX,
+                expectedY,
+                expectedWidth,
+                expectedHeight),
+            actual);
+    }
+
     private static FunctionRowActionExecutor CreateExecutor(
         RecordingServiceClient? client = null,
         RecordingInputSender? input = null,
-        RecordingDisplayBrightnessController? display = null) => new(
+        RecordingDisplayBrightnessController? display = null,
+        RecordingDisplayBrightnessOsd? osd = null) => new(
             client ?? new RecordingServiceClient(Status(LightingSettingsFactory.Off())),
             input ?? new RecordingInputSender(),
-            display ?? new RecordingDisplayBrightnessController());
+            display ?? new RecordingDisplayBrightnessController(),
+            osd ?? new RecordingDisplayBrightnessOsd());
 
     private static ServiceStatusSnapshot Status(
         LightingSettings desired,
@@ -214,13 +266,25 @@ public sealed class FunctionRowActionExecutorTests
         : IDisplayBrightnessController
     {
         public List<int> Directions { get; } = [];
+        public byte? NextBrightness { get; set; } = 60;
 
-        public Task<bool> AdjustAsync(
+        public Task<byte?> AdjustAsync(
             int direction,
             CancellationToken cancellationToken)
         {
             Directions.Add(direction);
-            return Task.FromResult(true);
+            return Task.FromResult(NextBrightness);
+        }
+    }
+
+    private sealed class RecordingDisplayBrightnessOsd : IDisplayBrightnessOsd
+    {
+        public List<byte> Values { get; } = [];
+
+        public void Show(byte brightness) => Values.Add(brightness);
+
+        public void Dispose()
+        {
         }
     }
 

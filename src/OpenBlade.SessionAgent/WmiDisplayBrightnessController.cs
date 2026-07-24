@@ -13,7 +13,7 @@ public sealed class WmiDisplayBrightnessController : IDisplayBrightnessControlle
     private const string WmiNamespace = @"root\wmi";
     private const byte BrightnessStep = 10;
 
-    public Task<bool> AdjustAsync(
+    public Task<byte?> AdjustAsync(
         int direction,
         CancellationToken cancellationToken)
     {
@@ -69,7 +69,7 @@ public sealed class WmiDisplayBrightnessController : IDisplayBrightnessControlle
                 .LastOrDefault();
     }
 
-    private static bool AdjustCore(
+    private static byte? AdjustCore(
         int direction,
         CancellationToken cancellationToken)
     {
@@ -116,10 +116,10 @@ public sealed class WmiDisplayBrightnessController : IDisplayBrightnessControlle
                     throw new ManagementException(
                         $"Windows rejected display brightness {target}% with status {returnValue}.");
                 }
-                return true;
+                return target;
             }
         }
 
-        return false;
+        return null;
     }
 }

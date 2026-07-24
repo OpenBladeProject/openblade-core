@@ -5,7 +5,12 @@ namespace OpenBlade.SessionAgent;
 
 public interface IDisplayBrightnessController
 {
-    Task<bool> AdjustAsync(int direction, CancellationToken cancellationToken);
+    Task<byte?> AdjustAsync(int direction, CancellationToken cancellationToken);
+}
+
+public interface IDisplayBrightnessOsd : IDisposable
+{
+    void Show(byte brightness);
 }
 
 /// <summary>
@@ -17,17 +22,21 @@ public sealed class FunctionRowActionExecutor
     private readonly IServiceClient serviceClient;
     private readonly ISpecialKeyInputSender input;
     private readonly IDisplayBrightnessController displayBrightness;
+    private readonly IDisplayBrightnessOsd displayBrightnessOsd;
 
     public FunctionRowActionExecutor(
         IServiceClient serviceClient,
         ISpecialKeyInputSender input,
-        IDisplayBrightnessController displayBrightness)
+        IDisplayBrightnessController displayBrightness,
+        IDisplayBrightnessOsd displayBrightnessOsd)
     {
         this.serviceClient = serviceClient
             ?? throw new ArgumentNullException(nameof(serviceClient));
         this.input = input ?? throw new ArgumentNullException(nameof(input));
         this.displayBrightness = displayBrightness
             ?? throw new ArgumentNullException(nameof(displayBrightness));
+        this.displayBrightnessOsd = displayBrightnessOsd
+            ?? throw new ArgumentNullException(nameof(displayBrightnessOsd));
     }
 
     public async Task ExecuteAsync(
@@ -58,12 +67,12 @@ public sealed class FunctionRowActionExecutor
                 input.SendMediaAction(SpecialKeyActionKind.MediaNextTrack);
                 return;
             case FunctionRowAction.DisplayBrightnessDown:
-                _ = await displayBrightness.AdjustAsync(
+                await AdjustDisplayBrightnessAsync(
                     direction: -1,
                     cancellationToken).ConfigureAwait(false);
                 return;
             case FunctionRowAction.DisplayBrightnessUp:
-                _ = await displayBrightness.AdjustAsync(
+                await AdjustDisplayBrightnessAsync(
                     direction: 1,
                     cancellationToken).ConfigureAwait(false);
                 return;
@@ -82,6 +91,19 @@ public sealed class FunctionRowActionExecutor
                 return;
             default:
                 throw new ArgumentOutOfRangeException(nameof(action));
+        }
+    }
+
+    private async Task AdjustDisplayBrightnessAsync(
+        int direction,
+        CancellationToken cancellationToken)
+    {
+        byte? brightness = await displayBrightness.AdjustAsync(
+            direction,
+            cancellationToken).ConfigureAwait(false);
+        if (brightness is { } value)
+        {
+            displayBrightnessOsd.Show(value);
         }
     }
 
