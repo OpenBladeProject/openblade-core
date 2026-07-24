@@ -144,6 +144,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Made the direct microphone-mute key update and verify every distinct Windows
+  default capture endpoint instead of only the Multimedia-role device.
 - Returned the keyboard firmware to Normal mode when OpenBlade shuts down.
   The service now stops its lighting stream, releases Driver mode with
   independent readback, and only then closes its hardware handles.

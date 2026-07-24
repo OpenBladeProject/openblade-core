@@ -248,6 +248,8 @@ public sealed class WindowsSpecialKeyInputSender : ISpecialKeyInputSender
     private const uint XButton1 = 0x0001;
     private const uint XButton2 = 0x0002;
     private const int WheelDelta = 120;
+    private const int ElementNotFoundHResult = unchecked((int)0x80070490);
+    private const uint ClassContextAll = 23;
 
     public void SendKeyboardShortcut(string shortcut)
     {
@@ -326,33 +328,111 @@ public sealed class WindowsSpecialKeyInputSender : ISpecialKeyInputSender
     public void ToggleMicrophoneMute()
     {
         object? enumeratorObject = null;
-        object? deviceObject = null;
-        object? endpointObject = null;
+        var endpoints = new List<DefaultCaptureEndpoint>();
         try
         {
             enumeratorObject = new MmDeviceEnumerator();
             var enumerator = (IMMDeviceEnumerator)enumeratorObject;
-            Marshal.ThrowExceptionForHR(enumerator.GetDefaultAudioEndpoint(
-                EDataFlow.Capture,
-                ERole.Multimedia,
-                out IMMDevice device));
-            deviceObject = device;
-            Guid endpointVolumeId = typeof(IAudioEndpointVolume).GUID;
-            Marshal.ThrowExceptionForHR(device.Activate(
-                ref endpointVolumeId,
-                23,
-                0,
-                out object endpoint));
-            endpointObject = endpoint;
-            var volume = (IAudioEndpointVolume)endpoint;
-            Marshal.ThrowExceptionForHR(volume.GetMute(out bool muted));
+            var deviceIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (ERole role in DefaultCaptureRoles)
+            {
+                int result = enumerator.GetDefaultAudioEndpoint(
+                    EDataFlow.Capture,
+                    role,
+                    out IMMDevice device);
+                if (result == ElementNotFoundHResult)
+                {
+                    continue;
+                }
+
+                Marshal.ThrowExceptionForHR(result);
+                object? deviceObject = device;
+                object? endpointObject = null;
+                try
+                {
+                    Marshal.ThrowExceptionForHR(device.GetId(out string deviceId));
+                    if (!deviceIds.Add(deviceId))
+                    {
+                        continue;
+                    }
+
+                    Guid endpointVolumeId = typeof(IAudioEndpointVolume).GUID;
+                    Marshal.ThrowExceptionForHR(device.Activate(
+                        ref endpointVolumeId,
+                        ClassContextAll,
+                        0,
+                        out object endpoint));
+                    endpointObject = endpoint;
+                    var volume = (IAudioEndpointVolume)endpoint;
+                    Marshal.ThrowExceptionForHR(volume.GetMute(out bool muted));
+                    endpoints.Add(new DefaultCaptureEndpoint(
+                        deviceObject,
+                        endpointObject,
+                        volume,
+                        muted));
+                    deviceObject = null;
+                    endpointObject = null;
+                }
+                finally
+                {
+                    ReleaseCom(endpointObject);
+                    ReleaseCom(deviceObject);
+                }
+            }
+
+            if (endpoints.Count == 0)
+            {
+                throw new InvalidOperationException(
+                    "Windows did not report a default microphone.");
+            }
+
+            bool targetMute = !endpoints[0].OriginalMute;
             Guid context = Guid.Empty;
-            Marshal.ThrowExceptionForHR(volume.SetMute(!muted, ref context));
+            try
+            {
+                foreach (DefaultCaptureEndpoint endpoint in endpoints)
+                {
+                    Marshal.ThrowExceptionForHR(endpoint.Volume.SetMute(
+                        targetMute,
+                        ref context));
+                }
+
+                foreach (DefaultCaptureEndpoint endpoint in endpoints)
+                {
+                    Marshal.ThrowExceptionForHR(endpoint.Volume.GetMute(out bool muted));
+                    if (muted != targetMute)
+                    {
+                        throw new InvalidOperationException(
+                            "Windows did not retain the requested microphone mute state.");
+                    }
+                }
+            }
+            catch
+            {
+                foreach (DefaultCaptureEndpoint endpoint in endpoints)
+                {
+                    try
+                    {
+                        _ = endpoint.Volume.SetMute(endpoint.OriginalMute, ref context);
+                    }
+                    catch
+                    {
+                        // Preserve the original failure. The operation is best-effort
+                        // reversible when an endpoint disappears during the update.
+                    }
+                }
+
+                throw;
+            }
         }
         finally
         {
-            ReleaseCom(endpointObject);
-            ReleaseCom(deviceObject);
+            foreach (DefaultCaptureEndpoint endpoint in endpoints)
+            {
+                ReleaseCom(endpoint.EndpointObject);
+                ReleaseCom(endpoint.DeviceObject);
+            }
+
             ReleaseCom(enumeratorObject);
         }
     }
@@ -516,6 +596,19 @@ public sealed class WindowsSpecialKeyInputSender : ISpecialKeyInputSender
         Communications,
     }
 
+    private static readonly ERole[] DefaultCaptureRoles =
+    [
+        ERole.Console,
+        ERole.Multimedia,
+        ERole.Communications,
+    ];
+
+    private sealed record DefaultCaptureEndpoint(
+        object DeviceObject,
+        object EndpointObject,
+        IAudioEndpointVolume Volume,
+        bool OriginalMute);
+
     [ComImport]
     [Guid("BCDE0395-E52F-467C-8E3D-C4579291692E")]
     private sealed class MmDeviceEnumerator
@@ -548,6 +641,15 @@ public sealed class WindowsSpecialKeyInputSender : ISpecialKeyInputSender
             uint classContext,
             nint activationParameters,
             [MarshalAs(UnmanagedType.IUnknown)] out object instance);
+
+        [PreserveSig]
+        int OpenPropertyStore(uint accessMode, out nint properties);
+
+        [PreserveSig]
+        int GetId([MarshalAs(UnmanagedType.LPWStr)] out string deviceId);
+
+        [PreserveSig]
+        int GetState(out uint state);
     }
 
     [ComImport]
