@@ -3,6 +3,7 @@ using System.Security.Principal;
 using Microsoft.UI.Dispatching;
 using Microsoft.UI.Xaml;
 using OpenBlade.Contracts;
+using OpenBlade.Session;
 
 namespace OpenBlade.Tray;
 
@@ -13,6 +14,7 @@ public partial class App : Microsoft.UI.Xaml.Application
     private RegisteredWaitHandle? shutdownRegistration;
     private TrayInstanceCoordinator? instanceCoordinator;
     private MainWindow? mainWindow;
+    private WindowsTrayBrightnessOsdHost? brightnessOsdHost;
     private WindowsShellThemeSource? trayIconThemeSource;
     private ITrayIconHost? trayIconHost;
     private TrayExitLifecycle? exitLifecycle;
@@ -57,6 +59,12 @@ public partial class App : Microsoft.UI.Xaml.Application
         }
 
         mainWindow = CreateMainWindow();
+        brightnessOsdHost = WindowsTrayBrightnessOsdHost.CreateBestEffort(
+            mainWindow,
+            SessionAgentEventEndpoint.Create(new SecurityIdentifier(userSid)),
+            exception => Trace.TraceWarning(
+                "OpenBlade brightness OSD host failed: {0}",
+                exception.Message));
         windowInitializationTask = mainWindow.InitializeAsync();
 
         exitLifecycle = new TrayExitLifecycle(
@@ -80,6 +88,8 @@ public partial class App : Microsoft.UI.Xaml.Application
                 },
                 DisposeViewModelAsync: async () =>
                 {
+                    brightnessOsdHost?.Dispose();
+                    brightnessOsdHost = null;
                     if (mainWindow is not null)
                     {
                         await mainWindow.DisposeAsync();

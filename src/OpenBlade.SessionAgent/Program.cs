@@ -34,6 +34,8 @@ internal static class Program
         SecurityIdentifier userSid = WindowsIdentity.GetCurrent().User
             ?? throw new InvalidOperationException("The current user SID is unavailable.");
         SessionAgentPipeEndpoint endpoint = SessionAgentPipeEndpoint.Create(userSid);
+        SessionAgentEventEndpoint eventEndpoint =
+            SessionAgentEventEndpoint.Create(userSid);
         if (!SessionAgentPipeOwner.TryAcquire(endpoint, userSid, out SessionAgentPipeOwner? owner))
         {
             return 0;
@@ -97,9 +99,10 @@ internal static class Program
                     new ServiceClient(),
                     specialKeyInput);
                 using IDisplayBrightnessOsd displayBrightnessOsd =
-                    WindowsDisplayBrightnessOsd.CreateBestEffort(
+                    WindowsTrayBrightnessOsdNotifier.CreateBestEffort(
+                        eventEndpoint,
                         exception => System.Diagnostics.Trace.TraceWarning(
-                            "OpenBlade brightness OSD failed: {0}",
+                            "OpenBlade brightness OSD notification failed: {0}",
                             exception.Message));
                 var functionRowActions = new FunctionRowActionExecutor(
                     new ServiceClient(),

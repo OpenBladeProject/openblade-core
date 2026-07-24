@@ -180,8 +180,8 @@ public sealed class FunctionRowActionExecutorTests
     }
 
     [Theory]
-    [InlineData(0, 0, 1920, 1040, 96, 863, 922, 194, 46)]
-    [InlineData(-1920, 0, 0, 1400, 144, -1106, 1223, 291, 69)]
+    [InlineData(0, 0, 1920, 1040, 96, 863, 918, 194, 50)]
+    [InlineData(-1920, 0, 0, 1400, 144, -1106, 1218, 291, 74)]
     public void BrightnessOsdBounds_CenterAboveActiveMonitorTaskbar(
         int left,
         int top,
@@ -236,6 +236,12 @@ public sealed class FunctionRowActionExecutorTests
             fallbackHighlight: 0x00D47800);
 
         Assert.Equal(0x00DEC5A7u, actual);
+    }
+
+    [Fact]
+    public void BrightnessOsdMotion_UsesWindowsDirectFlyoutDuration()
+    {
+        Assert.Equal(167, WindowsDisplayBrightnessOsd.SlideDurationMilliseconds);
     }
 
     private static FunctionRowActionExecutor CreateExecutor(

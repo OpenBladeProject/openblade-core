@@ -2,10 +2,16 @@ using System.Collections.Concurrent;
 using System.ComponentModel;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
+using System.Text;
 
-namespace OpenBlade.SessionAgent;
+namespace OpenBlade.Tray;
 
-internal sealed class NullDisplayBrightnessOsd : IDisplayBrightnessOsd
+internal interface IDisplayBrightnessOsdPresenter : IDisposable
+{
+    void Show(byte brightness);
+}
+
+internal sealed class NullDisplayBrightnessOsd : IDisplayBrightnessOsdPresenter
 {
     internal static NullDisplayBrightnessOsd Instance { get; } = new();
 
@@ -28,16 +34,19 @@ internal sealed class NullDisplayBrightnessOsd : IDisplayBrightnessOsd
 /// owns this session-local presentation while WMI remains the documented
 /// display-brightness control path.
 /// </summary>
-public sealed class WindowsDisplayBrightnessOsd : IDisplayBrightnessOsd
+public sealed class WindowsDisplayBrightnessOsd : IDisplayBrightnessOsdPresenter
 {
     private const uint ShowBrightnessMessage = 0x8001; // WM_APP + 1
+    private const uint AdvanceSlideMessage = 0x8002; // WM_APP + 2
     private const uint WindowMessageClose = 0x0010;
     private const uint WindowMessageDestroy = 0x0002;
     private const uint WindowMessageEraseBackground = 0x0014;
     private const uint WindowMessagePaint = 0x000F;
     private const uint WindowMessageTimer = 0x0113;
+    private const uint WindowMessageDpiChanged = 0x02E0;
     private const nuint HideTimerId = 1;
-    private const uint HideDelayMilliseconds = 1500;
+    private const uint HideDelayMilliseconds = 2500;
+    internal const double SlideDurationMilliseconds = 167;
     private const uint ExtendedStyle = 0x00000008 // WS_EX_TOPMOST
         | 0x00000020 // WS_EX_TRANSPARENT
         | 0x00000080 // WS_EX_TOOLWINDOW
@@ -46,12 +55,14 @@ public sealed class WindowsDisplayBrightnessOsd : IDisplayBrightnessOsd
     private const uint PopupStyle = 0x80000000;
     private const uint LayeredAlpha = 0x00000002;
     private const uint MonitorDefaultToPrimary = 0x00000001;
+    private const int EffectiveMonitorDpi = 0;
     private const uint SetWindowNoActivate = 0x0010;
-    private const uint SetWindowShow = 0x0040;
     private const int ShowNoActivate = 4;
     private const int ShowHide = 0;
     private const int TransparentBackgroundMode = 1;
     private const int NullPen = 8;
+    private const int HalftoneStretchMode = 4;
+    private const int TrackSupersampleFactor = 4;
     private const uint DrawTextCenter = 0x00000001;
     private const uint DrawTextRight = 0x00000002;
     private const uint DrawTextVerticalCenter = 0x00000004;
@@ -75,9 +86,21 @@ public sealed class WindowsDisplayBrightnessOsd : IDisplayBrightnessOsd
     private readonly TaskCompletionSource initialization =
         new(TaskCreationOptions.RunContinuationsAsynchronously);
     private readonly Action<Exception>? errorHandler;
+    private readonly object slideGate = new();
     private nint windowHandle;
     private int latestBrightness;
     private int disposed;
+    private DisplayBrightnessOsdBounds displayedBounds;
+    private nint taskbarHandle;
+    private int hiddenY;
+    private int currentY;
+    private int slideStartY;
+    private int slideEndY;
+    private long slideStartedTimestamp;
+    private int slideFramePending;
+    private bool slideActive;
+    private bool slideHidesWindow;
+    private CancellationTokenSource? slideCancellation;
 
     private WindowsDisplayBrightnessOsd(Action<Exception>? errorHandler)
     {
@@ -92,7 +115,7 @@ public sealed class WindowsDisplayBrightnessOsd : IDisplayBrightnessOsd
         initialization.Task.GetAwaiter().GetResult();
     }
 
-    public static IDisplayBrightnessOsd CreateBestEffort(
+    internal static IDisplayBrightnessOsdPresenter CreateBestEffort(
         Action<Exception>? errorHandler = null)
     {
         try
@@ -157,7 +180,7 @@ public sealed class WindowsDisplayBrightnessOsd : IDisplayBrightnessOsd
     {
         double scale = Math.Max(1d, dpi / 96d);
         int width = checked((int)Math.Round(194 * scale));
-        int height = checked((int)Math.Round(46 * scale));
+        int height = checked((int)Math.Round(49.5 * scale));
         int bottomMargin = checked((int)Math.Round(72 * scale));
         int x = workLeft + Math.Max(0, (workRight - workLeft - width) / 2);
         int y = Math.Max(workTop, workBottom - height - bottomMargin);
@@ -208,7 +231,7 @@ public sealed class WindowsDisplayBrightnessOsd : IDisplayBrightnessOsd
                 0,
                 0,
                 194,
-                46,
+                50,
                 0,
                 0,
                 module,
@@ -278,17 +301,26 @@ public sealed class WindowsDisplayBrightnessOsd : IDisplayBrightnessOsd
         switch (message)
         {
             case ShowBrightnessMessage:
+                _ = InvalidateRect(window, 0, false);
                 PositionAndShow(window);
                 _ = KillTimer(window, HideTimerId);
                 _ = SetTimer(window, HideTimerId, HideDelayMilliseconds, 0);
-                _ = InvalidateRect(window, 0, false);
+                return 0;
+            case AdvanceSlideMessage:
+                Interlocked.Exchange(ref slideFramePending, 0);
+                AdvanceSlideAnimation(window);
                 return 0;
             case WindowMessageTimer when windowParameter == HideTimerId:
                 _ = KillTimer(window, HideTimerId);
-                _ = ShowWindow(window, ShowHide);
+                StartHideAnimation(window);
                 return 0;
             case WindowMessagePaint:
                 Paint(window);
+                return 0;
+            case WindowMessageDpiChanged:
+                ApplyDpiChange(
+                    window,
+                    checked((uint)(windowParameter & 0xFFFF)));
                 return 0;
             case WindowMessageEraseBackground:
                 return 1;
@@ -296,6 +328,8 @@ public sealed class WindowsDisplayBrightnessOsd : IDisplayBrightnessOsd
                 _ = DestroyWindow(window);
                 return 0;
             case WindowMessageDestroy:
+                _ = KillTimer(window, HideTimerId);
+                CancelSlideAnimation();
                 Instances.TryRemove(window, out _);
                 windowHandle = 0;
                 PostQuitMessage(0);
@@ -320,16 +354,115 @@ public sealed class WindowsDisplayBrightnessOsd : IDisplayBrightnessOsd
                 "The active monitor could not be located for the brightness OSD.");
         }
 
-        uint dpi = GetDpiForWindow(window);
+        uint dpi = GetEffectiveMonitorDpi(monitor, window);
         DisplayBrightnessOsdBounds bounds = CalculateBounds(
             monitorInfo.WorkArea.Left,
             monitorInfo.WorkArea.Top,
             monitorInfo.WorkArea.Right,
             monitorInfo.WorkArea.Bottom,
             dpi == 0 ? 96u : dpi);
+        ApplyCornerRegion(window, bounds, dpi);
+        bool wasVisible = IsWindowVisible(window);
+        displayedBounds = bounds;
+        taskbarHandle = FindTaskbarForMonitor(monitor);
+        hiddenY = monitorInfo.WorkArea.Bottom;
+        if (!wasVisible)
+        {
+            Volatile.Write(ref currentY, hiddenY);
+            PositionWindow(window, bounds, taskbarHandle, hiddenY);
+            _ = UpdateWindow(window);
+            _ = ShowWindow(window, ShowNoActivate);
+            StartSlideAnimation(
+                window,
+                bounds,
+                taskbarHandle,
+                hiddenY,
+                bounds.Y,
+                hidesWindow: false);
+            return;
+        }
+
+        if (Volatile.Read(ref slideActive))
+        {
+            int latestY = Volatile.Read(ref currentY);
+            PositionWindow(window, bounds, taskbarHandle, latestY);
+            if (Volatile.Read(ref slideHidesWindow))
+            {
+                StartSlideAnimation(
+                    window,
+                    bounds,
+                    taskbarHandle,
+                    latestY,
+                    bounds.Y,
+                    hidesWindow: false);
+            }
+            return;
+        }
+
+        Volatile.Write(ref currentY, bounds.Y);
+        PositionWindow(window, bounds, taskbarHandle, bounds.Y);
+        _ = ShowWindow(window, ShowNoActivate);
+    }
+
+    private void ApplyDpiChange(nint window, uint dpi)
+    {
+        nint monitor = MonitorFromWindow(window, MonitorDefaultToPrimary);
+        var monitorInfo = new MonitorInformation
+        {
+            Size = checked((uint)Marshal.SizeOf<MonitorInformation>()),
+        };
+        if (monitor == 0 || !GetMonitorInfo(monitor, ref monitorInfo))
+        {
+            return;
+        }
+
+        uint effectiveDpi = dpi == 0
+            ? GetEffectiveMonitorDpi(monitor, window)
+            : dpi;
+        DisplayBrightnessOsdBounds bounds = CalculateBounds(
+            monitorInfo.WorkArea.Left,
+            monitorInfo.WorkArea.Top,
+            monitorInfo.WorkArea.Right,
+            monitorInfo.WorkArea.Bottom,
+            effectiveDpi == 0 ? 96u : effectiveDpi);
+        CancelSlideAnimation();
+        displayedBounds = bounds;
+        taskbarHandle = FindTaskbarForMonitor(monitor);
+        hiddenY = monitorInfo.WorkArea.Bottom;
+        int y = IsWindowVisible(window)
+            ? bounds.Y
+            : hiddenY;
+        Volatile.Write(ref currentY, y);
+        ApplyCornerRegion(window, bounds, effectiveDpi);
+        PositionWindow(window, bounds, taskbarHandle, y);
+        _ = InvalidateRect(window, 0, false);
+    }
+
+    private static uint GetEffectiveMonitorDpi(nint monitor, nint window)
+    {
+        if (GetDpiForMonitor(
+                monitor,
+                EffectiveMonitorDpi,
+                out uint dpiX,
+                out _) >= 0
+            && dpiX > 0)
+        {
+            return dpiX;
+        }
+
+        uint windowDpi = GetDpiForWindow(window);
+        return windowDpi == 0 ? 96u : windowDpi;
+    }
+
+    private static void ApplyCornerRegion(
+        nint window,
+        DisplayBrightnessOsdBounds bounds,
+        uint dpi)
+    {
         int cornerDiameter = Math.Max(
             10,
-            checked((int)Math.Round(14 * Math.Max(1d, dpi / 96d))));
+            checked((int)Math.Round(
+                14 * Math.Max(1d, dpi / 96d))));
         nint region = CreateRoundRectRgn(
             0,
             0,
@@ -341,20 +474,245 @@ public sealed class WindowsDisplayBrightnessOsd : IDisplayBrightnessOsd
         {
             _ = DeleteObject(region);
         }
+    }
+
+    private void StartHideAnimation(nint window)
+    {
+        if (!IsWindowVisible(window))
+        {
+            return;
+        }
+
+        StartSlideAnimation(
+            window,
+            displayedBounds,
+            taskbarHandle,
+            Volatile.Read(ref currentY),
+            hiddenY,
+            hidesWindow: true);
+    }
+
+    private void StartSlideAnimation(
+        nint window,
+        DisplayBrightnessOsdBounds bounds,
+        nint taskbar,
+        int startY,
+        int endY,
+        bool hidesWindow)
+    {
+        CancelSlideAnimation();
+        if (startY == endY)
+        {
+            Volatile.Write(ref currentY, endY);
+            PositionWindow(window, bounds, taskbar, endY);
+            if (hidesWindow)
+            {
+                _ = ShowWindow(window, ShowHide);
+            }
+            return;
+        }
+
+        var cancellation = new CancellationTokenSource();
+        lock (slideGate)
+        {
+            slideCancellation = cancellation;
+            slideStartY = startY;
+            slideEndY = endY;
+            slideStartedTimestamp = Stopwatch.GetTimestamp();
+            slideActive = true;
+            slideHidesWindow = hidesWindow;
+        }
+        CancellationToken token = cancellation.Token;
+        _ = Task.Run(
+            () => RunSlideFrameClock(window, token));
+    }
+
+    private void RunSlideFrameClock(nint window, CancellationToken token)
+    {
+        try
+        {
+            while (true)
+            {
+                token.ThrowIfCancellationRequested();
+                // DwmFlush blocks until the compositor presents the frame,
+                // then the owning window thread applies that frame. Keeping
+                // SetWindowPos on the owner prevents DWM from coalescing the
+                // entire animation into its final position.
+                if (DwmFlush() < 0)
+                {
+                    Thread.Sleep(1);
+                }
+                token.ThrowIfCancellationRequested();
+                if (Interlocked.Exchange(ref slideFramePending, 1) == 0
+                    && !PostMessage(window, AdvanceSlideMessage, 0, 0))
+                {
+                    Interlocked.Exchange(ref slideFramePending, 0);
+                    throw new Win32Exception(
+                        Marshal.GetLastWin32Error(),
+                        "The brightness OSD animation frame could not be queued.");
+                }
+
+                if (Stopwatch.GetElapsedTime(slideStartedTimestamp)
+                    .TotalMilliseconds >= SlideDurationMilliseconds)
+                {
+                    break;
+                }
+            }
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        catch (Exception exception)
+        {
+            Report(errorHandler, exception);
+        }
+    }
+
+    private void AdvanceSlideAnimation(nint window)
+    {
+        CancellationTokenSource? cancellation;
+        int startY;
+        int endY;
+        long started;
+        bool hidesWindow;
+        lock (slideGate)
+        {
+            if (!slideActive || slideCancellation is null)
+            {
+                return;
+            }
+
+            cancellation = slideCancellation;
+            startY = slideStartY;
+            endY = slideEndY;
+            started = slideStartedTimestamp;
+            hidesWindow = slideHidesWindow;
+        }
+
+        double elapsedMilliseconds =
+            Stopwatch.GetElapsedTime(started).TotalMilliseconds;
+        double progress = Math.Clamp(
+            elapsedMilliseconds / SlideDurationMilliseconds,
+            0,
+            1);
+        double easedProgress = hidesWindow
+            ? progress == 0
+                ? 0
+                : Math.Pow(2, 10 * progress - 10)
+            : progress == 1
+                ? 1
+                : 1 - Math.Pow(2, -10 * progress);
+        int y = checked((int)Math.Round(
+            startY + (endY - startY) * easedProgress));
+        PositionWindow(window, displayedBounds, taskbarHandle, y);
+        Volatile.Write(ref currentY, y);
+
+        if (progress >= 1)
+        {
+            CompleteSlideAnimation(
+                window,
+                endY,
+                hidesWindow,
+                cancellation);
+        }
+    }
+
+    private void CompleteSlideAnimation(
+        nint window,
+        int endY,
+        bool hidesWindow,
+        CancellationTokenSource cancellation)
+    {
+        lock (slideGate)
+        {
+            if (!ReferenceEquals(slideCancellation, cancellation))
+            {
+                return;
+            }
+            slideCancellation = null;
+            slideActive = false;
+            slideHidesWindow = false;
+        }
+        cancellation.Dispose();
+        Volatile.Write(ref currentY, endY);
+        if (hidesWindow)
+        {
+            _ = ShowWindow(window, ShowHide);
+        }
+    }
+
+    private void CancelSlideAnimation()
+    {
+        CancellationTokenSource? cancellation;
+        lock (slideGate)
+        {
+            cancellation = slideCancellation;
+            slideCancellation = null;
+            slideActive = false;
+            slideHidesWindow = false;
+        }
+        if (cancellation is not null)
+        {
+            cancellation.Cancel();
+            cancellation.Dispose();
+        }
+    }
+
+    private static void PositionWindow(
+        nint window,
+        DisplayBrightnessOsdBounds bounds,
+        nint taskbar,
+        int y)
+    {
+        nint insertAfter = taskbar == 0
+            ? new nint(-1) // HWND_TOPMOST
+            : taskbar;
         if (!SetWindowPos(
             window,
-            new nint(-1), // HWND_TOPMOST
+            insertAfter,
             bounds.X,
-            bounds.Y,
+            y,
             bounds.Width,
             bounds.Height,
-            SetWindowNoActivate | SetWindowShow))
+            SetWindowNoActivate))
         {
             throw new Win32Exception(
                 Marshal.GetLastWin32Error(),
                 "The brightness OSD could not be positioned.");
         }
-        _ = ShowWindow(window, ShowNoActivate);
+    }
+
+    private static nint FindTaskbarForMonitor(nint monitor)
+    {
+        nint match = 0;
+        _ = EnumWindows(
+            (candidate, _) =>
+            {
+                var className = new StringBuilder(64);
+                if (GetClassName(candidate, className, className.Capacity) == 0)
+                {
+                    return true;
+                }
+
+                string value = className.ToString();
+                if ((string.Equals(
+                        value,
+                        "Shell_TrayWnd",
+                        StringComparison.Ordinal)
+                    || string.Equals(
+                        value,
+                        "Shell_SecondaryTrayWnd",
+                        StringComparison.Ordinal))
+                    && MonitorFromWindow(candidate, 0) == monitor)
+                {
+                    match = candidate;
+                    return false;
+                }
+
+                return true;
+            },
+            0);
+        return match;
     }
 
     private void Paint(nint window)
@@ -386,11 +744,13 @@ public sealed class WindowsDisplayBrightnessOsd : IDisplayBrightnessOsd
             }
             previousBitmap = SelectObject(buffer, bitmap);
 
-            Fill(buffer, client, ColorRef(43, 43, 43));
+            Fill(buffer, client, ColorRef(50, 48, 49));
+            uint dpi = GetDpiForWindow(window);
             DrawBrightnessContent(
                 buffer,
                 client,
-                checked((byte)Volatile.Read(ref latestBrightness)));
+                checked((byte)Volatile.Read(ref latestBrightness)),
+                dpi == 0 ? 96u : dpi);
             _ = BitBlt(
                 target,
                 0,
@@ -423,17 +783,18 @@ public sealed class WindowsDisplayBrightnessOsd : IDisplayBrightnessOsd
     private static void DrawBrightnessContent(
         nint deviceContext,
         Rectangle client,
-        byte brightness)
+        byte brightness,
+        uint dpi)
     {
-        double scale = Math.Max(1d, (client.Bottom - client.Top) / 46d);
+        double scale = Math.Max(1d, dpi / 96d);
         int iconLeft = checked((int)Math.Round(8 * scale));
         int iconRight = checked((int)Math.Round(37 * scale));
-        int trackLeft = checked((int)Math.Round(43 * scale));
-        int trackRight = checked((int)Math.Round(154 * scale));
-        int trackTop = checked((int)Math.Round(20.5 * scale));
+        int trackLeft = checked((int)Math.Round(43.5 * scale));
+        int trackRight = checked((int)Math.Round(153.5 * scale));
+        int trackTop = checked((int)Math.Round(22 * scale));
         int trackHeight = Math.Max(
             4,
-            checked((int)Math.Round(4.5 * scale)));
+            checked((int)Math.Round(4 * scale)));
 
         nint iconFont = CreateFont(
             -checked((int)Math.Round(17 * scale)),
@@ -455,11 +816,14 @@ public sealed class WindowsDisplayBrightnessOsd : IDisplayBrightnessOsd
             : SelectObject(deviceContext, iconFont);
         _ = SetBkMode(deviceContext, TransparentBackgroundMode);
         _ = SetTextColor(deviceContext, ColorRef(255, 255, 255));
+        int iconVerticalOffset = Math.Max(
+            1,
+            checked((int)Math.Round(0.5 * scale)));
         var iconBounds = new Rectangle(
             iconLeft,
-            0,
+            -iconVerticalOffset,
             iconRight,
-            client.Bottom);
+            client.Bottom - iconVerticalOffset);
         _ = DrawText(
             deviceContext,
             "\uE706",
@@ -479,26 +843,17 @@ public sealed class WindowsDisplayBrightnessOsd : IDisplayBrightnessOsd
             _ = DeleteObject(iconFont);
         }
 
-        DrawRoundedBar(
+        int trackWidth = trackRight - trackLeft;
+        int progress = checked((int)Math.Round(trackWidth * brightness / 100d));
+        DrawProgressTrack(
             deviceContext,
             trackLeft,
             trackTop,
             trackRight,
             trackTop + trackHeight,
-            ColorRef(159, 159, 159));
-        int trackWidth = trackRight - trackLeft;
-        int progress = checked((int)Math.Round(trackWidth * brightness / 100d));
-        uint activeColor = GetFlyoutAccentColor();
-        if (progress > 0)
-        {
-            DrawRoundedBar(
-                deviceContext,
-                trackLeft,
-                trackTop,
-                trackLeft + Math.Max(trackHeight, progress),
-                trackTop + trackHeight,
-                activeColor);
-        }
+            progress,
+            ColorRef(159, 159, 159),
+            GetFlyoutAccentColor());
 
         nint valueFont = CreateFont(
             -checked((int)Math.Round(14 * scale)),
@@ -520,7 +875,7 @@ public sealed class WindowsDisplayBrightnessOsd : IDisplayBrightnessOsd
             : SelectObject(deviceContext, valueFont);
         int valueVerticalOffset = Math.Max(
             1,
-            checked((int)Math.Round(0.5 * scale)));
+            checked((int)Math.Round(2 * scale)));
         var valueBounds = new Rectangle(
             checked((int)Math.Round(155 * scale)),
             -valueVerticalOffset,
@@ -545,7 +900,110 @@ public sealed class WindowsDisplayBrightnessOsd : IDisplayBrightnessOsd
         }
     }
 
-    private static void DrawRoundedBar(
+    private static void DrawProgressTrack(
+        nint deviceContext,
+        int left,
+        int top,
+        int right,
+        int bottom,
+        int progress,
+        uint inactiveColor,
+        uint activeColor)
+    {
+        int width = right - left;
+        int height = bottom - top;
+        if (width <= 0 || height <= 0)
+        {
+            return;
+        }
+
+        int scaledWidth = checked(width * TrackSupersampleFactor);
+        int scaledHeight = checked(height * TrackSupersampleFactor);
+        nint buffer = CreateCompatibleDC(deviceContext);
+        nint bitmap = buffer == 0
+            ? 0
+            : CreateCompatibleBitmap(deviceContext, scaledWidth, scaledHeight);
+        nint previousBitmap = bitmap == 0
+            ? 0
+            : SelectObject(buffer, bitmap);
+        try
+        {
+            if (buffer == 0 || bitmap == 0 || previousBitmap == 0)
+            {
+                DrawRoundedBarCore(
+                    deviceContext,
+                    left,
+                    top,
+                    right,
+                    bottom,
+                    inactiveColor);
+                if (progress > 0)
+                {
+                    DrawRoundedBarCore(
+                        deviceContext,
+                        left,
+                        top,
+                        left + Math.Max(height, progress),
+                        bottom,
+                        activeColor);
+                }
+                return;
+            }
+
+            var scaledBounds = new Rectangle(0, 0, scaledWidth, scaledHeight);
+            Fill(buffer, scaledBounds, ColorRef(50, 48, 49));
+            DrawRoundedBarCore(
+                buffer,
+                0,
+                0,
+                scaledWidth,
+                scaledHeight,
+                inactiveColor);
+            if (progress > 0)
+            {
+                int scaledProgress = checked(progress * TrackSupersampleFactor);
+                DrawRoundedBarCore(
+                    buffer,
+                    0,
+                    0,
+                    Math.Max(scaledHeight, scaledProgress),
+                    scaledHeight,
+                    activeColor);
+            }
+
+            _ = SetStretchBltMode(deviceContext, HalftoneStretchMode);
+            _ = SetBrushOrgEx(deviceContext, 0, 0, out _);
+            _ = StretchBlt(
+                deviceContext,
+                left,
+                top,
+                width,
+                height,
+                buffer,
+                0,
+                0,
+                scaledWidth,
+                scaledHeight,
+                SourceCopy);
+        }
+        finally
+        {
+            if (buffer != 0 && previousBitmap != 0)
+            {
+                _ = SelectObject(buffer, previousBitmap);
+            }
+            if (bitmap != 0)
+            {
+                _ = DeleteObject(bitmap);
+            }
+            if (buffer != 0)
+            {
+                _ = DeleteDC(buffer);
+            }
+        }
+    }
+
+    private static void DrawRoundedBarCore(
         nint deviceContext,
         int left,
         int top,
@@ -774,6 +1232,10 @@ public sealed class WindowsDisplayBrightnessOsd : IDisplayBrightnessOsd
         nuint windowParameter,
         nint messageParameter);
 
+    private delegate bool EnumWindowsProcedure(
+        nint window,
+        nint parameter);
+
     [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
     private static extern nint GetModuleHandle(string? moduleName);
 
@@ -854,7 +1316,24 @@ public sealed class WindowsDisplayBrightnessOsd : IDisplayBrightnessOsd
     private static extern bool ShowWindow(nint window, int command);
 
     [DllImport("user32.dll")]
+    private static extern bool IsWindowVisible(nint window);
+
+    [DllImport("user32.dll")]
+    private static extern bool UpdateWindow(nint window);
+
+    [DllImport("user32.dll")]
     private static extern nint GetForegroundWindow();
+
+    [DllImport("user32.dll")]
+    private static extern bool EnumWindows(
+        EnumWindowsProcedure callback,
+        nint parameter);
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    private static extern int GetClassName(
+        nint window,
+        StringBuilder className,
+        int maximumCount);
 
     [DllImport("user32.dll")]
     private static extern nint MonitorFromWindow(nint window, uint flags);
@@ -1000,12 +1479,48 @@ public sealed class WindowsDisplayBrightnessOsd : IDisplayBrightnessOsd
         int ySource,
         uint rasterOperation);
 
+    [DllImport("gdi32.dll")]
+    private static extern int SetStretchBltMode(
+        nint deviceContext,
+        int stretchMode);
+
+    [DllImport("gdi32.dll")]
+    private static extern bool SetBrushOrgEx(
+        nint deviceContext,
+        int x,
+        int y,
+        out Point oldPoint);
+
+    [DllImport("gdi32.dll")]
+    private static extern bool StretchBlt(
+        nint destination,
+        int xDestination,
+        int yDestination,
+        int widthDestination,
+        int heightDestination,
+        nint source,
+        int xSource,
+        int ySource,
+        int widthSource,
+        int heightSource,
+        uint rasterOperation);
+
     [DllImport("dwmapi.dll")]
     private static extern int DwmSetWindowAttribute(
         nint window,
         int attribute,
         ref int value,
         int valueSize);
+
+    [DllImport("dwmapi.dll")]
+    private static extern int DwmFlush();
+
+    [DllImport("shcore.dll")]
+    private static extern int GetDpiForMonitor(
+        nint monitor,
+        int dpiType,
+        out uint dpiX,
+        out uint dpiY);
 }
 
 internal readonly record struct DisplayBrightnessOsdBounds(
