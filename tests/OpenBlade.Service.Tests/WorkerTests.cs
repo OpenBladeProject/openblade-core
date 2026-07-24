@@ -25,4 +25,25 @@ public sealed class WorkerTests
         await running;
         Assert.Equal(1, Volatile.Read(ref backgroundStarts));
     }
+
+    [Fact]
+    public async Task ShutdownCleanup_UsesFreshTokenAfterHostTokenIsCancelled()
+    {
+        using var stopping = new CancellationTokenSource();
+        stopping.Cancel();
+        bool cleanupRan = false;
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
+            Worker.RunWithShutdownCleanupAsync(
+                token => Task.FromCanceled(token),
+                token =>
+                {
+                    Assert.False(token.IsCancellationRequested);
+                    cleanupRan = true;
+                    return Task.CompletedTask;
+                },
+                stopping.Token));
+
+        Assert.True(cleanupRan);
+    }
 }

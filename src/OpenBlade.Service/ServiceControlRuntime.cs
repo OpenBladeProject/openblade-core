@@ -123,6 +123,12 @@ public interface IServiceControlRuntime
     Task MaintainDriverModeAsync(CancellationToken cancellationToken) =>
         Task.CompletedTask;
 
+    Task<ControlOperationResult> PrepareForShutdownAsync(
+        CancellationToken cancellationToken) => Task.FromResult(
+            new ControlOperationResult(
+                ControlOperationStatus.Applied,
+                "Keyboard Driver mode is released."));
+
     Task InvalidateLightingRendererAsync(CancellationToken cancellationToken) =>
         Task.CompletedTask;
 
@@ -152,6 +158,12 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         new(null, null, null, null);
     private static readonly DeviceCapabilities UnavailableCapabilities =
         DeviceCapabilities.Unavailable();
+    private static readonly HashSet<string> KeyboardDriverModeControllers =
+        new(StringComparer.OrdinalIgnoreCase)
+        {
+            "RazerAppEngine",
+            "Razer Synapse Service",
+        };
 
     private readonly BatteryConfigurationStore store;
     private readonly PersistentOverrideStore overrideStore;
@@ -1617,6 +1629,76 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
 
                 throw;
             }
+        }
+        finally
+        {
+            operationGate.Release();
+        }
+    }
+
+    public async Task<ControlOperationResult> PrepareForShutdownAsync(
+        CancellationToken cancellationToken)
+    {
+        EnsureInitialized();
+        await operationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            RefreshControllerPresenceCore(cancellationToken);
+            ServiceStatusSnapshot current = GetStatus();
+            if (current.ControllerDetectionWarning is not null)
+            {
+                const string unverified =
+                    "Keyboard Driver mode was left unchanged because other Razer software could not be checked.";
+                history.RecordSummary(ControlOperationStatus.Stored, unverified);
+                return new ControlOperationResult(ControlOperationStatus.Stored, unverified);
+            }
+
+            if (current.PotentialControllers.Any(KeyboardDriverModeControllers.Contains))
+            {
+                const string retained =
+                    "Keyboard Driver mode was left unchanged because Razer Synapse is active.";
+                history.RecordSummary(ControlOperationStatus.Stored, retained);
+                return new ControlOperationResult(ControlOperationStatus.Stored, retained);
+            }
+
+            if (!deviceProvider.TryGetVerifiedDevice(out IBladeDevice device))
+            {
+                const string unavailable =
+                    "OpenBlade could not verify the laptop before releasing keyboard Driver mode.";
+                history.RecordSummary(ControlOperationStatus.Failed, unavailable);
+                return new ControlOperationResult(ControlOperationStatus.Failed, unavailable);
+            }
+
+            bool? active = await device.ReleaseDriverModeAsync(cancellationToken)
+                .ConfigureAwait(false);
+            if (active is not false)
+            {
+                const string unconfirmed =
+                    "The laptop did not confirm that keyboard Driver mode was released.";
+                history.RecordSummary(ControlOperationStatus.Failed, unconfirmed);
+                return new ControlOperationResult(ControlOperationStatus.Failed, unconfirmed);
+            }
+
+            driverModePortRecoveryAttempted = false;
+            const string message = "Keyboard Driver mode was released before shutdown.";
+            history.RecordSummary(ControlOperationStatus.Applied, message);
+            PublishIfChanged(GetStatus() with
+            {
+                KeyboardDriverModeActive = false,
+                Message = message,
+            });
+            return new ControlOperationResult(ControlOperationStatus.Applied, message);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception exception)
+        {
+            string failure =
+                $"Keyboard Driver mode could not be released: {exception.Message}";
+            history.RecordSummary(ControlOperationStatus.Failed, failure);
+            return new ControlOperationResult(ControlOperationStatus.Failed, failure);
         }
         finally
         {

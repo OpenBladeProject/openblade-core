@@ -32,5 +32,5 @@ builder.Services.AddSingleton<IServiceShutdownSignal, HostServiceShutdownSignal>
 builder.Services.AddSingleton<ControlRequestHandler>();
 builder.Services.AddHostedService<Worker>();
 
-IHost host = builder.Build();
+using IHost host = builder.Build();
 host.Run();

@@ -73,6 +73,70 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     }
 
     [Fact]
+    public async Task PrepareForShutdown_ReleasesDriverModeAndPublishesNormalState()
+    {
+        TestContext context = CreateContext(providerAvailable: true);
+        context.Device.DriverModeActive = true;
+        await context.Runtime.MaintainDriverModeAsync(CancellationToken.None);
+
+        ControlOperationResult result = await context.Runtime
+            .PrepareForShutdownAsync(CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Applied, result.Status);
+        Assert.False(context.Runtime.GetStatus().KeyboardDriverModeActive);
+        Assert.Equal(1, context.Device.DriverModeReleaseCalls);
+        Assert.Equal(1, context.Device.DriverModeEnsureCalls);
+    }
+
+    [Fact]
+    public async Task PrepareForShutdown_DoesNotChangeDriverModeDuringControllerConflict()
+    {
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            conflicts: ["RazerAppEngine"]);
+        context.Device.DriverModeActive = true;
+
+        ControlOperationResult result = await context.Runtime
+            .PrepareForShutdownAsync(CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Stored, result.Status);
+        Assert.True(context.Device.DriverModeActive);
+        Assert.Equal(0, context.Device.DriverModeReleaseCalls);
+    }
+
+    [Fact]
+    public async Task PrepareForShutdown_ReleasesDriverModeWhileChromaServiceIsRunning()
+    {
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            conflicts: ["Razer Chroma SDK Service"]);
+        context.Device.DriverModeActive = true;
+
+        ControlOperationResult result = await context.Runtime
+            .PrepareForShutdownAsync(CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Applied, result.Status);
+        Assert.False(context.Device.DriverModeActive);
+        Assert.Equal(1, context.Device.DriverModeReleaseCalls);
+    }
+
+    [Fact]
+    public async Task PrepareForShutdown_DoesNotWriteWhenControllerDetectionFailed()
+    {
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            detectionFailure: "Process enumeration failed.");
+        context.Device.DriverModeActive = true;
+
+        ControlOperationResult result = await context.Runtime
+            .PrepareForShutdownAsync(CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Stored, result.Status);
+        Assert.True(context.Device.DriverModeActive);
+        Assert.Equal(0, context.Device.DriverModeReleaseCalls);
+    }
+
+    [Fact]
     public async Task BeforeInitialize_StatusAndMutationAccessAreRejectedWithoutHardwareAccess()
     {
         TestContext context = CreateContext(providerAvailable: true, initialize: false);
@@ -5189,6 +5253,8 @@ public sealed class ServiceControlRuntimeTests : IDisposable
 
         public int DriverModeReadCalls { get; private set; }
 
+        public int DriverModeReleaseCalls { get; private set; }
+
         public int OneShotSetCalls { get; private set; }
 
         public ApplyOneShotLaptopControl? LastOneShotLaptopControl { get; private set; }
@@ -5290,6 +5356,14 @@ public sealed class ServiceControlRuntimeTests : IDisposable
                 return Task.FromException<bool?>(failure);
             }
             return Task.FromResult(DriverModeActive);
+        }
+
+        public Task<bool?> ReleaseDriverModeAsync(CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            DriverModeReleaseCalls++;
+            DriverModeActive = false;
+            return Task.FromResult<bool?>(false);
         }
 
         public Task SetPerformanceAsync(PerformancePreset value, CancellationToken cancellationToken)

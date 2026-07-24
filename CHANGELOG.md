@@ -135,6 +135,9 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Returned the keyboard firmware to Normal mode when OpenBlade shuts down.
+  The service now stops its lighting stream, releases Driver mode with
+  independent readback, and only then closes its hardware handles.
 - Made F8 and F9 move the built-in display by a visible 10 percentage points
   while still selecting only brightness levels reported by Windows.
 - Kept keyboard-brightness writes independent from battery readback failures.

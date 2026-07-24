@@ -442,6 +442,40 @@ internal sealed class ProductionLightingPort : IProductionLightingPort
         }
     }
 
+    public async Task<bool?> ReleaseDriverModeAsync(
+        CancellationToken cancellationToken)
+    {
+        await EnterAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            await StopStreamCoreAsync().ConfigureAwait(false);
+            RazerDeviceMode current = await QueryDeviceModeCoreAsync(cancellationToken)
+                .ConfigureAwait(false);
+            if (current == RazerDeviceMode.Driver)
+            {
+                await SetDeviceModeCoreAsync(
+                    RazerDeviceMode.Normal,
+                    cancellationToken).ConfigureAwait(false);
+            }
+
+            RazerDeviceMode confirmed = await QueryDeviceModeCoreAsync(cancellationToken)
+                .ConfigureAwait(false);
+            if (confirmed != RazerDeviceMode.Normal)
+            {
+                throw new BladeWriteException(
+                    WriteSubmissionState.Indeterminate,
+                    "Normal mode did not match independent readback.");
+            }
+
+            ownsDriverMode = false;
+            return false;
+        }
+        finally
+        {
+            operationGate.Release();
+        }
+    }
+
     public async Task<bool?> ReadDriverModeAsync(CancellationToken cancellationToken)
     {
         await EnterAsync(cancellationToken).ConfigureAwait(false);

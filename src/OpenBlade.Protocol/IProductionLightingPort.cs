@@ -37,6 +37,13 @@ public interface IProductionLightingPort : IAsyncDisposable
         return await ReadDriverModeAsync(cancellationToken).ConfigureAwait(false);
     }
 
+    /// <summary>
+    /// Explicitly returns the firmware to Normal mode before OpenBlade stops.
+    /// A false result confirms that Driver mode is no longer active.
+    /// </summary>
+    Task<bool?> ReleaseDriverModeAsync(CancellationToken cancellationToken) =>
+        Task.FromResult<bool?>(null);
+
     Task<LightingSettings?> ReadStateAsync(CancellationToken cancellationToken);
 
     Task<LogoLightingMode?> ReadLogoStateAsync(CancellationToken cancellationToken) =>

@@ -118,11 +118,11 @@ internal static class ProductionLightingEvidenceSource
         "OpenBladeLightingImplementationFingerprint";
 
     private const string ApprovedLightingImplementationFingerprintSha256 =
-        // Re-reviewed after serializing command-interface and matrix-interface
-        // feature reports inside the admitted lighting port. The report bytes,
-        // semantic commands, frame cadence, and validated device scope are
-        // unchanged; only concurrent submission to firmware is prevented.
-        "CA3776BD2AE0534AD1B2DFCA3C675CD42D6E8A12F45D3C348C87ECE7456FB862";
+        // Re-reviewed after adding the explicit service-shutdown transition
+        // from Driver mode to Normal mode. It stops the owned frame stream,
+        // uses the already validated 00/04 mode command, and requires an
+        // independent Normal-mode readback before hardware handles close.
+        "5D79ABACAF86CAA9FF0FBA0B56511DC21D9C7FD58D77F13A6C41E7E761A8D5CF";
 
     private static readonly JsonSerializerOptions SerializerOptions =
         new(JsonSerializerDefaults.Web)

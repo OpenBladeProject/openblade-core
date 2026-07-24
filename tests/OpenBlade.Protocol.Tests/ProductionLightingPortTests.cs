@@ -109,6 +109,44 @@ public sealed class ProductionLightingPortTests
     }
 
     [Fact]
+    public async Task ReleaseDriverMode_ExplicitlyRestoresPreExistingDriverMode()
+    {
+        var session = new LightingSession(initialBrightness: 0xC5)
+        {
+            DeviceMode = RazerDeviceMode.Driver,
+        };
+        var port = CreatePort(session, new MatrixWriter(), admitted: true);
+
+        Assert.False(await port.ReleaseDriverModeAsync(default));
+
+        Assert.Equal(RazerDeviceMode.Normal, session.DeviceMode);
+        Assert.Equal(
+            [
+                (0x00, 0x84, "0000"),
+                (0x00, 0x04, "0000"),
+                (0x00, 0x84, "0000"),
+            ],
+            session.Commands.Select(CommandTuple).ToArray());
+    }
+
+    [Fact]
+    public async Task ReleaseDriverMode_WhenAlreadyNormal_DoesNotSubmitAWrite()
+    {
+        var session = new LightingSession(initialBrightness: 0xC5)
+        {
+            DeviceMode = RazerDeviceMode.Normal,
+        };
+        var port = CreatePort(session, new MatrixWriter(), admitted: true);
+
+        Assert.False(await port.ReleaseDriverModeAsync(default));
+
+        Assert.Equal(RazerDeviceMode.Normal, session.DeviceMode);
+        Assert.Equal(
+            [(0x00, 0x84, "0000"), (0x00, 0x84, "0000")],
+            session.Commands.Select(CommandTuple).ToArray());
+    }
+
+    [Fact]
     public async Task DriverModeLifecycle_ReacquiresModeAfterFirmwareFallsBackToNormal()
     {
         var session = new LightingSession(initialBrightness: 0xC5)
@@ -163,6 +201,56 @@ public sealed class ProductionLightingPortTests
         writer.ReleaseBlockedWrite();
         Assert.True(await read.WaitAsync(TimeSpan.FromSeconds(2)));
         Assert.Equal(initialCommands + 1, session.Commands.Count);
+    }
+
+    [Fact]
+    public async Task MaintainDriverMode_DoesNotStopTheActiveLightingStream()
+    {
+        var session = new LightingSession(initialBrightness: 0xFF)
+        {
+            DeviceMode = RazerDeviceMode.Driver,
+        };
+        var writer = new MatrixWriter();
+        await using var port = CreatePort(session, writer, admitted: true);
+        await port.SetLightingAsync(
+            LightingSettingsFactory.SpectrumCycling(brightness: 100),
+            default);
+
+        await port.MaintainDriverModeAsync(default);
+        int writesAfterMaintenance = writer.Reports.Count;
+
+        await writer.WaitForWriteCountAsync(
+            writesAfterMaintenance + 1,
+            TimeSpan.FromSeconds(2));
+    }
+
+    [Fact]
+    public async Task ReleaseDriverMode_DrainsTheLightingStreamBeforeModeWrite()
+    {
+        var session = new LightingSession(initialBrightness: 0xFF)
+        {
+            DeviceMode = RazerDeviceMode.Driver,
+        };
+        var writer = new MatrixWriter();
+        await using var port = CreatePort(session, writer, admitted: true);
+        await port.SetLightingAsync(
+            LightingSettingsFactory.SpectrumCycling(brightness: 100),
+            default);
+
+        int initialWrites = writer.Reports.Count;
+        int initialCommands = session.Commands.Count;
+        writer.BlockNextWrite();
+        await writer.WaitForWriteCountAsync(initialWrites + 1, TimeSpan.FromSeconds(2));
+
+        Task<bool?> release = port.ReleaseDriverModeAsync(default);
+        await Task.Delay(100);
+
+        Assert.False(release.IsCompleted);
+        Assert.Equal(initialCommands, session.Commands.Count);
+
+        writer.ReleaseBlockedWrite();
+        Assert.False(await release.WaitAsync(TimeSpan.FromSeconds(2)));
+        Assert.Equal(RazerDeviceMode.Normal, session.DeviceMode);
     }
 
     [Fact]

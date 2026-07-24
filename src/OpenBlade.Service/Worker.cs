@@ -14,6 +14,7 @@ public sealed class Worker(
     ILogger<Worker> logger) : BackgroundService
 {
     private const int MaximumPipeClients = NamedPipeControlServer.MaximumServerInstances;
+    private static readonly TimeSpan ShutdownCleanupTimeout = TimeSpan.FromSeconds(5);
 
     protected override Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -23,10 +24,30 @@ public sealed class Worker(
             runtime,
             powerStateProvider,
             logger);
-        return RunAfterSuccessfulStartupAsync(
-            startupCoordinator.InitializeAsync,
-            RunBackgroundAsync,
+        return RunWithShutdownCleanupAsync(
+            token => RunAfterSuccessfulStartupAsync(
+                startupCoordinator.InitializeAsync,
+                RunBackgroundAsync,
+                token),
+            PrepareForShutdownAsync,
             stoppingToken);
+    }
+
+    internal static async Task RunWithShutdownCleanupAsync(
+        Func<CancellationToken, Task> runAsync,
+        Func<CancellationToken, Task> cleanupAsync,
+        CancellationToken stoppingToken)
+    {
+        try
+        {
+            await runAsync(stoppingToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            using var cleanupTimeout = new CancellationTokenSource(
+                ShutdownCleanupTimeout);
+            await cleanupAsync(cleanupTimeout.Token).ConfigureAwait(false);
+        }
     }
 
     internal static async Task RunAfterSuccessfulStartupAsync(
@@ -67,6 +88,34 @@ public sealed class Worker(
                     token => RunPipeListenerAsync(server, token))),
         ];
         await ServiceBackgroundTaskGroup.RunAsync(operations, stoppingToken);
+    }
+
+    private async Task PrepareForShutdownAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            ControlOperationResult result = await runtime
+                .PrepareForShutdownAsync(cancellationToken)
+                .ConfigureAwait(false);
+            if (result.Status is not (
+                ControlOperationStatus.Applied or ControlOperationStatus.Stored))
+            {
+                logger.LogWarning(
+                    "Keyboard Driver mode cleanup did not complete during service stop: {Message}",
+                    result.Message);
+            }
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            logger.LogWarning(
+                "Keyboard Driver mode cleanup timed out during service stop.");
+        }
+        catch (Exception exception)
+        {
+            logger.LogWarning(
+                exception,
+                "Keyboard Driver mode cleanup failed during service stop.");
+        }
     }
 
     private async Task RunPipeListenerAsync(

@@ -1094,6 +1094,25 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
             }
         }
 
+        public async Task<bool?> ReleaseDriverModeAsync(
+            CancellationToken cancellationToken)
+        {
+            await EnterHardwareOperationAsync(cancellationToken).ConfigureAwait(false);
+            try
+            {
+                IProductionLightingPort? port =
+                    await GetLightingPortCoreAsync(cancellationToken).ConfigureAwait(false);
+                return port is null
+                    ? null
+                    : await port.ReleaseDriverModeAsync(cancellationToken)
+                        .ConfigureAwait(false);
+            }
+            finally
+            {
+                hardwareOperationGate.Release();
+            }
+        }
+
         internal async Task<LightingRendererOwnershipState> InvalidateLightingRendererAsync(
             CancellationToken cancellationToken)
         {
