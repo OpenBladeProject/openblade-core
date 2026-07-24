@@ -333,6 +333,56 @@ public sealed class MainViewModelTests
     }
 
     [Fact]
+    public async Task PowerSourceRefresh_DoesNotPublishTransientProfileDifference()
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        ServiceStatusSnapshot ac = CreateStatus(verified: true, blocked: false);
+        client.Publish(ac);
+        await WaitUntilAsync(() =>
+            viewModel.IsConnected
+            && viewModel.ActivePowerSource == PowerSource.PluggedIn);
+
+        var publishedDifferences = new List<bool>();
+        viewModel.PropertyChanged += (_, args) =>
+        {
+            if (args.PropertyName == nameof(viewModel.HasLaptopPageProfileDifference))
+            {
+                publishedDifferences.Add(viewModel.HasLaptopPageProfileDifference);
+            }
+        };
+
+        PowerProfile battery = ac.Profiles.Battery;
+        client.Publish(ac with
+        {
+            Revision = ac.Revision + 1,
+            ActivePowerSource = PowerSource.Battery,
+            ConfirmedState = ac.ConfirmedState! with
+            {
+                Performance = battery.Performance,
+                Fans = battery.Fans,
+            },
+            DesiredState = ac.DesiredState with
+            {
+                Performance = new ResolvedSetting<PerformancePreset>(
+                    battery.Performance,
+                    SettingValueSource.PowerProfile),
+                Fans = new ResolvedSetting<FanMode>(
+                    battery.Fans,
+                    SettingValueSource.PowerProfile),
+                FanControl = battery.FanControl,
+            },
+        });
+        await WaitUntilAsync(() =>
+            viewModel.ActivePowerSource == PowerSource.Battery
+            && viewModel.SelectedPerformance == battery.Performance);
+
+        Assert.False(viewModel.HasLaptopPageProfileDifference);
+        Assert.DoesNotContain(true, publishedDifferences);
+    }
+
+    [Fact]
     public async Task SaveLightingProfileDraft_PersistsVisibleSelectionBeforeClearingOverride()
     {
         var client = new FakeServiceClient();

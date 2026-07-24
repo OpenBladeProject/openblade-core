@@ -205,6 +205,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
     private bool mcuVersionReadAttempted;
     private LightingSettings? lastOwnedLightingSettings;
     private LightingSettings? pendingLightingRestore;
+    private bool pendingLightingRestoreFromLifecycle;
     private LightingSettings? faultedLightingRecoveryCandidate;
     private readonly HashSet<LightingSuppressionReason> lightingSuppressions = [];
     private readonly IFanTemperatureSource fanTemperatureSource;
@@ -1670,10 +1671,28 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 // The destination profile supersedes any renderer snapshot captured
                 // before the power-source transition.
                 pendingLightingRestore = null;
+                pendingLightingRestoreFromLifecycle = false;
                 await ApplyFullTransitionAsync(powerSource, cancellationToken);
             }
             else
             {
+                // Resume can leave firmware reporting Off after Windows has
+                // already retired the matrix stream. Restore the owned renderer
+                // before observation so that transient firmware state is not
+                // misclassified as an external lighting change.
+                if (pendingLightingRestoreFromLifecycle
+                    && pendingLightingRestore is not null
+                    && lightingSuppressions.Count == 0)
+                {
+                    bool restored =
+                        await RestoreLightingRendererCoreAsync(cancellationToken)
+                            .ConfigureAwait(false);
+                    if (!restored)
+                    {
+                        return;
+                    }
+                }
+
                 bool powerSourceConfirmed = powerSource != PowerSource.ExternalUnknown;
                 await ObserveCoreAsync(
                     PowerSourceForStatus(powerSource),
@@ -2010,12 +2029,15 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         if (!preserveForLifecycleRestore)
         {
             pendingLightingRestore = null;
+            pendingLightingRestoreFromLifecycle = false;
         }
         faultedLightingRecoveryCandidate = null;
 
         try
         {
             LightingSettings? owned = lastOwnedLightingSettings;
+            LightingRendererOwnershipState publishedOwnership =
+                GetStatus().LightingRendererOwnership;
             LightingRendererOwnershipState liveOwnership =
                 await deviceProvider
                     .InvalidateLightingRendererAsync(cancellationToken)
@@ -2026,11 +2048,15 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             // renderer untouched and must remain retryable.
             lastOwnedLightingSettings = null;
             if (preserveForLifecycleRestore
-                && IsExplicitLightingOwnership(liveOwnership)
                 && owned is not null
-                && OwnershipMatches(liveOwnership, owned))
+                && (IsExplicitLightingOwnership(liveOwnership)
+                        && OwnershipMatches(liveOwnership, owned)
+                    || liveOwnership == LightingRendererOwnershipState.None
+                        && IsExplicitLightingOwnership(publishedOwnership)
+                        && OwnershipMatches(publishedOwnership, owned)))
             {
                 pendingLightingRestore = owned;
+                pendingLightingRestoreFromLifecycle = true;
             }
             else if (preserveForLifecycleRestore
                 && (liveOwnership == LightingRendererOwnershipState.Faulted
@@ -2039,6 +2065,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 // A live fault, relinquished renderer, or ownership mismatch
                 // disproves the cached status and must cancel any stale restore.
                 pendingLightingRestore = null;
+                pendingLightingRestoreFromLifecycle = false;
             }
             // Repeated invalidation after a successful suspend/removal has no
             // live renderer and no new owned snapshot. Preserve the restore
@@ -2054,6 +2081,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             if (!preserveForLifecycleRestore)
             {
                 pendingLightingRestore = null;
+                pendingLightingRestoreFromLifecycle = false;
             }
         }
     }
@@ -2065,132 +2093,148 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         await operationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            ServiceStatusSnapshot current = GetStatus();
-            LightingSettings? requested = pendingLightingRestore;
-            if (requested is null
-                && preferences.AlwaysOverrideExternalLightingChanges
-                && current.ExternalChanges.Contains(DeviceSubsystem.Lighting))
-            {
-                requested = preferences.LastKnownLighting
-                    ?? current.DesiredState.Lighting.Value;
-            }
-            if (requested is null || lightingSuppressions.Count > 0)
-            {
-                return;
-            }
-
-            pendingLightingRestore = null;
-            if (requested.Effect == LightingEffect.Off
-                && current.ConfirmedState?.Lighting is { } confirmedLighting
-                && LightingSettingsFactory.NormalizeLegacyOff(confirmedLighting)
-                    == LightingSettingsFactory.NormalizeLegacyOff(requested))
-            {
-                await TryPersistLastKnownLightingAsync(requested, cancellationToken)
-                    .ConfigureAwait(false);
-                return;
-            }
-
-            bool correctingExternalLightingChange =
-                preferences.AlwaysOverrideExternalLightingChanges
-                && current.ExternalChanges.Contains(DeviceSubsystem.Lighting);
-            if (IsExplicitLightingOwnership(current.LightingRendererOwnership)
-                && !correctingExternalLightingChange)
-            {
-                // A power-source transition already established the destination
-                // profile's renderer. Never replace it with the pre-lifecycle one.
-                return;
-            }
-
-            if (current.ExternalChanges.Contains(DeviceSubsystem.Lighting)
-                && !preferences.AlwaysOverrideExternalLightingChanges)
-            {
-                pendingLightingRestore = requested;
-                const string blockedMessage =
-                    "OpenBlade lighting was not restored because an external lighting change is present.";
-                history.RecordSummary(ControlOperationStatus.Blocked, blockedMessage);
-                PublishIfChanged(current with { Message = blockedMessage });
-                return;
-            }
-
-            if (!current.DeviceVerified || current.WritesBlocked)
-            {
-                DeferLightingRestoreUntilDeviceArrival(requested, current);
-                return;
-            }
-
-            IBladeDevice device;
-            try
-            {
-                if (!deviceProvider.TryGetVerifiedDevice(out device))
-                {
-                    DeferLightingRestoreUntilDeviceArrival(requested, current);
-                    return;
-                }
-            }
-            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-            {
-                throw;
-            }
-            catch
-            {
-                PublishLightingRestoreFailure(
-                    "OpenBlade lighting could not be restored after the system lifecycle change; it will not retry automatically.",
-                    LightingRendererOwnershipState.Faulted);
-                return;
-            }
-
-            ScopedApplyOutcome outcome;
-            try
-            {
-                outcome = await new ControlCoordinator(device)
-                    .ApplyLightingOutcomeAsync(
-                        requested,
-                        cancellationToken,
-                        forceWrite: preferences.AlwaysOverrideExternalLightingChanges)
-                    .ConfigureAwait(false);
-            }
-            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-            {
-                throw;
-            }
-            catch
-            {
-                PublishLightingRestoreFailure(
-                    "OpenBlade lighting could not be restored after the system lifecycle change; it will not retry automatically.",
-                    LightingRendererOwnershipState.Faulted);
-                return;
-            }
-
-            LightingRendererOwnershipState observed =
-                await PublishObservedLightingOwnershipAsync(device, cancellationToken)
-                    .ConfigureAwait(false);
-            bool restored = outcome.Result.Status is
-                    ControlResultStatus.Applied or ControlResultStatus.Unchanged
-                && OwnershipMatches(observed, requested);
-            UpdateOwnedLightingSnapshot(
-                observed,
-                restored ? requested : null);
-            if (!restored)
-            {
-                PublishLightingRestoreFailure(
-                    "OpenBlade lighting could not be restored after the system lifecycle change; it will not retry automatically.",
-                    observed);
-                return;
-            }
-
-            await TryPersistLastKnownLightingAsync(requested, cancellationToken)
+            _ = await RestoreLightingRendererCoreAsync(cancellationToken)
                 .ConfigureAwait(false);
-
-            const string message = "OpenBlade lighting was restored after the system lifecycle change.";
-            history.RecordSubsystemResult(
-                DeviceSubsystem.Lighting,
-                new ControlResult(ControlResultStatus.Applied, message));
-            PublishIfChanged(GetStatus() with { Message = message });
         }
         finally
         {
             operationGate.Release();
         }
+    }
+
+    private async Task<bool> RestoreLightingRendererCoreAsync(
+        CancellationToken cancellationToken)
+    {
+        ServiceStatusSnapshot current = GetStatus();
+        LightingSettings? requested = pendingLightingRestore;
+        bool lifecycleRestore = pendingLightingRestoreFromLifecycle;
+        if (requested is null
+            && preferences.AlwaysOverrideExternalLightingChanges
+            && current.ExternalChanges.Contains(DeviceSubsystem.Lighting))
+        {
+            requested = preferences.LastKnownLighting
+                ?? current.DesiredState.Lighting.Value;
+        }
+        if (requested is null || lightingSuppressions.Count > 0)
+        {
+            return true;
+        }
+
+        pendingLightingRestore = null;
+        if (requested.Effect == LightingEffect.Off
+            && current.ConfirmedState?.Lighting is { } confirmedLighting
+            && LightingSettingsFactory.NormalizeLegacyOff(confirmedLighting)
+                == LightingSettingsFactory.NormalizeLegacyOff(requested))
+        {
+            await TryPersistLastKnownLightingAsync(requested, cancellationToken)
+                .ConfigureAwait(false);
+            pendingLightingRestoreFromLifecycle = false;
+            return true;
+        }
+
+        bool correctingExternalLightingChange =
+            preferences.AlwaysOverrideExternalLightingChanges
+            && current.ExternalChanges.Contains(DeviceSubsystem.Lighting);
+        if (IsExplicitLightingOwnership(current.LightingRendererOwnership)
+            && !correctingExternalLightingChange)
+        {
+            // A power-source transition already established the destination
+            // profile's renderer. Never replace it with the pre-lifecycle one.
+            pendingLightingRestoreFromLifecycle = false;
+            return true;
+        }
+
+        if (current.ExternalChanges.Contains(DeviceSubsystem.Lighting)
+            && !preferences.AlwaysOverrideExternalLightingChanges)
+        {
+            pendingLightingRestore = requested;
+            pendingLightingRestoreFromLifecycle = lifecycleRestore;
+            const string blockedMessage =
+                "OpenBlade lighting was not restored because an external lighting change is present.";
+            history.RecordSummary(ControlOperationStatus.Blocked, blockedMessage);
+            PublishIfChanged(current with { Message = blockedMessage });
+            return false;
+        }
+
+        if (!current.DeviceVerified || current.WritesBlocked)
+        {
+            DeferLightingRestoreUntilDeviceArrival(requested, current);
+            return false;
+        }
+
+        IBladeDevice device;
+        try
+        {
+            if (!deviceProvider.TryGetVerifiedDevice(out device))
+            {
+                DeferLightingRestoreUntilDeviceArrival(requested, current);
+                return false;
+            }
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch
+        {
+            pendingLightingRestoreFromLifecycle = false;
+            PublishLightingRestoreFailure(
+                "OpenBlade lighting could not be restored after the system lifecycle change; it will not retry automatically.",
+                LightingRendererOwnershipState.Faulted);
+            return false;
+        }
+
+        ScopedApplyOutcome outcome;
+        try
+        {
+            outcome = await new ControlCoordinator(device)
+                .ApplyLightingOutcomeAsync(
+                    requested,
+                    cancellationToken,
+                    forceWrite: preferences.AlwaysOverrideExternalLightingChanges)
+                .ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch
+        {
+            pendingLightingRestoreFromLifecycle = false;
+            PublishLightingRestoreFailure(
+                "OpenBlade lighting could not be restored after the system lifecycle change; it will not retry automatically.",
+                LightingRendererOwnershipState.Faulted);
+            return false;
+        }
+
+        LightingRendererOwnershipState observed =
+            await PublishObservedLightingOwnershipAsync(device, cancellationToken)
+                .ConfigureAwait(false);
+        bool restored = outcome.Result.Status is
+                ControlResultStatus.Applied or ControlResultStatus.Unchanged
+            && OwnershipMatches(observed, requested);
+        UpdateOwnedLightingSnapshot(
+            observed,
+            restored ? requested : null);
+        if (!restored)
+        {
+            pendingLightingRestoreFromLifecycle = false;
+            PublishLightingRestoreFailure(
+                "OpenBlade lighting could not be restored after the system lifecycle change; it will not retry automatically.",
+                observed);
+            return false;
+        }
+
+        await TryPersistLastKnownLightingAsync(requested, cancellationToken)
+            .ConfigureAwait(false);
+        pendingLightingRestoreFromLifecycle = false;
+
+        const string message = "OpenBlade lighting was restored after the system lifecycle change.";
+        history.RecordSubsystemResult(
+            DeviceSubsystem.Lighting,
+            new ControlResult(ControlResultStatus.Applied, message));
+        PublishIfChanged(GetStatus() with { Message = message });
+        return true;
     }
 
     private void DeferLightingRestoreUntilDeviceArrival(

@@ -287,6 +287,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     private long reconnectGeneration;
     private bool subscriptionConnected;
     private bool changingTelemetryPreferences;
+    private bool suppressProfileDifferenceNotifications;
 
     public MainViewModel(IServiceClient serviceClient, IUiDispatcher dispatcher)
         : this(
@@ -3501,6 +3502,25 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
 
     private void ApplyStatus(ServiceStatusSnapshot status)
     {
+        bool wasSuppressed = suppressProfileDifferenceNotifications;
+        suppressProfileDifferenceNotifications = true;
+        try
+        {
+            ApplyStatusCore(status);
+        }
+        finally
+        {
+            suppressProfileDifferenceNotifications = wasSuppressed;
+        }
+
+        if (!suppressProfileDifferenceNotifications)
+        {
+            NotifyProfileDifferenceState();
+        }
+    }
+
+    private void ApplyStatusCore(ServiceStatusSnapshot status)
+    {
         if (status.Revision < latestAcceptedRevision)
         {
             return;
@@ -6670,7 +6690,10 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         PropertyChanged?.Invoke(
             this,
             new PropertyChangedEventArgs(nameof(CanChangeBatteryProtection)));
-        NotifyProfileDifferenceState();
+        if (!suppressProfileDifferenceNotifications)
+        {
+            NotifyProfileDifferenceState();
+        }
     }
 
     private void NotifyProfileDifferenceState()

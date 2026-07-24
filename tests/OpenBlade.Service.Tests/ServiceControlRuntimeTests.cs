@@ -748,6 +748,52 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     }
 
     [Fact]
+    public async Task Invalidation_RestoresCachedOwnershipWhenWindowsAlreadyClosedRenderer()
+    {
+        TestContext context = await CreateOwnedStaticLightingContextAsync();
+        LightingSettings expected =
+            context.Runtime.GetStatus().DesiredState.Lighting.Value;
+
+        // Windows can retire the HID stream before the service receives the
+        // suspend callback. The last published ownership is still the service's
+        // valid lifecycle restore intent.
+        context.Device.LightingRendererOwnership =
+            LightingRendererOwnershipState.None;
+
+        await context.Runtime.InvalidateLightingRendererAsync(CancellationToken.None);
+        await context.Runtime.RestoreLightingRendererAsync(CancellationToken.None);
+
+        Assert.Equal(2, context.Device.LightingSetCalls);
+        Assert.Equal(expected, context.Device.ConfirmedState.Lighting);
+        Assert.Equal(
+            LightingRendererOwnershipState.Static,
+            context.Runtime.GetStatus().LightingRendererOwnership);
+    }
+
+    [Fact]
+    public async Task ResumeWithUnchangedPowerSource_RestoresBeforeObservingFirmwareOff()
+    {
+        TestContext context = await CreateOwnedStaticLightingContextAsync();
+        LightingSettings expected =
+            context.Runtime.GetStatus().DesiredState.Lighting.Value;
+        context.Device.LightingRendererOwnership =
+            LightingRendererOwnershipState.None;
+
+        await context.Runtime.InvalidateLightingRendererAsync(CancellationToken.None);
+        await context.Runtime.HandlePowerSourceChangedAsync(CancellationToken.None);
+        await context.Runtime.RestoreLightingRendererAsync(CancellationToken.None);
+
+        Assert.Equal(2, context.Device.LightingSetCalls);
+        Assert.Equal(expected, context.Device.ConfirmedState.Lighting);
+        Assert.DoesNotContain(
+            DeviceSubsystem.Lighting,
+            context.Runtime.GetStatus().ExternalChanges);
+        Assert.Equal(
+            LightingRendererOwnershipState.Static,
+            context.Runtime.GetStatus().LightingRendererOwnership);
+    }
+
+    [Fact]
     public async Task LifecycleRestore_WithoutExplicitOwnership_PerformsNoLightingWrite()
     {
         TestContext context = CreateWritableContext();
