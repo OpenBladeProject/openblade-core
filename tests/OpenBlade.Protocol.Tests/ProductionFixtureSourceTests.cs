@@ -86,6 +86,10 @@ public sealed class ProductionFixtureSourceTests
                 (0x00, 0x08, [0x01, 0x00, 0x00, 0x00]),
             [ProductionBatteryPort.GamingModeOffAction] =
                 (0x00, 0x08, [0x00, 0x00, 0x00, 0x00]),
+            [ProductionBatteryPort.MicrophoneMuteIndicatorOnAction] =
+                (0x18, 0x04, [0x00, 0x02, 0x01]),
+            [ProductionBatteryPort.MicrophoneMuteIndicatorOffAction] =
+                (0x18, 0x04, [0x00, 0x02, 0x00]),
         };
         using JsonDocument document = JsonDocument.Parse(fixture.Value);
         string[] fixtureActions = document.RootElement.EnumerateArray()
@@ -110,6 +114,8 @@ public sealed class ProductionFixtureSourceTests
             ProductionBatteryPort.MultimediaKeysPrimaryAction,
             ProductionBatteryPort.GamingModeOnAction,
             ProductionBatteryPort.GamingModeOffAction,
+            ProductionBatteryPort.MicrophoneMuteIndicatorOnAction,
+            ProductionBatteryPort.MicrophoneMuteIndicatorOffAction,
         })
         {
             Assert.True(catalog.TryGet(action, out RazerCommandDefinition? command));
@@ -142,6 +148,7 @@ public sealed class ProductionFixtureSourceTests
             OneShotLaptopControl.StartupAnimation,
             OneShotLaptopControl.FunctionKeyPrimary,
             OneShotLaptopControl.GamingMode,
+            OneShotLaptopControl.MicrophoneMuteIndicator,
         ]));
 
         RazerCommandDefinition catalogCommand(string action)

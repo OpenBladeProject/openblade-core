@@ -92,16 +92,18 @@ public sealed class SpecialKeyActionExecutorTests
     public async Task ExecuteAsync_DefaultM5PreservesMicrophoneMute()
     {
         var input = new RecordingInputSender();
+        var client = new RecordingServiceClient();
         var executor = new SpecialKeyActionExecutor(
             new FixedBindings(
                 SpecialKeySlot.M5,
                 new SpecialKeyAction(SpecialKeyActionKind.Default)),
-            new RecordingServiceClient(),
+            client,
             input);
 
         await executor.ExecuteAsync(SpecialKeySlot.M5, CancellationToken.None);
 
         Assert.Equal(1, input.MicrophoneMuteCount);
+        Assert.Equal(true, client.MicrophoneMuteIndicator);
     }
 
     [Fact]
@@ -214,11 +216,18 @@ public sealed class SpecialKeyActionExecutorTests
     public async Task ExecuteAsync_MicrophoneMuteUsesInputSender()
     {
         var input = new RecordingInputSender();
-        var executor = CreateExecutor(SpecialKeyActionKind.MicrophoneMute, input);
+        var client = new RecordingServiceClient();
+        var executor = new SpecialKeyActionExecutor(
+            new FixedBindings(
+                SpecialKeySlot.M2,
+                new SpecialKeyAction(SpecialKeyActionKind.MicrophoneMute)),
+            client,
+            input);
 
         await executor.ExecuteAsync(SpecialKeySlot.M2, CancellationToken.None);
 
         Assert.Equal(1, input.MicrophoneMuteCount);
+        Assert.Equal(true, client.MicrophoneMuteIndicator);
     }
 
     private static SpecialKeyActionExecutor CreateExecutor(
@@ -260,6 +269,7 @@ public sealed class SpecialKeyActionExecutorTests
         public List<SpecialKeyActionKind> MediaActions { get; } = [];
         public List<(string Target, bool RequireWebAddress)> Launches { get; } = [];
         public int MicrophoneMuteCount { get; private set; }
+        public bool MicrophoneMuted { get; set; }
 
         public void SendKeyboardShortcut(string shortcut) => Shortcuts.Add(shortcut);
 
@@ -269,7 +279,12 @@ public sealed class SpecialKeyActionExecutorTests
 
         public void SendMediaAction(SpecialKeyActionKind action) => MediaActions.Add(action);
 
-        public void ToggleMicrophoneMute() => MicrophoneMuteCount++;
+        public bool ToggleMicrophoneMute()
+        {
+            MicrophoneMuteCount++;
+            MicrophoneMuted = !MicrophoneMuted;
+            return MicrophoneMuted;
+        }
 
         public void Launch(string target, bool requireWebAddress) =>
             Launches.Add((target, requireWebAddress));
@@ -280,6 +295,7 @@ public sealed class SpecialKeyActionExecutorTests
         public int PerformanceCycles { get; private set; }
         public int GamingModeWrites { get; private set; }
         public bool? GamingModeEnabled { get; set; }
+        public bool? MicrophoneMuteIndicator { get; private set; }
 
         public Task<ControlOperationResult> CyclePerformanceShortcutAsync(
             PerformanceShortcutSource source,
@@ -298,9 +314,18 @@ public sealed class SpecialKeyActionExecutorTests
             ApplyOneShotLaptopControl value,
             CancellationToken token)
         {
-            Assert.Equal(OneShotLaptopControl.GamingMode, value.Control);
-            GamingModeEnabled = value.Enabled;
-            GamingModeWrites++;
+            if (value.Control == OneShotLaptopControl.GamingMode)
+            {
+                GamingModeEnabled = value.Enabled;
+                GamingModeWrites++;
+            }
+            else
+            {
+                Assert.Equal(
+                    OneShotLaptopControl.MicrophoneMuteIndicator,
+                    value.Control);
+                MicrophoneMuteIndicator = value.Enabled;
+            }
             return Task.FromResult(new ControlOperationResult(
                 ControlOperationStatus.Applied,
                 "Applied."));

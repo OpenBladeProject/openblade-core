@@ -9,6 +9,7 @@ public enum OneShotLaptopControl
     StartupAnimation,
     FunctionKeyPrimary,
     GamingMode,
+    MicrophoneMuteIndicator,
 }
 
 public enum FunctionKeyPrimaryMode
@@ -24,7 +25,9 @@ public sealed record ApplyOneShotLaptopControl(
 {
     public bool IsWellFormed() => Control switch
     {
-        OneShotLaptopControl.StartupAnimation or OneShotLaptopControl.GamingMode =>
+        OneShotLaptopControl.StartupAnimation
+            or OneShotLaptopControl.GamingMode
+            or OneShotLaptopControl.MicrophoneMuteIndicator =>
             Enabled.HasValue && FunctionKeyMode is null,
         OneShotLaptopControl.FunctionKeyPrimary =>
             Enabled is null

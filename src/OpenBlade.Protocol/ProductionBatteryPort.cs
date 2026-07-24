@@ -58,6 +58,10 @@ internal sealed class ProductionBatteryPort : IProductionBatteryPort
     internal const string MultimediaKeysPrimaryAction = "function-key-primary-multimedia";
     internal const string GamingModeOnAction = "gaming-mode-on";
     internal const string GamingModeOffAction = "gaming-mode-off";
+    internal const string MicrophoneMuteIndicatorOnAction =
+        "microphone-mute-indicator-on";
+    internal const string MicrophoneMuteIndicatorOffAction =
+        "microphone-mute-indicator-off";
 
     private readonly IRazerCommandSession session;
     private readonly DeviceCommandCatalog catalog;
@@ -745,6 +749,9 @@ internal sealed class ProductionBatteryPort : IProductionBatteryPort
             OneShotLaptopControl.GamingMode => value.Enabled is true
                 ? GamingModeOnAction
                 : GamingModeOffAction,
+            OneShotLaptopControl.MicrophoneMuteIndicator => value.Enabled is true
+                ? MicrophoneMuteIndicatorOnAction
+                : MicrophoneMuteIndicatorOffAction,
             _ => null,
         };
         if (action is null
@@ -888,6 +895,13 @@ internal sealed class ProductionBatteryPort : IProductionBatteryPort
         if (HasOneShotPair(catalog, GamingModeOnAction, GamingModeOffAction))
         {
             oneShotControls.Add(OneShotLaptopControl.GamingMode);
+        }
+        if (HasOneShotPair(
+                catalog,
+                MicrophoneMuteIndicatorOnAction,
+                MicrophoneMuteIndicatorOffAction))
+        {
+            oneShotControls.Add(OneShotLaptopControl.MicrophoneMuteIndicator);
         }
 
         return new DeviceCapabilities(

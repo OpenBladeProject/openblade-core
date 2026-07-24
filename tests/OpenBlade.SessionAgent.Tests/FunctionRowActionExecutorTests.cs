@@ -328,7 +328,7 @@ public sealed class FunctionRowActionExecutorTests
         public void SendText(string text) => throw new NotSupportedException();
         public void SendMouseAction(SpecialKeyActionKind action) =>
             throw new NotSupportedException();
-        public void ToggleMicrophoneMute() => throw new NotSupportedException();
+        public bool ToggleMicrophoneMute() => throw new NotSupportedException();
         public void Launch(string target, bool requireWebAddress) =>
             throw new NotSupportedException();
     }

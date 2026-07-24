@@ -21,7 +21,7 @@ public interface ISpecialKeyInputSender
 
     void SendMediaAction(SpecialKeyActionKind action);
 
-    void ToggleMicrophoneMute();
+    bool ToggleMicrophoneMute();
 
     void Launch(string target, bool requireWebAddress);
 }
@@ -76,7 +76,7 @@ public sealed class SpecialKeyActionExecutor : ISpecialKeyActionExecutor
                 input.SendMediaAction(action.Kind);
                 return;
             case SpecialKeyActionKind.MicrophoneMute:
-                input.ToggleMicrophoneMute();
+                await ToggleMicrophoneMuteAsync(cancellationToken).ConfigureAwait(false);
                 return;
             case SpecialKeyActionKind.LaunchApplication:
                 input.Launch(RequireValue(action), requireWebAddress: false);
@@ -115,7 +115,29 @@ public sealed class SpecialKeyActionExecutor : ISpecialKeyActionExecutor
         }
         else if (slot == SpecialKeySlot.M5)
         {
-            input.ToggleMicrophoneMute();
+            await ToggleMicrophoneMuteAsync(cancellationToken).ConfigureAwait(false);
+        }
+    }
+
+    private async Task ToggleMicrophoneMuteAsync(CancellationToken cancellationToken)
+    {
+        bool muted = input.ToggleMicrophoneMute();
+        try
+        {
+            _ = await serviceClient.ApplyOneShotLaptopControlAsync(
+                new ApplyOneShotLaptopControl(
+                    OneShotLaptopControl.MicrophoneMuteIndicator,
+                    Enabled: muted),
+                cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch
+        {
+            // Windows microphone mute is the primary action. A disconnected
+            // service or unavailable indicator must not undo or break it.
         }
     }
 
@@ -325,7 +347,7 @@ public sealed class WindowsSpecialKeyInputSender : ISpecialKeyInputSender
         Send([KeyDown(key), KeyUp(key)]);
     }
 
-    public void ToggleMicrophoneMute()
+    public bool ToggleMicrophoneMute()
     {
         object? enumeratorObject = null;
         var endpoints = new List<DefaultCaptureEndpoint>();
@@ -406,6 +428,8 @@ public sealed class WindowsSpecialKeyInputSender : ISpecialKeyInputSender
                             "Windows did not retain the requested microphone mute state.");
                     }
                 }
+
+                return targetMute;
             }
             catch
             {

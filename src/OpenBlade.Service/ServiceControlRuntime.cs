@@ -1108,6 +1108,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                     OneShotLaptopControl.StartupAnimation => "Startup animation",
                     OneShotLaptopControl.FunctionKeyPrimary => "Function key behavior",
                     OneShotLaptopControl.GamingMode => "Gaming Mode",
+                    OneShotLaptopControl.MicrophoneMuteIndicator =>
+                        "Microphone mute indicator",
                     _ => "Laptop control",
                 };
                 bool? refreshedStartupAnimation = null;

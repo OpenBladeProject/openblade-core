@@ -656,5 +656,43 @@
     "restored": true,
     "oneShotOnly": true,
     "expectedResponsePayload": "MgoAAA=="
+  },
+  {
+    "device": {
+      "model": "RZ09-0581",
+      "vendorId": 5426,
+      "productId": 736,
+      "biosVersion": "3.01"
+    },
+    "action": "microphone-mute-indicator-on",
+    "commandClass": 24,
+    "commandId": 4,
+    "payload": "AAIB",
+    "captured": true,
+    "decoded": true,
+    "applied": true,
+    "readBack": false,
+    "restored": true,
+    "oneShotOnly": true,
+    "expectedResponsePayload": "AAIB"
+  },
+  {
+    "device": {
+      "model": "RZ09-0581",
+      "vendorId": 5426,
+      "productId": 736,
+      "biosVersion": "3.01"
+    },
+    "action": "microphone-mute-indicator-off",
+    "commandClass": 24,
+    "commandId": 4,
+    "payload": "AAIA",
+    "captured": true,
+    "decoded": true,
+    "applied": true,
+    "readBack": false,
+    "restored": true,
+    "oneShotOnly": true,
+    "expectedResponsePayload": "AAIA"
   }
 ]

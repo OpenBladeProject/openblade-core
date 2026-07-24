@@ -1084,7 +1084,9 @@ public sealed class ProductionBatteryPortTests
             OneShotFixture(ProductionBatteryPort.FunctionKeysPrimaryAction, 0x02, 0x06, [0x01, 0x00], [0x01, 0x00]),
             OneShotFixture(ProductionBatteryPort.MultimediaKeysPrimaryAction, 0x02, 0x06, [0x01, 0x01], [0x01, 0x01]),
             OneShotFixture(ProductionBatteryPort.GamingModeOnAction, 0x00, 0x08, [0x01, 0x00, 0x00, 0x00], [0x32, 0x0A, 0x00, 0x00]),
-            OneShotFixture(ProductionBatteryPort.GamingModeOffAction, 0x00, 0x08, [0x00, 0x00, 0x00, 0x00], [0x32, 0x0A, 0x00, 0x00]));
+            OneShotFixture(ProductionBatteryPort.GamingModeOffAction, 0x00, 0x08, [0x00, 0x00, 0x00, 0x00], [0x32, 0x0A, 0x00, 0x00]),
+            OneShotFixture(ProductionBatteryPort.MicrophoneMuteIndicatorOnAction, 0x18, 0x04, [0x00, 0x02, 0x01], [0x00, 0x02, 0x01]),
+            OneShotFixture(ProductionBatteryPort.MicrophoneMuteIndicatorOffAction, 0x18, 0x04, [0x00, 0x02, 0x00], [0x00, 0x02, 0x00]));
         var cases = new[]
         {
             (new ApplyOneShotLaptopControl(OneShotLaptopControl.StartupAnimation, Enabled: true), (byte)0x0F, (byte)0x18, new byte[] { 0x00, 0x00 }, new byte[] { 0x00, 0x00 }),
@@ -1093,6 +1095,8 @@ public sealed class ProductionBatteryPortTests
             (new ApplyOneShotLaptopControl(OneShotLaptopControl.FunctionKeyPrimary, FunctionKeyMode: FunctionKeyPrimaryMode.MultimediaKeys), (byte)0x02, (byte)0x06, new byte[] { 0x01, 0x01 }, new byte[] { 0x01, 0x01 }),
             (new ApplyOneShotLaptopControl(OneShotLaptopControl.GamingMode, Enabled: true), (byte)0x00, (byte)0x08, new byte[] { 0x01, 0x00, 0x00, 0x00 }, new byte[] { 0x32, 0x0A, 0x00, 0x00 }),
             (new ApplyOneShotLaptopControl(OneShotLaptopControl.GamingMode, Enabled: false), (byte)0x00, (byte)0x08, new byte[] { 0x00, 0x00, 0x00, 0x00 }, new byte[] { 0x32, 0x0A, 0x00, 0x00 }),
+            (new ApplyOneShotLaptopControl(OneShotLaptopControl.MicrophoneMuteIndicator, Enabled: true), (byte)0x18, (byte)0x04, new byte[] { 0x00, 0x02, 0x01 }, new byte[] { 0x00, 0x02, 0x01 }),
+            (new ApplyOneShotLaptopControl(OneShotLaptopControl.MicrophoneMuteIndicator, Enabled: false), (byte)0x18, (byte)0x04, new byte[] { 0x00, 0x02, 0x00 }, new byte[] { 0x00, 0x02, 0x00 }),
         };
 
         DeviceCapabilities capabilities = ProductionBatteryPort.CreateCapabilities(
@@ -1103,6 +1107,7 @@ public sealed class ProductionBatteryPortTests
             OneShotLaptopControl.StartupAnimation,
             OneShotLaptopControl.FunctionKeyPrimary,
             OneShotLaptopControl.GamingMode,
+            OneShotLaptopControl.MicrophoneMuteIndicator,
         ]));
 
         foreach ((ApplyOneShotLaptopControl value, byte classId, byte commandId, byte[] request, byte[] response) in cases)
