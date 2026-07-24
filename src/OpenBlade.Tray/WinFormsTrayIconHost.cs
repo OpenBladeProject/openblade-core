@@ -8,6 +8,7 @@ public sealed class WinFormsTrayIconHost : ITrayIconHost
     private readonly NotifyIcon trayIcon;
     private readonly MainViewModel viewModel;
     private readonly ITrayIconThemeSource themeSource;
+    private readonly WindowsAppNotificationPresenter? notificationPresenter;
     private Icon? currentIcon;
     private int disposed;
 
@@ -33,6 +34,10 @@ public sealed class WinFormsTrayIconHost : ITrayIconHost
             Visible = true,
         };
         trayIcon.DoubleClick += (_, _) => open.Invoke();
+        notificationPresenter = WindowsAppNotificationPresenter.CreateBestEffort(
+            exception => System.Diagnostics.Trace.TraceWarning(
+                "OpenBlade app notification presenter failed: {0}",
+                exception.Message));
         viewModel.PropertyChanged += OnViewModelPropertyChanged;
         themeSource.TrayIconThemeChanged += OnTrayIconThemeChanged;
     }
@@ -48,6 +53,7 @@ public sealed class WinFormsTrayIconHost : ITrayIconHost
         themeSource.TrayIconThemeChanged -= OnTrayIconThemeChanged;
         trayIcon.Visible = false;
         trayIcon.Dispose();
+        notificationPresenter?.Dispose();
         currentIcon?.Dispose();
         currentIcon = null;
         menu.Dispose();
@@ -61,14 +67,16 @@ public sealed class WinFormsTrayIconHost : ITrayIconHost
             return;
         }
 
-        ToolTipIcon icon = notification.Severity == TrayNotificationSeverity.Error
-            ? ToolTipIcon.Error
-            : ToolTipIcon.Info;
+        if (notificationPresenter?.TryShow(notification) == true)
+        {
+            return;
+        }
+
         trayIcon.ShowBalloonTip(
             timeout: 2000,
             notification.Title,
             notification.Body,
-            icon);
+            ToolTipIcon.None);
     }
 
     private void OnViewModelPropertyChanged(

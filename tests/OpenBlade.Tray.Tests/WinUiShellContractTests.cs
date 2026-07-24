@@ -772,7 +772,8 @@ public sealed class WinUiShellContractTests
                          && !path.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}")))
         {
             string source = File.ReadAllText(file);
-            Assert.DoesNotContain("System.Windows", source, StringComparison.Ordinal);
+            Assert.DoesNotContain("using System.Windows;", source, StringComparison.Ordinal);
+            Assert.DoesNotContain("System.Windows.Controls", source, StringComparison.Ordinal);
             Assert.DoesNotContain("DynamicResource", source, StringComparison.Ordinal);
             Assert.DoesNotContain("Wpf", source, StringComparison.OrdinalIgnoreCase);
         }
@@ -801,7 +802,22 @@ public sealed class WinUiShellContractTests
         Assert.Contains("Interlocked.Exchange(ref disposed, 1)", trayHost, StringComparison.Ordinal);
         Assert.Contains("trayIcon.Visible = false", trayHost, StringComparison.Ordinal);
         Assert.Contains("trayIcon.Dispose()", trayHost, StringComparison.Ordinal);
+        Assert.Contains("notificationPresenter?.TryShow(notification)", trayHost, StringComparison.Ordinal);
+        Assert.Contains("trayIcon.Icon = replacement", trayHost, StringComparison.Ordinal);
+        Assert.Contains("ToolTipIcon.None", trayHost, StringComparison.Ordinal);
+        Assert.DoesNotContain("ToolTipIcon.Info", trayHost, StringComparison.Ordinal);
+        Assert.DoesNotContain("notificationIconRestoreTimer", trayHost, StringComparison.Ordinal);
+        Assert.DoesNotContain("trayIcon.Icon = notificationIcon", trayHost, StringComparison.Ordinal);
         Assert.Contains("menu.Dispose()", trayHost, StringComparison.Ordinal);
+
+        string notificationPresenter = ReadRepositoryFile(
+            "src",
+            "OpenBlade.Tray",
+            "WindowsAppNotificationPresenter.cs");
+        Assert.Contains("AppNotificationManager.Default", notificationPresenter, StringComparison.Ordinal);
+        Assert.Contains("manager.Register()", notificationPresenter, StringComparison.Ordinal);
+        Assert.Contains("builder.SetAppLogoOverride(logoUri)", notificationPresenter, StringComparison.Ordinal);
+        Assert.Contains("\"OpenBlade.png\"", notificationPresenter, StringComparison.Ordinal);
 
         string window = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml.cs");
         Assert.Contains("OpenBladeIconAssets.ApplicationIconPath is { } applicationIconPath", window, StringComparison.Ordinal);
