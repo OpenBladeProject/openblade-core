@@ -53,6 +53,24 @@ public sealed class WinFormsTrayIconHost : ITrayIconHost
         menu.Dispose();
     }
 
+    public void ShowNotification(TrayNotification notification)
+    {
+        ArgumentNullException.ThrowIfNull(notification);
+        if (Volatile.Read(ref disposed) != 0)
+        {
+            return;
+        }
+
+        ToolTipIcon icon = notification.Severity == TrayNotificationSeverity.Error
+            ? ToolTipIcon.Error
+            : ToolTipIcon.Info;
+        trayIcon.ShowBalloonTip(
+            timeout: 2000,
+            notification.Title,
+            notification.Body,
+            icon);
+    }
+
     private void OnViewModelPropertyChanged(
         object? sender,
         PropertyChangedEventArgs args)

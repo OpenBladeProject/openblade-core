@@ -1,6 +1,7 @@
-using Microsoft.Windows.AppNotifications;
-using Microsoft.Windows.AppNotifications.Builder;
+using System.ComponentModel;
+using System.Runtime.InteropServices;
 using OpenBlade.Contracts;
+using OpenBlade.Session;
 using OpenBlade.Tray;
 
 namespace OpenBlade.SessionAgent;
@@ -78,35 +79,38 @@ internal sealed class NullPerformanceShortcutNotificationSink
     }
 }
 
-public sealed class WindowsPerformanceShortcutNotificationSink
+public sealed class WindowsTrayPerformanceShortcutNotificationSink
     : IPerformanceShortcutNotificationSink
 {
-    private readonly AppNotificationManager manager;
-    private readonly Action<Exception>? errorHandler;
-    private int disposed;
+    private static readonly nint BroadcastWindow = new(0xFFFF);
 
-    private WindowsPerformanceShortcutNotificationSink(Action<Exception>? errorHandler)
+    private readonly uint notificationMessage;
+    private readonly Action<Exception>? errorHandler;
+
+    private WindowsTrayPerformanceShortcutNotificationSink(
+        string messageName,
+        Action<Exception>? errorHandler)
     {
         this.errorHandler = errorHandler;
-        manager = AppNotificationManager.Default;
-        manager.NotificationInvoked += OnNotificationInvoked;
-        try
+        notificationMessage = RegisterWindowMessage(messageName);
+        if (notificationMessage == 0)
         {
-            manager.Register();
-        }
-        catch
-        {
-            manager.NotificationInvoked -= OnNotificationInvoked;
-            throw;
+            throw new Win32Exception(
+                Marshal.GetLastWin32Error(),
+                "The performance notification message could not be registered.");
         }
     }
 
     public static IPerformanceShortcutNotificationSink CreateBestEffort(
+        SessionAgentEventEndpoint endpoint,
         Action<Exception>? errorHandler = null)
     {
+        ArgumentNullException.ThrowIfNull(endpoint);
         try
         {
-            return new WindowsPerformanceShortcutNotificationSink(errorHandler);
+            return new WindowsTrayPerformanceShortcutNotificationSink(
+                endpoint.PerformanceShortcutNotificationMessageName,
+                errorHandler);
         }
         catch (Exception exception)
         {
@@ -117,87 +121,63 @@ public sealed class WindowsPerformanceShortcutNotificationSink
 
     public void ShowApplied(string message)
     {
-        if (Volatile.Read(ref disposed) != 0 || string.IsNullOrWhiteSpace(message))
+        if (string.IsNullOrWhiteSpace(message))
         {
             return;
         }
 
-        try
-        {
-            AppNotification notification = new AppNotificationBuilder()
-                .AddText("Performance mode changed")
-                .AddText(PerformanceShortcutNotificationText.FormatAppliedBody(message))
-                .BuildNotification();
-            manager.Show(notification);
-        }
-        catch (Exception exception)
-        {
-            Report(errorHandler, exception);
-        }
+        PerformancePreset? preset =
+            PerformanceShortcutNotificationText.TryGetSelectedPreset(
+                message,
+                out PerformancePreset selected)
+                ? selected
+                : null;
+        Send(new PerformanceShortcutNotificationSignal(
+            PerformanceShortcutNotificationKind.CurrentMode,
+            preset));
     }
 
     public void ShowSelected(PerformancePreset preset)
     {
-        if (Volatile.Read(ref disposed) != 0 || !Enum.IsDefined(preset))
+        if (!Enum.IsDefined(preset))
         {
             return;
         }
 
-        Show(
-            "Performance mode changed",
-            $"Current mode: {PerformancePresetPresentation.Label(preset)}");
+        Send(new PerformanceShortcutNotificationSignal(
+            PerformanceShortcutNotificationKind.CurrentMode,
+            preset));
     }
 
     public void ShowFailed(string message)
     {
-        if (Volatile.Read(ref disposed) != 0 || string.IsNullOrWhiteSpace(message))
+        if (string.IsNullOrWhiteSpace(message))
         {
             return;
         }
 
-        Show("Performance mode could not be changed", message);
+        Send(new PerformanceShortcutNotificationSignal(
+            PerformanceShortcutNotificationKind.Failed,
+            Preset: null));
     }
 
-    private void Show(string title, string body)
+    private void Send(PerformanceShortcutNotificationSignal signal)
     {
-        try
+        if (!PostMessage(
+                BroadcastWindow,
+                notificationMessage,
+                signal.Encode(),
+                0))
         {
-            AppNotification notification = new AppNotificationBuilder()
-                .AddText(title)
-                .AddText(body)
-                .BuildNotification();
-            manager.Show(notification);
-        }
-        catch (Exception exception)
-        {
-            Report(errorHandler, exception);
+            Report(
+                errorHandler,
+                new Win32Exception(
+                    Marshal.GetLastWin32Error(),
+                    "The tray could not be notified of the performance shortcut."));
         }
     }
 
     public void Dispose()
-    {
-        if (Interlocked.Exchange(ref disposed, 1) != 0)
-        {
-            return;
-        }
-
-        try
-        {
-            manager.Unregister();
-        }
-        catch (Exception exception)
-        {
-            Report(errorHandler, exception);
-        }
-        finally
-        {
-            manager.NotificationInvoked -= OnNotificationInvoked;
-        }
-    }
-
-    private static void OnNotificationInvoked(
-        AppNotificationManager sender,
-        AppNotificationActivatedEventArgs args)
     {
     }
 
@@ -211,4 +191,19 @@ public sealed class WindowsPerformanceShortcutNotificationSink
         {
         }
     }
+
+    [DllImport(
+        "user32.dll",
+        EntryPoint = "RegisterWindowMessageW",
+        SetLastError = true,
+        CharSet = CharSet.Unicode)]
+    private static extern uint RegisterWindowMessage(string messageName);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool PostMessage(
+        nint window,
+        uint message,
+        nuint windowParameter,
+        nint longParameter);
 }

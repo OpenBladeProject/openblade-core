@@ -74,7 +74,7 @@ public sealed class WindowsDisplayBrightnessOsd : IDisplayBrightnessOsdPresenter
     private const int DwmRoundCorners = 2;
     private const int ColorHighlight = 13;
     private const string AccentPaletteRegistryPath =
-        @"HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Explorer\Accent";
+        @"Software\Microsoft\Windows\CurrentVersion\Explorer\Accent";
     private static readonly nint PerMonitorAwareV2 = new(-4);
     private static readonly ConcurrentDictionary<nint, WindowsDisplayBrightnessOsd>
         Instances = new();
@@ -1120,24 +1120,11 @@ public sealed class WindowsDisplayBrightnessOsd : IDisplayBrightnessOsdPresenter
     private static uint GetFlyoutAccentColor()
     {
         uint fallbackHighlight = GetSysColor(ColorHighlight);
-        try
-        {
-            return ResolveFlyoutAccentColor(
-                Microsoft.Win32.Registry.GetValue(
-                    AccentPaletteRegistryPath,
-                    "AccentPalette",
-                    null) as byte[],
-                fallbackHighlight);
-        }
-        catch (Exception exception) when (
-            exception is IOException
-                or System.Security.SecurityException
-                or UnauthorizedAccessException)
-        {
-            return ResolveFlyoutAccentColor(
-                accentPalette: null,
-                fallbackHighlight);
-        }
+        return ResolveFlyoutAccentColor(
+            WindowsRegistryReader.ReadCurrentUserBinary(
+                AccentPaletteRegistryPath,
+                "AccentPalette"),
+            fallbackHighlight);
     }
 
     private static void Report(Action<Exception>? errorHandler, Exception exception)

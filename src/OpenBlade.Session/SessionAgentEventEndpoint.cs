@@ -5,17 +5,21 @@ using System.Text;
 namespace OpenBlade.Session;
 
 public sealed record SessionAgentEventEndpoint(
-    string DisplayBrightnessChangedMessageName)
+    string DisplayBrightnessChangedMessageName,
+    string PerformanceShortcutNotificationMessageName)
 {
     private const string DisplayBrightnessChangedPrefix =
         "OpenBlade.SessionAgent.DisplayBrightnessChanged";
+    private const string PerformanceShortcutNotificationPrefix =
+        "OpenBlade.SessionAgent.PerformanceShortcutNotification";
 
     public static SessionAgentEventEndpoint Create(SecurityIdentifier userSid)
     {
         ArgumentNullException.ThrowIfNull(userSid);
         byte[] hash = SHA256.HashData(Encoding.UTF8.GetBytes(userSid.Value));
+        string suffix = Convert.ToHexString(hash.AsSpan(0, 16));
         return new SessionAgentEventEndpoint(
-            $"{DisplayBrightnessChangedPrefix}."
-                + Convert.ToHexString(hash.AsSpan(0, 16)));
+            $"{DisplayBrightnessChangedPrefix}.{suffix}",
+            $"{PerformanceShortcutNotificationPrefix}.{suffix}");
     }
 }

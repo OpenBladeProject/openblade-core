@@ -1,4 +1,3 @@
-using System.Security;
 using Microsoft.UI.Dispatching;
 using Microsoft.Win32;
 
@@ -68,20 +67,7 @@ public sealed class WindowsShellThemeSource : ITrayIconThemeSource, IDisposable
             ReadSystemUsesLightTheme());
 
     private static int? ReadSystemUsesLightTheme()
-    {
-        try
-        {
-            using RegistryKey? personalize = Registry.CurrentUser.OpenSubKey(
-                PersonalizeRegistryPath,
-                writable: false);
-            return personalize?.GetValue(SystemUsesLightThemeValueName) is int value
-                ? value
-                : null;
-        }
-        catch (Exception exception) when (
-            exception is IOException or SecurityException or UnauthorizedAccessException)
-        {
-            return null;
-        }
-    }
+        => WindowsRegistryReader.ReadCurrentUserDword(
+            PersonalizeRegistryPath,
+            SystemUsesLightThemeValueName);
 }

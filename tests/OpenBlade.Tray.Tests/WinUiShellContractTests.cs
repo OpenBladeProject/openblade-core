@@ -883,14 +883,21 @@ public sealed class WinUiShellContractTests
                          && !path.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}")))
         {
             string source = File.ReadAllText(file);
-            if (!file.EndsWith(
-                    "WindowsShellThemeSource.cs",
-                    StringComparison.OrdinalIgnoreCase))
+            bool isRegistryReader = file.EndsWith(
+                "WindowsRegistryReader.cs",
+                StringComparison.OrdinalIgnoreCase);
+            bool isShellThemeSource = file.EndsWith(
+                "WindowsShellThemeSource.cs",
+                StringComparison.OrdinalIgnoreCase);
+            if (!isRegistryReader && !isShellThemeSource)
             {
                 Assert.DoesNotContain(
                     "Microsoft.Win32",
                     source,
                     StringComparison.Ordinal);
+            }
+            if (!isShellThemeSource)
+            {
                 Assert.DoesNotContain("SystemEvents", source, StringComparison.Ordinal);
             }
             if (!file.EndsWith(

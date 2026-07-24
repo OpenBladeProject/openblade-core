@@ -15,6 +15,7 @@ public partial class App : Microsoft.UI.Xaml.Application
     private TrayInstanceCoordinator? instanceCoordinator;
     private MainWindow? mainWindow;
     private WindowsTrayBrightnessOsdHost? brightnessOsdHost;
+    private WindowsTrayPerformanceNotificationHost? performanceNotificationHost;
     private WindowsShellThemeSource? trayIconThemeSource;
     private ITrayIconHost? trayIconHost;
     private TrayExitLifecycle? exitLifecycle;
@@ -43,28 +44,23 @@ public partial class App : Microsoft.UI.Xaml.Application
             return;
         }
 
-        try
-        {
-            if (!SessionAgentLauncher.TryStartSibling())
-            {
-                Trace.TraceWarning(
-                    "OpenBlade session agent is not present beside the tray executable.");
-            }
-        }
-        catch (Exception exception)
-        {
-            Trace.TraceError(
-                "OpenBlade session agent could not be started: {0}",
-                exception);
-        }
-
         mainWindow = CreateMainWindow();
+        SessionAgentEventEndpoint sessionEventEndpoint =
+            SessionAgentEventEndpoint.Create(new SecurityIdentifier(userSid));
         brightnessOsdHost = WindowsTrayBrightnessOsdHost.CreateBestEffort(
             mainWindow,
-            SessionAgentEventEndpoint.Create(new SecurityIdentifier(userSid)),
+            sessionEventEndpoint,
             exception => Trace.TraceWarning(
                 "OpenBlade brightness OSD host failed: {0}",
                 exception.Message));
+        performanceNotificationHost =
+            WindowsTrayPerformanceNotificationHost.CreateBestEffort(
+                mainWindow,
+                sessionEventEndpoint,
+                signal => Enqueue(() => ShowPerformanceNotification(signal)),
+                exception => Trace.TraceWarning(
+                    "OpenBlade performance notification host failed: {0}",
+                    exception.Message));
         windowInitializationTask = mainWindow.InitializeAsync();
 
         exitLifecycle = new TrayExitLifecycle(
@@ -88,6 +84,8 @@ public partial class App : Microsoft.UI.Xaml.Application
                 },
                 DisposeViewModelAsync: async () =>
                 {
+                    performanceNotificationHost?.Dispose();
+                    performanceNotificationHost = null;
                     brightnessOsdHost?.Dispose();
                     brightnessOsdHost = null;
                     if (mainWindow is not null)
@@ -126,6 +124,7 @@ public partial class App : Microsoft.UI.Xaml.Application
 
         trayIconThemeSource = new WindowsShellThemeSource(uiDispatcherQueue);
         CreateTrayIconHost();
+        StartSessionAgent();
         ShowMainWindow(initialLaunch: true);
     }
 
@@ -149,6 +148,54 @@ public partial class App : Microsoft.UI.Xaml.Application
             trayMenuController,
             mainWindow.ViewModel,
             trayIconThemeSource);
+    }
+
+    private static void StartSessionAgent()
+    {
+        try
+        {
+            if (!SessionAgentLauncher.TryStartSibling())
+            {
+                Trace.TraceWarning(
+                    "OpenBlade session agent is not present beside the tray executable.");
+            }
+        }
+        catch (Exception exception)
+        {
+            Trace.TraceError(
+                "OpenBlade session agent could not be started: {0}",
+                exception);
+        }
+    }
+
+    private void ShowPerformanceNotification(
+        PerformanceShortcutNotificationSignal signal)
+    {
+        if (trayIconHost is null)
+        {
+            return;
+        }
+
+        TrayNotification notification;
+        if (signal.Kind == PerformanceShortcutNotificationKind.Failed)
+        {
+            notification = new TrayNotification(
+                "Performance mode could not be changed",
+                "OpenBlade could not apply the selected mode.",
+                TrayNotificationSeverity.Error);
+        }
+        else
+        {
+            string body = signal.Preset is { } preset
+                ? $"Current mode: {PerformancePresetPresentation.Label(preset)}"
+                : "The performance mode changed.";
+            notification = new TrayNotification(
+                "Performance mode changed",
+                body,
+                TrayNotificationSeverity.Information);
+        }
+
+        trayIconHost.ShowNotification(notification);
     }
 
     public Task ExitTrayAsync()

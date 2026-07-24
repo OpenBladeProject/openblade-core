@@ -115,7 +115,8 @@ internal static class Program
                     statusFeed,
                     coordinator);
                 using IPerformanceShortcutNotificationSink shortcutNotifications =
-                    WindowsPerformanceShortcutNotificationSink.CreateBestEffort(
+                    WindowsTrayPerformanceShortcutNotificationSink.CreateBestEffort(
+                        eventEndpoint,
                         exception => System.Diagnostics.Trace.TraceWarning(
                             "OpenBlade notification failed: {0}",
                             exception.Message));

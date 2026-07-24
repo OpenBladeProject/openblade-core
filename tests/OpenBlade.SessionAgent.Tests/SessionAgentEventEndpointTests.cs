@@ -18,6 +18,10 @@ public sealed class SessionAgentEventEndpointTests
             "OpenBlade.SessionAgent.DisplayBrightnessChanged.",
             first.DisplayBrightnessChangedMessageName,
             StringComparison.Ordinal);
+        Assert.StartsWith(
+            "OpenBlade.SessionAgent.PerformanceShortcutNotification.",
+            first.PerformanceShortcutNotificationMessageName,
+            StringComparison.Ordinal);
     }
 
     [Fact]
@@ -31,5 +35,8 @@ public sealed class SessionAgentEventEndpointTests
         Assert.NotEqual(
             first.DisplayBrightnessChangedMessageName,
             second.DisplayBrightnessChangedMessageName);
+        Assert.NotEqual(
+            first.PerformanceShortcutNotificationMessageName,
+            second.PerformanceShortcutNotificationMessageName);
     }
 }

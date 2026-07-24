@@ -14,10 +14,6 @@
     <WindowsAppSDKSelfContained>true</WindowsAppSDKSelfContained>
   </PropertyGroup>
   <ItemGroup>
-    <!-- Notifications live in Foundation; the umbrella package
-         unnecessarily deploys WinUI, AI, ML, and Widgets into the agent. -->
-    <PackageReference Include="Microsoft.WindowsAppSDK.Foundation" Version="[2.1.0]" />
-    <PackageReference Include="Microsoft.WindowsAppSDK.Runtime" Version="[2.2.0]" />
     <PackageReference Include="System.Management" Version="[10.0.0]" />
   </ItemGroup>
   <ItemGroup>
