@@ -526,10 +526,18 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             }
 
             ServiceStatusSnapshot current = GetStatus();
-            IReadOnlyList<PerformancePreset> cycle = PerformanceShortcutCycle(
+            PerformancePreset currentPreset =
+                current.ExternalChanges.Contains(DeviceSubsystem.Performance)
+                    && current.ConfirmedState?.Performance is { } observedPreset
+                    ? observedPreset
+                    : Automation
+                        .Resolve(current.ConfirmedState ?? UnknownConfirmedState)
+                        .Performance.Value;
+            if (!PerformanceShortcutSelection.TrySelectNext(
                 powerSource,
-                current.Capabilities?.PerformancePresets);
-            if (cycle.Count < 2)
+                current.Capabilities?.PerformancePresets,
+                currentPreset,
+                out PerformancePreset next))
             {
                 const string unavailableMessage =
                     "No alternate performance preset is available for the current power source.";
@@ -539,24 +547,6 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                     ControlOperationStatus.Blocked,
                     unavailableMessage);
             }
-
-            PerformancePreset currentPreset =
-                current.ExternalChanges.Contains(DeviceSubsystem.Performance)
-                    && current.ConfirmedState?.Performance is { } observedPreset
-                    ? observedPreset
-                    : Automation
-                        .Resolve(current.ConfirmedState ?? UnknownConfirmedState)
-                        .Performance.Value;
-            int currentIndex = -1;
-            for (int index = 0; index < cycle.Count; index++)
-            {
-                if (cycle[index] == currentPreset)
-                {
-                    currentIndex = index;
-                    break;
-                }
-            }
-            PerformancePreset next = cycle[(currentIndex + 1 + cycle.Count) % cycle.Count];
             var stagedOverride = new PerformanceOverride(
                 next,
                 OverrideLifetime.UntilPowerSourceChange,
@@ -4063,34 +4053,6 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         LightingRendererOwnershipState ownership) => ownership is
         LightingRendererOwnershipState.Reactive or
         LightingRendererOwnershipState.Ripple;
-
-    private static IReadOnlyList<PerformancePreset> PerformanceShortcutCycle(
-        PowerSource powerSource,
-        IReadOnlySet<PerformancePreset>? admitted)
-    {
-        PerformancePreset[] ordered = powerSource switch
-        {
-            PowerSource.PluggedIn =>
-            [
-                PerformancePreset.Balanced,
-                PerformancePreset.Silent,
-                PerformancePreset.Performance,
-                PerformancePreset.Custom,
-            ],
-            PowerSource.Battery =>
-            [
-                PerformancePreset.BatteryBalanced,
-                PerformancePreset.BatterySaver,
-            ],
-            _ => [],
-        };
-        if (admitted is null || admitted.Count == 0)
-        {
-            return ordered;
-        }
-
-        return ordered.Where(admitted.Contains).ToArray();
-    }
 
     private static bool OwnershipMatches(
         LightingRendererOwnershipState ownership,

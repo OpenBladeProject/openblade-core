@@ -31,6 +31,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
   version, runtime, process context, exception details, and stack traces. The
   reporter retains the newest 20 files and never suppresses the original
   failure.
+- Added the same retained fatal crash reports to the always-running Session
+  Agent, including failures from any of its coordinated background loops.
 - Added a customizable Dashboard card picker. Users can pin full interactive
   power, fan, battery, keyboard, startup, lighting, and display cards and drag
   them into the preferred order; the selection and order persist in UI
@@ -58,9 +60,13 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Changed
 
-- Restored the built-in M3 Gaming mode and M5 microphone-mute actions while
-  keyboard Driver mode is active. Default bindings now invoke their native
-  behavior through the Session Agent instead of silently discarding the keys.
+- Separated the non-Fn Game mode, performance mode, and microphone-mute reports
+  from the customizable Fn-layer M3, M4, and M5 reports. Their normal actions
+  now keep working in keyboard Driver mode without changing Fn-layer bindings.
+- Made performance-key feedback immediate. OpenBlade predicts the next admitted
+  mode from the latest authoritative service state, shows the Windows notification
+  before the firmware write finishes, and follows with a failure notification
+  if the service cannot apply the selection.
 - Made About-page action rows fully clickable with a subtle Windows Settings
   hover and pressed highlight. The Troubleshooting expander uses the same
   full-card interaction treatment, and all trailing glyphs share the native

@@ -37,6 +37,24 @@ public interface IReactiveKeyboardSourceFactory
             publishPerformanceShortcut,
             publishSpecialKey,
             shouldOverrideSpecialKey);
+
+    IReactiveKeyboardSource Create(
+        Action<ReactiveKeyPulse> publish,
+        Action<PerformanceShortcutSource> publishPerformanceShortcut,
+        Action<SpecialKeySlot> publishSpecialKey,
+        Func<SpecialKeySlot, bool> shouldOverrideSpecialKey,
+        Action<SpecialKeySlot> publishDefaultLaptopKey,
+        Action<FunctionRowAction> publishFunctionRowAction,
+        Func<FunctionKeyPrimaryMode?> readFunctionKeyPrimaryMode,
+        Func<bool> isDriverModeActive) =>
+        Create(
+            publish,
+            publishPerformanceShortcut,
+            publishSpecialKey,
+            shouldOverrideSpecialKey,
+            publishFunctionRowAction,
+            readFunctionKeyPrimaryMode,
+            isDriverModeActive);
 }
 
 /// <summary>
@@ -54,11 +72,16 @@ public sealed class ServiceReactiveLightingLoop : IAsyncDisposable
     private readonly ReactiveKeyPulsePump pulsePump;
     private readonly PerformanceShortcutTriggerPump shortcutPump;
     private readonly SpecialKeyTriggerPump? specialKeyPump;
+    private readonly SpecialKeyTriggerPump? defaultLaptopKeyPump;
     private readonly Func<SpecialKeySlot, bool> shouldOverrideSpecialKey;
     private readonly IPerformanceShortcutNotificationSink shortcutNotifications;
     private readonly Action<Exception>? errorHandler;
     private readonly FunctionRowActionPump? functionRowActionPump;
+    private readonly object performanceShortcutStateSync = new();
     private IReactiveKeyboardSource? source;
+    private ServiceStatusSnapshot? latestStatus;
+    private PerformancePreset? optimisticPerformancePreset;
+    private bool performanceShortcutInFlight;
     private int inputConnected;
     private int keyTriggeredActive;
     private int functionKeyPrimaryMode = -1;
@@ -73,6 +96,7 @@ public sealed class ServiceReactiveLightingLoop : IAsyncDisposable
         IServiceStatusWatcher? statusWatcher = null,
         Func<SpecialKeySlot, bool>? shouldOverrideSpecialKey = null,
         Func<SpecialKeySlot, CancellationToken, Task>? executeSpecialKeyAsync = null,
+        Func<SpecialKeySlot, CancellationToken, Task>? executeDefaultLaptopKeyAsync = null,
         Func<FunctionRowAction, CancellationToken, Task>? executeFunctionRowActionAsync = null)
     {
         this.serviceClient = serviceClient ?? throw new ArgumentNullException(nameof(serviceClient));
@@ -96,6 +120,12 @@ public sealed class ServiceReactiveLightingLoop : IAsyncDisposable
         {
             specialKeyPump = new SpecialKeyTriggerPump(
                 executeSpecialKeyAsync,
+                errorHandler: ReportFailure);
+        }
+        if (executeDefaultLaptopKeyAsync is not null)
+        {
+            defaultLaptopKeyPump = new SpecialKeyTriggerPump(
+                executeDefaultLaptopKeyAsync,
                 errorHandler: ReportFailure);
         }
     }
@@ -176,6 +206,10 @@ public sealed class ServiceReactiveLightingLoop : IAsyncDisposable
         {
             await specialKeyPump.DisposeAsync().ConfigureAwait(false);
         }
+        if (defaultLaptopKeyPump is not null)
+        {
+            await defaultLaptopKeyPump.DisposeAsync().ConfigureAwait(false);
+        }
         if (functionRowActionPump is not null)
         {
             await functionRowActionPump.DisposeAsync().ConfigureAwait(false);
@@ -198,6 +232,7 @@ public sealed class ServiceReactiveLightingLoop : IAsyncDisposable
             pulsePump.ClearPending();
             shortcutPump.ClearPending();
             specialKeyPump?.ClearPending();
+            defaultLaptopKeyPump?.ClearPending();
             functionRowActionPump?.ClearPending();
             return;
         }
@@ -236,6 +271,15 @@ public sealed class ServiceReactiveLightingLoop : IAsyncDisposable
                     }
                 },
                 shouldOverrideSpecialKey,
+                defaultLaptopKey =>
+                {
+                    if (defaultLaptopKeyPump is null
+                        || !defaultLaptopKeyPump.TryEnqueue(defaultLaptopKey))
+                    {
+                        ReportFailure(new InvalidOperationException(
+                            "Default laptop-key input could not keep up and skipped a button press."));
+                    }
+                },
                 action =>
                 {
                     if (functionRowActionPump is null
@@ -301,6 +345,15 @@ public sealed class ServiceReactiveLightingLoop : IAsyncDisposable
 
     private void ApplyAuthoritativeStatus(ServiceStatusSnapshot status)
     {
+        lock (performanceShortcutStateSync)
+        {
+            latestStatus = status;
+            if (!performanceShortcutInFlight)
+            {
+                optimisticPerformancePreset = null;
+            }
+        }
+
         if (!status.DeviceVerified)
         {
             Interlocked.Exchange(ref functionKeyPrimaryMode, -1);
@@ -411,15 +464,59 @@ public sealed class ServiceReactiveLightingLoop : IAsyncDisposable
         PerformanceShortcutSource source,
         CancellationToken cancellationToken)
     {
-        ControlOperationResult result = await serviceClient
-            .CyclePerformanceShortcutAsync(source, cancellationToken)
-            .ConfigureAwait(false);
+        PerformancePreset? predicted = BeginPerformanceShortcut();
+        if (predicted is { } selected)
+        {
+            try
+            {
+                shortcutNotifications.ShowSelected(selected);
+            }
+            catch (Exception exception)
+            {
+                ReportFailure(exception);
+            }
+        }
+
+        ControlOperationResult result;
+        try
+        {
+            result = await serviceClient
+                .CyclePerformanceShortcutAsync(source, cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            CompletePerformanceShortcut(applied: false);
+            throw;
+        }
+        catch (Exception exception)
+        {
+            CompletePerformanceShortcut(applied: false);
+            TryShowPerformanceShortcutFailure(exception.Message);
+            throw;
+        }
+        CompletePerformanceShortcut(result.Status == ControlOperationStatus.Applied);
         if (result.Status == ControlOperationStatus.Failed)
         {
+            TryShowPerformanceShortcutFailure(result.Message);
             throw new InvalidOperationException(result.Message);
         }
 
-        if (result.Status == ControlOperationStatus.Applied)
+        if (result.Status != ControlOperationStatus.Applied)
+        {
+            if (predicted is not null)
+            {
+                TryShowPerformanceShortcutFailure(result.Message);
+            }
+            return;
+        }
+
+        bool predictionMatched = predicted is { } expected
+            && PerformanceShortcutNotificationText.TryGetSelectedPreset(
+                result.Message,
+                out PerformancePreset applied)
+            && applied == expected;
+        if (!predictionMatched)
         {
             try
             {
@@ -429,6 +526,60 @@ public sealed class ServiceReactiveLightingLoop : IAsyncDisposable
             {
                 ReportFailure(exception);
             }
+        }
+    }
+
+    private PerformancePreset? BeginPerformanceShortcut()
+    {
+        lock (performanceShortcutStateSync)
+        {
+            performanceShortcutInFlight = true;
+            ServiceStatusSnapshot? status = latestStatus;
+            if (status is null || !status.DeviceVerified || status.WritesBlocked)
+            {
+                return null;
+            }
+
+            PerformancePreset current = optimisticPerformancePreset
+                ?? (status.ExternalChanges.Contains(DeviceSubsystem.Performance)
+                    && status.ConfirmedState?.Performance is { } observed
+                        ? observed
+                        : status.DesiredState.Performance.Value);
+            if (!PerformanceShortcutSelection.TrySelectNext(
+                status.ActivePowerSource,
+                status.Capabilities?.PerformancePresets,
+                current,
+                out PerformancePreset next))
+            {
+                return null;
+            }
+
+            optimisticPerformancePreset = next;
+            return next;
+        }
+    }
+
+    private void CompletePerformanceShortcut(bool applied)
+    {
+        lock (performanceShortcutStateSync)
+        {
+            performanceShortcutInFlight = false;
+            if (!applied)
+            {
+                optimisticPerformancePreset = null;
+            }
+        }
+    }
+
+    private void TryShowPerformanceShortcutFailure(string message)
+    {
+        try
+        {
+            shortcutNotifications.ShowFailed(message);
+        }
+        catch (Exception exception)
+        {
+            ReportFailure(exception);
         }
     }
 

@@ -9,15 +9,15 @@ namespace OpenBlade.SessionAgent.Tests;
 public sealed class ServiceReactiveLightingLoopTests
 {
     [Theory]
-    [InlineData(ControlOperationStatus.Applied, true)]
-    [InlineData(ControlOperationStatus.Stored, false)]
-    [InlineData(ControlOperationStatus.Blocked, false)]
-    [InlineData(ControlOperationStatus.Failed, false)]
-    public async Task PhysicalShortcut_NotifiesOnlyAfterAppliedResult(
+    [InlineData(ControlOperationStatus.Applied, false)]
+    [InlineData(ControlOperationStatus.Stored, true)]
+    [InlineData(ControlOperationStatus.Blocked, true)]
+    [InlineData(ControlOperationStatus.Failed, true)]
+    public async Task PhysicalShortcut_ShowsImmediateSelectionAndCorrectsRejectedChange(
         ControlOperationStatus status,
-        bool shouldNotify)
+        bool shouldShowFailure)
     {
-        const string message = "Fn+P selected Performance.";
+        const string message = "Fn+P selected Silent.";
         var client = new WatchClient
         {
             PerformanceShortcutResult = new(status, message),
@@ -33,20 +33,66 @@ public sealed class ServiceReactiveLightingLoopTests
         using var cancellation = new CancellationTokenSource();
         Task running = loop.RunAsync(cancellation.Token);
 
-        client.Publish(Status(LightingRendererOwnershipState.Static));
+        client.Publish(Status(LightingRendererOwnershipState.Static) with
+        {
+            KeyboardDriverModeActive = true,
+        });
         await WaitUntilAsync(() => factory.CreateCount == 1);
+        await WaitUntilAsync(() => factory.Last!.IsDriverModeActive());
         factory.Last!.PublishPerformanceShortcut(PerformanceShortcutSource.FunctionP);
         await WaitUntilAsync(() => client.PerformanceShortcuts.Count == 1);
-        if (shouldNotify)
+        await WaitUntilAsync(() => notifications.Selected.Count == 1);
+        Assert.Equal(PerformancePreset.Silent, Assert.Single(notifications.Selected));
+        Assert.Empty(notifications.AppliedMessages);
+        if (shouldShowFailure)
         {
-            await WaitUntilAsync(() => notifications.Messages.Count == 1);
-            Assert.Equal(message, Assert.Single(notifications.Messages));
+            await WaitUntilAsync(() => notifications.FailureMessages.Count == 1);
+            Assert.Equal(message, Assert.Single(notifications.FailureMessages));
         }
         else
         {
             await Task.Delay(50);
-            Assert.Empty(notifications.Messages);
+            Assert.Empty(notifications.FailureMessages);
         }
+
+        cancellation.Cancel();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => running);
+    }
+
+    [Fact]
+    public async Task PhysicalShortcut_NotifiesBeforeFirmwareOperationCompletes()
+    {
+        var completion = new TaskCompletionSource<ControlOperationResult>(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        var client = new WatchClient
+        {
+            PerformanceShortcutCompletion = completion,
+        };
+        var factory = new RecordingSourceFactory();
+        var notifications = new RecordingNotificationSink();
+        await using var loop = new ServiceReactiveLightingLoop(
+            client,
+            factory,
+            shortcutNotifications: notifications);
+        using var cancellation = new CancellationTokenSource();
+        Task running = loop.RunAsync(cancellation.Token);
+
+        client.Publish(Status(LightingRendererOwnershipState.Static) with
+        {
+            KeyboardDriverModeActive = true,
+        });
+        await WaitUntilAsync(() => factory.CreateCount == 1);
+        await WaitUntilAsync(() => factory.Last!.IsDriverModeActive());
+        factory.Last!.PublishPerformanceShortcut(PerformanceShortcutSource.DedicatedButton);
+
+        await WaitUntilAsync(() => notifications.Selected.Count == 1);
+        Assert.False(completion.Task.IsCompleted);
+        Assert.Equal(PerformancePreset.Silent, Assert.Single(notifications.Selected));
+
+        completion.SetResult(new ControlOperationResult(
+            ControlOperationStatus.Applied,
+            "The performance button selected Silent."));
+        await WaitUntilAsync(() => client.PerformanceShortcuts.Count == 1);
 
         cancellation.Cancel();
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => running);
@@ -74,7 +120,9 @@ public sealed class ServiceReactiveLightingLoopTests
         Assert.False(factory.Last!.Disposed);
         factory.Last.Publish(new ReactiveKeyPulse(53));
         await WaitUntilAsync(() => client.Pulses.Count == 1);
-        Assert.Empty(notifications.Messages);
+        Assert.Empty(notifications.Selected);
+        Assert.Empty(notifications.AppliedMessages);
+        Assert.Empty(notifications.FailureMessages);
         cancellation.Cancel();
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => running);
     }
@@ -332,6 +380,41 @@ public sealed class ServiceReactiveLightingLoopTests
     }
 
     [Fact]
+    public async Task DirectDefaultLaptopKey_BypassesFnLayerBinding()
+    {
+        var client = new WatchClient();
+        var factory = new RecordingSourceFactory();
+        var configured = new ConcurrentQueue<SpecialKeySlot>();
+        var defaults = new ConcurrentQueue<SpecialKeySlot>();
+        await using var loop = new ServiceReactiveLightingLoop(
+            client,
+            factory,
+            shouldOverrideSpecialKey: _ => true,
+            executeSpecialKeyAsync: (slot, _) =>
+            {
+                configured.Enqueue(slot);
+                return Task.CompletedTask;
+            },
+            executeDefaultLaptopKeyAsync: (slot, _) =>
+            {
+                defaults.Enqueue(slot);
+                return Task.CompletedTask;
+            });
+        using var cancellation = new CancellationTokenSource();
+        Task running = loop.RunAsync(cancellation.Token);
+
+        await WaitUntilAsync(() => factory.CreateCount == 1);
+        factory.Last!.PublishDefaultLaptopKey(SpecialKeySlot.M3);
+        await WaitUntilAsync(() => defaults.Count == 1);
+
+        Assert.Equal(SpecialKeySlot.M3, Assert.Single(defaults));
+        Assert.Empty(configured);
+
+        cancellation.Cancel();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => running);
+    }
+
+    [Fact]
     public async Task AuthoritativeStatusControlsFunctionRowTranslation()
     {
         var client = new WatchClient();
@@ -576,6 +659,29 @@ public sealed class ServiceReactiveLightingLoopTests
                 publishPerformanceShortcut,
                 publishSpecialKey,
                 shouldOverrideSpecialKey,
+                _ => { },
+                publishFunctionRowAction,
+                readFunctionKeyPrimaryMode,
+                isDriverModeActive);
+        }
+
+        public IReactiveKeyboardSource Create(
+            Action<ReactiveKeyPulse> publish,
+            Action<PerformanceShortcutSource> publishPerformanceShortcut,
+            Action<SpecialKeySlot> publishSpecialKey,
+            Func<SpecialKeySlot, bool> shouldOverrideSpecialKey,
+            Action<SpecialKeySlot> publishDefaultLaptopKey,
+            Action<FunctionRowAction> publishFunctionRowAction,
+            Func<FunctionKeyPrimaryMode?> readFunctionKeyPrimaryMode,
+            Func<bool> isDriverModeActive)
+        {
+            CreateCount++;
+            return Last = new RecordingSource(
+                publish,
+                publishPerformanceShortcut,
+                publishSpecialKey,
+                shouldOverrideSpecialKey,
+                publishDefaultLaptopKey,
                 publishFunctionRowAction,
                 readFunctionKeyPrimaryMode,
                 isDriverModeActive);
@@ -590,6 +696,7 @@ public sealed class ServiceReactiveLightingLoopTests
         private readonly Action<PerformanceShortcutSource> publishPerformanceShortcut;
         private readonly Action<SpecialKeySlot> publishSpecialKey;
         private readonly Func<SpecialKeySlot, bool> shouldOverrideSpecialKey;
+        private readonly Action<SpecialKeySlot> publishDefaultLaptopKey;
         private readonly Action<FunctionRowAction> publishFunctionRowAction;
         private readonly Func<FunctionKeyPrimaryMode?> readFunctionKeyPrimaryMode;
         private readonly Func<bool> isDriverModeActive;
@@ -599,6 +706,7 @@ public sealed class ServiceReactiveLightingLoopTests
             Action<PerformanceShortcutSource> publishPerformanceShortcut,
             Action<SpecialKeySlot>? publishSpecialKey = null,
             Func<SpecialKeySlot, bool>? shouldOverrideSpecialKey = null,
+            Action<SpecialKeySlot>? publishDefaultLaptopKey = null,
             Action<FunctionRowAction>? publishFunctionRowAction = null,
             Func<FunctionKeyPrimaryMode?>? readFunctionKeyPrimaryMode = null,
             Func<bool>? isDriverModeActive = null)
@@ -607,6 +715,7 @@ public sealed class ServiceReactiveLightingLoopTests
             this.publishPerformanceShortcut = publishPerformanceShortcut;
             this.publishSpecialKey = publishSpecialKey ?? (_ => { });
             this.shouldOverrideSpecialKey = shouldOverrideSpecialKey ?? (_ => false);
+            this.publishDefaultLaptopKey = publishDefaultLaptopKey ?? (_ => { });
             this.publishFunctionRowAction = publishFunctionRowAction ?? (_ => { });
             this.readFunctionKeyPrimaryMode = readFunctionKeyPrimaryMode ?? (() => null);
             this.isDriverModeActive = isDriverModeActive ?? (() => false);
@@ -622,6 +731,9 @@ public sealed class ServiceReactiveLightingLoopTests
             publishPerformanceShortcut(source);
 
         public void PublishSpecialKey(SpecialKeySlot slot) => publishSpecialKey(slot);
+
+        public void PublishDefaultLaptopKey(SpecialKeySlot slot) =>
+            publishDefaultLaptopKey(slot);
 
         public bool ShouldOverrideSpecialKey(SpecialKeySlot slot) =>
             shouldOverrideSpecialKey(slot);
@@ -654,6 +766,12 @@ public sealed class ServiceReactiveLightingLoopTests
         public ControlOperationResult PerformanceShortcutResult { get; init; } = new(
             ControlOperationStatus.Applied,
             "Applied");
+
+        public TaskCompletionSource<ControlOperationResult>? PerformanceShortcutCompletion
+        {
+            get;
+            init;
+        }
 
         public void Publish(ServiceStatusSnapshot status) =>
             Assert.True(updates.Writer.TryWrite(new ServiceWatchUpdate.Connected(status)));
@@ -707,7 +825,8 @@ public sealed class ServiceReactiveLightingLoopTests
             CancellationToken token)
         {
             PerformanceShortcuts.Enqueue(source);
-            return Task.FromResult(PerformanceShortcutResult);
+            return PerformanceShortcutCompletion?.Task
+                ?? Task.FromResult(PerformanceShortcutResult);
         }
 
         public Task<ControlOperationResult> SetFanOverrideAsync(
@@ -733,9 +852,17 @@ public sealed class ServiceReactiveLightingLoopTests
 
     private sealed class RecordingNotificationSink : IPerformanceShortcutNotificationSink
     {
-        internal ConcurrentQueue<string> Messages { get; } = new();
+        internal ConcurrentQueue<PerformancePreset> Selected { get; } = new();
 
-        public void ShowApplied(string message) => Messages.Enqueue(message);
+        internal ConcurrentQueue<string> AppliedMessages { get; } = new();
+
+        internal ConcurrentQueue<string> FailureMessages { get; } = new();
+
+        public void ShowSelected(PerformancePreset preset) => Selected.Enqueue(preset);
+
+        public void ShowApplied(string message) => AppliedMessages.Enqueue(message);
+
+        public void ShowFailed(string message) => FailureMessages.Enqueue(message);
 
         public void Dispose()
         {
@@ -744,7 +871,13 @@ public sealed class ServiceReactiveLightingLoopTests
 
     private sealed class ThrowingNotificationSink : IPerformanceShortcutNotificationSink
     {
+        public void ShowSelected(PerformancePreset preset) =>
+            throw new InvalidOperationException("Notification unavailable");
+
         public void ShowApplied(string message) =>
+            throw new InvalidOperationException("Notification unavailable");
+
+        public void ShowFailed(string message) =>
             throw new InvalidOperationException("Notification unavailable");
 
         public void Dispose()

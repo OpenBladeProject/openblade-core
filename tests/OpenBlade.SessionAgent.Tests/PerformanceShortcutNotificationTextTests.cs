@@ -1,3 +1,4 @@
+using OpenBlade.Contracts;
 using OpenBlade.SessionAgent;
 
 namespace OpenBlade.SessionAgent.Tests;
@@ -17,6 +18,19 @@ public sealed class PerformanceShortcutNotificationTextTests
         Assert.Equal(
             expected,
             PerformanceShortcutNotificationText.FormatAppliedBody(serviceMessage));
+    }
+
+    [Theory]
+    [InlineData("The performance button selected Silent.", PerformancePreset.Silent)]
+    [InlineData("Fn+P selected BatterySaver.", PerformancePreset.BatterySaver)]
+    public void SelectedPresetCanBeComparedWithOptimisticFeedback(
+        string serviceMessage,
+        PerformancePreset expected)
+    {
+        Assert.True(PerformanceShortcutNotificationText.TryGetSelectedPreset(
+            serviceMessage,
+            out PerformancePreset actual));
+        Assert.Equal(expected, actual);
     }
 
     [Fact]

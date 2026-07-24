@@ -50,18 +50,7 @@ public sealed class SpecialKeyActionExecutor : ISpecialKeyActionExecutor
         switch (action.Kind)
         {
             case SpecialKeyActionKind.Default:
-                if (slot == SpecialKeySlot.M3)
-                {
-                    await ToggleGamingModeAsync(cancellationToken).ConfigureAwait(false);
-                }
-                else if (slot == SpecialKeySlot.M4)
-                {
-                    await CyclePowerModeAsync(cancellationToken).ConfigureAwait(false);
-                }
-                else if (slot == SpecialKeySlot.M5)
-                {
-                    input.ToggleMicrophoneMute();
-                }
+                await ExecuteDefaultAsync(slot, cancellationToken).ConfigureAwait(false);
                 return;
             case SpecialKeyActionKind.Disabled:
                 return;
@@ -109,6 +98,24 @@ public sealed class SpecialKeyActionExecutor : ISpecialKeyActionExecutor
                 return;
             default:
                 throw new InvalidOperationException("The special-key action is unsupported.");
+        }
+    }
+
+    public async Task ExecuteDefaultAsync(
+        SpecialKeySlot slot,
+        CancellationToken cancellationToken)
+    {
+        if (slot == SpecialKeySlot.M3)
+        {
+            await ToggleGamingModeAsync(cancellationToken).ConfigureAwait(false);
+        }
+        else if (slot == SpecialKeySlot.M4)
+        {
+            await CyclePowerModeAsync(cancellationToken).ConfigureAwait(false);
+        }
+        else if (slot == SpecialKeySlot.M5)
+        {
+            input.ToggleMicrophoneMute();
         }
     }
 

@@ -1,4 +1,5 @@
 using System.Security.Principal;
+using System.Runtime.ExceptionServices;
 using OpenBlade.Contracts;
 using OpenBlade.Display;
 using OpenBlade.Session;
@@ -15,8 +16,15 @@ internal static class Program
         {
             return RunAsync().GetAwaiter().GetResult();
         }
-        catch
+        catch (Exception exception)
         {
+            _ = CrashReportWriter.CreateDefault(
+                    "OpenBlade.SessionAgent",
+                    OpenBladeProductVersion.Read(typeof(Program).Assembly))
+                .TryWrite(
+                    "Fatal process failure",
+                    exception,
+                    processTerminating: true);
             return 1;
         }
     }
@@ -114,6 +122,7 @@ internal static class Program
                     statusFeed,
                     specialKeyBindings.ShouldHandleInDriverMode,
                     specialKeyExecutor.ExecuteAsync,
+                    specialKeyExecutor.ExecuteDefaultAsync,
                     functionRowActions.ExecuteAsync);
                 await using var ambient = new ServiceAmbientLightingLoop(
                     new ServiceClient(),
@@ -146,6 +155,9 @@ internal static class Program
                     reactiveTask,
                     ambientTask,
                     lightingIdleTask).ConfigureAwait(false);
+                Exception? terminalFailure = completed.IsFaulted
+                    ? completed.Exception?.GetBaseException()
+                    : null;
                 if (!lifetime.IsCancellationRequested)
                 {
                     lifetime.Cancel();
@@ -166,7 +178,11 @@ internal static class Program
                 catch (OperationCanceledException) when (lifetime.IsCancellationRequested)
                 {
                 }
-                return completed.IsFaulted ? 1 : 0;
+                if (terminalFailure is not null)
+                {
+                    ExceptionDispatchInfo.Capture(terminalFailure).Throw();
+                }
+                return 0;
             }
             finally
             {

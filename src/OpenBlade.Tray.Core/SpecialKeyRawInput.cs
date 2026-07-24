@@ -220,3 +220,51 @@ public static class Rz09_0581SpecialKeyRawHidInput
         return trigger;
     }
 }
+
+/// <summary>
+/// Recognizes the non-Fn M3 and M5 reports that retain the laptop's normal
+/// Game mode and microphone-mute behavior while keyboard Driver mode is active.
+/// These reports are deliberately kept separate from the customizable Fn-layer
+/// M3 and M5 identities above.
+/// </summary>
+public static class Rz09_0581DefaultLaptopKeyRawHidInput
+{
+    private const byte FunctionReportId = 0x04;
+    private const byte GamingModeUsage = 0x03;
+    private const byte MicrophoneMuteUsage = 0xD4;
+
+    public static bool TryCreateTrigger(
+        ReadOnlySpan<byte> report,
+        ref bool gamingModePressed,
+        ref bool microphoneMutePressed,
+        out SpecialKeySlot slot)
+    {
+        slot = default;
+        if (report.Length < 3 || report[0] != FunctionReportId)
+        {
+            return false;
+        }
+
+        bool gamingModeNow = report[1] == GamingModeUsage;
+        bool microphoneMuteNow = report[1] == MicrophoneMuteUsage;
+        bool gamingModeTrigger = gamingModeNow && !gamingModePressed;
+        bool microphoneMuteTrigger =
+            microphoneMuteNow && !microphoneMutePressed;
+        gamingModePressed = gamingModeNow;
+        microphoneMutePressed = microphoneMuteNow;
+
+        if (gamingModeTrigger)
+        {
+            slot = SpecialKeySlot.M3;
+            return true;
+        }
+
+        if (microphoneMuteTrigger)
+        {
+            slot = SpecialKeySlot.M5;
+            return true;
+        }
+
+        return false;
+    }
+}

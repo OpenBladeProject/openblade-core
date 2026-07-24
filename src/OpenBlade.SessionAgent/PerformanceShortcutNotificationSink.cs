@@ -7,7 +7,11 @@ namespace OpenBlade.SessionAgent;
 
 public interface IPerformanceShortcutNotificationSink : IDisposable
 {
+    void ShowSelected(PerformancePreset preset);
+
     void ShowApplied(string message);
+
+    void ShowFailed(string message);
 }
 
 public static class PerformanceShortcutNotificationText
@@ -18,20 +22,33 @@ public static class PerformanceShortcutNotificationText
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(serviceMessage);
 
+        return TryGetSelectedPreset(serviceMessage, out PerformancePreset preset)
+            ? $"Current mode: {PerformancePresetPresentation.Label(preset)}"
+            : serviceMessage;
+    }
+
+    public static bool TryGetSelectedPreset(
+        string serviceMessage,
+        out PerformancePreset preset)
+    {
+        preset = default;
+        if (string.IsNullOrWhiteSpace(serviceMessage))
+        {
+            return false;
+        }
+
         int markerIndex = serviceMessage.LastIndexOf(
             SelectedMarker,
             StringComparison.Ordinal);
         if (markerIndex < 0)
         {
-            return serviceMessage;
+            return false;
         }
 
         string selectedValue = serviceMessage[
             (markerIndex + SelectedMarker.Length)..].TrimEnd('.');
-        return Enum.TryParse(selectedValue, ignoreCase: false, out PerformancePreset preset)
-            && Enum.IsDefined(preset)
-                ? $"Current mode: {PerformancePresetPresentation.Label(preset)}"
-                : serviceMessage;
+        return Enum.TryParse(selectedValue, ignoreCase: false, out preset)
+            && Enum.IsDefined(preset);
     }
 }
 
@@ -45,6 +62,14 @@ internal sealed class NullPerformanceShortcutNotificationSink
     }
 
     public void ShowApplied(string message)
+    {
+    }
+
+    public void ShowSelected(PerformancePreset preset)
+    {
+    }
+
+    public void ShowFailed(string message)
     {
     }
 
@@ -102,6 +127,44 @@ public sealed class WindowsPerformanceShortcutNotificationSink
             AppNotification notification = new AppNotificationBuilder()
                 .AddText("Performance mode changed")
                 .AddText(PerformanceShortcutNotificationText.FormatAppliedBody(message))
+                .BuildNotification();
+            manager.Show(notification);
+        }
+        catch (Exception exception)
+        {
+            Report(errorHandler, exception);
+        }
+    }
+
+    public void ShowSelected(PerformancePreset preset)
+    {
+        if (Volatile.Read(ref disposed) != 0 || !Enum.IsDefined(preset))
+        {
+            return;
+        }
+
+        Show(
+            "Performance mode changed",
+            $"Current mode: {PerformancePresetPresentation.Label(preset)}");
+    }
+
+    public void ShowFailed(string message)
+    {
+        if (Volatile.Read(ref disposed) != 0 || string.IsNullOrWhiteSpace(message))
+        {
+            return;
+        }
+
+        Show("Performance mode could not be changed", message);
+    }
+
+    private void Show(string title, string body)
+    {
+        try
+        {
+            AppNotification notification = new AppNotificationBuilder()
+                .AddText(title)
+                .AddText(body)
                 .BuildNotification();
             manager.Show(notification);
         }

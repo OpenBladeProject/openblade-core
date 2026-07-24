@@ -48,6 +48,26 @@ public sealed class WindowsReactiveKeyboardSourceFactory : IReactiveKeyboardSour
             publishPerformanceShortcut,
             publishSpecialKey,
             shouldOverrideSpecialKey,
+            _ => { },
+            publishFunctionRowAction,
+            readFunctionKeyPrimaryMode,
+            isDriverModeActive);
+
+    public IReactiveKeyboardSource Create(
+        Action<ReactiveKeyPulse> publish,
+        Action<PerformanceShortcutSource> publishPerformanceShortcut,
+        Action<SpecialKeySlot> publishSpecialKey,
+        Func<SpecialKeySlot, bool> shouldOverrideSpecialKey,
+        Action<SpecialKeySlot> publishDefaultLaptopKey,
+        Action<FunctionRowAction> publishFunctionRowAction,
+        Func<FunctionKeyPrimaryMode?> readFunctionKeyPrimaryMode,
+        Func<bool> isDriverModeActive) =>
+        new WindowsReactiveKeyboardSource(
+            publish,
+            publishPerformanceShortcut,
+            publishSpecialKey,
+            shouldOverrideSpecialKey,
+            publishDefaultLaptopKey,
             publishFunctionRowAction,
             readFunctionKeyPrimaryMode,
             isDriverModeActive);
@@ -101,6 +121,7 @@ internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
     private readonly Action<PerformanceShortcutSource> publishPerformanceShortcut;
     private readonly Action<SpecialKeySlot> publishSpecialKey;
     private readonly Func<SpecialKeySlot, bool> shouldOverrideSpecialKey;
+    private readonly Action<SpecialKeySlot> publishDefaultLaptopKey;
     private readonly Action<FunctionRowAction> publishFunctionRowAction;
     private readonly Func<FunctionKeyPrimaryMode?> readFunctionKeyPrimaryMode;
     private readonly Func<bool> isDriverModeActive;
@@ -120,6 +141,8 @@ internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
     private bool performanceFunctionKeyPressed;
     private bool dedicatedPerformanceButtonPressed;
     private bool functionPPressed;
+    private bool defaultGamingModePressed;
+    private bool defaultMicrophoneMutePressed;
     private readonly bool[] specialKeyPressed = new bool[5];
     private nint keyboardHook;
     private int disposed;
@@ -133,6 +156,7 @@ internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
             _ => { },
             _ => false,
             _ => { },
+            _ => { },
             () => null,
             () => false)
     {
@@ -143,6 +167,7 @@ internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
         Action<PerformanceShortcutSource> publishPerformanceShortcut,
         Action<SpecialKeySlot> publishSpecialKey,
         Func<SpecialKeySlot, bool> shouldOverrideSpecialKey,
+        Action<SpecialKeySlot>? publishDefaultLaptopKey = null,
         Action<FunctionRowAction>? publishFunctionRowAction = null,
         Func<FunctionKeyPrimaryMode?>? readFunctionKeyPrimaryMode = null,
         Func<bool>? isDriverModeActive = null)
@@ -154,6 +179,7 @@ internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
             ?? throw new ArgumentNullException(nameof(publishSpecialKey));
         this.shouldOverrideSpecialKey = shouldOverrideSpecialKey
             ?? throw new ArgumentNullException(nameof(shouldOverrideSpecialKey));
+        this.publishDefaultLaptopKey = publishDefaultLaptopKey ?? (_ => { });
         this.publishFunctionRowAction = publishFunctionRowAction ?? (_ => { });
         this.readFunctionKeyPrimaryMode = readFunctionKeyPrimaryMode ?? (() => null);
         this.isDriverModeActive = isDriverModeActive ?? (() => false);
@@ -630,6 +656,14 @@ internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
                 && overrideSpecialKey)
             {
                 continue;
+            }
+            if (Rz09_0581DefaultLaptopKeyRawHidInput.TryCreateTrigger(
+                report[..inspectedBytes],
+                ref defaultGamingModePressed,
+                ref defaultMicrophoneMutePressed,
+                out SpecialKeySlot defaultLaptopKey))
+            {
+                publishDefaultLaptopKey(defaultLaptopKey);
             }
             if (Rz09_0581PerformanceShortcutRawHidInput.TryCreateTrigger(
                 report[..inspectedBytes],

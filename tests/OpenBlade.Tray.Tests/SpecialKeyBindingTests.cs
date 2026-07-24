@@ -144,6 +144,94 @@ public sealed class SpecialKeyBindingTests
             out _));
     }
 
+    [Fact]
+    public void RawHidInput_DoesNotTreatDirectDefaultActionsAsFnLayerMKeys()
+    {
+        bool functionPressed = false;
+        Span<bool> pressed = stackalloc bool[5];
+
+        Assert.False(Trigger(
+            [0x04, 0x03, 0x00],
+            ref functionPressed,
+            pressed,
+            out _));
+        Assert.False(functionPressed);
+        Assert.False(Trigger([0x04, 0x00, 0x00], ref functionPressed, pressed, out _));
+
+        Assert.False(Trigger(
+            [0x04, 0xD3, 0x00],
+            ref functionPressed,
+            pressed,
+            out _));
+        Assert.False(Trigger([0x04, 0x00, 0x00], ref functionPressed, pressed, out _));
+
+        Assert.False(Trigger(
+            [0x04, 0xD4, 0x00],
+            ref functionPressed,
+            pressed,
+            out _));
+        Assert.False(Trigger([0x04, 0x00, 0x00], ref functionPressed, pressed, out _));
+    }
+
+    [Fact]
+    public void DefaultLaptopKeyInput_RecognizesDirectM3AndM5OncePerPress()
+    {
+        bool gamingModePressed = false;
+        bool microphoneMutePressed = false;
+
+        Assert.True(Rz09_0581DefaultLaptopKeyRawHidInput.TryCreateTrigger(
+            [0x04, 0x03, 0x00],
+            ref gamingModePressed,
+            ref microphoneMutePressed,
+            out SpecialKeySlot gamingMode));
+        Assert.Equal(SpecialKeySlot.M3, gamingMode);
+        Assert.False(Rz09_0581DefaultLaptopKeyRawHidInput.TryCreateTrigger(
+            [0x04, 0x03, 0x00],
+            ref gamingModePressed,
+            ref microphoneMutePressed,
+            out _));
+        Assert.False(Rz09_0581DefaultLaptopKeyRawHidInput.TryCreateTrigger(
+            [0x04, 0x00, 0x00],
+            ref gamingModePressed,
+            ref microphoneMutePressed,
+            out _));
+
+        Assert.True(Rz09_0581DefaultLaptopKeyRawHidInput.TryCreateTrigger(
+            [0x04, 0xD4, 0x00],
+            ref gamingModePressed,
+            ref microphoneMutePressed,
+            out SpecialKeySlot microphoneMute));
+        Assert.Equal(SpecialKeySlot.M5, microphoneMute);
+        Assert.False(Rz09_0581DefaultLaptopKeyRawHidInput.TryCreateTrigger(
+            [0x04, 0x00, 0x00],
+            ref gamingModePressed,
+            ref microphoneMutePressed,
+            out _));
+    }
+
+    [Fact]
+    public void DefaultLaptopKeyInput_DoesNotConsumeFnLayerOrPerformanceReports()
+    {
+        bool gamingModePressed = false;
+        bool microphoneMutePressed = false;
+
+        Assert.False(Rz09_0581DefaultLaptopKeyRawHidInput.TryCreateTrigger(
+            [0x04, 0x0A, 0x03],
+            ref gamingModePressed,
+            ref microphoneMutePressed,
+            out _));
+        Assert.False(Rz09_0581DefaultLaptopKeyRawHidInput.TryCreateTrigger(
+            [0x04, 0xD3, 0x00],
+            ref gamingModePressed,
+            ref microphoneMutePressed,
+            out _));
+        Assert.False(Rz09_0581DefaultLaptopKeyRawHidInput.TryCreateTrigger(
+            [0x04, 0x0A, 0xD4],
+            ref gamingModePressed,
+            ref microphoneMutePressed,
+            out _));
+    }
+
     private static bool Trigger(
         ReadOnlySpan<byte> report,
         ref bool functionPressed,
