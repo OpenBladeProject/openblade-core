@@ -16,6 +16,8 @@ src/OpenBlade.Tray/Assets/Brand/Notifications/*
 src/OpenBlade.Tray/Assets/Brand/Tray/*
 !src/OpenBlade.Tray/Assets/Brand/Tray/ac-balanced-dark.ico
 !src/OpenBlade.Tray/Assets/Brand/Tray/ac-balanced-light.ico
+!src/OpenBlade.Tray/Assets/Brand/Tray/ac-custom-dark.ico
+!src/OpenBlade.Tray/Assets/Brand/Tray/ac-custom-light.ico
 !src/OpenBlade.Tray/Assets/Brand/Tray/ac-performance-dark.ico
 !src/OpenBlade.Tray/Assets/Brand/Tray/ac-performance-light.ico
 !src/OpenBlade.Tray/Assets/Brand/Tray/ac-silent-dark.ico

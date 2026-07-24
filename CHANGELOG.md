@@ -67,6 +67,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Changed
 
+- Updated the light and dark tray icon set for clearer taskbar visibility and
+  added matching Custom power-mode icons.
 - Reduced each host-rendered Ambient Awareness IPC request from thousands of
   bytes to one compact Base64 RGB payload inside the existing typed JSON
   envelope. The Service and protocol codec now share one captured keyboard
