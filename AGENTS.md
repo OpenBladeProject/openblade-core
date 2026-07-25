@@ -137,3 +137,70 @@ dotnet test OpenBlade.slnx -p:NuGetAudit=false --no-build --no-restore
 
 Use `build/Publish.ps1` and the payload validation tests for release or setup
 changes. Do not install or request UAC when the user is unavailable.
+
+## Live tray patching on the installed machine
+
+Use this path only when shared Contracts and both IPC versions are unchanged.
+If either changed, do a coordinated full install instead. Do not repeatedly
+retry a failed Program Files copy: sandbox escalation is not Windows
+administrator elevation.
+
+1. Commit the patch first so the deployed `ProductVersion` contains the exact
+   commit hash, then rebuild the tray:
+
+   ```powershell
+   dotnet build src\OpenBlade.Tray\OpenBlade.Tray.csproj `
+       -c Release -r win-x64 -p:NuGetAudit=false --no-restore
+   ```
+
+   The source directory is
+   `src\OpenBlade.Tray\bin\Release\net10.0-windows10.0.26100.0\win-x64`.
+2. Deploy the complete matching tray payload:
+   `OpenBlade.Tray.exe`, `OpenBlade.Tray.dll`, `OpenBlade.Tray.Core.dll`,
+   `OpenBlade.Session.dll`, `OpenBlade.Tray.pri`, and `MainWindow.xbf`.
+   Missing `.pri` or `.xbf` files can make the tray exit immediately.
+3. Treat `OpenBlade.Tray.Core.dll` and `OpenBlade.Session.dll` as shared,
+   process-loaded files. If either differs, stop both the installed tray and
+   Session Agent after verifying their executable paths are exactly under
+   `%ProgramFiles%\OpenBlade`. Stopping only the tray leaves Tray.Core locked
+   by `OpenBlade.SessionAgent.exe`.
+4. Use two deployment phases:
+   - A normal-integrity parent launches one short-lived PowerShell child with
+     `Start-Process -Verb RunAs -Wait`.
+   - The elevated child stops the exact installed processes, waits for the
+     target files to accept an exclusive read/write open, copies the payload,
+     verifies it, writes a JSON report, and exits. It must not launch the tray
+     or Session Agent.
+   - After the elevated child exits, the normal-integrity parent starts the
+     unchanged installed Session Agent hidden, then starts the installed tray.
+5. Do not start the long-lived tray or Session Agent from the elevated child.
+   They inherit elevation, Computer Use cannot inspect them normally, and the
+   parent `-Wait` can remain blocked on the elevated process tree until those
+   applications exit.
+6. Before and after copying, record SHA-256, `ProductVersion`, and
+   `FileVersion` for at least `OpenBlade.Service.exe` and
+   `OpenBlade.SessionAgent.exe`; fail if either protected executable changes.
+   Verify every deployed file hash equals its Release-build source.
+7. Final live checks:
+   - exactly one tray and one Session Agent run from `%ProgramFiles%\OpenBlade`;
+   - Computer Use can inspect the tray without a higher-integrity warning;
+   - tray and Tray.Core show the intended commit in `ProductVersion`;
+   - the service and Session Agent executable hashes match the pre-patch report;
+   - a read-only service-status query confirms the changed setting reached the
+     authoritative service state. A sandboxed named-pipe probe may return
+     `UnauthorizedAccessException`; run that read-only probe outside the
+     sandbox after approval instead of changing pipe permissions.
+
+Known failure signatures:
+
+- `Access to ... Program Files\OpenBlade ... is denied`: the copy is not
+  elevated. Use the single UAC phase; do not retry the same command.
+- `OpenBlade.Tray.Core.dll ... is being used by another process`: the Session
+  Agent is still running.
+- The wrapper times out but the deployment report is complete: the elevated
+  child launched a long-lived process and `-Wait` is following its process
+  tree. Correct the two-phase restart; do not assume the copy failed.
+- Computer Use reports that OpenBlade has higher Windows integrity: stop the
+  elevated tray and Session Agent, then relaunch both from the normal parent.
+- The tray starts and immediately exits after a XAML patch: verify the matching
+  `.pri` and `MainWindow.xbf` were copied with the binaries.
