@@ -42,6 +42,9 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
     private readonly DispatcherQueueTimer lightingCommitTimer;
     private readonly DispatcherQueueTimer gpuClockOffsetCommitTimer;
     private readonly DispatcherQueueTimer displayRefreshTimer;
+    private readonly CoalescingCommitState<int> chargeLimitCommits = new();
+    private readonly CoalescingCommitState<LightingCommitRequest> lightingCommits = new();
+    private readonly CoalescingCommitState<GpuClockOffsetSettings> gpuClockOffsetCommits = new();
     private readonly object initializationSync = new();
     private Task? initializationTask;
     private bool initialPlacementAttempted;
@@ -62,13 +65,8 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
     private bool troubleshootingHeaderPointerPressed;
     private bool dashboardCardsReady;
     private bool canonicalLaptopCardsPlaced;
-    private bool chargeLimitCommitInProgress;
     private bool fanControlCommitInProgress;
-    private bool lightingCommitInProgress;
-    private bool gpuClockOffsetCommitInProgress;
-    private GpuClockOffsetSettings? pendingGpuClockOffsets;
     private bool chargeLimitPointerInteraction;
-    private int? pendingChargeLimitPercent;
     private bool? dashboardIsStacked;
     private bool? profilesUseCompactLayout;
     private bool enforcingMinimumWindowSize;
@@ -300,10 +298,13 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         AppWindow.Changed -= OnAppWindowChanged;
         chargeLimitCommitTimer.Stop();
         chargeLimitCommitTimer.Tick -= OnChargeLimitCommitTimerTick;
+        chargeLimitCommits.Dispose();
         lightingCommitTimer.Stop();
         lightingCommitTimer.Tick -= OnLightingCommitTimerTick;
+        lightingCommits.Dispose();
         gpuClockOffsetCommitTimer.Stop();
         gpuClockOffsetCommitTimer.Tick -= OnGpuClockOffsetCommitTimerTick;
+        gpuClockOffsetCommits.Dispose();
         displayRefreshTimer.Stop();
         displayRefreshTimer.Tick -= OnDisplayRefreshTimerTick;
         micaBackdropHost.Dispose();
@@ -989,9 +990,10 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         object sender,
         RangeBaseValueChangedEventArgs args)
     {
+        gpuClockOffsetCommits.TryPeekPending(out GpuClockOffsetSettings? pending);
         ScheduleGpuClockOffsetCommit(
             coreMegahertz: checked((int)Math.Round(args.NewValue)),
-            memoryMegahertz: pendingGpuClockOffsets?.MemoryMegahertz
+            memoryMegahertz: pending?.MemoryMegahertz
                 ?? ViewModel.GpuMemoryClockOffsetMegahertz);
     }
 
@@ -999,8 +1001,9 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         object sender,
         RangeBaseValueChangedEventArgs args)
     {
+        gpuClockOffsetCommits.TryPeekPending(out GpuClockOffsetSettings? pending);
         ScheduleGpuClockOffsetCommit(
-            coreMegahertz: pendingGpuClockOffsets?.CoreMegahertz
+            coreMegahertz: pending?.CoreMegahertz
                 ?? ViewModel.GpuCoreClockOffsetMegahertz,
             memoryMegahertz: checked((int)Math.Round(args.NewValue)));
     }
@@ -1025,12 +1028,12 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
 
         if (requested == ViewModel.CurrentGpuClockOffsets)
         {
-            pendingGpuClockOffsets = null;
+            gpuClockOffsetCommits.ClearPending();
             gpuClockOffsetCommitTimer.Stop();
             return;
         }
 
-        pendingGpuClockOffsets = requested;
+        gpuClockOffsetCommits.Schedule(requested);
         gpuClockOffsetCommitTimer.Stop();
         gpuClockOffsetCommitTimer.Start();
     }
@@ -1040,27 +1043,34 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         object args)
     {
         sender.Stop();
-        if (gpuClockOffsetCommitInProgress
-            || pendingGpuClockOffsets is not { } requested
-            || !ViewModel.IsGpuClockTuningAvailable)
+        CoalescingCommitBeginStatus status =
+            gpuClockOffsetCommits.TryBegin(out GpuClockOffsetSettings? requested);
+        if (status == CoalescingCommitBeginStatus.InProgress)
+        {
+            sender.Start();
+            return;
+        }
+        if (status != CoalescingCommitBeginStatus.Started
+            || requested is null)
         {
             return;
         }
 
-        pendingGpuClockOffsets = null;
-        gpuClockOffsetCommitInProgress = true;
         try
         {
-            var custom = new CustomPerformanceSettings(
-                ViewModel.SelectedCustomCpuLevel,
-                ViewModel.SelectedCustomGpuLevel)
+            if (ViewModel.IsGpuClockTuningAvailable)
             {
-                GpuClockOffsets = requested,
-            };
-            if (ViewModel.SetCustomPerformanceCommand is AsyncRelayCommand command
-                && command.CanExecute(custom))
-            {
-                await command.ExecuteAsync(custom);
+                var custom = new CustomPerformanceSettings(
+                    ViewModel.SelectedCustomCpuLevel,
+                    ViewModel.SelectedCustomGpuLevel)
+                {
+                    GpuClockOffsets = requested,
+                };
+                if (ViewModel.SetCustomPerformanceCommand is AsyncRelayCommand command
+                    && command.CanExecute(custom))
+                {
+                    await command.ExecuteAsync(custom);
+                }
             }
         }
         catch (Exception exception)
@@ -1069,8 +1079,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         }
         finally
         {
-            gpuClockOffsetCommitInProgress = false;
-            if (pendingGpuClockOffsets is not null)
+            if (gpuClockOffsetCommits.Complete())
             {
                 sender.Start();
             }
@@ -1247,14 +1256,21 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
 
     private void ScheduleLightingCommit()
     {
-        if (Volatile.Read(ref disposed) != 0
-            || (!ViewModel.IsLightingApplyPending
-                && !ViewModel.HasUnsavedLightingPowerPolicy))
+        var request = new LightingCommitRequest(
+            ViewModel.IsLightingApplyPending
+                ? ViewModel.LightingDraft
+                : null,
+            ViewModel.HasUnsavedLightingPowerPolicy
+                ? ViewModel.LightingPowerPolicyDraft
+                : null);
+        if (Volatile.Read(ref disposed) != 0 || !request.HasWork)
         {
+            lightingCommits.ClearPending();
             lightingCommitTimer.Stop();
             return;
         }
 
+        lightingCommits.Schedule(request);
         lightingCommitTimer.Stop();
         lightingCommitTimer.Start();
     }
@@ -1269,29 +1285,33 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         {
             return;
         }
-        if (lightingCommitInProgress)
+        CoalescingCommitBeginStatus status =
+            lightingCommits.TryBegin(out LightingCommitRequest? request);
+        if (status == CoalescingCommitBeginStatus.InProgress)
         {
             sender.Start();
             return;
         }
+        if (status != CoalescingCommitBeginStatus.Started
+            || request is null)
+        {
+            return;
+        }
 
-        lightingCommitInProgress = true;
         try
         {
-            if (ViewModel.IsLightingApplyPending
+            if (request.Lighting is { } draft
                 && ViewModel.SetLightingCommand is AsyncRelayCommand lightingCommand)
             {
-                LightingSettings draft = ViewModel.LightingDraft;
                 if (lightingCommand.CanExecute(draft))
                 {
                     await lightingCommand.ExecuteAsync(draft);
                 }
             }
 
-            if (ViewModel.HasUnsavedLightingPowerPolicy
+            if (request.PowerPolicy is { } policy
                 && ViewModel.SaveLightingPowerPolicyCommand is AsyncRelayCommand policyCommand)
             {
-                LightingPowerPolicy policy = ViewModel.LightingPowerPolicyDraft;
                 if (policyCommand.CanExecute(policy))
                 {
                     await policyCommand.ExecuteAsync(policy);
@@ -1304,13 +1324,18 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         }
         finally
         {
-            lightingCommitInProgress = false;
-            if (Volatile.Read(ref disposed) == 0
-                && ViewModel.CanControlLighting
-                && (ViewModel.IsLightingApplyPending
-                    || ViewModel.HasUnsavedLightingPowerPolicy))
+            bool hasQueuedCommit = lightingCommits.Complete();
+            if (Volatile.Read(ref disposed) == 0 && ViewModel.CanControlLighting)
             {
-                sender.Start();
+                if (hasQueuedCommit)
+                {
+                    sender.Start();
+                }
+                else if (ViewModel.IsLightingApplyPending
+                    || ViewModel.HasUnsavedLightingPowerPolicy)
+                {
+                    ScheduleLightingCommit();
+                }
             }
         }
     }
@@ -1377,8 +1402,8 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         }
 
         ViewModel.ChargeLimitPercent = value;
+        chargeLimitCommits.Schedule(value);
         chargeLimitCommitTimer.Stop();
-        pendingChargeLimitPercent = value;
         chargeLimitCommitTimer.Start();
     }
 
@@ -1387,27 +1412,29 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         object args)
     {
         sender.Stop();
-        if (Volatile.Read(ref disposed) != 0 || pendingChargeLimitPercent is not int value)
+        if (Volatile.Read(ref disposed) != 0)
         {
             return;
         }
-        if (chargeLimitCommitInProgress)
+        CoalescingCommitBeginStatus status =
+            chargeLimitCommits.TryBegin(out int value);
+        if (status == CoalescingCommitBeginStatus.InProgress)
         {
             sender.Start();
             return;
         }
-
-        pendingChargeLimitPercent = null;
-        if (ViewModel.SetChargeLimitCommand is not AsyncRelayCommand command
-            || !command.CanExecute(value))
+        if (status != CoalescingCommitBeginStatus.Started)
         {
             return;
         }
 
-        chargeLimitCommitInProgress = true;
         try
         {
-            await command.ExecuteAsync(value);
+            if (ViewModel.SetChargeLimitCommand is AsyncRelayCommand command
+                && command.CanExecute(value))
+            {
+                await command.ExecuteAsync(value);
+            }
         }
         catch (Exception exception)
         {
@@ -1415,8 +1442,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         }
         finally
         {
-            chargeLimitCommitInProgress = false;
-            if (pendingChargeLimitPercent is not null
+            if (chargeLimitCommits.Complete()
                 && Volatile.Read(ref disposed) == 0)
             {
                 sender.Stop();

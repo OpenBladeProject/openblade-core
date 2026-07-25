@@ -316,8 +316,17 @@ public sealed class WinUiShellContractTests
         Assert.DoesNotContain("Apply switch-off behavior", xaml, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("TimeSpan.FromMilliseconds(500)", window, StringComparison.Ordinal);
         Assert.Contains("ScheduleLightingCommit", window, StringComparison.Ordinal);
+        Assert.Contains(
+            "CoalescingCommitState<LightingCommitRequest>",
+            window,
+            StringComparison.Ordinal);
         Assert.Contains("ViewModel.SetLightingCommand", window, StringComparison.Ordinal);
         Assert.Contains("ViewModel.SaveLightingPowerPolicyCommand", window, StringComparison.Ordinal);
+        Assert.DoesNotContain("lightingCommitInProgress", window, StringComparison.Ordinal);
+        Assert.DoesNotContain("chargeLimitCommitInProgress", window, StringComparison.Ordinal);
+        Assert.DoesNotContain("gpuClockOffsetCommitInProgress", window, StringComparison.Ordinal);
+        Assert.DoesNotContain("pendingChargeLimitPercent", window, StringComparison.Ordinal);
+        Assert.DoesNotContain("pendingGpuClockOffsets", window, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -1158,7 +1167,8 @@ public sealed class WinUiShellContractTests
         Assert.Contains("TimeSpan.FromMilliseconds(400)", source, StringComparison.Ordinal);
         Assert.Contains("dispatcherQueue.CreateTimer()", source, StringComparison.Ordinal);
         Assert.Contains("chargeLimitCommitTimer.IsRepeating = false", source, StringComparison.Ordinal);
-        Assert.Contains("pendingChargeLimitPercent = value", source, StringComparison.Ordinal);
+        Assert.Contains("chargeLimitCommits.Schedule(value)", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("pendingChargeLimitPercent", source, StringComparison.Ordinal);
         Assert.Contains("command.ExecuteAsync(value)", source, StringComparison.Ordinal);
         Assert.Contains("SynchronizeBatteryProtectionToggle(toggle)", source, StringComparison.Ordinal);
     }

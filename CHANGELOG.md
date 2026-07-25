@@ -67,6 +67,10 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Changed
 
+- Moved the deferred lighting, charge-limit, and GPU clock commit state out of
+  WinUI event handlers into one executable, coalescing Tray.Core policy. Rapid
+  edits now consistently keep only the latest value and queue at most one
+  follow-up while a hardware write is running.
 - Setup rollback now treats restoration of the previous installation as the
   terminal recovery point even if cleanup of a guarded transaction directory
   fails. The cleanup failure remains visible without risking a second move of
