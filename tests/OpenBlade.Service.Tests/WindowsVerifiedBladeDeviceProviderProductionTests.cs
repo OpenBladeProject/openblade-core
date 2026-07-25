@@ -516,6 +516,92 @@ public sealed class WindowsVerifiedBladeDeviceProviderProductionTests
     }
 
     [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task TransientReadFailureRetriesWithFreshVerifiedSessionAndRecovers(
+        bool timeout)
+    {
+        DeviceCapabilities capabilities = BatteryCapabilities(new HashSet<int> { 80 });
+        var failed = new FakeProductionPort(
+            capabilities,
+            BatteryValidationSetting.Limit80,
+            temporary: null)
+        {
+            ProtectionFailure = timeout
+                ? new TimeoutException("temporary timeout")
+                : new IOException("temporary native I/O failure"),
+        };
+        var recovered = new FakeProductionPort(
+            capabilities,
+            BatteryValidationSetting.Limit80,
+            temporary: null);
+        var factory = new FakeProductionFactory(capabilities, failed, recovered);
+        using var provider = ReadyProvider(factory);
+        provider.TryGetVerifiedDevice(out IBladeDevice device);
+
+        ConfirmedDeviceState state = await device.ReadStateAsync(default);
+
+        Assert.Equal(new ConfirmedBatteryState(true, 80, null), state.Battery);
+        Assert.Equal(2, factory.OpenCount);
+        Assert.Equal(1, failed.DisposeCount);
+        Assert.Equal(1, recovered.DisposeCount);
+    }
+
+    [Fact]
+    public async Task RepeatedTransientReadFailureStopsAfterTwoFreshSessionRetries()
+    {
+        DeviceCapabilities capabilities = BatteryCapabilities(new HashSet<int> { 80 });
+        FakeProductionPort[] failed = Enumerable.Range(0, 3)
+            .Select(_ => new FakeProductionPort(
+                capabilities,
+                BatteryValidationSetting.Limit80,
+                temporary: null)
+            {
+                ProtectionFailure = new IOException("temporary native I/O failure"),
+            })
+            .ToArray();
+        var neverOpened = new FakeProductionPort(
+            capabilities,
+            BatteryValidationSetting.Limit80,
+            temporary: null);
+        var factory = new FakeProductionFactory(
+            capabilities,
+            [.. failed, neverOpened]);
+        using var provider = ReadyProvider(factory);
+        provider.TryGetVerifiedDevice(out IBladeDevice device);
+
+        IOException error = await Assert.ThrowsAsync<IOException>(
+            () => device.ReadStateAsync(default));
+
+        Assert.Equal("Battery state query failed.", error.Message);
+        Assert.Equal(3, factory.OpenCount);
+        Assert.All(failed, port => Assert.Equal(1, port.DisposeCount));
+        Assert.Equal(0, neverOpened.ProtectionQueryCount);
+    }
+
+    [Fact]
+    public async Task IdentityBlockedReadDoesNotRetry()
+    {
+        DeviceCapabilities capabilities = BatteryCapabilities(new HashSet<int> { 80 });
+        var neverOpened = new FakeProductionPort(
+            capabilities,
+            BatteryValidationSetting.Limit80,
+            temporary: null);
+        var factory = new IdentityThenPortFactory(capabilities, neverOpened);
+        using var provider = ReadyProvider(factory);
+        provider.TryGetVerifiedDevice(out IBladeDevice device);
+
+        IOException error = await Assert.ThrowsAsync<IOException>(
+            () => device.ReadStateAsync(default));
+
+        Assert.Equal(
+            "Battery state query was blocked by exact device identity verification.",
+            error.Message);
+        Assert.Equal(1, factory.OpenCount);
+        Assert.Equal(0, neverOpened.ProtectionQueryCount);
+    }
+
+    [Theory]
     [InlineData(HidProtocolValidationFailure.TransactionMismatch)]
     [InlineData(HidProtocolValidationFailure.CommandClassMismatch)]
     [InlineData(HidProtocolValidationFailure.CommandIdMismatch)]

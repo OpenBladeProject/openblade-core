@@ -187,6 +187,9 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Retried transient read-only battery-state I/O and timeout failures through a
+  fresh identity-verified session before blocking controls. Writes remain
+  single-attempt, and indeterminate hardware writes are never retried.
 - Gaming mode's Windows-key and Alt+Tab toggles now persist immediately to the
   active power profile, so the Session Agent applies their visible state
   without waiting for a separate profile-save action.

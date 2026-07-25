@@ -336,6 +336,7 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
             await EnterHardwareOperationAsync(cancellationToken).ConfigureAwait(false);
             try
             {
+                bool observedTimeout = false;
                 for (int attempt = 0; ; attempt++)
                 {
                     try
@@ -350,6 +351,26 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
                             HidProtocolValidationFailure.CommandClassMismatch or
                             HidProtocolValidationFailure.CommandIdMismatch)
                     {
+                        cancellationToken.ThrowIfCancellationRequested();
+                        await Task.Delay(
+                            TimeSpan.FromMilliseconds(25 * (attempt + 1)),
+                            cancellationToken).ConfigureAwait(false);
+                    }
+                    catch (Exception exception) when (
+                        exception is IOException or TimeoutException)
+                    {
+                        observedTimeout |= exception is TimeoutException;
+                        if (attempt >= MaximumBatteryReadAttempts - 1)
+                        {
+                            if (observedTimeout && exception is IOException)
+                            {
+                                throw new TimeoutException(
+                                    "Battery state query timed out.");
+                            }
+
+                            throw;
+                        }
+
                         cancellationToken.ThrowIfCancellationRequested();
                         await Task.Delay(
                             TimeSpan.FromMilliseconds(25 * (attempt + 1)),

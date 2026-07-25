@@ -409,7 +409,7 @@ public sealed class WindowsVerifiedBladeDeviceProviderTests
     }
 
     [Fact]
-    public async Task ReadState_QueryFailureDisposesPortAndMapsTimeout()
+    public async Task ReadState_QueryFailureDisposesPortRetriesAndMapsTimeout()
     {
         var port = FakeQueryPort.Failure(HidSessionFailureKind.Timeout);
         var factory = new FakeQueryFactory(port);
@@ -418,7 +418,7 @@ public sealed class WindowsVerifiedBladeDeviceProviderTests
 
         await Assert.ThrowsAsync<TimeoutException>(() => device.ReadStateAsync(default));
 
-        Assert.Equal(1, factory.OpenCount);
+        Assert.Equal(3, factory.OpenCount);
         Assert.Equal(1, port.QueryCount);
         Assert.Equal(1, port.DisposeCount);
     }
