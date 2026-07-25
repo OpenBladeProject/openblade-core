@@ -6,6 +6,18 @@ artifacts/
 *.user
 *.suo
 TestResults/
+
+# Local hardware capture and query output. Commit only sanitized evidence.
+*.pcap
+*.pcapng
+*.usbpcap.json
+.capture-control-*/
+.query-control-*/
+/raw/*
+!/raw/.gitkeep
+/work/*
+!/work/.gitkeep
+
 src/OpenBlade.Tray/Assets/Brand/*
 !src/OpenBlade.Tray/Assets/Brand/OpenBlade.ico
 !src/OpenBlade.Tray/Assets/Brand/OpenBlade.png
