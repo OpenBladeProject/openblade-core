@@ -193,6 +193,7 @@ All notable changes to OpenBlade are documented in this file. The project follow
 - Retried transient read-only battery-state I/O and timeout failures through a
   fresh identity-verified session before blocking controls. Writes remain
   single-attempt, and indeterminate hardware writes are never retried.
+- Standardized the About page's component labels to sentence case.
 - Suppressed false Performance-key failure notifications when fresh hardware
   readback confirms that the final selected mode was successfully applied.
 - Gaming mode's Windows-key and Alt+Tab toggles now persist immediately to the
