@@ -94,9 +94,11 @@ public sealed record FirmwareVersions(
     string BiosVersion,
     string EcVersion,
     string McuVersion,
-    string VbiosVersion)
+    string VbiosVersion,
+    string ModelNumber = "Unavailable")
 {
     public static FirmwareVersions Unavailable() => new(
+        "Unavailable",
         "Unavailable",
         "Unavailable",
         "Unavailable",

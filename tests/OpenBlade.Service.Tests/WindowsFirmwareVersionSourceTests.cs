@@ -12,6 +12,7 @@ public sealed class WindowsFirmwareVersionSourceTests
             ["BIOSVersion"] = " 3.01 ",
             ["ECFirmwareMajorRelease"] = 1,
             ["ECFirmwareMinorRelease"] = 4,
+            ["SystemSKU"] = "RZ09-05819EN4",
         };
         var source = new WindowsFirmwareVersionSource(
             (_, name) => values.GetValueOrDefault(name),
@@ -29,6 +30,7 @@ public sealed class WindowsFirmwareVersionSourceTests
         Assert.Equal("1.04", result.EcVersion);
         Assert.Equal("Unavailable", result.McuVersion);
         Assert.Equal("98.3.5c.40.3d", result.VbiosVersion);
+        Assert.Equal("RZ09-0581", result.ModelNumber);
     }
 
     [Fact]
@@ -47,6 +49,16 @@ public sealed class WindowsFirmwareVersionSourceTests
         var source = new WindowsFirmwareVersionSource((_, _) => null, () => []);
 
         Assert.Equal("Unavailable", source.Capture().EcVersion);
+    }
+
+    [Fact]
+    public void Capture_PreservesAnUnknownModelForCompatibilityReporting()
+    {
+        var source = new WindowsFirmwareVersionSource(
+            (_, name) => name == "SystemSKU" ? "RZ09-9999ABC" : null,
+            () => []);
+
+        Assert.Equal("RZ09-9999ABC", source.Capture().ModelNumber);
     }
 
     [Theory]

@@ -1091,7 +1091,9 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         ? "Unavailable"
         : latestStatus?.DeviceVerified == true
             ? TargetLaptopLabel
-            : "Not detected";
+            : HasConcreteFirmwareValue(latestStatus?.Firmware?.ModelNumber)
+                ? FirmwareValue(latestStatus?.Firmware?.ModelNumber)
+                : "Not detected";
 
     public string AboutBiosVersionStatus => FirmwareValue(latestStatus?.Firmware?.BiosVersion);
 
@@ -1100,6 +1102,75 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     public string AboutMcuVersionStatus => FirmwareValue(latestStatus?.Firmware?.McuVersion);
 
     public string AboutVbiosVersionStatus => FirmwareValue(latestStatus?.Firmware?.VbiosVersion);
+
+    public bool HasUntestedPlatformVersion =>
+        CurrentTestedPlatformAssessment is
+        {
+            IsEvaluated: true,
+            MatchesTestedConfiguration: false,
+        };
+
+    public string PlatformCompatibilityWarningTitle =>
+        CurrentTestedPlatformAssessment.Mismatches.Any(mismatch =>
+            string.Equals(
+                mismatch.Component,
+                "Model",
+                StringComparison.OrdinalIgnoreCase))
+            ? "Incompatible hardware"
+            : "Incompatible firmware";
+
+    public string DashboardTestedPlatformWarningMessage =>
+        FormatTestedPlatformWarning(CurrentTestedPlatformAssessment);
+
+    public string AboutTestedPlatformWarningMessage
+    {
+        get
+        {
+            string warning = DashboardTestedPlatformWarningMessage;
+            return string.IsNullOrEmpty(warning)
+                ? string.Empty
+                : $"{warning} This is a compatibility notice, not a hardware failure. "
+                    + "Controls remain available, but behavior may differ.";
+        }
+    }
+
+    public string AboutTestedModelVersionsStatus =>
+        TestedPlatformCatalog.OpenBladeTarget.ModelNumber;
+
+    public string AboutTestedBiosVersionsStatus =>
+        FormatTestedVersions(TestedPlatformCatalog.OpenBladeTarget.BiosVersions);
+
+    public string AboutTestedEcVersionsStatus =>
+        FormatTestedVersions(TestedPlatformCatalog.OpenBladeTarget.EcVersions);
+
+    public string AboutTestedMcuVersionsStatus =>
+        FormatTestedVersions(TestedPlatformCatalog.OpenBladeTarget.McuVersions);
+
+    private TestedPlatformAssessment CurrentTestedPlatformAssessment
+    {
+        get
+        {
+            if (!IsConnected)
+            {
+                return new(false, []);
+            }
+
+            string? modelNumber = latestStatus?.Firmware?.ModelNumber;
+            if (!HasConcreteFirmwareValue(modelNumber))
+            {
+                if (latestStatus?.DeviceVerified != true)
+                {
+                    return new(false, []);
+                }
+
+                modelNumber = TargetLaptop.ModelNumber;
+            }
+
+            return TestedPlatformCatalog.Assess(
+                modelNumber,
+                latestStatus?.Firmware);
+        }
+    }
 
     private static string ComponentVersionValue(string? value) =>
         string.IsNullOrWhiteSpace(value) ? "Unavailable" : value.Trim();
@@ -7293,6 +7364,38 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     private static string FirmwareValue(string? value) =>
         string.IsNullOrWhiteSpace(value) ? "Unavailable" : value.Trim();
 
+    private static bool HasConcreteFirmwareValue(string? value) =>
+        !string.IsNullOrWhiteSpace(value)
+        && !string.Equals(
+            value.Trim(),
+            UnavailableLabel,
+            StringComparison.OrdinalIgnoreCase);
+
+    private static string FormatTestedVersions(IReadOnlyList<string> versions) =>
+        string.Join(", ", versions);
+
+    private static string FormatTestedPlatformWarning(
+        TestedPlatformAssessment assessment)
+    {
+        if (!assessment.IsEvaluated || assessment.Mismatches.Count == 0)
+        {
+            return string.Empty;
+        }
+
+        string versions = string.Join(
+            ", ",
+            assessment.Mismatches.Select(mismatch =>
+                $"{mismatch.Component} {mismatch.CurrentValue}"));
+        bool hasUnavailableValue = assessment.Mismatches.Any(mismatch =>
+            string.Equals(
+                mismatch.CurrentValue,
+                UnavailableLabel,
+                StringComparison.OrdinalIgnoreCase));
+        return hasUnavailableValue
+            ? $"OpenBlade could not verify this configuration: {versions}."
+            : $"OpenBlade has not tested this configuration: {versions}.";
+    }
+
     private static string FormatOperationResult(ControlOperationResult result) => result.Status switch
     {
         ControlOperationStatus.Applied or ControlOperationStatus.Stored => string.Empty,
@@ -7429,6 +7532,18 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         PropertyChanged?.Invoke(
             this,
             new PropertyChangedEventArgs(nameof(AboutVbiosVersionStatus)));
+        PropertyChanged?.Invoke(
+            this,
+            new PropertyChangedEventArgs(nameof(HasUntestedPlatformVersion)));
+        PropertyChanged?.Invoke(
+            this,
+            new PropertyChangedEventArgs(nameof(PlatformCompatibilityWarningTitle)));
+        PropertyChanged?.Invoke(
+            this,
+            new PropertyChangedEventArgs(nameof(DashboardTestedPlatformWarningMessage)));
+        PropertyChanged?.Invoke(
+            this,
+            new PropertyChangedEventArgs(nameof(AboutTestedPlatformWarningMessage)));
     }
 
     private void NotifyFirmwareFieldLoadingState()

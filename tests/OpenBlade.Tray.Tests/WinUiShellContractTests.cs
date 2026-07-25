@@ -307,6 +307,56 @@ public sealed class WinUiShellContractTests
     }
 
     [Fact]
+    public void TestedPlatformWarningUsesDashboardPillAndAboutDetails()
+    {
+        string xaml = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml");
+        string window = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml.cs");
+
+        Assert.Contains("x:Name=\"TestedPlatformWarningBadge\"", xaml, StringComparison.Ordinal);
+        Assert.Contains(
+            "Text=\"{x:Bind ViewModel.PlatformCompatibilityWarningTitle, Mode=OneWay}\"",
+            xaml,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "Visibility=\"{x:Bind ViewModel.HasUntestedPlatformVersion, Mode=OneWay}\"",
+            xaml,
+            StringComparison.Ordinal);
+        Assert.Contains("Click=\"OnTestedPlatformWarningClick\"", xaml, StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            "x:Name=\"DashboardTestedPlatformWarning\"",
+            xaml,
+            StringComparison.Ordinal);
+        Assert.Contains("x:Name=\"AboutTestedPlatformWarning\"", xaml, StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            "<InfoBar x:Name=\"AboutTestedPlatformWarning\"",
+            xaml,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "Background=\"{ThemeResource SystemFillColorCautionBrush}\"",
+            xaml,
+            StringComparison.Ordinal);
+        Assert.Contains("x:Name=\"AboutTestedPlatformCard\"", xaml, StringComparison.Ordinal);
+        Assert.Contains("ViewModel.AboutTestedModelVersionsStatus", xaml, StringComparison.Ordinal);
+        Assert.Contains("ViewModel.AboutTestedBiosVersionsStatus", xaml, StringComparison.Ordinal);
+        Assert.Contains("ViewModel.AboutTestedEcVersionsStatus", xaml, StringComparison.Ordinal);
+        Assert.Contains("ViewModel.AboutTestedMcuVersionsStatus", xaml, StringComparison.Ordinal);
+
+        int handler = window.IndexOf(
+            "private void OnTestedPlatformWarningClick",
+            StringComparison.Ordinal);
+        Assert.True(handler >= 0);
+        string handlerSource = window[handler..];
+        Assert.Contains(
+            "MainNavigation.SelectedItem = AboutNavigationItem",
+            handlerSource,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "AboutTestedPlatformWarning.StartBringIntoView",
+            handlerSource,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void LightingAutoAppliesWithDebounceAndHasNoSeparateApplyAction()
     {
         string xaml = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml");
@@ -545,10 +595,17 @@ public sealed class WinUiShellContractTests
     public void DashboardTelemetryUsesResponsiveSingleRowWithoutClipping()
     {
         string xaml = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml");
+        string heroReadings = SliceMethod(
+            xaml,
+            "<Border x:Name=\"HeroReadings\"",
+            ">");
 
         Assert.Contains("x:Name=\"HeroReadings\"", xaml, StringComparison.Ordinal);
         Assert.Contains("Padding=\"0,14,0,0\"", xaml, StringComparison.Ordinal);
-        Assert.DoesNotContain("Margin=\"0,18,0,0\"", xaml, StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            "Margin=\"0,18,0,0\"",
+            heroReadings,
+            StringComparison.Ordinal);
         Assert.Contains("<UniformGridLayout Orientation=\"Horizontal\"", xaml, StringComparison.Ordinal);
         Assert.Contains("MinItemWidth=\"100\"", xaml, StringComparison.Ordinal);
         Assert.Contains("MinColumnSpacing=\"0\"", xaml, StringComparison.Ordinal);
@@ -587,9 +644,17 @@ public sealed class WinUiShellContractTests
     {
         string xaml = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml");
 
-        Assert.Equal(2, CountOccurrences(
+        Assert.Equal(3, CountOccurrences(
             xaml,
             "Style=\"{StaticResource StatusPillButtonStyle}\""));
+        string warningBadge = SliceMethod(
+            xaml,
+            "<Button x:Name=\"TestedPlatformWarningBadge\"",
+            ">");
+        Assert.Contains(
+            "Style=\"{StaticResource StatusPillButtonStyle}\"",
+            warningBadge,
+            StringComparison.Ordinal);
         Assert.Contains(
             "<Setter Property=\"Background\" Value=\"{ThemeResource SubtleFillColorSecondaryBrush}\" />",
             xaml,

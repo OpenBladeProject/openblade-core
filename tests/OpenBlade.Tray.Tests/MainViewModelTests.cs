@@ -3984,6 +3984,63 @@ public sealed class MainViewModelTests
     }
 
     [Fact]
+    public async Task TestedPlatformWarning_TracksFirmwareAndHardwareMismatches()
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+
+        ServiceStatusSnapshot stable = CreateStatus(verified: true, blocked: false) with
+        {
+            Firmware = new FirmwareVersions(
+                "3.01",
+                "1.04",
+                "1.6.0.0",
+                "98.3.5c.40.3d",
+                "RZ09-0581"),
+        };
+        client.Publish(stable);
+        await WaitUntilAsync(() => viewModel.IsConnected);
+
+        Assert.False(viewModel.HasUntestedPlatformVersion);
+        Assert.Equal("", viewModel.DashboardTestedPlatformWarningMessage);
+        Assert.Equal("RZ09-0581", viewModel.AboutTestedModelVersionsStatus);
+        Assert.Equal("3.01", viewModel.AboutTestedBiosVersionsStatus);
+        Assert.Equal("1.04", viewModel.AboutTestedEcVersionsStatus);
+        Assert.Equal("1.5.0.0, 1.6.0.0", viewModel.AboutTestedMcuVersionsStatus);
+
+        client.Publish(stable with
+        {
+            Revision = stable.Revision + 1,
+            Firmware = stable.Firmware! with { McuVersion = "1.7.0.0" },
+        });
+        await WaitUntilAsync(() => viewModel.HasUntestedPlatformVersion);
+
+        Assert.Equal("Incompatible firmware", viewModel.PlatformCompatibilityWarningTitle);
+        Assert.Equal(
+            "OpenBlade has not tested this configuration: MCU 1.7.0.0.",
+            viewModel.DashboardTestedPlatformWarningMessage);
+        Assert.Contains(
+            "This is a compatibility notice, not a hardware failure.",
+            viewModel.AboutTestedPlatformWarningMessage,
+            StringComparison.Ordinal);
+
+        client.Publish(stable with
+        {
+            Revision = stable.Revision + 2,
+            DeviceVerified = false,
+            Firmware = stable.Firmware! with { ModelNumber = "RZ09-9999ABC" },
+        });
+        await WaitUntilAsync(() =>
+            viewModel.PlatformCompatibilityWarningTitle == "Incompatible hardware");
+
+        Assert.Equal("RZ09-9999ABC", viewModel.AboutDetectedLaptopStatus);
+        Assert.Equal(
+            "OpenBlade has not tested this configuration: Model RZ09-9999ABC.",
+            viewModel.DashboardTestedPlatformWarningMessage);
+    }
+
+    [Fact]
     public async Task ShutdownOpenBlade_RequestsTypedServiceShutdown()
     {
         var client = new FakeServiceClient();

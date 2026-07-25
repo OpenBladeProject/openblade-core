@@ -436,6 +436,50 @@ public sealed class IpcMessageCodecTests
     }
 
     [Fact]
+    public async Task FirmwareMetadata_RoundTripsModelAndDefaultsOlderFrames()
+    {
+        ServiceStatusSnapshot expected = CreateStatus() with
+        {
+            Firmware = new FirmwareVersions(
+                "3.01",
+                "1.04",
+                "1.6.0.0",
+                "98.3.5c.40.3d",
+                "RZ09-0581"),
+        };
+        ServiceStatusSnapshot actual = await RoundTripStatusAsync(expected);
+        Assert.Equal(expected.Firmware, actual.Firmware);
+
+        ServiceServerFrame frame = new ServiceStatusEvent(
+            OpenBladeIpc.ProtocolVersion,
+            expected);
+        using var encoded = new MemoryStream();
+        await IpcMessageCodec.WriteServerFrameAsync(
+            encoded,
+            frame,
+            CancellationToken.None);
+        byte[] framedBytes = encoded.ToArray();
+        int payloadLength = BinaryPrimitives.ReadInt32LittleEndian(framedBytes);
+        JsonObject root = Assert.IsType<JsonObject>(
+            JsonNode.Parse(Encoding.UTF8.GetString(
+                framedBytes,
+                sizeof(int),
+                payloadLength)));
+        JsonObject status = Assert.IsType<JsonObject>(
+            root["status"]);
+        JsonObject firmware = Assert.IsType<JsonObject>(
+            status["firmware"]);
+        firmware.Remove("modelNumber");
+        using MemoryStream stream = FrameJson(root.ToJsonString());
+
+        ServiceStatusEvent olderFrame = Assert.IsType<ServiceStatusEvent>(
+            await IpcMessageCodec.ReadServerFrameAsync(
+                stream,
+                CancellationToken.None));
+        Assert.Equal("Unavailable", olderFrame.Status.Firmware?.ModelNumber);
+    }
+
+    [Fact]
     public async Task WriteServerFrameAsync_RejectsUnknownLightingOwnership()
     {
         using MemoryStream stream = new();

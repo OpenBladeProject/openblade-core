@@ -40,7 +40,28 @@ public sealed class WindowsFirmwareVersionSource : IFirmwareVersionSource
         ReadBiosVersion(),
         ReadEcVersion(),
         Unavailable,
-        ReadVbiosVersion());
+        ReadVbiosVersion(),
+        ReadModelNumber());
+
+    private string ReadModelNumber()
+    {
+        try
+        {
+            string systemSku = FormatRegistryString(
+                readRegistryValue(BiosRegistryPath, "SystemSKU"));
+            if (systemSku == Unavailable)
+            {
+                return Unavailable;
+            }
+
+            return RazerBladeModelCatalog.Find(systemSku)?.ModelNumber
+                ?? systemSku;
+        }
+        catch (Exception exception) when (IsSafeMetadataFailure(exception))
+        {
+            return Unavailable;
+        }
+    }
 
     private string ReadBiosVersion()
     {

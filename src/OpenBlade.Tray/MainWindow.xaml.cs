@@ -1905,6 +1905,22 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             });
     }
 
+    private void OnTestedPlatformWarningClick(object sender, RoutedEventArgs args)
+    {
+        MainNavigation.SelectedItem = AboutNavigationItem;
+        dispatcherQueue.TryEnqueue(
+            DispatcherQueuePriority.Low,
+            () =>
+            {
+                AboutTestedPlatformWarning.StartBringIntoView(
+                    new BringIntoViewOptions
+                    {
+                        AnimationDesired = true,
+                        VerticalAlignmentRatio = 0,
+                    });
+            });
+    }
+
     private async void OnShutdownOpenBlade(object sender, RoutedEventArgs args)
     {
         var confirmation = new ContentDialog
