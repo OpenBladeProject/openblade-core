@@ -90,7 +90,7 @@ public sealed class LightingValidationCommand
             identity.InformationalVersion,
             identity.CommitHash,
             identity.ProtocolAssemblySha256,
-            ProductionLightingEvidenceSource.GetDefaultOpenBladeValidationPath(),
+            ProductionLightingEvidenceSource.GetDefaultExactBuildValidationPath(),
             checkEnvironment: CheckWindowsEnvironment);
     }
 
@@ -308,7 +308,7 @@ public sealed class LightingValidationCommand
             && failure is null;
         failure ??= allGates ? null : "hardwareGatesIncomplete";
 
-        var evidence = new ProductionLightingOpenBladeValidationEvidence(
+        var evidence = new ProductionLightingExactBuildValidationEvidence(
             SchemaVersion: 2,
             EvidenceKind: "openBladeExactBuildHardwareValidation",
             Device: new(

@@ -48,6 +48,10 @@ The current production target is the Razer Blade 16 RZ09-0581, USB
    pass function-row keys through whenever Driver-mode status is unknown.
    During coordinated shutdown, the service restores Normal mode only after its
    existing identity and competing-controller safety checks pass.
+   Production lighting admission is owned by the approved embedded oracle and
+   the reviewed semantic implementation fingerprint. A machine-local
+   exact-build validation artifact is developer evidence only and must never
+   independently enable production writes.
 2. The Session Agent owns current-user APIs and input observation. The visible
    tray may exit without disabling profile automation, display automation,
    interactive lighting, or configured special keys.

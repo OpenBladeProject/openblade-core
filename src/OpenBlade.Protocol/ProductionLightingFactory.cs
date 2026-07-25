@@ -49,7 +49,9 @@ public sealed class ProductionLightingFactory : IProductionLightingPortFactory
     {
         _ = ProductionLightingEvidenceSource.ReadValidatedOracle();
         return CreateWindows(
-            admitted: ProductionLightingEvidenceSource.IsApprovedLightingImplementation(),
+            admitted:
+                ProductionLightingEvidenceSource
+                    .IsProductionLightingImplementationApproved(),
             ControllerExclusivityPolicy.Advisory);
     }
 

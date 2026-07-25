@@ -39,10 +39,11 @@ internal sealed record ProductionLightingOracleCaptureEvidence(
 
 /// <summary>
 /// A separately captured, machine-local OpenBlade hardware-validation result.
-/// It is never embedded: production admission binds this external artifact to
-/// the exact installed protocol assembly after every gate has passed.
+/// It is developer evidence for an exact protocol build and never grants
+/// production runtime admission. Production admission is owned by the embedded
+/// oracle and the reviewed semantic implementation fingerprint below.
 /// </summary>
-internal sealed record ProductionLightingOpenBladeValidationEvidence(
+internal sealed record ProductionLightingExactBuildValidationEvidence(
     int SchemaVersion,
     string EvidenceKind,
     ProductionLightingDeviceEvidence Device,
@@ -109,7 +110,7 @@ internal static class ProductionLightingEvidenceSource
     internal const string OracleResourceName =
         "OpenBlade.Protocol.Fixtures.Rz09_0581_02e0_3_01_LightingProduction.json";
 
-    internal const string OpenBladeValidationFileName = "lighting-validation.json";
+    internal const string ExactBuildValidationFileName = "lighting-validation.json";
 
     private const string ApprovedOracleFixtureSha256 =
         "5177FA9F6F91D96C9C34C5506CDA8EDC0A86EE5B5EEFA5F4322F4E4633C23521";
@@ -118,10 +119,10 @@ internal static class ProductionLightingEvidenceSource
         "OpenBladeLightingImplementationFingerprint";
 
     private const string ApprovedLightingImplementationFingerprintSha256 =
-        // Re-reviewed after compacting the user-mode Ambient IPC representation.
-        // The exact captured envelopes remain byte-for-byte identical; feature
-        // report encoding now writes directly into its final report buffer.
-        "4F34539C3EB65FD7EF4046FD2119C21B9A203337841A90F898398FB51B75135E";
+        // Re-reviewed after clarifying the production-admission predicate name.
+        // The admitted commands, implementation-source set, and factory control
+        // flow remain unchanged.
+        "D626D97B36346E054519916CEF8D25892216AA6D57F598BDC0E2FFDF3F7C5424";
 
     private static readonly JsonSerializerOptions SerializerOptions =
         new(JsonSerializerDefaults.Web)
@@ -142,7 +143,7 @@ internal static class ProductionLightingEvidenceSource
         return evidence!;
     }
 
-    internal static bool IsApprovedLightingImplementation()
+    internal static bool IsProductionLightingImplementationApproved()
     {
         string? fingerprint = typeof(ProductionLightingEvidenceSource).Assembly
             .GetCustomAttributes<AssemblyMetadataAttribute>()
@@ -152,10 +153,10 @@ internal static class ProductionLightingEvidenceSource
                     LightingImplementationMetadataKey,
                     StringComparison.Ordinal))
             ?.Value;
-        return IsApprovedLightingImplementationFingerprint(fingerprint);
+        return IsProductionLightingImplementationFingerprintApproved(fingerprint);
     }
 
-    internal static bool IsApprovedLightingImplementationFingerprint(
+    internal static bool IsProductionLightingImplementationFingerprintApproved(
         string? fingerprint)
     {
         if (string.IsNullOrWhiteSpace(fingerprint))
@@ -171,13 +172,13 @@ internal static class ProductionLightingEvidenceSource
             StringComparison.Ordinal);
     }
 
-    internal static bool IsCurrentBuildValidated()
+    internal static bool HasCurrentExactBuildValidationArtifact()
     {
         try
         {
             Assembly assembly = typeof(ProductionLightingEvidenceSource).Assembly;
-            return IsCurrentBuildValidated(
-                GetDefaultOpenBladeValidationPath(),
+            return HasCurrentExactBuildValidationArtifact(
+                GetDefaultExactBuildValidationPath(),
                 ReadBuildIdentity(assembly));
         }
         catch (Exception exception) when (
@@ -192,7 +193,7 @@ internal static class ProductionLightingEvidenceSource
         }
     }
 
-    internal static bool IsCurrentBuildValidated(
+    internal static bool HasCurrentExactBuildValidationArtifact(
         string artifactPath,
         ProductionLightingBuildIdentity buildIdentity)
     {
@@ -208,11 +209,11 @@ internal static class ProductionLightingEvidenceSource
             }
 
             byte[] bytes = File.ReadAllBytes(artifactPath);
-            ProductionLightingOpenBladeValidationEvidence? evidence =
-                JsonSerializer.Deserialize<ProductionLightingOpenBladeValidationEvidence>(
+            ProductionLightingExactBuildValidationEvidence? evidence =
+                JsonSerializer.Deserialize<ProductionLightingExactBuildValidationEvidence>(
                     bytes,
                     SerializerOptions);
-            return IsValidatedForBuild(evidence, buildIdentity);
+            return IsExactBuildValidationEvidenceValid(evidence, buildIdentity);
         }
         catch (Exception exception) when (
             exception is JsonException
@@ -223,8 +224,8 @@ internal static class ProductionLightingEvidenceSource
         }
     }
 
-    internal static bool IsValidatedForBuild(
-        ProductionLightingOpenBladeValidationEvidence? evidence,
+    internal static bool IsExactBuildValidationEvidenceValid(
+        ProductionLightingExactBuildValidationEvidence? evidence,
         ProductionLightingBuildIdentity buildIdentity)
     {
         ArgumentNullException.ThrowIfNull(buildIdentity);
@@ -281,11 +282,11 @@ internal static class ProductionLightingEvidenceSource
         return true;
     }
 
-    internal static string GetDefaultOpenBladeValidationPath()
+    internal static string GetDefaultExactBuildValidationPath()
     {
         string root = Environment.GetFolderPath(
             Environment.SpecialFolder.CommonApplicationData);
-        return Path.Combine(root, "OpenBlade", OpenBladeValidationFileName);
+        return Path.Combine(root, "OpenBlade", ExactBuildValidationFileName);
     }
 
     internal static ProductionLightingBuildIdentity ReadCurrentBuildIdentity() =>

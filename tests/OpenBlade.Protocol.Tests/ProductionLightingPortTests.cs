@@ -24,7 +24,7 @@ public sealed class ProductionLightingPortTests
     }
 
     [Fact]
-    public void ApprovedEvidence_AdmitsTheExactDeviceLightingCommandSet()
+    public void ProductionAdmissionUsesOracleAndReviewedImplementationFingerprint()
     {
         ProductionLightingOracleEvidence evidence =
             ProductionLightingEvidenceSource.ReadValidatedOracle();
@@ -46,7 +46,7 @@ public sealed class ProductionLightingPortTests
         Assert.Empty(factory.Capabilities.PerformancePresets);
         Assert.Empty(factory.Capabilities.FanModes);
         Assert.Empty(factory.Capabilities.ChargeLimits);
-        Assert.False(ProductionLightingEvidenceSource.IsCurrentBuildValidated(
+        Assert.False(ProductionLightingEvidenceSource.HasCurrentExactBuildValidationArtifact(
             Path.Combine(Path.GetTempPath(), $"absent-{Guid.NewGuid():N}.json"),
             TestBuildIdentity()));
     }
@@ -353,13 +353,15 @@ public sealed class ProductionLightingPortTests
         string actualHash = Convert.ToHexString(
             SHA256.HashData(Encoding.UTF8.GetBytes(fingerprint)));
         Assert.True(
-            ProductionLightingEvidenceSource.IsApprovedLightingImplementation(),
+            ProductionLightingEvidenceSource.IsProductionLightingImplementationApproved(),
             $"Current lighting implementation hash: {actualHash}");
         Assert.False(
-            ProductionLightingEvidenceSource.IsApprovedLightingImplementationFingerprint(null));
+            ProductionLightingEvidenceSource
+                .IsProductionLightingImplementationFingerprintApproved(null));
         Assert.False(
-            ProductionLightingEvidenceSource.IsApprovedLightingImplementationFingerprint(
-                "changed-lighting-implementation"));
+            ProductionLightingEvidenceSource
+                .IsProductionLightingImplementationFingerprintApproved(
+                    "changed-lighting-implementation"));
     }
 
     [Fact]
@@ -368,19 +370,21 @@ public sealed class ProductionLightingPortTests
         const string commit = "403aa01b11e969a6351595154569ef56f8878efa";
         const string version = "0.1.0+403aa01b11e969a6351595154569ef56f8878efa";
         ProductionLightingBuildIdentity identity = TestBuildIdentity();
-        ProductionLightingOpenBladeValidationEvidence evidence = ValidEvidence();
+        ProductionLightingExactBuildValidationEvidence evidence = ValidEvidence();
 
         Assert.Equal(version, identity.InformationalVersion);
         Assert.Equal(commit, identity.CommitHash);
-        Assert.True(ProductionLightingEvidenceSource.IsValidatedForBuild(evidence, identity));
-        Assert.False(ProductionLightingEvidenceSource.IsValidatedForBuild(
+        Assert.True(
+            ProductionLightingEvidenceSource
+                .IsExactBuildValidationEvidenceValid(evidence, identity));
+        Assert.False(ProductionLightingEvidenceSource.IsExactBuildValidationEvidenceValid(
             evidence,
             identity with
             {
                 ProtocolAssemblySha256 =
                     "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
             }));
-        Assert.False(ProductionLightingEvidenceSource.IsValidatedForBuild(
+        Assert.False(ProductionLightingEvidenceSource.IsExactBuildValidationEvidenceValid(
             evidence with { BaselineRestored = false },
             identity));
     }
@@ -405,16 +409,20 @@ public sealed class ProductionLightingPortTests
                         },
                     }));
 
-            Assert.True(ProductionLightingEvidenceSource.IsCurrentBuildValidated(
-                path,
-                TestBuildIdentity()));
-            Assert.False(ProductionLightingEvidenceSource.IsCurrentBuildValidated(
-                path,
-                TestBuildIdentity() with
-                {
-                    ProtocolAssemblySha256 =
-                        "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB",
-                }));
+            Assert.True(
+                ProductionLightingEvidenceSource
+                    .HasCurrentExactBuildValidationArtifact(
+                        path,
+                        TestBuildIdentity()));
+            Assert.False(
+                ProductionLightingEvidenceSource
+                    .HasCurrentExactBuildValidationArtifact(
+                        path,
+                        TestBuildIdentity() with
+                        {
+                            ProtocolAssemblySha256 =
+                                "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB",
+                        }));
         }
         finally
         {
@@ -1160,7 +1168,7 @@ public sealed class ProductionLightingPortTests
         "403aa01b11e969a6351595154569ef56f8878efa",
         "0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF");
 
-    private static ProductionLightingOpenBladeValidationEvidence ValidEvidence()
+    private static ProductionLightingExactBuildValidationEvidence ValidEvidence()
     {
         LightingSettings baseline = LightingSettingsFactory.Static(
             new RgbColor(0, byte.MaxValue, 0),
