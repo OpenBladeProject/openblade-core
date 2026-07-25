@@ -12,9 +12,6 @@ internal static class Program
     [STAThread]
     private static int Main()
     {
-        using IDisposable traceLogRegistration = PersistentTraceLog.RegisterDefault(
-            "OpenBlade.SessionAgent",
-            OpenBladeProductVersion.Read(typeof(Program).Assembly));
         try
         {
             return RunAsync().GetAwaiter().GetResult();
@@ -39,12 +36,20 @@ internal static class Program
         SessionAgentPipeEndpoint endpoint = SessionAgentPipeEndpoint.Create(userSid);
         SessionAgentEventEndpoint eventEndpoint =
             SessionAgentEventEndpoint.Create(userSid);
-        if (!SessionAgentPipeOwner.TryAcquire(endpoint, userSid, out SessionAgentPipeOwner? owner))
+        if (!TryAcquireStartupOwnership(
+                endpoint,
+                userSid,
+                () => PersistentTraceLog.RegisterDefault(
+                    "OpenBlade.SessionAgent",
+                    OpenBladeProductVersion.Read(typeof(Program).Assembly)),
+                out SessionAgentPipeOwner? owner,
+                out IDisposable? traceLogRegistration))
         {
             return 0;
         }
 
         await using SessionAgentPipeOwner acquiredOwner = owner!;
+        using IDisposable acquiredTraceLogRegistration = traceLogRegistration!;
         using (var lifetime = new CancellationTokenSource())
         using (EventWaitHandle shutdownEvent = CreateShutdownEvent())
         using (var controller = new WindowsDisplaySettingsController())
@@ -213,6 +218,36 @@ internal static class Program
                     _ = callbacksCompleted.WaitOne(TimeSpan.FromSeconds(2));
                 }
             }
+        }
+    }
+
+    internal static bool TryAcquireStartupOwnership(
+        SessionAgentPipeEndpoint endpoint,
+        SecurityIdentifier userSid,
+        Func<IDisposable> registerTraceLog,
+        out SessionAgentPipeOwner? owner,
+        out IDisposable? traceLogRegistration)
+    {
+        ArgumentNullException.ThrowIfNull(registerTraceLog);
+        if (!SessionAgentPipeOwner.TryAcquire(endpoint, userSid, out owner))
+        {
+            traceLogRegistration = null;
+            return false;
+        }
+
+        try
+        {
+            traceLogRegistration = registerTraceLog()
+                ?? throw new InvalidOperationException(
+                    "The Session Agent trace registration was not created.");
+            return true;
+        }
+        catch
+        {
+            owner!.DisposeAsync().AsTask().GetAwaiter().GetResult();
+            owner = null;
+            traceLogRegistration = null;
+            throw;
         }
     }
 

@@ -174,6 +174,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Prevented losing duplicate Session Agent launches from consuming persistent
+  log entries before singleton ownership is acquired.
 - Coalesced rapid performance-key presses behind a 1.25-second quiet period.
   Notifications still update immediately, but only the final selected mode is
   sent to the firmware instead of queueing every intermediate mode.

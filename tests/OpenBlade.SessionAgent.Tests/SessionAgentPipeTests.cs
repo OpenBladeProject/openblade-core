@@ -54,4 +54,82 @@ public sealed class SessionAgentPipeTests
         Assert.True(SessionAgentPipeOwner.TryAcquire(endpoint, sid, out SessionAgentPipeOwner? replacement));
         await replacement!.DisposeAsync();
     }
+
+    [Fact]
+    public async Task DuplicateStartupDoesNotRegisterPersistentLogging()
+    {
+        SecurityIdentifier sid = WindowsIdentity.GetCurrent().User!;
+        var endpoint = new SessionAgentPipeEndpoint(
+            $"{SessionDisplayIpc.PipeNamePrefix}.Tests.{Guid.NewGuid():N}");
+        Assert.True(
+            SessionAgentPipeOwner.TryAcquire(
+                endpoint,
+                sid,
+                out SessionAgentPipeOwner? existing));
+        int registrationCount = 0;
+
+        bool acquired = Program.TryAcquireStartupOwnership(
+            endpoint,
+            sid,
+            () =>
+            {
+                registrationCount++;
+                return new CancellationTokenSource();
+            },
+            out SessionAgentPipeOwner? duplicate,
+            out IDisposable? traceRegistration);
+
+        Assert.False(acquired);
+        Assert.Equal(0, registrationCount);
+        Assert.Null(duplicate);
+        Assert.Null(traceRegistration);
+        await existing!.DisposeAsync();
+    }
+
+    [Fact]
+    public async Task SuccessfulStartupRegistersLoggingAfterOwnership()
+    {
+        SecurityIdentifier sid = WindowsIdentity.GetCurrent().User!;
+        var endpoint = new SessionAgentPipeEndpoint(
+            $"{SessionDisplayIpc.PipeNamePrefix}.Tests.{Guid.NewGuid():N}");
+        int registrationCount = 0;
+
+        Assert.True(Program.TryAcquireStartupOwnership(
+            endpoint,
+            sid,
+            () =>
+            {
+                registrationCount++;
+                return new CancellationTokenSource();
+            },
+            out SessionAgentPipeOwner? owner,
+            out IDisposable? traceRegistration));
+        Assert.Equal(1, registrationCount);
+
+        traceRegistration!.Dispose();
+        await owner!.DisposeAsync();
+    }
+
+    [Fact]
+    public async Task FailedLoggingRegistrationReleasesStartupOwnership()
+    {
+        SecurityIdentifier sid = WindowsIdentity.GetCurrent().User!;
+        var endpoint = new SessionAgentPipeEndpoint(
+            $"{SessionDisplayIpc.PipeNamePrefix}.Tests.{Guid.NewGuid():N}");
+
+        Assert.Throws<InvalidOperationException>(() =>
+            Program.TryAcquireStartupOwnership(
+                endpoint,
+                sid,
+                static () => throw new InvalidOperationException("registration failed"),
+                out _,
+                out _));
+
+        Assert.True(
+            SessionAgentPipeOwner.TryAcquire(
+                endpoint,
+                sid,
+                out SessionAgentPipeOwner? replacement));
+        await replacement!.DisposeAsync();
+    }
 }
