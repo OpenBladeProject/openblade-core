@@ -42,7 +42,7 @@ public sealed class WindowsReactiveKeyboardSourceFactory : IReactiveKeyboardSour
         Func<SpecialKeySlot, bool> shouldOverrideSpecialKey,
         Action<FunctionRowAction> publishFunctionRowAction,
         Func<FunctionKeyPrimaryMode?> readFunctionKeyPrimaryMode,
-        Func<bool> isDriverModeActive) =>
+        Func<KeyboardDriverModeObservation> readDriverModeObservation) =>
         new WindowsReactiveKeyboardSource(
             publish,
             publishPerformanceShortcut,
@@ -51,7 +51,7 @@ public sealed class WindowsReactiveKeyboardSourceFactory : IReactiveKeyboardSour
             _ => { },
             publishFunctionRowAction,
             readFunctionKeyPrimaryMode,
-            isDriverModeActive);
+            readDriverModeObservation);
 
     public IReactiveKeyboardSource Create(
         Action<ReactiveKeyPulse> publish,
@@ -61,7 +61,7 @@ public sealed class WindowsReactiveKeyboardSourceFactory : IReactiveKeyboardSour
         Action<SpecialKeySlot> publishDefaultLaptopKey,
         Action<FunctionRowAction> publishFunctionRowAction,
         Func<FunctionKeyPrimaryMode?> readFunctionKeyPrimaryMode,
-        Func<bool> isDriverModeActive,
+        Func<KeyboardDriverModeObservation> readDriverModeObservation,
         Func<GamingModeKeyPolicy> readGamingModeKeyPolicy) =>
         new WindowsReactiveKeyboardSource(
             publish,
@@ -71,7 +71,7 @@ public sealed class WindowsReactiveKeyboardSourceFactory : IReactiveKeyboardSour
             publishDefaultLaptopKey,
             publishFunctionRowAction,
             readFunctionKeyPrimaryMode,
-            isDriverModeActive,
+            readDriverModeObservation,
             readGamingModeKeyPolicy);
 
     public IReactiveKeyboardSource Create(
@@ -82,7 +82,7 @@ public sealed class WindowsReactiveKeyboardSourceFactory : IReactiveKeyboardSour
         Action<SpecialKeySlot> publishDefaultLaptopKey,
         Action<FunctionRowAction> publishFunctionRowAction,
         Func<FunctionKeyPrimaryMode?> readFunctionKeyPrimaryMode,
-        Func<bool> isDriverModeActive) =>
+        Func<KeyboardDriverModeObservation> readDriverModeObservation) =>
         new WindowsReactiveKeyboardSource(
             publish,
             publishPerformanceShortcut,
@@ -91,7 +91,7 @@ public sealed class WindowsReactiveKeyboardSourceFactory : IReactiveKeyboardSour
             publishDefaultLaptopKey,
             publishFunctionRowAction,
             readFunctionKeyPrimaryMode,
-            isDriverModeActive);
+            readDriverModeObservation);
 }
 
 /// <summary>
@@ -146,7 +146,7 @@ internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
     private readonly Action<SpecialKeySlot> publishDefaultLaptopKey;
     private readonly Action<FunctionRowAction> publishFunctionRowAction;
     private readonly Func<FunctionKeyPrimaryMode?> readFunctionKeyPrimaryMode;
-    private readonly Func<bool> isDriverModeActive;
+    private readonly Func<KeyboardDriverModeObservation> readDriverModeObservation;
     private readonly Func<GamingModeKeyPolicy> readGamingModeKeyPolicy;
     private readonly Rz09_0581FunctionRowInputState functionRowInput = new();
     private readonly GamingModeKeyBlockState gamingModeKeyBlockState = new();
@@ -182,7 +182,7 @@ internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
             _ => { },
             _ => { },
             () => null,
-            () => false,
+            () => KeyboardDriverModeObservation.Unknown,
             () => GamingModeKeyPolicy.Disabled)
     {
     }
@@ -195,7 +195,7 @@ internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
         Action<SpecialKeySlot>? publishDefaultLaptopKey = null,
         Action<FunctionRowAction>? publishFunctionRowAction = null,
         Func<FunctionKeyPrimaryMode?>? readFunctionKeyPrimaryMode = null,
-        Func<bool>? isDriverModeActive = null,
+        Func<KeyboardDriverModeObservation>? readDriverModeObservation = null,
         Func<GamingModeKeyPolicy>? readGamingModeKeyPolicy = null)
     {
         this.publish = publish ?? throw new ArgumentNullException(nameof(publish));
@@ -208,7 +208,8 @@ internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
         this.publishDefaultLaptopKey = publishDefaultLaptopKey ?? (_ => { });
         this.publishFunctionRowAction = publishFunctionRowAction ?? (_ => { });
         this.readFunctionKeyPrimaryMode = readFunctionKeyPrimaryMode ?? (() => null);
-        this.isDriverModeActive = isDriverModeActive ?? (() => false);
+        this.readDriverModeObservation =
+            readDriverModeObservation ?? (() => KeyboardDriverModeObservation.Unknown);
         this.readGamingModeKeyPolicy =
             readGamingModeKeyPolicy ?? (() => GamingModeKeyPolicy.Disabled);
         messageThread = new Thread(RunMessageWindow)
@@ -473,7 +474,7 @@ internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
                     keyDown,
                     owner.performanceFunctionKeyPressed,
                     owner.readFunctionKeyPrimaryMode(),
-                    owner.isDriverModeActive(),
+                    owner.readDriverModeObservation().AllowsFunctionRowInterception,
                     out FunctionRowAction? action))
                 {
                     if (action is { } triggered)
@@ -604,7 +605,7 @@ internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
                 keyDown,
                 performanceFunctionKeyPressed,
                 readFunctionKeyPrimaryMode(),
-                isDriverModeActive(),
+                readDriverModeObservation().AllowsFunctionRowInterception,
                 out FunctionRowAction? recoveredAction))
         {
             if (recoveredAction is { } action)

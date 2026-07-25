@@ -42,6 +42,12 @@ The current production target is the Razer Blade 16 RZ09-0581, USB
 
 1. The service is the sole owner of the laptop control HID handle. It exposes
    typed operations only and serializes all hardware access.
+   It also owns keyboard Driver mode continuously while running: it performs
+   verified read-before-write maintenance and is the only component allowed to
+   change that mode. The Session Agent consumes confirmed status only and must
+   pass function-row keys through whenever Driver-mode status is unknown.
+   During coordinated shutdown, the service restores Normal mode only after its
+   existing identity and competing-controller safety checks pass.
 2. The Session Agent owns current-user APIs and input observation. The visible
    tray may exit without disabling profile automation, display automation,
    interactive lighting, or configured special keys.

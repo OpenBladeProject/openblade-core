@@ -272,6 +272,52 @@ public sealed class ServiceReactiveLightingLoopTests
     }
 
     [Fact]
+    public async Task StatusReconnectMarksDriverModeUnknownWithoutForgettingConfirmation()
+    {
+        var client = new WatchClient();
+        var factory = new RecordingSourceFactory();
+        await using var loop = new ServiceReactiveLightingLoop(client, factory);
+        using var cancellation = new CancellationTokenSource();
+        Task running = loop.RunAsync(cancellation.Token);
+
+        client.Publish(Status(LightingRendererOwnershipState.Static) with
+        {
+            KeyboardDriverModeActive = true,
+        });
+        await WaitUntilAsync(
+            () => factory.Last?.ReadDriverModeObservation().Knowledge
+                == KeyboardDriverModeKnowledge.Active);
+        long confirmedAt =
+            factory.Last!.ReadDriverModeObservation().LastConfirmedTimestamp;
+
+        client.Reconnect();
+
+        await WaitUntilAsync(
+            () => factory.Last.ReadDriverModeObservation().Knowledge
+                == KeyboardDriverModeKnowledge.Unknown);
+        KeyboardDriverModeObservation unknown =
+            factory.Last.ReadDriverModeObservation();
+        Assert.False(unknown.AllowsFunctionRowInterception);
+        Assert.Equal(confirmedAt, unknown.LastConfirmedTimestamp);
+
+        cancellation.Cancel();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => running);
+    }
+
+    [Theory]
+    [InlineData(KeyboardDriverModeKnowledge.Unknown, false)]
+    [InlineData(KeyboardDriverModeKnowledge.Inactive, false)]
+    [InlineData(KeyboardDriverModeKnowledge.Active, true)]
+    public void DriverModeObservation_InterceptsOnlyWhenKnownActive(
+        KeyboardDriverModeKnowledge knowledge,
+        bool expected)
+    {
+        var observation = new KeyboardDriverModeObservation(knowledge, 123);
+
+        Assert.Equal(expected, observation.AllowsFunctionRowInterception);
+    }
+
+    [Fact]
     public async Task TemporaryAccessRefresh_PreservesPreviouslyActiveInputWhenDesiredStateIsStale()
     {
         var client = new WatchClient();
@@ -554,7 +600,7 @@ public sealed class ServiceReactiveLightingLoopTests
     }
 
     [Fact]
-    public async Task UnknownVerifiedReadbackPreservesLastConfirmedFunctionRowTranslation()
+    public async Task UnknownVerifiedReadbackPreservesPreferenceButDisablesInterception()
     {
         var client = new WatchClient();
         var factory = new RecordingSourceFactory();
@@ -572,6 +618,9 @@ public sealed class ServiceReactiveLightingLoopTests
             () => factory.Last!.ReadFunctionKeyPrimaryMode()
                 == FunctionKeyPrimaryMode.MultimediaKeys
                 && factory.Last.IsDriverModeActive());
+        long confirmedAt =
+            factory.Last!.ReadDriverModeObservation().LastConfirmedTimestamp;
+        Assert.True(confirmedAt > 0);
 
         client.Publish(Status(LightingRendererOwnershipState.Static) with
         {
@@ -579,12 +628,17 @@ public sealed class ServiceReactiveLightingLoopTests
             FunctionKeyPrimary = null,
             KeyboardDriverModeActive = null,
         });
-        await Task.Delay(50);
+        await WaitUntilAsync(
+            () => factory.Last!.ReadDriverModeObservation().Knowledge
+                == KeyboardDriverModeKnowledge.Unknown);
 
         Assert.Equal(
             FunctionKeyPrimaryMode.MultimediaKeys,
             factory.Last!.ReadFunctionKeyPrimaryMode());
-        Assert.True(factory.Last.IsDriverModeActive());
+        Assert.False(factory.Last.IsDriverModeActive());
+        Assert.Equal(
+            confirmedAt,
+            factory.Last.ReadDriverModeObservation().LastConfirmedTimestamp);
 
         client.Publish(Status(LightingRendererOwnershipState.Static) with
         {
@@ -788,7 +842,7 @@ public sealed class ServiceReactiveLightingLoopTests
             Func<SpecialKeySlot, bool> shouldOverrideSpecialKey,
             Action<FunctionRowAction> publishFunctionRowAction,
             Func<FunctionKeyPrimaryMode?> readFunctionKeyPrimaryMode,
-            Func<bool> isDriverModeActive)
+            Func<KeyboardDriverModeObservation> readDriverModeObservation)
         {
             CreateCount++;
             return Last = new RecordingSource(
@@ -799,7 +853,7 @@ public sealed class ServiceReactiveLightingLoopTests
                 _ => { },
                 publishFunctionRowAction,
                 readFunctionKeyPrimaryMode,
-                isDriverModeActive);
+                readDriverModeObservation);
         }
 
         public IReactiveKeyboardSource Create(
@@ -810,7 +864,7 @@ public sealed class ServiceReactiveLightingLoopTests
             Action<SpecialKeySlot> publishDefaultLaptopKey,
             Action<FunctionRowAction> publishFunctionRowAction,
             Func<FunctionKeyPrimaryMode?> readFunctionKeyPrimaryMode,
-            Func<bool> isDriverModeActive,
+            Func<KeyboardDriverModeObservation> readDriverModeObservation,
             Func<GamingModeKeyPolicy> readGamingModeKeyPolicy)
         {
             CreateCount++;
@@ -822,7 +876,7 @@ public sealed class ServiceReactiveLightingLoopTests
                 publishDefaultLaptopKey,
                 publishFunctionRowAction,
                 readFunctionKeyPrimaryMode,
-                isDriverModeActive,
+                readDriverModeObservation,
                 readGamingModeKeyPolicy);
         }
 
@@ -834,7 +888,7 @@ public sealed class ServiceReactiveLightingLoopTests
             Action<SpecialKeySlot> publishDefaultLaptopKey,
             Action<FunctionRowAction> publishFunctionRowAction,
             Func<FunctionKeyPrimaryMode?> readFunctionKeyPrimaryMode,
-            Func<bool> isDriverModeActive)
+            Func<KeyboardDriverModeObservation> readDriverModeObservation)
         {
             CreateCount++;
             return Last = new RecordingSource(
@@ -845,7 +899,7 @@ public sealed class ServiceReactiveLightingLoopTests
                 publishDefaultLaptopKey,
                 publishFunctionRowAction,
                 readFunctionKeyPrimaryMode,
-                isDriverModeActive);
+                readDriverModeObservation);
         }
     }
 
@@ -860,7 +914,7 @@ public sealed class ServiceReactiveLightingLoopTests
         private readonly Action<SpecialKeySlot> publishDefaultLaptopKey;
         private readonly Action<FunctionRowAction> publishFunctionRowAction;
         private readonly Func<FunctionKeyPrimaryMode?> readFunctionKeyPrimaryMode;
-        private readonly Func<bool> isDriverModeActive;
+        private readonly Func<KeyboardDriverModeObservation> readDriverModeObservation;
         private readonly Func<GamingModeKeyPolicy> readGamingModeKeyPolicy;
 
         public RecordingSource(
@@ -871,7 +925,7 @@ public sealed class ServiceReactiveLightingLoopTests
             Action<SpecialKeySlot>? publishDefaultLaptopKey = null,
             Action<FunctionRowAction>? publishFunctionRowAction = null,
             Func<FunctionKeyPrimaryMode?>? readFunctionKeyPrimaryMode = null,
-            Func<bool>? isDriverModeActive = null,
+            Func<KeyboardDriverModeObservation>? readDriverModeObservation = null,
             Func<GamingModeKeyPolicy>? readGamingModeKeyPolicy = null)
         {
             this.publish = publish;
@@ -881,7 +935,8 @@ public sealed class ServiceReactiveLightingLoopTests
             this.publishDefaultLaptopKey = publishDefaultLaptopKey ?? (_ => { });
             this.publishFunctionRowAction = publishFunctionRowAction ?? (_ => { });
             this.readFunctionKeyPrimaryMode = readFunctionKeyPrimaryMode ?? (() => null);
-            this.isDriverModeActive = isDriverModeActive ?? (() => false);
+            this.readDriverModeObservation =
+                readDriverModeObservation ?? (() => KeyboardDriverModeObservation.Unknown);
             this.readGamingModeKeyPolicy =
                 readGamingModeKeyPolicy ?? (() => GamingModeKeyPolicy.Disabled);
         }
@@ -909,7 +964,11 @@ public sealed class ServiceReactiveLightingLoopTests
         public FunctionKeyPrimaryMode? ReadFunctionKeyPrimaryMode() =>
             readFunctionKeyPrimaryMode();
 
-        public bool IsDriverModeActive() => isDriverModeActive();
+        public KeyboardDriverModeObservation ReadDriverModeObservation() =>
+            readDriverModeObservation();
+
+        public bool IsDriverModeActive() =>
+            ReadDriverModeObservation().AllowsFunctionRowInterception;
 
         public GamingModeKeyPolicy ReadGamingModeKeyPolicy() =>
             readGamingModeKeyPolicy();

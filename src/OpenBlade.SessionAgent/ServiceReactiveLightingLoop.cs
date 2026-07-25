@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using OpenBlade.Contracts;
 using OpenBlade.Tray;
 
@@ -31,7 +32,7 @@ public interface IReactiveKeyboardSourceFactory
         Func<SpecialKeySlot, bool> shouldOverrideSpecialKey,
         Action<FunctionRowAction> publishFunctionRowAction,
         Func<FunctionKeyPrimaryMode?> readFunctionKeyPrimaryMode,
-        Func<bool> isDriverModeActive) =>
+        Func<KeyboardDriverModeObservation> readDriverModeObservation) =>
         Create(
             publish,
             publishPerformanceShortcut,
@@ -46,7 +47,7 @@ public interface IReactiveKeyboardSourceFactory
         Action<SpecialKeySlot> publishDefaultLaptopKey,
         Action<FunctionRowAction> publishFunctionRowAction,
         Func<FunctionKeyPrimaryMode?> readFunctionKeyPrimaryMode,
-        Func<bool> isDriverModeActive) =>
+        Func<KeyboardDriverModeObservation> readDriverModeObservation) =>
         Create(
             publish,
             publishPerformanceShortcut,
@@ -54,7 +55,7 @@ public interface IReactiveKeyboardSourceFactory
             shouldOverrideSpecialKey,
             publishFunctionRowAction,
             readFunctionKeyPrimaryMode,
-            isDriverModeActive);
+            readDriverModeObservation);
 
     IReactiveKeyboardSource Create(
         Action<ReactiveKeyPulse> publish,
@@ -64,7 +65,7 @@ public interface IReactiveKeyboardSourceFactory
         Action<SpecialKeySlot> publishDefaultLaptopKey,
         Action<FunctionRowAction> publishFunctionRowAction,
         Func<FunctionKeyPrimaryMode?> readFunctionKeyPrimaryMode,
-        Func<bool> isDriverModeActive,
+        Func<KeyboardDriverModeObservation> readDriverModeObservation,
         Func<GamingModeKeyPolicy> readGamingModeKeyPolicy) =>
         Create(
             publish,
@@ -74,7 +75,7 @@ public interface IReactiveKeyboardSourceFactory
             publishDefaultLaptopKey,
             publishFunctionRowAction,
             readFunctionKeyPrimaryMode,
-            isDriverModeActive);
+            readDriverModeObservation);
 }
 
 /// <summary>
@@ -108,7 +109,8 @@ public sealed class ServiceReactiveLightingLoop : IAsyncDisposable
     private int inputConnected;
     private int keyTriggeredActive;
     private int functionKeyPrimaryMode = -1;
-    private int driverModeActive;
+    private int driverModeKnowledge;
+    private long driverModeLastConfirmedTimestamp;
     private int gamingModeKeyPolicyBits;
     private int disposed;
 
@@ -187,6 +189,8 @@ public sealed class ServiceReactiveLightingLoop : IAsyncDisposable
                                 // service publishes a replacement status; tearing
                                 // it down here creates a visible dead zone on every
                                 // short pipe reconnect.
+                                SetDriverModeUnknown(
+                                    "The service status connection is reconnecting.");
                                 break;
                         }
                     }
@@ -207,6 +211,8 @@ public sealed class ServiceReactiveLightingLoop : IAsyncDisposable
                     // renderer stopped. Keep both until an authoritative status
                     // replaces them; otherwise every retry creates a one-second
                     // interval in which physical key presses are lost.
+                    SetDriverModeUnknown(
+                        "The service status connection failed.");
                     ReportFailure(exception);
                     await Task.Delay(FailureRetryDelay, cancellationToken).ConfigureAwait(false);
                 }
@@ -214,6 +220,9 @@ public sealed class ServiceReactiveLightingLoop : IAsyncDisposable
         }
         finally
         {
+            SetDriverModeUnknown(
+                "Reactive input observation is stopping.",
+                warning: false);
             SetInputState(connected: false, keyTriggered: false);
         }
     }
@@ -309,7 +318,7 @@ public sealed class ServiceReactiveLightingLoop : IAsyncDisposable
                     }
                 },
                 ReadFunctionKeyPrimaryMode,
-                () => Volatile.Read(ref driverModeActive) != 0,
+                ReadDriverModeObservation,
                 ReadGamingModeKeyPolicy);
             if (Volatile.Read(ref disposed) != 0
                 || Interlocked.CompareExchange(ref source, created, null) is not null)
@@ -377,19 +386,15 @@ public sealed class ServiceReactiveLightingLoop : IAsyncDisposable
         if (!status.DeviceVerified)
         {
             Interlocked.Exchange(ref functionKeyPrimaryMode, -1);
-            Interlocked.Exchange(ref driverModeActive, 0);
+            SetDriverModeUnknown("The laptop is not currently verified.");
             functionRowActionPump?.ClearPending();
             Interlocked.Exchange(ref gamingModeKeyPolicyBits, 0);
         }
         else
         {
-            // A verified laptop can briefly report either readback as unknown
-            // while the service replaces a stale HID command session. Preserve
-            // the last confirmed translation state through that gap. A newly
-            // started Agent has no last readback to preserve, so use the active
-            // profile's saved behavior until firmware readback recovers. Without
-            // that fallback, Driver mode remains loaded but F1-F12 translation
-            // silently stays disabled after a transient device-verification loss.
+            // Function-key preference can safely fall back to the active profile.
+            // Driver-mode ownership cannot: an unknown firmware readback must
+            // pass keys through instead of risking a stale hook decision.
             FunctionKeyPrimaryMode? effectivePrimaryMode =
                 status.FunctionKeyPrimary
                 ?? FunctionKeyPrimaryFromActiveProfile(status);
@@ -400,11 +405,17 @@ public sealed class ServiceReactiveLightingLoop : IAsyncDisposable
 
             if (status.KeyboardDriverModeActive is { } active)
             {
-                Interlocked.Exchange(ref driverModeActive, active ? 1 : 0);
+                SetDriverModeConfirmed(active);
                 if (!active)
                 {
                     functionRowActionPump?.ClearPending();
                 }
+            }
+            else
+            {
+                SetDriverModeUnknown(
+                    "The service could not confirm keyboard Driver mode.");
+                functionRowActionPump?.ClearPending();
             }
 
             LaptopBehaviorProfileSettings behavior =
@@ -453,6 +464,54 @@ public sealed class ServiceReactiveLightingLoop : IAsyncDisposable
         }
 
         SetInputState(connected: true, keyTriggered: false);
+    }
+
+    private KeyboardDriverModeObservation ReadDriverModeObservation() => new(
+        (KeyboardDriverModeKnowledge)Volatile.Read(ref driverModeKnowledge),
+        Interlocked.Read(ref driverModeLastConfirmedTimestamp));
+
+    private void SetDriverModeConfirmed(bool active)
+    {
+        KeyboardDriverModeKnowledge knowledge = active
+            ? KeyboardDriverModeKnowledge.Active
+            : KeyboardDriverModeKnowledge.Inactive;
+        Interlocked.Exchange(
+            ref driverModeLastConfirmedTimestamp,
+            Stopwatch.GetTimestamp());
+        int previous = Interlocked.Exchange(ref driverModeKnowledge, (int)knowledge);
+        if (previous == (int)KeyboardDriverModeKnowledge.Unknown)
+        {
+            Trace.TraceInformation(
+                "Keyboard Driver mode readback recovered as {0}.",
+                active ? "active" : "inactive");
+        }
+    }
+
+    private void SetDriverModeUnknown(string reason, bool warning = true)
+    {
+        int previous = Interlocked.Exchange(
+            ref driverModeKnowledge,
+            (int)KeyboardDriverModeKnowledge.Unknown);
+        if (previous == (int)KeyboardDriverModeKnowledge.Unknown)
+        {
+            return;
+        }
+
+        long confirmedAt = Interlocked.Read(ref driverModeLastConfirmedTimestamp);
+        double ageSeconds = confirmedAt <= 0
+            ? 0
+            : Stopwatch.GetElapsedTime(confirmedAt).TotalSeconds;
+        const string message =
+            "Keyboard Driver mode state became unknown after {0:F1}s. "
+            + "Function-row interception will pass through until readback recovers. {1}";
+        if (warning)
+        {
+            Trace.TraceWarning(message, ageSeconds, reason);
+        }
+        else
+        {
+            Trace.TraceInformation(message, ageSeconds, reason);
+        }
     }
 
     private static FunctionKeyPrimaryMode? FunctionKeyPrimaryFromActiveProfile(

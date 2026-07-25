@@ -67,6 +67,10 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Changed
 
+- Changed function-row interception to require a current, confirmed keyboard
+  Driver-mode state. Unknown state during service reconnects or firmware
+  readback failures now passes keys through and records a diagnostic transition
+  instead of relying on a stale Boolean.
 - Updated the light and dark tray icon set for clearer taskbar visibility and
   added matching Custom power-mode icons.
 - Reduced each host-rendered Ambient Awareness IPC request from thousands of
