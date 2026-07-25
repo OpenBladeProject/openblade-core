@@ -3195,49 +3195,6 @@
                             </Grid>
                         </Border>
 
-                        <TextBlock Text="Tested versions"
-                                   Style="{StaticResource SectionHeaderStyle}" />
-                        <Border x:Name="AboutTestedPlatformCard"
-                                Style="{StaticResource SettingsGroupStyle}">
-                            <StackPanel>
-                                <Border Style="{StaticResource SettingsRowStyle}">
-                                    <Grid ColumnSpacing="24">
-                                        <Grid.ColumnDefinitions><ColumnDefinition Width="2*" /><ColumnDefinition Width="3*" /></Grid.ColumnDefinitions>
-                                        <TextBlock Text="Model" Style="{StaticResource CardTitleStyle}" />
-                                        <TextBlock Grid.Column="1"
-                                                   Text="{x:Bind ViewModel.AboutTestedModelVersionsStatus, Mode=OneWay}"
-                                                   Style="{StaticResource TroubleshootingValueStyle}" />
-                                    </Grid>
-                                </Border>
-                                <Border Style="{StaticResource SettingsRowStyle}">
-                                    <Grid ColumnSpacing="24">
-                                        <Grid.ColumnDefinitions><ColumnDefinition Width="2*" /><ColumnDefinition Width="3*" /></Grid.ColumnDefinitions>
-                                        <TextBlock Text="BIOS" Style="{StaticResource CardTitleStyle}" />
-                                        <TextBlock Grid.Column="1"
-                                                   Text="{x:Bind ViewModel.AboutTestedBiosVersionsStatus, Mode=OneWay}"
-                                                   Style="{StaticResource TroubleshootingValueStyle}" />
-                                    </Grid>
-                                </Border>
-                                <Border Style="{StaticResource SettingsRowStyle}">
-                                    <Grid ColumnSpacing="24">
-                                        <Grid.ColumnDefinitions><ColumnDefinition Width="2*" /><ColumnDefinition Width="3*" /></Grid.ColumnDefinitions>
-                                        <TextBlock Text="EC" Style="{StaticResource CardTitleStyle}" />
-                                        <TextBlock Grid.Column="1"
-                                                   Text="{x:Bind ViewModel.AboutTestedEcVersionsStatus, Mode=OneWay}"
-                                                   Style="{StaticResource TroubleshootingValueStyle}" />
-                                    </Grid>
-                                </Border>
-                                <Border Style="{StaticResource SettingsLastRowStyle}">
-                                    <Grid ColumnSpacing="24">
-                                        <Grid.ColumnDefinitions><ColumnDefinition Width="2*" /><ColumnDefinition Width="3*" /></Grid.ColumnDefinitions>
-                                        <TextBlock Text="MCU" Style="{StaticResource CardTitleStyle}" />
-                                        <TextBlock Grid.Column="1"
-                                                   Text="{x:Bind ViewModel.AboutTestedMcuVersionsStatus, Mode=OneWay}"
-                                                   Style="{StaticResource TroubleshootingValueStyle}" />
-                                    </Grid>
-                                </Border>
-                            </StackPanel>
-                        </Border>
                         </StackPanel>
 
                         <StackPanel x:Name="AboutSupportSection">

@@ -4004,10 +4004,6 @@ public sealed class MainViewModelTests
 
         Assert.False(viewModel.HasUntestedPlatformVersion);
         Assert.Equal("", viewModel.DashboardTestedPlatformWarningMessage);
-        Assert.Equal("RZ09-0581", viewModel.AboutTestedModelVersionsStatus);
-        Assert.Equal("3.01", viewModel.AboutTestedBiosVersionsStatus);
-        Assert.Equal("1.04", viewModel.AboutTestedEcVersionsStatus);
-        Assert.Equal("1.5.0.0, 1.6.0.0", viewModel.AboutTestedMcuVersionsStatus);
 
         client.Publish(stable with
         {

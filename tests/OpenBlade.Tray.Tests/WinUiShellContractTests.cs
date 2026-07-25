@@ -335,11 +335,8 @@ public sealed class WinUiShellContractTests
             "Background=\"{ThemeResource SystemFillColorCautionBrush}\"",
             xaml,
             StringComparison.Ordinal);
-        Assert.Contains("x:Name=\"AboutTestedPlatformCard\"", xaml, StringComparison.Ordinal);
-        Assert.Contains("ViewModel.AboutTestedModelVersionsStatus", xaml, StringComparison.Ordinal);
-        Assert.Contains("ViewModel.AboutTestedBiosVersionsStatus", xaml, StringComparison.Ordinal);
-        Assert.Contains("ViewModel.AboutTestedEcVersionsStatus", xaml, StringComparison.Ordinal);
-        Assert.Contains("ViewModel.AboutTestedMcuVersionsStatus", xaml, StringComparison.Ordinal);
+        Assert.DoesNotContain("Tested versions", xaml, StringComparison.Ordinal);
+        Assert.DoesNotContain("AboutTestedPlatformCard", xaml, StringComparison.Ordinal);
 
         int handler = window.IndexOf(
             "private void OnTestedPlatformWarningClick",

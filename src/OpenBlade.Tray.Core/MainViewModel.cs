@@ -1134,18 +1134,6 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         }
     }
 
-    public string AboutTestedModelVersionsStatus =>
-        TestedPlatformCatalog.OpenBladeTarget.ModelNumber;
-
-    public string AboutTestedBiosVersionsStatus =>
-        FormatTestedVersions(TestedPlatformCatalog.OpenBladeTarget.BiosVersions);
-
-    public string AboutTestedEcVersionsStatus =>
-        FormatTestedVersions(TestedPlatformCatalog.OpenBladeTarget.EcVersions);
-
-    public string AboutTestedMcuVersionsStatus =>
-        FormatTestedVersions(TestedPlatformCatalog.OpenBladeTarget.McuVersions);
-
     private TestedPlatformAssessment CurrentTestedPlatformAssessment
     {
         get
@@ -7370,9 +7358,6 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             value.Trim(),
             UnavailableLabel,
             StringComparison.OrdinalIgnoreCase);
-
-    private static string FormatTestedVersions(IReadOnlyList<string> versions) =>
-        string.Join(", ", versions);
 
     private static string FormatTestedPlatformWarning(
         TestedPlatformAssessment assessment)

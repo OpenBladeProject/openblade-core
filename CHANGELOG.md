@@ -14,7 +14,7 @@ All notable changes to OpenBlade are documented in this file. The project follow
   lighting, startup animation, function-key behavior, and Gaming mode.
 - Added a tested system-version catalog for the RZ09-0581, BIOS, EC, and MCU.
   The Dashboard now warns when detected versions are unverified and links to
-  the tested-version details on About without disabling hardware controls.
+  compatibility details on About without disabling hardware controls.
 - Added bounded, redacted persistent logs for non-fatal Tray and Session Agent
   failures. Diagnostic exports now include both user-mode log histories.
 - Added a compact, non-activating Windows-style flyout for built-in display
