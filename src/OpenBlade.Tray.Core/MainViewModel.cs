@@ -1917,27 +1917,71 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     public bool CanEditGamingModeKeyPolicy =>
         CanMutate && SupportsGamingMode && HasConfirmedPowerSource;
 
-    public void SetGamingModeKeyPolicy(bool blockWindowsKey, bool blockAltTab)
+    public async Task<bool> SetGamingModeKeyPolicyAsync(
+        bool blockWindowsKey,
+        bool blockAltTab,
+        CancellationToken cancellationToken)
     {
         if (!CanEditGamingModeKeyPolicy)
         {
-            return;
+            return false;
         }
 
         PowerSource source = ActivePowerSource;
-        LaptopBehaviorProfileSettings saved =
-            GetProfile(source).EffectiveLaptopBehavior;
-        LaptopBehaviorProfileSettings current =
-            activeProfileDraftLaptopBehavior ?? saved;
-        MarkActiveProfileDraft(
-            source,
-            laptopBehavior: current with
+        var policy = new GamingModeKeyPolicy(blockWindowsKey, blockAltTab);
+        PowerProfile savedProfile = GetProfile(source);
+        PowerProfile updatedProfile = savedProfile with
+        {
+            LaptopBehavior = savedProfile.EffectiveLaptopBehavior with
             {
-                GamingModeKeyPolicy = new GamingModeKeyPolicy(
-                    blockWindowsKey,
-                    blockAltTab),
+                GamingModeKeyPolicy = policy,
             },
-            previousLaptopBehavior: saved);
+        };
+        ProfileSet updatedProfiles = source switch
+        {
+            PowerSource.PluggedIn => Profiles with { PluggedIn = updatedProfile },
+            PowerSource.Battery => Profiles with { Battery = updatedProfile },
+            PowerSource.UsbC => Profiles with { UsbC = updatedProfile },
+            _ => throw new ArgumentOutOfRangeException(nameof(source)),
+        };
+        bool accepted = await RunOperationAsync(
+            token => serviceClient.UpdateProfilesAsync(updatedProfiles, token),
+            cancellationToken);
+        if (!accepted)
+        {
+            return false;
+        }
+
+        await dispatcher.InvokeAsync(
+            () =>
+            {
+                LaptopBehaviorProfileSettings? rebasedDraft =
+                    activeProfileDraftSource == source
+                        ? activeProfileDraftLaptopBehavior
+                        : null;
+                Profiles = updatedProfiles;
+                if (rebasedDraft is not null)
+                {
+                    rebasedDraft = rebasedDraft with
+                    {
+                        GamingModeKeyPolicy = policy,
+                    };
+                    if (activeProfileOriginalLaptopBehavior is not null)
+                    {
+                        activeProfileOriginalLaptopBehavior =
+                            activeProfileOriginalLaptopBehavior with
+                            {
+                                GamingModeKeyPolicy = policy,
+                            };
+                    }
+                    activeProfileDraftLaptopBehavior = rebasedDraft;
+                    MarkActiveProfileDraft(
+                        source,
+                        laptopBehavior: rebasedDraft);
+                }
+            },
+            cancellationToken).ConfigureAwait(false);
+        return true;
     }
 
     private GamingModeKeyPolicy CurrentGamingModeKeyPolicy =>

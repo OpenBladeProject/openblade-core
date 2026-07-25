@@ -182,6 +182,9 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Gaming mode's Windows-key and Alt+Tab toggles now persist immediately to the
+  active power profile, so the Session Agent applies their visible state
+  without waiting for a separate profile-save action.
 - Prevented losing duplicate Session Agent launches from consuming persistent
   log entries before singleton ownership is acquired.
 - Coalesced rapid performance-key presses behind a 1.25-second quiet period.

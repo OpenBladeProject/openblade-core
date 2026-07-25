@@ -687,6 +687,86 @@ public sealed class MainViewModelTests
     }
 
     [Fact]
+    public async Task GamingModeKeyPolicy_PersistsImmediatelyToTheActiveProfile()
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        ServiceStatusSnapshot status = CreateStatus(
+            verified: true,
+            blocked: false,
+            capabilities: DeviceCapabilities.SafeTargetDefaults() with
+            {
+                OneShotLaptopControls = new HashSet<OneShotLaptopControl>
+                {
+                    OneShotLaptopControl.GamingMode,
+                },
+                ChargeLimits = ChargeLimits(),
+            }) with
+        {
+            GamingModeEnabled = true,
+        };
+        client.Publish(status);
+        await WaitUntilAsync(() =>
+            viewModel.GamingModeEnabled is true
+            && viewModel.CanEditGamingModeKeyPolicy);
+
+        bool accepted = await viewModel.SetGamingModeKeyPolicyAsync(
+            blockWindowsKey: true,
+            blockAltTab: true,
+            CancellationToken.None);
+
+        Assert.True(accepted);
+        Assert.Equal(
+            new GamingModeKeyPolicy(true, true),
+            client.LastProfiles?.PluggedIn
+                .EffectiveLaptopBehavior
+                .EffectiveGamingModeKeyPolicy);
+        Assert.True(viewModel.BlockWindowsKeyInGamingMode);
+        Assert.True(viewModel.BlockAltTabInGamingMode);
+        Assert.False(viewModel.HasLaptopProfileDraft);
+    }
+
+    [Fact]
+    public async Task GamingModeKeyPolicy_RestoresTheSavedStateWhenPersistenceFails()
+    {
+        var client = new FakeServiceClient
+        {
+            NextResult = new ControlOperationResult(
+                ControlOperationStatus.Failed,
+                "Profile storage failed."),
+        };
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        ServiceStatusSnapshot status = CreateStatus(
+            verified: true,
+            blocked: false,
+            capabilities: DeviceCapabilities.SafeTargetDefaults() with
+            {
+                OneShotLaptopControls = new HashSet<OneShotLaptopControl>
+                {
+                    OneShotLaptopControl.GamingMode,
+                },
+                ChargeLimits = ChargeLimits(),
+            }) with
+        {
+            GamingModeEnabled = true,
+        };
+        client.Publish(status);
+        await WaitUntilAsync(() => viewModel.CanEditGamingModeKeyPolicy);
+
+        bool accepted = await viewModel.SetGamingModeKeyPolicyAsync(
+            blockWindowsKey: true,
+            blockAltTab: true,
+            CancellationToken.None);
+
+        Assert.False(accepted);
+        Assert.False(viewModel.BlockWindowsKeyInGamingMode);
+        Assert.False(viewModel.BlockAltTabInGamingMode);
+        Assert.False(viewModel.HasLaptopProfileDraft);
+    }
+
+    [Fact]
     public async Task DisplayDiscard_KeepsDraftWhenReadbackIsNotConfirmed()
     {
         var client = new FakeServiceClient();

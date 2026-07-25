@@ -53,6 +53,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
     private bool changingFanSelection;
     private bool changingBatteryProtection;
     private bool changingGamingMode;
+    private bool changingGamingModeKeyPolicy;
     private bool changingStartupAnimation;
     private bool changingExternalLightingPolicy;
     private bool changingDisplaySettings;
@@ -952,38 +953,58 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             selector);
     }
 
-    private void OnBlockWindowsKeyInGamingModeToggled(
+    private async void OnBlockWindowsKeyInGamingModeToggled(
         object sender,
         RoutedEventArgs args)
     {
-        if (Volatile.Read(ref disposed) != 0
+        if (changingGamingModeKeyPolicy
+            || Volatile.Read(ref disposed) != 0
             || sender is not ToggleSwitch toggle
             || toggle.IsOn == ViewModel.BlockWindowsKeyInGamingMode)
         {
             return;
         }
 
-        ViewModel.SetGamingModeKeyPolicy(
-            toggle.IsOn,
-            ViewModel.BlockAltTabInGamingMode);
-        toggle.IsOn = ViewModel.BlockWindowsKeyInGamingMode;
+        changingGamingModeKeyPolicy = true;
+        try
+        {
+            await ViewModel.SetGamingModeKeyPolicyAsync(
+                toggle.IsOn,
+                ViewModel.BlockAltTabInGamingMode,
+                CancellationToken.None);
+        }
+        finally
+        {
+            toggle.IsOn = ViewModel.BlockWindowsKeyInGamingMode;
+            changingGamingModeKeyPolicy = false;
+        }
     }
 
-    private void OnBlockAltTabInGamingModeToggled(
+    private async void OnBlockAltTabInGamingModeToggled(
         object sender,
         RoutedEventArgs args)
     {
-        if (Volatile.Read(ref disposed) != 0
+        if (changingGamingModeKeyPolicy
+            || Volatile.Read(ref disposed) != 0
             || sender is not ToggleSwitch toggle
             || toggle.IsOn == ViewModel.BlockAltTabInGamingMode)
         {
             return;
         }
 
-        ViewModel.SetGamingModeKeyPolicy(
-            ViewModel.BlockWindowsKeyInGamingMode,
-            toggle.IsOn);
-        toggle.IsOn = ViewModel.BlockAltTabInGamingMode;
+        changingGamingModeKeyPolicy = true;
+        try
+        {
+            await ViewModel.SetGamingModeKeyPolicyAsync(
+                ViewModel.BlockWindowsKeyInGamingMode,
+                toggle.IsOn,
+                CancellationToken.None);
+        }
+        finally
+        {
+            toggle.IsOn = ViewModel.BlockAltTabInGamingMode;
+            changingGamingModeKeyPolicy = false;
+        }
     }
 
     private void OnGpuCoreClockOffsetChanged(
