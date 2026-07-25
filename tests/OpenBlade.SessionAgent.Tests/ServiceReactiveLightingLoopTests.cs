@@ -106,6 +106,104 @@ public sealed class ServiceReactiveLightingLoopTests
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => running);
     }
 
+    [Theory]
+    [InlineData(ControlOperationStatus.Stored)]
+    [InlineData(ControlOperationStatus.Blocked)]
+    [InlineData(ControlOperationStatus.Failed)]
+    public async Task PhysicalShortcut_DoesNotWarnWhenFreshReadbackConfirmsSelection(
+        ControlOperationStatus status)
+    {
+        var client = new WatchClient
+        {
+            PerformanceShortcutResult = new(status, "Performance was not confirmed."),
+            ObservationStatus = Status(LightingRendererOwnershipState.Static) with
+            {
+                ConfirmedState = new ConfirmedDeviceState(
+                    PerformancePreset.Silent,
+                    Fans: null,
+                    Battery: null,
+                    Lighting: null),
+            },
+        };
+        var factory = new RecordingSourceFactory();
+        var notifications = new RecordingNotificationSink();
+        await using var loop = new ServiceReactiveLightingLoop(
+            client,
+            factory,
+            shortcutNotifications: notifications,
+            performanceShortcutQuietPeriod: TimeSpan.FromMilliseconds(25));
+        using var cancellation = new CancellationTokenSource();
+        Task running = loop.RunAsync(cancellation.Token);
+
+        client.Publish(Status(LightingRendererOwnershipState.Static) with
+        {
+            KeyboardDriverModeActive = true,
+        });
+        await WaitUntilAsync(() => factory.CreateCount == 1);
+        await WaitUntilAsync(() => factory.Last!.IsDriverModeActive());
+        factory.Last!.PublishPerformanceShortcut(PerformanceShortcutSource.DedicatedButton);
+
+        await WaitUntilAsync(() => client.ObservationCount == 1);
+        await WaitUntilAsync(() => client.PerformancePreviews.Count == 2);
+        await Task.Delay(50);
+
+        Assert.Equal(PerformancePreset.Silent, Assert.Single(notifications.Selected));
+        Assert.Empty(notifications.FailureMessages);
+
+        cancellation.Cancel();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => running);
+    }
+
+    [Fact]
+    public async Task PhysicalShortcut_DoesNotWarnWhenRequestFaultsButReadbackConfirmsSelection()
+    {
+        var completion = new TaskCompletionSource<ControlOperationResult>(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        var client = new WatchClient
+        {
+            PerformanceShortcutCompletion = completion,
+            ObservationStatus = Status(LightingRendererOwnershipState.Static) with
+            {
+                ConfirmedState = new ConfirmedDeviceState(
+                    PerformancePreset.Silent,
+                    Fans: null,
+                    Battery: null,
+                    Lighting: null),
+            },
+        };
+        var factory = new RecordingSourceFactory();
+        var notifications = new RecordingNotificationSink();
+        var failures = new ConcurrentQueue<Exception>();
+        await using var loop = new ServiceReactiveLightingLoop(
+            client,
+            factory,
+            failures.Enqueue,
+            notifications,
+            performanceShortcutQuietPeriod: TimeSpan.FromMilliseconds(25));
+        using var cancellation = new CancellationTokenSource();
+        Task running = loop.RunAsync(cancellation.Token);
+
+        client.Publish(Status(LightingRendererOwnershipState.Static) with
+        {
+            KeyboardDriverModeActive = true,
+        });
+        await WaitUntilAsync(() => factory.CreateCount == 1);
+        await WaitUntilAsync(() => factory.Last!.IsDriverModeActive());
+        factory.Last!.PublishPerformanceShortcut(PerformanceShortcutSource.DedicatedButton);
+        await WaitUntilAsync(() => notifications.Selected.Count == 1);
+        completion.SetException(new IOException("The response pipe closed."));
+
+        await WaitUntilAsync(() => client.ObservationCount == 1);
+        await WaitUntilAsync(() => failures.Count == 1);
+        await Task.Delay(50);
+
+        Assert.IsType<IOException>(Assert.Single(failures));
+        Assert.Empty(notifications.FailureMessages);
+
+        cancellation.Cancel();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => running);
+    }
+
     [Fact]
     public async Task RapidPerformancePressesNotifyEachSelectionButWriteOnlyFinalMode()
     {
@@ -997,6 +1095,9 @@ public sealed class ServiceReactiveLightingLoopTests
 
         public int ObservationCount { get; private set; }
 
+        public ServiceStatusSnapshot ObservationStatus { get; init; } =
+            Status(LightingRendererOwnershipState.Static);
+
         public ControlOperationResult PerformanceShortcutResult { get; init; } = new(
             ControlOperationStatus.Applied,
             "Applied");
@@ -1043,7 +1144,7 @@ public sealed class ServiceReactiveLightingLoopTests
             CancellationToken cancellationToken)
         {
             ObservationCount++;
-            return Task.FromResult(Status(LightingRendererOwnershipState.Static));
+            return Task.FromResult(ObservationStatus);
         }
 
         public Task<DiagnosticArchive> ExportDiagnosticsAsync(

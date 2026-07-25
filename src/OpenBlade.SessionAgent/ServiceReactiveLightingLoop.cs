@@ -616,7 +616,9 @@ public sealed class ServiceReactiveLightingLoop : IAsyncDisposable
         PerformanceShortcutIntent intent,
         CancellationToken cancellationToken)
     {
-        ControlOperationResult result;
+        ControlOperationResult? result = null;
+        Exception? operationException = null;
+        ServiceStatusSnapshot? refreshedStatus = null;
         bool refreshConfirmedState = false;
         try
         {
@@ -637,17 +639,13 @@ public sealed class ServiceReactiveLightingLoop : IAsyncDisposable
         catch (Exception exception)
         {
             refreshConfirmedState = true;
-            if (CompletePerformanceShortcut(intent.Generation, applied: false))
-            {
-                TryShowPerformanceShortcutFailure(exception.Message);
-            }
-            throw;
+            operationException = exception;
         }
         finally
         {
             if (refreshConfirmedState)
             {
-                await RefreshConfirmedPerformanceAfterFailureAsync()
+                refreshedStatus = await RefreshConfirmedPerformanceAfterFailureAsync()
                     .ConfigureAwait(false);
             }
             await PublishPerformanceShortcutPreviewAsync(
@@ -655,23 +653,48 @@ public sealed class ServiceReactiveLightingLoop : IAsyncDisposable
                 preset: null,
                 CancellationToken.None).ConfigureAwait(false);
         }
+        bool confirmedApplied = PerformanceShortcutReadbackMatches(
+            intent,
+            refreshedStatus);
         bool latestIntent = CompletePerformanceShortcut(
             intent.Generation,
-            result.Status == ControlOperationStatus.Applied);
-        if (result.Status == ControlOperationStatus.Failed)
+            result?.Status == ControlOperationStatus.Applied || confirmedApplied);
+        if (confirmedApplied)
+        {
+            if (operationException is not null)
+            {
+                ReportFailure(operationException);
+            }
+            return;
+        }
+        if (operationException is not null)
         {
             if (latestIntent)
             {
-                TryShowPerformanceShortcutFailure(result.Message);
+                TryShowPerformanceShortcutFailure(operationException.Message);
             }
-            throw new InvalidOperationException(result.Message);
+            System.Runtime.ExceptionServices.ExceptionDispatchInfo
+                .Capture(operationException)
+                .Throw();
         }
 
-        if (result.Status != ControlOperationStatus.Applied)
+        ControlOperationResult completed = result
+            ?? throw new InvalidOperationException(
+                "The performance shortcut completed without a result.");
+        if (completed.Status == ControlOperationStatus.Failed)
+        {
+            if (latestIntent)
+            {
+                TryShowPerformanceShortcutFailure(completed.Message);
+            }
+            throw new InvalidOperationException(completed.Message);
+        }
+
+        if (completed.Status != ControlOperationStatus.Applied)
         {
             if (latestIntent && intent.Target is not null)
             {
-                TryShowPerformanceShortcutFailure(result.Message);
+                TryShowPerformanceShortcutFailure(completed.Message);
             }
             return;
         }
@@ -681,7 +704,7 @@ public sealed class ServiceReactiveLightingLoop : IAsyncDisposable
         {
             try
             {
-                shortcutNotifications.ShowApplied(result.Message);
+                shortcutNotifications.ShowApplied(completed.Message);
             }
             catch (Exception exception)
             {
@@ -690,12 +713,12 @@ public sealed class ServiceReactiveLightingLoop : IAsyncDisposable
         }
     }
 
-    private async Task RefreshConfirmedPerformanceAfterFailureAsync()
+    private async Task<ServiceStatusSnapshot?> RefreshConfirmedPerformanceAfterFailureAsync()
     {
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
         try
         {
-            await serviceClient.ObserveStateAsync(
+            return await serviceClient.ObserveStateAsync(
                     LiveReadingSensors.None,
                     timeout.Token)
                 .ConfigureAwait(false);
@@ -707,7 +730,23 @@ public sealed class ServiceReactiveLightingLoop : IAsyncDisposable
         {
             ReportFailure(exception);
         }
+
+        return null;
     }
+
+    private static bool PerformanceShortcutReadbackMatches(
+        PerformanceShortcutIntent intent,
+        ServiceStatusSnapshot? status) =>
+        intent.Target is { } target
+        && status is
+        {
+            DeviceVerified: true,
+            WritesBlocked: false,
+            ConfirmedState.Performance: { } confirmed,
+        }
+        && confirmed == target
+        && (intent.PowerSource is null
+            || status.ActivePowerSource == intent.PowerSource);
 
     private async Task PublishPerformanceShortcutPreviewAsync(
         long generation,
