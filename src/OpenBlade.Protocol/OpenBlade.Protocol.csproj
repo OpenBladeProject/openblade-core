@@ -23,76 +23,14 @@
       Include="Fixtures\Rz09_0581_02e0_3_01_LightingProduction.json"
       LogicalName="OpenBlade.Protocol.Fixtures.Rz09_0581_02e0_3_01_LightingProduction.json" />
     <EmbeddedResource
+      Include="Fixtures\Rz09_0581_02e0_3_01_LightingSemanticAdmission.json"
+      LogicalName="OpenBlade.Protocol.Fixtures.Rz09_0581_02e0_3_01_LightingSemanticAdmission.json" />
+    <EmbeddedResource
       Include="Fixtures\Rz09_0581_02e0_3_01_TidalOracle.json"
       LogicalName="OpenBlade.Protocol.Fixtures.Rz09_0581_02e0_3_01_TidalOracle.json" />
     <EmbeddedResource
       Include="Fixtures\Rz09_0581_02e0_3_01_WaveWheelOracle.json"
       LogicalName="OpenBlade.Protocol.Fixtures.Rz09_0581_02e0_3_01_WaveWheelOracle.json" />
   </ItemGroup>
-
-  <ItemGroup>
-    <LightingImplementationSource Include="..\OpenBlade.Contracts\DeviceState.cs" />
-    <LightingImplementationSource Include="..\OpenBlade.Contracts\Lighting.cs" />
-    <LightingImplementationSource Include="..\OpenBlade.Contracts\AmbientLightingFrame.cs" />
-    <LightingImplementationSource Include="..\OpenBlade.Contracts\Profiles.cs" />
-    <LightingImplementationSource Include="..\OpenBlade.Contracts\ReactiveKeyPulse.cs" />
-    <LightingImplementationSource Include="BladeWriteException.cs" />
-    <LightingImplementationSource Include="BatteryValidationProbe.cs" />
-    <LightingImplementationSource Include="ControllerPresence.cs" />
-    <LightingImplementationSource Include="BoundedValidationActorDisposal.cs" />
-    <LightingImplementationSource Include="HardwareAccessGuard.cs" />
-    <LightingImplementationSource Include="HidFeatureIoResult.cs" />
-    <LightingImplementationSource Include="HidHandleIdentity.cs" />
-    <LightingImplementationSource Include="HidSessionResult.cs" />
-    <LightingImplementationSource Include="IProductionLightingPort.cs" />
-    <LightingImplementationSource Include="DeviceModeProtocol.cs" />
-    <LightingImplementationSource Include="LightingBrightnessProtocol.cs" />
-    <LightingImplementationSource Include="LogoLightingProtocol.cs" />
-    <LightingImplementationSource Include="NativeOperationState.cs" />
-    <LightingImplementationSource Include="OverlappedFeatureOperation.cs" />
-    <LightingImplementationSource Include="PendingDisposalRegistry.cs" />
-    <LightingImplementationSource Include="Pid02E0LightingEffects.cs" />
-    <LightingImplementationSource Include="Pid02E0RippleEffect.cs" />
-    <LightingImplementationSource Include="Pid02E0TidalEffect.cs" />
-    <LightingImplementationSource Include="Pid02E0StarlightEffect.cs" />
-    <LightingImplementationSource Include="Pid02E0WaveWheelEffects.cs" />
-    <LightingImplementationSource Include="Fixtures\Rz09_0581_02e0_3_01_TidalOracle.json" />
-    <LightingImplementationSource Include="Fixtures\Rz09_0581_02e0_3_01_WaveWheelOracle.json" />
-    <LightingImplementationSource Include="Pid02E0MatrixRenderers.cs" />
-    <LightingImplementationSource Include="Pid02E0MatrixReport.cs" />
-    <LightingImplementationSource Include="ProductionLightingFactory.cs" />
-    <LightingImplementationSource Include="ProductionLightingPort.cs" />
-    <LightingImplementationSource Include="RazerReport.cs" />
-    <LightingImplementationSource Include="TargetBladeDevice.cs" />
-    <LightingImplementationSource Include="ValidationActorFactory.cs" />
-    <LightingImplementationSource Include="ValidationRunContext.cs" />
-    <LightingImplementationSource Include="WindowsHardwareAccessGuard.cs" />
-    <LightingImplementationSource Include="WindowsHidNative.cs" />
-    <LightingImplementationSource Include="WindowsHostIdentitySource.cs" />
-    <LightingImplementationSource Include="WindowsPid02E0MatrixFeatureWriter.cs" />
-    <LightingImplementationSource Include="WindowsRazerHidSession.cs" />
-    <LightingImplementationSource Include="WindowsRazerHidSessionOpener.cs" />
-  </ItemGroup>
-
-  <Target Name="ComputeLightingImplementationFingerprint"
-          BeforeTargets="GetAssemblyAttributes">
-    <GetFileHash Files="@(LightingImplementationSource)"
-                 Algorithm="SHA256"
-                 HashEncoding="hex">
-      <Output TaskParameter="Items" ItemName="_LightingImplementationSourceHash" />
-    </GetFileHash>
-    <PropertyGroup>
-      <LightingImplementationFingerprint>@(_LightingImplementationSourceHash-&gt;'%(Filename)%(Extension)=%(FileHash)', '|')</LightingImplementationFingerprint>
-    </PropertyGroup>
-    <ItemGroup>
-      <AssemblyAttribute Include="System.Reflection.AssemblyMetadataAttribute">
-        <_Parameter1>OpenBladeLightingImplementationFingerprint</_Parameter1>
-        <_Parameter2>$(LightingImplementationFingerprint)</_Parameter2>
-      </AssemblyAttribute>
-    </ItemGroup>
-    <WriteLinesToFile File="$(IntermediateOutputPath)lighting-implementation-fingerprint.txt"
-                      Lines="$(LightingImplementationFingerprint)"
-                      Overwrite="true" />
-  </Target>
 
 </Project>

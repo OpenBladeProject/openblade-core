@@ -1,0 +1,54 @@
+{
+  "schemaVersion": 1,
+  "evidenceKind": "semanticLightingAdmission",
+  "device": {
+    "model": "RZ09-0581",
+    "vendorId": 5426,
+    "productId": 736,
+    "biosVersion": "3.01"
+  },
+  "controlEnvelope": {
+    "reportLength": 90,
+    "maximumPayloadLength": 80
+  },
+  "deviceMode": {
+    "query": "00/84:0000",
+    "setNormal": "00/04:0000",
+    "setDriver": "00/04:0300"
+  },
+  "brightness": {
+    "query": "03/83:010500",
+    "setPrefix": "03/03:0105",
+    "percent77Raw": 197
+  },
+  "logo": {
+    "queryState": "03/80:010400",
+    "queryEffect": "03/82:010400",
+    "setStatePrefix": "03/00:0104",
+    "setEffectPrefix": "03/02:0104",
+    "supportedModes": ["static", "breathing", "off"]
+  },
+  "matrix": {
+    "command": "03/0B",
+    "envelopeLength": 374,
+    "featureReportLength": 375,
+    "slotCount": 102,
+    "holeSlots": [0, 17, 31, 34, 48, 51, 64, 65, 68, 70, 81, 82, 85, 89, 92, 93],
+    "knownAnswerTransactionId": 90,
+    "knownAnswerColor": "47E10C",
+    "knownAnswerFeatureReportSha256": "7AFEE96E76C0547BE237465CAA2149E9254BD71DC1DE8D3EC17E5F2F0976C98F"
+  },
+  "supportedEffects": [
+    "off",
+    "static",
+    "spectrum",
+    "breathing",
+    "reactive",
+    "tidal",
+    "starlight",
+    "wave",
+    "wheel",
+    "ripple",
+    "ambientAwareness"
+  ]
+}

@@ -49,7 +49,10 @@ The current production target is the Razer Blade 16 RZ09-0581, USB
    During coordinated shutdown, the service restores Normal mode only after its
    existing identity and competing-controller safety checks pass.
    Production lighting admission is owned by the approved embedded oracle and
-   the reviewed semantic implementation fingerprint. A machine-local
+   the reviewed semantic admission manifest. The manifest compares the actual
+   device identity, command contracts, report geometry, layout mask, supported
+   values, and a known-answer encoded report; unrelated source edits do not
+   require re-approval. A machine-local
    exact-build validation artifact is developer evidence only and must never
    independently enable production writes.
 2. The Session Agent owns current-user APIs and input observation. The visible

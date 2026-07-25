@@ -41,7 +41,7 @@ internal sealed record ProductionLightingOracleCaptureEvidence(
 /// A separately captured, machine-local OpenBlade hardware-validation result.
 /// It is developer evidence for an exact protocol build and never grants
 /// production runtime admission. Production admission is owned by the embedded
-/// oracle and the reviewed semantic implementation fingerprint below.
+/// oracle and the reviewed semantic admission manifest below.
 /// </summary>
 internal sealed record ProductionLightingExactBuildValidationEvidence(
     int SchemaVersion,
@@ -104,25 +104,64 @@ internal sealed record ProductionLightingProtocolEvidence(
     int MatrixFeatureReportLength,
     int MatrixSlotCount);
 
+internal sealed record ProductionLightingSemanticAdmissionEvidence(
+    int SchemaVersion,
+    string EvidenceKind,
+    ProductionLightingDeviceEvidence Device,
+    ProductionLightingControlEnvelopeEvidence ControlEnvelope,
+    ProductionLightingDeviceModeEvidence DeviceMode,
+    ProductionLightingBrightnessEvidence Brightness,
+    ProductionLightingLogoEvidence Logo,
+    ProductionLightingMatrixEvidence Matrix,
+    LightingEffect[] SupportedEffects);
+
+internal sealed record ProductionLightingControlEnvelopeEvidence(
+    int ReportLength,
+    int MaximumPayloadLength);
+
+internal sealed record ProductionLightingDeviceModeEvidence(
+    string Query,
+    string SetNormal,
+    string SetDriver);
+
+internal sealed record ProductionLightingBrightnessEvidence(
+    string Query,
+    string SetPrefix,
+    byte Percent77Raw);
+
+internal sealed record ProductionLightingLogoEvidence(
+    string QueryState,
+    string QueryEffect,
+    string SetStatePrefix,
+    string SetEffectPrefix,
+    LogoLightingMode[] SupportedModes);
+
+internal sealed record ProductionLightingMatrixEvidence(
+    string Command,
+    int EnvelopeLength,
+    int FeatureReportLength,
+    int SlotCount,
+    int[] HoleSlots,
+    byte KnownAnswerTransactionId,
+    string KnownAnswerColor,
+    string KnownAnswerFeatureReportSha256);
+
 internal static class ProductionLightingEvidenceSource
 {
     private const int MaximumValidationArtifactBytes = 64 * 1024;
     internal const string OracleResourceName =
         "OpenBlade.Protocol.Fixtures.Rz09_0581_02e0_3_01_LightingProduction.json";
 
+    internal const string SemanticAdmissionResourceName =
+        "OpenBlade.Protocol.Fixtures.Rz09_0581_02e0_3_01_LightingSemanticAdmission.json";
+
     internal const string ExactBuildValidationFileName = "lighting-validation.json";
 
     private const string ApprovedOracleFixtureSha256 =
         "5177FA9F6F91D96C9C34C5506CDA8EDC0A86EE5B5EEFA5F4322F4E4633C23521";
 
-    private const string LightingImplementationMetadataKey =
-        "OpenBladeLightingImplementationFingerprint";
-
-    private const string ApprovedLightingImplementationFingerprintSha256 =
-        // Re-reviewed after clarifying the production-admission predicate name.
-        // The admitted commands, implementation-source set, and factory control
-        // flow remain unchanged.
-        "D626D97B36346E054519916CEF8D25892216AA6D57F598BDC0E2FFDF3F7C5424";
+    private const string ApprovedSemanticAdmissionFixtureSha256 =
+        "14943D43A82BEA37B2211C72766DD54C393315F851ED7AF40FB2AB8E4635C999";
 
     private static readonly JsonSerializerOptions SerializerOptions =
         new(JsonSerializerDefaults.Web)
@@ -145,32 +184,126 @@ internal static class ProductionLightingEvidenceSource
 
     internal static bool IsProductionLightingImplementationApproved()
     {
-        string? fingerprint = typeof(ProductionLightingEvidenceSource).Assembly
-            .GetCustomAttributes<AssemblyMetadataAttribute>()
-            .SingleOrDefault(attribute =>
-                string.Equals(
-                    attribute.Key,
-                    LightingImplementationMetadataKey,
-                    StringComparison.Ordinal))
-            ?.Value;
-        return IsProductionLightingImplementationFingerprintApproved(fingerprint);
+        ProductionLightingSemanticAdmissionEvidence approved =
+            ReadValidatedSemanticAdmission();
+        ProductionLightingSemanticAdmissionEvidence current =
+            BuildCurrentSemanticAdmission();
+        return SemanticAdmissionMatches(approved, current);
     }
 
-    internal static bool IsProductionLightingImplementationFingerprintApproved(
-        string? fingerprint)
+    internal static ProductionLightingSemanticAdmissionEvidence
+        ReadValidatedSemanticAdmission()
     {
-        if (string.IsNullOrWhiteSpace(fingerprint))
+        byte[] bytes = ReadRequiredEmbeddedResource(SemanticAdmissionResourceName);
+        RequireApprovedHash(
+            bytes,
+            ApprovedSemanticAdmissionFixtureSha256,
+            "Lighting semantic admission fixture");
+        ProductionLightingSemanticAdmissionEvidence? evidence =
+            JsonSerializer.Deserialize<ProductionLightingSemanticAdmissionEvidence>(
+                bytes,
+                SerializerOptions);
+        if (evidence is null)
         {
-            return false;
+            throw new UnvalidatedCommandException(
+                "Lighting semantic admission evidence is unavailable.");
         }
 
-        string actual = Convert.ToHexString(
-            SHA256.HashData(Encoding.UTF8.GetBytes(fingerprint)));
-        return string.Equals(
-            actual,
-            ApprovedLightingImplementationFingerprintSha256,
-            StringComparison.Ordinal);
+        return evidence;
     }
+
+    internal static ProductionLightingSemanticAdmissionEvidence
+        BuildCurrentSemanticAdmission()
+    {
+        const byte transactionId = 0x5A;
+        MatrixRgb knownColor = new(0x47, 0xE1, 0x0C);
+        byte[] knownReport = Pid02E0MatrixReportCodec.EncodeFeatureReportBuffer(
+            new Pid02E0MatrixReport(
+                transactionId,
+                Pid02E0MatrixLayout.RenderUniform(knownColor)));
+
+        return new(
+            1,
+            "semanticLightingAdmission",
+            TargetDeviceEvidence,
+            new(RazerReport.ReportLength, RazerReport.MaximumPayloadLength),
+            new(
+                Command(
+                    DeviceModeProtocol.OperationClass,
+                    DeviceModeProtocol.QueryOperationId,
+                    DeviceModeProtocol.QueryArguments),
+                Command(
+                    DeviceModeProtocol.OperationClass,
+                    DeviceModeProtocol.SetOperationId,
+                    DeviceModeProtocol.CreateSetArguments(RazerDeviceMode.Normal)),
+                Command(
+                    DeviceModeProtocol.OperationClass,
+                    DeviceModeProtocol.SetOperationId,
+                    DeviceModeProtocol.CreateSetArguments(RazerDeviceMode.Driver))),
+            new(
+                Command(
+                    LightingBrightnessProtocol.OperationClass,
+                    LightingBrightnessProtocol.QueryOperationId,
+                    LightingBrightnessProtocol.QueryArguments),
+                Prefix(
+                    LightingBrightnessProtocol.OperationClass,
+                    LightingBrightnessProtocol.SetOperationId,
+                    [0x01, 0x05]),
+                LightingBrightnessProtocol.PercentToRaw(77)),
+            new(
+                Command(
+                    LogoLightingProtocol.CommandClass,
+                    LogoLightingProtocol.QueryStateCommandId,
+                    LogoLightingProtocol.QueryArguments()),
+                Command(
+                    LogoLightingProtocol.CommandClass,
+                    LogoLightingProtocol.QueryEffectCommandId,
+                    LogoLightingProtocol.QueryArguments()),
+                Prefix(
+                    LogoLightingProtocol.CommandClass,
+                    LogoLightingProtocol.SetStateCommandId,
+                    [LogoLightingProtocol.PersistentStorage, LogoLightingProtocol.LogoLedId]),
+                Prefix(
+                    LogoLightingProtocol.CommandClass,
+                    LogoLightingProtocol.SetEffectCommandId,
+                    [LogoLightingProtocol.PersistentStorage, LogoLightingProtocol.LogoLedId]),
+                Enum.GetValues<LogoLightingMode>()),
+            new(
+                $"{Pid02E0MatrixReportCodec.CommandClass:X2}/{Pid02E0MatrixReportCodec.CommandId:X2}",
+                Pid02E0MatrixReportCodec.EnvelopeLength,
+                Pid02E0MatrixReportCodec.FeatureReportBufferLength,
+                Pid02E0MatrixFrame.SlotCount,
+                Pid02E0MatrixLayout.CapturedHoleSlots.ToArray(),
+                transactionId,
+                $"{knownColor.Red:X2}{knownColor.Green:X2}{knownColor.Blue:X2}",
+                Convert.ToHexString(SHA256.HashData(knownReport))),
+            Enum.GetValues<LightingEffect>());
+    }
+
+    internal static bool SemanticAdmissionMatches(
+        ProductionLightingSemanticAdmissionEvidence approved,
+        ProductionLightingSemanticAdmissionEvidence current) =>
+        approved.SchemaVersion == current.SchemaVersion
+        && string.Equals(approved.EvidenceKind, current.EvidenceKind, StringComparison.Ordinal)
+        && approved.Device == current.Device
+        && approved.ControlEnvelope == current.ControlEnvelope
+        && approved.DeviceMode == current.DeviceMode
+        && approved.Brightness == current.Brightness
+        && approved.Logo.QueryState == current.Logo.QueryState
+        && approved.Logo.QueryEffect == current.Logo.QueryEffect
+        && approved.Logo.SetStatePrefix == current.Logo.SetStatePrefix
+        && approved.Logo.SetEffectPrefix == current.Logo.SetEffectPrefix
+        && approved.Logo.SupportedModes.SequenceEqual(current.Logo.SupportedModes)
+        && approved.Matrix.Command == current.Matrix.Command
+        && approved.Matrix.EnvelopeLength == current.Matrix.EnvelopeLength
+        && approved.Matrix.FeatureReportLength == current.Matrix.FeatureReportLength
+        && approved.Matrix.SlotCount == current.Matrix.SlotCount
+        && approved.Matrix.HoleSlots.SequenceEqual(current.Matrix.HoleSlots)
+        && approved.Matrix.KnownAnswerTransactionId == current.Matrix.KnownAnswerTransactionId
+        && approved.Matrix.KnownAnswerColor == current.Matrix.KnownAnswerColor
+        && approved.Matrix.KnownAnswerFeatureReportSha256
+            == current.Matrix.KnownAnswerFeatureReportSha256
+        && approved.SupportedEffects.SequenceEqual(current.SupportedEffects);
 
     internal static bool HasCurrentExactBuildValidationArtifact()
     {
@@ -537,6 +670,18 @@ internal static class ProductionLightingEvidenceSource
         TargetBladeDevice.VendorId,
         TargetBladeDevice.ProductId,
         TargetBladeDevice.BiosVersion);
+
+    private static string Command(
+        byte commandClass,
+        byte commandId,
+        ReadOnlySpan<byte> payload) =>
+        $"{commandClass:X2}/{commandId:X2}:{Convert.ToHexString(payload)}";
+
+    private static string Prefix(
+        byte commandClass,
+        byte commandId,
+        ReadOnlySpan<byte> payloadPrefix) =>
+        Command(commandClass, commandId, payloadPrefix);
 
     private static bool ValidOracleCapture(
         ProductionLightingOracleCaptureEvidence capture,

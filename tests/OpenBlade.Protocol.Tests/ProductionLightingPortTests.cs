@@ -1,8 +1,6 @@
 using OpenBlade.Contracts;
 using OpenBlade.Protocol;
 using System.Reflection;
-using System.Security.Cryptography;
-using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
@@ -24,7 +22,7 @@ public sealed class ProductionLightingPortTests
     }
 
     [Fact]
-    public void ProductionAdmissionUsesOracleAndReviewedImplementationFingerprint()
+    public void ProductionAdmissionUsesOracleAndReviewedSemanticEvidence()
     {
         ProductionLightingOracleEvidence evidence =
             ProductionLightingEvidenceSource.ReadValidatedOracle();
@@ -343,25 +341,45 @@ public sealed class ProductionLightingPortTests
     }
 
     [Fact]
-    public void LightingAdmission_RequiresTheApprovedSemanticImplementationFingerprint()
+    public void LightingAdmission_RequiresApprovedRuntimeSemantics()
     {
-        string fingerprint = typeof(ProductionLightingEvidenceSource).Assembly
-            .GetCustomAttributes<AssemblyMetadataAttribute>()
-            .Single(attribute =>
-                attribute.Key == "OpenBladeLightingImplementationFingerprint")
-            .Value!;
-        string actualHash = Convert.ToHexString(
-            SHA256.HashData(Encoding.UTF8.GetBytes(fingerprint)));
+        ProductionLightingSemanticAdmissionEvidence approved =
+            ProductionLightingEvidenceSource.ReadValidatedSemanticAdmission();
+        ProductionLightingSemanticAdmissionEvidence current =
+            ProductionLightingEvidenceSource.BuildCurrentSemanticAdmission();
+
+        Assert.Equal(
+            JsonSerializer.Serialize(approved),
+            JsonSerializer.Serialize(current));
         Assert.True(
             ProductionLightingEvidenceSource.IsProductionLightingImplementationApproved(),
-            $"Current lighting implementation hash: {actualHash}");
+            "Current lighting wire semantics must match reviewed evidence.");
         Assert.False(
-            ProductionLightingEvidenceSource
-                .IsProductionLightingImplementationFingerprintApproved(null));
+            ProductionLightingEvidenceSource.SemanticAdmissionMatches(
+                approved,
+                current with
+                {
+                    DeviceMode = current.DeviceMode with
+                    {
+                        SetDriver = "00/04:FF00",
+                    },
+                }));
         Assert.False(
-            ProductionLightingEvidenceSource
-                .IsProductionLightingImplementationFingerprintApproved(
-                    "changed-lighting-implementation"));
+            ProductionLightingEvidenceSource.SemanticAdmissionMatches(
+                approved,
+                current with
+                {
+                    Matrix = current.Matrix with
+                    {
+                        KnownAnswerFeatureReportSha256 =
+                            new string('A', 64),
+                    },
+                }));
+        Assert.DoesNotContain(
+            typeof(ProductionLightingEvidenceSource).Assembly
+                .GetCustomAttributes<System.Reflection.AssemblyMetadataAttribute>(),
+            attribute =>
+                attribute.Key == "OpenBladeLightingImplementationFingerprint");
     }
 
     [Fact]
