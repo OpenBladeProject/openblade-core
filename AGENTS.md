@@ -33,6 +33,9 @@ The current production target is the Razer Blade 16 RZ09-0581, USB
 - `src/OpenBlade.Display`: Windows display enumeration and mutation.
 - `src/OpenBlade.Capture`: developer-only, typed protocol inspection and
   reversible validation commands. It is never part of the installed product.
+- `src/OpenBlade.FirmwareSmoke`: developer-only installed-product validation
+  before and after laptop firmware updates. It uses typed service IPC, requires
+  a read-only green gate before reversible writes, and always restores state.
 - `src/OpenBlade.Setup`: transactional install, repair, shutdown, and uninstall.
 - `tests/*`: project-aligned tests plus `Build.Tests` release-payload checks.
 - `captures`: submodule containing sanitized evidence and capture tooling.

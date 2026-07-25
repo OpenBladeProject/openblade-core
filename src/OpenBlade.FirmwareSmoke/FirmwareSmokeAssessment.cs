@@ -1,0 +1,463 @@
+namespace OpenBlade.FirmwareSmoke;
+
+public static class FirmwareSmokeAssessment
+{
+    private static readonly string[] ExpectedPerformancePresets =
+    [
+        "Balanced",
+        "BatteryBalanced",
+        "BatterySaver",
+        "Custom",
+        "Performance",
+        "Silent",
+    ];
+
+    private static readonly string[] ExpectedFanModes =
+    [
+        "Automatic",
+        "Fixed",
+        "ManualCurve",
+        "Maximum",
+    ];
+
+    private static readonly string[] ExpectedLightingEffects =
+    [
+        "AmbientAwareness",
+        "Breathing",
+        "Off",
+        "Reactive",
+        "Ripple",
+        "Spectrum",
+        "Starlight",
+        "Static",
+        "Tidal",
+        "Wave",
+        "Wheel",
+    ];
+
+    private static readonly int[] ExpectedChargeLimits = [50, 55, 60, 65, 70, 75, 80];
+
+    private static readonly string[] ExpectedLogoModes = ["Breathing", "Off", "Static"];
+
+    private static readonly string[] ExpectedLaptopControls =
+    [
+        "FunctionKeyPrimary",
+        "GamingMode",
+        "MicrophoneMuteIndicator",
+        "StartupAnimation",
+    ];
+
+    public static IReadOnlyList<string> ManualChecks { get; } =
+    [
+        "Confirm the keyboard visibly renders Static and at least one animated effect.",
+        "Confirm keyboard brightness decreases and increases with the physical function keys.",
+        "Confirm media, display-brightness, Project, and Print Screen function-row actions.",
+        "Confirm the performance key or Fn+P changes mode and shows the expected notification.",
+        "Confirm M1 through M5 overrides and their default pass-through behavior.",
+        "Confirm microphone mute changes Windows state and its keyboard indicator.",
+        "Unplug AC, test the Battery profile, then test USB-C and return to the full-power adapter.",
+        "Sleep and resume once; confirm lighting, Driver mode, profile state, and readings recover.",
+    ];
+
+    public static FirmwareSmokeReport ValidateBaseline(FirmwareSmokeSnapshot snapshot)
+    {
+        var checks = CommonHealthChecks(snapshot);
+        checks.Add(Check(
+            "firmware.mcu.available",
+            "MCU version is readable",
+            !IsUnavailable(snapshot.Firmware.Mcu),
+            "A concrete MCU version",
+            snapshot.Firmware.Mcu));
+        return new FirmwareSmokeReport(
+            "baseline",
+            DateTimeOffset.UtcNow,
+            checks,
+            ManualChecks);
+    }
+
+    public static FirmwareSmokeReport ComparePostUpdate(
+        FirmwareSmokeSnapshot baseline,
+        FirmwareSmokeSnapshot current,
+        bool requireMcuChange)
+    {
+        var checks = CommonHealthChecks(current);
+        FirmwareSmokeReport baselineValidation = ValidateBaseline(baseline);
+        string[] baselineFailures = baselineValidation.Checks
+            .Where(check => check.Outcome == FirmwareSmokeOutcome.Failed)
+            .Select(check => check.Id)
+            .ToArray();
+        checks.Add(Check(
+            "baseline.integrity",
+            "Baseline passed its original read-only health gate",
+            baselineFailures.Length == 0,
+            "No failed baseline checks",
+            baselineFailures.Length == 0
+                ? "Passed"
+                : string.Join(", ", baselineFailures)));
+        checks.Add(Check(
+            "snapshot.schema",
+            "Baseline schema is supported",
+            baseline.SchemaVersion == FirmwareSmokeSnapshotCollector.CurrentSchemaVersion,
+            FirmwareSmokeSnapshotCollector.CurrentSchemaVersion.ToString(),
+            baseline.SchemaVersion.ToString()));
+        checks.Add(Check(
+            "product.service-version",
+            "Service build did not change during the firmware update",
+            string.Equals(
+                baseline.ServiceVersion,
+                current.ServiceVersion,
+                StringComparison.Ordinal),
+            baseline.ServiceVersion ?? "Unavailable",
+            current.ServiceVersion ?? "Unavailable"));
+        checks.Add(Check(
+            "firmware.bios",
+            "BIOS version is unchanged",
+            baseline.Firmware.Bios == current.Firmware.Bios,
+            baseline.Firmware.Bios,
+            current.Firmware.Bios));
+        checks.Add(Check(
+            "firmware.ec",
+            "EC version is unchanged",
+            baseline.Firmware.Ec == current.Firmware.Ec,
+            baseline.Firmware.Ec,
+            current.Firmware.Ec));
+        checks.Add(Check(
+            "firmware.vbios",
+            "VBIOS version is unchanged",
+            baseline.Firmware.Vbios == current.Firmware.Vbios,
+            baseline.Firmware.Vbios,
+            current.Firmware.Vbios));
+        checks.Add(Check(
+            "firmware.mcu",
+            requireMcuChange
+                ? "MCU version changed and remains readable"
+                : "MCU version remains readable for the rehearsal",
+            !IsUnavailable(current.Firmware.Mcu)
+                && (!requireMcuChange
+                    || !string.Equals(
+                        baseline.Firmware.Mcu,
+                        current.Firmware.Mcu,
+                        StringComparison.Ordinal)),
+            requireMcuChange
+                ? $"Different from {baseline.Firmware.Mcu}"
+                : baseline.Firmware.Mcu,
+            current.Firmware.Mcu));
+        checks.Add(Check(
+            "capabilities.unchanged",
+            "Advertised capabilities match the baseline",
+            CapabilitiesEqual(baseline.Capabilities, current.Capabilities),
+            Summarize(baseline.Capabilities),
+            Summarize(current.Capabilities)));
+        checks.Add(Check(
+            "state.performance",
+            "Performance readback matches the baseline",
+            baseline.Controls.Performance == current.Controls.Performance,
+            baseline.Controls.Performance ?? "Unavailable",
+            current.Controls.Performance ?? "Unavailable"));
+        checks.Add(Check(
+            "state.fans",
+            "Fan-mode readback matches the baseline",
+            baseline.Controls.Fans == current.Controls.Fans,
+            baseline.Controls.Fans ?? "Unavailable",
+            current.Controls.Fans ?? "Unavailable"));
+        checks.Add(Check(
+            "state.battery",
+            "Battery protection and charge-limit readback match the baseline",
+            baseline.Controls.BatteryProtectionEnabled
+                == current.Controls.BatteryProtectionEnabled
+                && baseline.Controls.ChargeLimitPercent
+                == current.Controls.ChargeLimitPercent
+                && baseline.Controls.TemporaryFullCharge
+                == current.Controls.TemporaryFullCharge,
+            BatteryState(baseline),
+            BatteryState(current)));
+        checks.Add(Check(
+            "state.logo",
+            "Lid-logo readback matches the baseline",
+            baseline.Controls.LogoLighting == current.Controls.LogoLighting,
+            baseline.Controls.LogoLighting ?? "Unavailable",
+            current.Controls.LogoLighting ?? "Unavailable"));
+        checks.Add(Check(
+            "state.laptop-controls",
+            "Startup, function-key, and Gaming-mode readbacks match the baseline",
+            baseline.Controls.StartupAnimationEnabled
+                == current.Controls.StartupAnimationEnabled
+                && baseline.Controls.FunctionKeyPrimary
+                == current.Controls.FunctionKeyPrimary
+                && baseline.Controls.GamingModeEnabled
+                == current.Controls.GamingModeEnabled,
+            LaptopControlState(baseline),
+            LaptopControlState(current)));
+        checks.Add(Check(
+            "state.driver-mode",
+            "Keyboard Driver mode is confirmed",
+            current.Controls.KeyboardDriverModeActive == true,
+            "True",
+            Value(current.Controls.KeyboardDriverModeActive)));
+        checks.Add(Check(
+            "state.lighting-renderer",
+            "Lighting renderer is active and not faulted",
+            current.Controls.LightingRendererOwnership is not "None" and not "Faulted",
+            "An active, non-faulted renderer",
+            current.Controls.LightingRendererOwnership));
+        checks.Add(Check(
+            "runtime.components",
+            "Installed OpenBlade component versions match the baseline",
+            baseline.Runtime.InstalledComponents.SequenceEqual(
+                current.Runtime.InstalledComponents),
+            Components(baseline),
+            Components(current)));
+
+        return new FirmwareSmokeReport(
+            requireMcuChange ? "post-update" : "pre-update rehearsal",
+            DateTimeOffset.UtcNow,
+            checks,
+            ManualChecks);
+    }
+
+    private static List<FirmwareSmokeCheck> CommonHealthChecks(
+        FirmwareSmokeSnapshot snapshot)
+    {
+        var checks = new List<FirmwareSmokeCheck>
+        {
+            Check(
+                "target.model",
+                "Snapshot targets the supported laptop",
+                snapshot.TargetModel == "RZ09-0581",
+                "RZ09-0581",
+                snapshot.TargetModel),
+            Check(
+                "device.verified",
+                "Exact device verification succeeded",
+                snapshot.DeviceVerified,
+                "True",
+                snapshot.DeviceVerified.ToString()),
+            Check(
+                "device.writes",
+                "Production writes are not blocked",
+                !snapshot.WritesBlocked,
+                "False",
+                snapshot.WritesBlocked.ToString()),
+            Check(
+                "device.controllers",
+                "No competing Razer controller is detected",
+                snapshot.PotentialControllers.Count == 0,
+                "None",
+                List(snapshot.PotentialControllers)),
+            Check(
+                "device.controller-detection",
+                "Controller detection completed without warning",
+                string.IsNullOrWhiteSpace(snapshot.ControllerDetectionWarning),
+                "None",
+                snapshot.ControllerDetectionWarning ?? "None"),
+            Check(
+                "device.external-changes",
+                "No unexplained external control changes are present",
+                snapshot.ExternalChanges.Count == 0,
+                "None",
+                List(snapshot.ExternalChanges)),
+            Check(
+                "power.source",
+                "Laptop is on the full-power AC adapter",
+                snapshot.Controls.ActivePowerSource == "PluggedIn",
+                "PluggedIn",
+                snapshot.Controls.ActivePowerSource),
+            Check(
+                "capabilities.performance",
+                "All approved performance presets are admitted",
+                snapshot.Capabilities.PerformancePresets.SequenceEqual(
+                    ExpectedPerformancePresets),
+                string.Join(", ", ExpectedPerformancePresets),
+                List(snapshot.Capabilities.PerformancePresets)),
+            Check(
+                "capabilities.fans",
+                "All approved fan modes are admitted",
+                snapshot.Capabilities.FanModes.SequenceEqual(ExpectedFanModes),
+                string.Join(", ", ExpectedFanModes),
+                List(snapshot.Capabilities.FanModes)),
+            Check(
+                "capabilities.lighting",
+                "All approved lighting effects are admitted",
+                snapshot.Capabilities.LightingEffects.SequenceEqual(
+                    ExpectedLightingEffects),
+                string.Join(", ", ExpectedLightingEffects),
+                List(snapshot.Capabilities.LightingEffects)),
+            Check(
+                "capabilities.charge-limits",
+                "All approved charge limits are admitted",
+                snapshot.Capabilities.ChargeLimits.SequenceEqual(ExpectedChargeLimits),
+                string.Join(", ", ExpectedChargeLimits),
+                List(snapshot.Capabilities.ChargeLimits)),
+            Check(
+                "capabilities.battery",
+                "Battery protection-off and temporary-full-charge are admitted",
+                snapshot.Capabilities.SupportsBatteryProtectionOff
+                    && snapshot.Capabilities.SupportsTemporaryFullCharge,
+                "Both supported",
+                $"ProtectionOff={snapshot.Capabilities.SupportsBatteryProtectionOff}; " +
+                $"TemporaryFullCharge={snapshot.Capabilities.SupportsTemporaryFullCharge}"),
+            Check(
+                "capabilities.logo",
+                "All approved lid-logo modes are admitted",
+                snapshot.Capabilities.LogoLightingModes.SequenceEqual(ExpectedLogoModes),
+                string.Join(", ", ExpectedLogoModes),
+                List(snapshot.Capabilities.LogoLightingModes)),
+            Check(
+                "capabilities.laptop-controls",
+                "All approved laptop controls are admitted",
+                snapshot.Capabilities.OneShotLaptopControls.SequenceEqual(
+                    ExpectedLaptopControls),
+                string.Join(", ", ExpectedLaptopControls),
+                List(snapshot.Capabilities.OneShotLaptopControls)),
+            Check(
+                "readback.performance",
+                "Performance readback is available",
+                snapshot.Controls.Performance is not null,
+                "Available",
+                snapshot.Controls.Performance ?? "Unavailable"),
+            Check(
+                "readback.fans",
+                "Fan-mode readback is available",
+                snapshot.Controls.Fans is not null,
+                "Available",
+                snapshot.Controls.Fans ?? "Unavailable"),
+            Check(
+                "readback.battery",
+                "Battery readback is complete",
+                snapshot.Controls.BatteryProtectionEnabled.HasValue
+                    && snapshot.Controls.TemporaryFullCharge.HasValue
+                    && (snapshot.Controls.BatteryProtectionEnabled == false
+                        || snapshot.Controls.ChargeLimitPercent.HasValue),
+                "Complete",
+                BatteryState(snapshot)),
+            Check(
+                "readback.logo",
+                "Lid-logo readback is available",
+                snapshot.Controls.LogoLighting is not null,
+                "Available",
+                snapshot.Controls.LogoLighting ?? "Unavailable"),
+            Check(
+                "readback.laptop-controls",
+                "Startup, function-key, Gaming, and Driver-mode readbacks are available",
+                snapshot.Controls.StartupAnimationEnabled.HasValue
+                    && snapshot.Controls.FunctionKeyPrimary is not null
+                    && snapshot.Controls.GamingModeEnabled.HasValue
+                    && snapshot.Controls.KeyboardDriverModeActive.HasValue,
+                "All available",
+                LaptopControlState(snapshot) +
+                $"; Driver={Value(snapshot.Controls.KeyboardDriverModeActive)}"),
+            Check(
+                "telemetry.battery-power",
+                "Windows battery-power reading is available",
+                snapshot.LiveReadings.BatteryPowerFlowMilliwatts.HasValue,
+                "Available",
+                Value(snapshot.LiveReadings.BatteryPowerFlowMilliwatts)),
+            Check(
+                "telemetry.fans",
+                "Both firmware fan-speed readings are available",
+                snapshot.LiveReadings.Fan1Rpm.HasValue
+                    && snapshot.LiveReadings.Fan2Rpm.HasValue,
+                "Fan 1 and Fan 2 available",
+                $"Fan1={Value(snapshot.LiveReadings.Fan1Rpm)}; " +
+                $"Fan2={Value(snapshot.LiveReadings.Fan2Rpm)}"),
+            Check(
+                "telemetry.cpu-temperature",
+                "Firmware CPU temperature is available",
+                snapshot.LiveReadings.CpuTemperatureCelsius.HasValue,
+                "Available",
+                Value(snapshot.LiveReadings.CpuTemperatureCelsius)),
+            ProcessCheck(
+                "runtime.service",
+                "One OpenBlade Service process is running",
+                snapshot.Runtime.ServiceProcessCount),
+            ProcessCheck(
+                "runtime.session-agent",
+                "One OpenBlade Session Agent process is running",
+                snapshot.Runtime.SessionAgentProcessCount),
+        };
+
+        checks.Add(new FirmwareSmokeCheck(
+            "runtime.tray",
+            "One OpenBlade Tray process is preferred",
+            snapshot.Runtime.TrayProcessCount == 1
+                ? FirmwareSmokeOutcome.Passed
+                : FirmwareSmokeOutcome.Warning,
+            "1",
+            snapshot.Runtime.TrayProcessCount.ToString()));
+        checks.Add(new FirmwareSmokeCheck(
+            "telemetry.gpu-temperature",
+            "GPU temperature is optional while the NVIDIA GPU is asleep",
+            snapshot.LiveReadings.GpuTemperatureCelsius.HasValue
+                ? FirmwareSmokeOutcome.Passed
+                : FirmwareSmokeOutcome.Warning,
+            "Available when the GPU is active",
+            Value(snapshot.LiveReadings.GpuTemperatureCelsius)));
+        return checks;
+    }
+
+    private static FirmwareSmokeCheck ProcessCheck(
+        string id,
+        string description,
+        int actual) =>
+        Check(id, description, actual == 1, "1", actual.ToString());
+
+    private static FirmwareSmokeCheck Check(
+        string id,
+        string description,
+        bool passed,
+        string expected,
+        string actual) =>
+        new(
+            id,
+            description,
+            passed ? FirmwareSmokeOutcome.Passed : FirmwareSmokeOutcome.Failed,
+            expected,
+            actual);
+
+    private static bool IsUnavailable(string value) =>
+        string.IsNullOrWhiteSpace(value)
+        || value.Equals("Unavailable", StringComparison.OrdinalIgnoreCase);
+
+    private static string BatteryState(FirmwareSmokeSnapshot snapshot) =>
+        $"Enabled={Value(snapshot.Controls.BatteryProtectionEnabled)}; " +
+        $"Limit={Value(snapshot.Controls.ChargeLimitPercent)}; " +
+        $"TemporaryFullCharge={Value(snapshot.Controls.TemporaryFullCharge)}";
+
+    private static string LaptopControlState(FirmwareSmokeSnapshot snapshot) =>
+        $"Startup={Value(snapshot.Controls.StartupAnimationEnabled)}; " +
+        $"Function={snapshot.Controls.FunctionKeyPrimary ?? "Unavailable"}; " +
+        $"Gaming={Value(snapshot.Controls.GamingModeEnabled)}";
+
+    private static string Components(FirmwareSmokeSnapshot snapshot) =>
+        string.Join(
+            "; ",
+            snapshot.Runtime.InstalledComponents.Select(component =>
+                $"{component.Name}={component.ProductVersion ?? "Unavailable"}"));
+
+    private static string Summarize(FirmwareSmokeCapabilities capabilities) =>
+        $"Performance={capabilities.PerformancePresets.Count}; " +
+        $"Fans={capabilities.FanModes.Count}; " +
+        $"Lighting={capabilities.LightingEffects.Count}; " +
+        $"ChargeLimits={capabilities.ChargeLimits.Count}; " +
+        $"Logo={capabilities.LogoLightingModes.Count}; " +
+        $"Laptop={capabilities.OneShotLaptopControls.Count}";
+
+    private static bool CapabilitiesEqual(
+        FirmwareSmokeCapabilities left,
+        FirmwareSmokeCapabilities right) =>
+        left.PerformancePresets.SequenceEqual(right.PerformancePresets)
+        && left.FanModes.SequenceEqual(right.FanModes)
+        && left.LightingEffects.SequenceEqual(right.LightingEffects)
+        && left.ChargeLimits.SequenceEqual(right.ChargeLimits)
+        && left.SupportsBatteryProtectionOff == right.SupportsBatteryProtectionOff
+        && left.SupportsTemporaryFullCharge == right.SupportsTemporaryFullCharge
+        && left.LogoLightingModes.SequenceEqual(right.LogoLightingModes)
+        && left.OneShotLaptopControls.SequenceEqual(right.OneShotLaptopControls);
+
+    private static string List<T>(IReadOnlyList<T> values) =>
+        values.Count == 0 ? "None" : string.Join(", ", values);
+
+    private static string Value<T>(T? value)
+        where T : struct =>
+        value?.ToString() ?? "Unavailable";
+}

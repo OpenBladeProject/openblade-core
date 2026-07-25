@@ -7,6 +7,11 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Added
 
+- Added an automated MCU firmware smoke-test workflow. It captures a read-only
+  baseline and diagnostic archive, compares firmware, capabilities, readbacks,
+  telemetry, and installed components after the update, and offers an
+  exact-confirmation reversible rehearsal for performance, fans, battery,
+  lighting, startup animation, function-key behavior, and Gaming mode.
 - Added bounded, redacted persistent logs for non-fatal Tray and Session Agent
   failures. Diagnostic exports now include both user-mode log histories.
 - Added a compact, non-activating Windows-style flyout for built-in display

@@ -62,6 +62,49 @@ Only bounded OpenBlade-owned log messages are retained. Raw HID reports,
 payloads, checksums, transaction IDs, native handles, stack traces, serial
 numbers, and configured local identity/path tokens are excluded or redacted.
 
+## Firmware-update smoke test
+
+Run the product-level smoke workflow before and after a laptop firmware update.
+It talks only to the installed OpenBlade service through typed IPC; it does not
+use USBPcap or expose raw firmware commands. Local reports are written beneath
+the ignored `artifacts\firmware-smoke` directory.
+
+Capture and inspect the read-only baseline first:
+
+```powershell
+.\scripts\Test-FirmwareUpdate.ps1 -Phase Baseline
+```
+
+Before updating, rehearse the reversible checks against the known-good firmware.
+The command changes one admitted control at a time, confirms readback, and
+restores the original value even when a check fails:
+
+```powershell
+.\scripts\Test-FirmwareUpdate.ps1 `
+    -Phase Rehearsal `
+    -BaselinePath .\artifacts\firmware-smoke\<baseline>\baseline.json `
+    -ConfirmTarget RZ09-0581-MCU-SMOKE
+```
+
+After the firmware updater finishes and Windows restarts, run the read-only
+comparison. It fails if the MCU version did not change or if device admission,
+capabilities, readbacks, telemetry, component versions, or runtime health
+regress:
+
+```powershell
+.\scripts\Test-FirmwareUpdate.ps1 `
+    -Phase PostUpdate `
+    -BaselinePath .\artifacts\firmware-smoke\<baseline>\baseline.json
+```
+
+Only after that report passes, run `-Phase Reversible` with the same baseline
+and target confirmation. Complete the guided physical checklist in the
+generated Markdown report for matrix lighting, special keys, power-source
+transitions, and sleep/resume behavior that software readback cannot prove.
+If an interrupted run cannot restore a value, stop further checks and use
+`-Phase Recover` with the same baseline and target confirmation before doing
+anything else.
+
 ## Build and test
 
 Requires Windows 11 and the .NET 10 SDK.

@@ -3,6 +3,7 @@
     <Project Path="src/OpenBlade.Capture/OpenBlade.Capture.csproj" />
     <Project Path="src/OpenBlade.Contracts/OpenBlade.Contracts.csproj" />
     <Project Path="src/OpenBlade.Display/OpenBlade.Display.csproj" />
+    <Project Path="src/OpenBlade.FirmwareSmoke/OpenBlade.FirmwareSmoke.csproj" />
     <Project Path="src/OpenBlade.Protocol/OpenBlade.Protocol.csproj" />
     <Project Path="src/OpenBlade.Service/OpenBlade.Service.csproj" />
     <Project Path="src/OpenBlade.Session/OpenBlade.Session.csproj" />
@@ -14,6 +15,7 @@
   <Folder Name="/tests/">
     <Project Path="tests/OpenBlade.Contracts.Tests/OpenBlade.Contracts.Tests.csproj" />
     <Project Path="tests/OpenBlade.Display.Tests/OpenBlade.Display.Tests.csproj" />
+    <Project Path="tests/OpenBlade.FirmwareSmoke.Tests/OpenBlade.FirmwareSmoke.Tests.csproj" />
     <Project Path="tests/OpenBlade.Capture.Tests/OpenBlade.Capture.Tests.csproj" />
     <Project Path="tests/OpenBlade.Protocol.Tests/OpenBlade.Protocol.Tests.csproj" />
     <Project Path="tests/OpenBlade.Service.Tests/OpenBlade.Service.Tests.csproj" />
