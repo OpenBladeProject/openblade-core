@@ -67,6 +67,10 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Changed
 
+- Setup rollback now treats restoration of the previous installation as the
+  terminal recovery point even if cleanup of a guarded transaction directory
+  fails. The cleanup failure remains visible without risking a second move of
+  the already-restored installation.
 - Changed function-row interception to require a current, confirmed keyboard
   Driver-mode state. Unknown state during service reconnects or firmware
   readback failures now passes keys through and records a diagnostic transition

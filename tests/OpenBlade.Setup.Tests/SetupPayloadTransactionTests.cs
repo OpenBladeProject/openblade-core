@@ -520,6 +520,84 @@ public sealed class SetupPayloadTransactionTests
     }
 
     [Fact]
+    public async Task Rollback_FailedTreeCleanupFailureKeepsRestoredTreeTerminal()
+    {
+        using TestTree tree = new();
+        tree.CreateCompletePayload();
+        tree.WriteInstall("old.bin", [9, 8, 7]);
+        SortedDictionary<string, string> before = ReadManifest(tree.Install);
+        DelegatingPayloadFileSystem files = new()
+        {
+            DeleteFailure = path => path.Contains(".failed.", StringComparison.OrdinalIgnoreCase)
+                ? new IOException("injected failed-tree cleanup failure")
+                : null,
+        };
+
+        await using ISetupPayloadTransaction transaction =
+            await tree.CreatePlatform(files).StagePayloadAsync(CancellationToken.None);
+        await transaction.ActivateAsync(CancellationToken.None);
+
+        IOException failure = await Assert.ThrowsAsync<IOException>(
+            () => transaction.RollbackAsync(CancellationToken.None));
+
+        Assert.Contains("was restored", failure.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(before, ReadManifest(tree.Install));
+        Assert.False(transaction.IsActivated);
+        Assert.Single(Directory.GetDirectories(tree.ProgramFiles, "OpenBlade.failed.*"));
+        await transaction.RollbackAsync(CancellationToken.None);
+        Assert.Equal(before, ReadManifest(tree.Install));
+    }
+
+    [Fact]
+    public async Task Rollback_StrandedBackupCleanupFailureKeepsRestoredTreeTerminal()
+    {
+        using TestTree tree = new();
+        tree.CreateCompletePayload();
+        tree.WriteInstall("old.bin", [4, 2, 4, 2]);
+        SortedDictionary<string, string> before = ReadManifest(tree.Install);
+        bool permitBackupRestore = false;
+        DelegatingPayloadFileSystem files = new()
+        {
+            MoveFailure = (source, destination) =>
+            {
+                if (!destination.Equals(tree.Install, StringComparison.OrdinalIgnoreCase))
+                {
+                    return null;
+                }
+
+                if (source.Contains(".installing.", StringComparison.OrdinalIgnoreCase))
+                {
+                    return new IOException("injected activation failure");
+                }
+
+                return source.Contains(".rollback.", StringComparison.OrdinalIgnoreCase)
+                    && !permitBackupRestore
+                        ? new IOException("injected initial restore failure")
+                        : null;
+            },
+            DeleteFailure = path => path.Contains(".installing.", StringComparison.OrdinalIgnoreCase)
+                ? new IOException("injected staging cleanup failure")
+                : null,
+        };
+
+        await using ISetupPayloadTransaction transaction =
+            await tree.CreatePlatform(files).StagePayloadAsync(CancellationToken.None);
+        await Assert.ThrowsAsync<AggregateException>(
+            () => transaction.ActivateAsync(CancellationToken.None));
+        permitBackupRestore = true;
+
+        IOException failure = await Assert.ThrowsAsync<IOException>(
+            () => transaction.RollbackAsync(CancellationToken.None));
+
+        Assert.Contains("was restored", failure.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(before, ReadManifest(tree.Install));
+        Assert.False(transaction.IsActivated);
+        Assert.Single(Directory.GetDirectories(tree.ProgramFiles, "OpenBlade.installing.*"));
+        await transaction.RollbackAsync(CancellationToken.None);
+        Assert.Equal(before, ReadManifest(tree.Install));
+    }
+
+    [Fact]
     public async Task Commit_BackupCleanupFailure_IsPointOfNoReturnAndKeepsHealthyNewTree()
     {
         using TestTree tree = new();

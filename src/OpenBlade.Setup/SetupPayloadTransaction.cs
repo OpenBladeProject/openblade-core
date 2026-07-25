@@ -403,7 +403,8 @@ public sealed class SetupPayloadTransaction : ISetupPayloadTransaction
             throw;
         }
 
-        DeleteTransactionDirectory(files, paths, failedDirectory);
+        state = TransactionState.RolledBack;
+        CleanupRestoredTransactionDirectories(failedDirectory);
     }
 
     private async Task RestoreStrandedBackupAsync(CancellationToken cancellationToken)
@@ -418,9 +419,42 @@ public sealed class SetupPayloadTransaction : ISetupPayloadTransaction
             backupDirectory,
             paths.InstallDirectory,
             cancellationToken);
-        if (files.DirectoryExists(stagingDirectory))
+        state = TransactionState.RolledBack;
+        CleanupRestoredTransactionDirectories(stagingDirectory, failedDirectory);
+    }
+
+    private void CleanupRestoredTransactionDirectories(params string[] directories)
+    {
+        List<Exception> failures = [];
+        foreach (string directory in directories)
         {
-            DeleteTransactionDirectory(files, paths, stagingDirectory);
+            if (!files.DirectoryExists(directory))
+            {
+                continue;
+            }
+
+            try
+            {
+                DeleteTransactionDirectory(files, paths, directory);
+            }
+            catch (Exception exception)
+            {
+                failures.Add(new IOException(
+                    $"The prior OpenBlade installation was restored, but guarded transaction cleanup failed for '{directory}'.",
+                    exception));
+            }
+        }
+
+        if (failures.Count == 1)
+        {
+            throw failures[0];
+        }
+
+        if (failures.Count > 1)
+        {
+            throw new AggregateException(
+                "The prior OpenBlade installation was restored, but transaction cleanup failed.",
+                failures);
         }
     }
 

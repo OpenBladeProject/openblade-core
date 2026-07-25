@@ -101,7 +101,9 @@ public sealed class SetupCommandRunnerTests
 
     [Theory]
     [InlineData("sid")]
+    [InlineData("service-install")]
     [InlineData("service-health")]
+    [InlineData("agent-shortcut-install")]
     [InlineData("shortcut-install")]
     [InlineData("start-menu-install")]
     [InlineData("uninstall-shortcut-install")]
@@ -131,6 +133,41 @@ public sealed class SetupCommandRunnerTests
                 "agent-shortcut-install", "shortcut-install", "start-menu-install",
             ]);
         Assert.All(platform.CleanupTokens, token => Assert.False(token.IsCancellationRequested));
+    }
+
+    [Theory]
+    [InlineData("shortcut-remove")]
+    [InlineData("agent-shortcut-remove")]
+    [InlineData("start-menu-remove")]
+    [InlineData("uninstall-shortcut-remove")]
+    [InlineData("uninstall-registration-remove")]
+    [InlineData("service-prepare")]
+    [InlineData("tray-stop")]
+    [InlineData("session-agent-stop")]
+    public async Task Install_UpdatePreActivationFailureRestoresCapturedLifecycle(
+        string failurePoint)
+    {
+        RecordingSetupPlatform platform = new()
+        {
+            ServiceExists = true,
+            UninstallShortcutExisted = true,
+            UninstallRegistrationExisted = true,
+            FailurePoint = failurePoint,
+            Transaction = new RecordingPayloadTransaction(hadExistingInstall: true),
+        };
+
+        InvalidOperationException failure = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => new SetupCommandRunner(platform).RunAsync(["install"], CancellationToken.None));
+
+        Assert.Equal($"{failurePoint} failed", failure.Message);
+        Assert.DoesNotContain("payload-activate", platform.Operations);
+        Assert.Contains("payload-rollback", platform.Operations);
+        Assert.Contains("service-restore", platform.Operations);
+        Assert.True(platform.ServiceRegistered);
+        Assert.True(platform.ServiceRunning);
+        Assert.True(platform.TrayShortcutPresent);
+        Assert.True(platform.SessionAgentShortcutPresent);
+        Assert.True(platform.StartMenuShortcutPresent);
     }
 
     [Fact]
