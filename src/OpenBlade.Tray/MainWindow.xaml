@@ -3078,11 +3078,11 @@
                                 <Border Style="{StaticResource SettingsRowStyle}">
                                     <Grid ColumnSpacing="24">
                                         <Grid.ColumnDefinitions><ColumnDefinition Width="2*" /><ColumnDefinition Width="3*" /></Grid.ColumnDefinitions>
-                                        <TextBlock Text="Session Agent" Style="{StaticResource CardTitleStyle}" />
+                                        <TextBlock Text="Session agent" Style="{StaticResource CardTitleStyle}" />
                                         <TextBlock Grid.Column="1"
                                                    Text="{x:Bind ViewModel.AboutSessionAgentVersionStatus, Mode=OneWay}"
                                                    Style="{StaticResource TroubleshootingValueStyle}"
-                                                   AutomationProperties.Name="OpenBlade Session Agent version" />
+                                                   AutomationProperties.Name="OpenBlade session agent version" />
                                     </Grid>
                                 </Border>
                                 <Border Style="{StaticResource SettingsLastRowStyle}">

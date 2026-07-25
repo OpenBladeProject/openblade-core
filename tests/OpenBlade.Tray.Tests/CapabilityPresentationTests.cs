@@ -606,6 +606,7 @@ public sealed class CapabilityPresentationTests
             && Attribute(element, "Text") is "Versions" or "Laptop" or "Firmware");
         XElement settingsPage = NamedElement(document, "ScrollView", "SettingsPage");
         XElement aboutPage = NamedElement(document, "ScrollView", "AboutPage");
+        XElement aboutVersions = NamedElement(document, "StackPanel", "AboutVersionsSection");
         XElement aboutNavigation = NamedElement(document, "NavigationViewItem", "AboutNavigationItem");
         Assert.Equal("about", Attribute(aboutNavigation, "Tag"));
         Assert.Contains(aboutNavigation.Ancestors(), element =>
@@ -622,6 +623,15 @@ public sealed class CapabilityPresentationTests
         Assert.Contains("ViewModel.AboutUiVersionStatus", aboutPage.ToString(), StringComparison.Ordinal);
         Assert.Contains("ViewModel.AboutSessionAgentVersionStatus", aboutPage.ToString(), StringComparison.Ordinal);
         Assert.Contains("ViewModel.AboutServiceVersionStatus", aboutPage.ToString(), StringComparison.Ordinal);
+        Assert.Equal(
+            new string?[] { "OpenBlade app", "Session agent", "Service" },
+            aboutVersions
+                .Descendants()
+                .Where(element =>
+                    element.Name.LocalName == "TextBlock"
+                    && Attribute(element, "Style") == "{StaticResource CardTitleStyle}")
+                .Select(element => Attribute(element, "Text"))
+                .ToArray());
         Assert.DoesNotContain("OpenBlade installer version", aboutPage.ToString(), StringComparison.Ordinal);
         Assert.DoesNotContain("Supported laptop", aboutPage.ToString(), StringComparison.Ordinal);
         Assert.DoesNotContain("Relationship to Razer", aboutPage.ToString(), StringComparison.Ordinal);
