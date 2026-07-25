@@ -3,7 +3,9 @@
 OpenBlade is a lightweight, standalone Windows utility for Razer Blade laptops.
 Its capability system is designed for additional models, but the current
 release supports only the Razer Blade 16 RZ09-0581 with USB identity
-`1532:02E0` and BIOS `3.01`.
+`1532:02E0` and BIOS `3.01`. The tested machine also reports EC `1.04` and
+MCU `1.5.0.0`; these are recorded as diagnostic metadata and do not expand the
+runtime admission scope.
 
 ## Safety state
 
