@@ -59,4 +59,42 @@ public sealed class WindowsPowerStateProviderTests
         Assert.Equal(PowerSource.PluggedIn, provider.CapturePowerSource());
         Assert.Null(provider.CaptureBatteryPowerFlowMilliwatts());
     }
+
+    [Fact]
+    public void MapBatteryHealth_AggregatesValidAbsoluteCapacities()
+    {
+        BatteryHealthStatus? health = WindowsPowerStateProvider.MapBatteryHealth(
+        [
+            (80_000, 72_000),
+            (15_200, 14_440),
+        ]);
+
+        Assert.Equal(new BatteryHealthStatus(95_200, 86_440), health);
+    }
+
+    [Fact]
+    public void MapBatteryHealth_IgnoresUnknownEntriesAndRejectsImplausibleTotals()
+    {
+        Assert.Equal(
+            new BatteryHealthStatus(95_200, 90_440),
+            WindowsPowerStateProvider.MapBatteryHealth(
+            [
+                (0, 0),
+                (uint.MaxValue, uint.MaxValue),
+                (95_200, 90_440),
+            ]));
+        Assert.Null(WindowsPowerStateProvider.MapBatteryHealth([(95_200, 200_000)]));
+        Assert.Null(WindowsPowerStateProvider.MapBatteryHealth([]));
+    }
+
+    [Fact]
+    public void BatteryHealthFailure_ReturnsUnavailable()
+    {
+        var provider = new WindowsPowerStateProvider(
+            () => PowerSource.PluggedIn,
+            () => null,
+            () => throw new InvalidOperationException("native failure"));
+
+        Assert.Null(provider.CaptureBatteryHealth());
+    }
 }

@@ -3951,7 +3951,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             LightingRendererOwnership: LightingRendererOwnershipState.None,
             LightingSuppressions: [],
             AlwaysOverrideExternalLightingChanges:
-                preferences.AlwaysOverrideExternalLightingChanges)
+                preferences.AlwaysOverrideExternalLightingChanges,
+            BatteryHealth: powerStateProvider.CaptureBatteryHealth())
         {
             FanControlOverride = Automation.FanControlOverride,
         };
@@ -4188,6 +4189,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         && (left.LightingSuppressions ?? []).SequenceEqual(
             right.LightingSuppressions ?? [])
         && left.Firmware == right.Firmware
+        && left.BatteryHealth == right.BatteryHealth
         && string.Equals(left.ServiceVersion, right.ServiceVersion, StringComparison.Ordinal);
 
     private static async Task<LightingRendererOwnershipState> ReadLightingOwnershipAsync(

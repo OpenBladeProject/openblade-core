@@ -3130,6 +3130,15 @@
                                 <Border Style="{StaticResource SettingsRowStyle}">
                                     <Grid ColumnSpacing="24">
                                         <Grid.ColumnDefinitions><ColumnDefinition Width="2*" /><ColumnDefinition Width="3*" /></Grid.ColumnDefinitions>
+                                        <TextBlock Text="Battery health" Style="{StaticResource CardTitleStyle}" />
+                                        <TextBlock Grid.Column="1"
+                                                   Text="{x:Bind ViewModel.AboutBatteryHealthStatus, Mode=OneWay}"
+                                                   Style="{StaticResource TroubleshootingValueStyle}" />
+                                    </Grid>
+                                </Border>
+                                <Border Style="{StaticResource SettingsRowStyle}">
+                                    <Grid ColumnSpacing="24">
+                                        <Grid.ColumnDefinitions><ColumnDefinition Width="2*" /><ColumnDefinition Width="3*" /></Grid.ColumnDefinitions>
                                         <TextBlock Text="BIOS" Style="{StaticResource CardTitleStyle}" />
                                         <TextBlock Grid.Column="1" Text="{x:Bind ViewModel.AboutBiosVersionStatus, Mode=OneWay}" Style="{StaticResource TroubleshootingValueStyle}" />
                                     </Grid>

@@ -9,6 +9,8 @@ public interface IPowerStateProvider
     PowerSource CapturePowerSource();
 
     int? CaptureBatteryPowerFlowMilliwatts();
+
+    BatteryHealthStatus? CaptureBatteryHealth() => null;
 }
 
 public sealed class WindowsPowerStateProvider : IPowerStateProvider
@@ -18,20 +20,26 @@ public sealed class WindowsPowerStateProvider : IPowerStateProvider
 
     private readonly Func<PowerSource> capturePowerSource;
     private readonly Func<int?> captureBatteryPowerFlow;
+    private readonly Func<BatteryHealthStatus?> captureBatteryHealth;
 
     internal WindowsPowerStateProvider()
-        : this(CaptureWindowsPowerSource, CaptureWindowsBatteryPowerFlow)
+        : this(
+            CaptureWindowsPowerSource,
+            CaptureWindowsBatteryPowerFlow,
+            WindowsBatteryHealthReader.Capture)
     {
     }
 
     internal WindowsPowerStateProvider(
         Func<PowerSource> capturePowerSource,
-        Func<int?> captureBatteryPowerFlow)
+        Func<int?> captureBatteryPowerFlow,
+        Func<BatteryHealthStatus?>? captureBatteryHealth = null)
     {
         this.capturePowerSource = capturePowerSource
             ?? throw new ArgumentNullException(nameof(capturePowerSource));
         this.captureBatteryPowerFlow = captureBatteryPowerFlow
             ?? throw new ArgumentNullException(nameof(captureBatteryPowerFlow));
+        this.captureBatteryHealth = captureBatteryHealth ?? (() => null);
     }
 
     public PowerSource CapturePowerSource() => capturePowerSource();
@@ -46,6 +54,48 @@ public sealed class WindowsPowerStateProvider : IPowerStateProvider
         {
             return null;
         }
+    }
+
+    public BatteryHealthStatus? CaptureBatteryHealth()
+    {
+        try
+        {
+            return captureBatteryHealth();
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    internal static BatteryHealthStatus? MapBatteryHealth(
+        IEnumerable<(uint DesignCapacity, uint FullChargeCapacity)> capacities)
+    {
+        ArgumentNullException.ThrowIfNull(capacities);
+        long totalDesignCapacity = 0;
+        long totalFullChargeCapacity = 0;
+        foreach ((uint designCapacity, uint fullChargeCapacity) in capacities)
+        {
+            if (designCapacity is 0 or uint.MaxValue
+                || fullChargeCapacity is 0 or uint.MaxValue)
+            {
+                continue;
+            }
+
+            totalDesignCapacity += designCapacity;
+            totalFullChargeCapacity += fullChargeCapacity;
+        }
+
+        if (totalDesignCapacity is <= 0 or > 1_000_000
+            || totalFullChargeCapacity is <= 0 or > 1_000_000
+            || totalFullChargeCapacity > totalDesignCapacity * 2)
+        {
+            return null;
+        }
+
+        return new BatteryHealthStatus(
+            checked((int)totalDesignCapacity),
+            checked((int)totalFullChargeCapacity));
     }
 
     internal static PowerSource MapPowerSource(byte acLineStatus) => acLineStatus switch

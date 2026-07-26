@@ -7,6 +7,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Added
 
+- Added battery health to About using Windows' read-only design and full-charge
+  capacity data.
 - Added a Synapse-style playback mute indicator for the RZ09-0581 keyboard.
   While Windows audio is muted, OpenBlade keeps the F1 mute key red without
   replacing the selected lighting effect. Core Audio notifications update the

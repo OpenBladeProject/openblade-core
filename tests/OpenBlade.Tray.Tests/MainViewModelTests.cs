@@ -3984,6 +3984,35 @@ public sealed class MainViewModelTests
     }
 
     [Fact]
+    public async Task AboutBatteryHealth_ShowsCapacityRatioAndTracksAvailability()
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+
+        Assert.Equal("Unavailable", viewModel.AboutBatteryHealthStatus);
+
+        client.Publish(CreateStatus(verified: true, blocked: false) with
+        {
+            BatteryHealth = new BatteryHealthStatus(95_200, 90_440),
+        });
+        await WaitUntilAsync(() =>
+            viewModel.AboutBatteryHealthStatus.StartsWith(
+                "95%",
+                StringComparison.Ordinal));
+
+        Assert.Equal("95% (90.4 Wh of 95.2 Wh)", viewModel.AboutBatteryHealthStatus);
+
+        client.Publish(CreateStatus(verified: true, blocked: false) with
+        {
+            Revision = 2,
+            BatteryHealth = null,
+        });
+        await WaitUntilAsync(() =>
+            viewModel.AboutBatteryHealthStatus == "Unavailable");
+    }
+
+    [Fact]
     public async Task TestedPlatformWarning_TracksFirmwareAndHardwareMismatches()
     {
         var client = new FakeServiceClient();
