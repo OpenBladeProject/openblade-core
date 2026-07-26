@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using System.Runtime.InteropServices;
+using Microsoft.Extensions.Logging;
 using OpenBlade.Contracts;
 
 namespace OpenBlade.Service;
@@ -21,6 +22,7 @@ public sealed class WindowsPowerStateProvider : IPowerStateProvider
     private readonly Func<PowerSource> capturePowerSource;
     private readonly Func<int?> captureBatteryPowerFlow;
     private readonly Func<BatteryHealthStatus?> captureBatteryHealth;
+    private readonly ILogger? logger;
 
     internal WindowsPowerStateProvider()
         : this(
@@ -30,16 +32,27 @@ public sealed class WindowsPowerStateProvider : IPowerStateProvider
     {
     }
 
+    internal WindowsPowerStateProvider(ILogger logger)
+        : this(
+            CaptureWindowsPowerSource,
+            CaptureWindowsBatteryPowerFlow,
+            WindowsBatteryHealthReader.Capture,
+            logger)
+    {
+    }
+
     internal WindowsPowerStateProvider(
         Func<PowerSource> capturePowerSource,
         Func<int?> captureBatteryPowerFlow,
-        Func<BatteryHealthStatus?>? captureBatteryHealth = null)
+        Func<BatteryHealthStatus?>? captureBatteryHealth = null,
+        ILogger? logger = null)
     {
         this.capturePowerSource = capturePowerSource
             ?? throw new ArgumentNullException(nameof(capturePowerSource));
         this.captureBatteryPowerFlow = captureBatteryPowerFlow
             ?? throw new ArgumentNullException(nameof(captureBatteryPowerFlow));
         this.captureBatteryHealth = captureBatteryHealth ?? (() => null);
+        this.logger = logger;
     }
 
     public PowerSource CapturePowerSource() => capturePowerSource();
@@ -62,8 +75,11 @@ public sealed class WindowsPowerStateProvider : IPowerStateProvider
         {
             return captureBatteryHealth();
         }
-        catch
+        catch (Exception exception)
         {
+            logger?.LogWarning(
+                exception,
+                "Windows battery health capture failed; capacity is unavailable.");
             return null;
         }
     }

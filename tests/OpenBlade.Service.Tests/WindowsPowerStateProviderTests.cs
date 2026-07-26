@@ -90,11 +90,18 @@ public sealed class WindowsPowerStateProviderTests
     [Fact]
     public void BatteryHealthFailure_ReturnsUnavailable()
     {
+        var history = new DiagnosticHistory();
         var provider = new WindowsPowerStateProvider(
             () => PowerSource.PluggedIn,
             () => null,
-            () => throw new InvalidOperationException("native failure"));
+            () => throw new InvalidOperationException("native failure"),
+            history.CreateLogger("OpenBlade.Service.WindowsPowerStateProvider"));
 
         Assert.Null(provider.CaptureBatteryHealth());
+        Assert.Contains(
+            history.Snapshot().LogLines,
+            line => line.Contains(
+                "Warning OpenBlade.Service.WindowsPowerStateProvider: Windows battery health capture failed; capacity is unavailable.",
+                StringComparison.Ordinal));
     }
 }

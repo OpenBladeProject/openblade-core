@@ -200,6 +200,27 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     }
 
     [Fact]
+    public async Task PowerSourceChange_RetriesUnavailableBatteryHealthOnlyOnce()
+    {
+        TestContext context = CreateContext(providerAvailable: true);
+        var recovered = new BatteryHealthStatus(95_200, 90_440);
+        context.Telemetry.BatteryHealth = recovered;
+        context.Telemetry.Current = CreateTelemetry(PowerSource.Battery);
+
+        await context.Runtime.HandlePowerSourceChangedAsync(CancellationToken.None);
+
+        Assert.Equal(recovered, context.Runtime.GetStatus().BatteryHealth);
+        Assert.Equal(2, context.Telemetry.BatteryHealthCaptureCount);
+
+        context.Telemetry.BatteryHealth = new BatteryHealthStatus(95_200, 89_000);
+        context.Telemetry.Current = CreateTelemetry(PowerSource.PluggedIn);
+        await context.Runtime.HandlePowerSourceChangedAsync(CancellationToken.None);
+
+        Assert.Equal(recovered, context.Runtime.GetStatus().BatteryHealth);
+        Assert.Equal(2, context.Telemetry.BatteryHealthCaptureCount);
+    }
+
+    [Fact]
     public async Task FirstVerifiedObservation_ReadsMcuVersionOnceAndPreservesOtherFirmware()
     {
         var firmware = new FirmwareVersions(
@@ -5250,7 +5271,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         public int CaptureCount { get; private set; }
         public int BatteryPowerFlowCaptureCount { get; private set; }
         public int BatteryHealthCaptureCount { get; private set; }
-        public BatteryHealthStatus? BatteryHealth { get; init; }
+        public BatteryHealthStatus? BatteryHealth { get; set; }
 
         public PowerSource CapturePowerSource()
         {

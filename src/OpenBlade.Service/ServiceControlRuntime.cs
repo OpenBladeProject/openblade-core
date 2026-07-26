@@ -225,6 +225,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
     private long lastFullObservationTimestamp;
     private bool controllerPresenceObserved;
     private long lastControllerPresenceTimestamp;
+    private bool batteryHealthRetryPending;
 
     public ServiceControlRuntime(
         BatteryConfigurationStore store,
@@ -1722,6 +1723,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         {
             PowerSource powerSource = await ResolveCurrentPowerSourceAsync(cancellationToken);
             cancellationToken.ThrowIfCancellationRequested();
+            RetryBatteryHealthCaptureCore();
             RefreshControllerPresenceCore(cancellationToken);
             if (powerSource != PowerSource.ExternalUnknown
                 && Automation.ChangePowerSource(powerSource))
@@ -3928,7 +3930,11 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         });
     }
 
-    private ServiceStatusSnapshot CreateInitialSnapshot(PowerSource powerSource) => new(
+    private ServiceStatusSnapshot CreateInitialSnapshot(PowerSource powerSource)
+    {
+        BatteryHealthStatus? batteryHealth = powerStateProvider.CaptureBatteryHealth();
+        batteryHealthRetryPending = batteryHealth is null;
+        return new(
             Revision: 0,
             DeviceVerified: false,
             WritesBlocked: true,
@@ -3952,10 +3958,26 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             LightingSuppressions: [],
             AlwaysOverrideExternalLightingChanges:
                 preferences.AlwaysOverrideExternalLightingChanges,
-            BatteryHealth: powerStateProvider.CaptureBatteryHealth())
+            BatteryHealth: batteryHealth)
         {
             FanControlOverride = Automation.FanControlOverride,
         };
+    }
+
+    private void RetryBatteryHealthCaptureCore()
+    {
+        if (!batteryHealthRetryPending)
+        {
+            return;
+        }
+
+        batteryHealthRetryPending = false;
+        BatteryHealthStatus? batteryHealth = powerStateProvider.CaptureBatteryHealth();
+        if (batteryHealth is not null)
+        {
+            PublishIfChanged(GetStatus() with { BatteryHealth = batteryHealth });
+        }
+    }
 
     private ControlOperationResult PublishScopedUnavailable(
         DeviceSubsystem subsystem,

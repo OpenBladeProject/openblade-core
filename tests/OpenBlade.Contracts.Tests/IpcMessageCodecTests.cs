@@ -332,7 +332,7 @@ public sealed class IpcMessageCodecTests
             DesiredState = CreateStatus().DesiredState with { Battery = desired },
         };
 
-        Assert.Equal(23, OpenBladeIpc.ProtocolVersion);
+        Assert.Equal(24, OpenBladeIpc.ProtocolVersion);
         Assert.Equal(request, await RoundTripRequestAsync(request));
         ServiceStatusSnapshot roundTrip = await RoundTripStatusAsync(status);
         Assert.Equal([80], roundTrip.Capabilities!.ChargeLimits);
@@ -435,7 +435,7 @@ public sealed class IpcMessageCodecTests
 
         ServiceStatusSnapshot actual = await RoundTripStatusAsync(expected);
 
-        Assert.Equal(23, OpenBladeIpc.ProtocolVersion);
+        Assert.Equal(24, OpenBladeIpc.ProtocolVersion);
         AssertStatusEqual(expected, actual);
     }
 
@@ -843,7 +843,7 @@ public sealed class IpcMessageCodecTests
 
         // Deliberate tripwire: every future protocol bump must revisit the
         // explicitly incompatible v21/v22 deployment boundary.
-        Assert.Equal(23, OpenBladeIpc.ProtocolVersion);
+        Assert.Equal(24, OpenBladeIpc.ProtocolVersion);
         Assert.Equal("IPC protocol version is unsupported.", exception.Message);
     }
 
@@ -869,7 +869,7 @@ public sealed class IpcMessageCodecTests
             IpcMessageCodec.ReadServerFrameAsync(stream, CancellationToken.None));
 
         // Keep this symmetric with ReadRequestAsync_RejectsVersionTwentyOnePeer.
-        Assert.Equal(23, OpenBladeIpc.ProtocolVersion);
+        Assert.Equal(24, OpenBladeIpc.ProtocolVersion);
         Assert.Equal("IPC protocol version is unsupported.", exception.Message);
     }
 
