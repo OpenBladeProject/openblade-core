@@ -762,6 +762,28 @@ public sealed class ProductionLightingPortTests
     }
 
     [Fact]
+    public async Task PlaybackMuteIndicator_FailedWriteRollsBackRenderStateForRetry()
+    {
+        var session = new LightingSession(initialBrightness: 0xFF);
+        var writer = new MatrixWriter();
+        await using var port = CreatePort(session, writer, admitted: true);
+        var baseColor = new RgbColor(0x12, 0x34, 0x56);
+        LightingSettings lighting = LightingSettingsFactory.Static(baseColor, 100);
+        await port.SetLightingAsync(lighting, default);
+        writer.Failures.Enqueue(HidSessionFailureKind.ConflictBlocked);
+
+        BladeWriteException failure = await Assert.ThrowsAsync<BladeWriteException>(
+            () => port.SetPlaybackMuteIndicatorAsync(muted: true, default));
+
+        Assert.Equal(WriteSubmissionState.KnownNotApplied, failure.SubmissionState);
+        await port.SetLightingAsync(lighting, default);
+        Assert.Equal(new MatrixRgb(0x12, 0x34, 0x56), writer.Reports[^1].Frame[2]);
+
+        await port.SetPlaybackMuteIndicatorAsync(muted: true, default);
+        Assert.Equal(new MatrixRgb(0xFF, 0, 0), writer.Reports[^1].Frame[2]);
+    }
+
+    [Fact]
     public async Task ReactivePulse_WritesTheRequestedSlotWhenLiveRendererIsReactive()
     {
         var session = new LightingSession(initialBrightness: 0xFF);

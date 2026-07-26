@@ -855,6 +855,9 @@ public sealed class WindowsRazerHidSessionTests
             Timeout,
             default);
         await io.WaitForCallsAsync(1);
+        using var timerReadiness =
+            new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        await time.WaitForTimerCountAsync(2, timerReadiness.Token);
 
         time.Advance(TimeSpan.FromMilliseconds(9));
         await Task.Yield();
@@ -1379,6 +1382,7 @@ public sealed class WindowsRazerHidSessionTests
     private sealed class ManualTimeProvider : TimeProvider
     {
         private readonly object sync = new();
+        private readonly SemaphoreSlim timerCreated = new(0);
         private DateTimeOffset utcNow = DateTimeOffset.UnixEpoch;
         private readonly List<Timer> timers = [];
         public override DateTimeOffset GetUtcNow() => utcNow;
@@ -1386,9 +1390,31 @@ public sealed class WindowsRazerHidSessionTests
         public override long GetTimestamp() => utcNow.Ticks;
         public override ITimer CreateTimer(TimerCallback callback, object? state, TimeSpan dueTime, TimeSpan period)
         {
-            var timer = new Timer(this, callback, state, utcNow + dueTime);
-            lock (sync) timers.Add(timer);
+            Timer timer;
+            lock (sync)
+            {
+                timer = new Timer(this, callback, state, utcNow + dueTime);
+                timers.Add(timer);
+            }
+            timerCreated.Release();
             return timer;
+        }
+        public async Task WaitForTimerCountAsync(
+            int count,
+            CancellationToken cancellationToken)
+        {
+            while (true)
+            {
+                lock (sync)
+                {
+                    if (timers.Count >= count)
+                    {
+                        return;
+                    }
+                }
+
+                await timerCreated.WaitAsync(cancellationToken);
+            }
         }
         public void Advance(TimeSpan amount)
         {

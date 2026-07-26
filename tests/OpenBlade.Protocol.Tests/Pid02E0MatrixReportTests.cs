@@ -91,6 +91,37 @@ public sealed class Pid02E0MatrixReportTests
     }
 
     [Fact]
+    public void WithSlot_RejectsEveryCapturedLayoutHole()
+    {
+        Pid02E0MatrixFrame frame =
+            Pid02E0MatrixLayout.RenderUniform(new MatrixRgb(1, 2, 3));
+
+        foreach (int hole in ExpectedHoleSlots)
+        {
+            ArgumentOutOfRangeException exception = Assert.Throws<
+                ArgumentOutOfRangeException>(
+                    () => frame.WithSlot(hole, new MatrixRgb(0xFF, 0, 0)));
+
+            Assert.Equal("index", exception.ParamName);
+        }
+    }
+
+    [Fact]
+    public void WithSlot_ReplacesOnlyTheRequestedPhysicalSlot()
+    {
+        var originalColor = new MatrixRgb(1, 2, 3);
+        var replacement = new MatrixRgb(0xFF, 0, 0);
+        Pid02E0MatrixFrame original =
+            Pid02E0MatrixLayout.RenderUniform(originalColor);
+
+        Pid02E0MatrixFrame changed = original.WithSlot(2, replacement);
+
+        Assert.Equal(originalColor, original[2]);
+        Assert.Equal(replacement, changed[2]);
+        Assert.Equal(originalColor, changed[3]);
+    }
+
+    [Fact]
     public void SpectrumSampleRenderer_MatchesExactFirstCapturedSpectrumFrame()
     {
         JsonElement fixture = Frame("Spectrum");

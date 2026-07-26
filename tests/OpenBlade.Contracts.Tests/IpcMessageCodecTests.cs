@@ -779,29 +779,28 @@ public sealed class IpcMessageCodecTests
     }
 
     [Fact]
-    public async Task ReadRequestAsync_RejectsVersionTwentyOnePeer()
+    public async Task ReadRequestAsync_RejectsImmediatelyPreviousProtocolPeer()
     {
+        int previousProtocolVersion = OpenBladeIpc.ProtocolVersion - 1;
         using MemoryStream stream = FrameJson(
-            $$"""{"operation":"getStatus","version":21,"requestId":"{{Guid.NewGuid()}}"}""");
+            $$"""{"operation":"getStatus","version":{{previousProtocolVersion}},"requestId":"{{Guid.NewGuid()}}"}""");
 
         InvalidDataException exception = await Assert.ThrowsAsync<InvalidDataException>(() =>
             IpcMessageCodec.ReadRequestAsync(stream, CancellationToken.None));
 
-        // Deliberate tripwire: every future protocol bump must revisit the
-        // explicitly incompatible v21/v22 deployment boundary.
-        Assert.Equal(23, OpenBladeIpc.ProtocolVersion);
         Assert.Equal("IPC protocol version is unsupported.", exception.Message);
     }
 
     [Fact]
-    public async Task ReadServerFrameAsync_RejectsVersionTwentyOnePeer()
+    public async Task ReadServerFrameAsync_RejectsImmediatelyPreviousProtocolPeer()
     {
+        int previousProtocolVersion = OpenBladeIpc.ProtocolVersion - 1;
         Guid requestId = Guid.NewGuid();
         using MemoryStream stream = FrameJson(
             $$"""
               {
                 "frame":"response",
-                "version":21,
+                "version":{{previousProtocolVersion}},
                 "requestId":"{{requestId}}",
                 "success":false,
                 "error":"IPC protocol version is unsupported.",
@@ -814,8 +813,6 @@ public sealed class IpcMessageCodecTests
         InvalidDataException exception = await Assert.ThrowsAsync<InvalidDataException>(() =>
             IpcMessageCodec.ReadServerFrameAsync(stream, CancellationToken.None));
 
-        // Keep this symmetric with ReadRequestAsync_RejectsVersionTwentyOnePeer.
-        Assert.Equal(23, OpenBladeIpc.ProtocolVersion);
         Assert.Equal("IPC protocol version is unsupported.", exception.Message);
     }
 

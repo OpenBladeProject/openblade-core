@@ -299,7 +299,7 @@ public sealed class ServiceReactiveLightingLoopTests
         await WaitUntilAsync(() => factory.CreateCount == 1);
         client.Publish(Status(LightingRendererOwnershipState.Reactive) with { Revision = 2 });
         client.Reconnect();
-        await Task.Delay(50);
+        await WaitUntilAsync(() => client.DeliveryCount == 3);
 
         Assert.False(factory.Last!.Disposed);
         factory.Last.Publish(new ReactiveKeyPulse(53));
@@ -360,7 +360,7 @@ public sealed class ServiceReactiveLightingLoopTests
             Message = "Checking the laptop connection.",
             LightingRendererOwnership = LightingRendererOwnershipState.None,
         });
-        await Task.Delay(25);
+        await WaitUntilAsync(() => client.DeliveryCount == 2);
 
         factory.Last!.Publish(new ReactiveKeyPulse(53));
         await WaitUntilAsync(() => client.Pulses.Count == 1);
@@ -434,7 +434,7 @@ public sealed class ServiceReactiveLightingLoopTests
             WritesBlocked = true,
             Message = "Refreshing laptop controls after a temporary device-access failure. Last read failed.",
         });
-        await Task.Delay(25);
+        await WaitUntilAsync(() => client.DeliveryCount == 2);
 
         factory.Last!.Publish(new ReactiveKeyPulse(53));
         await WaitUntilAsync(() => client.Pulses.Count == 1);
@@ -455,7 +455,7 @@ public sealed class ServiceReactiveLightingLoopTests
         client.Publish(Status(LightingRendererOwnershipState.Reactive));
         await WaitUntilAsync(() => factory.CreateCount == 1);
         client.Publish(Status(LightingRendererOwnershipState.Static) with { Revision = 2 });
-        await Task.Delay(25);
+        await WaitUntilAsync(() => client.DeliveryCount == 2);
 
         factory.Last!.Publish(new ReactiveKeyPulse(53));
         await Task.Delay(50);
@@ -543,7 +543,7 @@ public sealed class ServiceReactiveLightingLoopTests
         RecordingSource first = factory.Last!;
 
         client.Publish(Status(LightingRendererOwnershipState.Reactive) with { Revision = 2 });
-        await Task.Delay(25);
+        await WaitUntilAsync(() => client.DeliveryCount == 2);
         Assert.Equal(1, factory.CreateCount);
 
         first.Publish(new ReactiveKeyPulse(77));
@@ -552,7 +552,7 @@ public sealed class ServiceReactiveLightingLoopTests
         Assert.Equal(77, pulse.MatrixSlot);
 
         client.Publish(Status(LightingRendererOwnershipState.Static) with { Revision = 3 });
-        await Task.Delay(25);
+        await WaitUntilAsync(() => client.DeliveryCount == 3);
         Assert.False(first.Disposed);
         first.Publish(new ReactiveKeyPulse(78));
         await Task.Delay(25);
@@ -562,17 +562,17 @@ public sealed class ServiceReactiveLightingLoopTests
         await WaitUntilAsync(() => client.PerformanceSelections.Count == 1);
 
         client.Publish(Status(LightingRendererOwnershipState.Reactive) with { Revision = 4 });
-        await Task.Delay(25);
+        await WaitUntilAsync(() => client.DeliveryCount == 4);
         Assert.Equal(1, factory.CreateCount);
 
         client.Publish(Status(LightingRendererOwnershipState.Ripple) with { Revision = 5 });
-        await Task.Delay(25);
+        await WaitUntilAsync(() => client.DeliveryCount == 5);
         first.Publish(new ReactiveKeyPulse(79));
         await WaitUntilAsync(() => client.Pulses.Count == 2);
         Assert.Equal(1, factory.CreateCount);
 
         client.Reconnect();
-        await Task.Delay(25);
+        await WaitUntilAsync(() => client.DeliveryCount == 6);
         Assert.False(first.Disposed);
         first.Publish(new ReactiveKeyPulse(80));
         await WaitUntilAsync(() => client.Pulses.Count == 3);
@@ -1083,6 +1083,7 @@ public sealed class ServiceReactiveLightingLoopTests
     private sealed class WatchClient : IServiceClient
     {
         private readonly Channel<ServiceWatchUpdate> updates = Channel.CreateUnbounded<ServiceWatchUpdate>();
+        private int deliveryCount;
 
         public ConcurrentQueue<ReactiveKeyPulse> Pulses { get; } = new();
 
@@ -1092,6 +1093,8 @@ public sealed class ServiceReactiveLightingLoopTests
 
         public ConcurrentQueue<(Guid SessionId, long Generation, PerformancePreset? Preset)>
             PerformancePreviews { get; } = new();
+
+        public int DeliveryCount => Volatile.Read(ref deliveryCount);
 
         public int ObservationCount { get; private set; }
 
@@ -1123,6 +1126,7 @@ public sealed class ServiceReactiveLightingLoopTests
             await foreach (ServiceWatchUpdate update in updates.Reader.ReadAllAsync(token))
             {
                 yield return update;
+                Interlocked.Increment(ref deliveryCount);
             }
         }
 

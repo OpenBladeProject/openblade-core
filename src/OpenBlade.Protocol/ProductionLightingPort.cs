@@ -35,7 +35,10 @@ internal sealed class ProductionLightingPort : IProductionLightingPort
     private int nextCommandTransaction = 1;
     private int nextMatrixTransaction = 1;
     private int ownershipState;
-    private bool playbackMuted;
+    // Renderer-local overlay state. This is rolled back on a failed matrix
+    // submission; the provider separately retains the desired Windows state
+    // across renderer replacement.
+    private bool renderPlaybackMuted;
     private bool ownsDriverMode;
     private bool closing;
     private bool disposed;
@@ -461,14 +464,16 @@ internal sealed class ProductionLightingPort : IProductionLightingPort
         try
         {
             Pid02E0MatrixFrame? frame = null;
+            bool previousMuted;
             lock (effectSync)
             {
-                if (playbackMuted == muted)
+                previousMuted = renderPlaybackMuted;
+                if (renderPlaybackMuted == muted)
                 {
                     return;
                 }
 
-                playbackMuted = muted;
+                renderPlaybackMuted = muted;
                 if (activeEffect is { } effect)
                 {
                     frame = effect.RenderFrame(
@@ -489,6 +494,7 @@ internal sealed class ProductionLightingPort : IProductionLightingPort
             {
                 lock (effectSync)
                 {
+                    renderPlaybackMuted = previousMuted;
                     activeEffect = null;
                     activeKeyTriggeredEffect = null;
                     pendingKeyTriggeredPulses.Clear();
@@ -963,7 +969,7 @@ internal sealed class ProductionLightingPort : IProductionLightingPort
         {
             lock (effectSync)
             {
-                if (playbackMuted)
+                if (renderPlaybackMuted)
                 {
                     frame = frame.WithSlot(
                         PlaybackMuteKeyMatrixSlot,

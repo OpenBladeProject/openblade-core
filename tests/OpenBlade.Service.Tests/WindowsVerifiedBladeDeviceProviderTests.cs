@@ -781,6 +781,34 @@ public sealed class WindowsVerifiedBladeDeviceProviderTests
     }
 
     [Fact]
+    public async Task PlaybackMuteIndicator_FaultedKnownNotAppliedPortIsReopened()
+    {
+        var first = new FakeLightingPort
+        {
+            PlaybackMuteFailure = new BladeWriteException(
+                WriteSubmissionState.KnownNotApplied,
+                "Blocked"),
+        };
+        var second = new FakeLightingPort();
+        var lightingFactory = new FakeLightingFactory(first, second);
+        using var provider = new WindowsVerifiedBladeDeviceProvider(
+            () => Probe(BatteryValidationProbeClassification.Ready),
+            Adapt(new FakeQueryFactory()),
+            UnavailableFanRpmFactory(),
+            lightingFactory);
+        Assert.True(provider.TryGetVerifiedDevice(out IBladeDevice device));
+
+        BladeWriteException failure = await Assert.ThrowsAsync<BladeWriteException>(
+            () => device.SetPlaybackMuteIndicatorAsync(true, default));
+        await device.SetPlaybackMuteIndicatorAsync(true, default);
+
+        Assert.Equal(WriteSubmissionState.KnownNotApplied, failure.SubmissionState);
+        Assert.Equal(1, first.DisposeCount);
+        Assert.Equal(2, lightingFactory.OpenCount);
+        Assert.Contains(true, second.PlaybackMuteIndicatorStates);
+    }
+
+    [Fact]
     public async Task ReleaseDriverMode_ReusesTheSerializedLightingPort()
     {
         var lightingPort = new FakeLightingPort();
@@ -1203,6 +1231,8 @@ public sealed class WindowsVerifiedBladeDeviceProviderTests
 
         public List<bool> PlaybackMuteIndicatorStates { get; } = [];
 
+        public BladeWriteException? PlaybackMuteFailure { get; init; }
+
         public int DisposeCount { get; private set; }
 
         public int DriverModeEnsureCount { get; private set; }
@@ -1276,6 +1306,11 @@ public sealed class WindowsVerifiedBladeDeviceProviderTests
             CancellationToken cancellationToken)
         {
             PlaybackMuteIndicatorStates.Add(muted);
+            if (PlaybackMuteFailure is { } failure)
+            {
+                OwnershipState = LightingRendererOwnershipState.Faulted;
+                return Task.FromException(failure);
+            }
             return Task.CompletedTask;
         }
 

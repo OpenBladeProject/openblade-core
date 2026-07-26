@@ -217,7 +217,9 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
         private bool closing;
         private bool disposed;
         private IProductionLightingPort? lightingPort;
-        private int playbackMuteState = -1;
+        // Desired Windows playback state, retained independently of any one
+        // renderer port so a recycled exact-device session can reapply it.
+        private int desiredPlaybackMuteState = -1;
 
         internal bool HasOwnedKeyTriggeredRenderer
         {
@@ -1563,7 +1565,7 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
             bool muted,
             CancellationToken cancellationToken)
         {
-            Volatile.Write(ref playbackMuteState, muted ? 1 : 0);
+            Volatile.Write(ref desiredPlaybackMuteState, muted ? 1 : 0);
             IProductionLightingPort? port = null;
             try
             {
@@ -1598,7 +1600,10 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
             }
             catch (BladeWriteException exception)
             {
-                if (exception.SubmissionState == WriteSubmissionState.Indeterminate)
+                if (exception.SubmissionState == WriteSubmissionState.Indeterminate
+                    || port?.OwnershipState is
+                        LightingRendererOwnershipState.None or
+                        LightingRendererOwnershipState.Faulted)
                 {
                     await ResetLightingPortCoreAsync(port).ConfigureAwait(false);
                 }
@@ -1659,7 +1664,7 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
                 return null;
             }
 
-            int muted = Volatile.Read(ref playbackMuteState);
+            int muted = Volatile.Read(ref desiredPlaybackMuteState);
             if (muted >= 0)
             {
                 try

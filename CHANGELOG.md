@@ -194,6 +194,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Fixed playback mute indication retries so a rejected matrix write retires its
+  faulted renderer and reapplies the latest Windows mute state on a fresh port.
 - Retried transient read-only battery-state I/O and timeout failures through a
   fresh identity-verified session before blocking controls. Writes remain
   single-attempt, and indeterminate hardware writes are never retried.

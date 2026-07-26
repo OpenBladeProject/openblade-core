@@ -51,6 +51,13 @@ internal sealed class Pid02E0MatrixFrame
         {
             throw new ArgumentOutOfRangeException(nameof(index));
         }
+        if (Pid02E0MatrixLayout.IsHole(index))
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(index),
+                index,
+                $"Captured layout-hole slot {index} cannot receive a matrix override.");
+        }
 
         MatrixRgb[] slots = ToArray();
         slots[index] = color;

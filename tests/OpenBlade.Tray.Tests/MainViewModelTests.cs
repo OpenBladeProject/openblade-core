@@ -1,3 +1,5 @@
+using System.Collections;
+using System.Collections.Concurrent;
 using System.Threading.Channels;
 using OpenBlade.Contracts;
 using OpenBlade.Tray;
@@ -3098,7 +3100,7 @@ public sealed class MainViewModelTests
             "Live readings are unavailable while the OpenBlade service is not running.",
             viewModel.LiveReadingsRefreshToolTip);
 
-        var changed = new HashSet<string>();
+        var changed = new ConcurrentPropertySet();
         viewModel.PropertyChanged += (_, args) => changed.Add(args.PropertyName!);
         await viewModel.StartAsync();
         client.Publish(CreateStatus(verified: true, blocked: false) with
@@ -3192,7 +3194,7 @@ public sealed class MainViewModelTests
         await WaitUntilAsync(() => dispatcher.CompletedCalls > dispatchesBeforeBaseline);
         Assert.Equal(baseline.LiveReadings, viewModel.LiveReadings);
 
-        var changed = new HashSet<string>();
+        var changed = new ConcurrentPropertySet();
         viewModel.PropertyChanged += (_, args) => changed.Add(args.PropertyName!);
         ServiceStatusSnapshot update = baseline with
         {
@@ -3230,7 +3232,7 @@ public sealed class MainViewModelTests
         await WaitUntilAsync(() => viewModel.LiveReadings == baseline.LiveReadings);
 
         viewModel.SetDashboardTelemetryPresentationActive(false);
-        var changed = new HashSet<string>();
+        var changed = new ConcurrentPropertySet();
         viewModel.PropertyChanged += (_, args) => changed.Add(args.PropertyName!);
         ServiceStatusSnapshot update = baseline with
         {
@@ -3327,7 +3329,7 @@ public sealed class MainViewModelTests
     {
         var client = new FakeServiceClient();
         await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
-        var changed = new HashSet<string>();
+        var changed = new ConcurrentPropertySet();
         viewModel.PropertyChanged += (_, args) => changed.Add(args.PropertyName!);
 
         Assert.Equal(
@@ -4869,6 +4871,23 @@ public sealed class MainViewModelTests
     }
 
     private static HashSet<int> ChargeLimits() => [50, 55, 60, 65, 70, 75, 80];
+
+    private sealed class ConcurrentPropertySet : IReadOnlyCollection<string>
+    {
+        private readonly ConcurrentDictionary<string, byte> values = new();
+
+        public int Count => values.Count;
+
+        public bool Add(string value) => values.TryAdd(value, 0);
+
+        public bool Contains(string value) => values.ContainsKey(value);
+
+        public void Clear() => values.Clear();
+
+        public IEnumerator<string> GetEnumerator() => values.Keys.GetEnumerator();
+
+        IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
+    }
 
     private sealed class RecordingDispatcher : IUiDispatcher
     {

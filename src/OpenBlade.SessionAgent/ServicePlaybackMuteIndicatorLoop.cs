@@ -25,7 +25,9 @@ public sealed class ServicePlaybackMuteIndicatorLoop
             SingleWriter = false,
         });
     private int connected;
+    // Latest state observed from Core Audio, independent of service delivery.
     private int latestMuteState = -1;
+    // Successful IPC delivery cache only; failures and reconnects invalidate it.
     private int lastSentState = -1;
 
     public ServicePlaybackMuteIndicatorLoop(
