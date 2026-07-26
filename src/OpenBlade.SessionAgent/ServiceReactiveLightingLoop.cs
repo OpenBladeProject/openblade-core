@@ -39,12 +39,12 @@ public sealed class ServiceReactiveLightingLoop : IAsyncDisposable
     private readonly IReactiveKeyboardSourceFactory sourceFactory;
     private readonly ReactiveKeyPulsePump pulsePump;
     private readonly PerformanceShortcutTriggerPump shortcutPump;
-    private readonly SpecialKeyTriggerPump? specialKeyPump;
-    private readonly SpecialKeyTriggerPump? defaultLaptopKeyPump;
+    private readonly BoundedEnumActionPump<SpecialKeySlot>? specialKeyPump;
+    private readonly BoundedEnumActionPump<SpecialKeySlot>? defaultLaptopKeyPump;
     private readonly Func<SpecialKeySlot, bool> shouldOverrideSpecialKey;
     private readonly IPerformanceShortcutNotificationSink shortcutNotifications;
     private readonly Action<Exception>? errorHandler;
-    private readonly FunctionRowActionPump? functionRowActionPump;
+    private readonly BoundedEnumActionPump<FunctionRowAction>? functionRowActionPump;
     private readonly object performanceShortcutStateSync = new();
     private readonly SemaphoreSlim performanceShortcutPreviewGate = new(1, 1);
     private readonly Guid performanceShortcutSessionId = Guid.NewGuid();
@@ -87,19 +87,19 @@ public sealed class ServiceReactiveLightingLoop : IAsyncDisposable
         this.shouldOverrideSpecialKey = shouldOverrideSpecialKey ?? (_ => false);
         if (executeFunctionRowActionAsync is not null)
         {
-            functionRowActionPump = new FunctionRowActionPump(
+            functionRowActionPump = new BoundedEnumActionPump<FunctionRowAction>(
                 executeFunctionRowActionAsync,
                 errorHandler: ReportFailure);
         }
         if (executeSpecialKeyAsync is not null)
         {
-            specialKeyPump = new SpecialKeyTriggerPump(
+            specialKeyPump = new BoundedEnumActionPump<SpecialKeySlot>(
                 executeSpecialKeyAsync,
                 errorHandler: ReportFailure);
         }
         if (executeDefaultLaptopKeyAsync is not null)
         {
-            defaultLaptopKeyPump = new SpecialKeyTriggerPump(
+            defaultLaptopKeyPump = new BoundedEnumActionPump<SpecialKeySlot>(
                 executeDefaultLaptopKeyAsync,
                 errorHandler: ReportFailure);
         }

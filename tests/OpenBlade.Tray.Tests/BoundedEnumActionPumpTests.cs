@@ -3,7 +3,7 @@ using OpenBlade.Tray;
 
 namespace OpenBlade.Tray.Tests;
 
-public sealed class FunctionRowActionPumpTests
+public sealed class BoundedEnumActionPumpTests
 {
     [Fact]
     public async Task ExecutesSequentiallyInOrderAndRejectsWhenPendingQueueIsFull()
@@ -18,7 +18,7 @@ public sealed class FunctionRowActionPumpTests
         int active = 0;
         int maximumActive = 0;
 
-        await using var pump = new FunctionRowActionPump(
+        await using var pump = new BoundedEnumActionPump<FunctionRowAction>(
             async (action, token) =>
             {
                 int nowActive = Interlocked.Increment(ref active);
@@ -68,7 +68,7 @@ public sealed class FunctionRowActionPumpTests
         var resumed = new TaskCompletionSource(
             TaskCreationOptions.RunContinuationsAsynchronously);
         var failures = new ConcurrentQueue<Exception>();
-        await using var pump = new FunctionRowActionPump(
+        await using var pump = new BoundedEnumActionPump<FunctionRowAction>(
             (action, _) =>
             {
                 if (action == FunctionRowAction.VolumeMute)
@@ -97,7 +97,7 @@ public sealed class FunctionRowActionPumpTests
         var resumed = new TaskCompletionSource(
             TaskCreationOptions.RunContinuationsAsynchronously);
         int attempts = 0;
-        await using var pump = new FunctionRowActionPump(
+        await using var pump = new BoundedEnumActionPump<FunctionRowAction>(
             (action, _) =>
             {
                 Interlocked.Increment(ref attempts);
@@ -124,7 +124,7 @@ public sealed class FunctionRowActionPumpTests
     {
         var delivered = new TaskCompletionSource(
             TaskCreationOptions.RunContinuationsAsynchronously);
-        await using var pump = new FunctionRowActionPump(
+        await using var pump = new BoundedEnumActionPump<FunctionRowAction>(
             (action, _) =>
             {
                 Assert.Equal(FunctionRowAction.PrintScreen, action);
@@ -139,13 +139,32 @@ public sealed class FunctionRowActionPumpTests
     }
 
     [Fact]
+    public async Task SupportsSpecialKeySlotValues()
+    {
+        var delivered = new TaskCompletionSource<SpecialKeySlot>(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        await using var pump = new BoundedEnumActionPump<SpecialKeySlot>(
+            (slot, _) =>
+            {
+                delivered.TrySetResult(slot);
+                return Task.CompletedTask;
+            });
+
+        Assert.False(pump.TryEnqueue((SpecialKeySlot)999));
+        Assert.True(pump.TryEnqueue(SpecialKeySlot.M3));
+        Assert.Equal(
+            SpecialKeySlot.M3,
+            await delivered.Task.WaitAsync(TimeSpan.FromSeconds(2)));
+    }
+
+    [Fact]
     public async Task DisposeCancelsInFlightActionRejectsNewWorkAndIsIdempotent()
     {
         var started = new TaskCompletionSource(
             TaskCreationOptions.RunContinuationsAsynchronously);
         var cancellationObserved = new TaskCompletionSource(
             TaskCreationOptions.RunContinuationsAsynchronously);
-        var pump = new FunctionRowActionPump(
+        var pump = new BoundedEnumActionPump<FunctionRowAction>(
             async (_, token) =>
             {
                 started.TrySetResult();

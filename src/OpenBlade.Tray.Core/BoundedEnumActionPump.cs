@@ -1,18 +1,19 @@
 namespace OpenBlade.Tray;
 
 /// <summary>
-/// Runs reconstructed function-row actions sequentially and bounds pending
-/// key presses. The low-level keyboard hook only enqueues work and never
-/// performs IPC, WMI, or injected input while Windows is waiting on it.
+/// Runs valid enum actions sequentially with a bounded, reject-on-full queue.
+/// Input hooks only enqueue work and never perform IPC, WMI, or injected input
+/// while Windows is waiting on them.
 /// </summary>
-public sealed class FunctionRowActionPump : IAsyncDisposable
+public sealed class BoundedEnumActionPump<T> : IAsyncDisposable
+    where T : struct, Enum
 {
     public const int DefaultCapacity = 16;
 
-    private readonly Func<FunctionRowAction, CancellationToken, Task> executeAsync;
+    private readonly Func<T, CancellationToken, Task> executeAsync;
     private readonly Action<Exception>? errorHandler;
     private readonly int capacity;
-    private readonly Queue<FunctionRowAction> pending = [];
+    private readonly Queue<T> pending = [];
     private readonly SemaphoreSlim signal = new(0);
     private readonly CancellationTokenSource lifetime = new();
     private readonly object sync = new();
@@ -20,8 +21,8 @@ public sealed class FunctionRowActionPump : IAsyncDisposable
     private bool accepting = true;
     private int disposed;
 
-    public FunctionRowActionPump(
-        Func<FunctionRowAction, CancellationToken, Task> executeAsync,
+    public BoundedEnumActionPump(
+        Func<T, CancellationToken, Task> executeAsync,
         int capacity = DefaultCapacity,
         Action<Exception>? errorHandler = null)
     {
@@ -37,9 +38,9 @@ public sealed class FunctionRowActionPump : IAsyncDisposable
         worker = RunAsync(lifetime.Token);
     }
 
-    public bool TryEnqueue(FunctionRowAction action)
+    public bool TryEnqueue(T value)
     {
-        if (!Enum.IsDefined(action))
+        if (!Enum.IsDefined(value))
         {
             return false;
         }
@@ -51,7 +52,7 @@ public sealed class FunctionRowActionPump : IAsyncDisposable
                 return false;
             }
 
-            pending.Enqueue(action);
+            pending.Enqueue(value);
             signal.Release();
             return true;
         }
@@ -97,7 +98,7 @@ public sealed class FunctionRowActionPump : IAsyncDisposable
         while (true)
         {
             await signal.WaitAsync(cancellationToken).ConfigureAwait(false);
-            FunctionRowAction action;
+            T value;
             lock (sync)
             {
                 if (pending.Count == 0)
@@ -106,12 +107,12 @@ public sealed class FunctionRowActionPump : IAsyncDisposable
                     continue;
                 }
 
-                action = pending.Dequeue();
+                value = pending.Dequeue();
             }
 
             try
             {
-                await executeAsync(action, cancellationToken).ConfigureAwait(false);
+                await executeAsync(value, cancellationToken).ConfigureAwait(false);
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
