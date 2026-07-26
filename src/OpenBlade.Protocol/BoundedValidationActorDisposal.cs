@@ -3,7 +3,7 @@ namespace OpenBlade.Protocol;
 internal static class BoundedValidationActorDisposal
 {
     internal static async Task DisposeAsync(
-        ValidationActor target,
+        IAsyncDisposable target,
         TimeProvider timeProvider,
         TimeSpan timeout,
         PendingDisposalRegistry pendingDisposals)

@@ -202,6 +202,10 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Bounded service shutdown while a hardware operation or lighting-port cleanup
+  is stalled. OpenBlade now rejects new operations immediately, retains native
+  cleanup without force-closing an in-use HID handle, and lets service stop
+  continue after the configured drain deadlines.
 - Coalesced superseded UI preference saves so rapid changes perform at most one
   in-flight durable write plus one latest-value follow-up, while shutdown still
   flushes the user's final preference state.

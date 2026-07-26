@@ -88,6 +88,21 @@ public interface IProductionLightingPort : IAsyncDisposable
     /// after the render stream has settled and before ownership is relinquished.
     /// </summary>
     Task<LightingRendererOwnershipState> InvalidateAsync();
+
+    /// <summary>
+    /// Disposes the port within its own cleanup deadline. True means the close
+    /// task completed; false means cleanup remains safely retained and the
+    /// caller must not force-close the handle.
+    /// </summary>
+    Task<bool> DisposeWithinCleanupDeadlineAsync() =>
+        DisposeWithinCleanupDeadlineDefaultAsync(this);
+
+    private static async Task<bool> DisposeWithinCleanupDeadlineDefaultAsync(
+        IAsyncDisposable target)
+    {
+        await target.DisposeAsync().ConfigureAwait(false);
+        return true;
+    }
 }
 
 public interface IProductionLightingPortFactory

@@ -19,6 +19,8 @@ internal sealed class ProductionLightingPort : IProductionLightingPort
     private readonly IPid02E0MatrixFeatureWriter? matrixWriter;
     private readonly TimeProvider timeProvider;
     private readonly TimeSpan exchangeTimeout;
+    private readonly TimeSpan cleanupDrainTimeout;
+    private readonly PendingDisposalRegistry pendingDisposals;
     private readonly SemaphoreSlim operationGate = new(1, 1);
     private readonly SemaphoreSlim featureIoGate = new(1, 1);
     private readonly object effectSync = new();
@@ -49,14 +51,20 @@ internal sealed class ProductionLightingPort : IProductionLightingPort
         IPid02E0MatrixFeatureWriter? matrixWriter,
         bool admitted,
         TimeProvider timeProvider,
-        TimeSpan exchangeTimeout)
+        TimeSpan exchangeTimeout,
+        TimeSpan cleanupDrainTimeout,
+        PendingDisposalRegistry pendingDisposals)
     {
         this.actor = actor ?? throw new ArgumentNullException(nameof(actor));
         session = actor.Session;
         this.matrixWriter = matrixWriter;
         this.timeProvider = timeProvider ?? throw new ArgumentNullException(nameof(timeProvider));
         RazerCommandSessionTimeout.Validate(exchangeTimeout);
+        RazerCommandSessionTimeout.Validate(cleanupDrainTimeout);
         this.exchangeTimeout = exchangeTimeout;
+        this.cleanupDrainTimeout = cleanupDrainTimeout;
+        this.pendingDisposals = pendingDisposals
+            ?? throw new ArgumentNullException(nameof(pendingDisposals));
         Capabilities = CreateCapabilities(admitted && matrixWriter is not null);
     }
 
@@ -513,8 +521,18 @@ internal sealed class ProductionLightingPort : IProductionLightingPort
     public async Task<LightingRendererOwnershipState> InvalidateAsync() =>
         await CloseAsync().ConfigureAwait(false);
 
-    public async ValueTask DisposeAsync() =>
-        _ = await CloseAsync().ConfigureAwait(false);
+    public ValueTask DisposeAsync() => new(CloseAsync());
+
+    public async Task<bool> DisposeWithinCleanupDeadlineAsync()
+    {
+        Task<LightingRendererOwnershipState> closingTask = CloseAsync();
+        await BoundedValidationActorDisposal.DisposeAsync(
+            this,
+            timeProvider,
+            cleanupDrainTimeout,
+            pendingDisposals).ConfigureAwait(false);
+        return closingTask.IsCompleted;
+    }
 
     public async Task EnsureDriverModeAsync(CancellationToken cancellationToken) =>
         _ = await MaintainDriverModeAsync(cancellationToken).ConfigureAwait(false);

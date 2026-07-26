@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using OpenBlade.Contracts;
 using OpenBlade.Protocol;
 using OpenBlade.Service;
@@ -6,6 +7,8 @@ namespace OpenBlade.Service.Tests;
 
 public sealed class WindowsVerifiedBladeDeviceProviderTests
 {
+    private static readonly TimeSpan TestShutdownBudget = TimeSpan.FromMilliseconds(50);
+
     [Fact]
     public void ProductionCompositionUsesOnlyServiceAdvisoryFactories()
     {
@@ -975,6 +978,123 @@ public sealed class WindowsVerifiedBladeDeviceProviderTests
         Assert.Equal(0, factory.OpenCount);
     }
 
+    [Fact]
+    public async Task Dispose_ReturnsWithinBudgetWhenTheHardwareGateIsHeld()
+    {
+        BlockedShutdownScenario scenario = await StartBlockedShutdownScenarioAsync();
+        var elapsed = Stopwatch.StartNew();
+
+        scenario.Provider.Dispose();
+        elapsed.Stop();
+
+        Assert.True(
+            elapsed.Elapsed < TimeSpan.FromSeconds(1),
+            $"Provider disposal took {elapsed.Elapsed}.");
+        Assert.Equal(0, scenario.LightingPort.DrainCount);
+        await scenario.ReleaseAndDrainAsync();
+    }
+
+    [Fact]
+    public async Task Dispose_RejectsNewOperationsImmediately()
+    {
+        BlockedShutdownScenario scenario = await StartBlockedShutdownScenarioAsync();
+
+        Task disposal = Task.Run(scenario.Provider.Dispose);
+        using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(1));
+        while (scenario.Provider.TryGetVerifiedDevice(out _))
+        {
+            await Task.Delay(1, deadline.Token);
+        }
+
+        await Assert.ThrowsAsync<ObjectDisposedException>(
+            () => scenario.Device.ReadStateAsync(default));
+        await disposal;
+        await scenario.ReleaseAndDrainAsync();
+    }
+
+    [Fact]
+    public async Task Dispose_DoesNotDisposeThePortWhenTheGateTimesOut()
+    {
+        BlockedShutdownScenario scenario = await StartBlockedShutdownScenarioAsync();
+
+        scenario.Provider.Dispose();
+
+        Assert.Equal(0, scenario.LightingPort.DrainCount);
+        Assert.Equal(0, scenario.LightingPort.DisposeCount);
+        await scenario.ReleaseAndDrainAsync();
+    }
+
+    [Fact]
+    public async Task Dispose_EventuallyDisposesThePortExactlyOnceAfterTheGateFrees()
+    {
+        BlockedShutdownScenario scenario = await StartBlockedShutdownScenarioAsync();
+        scenario.Provider.Dispose();
+
+        await scenario.ReleaseAndDrainAsync();
+
+        Assert.Equal(1, scenario.LightingPort.DrainCount);
+        Assert.Equal(1, scenario.LightingPort.DisposeCount);
+    }
+
+    [Fact]
+    public async Task Dispose_PermanentlyStuckCleanupDoesNotThrowOrHang()
+    {
+        BlockedShutdownScenario scenario = await StartBlockedShutdownScenarioAsync();
+
+        await Task.Run(scenario.Provider.Dispose).WaitAsync(TimeSpan.FromSeconds(1));
+
+        Assert.Equal(0, scenario.LightingPort.DrainCount);
+        await scenario.ReleaseAndDrainAsync();
+    }
+
+    [Fact]
+    public async Task Dispose_NormalPathDisposesThePortAndIsIdempotent()
+    {
+        var lightingPort = new FakeLightingPort();
+        var provider = new WindowsVerifiedBladeDeviceProvider(
+            () => Probe(BatteryValidationProbeClassification.Ready),
+            Adapt(new FakeQueryFactory()),
+            UnavailableFanRpmFactory(),
+            new FakeLightingFactory(lightingPort),
+            shutdownBudget: TestShutdownBudget);
+        Assert.True(provider.TryGetVerifiedDevice(out IBladeDevice device));
+        await device.SetLightingAsync(
+            LightingSettingsFactory.Static(new RgbColor(1, 2, 3), 50),
+            default);
+
+        provider.Dispose();
+        provider.Dispose();
+
+        Assert.Equal(1, lightingPort.DrainCount);
+        Assert.Equal(1, lightingPort.DisposeCount);
+        Assert.False(provider.TryGetVerifiedDevice(out _));
+    }
+
+    private static async Task<BlockedShutdownScenario> StartBlockedShutdownScenarioAsync()
+    {
+        FakeQueryPort blockedPort =
+            FakeQueryPort.Blocked(BatteryValidationSetting.Limit80);
+        var lightingPort = new FakeLightingPort();
+        var provider = new WindowsVerifiedBladeDeviceProvider(
+            () => Probe(BatteryValidationProbeClassification.Ready),
+            Adapt(new FakeQueryFactory(blockedPort)),
+            UnavailableFanRpmFactory(),
+            new FakeLightingFactory(lightingPort),
+            shutdownBudget: TestShutdownBudget);
+        Assert.True(provider.TryGetVerifiedDevice(out IBladeDevice device));
+        await device.SetLightingAsync(
+            LightingSettingsFactory.Static(new RgbColor(1, 2, 3), 50),
+            default);
+        Task<ConfirmedDeviceState> hardwareOperation = device.ReadStateAsync(default);
+        await blockedPort.QueryStarted.Task.WaitAsync(TimeSpan.FromSeconds(1));
+        return new(
+            provider,
+            device,
+            lightingPort,
+            blockedPort,
+            hardwareOperation);
+    }
+
     private static WindowsVerifiedBladeDeviceProvider ReadyProvider(
         IBatteryQuerySequenceRunFactory factory) => new(
             () => Probe(BatteryValidationProbeClassification.Ready),
@@ -1235,6 +1355,13 @@ public sealed class WindowsVerifiedBladeDeviceProviderTests
 
         public int DisposeCount { get; private set; }
 
+        public int DrainCount { get; private set; }
+
+        public bool DrainResult { get; init; } = true;
+
+        public TaskCompletionSource DrainStarted { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
         public int DriverModeEnsureCount { get; private set; }
 
         public int DriverModeReadCount { get; private set; }
@@ -1321,11 +1448,34 @@ public sealed class WindowsVerifiedBladeDeviceProviderTests
             return observed;
         }
 
+        public async Task<bool> DisposeWithinCleanupDeadlineAsync()
+        {
+            DrainCount++;
+            DrainStarted.TrySetResult();
+            await DisposeAsync();
+            return DrainResult;
+        }
+
         public ValueTask DisposeAsync()
         {
             DisposeCount++;
             OwnershipState = LightingRendererOwnershipState.None;
             return ValueTask.CompletedTask;
+        }
+    }
+
+    private sealed record BlockedShutdownScenario(
+        WindowsVerifiedBladeDeviceProvider Provider,
+        IBladeDevice Device,
+        FakeLightingPort LightingPort,
+        FakeQueryPort BlockedPort,
+        Task<ConfirmedDeviceState> HardwareOperation)
+    {
+        internal async Task ReleaseAndDrainAsync()
+        {
+            BlockedPort.Release();
+            await HardwareOperation.WaitAsync(TimeSpan.FromSeconds(1));
+            await LightingPort.DrainStarted.Task.WaitAsync(TimeSpan.FromSeconds(1));
         }
     }
 

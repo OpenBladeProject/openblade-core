@@ -53,7 +53,8 @@ internal static class ServiceComposition
                 provider.GetRequiredService<IProductionBatteryPortFactory>(),
                 provider.GetRequiredService<IFanRpmQueryRunFactory>(),
                 provider.GetRequiredService<IProductionLightingPortFactory>(),
-                provider.GetRequiredService<IGpuClockOffsetController>()));
+                provider.GetRequiredService<IGpuClockOffsetController>(),
+                provider.GetService<ILogger<WindowsVerifiedBladeDeviceProvider>>()));
         return services;
     }
 

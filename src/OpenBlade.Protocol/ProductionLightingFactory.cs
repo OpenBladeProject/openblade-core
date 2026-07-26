@@ -160,7 +160,9 @@ public sealed class ProductionLightingFactory : IProductionLightingPortFactory
             matrixWriter,
             admitted,
             timeProvider,
-            exchangeTimeout);
+            exchangeTimeout,
+            cleanupDrainTimeout,
+            pendingDisposals);
         if (admitted)
         {
             try

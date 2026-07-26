@@ -1216,6 +1216,77 @@ public sealed class ProductionLightingPortTests
     }
 
     [Fact]
+    public async Task DisposeWithinCleanupDeadline_ReturnsTrueWhenTheCloseDrains()
+    {
+        var registry = new PendingDisposalRegistry();
+        var port = CreatePort(
+            new LightingSession(initialBrightness: 0xFF),
+            new MatrixWriter(),
+            admitted: true,
+            pendingDisposals: registry);
+
+        bool drained = await port.DisposeWithinCleanupDeadlineAsync();
+
+        Assert.True(drained);
+        Assert.Equal(0, registry.Count);
+    }
+
+    [Fact]
+    public async Task DisposeWithinCleanupDeadline_ReturnsFalseAndRetainsWhenTheCloseStalls()
+    {
+        var time = new ManualTimeProvider();
+        var registry = new PendingDisposalRegistry();
+        var port = CreatePort(
+            new LightingSession(initialBrightness: 0xFF),
+            new MatrixWriter(),
+            admitted: true,
+            timeProvider: time,
+            cleanupDrainTimeout: TimeSpan.FromSeconds(1),
+            pendingDisposals: registry);
+        SemaphoreSlim gate = OperationGate(port);
+        await gate.WaitAsync();
+
+        Task<bool> disposal = port.DisposeWithinCleanupDeadlineAsync();
+        time.Advance(TimeSpan.FromSeconds(1));
+
+        Assert.False(await disposal);
+        Assert.Equal(1, registry.Count);
+
+        gate.Release();
+        await registry.WhenEmptyAsync().WaitAsync(TimeSpan.FromSeconds(2));
+        Assert.Equal(0, registry.Count);
+    }
+
+    [Fact]
+    public async Task DisposeWithinCleanupDeadline_IsIdempotentAcrossRepeatCalls()
+    {
+        var time = new ManualTimeProvider();
+        var registry = new PendingDisposalRegistry();
+        var port = CreatePort(
+            new LightingSession(initialBrightness: 0xFF),
+            new MatrixWriter(),
+            admitted: true,
+            timeProvider: time,
+            cleanupDrainTimeout: TimeSpan.FromSeconds(1),
+            pendingDisposals: registry);
+        SemaphoreSlim gate = OperationGate(port);
+        await gate.WaitAsync();
+
+        Task<bool> first = port.DisposeWithinCleanupDeadlineAsync();
+        time.Advance(TimeSpan.FromSeconds(1));
+        Assert.False(await first);
+
+        Task<bool> second = port.DisposeWithinCleanupDeadlineAsync();
+        time.Advance(TimeSpan.FromSeconds(1));
+        Assert.False(await second);
+        Assert.Equal(1, registry.Count);
+
+        gate.Release();
+        await registry.WhenEmptyAsync().WaitAsync(TimeSpan.FromSeconds(2));
+        Assert.True(await port.DisposeWithinCleanupDeadlineAsync());
+    }
+
+    [Fact]
     public async Task AnimatedStream_DoesNotPassItsStopTokenIntoNativeWrites()
     {
         var session = new LightingSession(initialBrightness: 0xFF);
@@ -1403,12 +1474,22 @@ public sealed class ProductionLightingPortTests
     private static ProductionLightingPort CreatePort(
         LightingSession session,
         MatrixWriter? writer,
-        bool admitted) => new(
+        bool admitted,
+        TimeProvider? timeProvider = null,
+        TimeSpan? cleanupDrainTimeout = null,
+        PendingDisposalRegistry? pendingDisposals = null) => new(
             new ValidationActor(session, new BatteryCommands(), new TemporaryCommands()),
             writer,
             admitted,
-            TimeProvider.System,
-            TimeSpan.FromSeconds(1));
+            timeProvider ?? TimeProvider.System,
+            TimeSpan.FromSeconds(1),
+            cleanupDrainTimeout ?? TimeSpan.FromSeconds(1),
+            pendingDisposals ?? new PendingDisposalRegistry());
+
+    private static SemaphoreSlim OperationGate(ProductionLightingPort port) =>
+        Assert.IsType<SemaphoreSlim>(typeof(ProductionLightingPort)
+            .GetField("operationGate", BindingFlags.Instance | BindingFlags.NonPublic)!
+            .GetValue(port));
 
     private static (int ClassId, int CommandId, string Arguments) CommandTuple(
         RazerCommandSpec command) => (
@@ -1680,6 +1761,66 @@ public sealed class ProductionLightingPortTests
 
         private static TaskCompletionSource NewWriteObserved() =>
             new(TaskCreationOptions.RunContinuationsAsynchronously);
+    }
+
+    private sealed class ManualTimeProvider : TimeProvider
+    {
+        private DateTimeOffset now = DateTimeOffset.UnixEpoch;
+        private readonly List<Timer> timers = [];
+
+        public override DateTimeOffset GetUtcNow() => now;
+
+        public override ITimer CreateTimer(
+            TimerCallback callback,
+            object? state,
+            TimeSpan dueTime,
+            TimeSpan period)
+        {
+            var timer = new Timer(this, callback, state, now + dueTime);
+            timers.Add(timer);
+            return timer;
+        }
+
+        internal void Advance(TimeSpan amount)
+        {
+            now += amount;
+            foreach (Timer timer in timers.ToArray())
+            {
+                timer.Fire(now);
+            }
+        }
+
+        private sealed class Timer(
+            ManualTimeProvider owner,
+            TimerCallback callback,
+            object? state,
+            DateTimeOffset due) : ITimer
+        {
+            private bool disposed;
+
+            public bool Change(TimeSpan dueTime, TimeSpan period)
+            {
+                due = owner.now + dueTime;
+                return true;
+            }
+
+            public void Dispose() => disposed = true;
+
+            public ValueTask DisposeAsync()
+            {
+                Dispose();
+                return ValueTask.CompletedTask;
+            }
+
+            internal void Fire(DateTimeOffset observed)
+            {
+                if (!disposed && observed >= due)
+                {
+                    disposed = true;
+                    callback(state);
+                }
+            }
+        }
     }
 
     private sealed class BatteryCommands : IBatteryCommandClient

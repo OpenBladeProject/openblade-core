@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
+using Microsoft.Extensions.Logging;
 using OpenBlade.Contracts;
 using OpenBlade.Protocol;
 
@@ -11,6 +12,7 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
 {
     private static readonly TimeSpan RecentReadyProbeGracePeriod =
         TimeSpan.FromSeconds(15);
+    private static readonly TimeSpan DefaultShutdownBudget = TimeSpan.FromSeconds(5);
 
     internal static Func<BatteryValidationProbeResult> ProductionProbeFactory { get; } =
         BatteryValidationFactory.ProbeWindowsForService;
@@ -45,14 +47,25 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
         IProductionBatteryPortFactory batteryFactory,
         IFanRpmQueryRunFactory fanRpmFactory,
         IProductionLightingPortFactory? lightingFactory = null,
-        IGpuClockOffsetController? gpuClockOffsets = null)
+        IGpuClockOffsetController? gpuClockOffsets = null,
+        ILogger<WindowsVerifiedBladeDeviceProvider>? logger = null,
+        TimeSpan? shutdownBudget = null)
     {
+        TimeSpan effectiveShutdownBudget = shutdownBudget ?? DefaultShutdownBudget;
+        if (effectiveShutdownBudget <= TimeSpan.Zero ||
+            effectiveShutdownBudget.TotalMilliseconds > int.MaxValue)
+        {
+            throw new ArgumentOutOfRangeException(nameof(shutdownBudget));
+        }
+
         this.probe = probe ?? throw new ArgumentNullException(nameof(probe));
         device = new SerializedBladeDevice(
             batteryFactory ?? throw new ArgumentNullException(nameof(batteryFactory)),
             fanRpmFactory ?? throw new ArgumentNullException(nameof(fanRpmFactory)),
             lightingFactory ?? UnavailableProductionLightingFactory.Instance,
-            gpuClockOffsets ?? UnavailableGpuClockOffsetController.Instance);
+            gpuClockOffsets ?? UnavailableGpuClockOffsetController.Instance,
+            logger,
+            effectiveShutdownBudget);
     }
 
     public bool TryGetVerifiedDevice(out IBladeDevice verifiedDevice)
@@ -212,8 +225,11 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
         private readonly IFanRpmQueryRunFactory fanRpmFactory;
         private readonly IProductionLightingPortFactory lightingFactory;
         private readonly IGpuClockOffsetController gpuClockOffsets;
+        private readonly ILogger<WindowsVerifiedBladeDeviceProvider>? logger;
+        private readonly TimeSpan shutdownBudget;
         private readonly object lifecycleSync = new();
         private readonly SemaphoreSlim hardwareOperationGate = new(1, 1);
+        private Task? deferredDisposal;
         private bool closing;
         private bool disposed;
         private IProductionLightingPort? lightingPort;
@@ -260,12 +276,16 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
             IProductionBatteryPortFactory batteryFactory,
             IFanRpmQueryRunFactory fanRpmFactory,
             IProductionLightingPortFactory lightingFactory,
-            IGpuClockOffsetController gpuClockOffsets)
+            IGpuClockOffsetController gpuClockOffsets,
+            ILogger<WindowsVerifiedBladeDeviceProvider>? logger,
+            TimeSpan shutdownBudget)
         {
             this.batteryFactory = batteryFactory;
             this.fanRpmFactory = fanRpmFactory;
             this.lightingFactory = lightingFactory;
             this.gpuClockOffsets = gpuClockOffsets;
+            this.logger = logger;
+            this.shutdownBudget = shutdownBudget;
         }
 
         public async Task<DeviceCapabilities> ReadCapabilitiesAsync(
@@ -1201,15 +1221,22 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
                 closing = true;
             }
 
-            hardwareOperationGate.Wait();
+            if (!hardwareOperationGate.Wait(shutdownBudget))
+            {
+                lock (lifecycleSync)
+                {
+                    disposed = true;
+                    deferredDisposal = DisposeAfterHardwareOperationAsync();
+                }
+                logger?.LogError(
+                    "Device-provider shutdown abandoned synchronous cleanup after waiting {ShutdownBudgetMilliseconds} ms for an active hardware operation. The handle was not force-closed; cleanup will continue if the operation drains.",
+                    shutdownBudget.TotalMilliseconds);
+                return;
+            }
+
             try
             {
-                IProductionLightingPort? currentLighting = lightingPort;
-                lightingPort = null;
-                if (currentLighting is not null)
-                {
-                    currentLighting.DisposeAsync().AsTask().GetAwaiter().GetResult();
-                }
+                DisposeLightingPortWithinDeadlineAsync().GetAwaiter().GetResult();
 
                 lock (lifecycleSync)
                 {
@@ -1627,6 +1654,47 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
             finally
             {
                 hardwareOperationGate.Release();
+            }
+        }
+
+        private async Task DisposeAfterHardwareOperationAsync()
+        {
+            await hardwareOperationGate.WaitAsync().ConfigureAwait(false);
+            try
+            {
+                await DisposeLightingPortWithinDeadlineAsync().ConfigureAwait(false);
+            }
+            finally
+            {
+                hardwareOperationGate.Release();
+            }
+        }
+
+        private async Task DisposeLightingPortWithinDeadlineAsync()
+        {
+            IProductionLightingPort? currentLighting = lightingPort;
+            lightingPort = null;
+            if (currentLighting is null)
+            {
+                return;
+            }
+
+            try
+            {
+                bool drained = await currentLighting
+                    .DisposeWithinCleanupDeadlineAsync()
+                    .ConfigureAwait(false);
+                if (!drained)
+                {
+                    logger?.LogError(
+                        "The production lighting port did not drain within its cleanup deadline. Native cleanup remains retained and the handle was not force-closed.");
+                }
+            }
+            catch (Exception exception)
+            {
+                logger?.LogError(
+                    exception,
+                    "The production lighting port failed during device-provider shutdown.");
             }
         }
 
