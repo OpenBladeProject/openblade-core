@@ -107,6 +107,11 @@ public sealed class ControlRequestHandler
                 await runtime.PushAmbientLightingFrameAsync(
                     AmbientLightingFrame.FromRgbBytes(ambient.RgbBytes),
                     cancellationToken)),
+            SetPlaybackMuteIndicatorRequest mute => Result(
+                request.RequestId,
+                await runtime.SetPlaybackMuteIndicatorAsync(
+                    mute.Muted,
+                    cancellationToken)),
             SetBatteryPolicyRequest set => Result(
                 request.RequestId,
                 await runtime.SetBatteryPolicyAsync(set.Value, cancellationToken)),

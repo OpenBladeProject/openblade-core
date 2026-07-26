@@ -545,6 +545,38 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     }
 
     [Fact]
+    public async Task PlaybackMuteIndicator_UsesVerifiedTypedLightingPath()
+    {
+        DeviceCapabilities capabilities = DeviceCapabilities.Unavailable() with
+        {
+            LightingEffects = new HashSet<LightingEffect>
+            {
+                LightingEffect.Off,
+                LightingEffect.Static,
+            },
+        };
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            profileValidator: ProfileSetValidator.CreateForLightingCapabilities(
+                capabilities));
+        context.Device.Capabilities = capabilities;
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+
+        ControlOperationResult muted =
+            await context.Runtime.SetPlaybackMuteIndicatorAsync(
+                true,
+                CancellationToken.None);
+        ControlOperationResult unmuted =
+            await context.Runtime.SetPlaybackMuteIndicatorAsync(
+                false,
+                CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Applied, muted.Status);
+        Assert.Equal(ControlOperationStatus.Applied, unmuted.Status);
+        Assert.Equal([true, false], context.Device.PlaybackMuteIndicatorStates);
+    }
+
+    [Fact]
     public async Task VerifiedReadFailure_PreservesOwnedReactiveInput()
     {
         DeviceCapabilities capabilities = DeviceCapabilities.Unavailable() with
@@ -5340,6 +5372,8 @@ public sealed class ServiceControlRuntimeTests : IDisposable
 
         public int AmbientFrameCalls { get; private set; }
 
+        public List<bool> PlaybackMuteIndicatorStates { get; } = [];
+
         public LightingRendererOwnershipState LightingRendererOwnership { get; set; }
         public LightingRendererOwnershipState? LightingOwnershipAfterSet { get; set; }
 
@@ -5761,6 +5795,16 @@ public sealed class ServiceControlRuntimeTests : IDisposable
                 LightingRendererOwnershipState.AmbientAwareness
                     ? Task.CompletedTask
                     : Task.FromException(new IOException("Renderer is not active."));
+        }
+
+        public Task SetPlaybackMuteIndicatorAsync(
+            bool muted,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            TotalCalls++;
+            PlaybackMuteIndicatorStates.Add(muted);
+            return Task.CompletedTask;
         }
     }
 }

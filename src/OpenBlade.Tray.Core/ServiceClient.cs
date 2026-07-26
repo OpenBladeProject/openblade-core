@@ -282,6 +282,15 @@ public sealed class ServiceClient : IServiceClient, IAsyncDisposable
         }
     }
 
+    public Task<ControlOperationResult> SetPlaybackMuteIndicatorAsync(
+        bool muted,
+        CancellationToken token) => SendMutationAsync(
+            new SetPlaybackMuteIndicatorRequest(
+                OpenBladeIpc.ProtocolVersion,
+                Guid.NewGuid(),
+                muted),
+            token);
+
     public Task<ControlOperationResult> SetBatteryPolicyAsync(
         BatteryPolicy value,
         CancellationToken token) => SendMutationAsync(

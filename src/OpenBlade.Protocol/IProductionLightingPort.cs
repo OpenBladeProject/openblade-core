@@ -76,6 +76,13 @@ public interface IProductionLightingPort : IAsyncDisposable
                 WriteSubmissionState.KnownNotApplied,
                 "Ambient Awareness input is unavailable."));
 
+    Task SetPlaybackMuteIndicatorAsync(
+        bool muted,
+        CancellationToken cancellationToken) => Task.FromException(
+            new BladeWriteException(
+                WriteSubmissionState.KnownNotApplied,
+                "Playback mute indication is unavailable."));
+
     /// <summary>
     /// Stops and disposes the live renderer, returning its final ownership state
     /// after the render stream has settled and before ownership is relinquished.

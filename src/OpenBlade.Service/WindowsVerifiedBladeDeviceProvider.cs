@@ -217,6 +217,7 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
         private bool closing;
         private bool disposed;
         private IProductionLightingPort? lightingPort;
+        private int playbackMuteState = -1;
 
         internal bool HasOwnedKeyTriggeredRenderer
         {
@@ -1052,6 +1053,15 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
                     : RejectProductionWrite("Ambient Awareness input is not admitted.");
         }
 
+        public Task SetPlaybackMuteIndicatorAsync(
+            bool muted,
+            CancellationToken cancellationToken) =>
+            lightingFactory.Capabilities.LightingEffects.Count > 0
+                ? ExecuteProductionPlaybackMuteIndicatorAsync(
+                    muted,
+                    cancellationToken)
+                : RejectProductionWrite("Playback mute indication is not admitted.");
+
         public async Task<LightingRendererOwnershipState>
             ReadLightingRendererOwnershipAsync(CancellationToken cancellationToken)
         {
@@ -1549,6 +1559,72 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
             }
         }
 
+        private async Task ExecuteProductionPlaybackMuteIndicatorAsync(
+            bool muted,
+            CancellationToken cancellationToken)
+        {
+            Volatile.Write(ref playbackMuteState, muted ? 1 : 0);
+            IProductionLightingPort? port = null;
+            try
+            {
+                await EnterHardwareOperationAsync(cancellationToken).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                throw new BladeWriteException(
+                    WriteSubmissionState.KnownNotApplied,
+                    "Playback mute indication was canceled before a verified session opened.");
+            }
+            catch (ObjectDisposedException exception)
+            {
+                throw new BladeWriteException(
+                    WriteSubmissionState.KnownNotApplied,
+                    "Playback mute indication was blocked because the device provider is closing.",
+                    exception);
+            }
+
+            try
+            {
+                port = await GetLightingPortCoreAsync(cancellationToken).ConfigureAwait(false);
+                if (port is null || port.Capabilities.LightingEffects.Count == 0)
+                {
+                    throw new BladeWriteException(
+                        WriteSubmissionState.KnownNotApplied,
+                        "The lighting writer could not open an exact-device session.");
+                }
+
+                await port.SetPlaybackMuteIndicatorAsync(muted, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+            catch (BladeWriteException exception)
+            {
+                if (exception.SubmissionState == WriteSubmissionState.Indeterminate)
+                {
+                    await ResetLightingPortCoreAsync(port).ConfigureAwait(false);
+                }
+
+                throw;
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw new BladeWriteException(
+                    WriteSubmissionState.Indeterminate,
+                    "Playback mute indication was canceled after a verified session opened.");
+            }
+            catch (Exception exception)
+            {
+                await ResetLightingPortCoreAsync(port).ConfigureAwait(false);
+                throw new BladeWriteException(
+                    WriteSubmissionState.Indeterminate,
+                    "The playback mute indicator outcome is indeterminate.",
+                    exception);
+            }
+            finally
+            {
+                hardwareOperationGate.Release();
+            }
+        }
+
         private async Task<IProductionLightingPort?> GetLightingPortCoreAsync(
             CancellationToken cancellationToken)
         {
@@ -1581,6 +1657,22 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
                 }
 
                 return null;
+            }
+
+            int muted = Volatile.Read(ref playbackMuteState);
+            if (muted >= 0)
+            {
+                try
+                {
+                    await port.SetPlaybackMuteIndicatorAsync(
+                        muted != 0,
+                        cancellationToken).ConfigureAwait(false);
+                }
+                catch
+                {
+                    await port.DisposeAsync().ConfigureAwait(false);
+                    throw;
+                }
             }
 
             lightingPort = port;

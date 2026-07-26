@@ -756,6 +756,31 @@ public sealed class WindowsVerifiedBladeDeviceProviderTests
     }
 
     [Fact]
+    public async Task PlaybackMuteIndicator_IsReappliedWhenLightingPortReopens()
+    {
+        var first = new FakeLightingPort();
+        var second = new FakeLightingPort();
+        using var provider = new WindowsVerifiedBladeDeviceProvider(
+            () => Probe(BatteryValidationProbeClassification.Ready),
+            Adapt(new FakeQueryFactory()),
+            UnavailableFanRpmFactory(),
+            new FakeLightingFactory(first, second));
+        Assert.True(provider.TryGetVerifiedDevice(out IBladeDevice device));
+
+        await device.SetPlaybackMuteIndicatorAsync(true, default);
+        await device.SetLightingAsync(
+            LightingSettingsFactory.Static(new RgbColor(0, 0xFF, 0), 100),
+            default);
+        await provider.InvalidateLightingRendererAsync(default);
+        await device.SetLightingAsync(
+            LightingSettingsFactory.Static(new RgbColor(0, 0, 0xFF), 100),
+            default);
+
+        Assert.Contains(true, first.PlaybackMuteIndicatorStates);
+        Assert.Equal([true], second.PlaybackMuteIndicatorStates);
+    }
+
+    [Fact]
     public async Task ReleaseDriverMode_ReusesTheSerializedLightingPort()
     {
         var lightingPort = new FakeLightingPort();
@@ -1176,6 +1201,8 @@ public sealed class WindowsVerifiedBladeDeviceProviderTests
 
         public List<AmbientLightingFrame> AmbientFrames { get; } = [];
 
+        public List<bool> PlaybackMuteIndicatorStates { get; } = [];
+
         public int DisposeCount { get; private set; }
 
         public int DriverModeEnsureCount { get; private set; }
@@ -1241,6 +1268,14 @@ public sealed class WindowsVerifiedBladeDeviceProviderTests
             CancellationToken cancellationToken)
         {
             AmbientFrames.Add(frame);
+            return Task.CompletedTask;
+        }
+
+        public Task SetPlaybackMuteIndicatorAsync(
+            bool muted,
+            CancellationToken cancellationToken)
+        {
+            PlaybackMuteIndicatorStates.Add(muted);
             return Task.CompletedTask;
         }
 

@@ -720,6 +720,48 @@ public sealed class ProductionLightingPortTests
     }
 
     [Fact]
+    public async Task PlaybackMuteIndicator_OverlaysF1RedAndRestoresTheCurrentEffect()
+    {
+        var session = new LightingSession(initialBrightness: 0xFF);
+        var writer = new MatrixWriter();
+        await using var port = CreatePort(session, writer, admitted: true);
+        var baseColor = new RgbColor(0x12, 0x34, 0x56);
+        await port.SetLightingAsync(
+            LightingSettingsFactory.Static(baseColor, 100),
+            default);
+
+        await port.SetPlaybackMuteIndicatorAsync(muted: true, default);
+
+        Assert.Equal(2, writer.Reports.Count);
+        Assert.Equal(new MatrixRgb(0xFF, 0x00, 0x00), writer.Reports[^1].Frame[2]);
+        Assert.Equal(new MatrixRgb(0x12, 0x34, 0x56), writer.Reports[^1].Frame[3]);
+
+        await port.SetPlaybackMuteIndicatorAsync(muted: false, default);
+
+        Assert.Equal(3, writer.Reports.Count);
+        Assert.Equal(new MatrixRgb(0x12, 0x34, 0x56), writer.Reports[^1].Frame[2]);
+    }
+
+    [Fact]
+    public async Task PlaybackMuteIndicator_SetBeforeLightingAppliesToInitialFrame()
+    {
+        var session = new LightingSession(initialBrightness: 0);
+        var writer = new MatrixWriter();
+        await using var port = CreatePort(session, writer, admitted: true);
+
+        await port.SetPlaybackMuteIndicatorAsync(muted: true, default);
+        Assert.Empty(writer.Reports);
+
+        await port.SetLightingAsync(
+            LightingSettingsFactory.Static(new RgbColor(0, 0xFF, 0), 100),
+            default);
+
+        Assert.Single(writer.Reports);
+        Assert.Equal(new MatrixRgb(0xFF, 0x00, 0x00), writer.Reports[0].Frame[2]);
+        Assert.Equal(new MatrixRgb(0, 0xFF, 0), writer.Reports[0].Frame[3]);
+    }
+
+    [Fact]
     public async Task ReactivePulse_WritesTheRequestedSlotWhenLiveRendererIsReactive()
     {
         var session = new LightingSession(initialBrightness: 0xFF);

@@ -7,7 +7,7 @@ namespace OpenBlade.Contracts;
 
 public static class OpenBladeIpc
 {
-    public const int ProtocolVersion = 22;
+    public const int ProtocolVersion = 23;
     public const int MaximumMessageBytes = 64 * 1024;
     public const int MaximumDiagnosticArchiveBytes = 32 * 1024;
     public const string PipeName = "OpenBlade.Service.v2";
@@ -173,6 +173,7 @@ public static class IpcMessageCodec
                 pulse.Pulse.MatrixSlot <= ReactiveKeyPulse.MaximumMatrixSlot,
             PushAmbientLightingFrameRequest ambient => ambient.RgbBytes is not null
                 && AmbientLightingFrame.IsWellFormedRgbBytes(ambient.RgbBytes),
+            SetPlaybackMuteIndicatorRequest => true,
             SetBatteryPolicyRequest set => set.Value is not null,
             SetBatteryProtectionRequest => true,
             SetFullChargeOverrideRequest => true,

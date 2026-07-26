@@ -7,6 +7,10 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Added
 
+- Added a Synapse-style playback mute indicator for the RZ09-0581 keyboard.
+  While Windows audio is muted, OpenBlade keeps the F1 mute key red without
+  replacing the selected lighting effect. Core Audio notifications update the
+  indicator without continuous polling.
 - Added an automated MCU firmware smoke-test workflow. It captures a read-only
   baseline and diagnostic archive, compares firmware, capabilities, readbacks,
   telemetry, and installed components after the update, and offers an

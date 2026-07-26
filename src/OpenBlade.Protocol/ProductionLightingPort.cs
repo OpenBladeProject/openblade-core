@@ -7,6 +7,8 @@ internal sealed class ProductionLightingPort : IProductionLightingPort
     private const byte KeyboardBrightnessRawStep = 0x10;
     private const int MaximumPendingKeyTriggeredPulses = 1024;
     private const int PendingKeyTriggeredPulseTrimTarget = 256;
+    private const int PlaybackMuteKeyMatrixSlot = 2;
+    private static readonly MatrixRgb PlaybackMuteIndicatorColor = new(0xFF, 0x00, 0x00);
     private static readonly TimeSpan MaximumKeyPulsePreAge =
         TimeSpan.FromMilliseconds(75);
     private static readonly IReadOnlySet<LightingEffect> AdmittedEffects =
@@ -33,6 +35,7 @@ internal sealed class ProductionLightingPort : IProductionLightingPort
     private int nextCommandTransaction = 1;
     private int nextMatrixTransaction = 1;
     private int ownershipState;
+    private bool playbackMuted;
     private bool ownsDriverMode;
     private bool closing;
     private bool disposed;
@@ -430,6 +433,57 @@ internal sealed class ProductionLightingPort : IProductionLightingPort
             try
             {
                 await WriteMatrixCoreAsync(matrixFrame, cancellationToken).ConfigureAwait(false);
+            }
+            catch
+            {
+                lock (effectSync)
+                {
+                    activeEffect = null;
+                    activeKeyTriggeredEffect = null;
+                    pendingKeyTriggeredPulses.Clear();
+                    lastDeliveredState = null;
+                }
+                SetOwnership(LightingRendererOwnershipState.Faulted);
+                throw;
+            }
+        }
+        finally
+        {
+            operationGate.Release();
+        }
+    }
+
+    public async Task SetPlaybackMuteIndicatorAsync(
+        bool muted,
+        CancellationToken cancellationToken)
+    {
+        await EnterWriteAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            Pid02E0MatrixFrame? frame = null;
+            lock (effectSync)
+            {
+                if (playbackMuted == muted)
+                {
+                    return;
+                }
+
+                playbackMuted = muted;
+                if (activeEffect is { } effect)
+                {
+                    frame = effect.RenderFrame(
+                        timeProvider.GetElapsedTime(effectStartedTimestamp));
+                }
+            }
+
+            if (frame is null)
+            {
+                return;
+            }
+
+            try
+            {
+                await WriteMatrixCoreAsync(frame, cancellationToken).ConfigureAwait(false);
             }
             catch
             {
@@ -907,6 +961,16 @@ internal sealed class ProductionLightingPort : IProductionLightingPort
         HidSessionResult<HidUnit> result;
         try
         {
+            lock (effectSync)
+            {
+                if (playbackMuted)
+                {
+                    frame = frame.WithSlot(
+                        PlaybackMuteKeyMatrixSlot,
+                        PlaybackMuteIndicatorColor);
+                }
+            }
+
             result = await matrixWriter.WriteAsync(
                 new Pid02E0MatrixReport(AllocateMatrixTransaction(), frame),
                 cancellationToken).ConfigureAwait(false);

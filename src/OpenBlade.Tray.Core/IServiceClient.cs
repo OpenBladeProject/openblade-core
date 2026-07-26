@@ -122,6 +122,13 @@ public interface IServiceClient : IServiceStatusWatcher
                 ControlOperationStatus.Blocked,
                 "Ambient Awareness input is unavailable."));
 
+    Task<ControlOperationResult> SetPlaybackMuteIndicatorAsync(
+        bool muted,
+        CancellationToken token) => Task.FromResult(
+            new ControlOperationResult(
+                ControlOperationStatus.Blocked,
+                "Playback mute indication is unavailable."));
+
     Task<ControlOperationResult> SetBatteryPolicyAsync(
         BatteryPolicy value,
         CancellationToken token);

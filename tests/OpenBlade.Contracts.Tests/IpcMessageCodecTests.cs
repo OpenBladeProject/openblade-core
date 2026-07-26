@@ -121,6 +121,10 @@ public sealed class IpcMessageCodecTests
             OpenBladeIpc.ProtocolVersion,
             Guid.NewGuid(),
             new ReactiveKeyPulse(77)),
+        new SetPlaybackMuteIndicatorRequest(
+            OpenBladeIpc.ProtocolVersion,
+            Guid.NewGuid(),
+            Muted: true),
         new SetBatteryPolicyRequest(
             OpenBladeIpc.ProtocolVersion,
             Guid.NewGuid(),
@@ -328,7 +332,7 @@ public sealed class IpcMessageCodecTests
             DesiredState = CreateStatus().DesiredState with { Battery = desired },
         };
 
-        Assert.Equal(22, OpenBladeIpc.ProtocolVersion);
+        Assert.Equal(23, OpenBladeIpc.ProtocolVersion);
         Assert.Equal(request, await RoundTripRequestAsync(request));
         ServiceStatusSnapshot roundTrip = await RoundTripStatusAsync(status);
         Assert.Equal([80], roundTrip.Capabilities!.ChargeLimits);
@@ -431,7 +435,7 @@ public sealed class IpcMessageCodecTests
 
         ServiceStatusSnapshot actual = await RoundTripStatusAsync(expected);
 
-        Assert.Equal(22, OpenBladeIpc.ProtocolVersion);
+        Assert.Equal(23, OpenBladeIpc.ProtocolVersion);
         AssertStatusEqual(expected, actual);
     }
 
@@ -785,7 +789,7 @@ public sealed class IpcMessageCodecTests
 
         // Deliberate tripwire: every future protocol bump must revisit the
         // explicitly incompatible v21/v22 deployment boundary.
-        Assert.Equal(22, OpenBladeIpc.ProtocolVersion);
+        Assert.Equal(23, OpenBladeIpc.ProtocolVersion);
         Assert.Equal("IPC protocol version is unsupported.", exception.Message);
     }
 
@@ -811,7 +815,7 @@ public sealed class IpcMessageCodecTests
             IpcMessageCodec.ReadServerFrameAsync(stream, CancellationToken.None));
 
         // Keep this symmetric with ReadRequestAsync_RejectsVersionTwentyOnePeer.
-        Assert.Equal(22, OpenBladeIpc.ProtocolVersion);
+        Assert.Equal(23, OpenBladeIpc.ProtocolVersion);
         Assert.Equal("IPC protocol version is unsupported.", exception.Message);
     }
 

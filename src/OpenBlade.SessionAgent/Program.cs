@@ -163,6 +163,14 @@ internal static class Program
                         exception.Message),
                     statusWatcher: statusFeed,
                     displayStateSource: new WindowsSessionDisplayStateSource());
+                await using var playbackMuteServiceClient = new ServiceClient();
+                var playbackMuteIndicator = new ServicePlaybackMuteIndicatorLoop(
+                    playbackMuteServiceClient,
+                    new WindowsPlaybackMuteStateSource(),
+                    exception => System.Diagnostics.Trace.TraceWarning(
+                        "OpenBlade playback mute indication failed: {0}",
+                        exception.Message),
+                    statusWatcher: statusFeed);
 
                 Task statusFeedTask = statusFeed.RunAsync(lifetime.Token);
                 Task specialKeyBindingsTask = specialKeyBindings.RunAsync(lifetime.Token);
@@ -171,6 +179,7 @@ internal static class Program
                 Task reactiveTask = reactive.RunAsync(lifetime.Token);
                 Task ambientTask = ambient.RunAsync(lifetime.Token);
                 Task lightingIdleTask = lightingIdlePolicy.RunAsync(lifetime.Token);
+                Task playbackMuteTask = playbackMuteIndicator.RunAsync(lifetime.Token);
                 Task completed = await Task.WhenAny(
                     serverTask,
                     statusFeedTask,
@@ -178,7 +187,8 @@ internal static class Program
                     automationTask,
                     reactiveTask,
                     ambientTask,
-                    lightingIdleTask).ConfigureAwait(false);
+                    lightingIdleTask,
+                    playbackMuteTask).ConfigureAwait(false);
                 Exception? terminalFailure = completed.IsFaulted
                     ? completed.Exception?.GetBaseException()
                     : null;
@@ -196,7 +206,8 @@ internal static class Program
                             automationTask,
                             reactiveTask,
                             ambientTask,
-                            lightingIdleTask)
+                            lightingIdleTask,
+                            playbackMuteTask)
                         .ConfigureAwait(false);
                 }
                 catch (OperationCanceledException) when (lifetime.IsCancellationRequested)

@@ -44,6 +44,18 @@ internal sealed class Pid02E0MatrixFrame
     internal MatrixRgb this[int index] => _slots[index];
 
     internal MatrixRgb[] ToArray() => (MatrixRgb[])_slots.Clone();
+
+    internal Pid02E0MatrixFrame WithSlot(int index, MatrixRgb color)
+    {
+        if ((uint)index >= SlotCount)
+        {
+            throw new ArgumentOutOfRangeException(nameof(index));
+        }
+
+        MatrixRgb[] slots = ToArray();
+        slots[index] = color;
+        return new Pid02E0MatrixFrame(slots);
+    }
 }
 
 /// <summary>

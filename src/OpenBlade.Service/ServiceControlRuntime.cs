@@ -103,6 +103,13 @@ public interface IServiceControlRuntime
                 ControlOperationStatus.Blocked,
                 "Ambient Awareness input is unavailable."));
 
+    Task<ControlOperationResult> SetPlaybackMuteIndicatorAsync(
+        bool muted,
+        CancellationToken token) => Task.FromResult(
+            new ControlOperationResult(
+                ControlOperationStatus.Blocked,
+                "Playback mute indication is unavailable."));
+
     Task<ControlOperationResult> ApplyOneShotLaptopControlAsync(
         ApplyOneShotLaptopControl value,
         CancellationToken token) => Task.FromResult(
@@ -1266,6 +1273,57 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             return new ControlOperationResult(
                 ControlOperationStatus.Failed,
                 "Ambient Awareness could not update the keyboard.");
+        }
+    }
+
+    public async Task<ControlOperationResult> SetPlaybackMuteIndicatorAsync(
+        bool muted,
+        CancellationToken token)
+    {
+        EnsureInitialized();
+        token.ThrowIfCancellationRequested();
+        ServiceStatusSnapshot current = GetStatus();
+        if (!current.DeviceVerified
+            || current.WritesBlocked
+            || current.ActivePowerSource == PowerSource.ExternalUnknown)
+        {
+            return new ControlOperationResult(
+                ControlOperationStatus.Blocked,
+                "Playback mute indication is blocked while laptop controls are unavailable.");
+        }
+
+        if (current.Capabilities?.LightingEffects.Count == 0)
+        {
+            return new ControlOperationResult(
+                ControlOperationStatus.Blocked,
+                "Playback mute indication is unavailable for this laptop.");
+        }
+
+        try
+        {
+            if (!deviceProvider.TryGetVerifiedDevice(out IBladeDevice device))
+            {
+                return new ControlOperationResult(
+                    ControlOperationStatus.Blocked,
+                    "Playback mute indication is unavailable for this laptop.");
+            }
+
+            await device.SetPlaybackMuteIndicatorAsync(muted, token).ConfigureAwait(false);
+            return new ControlOperationResult(
+                ControlOperationStatus.Applied,
+                muted
+                    ? "The playback mute indicator was enabled."
+                    : "The playback mute indicator was disabled.");
+        }
+        catch (OperationCanceledException) when (token.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch
+        {
+            return new ControlOperationResult(
+                ControlOperationStatus.Failed,
+                "The playback mute indicator could not be updated.");
         }
     }
 

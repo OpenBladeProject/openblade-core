@@ -47,6 +47,10 @@ public sealed class ControlRequestHandlerTests
                 Guid.NewGuid(),
                 new AmbientLightingFrame(
                     new RgbColor[AmbientLightingFrame.SlotCount]).ToRgbBytes()),
+            new SetPlaybackMuteIndicatorRequest(
+                OpenBladeIpc.ProtocolVersion,
+                Guid.NewGuid(),
+                Muted: true),
             new SetBatteryPolicyRequest(
                 OpenBladeIpc.ProtocolVersion,
                 Guid.NewGuid(),
@@ -74,7 +78,8 @@ public sealed class ControlRequestHandlerTests
             "CyclePerformanceShortcut", "SetFanOverride", "SetLightingOverride",
             "StepKeyboardBrightness",
             "SetExternalLightingOverridePolicy", "SetLightingSuppression",
-            "PulseReactiveKey", "PushAmbientLightingFrame", "SetBatteryPolicy",
+            "PulseReactiveKey", "PushAmbientLightingFrame",
+            "SetPlaybackMuteIndicator", "SetBatteryPolicy",
             "SetBatteryProtection", "SetFullChargeOverride", "ApplyOneShotLaptopControl",
             "ExportDiagnostics", "Shutdown",
         ];
@@ -308,6 +313,14 @@ public sealed class ControlRequestHandlerTests
         {
             Assert.True(frame.IsWellFormed());
             return Record("PushAmbientLightingFrame");
+        }
+
+        public Task<ControlOperationResult> SetPlaybackMuteIndicatorAsync(
+            bool muted,
+            CancellationToken token)
+        {
+            Assert.True(muted);
+            return Record("SetPlaybackMuteIndicator");
         }
 
         public Task<ControlOperationResult> SetBatteryPolicyAsync(BatteryPolicy value, CancellationToken token) =>

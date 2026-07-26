@@ -122,4 +122,11 @@ public interface IBladeDevice
             new BladeWriteException(
                 WriteSubmissionState.KnownNotApplied,
                 "Ambient Awareness input is unavailable."));
+
+    Task SetPlaybackMuteIndicatorAsync(
+        bool muted,
+        CancellationToken cancellationToken) => Task.FromException(
+            new BladeWriteException(
+                WriteSubmissionState.KnownNotApplied,
+                "Playback mute indication is unavailable."));
 }
