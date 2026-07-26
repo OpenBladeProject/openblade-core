@@ -1691,7 +1691,7 @@
             </NavigationView.FooterMenuItems>
 
             <Grid HorizontalAlignment="Stretch">
-                <ScrollView x:Name="HomePage"
+                <ScrollViewer x:Name="HomePage"
                             HorizontalContentAlignment="Stretch"
                             HorizontalScrollMode="Disabled"
                             HorizontalScrollBarVisibility="Hidden"
@@ -1920,9 +1920,9 @@
                                         ContentTemplate="{StaticResource DashboardBatteryCardTemplate}"
                                         HorizontalContentAlignment="Stretch" />
                     </StackPanel>
-                </ScrollView>
+                </ScrollViewer>
 
-                <ScrollView x:Name="ProfilesPage"
+                <ScrollViewer x:Name="ProfilesPage"
                             Visibility="Collapsed"
                             HorizontalContentAlignment="Stretch"
                             HorizontalScrollMode="Disabled"
@@ -2287,9 +2287,9 @@
                         </StackPanel>
                         </StackPanel>
                     </StackPanel>
-                </ScrollView>
+                </ScrollViewer>
 
-                <ScrollView x:Name="LaptopPage"
+                <ScrollViewer x:Name="LaptopPage"
                             Visibility="Collapsed"
                             HorizontalContentAlignment="Stretch"
                             HorizontalScrollMode="Disabled"
@@ -2444,9 +2444,9 @@
                         </StackPanel>
                         </StackPanel>
                     </StackPanel>
-                </ScrollView>
+                </ScrollViewer>
 
-                <ScrollView x:Name="LightingPage"
+                <ScrollViewer x:Name="LightingPage"
                             Visibility="Collapsed"
                             HorizontalContentAlignment="Stretch"
                             HorizontalScrollMode="Disabled"
@@ -2540,9 +2540,9 @@
                                         HorizontalContentAlignment="Stretch" />
                         </StackPanel>
                     </StackPanel>
-                </ScrollView>
+                </ScrollViewer>
 
-                <ScrollView x:Name="DisplayPage"
+                <ScrollViewer x:Name="DisplayPage"
                             Visibility="Collapsed"
                             HorizontalContentAlignment="Stretch"
                             HorizontalScrollMode="Disabled"
@@ -2634,9 +2634,9 @@
                                         HorizontalContentAlignment="Stretch" />
                         </StackPanel>
                     </StackPanel>
-                </ScrollView>
+                </ScrollViewer>
 
-                <ScrollView x:Name="SettingsPage"
+                <ScrollViewer x:Name="SettingsPage"
                             Visibility="Collapsed"
                             HorizontalContentAlignment="Stretch"
                             HorizontalScrollMode="Disabled"
@@ -3023,9 +3023,9 @@
                         </StackPanel>
 
                     </StackPanel>
-                </ScrollView>
+                </ScrollViewer>
 
-                <ScrollView x:Name="AboutPage"
+                <ScrollViewer x:Name="AboutPage"
                             Visibility="Collapsed"
                             HorizontalContentAlignment="Stretch"
                             HorizontalScrollMode="Disabled"
@@ -3417,7 +3417,7 @@
                         </StackPanel>
                         </StackPanel>
                     </StackPanel>
-                </ScrollView>
+                </ScrollViewer>
             </Grid>
         </NavigationView>
     </Grid>

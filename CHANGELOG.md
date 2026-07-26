@@ -202,6 +202,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Fixed page scrollbars remaining visible after scrolling instead of
+  auto-hiding.
 - Bounded service shutdown while a hardware operation or lighting-port cleanup
   is stalled. OpenBlade now rejects new operations immediately, retains native
   cleanup without force-closing an in-use HID handle, and lets service stop

@@ -194,7 +194,7 @@ public sealed class CapabilityPresentationTests
             < dashboardElements.IndexOf(chargeLimit));
 
         Assert.DoesNotContain(
-            NamedElement(document, "ScrollView", "HomePage")
+            NamedElement(document, "ScrollViewer", "HomePage")
                 .Descendants()
                 .Where(element => element.Name.LocalName == "Button"),
             button =>
@@ -218,7 +218,7 @@ public sealed class CapabilityPresentationTests
         Assert.Contains("x:Name=\"LaptopCardsHost\"", xaml, StringComparison.Ordinal);
         Assert.Contains("x:Name=\"LightingCardsHost\"", xaml, StringComparison.Ordinal);
         Assert.Contains("x:Name=\"DisplayCardsHost\"", xaml, StringComparison.Ordinal);
-        XElement home = NamedElement(document, "ScrollView", "HomePage");
+        XElement home = NamedElement(document, "ScrollViewer", "HomePage");
         XElement batteryTemplate = NamedTemplate(document, "DashboardBatteryCardTemplate");
         XElement fansTemplate = NamedTemplate(document, "DashboardFansCardTemplate");
         _ = Assert.Single(
@@ -253,7 +253,7 @@ public sealed class CapabilityPresentationTests
     }
 
     [Fact]
-    public void MainWindow_UsesInteractionTrackerScrollViewsWithEdgeAlignedPadding()
+    public void MainWindow_UsesAutoHidingScrollViewersWithEdgeAlignedPadding()
     {
         XDocument document = XDocument.Parse(ReadMainWindowXaml());
 
@@ -267,7 +267,7 @@ public sealed class CapabilityPresentationTests
                      "SettingsPage",
                  })
         {
-            XElement page = NamedElement(document, "ScrollView", pageName);
+            XElement page = NamedElement(document, "ScrollViewer", pageName);
             Assert.Null(Attribute(page.Parent!, "Padding"));
             Assert.Equal("Disabled", Attribute(page, "HorizontalScrollMode"));
             Assert.Equal("Hidden", Attribute(page, "HorizontalScrollBarVisibility"));
@@ -284,7 +284,7 @@ public sealed class CapabilityPresentationTests
     public void MainWindow_DisplayPageUsesSettingsRowsAndHdrGatesColorProfiles()
     {
         XDocument document = XDocument.Parse(ReadMainWindowXaml());
-        XElement display = NamedElement(document, "ScrollView", "DisplayPage");
+        XElement display = NamedElement(document, "ScrollViewer", "DisplayPage");
         XElement displayTemplate = NamedTemplate(document, "DashboardDisplayCardTemplate");
 
         Assert.Contains(document.Descendants(), element =>
@@ -324,8 +324,8 @@ public sealed class CapabilityPresentationTests
     {
         string xaml = ReadMainWindowXaml();
         XDocument document = XDocument.Parse(xaml);
-        XElement settings = NamedElement(document, "ScrollView", "SettingsPage");
-        XElement about = NamedElement(document, "ScrollView", "AboutPage");
+        XElement settings = NamedElement(document, "ScrollViewer", "SettingsPage");
+        XElement about = NamedElement(document, "ScrollViewer", "AboutPage");
 
         Assert.Equal(
             3,
@@ -604,8 +604,8 @@ public sealed class CapabilityPresentationTests
         Assert.DoesNotContain(troubleshooting.Descendants(), element =>
             element.Name.LocalName == "TextBlock"
             && Attribute(element, "Text") is "Versions" or "Laptop" or "Firmware");
-        XElement settingsPage = NamedElement(document, "ScrollView", "SettingsPage");
-        XElement aboutPage = NamedElement(document, "ScrollView", "AboutPage");
+        XElement settingsPage = NamedElement(document, "ScrollViewer", "SettingsPage");
+        XElement aboutPage = NamedElement(document, "ScrollViewer", "AboutPage");
         XElement aboutVersions = NamedElement(document, "StackPanel", "AboutVersionsSection");
         XElement aboutNavigation = NamedElement(document, "NavigationViewItem", "AboutNavigationItem");
         Assert.Equal("about", Attribute(aboutNavigation, "Tag"));
@@ -775,7 +775,7 @@ public sealed class CapabilityPresentationTests
             document,
             "NavigationViewItem",
             "LaptopNavigationItem");
-        XElement laptop = NamedElement(document, "ScrollView", "LaptopPage");
+        XElement laptop = NamedElement(document, "ScrollViewer", "LaptopPage");
         XElement keyboardTemplate = NamedTemplate(
             document,
             "DashboardKeyboardBehaviorCardTemplate");
@@ -786,7 +786,7 @@ public sealed class CapabilityPresentationTests
             .Descendants()
             .Concat(startupTemplate.Descendants())
             .ToArray();
-        XElement settings = NamedElement(document, "ScrollView", "SettingsPage");
+        XElement settings = NamedElement(document, "ScrollViewer", "SettingsPage");
 
         Assert.Equal("Laptop", Attribute(navigation, "Content"));
         Assert.Equal("laptop", Attribute(navigation, "Tag"));
@@ -1783,7 +1783,7 @@ public sealed class CapabilityPresentationTests
             document,
             "NavigationViewItem",
             "LightingNavigationItem");
-        XElement page = NamedElement(document, "ScrollView", "LightingPage");
+        XElement page = NamedElement(document, "ScrollViewer", "LightingPage");
         XElement lightingTemplate = NamedTemplate(document, "DashboardLightingCardTemplate");
         XElement effectPicker = NamedElement(document, "ComboBox", "LightingEffectPicker");
         XElement controls = NamedElement(document, "ContentControl", "LightingControls");
