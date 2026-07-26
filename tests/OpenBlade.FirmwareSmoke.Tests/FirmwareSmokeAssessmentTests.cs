@@ -218,12 +218,12 @@ public sealed class FirmwareSmokeAssessmentTests
 
     private static FirmwareSmokeCapabilities CopyCapabilities(
         FirmwareSmokeCapabilities value) => value with
-    {
-        PerformancePresets = value.PerformancePresets.ToArray(),
-        FanModes = value.FanModes.ToArray(),
-        LightingEffects = value.LightingEffects.ToArray(),
-        ChargeLimits = value.ChargeLimits.ToArray(),
-        LogoLightingModes = value.LogoLightingModes.ToArray(),
-        OneShotLaptopControls = value.OneShotLaptopControls.ToArray(),
-    };
+        {
+            PerformancePresets = value.PerformancePresets.ToArray(),
+            FanModes = value.FanModes.ToArray(),
+            LightingEffects = value.LightingEffects.ToArray(),
+            ChargeLimits = value.ChargeLimits.ToArray(),
+            LogoLightingModes = value.LogoLightingModes.ToArray(),
+            OneShotLaptopControls = value.OneShotLaptopControls.ToArray(),
+        };
 }

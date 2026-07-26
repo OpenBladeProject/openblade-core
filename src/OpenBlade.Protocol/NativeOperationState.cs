@@ -15,54 +15,54 @@ internal sealed class NativeOperationFinalizationException : Exception
 
 internal sealed class NativeUseLease : IDisposable
 {
-    private Action? _release;
+    private Action? releaseAction;
 
     internal NativeUseLease(Action release)
     {
-        _release = release;
+        releaseAction = release;
     }
 
     public void Dispose()
     {
-        Interlocked.Exchange(ref _release, null)?.Invoke();
+        Interlocked.Exchange(ref releaseAction, null)?.Invoke();
     }
 }
 
 internal sealed class NativeOperationState
 {
-    private readonly object _sync = new();
-    private readonly Action _finalizeResources;
-    private readonly TaskCompletionSource<HidFeatureIoResult> _completion =
+    private readonly object sync = new();
+    private readonly Action finalizeResourcesAction;
+    private readonly TaskCompletionSource<HidFeatureIoResult> completion =
         new(TaskCreationOptions.RunContinuationsAsynchronously);
 
-    private SubmissionState _submissionState = SubmissionState.Allocated;
-    private NativeIoCompletion? _nativeCompletion;
-    private HidFeatureTermination _termination = HidFeatureTermination.Completed;
-    private int _nativeUseLeaseCount;
-    private bool _completionObserved;
-    private bool _abandonedBeforeSubmission;
-    private bool _targetedCancellationClaimed;
+    private SubmissionState submissionState = SubmissionState.Allocated;
+    private NativeIoCompletion? nativeCompletion;
+    private HidFeatureTermination recordedTermination = HidFeatureTermination.Completed;
+    private int nativeUseLeaseCount;
+    private bool completionObserved;
+    private bool abandonedBeforeSubmission;
+    private bool targetedCancellationClaimed;
 
     public NativeOperationState(Action finalizeResources)
     {
         ArgumentNullException.ThrowIfNull(finalizeResources);
-        _finalizeResources = finalizeResources;
+        finalizeResourcesAction = finalizeResources;
     }
 
-    public Task<HidFeatureIoResult> Completion => _completion.Task;
+    public Task<HidFeatureIoResult> Completion => completion.Task;
 
     public bool TryBeginSubmission(out NativeUseLease lease)
     {
-        lock (_sync)
+        lock (sync)
         {
-            if (_submissionState != SubmissionState.Allocated)
+            if (submissionState != SubmissionState.Allocated)
             {
                 lease = null!;
                 return false;
             }
 
-            _submissionState = SubmissionState.Submitting;
-            _nativeUseLeaseCount++;
+            submissionState = SubmissionState.Submitting;
+            nativeUseLeaseCount++;
             lease = new NativeUseLease(ReleaseNativeUseLease);
             return true;
         }
@@ -71,14 +71,14 @@ internal sealed class NativeOperationState
     public void RecordSubmitted()
     {
         Finalization? finalization = null;
-        lock (_sync)
+        lock (sync)
         {
-            if (_submissionState != SubmissionState.Submitting || _abandonedBeforeSubmission)
+            if (submissionState != SubmissionState.Submitting || abandonedBeforeSubmission)
             {
                 return;
             }
 
-            _submissionState = SubmissionState.Submitted;
+            submissionState = SubmissionState.Submitted;
             finalization = TryBeginFinalizationLocked();
         }
 
@@ -89,14 +89,14 @@ internal sealed class NativeOperationState
     {
         ValidateCancellationTermination(termination);
         Finalization? finalization = null;
-        lock (_sync)
+        lock (sync)
         {
-            if (_submissionState is SubmissionState.Submitted or SubmissionState.Finalized)
+            if (submissionState is SubmissionState.Submitted or SubmissionState.Finalized)
             {
                 return;
             }
 
-            _abandonedBeforeSubmission = true;
+            abandonedBeforeSubmission = true;
             RecordCancellationIntentLocked(termination);
             finalization = TryBeginFinalizationLocked();
         }
@@ -107,18 +107,18 @@ internal sealed class NativeOperationState
     public void RecordImmediateFailure(NativeIoCompletion failure)
     {
         Finalization? finalization = null;
-        lock (_sync)
+        lock (sync)
         {
-            if (_submissionState != SubmissionState.Submitting || _abandonedBeforeSubmission)
+            if (submissionState != SubmissionState.Submitting || abandonedBeforeSubmission)
             {
                 return;
             }
 
-            _submissionState = SubmissionState.Submitted;
-            if (!_completionObserved)
+            submissionState = SubmissionState.Submitted;
+            if (!completionObserved)
             {
-                _nativeCompletion = failure;
-                _completionObserved = true;
+                nativeCompletion = failure;
+                completionObserved = true;
             }
 
             finalization = TryBeginFinalizationLocked();
@@ -130,7 +130,7 @@ internal sealed class NativeOperationState
     public void RecordCancellationIntent(HidFeatureTermination termination)
     {
         ValidateCancellationTermination(termination);
-        lock (_sync)
+        lock (sync)
         {
             RecordCancellationIntentLocked(termination);
         }
@@ -138,17 +138,17 @@ internal sealed class NativeOperationState
 
     public bool TryAcquireCancellationLease(out NativeUseLease lease)
     {
-        lock (_sync)
+        lock (sync)
         {
-            if (_submissionState != SubmissionState.Submitted ||
-                _completionObserved ||
-                _termination == HidFeatureTermination.Completed)
+            if (submissionState != SubmissionState.Submitted ||
+                completionObserved ||
+                recordedTermination == HidFeatureTermination.Completed)
             {
                 lease = null!;
                 return false;
             }
 
-            _nativeUseLeaseCount++;
+            nativeUseLeaseCount++;
             lease = new NativeUseLease(ReleaseNativeUseLease);
             return true;
         }
@@ -156,17 +156,17 @@ internal sealed class NativeOperationState
 
     public bool TryClaimTargetedCancellation()
     {
-        lock (_sync)
+        lock (sync)
         {
-            if (_submissionState != SubmissionState.Submitted ||
-                _completionObserved ||
-                _termination == HidFeatureTermination.Completed ||
-                _targetedCancellationClaimed)
+            if (submissionState != SubmissionState.Submitted ||
+                completionObserved ||
+                recordedTermination == HidFeatureTermination.Completed ||
+                targetedCancellationClaimed)
             {
                 return false;
             }
 
-            _targetedCancellationClaimed = true;
+            targetedCancellationClaimed = true;
             return true;
         }
     }
@@ -174,17 +174,17 @@ internal sealed class NativeOperationState
     public void PublishSubmittedCancellationWithoutNativeCompletion()
     {
         HidFeatureIoResult? result = null;
-        lock (_sync)
+        lock (sync)
         {
-            if (_submissionState == SubmissionState.Submitted
-                && !_completionObserved
-                && _termination != HidFeatureTermination.Completed
-                && !_completion.Task.IsCompleted)
+            if (submissionState == SubmissionState.Submitted
+                && !completionObserved
+                && recordedTermination != HidFeatureTermination.Completed
+                && !completion.Task.IsCompleted)
             {
                 result = new HidFeatureIoResult(
                     Completion: null,
                     WasSubmitted: true,
-                    Termination: _termination);
+                    Termination: recordedTermination);
             }
         }
 
@@ -193,22 +193,22 @@ internal sealed class NativeOperationState
             // The owning HID session treats this submitted cancellation as
             // indeterminate and poisons the handle. Native buffers remain pinned
             // until a late completion callback safely finalizes the operation.
-            _completion.TrySetResult(completed);
+            completion.TrySetResult(completed);
         }
     }
 
     public void RecordCompletion(NativeIoCompletion completion)
     {
         Finalization? finalization = null;
-        lock (_sync)
+        lock (sync)
         {
-            if (_submissionState == SubmissionState.Finalized || _completionObserved)
+            if (submissionState == SubmissionState.Finalized || completionObserved)
             {
                 return;
             }
 
-            _nativeCompletion = completion;
-            _completionObserved = true;
+            nativeCompletion = completion;
+            completionObserved = true;
             finalization = TryBeginFinalizationLocked();
         }
 
@@ -217,20 +217,20 @@ internal sealed class NativeOperationState
 
     private void RecordCancellationIntentLocked(HidFeatureTermination termination)
     {
-        if (_submissionState != SubmissionState.Finalized &&
-            (!_completionObserved || _submissionState == SubmissionState.Submitting) &&
-            _termination == HidFeatureTermination.Completed)
+        if (submissionState != SubmissionState.Finalized &&
+            (!completionObserved || submissionState == SubmissionState.Submitting) &&
+            recordedTermination == HidFeatureTermination.Completed)
         {
-            _termination = termination;
+            recordedTermination = termination;
         }
     }
 
     private void ReleaseNativeUseLease()
     {
         Finalization? finalization;
-        lock (_sync)
+        lock (sync)
         {
-            _nativeUseLeaseCount--;
+            nativeUseLeaseCount--;
             finalization = TryBeginFinalizationLocked();
         }
 
@@ -239,24 +239,24 @@ internal sealed class NativeOperationState
 
     private Finalization? TryBeginFinalizationLocked()
     {
-        if (_submissionState == SubmissionState.Finalized || _nativeUseLeaseCount != 0)
+        if (submissionState == SubmissionState.Finalized || nativeUseLeaseCount != 0)
         {
             return null;
         }
 
-        bool canFinalize = _abandonedBeforeSubmission ||
-            (_submissionState == SubmissionState.Submitted && _completionObserved);
+        bool canFinalize = abandonedBeforeSubmission ||
+            (submissionState == SubmissionState.Submitted && completionObserved);
         if (!canFinalize)
         {
             return null;
         }
 
-        bool wasSubmitted = !_abandonedBeforeSubmission;
+        bool wasSubmitted = !abandonedBeforeSubmission;
         var result = new HidFeatureIoResult(
-            _nativeCompletion,
+            nativeCompletion,
             wasSubmitted,
-            _termination);
-        _submissionState = SubmissionState.Finalized;
+            recordedTermination);
+        submissionState = SubmissionState.Finalized;
         return new Finalization(result);
     }
 
@@ -269,12 +269,12 @@ internal sealed class NativeOperationState
 
         try
         {
-            _finalizeResources();
-            _completion.TrySetResult(finalization.Value.Result);
+            finalizeResourcesAction();
+            completion.TrySetResult(finalization.Value.Result);
         }
         catch (Exception exception)
         {
-            _completion.TrySetException(
+            completion.TrySetException(
                 new NativeOperationFinalizationException(
                     finalization.Value.Result,
                     exception));

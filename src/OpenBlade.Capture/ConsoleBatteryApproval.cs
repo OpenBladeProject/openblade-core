@@ -4,21 +4,21 @@ namespace OpenBlade.Capture;
 
 public sealed class ConsoleBatteryApproval(TextReader input, TextWriter output) : IInteractiveApproval
 {
-    private readonly TextReader _input = input ?? throw new ArgumentNullException(nameof(input));
-    private readonly TextWriter _output = output ?? throw new ArgumentNullException(nameof(output));
+    private readonly TextReader inputReader = input ?? throw new ArgumentNullException(nameof(input));
+    private readonly TextWriter outputWriter = output ?? throw new ArgumentNullException(nameof(output));
 
     public async Task<bool> ConfirmAsync(
         BatteryValidationSetting prior,
         BatteryValidationSetting candidate,
         CancellationToken cancellationToken)
     {
-        await _output.WriteLineAsync($"Prior: {prior}").ConfigureAwait(false);
-        await _output.WriteLineAsync($"Candidate: {candidate}").ConfigureAwait(false);
-        await _output.WriteLineAsync(
+        await outputWriter.WriteLineAsync($"Prior: {prior}").ConfigureAwait(false);
+        await outputWriter.WriteLineAsync($"Candidate: {candidate}").ConfigureAwait(false);
+        await outputWriter.WriteLineAsync(
             "Type YES to apply the candidate once, read it back, and restore the prior value:")
             .ConfigureAwait(false);
 
-        string? response = await _input.ReadLineAsync(cancellationToken).ConfigureAwait(false);
+        string? response = await inputReader.ReadLineAsync(cancellationToken).ConfigureAwait(false);
         return string.Equals(response, "YES", StringComparison.Ordinal);
     }
 }

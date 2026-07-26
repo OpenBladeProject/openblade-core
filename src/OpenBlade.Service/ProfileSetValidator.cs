@@ -58,7 +58,7 @@ public sealed class ProfileValidationPolicy
 public sealed class ProfileSetValidator(ProfileValidationPolicy policy)
 {
     private static readonly RgbColor NeutralColor = new(0, 0, 0);
-    private readonly ProfileValidationPolicy _policy =
+    private readonly ProfileValidationPolicy validationPolicy =
         policy ?? throw new ArgumentNullException(nameof(policy));
 
     public static ProfileSetValidator CreateUnverifiedSafeDefaults() =>
@@ -104,7 +104,7 @@ public sealed class ProfileSetValidator(ProfileValidationPolicy policy)
             throw Invalid("The fan mode is undefined.");
         }
 
-        if (!_policy.SupportedPerformanceFanCombinations.Contains(
+        if (!validationPolicy.SupportedPerformanceFanCombinations.Contains(
                 new PerformanceFanCombination(performance, fans)))
         {
             throw Invalid(
@@ -216,7 +216,7 @@ public sealed class ProfileSetValidator(ProfileValidationPolicy policy)
             throw Invalid($"The {name} lighting effect is undefined.");
         }
 
-        if (!_policy.SupportedLightingEffects.Contains(lighting.Effect))
+        if (!validationPolicy.SupportedLightingEffects.Contains(lighting.Effect))
         {
             throw Invalid($"The {name} lighting effect is not supported by the active validation policy.");
         }

@@ -15,13 +15,13 @@ public sealed class WindowsDisplaySettingsController : IDisplaySettingsControlle
         "AdobeRGB_CTR.icm",
     ];
 
-    private readonly SemaphoreSlim _operationGate = new(1, 1);
-    private bool _disposed;
+    private readonly SemaphoreSlim operationGate = new(1, 1);
+    private bool disposed;
 
     public async Task<DisplaySettingsSnapshot> QueryAsync(CancellationToken cancellationToken = default)
     {
-        ObjectDisposedException.ThrowIf(_disposed, this);
-        await _operationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        ObjectDisposedException.ThrowIf(disposed, this);
+        await operationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
             return await RunNativeAsync(
@@ -34,7 +34,7 @@ public sealed class WindowsDisplaySettingsController : IDisplaySettingsControlle
         }
         finally
         {
-            _operationGate.Release();
+            operationGate.Release();
         }
     }
 
@@ -43,8 +43,8 @@ public sealed class WindowsDisplaySettingsController : IDisplaySettingsControlle
         CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(key);
-        ObjectDisposedException.ThrowIf(_disposed, this);
-        await _operationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        ObjectDisposedException.ThrowIf(disposed, this);
+        await operationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
             return await RunNativeAsync(() =>
@@ -91,7 +91,7 @@ public sealed class WindowsDisplaySettingsController : IDisplaySettingsControlle
         }
         finally
         {
-            _operationGate.Release();
+            operationGate.Release();
         }
     }
 
@@ -99,8 +99,8 @@ public sealed class WindowsDisplaySettingsController : IDisplaySettingsControlle
         bool enabled,
         CancellationToken cancellationToken = default)
     {
-        ObjectDisposedException.ThrowIf(_disposed, this);
-        await _operationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        ObjectDisposedException.ThrowIf(disposed, this);
+        await operationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
             return await RunNativeAsync(() =>
@@ -151,7 +151,7 @@ public sealed class WindowsDisplaySettingsController : IDisplaySettingsControlle
         }
         finally
         {
-            _operationGate.Release();
+            operationGate.Release();
         }
     }
 
@@ -160,8 +160,8 @@ public sealed class WindowsDisplaySettingsController : IDisplaySettingsControlle
         CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(id);
-        ObjectDisposedException.ThrowIf(_disposed, this);
-        await _operationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        ObjectDisposedException.ThrowIf(disposed, this);
+        await operationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
             return await RunNativeAsync(() =>
@@ -218,19 +218,19 @@ public sealed class WindowsDisplaySettingsController : IDisplaySettingsControlle
         }
         finally
         {
-            _operationGate.Release();
+            operationGate.Release();
         }
     }
 
     public void Dispose()
     {
-        if (_disposed)
+        if (disposed)
         {
             return;
         }
 
-        _disposed = true;
-        _operationGate.Dispose();
+        disposed = true;
+        operationGate.Dispose();
     }
 
     internal static Task<T> RunNativeAsync<T>(

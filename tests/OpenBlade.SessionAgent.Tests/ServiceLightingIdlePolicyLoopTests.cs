@@ -355,7 +355,7 @@ public sealed class ServiceLightingIdlePolicyLoopTests
         private int deliveryCount;
 
         public ConcurrentQueue<(LightingSuppressionReason Reason, bool Suppressed)> Requests
-            { get; } = new();
+        { get; } = new();
 
         public TaskCompletionSource Delivered { get; } = new(
             TaskCreationOptions.RunContinuationsAsynchronously);

@@ -1,5 +1,5 @@
-using System.Security.Principal;
 using System.Runtime.ExceptionServices;
+using System.Security.Principal;
 using OpenBlade.Contracts;
 using OpenBlade.Display;
 using OpenBlade.Session;

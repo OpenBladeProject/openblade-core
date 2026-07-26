@@ -6,11 +6,11 @@ internal sealed class TrustedFixtureHashRegistry
     [
         "12D41086349900514F2D8CB87073A90FD751CB1DF964A1D8D0B8C320B7F0FABC",
     ];
-    private readonly HashSet<string> _sha256Hashes;
+    private readonly HashSet<string> trustedSha256Hashes;
 
     private TrustedFixtureHashRegistry(IEnumerable<string> sha256Hashes)
     {
-        _sha256Hashes = new HashSet<string>(sha256Hashes, StringComparer.OrdinalIgnoreCase);
+        trustedSha256Hashes = new HashSet<string>(sha256Hashes, StringComparer.OrdinalIgnoreCase);
     }
 
     public static TrustedFixtureHashRegistry Production { get; } =
@@ -31,5 +31,5 @@ internal sealed class TrustedFixtureHashRegistry
     }
 
     public bool Contains(ReadOnlySpan<byte> sha256) =>
-        _sha256Hashes.Contains(Convert.ToHexString(sha256));
+        trustedSha256Hashes.Contains(Convert.ToHexString(sha256));
 }

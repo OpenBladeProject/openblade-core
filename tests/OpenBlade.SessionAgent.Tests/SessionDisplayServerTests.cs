@@ -1,8 +1,8 @@
+using System.Security.Principal;
 using OpenBlade.Contracts;
 using OpenBlade.Display;
 using OpenBlade.Session;
 using OpenBlade.SessionAgent;
-using System.Security.Principal;
 
 namespace OpenBlade.SessionAgent.Tests;
 

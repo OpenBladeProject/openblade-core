@@ -5788,18 +5788,18 @@ public sealed class ServiceControlRuntimeTests : IDisposable
                 StartupAnimationEnabled = enabled;
             }
             else if (value is
-                {
-                    Control: OneShotLaptopControl.FunctionKeyPrimary,
-                    FunctionKeyMode: { } functionKeyMode,
-                })
+            {
+                Control: OneShotLaptopControl.FunctionKeyPrimary,
+                FunctionKeyMode: { } functionKeyMode,
+            })
             {
                 FunctionKeyPrimary = functionKeyMode;
             }
             else if (value is
-                {
-                    Control: OneShotLaptopControl.GamingMode,
-                    Enabled: { } gamingModeEnabled,
-                })
+            {
+                Control: OneShotLaptopControl.GamingMode,
+                Enabled: { } gamingModeEnabled,
+            })
             {
                 GamingModeEnabled = gamingModeEnabled;
             }

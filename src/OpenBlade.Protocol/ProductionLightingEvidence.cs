@@ -431,9 +431,9 @@ internal static class ProductionLightingEvidenceSource
         && baseline.Settings == LightingSettingsFactory.Static(
             new RgbColor(0, byte.MaxValue, 0),
             baseline.Settings.Brightness) with
-            {
-                LogoMode = LogoLightingMode.Static,
-            }
+        {
+            LogoMode = LogoLightingMode.Static,
+        }
         && baseline.Settings.Brightness is > 0 and <= 100
         && baseline.ExpectedBrightnessRaw
             == LightingBrightnessProtocol.PercentToRaw(baseline.Settings.Brightness)
@@ -603,9 +603,9 @@ internal static class ProductionLightingEvidenceSource
             "logoOff" => action.Settings == LightingSettingsFactory.Static(
                 new RgbColor(0, byte.MaxValue, 0),
                 brightness) with
-                {
-                    LogoMode = LogoLightingMode.Off,
-                },
+            {
+                LogoMode = LogoLightingMode.Off,
+            },
             "logoStaticRestore" => action.Settings ==
                 LightingSettingsFactory.Static(
                     new RgbColor(0, byte.MaxValue, 0),

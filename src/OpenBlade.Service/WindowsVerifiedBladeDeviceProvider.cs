@@ -303,10 +303,10 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
                 return lighting is null
                     ? batteryCapabilities
                     : batteryCapabilities with
-                {
-                    LightingEffects = lighting.Capabilities.LightingEffects,
-                    LogoLightingModes = lighting.Capabilities.LogoLightingModes,
-                };
+                    {
+                        LightingEffects = lighting.Capabilities.LightingEffects,
+                        LogoLightingModes = lighting.Capabilities.LogoLightingModes,
+                    };
             }
             finally
             {

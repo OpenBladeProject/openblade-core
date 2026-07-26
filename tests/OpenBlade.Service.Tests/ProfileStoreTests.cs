@@ -1,12 +1,12 @@
+using System.Text.Json;
 using OpenBlade.Contracts;
 using OpenBlade.Service;
-using System.Text.Json;
 
 namespace OpenBlade.Service.Tests;
 
 public sealed class ProfileStoreTests : IDisposable
 {
-    private readonly string _directory = Path.Combine(
+    private readonly string storeDirectory = Path.Combine(
         Path.GetTempPath(),
         "OpenBlade.Tests",
         Guid.NewGuid().ToString("N"));
@@ -14,7 +14,7 @@ public sealed class ProfileStoreTests : IDisposable
     [Fact]
     public async Task SaveThenLoad_RoundTripsProfiles()
     {
-        string path = Path.Combine(_directory, "profiles.json");
+        string path = Path.Combine(storeDirectory, "profiles.json");
         ProfileStore store = new(path);
         ProfileSet defaults = ProfileDefaults.CreateSafeDefaults();
         ProfileSet expected = defaults with
@@ -51,8 +51,8 @@ public sealed class ProfileStoreTests : IDisposable
     [Fact]
     public async Task Load_PreviousSchemaDoesNotInventGpuClockOffsets()
     {
-        Directory.CreateDirectory(_directory);
-        string path = Path.Combine(_directory, "profiles.json");
+        Directory.CreateDirectory(storeDirectory);
+        string path = Path.Combine(storeDirectory, "profiles.json");
         ProfileSet defaults = ProfileDefaults.CreateSafeDefaults();
         await File.WriteAllBytesAsync(
             path,
@@ -78,8 +78,8 @@ public sealed class ProfileStoreTests : IDisposable
     [Fact]
     public async Task Load_CorruptJsonReturnsSafeDefaultsAndReportsRecovery()
     {
-        Directory.CreateDirectory(_directory);
-        string path = Path.Combine(_directory, "profiles.json");
+        Directory.CreateDirectory(storeDirectory);
+        string path = Path.Combine(storeDirectory, "profiles.json");
         await File.WriteAllTextAsync(path, "{not-json", CancellationToken.None);
         ProfileStore store = new(path);
 
@@ -96,8 +96,8 @@ public sealed class ProfileStoreTests : IDisposable
     [Fact]
     public async Task Load_SemanticallyInvalidJsonAtomicallyRecoversSafeDefaults()
     {
-        Directory.CreateDirectory(_directory);
-        string path = Path.Combine(_directory, "profiles.json");
+        Directory.CreateDirectory(storeDirectory);
+        string path = Path.Combine(storeDirectory, "profiles.json");
         string json = """
             {
               "pluggedIn": {
@@ -129,7 +129,7 @@ public sealed class ProfileStoreTests : IDisposable
     [Fact]
     public async Task Save_InvalidProfilesThrowsBeforeReplacingExistingFile()
     {
-        string path = Path.Combine(_directory, "profiles.json");
+        string path = Path.Combine(storeDirectory, "profiles.json");
         ProfileStore store = new(path);
         ProfileSet valid = ProfileDefaults.CreateSafeDefaults();
         await store.SaveAsync(valid, CancellationToken.None);
@@ -148,7 +148,7 @@ public sealed class ProfileStoreTests : IDisposable
     [Fact]
     public async Task Load_CaseVariantSchemaMemberRecoversInsteadOfBindingLoosely()
     {
-        string path = Path.Combine(_directory, "profiles.json");
+        string path = Path.Combine(storeDirectory, "profiles.json");
         ProfileStore store = new(path);
         await store.SaveAsync(ProfileDefaults.CreateSafeDefaults(), CancellationToken.None);
         string json = (await File.ReadAllTextAsync(path))
@@ -164,8 +164,8 @@ public sealed class ProfileStoreTests : IDisposable
     [Fact]
     public async Task Load_CurrentSchemaLegacyOffNormalizesAndRewritesTypedParameters()
     {
-        Directory.CreateDirectory(_directory);
-        string path = Path.Combine(_directory, "profiles.json");
+        Directory.CreateDirectory(storeDirectory);
+        string path = Path.Combine(storeDirectory, "profiles.json");
         LightingSettings legacyOff = new(LightingEffect.Off, default, Brightness: 0);
         ProfileSet defaults = ProfileDefaults.CreateSafeDefaults();
         ProfileSet legacy = defaults with
@@ -192,8 +192,8 @@ public sealed class ProfileStoreTests : IDisposable
     [Fact]
     public async Task Load_CurrentSchemaNonOffZeroBrightnessMigratesToVisibleSetting()
     {
-        Directory.CreateDirectory(_directory);
-        string path = Path.Combine(_directory, "profiles.json");
+        Directory.CreateDirectory(storeDirectory);
+        string path = Path.Combine(storeDirectory, "profiles.json");
         ProfileSet defaults = ProfileDefaults.CreateSafeDefaults();
         ProfileSet legacy = defaults with
         {
@@ -232,8 +232,8 @@ public sealed class ProfileStoreTests : IDisposable
     [Fact]
     public async Task Load_CurrentSchemaWithoutDisplaySettingsNormalizesAndRewritesProfiles()
     {
-        Directory.CreateDirectory(_directory);
-        string path = Path.Combine(_directory, "profiles.json");
+        Directory.CreateDirectory(storeDirectory);
+        string path = Path.Combine(storeDirectory, "profiles.json");
         ProfileSet defaults = ProfileDefaults.CreateSafeDefaults();
         ProfileSet legacy = defaults with
         {
@@ -259,8 +259,8 @@ public sealed class ProfileStoreTests : IDisposable
     [Fact]
     public async Task Load_SchemaFourGlobalLightingPolicyMigratesToEveryPowerProfile()
     {
-        Directory.CreateDirectory(_directory);
-        string path = Path.Combine(_directory, "profiles.json");
+        Directory.CreateDirectory(storeDirectory);
+        string path = Path.Combine(storeDirectory, "profiles.json");
         ProfileSet defaults = ProfileDefaults.CreateSafeDefaults();
         var policy = new LightingPowerPolicy(
             turnOffWhenDisplayTurnsOff: true,
@@ -294,8 +294,8 @@ public sealed class ProfileStoreTests : IDisposable
     [Fact]
     public async Task Load_SchemaOneAddsUsbCAndNormalizesMissingDisplaySettings()
     {
-        Directory.CreateDirectory(_directory);
-        string path = Path.Combine(_directory, "profiles.json");
+        Directory.CreateDirectory(storeDirectory);
+        string path = Path.Combine(storeDirectory, "profiles.json");
         ProfileSet defaults = ProfileDefaults.CreateSafeDefaults();
         var legacy = new LegacyProfileDocument(
             ProfileStore.LegacySchemaVersion,
@@ -328,9 +328,9 @@ public sealed class ProfileStoreTests : IDisposable
 
     public void Dispose()
     {
-        if (Directory.Exists(_directory))
+        if (Directory.Exists(storeDirectory))
         {
-            Directory.Delete(_directory, recursive: true);
+            Directory.Delete(storeDirectory, recursive: true);
         }
     }
 }

@@ -1032,16 +1032,16 @@ internal sealed class ProductionLightingPort : IProductionLightingPort
             StaticLightingParameters value => new Pid02E0StaticEffect(Color(value.Color)),
             SpectrumCyclingLightingParameters => new Pid02E0SpectrumEffect(),
             BreathingLightingParameters
-                {
-                    ColorMode: BreathingColorMode.Single,
-                    PrimaryColor: { } primary,
-                } => Pid02E0BreathingEffect.Single(Color(primary)),
+            {
+                ColorMode: BreathingColorMode.Single,
+                PrimaryColor: { } primary,
+            } => Pid02E0BreathingEffect.Single(Color(primary)),
             BreathingLightingParameters
-                {
-                    ColorMode: BreathingColorMode.Dual,
-                    PrimaryColor: { } primary,
-                    SecondaryColor: { } secondary,
-                } => Pid02E0BreathingEffect.Dual(Color(primary), Color(secondary)),
+            {
+                ColorMode: BreathingColorMode.Dual,
+                PrimaryColor: { } primary,
+                SecondaryColor: { } secondary,
+            } => Pid02E0BreathingEffect.Dual(Color(primary), Color(secondary)),
             BreathingLightingParameters { ColorMode: BreathingColorMode.Random } =>
                 Pid02E0BreathingEffect.Random(
                     new Pid02E0RandomPaletteColorSource()),
@@ -1056,10 +1056,10 @@ internal sealed class ProductionLightingPort : IProductionLightingPort
                 value.RandomColors,
                 value.Direction),
             StarlightLightingParameters
-                {
-                    ColorMode: StarlightColorMode.Single,
-                    PrimaryColor: { } primary,
-                } value => new Pid02E0StarlightEffect(
+            {
+                ColorMode: StarlightColorMode.Single,
+                PrimaryColor: { } primary,
+            } value => new Pid02E0StarlightEffect(
                     value.ColorMode,
                     Color(primary),
                     default,
@@ -1067,19 +1067,19 @@ internal sealed class ProductionLightingPort : IProductionLightingPort
             WaveLightingParameters value => new Pid02E0WaveEffect(value.Direction),
             WheelLightingParameters value => new Pid02E0WheelEffect(value.Direction),
             StarlightLightingParameters
-                {
-                    ColorMode: StarlightColorMode.Dual,
-                    PrimaryColor: { } primary,
-                    SecondaryColor: { } secondary,
-                } value => new Pid02E0StarlightEffect(
+            {
+                ColorMode: StarlightColorMode.Dual,
+                PrimaryColor: { } primary,
+                SecondaryColor: { } secondary,
+            } value => new Pid02E0StarlightEffect(
                     value.ColorMode,
                     Color(primary),
                     Color(secondary),
                     StarlightDuration(value.Duration)),
             StarlightLightingParameters
-                {
-                    ColorMode: StarlightColorMode.Random,
-                } value => new Pid02E0StarlightEffect(
+            {
+                ColorMode: StarlightColorMode.Random,
+            } value => new Pid02E0StarlightEffect(
                     value.ColorMode,
                     default,
                     default,

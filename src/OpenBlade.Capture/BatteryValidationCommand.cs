@@ -11,9 +11,9 @@ public sealed class BatteryValidationCommand
     private readonly Func<
         BatteryValidationSetting,
         CancellationToken,
-        Task<BatteryValidationResult>> _run;
-    private readonly TextWriter _output;
-    private readonly Func<Action, IDisposable> _registerCancellation;
+        Task<BatteryValidationResult>> runAsync;
+    private readonly TextWriter outputWriter;
+    private readonly Func<Action, IDisposable> registerCancellationHandler;
 
     public BatteryValidationCommand(
         Func<
@@ -23,9 +23,9 @@ public sealed class BatteryValidationCommand
         TextWriter output,
         Func<Action, IDisposable>? registerCancellation = null)
     {
-        _run = run ?? throw new ArgumentNullException(nameof(run));
-        _output = output ?? throw new ArgumentNullException(nameof(output));
-        _registerCancellation = registerCancellation ?? RegisterConsoleCancellation;
+        runAsync = run ?? throw new ArgumentNullException(nameof(run));
+        outputWriter = output ?? throw new ArgumentNullException(nameof(output));
+        registerCancellationHandler = registerCancellation ?? RegisterConsoleCancellation;
     }
 
     public async Task<int> RunAsync(
@@ -35,7 +35,7 @@ public sealed class BatteryValidationCommand
         ArgumentNullException.ThrowIfNull(arguments);
         if (!TryParse(arguments, out BatteryValidationSetting candidate))
         {
-            await _output
+            await outputWriter
                 .WriteLineAsync("Usage: OpenBlade.Capture validate-battery <off|50|55|60|65|70|75|80>")
                 .ConfigureAwait(false);
             return UsageExitCode;
@@ -43,12 +43,12 @@ public sealed class BatteryValidationCommand
 
         using CancellationTokenSource commandCancellation =
             CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        using IDisposable registration = _registerCancellation(
+        using IDisposable registration = registerCancellationHandler(
             () => Cancel(commandCancellation));
 
         try
         {
-            BatteryValidationResult result = await _run(candidate, commandCancellation.Token)
+            BatteryValidationResult result = await runAsync(candidate, commandCancellation.Token)
                 .ConfigureAwait(false);
             commandCancellation.Token.ThrowIfCancellationRequested();
             await RenderAsync(result).ConfigureAwait(false);
@@ -56,62 +56,62 @@ public sealed class BatteryValidationCommand
         }
         catch (OperationCanceledException) when (commandCancellation.IsCancellationRequested)
         {
-            await _output.WriteLineAsync("Canceled=True").ConfigureAwait(false);
+            await outputWriter.WriteLineAsync("Canceled=True").ConfigureAwait(false);
             return CanceledExitCode;
         }
     }
 
     private async Task RenderAsync(BatteryValidationResult result)
     {
-        await _output.WriteLineAsync($"ApplyAttempted={result.ApplyAttempted}").ConfigureAwait(false);
-        await _output.WriteLineAsync($"Applied={result.Applied}").ConfigureAwait(false);
-        await _output.WriteLineAsync($"ReadBack={result.ReadBack}").ConfigureAwait(false);
-        await _output.WriteLineAsync($"Restored={result.Restored}").ConfigureAwait(false);
-        await _output.WriteLineAsync($"PrimaryFailure={result.PrimaryFailure}").ConfigureAwait(false);
-        await _output.WriteLineAsync($"RestorationFailure={result.RestorationFailure}").ConfigureAwait(false);
-        await _output.WriteLineAsync($"Success={result.Success}").ConfigureAwait(false);
+        await outputWriter.WriteLineAsync($"ApplyAttempted={result.ApplyAttempted}").ConfigureAwait(false);
+        await outputWriter.WriteLineAsync($"Applied={result.Applied}").ConfigureAwait(false);
+        await outputWriter.WriteLineAsync($"ReadBack={result.ReadBack}").ConfigureAwait(false);
+        await outputWriter.WriteLineAsync($"Restored={result.Restored}").ConfigureAwait(false);
+        await outputWriter.WriteLineAsync($"PrimaryFailure={result.PrimaryFailure}").ConfigureAwait(false);
+        await outputWriter.WriteLineAsync($"RestorationFailure={result.RestorationFailure}").ConfigureAwait(false);
+        await outputWriter.WriteLineAsync($"Success={result.Success}").ConfigureAwait(false);
         if (result.BaselineQueryDiagnostic is { } diagnostic)
         {
-            await _output.WriteLineAsync($"BaselineQueryPhase={diagnostic.Phase}").ConfigureAwait(false);
-            await _output.WriteLineAsync($"BaselineQuerySessionFailure={diagnostic.Failure}").ConfigureAwait(false);
-            await _output.WriteLineAsync(
+            await outputWriter.WriteLineAsync($"BaselineQueryPhase={diagnostic.Phase}").ConfigureAwait(false);
+            await outputWriter.WriteLineAsync($"BaselineQuerySessionFailure={diagnostic.Failure}").ConfigureAwait(false);
+            await outputWriter.WriteLineAsync(
                 $"BaselineQueryWin32Error={diagnostic.NativeWin32Error?.ToString() ?? "Unavailable"}").ConfigureAwait(false);
-            await _output.WriteLineAsync(
+            await outputWriter.WriteLineAsync(
                 $"BaselineQueryTransferredBytes={diagnostic.TransferredByteCount?.ToString() ?? "Unavailable"}").ConfigureAwait(false);
-            await _output.WriteLineAsync(
+            await outputWriter.WriteLineAsync(
                 $"BaselineQueryProtocolValidationFailure={diagnostic.ProtocolValidationFailure?.ToString() ?? "Unavailable"}").ConfigureAwait(false);
         }
         if (result.CandidateApplyDiagnostic is { } candidateApplyDiagnostic)
         {
-            await _output.WriteLineAsync($"CandidateApplyPhase={candidateApplyDiagnostic.Phase}").ConfigureAwait(false);
-            await _output.WriteLineAsync($"CandidateApplySessionFailure={candidateApplyDiagnostic.Failure}").ConfigureAwait(false);
-            await _output.WriteLineAsync(
+            await outputWriter.WriteLineAsync($"CandidateApplyPhase={candidateApplyDiagnostic.Phase}").ConfigureAwait(false);
+            await outputWriter.WriteLineAsync($"CandidateApplySessionFailure={candidateApplyDiagnostic.Failure}").ConfigureAwait(false);
+            await outputWriter.WriteLineAsync(
                 $"CandidateApplyWin32Error={candidateApplyDiagnostic.NativeWin32Error?.ToString() ?? "Unavailable"}").ConfigureAwait(false);
-            await _output.WriteLineAsync(
+            await outputWriter.WriteLineAsync(
                 $"CandidateApplyTransferredBytes={candidateApplyDiagnostic.TransferredByteCount?.ToString() ?? "Unavailable"}").ConfigureAwait(false);
-            await _output.WriteLineAsync(
+            await outputWriter.WriteLineAsync(
                 $"CandidateApplyProtocolValidationFailure={candidateApplyDiagnostic.ProtocolValidationFailure?.ToString() ?? "Unavailable"}").ConfigureAwait(false);
         }
         if (result.CandidateQueryDiagnostic is { } candidateQueryDiagnostic)
         {
-            await _output.WriteLineAsync($"CandidateQueryPhase={candidateQueryDiagnostic.Phase}").ConfigureAwait(false);
-            await _output.WriteLineAsync($"CandidateQuerySessionFailure={candidateQueryDiagnostic.Failure}").ConfigureAwait(false);
-            await _output.WriteLineAsync(
+            await outputWriter.WriteLineAsync($"CandidateQueryPhase={candidateQueryDiagnostic.Phase}").ConfigureAwait(false);
+            await outputWriter.WriteLineAsync($"CandidateQuerySessionFailure={candidateQueryDiagnostic.Failure}").ConfigureAwait(false);
+            await outputWriter.WriteLineAsync(
                 $"CandidateQueryWin32Error={candidateQueryDiagnostic.NativeWin32Error?.ToString() ?? "Unavailable"}").ConfigureAwait(false);
-            await _output.WriteLineAsync(
+            await outputWriter.WriteLineAsync(
                 $"CandidateQueryTransferredBytes={candidateQueryDiagnostic.TransferredByteCount?.ToString() ?? "Unavailable"}").ConfigureAwait(false);
-            await _output.WriteLineAsync(
+            await outputWriter.WriteLineAsync(
                 $"CandidateQueryProtocolValidationFailure={candidateQueryDiagnostic.ProtocolValidationFailure?.ToString() ?? "Unavailable"}").ConfigureAwait(false);
         }
         if (result.RestorationDiagnostic is { } restorationDiagnostic)
         {
-            await _output.WriteLineAsync($"RestorationPhase={restorationDiagnostic.Phase}").ConfigureAwait(false);
-            await _output.WriteLineAsync($"RestorationSessionFailure={restorationDiagnostic.Failure}").ConfigureAwait(false);
-            await _output.WriteLineAsync(
+            await outputWriter.WriteLineAsync($"RestorationPhase={restorationDiagnostic.Phase}").ConfigureAwait(false);
+            await outputWriter.WriteLineAsync($"RestorationSessionFailure={restorationDiagnostic.Failure}").ConfigureAwait(false);
+            await outputWriter.WriteLineAsync(
                 $"RestorationWin32Error={restorationDiagnostic.NativeWin32Error?.ToString() ?? "Unavailable"}").ConfigureAwait(false);
-            await _output.WriteLineAsync(
+            await outputWriter.WriteLineAsync(
                 $"RestorationTransferredBytes={restorationDiagnostic.TransferredByteCount?.ToString() ?? "Unavailable"}").ConfigureAwait(false);
-            await _output.WriteLineAsync(
+            await outputWriter.WriteLineAsync(
                 $"RestorationProtocolValidationFailure={restorationDiagnostic.ProtocolValidationFailure?.ToString() ?? "Unavailable"}").ConfigureAwait(false);
         }
     }
@@ -166,11 +166,11 @@ public sealed class BatteryValidationCommand
 
     private sealed class CancellationRegistration(ConsoleCancelEventHandler handler) : IDisposable
     {
-        private ConsoleCancelEventHandler? _handler = handler;
+        private ConsoleCancelEventHandler? registeredHandler = handler;
 
         public void Dispose()
         {
-            ConsoleCancelEventHandler? handler = Interlocked.Exchange(ref _handler, null);
+            ConsoleCancelEventHandler? handler = Interlocked.Exchange(ref registeredHandler, null);
             if (handler is not null)
             {
                 Console.CancelKeyPress -= handler;

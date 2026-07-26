@@ -24,12 +24,12 @@ public sealed class DisplayAutomationCheckpointStore(string path)
                 Checkpoint? checkpoint = JsonSerializer.Deserialize<Checkpoint>(
                     File.ReadAllBytes(path));
                 return checkpoint is
-                    {
-                        SchemaVersion: SchemaVersion,
-                        LastReconciledPowerSource: PowerSource.PluggedIn
+                {
+                    SchemaVersion: SchemaVersion,
+                    LastReconciledPowerSource: PowerSource.PluggedIn
                             or PowerSource.Battery
                             or PowerSource.UsbC,
-                    }
+                }
                     ? checkpoint.LastReconciledPowerSource
                     : null;
             }

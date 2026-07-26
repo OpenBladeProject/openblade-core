@@ -1318,7 +1318,11 @@ public sealed class WindowsRazerHidSessionTests
         byte[] report = RazerReport.Create(tx, cls, cmd, payload).Encode();
         report[0] = (byte)RazerCommandStatus.Successful;
         byte checksum = 0;
-        for (int i = 2; i <= 87; i++) checksum ^= report[i];
+        for (int i = 2; i <= 87; i++)
+        {
+            checksum ^= report[i];
+        }
+
         report[88] = checksum;
         byte[] feature = new byte[91];
         report.CopyTo(feature, 1);
@@ -1328,7 +1332,11 @@ public sealed class WindowsRazerHidSessionTests
     private static void Rechecksum(byte[] feature)
     {
         byte checksum = 0;
-        for (int i = 3; i <= 88; i++) checksum ^= feature[i];
+        for (int i = 3; i <= 88; i++)
+        {
+            checksum ^= feature[i];
+        }
+
         feature[89] = checksum;
     }
 
@@ -1366,7 +1374,11 @@ public sealed class WindowsRazerHidSessionTests
         {
             Calls.Add(new(controlCode, buffer, callerCancellation, deadlineCancellation));
             called.TrySetResult(true);
-            if (values.Count == 0) throw new InvalidOperationException("Unexpected I/O");
+            if (values.Count == 0)
+            {
+                throw new InvalidOperationException("Unexpected I/O");
+            }
+
             return values.Dequeue()(handle, controlCode, buffer, callerCancellation, deadlineCancellation);
         }
         public async Task WaitForCallsAsync(int count)
@@ -1374,7 +1386,10 @@ public sealed class WindowsRazerHidSessionTests
             while (Calls.Count < count)
             {
                 await called.Task;
-                if (Calls.Count < count) await Task.Yield();
+                if (Calls.Count < count)
+                {
+                    await Task.Yield();
+                }
             }
         }
     }
@@ -1420,7 +1435,10 @@ public sealed class WindowsRazerHidSessionTests
         {
             List<Timer> due;
             lock (sync) { utcNow += amount; due = timers.Where(t => !t.Disposed && t.Due <= utcNow).ToList(); }
-            foreach (Timer timer in due) timer.Fire();
+            foreach (Timer timer in due)
+            {
+                timer.Fire();
+            }
         }
         private sealed class Timer(ManualTimeProvider owner, TimerCallback callback, object? state, DateTimeOffset due) : ITimer
         {

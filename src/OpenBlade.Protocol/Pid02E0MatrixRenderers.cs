@@ -34,7 +34,7 @@ internal static class Pid02E0MatrixRenderers
 /// </summary>
 internal sealed class Pid02E0ReactiveFrame
 {
-    private readonly Pid02E0MatrixFrame _matrix;
+    private readonly Pid02E0MatrixFrame matrix;
 
     internal Pid02E0ReactiveFrame(ReadOnlySpan<MatrixRgb> slots)
     {
@@ -56,13 +56,13 @@ internal sealed class Pid02E0ReactiveFrame
             }
         }
 
-        _matrix = new Pid02E0MatrixFrame(slots);
+        matrix = new Pid02E0MatrixFrame(slots);
     }
 
-    internal MatrixRgb this[int slot] => _matrix[slot];
+    internal MatrixRgb this[int slot] => matrix[slot];
 
     internal Pid02E0MatrixFrame ToMatrixFrame() =>
-        new(_matrix.ToArray());
+        new(matrix.ToArray());
 
     internal static Pid02E0ReactiveFrame BlackIdle() =>
         new(new MatrixRgb[Pid02E0MatrixFrame.SlotCount]);

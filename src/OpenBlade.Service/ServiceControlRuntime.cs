@@ -3040,42 +3040,42 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             switch (requested.Control)
             {
                 case OneShotLaptopControl.FunctionKeyPrimary:
-                {
-                    FunctionKeyPrimaryMode? readback = await device
-                        .ReadFunctionKeyPrimaryAsync(token)
-                        .ConfigureAwait(false);
-                    if (readback != requested.FunctionKeyMode)
                     {
-                        failures.Add($"{label} was not confirmed.");
-                        return;
+                        FunctionKeyPrimaryMode? readback = await device
+                            .ReadFunctionKeyPrimaryAsync(token)
+                            .ConfigureAwait(false);
+                        if (readback != requested.FunctionKeyMode)
+                        {
+                            failures.Add($"{label} was not confirmed.");
+                            return;
+                        }
+                        PublishIfChanged(GetStatus() with { FunctionKeyPrimary = readback });
+                        break;
                     }
-                    PublishIfChanged(GetStatus() with { FunctionKeyPrimary = readback });
-                    break;
-                }
                 case OneShotLaptopControl.GamingMode:
-                {
-                    bool? readback = await device.ReadGamingModeAsync(token)
-                        .ConfigureAwait(false);
-                    if (readback != requested.Enabled)
                     {
-                        failures.Add($"{label} was not confirmed.");
-                        return;
+                        bool? readback = await device.ReadGamingModeAsync(token)
+                            .ConfigureAwait(false);
+                        if (readback != requested.Enabled)
+                        {
+                            failures.Add($"{label} was not confirmed.");
+                            return;
+                        }
+                        PublishIfChanged(GetStatus() with { GamingModeEnabled = readback });
+                        break;
                     }
-                    PublishIfChanged(GetStatus() with { GamingModeEnabled = readback });
-                    break;
-                }
                 case OneShotLaptopControl.StartupAnimation:
-                {
-                    bool? readback = await device.ReadStartupAnimationAsync(token)
-                        .ConfigureAwait(false);
-                    if (readback != requested.Enabled)
                     {
-                        failures.Add($"{label} was not confirmed.");
-                        return;
+                        bool? readback = await device.ReadStartupAnimationAsync(token)
+                            .ConfigureAwait(false);
+                        if (readback != requested.Enabled)
+                        {
+                            failures.Add($"{label} was not confirmed.");
+                            return;
+                        }
+                        PublishIfChanged(GetStatus() with { StartupAnimationEnabled = readback });
+                        break;
                     }
-                    PublishIfChanged(GetStatus() with { StartupAnimationEnabled = readback });
-                    break;
-                }
             }
         }
         catch (OperationCanceledException) when (token.IsCancellationRequested)

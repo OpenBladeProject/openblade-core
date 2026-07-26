@@ -477,7 +477,7 @@ public sealed class NamedPipeControlServerTests
         public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
         public override void SetLength(long value) => throw new NotSupportedException();
         public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
-        protected override void Dispose(bool disposing) { if (disposing) reader.Dispose(); base.Dispose(disposing); }
+        protected override void Dispose(bool disposing) { if (disposing) { reader.Dispose(); } base.Dispose(disposing); }
     }
 
     private sealed class BlockingReadStream : Stream
@@ -537,7 +537,10 @@ public sealed class NamedPipeControlServerTests
         public void Advance(TimeSpan amount)
         {
             now += amount;
-            foreach (ManualTimer timer in timers.ToArray()) timer.FireIfDue(now);
+            foreach (ManualTimer timer in timers.ToArray())
+            {
+                timer.FireIfDue(now);
+            }
         }
         private sealed class ManualTimer(TimerCallback callback, object? state, DateTimeOffset due, TimeSpan period) : ITimer
         {
@@ -545,10 +548,20 @@ public sealed class NamedPipeControlServerTests
             private DateTimeOffset next = due;
             public void FireIfDue(DateTimeOffset now)
             {
-                if (disposed || now < next) return;
+                if (disposed || now < next)
+                {
+                    return;
+                }
+
                 callback(state);
-                if (period == Timeout.InfiniteTimeSpan) disposed = true;
-                else next = now + period;
+                if (period == Timeout.InfiniteTimeSpan)
+                {
+                    disposed = true;
+                }
+                else
+                {
+                    next = now + period;
+                }
             }
             public bool Change(TimeSpan dueTime, TimeSpan period) => throw new NotSupportedException();
             public void Dispose() => disposed = true;

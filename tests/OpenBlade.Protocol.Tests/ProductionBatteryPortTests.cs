@@ -1305,11 +1305,11 @@ public sealed class ProductionBatteryPortTests
         byte commandId,
         byte[] payload,
         byte[] expectedResponse) => Fixture(action, commandClass, commandId, payload) with
-    {
-        ReadBack = false,
-        OneShotOnly = true,
-        ExpectedResponsePayload = expectedResponse,
-    };
+        {
+            ReadBack = false,
+            OneShotOnly = true,
+            ExpectedResponsePayload = expectedResponse,
+        };
 
     private static CapturedCommandFixture[] MaximumCapabilityFixtures() =>
     [

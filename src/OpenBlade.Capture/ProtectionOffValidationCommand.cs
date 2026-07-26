@@ -83,7 +83,10 @@ public sealed class ProtectionOffValidationCommand
         public void Dispose()
         {
             ConsoleCancelEventHandler? current = Interlocked.Exchange(ref handler, null);
-            if (current is not null) Console.CancelKeyPress -= current;
+            if (current is not null)
+            {
+                Console.CancelKeyPress -= current;
+            }
         }
     }
 }

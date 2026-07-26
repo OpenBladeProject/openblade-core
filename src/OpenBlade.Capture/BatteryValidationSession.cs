@@ -1,5 +1,5 @@
-using OpenBlade.Protocol;
 using System.Runtime.ExceptionServices;
+using OpenBlade.Protocol;
 
 namespace OpenBlade.Capture;
 
@@ -70,13 +70,13 @@ public sealed class BatteryValidationSession(
 {
     private static readonly TimeSpan DefaultSettlingDelay = TimeSpan.FromSeconds(1);
 
-    private readonly TimeSpan _cleanupTimeout = cleanupTimeout > TimeSpan.Zero
+    private readonly TimeSpan cleanupTimeout = cleanupTimeout > TimeSpan.Zero
         && cleanupTimeout != Timeout.InfiniteTimeSpan
             ? cleanupTimeout
             : throw new ArgumentOutOfRangeException(nameof(cleanupTimeout));
-    private readonly TimeSpan _settlingDelay = ValidateSettlingDelay(
+    private readonly TimeSpan effectiveSettlingDelay = ValidateSettlingDelay(
         settlingDelay ?? DefaultSettlingDelay);
-    private readonly Func<TimeSpan, CancellationToken, Task> _delayAsync =
+    private readonly Func<TimeSpan, CancellationToken, Task> delayAsync =
         delayAsync ?? ((delay, token) => Task.Delay(delay, token));
 
     public async Task<BatteryValidationResult> RunAsync(
@@ -246,7 +246,7 @@ public sealed class BatteryValidationSession(
                 try
                 {
                     await WaitForSettlingAsync(CancellationToken.None).ConfigureAwait(false);
-                    using (CancellationTokenSource restoreApplyCleanup = new(_cleanupTimeout))
+                    using (CancellationTokenSource restoreApplyCleanup = new(cleanupTimeout))
                     {
                         HidSessionResult<HidUnit> restoreApply =
                             await port.ApplyAsync(prior, restoreApplyCleanup.Token).ConfigureAwait(false);
@@ -270,7 +270,7 @@ public sealed class BatteryValidationSession(
                     try
                     {
                         await WaitForSettlingAsync(CancellationToken.None).ConfigureAwait(false);
-                        using CancellationTokenSource restoreQueryCleanup = new(_cleanupTimeout);
+                        using CancellationTokenSource restoreQueryCleanup = new(cleanupTimeout);
                         HidSessionResult<BatteryValidationSetting> restoreQuery = await port
                             .QueryAsync(restoreQueryCleanup.Token)
                             .ConfigureAwait(false);
@@ -404,7 +404,7 @@ public sealed class BatteryValidationSession(
     private async Task WaitForSettlingAsync(CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        await _delayAsync(_settlingDelay, cancellationToken).ConfigureAwait(false);
+        await delayAsync(effectiveSettlingDelay, cancellationToken).ConfigureAwait(false);
         cancellationToken.ThrowIfCancellationRequested();
     }
 

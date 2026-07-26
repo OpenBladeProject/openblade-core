@@ -26,7 +26,7 @@ internal sealed class Pid02E0MatrixFrame
 {
     internal const int SlotCount = 102;
 
-    private readonly MatrixRgb[] _slots;
+    private readonly MatrixRgb[] frameSlots;
 
     internal Pid02E0MatrixFrame(ReadOnlySpan<MatrixRgb> slots)
     {
@@ -38,12 +38,12 @@ internal sealed class Pid02E0MatrixFrame
                 $"A PID 02E0 matrix frame must contain exactly {SlotCount} RGB slots.");
         }
 
-        _slots = slots.ToArray();
+        frameSlots = slots.ToArray();
     }
 
-    internal MatrixRgb this[int index] => _slots[index];
+    internal MatrixRgb this[int index] => frameSlots[index];
 
-    internal MatrixRgb[] ToArray() => (MatrixRgb[])_slots.Clone();
+    internal MatrixRgb[] ToArray() => (MatrixRgb[])frameSlots.Clone();
 
     internal Pid02E0MatrixFrame WithSlot(int index, MatrixRgb color)
     {

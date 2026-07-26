@@ -2380,7 +2380,8 @@ public sealed class MainViewModelTests
         {
             ConfirmedState = CreateStatus(
                 verified: true,
-                blocked: false).ConfirmedState! with { Lighting = null },
+                blocked: false).ConfirmedState! with
+            { Lighting = null },
             LightingRendererOwnership = LightingRendererOwnershipState.None,
         };
         client.Publish(initial);

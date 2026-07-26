@@ -705,7 +705,10 @@ public sealed class BatteryValidationRunTests
     private static HidSessionResult<T> Failure<T>(HidSessionFailureKind failure) => new(default, failure);
     private static void Consume(ValidationRunContext context, int count)
     {
-        for (int i = 0; i < count; i++) Assert.True(context.TryAllocateTransaction(out _));
+        for (int i = 0; i < count; i++)
+        {
+            Assert.True(context.TryAllocateTransaction(out _));
+        }
     }
 
     private sealed class ScriptedActorFactory(params object[] actors) : IValidationActorFactory
@@ -766,7 +769,11 @@ public sealed class BatteryValidationRunTests
         {
             DisposeCount++;
             if (!pendingDispose) { Disposition = RazerCommandSessionDisposition.FullyDisposed; completion.TrySetResult(); }
-            else Disposition = RazerCommandSessionDisposition.Disposing;
+            else
+            {
+                Disposition = RazerCommandSessionDisposition.Disposing;
+            }
+
             return new ValueTask(completion.Task);
         }
         internal void CompleteDispose() { Disposition = RazerCommandSessionDisposition.FullyDisposed; completion.TrySetResult(); }
@@ -808,7 +815,10 @@ public sealed class BatteryValidationRunTests
         internal void Advance(TimeSpan amount)
         {
             now += amount;
-            foreach (Timer timer in timers.ToArray()) timer.Fire(now);
+            foreach (Timer timer in timers.ToArray())
+            {
+                timer.Fire(now);
+            }
         }
         internal void Schedule(TimeSpan due, Action action) =>
             _ = CreateTimer(_ => action(), null, due, Timeout.InfiniteTimeSpan);

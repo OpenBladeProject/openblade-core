@@ -1155,7 +1155,10 @@ public sealed class ServiceClientTests
                 now += amount;
                 due = timers.Where(timer => timer.IsDue(now)).ToArray();
             }
-            foreach (FakeTimer timer in due) timer.Fire(now);
+            foreach (FakeTimer timer in due)
+            {
+                timer.Fire(now);
+            }
         }
         private sealed class FakeTimer(TimerCallback callback, object? state, DateTimeOffset due, TimeSpan period) : ITimer
         {
@@ -1164,10 +1167,20 @@ public sealed class ServiceClientTests
             public bool IsDue(DateTimeOffset current) => Volatile.Read(ref disposed) == 0 && current >= next;
             public void Fire(DateTimeOffset current)
             {
-                if (Volatile.Read(ref disposed) != 0) return;
+                if (Volatile.Read(ref disposed) != 0)
+                {
+                    return;
+                }
+
                 callback(state);
-                if (period == Timeout.InfiniteTimeSpan) Dispose();
-                else next = current + period;
+                if (period == Timeout.InfiniteTimeSpan)
+                {
+                    Dispose();
+                }
+                else
+                {
+                    next = current + period;
+                }
             }
             public bool Change(TimeSpan dueTime, TimeSpan period) => throw new NotSupportedException();
             public void Dispose() => Interlocked.Exchange(ref disposed, 1);

@@ -417,28 +417,28 @@ public sealed class NativeOperationStateTests
 
     private sealed class FinalizerProbe
     {
-        private int _callCount;
+        private int callCount;
 
-        public int CallCount => Volatile.Read(ref _callCount);
+        public int CallCount => Volatile.Read(ref callCount);
 
-        public void FinalizeResources() => Interlocked.Increment(ref _callCount);
+        public void FinalizeResources() => Interlocked.Increment(ref callCount);
     }
 
     private sealed class ScriptedGate
     {
-        private readonly TaskCompletionSource _paused =
+        private readonly TaskCompletionSource paused =
             new(TaskCreationOptions.RunContinuationsAsynchronously);
-        private readonly TaskCompletionSource _released =
+        private readonly TaskCompletionSource released =
             new(TaskCreationOptions.RunContinuationsAsynchronously);
 
-        public Task WaitUntilPausedAsync() => _paused.Task;
+        public Task WaitUntilPausedAsync() => paused.Task;
 
         public async Task PauseAsync()
         {
-            _paused.TrySetResult();
-            await _released.Task;
+            paused.TrySetResult();
+            await released.Task;
         }
 
-        public void Release() => _released.TrySetResult();
+        public void Release() => released.TrySetResult();
     }
 }

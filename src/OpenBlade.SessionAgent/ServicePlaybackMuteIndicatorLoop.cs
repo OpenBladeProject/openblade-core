@@ -1,6 +1,6 @@
+using System.Threading.Channels;
 using OpenBlade.Contracts;
 using OpenBlade.Tray;
-using System.Threading.Channels;
 
 namespace OpenBlade.SessionAgent;
 

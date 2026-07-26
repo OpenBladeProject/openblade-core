@@ -25,14 +25,14 @@ internal sealed class RazerReport
     public const int ReportLength = 90;
     public const int MaximumPayloadLength = 80;
 
-    private readonly byte[] _payload;
+    private readonly byte[] payloadBytes;
 
     private RazerReport(byte transactionId, byte commandClass, byte commandId, byte[] payload)
     {
         TransactionId = transactionId;
         CommandClass = commandClass;
         CommandId = commandId;
-        _payload = payload;
+        payloadBytes = payload;
     }
 
     public byte TransactionId { get; }
@@ -63,10 +63,10 @@ internal sealed class RazerReport
         byte[] bytes = new byte[ReportLength];
         bytes[0] = (byte)RazerCommandStatus.New;
         bytes[1] = TransactionId;
-        bytes[5] = checked((byte)_payload.Length);
+        bytes[5] = checked((byte)payloadBytes.Length);
         bytes[6] = CommandClass;
         bytes[7] = CommandId;
-        _payload.CopyTo(bytes, 8);
+        payloadBytes.CopyTo(bytes, 8);
         bytes[88] = CalculateChecksum(bytes);
         return bytes;
     }

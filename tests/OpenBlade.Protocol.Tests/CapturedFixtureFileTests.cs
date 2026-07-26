@@ -1,12 +1,12 @@
-using System.Text.Json;
 using System.Security.Cryptography;
+using System.Text.Json;
 using OpenBlade.Protocol;
 
 namespace OpenBlade.Protocol.Tests;
 
 public sealed class CapturedFixtureFileTests : IDisposable
 {
-    private readonly string _path = Path.Combine(
+    private readonly string fixturePath = Path.Combine(
         Path.GetTempPath(),
         $"openblade-fixture-{Guid.NewGuid():N}.json");
 
@@ -25,11 +25,11 @@ public sealed class CapturedFixtureFileTests : IDisposable
             true,
             true,
             true);
-        await File.WriteAllTextAsync(_path, JsonSerializer.Serialize(new[] { fixture }));
+        await File.WriteAllTextAsync(fixturePath, JsonSerializer.Serialize(new[] { fixture }));
         TrustedFixtureHashRegistry registry = RegistryForCurrentFile();
 
         DeviceCommandCatalog catalog = await CapturedFixtureFile.LoadCatalogAsync(
-            _path,
+            fixturePath,
             registry,
             CancellationToken.None);
 
@@ -39,11 +39,11 @@ public sealed class CapturedFixtureFileTests : IDisposable
     [Fact]
     public async Task LoadCatalogAsync_RejectsEmptyFixtureSet()
     {
-        await File.WriteAllTextAsync(_path, "[]");
+        await File.WriteAllTextAsync(fixturePath, "[]");
         TrustedFixtureHashRegistry registry = RegistryForCurrentFile();
 
         await Assert.ThrowsAsync<UnvalidatedCommandException>(() =>
-            CapturedFixtureFile.LoadCatalogAsync(_path, registry, CancellationToken.None));
+            CapturedFixtureFile.LoadCatalogAsync(fixturePath, registry, CancellationToken.None));
     }
 
     [Fact]
@@ -52,7 +52,7 @@ public sealed class CapturedFixtureFileTests : IDisposable
         await WriteValidatedFixtureAsync();
 
         UnvalidatedCommandException exception = await Assert.ThrowsAsync<UnvalidatedCommandException>(() =>
-            CapturedFixtureFile.ValidateCapturedFixtureAsync(_path, CancellationToken.None));
+            CapturedFixtureFile.ValidateCapturedFixtureAsync(fixturePath, CancellationToken.None));
 
         Assert.Contains("SHA-256", exception.Message, StringComparison.OrdinalIgnoreCase);
         Assert.Contains(CurrentFileHash(), exception.Message, StringComparison.OrdinalIgnoreCase);
@@ -63,26 +63,26 @@ public sealed class CapturedFixtureFileTests : IDisposable
     {
         await WriteValidatedFixtureAsync();
         TrustedFixtureHashRegistry registry = RegistryForCurrentFile();
-        await File.AppendAllTextAsync(_path, " ");
+        await File.AppendAllTextAsync(fixturePath, " ");
 
         await Assert.ThrowsAsync<UnvalidatedCommandException>(() =>
-            CapturedFixtureFile.LoadCatalogAsync(_path, registry, CancellationToken.None));
+            CapturedFixtureFile.LoadCatalogAsync(fixturePath, registry, CancellationToken.None));
     }
 
     [Fact]
     public async Task LoadCatalogAsync_RejectsUnknownJsonMembers()
     {
         await WriteValidatedFixtureAsync();
-        string json = await File.ReadAllTextAsync(_path);
+        string json = await File.ReadAllTextAsync(fixturePath);
         json = json.Replace(
             "\"captured\":true",
             "\"unexpected\":true,\"captured\":true",
             StringComparison.OrdinalIgnoreCase);
-        await File.WriteAllTextAsync(_path, json);
+        await File.WriteAllTextAsync(fixturePath, json);
         TrustedFixtureHashRegistry registry = RegistryForCurrentFile();
 
         await Assert.ThrowsAsync<JsonException>(() =>
-            CapturedFixtureFile.LoadCatalogAsync(_path, registry, CancellationToken.None));
+            CapturedFixtureFile.LoadCatalogAsync(fixturePath, registry, CancellationToken.None));
     }
 
     [Theory]
@@ -93,27 +93,27 @@ public sealed class CapturedFixtureFileTests : IDisposable
         string duplicateMembers)
     {
         await WriteValidatedFixtureAsync();
-        string json = await File.ReadAllTextAsync(_path);
+        string json = await File.ReadAllTextAsync(fixturePath);
         json = json.Replace(originalMember, duplicateMembers, StringComparison.Ordinal);
-        await File.WriteAllTextAsync(_path, json);
+        await File.WriteAllTextAsync(fixturePath, json);
         TrustedFixtureHashRegistry registry = RegistryForCurrentFile();
 
         await Assert.ThrowsAsync<JsonException>(() =>
-            CapturedFixtureFile.LoadCatalogAsync(_path, registry, CancellationToken.None));
+            CapturedFixtureFile.LoadCatalogAsync(fixturePath, registry, CancellationToken.None));
     }
 
     [Fact]
     public async Task ByteMemoryOverloadUsesTheSameHashAndDuplicateMemberGatesAsFileLoading()
     {
         await WriteValidatedFixtureAsync();
-        byte[] bytes = await File.ReadAllBytesAsync(_path);
+        byte[] bytes = await File.ReadAllBytesAsync(fixturePath);
         TrustedFixtureHashRegistry registry = RegistryForCurrentFile();
 
         DeviceCommandCatalog catalog = CapturedFixtureFile.LoadCatalog(bytes, registry);
 
         Assert.True(catalog.TryGet("performance.balanced", out _));
 
-        string duplicate = (await File.ReadAllTextAsync(_path)).Replace(
+        string duplicate = (await File.ReadAllTextAsync(fixturePath)).Replace(
             "\"Captured\":true",
             "\"captured\":false,\"Captured\":true",
             StringComparison.Ordinal);
@@ -133,12 +133,12 @@ public sealed class CapturedFixtureFileTests : IDisposable
         string json)
     {
         byte[] bytes = System.Text.Encoding.UTF8.GetBytes(json);
-        await File.WriteAllBytesAsync(_path, bytes);
+        await File.WriteAllBytesAsync(fixturePath, bytes);
         TrustedFixtureHashRegistry registry = TrustedFixtureHashRegistry.FromSha256Hex(
             [Convert.ToHexString(SHA256.HashData(bytes))]);
 
         Exception? fileFailure = await Record.ExceptionAsync(() =>
-            CapturedFixtureFile.LoadCatalogAsync(_path, registry, CancellationToken.None));
+            CapturedFixtureFile.LoadCatalogAsync(fixturePath, registry, CancellationToken.None));
         Exception? memoryFailure = Record.Exception(() =>
             CapturedFixtureFile.LoadCatalog(bytes, registry));
 
@@ -168,20 +168,20 @@ public sealed class CapturedFixtureFileTests : IDisposable
             true,
             true,
             true);
-        await File.WriteAllTextAsync(_path, JsonSerializer.Serialize(new[] { fixture }));
+        await File.WriteAllTextAsync(fixturePath, JsonSerializer.Serialize(new[] { fixture }));
     }
 
     private TrustedFixtureHashRegistry RegistryForCurrentFile() =>
         TrustedFixtureHashRegistry.FromSha256Hex([CurrentFileHash()]);
 
     private string CurrentFileHash() =>
-        Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(_path)));
+        Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(fixturePath)));
 
     public void Dispose()
     {
-        if (File.Exists(_path))
+        if (File.Exists(fixturePath))
         {
-            File.Delete(_path);
+            File.Delete(fixturePath);
         }
     }
 }

@@ -1,6 +1,6 @@
+using System.Runtime.InteropServices;
 using Microsoft.Win32;
 using OpenBlade.Protocol;
-using System.Runtime.InteropServices;
 
 namespace OpenBlade.Protocol.Tests;
 

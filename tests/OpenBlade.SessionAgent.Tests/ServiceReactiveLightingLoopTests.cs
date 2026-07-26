@@ -1,5 +1,5 @@
-using System.Threading.Channels;
 using System.Collections.Concurrent;
+using System.Threading.Channels;
 using OpenBlade.Contracts;
 using OpenBlade.SessionAgent;
 using OpenBlade.Tray;
@@ -993,7 +993,8 @@ public sealed class ServiceReactiveLightingLoopTests
         public ConcurrentQueue<PerformanceOverride> PerformanceSelections { get; } = new();
 
         public ConcurrentQueue<(Guid SessionId, long Generation, PerformancePreset? Preset)>
-            PerformancePreviews { get; } = new();
+            PerformancePreviews
+        { get; } = new();
 
         public int DeliveryCount => Volatile.Read(ref deliveryCount);
 

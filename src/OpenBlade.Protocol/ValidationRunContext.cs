@@ -60,53 +60,53 @@ internal sealed class ValidationRunContext
     private const int ProtectionOffValidationTransactionCount = 8;
     private const int TemporaryFullChargeValidationTransactionCount = 8;
 
-    private readonly object _sync = new();
-    private int _nextTransactionId = 1;
-    private ActorLease? _activeActorLease;
+    private readonly object sync = new();
+    private int nextTransactionId = 1;
+    private ActorLease? activeActorLease;
 
     public bool TryAllocateTransaction(out byte transactionId)
     {
-        lock (_sync)
+        lock (sync)
         {
-            if (_nextTransactionId > MaximumTransactionId)
+            if (nextTransactionId > MaximumTransactionId)
             {
                 transactionId = default;
                 return false;
             }
 
-            transactionId = (byte)_nextTransactionId;
-            _nextTransactionId++;
+            transactionId = (byte)nextTransactionId;
+            nextTransactionId++;
             return true;
         }
     }
 
     public bool TryReserveBatteryValidation(out BatteryValidationTransactionIds ids)
     {
-        lock (_sync)
+        lock (sync)
         {
-            if (_nextTransactionId > MaximumTransactionId - BatteryValidationTransactionCount + 1)
+            if (nextTransactionId > MaximumTransactionId - BatteryValidationTransactionCount + 1)
             {
                 ids = default;
                 return false;
             }
 
-            byte baselineQuery = (byte)_nextTransactionId;
+            byte baselineQuery = (byte)nextTransactionId;
             ids = new BatteryValidationTransactionIds(
                 baselineQuery,
                 (byte)(baselineQuery + 1),
                 (byte)(baselineQuery + 2),
                 (byte)(baselineQuery + 3),
                 (byte)(baselineQuery + 4));
-            _nextTransactionId += BatteryValidationTransactionCount;
+            nextTransactionId += BatteryValidationTransactionCount;
             return true;
         }
     }
 
     public bool TryReserveBatteryQuerySequence(out byte[] transactionIds)
     {
-        lock (_sync)
+        lock (sync)
         {
-            if (_nextTransactionId > MaximumTransactionId - BatteryValidationTransactionCount + 1)
+            if (nextTransactionId > MaximumTransactionId - BatteryValidationTransactionCount + 1)
             {
                 transactionIds = [];
                 return false;
@@ -115,25 +115,25 @@ internal sealed class ValidationRunContext
             transactionIds = new byte[BatteryValidationTransactionCount];
             for (int index = 0; index < transactionIds.Length; index++)
             {
-                transactionIds[index] = (byte)(_nextTransactionId + index);
+                transactionIds[index] = (byte)(nextTransactionId + index);
             }
 
-            _nextTransactionId += BatteryValidationTransactionCount;
+            nextTransactionId += BatteryValidationTransactionCount;
             return true;
         }
     }
 
     public bool TryReserveProtectionOffValidation(out ProtectionOffValidationTransactionIds ids)
     {
-        lock (_sync)
+        lock (sync)
         {
-            if (_nextTransactionId > MaximumTransactionId - ProtectionOffValidationTransactionCount + 1)
+            if (nextTransactionId > MaximumTransactionId - ProtectionOffValidationTransactionCount + 1)
             {
                 ids = default;
                 return false;
             }
 
-            byte first = (byte)_nextTransactionId;
+            byte first = (byte)nextTransactionId;
             ids = new ProtectionOffValidationTransactionIds(
                 first,
                 (byte)(first + 1),
@@ -143,7 +143,7 @@ internal sealed class ValidationRunContext
                 (byte)(first + 5),
                 (byte)(first + 6),
                 (byte)(first + 7));
-            _nextTransactionId += ProtectionOffValidationTransactionCount;
+            nextTransactionId += ProtectionOffValidationTransactionCount;
             return true;
         }
     }
@@ -151,16 +151,16 @@ internal sealed class ValidationRunContext
     public bool TryReserveTemporaryFullChargeValidation(
         out TemporaryFullChargeValidationTransactionIds ids)
     {
-        lock (_sync)
+        lock (sync)
         {
-            if (_nextTransactionId > MaximumTransactionId
+            if (nextTransactionId > MaximumTransactionId
                 - TemporaryFullChargeValidationTransactionCount + 1)
             {
                 ids = default;
                 return false;
             }
 
-            byte first = (byte)_nextTransactionId;
+            byte first = (byte)nextTransactionId;
             ids = new TemporaryFullChargeValidationTransactionIds(
                 first,
                 (byte)(first + 1),
@@ -170,34 +170,34 @@ internal sealed class ValidationRunContext
                 (byte)(first + 5),
                 (byte)(first + 6),
                 (byte)(first + 7));
-            _nextTransactionId += TemporaryFullChargeValidationTransactionCount;
+            nextTransactionId += TemporaryFullChargeValidationTransactionCount;
             return true;
         }
     }
 
     public bool TryAcquireActor(out ActorLease lease)
     {
-        lock (_sync)
+        lock (sync)
         {
-            if (_activeActorLease is not null)
+            if (activeActorLease is not null)
             {
                 lease = null!;
                 return false;
             }
 
             lease = new ActorLease(this);
-            _activeActorLease = lease;
+            activeActorLease = lease;
             return true;
         }
     }
 
     private void ReleaseActor(ActorLease lease)
     {
-        lock (_sync)
+        lock (sync)
         {
-            if (ReferenceEquals(_activeActorLease, lease))
+            if (ReferenceEquals(activeActorLease, lease))
             {
-                _activeActorLease = null;
+                activeActorLease = null;
             }
         }
     }

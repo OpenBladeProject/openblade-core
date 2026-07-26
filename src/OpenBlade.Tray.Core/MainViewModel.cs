@@ -1,6 +1,6 @@
-using System.ComponentModel;
 using System.Collections.ObjectModel;
 using System.Collections.Specialized;
+using System.ComponentModel;
 using System.Globalization;
 using System.IO;
 using System.Runtime.CompilerServices;
@@ -2814,7 +2814,8 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     }
 
     public IReadOnlyList<AmbientAwarenessRegionOption>
-        AvailableAmbientAwarenessRegionOptions { get; } =
+        AvailableAmbientAwarenessRegionOptions
+    { get; } =
         Enum.GetValues<AmbientAwarenessRegion>()
             .Select(region => new AmbientAwarenessRegionOption(
                 region,

@@ -67,11 +67,11 @@ public sealed class UnvalidatedCommandException : Exception
 
 internal sealed class DeviceCommandCatalog
 {
-    private readonly IReadOnlyDictionary<string, RazerCommandDefinition> _commands;
+    private readonly IReadOnlyDictionary<string, RazerCommandDefinition> commandDefinitions;
 
     private DeviceCommandCatalog(IReadOnlyDictionary<string, RazerCommandDefinition> commands)
     {
-        _commands = commands;
+        commandDefinitions = commands;
     }
 
     public static DeviceCommandCatalog Empty { get; } = new(
@@ -150,5 +150,5 @@ internal sealed class DeviceCommandCatalog
     }
 
     public bool TryGet(string action, out RazerCommandDefinition? command) =>
-        _commands.TryGetValue(action, out command);
+        commandDefinitions.TryGetValue(action, out command);
 }

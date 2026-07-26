@@ -349,7 +349,8 @@ public sealed class FunctionRowActionExecutorTests
         public int GetStatusCalls { get; private set; }
         public List<ManualOverride<LightingSettings>?> LightingOverrides { get; } = [];
         public List<(KeyboardBrightnessDirection Direction, OverrideLifetime Lifetime)>
-            KeyboardBrightnessSteps { get; } = [];
+            KeyboardBrightnessSteps
+        { get; } = [];
         public ControlOperationResult LightingResult { get; set; } =
             new(ControlOperationStatus.Applied, "Applied.");
 

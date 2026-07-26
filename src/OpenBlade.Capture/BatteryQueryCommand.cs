@@ -6,18 +6,18 @@ public sealed class BatteryQueryCommand
     public const int QueryFailureExitCode = 2;
     public const int CanceledExitCode = 4;
 
-    private readonly Func<CancellationToken, Task<BatteryQueryResult>> _run;
-    private readonly TextWriter _output;
-    private readonly Func<Action, IDisposable> _registerCancellation;
+    private readonly Func<CancellationToken, Task<BatteryQueryResult>> runAsync;
+    private readonly TextWriter outputWriter;
+    private readonly Func<Action, IDisposable> registerCancellationHandler;
 
     public BatteryQueryCommand(
         Func<CancellationToken, Task<BatteryQueryResult>> run,
         TextWriter output,
         Func<Action, IDisposable>? registerCancellation = null)
     {
-        _run = run ?? throw new ArgumentNullException(nameof(run));
-        _output = output ?? throw new ArgumentNullException(nameof(output));
-        _registerCancellation = registerCancellation ?? RegisterConsoleCancellation;
+        runAsync = run ?? throw new ArgumentNullException(nameof(run));
+        outputWriter = output ?? throw new ArgumentNullException(nameof(output));
+        registerCancellationHandler = registerCancellation ?? RegisterConsoleCancellation;
     }
 
     public async Task<int> RunAsync(
@@ -27,19 +27,19 @@ public sealed class BatteryQueryCommand
         ArgumentNullException.ThrowIfNull(arguments);
         if (arguments.Count != 0)
         {
-            await _output.WriteLineAsync("Usage: OpenBlade.Capture query-battery")
+            await outputWriter.WriteLineAsync("Usage: OpenBlade.Capture query-battery")
                 .ConfigureAwait(false);
             return UsageExitCode;
         }
 
         using CancellationTokenSource commandCancellation =
             CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        using IDisposable registration = _registerCancellation(
+        using IDisposable registration = registerCancellationHandler(
             () => Cancel(commandCancellation));
 
         try
         {
-            BatteryQueryResult result = await _run(commandCancellation.Token)
+            BatteryQueryResult result = await runAsync(commandCancellation.Token)
                 .ConfigureAwait(false);
             commandCancellation.Token.ThrowIfCancellationRequested();
             await RenderAsync(result).ConfigureAwait(false);
@@ -47,24 +47,24 @@ public sealed class BatteryQueryCommand
         }
         catch (OperationCanceledException) when (commandCancellation.IsCancellationRequested)
         {
-            await _output.WriteLineAsync("Canceled=True").ConfigureAwait(false);
+            await outputWriter.WriteLineAsync("Canceled=True").ConfigureAwait(false);
             return CanceledExitCode;
         }
     }
 
     private async Task RenderAsync(BatteryQueryResult result)
     {
-        await _output.WriteLineAsync(
+        await outputWriter.WriteLineAsync(
             $"Setting={result.Setting?.ToString() ?? "Unavailable"}").ConfigureAwait(false);
-        await _output.WriteLineAsync($"Failure={result.Failure}").ConfigureAwait(false);
-        await _output.WriteLineAsync($"Success={result.Success}").ConfigureAwait(false);
+        await outputWriter.WriteLineAsync($"Failure={result.Failure}").ConfigureAwait(false);
+        await outputWriter.WriteLineAsync($"Success={result.Success}").ConfigureAwait(false);
         if (result.Diagnostic is { } diagnostic)
         {
-            await _output.WriteLineAsync($"Phase={diagnostic.Phase}").ConfigureAwait(false);
-            await _output.WriteLineAsync($"SessionFailure={diagnostic.Failure}").ConfigureAwait(false);
-            await _output.WriteLineAsync(
+            await outputWriter.WriteLineAsync($"Phase={diagnostic.Phase}").ConfigureAwait(false);
+            await outputWriter.WriteLineAsync($"SessionFailure={diagnostic.Failure}").ConfigureAwait(false);
+            await outputWriter.WriteLineAsync(
                 $"Win32Error={diagnostic.NativeWin32Error?.ToString() ?? "Unavailable"}").ConfigureAwait(false);
-            await _output.WriteLineAsync(
+            await outputWriter.WriteLineAsync(
                 $"TransferredBytes={diagnostic.TransferredByteCount?.ToString() ?? "Unavailable"}").ConfigureAwait(false);
         }
     }
@@ -93,11 +93,11 @@ public sealed class BatteryQueryCommand
 
     private sealed class CancellationRegistration(ConsoleCancelEventHandler handler) : IDisposable
     {
-        private ConsoleCancelEventHandler? _handler = handler;
+        private ConsoleCancelEventHandler? registeredHandler = handler;
 
         public void Dispose()
         {
-            ConsoleCancelEventHandler? handler = Interlocked.Exchange(ref _handler, null);
+            ConsoleCancelEventHandler? handler = Interlocked.Exchange(ref registeredHandler, null);
             if (handler is not null)
             {
                 Console.CancelKeyPress -= handler;

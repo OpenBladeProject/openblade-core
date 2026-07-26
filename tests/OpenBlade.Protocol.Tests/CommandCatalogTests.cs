@@ -1,5 +1,5 @@
-using OpenBlade.Protocol;
 using System.Collections.Immutable;
+using OpenBlade.Protocol;
 
 namespace OpenBlade.Protocol.Tests;
 

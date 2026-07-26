@@ -1,5 +1,5 @@
-using System.Threading.Channels;
 using System.Runtime.CompilerServices;
+using System.Threading.Channels;
 using System.Xml.Linq;
 using OpenBlade.Contracts;
 using OpenBlade.Tray;
@@ -1975,7 +1975,10 @@ public sealed class CapabilityPresentationTests
         public async IAsyncEnumerable<ServiceWatchUpdate> WatchStatusAsync(
             [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken token)
         {
-            await foreach (ServiceWatchUpdate status in statuses.Reader.ReadAllAsync(token)) yield return status;
+            await foreach (ServiceWatchUpdate status in statuses.Reader.ReadAllAsync(token))
+            {
+                yield return status;
+            }
         }
         public Task<ControlOperationResult> UpdateProfilesAsync(ProfileSet profiles, CancellationToken token)
         {

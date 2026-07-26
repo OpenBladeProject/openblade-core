@@ -1,5 +1,5 @@
-using OpenBlade.Protocol;
 using System.Runtime.ExceptionServices;
+using OpenBlade.Protocol;
 
 namespace OpenBlade.Capture;
 
