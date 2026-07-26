@@ -3989,29 +3989,42 @@ public sealed class MainViewModelTests
     public async Task AboutBatteryHealth_ShowsCapacityRatioAndTracksAvailability()
     {
         var client = new FakeServiceClient();
-        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        var dispatcher = new RecordingDispatcher();
+        await using var viewModel = new MainViewModel(client, dispatcher);
         await viewModel.StartAsync();
+        int completedCallsBeforeBaseline = dispatcher.CompletedCalls;
+        client.Publish(CreateStatus(verified: true, blocked: false));
+        await WaitUntilAsync(() =>
+            viewModel.IsConnected
+            && dispatcher.CompletedCalls > completedCallsBeforeBaseline);
 
         Assert.Equal("Unavailable", viewModel.AboutBatteryHealthStatus);
 
+        int notificationCount = 0;
+        viewModel.PropertyChanged += (_, args) =>
+        {
+            if (args.PropertyName == nameof(MainViewModel.AboutBatteryHealthStatus))
+            {
+                Interlocked.Increment(ref notificationCount);
+            }
+        };
         client.Publish(CreateStatus(verified: true, blocked: false) with
         {
+            Revision = 2,
             BatteryHealth = new BatteryHealthStatus(95_200, 90_440),
         });
-        await WaitUntilAsync(() =>
-            viewModel.AboutBatteryHealthStatus.StartsWith(
-                "95%",
-                StringComparison.Ordinal));
+        await WaitUntilAsync(() => Volatile.Read(ref notificationCount) == 1);
 
         Assert.Equal("95% (90.4 Wh of 95.2 Wh)", viewModel.AboutBatteryHealthStatus);
 
         client.Publish(CreateStatus(verified: true, blocked: false) with
         {
-            Revision = 2,
+            Revision = 3,
             BatteryHealth = null,
         });
-        await WaitUntilAsync(() =>
-            viewModel.AboutBatteryHealthStatus == "Unavailable");
+        await WaitUntilAsync(() => Volatile.Read(ref notificationCount) == 2);
+
+        Assert.Equal("Unavailable", viewModel.AboutBatteryHealthStatus);
     }
 
     [Fact]

@@ -7314,6 +7314,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         && (left.LightingSuppressions ?? []).SequenceEqual(
             right.LightingSuppressions ?? [])
         && left.Firmware == right.Firmware
+        && left.BatteryHealth == right.BatteryHealth
         && string.Equals(left.ServiceVersion, right.ServiceVersion, StringComparison.Ordinal);
 
     private static bool CapabilitiesEqual(

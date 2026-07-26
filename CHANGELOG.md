@@ -202,6 +202,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Updated the About page immediately when delayed battery-health data becomes
+  available or unavailable without another laptop status change.
 - Fixed playback mute indication retries so a rejected matrix write retires its
   faulted renderer and reapplies the latest Windows mute state on a fresh port.
 - Retried transient read-only battery-state I/O and timeout failures through a
