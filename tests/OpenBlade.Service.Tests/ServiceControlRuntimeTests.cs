@@ -200,21 +200,41 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     }
 
     [Fact]
-    public async Task PowerSourceChange_RetriesUnavailableBatteryHealthOnlyOnce()
+    public async Task PowerSourceChange_RetriesBatteryHealthUntilAvailable()
     {
         TestContext context = CreateContext(providerAvailable: true);
         var recovered = new BatteryHealthStatus(95_200, 90_440);
-        context.Telemetry.BatteryHealth = recovered;
         context.Telemetry.Current = CreateTelemetry(PowerSource.Battery);
 
         await context.Runtime.HandlePowerSourceChangedAsync(CancellationToken.None);
 
-        Assert.Equal(recovered, context.Runtime.GetStatus().BatteryHealth);
+        Assert.Null(context.Runtime.GetStatus().BatteryHealth);
         Assert.Equal(2, context.Telemetry.BatteryHealthCaptureCount);
 
-        context.Telemetry.BatteryHealth = new BatteryHealthStatus(95_200, 89_000);
+        context.Telemetry.BatteryHealth = recovered;
         context.Telemetry.Current = CreateTelemetry(PowerSource.PluggedIn);
         await context.Runtime.HandlePowerSourceChangedAsync(CancellationToken.None);
+
+        Assert.Equal(recovered, context.Runtime.GetStatus().BatteryHealth);
+        Assert.Equal(3, context.Telemetry.BatteryHealthCaptureCount);
+
+        context.Telemetry.BatteryHealth = new BatteryHealthStatus(95_200, 89_000);
+        context.Telemetry.Current = CreateTelemetry(PowerSource.Battery);
+        await context.Runtime.HandlePowerSourceChangedAsync(CancellationToken.None);
+
+        Assert.Equal(recovered, context.Runtime.GetStatus().BatteryHealth);
+        Assert.Equal(3, context.Telemetry.BatteryHealthCaptureCount);
+    }
+
+    [Fact]
+    public async Task FirstVerifiedObservation_RetriesUnavailableBatteryHealthOnce()
+    {
+        TestContext context = CreateContext(providerAvailable: true);
+        var recovered = new BatteryHealthStatus(95_200, 90_440);
+        context.Telemetry.BatteryHealth = recovered;
+
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
 
         Assert.Equal(recovered, context.Runtime.GetStatus().BatteryHealth);
         Assert.Equal(2, context.Telemetry.BatteryHealthCaptureCount);

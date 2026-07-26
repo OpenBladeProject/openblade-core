@@ -9,8 +9,9 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 - Added battery health to About using Windows' read-only design and full-charge
   capacity data. If the battery is not ready during service startup, OpenBlade
-  retries once on the next power-source change and records native capture
-  failures in diagnostics.
+  retries after the first successful laptop verification and on later
+  power-source changes while health remains unavailable. Native capture
+  failures are recorded in diagnostics.
 - Added a Synapse-style playback mute indicator for the RZ09-0581 keyboard.
   While Windows audio is muted, OpenBlade keeps the F1 mute key red without
   replacing the selected lighting effect. Core Audio notifications update the

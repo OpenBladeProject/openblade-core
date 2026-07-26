@@ -225,7 +225,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
     private long lastFullObservationTimestamp;
     private bool controllerPresenceObserved;
     private long lastControllerPresenceTimestamp;
-    private bool batteryHealthRetryPending;
+    private bool batteryHealthVerificationRetryPending;
 
     public ServiceControlRuntime(
         BatteryConfigurationStore store,
@@ -1723,7 +1723,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         {
             PowerSource powerSource = await ResolveCurrentPowerSourceAsync(cancellationToken);
             cancellationToken.ThrowIfCancellationRequested();
-            RetryBatteryHealthCaptureCore();
+            RefreshBatteryHealthAfterPowerSourceChangeCore();
             RefreshControllerPresenceCore(cancellationToken);
             if (powerSource != PowerSource.ExternalUnknown
                 && Automation.ChangePowerSource(powerSource))
@@ -3320,6 +3320,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             consecutiveVerifiedAccessFailures = 0;
             fullObservationCompleted = true;
             lastFullObservationTimestamp = Stopwatch.GetTimestamp();
+            BatteryHealthStatus? batteryHealth =
+                CaptureBatteryHealthAfterFirstVerificationCore();
             PublishIfChanged(GetStatus() with
             {
                 DeviceVerified = true,
@@ -3353,6 +3355,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 StartupAnimationEnabled = startupAnimation,
                 FunctionKeyPrimary = functionKeyPrimary,
                 GamingModeEnabled = gamingModeEnabled,
+                BatteryHealth = batteryHealth,
             });
 
             if (powerSourceConfirmed)
@@ -3933,7 +3936,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
     private ServiceStatusSnapshot CreateInitialSnapshot(PowerSource powerSource)
     {
         BatteryHealthStatus? batteryHealth = powerStateProvider.CaptureBatteryHealth();
-        batteryHealthRetryPending = batteryHealth is null;
+        batteryHealthVerificationRetryPending = batteryHealth is null;
         return new(
             Revision: 0,
             DeviceVerified: false,
@@ -3964,19 +3967,30 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         };
     }
 
-    private void RetryBatteryHealthCaptureCore()
+    private void RefreshBatteryHealthAfterPowerSourceChangeCore()
     {
-        if (!batteryHealthRetryPending)
+        if (GetStatus().BatteryHealth is not null)
         {
             return;
         }
 
-        batteryHealthRetryPending = false;
         BatteryHealthStatus? batteryHealth = powerStateProvider.CaptureBatteryHealth();
         if (batteryHealth is not null)
         {
             PublishIfChanged(GetStatus() with { BatteryHealth = batteryHealth });
         }
+    }
+
+    private BatteryHealthStatus? CaptureBatteryHealthAfterFirstVerificationCore()
+    {
+        BatteryHealthStatus? current = GetStatus().BatteryHealth;
+        if (!batteryHealthVerificationRetryPending)
+        {
+            return current;
+        }
+
+        batteryHealthVerificationRetryPending = false;
+        return current ?? powerStateProvider.CaptureBatteryHealth();
     }
 
     private ControlOperationResult PublishScopedUnavailable(
