@@ -1,4 +1,5 @@
 using System.IO;
+using System.Security;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
@@ -138,34 +139,56 @@ public sealed class UiPreferenceStore
         ArgumentNullException.ThrowIfNull(preferences);
 
         string directory = Path.GetDirectoryName(path)!;
-        Directory.CreateDirectory(directory);
         string temporaryPath = Path.Combine(
             directory,
             $"{Path.GetFileName(path)}.{Guid.NewGuid():N}.tmp");
 
         try
         {
-            await using (FileStream stream = new(
-                temporaryPath,
-                FileMode.CreateNew,
-                FileAccess.Write,
-                FileShare.None,
-                bufferSize: 4096,
-                FileOptions.Asynchronous | FileOptions.WriteThrough))
+            Directory.CreateDirectory(directory);
+            try
             {
-                await JsonSerializer.SerializeAsync(
-                    stream,
-                    preferences,
-                    SerializerOptions,
-                    cancellationToken);
-                await stream.FlushAsync(cancellationToken);
-            }
+                await using (FileStream stream = new(
+                    temporaryPath,
+                    FileMode.CreateNew,
+                    FileAccess.Write,
+                    FileShare.None,
+                    bufferSize: 4096,
+                    FileOptions.Asynchronous | FileOptions.WriteThrough))
+                {
+                    await JsonSerializer.SerializeAsync(
+                        stream,
+                        preferences,
+                        SerializerOptions,
+                        cancellationToken);
+                    await stream.FlushAsync(cancellationToken);
+                }
 
-            File.Move(temporaryPath, path, overwrite: true);
+                File.Move(temporaryPath, path, overwrite: true);
+            }
+            finally
+            {
+                TryDeleteTemporary(temporaryPath);
+            }
         }
-        finally
+        catch (Exception exception) when (
+            exception is IOException or UnauthorizedAccessException or SecurityException)
+        {
+            throw new UiPreferenceSaveException(
+                $"Preferences could not be written to '{path}'.",
+                exception);
+        }
+    }
+
+    private static void TryDeleteTemporary(string temporaryPath)
+    {
+        try
         {
             File.Delete(temporaryPath);
+        }
+        catch (Exception exception) when (
+            exception is IOException or UnauthorizedAccessException or SecurityException)
+        {
         }
     }
 }

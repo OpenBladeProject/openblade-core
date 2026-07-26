@@ -202,6 +202,9 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Coalesced superseded UI preference saves so rapid changes perform at most one
+  in-flight durable write plus one latest-value follow-up, while shutdown still
+  flushes the user's final preference state.
 - Updated the About page immediately when delayed battery-health data becomes
   available or unavailable without another laptop status change.
 - Fixed playback mute indication retries so a rejected matrix write retires its

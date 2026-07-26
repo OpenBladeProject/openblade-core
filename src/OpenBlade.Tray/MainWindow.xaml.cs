@@ -617,6 +617,12 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         {
             // Shutdown won the race; no preference work remains valid.
         }
+        catch (InvalidOperationException exception)
+        {
+            Trace.TraceError(
+                "OpenBlade preference save queue failed: {0}",
+                exception);
+        }
     }
 
     private void PlaceInitialWindow()

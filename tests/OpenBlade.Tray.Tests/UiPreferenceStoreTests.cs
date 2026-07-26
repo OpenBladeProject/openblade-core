@@ -1,3 +1,4 @@
+using System.Collections;
 using System.Text.Json;
 
 namespace OpenBlade.Tray.Tests;
@@ -306,11 +307,104 @@ public sealed class UiPreferenceStoreTests : IDisposable
         Assert.Empty(Directory.EnumerateFiles(directory, "*.tmp"));
     }
 
+    [Fact]
+    public async Task SaveAsync_WrapsIoFailureInUiPreferenceSaveException()
+    {
+        Directory.CreateDirectory(directory);
+        string blockingFile = Path.Combine(directory, "not-a-directory");
+        await File.WriteAllTextAsync(blockingFile, "blocking directory creation");
+        string path = Path.Combine(blockingFile, "preferences.json");
+        UiPreferenceStore store = new(path);
+
+        UiPreferenceSaveException exception =
+            await Assert.ThrowsAsync<UiPreferenceSaveException>(
+                () => store.SaveAsync(new UiPreferences(ThemePreference.Dark)));
+
+        Assert.IsAssignableFrom<IOException>(exception.InnerException);
+        Assert.Contains(path, exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task SaveAsync_DoesNotWrapProgrammingErrors()
+    {
+        UiPreferenceStore store = new(Path.Combine(directory, "preferences.json"));
+        var failure = new ProgrammingTestException("serializer failed");
+        var preferences = new UiPreferences(
+            ThemePreference.Dark,
+            DashboardTelemetryItems:
+                new ThrowingReadOnlyList<LiveReadingItemKind>(() => failure));
+
+        ProgrammingTestException exception =
+            await Assert.ThrowsAsync<ProgrammingTestException>(
+                () => store.SaveAsync(preferences));
+
+        Assert.Same(failure, exception);
+    }
+
+    [Fact]
+    public async Task SaveAsync_TemporaryFileCleanupFailureDoesNotMaskTheResult()
+    {
+        string? temporaryPath = null;
+        UiPreferenceStore store = new(Path.Combine(directory, "preferences.json"));
+        var failure = new ProgrammingTestException("serializer failed");
+        var preferences = new UiPreferences(
+            ThemePreference.Dark,
+            DashboardTelemetryItems:
+                new ThrowingReadOnlyList<LiveReadingItemKind>(() =>
+                {
+                    temporaryPath = Assert.Single(
+                        Directory.EnumerateFiles(directory, "*.tmp"));
+                    File.SetAttributes(temporaryPath, FileAttributes.ReadOnly);
+                    return failure;
+                }));
+
+        try
+        {
+            ProgrammingTestException exception =
+                await Assert.ThrowsAsync<ProgrammingTestException>(
+                    () => store.SaveAsync(preferences));
+
+            Assert.Same(failure, exception);
+            Assert.NotNull(temporaryPath);
+            Assert.True(File.Exists(temporaryPath));
+        }
+        finally
+        {
+            if (temporaryPath is not null && File.Exists(temporaryPath))
+            {
+                File.SetAttributes(temporaryPath, FileAttributes.Normal);
+                File.Delete(temporaryPath);
+            }
+        }
+    }
+
     public void Dispose()
     {
         if (Directory.Exists(directory))
         {
+            foreach (string file in Directory.EnumerateFiles(
+                directory,
+                "*",
+                SearchOption.AllDirectories))
+            {
+                File.SetAttributes(file, FileAttributes.Normal);
+            }
+
             Directory.Delete(directory, recursive: true);
         }
     }
+
+    private sealed class ThrowingReadOnlyList<T>(Func<Exception> createFailure)
+        : IReadOnlyList<T>
+    {
+        public int Count => 1;
+
+        public T this[int index] => throw createFailure();
+
+        public IEnumerator<T> GetEnumerator() => throw createFailure();
+
+        IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
+    }
+
+    private sealed class ProgrammingTestException(string message) : Exception(message);
 }
