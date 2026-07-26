@@ -905,99 +905,11 @@ public sealed class ServiceReactiveLightingLoopTests
 
         public RecordingSource? Last { get; private set; }
 
-        public IReactiveKeyboardSource Create(Action<ReactiveKeyPulse> publish)
+        public IReactiveKeyboardSource Create(ReactiveKeyboardSourceOptions options)
         {
+            ArgumentNullException.ThrowIfNull(options);
             CreateCount++;
-            return Last = new RecordingSource(publish, _ => { });
-        }
-
-        public IReactiveKeyboardSource Create(
-            Action<ReactiveKeyPulse> publish,
-            Action<PerformanceShortcutSource> publishPerformanceShortcut)
-        {
-            CreateCount++;
-            return Last = new RecordingSource(publish, publishPerformanceShortcut);
-        }
-
-        public IReactiveKeyboardSource Create(
-            Action<ReactiveKeyPulse> publish,
-            Action<PerformanceShortcutSource> publishPerformanceShortcut,
-            Action<SpecialKeySlot> publishSpecialKey,
-            Func<SpecialKeySlot, bool> shouldOverrideSpecialKey)
-        {
-            CreateCount++;
-            return Last = new RecordingSource(
-                publish,
-                publishPerformanceShortcut,
-                publishSpecialKey,
-                shouldOverrideSpecialKey);
-        }
-
-        public IReactiveKeyboardSource Create(
-            Action<ReactiveKeyPulse> publish,
-            Action<PerformanceShortcutSource> publishPerformanceShortcut,
-            Action<SpecialKeySlot> publishSpecialKey,
-            Func<SpecialKeySlot, bool> shouldOverrideSpecialKey,
-            Action<FunctionRowAction> publishFunctionRowAction,
-            Func<FunctionKeyPrimaryMode?> readFunctionKeyPrimaryMode,
-            Func<KeyboardDriverModeObservation> readDriverModeObservation)
-        {
-            CreateCount++;
-            return Last = new RecordingSource(
-                publish,
-                publishPerformanceShortcut,
-                publishSpecialKey,
-                shouldOverrideSpecialKey,
-                _ => { },
-                publishFunctionRowAction,
-                readFunctionKeyPrimaryMode,
-                readDriverModeObservation);
-        }
-
-        public IReactiveKeyboardSource Create(
-            Action<ReactiveKeyPulse> publish,
-            Action<PerformanceShortcutSource> publishPerformanceShortcut,
-            Action<SpecialKeySlot> publishSpecialKey,
-            Func<SpecialKeySlot, bool> shouldOverrideSpecialKey,
-            Action<SpecialKeySlot> publishDefaultLaptopKey,
-            Action<FunctionRowAction> publishFunctionRowAction,
-            Func<FunctionKeyPrimaryMode?> readFunctionKeyPrimaryMode,
-            Func<KeyboardDriverModeObservation> readDriverModeObservation,
-            Func<GamingModeKeyPolicy> readGamingModeKeyPolicy)
-        {
-            CreateCount++;
-            return Last = new RecordingSource(
-                publish,
-                publishPerformanceShortcut,
-                publishSpecialKey,
-                shouldOverrideSpecialKey,
-                publishDefaultLaptopKey,
-                publishFunctionRowAction,
-                readFunctionKeyPrimaryMode,
-                readDriverModeObservation,
-                readGamingModeKeyPolicy);
-        }
-
-        public IReactiveKeyboardSource Create(
-            Action<ReactiveKeyPulse> publish,
-            Action<PerformanceShortcutSource> publishPerformanceShortcut,
-            Action<SpecialKeySlot> publishSpecialKey,
-            Func<SpecialKeySlot, bool> shouldOverrideSpecialKey,
-            Action<SpecialKeySlot> publishDefaultLaptopKey,
-            Action<FunctionRowAction> publishFunctionRowAction,
-            Func<FunctionKeyPrimaryMode?> readFunctionKeyPrimaryMode,
-            Func<KeyboardDriverModeObservation> readDriverModeObservation)
-        {
-            CreateCount++;
-            return Last = new RecordingSource(
-                publish,
-                publishPerformanceShortcut,
-                publishSpecialKey,
-                shouldOverrideSpecialKey,
-                publishDefaultLaptopKey,
-                publishFunctionRowAction,
-                readFunctionKeyPrimaryMode,
-                readDriverModeObservation);
+            return Last = new RecordingSource(options);
         }
     }
 
@@ -1015,28 +927,17 @@ public sealed class ServiceReactiveLightingLoopTests
         private readonly Func<KeyboardDriverModeObservation> readDriverModeObservation;
         private readonly Func<GamingModeKeyPolicy> readGamingModeKeyPolicy;
 
-        public RecordingSource(
-            Action<ReactiveKeyPulse> publish,
-            Action<PerformanceShortcutSource> publishPerformanceShortcut,
-            Action<SpecialKeySlot>? publishSpecialKey = null,
-            Func<SpecialKeySlot, bool>? shouldOverrideSpecialKey = null,
-            Action<SpecialKeySlot>? publishDefaultLaptopKey = null,
-            Action<FunctionRowAction>? publishFunctionRowAction = null,
-            Func<FunctionKeyPrimaryMode?>? readFunctionKeyPrimaryMode = null,
-            Func<KeyboardDriverModeObservation>? readDriverModeObservation = null,
-            Func<GamingModeKeyPolicy>? readGamingModeKeyPolicy = null)
+        public RecordingSource(ReactiveKeyboardSourceOptions options)
         {
-            this.publish = publish;
-            this.publishPerformanceShortcut = publishPerformanceShortcut;
-            this.publishSpecialKey = publishSpecialKey ?? (_ => { });
-            this.shouldOverrideSpecialKey = shouldOverrideSpecialKey ?? (_ => false);
-            this.publishDefaultLaptopKey = publishDefaultLaptopKey ?? (_ => { });
-            this.publishFunctionRowAction = publishFunctionRowAction ?? (_ => { });
-            this.readFunctionKeyPrimaryMode = readFunctionKeyPrimaryMode ?? (() => null);
-            this.readDriverModeObservation =
-                readDriverModeObservation ?? (() => KeyboardDriverModeObservation.Unknown);
-            this.readGamingModeKeyPolicy =
-                readGamingModeKeyPolicy ?? (() => GamingModeKeyPolicy.Disabled);
+            publish = options.PublishPulse;
+            publishPerformanceShortcut = options.PublishPerformanceShortcut;
+            publishSpecialKey = options.PublishSpecialKey;
+            shouldOverrideSpecialKey = options.ShouldOverrideSpecialKey;
+            publishDefaultLaptopKey = options.PublishDefaultLaptopKey;
+            publishFunctionRowAction = options.PublishFunctionRowAction;
+            readFunctionKeyPrimaryMode = options.ReadFunctionKeyPrimaryMode;
+            readDriverModeObservation = options.ReadDriverModeObservation;
+            readGamingModeKeyPolicy = options.ReadGamingModeKeyPolicy;
         }
 
         public bool Disposed { get; private set; }

@@ -16,82 +16,8 @@ public sealed class WindowsReactiveKeyboardSourceFactory : IReactiveKeyboardSour
     {
     }
 
-    public IReactiveKeyboardSource Create(Action<ReactiveKeyPulse> publish) =>
-        new WindowsReactiveKeyboardSource(publish, _ => { });
-
-    public IReactiveKeyboardSource Create(
-        Action<ReactiveKeyPulse> publish,
-        Action<PerformanceShortcutSource> publishPerformanceShortcut) =>
-        new WindowsReactiveKeyboardSource(publish, publishPerformanceShortcut);
-
-    public IReactiveKeyboardSource Create(
-        Action<ReactiveKeyPulse> publish,
-        Action<PerformanceShortcutSource> publishPerformanceShortcut,
-        Action<SpecialKeySlot> publishSpecialKey,
-        Func<SpecialKeySlot, bool> shouldOverrideSpecialKey) =>
-        new WindowsReactiveKeyboardSource(
-            publish,
-            publishPerformanceShortcut,
-            publishSpecialKey,
-            shouldOverrideSpecialKey);
-
-    public IReactiveKeyboardSource Create(
-        Action<ReactiveKeyPulse> publish,
-        Action<PerformanceShortcutSource> publishPerformanceShortcut,
-        Action<SpecialKeySlot> publishSpecialKey,
-        Func<SpecialKeySlot, bool> shouldOverrideSpecialKey,
-        Action<FunctionRowAction> publishFunctionRowAction,
-        Func<FunctionKeyPrimaryMode?> readFunctionKeyPrimaryMode,
-        Func<KeyboardDriverModeObservation> readDriverModeObservation) =>
-        new WindowsReactiveKeyboardSource(
-            publish,
-            publishPerformanceShortcut,
-            publishSpecialKey,
-            shouldOverrideSpecialKey,
-            _ => { },
-            publishFunctionRowAction,
-            readFunctionKeyPrimaryMode,
-            readDriverModeObservation);
-
-    public IReactiveKeyboardSource Create(
-        Action<ReactiveKeyPulse> publish,
-        Action<PerformanceShortcutSource> publishPerformanceShortcut,
-        Action<SpecialKeySlot> publishSpecialKey,
-        Func<SpecialKeySlot, bool> shouldOverrideSpecialKey,
-        Action<SpecialKeySlot> publishDefaultLaptopKey,
-        Action<FunctionRowAction> publishFunctionRowAction,
-        Func<FunctionKeyPrimaryMode?> readFunctionKeyPrimaryMode,
-        Func<KeyboardDriverModeObservation> readDriverModeObservation,
-        Func<GamingModeKeyPolicy> readGamingModeKeyPolicy) =>
-        new WindowsReactiveKeyboardSource(
-            publish,
-            publishPerformanceShortcut,
-            publishSpecialKey,
-            shouldOverrideSpecialKey,
-            publishDefaultLaptopKey,
-            publishFunctionRowAction,
-            readFunctionKeyPrimaryMode,
-            readDriverModeObservation,
-            readGamingModeKeyPolicy);
-
-    public IReactiveKeyboardSource Create(
-        Action<ReactiveKeyPulse> publish,
-        Action<PerformanceShortcutSource> publishPerformanceShortcut,
-        Action<SpecialKeySlot> publishSpecialKey,
-        Func<SpecialKeySlot, bool> shouldOverrideSpecialKey,
-        Action<SpecialKeySlot> publishDefaultLaptopKey,
-        Action<FunctionRowAction> publishFunctionRowAction,
-        Func<FunctionKeyPrimaryMode?> readFunctionKeyPrimaryMode,
-        Func<KeyboardDriverModeObservation> readDriverModeObservation) =>
-        new WindowsReactiveKeyboardSource(
-            publish,
-            publishPerformanceShortcut,
-            publishSpecialKey,
-            shouldOverrideSpecialKey,
-            publishDefaultLaptopKey,
-            publishFunctionRowAction,
-            readFunctionKeyPrimaryMode,
-            readDriverModeObservation);
+    public IReactiveKeyboardSource Create(ReactiveKeyboardSourceOptions options) =>
+        new WindowsReactiveKeyboardSource(options);
 }
 
 /// <summary>
@@ -171,47 +97,27 @@ internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
     private nint keyboardHook;
     private int disposed;
 
-    internal WindowsReactiveKeyboardSource(
-        Action<ReactiveKeyPulse> publish,
-        Action<PerformanceShortcutSource> publishPerformanceShortcut)
-        : this(
-            publish,
-            publishPerformanceShortcut,
-            _ => { },
-            _ => false,
-            _ => { },
-            _ => { },
-            () => null,
-            () => KeyboardDriverModeObservation.Unknown,
-            () => GamingModeKeyPolicy.Disabled)
+    internal WindowsReactiveKeyboardSource(ReactiveKeyboardSourceOptions options)
     {
-    }
-
-    internal WindowsReactiveKeyboardSource(
-        Action<ReactiveKeyPulse> publish,
-        Action<PerformanceShortcutSource> publishPerformanceShortcut,
-        Action<SpecialKeySlot> publishSpecialKey,
-        Func<SpecialKeySlot, bool> shouldOverrideSpecialKey,
-        Action<SpecialKeySlot>? publishDefaultLaptopKey = null,
-        Action<FunctionRowAction>? publishFunctionRowAction = null,
-        Func<FunctionKeyPrimaryMode?>? readFunctionKeyPrimaryMode = null,
-        Func<KeyboardDriverModeObservation>? readDriverModeObservation = null,
-        Func<GamingModeKeyPolicy>? readGamingModeKeyPolicy = null)
-    {
-        this.publish = publish ?? throw new ArgumentNullException(nameof(publish));
-        this.publishPerformanceShortcut = publishPerformanceShortcut
-            ?? throw new ArgumentNullException(nameof(publishPerformanceShortcut));
-        this.publishSpecialKey = publishSpecialKey
-            ?? throw new ArgumentNullException(nameof(publishSpecialKey));
-        this.shouldOverrideSpecialKey = shouldOverrideSpecialKey
-            ?? throw new ArgumentNullException(nameof(shouldOverrideSpecialKey));
-        this.publishDefaultLaptopKey = publishDefaultLaptopKey ?? (_ => { });
-        this.publishFunctionRowAction = publishFunctionRowAction ?? (_ => { });
-        this.readFunctionKeyPrimaryMode = readFunctionKeyPrimaryMode ?? (() => null);
-        this.readDriverModeObservation =
-            readDriverModeObservation ?? (() => KeyboardDriverModeObservation.Unknown);
-        this.readGamingModeKeyPolicy =
-            readGamingModeKeyPolicy ?? (() => GamingModeKeyPolicy.Disabled);
+        ArgumentNullException.ThrowIfNull(options);
+        publish = options.PublishPulse
+            ?? throw new ArgumentNullException(nameof(options.PublishPulse));
+        publishPerformanceShortcut = options.PublishPerformanceShortcut
+            ?? throw new ArgumentNullException(nameof(options.PublishPerformanceShortcut));
+        publishSpecialKey = options.PublishSpecialKey
+            ?? throw new ArgumentNullException(nameof(options.PublishSpecialKey));
+        shouldOverrideSpecialKey = options.ShouldOverrideSpecialKey
+            ?? throw new ArgumentNullException(nameof(options.ShouldOverrideSpecialKey));
+        publishDefaultLaptopKey = options.PublishDefaultLaptopKey
+            ?? throw new ArgumentNullException(nameof(options.PublishDefaultLaptopKey));
+        publishFunctionRowAction = options.PublishFunctionRowAction
+            ?? throw new ArgumentNullException(nameof(options.PublishFunctionRowAction));
+        readFunctionKeyPrimaryMode = options.ReadFunctionKeyPrimaryMode
+            ?? throw new ArgumentNullException(nameof(options.ReadFunctionKeyPrimaryMode));
+        readDriverModeObservation = options.ReadDriverModeObservation
+            ?? throw new ArgumentNullException(nameof(options.ReadDriverModeObservation));
+        readGamingModeKeyPolicy = options.ReadGamingModeKeyPolicy
+            ?? throw new ArgumentNullException(nameof(options.ReadGamingModeKeyPolicy));
         messageThread = new Thread(RunMessageWindow)
         {
             IsBackground = true,

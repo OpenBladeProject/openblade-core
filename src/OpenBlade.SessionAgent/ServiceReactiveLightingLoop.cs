@@ -9,73 +9,20 @@ public interface IReactiveKeyboardSource : IDisposable
     Task Completion { get; }
 }
 
+public sealed record ReactiveKeyboardSourceOptions(
+    Action<ReactiveKeyPulse> PublishPulse,
+    Action<PerformanceShortcutSource> PublishPerformanceShortcut,
+    Action<SpecialKeySlot> PublishSpecialKey,
+    Func<SpecialKeySlot, bool> ShouldOverrideSpecialKey,
+    Action<SpecialKeySlot> PublishDefaultLaptopKey,
+    Action<FunctionRowAction> PublishFunctionRowAction,
+    Func<FunctionKeyPrimaryMode?> ReadFunctionKeyPrimaryMode,
+    Func<KeyboardDriverModeObservation> ReadDriverModeObservation,
+    Func<GamingModeKeyPolicy> ReadGamingModeKeyPolicy);
+
 public interface IReactiveKeyboardSourceFactory
 {
-    IReactiveKeyboardSource Create(Action<ReactiveKeyPulse> publish);
-
-    IReactiveKeyboardSource Create(
-        Action<ReactiveKeyPulse> publish,
-        Action<PerformanceShortcutSource> publishPerformanceShortcut) =>
-        Create(publish);
-
-    IReactiveKeyboardSource Create(
-        Action<ReactiveKeyPulse> publish,
-        Action<PerformanceShortcutSource> publishPerformanceShortcut,
-        Action<SpecialKeySlot> publishSpecialKey,
-        Func<SpecialKeySlot, bool> shouldOverrideSpecialKey) =>
-        Create(publish, publishPerformanceShortcut);
-
-    IReactiveKeyboardSource Create(
-        Action<ReactiveKeyPulse> publish,
-        Action<PerformanceShortcutSource> publishPerformanceShortcut,
-        Action<SpecialKeySlot> publishSpecialKey,
-        Func<SpecialKeySlot, bool> shouldOverrideSpecialKey,
-        Action<FunctionRowAction> publishFunctionRowAction,
-        Func<FunctionKeyPrimaryMode?> readFunctionKeyPrimaryMode,
-        Func<KeyboardDriverModeObservation> readDriverModeObservation) =>
-        Create(
-            publish,
-            publishPerformanceShortcut,
-            publishSpecialKey,
-            shouldOverrideSpecialKey);
-
-    IReactiveKeyboardSource Create(
-        Action<ReactiveKeyPulse> publish,
-        Action<PerformanceShortcutSource> publishPerformanceShortcut,
-        Action<SpecialKeySlot> publishSpecialKey,
-        Func<SpecialKeySlot, bool> shouldOverrideSpecialKey,
-        Action<SpecialKeySlot> publishDefaultLaptopKey,
-        Action<FunctionRowAction> publishFunctionRowAction,
-        Func<FunctionKeyPrimaryMode?> readFunctionKeyPrimaryMode,
-        Func<KeyboardDriverModeObservation> readDriverModeObservation) =>
-        Create(
-            publish,
-            publishPerformanceShortcut,
-            publishSpecialKey,
-            shouldOverrideSpecialKey,
-            publishFunctionRowAction,
-            readFunctionKeyPrimaryMode,
-            readDriverModeObservation);
-
-    IReactiveKeyboardSource Create(
-        Action<ReactiveKeyPulse> publish,
-        Action<PerformanceShortcutSource> publishPerformanceShortcut,
-        Action<SpecialKeySlot> publishSpecialKey,
-        Func<SpecialKeySlot, bool> shouldOverrideSpecialKey,
-        Action<SpecialKeySlot> publishDefaultLaptopKey,
-        Action<FunctionRowAction> publishFunctionRowAction,
-        Func<FunctionKeyPrimaryMode?> readFunctionKeyPrimaryMode,
-        Func<KeyboardDriverModeObservation> readDriverModeObservation,
-        Func<GamingModeKeyPolicy> readGamingModeKeyPolicy) =>
-        Create(
-            publish,
-            publishPerformanceShortcut,
-            publishSpecialKey,
-            shouldOverrideSpecialKey,
-            publishDefaultLaptopKey,
-            publishFunctionRowAction,
-            readFunctionKeyPrimaryMode,
-            readDriverModeObservation);
+    IReactiveKeyboardSource Create(ReactiveKeyboardSourceOptions options);
 }
 
 /// <summary>
@@ -280,46 +227,48 @@ public sealed class ServiceReactiveLightingLoop : IAsyncDisposable
         try
         {
             IReactiveKeyboardSource created = sourceFactory.Create(
-                pulse =>
-                {
-                    if (Volatile.Read(ref keyTriggeredActive) != 0
-                        && !pulsePump.TryEnqueue(pulse))
+                new ReactiveKeyboardSourceOptions(
+                    PublishPulse: pulse =>
                     {
-                        ReportFailure(new InvalidOperationException(
-                            "Key-triggered lighting input could not keep up and skipped a key press."));
-                    }
-                },
-                QueuePerformanceShortcut,
-                specialKey =>
-                {
-                    if (specialKeyPump is null || !specialKeyPump.TryEnqueue(specialKey))
+                        if (Volatile.Read(ref keyTriggeredActive) != 0
+                            && !pulsePump.TryEnqueue(pulse))
+                        {
+                            ReportFailure(new InvalidOperationException(
+                                "Key-triggered lighting input could not keep up and skipped a key press."));
+                        }
+                    },
+                    PublishPerformanceShortcut: QueuePerformanceShortcut,
+                    PublishSpecialKey: specialKey =>
                     {
-                        ReportFailure(new InvalidOperationException(
-                            "Special-key input could not keep up and skipped a button press."));
-                    }
-                },
-                shouldOverrideSpecialKey,
-                defaultLaptopKey =>
-                {
-                    if (defaultLaptopKeyPump is null
-                        || !defaultLaptopKeyPump.TryEnqueue(defaultLaptopKey))
+                        if (specialKeyPump is null
+                            || !specialKeyPump.TryEnqueue(specialKey))
+                        {
+                            ReportFailure(new InvalidOperationException(
+                                "Special-key input could not keep up and skipped a button press."));
+                        }
+                    },
+                    ShouldOverrideSpecialKey: shouldOverrideSpecialKey,
+                    PublishDefaultLaptopKey: defaultLaptopKey =>
                     {
-                        ReportFailure(new InvalidOperationException(
-                            "Default laptop-key input could not keep up and skipped a button press."));
-                    }
-                },
-                action =>
-                {
-                    if (functionRowActionPump is null
-                        || !functionRowActionPump.TryEnqueue(action))
+                        if (defaultLaptopKeyPump is null
+                            || !defaultLaptopKeyPump.TryEnqueue(defaultLaptopKey))
+                        {
+                            ReportFailure(new InvalidOperationException(
+                                "Default laptop-key input could not keep up and skipped a button press."));
+                        }
+                    },
+                    PublishFunctionRowAction: action =>
                     {
-                        ReportFailure(new InvalidOperationException(
-                            "Function-row input could not keep up and skipped a key press."));
-                    }
-                },
-                ReadFunctionKeyPrimaryMode,
-                ReadDriverModeObservation,
-                ReadGamingModeKeyPolicy);
+                        if (functionRowActionPump is null
+                            || !functionRowActionPump.TryEnqueue(action))
+                        {
+                            ReportFailure(new InvalidOperationException(
+                                "Function-row input could not keep up and skipped a key press."));
+                        }
+                    },
+                    ReadFunctionKeyPrimaryMode: ReadFunctionKeyPrimaryMode,
+                    ReadDriverModeObservation: ReadDriverModeObservation,
+                    ReadGamingModeKeyPolicy: ReadGamingModeKeyPolicy));
             if (Volatile.Read(ref disposed) != 0
                 || Interlocked.CompareExchange(ref source, created, null) is not null)
             {
