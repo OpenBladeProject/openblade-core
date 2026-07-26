@@ -1,188 +1,177 @@
-# OpenBlade
+<div align="center">
+  <img src="src/OpenBlade.Tray/Assets/Brand/OpenBlade.png" width="128" alt="OpenBlade">
+  <h1>OpenBlade</h1>
+  <p><strong>Native Windows control for Razer Blade laptops.</strong></p>
+  <p>
+    <a href="https://github.com/OSSBlade/openblade-docs">Documentation</a>
+    ·
+    <a href="https://github.com/OSSBlade/openblade-core/releases">Releases</a>
+    ·
+    <a href="CHANGELOG.md">Changelog</a>
+  </p>
+</div>
 
-OpenBlade is a lightweight, standalone Windows utility for Razer Blade laptops.
-Its capability system is designed for additional models, but the current
-release supports only the Razer Blade 16 RZ09-0581 with USB identity
-`1532:02E0` and BIOS `3.01`. The tested machine also reports EC `1.04` and
-MCU `1.5.0.0` or `1.6.0.0`; these are recorded as diagnostic metadata and do
-not expand the runtime admission scope.
+OpenBlade is a tray-first utility for performance, thermals, battery, display
+behavior, special keys, and lighting. It runs without Razer Synapse components
+and does not install a sensor or control kernel driver.
 
-## Safety state
+Hardware support is evidence-based. OpenBlade is Razer-only, and a control is
+enabled only when its command has reviewed, sanitized capture evidence for the
+exact laptop and firmware.
 
-The application is deliberately fail-closed. A PID `02E0` hardware write is
-available only when that exact operation has a sanitized capture fixture that
-passed decoding, interactive application, response validation, and restoration
-and whose bytes are embedded and hash-trusted in the application. Stateful and
-automatic controls additionally require independent readback. Setter-only
-controls are exposed solely as explicit one-shot actions. Startup animation,
-Function key behavior, and Gaming Mode have validated readback on the current
-target, so OpenBlade can show their confirmed values, save them per profile, and
-restore them during profile transitions. OpenBlade never exposes a raw-command
-IPC endpoint.
+| Dashboard | Lighting |
+| :---: | :---: |
+| <img src="docs/images/openblade-dashboard.png" alt="OpenBlade dashboard" width="410"> | <img src="docs/images/openblade-lighting.png" alt="OpenBlade lighting controls" width="410"> |
 
-If a Razer/Synapse controller process is running, the service reports an
-advisory warning. OpenBlade observes confirmed device state and does not
-automatically overwrite a control that another controller changed. An explicit
-manual OpenBlade action may reclaim that control after a fresh readback. Users
-may opt in to always restoring OpenBlade's last lighting effect; this exception
-applies only to lighting and is disabled by default.
+## Current hardware support
 
-## Profiles
+| Laptop | USB identity | BIOS | EC | MCU |
+| --- | --- | --- | --- | --- |
+| Razer Blade 16 (2026), `RZ09-0581` | `1532:02E0` | `3.01` | `1.04` | `1.5.0.0`, `1.6.0.0` |
 
-Saved AC, USB-C, and battery profiles can be exported and imported as JSON.
-Exports use a versioned envelope with an explicit `schemaVersion`; imports are
-routed through a schema-specific reader so future OpenBlade releases can migrate
-older profile structures without silently interpreting them as the current one.
+Other Blade models remain unsupported until their commands have equivalent
+capture and restoration evidence. OpenBlade does not reuse commands from
+similar laptops or relax identity checks to make a device appear compatible.
 
-## Live readings
+## What it controls
 
-OpenBlade can show net battery power from Windows, independent Fan 1 and Fan 2
-RPM values from a validated read-only HID query, firmware CPU temperature, and
-GPU temperature from signed NVIDIA NVML. Each reading degrades to unavailable
-when its source cannot be read. The user can choose an Off, 1-, 2-, 5-, or
-10-second refresh interval and which readings appear. OpenBlade does not install
-or redistribute a sensor kernel driver.
+- AC, USB-C, and battery profiles with automatic power-source switching
+- Power modes, fan behavior, NVIDIA GPU clock offsets, and battery charge limits
+- Keyboard and lid-logo lighting, including streamed effects and a playback
+  mute indicator
+- Display profiles, brightness behavior, function-row behavior, and M1 through
+  M5 Fn-layer bindings
+- Battery power and health, fan RPM, CPU temperature, and NVIDIA GPU telemetry
+- Bounded, redacted diagnostics and guided firmware-update smoke tests
 
-## Diagnostics
+The visible tray can exit without stopping profile automation, display
+automation, configured special keys, or interactive lighting. The per-user
+Session Agent keeps those features active.
 
-The connected tray can export a redacted diagnostic ZIP even when hardware
-controls are read-only, conflicted, or unavailable. The LocalSystem service
-creates a snapshot-only archive and never accepts a destination path; the
-unelevated tray writes the user-selected file through a temporary sibling and
-replacement move. Archives are capped at 32 KiB and contain only these entries:
+## Hardware safety
 
-- `versions.json`
-- `device.json`
-- `capabilities.json`
-- `configuration.json`
-- `command-results.json`
-- `logs.jsonl`
+OpenBlade fails closed when identity, evidence, or state cannot be confirmed.
 
-Only bounded OpenBlade-owned log messages are retained. Raw HID reports,
-payloads, checksums, transaction IDs, native handles, stack traces, serial
-numbers, and configured local identity/path tokens are excluded or redacted.
+- The LocalSystem service is the only process that owns the laptop control HID
+  handle, and it serializes every hardware operation.
+- The protocol layer encodes validated 90-byte Razer reports. Service IPC
+  exposes typed operations only; there is no raw-command endpoint.
+- Every admitted write has a trusted capture fixture. Automatic and stateful
+  controls also require independent readback.
+- Temporary pipe, enumeration, or read failures preserve the last confirmed UI
+  state, but every write performs fresh identity and safety checks.
+- Razer software is reported as a possible conflict. OpenBlade does not stop it
+  or silently fight external changes.
 
-## Firmware-update smoke test
+Capture tools are kept outside the installed product, and raw captures are
+never production admission artifacts.
 
-Run the product-level smoke workflow before and after a laptop firmware update.
-It talks only to the installed OpenBlade service through typed IPC; it does not
-use USBPcap or expose raw firmware commands. Local reports are written beneath
-the ignored `artifacts\firmware-smoke` directory.
+## Architecture
 
-Capture and inspect the read-only baseline first:
+```mermaid
+flowchart LR
+    Tray["Tray<br>WinUI 3, user session"]
+    Agent["Session Agent<br>Raw Input and user APIs"]
+    Service["Service<br>LocalSystem"]
+    Windows["Windows session APIs"]
+    Blade["Razer Blade firmware"]
 
-```powershell
-.\scripts\Test-FirmwareUpdate.ps1 -Phase Baseline
+    Tray <-->|"typed service IPC"| Service
+    Tray <-->|"display IPC"| Agent
+    Agent <-->|"typed service IPC"| Service
+    Agent -->|"display, audio, and input"| Windows
+    Service -->|"validated HID reports"| Blade
 ```
 
-Before updating, rehearse the reversible checks against the known-good firmware.
-The command changes one admitted control at a time, confirms readback, and
-restores the original value even when a check fails:
+| Area | Responsibility |
+| --- | --- |
+| `OpenBlade.Contracts` | Versioned service IPC, profiles, capabilities, and device state |
+| `OpenBlade.Protocol` | Report encoding, fixtures, checksums, admission, and HID transport |
+| `OpenBlade.Service` | Hardware ownership, automation, configuration, and named-pipe server |
+| `OpenBlade.SessionAgent` | Current-user display, input, audio, and streamed-lighting work |
+| `OpenBlade.Tray.Core` / `OpenBlade.Tray` | Presentation policy and the WinUI 3 tray interface |
+| `OpenBlade.Setup` | Transactional install, repair, shutdown, and uninstall |
+| `OpenBlade.Capture` / `OpenBlade.FirmwareSmoke` | Developer-only protocol and firmware validation |
 
-```powershell
-.\scripts\Test-FirmwareUpdate.ps1 `
-    -Phase Rehearsal `
-    -BaselinePath .\artifacts\firmware-smoke\<baseline>\baseline.json `
-    -ConfirmTarget RZ09-0581-MCU-SMOKE
-```
-
-After the firmware updater finishes and Windows restarts, run the read-only
-comparison. It fails if the MCU version did not change or if device admission,
-capabilities, readbacks, telemetry, component versions, or runtime health
-regress:
-
-```powershell
-.\scripts\Test-FirmwareUpdate.ps1 `
-    -Phase PostUpdate `
-    -BaselinePath .\artifacts\firmware-smoke\<baseline>\baseline.json
-```
-
-Only after that report passes, run `-Phase Reversible` with the same baseline
-and target confirmation. Complete the guided physical checklist in the
-generated Markdown report for matrix lighting, special keys, power-source
-transitions, and sleep/resume behavior that software readback cannot prove.
-If an interrupted run cannot restore a value, stop further checks and use
-`-Phase Recover` with the same baseline and target confirmation before doing
-anything else.
+[AGENTS.md](AGENTS.md) contains the full codebase map and engineering
+constraints. [VERSIONING.md](VERSIONING.md) defines product, schema, and IPC
+compatibility policy.
 
 ## Build and test
 
-Requires Windows 11 and the .NET 10 SDK.
-
-Repository structure, safety constraints, and change workflow are documented in
-[AGENTS.md](AGENTS.md). Product, schema, IPC, and commit-message policy is in
-[VERSIONING.md](VERSIONING.md).
+You need Windows 11 x64 and the .NET 10 SDK.
 
 ```powershell
-dotnet restore OpenBlade.slnx
-dotnet build OpenBlade.slnx --no-restore
-dotnet test OpenBlade.slnx --no-build --no-restore
+git submodule update --init --recursive
+dotnet restore OpenBlade.slnx -p:NuGetAudit=false
+dotnet build OpenBlade.slnx -p:NuGetAudit=false --no-restore
+dotnet test OpenBlade.slnx -p:NuGetAudit=false --no-build --no-restore
 ```
 
-Create an untrimmed, self-contained `win-x64` bundle:
+The build treats warnings as errors and uses deterministic assemblies. Tests
+cover protocol encoding, device admission, IPC, service behavior, presentation
+policy, setup transactions, and release-payload boundaries.
+
+## Publish and install
+
+Create the self-contained `win-x64` production bundle and separate developer
+tools:
 
 ```powershell
 .\build\Publish.ps1
 ```
 
-The production installer bundle is written to `artifacts\win-x64\OpenBlade`.
-It contains the LocalSystem Service, the per-user SessionAgent, and the Tray
-application payload. The SessionAgent is the sole owner of current-user Windows
-display APIs, so saved display profiles continue to follow confirmed power-source
-changes after the visible tray exits. Run
-`OpenBlade.Setup.exe install` from an elevated terminal to install it. Use
-Windows Settings > Apps > Installed apps or the **Uninstall OpenBlade** Start
-menu entry for a confirmation-based uninstall that preserves saved profiles and
-preferences. For automation, the installed
-`C:\Program Files\OpenBlade\OpenBlade.Setup.exe uninstall` command has the same
-preserving behavior. Pass `--purge` explicitly to remove saved data too.
-Uninstall requests a graceful shutdown from the exact installed tray and
-SessionAgent processes and waits for both to exit before removing binaries. If
-binary removal fails, Setup restores the Installed apps and Start menu retry
-entries. The SessionAgent always starts at sign-in for profile automation; the
-Settings toggle independently controls whether the visible tray also starts at
-sign-in. Setup copies its single-file executable into the activated install tree
-with write-through I/O, then verifies the installed length and SHA-256 before
-committing the installation.
-
-Interactive lighting and performance shortcuts use Raw Input in the
-SessionAgent. OpenBlade does not install a UIAccess helper or run the tray as
-administrator, so Reactive, Ripple, and performance-shortcut input are not
-expected to react while Task Manager or another elevated application has focus.
-
-The Capture CLI is published separately to
-`artifacts\win-x64\OpenBlade.DeveloperTools`. It is a developer-only protocol
-tool and is not copied into the production installer or installed under
-Program Files.
-
-## Brand assets
-
-This repository contains only the application and tray `.ico` files required
-to build and run OpenBlade. Brand source files, alternate exports, and unused
-variants are maintained in
-[`OSSBlade/openblade-branding`](https://github.com/OSSBlade/openblade-branding).
-
-## Capture workflow
-
-Synapse may remain installed for other Razer devices and can be used as the
-protocol oracle while gathering captures. OpenBlade must not depend on it at
-runtime. Capture evidence and tooling are maintained in
-[OSSBlade/openblade-captures](https://github.com/OSSBlade/openblade-captures),
-which is included here as the `captures` submodule. Capture procedures are
-documented in
-[OSSBlade/openblade-docs](https://github.com/OSSBlade/openblade-docs).
-
-The capture CLI exposes typed target checks, read-only queries, fixture
-validation, and explicitly named reversible validation commands; it has no raw
-command mode:
+The production bundle is written to `artifacts\win-x64\OpenBlade`. From an
+elevated terminal, install it with:
 
 ```powershell
-dotnet run --project src/OpenBlade.Capture -- target
-dotnet run --project src/OpenBlade.Capture -- scan
-dotnet run --project src/OpenBlade.Capture -- query-fan-rpm
-dotnet run --project src/OpenBlade.Capture -- query-temporary-full-charge
-dotnet run --project src/OpenBlade.Capture -- validate path\to\fixtures.json
+.\artifacts\win-x64\OpenBlade\OpenBlade.Setup.exe install
 ```
 
-Do not infer commands from older Blade models or admit partially validated
-fixtures.
+Uninstall from Windows Settings, the Start menu entry, or the installed setup
+executable. Saved profiles and preferences are preserved unless `--purge` is
+passed explicitly.
+
+## Hardware development
+
+`OpenBlade.Capture` provides typed target checks, read-only queries, fixture
+validation, and explicitly named reversible validation commands. It has no raw
+command mode.
+
+```powershell
+dotnet run --project src\OpenBlade.Capture -- target
+dotnet run --project src\OpenBlade.Capture -- scan
+dotnet run --project src\OpenBlade.Capture -- query-fan-rpm
+dotnet run --project src\OpenBlade.Capture -- validate path\to\fixtures.json
+```
+
+The installed-product firmware workflow starts with a read-only baseline:
+
+```powershell
+.\scripts\Test-FirmwareUpdate.ps1 -Phase Baseline
+```
+
+Do not run USBPcap and OpenBlade control against the same interface at the same
+time. Do not commit raw PCAP files, serial numbers, user paths, or unsanitized
+payloads. Capture procedures and restoration requirements are documented in
+the separate capture and documentation repositories.
+
+## Contributing
+
+Read [AGENTS.md](AGENTS.md) before changing hardware, IPC, setup, or process
+boundaries. Keep changes narrow, add focused tests, and run the affected project
+tests before the full solution. Hardware support is not complete until its
+read/query, apply, readback, and restoration workflow has passed on the exact
+target.
+
+Commits follow Conventional Commits. Version and migration rules are in
+[VERSIONING.md](VERSIONING.md).
+
+## Project repositories
+
+- [openblade-docs](https://github.com/OSSBlade/openblade-docs): user
+  documentation and compatibility notes
+- [openblade-captures](https://github.com/OSSBlade/openblade-captures):
+  sanitized protocol evidence and capture tooling
+- [openblade-branding](https://github.com/OSSBlade/openblade-branding): brand
+  source files and exports
