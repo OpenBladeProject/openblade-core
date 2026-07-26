@@ -105,6 +105,10 @@ public sealed record FirmwareVersions(
         "Unavailable");
 }
 
+public sealed record BatteryHealthStatus(
+    int DesignCapacityMilliwattHours,
+    int FullChargeCapacityMilliwattHours);
+
 public enum ControlResultStatus
 {
     Applied,

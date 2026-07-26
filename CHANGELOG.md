@@ -7,6 +7,11 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Added
 
+- Added battery health to About using Windows' read-only design and full-charge
+  capacity data. If the battery is not ready during service startup, OpenBlade
+  retries after the first successful laptop verification and on later
+  power-source changes while health remains unavailable. Native capture
+  failures are recorded in diagnostics.
 - Added a Synapse-style playback mute indicator for the RZ09-0581 keyboard.
   While Windows audio is muted, OpenBlade keeps the F1 mute key red without
   replacing the selected lighting effect. Core Audio notifications update the
@@ -79,6 +84,9 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Changed
 
+- Advanced the service IPC protocol to version 24 for the battery-health status
+  field. Service, Tray, and Session Agent components must be upgraded together
+  through the coordinated installer.
 - Moved the deferred lighting, charge-limit, and GPU clock commit state out of
   WinUI event handlers into one executable, coalescing Tray.Core policy. Rapid
   edits now consistently keep only the latest value and queue at most one

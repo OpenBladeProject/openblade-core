@@ -7,7 +7,7 @@ namespace OpenBlade.Contracts;
 
 public static class OpenBladeIpc
 {
-    public const int ProtocolVersion = 23;
+    public const int ProtocolVersion = 24;
     public const int MaximumMessageBytes = 64 * 1024;
     public const int MaximumDiagnosticArchiveBytes = 32 * 1024;
     public const string PipeName = "OpenBlade.Service.v2";
@@ -274,6 +274,12 @@ public static class IpcMessageCodec
             || !Enum.IsDefined(status.LightingRendererOwnership)
             || status.FunctionKeyPrimary is { } functionKeyPrimary
                 && !Enum.IsDefined(functionKeyPrimary)
+            || status.BatteryHealth is { } batteryHealth
+                && (batteryHealth.DesignCapacityMilliwattHours is <= 0 or > 1_000_000
+                    || batteryHealth.FullChargeCapacityMilliwattHours
+                        is <= 0 or > 1_000_000
+                    || batteryHealth.FullChargeCapacityMilliwattHours
+                        > batteryHealth.DesignCapacityMilliwattHours * 2L)
             || status.LightingSuppressions is { } suppressions
                 && (suppressions.Count > 2
                     || suppressions.Any(reason => !Enum.IsDefined(reason))

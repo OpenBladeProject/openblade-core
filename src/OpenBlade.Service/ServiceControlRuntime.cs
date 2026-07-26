@@ -225,6 +225,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
     private long lastFullObservationTimestamp;
     private bool controllerPresenceObserved;
     private long lastControllerPresenceTimestamp;
+    private bool batteryHealthVerificationRetryPending;
 
     public ServiceControlRuntime(
         BatteryConfigurationStore store,
@@ -1722,6 +1723,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         {
             PowerSource powerSource = await ResolveCurrentPowerSourceAsync(cancellationToken);
             cancellationToken.ThrowIfCancellationRequested();
+            RefreshBatteryHealthAfterPowerSourceChangeCore();
             RefreshControllerPresenceCore(cancellationToken);
             if (powerSource != PowerSource.ExternalUnknown
                 && Automation.ChangePowerSource(powerSource))
@@ -3318,6 +3320,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             consecutiveVerifiedAccessFailures = 0;
             fullObservationCompleted = true;
             lastFullObservationTimestamp = Stopwatch.GetTimestamp();
+            BatteryHealthStatus? batteryHealth =
+                CaptureBatteryHealthAfterFirstVerificationCore();
             PublishIfChanged(GetStatus() with
             {
                 DeviceVerified = true,
@@ -3351,6 +3355,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 StartupAnimationEnabled = startupAnimation,
                 FunctionKeyPrimary = functionKeyPrimary,
                 GamingModeEnabled = gamingModeEnabled,
+                BatteryHealth = batteryHealth,
             });
 
             if (powerSourceConfirmed)
@@ -3928,7 +3933,11 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         });
     }
 
-    private ServiceStatusSnapshot CreateInitialSnapshot(PowerSource powerSource) => new(
+    private ServiceStatusSnapshot CreateInitialSnapshot(PowerSource powerSource)
+    {
+        BatteryHealthStatus? batteryHealth = powerStateProvider.CaptureBatteryHealth();
+        batteryHealthVerificationRetryPending = batteryHealth is null;
+        return new(
             Revision: 0,
             DeviceVerified: false,
             WritesBlocked: true,
@@ -3951,10 +3960,38 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             LightingRendererOwnership: LightingRendererOwnershipState.None,
             LightingSuppressions: [],
             AlwaysOverrideExternalLightingChanges:
-                preferences.AlwaysOverrideExternalLightingChanges)
+                preferences.AlwaysOverrideExternalLightingChanges,
+            BatteryHealth: batteryHealth)
         {
             FanControlOverride = Automation.FanControlOverride,
         };
+    }
+
+    private void RefreshBatteryHealthAfterPowerSourceChangeCore()
+    {
+        if (GetStatus().BatteryHealth is not null)
+        {
+            return;
+        }
+
+        BatteryHealthStatus? batteryHealth = powerStateProvider.CaptureBatteryHealth();
+        if (batteryHealth is not null)
+        {
+            PublishIfChanged(GetStatus() with { BatteryHealth = batteryHealth });
+        }
+    }
+
+    private BatteryHealthStatus? CaptureBatteryHealthAfterFirstVerificationCore()
+    {
+        BatteryHealthStatus? current = GetStatus().BatteryHealth;
+        if (!batteryHealthVerificationRetryPending)
+        {
+            return current;
+        }
+
+        batteryHealthVerificationRetryPending = false;
+        return current ?? powerStateProvider.CaptureBatteryHealth();
+    }
 
     private ControlOperationResult PublishScopedUnavailable(
         DeviceSubsystem subsystem,
@@ -4188,6 +4225,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         && (left.LightingSuppressions ?? []).SequenceEqual(
             right.LightingSuppressions ?? [])
         && left.Firmware == right.Firmware
+        && left.BatteryHealth == right.BatteryHealth
         && string.Equals(left.ServiceVersion, right.ServiceVersion, StringComparison.Ordinal);
 
     private static async Task<LightingRendererOwnershipState> ReadLightingOwnershipAsync(

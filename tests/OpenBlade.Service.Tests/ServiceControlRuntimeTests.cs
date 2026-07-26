@@ -186,6 +186,61 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     }
 
     [Fact]
+    public void Initialize_PublishesReadOnlyBatteryHealthWithoutBladeHardwareAccess()
+    {
+        var batteryHealth = new BatteryHealthStatus(95_200, 90_440);
+        TestContext context = CreateContext(
+            providerAvailable: true,
+            batteryHealth: batteryHealth);
+
+        Assert.Equal(batteryHealth, context.Runtime.GetStatus().BatteryHealth);
+        Assert.Equal(1, context.Telemetry.BatteryHealthCaptureCount);
+        Assert.Equal(0, context.Provider.TryGetCount);
+        Assert.Equal(0, context.Device.TotalCalls);
+    }
+
+    [Fact]
+    public async Task PowerSourceChange_RetriesBatteryHealthUntilAvailable()
+    {
+        TestContext context = CreateContext(providerAvailable: true);
+        var recovered = new BatteryHealthStatus(95_200, 90_440);
+        context.Telemetry.Current = CreateTelemetry(PowerSource.Battery);
+
+        await context.Runtime.HandlePowerSourceChangedAsync(CancellationToken.None);
+
+        Assert.Null(context.Runtime.GetStatus().BatteryHealth);
+        Assert.Equal(2, context.Telemetry.BatteryHealthCaptureCount);
+
+        context.Telemetry.BatteryHealth = recovered;
+        context.Telemetry.Current = CreateTelemetry(PowerSource.PluggedIn);
+        await context.Runtime.HandlePowerSourceChangedAsync(CancellationToken.None);
+
+        Assert.Equal(recovered, context.Runtime.GetStatus().BatteryHealth);
+        Assert.Equal(3, context.Telemetry.BatteryHealthCaptureCount);
+
+        context.Telemetry.BatteryHealth = new BatteryHealthStatus(95_200, 89_000);
+        context.Telemetry.Current = CreateTelemetry(PowerSource.Battery);
+        await context.Runtime.HandlePowerSourceChangedAsync(CancellationToken.None);
+
+        Assert.Equal(recovered, context.Runtime.GetStatus().BatteryHealth);
+        Assert.Equal(3, context.Telemetry.BatteryHealthCaptureCount);
+    }
+
+    [Fact]
+    public async Task FirstVerifiedObservation_RetriesUnavailableBatteryHealthOnce()
+    {
+        TestContext context = CreateContext(providerAvailable: true);
+        var recovered = new BatteryHealthStatus(95_200, 90_440);
+        context.Telemetry.BatteryHealth = recovered;
+
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+
+        Assert.Equal(recovered, context.Runtime.GetStatus().BatteryHealth);
+        Assert.Equal(2, context.Telemetry.BatteryHealthCaptureCount);
+    }
+
+    [Fact]
     public async Task FirstVerifiedObservation_ReadsMcuVersionOnceAndPreservesOtherFirmware()
     {
         var firmware = new FirmwareVersions(
@@ -5028,7 +5083,8 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         Func<TimeSpan, CancellationToken, Task>? transitionRetryDelay = null,
         FirmwareVersions? firmwareVersions = null,
         ProfileSetValidator? profileValidator = null,
-        IFanTemperatureSource? fanTemperatureSource = null)
+        IFanTemperatureSource? fanTemperatureSource = null,
+        BatteryHealthStatus? batteryHealth = null)
     {
         string profilePath = Path.Combine(directory, "profiles.json");
         string preferencesPath = Path.Combine(directory, "battery-preferences.json");
@@ -5058,7 +5114,11 @@ public sealed class ServiceControlRuntimeTests : IDisposable
                 .GetAwaiter()
                 .GetResult();
         }
-        var telemetry = new FakeTelemetryProvider { Current = CreateTelemetry(initialPowerSource) };
+        var telemetry = new FakeTelemetryProvider
+        {
+            Current = CreateTelemetry(initialPowerSource),
+            BatteryHealth = batteryHealth,
+        };
         var hub = new FakeHub();
         var device = new CountingBladeDevice();
         var provider = new CountingProvider(providerAvailable, device);
@@ -5230,6 +5290,8 @@ public sealed class ServiceControlRuntimeTests : IDisposable
 
         public int CaptureCount { get; private set; }
         public int BatteryPowerFlowCaptureCount { get; private set; }
+        public int BatteryHealthCaptureCount { get; private set; }
+        public BatteryHealthStatus? BatteryHealth { get; set; }
 
         public PowerSource CapturePowerSource()
         {
@@ -5241,6 +5303,12 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         {
             BatteryPowerFlowCaptureCount++;
             return Current.BatteryPowerFlowMilliwatts;
+        }
+
+        public BatteryHealthStatus? CaptureBatteryHealth()
+        {
+            BatteryHealthCaptureCount++;
+            return BatteryHealth;
         }
     }
 

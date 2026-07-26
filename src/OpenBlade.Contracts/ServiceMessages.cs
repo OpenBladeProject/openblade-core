@@ -203,7 +203,8 @@ public sealed record ServiceStatusSnapshot(
     FunctionKeyPrimaryMode? FunctionKeyPrimary = null,
     bool? GamingModeEnabled = null,
     bool AlwaysOverrideExternalLightingChanges = false,
-    bool? KeyboardDriverModeActive = null)
+    bool? KeyboardDriverModeActive = null,
+    BatteryHealthStatus? BatteryHealth = null)
 {
     public FanControlSettings? FanControlOverride { get; init; }
 

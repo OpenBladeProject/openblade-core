@@ -332,7 +332,7 @@ public sealed class IpcMessageCodecTests
             DesiredState = CreateStatus().DesiredState with { Battery = desired },
         };
 
-        Assert.Equal(23, OpenBladeIpc.ProtocolVersion);
+        Assert.Equal(24, OpenBladeIpc.ProtocolVersion);
         Assert.Equal(request, await RoundTripRequestAsync(request));
         ServiceStatusSnapshot roundTrip = await RoundTripStatusAsync(status);
         Assert.Equal([80], roundTrip.Capabilities!.ChargeLimits);
@@ -435,7 +435,7 @@ public sealed class IpcMessageCodecTests
 
         ServiceStatusSnapshot actual = await RoundTripStatusAsync(expected);
 
-        Assert.Equal(23, OpenBladeIpc.ProtocolVersion);
+        Assert.Equal(24, OpenBladeIpc.ProtocolVersion);
         AssertStatusEqual(expected, actual);
     }
 
@@ -481,6 +481,60 @@ public sealed class IpcMessageCodecTests
                 stream,
                 CancellationToken.None));
         Assert.Equal("Unavailable", olderFrame.Status.Firmware?.ModelNumber);
+    }
+
+    [Fact]
+    public async Task BatteryHealth_RoundTripsAndDefaultsOlderFramesToUnavailable()
+    {
+        ServiceStatusSnapshot expected = CreateStatus() with
+        {
+            BatteryHealth = new BatteryHealthStatus(95_200, 90_440),
+        };
+        ServiceStatusSnapshot actual = await RoundTripStatusAsync(expected);
+        Assert.Equal(expected.BatteryHealth, actual.BatteryHealth);
+
+        ServiceServerFrame frame = new ServiceStatusEvent(
+            OpenBladeIpc.ProtocolVersion,
+            expected);
+        using var encoded = new MemoryStream();
+        await IpcMessageCodec.WriteServerFrameAsync(
+            encoded,
+            frame,
+            CancellationToken.None);
+        byte[] framedBytes = encoded.ToArray();
+        int payloadLength = BinaryPrimitives.ReadInt32LittleEndian(framedBytes);
+        JsonObject root = Assert.IsType<JsonObject>(
+            JsonNode.Parse(Encoding.UTF8.GetString(
+                framedBytes,
+                sizeof(int),
+                payloadLength)));
+        JsonObject status = Assert.IsType<JsonObject>(
+            root["status"]);
+        Assert.True(status.Remove("batteryHealth"));
+        using MemoryStream stream = FrameJson(root.ToJsonString());
+
+        ServiceStatusEvent olderFrame = Assert.IsType<ServiceStatusEvent>(
+            await IpcMessageCodec.ReadServerFrameAsync(
+                stream,
+                CancellationToken.None));
+        Assert.Null(olderFrame.Status.BatteryHealth);
+    }
+
+    [Theory]
+    [InlineData(0, 90_000)]
+    [InlineData(95_000, 0)]
+    [InlineData(95_000, 190_001)]
+    [InlineData(1_000_001, 90_000)]
+    public async Task BatteryHealth_RejectsMalformedCapacityValues(
+        int designCapacity,
+        int fullChargeCapacity)
+    {
+        await AssertStatusWriteRejectedAsync(CreateStatus() with
+        {
+            BatteryHealth = new BatteryHealthStatus(
+                designCapacity,
+                fullChargeCapacity),
+        });
     }
 
     [Fact]
@@ -1141,6 +1195,7 @@ public sealed class IpcMessageCodecTests
         Assert.Equal(expected.LightingOverride, actual.LightingOverride);
         Assert.Equal(expected.FullChargeOverride, actual.FullChargeOverride);
         Assert.Equal(expected.ServiceVersion, actual.ServiceVersion);
+        Assert.Equal(expected.BatteryHealth, actual.BatteryHealth);
         Assert.Equal(
             expected.KeyboardDriverModeActive,
             actual.KeyboardDriverModeActive);

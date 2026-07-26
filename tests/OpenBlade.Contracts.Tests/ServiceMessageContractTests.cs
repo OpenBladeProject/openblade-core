@@ -7,9 +7,9 @@ namespace OpenBlade.Contracts.Tests;
 public sealed class ServiceMessageContractTests
 {
     [Fact]
-    public void ProtocolConstants_AreClosedVersionTwentyThreeAndRetainExactSizeLimit()
+    public void ProtocolConstants_AreClosedVersionTwentyFourAndRetainExactSizeLimit()
     {
-        Assert.Equal(23, OpenBladeIpc.ProtocolVersion);
+        Assert.Equal(24, OpenBladeIpc.ProtocolVersion);
         Assert.Equal("OpenBlade.Service.v2", OpenBladeIpc.PipeName);
         Assert.Equal(64 * 1024, OpenBladeIpc.MaximumMessageBytes);
         Assert.Equal(32 * 1024, OpenBladeIpc.MaximumDiagnosticArchiveBytes);
@@ -60,7 +60,7 @@ public sealed class ServiceMessageContractTests
             "Firmware", "ServiceVersion", "LightingRendererOwnership", "LightingSuppressions",
             "StartupAnimationEnabled", "FunctionKeyPrimary", "GamingModeEnabled",
             "AlwaysOverrideExternalLightingChanges", "KeyboardDriverModeActive",
-            "PerformanceShortcutPreview",
+            "PerformanceShortcutPreview", "BatteryHealth",
         ];
 
         Assert.Equal(
@@ -77,6 +77,7 @@ public sealed class ServiceMessageContractTests
         Assert.Equal(typeof(bool), typeof(ServiceStatusSnapshot).GetProperty("AlwaysOverrideExternalLightingChanges")!.PropertyType);
         Assert.Equal(typeof(bool?), typeof(ServiceStatusSnapshot).GetProperty("KeyboardDriverModeActive")!.PropertyType);
         Assert.Equal(typeof(PerformanceShortcutPreview), typeof(ServiceStatusSnapshot).GetProperty("PerformanceShortcutPreview")!.PropertyType);
+        Assert.Equal(typeof(BatteryHealthStatus), typeof(ServiceStatusSnapshot).GetProperty("BatteryHealth")!.PropertyType);
     }
 
     [Fact]

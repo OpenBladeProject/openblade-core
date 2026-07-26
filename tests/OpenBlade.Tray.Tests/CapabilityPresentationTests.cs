@@ -623,6 +623,10 @@ public sealed class CapabilityPresentationTests
         Assert.Contains("ViewModel.AboutUiVersionStatus", aboutPage.ToString(), StringComparison.Ordinal);
         Assert.Contains("ViewModel.AboutSessionAgentVersionStatus", aboutPage.ToString(), StringComparison.Ordinal);
         Assert.Contains("ViewModel.AboutServiceVersionStatus", aboutPage.ToString(), StringComparison.Ordinal);
+        Assert.Contains("ViewModel.AboutBatteryHealthStatus", aboutPage.ToString(), StringComparison.Ordinal);
+        Assert.Contains(aboutPage.Descendants(), element =>
+            element.Name.LocalName == "TextBlock"
+            && Attribute(element, "Text") == "Battery health");
         Assert.Equal(
             new string?[] { "OpenBlade app", "Session agent", "Service" },
             aboutVersions

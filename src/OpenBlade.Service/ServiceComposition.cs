@@ -24,7 +24,10 @@ internal static class ServiceComposition
     internal static IServiceCollection AddWindowsPowerState(this IServiceCollection services)
     {
         ArgumentNullException.ThrowIfNull(services);
-        services.AddSingleton<IPowerStateProvider>(_ => new WindowsPowerStateProvider());
+        services.AddSingleton<IPowerStateProvider>(provider =>
+            provider.GetService<ILogger<WindowsPowerStateProvider>>() is { } logger
+                ? new WindowsPowerStateProvider(logger)
+                : new WindowsPowerStateProvider());
         return services;
     }
 

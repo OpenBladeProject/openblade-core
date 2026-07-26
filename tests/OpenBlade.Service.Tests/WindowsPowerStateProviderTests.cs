@@ -59,4 +59,49 @@ public sealed class WindowsPowerStateProviderTests
         Assert.Equal(PowerSource.PluggedIn, provider.CapturePowerSource());
         Assert.Null(provider.CaptureBatteryPowerFlowMilliwatts());
     }
+
+    [Fact]
+    public void MapBatteryHealth_AggregatesValidAbsoluteCapacities()
+    {
+        BatteryHealthStatus? health = WindowsPowerStateProvider.MapBatteryHealth(
+        [
+            (80_000, 72_000),
+            (15_200, 14_440),
+        ]);
+
+        Assert.Equal(new BatteryHealthStatus(95_200, 86_440), health);
+    }
+
+    [Fact]
+    public void MapBatteryHealth_IgnoresUnknownEntriesAndRejectsImplausibleTotals()
+    {
+        Assert.Equal(
+            new BatteryHealthStatus(95_200, 90_440),
+            WindowsPowerStateProvider.MapBatteryHealth(
+            [
+                (0, 0),
+                (uint.MaxValue, uint.MaxValue),
+                (95_200, 90_440),
+            ]));
+        Assert.Null(WindowsPowerStateProvider.MapBatteryHealth([(95_200, 200_000)]));
+        Assert.Null(WindowsPowerStateProvider.MapBatteryHealth([]));
+    }
+
+    [Fact]
+    public void BatteryHealthFailure_ReturnsUnavailable()
+    {
+        var history = new DiagnosticHistory();
+        var provider = new WindowsPowerStateProvider(
+            () => PowerSource.PluggedIn,
+            () => null,
+            () => throw new InvalidOperationException("native failure"),
+            history.CreateLogger("OpenBlade.Service.WindowsPowerStateProvider"));
+
+        Assert.Null(provider.CaptureBatteryHealth());
+        Assert.Contains(
+            history.Snapshot().LogLines,
+            line => line.Contains(
+                "Warning OpenBlade.Service.WindowsPowerStateProvider: Windows battery health capture failed; capacity is unavailable.",
+                StringComparison.Ordinal));
+    }
 }

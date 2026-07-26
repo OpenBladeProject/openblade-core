@@ -1103,6 +1103,10 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
 
     public string AboutVbiosVersionStatus => FirmwareValue(latestStatus?.Firmware?.VbiosVersion);
 
+    public string AboutBatteryHealthStatus => !IsConnected
+        ? UnavailableLabel
+        : FormatBatteryHealth(latestStatus?.BatteryHealth);
+
     public bool HasUntestedPlatformVersion =>
         CurrentTestedPlatformAssessment is
         {
@@ -7352,6 +7356,27 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
     private static string FirmwareValue(string? value) =>
         string.IsNullOrWhiteSpace(value) ? "Unavailable" : value.Trim();
 
+    private static string FormatBatteryHealth(BatteryHealthStatus? health)
+    {
+        if (health is null)
+        {
+            return UnavailableLabel;
+        }
+
+        int percentage = checked((int)Math.Round(
+            health.FullChargeCapacityMilliwattHours
+                * 100d
+                / health.DesignCapacityMilliwattHours,
+            MidpointRounding.AwayFromZero));
+        string fullChargeCapacity = (
+            health.FullChargeCapacityMilliwattHours / 1000d)
+            .ToString("0.#", CultureInfo.CurrentCulture);
+        string designCapacity = (
+            health.DesignCapacityMilliwattHours / 1000d)
+            .ToString("0.#", CultureInfo.CurrentCulture);
+        return $"{percentage}% ({fullChargeCapacity} Wh of {designCapacity} Wh)";
+    }
+
     private static bool HasConcreteFirmwareValue(string? value) =>
         !string.IsNullOrWhiteSpace(value)
         && !string.Equals(
@@ -7517,6 +7542,9 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         PropertyChanged?.Invoke(
             this,
             new PropertyChangedEventArgs(nameof(AboutVbiosVersionStatus)));
+        PropertyChanged?.Invoke(
+            this,
+            new PropertyChangedEventArgs(nameof(AboutBatteryHealthStatus)));
         PropertyChanged?.Invoke(
             this,
             new PropertyChangedEventArgs(nameof(HasUntestedPlatformVersion)));
