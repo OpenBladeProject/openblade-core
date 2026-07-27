@@ -2,8 +2,6 @@
 
   <PropertyGroup>
     <TargetFramework>net10.0-windows</TargetFramework>
-    <Nullable>enable</Nullable>
-    <ImplicitUsings>enable</ImplicitUsings>
     <UserSecretsId>dotnet-OpenBlade.Service-da4c3e6f-538f-4bb3-b922-bbdc93aa5415</UserSecretsId>
   </PropertyGroup>
 
