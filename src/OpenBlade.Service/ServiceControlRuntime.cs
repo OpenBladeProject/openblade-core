@@ -2955,18 +2955,73 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
 
         DesiredDeviceState desired = ResolveHardwareDesired(
             cachedConfirmed ?? UnknownConfirmedState);
-        FullTransitionApplyOutcome outcome;
+        FullTransitionApplyOutcome outcome =
+            await ApplyDesiredTransitionWithRetryAsync(
+                device,
+                desired,
+                priorDesired,
+                powerSource,
+                current,
+                cachedConfirmed,
+                token);
+
+        ConfirmedDeviceState? confirmed = cachedConfirmed;
+        if (outcome.Readback is not null)
+        {
+            driftTracker.Observe(outcome.Readback);
+            confirmed = outcome.Readback;
+        }
+
+        string? laptopBehaviorMessage = current.WritesBlocked
+            ? null
+            : await ApplyProfileLaptopBehaviorAsync(
+                device,
+                powerSource,
+                outcome.Capabilities ?? current.Capabilities,
+                token).ConfigureAwait(false);
+
+        (outcome, LightingRendererOwnershipState observedLightingOwnership) =
+            await ReconcileFullTransitionLightingAsync(
+                device,
+                desired,
+                outcome,
+                token).ConfigureAwait(false);
+
+        await PublishFullTransitionOutcomeAsync(
+            desired,
+            outcome,
+            observedLightingOwnership,
+            powerSource,
+            confirmed,
+            current.Capabilities,
+            laptopBehaviorMessage,
+            preserveLiveReadings,
+            token).ConfigureAwait(false);
+    }
+
+    private async Task<FullTransitionApplyOutcome> ApplyDesiredTransitionWithRetryAsync(
+        IBladeDevice device,
+        DesiredDeviceState desired,
+        DesiredDeviceState? priorDesired,
+        PowerSource powerSource,
+        ServiceStatusSnapshot current,
+        ConfirmedDeviceState? cachedConfirmed,
+        CancellationToken token)
+    {
+        IReadOnlySet<DeviceSubsystem> ResolveAutomaticWriteExclusions(
+            ConfirmedDeviceState confirmed)
+        {
+            ObserveAutomaticState(confirmed, priorDesired, desired);
+            return GetCoupledAutomaticWriteExclusions();
+        }
+
         try
         {
-            outcome = await new ControlCoordinator(device)
+            FullTransitionApplyOutcome outcome = await new ControlCoordinator(device)
                 .ApplyDesiredStateOutcomeAsync(
                     desired,
                     token,
-                    automaticWriteExclusionResolver: confirmed =>
-                    {
-                        ObserveAutomaticState(confirmed, priorDesired, desired);
-                        return GetCoupledAutomaticWriteExclusions();
-                    });
+                    automaticWriteExclusionResolver: ResolveAutomaticWriteExclusions);
 
             if (ShouldRetryPowerTransitionAccess(outcome))
             {
@@ -2975,12 +3030,10 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                     .ApplyDesiredStateOutcomeAsync(
                         desired,
                         token,
-                        automaticWriteExclusionResolver: confirmed =>
-                        {
-                            ObserveAutomaticState(confirmed, priorDesired, desired);
-                            return GetCoupledAutomaticWriteExclusions();
-                        });
+                        automaticWriteExclusionResolver: ResolveAutomaticWriteExclusions);
             }
+
+            return outcome;
         }
         catch (IntentionalWriteCanceledException exception)
             when (token.IsCancellationRequested)
@@ -2999,22 +3052,16 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 writesBlocked: false);
             throw;
         }
+    }
 
-        ConfirmedDeviceState? confirmed = cachedConfirmed;
-        if (outcome.Readback is not null)
-        {
-            driftTracker.Observe(outcome.Readback);
-            confirmed = outcome.Readback;
-        }
-
-        string? laptopBehaviorMessage = current.WritesBlocked
-            ? null
-            : await ApplyProfileLaptopBehaviorAsync(
-                device,
-                powerSource,
-                outcome.Capabilities ?? current.Capabilities,
-                token).ConfigureAwait(false);
-
+    private async Task<(
+        FullTransitionApplyOutcome Outcome,
+        LightingRendererOwnershipState ObservedOwnership)> ReconcileFullTransitionLightingAsync(
+            IBladeDevice device,
+            DesiredDeviceState desired,
+            FullTransitionApplyOutcome outcome,
+            CancellationToken token)
+    {
         LightingRendererOwnershipState observedLightingOwnership =
             await PublishObservedLightingOwnershipAsync(device, token)
                 .ConfigureAwait(false);
@@ -3042,6 +3089,20 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             };
         }
 
+        return (outcome, observedLightingOwnership);
+    }
+
+    private async Task PublishFullTransitionOutcomeAsync(
+        DesiredDeviceState desired,
+        FullTransitionApplyOutcome outcome,
+        LightingRendererOwnershipState observedLightingOwnership,
+        PowerSource powerSource,
+        ConfirmedDeviceState? confirmed,
+        DeviceCapabilities? cachedCapabilities,
+        string? laptopBehaviorMessage,
+        bool preserveLiveReadings,
+        CancellationToken token)
+    {
         foreach (DeviceSubsystem subsystem in OrderedSubsystems)
         {
             if (outcome.ReadbackMatched.Contains(subsystem))
@@ -3061,6 +3122,10 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 driftTracker.ConfirmIntentional(subsystem, matched: false);
             }
         }
+
+        ControlResult lightingResult = ResultFor(
+            outcome.Results,
+            DeviceSubsystem.Lighting);
         UpdateOwnedLightingSnapshot(
             observedLightingOwnership,
             lightingResult.Status is ControlResultStatus.Applied
@@ -3088,7 +3153,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         PublishScopedStatus(
             powerSource,
             confirmed,
-            outcome.Capabilities ?? current.Capabilities,
+            outcome.Capabilities ?? cachedCapabilities,
             message,
             deviceVerified: !outcome.DeviceAccessFailed,
             writesBlocked: outcome.DeviceAccessFailed);
