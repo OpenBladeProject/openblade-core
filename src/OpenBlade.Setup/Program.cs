@@ -36,7 +36,8 @@ try
         await InstalledUninstallBootstrapper.WaitForInstalledParentExitAsync(CancellationToken.None);
     }
 
-    int exitCode = await new SetupCommandRunner(new WindowsSetupPlatform(paths: paths))
+    int exitCode = await new SetupCommandRunner(
+        new WindowsSetupPlatform(new WindowsSetupPlatformOptions(Paths: paths)))
         .RunAsync(effectiveArguments, CancellationToken.None);
     if ((interactiveRequested || interactiveRelay) && exitCode == 0)
     {

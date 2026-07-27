@@ -16,6 +16,21 @@ internal sealed class WindowsSetupFileOperations : ISetupFileOperations
     public void DeleteFile(string path) => File.Delete(path);
 }
 
+public sealed record WindowsSetupPlatformOptions(
+    ISetupServiceControl? ServiceControl = null,
+    IStartupShortcutWriter? ShortcutWriter = null,
+    IAuthorizedUserSidWriter? SidWriter = null,
+    ISetupServiceHealthProbe? HealthProbe = null,
+    ISetupFileOperations? FileOperations = null,
+    ISetupProcessOperations? ProcessOperations = null,
+    SetupPaths? Paths = null,
+    string? PayloadDirectory = null,
+    ISetupPayloadFileSystem? PayloadFileSystem = null,
+    IMachineDataDirectorySecurity? MachineDataDirectorySecurity = null,
+    IUninstallRegistration? UninstallRegistration = null,
+    IInstalledUninstallerWriter? InstalledUninstallerWriter = null,
+    string? SetupExecutablePath = null);
+
 public sealed class WindowsSetupPlatform : ISetupPlatform
 {
     private const string ServiceName = "OpenBlade";
@@ -35,36 +50,24 @@ public sealed class WindowsSetupPlatform : ISetupPlatform
     private readonly IInstalledUninstallerWriter installedUninstallerWriter;
     private readonly string setupExecutablePath;
 
-    public WindowsSetupPlatform(
-        ISetupServiceControl? serviceControl = null,
-        IStartupShortcutWriter? shortcutWriter = null,
-        IAuthorizedUserSidWriter? sidWriter = null,
-        ISetupServiceHealthProbe? healthProbe = null,
-        ISetupFileOperations? fileOperations = null,
-        ISetupProcessOperations? processOperations = null,
-        SetupPaths? paths = null,
-        string? payloadDirectory = null,
-        ISetupPayloadFileSystem? payloadFileSystem = null,
-        IMachineDataDirectorySecurity? machineDataDirectorySecurity = null,
-        IUninstallRegistration? uninstallRegistration = null,
-        IInstalledUninstallerWriter? installedUninstallerWriter = null,
-        string? setupExecutablePath = null)
+    public WindowsSetupPlatform(WindowsSetupPlatformOptions? options = null)
     {
-        this.paths = paths ?? SetupPaths.CreateDefault();
-        this.payloadDirectory = payloadDirectory ?? Path.Combine(AppContext.BaseDirectory, "payload");
-        this.payloadFileSystem = payloadFileSystem ?? new WindowsSetupPayloadFileSystem();
-        this.serviceControl = serviceControl ?? new ScSetupServiceControl();
-        this.shortcutWriter = shortcutWriter ?? new WindowsStartupShortcutWriter();
-        this.sidWriter = sidWriter ?? new AtomicAuthorizedUserSidWriter();
-        this.healthProbe = healthProbe ?? new SetupServiceHealthProbe();
-        this.fileOperations = fileOperations ?? new WindowsSetupFileOperations();
-        this.processOperations = processOperations ?? new WindowsSetupProcessOperations();
-        this.machineDataDirectorySecurity = machineDataDirectorySecurity
+        options ??= new();
+        paths = options.Paths ?? SetupPaths.CreateDefault();
+        payloadDirectory = options.PayloadDirectory ?? Path.Combine(AppContext.BaseDirectory, "payload");
+        payloadFileSystem = options.PayloadFileSystem ?? new WindowsSetupPayloadFileSystem();
+        serviceControl = options.ServiceControl ?? new ScSetupServiceControl();
+        shortcutWriter = options.ShortcutWriter ?? new WindowsStartupShortcutWriter();
+        sidWriter = options.SidWriter ?? new AtomicAuthorizedUserSidWriter();
+        healthProbe = options.HealthProbe ?? new SetupServiceHealthProbe();
+        fileOperations = options.FileOperations ?? new WindowsSetupFileOperations();
+        processOperations = options.ProcessOperations ?? new WindowsSetupProcessOperations();
+        machineDataDirectorySecurity = options.MachineDataDirectorySecurity
             ?? new WindowsMachineDataDirectorySecurity();
-        this.uninstallRegistration = uninstallRegistration ?? new WindowsUninstallRegistration();
-        this.installedUninstallerWriter = installedUninstallerWriter
+        uninstallRegistration = options.UninstallRegistration ?? new WindowsUninstallRegistration();
+        installedUninstallerWriter = options.InstalledUninstallerWriter
             ?? new VerifiedInstalledUninstallerWriter();
-        this.setupExecutablePath = setupExecutablePath
+        setupExecutablePath = options.SetupExecutablePath
             ?? Environment.ProcessPath
             ?? throw new InvalidOperationException("The OpenBlade setup executable path is unavailable.");
     }

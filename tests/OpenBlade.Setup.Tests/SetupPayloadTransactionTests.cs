@@ -843,10 +843,11 @@ public sealed class SetupPayloadTransactionTests
 
         public void WriteInstall(string relativePath, byte[] bytes) => Write(Install, relativePath, bytes);
 
-        public WindowsSetupPlatform CreatePlatform(ISetupPayloadFileSystem? files = null) => new(
-            paths: Paths,
-            payloadDirectory: Payload,
-            payloadFileSystem: files);
+        public WindowsSetupPlatform CreatePlatform(ISetupPayloadFileSystem? files = null) =>
+            WindowsSetupPlatformTestFactory.Create(
+                paths: Paths,
+                payloadDirectory: Payload,
+                payloadFileSystem: files);
 
         public void Dispose()
         {

@@ -1,0 +1,36 @@
+using OpenBlade.Setup;
+
+namespace OpenBlade.Setup.Tests;
+
+internal static class WindowsSetupPlatformTestFactory
+{
+    public static WindowsSetupPlatform Create(
+        ISetupServiceControl? serviceControl = null,
+        IStartupShortcutWriter? shortcutWriter = null,
+        IAuthorizedUserSidWriter? sidWriter = null,
+        ISetupServiceHealthProbe? healthProbe = null,
+        ISetupFileOperations? fileOperations = null,
+        ISetupProcessOperations? processOperations = null,
+        SetupPaths? paths = null,
+        string? payloadDirectory = null,
+        ISetupPayloadFileSystem? payloadFileSystem = null,
+        IMachineDataDirectorySecurity? machineDataDirectorySecurity = null,
+        IUninstallRegistration? uninstallRegistration = null,
+        IInstalledUninstallerWriter? installedUninstallerWriter = null,
+        string? setupExecutablePath = null) =>
+        new(
+            new WindowsSetupPlatformOptions(
+                ServiceControl: serviceControl,
+                ShortcutWriter: shortcutWriter,
+                SidWriter: sidWriter,
+                HealthProbe: healthProbe,
+                FileOperations: fileOperations,
+                ProcessOperations: processOperations,
+                Paths: paths,
+                PayloadDirectory: payloadDirectory,
+                PayloadFileSystem: payloadFileSystem,
+                MachineDataDirectorySecurity: machineDataDirectorySecurity,
+                UninstallRegistration: uninstallRegistration,
+                InstalledUninstallerWriter: installedUninstallerWriter,
+                SetupExecutablePath: setupExecutablePath));
+}

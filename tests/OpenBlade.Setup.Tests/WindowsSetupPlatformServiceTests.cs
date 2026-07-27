@@ -17,7 +17,7 @@ public sealed class WindowsSetupPlatformServiceTests
     public async Task InstallService_NewService_RegistersLiteralQuotedImagePath()
     {
         RecordingServiceControl serviceControl = new();
-        WindowsSetupPlatform platform = new(serviceControl);
+        WindowsSetupPlatform platform = WindowsSetupPlatformTestFactory.Create(serviceControl);
 
         await platform.InstallServiceAsync(CancellationToken.None);
 
@@ -37,7 +37,7 @@ public sealed class WindowsSetupPlatformServiceTests
     public async Task InstallService_SetsExactDescription()
     {
         RecordingServiceControl serviceControl = new();
-        WindowsSetupPlatform platform = new(serviceControl);
+        WindowsSetupPlatform platform = WindowsSetupPlatformTestFactory.Create(serviceControl);
 
         await platform.InstallServiceAsync(CancellationToken.None);
 
@@ -53,7 +53,7 @@ public sealed class WindowsSetupPlatformServiceTests
     public async Task InstallService_ExistingService_UpdatesConfigurationInsteadOfCreating()
     {
         RecordingServiceControl serviceControl = new() { Exists = true };
-        WindowsSetupPlatform platform = new(serviceControl);
+        WindowsSetupPlatform platform = WindowsSetupPlatformTestFactory.Create(serviceControl);
 
         await platform.InstallServiceAsync(CancellationToken.None);
 
@@ -65,7 +65,7 @@ public sealed class WindowsSetupPlatformServiceTests
     public async Task InstallService_ConfiguresBoundedRestartRecovery()
     {
         RecordingServiceControl serviceControl = new();
-        WindowsSetupPlatform platform = new(serviceControl);
+        WindowsSetupPlatform platform = WindowsSetupPlatformTestFactory.Create(serviceControl);
 
         await platform.InstallServiceAsync(CancellationToken.None);
 
@@ -84,7 +84,7 @@ public sealed class WindowsSetupPlatformServiceTests
     public async Task InstallService_StartsThenWaitsForRunning()
     {
         RecordingServiceControl serviceControl = new();
-        WindowsSetupPlatform platform = new(serviceControl);
+        WindowsSetupPlatform platform = WindowsSetupPlatformTestFactory.Create(serviceControl);
 
         await platform.InstallServiceAsync(CancellationToken.None);
 
@@ -98,7 +98,7 @@ public sealed class WindowsSetupPlatformServiceTests
     public async Task CaptureThenPrepareService_RunningService_RecordsStateBeforeStopping()
     {
         RecordingServiceControl serviceControl = new() { State = SetupServiceState.Running };
-        WindowsSetupPlatform platform = new(serviceControl);
+        WindowsSetupPlatform platform = WindowsSetupPlatformTestFactory.Create(serviceControl);
 
         SetupInstallLifecycleState prior = await platform.CaptureInstallLifecycleStateAsync(CancellationToken.None);
         await platform.PrepareServiceForInstallAsync(CancellationToken.None);
@@ -111,7 +111,7 @@ public sealed class WindowsSetupPlatformServiceTests
     public async Task CaptureThenPrepareService_StoppedService_RecordsStateWithoutStartingOrStoppingIt()
     {
         RecordingServiceControl serviceControl = new() { State = SetupServiceState.Stopped };
-        WindowsSetupPlatform platform = new(serviceControl);
+        WindowsSetupPlatform platform = WindowsSetupPlatformTestFactory.Create(serviceControl);
 
         SetupInstallLifecycleState prior = await platform.CaptureInstallLifecycleStateAsync(CancellationToken.None);
         await platform.PrepareServiceForInstallAsync(CancellationToken.None);
@@ -124,7 +124,7 @@ public sealed class WindowsSetupPlatformServiceTests
     public async Task CaptureInstallLifecycle_ReadsShortcutExistenceWithoutMutatingIt()
     {
         RecordingFileOperations files = new() { FileExistsResult = true };
-        WindowsSetupPlatform platform = new(fileOperations: files);
+        WindowsSetupPlatform platform = WindowsSetupPlatformTestFactory.Create(fileOperations: files);
 
         SetupInstallLifecycleState prior =
             await platform.CaptureInstallLifecycleStateAsync(CancellationToken.None);
@@ -139,7 +139,9 @@ public sealed class WindowsSetupPlatformServiceTests
     {
         RecordingServiceControl serviceControl = new() { State = SetupServiceState.Running };
         RecordingHealthProbe health = new();
-        WindowsSetupPlatform platform = new(serviceControl, healthProbe: health);
+        WindowsSetupPlatform platform = WindowsSetupPlatformTestFactory.Create(
+            serviceControl,
+            healthProbe: health);
 
         await platform.RestoreServiceInstallStateAsync(new(true, true), CancellationToken.None);
 
@@ -152,7 +154,9 @@ public sealed class WindowsSetupPlatformServiceTests
     {
         RecordingServiceControl serviceControl = new();
         RecordingHealthProbe health = new();
-        WindowsSetupPlatform platform = new(serviceControl, healthProbe: health);
+        WindowsSetupPlatform platform = WindowsSetupPlatformTestFactory.Create(
+            serviceControl,
+            healthProbe: health);
 
         await platform.RestoreServiceInstallStateAsync(new(true, false), CancellationToken.None);
 
@@ -165,7 +169,7 @@ public sealed class WindowsSetupPlatformServiceTests
     public async Task StopTray_FreshInstallWithNoTrayProcesses_IsSafe()
     {
         RecordingProcessOperations processes = new();
-        WindowsSetupPlatform platform = new(processOperations: processes);
+        WindowsSetupPlatform platform = WindowsSetupPlatformTestFactory.Create(processOperations: processes);
 
         await platform.StopTrayAsync(CancellationToken.None);
 
@@ -181,7 +185,7 @@ public sealed class WindowsSetupPlatformServiceTests
             "OpenBlade.Tray.exe");
         RecordingProcess process = new(installedTray);
         RecordingProcessOperations processes = new(process);
-        WindowsSetupPlatform platform = new(processOperations: processes);
+        WindowsSetupPlatform platform = WindowsSetupPlatformTestFactory.Create(processOperations: processes);
 
         await platform.StopTrayAsync(CancellationToken.None);
 
@@ -202,7 +206,7 @@ public sealed class WindowsSetupPlatformServiceTests
             "OpenBlade.SessionAgent.exe");
         RecordingProcess process = new(installedAgent);
         RecordingProcessOperations processes = new(process);
-        WindowsSetupPlatform platform = new(processOperations: processes);
+        WindowsSetupPlatform platform = WindowsSetupPlatformTestFactory.Create(processOperations: processes);
 
         await platform.StopSessionAgentAsync(CancellationToken.None);
 
@@ -222,7 +226,7 @@ public sealed class WindowsSetupPlatformServiceTests
     {
         RecordingProcess foreign = new(@"C:\worktree\OpenBlade.SessionAgent.exe");
         RecordingProcessOperations processes = new(foreign);
-        WindowsSetupPlatform platform = new(processOperations: processes);
+        WindowsSetupPlatform platform = WindowsSetupPlatformTestFactory.Create(processOperations: processes);
 
         await platform.StopSessionAgentAsync(CancellationToken.None);
 
@@ -240,7 +244,7 @@ public sealed class WindowsSetupPlatformServiceTests
             "OpenBlade.SessionAgent.exe");
         RecordingProcess process = new(installedAgent);
         RecordingProcessOperations processes = new(process) { SignalResult = false };
-        WindowsSetupPlatform platform = new(processOperations: processes);
+        WindowsSetupPlatform platform = WindowsSetupPlatformTestFactory.Create(processOperations: processes);
 
         InvalidOperationException failure = await Assert.ThrowsAsync<InvalidOperationException>(
             () => platform.StopSessionAgentAsync(CancellationToken.None));
@@ -254,7 +258,7 @@ public sealed class WindowsSetupPlatformServiceTests
     public async Task RemoveService_StopsWaitsDeletesThenWaitsForDeletion()
     {
         RecordingServiceControl serviceControl = new() { Exists = true };
-        WindowsSetupPlatform platform = new(serviceControl);
+        WindowsSetupPlatform platform = WindowsSetupPlatformTestFactory.Create(serviceControl);
 
         await platform.RemoveServiceAsync(CancellationToken.None);
 
@@ -267,7 +271,9 @@ public sealed class WindowsSetupPlatformServiceTests
     public async Task InstallStartupShortcut_CreatesRealLinkToTrayWithInstallWorkingDirectory()
     {
         RecordingShortcutWriter shortcutWriter = new();
-        WindowsSetupPlatform platform = new(new RecordingServiceControl(), shortcutWriter);
+        WindowsSetupPlatform platform = WindowsSetupPlatformTestFactory.Create(
+            new RecordingServiceControl(),
+            shortcutWriter);
 
         await platform.InstallStartupShortcutAsync(CancellationToken.None);
 
@@ -284,7 +290,7 @@ public sealed class WindowsSetupPlatformServiceTests
     public async Task InstallStartupShortcut_RemovesLegacyCommandStartupEntry()
     {
         RecordingFileOperations files = new();
-        WindowsSetupPlatform platform = new(
+        WindowsSetupPlatform platform = WindowsSetupPlatformTestFactory.Create(
             new RecordingServiceControl(),
             new RecordingShortcutWriter(),
             fileOperations: files);
@@ -300,7 +306,9 @@ public sealed class WindowsSetupPlatformServiceTests
     public async Task InstallSessionAgentStartupShortcut_CreatesIndependentMandatoryLink()
     {
         RecordingShortcutWriter shortcutWriter = new();
-        WindowsSetupPlatform platform = new(new RecordingServiceControl(), shortcutWriter);
+        WindowsSetupPlatform platform = WindowsSetupPlatformTestFactory.Create(
+            new RecordingServiceControl(),
+            shortcutWriter);
 
         await platform.InstallSessionAgentStartupShortcutAsync(CancellationToken.None);
 
@@ -317,7 +325,7 @@ public sealed class WindowsSetupPlatformServiceTests
     public async Task RemoveStartupShortcut_RemovesCurrentAndLegacyStartupEntries()
     {
         RecordingFileOperations files = new();
-        WindowsSetupPlatform platform = new(
+        WindowsSetupPlatform platform = WindowsSetupPlatformTestFactory.Create(
             new RecordingServiceControl(),
             new RecordingShortcutWriter(),
             fileOperations: files);
@@ -334,7 +342,7 @@ public sealed class WindowsSetupPlatformServiceTests
     public async Task RemoveSessionAgentStartupShortcut_RemovesOnlyAgentEntry()
     {
         RecordingFileOperations files = new();
-        WindowsSetupPlatform platform = new(fileOperations: files);
+        WindowsSetupPlatform platform = WindowsSetupPlatformTestFactory.Create(fileOperations: files);
 
         await platform.RemoveSessionAgentStartupShortcutAsync(CancellationToken.None);
 
@@ -346,7 +354,9 @@ public sealed class WindowsSetupPlatformServiceTests
     public async Task InstallStartMenuShortcut_CreatesSearchableLinkToTray()
     {
         RecordingShortcutWriter shortcutWriter = new();
-        WindowsSetupPlatform platform = new(new RecordingServiceControl(), shortcutWriter);
+        WindowsSetupPlatform platform = WindowsSetupPlatformTestFactory.Create(
+            new RecordingServiceControl(),
+            shortcutWriter);
 
         await platform.InstallStartMenuShortcutAsync(CancellationToken.None);
 
@@ -367,7 +377,7 @@ public sealed class WindowsSetupPlatformServiceTests
     public async Task RemoveStartMenuShortcut_RemovesSearchableEntry()
     {
         RecordingFileOperations files = new();
-        WindowsSetupPlatform platform = new(fileOperations: files);
+        WindowsSetupPlatform platform = WindowsSetupPlatformTestFactory.Create(fileOperations: files);
 
         await platform.RemoveStartMenuShortcutAsync(CancellationToken.None);
 
@@ -383,7 +393,9 @@ public sealed class WindowsSetupPlatformServiceTests
     public async Task InstallUninstallShortcut_TargetsInstalledSetupAndPreservesProfilesByDefault()
     {
         RecordingShortcutWriter shortcutWriter = new();
-        WindowsSetupPlatform platform = new(new RecordingServiceControl(), shortcutWriter);
+        WindowsSetupPlatform platform = WindowsSetupPlatformTestFactory.Create(
+            new RecordingServiceControl(),
+            shortcutWriter);
 
         await platform.InstallUninstallShortcutAsync(CancellationToken.None);
 
@@ -399,7 +411,8 @@ public sealed class WindowsSetupPlatformServiceTests
     public async Task InstallUninstallRegistration_CreatesInstalledAppsEntryForInstalledSetup()
     {
         RecordingUninstallRegistration registration = new();
-        WindowsSetupPlatform platform = new(uninstallRegistration: registration);
+        WindowsSetupPlatform platform = WindowsSetupPlatformTestFactory.Create(
+            uninstallRegistration: registration);
 
         await platform.InstallUninstallRegistrationAsync(CancellationToken.None);
 
@@ -415,7 +428,7 @@ public sealed class WindowsSetupPlatformServiceTests
     {
         RecordingInstalledUninstallerWriter writer = new();
         const string source = @"C:\Downloads\OpenBlade.Setup.exe";
-        WindowsSetupPlatform platform = new(
+        WindowsSetupPlatform platform = WindowsSetupPlatformTestFactory.Create(
             installedUninstallerWriter: writer,
             setupExecutablePath: source);
 
@@ -436,7 +449,7 @@ public sealed class WindowsSetupPlatformServiceTests
     {
         RecordingFileOperations files = new();
         RecordingUninstallRegistration registration = new() { EntryExists = true };
-        WindowsSetupPlatform platform = new(
+        WindowsSetupPlatform platform = WindowsSetupPlatformTestFactory.Create(
             fileOperations: files,
             uninstallRegistration: registration);
 
@@ -455,7 +468,7 @@ public sealed class WindowsSetupPlatformServiceTests
     {
         RecordingFileOperations files = new() { FileExistsResult = true };
         RecordingUninstallRegistration registration = new() { EntryExists = true };
-        WindowsSetupPlatform platform = new(
+        WindowsSetupPlatform platform = WindowsSetupPlatformTestFactory.Create(
             fileOperations: files,
             uninstallRegistration: registration);
 
@@ -473,7 +486,7 @@ public sealed class WindowsSetupPlatformServiceTests
     public async Task WriteAuthorizedUserSid_InvalidOrNonAccountSid_FailsClosed(string sid)
     {
         RecordingAuthorizedSidWriter sidWriter = new();
-        WindowsSetupPlatform platform = new(
+        WindowsSetupPlatform platform = WindowsSetupPlatformTestFactory.Create(
             new RecordingServiceControl(),
             new RecordingShortcutWriter(),
             sidWriter);
@@ -490,7 +503,7 @@ public sealed class WindowsSetupPlatformServiceTests
     {
         RecordingAuthorizedSidWriter sidWriter = new();
         RecordingMachineDataDirectorySecurity machineDataSecurity = new();
-        WindowsSetupPlatform platform = new(
+        WindowsSetupPlatform platform = WindowsSetupPlatformTestFactory.Create(
             new RecordingServiceControl(),
             new RecordingShortcutWriter(),
             sidWriter,
@@ -519,7 +532,7 @@ public sealed class WindowsSetupPlatformServiceTests
         {
             Failure = new UnauthorizedAccessException("ACL write denied."),
         };
-        WindowsSetupPlatform platform = new(
+        WindowsSetupPlatform platform = WindowsSetupPlatformTestFactory.Create(
             new RecordingServiceControl(),
             new RecordingShortcutWriter(),
             sidWriter,
@@ -539,7 +552,7 @@ public sealed class WindowsSetupPlatformServiceTests
     public async Task InstallAndRemoveService_NeverTargetsFormerServiceIdentity()
     {
         RecordingServiceControl serviceControl = new() { Exists = true };
-        WindowsSetupPlatform platform = new(serviceControl);
+        WindowsSetupPlatform platform = WindowsSetupPlatformTestFactory.Create(serviceControl);
 
         await platform.PrepareServiceForInstallAsync(CancellationToken.None);
         await platform.InstallServiceAsync(CancellationToken.None);
