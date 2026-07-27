@@ -226,8 +226,6 @@ public sealed class ProfileAutomationState
             && IsFanCompatibleWithSource(persistentFan.Value, PowerSource)
                 ? persistentFan
                 : null;
-        bool allowLightingOverride = PowerSource != PowerSource.ExternalUnknown;
-
         ResolvedSetting<PerformancePreset> resolvedPerformance = ResolvePerformance(
             profile.Performance,
             activeTemporaryPerformance,
@@ -246,6 +244,8 @@ public sealed class ProfileAutomationState
             confirmed.Fans.GetValueOrDefault(),
             activeTemporaryFans,
             activePersistentFans);
+        ResolvedSetting<LightingSettings> resolvedLighting =
+            ResolveLighting(profile, confirmed);
         FanControlSettings profileFanControl = profile.FanControl
             ?? FanControlSettings.FromLegacy(profile.Fans);
         FanControlSettings selectedFanControl = resolvedFans.Source switch
@@ -260,12 +260,34 @@ public sealed class ProfileAutomationState
         return new DesiredDeviceState(
             resolvedPerformance,
             resolvedFans,
-            OverrideResolver.Resolve<LightingSettings>(profile.Lighting, confirmed.Lighting ?? profile.Lighting, allowLightingOverride ? temporaryLighting : null, allowLightingOverride ? persistentLighting : null),
+            resolvedLighting,
             DesiredBattery)
         {
             CustomPerformance = customPerformance,
             FanControl = selectedFanControl,
         };
+    }
+
+    private ResolvedSetting<LightingSettings> ResolveLighting(
+        PowerProfile profile,
+        ConfirmedDeviceState confirmed)
+    {
+        if (PowerSource == PowerSource.ExternalUnknown)
+        {
+            return confirmed.Lighting is { } observed
+                ? new ResolvedSetting<LightingSettings>(
+                    observed,
+                    SettingValueSource.ConfirmedFirmwareState)
+                : new ResolvedSetting<LightingSettings>(
+                    profile.Lighting,
+                    SettingValueSource.PowerProfile);
+        }
+
+        return OverrideResolver.Resolve(
+            profile.Lighting,
+            confirmed.Lighting ?? profile.Lighting,
+            temporaryLighting,
+            persistentLighting);
     }
 
     private static FanControlSettings WithMode(

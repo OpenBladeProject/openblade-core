@@ -950,6 +950,77 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     }
 
     [Fact]
+    public async Task LightingPowerPolicy_PowerChangeWhileDisplayOffPersistsDestinationIntent()
+    {
+        TestContext context = await CreateOwnedStaticLightingContextAsync();
+        LightingSettings pluggedInLighting =
+            context.Runtime.GetStatus().DesiredState.Lighting.Value;
+        LightingSettings batteryLighting = LightingSettingsFactory.Static(
+            new RgbColor(0, 96, 255),
+            brightness: 40);
+        ProfileSet profiles = context.Runtime.GetStatus().Profiles;
+        await context.Runtime.UpdateProfilesAsync(
+            profiles with
+            {
+                PluggedIn = profiles.PluggedIn with
+                {
+                    LightingPowerPolicy = new LightingPowerPolicy(
+                        turnOffWhenDisplayTurnsOff: true,
+                        idleTimeoutMinutes: null),
+                },
+                Battery = profiles.Battery with
+                {
+                    Lighting = batteryLighting,
+                    LightingPowerPolicy = new LightingPowerPolicy(
+                        turnOffWhenDisplayTurnsOff: true,
+                        idleTimeoutMinutes: null),
+                },
+            },
+            CancellationToken.None);
+
+        await context.Runtime.SetLightingSuppressionAsync(
+            LightingSuppressionReason.DisplayOff,
+            suppressed: true,
+            CancellationToken.None);
+        BatteryConfiguration savedWhilePluggedIn =
+            await context.Store.LoadAsync(CancellationToken.None);
+        context.Telemetry.Current = CreateTelemetry(PowerSource.ExternalUnknown);
+        context.Device.AdapterPowerState = AdapterPowerState.Unknown;
+        await context.Runtime.HandlePowerSourceChangedAsync(CancellationToken.None);
+        BatteryConfiguration savedWhileUnclassified =
+            await context.Store.LoadAsync(CancellationToken.None);
+
+        Assert.Equal(
+            PowerSource.PluggedIn,
+            context.Runtime.GetStatus().ActivePowerSource);
+        Assert.Equal(
+            [LightingSuppressionReason.DisplayOff],
+            context.Runtime.GetStatus().LightingSuppressions);
+        Assert.Equal(
+            pluggedInLighting,
+            savedWhileUnclassified.Preferences.LastKnownLighting);
+
+        context.Telemetry.Current = CreateTelemetry(PowerSource.Battery);
+        await context.Runtime.HandlePowerSourceChangedAsync(CancellationToken.None);
+
+        BatteryConfiguration saved = await context.Store.LoadAsync(CancellationToken.None);
+        var restarted = new ProfileAutomationState(
+            saved.Profiles,
+            saved.Preferences,
+            PowerSource.Battery);
+
+        Assert.Equal(LightingEffect.Off, context.Device.ConfirmedState.Lighting!.Effect);
+        Assert.Equal(
+            pluggedInLighting,
+            savedWhilePluggedIn.Preferences.LastKnownLighting);
+        Assert.Equal(batteryLighting, saved.Preferences.LastKnownLighting);
+        Assert.Null(restarted.LightingOverride);
+        Assert.Equal(
+            batteryLighting,
+            restarted.Resolve(context.Device.ConfirmedState).Lighting.Value);
+    }
+
+    [Fact]
     public async Task LightingPowerPolicy_DisabledReasonIsBlockedWithoutHardwareWrite()
     {
         TestContext context = await CreateOwnedStaticLightingContextAsync();

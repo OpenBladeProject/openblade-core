@@ -2848,8 +2848,8 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
 
             if (subsystem == DeviceSubsystem.Lighting)
             {
-                await TryPersistLastKnownLightingAsync(
-                    desired.Lighting.Value,
+                await TryPersistRememberedLightingIntentAsync(
+                    confirmed,
                     token).ConfigureAwait(false);
             }
         }
@@ -3174,7 +3174,9 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         if (lightingResult.Status is ControlResultStatus.Applied
             or ControlResultStatus.Unchanged)
         {
-            await TryPersistLastKnownLightingAsync(desired.Lighting.Value, token)
+            await TryPersistRememberedLightingIntentAsync(
+                confirmed,
+                token)
                 .ConfigureAwait(false);
         }
 
@@ -4424,6 +4426,17 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 Value = LightingSettingsFactory.Off(),
             },
         };
+    }
+
+    private Task TryPersistRememberedLightingIntentAsync(
+        ConfirmedDeviceState? confirmed,
+        CancellationToken cancellationToken)
+    {
+        ResolvedSetting<LightingSettings> lighting =
+            Automation.Resolve(confirmed ?? UnknownConfirmedState).Lighting;
+        return lighting.Source == SettingValueSource.ConfirmedFirmwareState
+            ? Task.CompletedTask
+            : TryPersistLastKnownLightingAsync(lighting.Value, cancellationToken);
     }
 
     private bool IsLightingSuppressionConfigured(LightingSuppressionReason reason)
