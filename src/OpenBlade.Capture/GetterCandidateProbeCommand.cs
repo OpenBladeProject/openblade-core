@@ -28,7 +28,7 @@ internal abstract class GetterCandidateProbeCommand
     {
         this.run = run ?? throw new ArgumentNullException(nameof(run));
         this.output = output ?? throw new ArgumentNullException(nameof(output));
-        this.registerCancellation = registerCancellation ?? RegisterConsoleCancellation;
+        this.registerCancellation = registerCancellation ?? ConsoleCancellation.Register;
     }
 
     protected abstract CandidateMetadata Metadata { get; }
@@ -47,7 +47,8 @@ internal abstract class GetterCandidateProbeCommand
 
         using CancellationTokenSource commandCancellation =
             CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        using IDisposable registration = registerCancellation(() => Cancel(commandCancellation));
+        using IDisposable registration = registerCancellation(
+            () => ConsoleCancellation.Cancel(commandCancellation));
         try
         {
             HidSessionResult<GetterCandidateProbeSnapshot> result =
@@ -94,22 +95,6 @@ internal abstract class GetterCandidateProbeCommand
             result.Diagnostic?.ProtocolValidationFailure?.ToString() ?? "None",
         ResponsePayloadHex: result.Value?.ResponsePayloadHex ?? string.Empty);
 
-    private static IDisposable RegisterConsoleCancellation(Action cancel)
-    {
-        ConsoleCancelEventHandler handler = (_, eventArgs) =>
-        {
-            eventArgs.Cancel = true;
-            cancel();
-        };
-        Console.CancelKeyPress += handler;
-        return new CancellationRegistration(handler);
-    }
-
-    private static void Cancel(CancellationTokenSource source)
-    {
-        try { source.Cancel(); } catch (ObjectDisposedException) { }
-    }
-
     protected sealed record CandidateMetadata(
         string CommandName,
         string Candidate,
@@ -117,20 +102,6 @@ internal abstract class GetterCandidateProbeCommand
         string CommandIdHex,
         string RequestPayloadHex,
         int ExpectedPayloadLength);
-
-    private sealed class CancellationRegistration(ConsoleCancelEventHandler handler) : IDisposable
-    {
-        private ConsoleCancelEventHandler? handler = handler;
-
-        public void Dispose()
-        {
-            ConsoleCancelEventHandler? current = Interlocked.Exchange(ref handler, null);
-            if (current is not null)
-            {
-                Console.CancelKeyPress -= current;
-            }
-        }
-    }
 
     private sealed record CaptureDocument(
         int SchemaVersion,
@@ -216,7 +187,8 @@ internal sealed class DeviceModeQueryCommand(
         using CancellationTokenSource commandCancellation =
             CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         using IDisposable registration = (registerCancellation
-            ?? RegisterConsoleCancellation)(() => Cancel(commandCancellation));
+            ?? ConsoleCancellation.Register)(
+                () => ConsoleCancellation.Cancel(commandCancellation));
         try
         {
             HidSessionResult<GetterCandidateProbeSnapshot> result =
@@ -256,22 +228,6 @@ internal sealed class DeviceModeQueryCommand(
         }
     }
 
-    private static IDisposable RegisterConsoleCancellation(Action cancel)
-    {
-        ConsoleCancelEventHandler handler = (_, eventArgs) =>
-        {
-            eventArgs.Cancel = true;
-            cancel();
-        };
-        Console.CancelKeyPress += handler;
-        return new DeviceModeCancellationRegistration(handler);
-    }
-
-    private static void Cancel(CancellationTokenSource source)
-    {
-        try { source.Cancel(); } catch (ObjectDisposedException) { }
-    }
-
     private static bool TryDecodeMode(string payloadHex, out RazerDeviceMode mode)
     {
         mode = default;
@@ -287,18 +243,4 @@ internal sealed class DeviceModeQueryCommand(
         }
     }
 
-    private sealed class DeviceModeCancellationRegistration(
-        ConsoleCancelEventHandler handler) : IDisposable
-    {
-        private ConsoleCancelEventHandler? handler = handler;
-
-        public void Dispose()
-        {
-            ConsoleCancelEventHandler? current = Interlocked.Exchange(ref handler, null);
-            if (current is not null)
-            {
-                Console.CancelKeyPress -= current;
-            }
-        }
-    }
 }

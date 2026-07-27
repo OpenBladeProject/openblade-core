@@ -37,7 +37,7 @@ public sealed class PerformanceFanSetterValidationCommand
     {
         this.run = run ?? throw new ArgumentNullException(nameof(run));
         this.output = output ?? throw new ArgumentNullException(nameof(output));
-        this.registerCancellation = registerCancellation ?? RegisterConsoleCancellation;
+        this.registerCancellation = registerCancellation ?? ConsoleCancellation.Register;
     }
 
     public async Task<int> RunAsync(
@@ -53,7 +53,8 @@ public sealed class PerformanceFanSetterValidationCommand
 
         using CancellationTokenSource commandCancellation =
             CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        using IDisposable registration = registerCancellation(() => Cancel(commandCancellation));
+        using IDisposable registration = registerCancellation(
+            () => ConsoleCancellation.Cancel(commandCancellation));
         try
         {
             PerformanceFanSetterValidationResult result =
@@ -117,36 +118,6 @@ public sealed class PerformanceFanSetterValidationCommand
     {
         target = value;
         return true;
-    }
-
-    private static IDisposable RegisterConsoleCancellation(Action cancel)
-    {
-        ConsoleCancelEventHandler handler = (_, eventArgs) =>
-        {
-            eventArgs.Cancel = true;
-            cancel();
-        };
-        Console.CancelKeyPress += handler;
-        return new CancellationRegistration(handler);
-    }
-
-    private static void Cancel(CancellationTokenSource source)
-    {
-        try { source.Cancel(); } catch (ObjectDisposedException) { }
-    }
-
-    private sealed class CancellationRegistration(ConsoleCancelEventHandler handler) : IDisposable
-    {
-        private ConsoleCancelEventHandler? handler = handler;
-
-        public void Dispose()
-        {
-            ConsoleCancelEventHandler? current = Interlocked.Exchange(ref handler, null);
-            if (current is not null)
-            {
-                Console.CancelKeyPress -= current;
-            }
-        }
     }
 
     private sealed record CaptureDocument(

@@ -68,7 +68,7 @@ public sealed class LightingValidationCommand
         this.successArtifactPath = successArtifactPath;
         this.utcNow = utcNow ?? (() => DateTimeOffset.UtcNow);
         this.writeArtifact = writeArtifact ?? WriteAtomicallyAsync;
-        this.registerCancellation = registerCancellation ?? RegisterConsoleCancellation;
+        this.registerCancellation = registerCancellation ?? ConsoleCancellation.Register;
         this.checkEnvironment = checkEnvironment ?? (() => null);
     }
 
@@ -108,7 +108,7 @@ public sealed class LightingValidationCommand
         using CancellationTokenSource commandCancellation =
             CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         using IDisposable registration = registerCancellation(
-            () => TryCancel(commandCancellation));
+            () => ConsoleCancellation.Cancel(commandCancellation));
         DateTimeOffset startedAtUtc = utcNow();
         IProductionLightingPort? port = null;
         bool hardwareTouched = false;
@@ -990,46 +990,10 @@ public sealed class LightingValidationCommand
         }
     }
 
-    private static IDisposable RegisterConsoleCancellation(Action cancel)
-    {
-        ConsoleCancelEventHandler handler = (_, eventArgs) =>
-        {
-            eventArgs.Cancel = true;
-            cancel();
-        };
-        Console.CancelKeyPress += handler;
-        return new CancellationRegistration(handler);
-    }
-
-    private static void TryCancel(CancellationTokenSource source)
-    {
-        try
-        {
-            source.Cancel();
-        }
-        catch (ObjectDisposedException)
-        {
-        }
-    }
-
     private sealed record ValidationActionSpec(
         string Name,
         string Description,
         LightingSettings Settings,
         bool ReactivePulseRequired);
 
-    private sealed class CancellationRegistration(ConsoleCancelEventHandler handler)
-        : IDisposable
-    {
-        private ConsoleCancelEventHandler? handler = handler;
-
-        public void Dispose()
-        {
-            ConsoleCancelEventHandler? current = Interlocked.Exchange(ref handler, null);
-            if (current is not null)
-            {
-                Console.CancelKeyPress -= current;
-            }
-        }
-    }
 }

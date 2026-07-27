@@ -25,7 +25,7 @@ public sealed class BatteryValidationCommand
     {
         runAsync = run ?? throw new ArgumentNullException(nameof(run));
         outputWriter = output ?? throw new ArgumentNullException(nameof(output));
-        registerCancellationHandler = registerCancellation ?? RegisterConsoleCancellation;
+        registerCancellationHandler = registerCancellation ?? ConsoleCancellation.Register;
     }
 
     public async Task<int> RunAsync(
@@ -44,7 +44,7 @@ public sealed class BatteryValidationCommand
         using CancellationTokenSource commandCancellation =
             CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         using IDisposable registration = registerCancellationHandler(
-            () => Cancel(commandCancellation));
+            () => ConsoleCancellation.Cancel(commandCancellation));
 
         try
         {
@@ -142,39 +142,4 @@ public sealed class BatteryValidationCommand
         return parsed.Success;
     }
 
-    private static IDisposable RegisterConsoleCancellation(Action cancel)
-    {
-        ConsoleCancelEventHandler handler = (_, eventArgs) =>
-        {
-            eventArgs.Cancel = true;
-            cancel();
-        };
-        Console.CancelKeyPress += handler;
-        return new CancellationRegistration(handler);
-    }
-
-    private static void Cancel(CancellationTokenSource source)
-    {
-        try
-        {
-            source.Cancel();
-        }
-        catch (ObjectDisposedException)
-        {
-        }
-    }
-
-    private sealed class CancellationRegistration(ConsoleCancelEventHandler handler) : IDisposable
-    {
-        private ConsoleCancelEventHandler? registeredHandler = handler;
-
-        public void Dispose()
-        {
-            ConsoleCancelEventHandler? handler = Interlocked.Exchange(ref registeredHandler, null);
-            if (handler is not null)
-            {
-                Console.CancelKeyPress -= handler;
-            }
-        }
-    }
 }

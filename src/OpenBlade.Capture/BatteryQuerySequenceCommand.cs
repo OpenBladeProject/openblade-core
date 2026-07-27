@@ -20,7 +20,7 @@ public sealed class BatteryQuerySequenceCommand
     {
         this.run = run ?? throw new ArgumentNullException(nameof(run));
         this.output = output ?? throw new ArgumentNullException(nameof(output));
-        this.registerCancellation = registerCancellation ?? RegisterConsoleCancellation;
+        this.registerCancellation = registerCancellation ?? ConsoleCancellation.Register;
     }
 
     public async Task<int> RunAsync(
@@ -38,7 +38,7 @@ public sealed class BatteryQuerySequenceCommand
         using CancellationTokenSource commandCancellation =
             CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         using IDisposable registration = registerCancellation(
-            () => Cancel(commandCancellation));
+            () => ConsoleCancellation.Cancel(commandCancellation));
 
         try
         {
@@ -114,39 +114,4 @@ public sealed class BatteryQuerySequenceCommand
             _ => "Unknown",
         };
 
-    private static IDisposable RegisterConsoleCancellation(Action cancel)
-    {
-        ConsoleCancelEventHandler handler = (_, eventArgs) =>
-        {
-            eventArgs.Cancel = true;
-            cancel();
-        };
-        Console.CancelKeyPress += handler;
-        return new CancellationRegistration(handler);
-    }
-
-    private static void Cancel(CancellationTokenSource source)
-    {
-        try
-        {
-            source.Cancel();
-        }
-        catch (ObjectDisposedException)
-        {
-        }
-    }
-
-    private sealed class CancellationRegistration(ConsoleCancelEventHandler handler) : IDisposable
-    {
-        private ConsoleCancelEventHandler? handler = handler;
-
-        public void Dispose()
-        {
-            ConsoleCancelEventHandler? current = Interlocked.Exchange(ref handler, null);
-            if (current is not null)
-            {
-                Console.CancelKeyPress -= current;
-            }
-        }
-    }
 }

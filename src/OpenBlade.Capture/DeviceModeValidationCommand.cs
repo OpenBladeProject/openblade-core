@@ -40,7 +40,8 @@ internal sealed class DeviceModeValidationCommand(
         using CancellationTokenSource commandCancellation =
             CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         using IDisposable registration = (registerCancellation
-            ?? RegisterConsoleCancellation)(() => Cancel(commandCancellation));
+            ?? ConsoleCancellation.Register)(
+                () => ConsoleCancellation.Cancel(commandCancellation));
         try
         {
             DeviceModeValidationResult result = await run(
@@ -88,33 +89,4 @@ internal sealed class DeviceModeValidationCommand(
         return string.Equals(response?.Trim(), "YES", StringComparison.Ordinal);
     }
 
-    private static IDisposable RegisterConsoleCancellation(Action cancel)
-    {
-        ConsoleCancelEventHandler handler = (_, eventArgs) =>
-        {
-            eventArgs.Cancel = true;
-            cancel();
-        };
-        Console.CancelKeyPress += handler;
-        return new CancellationRegistration(handler);
-    }
-
-    private static void Cancel(CancellationTokenSource source)
-    {
-        try { source.Cancel(); } catch (ObjectDisposedException) { }
-    }
-
-    private sealed class CancellationRegistration(ConsoleCancelEventHandler handler) : IDisposable
-    {
-        private ConsoleCancelEventHandler? handler = handler;
-
-        public void Dispose()
-        {
-            ConsoleCancelEventHandler? current = Interlocked.Exchange(ref handler, null);
-            if (current is not null)
-            {
-                Console.CancelKeyPress -= current;
-            }
-        }
-    }
 }
