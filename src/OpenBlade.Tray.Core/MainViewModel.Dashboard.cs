@@ -10,17 +10,11 @@ public sealed partial class MainViewModel
         {
             return;
         }
-        PropertyChanged?.Invoke(
-            this,
-            new PropertyChangedEventArgs(nameof(EnabledDashboardTelemetryItems)));
+        Notify(nameof(EnabledDashboardTelemetryItems));
         if (dashboardTelemetryPresentationActive)
         {
-            PropertyChanged?.Invoke(
-                this,
-                new PropertyChangedEventArgs(nameof(VisibleDashboardTelemetryGroups)));
-            PropertyChanged?.Invoke(
-                this,
-                new PropertyChangedEventArgs(nameof(ShowDashboardLiveReadings)));
+            Notify(nameof(VisibleDashboardTelemetryGroups));
+            Notify(nameof(ShowDashboardLiveReadings));
         }
     }
 
@@ -31,16 +25,14 @@ public sealed partial class MainViewModel
             return;
         }
 
-        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(BatteryPowerFlowLabel)));
-        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Fan1RpmLabel)));
-        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Fan2RpmLabel)));
-        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Fan1RpmValue)));
-        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Fan2RpmValue)));
-        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(CpuTemperatureValue)));
-        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(GpuTemperatureValue)));
-        PropertyChanged?.Invoke(
-            this,
-            new PropertyChangedEventArgs(nameof(VisibleDashboardTelemetryGroups)));
+        Notify(nameof(BatteryPowerFlowLabel));
+        Notify(nameof(Fan1RpmLabel));
+        Notify(nameof(Fan2RpmLabel));
+        Notify(nameof(Fan1RpmValue));
+        Notify(nameof(Fan2RpmValue));
+        Notify(nameof(CpuTemperatureValue));
+        Notify(nameof(GpuTemperatureValue));
+        Notify(nameof(VisibleDashboardTelemetryGroups));
     }
 
     private void NotifyTrayHoverPreferencesChanged()
@@ -49,9 +41,7 @@ public sealed partial class MainViewModel
         {
             return;
         }
-        PropertyChanged?.Invoke(
-            this,
-            new PropertyChangedEventArgs(nameof(TrayHoverLabelPreferences)));
+        Notify(nameof(TrayHoverLabelPreferences));
         NotifyTrayHoverLabel();
     }
 }

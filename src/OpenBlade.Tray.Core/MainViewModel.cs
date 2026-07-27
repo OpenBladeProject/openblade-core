@@ -575,7 +575,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
                 return;
             }
             SetField(ref operationFeedbackMessage, value);
-            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasOperationFeedback)));
+            Notify(nameof(HasOperationFeedback));
         }
     }
 
@@ -591,9 +591,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
                 return;
             }
             SetField(ref troubleshootingRecentErrorStatus, value);
-            PropertyChanged?.Invoke(
-                this,
-                new PropertyChangedEventArgs(nameof(HasTroubleshootingRecentError)));
+            Notify(nameof(HasTroubleshootingRecentError));
         }
     }
 
@@ -793,41 +791,19 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
                 SelectedProfileComparisonOption = ComparisonOptions.First(option => option.Source == value);
             }
             NotifySelectedProfilePresentation();
-            PropertyChanged?.Invoke(
-                this,
-                new PropertyChangedEventArgs(nameof(IsPluggedInProfileActive)));
-            PropertyChanged?.Invoke(
-                this,
-                new PropertyChangedEventArgs(nameof(IsBatteryProfileActive)));
-            PropertyChanged?.Invoke(
-                this,
-                new PropertyChangedEventArgs(nameof(IsUsbCProfileActive)));
-            PropertyChanged?.Invoke(
-                this,
-                new PropertyChangedEventArgs(nameof(AvailableActivePerformanceOptions)));
-            PropertyChanged?.Invoke(
-                this,
-                new PropertyChangedEventArgs(nameof(SelectedPerformanceOption)));
-            PropertyChanged?.Invoke(
-                this,
-                new PropertyChangedEventArgs(nameof(IsCustomPerformanceVisible)));
-            PropertyChanged?.Invoke(
-                this,
-                new PropertyChangedEventArgs(nameof(IsGpuClockTuningAvailable)));
-            PropertyChanged?.Invoke(
-                this,
-                new PropertyChangedEventArgs(nameof(CanEditGpuClockTuning)));
-            PropertyChanged?.Invoke(
-                this,
-                new PropertyChangedEventArgs(nameof(ActiveSavedDisplayProfile)));
-            PropertyChanged?.Invoke(
-                this,
-                new PropertyChangedEventArgs(nameof(SaveToActiveProfileLabel)));
+            Notify(nameof(IsPluggedInProfileActive));
+            Notify(nameof(IsBatteryProfileActive));
+            Notify(nameof(IsUsbCProfileActive));
+            Notify(nameof(AvailableActivePerformanceOptions));
+            Notify(nameof(SelectedPerformanceOption));
+            Notify(nameof(IsCustomPerformanceVisible));
+            Notify(nameof(IsGpuClockTuningAvailable));
+            Notify(nameof(CanEditGpuClockTuning));
+            Notify(nameof(ActiveSavedDisplayProfile));
+            Notify(nameof(SaveToActiveProfileLabel));
             NotifyGamingModeKeyPolicy();
             NotifyActiveFanSelectionBinding();
-            PropertyChanged?.Invoke(
-                this,
-                new PropertyChangedEventArgs(nameof(BatteryPowerFlowLabel)));
+            Notify(nameof(BatteryPowerFlowLabel));
             NotifyTrayHoverLabel();
             NotifyCommands();
         }
@@ -915,9 +891,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
                 return;
             }
             SetField(ref performanceSourceLabel, value);
-            PropertyChanged?.Invoke(
-                this,
-                new PropertyChangedEventArgs(nameof(ThermalProfileRelationshipStatus)));
+            Notify(nameof(ThermalProfileRelationshipStatus));
         }
     }
 
@@ -931,9 +905,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
                 return;
             }
             SetField(ref fanSourceLabel, value);
-            PropertyChanged?.Invoke(
-                this,
-                new PropertyChangedEventArgs(nameof(ThermalProfileRelationshipStatus)));
+            Notify(nameof(ThermalProfileRelationshipStatus));
         }
     }
 
@@ -947,9 +919,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
                 return;
             }
             SetField(ref lightingSourceLabel, value);
-            PropertyChanged?.Invoke(
-                this,
-                new PropertyChangedEventArgs(nameof(LightingProfileRelationshipStatus)));
+            Notify(nameof(LightingProfileRelationshipStatus));
         }
     }
 
@@ -1375,20 +1345,14 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
                 return;
             }
             SetField(ref selectedPerformance, value);
-            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ActivePerformanceLabel)));
-            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(SelectedPerformanceOption)));
-            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsSilentSelected)));
-            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsBalancedSelected)));
-            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsPerformanceSelected)));
-            PropertyChanged?.Invoke(
-                this,
-                new PropertyChangedEventArgs(nameof(IsCustomPerformanceVisible)));
-            PropertyChanged?.Invoke(
-                this,
-                new PropertyChangedEventArgs(nameof(IsGpuClockTuningAvailable)));
-            PropertyChanged?.Invoke(
-                this,
-                new PropertyChangedEventArgs(nameof(CanEditGpuClockTuning)));
+            Notify(nameof(ActivePerformanceLabel));
+            Notify(nameof(SelectedPerformanceOption));
+            Notify(nameof(IsSilentSelected));
+            Notify(nameof(IsBalancedSelected));
+            Notify(nameof(IsPerformanceSelected));
+            Notify(nameof(IsCustomPerformanceVisible));
+            Notify(nameof(IsGpuClockTuningAvailable));
+            Notify(nameof(CanEditGpuClockTuning));
             NotifyTrayHoverLabel();
         }
     }
@@ -1419,24 +1383,12 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             }
 
             SetField(ref gpuClockOffsetCapabilities, value);
-            PropertyChanged?.Invoke(
-                this,
-                new PropertyChangedEventArgs(nameof(IsGpuClockTuningAvailable)));
-            PropertyChanged?.Invoke(
-                this,
-                new PropertyChangedEventArgs(nameof(CanEditGpuClockTuning)));
-            PropertyChanged?.Invoke(
-                this,
-                new PropertyChangedEventArgs(nameof(GpuCoreClockOffsetMinimum)));
-            PropertyChanged?.Invoke(
-                this,
-                new PropertyChangedEventArgs(nameof(GpuCoreClockOffsetMaximum)));
-            PropertyChanged?.Invoke(
-                this,
-                new PropertyChangedEventArgs(nameof(GpuMemoryClockOffsetMinimum)));
-            PropertyChanged?.Invoke(
-                this,
-                new PropertyChangedEventArgs(nameof(GpuMemoryClockOffsetMaximum)));
+            Notify(nameof(IsGpuClockTuningAvailable));
+            Notify(nameof(CanEditGpuClockTuning));
+            Notify(nameof(GpuCoreClockOffsetMinimum));
+            Notify(nameof(GpuCoreClockOffsetMaximum));
+            Notify(nameof(GpuMemoryClockOffsetMinimum));
+            Notify(nameof(GpuMemoryClockOffsetMaximum));
         }
     }
 
@@ -1479,9 +1431,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             }
 
             SetField(ref selectedCustomCpuLevel, value);
-            PropertyChanged?.Invoke(
-                this,
-                new PropertyChangedEventArgs(nameof(AvailableCustomGpuLevels)));
+            Notify(nameof(AvailableCustomGpuLevels));
         }
     }
 
@@ -1496,9 +1446,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             }
 
             SetField(ref selectedCustomGpuLevel, value);
-            PropertyChanged?.Invoke(
-                this,
-                new PropertyChangedEventArgs(nameof(AvailableCustomCpuLevels)));
+            Notify(nameof(AvailableCustomCpuLevels));
         }
     }
 
@@ -1522,10 +1470,10 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
                 return;
             }
             SetField(ref selectedFanMode, value);
-            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ActiveFanModeLabel)));
-            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(SelectedFanModeOption)));
-            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsFixedFanSpeedVisible)));
-            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsManualFanCurveVisible)));
+            Notify(nameof(ActiveFanModeLabel));
+            Notify(nameof(SelectedFanModeOption));
+            Notify(nameof(IsFixedFanSpeedVisible));
+            Notify(nameof(IsManualFanCurveVisible));
         }
     }
 
@@ -1541,9 +1489,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             }
 
             SetField(ref fixedFanSpeedRpm, normalized);
-            PropertyChanged?.Invoke(
-                this,
-                new PropertyChangedEventArgs(nameof(CurrentFanControlSettings)));
+            Notify(nameof(CurrentFanControlSettings));
         }
     }
 
@@ -1558,9 +1504,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             }
 
             SetField(ref useHigherFanTemperature, value);
-            PropertyChanged?.Invoke(
-                this,
-                new PropertyChangedEventArgs(nameof(CurrentFanControlSettings)));
+            Notify(nameof(CurrentFanControlSettings));
         }
     }
 
@@ -1586,9 +1530,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
 
             SetField(ref isFanControlOperationInProgress, value);
             NotifyCommands();
-            PropertyChanged?.Invoke(
-                this,
-                new PropertyChangedEventArgs(nameof(CanEditFanControl)));
+            Notify(nameof(CanEditFanControl));
         }
     }
 
@@ -1610,12 +1552,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             {
                 SetField(ref isPerformanceOperationInProgress, value);
                 NotifyCommands();
-                PropertyChanged?.Invoke(
-                    this,
-                    new PropertyChangedEventArgs(nameof(CanEditPerformance)));
-                PropertyChanged?.Invoke(
-                    this,
-                    new PropertyChangedEventArgs(nameof(CanEditGpuClockTuning)));
+                Notify(nameof(CanEditPerformance));
+                Notify(nameof(CanEditGpuClockTuning));
             }
         }
     }
@@ -1733,22 +1671,16 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             cpuFanCurveEditorPoints = source
                 .Select(value => new FanCurveEditorPoint(value.ToValue()))
                 .ToArray();
-            PropertyChanged?.Invoke(
-                this,
-                new PropertyChangedEventArgs(nameof(CpuFanCurveEditorPoints)));
+            Notify(nameof(CpuFanCurveEditorPoints));
         }
         else
         {
             gpuFanCurveEditorPoints = source
                 .Select(value => new FanCurveEditorPoint(value.ToValue()))
                 .ToArray();
-            PropertyChanged?.Invoke(
-                this,
-                new PropertyChangedEventArgs(nameof(GpuFanCurveEditorPoints)));
+            Notify(nameof(GpuFanCurveEditorPoints));
         }
-        PropertyChanged?.Invoke(
-            this,
-            new PropertyChangedEventArgs(nameof(CurrentFanControlSettings)));
+        Notify(nameof(CurrentFanControlSettings));
     }
 
     public LightingSettings SelectedLighting
@@ -1800,9 +1732,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             }
 
             SetField(ref batteryProtectionEnabled, value);
-            PropertyChanged?.Invoke(
-                this,
-                new PropertyChangedEventArgs(nameof(BatteryProtectionActionLabel)));
+            Notify(nameof(BatteryProtectionActionLabel));
         }
     }
 
@@ -1821,15 +1751,9 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             }
 
             SetField(ref fullChargeOverride, value);
-            PropertyChanged?.Invoke(
-                this,
-                new PropertyChangedEventArgs(nameof(EnableFullChargeOverride)));
-            PropertyChanged?.Invoke(
-                this,
-                new PropertyChangedEventArgs(nameof(FullChargeActionLabel)));
-            PropertyChanged?.Invoke(
-                this,
-                new PropertyChangedEventArgs(nameof(ProfileStateLabel)));
+            Notify(nameof(EnableFullChargeOverride));
+            Notify(nameof(FullChargeActionLabel));
+            Notify(nameof(ProfileStateLabel));
         }
     }
 
@@ -1853,24 +1777,12 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             }
 
             SetField(ref capabilities, value);
-            PropertyChanged?.Invoke(
-                this,
-                new PropertyChangedEventArgs(nameof(FullChargeActionLabel)));
-            PropertyChanged?.Invoke(
-                this,
-                new PropertyChangedEventArgs(nameof(HasOneShotLaptopControls)));
-            PropertyChanged?.Invoke(
-                this,
-                new PropertyChangedEventArgs(nameof(HasKeyboardLaptopControls)));
-            PropertyChanged?.Invoke(
-                this,
-                new PropertyChangedEventArgs(nameof(SupportsStartupAnimation)));
-            PropertyChanged?.Invoke(
-                this,
-                new PropertyChangedEventArgs(nameof(SupportsFunctionKeyPrimary)));
-            PropertyChanged?.Invoke(
-                this,
-                new PropertyChangedEventArgs(nameof(SupportsGamingMode)));
+            Notify(nameof(FullChargeActionLabel));
+            Notify(nameof(HasOneShotLaptopControls));
+            Notify(nameof(HasKeyboardLaptopControls));
+            Notify(nameof(SupportsStartupAnimation));
+            Notify(nameof(SupportsFunctionKeyPrimary));
+            Notify(nameof(SupportsGamingMode));
             NotifyGamingModeKeyPolicy();
             NotifyFirmwareFieldLoadingState();
         }
@@ -1895,15 +1807,9 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             }
 
             startupAnimationEnabled = value;
-            PropertyChanged?.Invoke(
-                this,
-                new PropertyChangedEventArgs(nameof(StartupAnimationEnabled)));
-            PropertyChanged?.Invoke(
-                this,
-                new PropertyChangedEventArgs(nameof(StartupAnimationToggleIsOn)));
-            PropertyChanged?.Invoke(
-                this,
-                new PropertyChangedEventArgs(nameof(IsStartupAnimationFieldLoading)));
+            Notify(nameof(StartupAnimationEnabled));
+            Notify(nameof(StartupAnimationToggleIsOn));
+            Notify(nameof(IsStartupAnimationFieldLoading));
         }
     }
 
@@ -1923,15 +1829,9 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             }
 
             functionKeyPrimary = value;
-            PropertyChanged?.Invoke(
-                this,
-                new PropertyChangedEventArgs(nameof(FunctionKeyPrimary)));
-            PropertyChanged?.Invoke(
-                this,
-                new PropertyChangedEventArgs(nameof(FunctionKeyPrimaryStateLabel)));
-            PropertyChanged?.Invoke(
-                this,
-                new PropertyChangedEventArgs(nameof(IsFunctionKeyFieldLoading)));
+            Notify(nameof(FunctionKeyPrimary));
+            Notify(nameof(FunctionKeyPrimaryStateLabel));
+            Notify(nameof(IsFunctionKeyFieldLoading));
         }
     }
 
@@ -1957,15 +1857,9 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             }
 
             gamingModeEnabled = value;
-            PropertyChanged?.Invoke(
-                this,
-                new PropertyChangedEventArgs(nameof(GamingModeEnabled)));
-            PropertyChanged?.Invoke(
-                this,
-                new PropertyChangedEventArgs(nameof(GamingModeToggleIsOn)));
-            PropertyChanged?.Invoke(
-                this,
-                new PropertyChangedEventArgs(nameof(IsGamingModeFieldLoading)));
+            Notify(nameof(GamingModeEnabled));
+            Notify(nameof(GamingModeToggleIsOn));
+            Notify(nameof(IsGamingModeFieldLoading));
         }
     }
 
@@ -2065,7 +1959,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             }
 
             liveReadings = value;
-            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(LiveReadings)));
+            Notify(nameof(LiveReadings));
             NotifyDashboardTelemetryValuesChanged();
             NotifyTrayHoverLabel();
         }
@@ -2082,9 +1976,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         if (active)
         {
             NotifyDashboardTelemetryValuesChanged();
-            PropertyChanged?.Invoke(
-                this,
-                new PropertyChangedEventArgs(nameof(ShowDashboardLiveReadings)));
+            Notify(nameof(ShowDashboardLiveReadings));
         }
     }
 
@@ -2182,9 +2074,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             }
 
             SetEditorField(ref pluggedInPerformanceEditor, value);
-            PropertyChanged?.Invoke(
-                this,
-                new PropertyChangedEventArgs(nameof(PluggedInPerformanceOption)));
+            Notify(nameof(PluggedInPerformanceOption));
         }
     }
 
@@ -2225,9 +2115,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             }
 
             SetEditorField(ref batteryPerformanceEditor, value);
-            PropertyChanged?.Invoke(
-                this,
-                new PropertyChangedEventArgs(nameof(BatteryPerformanceOption)));
+            Notify(nameof(BatteryPerformanceOption));
         }
     }
 
@@ -2268,9 +2156,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             }
 
             SetEditorField(ref usbCPerformanceEditor, value);
-            PropertyChanged?.Invoke(
-                this,
-                new PropertyChangedEventArgs(nameof(UsbCPerformanceOption)));
+            Notify(nameof(UsbCPerformanceOption));
         }
     }
 
@@ -2516,9 +2402,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             SeedVisibleLightingDefaults(previous, value);
 
             NotifyLightingParameterPresentation();
-            PropertyChanged?.Invoke(
-                this,
-                new PropertyChangedEventArgs(nameof(SelectedLightingEffectOption)));
+            Notify(nameof(SelectedLightingEffectOption));
         }
     }
 
@@ -2538,9 +2422,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
                 {
                     SeedVisibleLightingDefaults(lightingEffectEditor, value.Effect);
                     SetLightingEditorDirty(true);
-                    PropertyChanged?.Invoke(
-                        this,
-                        new PropertyChangedEventArgs(nameof(LightingDraft)));
+                    Notify(nameof(LightingDraft));
                     NotifyLightingParameterPresentation();
                     NotifyCommands();
                     return;
@@ -2575,9 +2457,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         {
             if (SetLightingColorField(ref lightingRedEditor, value))
             {
-                PropertyChanged?.Invoke(
-                    this,
-                    new PropertyChangedEventArgs(nameof(LightingPrimaryColorEditor)));
+                Notify(nameof(LightingPrimaryColorEditor));
             }
         }
     }
@@ -2589,9 +2469,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         {
             if (SetLightingColorField(ref lightingGreenEditor, value))
             {
-                PropertyChanged?.Invoke(
-                    this,
-                    new PropertyChangedEventArgs(nameof(LightingPrimaryColorEditor)));
+                Notify(nameof(LightingPrimaryColorEditor));
             }
         }
     }
@@ -2603,9 +2481,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         {
             if (SetLightingColorField(ref lightingBlueEditor, value))
             {
-                PropertyChanged?.Invoke(
-                    this,
-                    new PropertyChangedEventArgs(nameof(LightingPrimaryColorEditor)));
+                Notify(nameof(LightingPrimaryColorEditor));
             }
         }
     }
@@ -2626,9 +2502,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         {
             if (SetLightingColorField(ref lightingSecondaryRedEditor, value))
             {
-                PropertyChanged?.Invoke(
-                    this,
-                    new PropertyChangedEventArgs(nameof(LightingSecondaryColorEditor)));
+                Notify(nameof(LightingSecondaryColorEditor));
             }
         }
     }
@@ -2640,9 +2514,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         {
             if (SetLightingColorField(ref lightingSecondaryGreenEditor, value))
             {
-                PropertyChanged?.Invoke(
-                    this,
-                    new PropertyChangedEventArgs(nameof(LightingSecondaryColorEditor)));
+                Notify(nameof(LightingSecondaryColorEditor));
             }
         }
     }
@@ -2654,9 +2526,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         {
             if (SetLightingColorField(ref lightingSecondaryBlueEditor, value))
             {
-                PropertyChanged?.Invoke(
-                    this,
-                    new PropertyChangedEventArgs(nameof(LightingSecondaryColorEditor)));
+                Notify(nameof(LightingSecondaryColorEditor));
             }
         }
     }
@@ -2789,9 +2659,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
 
             if (SetLightingEditorField(ref lightingDirectionEditor, value))
             {
-                PropertyChanged?.Invoke(
-                    this,
-                    new PropertyChangedEventArgs(nameof(SelectedLightingDirectionOption)));
+                Notify(nameof(SelectedLightingDirectionOption));
             }
         }
     }
@@ -2834,10 +2702,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
 
             if (SetLightingEditorField(ref lightingAmbientAwarenessRegionEditor, value))
             {
-                PropertyChanged?.Invoke(
-                    this,
-                    new PropertyChangedEventArgs(
-                        nameof(SelectedAmbientAwarenessRegionOption)));
+                Notify(nameof(SelectedAmbientAwarenessRegionOption));
             }
         }
     }
@@ -2867,9 +2732,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
 
             if (SetLightingEditorField(ref logoLightingModeEditor, value))
             {
-                PropertyChanged?.Invoke(
-                    this,
-                    new PropertyChangedEventArgs(nameof(SelectedLogoLightingModeOption)));
+                Notify(nameof(SelectedLogoLightingModeOption));
             }
         }
     }
@@ -2995,9 +2858,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             }
 
             SetField(ref theme, value);
-            PropertyChanged?.Invoke(
-                this,
-                new PropertyChangedEventArgs(nameof(SelectedThemeOption)));
+            Notify(nameof(SelectedThemeOption));
         }
     }
 
@@ -3044,18 +2905,10 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
                 return;
             }
             SetField(ref liveReadingsRefreshCadence, value);
-            PropertyChanged?.Invoke(
-                this,
-                new PropertyChangedEventArgs(nameof(LiveReadingsEnabled)));
-            PropertyChanged?.Invoke(
-                this,
-                new PropertyChangedEventArgs(nameof(SelectedLiveReadingsRefreshOption)));
-            PropertyChanged?.Invoke(
-                this,
-                new PropertyChangedEventArgs(nameof(LiveReadingsObservationInterval)));
-            PropertyChanged?.Invoke(
-                this,
-                new PropertyChangedEventArgs(nameof(ShowDashboardLiveReadings)));
+            Notify(nameof(LiveReadingsEnabled));
+            Notify(nameof(SelectedLiveReadingsRefreshOption));
+            Notify(nameof(LiveReadingsObservationInterval));
+            Notify(nameof(ShowDashboardLiveReadings));
             if (!LiveReadingsEnabled)
             {
                 LiveReadings = null;
@@ -3122,9 +2975,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
 
             SetField(ref trayHoverLabelMode, value);
             ApplyLegacyTrayHoverLabelMode(value);
-            PropertyChanged?.Invoke(
-                this,
-                new PropertyChangedEventArgs(nameof(SelectedTrayHoverLabelOption)));
+            Notify(nameof(SelectedTrayHoverLabelOption));
             NotifyTrayHoverLabel();
         }
     }
@@ -3198,9 +3049,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             }
 
             SetField(ref startupStatusMessage, value);
-            PropertyChanged?.Invoke(
-                this,
-                new PropertyChangedEventArgs(nameof(StartupDescription)));
+            Notify(nameof(StartupDescription));
         }
     }
 
@@ -3874,18 +3723,10 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         {
             AvailablePerformancePresets = performancePresets;
             // WinUI clears a ComboBox selection when ItemsSource is replaced.
-            PropertyChanged?.Invoke(
-                this,
-                new PropertyChangedEventArgs(nameof(SelectedPerformance)));
-            PropertyChanged?.Invoke(
-                this,
-                new PropertyChangedEventArgs(nameof(PluggedInPerformanceEditor)));
-            PropertyChanged?.Invoke(
-                this,
-                new PropertyChangedEventArgs(nameof(BatteryPerformanceEditor)));
-            PropertyChanged?.Invoke(
-                this,
-                new PropertyChangedEventArgs(nameof(UsbCPerformanceEditor)));
+            Notify(nameof(SelectedPerformance));
+            Notify(nameof(PluggedInPerformanceEditor));
+            Notify(nameof(BatteryPerformanceEditor));
+            Notify(nameof(UsbCPerformanceEditor));
         }
         var admittedPerformancePresets = performancePresets.ToHashSet();
         IReadOnlyList<PerformancePresetOption> pluggedInOptions =
@@ -3924,21 +3765,11 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         }
         if (performanceOptionsChanged)
         {
-            PropertyChanged?.Invoke(
-                this,
-                new PropertyChangedEventArgs(nameof(AvailableActivePerformanceOptions)));
-            PropertyChanged?.Invoke(
-                this,
-                new PropertyChangedEventArgs(nameof(SelectedPerformanceOption)));
-            PropertyChanged?.Invoke(
-                this,
-                new PropertyChangedEventArgs(nameof(PluggedInPerformanceOption)));
-            PropertyChanged?.Invoke(
-                this,
-                new PropertyChangedEventArgs(nameof(BatteryPerformanceOption)));
-            PropertyChanged?.Invoke(
-                this,
-                new PropertyChangedEventArgs(nameof(UsbCPerformanceOption)));
+            Notify(nameof(AvailableActivePerformanceOptions));
+            Notify(nameof(SelectedPerformanceOption));
+            Notify(nameof(PluggedInPerformanceOption));
+            Notify(nameof(BatteryPerformanceOption));
+            Notify(nameof(UsbCPerformanceOption));
         }
         FanMode[] fanModes = capabilities.FanModes
             .Where(Enum.IsDefined)
@@ -3959,15 +3790,9 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
                 FanModePresentation.CreateOptions(
                     admittedFanModes,
                     automaticOnly: true));
-            PropertyChanged?.Invoke(
-                this,
-                new PropertyChangedEventArgs(nameof(PluggedInFanModeEditor)));
-            PropertyChanged?.Invoke(
-                this,
-                new PropertyChangedEventArgs(nameof(BatteryFanModeEditor)));
-            PropertyChanged?.Invoke(
-                this,
-                new PropertyChangedEventArgs(nameof(UsbCFanModeEditor)));
+            Notify(nameof(PluggedInFanModeEditor));
+            Notify(nameof(BatteryFanModeEditor));
+            Notify(nameof(UsbCFanModeEditor));
             NotifyActiveFanSelectionBinding();
         }
         LightingEffect[] lightingEffects = capabilities.LightingEffects
@@ -3993,9 +3818,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         if (!ReferenceEquals(AvailableLightingEffectOptions, lightingEffectOptions))
         {
             AvailableLightingEffectOptions = lightingEffectOptions;
-            PropertyChanged?.Invoke(
-                this,
-                new PropertyChangedEventArgs(nameof(SelectedLightingEffectOption)));
+            Notify(nameof(SelectedLightingEffectOption));
         }
         LightingSettings[] lightingSettings = AvailableLightingEffects
             .Select(CreateLightingChoice)
@@ -4021,18 +3844,12 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         if (!ReferenceEquals(AvailableLogoLightingModeOptions, logoLightingModeOptions))
         {
             AvailableLogoLightingModeOptions = logoLightingModeOptions;
-            PropertyChanged?.Invoke(
-                this,
-                new PropertyChangedEventArgs(nameof(SelectedLogoLightingModeOption)));
+            Notify(nameof(SelectedLogoLightingModeOption));
         }
-        PropertyChanged?.Invoke(
-            this,
-            new PropertyChangedEventArgs(nameof(IsLogoLightingVisible)));
+        Notify(nameof(IsLogoLightingVisible));
         IsPerformanceVisible = AvailablePerformancePresets.Count > 0;
         IsFanControlVisible = AvailableFanModes.Count > 0;
-        PropertyChanged?.Invoke(
-            this,
-            new PropertyChangedEventArgs(nameof(IsProfileControlVisible)));
+        Notify(nameof(IsProfileControlVisible));
     }
 
     private static LightingEffectOption CreateLightingEffectOption(LightingEffect effect) =>
@@ -4049,18 +3866,10 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     {
         // WinUI clears SelectedItem whenever the active ItemsSource is replaced.
         // Always publish the list first, then reapply the confirmed selection.
-        PropertyChanged?.Invoke(
-            this,
-            new PropertyChangedEventArgs(nameof(AvailableActiveFanModes)));
-        PropertyChanged?.Invoke(
-            this,
-            new PropertyChangedEventArgs(nameof(AvailableActiveFanModeOptions)));
-        PropertyChanged?.Invoke(
-            this,
-            new PropertyChangedEventArgs(nameof(SelectedFanMode)));
-        PropertyChanged?.Invoke(
-            this,
-            new PropertyChangedEventArgs(nameof(SelectedFanModeOption)));
+        Notify(nameof(AvailableActiveFanModes));
+        Notify(nameof(AvailableActiveFanModeOptions));
+        Notify(nameof(SelectedFanMode));
+        Notify(nameof(SelectedFanModeOption));
     }
 
     private void MarkDisconnected() => MarkDisconnected("Service disconnected");
@@ -4223,9 +4032,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     private void MarkLiveReadingsRefreshed()
     {
         lastLiveReadingsRefreshAt = timeProvider.GetUtcNow();
-        PropertyChanged?.Invoke(
-            this,
-            new PropertyChangedEventArgs(nameof(LiveReadingsRefreshToolTip)));
+        Notify(nameof(LiveReadingsRefreshToolTip));
     }
 
     private void ClearLiveReadingsRefreshTime()
@@ -4236,9 +4043,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         }
 
         lastLiveReadingsRefreshAt = null;
-        PropertyChanged?.Invoke(
-            this,
-            new PropertyChangedEventArgs(nameof(LiveReadingsRefreshToolTip)));
+        Notify(nameof(LiveReadingsRefreshToolTip));
     }
 
     private bool CanSetChargeLimit(int value)
@@ -4276,12 +4081,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         if (temporaryFullChargeStateKnown != known)
         {
             temporaryFullChargeStateKnown = known;
-            PropertyChanged?.Invoke(
-                this,
-                new PropertyChangedEventArgs(nameof(EnableFullChargeOverride)));
-            PropertyChanged?.Invoke(
-                this,
-                new PropertyChangedEventArgs(nameof(FullChargeActionLabel)));
+            Notify(nameof(EnableFullChargeOverride));
+            Notify(nameof(FullChargeActionLabel));
         }
 
         FullChargeOverride = active;
@@ -5393,12 +5194,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             ref lightingSecondaryBlueEditor,
             (int)secondaryColor.Blue,
             nameof(LightingSecondaryBlueEditor));
-        PropertyChanged?.Invoke(
-            this,
-            new PropertyChangedEventArgs(nameof(LightingPrimaryColorEditor)));
-        PropertyChanged?.Invoke(
-            this,
-            new PropertyChangedEventArgs(nameof(LightingSecondaryColorEditor)));
+        Notify(nameof(LightingPrimaryColorEditor));
+        Notify(nameof(LightingSecondaryColorEditor));
         BreathingColorMode breathingColorMode =
             value.Parameters is BreathingLightingParameters breathing
                 ? breathing.ColorMode
@@ -5470,16 +5267,10 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             value.LogoMode,
             nameof(LogoLightingModeEditor));
         NotifyLightingParameterPresentation();
-        PropertyChanged?.Invoke(
-            this,
-            new PropertyChangedEventArgs(nameof(SelectedLightingEffectOption)));
-        PropertyChanged?.Invoke(
-            this,
-            new PropertyChangedEventArgs(nameof(SelectedLogoLightingModeOption)));
-        PropertyChanged?.Invoke(
-            this,
-            new PropertyChangedEventArgs(nameof(SelectedAmbientAwarenessRegionOption)));
-        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(LightingDraft)));
+        Notify(nameof(SelectedLightingEffectOption));
+        Notify(nameof(SelectedLogoLightingModeOption));
+        Notify(nameof(SelectedAmbientAwarenessRegionOption));
+        Notify(nameof(LightingDraft));
     }
 
     private void SetKeyboardEffectUnconfirmed(bool value)
@@ -5490,15 +5281,9 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         }
 
         keyboardEffectUnconfirmed = value;
-        PropertyChanged?.Invoke(
-            this,
-            new PropertyChangedEventArgs(nameof(IsKeyboardEffectUnconfirmed)));
-        PropertyChanged?.Invoke(
-            this,
-            new PropertyChangedEventArgs(nameof(KeyboardEffectDescription)));
-        PropertyChanged?.Invoke(
-            this,
-            new PropertyChangedEventArgs(nameof(SelectedLightingEffectOption)));
+        Notify(nameof(IsKeyboardEffectUnconfirmed));
+        Notify(nameof(KeyboardEffectDescription));
+        Notify(nameof(SelectedLightingEffectOption));
     }
 
     private void LoadLightingPowerPolicyEditor(LightingPowerPolicy policy)
@@ -5516,12 +5301,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             policy.IdleTimeoutMinutes ?? 30,
             nameof(LightingIdleTimeoutMinutesEditor));
         lightingPowerPolicyEditorDirty = false;
-        PropertyChanged?.Invoke(
-            this,
-            new PropertyChangedEventArgs(nameof(HasUnsavedLightingPowerPolicy)));
-        PropertyChanged?.Invoke(
-            this,
-            new PropertyChangedEventArgs(nameof(LightingPowerPolicyDraft)));
+        Notify(nameof(HasUnsavedLightingPowerPolicy));
+        Notify(nameof(LightingPowerPolicyDraft));
         NotifyCommands();
     }
 
@@ -5567,12 +5348,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             ref batteryPerformanceEditor,
             value.Battery.Performance,
             nameof(BatteryPerformanceEditor));
-        PropertyChanged?.Invoke(
-            this,
-            new PropertyChangedEventArgs(nameof(PluggedInPerformanceOption)));
-        PropertyChanged?.Invoke(
-            this,
-            new PropertyChangedEventArgs(nameof(BatteryPerformanceOption)));
+        Notify(nameof(PluggedInPerformanceOption));
+        Notify(nameof(BatteryPerformanceOption));
         SetField(
             ref batteryFanModeEditor,
             value.Battery.Fans,
@@ -5593,9 +5370,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             ref usbCLightingEditor,
             value.UsbC.Lighting,
             nameof(UsbCLightingEditor));
-        PropertyChanged?.Invoke(
-            this,
-            new PropertyChangedEventArgs(nameof(UsbCPerformanceOption)));
+        Notify(nameof(UsbCPerformanceOption));
         SetField(
             ref profileChargeLimitEditor,
             value.BatteryPolicy.ChargeLimitPercent,
@@ -6129,43 +5904,25 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
 
     private void NotifyActiveProfileDraft()
     {
-        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasActiveProfileDraft)));
-        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasThermalProfileDraft)));
-        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasLightingProfileDraft)));
-        PropertyChanged?.Invoke(
-            this,
-            new PropertyChangedEventArgs(nameof(HasLightingProfileSaveOpportunity)));
-        PropertyChanged?.Invoke(
-            this,
-            new PropertyChangedEventArgs(nameof(HasLightingProfileActionOpportunity)));
-        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasDisplayProfileDraft)));
-        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasLaptopProfileDraft)));
-        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasLaptopPageProfileDraft)));
-        PropertyChanged?.Invoke(
-            this,
-            new PropertyChangedEventArgs(nameof(HasLaptopPageProfileSaveOpportunity)));
-        PropertyChanged?.Invoke(
-            this,
-            new PropertyChangedEventArgs(nameof(HasLaptopPageProfileActionOpportunity)));
-        PropertyChanged?.Invoke(
-            this,
-            new PropertyChangedEventArgs(nameof(ThermalProfileRelationshipStatus)));
-        PropertyChanged?.Invoke(
-            this,
-            new PropertyChangedEventArgs(nameof(LightingProfileRelationshipStatus)));
-        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsPluggedInProfileDraft)));
-        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsBatteryProfileDraft)));
-        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsUsbCProfileDraft)));
-        PropertyChanged?.Invoke(
-            this,
-            new PropertyChangedEventArgs(nameof(HasUnsavedProfileChanges)));
-        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ActiveProfileDraftName)));
-        PropertyChanged?.Invoke(
-            this,
-            new PropertyChangedEventArgs(nameof(SavedActiveProfileSummary)));
-        PropertyChanged?.Invoke(
-            this,
-            new PropertyChangedEventArgs(nameof(PendingActiveProfileSummary)));
+        Notify(nameof(HasActiveProfileDraft));
+        Notify(nameof(HasThermalProfileDraft));
+        Notify(nameof(HasLightingProfileDraft));
+        Notify(nameof(HasLightingProfileSaveOpportunity));
+        Notify(nameof(HasLightingProfileActionOpportunity));
+        Notify(nameof(HasDisplayProfileDraft));
+        Notify(nameof(HasLaptopProfileDraft));
+        Notify(nameof(HasLaptopPageProfileDraft));
+        Notify(nameof(HasLaptopPageProfileSaveOpportunity));
+        Notify(nameof(HasLaptopPageProfileActionOpportunity));
+        Notify(nameof(ThermalProfileRelationshipStatus));
+        Notify(nameof(LightingProfileRelationshipStatus));
+        Notify(nameof(IsPluggedInProfileDraft));
+        Notify(nameof(IsBatteryProfileDraft));
+        Notify(nameof(IsUsbCProfileDraft));
+        Notify(nameof(HasUnsavedProfileChanges));
+        Notify(nameof(ActiveProfileDraftName));
+        Notify(nameof(SavedActiveProfileSummary));
+        Notify(nameof(PendingActiveProfileSummary));
         NotifyGamingModeKeyPolicy();
         NotifyProfileSummaries();
         NotifyCommands();
@@ -6173,91 +5930,41 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
 
     private void NotifyGamingModeKeyPolicy()
     {
-        PropertyChanged?.Invoke(
-            this,
-            new PropertyChangedEventArgs(nameof(BlockWindowsKeyInGamingMode)));
-        PropertyChanged?.Invoke(
-            this,
-            new PropertyChangedEventArgs(nameof(BlockAltTabInGamingMode)));
-        PropertyChanged?.Invoke(
-            this,
-            new PropertyChangedEventArgs(nameof(CanEditGamingModeKeyPolicy)));
+        Notify(nameof(BlockWindowsKeyInGamingMode));
+        Notify(nameof(BlockAltTabInGamingMode));
+        Notify(nameof(CanEditGamingModeKeyPolicy));
     }
 
     private void NotifyProfileSummaries()
     {
-        PropertyChanged?.Invoke(
-            this,
-            new PropertyChangedEventArgs(nameof(PluggedInProfileThermalSummary)));
-        PropertyChanged?.Invoke(
-            this,
-            new PropertyChangedEventArgs(nameof(PluggedInProfileLightingSummary)));
-        PropertyChanged?.Invoke(
-            this,
-            new PropertyChangedEventArgs(nameof(BatteryProfileThermalSummary)));
-        PropertyChanged?.Invoke(
-            this,
-            new PropertyChangedEventArgs(nameof(BatteryProfileLightingSummary)));
-        PropertyChanged?.Invoke(
-            this,
-            new PropertyChangedEventArgs(nameof(UsbCProfileThermalSummary)));
-        PropertyChanged?.Invoke(
-            this,
-            new PropertyChangedEventArgs(nameof(UsbCProfileLightingSummary)));
-        PropertyChanged?.Invoke(
-            this,
-            new PropertyChangedEventArgs(nameof(PluggedInProfileDisplaySummary)));
-        PropertyChanged?.Invoke(
-            this,
-            new PropertyChangedEventArgs(nameof(BatteryProfileDisplaySummary)));
-        PropertyChanged?.Invoke(
-            this,
-            new PropertyChangedEventArgs(nameof(UsbCProfileDisplaySummary)));
-        PropertyChanged?.Invoke(
-            this,
-            new PropertyChangedEventArgs(nameof(ActiveSavedDisplayProfile)));
-        PropertyChanged?.Invoke(
-            this,
-            new PropertyChangedEventArgs(nameof(SavedActiveProfileSummary)));
-        PropertyChanged?.Invoke(
-            this,
-            new PropertyChangedEventArgs(nameof(PendingActiveProfileSummary)));
-        PropertyChanged?.Invoke(
-            this,
-            new PropertyChangedEventArgs(nameof(PluggedInProfilePresentation)));
-        PropertyChanged?.Invoke(
-            this,
-            new PropertyChangedEventArgs(nameof(UsbCProfilePresentation)));
-        PropertyChanged?.Invoke(
-            this,
-            new PropertyChangedEventArgs(nameof(BatteryProfilePresentation)));
-        PropertyChanged?.Invoke(
-            this,
-            new PropertyChangedEventArgs(nameof(LightingDisplayOffPolicyPresentation)));
-        PropertyChanged?.Invoke(
-            this,
-            new PropertyChangedEventArgs(nameof(LightingIdlePolicyPresentation)));
-        PropertyChanged?.Invoke(
-            this,
-            new PropertyChangedEventArgs(nameof(HasLightingProfileSaveOpportunity)));
-        PropertyChanged?.Invoke(
-            this,
-            new PropertyChangedEventArgs(nameof(HasLaptopPageProfileSaveOpportunity)));
+        Notify(nameof(PluggedInProfileThermalSummary));
+        Notify(nameof(PluggedInProfileLightingSummary));
+        Notify(nameof(BatteryProfileThermalSummary));
+        Notify(nameof(BatteryProfileLightingSummary));
+        Notify(nameof(UsbCProfileThermalSummary));
+        Notify(nameof(UsbCProfileLightingSummary));
+        Notify(nameof(PluggedInProfileDisplaySummary));
+        Notify(nameof(BatteryProfileDisplaySummary));
+        Notify(nameof(UsbCProfileDisplaySummary));
+        Notify(nameof(ActiveSavedDisplayProfile));
+        Notify(nameof(SavedActiveProfileSummary));
+        Notify(nameof(PendingActiveProfileSummary));
+        Notify(nameof(PluggedInProfilePresentation));
+        Notify(nameof(UsbCProfilePresentation));
+        Notify(nameof(BatteryProfilePresentation));
+        Notify(nameof(LightingDisplayOffPolicyPresentation));
+        Notify(nameof(LightingIdlePolicyPresentation));
+        Notify(nameof(HasLightingProfileSaveOpportunity));
+        Notify(nameof(HasLaptopPageProfileSaveOpportunity));
         NotifyProfileDifferenceState();
         NotifySelectedProfilePresentation();
     }
 
     private void NotifySelectedProfilePresentation()
     {
-        PropertyChanged?.Invoke(
-            this,
-            new PropertyChangedEventArgs(nameof(SelectedProfilePresentation)));
-        PropertyChanged?.Invoke(
-            this,
-            new PropertyChangedEventArgs(nameof(IsSelectedProfileActive)));
-        PropertyChanged?.Invoke(
-            this,
-            new PropertyChangedEventArgs(nameof(IsSelectedProfileDraft)));
+        Notify(nameof(SelectedProfilePresentation));
+        Notify(nameof(IsSelectedProfileActive));
+        Notify(nameof(IsSelectedProfileDraft));
     }
 
     private static string FormatThermalProfile(PowerProfile profile) =>
@@ -6848,12 +6555,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             command.NotifyCanExecuteChanged();
         }
 
-        PropertyChanged?.Invoke(
-            this,
-            new PropertyChangedEventArgs(nameof(CanAdjustChargeLimit)));
-        PropertyChanged?.Invoke(
-            this,
-            new PropertyChangedEventArgs(nameof(CanChangeBatteryProtection)));
+        Notify(nameof(CanAdjustChargeLimit));
+        Notify(nameof(CanChangeBatteryProtection));
         if (!suppressProfileDifferenceNotifications)
         {
             NotifyProfileDifferenceState();
@@ -6862,24 +6565,12 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
 
     private void NotifyProfileDifferenceState()
     {
-        PropertyChanged?.Invoke(
-            this,
-            new PropertyChangedEventArgs(nameof(HasThermalProfileDifference)));
-        PropertyChanged?.Invoke(
-            this,
-            new PropertyChangedEventArgs(nameof(HasLaptopBehaviorProfileDifference)));
-        PropertyChanged?.Invoke(
-            this,
-            new PropertyChangedEventArgs(nameof(HasLaptopPageProfileDifference)));
-        PropertyChanged?.Invoke(
-            this,
-            new PropertyChangedEventArgs(nameof(HasLaptopPageProfileActionOpportunity)));
-        PropertyChanged?.Invoke(
-            this,
-            new PropertyChangedEventArgs(nameof(HasLightingProfileDifference)));
-        PropertyChanged?.Invoke(
-            this,
-            new PropertyChangedEventArgs(nameof(HasLightingProfileActionOpportunity)));
+        Notify(nameof(HasThermalProfileDifference));
+        Notify(nameof(HasLaptopBehaviorProfileDifference));
+        Notify(nameof(HasLaptopPageProfileDifference));
+        Notify(nameof(HasLaptopPageProfileActionOpportunity));
+        Notify(nameof(HasLightingProfileDifference));
+        Notify(nameof(HasLightingProfileActionOpportunity));
     }
 
     private static string SourceLabel(
@@ -7222,9 +6913,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         if (trayHoverLabelMode != mode)
         {
             SetField(ref trayHoverLabelMode, mode, nameof(TrayHoverLabelMode));
-            PropertyChanged?.Invoke(
-                this,
-                new PropertyChangedEventArgs(nameof(SelectedTrayHoverLabelOption)));
+            Notify(nameof(SelectedTrayHoverLabelOption));
         }
     }
 
@@ -7421,111 +7110,58 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
 
     private void NotifyPresentationState()
     {
-        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsServiceUnavailable)));
-        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ControlAccessStatus)));
-        PropertyChanged?.Invoke(
-            this,
-            new PropertyChangedEventArgs(nameof(CanRequestHardwareControl)));
-        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(CanEditPerformance)));
-        PropertyChanged?.Invoke(
-            this,
-            new PropertyChangedEventArgs(nameof(CanEditGpuClockTuning)));
-        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(CanEditFanControl)));
+        Notify(nameof(IsServiceUnavailable));
+        Notify(nameof(ControlAccessStatus));
+        Notify(nameof(CanRequestHardwareControl));
+        Notify(nameof(CanEditPerformance));
+        Notify(nameof(CanEditGpuClockTuning));
+        Notify(nameof(CanEditFanControl));
         NotifyGamingModeKeyPolicy();
         NotifyDashboardTelemetryValuesChanged();
-        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(LiveReadingsRefreshToolTip)));
-        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ActivePerformanceLabel)));
-        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ActiveFanModeLabel)));
-        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ProfileStateLabel)));
-        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsReadinessReady)));
-        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsReadinessChecking)));
-        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsReadinessWarning)));
-        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsReadinessError)));
-        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasLightingCapability)));
-        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(CanControlLighting)));
-        PropertyChanged?.Invoke(
-            this,
-            new PropertyChangedEventArgs(nameof(IsLightingControlUnavailable)));
-        PropertyChanged?.Invoke(
-            this,
-            new PropertyChangedEventArgs(nameof(LightingControlUnavailableMessage)));
-        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasActiveChanges)));
-        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ActiveChangesText)));
-        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasAttention)));
-        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(AttentionSummary)));
-        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(AttentionBadgeLabel)));
-        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(AttentionDetails)));
-        PropertyChanged?.Invoke(
-            this,
-            new PropertyChangedEventArgs(nameof(TroubleshootingServiceStatus)));
-        PropertyChanged?.Invoke(
-            this,
-            new PropertyChangedEventArgs(nameof(TroubleshootingPowerSourceStatus)));
-        PropertyChanged?.Invoke(
-            this,
-            new PropertyChangedEventArgs(nameof(TroubleshootingControlsStatus)));
-        PropertyChanged?.Invoke(
-            this,
-            new PropertyChangedEventArgs(
-                nameof(TroubleshootingKeyboardDriverModeStatus)));
-        PropertyChanged?.Invoke(
-            this,
-            new PropertyChangedEventArgs(nameof(TroubleshootingOtherRazerSoftwareStatus)));
-        PropertyChanged?.Invoke(
-            this,
-            new PropertyChangedEventArgs(nameof(AboutServiceVersionStatus)));
-        PropertyChanged?.Invoke(
-            this,
-            new PropertyChangedEventArgs(nameof(AboutDetectedLaptopStatus)));
-        PropertyChanged?.Invoke(
-            this,
-            new PropertyChangedEventArgs(nameof(AboutBiosVersionStatus)));
-        PropertyChanged?.Invoke(
-            this,
-            new PropertyChangedEventArgs(nameof(AboutEcVersionStatus)));
-        PropertyChanged?.Invoke(
-            this,
-            new PropertyChangedEventArgs(nameof(AboutMcuVersionStatus)));
-        PropertyChanged?.Invoke(
-            this,
-            new PropertyChangedEventArgs(nameof(AboutVbiosVersionStatus)));
-        PropertyChanged?.Invoke(
-            this,
-            new PropertyChangedEventArgs(nameof(AboutBatteryHealthStatus)));
-        PropertyChanged?.Invoke(
-            this,
-            new PropertyChangedEventArgs(nameof(HasUntestedPlatformVersion)));
-        PropertyChanged?.Invoke(
-            this,
-            new PropertyChangedEventArgs(nameof(PlatformCompatibilityWarningTitle)));
-        PropertyChanged?.Invoke(
-            this,
-            new PropertyChangedEventArgs(nameof(DashboardTestedPlatformWarningMessage)));
-        PropertyChanged?.Invoke(
-            this,
-            new PropertyChangedEventArgs(nameof(AboutTestedPlatformWarningMessage)));
+        Notify(nameof(LiveReadingsRefreshToolTip));
+        Notify(nameof(ActivePerformanceLabel));
+        Notify(nameof(ActiveFanModeLabel));
+        Notify(nameof(ProfileStateLabel));
+        Notify(nameof(IsReadinessReady));
+        Notify(nameof(IsReadinessChecking));
+        Notify(nameof(IsReadinessWarning));
+        Notify(nameof(IsReadinessError));
+        Notify(nameof(HasLightingCapability));
+        Notify(nameof(CanControlLighting));
+        Notify(nameof(IsLightingControlUnavailable));
+        Notify(nameof(LightingControlUnavailableMessage));
+        Notify(nameof(HasActiveChanges));
+        Notify(nameof(ActiveChangesText));
+        Notify(nameof(HasAttention));
+        Notify(nameof(AttentionSummary));
+        Notify(nameof(AttentionBadgeLabel));
+        Notify(nameof(AttentionDetails));
+        Notify(nameof(TroubleshootingServiceStatus));
+        Notify(nameof(TroubleshootingPowerSourceStatus));
+        Notify(nameof(TroubleshootingControlsStatus));
+        Notify(nameof(TroubleshootingKeyboardDriverModeStatus));
+        Notify(nameof(TroubleshootingOtherRazerSoftwareStatus));
+        Notify(nameof(AboutServiceVersionStatus));
+        Notify(nameof(AboutDetectedLaptopStatus));
+        Notify(nameof(AboutBiosVersionStatus));
+        Notify(nameof(AboutEcVersionStatus));
+        Notify(nameof(AboutMcuVersionStatus));
+        Notify(nameof(AboutVbiosVersionStatus));
+        Notify(nameof(AboutBatteryHealthStatus));
+        Notify(nameof(HasUntestedPlatformVersion));
+        Notify(nameof(PlatformCompatibilityWarningTitle));
+        Notify(nameof(DashboardTestedPlatformWarningMessage));
+        Notify(nameof(AboutTestedPlatformWarningMessage));
     }
 
     private void NotifyFirmwareFieldLoadingState()
     {
-        PropertyChanged?.Invoke(
-            this,
-            new PropertyChangedEventArgs(nameof(IsStartupAnimationFieldLoading)));
-        PropertyChanged?.Invoke(
-            this,
-            new PropertyChangedEventArgs(nameof(CanEditStartupAnimation)));
-        PropertyChanged?.Invoke(
-            this,
-            new PropertyChangedEventArgs(nameof(IsFunctionKeyFieldLoading)));
-        PropertyChanged?.Invoke(
-            this,
-            new PropertyChangedEventArgs(nameof(CanEditFunctionKeyPrimary)));
-        PropertyChanged?.Invoke(
-            this,
-            new PropertyChangedEventArgs(nameof(IsGamingModeFieldLoading)));
-        PropertyChanged?.Invoke(
-            this,
-            new PropertyChangedEventArgs(nameof(CanEditGamingMode)));
+        Notify(nameof(IsStartupAnimationFieldLoading));
+        Notify(nameof(CanEditStartupAnimation));
+        Notify(nameof(IsFunctionKeyFieldLoading));
+        Notify(nameof(CanEditFunctionKeyPrimary));
+        Notify(nameof(IsGamingModeFieldLoading));
+        Notify(nameof(CanEditGamingMode));
     }
 
     private TrayHoverLabelFormatResult BuildTrayHoverLabel() =>
@@ -7544,16 +7180,13 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
 
     private void NotifyTrayHoverLabel()
     {
-        PropertyChanged?.Invoke(
-            this,
-            new PropertyChangedEventArgs(nameof(TrayHoverLabelText)));
-        PropertyChanged?.Invoke(
-            this,
-            new PropertyChangedEventArgs(nameof(HasTrayHoverLabelOverflow)));
-        PropertyChanged?.Invoke(
-            this,
-            new PropertyChangedEventArgs(nameof(TrayHoverLabelOverflowMessage)));
+        Notify(nameof(TrayHoverLabelText));
+        Notify(nameof(HasTrayHoverLabelOverflow));
+        Notify(nameof(TrayHoverLabelOverflowMessage));
     }
+
+    private void Notify(string? propertyName) =>
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
 
     private void SetField<T>(
         ref T field,
@@ -7566,7 +7199,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         }
 
         field = value;
-        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
+        Notify(propertyName);
     }
 
     private void SetOverrideField<T>(
@@ -7580,11 +7213,11 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         }
 
         field = value;
-        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
-        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ManualOverrideStatus)));
-        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasActiveChanges)));
-        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ActiveChangesText)));
-        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ProfileStateLabel)));
+        Notify(propertyName);
+        Notify(nameof(ManualOverrideStatus));
+        Notify(nameof(HasActiveChanges));
+        Notify(nameof(ActiveChangesText));
+        Notify(nameof(ProfileStateLabel));
     }
 
     private void SetOverrideField(
@@ -7598,11 +7231,11 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         }
 
         field = value;
-        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
-        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ManualOverrideStatus)));
-        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(HasActiveChanges)));
-        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ActiveChangesText)));
-        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ProfileStateLabel)));
+        Notify(propertyName);
+        Notify(nameof(ManualOverrideStatus));
+        Notify(nameof(HasActiveChanges));
+        Notify(nameof(ActiveChangesText));
+        Notify(nameof(ProfileStateLabel));
     }
 
     private static void AddOverrideStatus<T>(
@@ -7718,15 +7351,9 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         gpuFanCurveEditorPoints = value.ManualCurve.Gpu
             .Select(point => new FanCurveEditorPoint(point))
             .ToArray();
-        PropertyChanged?.Invoke(
-            this,
-            new PropertyChangedEventArgs(nameof(CpuFanCurveEditorPoints)));
-        PropertyChanged?.Invoke(
-            this,
-            new PropertyChangedEventArgs(nameof(GpuFanCurveEditorPoints)));
-        PropertyChanged?.Invoke(
-            this,
-            new PropertyChangedEventArgs(nameof(CurrentFanControlSettings)));
+        Notify(nameof(CpuFanCurveEditorPoints));
+        Notify(nameof(GpuFanCurveEditorPoints));
+        Notify(nameof(CurrentFanControlSettings));
     }
 
     private void SetEditorField<T>(
@@ -7756,12 +7383,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
 
         SetField(ref field, value, propertyName);
         lightingPowerPolicyEditorDirty = true;
-        PropertyChanged?.Invoke(
-            this,
-            new PropertyChangedEventArgs(nameof(HasUnsavedLightingPowerPolicy)));
-        PropertyChanged?.Invoke(
-            this,
-            new PropertyChangedEventArgs(nameof(LightingPowerPolicyDraft)));
+        Notify(nameof(HasUnsavedLightingPowerPolicy));
+        Notify(nameof(LightingPowerPolicyDraft));
         NotifyCommands();
     }
 
@@ -7773,12 +7396,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         }
 
         profileEditorsDirty = value;
-        PropertyChanged?.Invoke(
-            this,
-            new PropertyChangedEventArgs(nameof(HasProfileEditorChanges)));
-        PropertyChanged?.Invoke(
-            this,
-            new PropertyChangedEventArgs(nameof(HasUnsavedProfileChanges)));
+        Notify(nameof(HasProfileEditorChanges));
+        Notify(nameof(HasUnsavedProfileChanges));
     }
 
     private bool SetLightingColorField(
@@ -7812,13 +7431,11 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         SetField(ref red, (int)value.Red, $"{prefix}RedEditor");
         SetField(ref green, (int)value.Green, $"{prefix}GreenEditor");
         SetField(ref blue, (int)value.Blue, $"{prefix}BlueEditor");
-        PropertyChanged?.Invoke(
-            this,
-            new PropertyChangedEventArgs(
-                secondary
-                    ? nameof(LightingSecondaryColorEditor)
-                    : nameof(LightingPrimaryColorEditor)));
-        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(LightingDraft)));
+        Notify(
+            secondary
+                ? nameof(LightingSecondaryColorEditor)
+                : nameof(LightingPrimaryColorEditor));
+        Notify(nameof(LightingDraft));
         NotifyCommands();
     }
 
@@ -7834,7 +7451,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
 
         SetLightingEditorDirty(true);
         SetField(ref field, value, propertyName);
-        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(LightingDraft)));
+        Notify(nameof(LightingDraft));
         NotifyCommands();
         return true;
     }
@@ -7847,48 +7464,26 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         }
 
         lightingEditorDirty = value;
-        PropertyChanged?.Invoke(
-            this,
-            new PropertyChangedEventArgs(nameof(IsLightingApplyPending)));
+        Notify(nameof(IsLightingApplyPending));
     }
 
     private void NotifyLightingParameterPresentation()
     {
-        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(LightingShowsBrightness)));
-        PropertyChanged?.Invoke(
-            this,
-            new PropertyChangedEventArgs(nameof(LightingShowsBreathingColorMode)));
-        PropertyChanged?.Invoke(
-            this,
-            new PropertyChangedEventArgs(nameof(LightingShowsStarlightColorMode)));
-        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(LightingShowsPrimaryColor)));
-        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(LightingShowsSecondaryColor)));
-        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(LightingPrimaryColorLabel)));
-        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(LightingPrimaryColorDescription)));
-        PropertyChanged?.Invoke(
-            this,
-            new PropertyChangedEventArgs(nameof(LightingShowsReactiveDuration)));
-        PropertyChanged?.Invoke(
-            this,
-            new PropertyChangedEventArgs(nameof(LightingShowsStarlightDuration)));
-        PropertyChanged?.Invoke(
-            this,
-            new PropertyChangedEventArgs(nameof(LightingShowsRandomColors)));
-        PropertyChanged?.Invoke(
-            this,
-            new PropertyChangedEventArgs(nameof(LightingShowsDirection)));
-        PropertyChanged?.Invoke(
-            this,
-            new PropertyChangedEventArgs(nameof(LightingDirectionOptions)));
-        PropertyChanged?.Invoke(
-            this,
-            new PropertyChangedEventArgs(nameof(SelectedLightingDirectionOption)));
-        PropertyChanged?.Invoke(
-            this,
-            new PropertyChangedEventArgs(nameof(LightingShowsRotationDirection)));
-        PropertyChanged?.Invoke(
-            this,
-            new PropertyChangedEventArgs(nameof(LightingShowsAmbientAwarenessRegion)));
+        Notify(nameof(LightingShowsBrightness));
+        Notify(nameof(LightingShowsBreathingColorMode));
+        Notify(nameof(LightingShowsStarlightColorMode));
+        Notify(nameof(LightingShowsPrimaryColor));
+        Notify(nameof(LightingShowsSecondaryColor));
+        Notify(nameof(LightingPrimaryColorLabel));
+        Notify(nameof(LightingPrimaryColorDescription));
+        Notify(nameof(LightingShowsReactiveDuration));
+        Notify(nameof(LightingShowsStarlightDuration));
+        Notify(nameof(LightingShowsRandomColors));
+        Notify(nameof(LightingShowsDirection));
+        Notify(nameof(LightingDirectionOptions));
+        Notify(nameof(SelectedLightingDirectionOption));
+        Notify(nameof(LightingShowsRotationDirection));
+        Notify(nameof(LightingShowsAmbientAwarenessRegion));
     }
 
 }
