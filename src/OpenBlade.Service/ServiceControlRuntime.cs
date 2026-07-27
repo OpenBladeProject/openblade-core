@@ -3142,7 +3142,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         bool preserveLiveReadings,
         CancellationToken token)
     {
-        foreach (DeviceSubsystem subsystem in OrderedSubsystems)
+        foreach (DeviceSubsystem subsystem in DeviceSubsystemOrder.Default)
         {
             if (outcome.ReadbackMatched.Contains(subsystem))
             {
@@ -4917,14 +4917,6 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             DeviceSubsystem.Lighting => results.Lighting,
             _ => throw new ArgumentOutOfRangeException(nameof(subsystem)),
         };
-
-    private static IReadOnlyList<DeviceSubsystem> OrderedSubsystems { get; } =
-    [
-        DeviceSubsystem.Performance,
-        DeviceSubsystem.Fans,
-        DeviceSubsystem.Battery,
-        DeviceSubsystem.Lighting,
-    ];
 
     private static void ValidateOverride<T>(ManualOverride<T>? value, string parameterName)
         where T : struct, Enum

@@ -473,9 +473,9 @@ public sealed class ControlCoordinator
         string? thermalStopReason = null;
         IReadOnlyList<DeviceSubsystem> orderedSubsystems =
             IsManualFanMode(initial.Fans)
-                && desired.Fans.Value == FanMode.Automatic
-                ? FansFirstOrderedSubsystems
-                : OrderedSubsystems;
+            && desired.Fans.Value == FanMode.Automatic
+                ? DeviceSubsystemOrder.FansFirst
+                : DeviceSubsystemOrder.Default;
 
         foreach (DeviceSubsystem subsystem in orderedSubsystems)
         {
@@ -584,7 +584,7 @@ public sealed class ControlCoordinator
         FullTransitionApplyState transition)
     {
         transition.Matched.Clear();
-        foreach (DeviceSubsystem subsystem in OrderedSubsystems)
+        foreach (DeviceSubsystem subsystem in DeviceSubsystemOrder.Default)
         {
             PendingSubsystem pending = states[subsystem];
             if (transition.Attempted.Contains(subsystem))
@@ -1231,22 +1231,6 @@ public sealed class ControlCoordinator
     private static ControlResult SubsequentWritesBlocked(string reason) => new(
         ControlResultStatus.Blocked,
         $"No further hardware writes were attempted: {reason}");
-
-    private static IReadOnlyList<DeviceSubsystem> OrderedSubsystems { get; } =
-    [
-        DeviceSubsystem.Performance,
-        DeviceSubsystem.Fans,
-        DeviceSubsystem.Battery,
-        DeviceSubsystem.Lighting,
-    ];
-
-    private static IReadOnlyList<DeviceSubsystem> FansFirstOrderedSubsystems { get; } =
-    [
-        DeviceSubsystem.Fans,
-        DeviceSubsystem.Performance,
-        DeviceSubsystem.Battery,
-        DeviceSubsystem.Lighting,
-    ];
 
     private static bool IsVerifiedThermalCombination(
         PerformancePreset performance,
