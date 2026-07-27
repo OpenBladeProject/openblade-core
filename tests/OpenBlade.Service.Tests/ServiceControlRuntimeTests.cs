@@ -5658,6 +5658,13 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             return Task.CompletedTask;
         }
 
+        public Task SetGpuClockOffsetsAsync(
+            GpuClockOffsetSettings value,
+            CancellationToken cancellationToken) =>
+            Task.FromException(
+                new CapabilityUnavailableException(
+                    "GPU clock tuning is unavailable in this test device."));
+
         public Task SetFanModeAsync(FanMode value, CancellationToken cancellationToken)
         {
             TotalCalls++;
@@ -5670,6 +5677,19 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             AfterSetter?.Invoke(DeviceSubsystem.Fans);
             return Task.CompletedTask;
         }
+
+        public Task SetFanControlAsync(
+            FanControlSettings value,
+            CancellationToken cancellationToken) =>
+            SetFanModeAsync(value.Mode, cancellationToken);
+
+        public Task SetFanTargetsAsync(
+            int fan1Rpm,
+            int fan2Rpm,
+            CancellationToken cancellationToken) =>
+            Task.FromException(
+                new CapabilityUnavailableException(
+                    "Manual fan targets are unavailable in this test device."));
 
         public async Task SetChargeLimitAsync(BatteryPolicy value, CancellationToken cancellationToken)
         {

@@ -526,6 +526,16 @@ public sealed class ControlCoordinator
                     : pending.StateAwareSetter(initial, cancellationToken));
                 transition.Provisional[subsystem] = Indeterminate(pending.Name, null);
             }
+            catch (CapabilityUnavailableException exception)
+            {
+                transition.Attempted.Remove(subsystem);
+                transition.Provisional[subsystem] = CapabilityRefused(pending.Name, exception);
+                if (IsThermalSubsystem(subsystem))
+                {
+                    stopThermalWrites = true;
+                    thermalStopReason = transition.Provisional[subsystem].Message;
+                }
+            }
             catch (BladeWriteException exception)
                 when (exception.SubmissionState is WriteSubmissionState.KnownNotApplied)
             {
@@ -654,6 +664,16 @@ public sealed class ControlCoordinator
             {
                 await plan.Setter(cancellationToken);
                 submissionIndeterminate = true;
+            }
+            catch (CapabilityUnavailableException exception)
+            {
+                return new ScopedApplyOutcome(
+                    CapabilityRefused(plan.Name, exception),
+                    initial,
+                    WriteAttempted: false,
+                    ReadbackMatched: false,
+                    capabilities,
+                    DeviceAccessFailed: false);
             }
             catch (BladeWriteException exception)
                 when (exception.SubmissionState is WriteSubmissionState.KnownNotApplied)
@@ -826,6 +846,17 @@ public sealed class ControlCoordinator
                     : Indeterminate(name, null),
                 final,
                 WriteAttempted: true,
+                ReadbackMatched: false,
+                capabilities,
+                DeviceAccessFailed: false);
+        }
+        catch (CapabilityUnavailableException exception)
+            when (writeAttempted)
+        {
+            return new ScopedApplyOutcome(
+                CapabilityRefused(name, exception),
+                initial,
+                WriteAttempted: false,
                 ReadbackMatched: false,
                 capabilities,
                 DeviceAccessFailed: false);
@@ -1184,6 +1215,10 @@ public sealed class ControlCoordinator
     private static ControlResult WriteRejected(string name, Exception exception) => new(
         ControlResultStatus.Failed,
         $"{name} write was not applied: {exception.Message}");
+
+    private static ControlResult CapabilityRefused(string name, Exception exception) => new(
+        ControlResultStatus.Blocked,
+        $"{name} is unavailable: {exception.Message}");
 
     private static ControlResult ReadFailure(string name, Exception exception) => new(
         ControlResultStatus.Failed,

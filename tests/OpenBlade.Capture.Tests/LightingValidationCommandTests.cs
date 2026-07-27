@@ -525,6 +525,11 @@ public sealed class LightingValidationCommandTests
             return Task.CompletedTask;
         }
 
+        public Task<byte> StepBrightnessAsync(
+            KeyboardBrightnessDirection direction,
+            CancellationToken cancellationToken) =>
+            Refuse<byte>("Keyboard brightness stepping is unavailable in this test port.");
+
         public Task PulseReactiveKeyAsync(
             ReactiveKeyPulse pulse,
             CancellationToken cancellationToken)
@@ -532,6 +537,16 @@ public sealed class LightingValidationCommandTests
             Pulses.Add(pulse);
             return Task.CompletedTask;
         }
+
+        public Task PushAmbientLightingFrameAsync(
+            AmbientLightingFrame frame,
+            CancellationToken cancellationToken) =>
+            Refuse("Ambient Awareness input is unavailable in this test port.");
+
+        public Task SetPlaybackMuteIndicatorAsync(
+            bool muted,
+            CancellationToken cancellationToken) =>
+            Refuse("Playback mute indication is unavailable in this test port.");
 
         public Task<LightingRendererOwnershipState> InvalidateAsync()
         {
@@ -541,6 +556,12 @@ public sealed class LightingValidationCommandTests
         }
 
         public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+
+        private static Task Refuse(string message) =>
+            Task.FromException(new CapabilityUnavailableException(message));
+
+        private static Task<T> Refuse<T>(string message) =>
+            Task.FromException<T>(new CapabilityUnavailableException(message));
     }
 
     private sealed class FakeConsole(params string[] answers)

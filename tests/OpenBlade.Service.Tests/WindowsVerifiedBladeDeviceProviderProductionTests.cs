@@ -119,13 +119,14 @@ public sealed class WindowsVerifiedBladeDeviceProviderProductionTests
             gpu);
         provider.TryGetVerifiedDevice(out IBladeDevice device);
 
-        BladeWriteException error = await Assert.ThrowsAsync<BladeWriteException>(() =>
-            device.SetPerformanceAsync(
-                PerformancePreset.Custom,
-                requested,
-                default));
+        CapabilityUnavailableException error =
+            await Assert.ThrowsAsync<CapabilityUnavailableException>(() =>
+                device.SetPerformanceAsync(
+                    PerformancePreset.Custom,
+                    requested,
+                    default));
 
-        Assert.Equal(WriteSubmissionState.KnownNotApplied, error.SubmissionState);
+        Assert.Contains("unavailable", error.Message, StringComparison.OrdinalIgnoreCase);
         Assert.Equal(0, port.SetCustomPerformanceCount);
         Assert.Empty(gpu.Writes);
     }
@@ -1197,6 +1198,17 @@ public sealed class WindowsVerifiedBladeDeviceProviderProductionTests
             return WriteFailure is null ? Task.CompletedTask : Task.FromException(WriteFailure);
         }
 
+        public Task SetFanControlAsync(
+            FanControlSettings value,
+            CancellationToken cancellationToken) =>
+            SetFanModeAsync(value.Mode, cancellationToken);
+
+        public Task SetFanTargetsAsync(
+            int fan1Rpm,
+            int fan2Rpm,
+            CancellationToken cancellationToken) =>
+            WriteFailure is null ? Task.CompletedTask : Task.FromException(WriteFailure);
+
         public async Task SetChargeLimitAsync(int percent, CancellationToken cancellationToken)
         {
             SetLimitCount++;
@@ -1219,6 +1231,11 @@ public sealed class WindowsVerifiedBladeDeviceProviderProductionTests
         }
 
         public Task SetTemporaryFullChargeAsync(bool enabled, CancellationToken cancellationToken) =>
+            WriteFailure is null ? Task.CompletedTask : Task.FromException(WriteFailure);
+
+        public Task ApplyOneShotLaptopControlAsync(
+            ApplyOneShotLaptopControl value,
+            CancellationToken cancellationToken) =>
             WriteFailure is null ? Task.CompletedTask : Task.FromException(WriteFailure);
 
         public void Release() => protectionRelease!.TrySetResult();

@@ -728,6 +728,15 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                     }
                 }
             }
+            catch (CapabilityUnavailableException exception)
+            {
+                driftTracker.ConfirmIntentional(DeviceSubsystem.Fans, matched: false);
+                PublishIfChanged(current with
+                {
+                    ExternalChanges = driftTracker.ExternalChanges,
+                    Message = exception.Message,
+                });
+            }
             catch (BladeWriteException exception)
                 when (exception.SubmissionState == WriteSubmissionState.KnownNotApplied)
             {
@@ -935,6 +944,12 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         catch (OperationCanceledException) when (token.IsCancellationRequested)
         {
             throw;
+        }
+        catch (CapabilityUnavailableException exception)
+        {
+            driftTracker.ConfirmIntentional(DeviceSubsystem.Lighting, matched: false);
+            var blocked = new ControlResult(ControlResultStatus.Blocked, exception.Message);
+            return (0, PublishKeyboardBrightnessFailure(powerSource, current, blocked));
         }
         catch (BladeWriteException exception)
         {
@@ -1243,6 +1258,10 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         {
             throw;
         }
+        catch (CapabilityUnavailableException exception)
+        {
+            return new ControlOperationResult(ControlOperationStatus.Blocked, exception.Message);
+        }
         catch
         {
             if (device is not null)
@@ -1320,6 +1339,10 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         {
             throw;
         }
+        catch (CapabilityUnavailableException exception)
+        {
+            return new ControlOperationResult(ControlOperationStatus.Blocked, exception.Message);
+        }
         catch
         {
             if (device is not null)
@@ -1384,6 +1407,14 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         catch (OperationCanceledException) when (token.IsCancellationRequested)
         {
             throw;
+        }
+        catch (CapabilityUnavailableException exception)
+        {
+            var result = new ControlOperationResult(
+                ControlOperationStatus.Blocked,
+                exception.Message);
+            history.RecordSummary(result.Status, result.Message);
+            return result;
         }
         catch
         {
@@ -1456,6 +1487,14 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         catch (OperationCanceledException) when (token.IsCancellationRequested)
         {
             throw;
+        }
+        catch (CapabilityUnavailableException exception)
+        {
+            var result = new ControlOperationResult(
+                ControlOperationStatus.Blocked,
+                exception.Message);
+            history.RecordSummary(result.Status, result.Message);
+            return result;
         }
         catch
         {

@@ -52,10 +52,7 @@ public interface IProductionBatteryPort : IAsyncDisposable
 
     Task SetCustomPerformanceAsync(
         CustomPerformanceSettings value,
-        CancellationToken cancellationToken) => Task.FromException(
-            new BladeWriteException(
-                WriteSubmissionState.KnownNotApplied,
-                "Custom performance is unavailable."));
+        CancellationToken cancellationToken);
 
     Task SetFanModeAsync(
         FanMode value,
@@ -63,20 +60,12 @@ public interface IProductionBatteryPort : IAsyncDisposable
 
     Task SetFanControlAsync(
         FanControlSettings value,
-        CancellationToken cancellationToken) => value.Mode is FanMode.Automatic or FanMode.Maximum
-            ? SetFanModeAsync(value.Mode, cancellationToken)
-            : Task.FromException(
-                new BladeWriteException(
-                    WriteSubmissionState.KnownNotApplied,
-                    "Adjustable fan control is unavailable."));
+        CancellationToken cancellationToken);
 
     Task SetFanTargetsAsync(
         int fan1Rpm,
         int fan2Rpm,
-        CancellationToken cancellationToken) => Task.FromException(
-            new BladeWriteException(
-                WriteSubmissionState.KnownNotApplied,
-                "Manual fan targets are unavailable."));
+        CancellationToken cancellationToken);
 
     Task SetChargeLimitAsync(int percent, CancellationToken cancellationToken);
 
@@ -86,10 +75,7 @@ public interface IProductionBatteryPort : IAsyncDisposable
 
     Task ApplyOneShotLaptopControlAsync(
         ApplyOneShotLaptopControl value,
-        CancellationToken cancellationToken) => Task.FromException(
-            new BladeWriteException(
-                WriteSubmissionState.KnownNotApplied,
-                "One-shot laptop controls are unavailable."));
+        CancellationToken cancellationToken);
 }
 
 public interface IProductionBatteryPortFactory

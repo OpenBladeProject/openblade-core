@@ -60,10 +60,7 @@ public interface IProductionLightingPort : IAsyncDisposable
     /// </summary>
     Task<byte> StepBrightnessAsync(
         KeyboardBrightnessDirection direction,
-        CancellationToken cancellationToken) => Task.FromException<byte>(
-            new BladeWriteException(
-                WriteSubmissionState.KnownNotApplied,
-                "Keyboard brightness stepping is unavailable."));
+        CancellationToken cancellationToken);
 
     Task PulseReactiveKeyAsync(
         ReactiveKeyPulse pulse,
@@ -71,17 +68,11 @@ public interface IProductionLightingPort : IAsyncDisposable
 
     Task PushAmbientLightingFrameAsync(
         AmbientLightingFrame frame,
-        CancellationToken cancellationToken) => Task.FromException(
-            new BladeWriteException(
-                WriteSubmissionState.KnownNotApplied,
-                "Ambient Awareness input is unavailable."));
+        CancellationToken cancellationToken);
 
     Task SetPlaybackMuteIndicatorAsync(
         bool muted,
-        CancellationToken cancellationToken) => Task.FromException(
-            new BladeWriteException(
-                WriteSubmissionState.KnownNotApplied,
-                "Playback mute indication is unavailable."));
+        CancellationToken cancellationToken);
 
     /// <summary>
     /// Stops and disposes the live renderer, returning its final ownership state

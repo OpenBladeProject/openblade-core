@@ -423,11 +423,40 @@ public sealed class ControlRequestHandlerTests
         public Task<AdapterPowerState> ReadAdapterPowerStateAsync(CancellationToken cancellationToken) =>
             Count(AdapterPowerState.FullPower280W);
         public Task SetPerformanceAsync(PerformancePreset value, CancellationToken cancellationToken) => Count();
+        public Task SetPerformanceAsync(
+            PerformancePreset value,
+            CustomPerformanceSettings? customPerformance,
+            CancellationToken cancellationToken) => Count();
+        public Task SetGpuClockOffsetsAsync(
+            GpuClockOffsetSettings value,
+            CancellationToken cancellationToken) => Count();
         public Task SetFanModeAsync(FanMode value, CancellationToken cancellationToken) => Count();
+        public Task SetFanControlAsync(
+            FanControlSettings value,
+            CancellationToken cancellationToken) => Count();
+        public Task SetFanTargetsAsync(
+            int fan1Rpm,
+            int fan2Rpm,
+            CancellationToken cancellationToken) => Count();
         public Task SetChargeLimitAsync(BatteryPolicy value, CancellationToken cancellationToken) => Count();
         public Task SetBatteryProtectionOffAsync(CancellationToken cancellationToken) => Count();
         public Task SetTemporaryFullChargeAsync(bool enabled, CancellationToken cancellationToken) => Count();
         public Task SetLightingAsync(LightingSettings value, CancellationToken cancellationToken) => Count();
+        public Task<byte> StepKeyboardBrightnessAsync(
+            KeyboardBrightnessDirection direction,
+            CancellationToken cancellationToken) => Count((byte)0);
+        public Task ApplyOneShotLaptopControlAsync(
+            ApplyOneShotLaptopControl value,
+            CancellationToken cancellationToken) => Count();
+        public Task PulseReactiveKeyAsync(
+            ReactiveKeyPulse pulse,
+            CancellationToken cancellationToken) => Count();
+        public Task PushAmbientLightingFrameAsync(
+            AmbientLightingFrame frame,
+            CancellationToken cancellationToken) => Count();
+        public Task SetPlaybackMuteIndicatorAsync(
+            bool muted,
+            CancellationToken cancellationToken) => Count();
         private Task<T> Count<T>(T value) { Calls++; return Task.FromResult(value); }
         private Task Count() { Calls++; return Task.CompletedTask; }
     }

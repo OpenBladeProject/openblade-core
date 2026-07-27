@@ -180,20 +180,25 @@ public sealed class ProductionBatteryPortTests
         Assert.Equal(new ConfirmedBatteryState(true, 80, null), await port.QueryProtectionAsync(default));
         Assert.Null(await port.QueryTemporaryFullChargeAsync(default));
 
-        BladeWriteException limit = await Assert.ThrowsAsync<BladeWriteException>(
+        CapabilityUnavailableException limit =
+            await Assert.ThrowsAsync<CapabilityUnavailableException>(
             () => port.SetChargeLimitAsync(80, default));
-        BladeWriteException protection = await Assert.ThrowsAsync<BladeWriteException>(
+        CapabilityUnavailableException protection =
+            await Assert.ThrowsAsync<CapabilityUnavailableException>(
             () => port.SetProtectionOffAsync(default));
-        BladeWriteException temporary = await Assert.ThrowsAsync<BladeWriteException>(
+        CapabilityUnavailableException temporary =
+            await Assert.ThrowsAsync<CapabilityUnavailableException>(
             () => port.SetTemporaryFullChargeAsync(true, default));
-        BladeWriteException performance = await Assert.ThrowsAsync<BladeWriteException>(
+        CapabilityUnavailableException performance =
+            await Assert.ThrowsAsync<CapabilityUnavailableException>(
             () => port.SetPerformanceAsync(PerformancePreset.Balanced, default));
-        BladeWriteException fans = await Assert.ThrowsAsync<BladeWriteException>(
+        CapabilityUnavailableException fans =
+            await Assert.ThrowsAsync<CapabilityUnavailableException>(
             () => port.SetFanModeAsync(FanMode.Automatic, default));
 
         Assert.All(
             [limit, protection, temporary, performance, fans],
-            error => Assert.Equal(WriteSubmissionState.KnownNotApplied, error.SubmissionState));
+            error => Assert.Contains("admitted", error.Message, StringComparison.OrdinalIgnoreCase));
         Assert.Single(session.Commands);
         Assert.Equal((0x07, 0x92), (session.Commands[0].ClassId, session.Commands[0].CommandId));
     }
@@ -489,10 +494,11 @@ public sealed class ProductionBatteryPortTests
                 0x02,
                 [0x01, 0x01, 0x05, 0x00])));
 
-        BladeWriteException error = await Assert.ThrowsAsync<BladeWriteException>(
+        CapabilityUnavailableException error =
+            await Assert.ThrowsAsync<CapabilityUnavailableException>(
             () => port.SetPerformanceAsync(PerformancePreset.Silent, default));
 
-        Assert.Equal(WriteSubmissionState.KnownNotApplied, error.SubmissionState);
+        Assert.Contains("not admitted", error.Message, StringComparison.OrdinalIgnoreCase);
         Assert.Empty(session.Commands);
     }
 
@@ -849,11 +855,12 @@ public sealed class ProductionBatteryPortTests
                 0x02,
                 [0x01, 0x01, mode, 0x00])));
 
-        BladeWriteException error = await Assert.ThrowsAsync<BladeWriteException>(
+        CapabilityUnavailableException error =
+            await Assert.ThrowsAsync<CapabilityUnavailableException>(
             () => port.SetPerformanceAsync(preset, default));
 
         Assert.DoesNotContain(preset, port.Capabilities.PerformancePresets);
-        Assert.Equal(WriteSubmissionState.KnownNotApplied, error.SubmissionState);
+        Assert.Contains("not admitted", error.Message, StringComparison.OrdinalIgnoreCase);
         Assert.Empty(session.Commands);
     }
 
@@ -949,7 +956,7 @@ public sealed class ProductionBatteryPortTests
         await using var withoutEvidence = CreatePort(withoutEvidenceSession, catalog);
 
         Assert.False(withoutEvidence.Capabilities.SupportsBatteryProtectionOff);
-        await Assert.ThrowsAsync<BladeWriteException>(
+        await Assert.ThrowsAsync<CapabilityUnavailableException>(
             () => withoutEvidence.SetProtectionOffAsync(default));
         Assert.Empty(withoutEvidenceSession.Commands);
 
@@ -980,10 +987,11 @@ public sealed class ProductionBatteryPortTests
         var session = new ScriptedSession();
         await using var port = CreatePort(session, DeviceCommandCatalog.Empty);
 
-        BladeWriteException error = await Assert.ThrowsAsync<BladeWriteException>(
+        CapabilityUnavailableException error =
+            await Assert.ThrowsAsync<CapabilityUnavailableException>(
             () => port.SetChargeLimitAsync(limit, default));
 
-        Assert.Equal(WriteSubmissionState.KnownNotApplied, error.SubmissionState);
+        Assert.Contains("not admitted", error.Message, StringComparison.OrdinalIgnoreCase);
         Assert.Empty(session.Commands);
         Assert.Empty(port.Capabilities.ChargeLimits);
     }
@@ -998,10 +1006,11 @@ public sealed class ProductionBatteryPortTests
             session,
             Catalog(Fixture($"battery-limit-{limit}", 0x07, 0x12, [0x01])));
 
-        BladeWriteException error = await Assert.ThrowsAsync<BladeWriteException>(
+        CapabilityUnavailableException error =
+            await Assert.ThrowsAsync<CapabilityUnavailableException>(
             () => port.SetChargeLimitAsync(limit, default));
 
-        Assert.Equal(WriteSubmissionState.KnownNotApplied, error.SubmissionState);
+        Assert.Contains("not admitted", error.Message, StringComparison.OrdinalIgnoreCase);
         Assert.Empty(session.Commands);
         Assert.Empty(port.Capabilities.ChargeLimits);
     }
@@ -1067,9 +1076,10 @@ public sealed class ProductionBatteryPortTests
         Assert.False(port.Capabilities.SupportsTemporaryFullCharge);
         foreach (bool enabled in new[] { false, true })
         {
-            BladeWriteException error = await Assert.ThrowsAsync<BladeWriteException>(
+            CapabilityUnavailableException error =
+                await Assert.ThrowsAsync<CapabilityUnavailableException>(
                 () => port.SetTemporaryFullChargeAsync(enabled, default));
-            Assert.Equal(WriteSubmissionState.KnownNotApplied, error.SubmissionState);
+            Assert.Contains("requires admitted", error.Message, StringComparison.OrdinalIgnoreCase);
         }
 
         Assert.Empty(session.Commands);

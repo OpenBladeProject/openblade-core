@@ -236,8 +236,10 @@ public sealed class PublicProtocolSurfaceTests
     [Fact]
     public void PublicProtocolExceptionsRemainPublicAndTyped()
     {
+        Assert.True(typeof(CapabilityUnavailableException).IsPublic);
         Assert.True(typeof(RazerProtocolException).IsPublic);
         Assert.True(typeof(UnvalidatedCommandException).IsPublic);
+        Assert.False(TypeSurfaceContainsForbiddenType(typeof(CapabilityUnavailableException)));
         Assert.False(TypeSurfaceContainsForbiddenType(typeof(RazerProtocolException)));
         Assert.False(TypeSurfaceContainsForbiddenType(typeof(UnvalidatedCommandException)));
     }

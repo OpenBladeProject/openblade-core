@@ -141,9 +141,10 @@ public sealed class ProductionBatteryFactoryIntegrationTests
 
         await Assert.ThrowsAsync<ObjectDisposedException>(
             () => port.QueryProtectionAsync(default));
-        BladeWriteException blockedWrite = await Assert.ThrowsAsync<BladeWriteException>(
+        CapabilityUnavailableException blockedWrite =
+            await Assert.ThrowsAsync<CapabilityUnavailableException>(
             () => port.SetChargeLimitAsync(80, default));
-        Assert.Equal(WriteSubmissionState.KnownNotApplied, blockedWrite.SubmissionState);
+        Assert.Contains("not admitted", blockedWrite.Message, StringComparison.OrdinalIgnoreCase);
         Assert.False(disposing.IsCompleted);
         Assert.Equal(0, session.DisposeCount);
 

@@ -920,8 +920,7 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
                 GpuClockOffsetCapabilities? capabilities = gpuClockOffsets.Query();
                 if (capabilities is null || !capabilities.Supports(value))
                 {
-                    throw new BladeWriteException(
-                        WriteSubmissionState.KnownNotApplied,
+                    throw new CapabilityUnavailableException(
                         capabilities is null
                             ? "GPU clock tuning is unavailable."
                             : "The requested GPU clock offsets are outside the ranges reported by the NVIDIA driver.");
@@ -1291,6 +1290,10 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
                     await write(port).ConfigureAwait(false);
                 }
             }
+            catch (CapabilityUnavailableException)
+            {
+                throw;
+            }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
                 throw new BladeWriteException(
@@ -1347,6 +1350,10 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
                 }
 
                 await port.SetLightingAsync(value, cancellationToken).ConfigureAwait(false);
+            }
+            catch (CapabilityUnavailableException)
+            {
+                throw;
             }
             catch (BladeWriteException exception)
             {
@@ -1416,6 +1423,10 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
                 return await port.StepBrightnessAsync(direction, cancellationToken)
                     .ConfigureAwait(false);
             }
+            catch (CapabilityUnavailableException)
+            {
+                throw;
+            }
             catch (BladeWriteException exception)
             {
                 if (exception.SubmissionState == WriteSubmissionState.Indeterminate)
@@ -1470,6 +1481,10 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
                 await port.PulseReactiveKeyAsync(pulse, cancellationToken)
                     .ConfigureAwait(false);
             }
+            catch (CapabilityUnavailableException)
+            {
+                throw;
+            }
             catch (BladeWriteException)
             {
                 throw;
@@ -1504,6 +1519,10 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
                     await ownedPort.PushAmbientLightingFrameAsync(frame, cancellationToken)
                         .ConfigureAwait(false);
                     return;
+                }
+                catch (CapabilityUnavailableException)
+                {
+                    throw;
                 }
                 catch (BladeWriteException)
                 {
@@ -1558,6 +1577,10 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
 
                 await port.PushAmbientLightingFrameAsync(frame, cancellationToken)
                     .ConfigureAwait(false);
+            }
+            catch (CapabilityUnavailableException)
+            {
+                throw;
             }
             catch (BladeWriteException exception)
             {
@@ -1624,6 +1647,10 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
 
                 await port.SetPlaybackMuteIndicatorAsync(muted, cancellationToken)
                     .ConfigureAwait(false);
+            }
+            catch (CapabilityUnavailableException)
+            {
+                throw;
             }
             catch (BladeWriteException exception)
             {
@@ -1897,7 +1924,7 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
         }
 
         private static Task RejectProductionWrite(string message) => Task.FromException(
-            new BladeWriteException(WriteSubmissionState.KnownNotApplied, message));
+            new CapabilityUnavailableException(message));
 
         private sealed class FailClosedDeviceException(string message) : Exception(message);
     }

@@ -150,12 +150,16 @@ internal sealed class ProductionLightingPort : IProductionLightingPort
     {
         ArgumentNullException.ThrowIfNull(settings);
         settings = LightingSettingsFactory.NormalizeLegacyOff(settings);
-        if (!LightingSettingsValidation.IsWellFormed(settings)
-            || !Capabilities.LightingEffects.Contains(settings.Effect)
+        if (!LightingSettingsValidation.IsWellFormed(settings))
+        {
+            throw KnownNotApplied("The requested lighting setting is invalid.");
+        }
+
+        if (!Capabilities.LightingEffects.Contains(settings.Effect)
             || settings.LogoMode is { } logoMode
                 && !Capabilities.LogoLightingModes.Contains(logoMode))
         {
-            throw KnownNotApplied("The requested lighting setting is not admitted.");
+            throw Unavailable("The requested lighting setting is not admitted.");
         }
 
         await EnterWriteAsync(cancellationToken).ConfigureAwait(false);
@@ -978,7 +982,7 @@ internal sealed class ProductionLightingPort : IProductionLightingPort
     {
         if (matrixWriter is null)
         {
-            throw KnownNotApplied("The matrix writer is not admitted.");
+            throw Unavailable("The matrix writer is not admitted.");
         }
 
         await featureIoGate.WaitAsync(cancellationToken).ConfigureAwait(false);
@@ -1096,7 +1100,7 @@ internal sealed class ProductionLightingPort : IProductionLightingPort
                     ReactiveFadeDuration(ReactiveLightingDuration.Medium)),
             null when settings.Effect == LightingEffect.Ripple =>
                 new Pid02E0RippleEffect(Color(settings.Color)),
-            _ => throw KnownNotApplied("The requested lighting parameters are unsupported."),
+            _ => throw Unavailable("The requested lighting parameters are unsupported."),
         };
     }
 
@@ -1516,6 +1520,8 @@ internal sealed class ProductionLightingPort : IProductionLightingPort
 
     private static BladeWriteException KnownNotApplied(string message) =>
         new(WriteSubmissionState.KnownNotApplied, message);
+
+    private static CapabilityUnavailableException Unavailable(string message) => new(message);
 
     private static BladeWriteException RollbackIndeterminate(
         string message,

@@ -378,7 +378,7 @@ internal sealed class ProductionBatteryPort : IProductionBatteryPort
         string? action = ChargeLimitAction(percent);
         if (action is null)
         {
-            return Task.FromException(KnownNotApplied(
+            return Task.FromException(Unavailable(
                 $"Charge limit {percent}% is not admitted for production use."));
         }
 
@@ -404,7 +404,7 @@ internal sealed class ProductionBatteryPort : IProductionBatteryPort
             _ => null,
         };
         return actions is null
-            ? Task.FromException(KnownNotApplied(
+            ? Task.FromException(Unavailable(
                 $"Performance preset '{value}' is not admitted for production use."))
             : ExecuteThermalSettersAsync(
                 actions,
@@ -435,7 +435,7 @@ internal sealed class ProductionBatteryPort : IProductionBatteryPort
             value.Gpu);
         if (cpuAction is null || gpuAction is null)
         {
-            return Task.FromException(KnownNotApplied(
+            return Task.FromException(Unavailable(
                 "The custom performance CPU/GPU combination is not admitted."));
         }
 
@@ -476,7 +476,7 @@ internal sealed class ProductionBatteryPort : IProductionBatteryPort
             _ => null,
         };
         return actions is null
-            ? Task.FromException(KnownNotApplied(
+            ? Task.FromException(Unavailable(
                 $"Fan mode '{value}' is not admitted for production use."))
             : ExecuteThermalSettersAsync(
                 actions,
@@ -515,7 +515,7 @@ internal sealed class ProductionBatteryPort : IProductionBatteryPort
                 FanControlSettings.MaximumSpeedRpm,
                 FanControlSettings.MaximumSpeedRpm,
                 cancellationToken),
-            _ => Task.FromException(KnownNotApplied(
+            _ => Task.FromException(Unavailable(
                 $"Fan mode '{value.Mode}' is not admitted for production use.")),
         };
     }
@@ -558,7 +558,7 @@ internal sealed class ProductionBatteryPort : IProductionBatteryPort
     {
         if (!catalog.TryGet(action, out RazerCommandDefinition? command) || command is null)
         {
-            throw KnownNotApplied(
+            throw Unavailable(
                 $"Thermal action '{action}' is not admitted for production use.");
         }
 
@@ -702,7 +702,7 @@ internal sealed class ProductionBatteryPort : IProductionBatteryPort
     {
         if (!readEvidence.SupportsTemporaryFullChargeQuery)
         {
-            return Task.FromException(KnownNotApplied(
+            return Task.FromException(Unavailable(
                 "Battery protection-off is unavailable without admitted temporary-state readback."));
         }
 
@@ -715,7 +715,7 @@ internal sealed class ProductionBatteryPort : IProductionBatteryPort
     {
         if (!Capabilities.SupportsTemporaryFullCharge)
         {
-            return Task.FromException(KnownNotApplied(
+            return Task.FromException(Unavailable(
                 "Temporary full charge requires admitted enable, cancel, and readback commands."));
         }
 
@@ -759,7 +759,7 @@ internal sealed class ProductionBatteryPort : IProductionBatteryPort
             || command is null
             || !command.OneShotOnly)
         {
-            return Task.FromException(KnownNotApplied(
+            return Task.FromException(Unavailable(
                 $"One-shot laptop control '{value.Control}' is not admitted for production use."));
         }
 
@@ -991,7 +991,7 @@ internal sealed class ProductionBatteryPort : IProductionBatteryPort
 
         if (!catalog.TryGet(action, out RazerCommandDefinition? command) || command is null)
         {
-            throw KnownNotApplied($"Battery action '{action}' is not admitted for production use.");
+            throw Unavailable($"Battery action '{action}' is not admitted for production use.");
         }
 
         await EnterForWriteAsync(cancellationToken).ConfigureAwait(false);
@@ -1075,7 +1075,7 @@ internal sealed class ProductionBatteryPort : IProductionBatteryPort
             if (!catalog.TryGet(action, out RazerCommandDefinition? command)
                 || command is null)
             {
-                throw KnownNotApplied(
+                throw Unavailable(
                     $"Thermal action '{action}' is not admitted for production use.");
             }
 
@@ -1493,6 +1493,8 @@ internal sealed class ProductionBatteryPort : IProductionBatteryPort
     private static BladeWriteException KnownNotApplied(string message) => new(
         WriteSubmissionState.KnownNotApplied,
         message);
+
+    private static CapabilityUnavailableException Unavailable(string message) => new(message);
 
     private static BladeWriteException Indeterminate(string message) => new(
         WriteSubmissionState.Indeterminate,

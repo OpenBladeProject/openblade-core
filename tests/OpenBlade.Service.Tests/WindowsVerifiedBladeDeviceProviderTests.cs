@@ -601,31 +601,38 @@ public sealed class WindowsVerifiedBladeDeviceProviderTests
     }
 
     [Fact]
-    public async Task SettersRejectBeforeGateFactoryOrIo()
+    public async Task UnavailableSettersRefuseBeforeGateFactoryOrIo()
     {
         var factory = new FakeQueryFactory();
         using var provider = ReadyProvider(factory);
         provider.TryGetVerifiedDevice(out IBladeDevice device);
         LightingSettings lighting = ProfileDefaults.CreateSafeDefaults().PluggedIn.Lighting;
 
-        BladeWriteException performance = await Assert.ThrowsAsync<BladeWriteException>(
+        CapabilityUnavailableException performance =
+            await Assert.ThrowsAsync<CapabilityUnavailableException>(
             () => device.SetPerformanceAsync(PerformancePreset.Silent, default));
-        BladeWriteException fans = await Assert.ThrowsAsync<BladeWriteException>(
+        CapabilityUnavailableException fans =
+            await Assert.ThrowsAsync<CapabilityUnavailableException>(
             () => device.SetFanModeAsync(FanMode.Automatic, default));
-        BladeWriteException limit = await Assert.ThrowsAsync<BladeWriteException>(
+        CapabilityUnavailableException limit =
+            await Assert.ThrowsAsync<CapabilityUnavailableException>(
             () => device.SetChargeLimitAsync(BatteryPolicy.Create(80), default));
-        BladeWriteException protection = await Assert.ThrowsAsync<BladeWriteException>(
+        CapabilityUnavailableException protection =
+            await Assert.ThrowsAsync<CapabilityUnavailableException>(
             () => device.SetBatteryProtectionOffAsync(default));
-        BladeWriteException temporary = await Assert.ThrowsAsync<BladeWriteException>(
+        CapabilityUnavailableException temporary =
+            await Assert.ThrowsAsync<CapabilityUnavailableException>(
             () => device.SetTemporaryFullChargeAsync(true, default));
         Assert.All(
             [performance, fans, limit, protection, temporary],
-            exception => Assert.Equal(
-                WriteSubmissionState.KnownNotApplied,
-                exception.SubmissionState));
-        BladeWriteException lightingError = await Assert.ThrowsAsync<BladeWriteException>(
+            exception => Assert.Contains(
+                "not admitted",
+                exception.Message,
+                StringComparison.OrdinalIgnoreCase));
+        CapabilityUnavailableException lightingError =
+            await Assert.ThrowsAsync<CapabilityUnavailableException>(
             () => device.SetLightingAsync(lighting, default));
-        Assert.Equal(WriteSubmissionState.KnownNotApplied, lightingError.SubmissionState);
+        Assert.Contains("not admitted", lightingError.Message, StringComparison.OrdinalIgnoreCase);
 
         Assert.Equal(0, factory.OpenCount);
     }
@@ -1207,8 +1214,21 @@ public sealed class WindowsVerifiedBladeDeviceProviderTests
             PerformancePreset value,
             CancellationToken cancellationToken) => Reject();
 
+        public Task SetCustomPerformanceAsync(
+            CustomPerformanceSettings value,
+            CancellationToken cancellationToken) => Reject();
+
         public Task SetFanModeAsync(
             FanMode value,
+            CancellationToken cancellationToken) => Reject();
+
+        public Task SetFanControlAsync(
+            FanControlSettings value,
+            CancellationToken cancellationToken) => Reject();
+
+        public Task SetFanTargetsAsync(
+            int fan1Rpm,
+            int fan2Rpm,
             CancellationToken cancellationToken) => Reject();
 
         public Task SetChargeLimitAsync(int percent, CancellationToken cancellationToken) =>
@@ -1219,12 +1239,14 @@ public sealed class WindowsVerifiedBladeDeviceProviderTests
         public Task SetTemporaryFullChargeAsync(bool enabled, CancellationToken cancellationToken) =>
             Reject();
 
+        public Task ApplyOneShotLaptopControlAsync(
+            ApplyOneShotLaptopControl value,
+            CancellationToken cancellationToken) => Reject();
+
         public ValueTask DisposeAsync() => inner.DisposeAsync();
 
         private static Task Reject() => Task.FromException(
-            new BladeWriteException(
-                WriteSubmissionState.KnownNotApplied,
-                "Write unavailable in query adapter."));
+            new CapabilityUnavailableException("Write unavailable in query adapter."));
     }
 
     private sealed class FakeQueryFactory : IBatteryQuerySequenceRunFactory
@@ -1411,6 +1433,11 @@ public sealed class WindowsVerifiedBladeDeviceProviderTests
             };
             return Task.CompletedTask;
         }
+
+        public Task<byte> StepBrightnessAsync(
+            KeyboardBrightnessDirection direction,
+            CancellationToken cancellationToken) =>
+            Task.FromResult((byte)50);
 
         public Task PulseReactiveKeyAsync(
             ReactiveKeyPulse pulse,

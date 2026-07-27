@@ -50,38 +50,22 @@ public interface IBladeDevice
     Task SetPerformanceAsync(
         PerformancePreset value,
         CustomPerformanceSettings? customPerformance,
-        CancellationToken cancellationToken) => value == PerformancePreset.Custom
-            ? Task.FromException(
-                new BladeWriteException(
-                    WriteSubmissionState.KnownNotApplied,
-                    "Custom performance is unavailable."))
-            : SetPerformanceAsync(value, cancellationToken);
+        CancellationToken cancellationToken);
 
     Task SetGpuClockOffsetsAsync(
         GpuClockOffsetSettings value,
-        CancellationToken cancellationToken) => Task.FromException(
-            new BladeWriteException(
-                WriteSubmissionState.KnownNotApplied,
-                "GPU clock tuning is unavailable."));
+        CancellationToken cancellationToken);
 
     Task SetFanModeAsync(FanMode value, CancellationToken cancellationToken);
 
     Task SetFanControlAsync(
         FanControlSettings value,
-        CancellationToken cancellationToken) => value.Mode is FanMode.Automatic or FanMode.Maximum
-            ? SetFanModeAsync(value.Mode, cancellationToken)
-            : Task.FromException(
-                new BladeWriteException(
-                    WriteSubmissionState.KnownNotApplied,
-                    "Adjustable fan control is unavailable."));
+        CancellationToken cancellationToken);
 
     Task SetFanTargetsAsync(
         int fan1Rpm,
         int fan2Rpm,
-        CancellationToken cancellationToken) => Task.FromException(
-            new BladeWriteException(
-                WriteSubmissionState.KnownNotApplied,
-                "Manual fan targets are unavailable."));
+        CancellationToken cancellationToken);
 
     Task SetChargeLimitAsync(BatteryPolicy value, CancellationToken cancellationToken);
 
@@ -93,17 +77,11 @@ public interface IBladeDevice
 
     Task<byte> StepKeyboardBrightnessAsync(
         KeyboardBrightnessDirection direction,
-        CancellationToken cancellationToken) => Task.FromException<byte>(
-            new BladeWriteException(
-                WriteSubmissionState.KnownNotApplied,
-                "Keyboard brightness stepping is unavailable."));
+        CancellationToken cancellationToken);
 
     Task ApplyOneShotLaptopControlAsync(
         ApplyOneShotLaptopControl value,
-        CancellationToken cancellationToken) => Task.FromException(
-            new BladeWriteException(
-                WriteSubmissionState.KnownNotApplied,
-                "One-shot laptop controls are unavailable."));
+        CancellationToken cancellationToken);
 
     Task<LightingRendererOwnershipState> ReadLightingRendererOwnershipAsync(
         CancellationToken cancellationToken) =>
@@ -111,22 +89,13 @@ public interface IBladeDevice
 
     Task PulseReactiveKeyAsync(
         ReactiveKeyPulse pulse,
-        CancellationToken cancellationToken) => Task.FromException(
-            new BladeWriteException(
-                WriteSubmissionState.KnownNotApplied,
-                "Reactive lighting input is unavailable."));
+        CancellationToken cancellationToken);
 
     Task PushAmbientLightingFrameAsync(
         AmbientLightingFrame frame,
-        CancellationToken cancellationToken) => Task.FromException(
-            new BladeWriteException(
-                WriteSubmissionState.KnownNotApplied,
-                "Ambient Awareness input is unavailable."));
+        CancellationToken cancellationToken);
 
     Task SetPlaybackMuteIndicatorAsync(
         bool muted,
-        CancellationToken cancellationToken) => Task.FromException(
-            new BladeWriteException(
-                WriteSubmissionState.KnownNotApplied,
-                "Playback mute indication is unavailable."));
+        CancellationToken cancellationToken);
 }

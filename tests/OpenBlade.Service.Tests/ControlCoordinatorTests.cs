@@ -710,6 +710,26 @@ public sealed class ControlCoordinatorTests
     }
 
     [Fact]
+    public async Task ScopedCapabilityRefusal_IsBlockedWithoutAttemptingReadback()
+    {
+        RecordingBladeDevice device = CreateMismatchedDevice();
+        device.PerformanceFailure =
+            new CapabilityUnavailableException("performance capability changed");
+        var coordinator = new ControlCoordinator(device);
+
+        ScopedApplyOutcome outcome = await coordinator.ApplyPerformanceOutcomeAsync(
+            PerformancePreset.Balanced,
+            CancellationToken.None);
+
+        Assert.Equal(ControlResultStatus.Blocked, outcome.Result.Status);
+        Assert.Contains("unavailable", outcome.Result.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.False(outcome.WriteAttempted);
+        Assert.False(outcome.DeviceAccessFailed);
+        Assert.Same(device.State, outcome.Readback);
+        Assert.Equal(["Capabilities", "State", "SetPerformance"], device.Calls);
+    }
+
+    [Fact]
     public async Task ScopedApply_InvalidLighting_IsBlockedBeforeDeviceAccess()
     {
         RecordingBladeDevice device = CreateMismatchedDevice();
@@ -1345,6 +1365,12 @@ public sealed class ControlCoordinatorTests
             return SetFanModeAsync(value.Mode, cancellationToken);
         }
 
+        public Task SetFanTargetsAsync(
+            int fan1Rpm,
+            int fan2Rpm,
+            CancellationToken cancellationToken) =>
+            Refuse("Manual fan targets are unavailable in this test device.");
+
         public Task SetChargeLimitAsync(
             BatteryPolicy value,
             CancellationToken cancellationToken)
@@ -1437,7 +1463,38 @@ public sealed class ControlCoordinatorTests
             return Task.CompletedTask;
         }
 
+        public Task<byte> StepKeyboardBrightnessAsync(
+            KeyboardBrightnessDirection direction,
+            CancellationToken cancellationToken) =>
+            Refuse<byte>("Keyboard brightness stepping is unavailable in this test device.");
+
+        public Task ApplyOneShotLaptopControlAsync(
+            ApplyOneShotLaptopControl value,
+            CancellationToken cancellationToken) =>
+            Refuse("One-shot laptop controls are unavailable in this test device.");
+
+        public Task PulseReactiveKeyAsync(
+            ReactiveKeyPulse pulse,
+            CancellationToken cancellationToken) =>
+            Refuse("Reactive lighting input is unavailable in this test device.");
+
+        public Task PushAmbientLightingFrameAsync(
+            AmbientLightingFrame frame,
+            CancellationToken cancellationToken) =>
+            Refuse("Ambient Awareness input is unavailable in this test device.");
+
+        public Task SetPlaybackMuteIndicatorAsync(
+            bool muted,
+            CancellationToken cancellationToken) =>
+            Refuse("Playback mute indication is unavailable in this test device.");
+
         private bool ShouldConfirm(DeviceSubsystem subsystem) =>
             AutoConfirmWrites && SuppressConfirmationFor != subsystem;
+
+        private static Task Refuse(string message) =>
+            Task.FromException(new CapabilityUnavailableException(message));
+
+        private static Task<T> Refuse<T>(string message) =>
+            Task.FromException<T>(new CapabilityUnavailableException(message));
     }
 }

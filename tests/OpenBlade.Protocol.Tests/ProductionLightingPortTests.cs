@@ -1307,12 +1307,13 @@ public sealed class ProductionLightingPortTests
         var session = new LightingSession(initialBrightness: 0xFF);
         await using var port = CreatePort(session, writer: null, admitted: false);
 
-        BladeWriteException error = await Assert.ThrowsAsync<BladeWriteException>(() =>
-            port.SetLightingAsync(
-                LightingSettingsFactory.Static(new RgbColor(1, 2, 3), 50),
-                default));
+        CapabilityUnavailableException error =
+            await Assert.ThrowsAsync<CapabilityUnavailableException>(() =>
+                port.SetLightingAsync(
+                    LightingSettingsFactory.Static(new RgbColor(1, 2, 3), 50),
+                    default));
 
-        Assert.Equal(WriteSubmissionState.KnownNotApplied, error.SubmissionState);
+        Assert.Contains("not admitted", error.Message, StringComparison.OrdinalIgnoreCase);
         Assert.Empty(session.Commands);
     }
 
