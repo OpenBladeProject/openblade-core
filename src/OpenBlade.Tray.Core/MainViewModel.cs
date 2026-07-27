@@ -51,7 +51,7 @@ public sealed record ProfilePresentation(
     string GamingModeAltTab,
     string StartupAnimation);
 
-public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
+public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
 {
     private const string UnavailableLabel = "Unavailable";
     private const byte DefaultLightingBrightness = 50;
@@ -7174,57 +7174,6 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         }
     }
 
-    private void NotifyDashboardTelemetryPreferencesChanged()
-    {
-        if (changingTelemetryPreferences)
-        {
-            return;
-        }
-        PropertyChanged?.Invoke(
-            this,
-            new PropertyChangedEventArgs(nameof(EnabledDashboardTelemetryItems)));
-        if (dashboardTelemetryPresentationActive)
-        {
-            PropertyChanged?.Invoke(
-                this,
-                new PropertyChangedEventArgs(nameof(VisibleDashboardTelemetryGroups)));
-            PropertyChanged?.Invoke(
-                this,
-                new PropertyChangedEventArgs(nameof(ShowDashboardLiveReadings)));
-        }
-    }
-
-    private void NotifyDashboardTelemetryValuesChanged()
-    {
-        if (!dashboardTelemetryPresentationActive)
-        {
-            return;
-        }
-
-        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(BatteryPowerFlowLabel)));
-        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Fan1RpmLabel)));
-        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Fan2RpmLabel)));
-        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Fan1RpmValue)));
-        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Fan2RpmValue)));
-        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(CpuTemperatureValue)));
-        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(GpuTemperatureValue)));
-        PropertyChanged?.Invoke(
-            this,
-            new PropertyChangedEventArgs(nameof(VisibleDashboardTelemetryGroups)));
-    }
-
-    private void NotifyTrayHoverPreferencesChanged()
-    {
-        if (changingTelemetryPreferences)
-        {
-            return;
-        }
-        PropertyChanged?.Invoke(
-            this,
-            new PropertyChangedEventArgs(nameof(TrayHoverLabelPreferences)));
-        NotifyTrayHoverLabel();
-    }
-
     private void ApplyLegacyTrayHoverLabelMode(TrayHoverLabelMode mode)
     {
         changingTelemetryPreferences = true;
@@ -7327,58 +7276,6 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         || message.StartsWith(
             "Refreshing laptop controls after a temporary device-access failure",
             StringComparison.OrdinalIgnoreCase);
-
-    private static bool StatusMetadataEqual(
-        ServiceStatusSnapshot left,
-        ServiceStatusSnapshot right) =>
-        left.DeviceVerified == right.DeviceVerified
-        && left.WritesBlocked == right.WritesBlocked
-        && left.PotentialControllers.SequenceEqual(
-            right.PotentialControllers,
-            StringComparer.Ordinal)
-        && string.Equals(
-            left.ControllerDetectionWarning,
-            right.ControllerDetectionWarning,
-            StringComparison.Ordinal)
-        && left.ExternalChanges.SequenceEqual(right.ExternalChanges)
-        && string.Equals(left.Message, right.Message, StringComparison.Ordinal)
-        && CapabilitiesEqual(left.Capabilities, right.Capabilities)
-        && left.ConfirmedState == right.ConfirmedState
-        && left.Profiles == right.Profiles
-        && left.DesiredState == right.DesiredState
-        && left.ActivePowerSource == right.ActivePowerSource
-        && left.PerformanceOverride == right.PerformanceOverride
-        && left.FanOverride == right.FanOverride
-        && left.FanControlOverride == right.FanControlOverride
-        && left.LightingOverride == right.LightingOverride
-        && left.FullChargeOverride == right.FullChargeOverride
-        && left.LightingRendererOwnership == right.LightingRendererOwnership
-        && left.StartupAnimationEnabled == right.StartupAnimationEnabled
-        && left.FunctionKeyPrimary == right.FunctionKeyPrimary
-        && left.GamingModeEnabled == right.GamingModeEnabled
-        && left.PerformanceShortcutPreview == right.PerformanceShortcutPreview
-        && left.KeyboardDriverModeActive == right.KeyboardDriverModeActive
-        && left.AlwaysOverrideExternalLightingChanges
-            == right.AlwaysOverrideExternalLightingChanges
-        && (left.LightingSuppressions ?? []).SequenceEqual(
-            right.LightingSuppressions ?? [])
-        && left.Firmware == right.Firmware
-        && left.BatteryHealth == right.BatteryHealth
-        && string.Equals(left.ServiceVersion, right.ServiceVersion, StringComparison.Ordinal);
-
-    private static bool CapabilitiesEqual(
-        DeviceCapabilities? left,
-        DeviceCapabilities? right) =>
-        ReferenceEquals(left, right)
-        || (left is not null && right is not null
-            && left.PerformancePresets.SetEquals(right.PerformancePresets)
-            && left.FanModes.SetEquals(right.FanModes)
-            && left.LightingEffects.SetEquals(right.LightingEffects)
-            && left.LogoLightingModes.SetEquals(right.LogoLightingModes)
-            && left.OneShotLaptopControls.SetEquals(right.OneShotLaptopControls)
-            && left.ChargeLimits.SetEquals(right.ChargeLimits)
-            && left.SupportsBatteryProtectionOff == right.SupportsBatteryProtectionOff
-            && left.SupportsTemporaryFullCharge == right.SupportsTemporaryFullCharge);
 
     private static string FormatOperationFeedback(string message)
     {
