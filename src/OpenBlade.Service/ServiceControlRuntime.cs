@@ -3428,24 +3428,11 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         cancellationToken.ThrowIfCancellationRequested();
         if (!deviceAvailable)
         {
-            fullObservationCompleted = false;
-            consecutiveVerifiedAccessFailures = 0;
-            cancellationToken.ThrowIfCancellationRequested();
-            if (GetStatus().DeviceVerified
-                && ++consecutiveDeviceProbeFailures < ObservationFailureThreshold)
-            {
-                PublishTransientDeviceProbeFailure(powerSource, includeLiveReadings
-                    ? new LiveReadings(batteryPowerFlowMilliwatts, null, null)
-                    : null);
-                return;
-            }
-
-            PublishObservationUnavailable(
+            PublishUnavailableDeviceObservation(
                 powerSource,
-                includeLiveReadings
-                    ? new LiveReadings(batteryPowerFlowMilliwatts, null, null)
-                    : null,
-                "No verified PID 02E0 device is available.");
+                includeLiveReadings,
+                batteryPowerFlowMilliwatts,
+                cancellationToken);
             return;
         }
 
@@ -3453,127 +3440,25 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
 
         try
         {
-            DeviceCapabilities capabilities =
-                await device.ReadCapabilitiesAsync(cancellationToken);
-            ServiceStatusSnapshot currentBeforeRead = GetStatus();
-            if (!HasAnyControlCapability(capabilities)
-                && currentBeforeRead.DeviceVerified
-                && currentBeforeRead.Capabilities is { } previousCapabilities
-                && HasAnyControlCapability(previousCapabilities))
-            {
-                // Capabilities are immutable for a connected model. A failed
-                // refresh must not make every UI control disappear until the
-                // next audit; each mutation still re-admits its own command.
-                capabilities = previousCapabilities;
-            }
-            ConfirmedDeviceState confirmed = await ReadObservedStateAsync(
+            FullDeviceObservation observation = await ReadFullDeviceObservationAsync(
                 device,
-                cancellationToken);
-            bool? startupAnimation = await ReadStartupAnimationStateAsync(
-                device,
+                requestedLiveReadings,
+                includeLiveReadings,
                 cancellationToken).ConfigureAwait(false);
-            FunctionKeyPrimaryMode? functionKeyPrimary =
-                await ReadFunctionKeyPrimaryStateAsync(
-                    device,
-                    cancellationToken).ConfigureAwait(false);
-            bool? gamingModeEnabled = await ReadGamingModeStateAsync(
-                device,
-                cancellationToken).ConfigureAwait(false);
-            LightingRendererOwnershipState lightingOwnership =
-                await ReadLightingOwnershipAsync(device, cancellationToken)
-                    .ConfigureAwait(false);
-            CaptureFaultedLightingRecoveryCandidate(lightingOwnership);
-            UpdateOwnedLightingSnapshot(lightingOwnership, appliedSettings: null);
-            FirmwareVersions? firmware = await ReadFirmwareVersionsAsync(
-                device,
-                cancellationToken);
-            FanRpmReadings? fans = null;
-            FanTemperatureReadings temperatures = default;
-            if (includeLiveReadings)
-            {
-                if (Requests(requestedLiveReadings, LiveReadingSensors.FanSpeeds))
-                {
-                    try
-                    {
-                        fans = await device.ReadFanRpmAsync(cancellationToken);
-                    }
-                    catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-                    {
-                        throw;
-                    }
-                    catch
-                    {
-                        fans = null;
-                    }
-                }
-
-                bool includeCpu = Requests(
-                    requestedLiveReadings,
-                    LiveReadingSensors.CpuTemperature);
-                bool includeGpu = Requests(
-                    requestedLiveReadings,
-                    LiveReadingSensors.GpuTemperature);
-                if (includeCpu || includeGpu)
-                {
-                    try
-                    {
-                        temperatures = await fanTemperatureSource.ReadAsync(
-                            includeCpu,
-                            includeGpu,
-                            cancellationToken);
-                    }
-                    catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-                    {
-                        throw;
-                    }
-                    catch
-                    {
-                        temperatures = default;
-                    }
-                }
-            }
             cancellationToken.ThrowIfCancellationRequested();
-            ObserveAutomaticState(confirmed);
+            ObserveAutomaticState(observation.Confirmed);
             consecutiveVerifiedAccessFailures = 0;
             fullObservationCompleted = true;
             lastFullObservationTimestamp = Stopwatch.GetTimestamp();
             BatteryHealthStatus? batteryHealth =
                 CaptureBatteryHealthAfterFirstVerificationCore();
-            PublishIfChanged(GetStatus() with
-            {
-                DeviceVerified = true,
-                WritesBlocked = !powerSourceConfirmed,
-                ExternalChanges = driftTracker.ExternalChanges,
-                Message = !powerSourceConfirmed
-                    ? powerSource == PowerSource.ExternalUnknown
-                        ? "Verified device state observed, but the external power adapter could not be classified; control writes are blocked."
-                        : TransientExternalPowerMessage
-                    : "Verified device state observed.",
-                Capabilities = capabilities,
-                ConfirmedState = confirmed,
-                Profiles = Automation.Profiles,
-                DesiredState = Automation.Resolve(confirmed),
-                ActivePowerSource = powerSource,
-                LiveReadings = includeLiveReadings
-                    ? new LiveReadings(
-                        batteryPowerFlowMilliwatts,
-                        fans?.Selector1Rpm,
-                        fans?.Selector2Rpm,
-                        temperatures.CpuCelsius,
-                        temperatures.GpuCelsius)
-                    : null,
-                PerformanceOverride = Automation.PerformanceOverride,
-                FanOverride = Automation.FanOverride,
-                FanControlOverride = Automation.FanControlOverride,
-                LightingOverride = Automation.LightingOverride,
-                FullChargeOverride = ResolveFullChargeOverride(confirmed),
-                Firmware = firmware,
-                LightingRendererOwnership = lightingOwnership,
-                StartupAnimationEnabled = startupAnimation,
-                FunctionKeyPrimary = functionKeyPrimary,
-                GamingModeEnabled = gamingModeEnabled,
-                BatteryHealth = batteryHealth,
-            });
+            PublishVerifiedDeviceObservation(
+                powerSource,
+                powerSourceConfirmed,
+                includeLiveReadings,
+                batteryPowerFlowMilliwatts,
+                observation,
+                batteryHealth);
 
             if (powerSourceConfirmed)
             {
@@ -3587,34 +3472,216 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         }
         catch (Exception exception)
         {
-            fullObservationCompleted = false;
-            cancellationToken.ThrowIfCancellationRequested();
-            string message = $"Verified device access failed: {exception.Message}";
-            ServiceStatusSnapshot current = GetStatus();
-            if (current.DeviceVerified
-                && ++consecutiveVerifiedAccessFailures < ObservationFailureThreshold)
-            {
-                PublishTransientVerifiedAccessFailure(
-                    powerSource,
-                    includeLiveReadings
-                        ? new LiveReadings(batteryPowerFlowMilliwatts, null, null)
-                        : null,
-                    message);
-            }
-            else
-            {
-                PublishObservationUnavailable(
-                    powerSource,
-                    includeLiveReadings
-                        ? new LiveReadings(batteryPowerFlowMilliwatts, null, null)
-                        : null,
-                    message,
-                    deviceVerified: true);
-            }
-            history.RecordSummary(
-                ControlOperationStatus.Failed,
-                GetStatus().Message);
+            PublishVerifiedDeviceObservationFailure(
+                powerSource,
+                includeLiveReadings,
+                batteryPowerFlowMilliwatts,
+                exception,
+                cancellationToken);
         }
+    }
+
+    private void PublishUnavailableDeviceObservation(
+        PowerSource powerSource,
+        bool includeLiveReadings,
+        int? batteryPowerFlowMilliwatts,
+        CancellationToken cancellationToken)
+    {
+        fullObservationCompleted = false;
+        consecutiveVerifiedAccessFailures = 0;
+        cancellationToken.ThrowIfCancellationRequested();
+        LiveReadings? liveReadings = includeLiveReadings
+            ? new LiveReadings(batteryPowerFlowMilliwatts, null, null)
+            : null;
+        if (GetStatus().DeviceVerified
+            && ++consecutiveDeviceProbeFailures < ObservationFailureThreshold)
+        {
+            PublishTransientDeviceProbeFailure(powerSource, liveReadings);
+            return;
+        }
+
+        PublishObservationUnavailable(
+            powerSource,
+            liveReadings,
+            "No verified PID 02E0 device is available.");
+    }
+
+    private async Task<FullDeviceObservation> ReadFullDeviceObservationAsync(
+        IBladeDevice device,
+        LiveReadingSensors requestedLiveReadings,
+        bool includeLiveReadings,
+        CancellationToken cancellationToken)
+    {
+        DeviceCapabilities capabilities =
+            await device.ReadCapabilitiesAsync(cancellationToken);
+        ServiceStatusSnapshot currentBeforeRead = GetStatus();
+        if (!HasAnyControlCapability(capabilities)
+            && currentBeforeRead.DeviceVerified
+            && currentBeforeRead.Capabilities is { } previousCapabilities
+            && HasAnyControlCapability(previousCapabilities))
+        {
+            // Capabilities are immutable for a connected model. A failed
+            // refresh must not make every UI control disappear until the
+            // next audit; each mutation still re-admits its own command.
+            capabilities = previousCapabilities;
+        }
+        ConfirmedDeviceState confirmed = await ReadObservedStateAsync(
+            device,
+            cancellationToken);
+        bool? startupAnimation = await ReadStartupAnimationStateAsync(
+            device,
+            cancellationToken).ConfigureAwait(false);
+        FunctionKeyPrimaryMode? functionKeyPrimary =
+            await ReadFunctionKeyPrimaryStateAsync(
+                device,
+                cancellationToken).ConfigureAwait(false);
+        bool? gamingModeEnabled = await ReadGamingModeStateAsync(
+            device,
+            cancellationToken).ConfigureAwait(false);
+        LightingRendererOwnershipState lightingOwnership =
+            await ReadLightingOwnershipAsync(device, cancellationToken)
+                .ConfigureAwait(false);
+        CaptureFaultedLightingRecoveryCandidate(lightingOwnership);
+        UpdateOwnedLightingSnapshot(lightingOwnership, appliedSettings: null);
+        FirmwareVersions? firmware = await ReadFirmwareVersionsAsync(
+            device,
+            cancellationToken);
+        FanRpmReadings? fans = null;
+        FanTemperatureReadings temperatures = default;
+        if (includeLiveReadings)
+        {
+            if (Requests(requestedLiveReadings, LiveReadingSensors.FanSpeeds))
+            {
+                try
+                {
+                    fans = await device.ReadFanRpmAsync(cancellationToken);
+                }
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                {
+                    throw;
+                }
+                catch
+                {
+                    fans = null;
+                }
+            }
+
+            bool includeCpu = Requests(
+                requestedLiveReadings,
+                LiveReadingSensors.CpuTemperature);
+            bool includeGpu = Requests(
+                requestedLiveReadings,
+                LiveReadingSensors.GpuTemperature);
+            if (includeCpu || includeGpu)
+            {
+                try
+                {
+                    temperatures = await fanTemperatureSource.ReadAsync(
+                        includeCpu,
+                        includeGpu,
+                        cancellationToken);
+                }
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                {
+                    throw;
+                }
+                catch
+                {
+                    temperatures = default;
+                }
+            }
+        }
+
+        return new(
+            capabilities,
+            confirmed,
+            startupAnimation,
+            functionKeyPrimary,
+            gamingModeEnabled,
+            lightingOwnership,
+            firmware,
+            fans,
+            temperatures);
+    }
+
+    private void PublishVerifiedDeviceObservation(
+        PowerSource powerSource,
+        bool powerSourceConfirmed,
+        bool includeLiveReadings,
+        int? batteryPowerFlowMilliwatts,
+        FullDeviceObservation observation,
+        BatteryHealthStatus? batteryHealth)
+    {
+        PublishIfChanged(GetStatus() with
+        {
+            DeviceVerified = true,
+            WritesBlocked = !powerSourceConfirmed,
+            ExternalChanges = driftTracker.ExternalChanges,
+            Message = !powerSourceConfirmed
+                ? powerSource == PowerSource.ExternalUnknown
+                    ? "Verified device state observed, but the external power adapter could not be classified; control writes are blocked."
+                    : TransientExternalPowerMessage
+                : "Verified device state observed.",
+            Capabilities = observation.Capabilities,
+            ConfirmedState = observation.Confirmed,
+            Profiles = Automation.Profiles,
+            DesiredState = Automation.Resolve(observation.Confirmed),
+            ActivePowerSource = powerSource,
+            LiveReadings = includeLiveReadings
+                ? new LiveReadings(
+                    batteryPowerFlowMilliwatts,
+                    observation.Fans?.Selector1Rpm,
+                    observation.Fans?.Selector2Rpm,
+                    observation.Temperatures.CpuCelsius,
+                    observation.Temperatures.GpuCelsius)
+                : null,
+            PerformanceOverride = Automation.PerformanceOverride,
+            FanOverride = Automation.FanOverride,
+            FanControlOverride = Automation.FanControlOverride,
+            LightingOverride = Automation.LightingOverride,
+            FullChargeOverride = ResolveFullChargeOverride(observation.Confirmed),
+            Firmware = observation.Firmware,
+            LightingRendererOwnership = observation.LightingOwnership,
+            StartupAnimationEnabled = observation.StartupAnimation,
+            FunctionKeyPrimary = observation.FunctionKeyPrimary,
+            GamingModeEnabled = observation.GamingModeEnabled,
+            BatteryHealth = batteryHealth,
+        });
+    }
+
+    private void PublishVerifiedDeviceObservationFailure(
+        PowerSource powerSource,
+        bool includeLiveReadings,
+        int? batteryPowerFlowMilliwatts,
+        Exception exception,
+        CancellationToken cancellationToken)
+    {
+        fullObservationCompleted = false;
+        cancellationToken.ThrowIfCancellationRequested();
+        string message = $"Verified device access failed: {exception.Message}";
+        ServiceStatusSnapshot current = GetStatus();
+        LiveReadings? liveReadings = includeLiveReadings
+            ? new LiveReadings(batteryPowerFlowMilliwatts, null, null)
+            : null;
+        if (current.DeviceVerified
+            && ++consecutiveVerifiedAccessFailures < ObservationFailureThreshold)
+        {
+            PublishTransientVerifiedAccessFailure(
+                powerSource,
+                liveReadings,
+                message);
+        }
+        else
+        {
+            PublishObservationUnavailable(
+                powerSource,
+                liveReadings,
+                message,
+                deviceVerified: true);
+        }
+        history.RecordSummary(
+            ControlOperationStatus.Failed,
+            GetStatus().Message);
     }
 
     private bool CanUseObservationFastPath(
@@ -4769,6 +4836,17 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         bool? StartupAnimation,
         FunctionKeyPrimaryMode? FunctionKeyPrimary,
         bool? GamingMode);
+
+    private sealed record FullDeviceObservation(
+        DeviceCapabilities Capabilities,
+        ConfirmedDeviceState Confirmed,
+        bool? StartupAnimation,
+        FunctionKeyPrimaryMode? FunctionKeyPrimary,
+        bool? GamingModeEnabled,
+        LightingRendererOwnershipState LightingOwnership,
+        FirmwareVersions? Firmware,
+        FanRpmReadings? Fans,
+        FanTemperatureReadings Temperatures);
 
     private static bool CapabilitiesEqual(
         DeviceCapabilities? left,
