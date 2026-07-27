@@ -1943,15 +1943,6 @@ public sealed class CapabilityPresentationTests
             null, null, null, false);
     }
 
-    private static async Task WaitUntilAsync(Func<bool> predicate)
-    {
-        for (int index = 0; index < 2_000 && !predicate(); index++)
-        {
-            await Task.Delay(1);
-        }
-        Assert.True(predicate());
-    }
-
     private static HashSet<int> ChargeLimits() => [50, 55, 60, 65, 70, 75, 80];
 
     private sealed class ImmediateDispatcher : IUiDispatcher

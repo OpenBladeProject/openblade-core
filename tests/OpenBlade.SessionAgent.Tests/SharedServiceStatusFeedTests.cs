@@ -179,16 +179,6 @@ public sealed class SharedServiceStatusFeedTests
             FullChargeOverride: false);
     }
 
-    private static async Task WaitUntilAsync(
-        Func<bool> condition,
-        CancellationToken cancellationToken)
-    {
-        while (!condition())
-        {
-            await Task.Delay(10, cancellationToken);
-        }
-    }
-
     private sealed class FakeStatusWatcher : IServiceStatusWatcher
     {
         private readonly Channel<ServiceWatchUpdate> updates =

@@ -65,16 +65,6 @@ public sealed class ServicePlaybackMuteIndicatorLoopTests
         await running;
     }
 
-    private static async Task WaitUntilAsync(
-        Func<bool> predicate,
-        CancellationToken cancellationToken)
-    {
-        while (!predicate())
-        {
-            await Task.Delay(10, cancellationToken);
-        }
-    }
-
     private sealed class MutableMuteSource : IPlaybackMuteStateSource
     {
         private readonly Channel<bool?> updates = Channel.CreateUnbounded<bool?>();

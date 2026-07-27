@@ -4904,15 +4904,6 @@ public sealed class MainViewModelTests
             ServiceVersion: "0.1.0-test");
     }
 
-    private static async Task WaitUntilAsync(Func<bool> predicate)
-    {
-        for (int index = 0; index < 2_000 && !predicate(); index++)
-        {
-            await Task.Delay(1);
-        }
-        Assert.True(predicate(), "The asynchronous condition was not reached.");
-    }
-
     private static HashSet<int> ChargeLimits() => [50, 55, 60, 65, 70, 75, 80];
 
     private sealed class ConcurrentPropertySet : IReadOnlyCollection<string>

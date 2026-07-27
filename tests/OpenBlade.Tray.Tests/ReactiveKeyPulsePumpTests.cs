@@ -351,12 +351,4 @@ public sealed class ReactiveKeyPulsePumpTests
         }
     }
 
-    private static async Task WaitUntilAsync(Func<bool> condition)
-    {
-        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(2));
-        while (!condition())
-        {
-            await Task.Delay(10, timeout.Token);
-        }
-    }
 }

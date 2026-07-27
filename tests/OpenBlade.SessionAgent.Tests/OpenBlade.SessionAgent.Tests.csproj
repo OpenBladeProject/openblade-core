@@ -12,6 +12,11 @@
   </ItemGroup>
   <ItemGroup>
     <Using Include="Xunit" />
+    <Using Include="OpenBlade.Testing.AsyncTest" Static="true" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Include="..\OpenBlade.Testing\AsyncTest.cs" Link="AsyncTest.cs" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\src\OpenBlade.SessionAgent\OpenBlade.SessionAgent.csproj" />

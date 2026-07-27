@@ -1008,16 +1008,6 @@ public sealed class ServiceClientTests
         return frame;
     }
 
-    private static async Task WaitUntilAsync(Func<bool> predicate)
-    {
-        for (int index = 0; index < 10_000 && !predicate(); index++)
-        {
-            await Task.Yield();
-        }
-
-        Assert.True(predicate(), "The asynchronous condition was not reached.");
-    }
-
     private static ServiceStatusSnapshot CreateStatus(long revision)
     {
         ProfileSet profiles = ProfileDefaults.CreateSafeDefaults();

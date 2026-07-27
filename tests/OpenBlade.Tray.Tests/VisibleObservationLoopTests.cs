@@ -207,15 +207,6 @@ public sealed class VisibleObservationLoopTests
         Assert.Equal(2, calls);
     }
 
-    private static async Task WaitUntilAsync(Func<bool> predicate)
-    {
-        for (int index = 0; index < 2_000 && !predicate(); index++)
-        {
-            await Task.Delay(1);
-        }
-        Assert.True(predicate(), "The asynchronous condition was not reached.");
-    }
-
     private sealed class ManualDelay
     {
         private readonly object sync = new();

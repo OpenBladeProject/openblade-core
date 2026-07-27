@@ -1497,15 +1497,6 @@ public sealed class ProductionLightingPortTests
             command.CommandId,
             Convert.ToHexString(command.Arguments.Span));
 
-    private static async Task WaitUntilAsync(Func<bool> predicate, TimeSpan timeout)
-    {
-        using var cancellation = new CancellationTokenSource(timeout);
-        while (!predicate())
-        {
-            await Task.Delay(10, cancellation.Token);
-        }
-    }
-
     private sealed class LightingSession(byte initialBrightness) : IRazerCommandSession
     {
         internal List<RazerCommandSpec> Commands { get; } = [];

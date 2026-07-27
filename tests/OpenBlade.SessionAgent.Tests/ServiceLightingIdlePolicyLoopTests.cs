@@ -275,16 +275,6 @@ public sealed class ServiceLightingIdlePolicyLoopTests
             FullChargeOverride: false);
     }
 
-    private static async Task WaitUntilAsync(
-        Func<bool> condition,
-        CancellationToken cancellationToken)
-    {
-        while (!condition())
-        {
-            await Task.Delay(10, cancellationToken);
-        }
-    }
-
     private sealed class FakeIdleTimeSource : IUserIdleTimeSource
     {
         public TimeSpan? Current { get; set; }
