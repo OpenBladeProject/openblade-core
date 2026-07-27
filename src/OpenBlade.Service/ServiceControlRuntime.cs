@@ -1421,167 +1421,169 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                     "This laptop control is unavailable right now.");
             }
 
-            try
-            {
-                if (!deviceProvider.TryGetVerifiedDevice(out IBladeDevice device))
-                {
-                    return new ControlOperationResult(
-                        ControlOperationStatus.Blocked,
-                        "This laptop control is unavailable right now.");
-                }
-
-                await device.ApplyOneShotLaptopControlAsync(value, token)
-                    .ConfigureAwait(false);
-                string label = value.Control switch
-                {
-                    OneShotLaptopControl.StartupAnimation => "Startup animation",
-                    OneShotLaptopControl.FunctionKeyPrimary => "Function key behavior",
-                    OneShotLaptopControl.GamingMode => "Gaming Mode",
-                    OneShotLaptopControl.MicrophoneMuteIndicator =>
-                        "Microphone mute indicator",
-                    _ => "Laptop control",
-                };
-                bool? refreshedStartupAnimation = null;
-                FunctionKeyPrimaryMode? refreshedFunctionKeyPrimary = null;
-                bool? refreshedGamingMode = null;
-                if (value.Control == OneShotLaptopControl.StartupAnimation)
-                {
-                    try
-                    {
-                        refreshedStartupAnimation = await device
-                            .ReadStartupAnimationAsync(token)
-                            .ConfigureAwait(false);
-                    }
-                    catch (OperationCanceledException) when (token.IsCancellationRequested)
-                    {
-                        throw;
-                    }
-                    catch
-                    {
-                        refreshedStartupAnimation = null;
-                    }
-                }
-                else if (value.Control == OneShotLaptopControl.FunctionKeyPrimary)
-                {
-                    try
-                    {
-                        refreshedFunctionKeyPrimary = await device
-                            .ReadFunctionKeyPrimaryAsync(token)
-                            .ConfigureAwait(false);
-                    }
-                    catch (OperationCanceledException) when (token.IsCancellationRequested)
-                    {
-                        throw;
-                    }
-                    catch
-                    {
-                        refreshedFunctionKeyPrimary = null;
-                    }
-                }
-                else if (value.Control == OneShotLaptopControl.GamingMode)
-                {
-                    try
-                    {
-                        refreshedGamingMode = await device
-                            .ReadGamingModeAsync(token)
-                            .ConfigureAwait(false);
-                    }
-                    catch (OperationCanceledException) when (token.IsCancellationRequested)
-                    {
-                        throw;
-                    }
-                    catch
-                    {
-                        refreshedGamingMode = null;
-                    }
-                }
-
-                bool startupReadbackMatches = refreshedStartupAnimation == value.Enabled;
-                bool functionKeyReadbackMatches =
-                    refreshedFunctionKeyPrimary == value.FunctionKeyMode;
-                bool gamingModeReadbackMatches = refreshedGamingMode == value.Enabled;
-                bool readbackMismatch =
-                    (value.Control == OneShotLaptopControl.StartupAnimation
-                        && refreshedStartupAnimation is not null
-                        && !startupReadbackMatches)
-                    || (value.Control == OneShotLaptopControl.FunctionKeyPrimary
-                        && refreshedFunctionKeyPrimary is not null
-                        && !functionKeyReadbackMatches)
-                    || (value.Control == OneShotLaptopControl.GamingMode
-                        && refreshedGamingMode is not null
-                        && !gamingModeReadbackMatches);
-                var result = new ControlOperationResult(
-                    readbackMismatch
-                        ? ControlOperationStatus.Failed
-                        : ControlOperationStatus.Applied,
-                    value.Control switch
-                    {
-                        OneShotLaptopControl.StartupAnimation when startupReadbackMatches =>
-                            $"{label} is {(value.Enabled is true ? "on" : "off")}.",
-                        OneShotLaptopControl.StartupAnimation when
-                            refreshedStartupAnimation is not null =>
-                            $"{label} did not match the requested setting.",
-                        OneShotLaptopControl.StartupAnimation =>
-                            $"{label} was applied, but its current state could not be read.",
-                        OneShotLaptopControl.FunctionKeyPrimary when functionKeyReadbackMatches =>
-                            $"{label} is {(value.FunctionKeyMode == FunctionKeyPrimaryMode.FunctionKeys ? "Function keys" : "Media keys")}.",
-                        OneShotLaptopControl.FunctionKeyPrimary when
-                            refreshedFunctionKeyPrimary is not null =>
-                            $"{label} did not match the requested setting.",
-                        OneShotLaptopControl.FunctionKeyPrimary =>
-                            $"{label} was applied, but its current state could not be read.",
-                        OneShotLaptopControl.GamingMode when gamingModeReadbackMatches =>
-                            $"{label} is {(value.Enabled is true ? "on" : "off")}.",
-                        OneShotLaptopControl.GamingMode when refreshedGamingMode is not null =>
-                            $"{label} did not match the requested setting.",
-                        OneShotLaptopControl.GamingMode =>
-                            $"{label} was applied, but its current state could not be read.",
-                        _ =>
-                            $"{label} was applied. OpenBlade cannot read its current firmware value.",
-                    });
-                if (refreshedStartupAnimation is not null)
-                {
-                    PublishIfChanged(GetStatus() with
-                    {
-                        StartupAnimationEnabled = refreshedStartupAnimation,
-                        Message = result.Message,
-                    });
-                }
-                if (refreshedFunctionKeyPrimary is not null)
-                {
-                    PublishIfChanged(GetStatus() with
-                    {
-                        FunctionKeyPrimary = refreshedFunctionKeyPrimary,
-                        Message = result.Message,
-                    });
-                }
-                if (refreshedGamingMode is not null)
-                {
-                    PublishIfChanged(GetStatus() with
-                    {
-                        GamingModeEnabled = refreshedGamingMode,
-                        Message = result.Message,
-                    });
-                }
-                history.RecordSummary(result.Status, result.Message);
-                return result;
-            }
-            catch (OperationCanceledException) when (token.IsCancellationRequested)
-            {
-                throw;
-            }
-            catch
-            {
-                var result = new ControlOperationResult(
-                    ControlOperationStatus.Failed,
-                    "The laptop control could not be applied.");
-                history.RecordSummary(result.Status, result.Message);
-                return result;
-            }
+            return await ApplyVerifiedOneShotLaptopControlAsync(value, token)
+                .ConfigureAwait(false);
         }
         finally
         {
             operationGate.Release();
+        }
+    }
+
+    private async Task<ControlOperationResult> ApplyVerifiedOneShotLaptopControlAsync(
+        ApplyOneShotLaptopControl value,
+        CancellationToken token)
+    {
+        try
+        {
+            if (!deviceProvider.TryGetVerifiedDevice(out IBladeDevice device))
+            {
+                return new ControlOperationResult(
+                    ControlOperationStatus.Blocked,
+                    "This laptop control is unavailable right now.");
+            }
+
+            await device.ApplyOneShotLaptopControlAsync(value, token)
+                .ConfigureAwait(false);
+            OneShotLaptopControlReadback readback =
+                await ReadOneShotLaptopControlStateAsync(device, value.Control, token)
+                    .ConfigureAwait(false);
+            ControlOperationResult result = CreateOneShotLaptopControlResult(value, readback);
+            PublishOneShotLaptopControlReadback(readback, result);
+            history.RecordSummary(result.Status, result.Message);
+            return result;
+        }
+        catch (OperationCanceledException) when (token.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch
+        {
+            var result = new ControlOperationResult(
+                ControlOperationStatus.Failed,
+                "The laptop control could not be applied.");
+            history.RecordSummary(result.Status, result.Message);
+            return result;
+        }
+    }
+
+    private static async Task<OneShotLaptopControlReadback>
+        ReadOneShotLaptopControlStateAsync(
+            IBladeDevice device,
+            OneShotLaptopControl control,
+            CancellationToken token)
+    {
+        try
+        {
+            return control switch
+            {
+                OneShotLaptopControl.StartupAnimation => new(
+                    await device.ReadStartupAnimationAsync(token).ConfigureAwait(false),
+                    null,
+                    null),
+                OneShotLaptopControl.FunctionKeyPrimary => new(
+                    null,
+                    await device.ReadFunctionKeyPrimaryAsync(token).ConfigureAwait(false),
+                    null),
+                OneShotLaptopControl.GamingMode => new(
+                    null,
+                    null,
+                    await device.ReadGamingModeAsync(token).ConfigureAwait(false)),
+                _ => new(null, null, null),
+            };
+        }
+        catch (OperationCanceledException) when (token.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch
+        {
+            return new(null, null, null);
+        }
+    }
+
+    private static ControlOperationResult CreateOneShotLaptopControlResult(
+        ApplyOneShotLaptopControl value,
+        OneShotLaptopControlReadback readback)
+    {
+        string label = value.Control switch
+        {
+            OneShotLaptopControl.StartupAnimation => "Startup animation",
+            OneShotLaptopControl.FunctionKeyPrimary => "Function key behavior",
+            OneShotLaptopControl.GamingMode => "Gaming Mode",
+            OneShotLaptopControl.MicrophoneMuteIndicator => "Microphone mute indicator",
+            _ => "Laptop control",
+        };
+        bool startupReadbackMatches = readback.StartupAnimation == value.Enabled;
+        bool functionKeyReadbackMatches =
+            readback.FunctionKeyPrimary == value.FunctionKeyMode;
+        bool gamingModeReadbackMatches = readback.GamingMode == value.Enabled;
+        bool readbackMismatch =
+            (value.Control == OneShotLaptopControl.StartupAnimation
+                && readback.StartupAnimation is not null
+                && !startupReadbackMatches)
+            || (value.Control == OneShotLaptopControl.FunctionKeyPrimary
+                && readback.FunctionKeyPrimary is not null
+                && !functionKeyReadbackMatches)
+            || (value.Control == OneShotLaptopControl.GamingMode
+                && readback.GamingMode is not null
+                && !gamingModeReadbackMatches);
+        return new ControlOperationResult(
+            readbackMismatch
+                ? ControlOperationStatus.Failed
+                : ControlOperationStatus.Applied,
+            value.Control switch
+            {
+                OneShotLaptopControl.StartupAnimation when startupReadbackMatches =>
+                    $"{label} is {(value.Enabled is true ? "on" : "off")}.",
+                OneShotLaptopControl.StartupAnimation when readback.StartupAnimation is not null =>
+                    $"{label} did not match the requested setting.",
+                OneShotLaptopControl.StartupAnimation =>
+                    $"{label} was applied, but its current state could not be read.",
+                OneShotLaptopControl.FunctionKeyPrimary when functionKeyReadbackMatches =>
+                    $"{label} is {(value.FunctionKeyMode == FunctionKeyPrimaryMode.FunctionKeys ? "Function keys" : "Media keys")}.",
+                OneShotLaptopControl.FunctionKeyPrimary when
+                    readback.FunctionKeyPrimary is not null =>
+                    $"{label} did not match the requested setting.",
+                OneShotLaptopControl.FunctionKeyPrimary =>
+                    $"{label} was applied, but its current state could not be read.",
+                OneShotLaptopControl.GamingMode when gamingModeReadbackMatches =>
+                    $"{label} is {(value.Enabled is true ? "on" : "off")}.",
+                OneShotLaptopControl.GamingMode when readback.GamingMode is not null =>
+                    $"{label} did not match the requested setting.",
+                OneShotLaptopControl.GamingMode =>
+                    $"{label} was applied, but its current state could not be read.",
+                _ => $"{label} was applied. OpenBlade cannot read its current firmware value.",
+            });
+    }
+
+    private void PublishOneShotLaptopControlReadback(
+        OneShotLaptopControlReadback readback,
+        ControlOperationResult result)
+    {
+        if (readback.StartupAnimation is not null)
+        {
+            PublishIfChanged(GetStatus() with
+            {
+                StartupAnimationEnabled = readback.StartupAnimation,
+                Message = result.Message,
+            });
+        }
+        if (readback.FunctionKeyPrimary is not null)
+        {
+            PublishIfChanged(GetStatus() with
+            {
+                FunctionKeyPrimary = readback.FunctionKeyPrimary,
+                Message = result.Message,
+            });
+        }
+        if (readback.GamingMode is not null)
+        {
+            PublishIfChanged(GetStatus() with
+            {
+                GamingModeEnabled = readback.GamingMode,
+                Message = result.Message,
+            });
         }
     }
 
@@ -4612,6 +4614,11 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
 
         public FirmwareVersions Capture() => FirmwareVersions.Unavailable();
     }
+
+    private sealed record OneShotLaptopControlReadback(
+        bool? StartupAnimation,
+        FunctionKeyPrimaryMode? FunctionKeyPrimary,
+        bool? GamingMode);
 
     private static bool CapabilitiesEqual(
         DeviceCapabilities? left,
