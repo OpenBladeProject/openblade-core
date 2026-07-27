@@ -1,6 +1,6 @@
 namespace OpenBlade.Protocol;
 
-public sealed record HidInterfaceInfo(
+internal sealed record HidInterfaceInfo(
     string DevicePath,
     ushort VendorId,
     ushort ProductId,
@@ -8,7 +8,7 @@ public sealed record HidInterfaceInfo(
     ushort Usage,
     ushort FeatureReportByteLength);
 
-public static class WindowsHidEnumerator
+internal static class WindowsHidEnumerator
 {
     private static readonly HidOpenParameters DiagnosticOpenParameters = new(
         DesiredAccess: 0,

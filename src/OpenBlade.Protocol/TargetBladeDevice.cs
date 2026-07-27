@@ -27,7 +27,7 @@ public static class TargetBladeDevice
         && identity.Usage == MatrixUsage
         && identity.FeatureReportByteLength == MatrixFeatureReportByteLength;
 
-    public static bool IsExactInteractiveValidationTarget(
+    internal static bool IsExactInteractiveValidationTarget(
         string? model,
         HidInterfaceInfo? interfaceInfo) =>
         string.Equals(model, Model, StringComparison.Ordinal)

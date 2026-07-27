@@ -64,7 +64,7 @@ public sealed class TargetBladeDeviceTests
             ExactInterface));
     }
 
-    public static TheoryData<string?, HidInterfaceInfo> InexactTargets => new()
+    public static TheoryData<string?, object> InexactTargets => new()
     {
         { "rz09-0581", ExactInterface },
         { null, ExactInterface },
@@ -79,11 +79,11 @@ public sealed class TargetBladeDeviceTests
     [MemberData(nameof(InexactTargets))]
     public void IsExactInteractiveValidationTarget_RejectsAnyInexactField(
         string? model,
-        HidInterfaceInfo interfaceInfo)
+        object interfaceInfo)
     {
         Assert.False(TargetBladeDevice.IsExactInteractiveValidationTarget(
             model,
-            interfaceInfo));
+            Assert.IsType<HidInterfaceInfo>(interfaceInfo)));
     }
 
     [Fact]
@@ -94,7 +94,9 @@ public sealed class TargetBladeDeviceTests
             null));
 
         ParameterInfo interfaceParameter = typeof(TargetBladeDevice)
-            .GetMethod(nameof(TargetBladeDevice.IsExactInteractiveValidationTarget))!
+            .GetMethod(
+                nameof(TargetBladeDevice.IsExactInteractiveValidationTarget),
+                BindingFlags.NonPublic | BindingFlags.Static)!
             .GetParameters()[1];
         NullabilityInfo nullability = new NullabilityInfoContext().Create(interfaceParameter);
 

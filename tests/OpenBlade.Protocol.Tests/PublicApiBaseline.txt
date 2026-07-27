@@ -167,35 +167,6 @@ type sealed class OpenBlade.Protocol.HardwareAccessDecision
   property System.Boolean Safe { get; }
   property System.Collections.Generic.IReadOnlyList<System.String> Conflicts { get; init; }
   property System.String DetectionFailure { get; init; }
-type sealed class OpenBlade.Protocol.HidInterfaceInfo
-  interface System.IEquatable<OpenBlade.Protocol.HidInterfaceInfo>
-  ctor (System.String DevicePath, System.UInt16 VendorId, System.UInt16 ProductId, System.UInt16 UsagePage, System.UInt16 Usage, System.UInt16 FeatureReportByteLength)
-  method OpenBlade.Protocol.HidInterfaceInfo <Clone>$()
-  method System.String get_DevicePath()
-  method System.UInt16 get_FeatureReportByteLength()
-  method System.UInt16 get_ProductId()
-  method System.UInt16 get_Usage()
-  method System.UInt16 get_UsagePage()
-  method System.UInt16 get_VendorId()
-  method System.Void Deconstruct(out System.String DevicePath, out System.UInt16 VendorId, out System.UInt16 ProductId, out System.UInt16 UsagePage, out System.UInt16 Usage, out System.UInt16 FeatureReportByteLength)
-  method System.Void set_DevicePath(System.String value)
-  method System.Void set_FeatureReportByteLength(System.UInt16 value)
-  method System.Void set_ProductId(System.UInt16 value)
-  method System.Void set_Usage(System.UInt16 value)
-  method System.Void set_UsagePage(System.UInt16 value)
-  method System.Void set_VendorId(System.UInt16 value)
-  method override System.Boolean Equals(System.Object obj)
-  method override System.Int32 GetHashCode()
-  method override System.String ToString()
-  method static System.Boolean op_Equality(OpenBlade.Protocol.HidInterfaceInfo left, OpenBlade.Protocol.HidInterfaceInfo right)
-  method static System.Boolean op_Inequality(OpenBlade.Protocol.HidInterfaceInfo left, OpenBlade.Protocol.HidInterfaceInfo right)
-  method virtual System.Boolean Equals(OpenBlade.Protocol.HidInterfaceInfo other)
-  property System.String DevicePath { get; init; }
-  property System.UInt16 FeatureReportByteLength { get; init; }
-  property System.UInt16 ProductId { get; init; }
-  property System.UInt16 Usage { get; init; }
-  property System.UInt16 UsagePage { get; init; }
-  property System.UInt16 VendorId { get; init; }
 type enum OpenBlade.Protocol.HidProtocolValidationFailure
   field System.Int32 value__
   field const OpenBlade.Protocol.HidProtocolValidationFailure Checksum = 2
@@ -624,7 +595,6 @@ type static class OpenBlade.Protocol.TargetBladeDevice
   field const System.UInt16 UsagePage = 1
   field const System.UInt16 VendorId = 5426
   method static System.Boolean CanCarryProtocolReport(System.UInt16 featureReportByteLength)
-  method static System.Boolean IsExactInteractiveValidationTarget(System.String model, OpenBlade.Protocol.HidInterfaceInfo interfaceInfo)
   method static System.Boolean Matches(System.UInt16 vendorId, System.UInt16 productId)
 type sealed class OpenBlade.Protocol.UnvalidatedCommandException
   base System.Exception
@@ -638,10 +608,6 @@ type sealed class OpenBlade.Protocol.WindowsHardwareAccessGuard
   ctor (OpenBlade.Protocol.IControllerPresenceMonitor monitor)
   ctor (OpenBlade.Protocol.IRunningProcessSource processSource, OpenBlade.Protocol.IWindowsServiceSource serviceSource)
   method virtual OpenBlade.Protocol.HardwareAccessDecision Check()
-type static class OpenBlade.Protocol.WindowsHidEnumerator
-  method static System.Collections.Generic.IReadOnlyList<OpenBlade.Protocol.HidInterfaceInfo> FindTargetCollections()
-  method static System.Collections.Generic.IReadOnlyList<OpenBlade.Protocol.HidInterfaceInfo> FindTargetInterfaces()
-  method static System.Collections.Generic.IReadOnlyList<OpenBlade.Protocol.HidInterfaceInfo> SelectProductionInterfaces(System.Collections.Generic.IEnumerable<OpenBlade.Protocol.HidInterfaceInfo> interfaces)
 type sealed class OpenBlade.Protocol.WindowsServiceSnapshot
   interface System.IEquatable<OpenBlade.Protocol.WindowsServiceSnapshot>
   ctor (System.String ServiceName, System.String DisplayName, OpenBlade.Protocol.WindowsServiceState State)
