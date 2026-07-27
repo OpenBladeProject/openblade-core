@@ -1,0 +1,676 @@
+# Reviewed exported API baseline. Regenerate with build/Update-PublicApiBaselines.ps1 and review the diff.
+type static class OpenBlade.Protocol.BatteryValidationFactory
+  method static OpenBlade.Protocol.BatteryValidationProbeResult ProbeWindows()
+  method static OpenBlade.Protocol.BatteryValidationProbeResult ProbeWindowsForService()
+  method static OpenBlade.Protocol.IBatteryQuerySequenceRunFactory CreateWindowsQuerySequence()
+  method static OpenBlade.Protocol.IBatteryQuerySequenceRunFactory CreateWindowsQuerySequenceForService()
+  method static OpenBlade.Protocol.IBatteryValidationRunFactory CreateWindows()
+  method static OpenBlade.Protocol.IFanRpmQueryRunFactory CreateWindowsFanRpmQuery()
+  method static OpenBlade.Protocol.ILightingBrightnessQueryRunner CreateWindowsLightingBrightnessQuery()
+  method static OpenBlade.Protocol.IPerformanceFanDiscriminatorQueryRunner CreateWindowsPerformanceFanDiscriminatorQuery()
+  method static OpenBlade.Protocol.IPerformanceFanSetterValidationRunner CreateWindowsPerformanceFanSetterValidation()
+  method static OpenBlade.Protocol.IProtectionOffValidationRunFactory CreateWindowsProtectionOffValidation()
+  method static OpenBlade.Protocol.ITemporaryFullChargeQueryRunFactory CreateWindowsTemporaryFullChargeQuery()
+  method static OpenBlade.Protocol.ITemporaryFullChargeValidationRunFactory CreateWindowsTemporaryFullChargeValidation()
+type enum OpenBlade.Protocol.BatteryValidationProbeClassification
+  field System.Int32 value__
+  field const OpenBlade.Protocol.BatteryValidationProbeClassification AmbiguousExactHandles = 9
+  field const OpenBlade.Protocol.BatteryValidationProbeClassification CandidateOpenFailed = 6
+  field const OpenBlade.Protocol.BatteryValidationProbeClassification ConflictBlocked = 3
+  field const OpenBlade.Protocol.BatteryValidationProbeClassification ConflictDetectionFailed = 4
+  field const OpenBlade.Protocol.BatteryValidationProbeClassification EnumerationFailed = 5
+  field const OpenBlade.Protocol.BatteryValidationProbeClassification HandleIdentityFailed = 7
+  field const OpenBlade.Protocol.BatteryValidationProbeClassification HostIdentityBlocked = 2
+  field const OpenBlade.Protocol.BatteryValidationProbeClassification NoExactHandle = 8
+  field const OpenBlade.Protocol.BatteryValidationProbeClassification Ready = 0
+  field const OpenBlade.Protocol.BatteryValidationProbeClassification ReadyWithAccessFallback = 1
+type sealed class OpenBlade.Protocol.BatteryValidationProbeResult
+  interface System.IEquatable<OpenBlade.Protocol.BatteryValidationProbeResult>
+  ctor (OpenBlade.Protocol.BatteryValidationProbeStage Stage, OpenBlade.Protocol.BatteryValidationProbeClassification Classification, System.Boolean HostIdentityMatched, System.Boolean ConflictCheckPassed, System.Int32 EnumeratedCandidateCount, System.Int32 CandidateOpenAttemptCount, System.Int32 CandidateOpenSuccessCount, System.Nullable<System.Int32> CandidateOpenWin32Error, System.Int32 CandidateAccessFallbackCount, System.Int32 IdentityReadCount, System.Int32 VendorMatchCount, System.Int32 ProductMatchCount, System.Int32 UsagePageMatchCount, System.Int32 UsageMatchCount, System.Int32 FeatureLengthMatchCount, System.Int32 ExactMatchCount)
+  method OpenBlade.Protocol.BatteryValidationProbeClassification get_Classification()
+  method OpenBlade.Protocol.BatteryValidationProbeResult <Clone>$()
+  method OpenBlade.Protocol.BatteryValidationProbeStage get_Stage()
+  method System.Boolean get_ConflictCheckPassed()
+  method System.Boolean get_HostIdentityMatched()
+  method System.Int32 get_CandidateAccessFallbackCount()
+  method System.Int32 get_CandidateOpenAttemptCount()
+  method System.Int32 get_CandidateOpenSuccessCount()
+  method System.Int32 get_EnumeratedCandidateCount()
+  method System.Int32 get_ExactMatchCount()
+  method System.Int32 get_FeatureLengthMatchCount()
+  method System.Int32 get_IdentityReadCount()
+  method System.Int32 get_ProductMatchCount()
+  method System.Int32 get_UsageMatchCount()
+  method System.Int32 get_UsagePageMatchCount()
+  method System.Int32 get_VendorMatchCount()
+  method System.Nullable<System.Int32> get_CandidateOpenWin32Error()
+  method System.Void Deconstruct(out OpenBlade.Protocol.BatteryValidationProbeStage Stage, out OpenBlade.Protocol.BatteryValidationProbeClassification Classification, out System.Boolean HostIdentityMatched, out System.Boolean ConflictCheckPassed, out System.Int32 EnumeratedCandidateCount, out System.Int32 CandidateOpenAttemptCount, out System.Int32 CandidateOpenSuccessCount, out System.Nullable<System.Int32> CandidateOpenWin32Error, out System.Int32 CandidateAccessFallbackCount, out System.Int32 IdentityReadCount, out System.Int32 VendorMatchCount, out System.Int32 ProductMatchCount, out System.Int32 UsagePageMatchCount, out System.Int32 UsageMatchCount, out System.Int32 FeatureLengthMatchCount, out System.Int32 ExactMatchCount)
+  method System.Void set_CandidateAccessFallbackCount(System.Int32 value)
+  method System.Void set_CandidateOpenAttemptCount(System.Int32 value)
+  method System.Void set_CandidateOpenSuccessCount(System.Int32 value)
+  method System.Void set_CandidateOpenWin32Error(System.Nullable<System.Int32> value)
+  method System.Void set_Classification(OpenBlade.Protocol.BatteryValidationProbeClassification value)
+  method System.Void set_ConflictCheckPassed(System.Boolean value)
+  method System.Void set_EnumeratedCandidateCount(System.Int32 value)
+  method System.Void set_ExactMatchCount(System.Int32 value)
+  method System.Void set_FeatureLengthMatchCount(System.Int32 value)
+  method System.Void set_HostIdentityMatched(System.Boolean value)
+  method System.Void set_IdentityReadCount(System.Int32 value)
+  method System.Void set_ProductMatchCount(System.Int32 value)
+  method System.Void set_Stage(OpenBlade.Protocol.BatteryValidationProbeStage value)
+  method System.Void set_UsageMatchCount(System.Int32 value)
+  method System.Void set_UsagePageMatchCount(System.Int32 value)
+  method System.Void set_VendorMatchCount(System.Int32 value)
+  method override System.Boolean Equals(System.Object obj)
+  method override System.Int32 GetHashCode()
+  method override System.String ToString()
+  method static System.Boolean op_Equality(OpenBlade.Protocol.BatteryValidationProbeResult left, OpenBlade.Protocol.BatteryValidationProbeResult right)
+  method static System.Boolean op_Inequality(OpenBlade.Protocol.BatteryValidationProbeResult left, OpenBlade.Protocol.BatteryValidationProbeResult right)
+  method virtual System.Boolean Equals(OpenBlade.Protocol.BatteryValidationProbeResult other)
+  property OpenBlade.Protocol.BatteryValidationProbeClassification Classification { get; init; }
+  property OpenBlade.Protocol.BatteryValidationProbeStage Stage { get; init; }
+  property System.Boolean ConflictCheckPassed { get; init; }
+  property System.Boolean HostIdentityMatched { get; init; }
+  property System.Int32 CandidateAccessFallbackCount { get; init; }
+  property System.Int32 CandidateOpenAttemptCount { get; init; }
+  property System.Int32 CandidateOpenSuccessCount { get; init; }
+  property System.Int32 EnumeratedCandidateCount { get; init; }
+  property System.Int32 ExactMatchCount { get; init; }
+  property System.Int32 FeatureLengthMatchCount { get; init; }
+  property System.Int32 IdentityReadCount { get; init; }
+  property System.Int32 ProductMatchCount { get; init; }
+  property System.Int32 UsageMatchCount { get; init; }
+  property System.Int32 UsagePageMatchCount { get; init; }
+  property System.Int32 VendorMatchCount { get; init; }
+  property System.Nullable<System.Int32> CandidateOpenWin32Error { get; init; }
+type enum OpenBlade.Protocol.BatteryValidationProbeStage
+  field System.Int32 value__
+  field const OpenBlade.Protocol.BatteryValidationProbeStage CandidateOpen = 3
+  field const OpenBlade.Protocol.BatteryValidationProbeStage Cardinality = 5
+  field const OpenBlade.Protocol.BatteryValidationProbeStage ConflictCheck = 1
+  field const OpenBlade.Protocol.BatteryValidationProbeStage Enumeration = 2
+  field const OpenBlade.Protocol.BatteryValidationProbeStage HandleIdentity = 4
+  field const OpenBlade.Protocol.BatteryValidationProbeStage HostIdentity = 0
+  field const OpenBlade.Protocol.BatteryValidationProbeStage Ready = 6
+type enum OpenBlade.Protocol.BatteryValidationSetting
+  field System.Int32 value__
+  field const OpenBlade.Protocol.BatteryValidationSetting Limit50 = 1
+  field const OpenBlade.Protocol.BatteryValidationSetting Limit55 = 2
+  field const OpenBlade.Protocol.BatteryValidationSetting Limit60 = 3
+  field const OpenBlade.Protocol.BatteryValidationSetting Limit65 = 4
+  field const OpenBlade.Protocol.BatteryValidationSetting Limit70 = 5
+  field const OpenBlade.Protocol.BatteryValidationSetting Limit75 = 6
+  field const OpenBlade.Protocol.BatteryValidationSetting Limit80 = 7
+  field const OpenBlade.Protocol.BatteryValidationSetting ProtectionOff = 0
+type sealed class OpenBlade.Protocol.BladeWriteException
+  base System.Exception
+  ctor (OpenBlade.Protocol.WriteSubmissionState submissionState, System.String message, System.Exception innerException = null)
+  method OpenBlade.Protocol.WriteSubmissionState get_SubmissionState()
+  property OpenBlade.Protocol.WriteSubmissionState SubmissionState { get; }
+type static class OpenBlade.Protocol.CapturedFixtureFile
+  method static System.Threading.Tasks.Task ValidateCapturedFixtureAsync(System.String path, System.Threading.CancellationToken cancellationToken = null)
+type sealed class OpenBlade.Protocol.ControllerPresenceObservation
+  interface System.IEquatable<OpenBlade.Protocol.ControllerPresenceObservation>
+  ctor (System.Collections.Generic.IReadOnlyList<System.String> PotentialControllers, System.String DetectionWarning)
+  method OpenBlade.Protocol.ControllerPresenceObservation <Clone>$()
+  method System.Collections.Generic.IReadOnlyList<System.String> get_PotentialControllers()
+  method System.String get_DetectionWarning()
+  method System.Void Deconstruct(out System.Collections.Generic.IReadOnlyList<System.String> PotentialControllers, out System.String DetectionWarning)
+  method System.Void set_DetectionWarning(System.String value)
+  method System.Void set_PotentialControllers(System.Collections.Generic.IReadOnlyList<System.String> value)
+  method override System.Boolean Equals(System.Object obj)
+  method override System.Int32 GetHashCode()
+  method override System.String ToString()
+  method static System.Boolean op_Equality(OpenBlade.Protocol.ControllerPresenceObservation left, OpenBlade.Protocol.ControllerPresenceObservation right)
+  method static System.Boolean op_Inequality(OpenBlade.Protocol.ControllerPresenceObservation left, OpenBlade.Protocol.ControllerPresenceObservation right)
+  method virtual System.Boolean Equals(OpenBlade.Protocol.ControllerPresenceObservation other)
+  property System.Collections.Generic.IReadOnlyList<System.String> PotentialControllers { get; init; }
+  property System.String DetectionWarning { get; init; }
+type sealed class OpenBlade.Protocol.FanRpmReadings
+  interface System.IEquatable<OpenBlade.Protocol.FanRpmReadings>
+  ctor (System.Int32 Selector1Rpm, System.Int32 Selector2Rpm)
+  method OpenBlade.Protocol.FanRpmReadings <Clone>$()
+  method System.Int32 get_MaxRpm()
+  method System.Int32 get_Selector1Rpm()
+  method System.Int32 get_Selector2Rpm()
+  method System.Void Deconstruct(out System.Int32 Selector1Rpm, out System.Int32 Selector2Rpm)
+  method System.Void set_Selector1Rpm(System.Int32 value)
+  method System.Void set_Selector2Rpm(System.Int32 value)
+  method override System.Boolean Equals(System.Object obj)
+  method override System.Int32 GetHashCode()
+  method override System.String ToString()
+  method static System.Boolean op_Equality(OpenBlade.Protocol.FanRpmReadings left, OpenBlade.Protocol.FanRpmReadings right)
+  method static System.Boolean op_Inequality(OpenBlade.Protocol.FanRpmReadings left, OpenBlade.Protocol.FanRpmReadings right)
+  method virtual System.Boolean Equals(OpenBlade.Protocol.FanRpmReadings other)
+  property System.Int32 MaxRpm { get; }
+  property System.Int32 Selector1Rpm { get; init; }
+  property System.Int32 Selector2Rpm { get; init; }
+type sealed class OpenBlade.Protocol.HardwareAccessDecision
+  interface System.IEquatable<OpenBlade.Protocol.HardwareAccessDecision>
+  ctor (System.Collections.Generic.IReadOnlyList<System.String> Conflicts, System.String DetectionFailure)
+  method OpenBlade.Protocol.HardwareAccessDecision <Clone>$()
+  method System.Boolean get_Safe()
+  method System.Collections.Generic.IReadOnlyList<System.String> get_Conflicts()
+  method System.String get_DetectionFailure()
+  method System.Void Deconstruct(out System.Collections.Generic.IReadOnlyList<System.String> Conflicts, out System.String DetectionFailure)
+  method System.Void set_Conflicts(System.Collections.Generic.IReadOnlyList<System.String> value)
+  method System.Void set_DetectionFailure(System.String value)
+  method override System.Boolean Equals(System.Object obj)
+  method override System.Int32 GetHashCode()
+  method override System.String ToString()
+  method static System.Boolean op_Equality(OpenBlade.Protocol.HardwareAccessDecision left, OpenBlade.Protocol.HardwareAccessDecision right)
+  method static System.Boolean op_Inequality(OpenBlade.Protocol.HardwareAccessDecision left, OpenBlade.Protocol.HardwareAccessDecision right)
+  method virtual System.Boolean Equals(OpenBlade.Protocol.HardwareAccessDecision other)
+  property System.Boolean Safe { get; }
+  property System.Collections.Generic.IReadOnlyList<System.String> Conflicts { get; init; }
+  property System.String DetectionFailure { get; init; }
+type sealed class OpenBlade.Protocol.HidInterfaceInfo
+  interface System.IEquatable<OpenBlade.Protocol.HidInterfaceInfo>
+  ctor (System.String DevicePath, System.UInt16 VendorId, System.UInt16 ProductId, System.UInt16 UsagePage, System.UInt16 Usage, System.UInt16 FeatureReportByteLength)
+  method OpenBlade.Protocol.HidInterfaceInfo <Clone>$()
+  method System.String get_DevicePath()
+  method System.UInt16 get_FeatureReportByteLength()
+  method System.UInt16 get_ProductId()
+  method System.UInt16 get_Usage()
+  method System.UInt16 get_UsagePage()
+  method System.UInt16 get_VendorId()
+  method System.Void Deconstruct(out System.String DevicePath, out System.UInt16 VendorId, out System.UInt16 ProductId, out System.UInt16 UsagePage, out System.UInt16 Usage, out System.UInt16 FeatureReportByteLength)
+  method System.Void set_DevicePath(System.String value)
+  method System.Void set_FeatureReportByteLength(System.UInt16 value)
+  method System.Void set_ProductId(System.UInt16 value)
+  method System.Void set_Usage(System.UInt16 value)
+  method System.Void set_UsagePage(System.UInt16 value)
+  method System.Void set_VendorId(System.UInt16 value)
+  method override System.Boolean Equals(System.Object obj)
+  method override System.Int32 GetHashCode()
+  method override System.String ToString()
+  method static System.Boolean op_Equality(OpenBlade.Protocol.HidInterfaceInfo left, OpenBlade.Protocol.HidInterfaceInfo right)
+  method static System.Boolean op_Inequality(OpenBlade.Protocol.HidInterfaceInfo left, OpenBlade.Protocol.HidInterfaceInfo right)
+  method virtual System.Boolean Equals(OpenBlade.Protocol.HidInterfaceInfo other)
+  property System.String DevicePath { get; init; }
+  property System.UInt16 FeatureReportByteLength { get; init; }
+  property System.UInt16 ProductId { get; init; }
+  property System.UInt16 Usage { get; init; }
+  property System.UInt16 UsagePage { get; init; }
+  property System.UInt16 VendorId { get; init; }
+type enum OpenBlade.Protocol.HidProtocolValidationFailure
+  field System.Int32 value__
+  field const OpenBlade.Protocol.HidProtocolValidationFailure Checksum = 2
+  field const OpenBlade.Protocol.HidProtocolValidationFailure CommandClassMismatch = 4
+  field const OpenBlade.Protocol.HidProtocolValidationFailure CommandIdMismatch = 5
+  field const OpenBlade.Protocol.HidProtocolValidationFailure EnvelopeLength = 1
+  field const OpenBlade.Protocol.HidProtocolValidationFailure PayloadLength = 7
+  field const OpenBlade.Protocol.HidProtocolValidationFailure PayloadValidator = 8
+  field const OpenBlade.Protocol.HidProtocolValidationFailure ReportId = 0
+  field const OpenBlade.Protocol.HidProtocolValidationFailure Status = 6
+  field const OpenBlade.Protocol.HidProtocolValidationFailure TransactionMismatch = 3
+type struct OpenBlade.Protocol.HidSessionFailureDiagnostic
+  interface System.IEquatable<OpenBlade.Protocol.HidSessionFailureDiagnostic>
+  ctor (OpenBlade.Protocol.HidSessionFailurePhase Phase, OpenBlade.Protocol.HidSessionFailureKind Failure, System.Nullable<System.Int32> NativeWin32Error, System.Nullable<System.Int32> TransferredByteCount)
+  method OpenBlade.Protocol.HidSessionFailureKind get_Failure()
+  method OpenBlade.Protocol.HidSessionFailurePhase get_Phase()
+  method System.Nullable<OpenBlade.Protocol.HidProtocolValidationFailure> get_ProtocolValidationFailure()
+  method System.Nullable<System.Int32> get_NativeWin32Error()
+  method System.Nullable<System.Int32> get_TransferredByteCount()
+  method System.Void Deconstruct(out OpenBlade.Protocol.HidSessionFailurePhase Phase, out OpenBlade.Protocol.HidSessionFailureKind Failure, out System.Nullable<System.Int32> NativeWin32Error, out System.Nullable<System.Int32> TransferredByteCount)
+  method System.Void set_Failure(OpenBlade.Protocol.HidSessionFailureKind value)
+  method System.Void set_NativeWin32Error(System.Nullable<System.Int32> value)
+  method System.Void set_Phase(OpenBlade.Protocol.HidSessionFailurePhase value)
+  method System.Void set_ProtocolValidationFailure(System.Nullable<OpenBlade.Protocol.HidProtocolValidationFailure> value)
+  method System.Void set_TransferredByteCount(System.Nullable<System.Int32> value)
+  method override System.Boolean Equals(System.Object obj)
+  method override System.Int32 GetHashCode()
+  method override System.String ToString()
+  method static System.Boolean op_Equality(OpenBlade.Protocol.HidSessionFailureDiagnostic left, OpenBlade.Protocol.HidSessionFailureDiagnostic right)
+  method static System.Boolean op_Inequality(OpenBlade.Protocol.HidSessionFailureDiagnostic left, OpenBlade.Protocol.HidSessionFailureDiagnostic right)
+  method virtual System.Boolean Equals(OpenBlade.Protocol.HidSessionFailureDiagnostic other)
+  property OpenBlade.Protocol.HidSessionFailureKind Failure { get; init; }
+  property OpenBlade.Protocol.HidSessionFailurePhase Phase { get; init; }
+  property System.Nullable<OpenBlade.Protocol.HidProtocolValidationFailure> ProtocolValidationFailure { get; init; }
+  property System.Nullable<System.Int32> NativeWin32Error { get; init; }
+  property System.Nullable<System.Int32> TransferredByteCount { get; init; }
+type enum OpenBlade.Protocol.HidSessionFailureKind
+  field System.Int32 value__
+  field const OpenBlade.Protocol.HidSessionFailureKind Canceled = 4
+  field const OpenBlade.Protocol.HidSessionFailureKind ConflictBlocked = 1
+  field const OpenBlade.Protocol.HidSessionFailureKind ConflictDetectionFailed = 2
+  field const OpenBlade.Protocol.HidSessionFailureKind Disposed = 7
+  field const OpenBlade.Protocol.HidSessionFailureKind Exhausted = 6
+  field const OpenBlade.Protocol.HidSessionFailureKind IdentityBlocked = 0
+  field const OpenBlade.Protocol.HidSessionFailureKind NativeIoFailure = 9
+  field const OpenBlade.Protocol.HidSessionFailureKind Poisoned = 5
+  field const OpenBlade.Protocol.HidSessionFailureKind ProtocolFailure = 10
+  field const OpenBlade.Protocol.HidSessionFailureKind QueuedCanceled = 3
+  field const OpenBlade.Protocol.HidSessionFailureKind Timeout = 8
+type enum OpenBlade.Protocol.HidSessionFailurePhase
+  field System.Int32 value__
+  field const OpenBlade.Protocol.HidSessionFailurePhase GetCompletion = 4
+  field const OpenBlade.Protocol.HidSessionFailurePhase GetSubmit = 3
+  field const OpenBlade.Protocol.HidSessionFailurePhase Guard = 0
+  field const OpenBlade.Protocol.HidSessionFailurePhase ProtocolValidation = 5
+  field const OpenBlade.Protocol.HidSessionFailurePhase SetCompletion = 2
+  field const OpenBlade.Protocol.HidSessionFailurePhase SetSubmit = 1
+type struct OpenBlade.Protocol.HidSessionResult<T>
+  interface System.IEquatable<OpenBlade.Protocol.HidSessionResult<T>>
+  ctor (T Value, System.Nullable<OpenBlade.Protocol.HidSessionFailureKind> Failure)
+  method System.Nullable<OpenBlade.Protocol.HidSessionFailureDiagnostic> get_Diagnostic()
+  method System.Nullable<OpenBlade.Protocol.HidSessionFailureKind> get_Failure()
+  method System.Void Deconstruct(out T Value, out System.Nullable<OpenBlade.Protocol.HidSessionFailureKind> Failure)
+  method System.Void set_Diagnostic(System.Nullable<OpenBlade.Protocol.HidSessionFailureDiagnostic> value)
+  method System.Void set_Failure(System.Nullable<OpenBlade.Protocol.HidSessionFailureKind> value)
+  method System.Void set_Value(T value)
+  method T get_Value()
+  method override System.Boolean Equals(System.Object obj)
+  method override System.Int32 GetHashCode()
+  method override System.String ToString()
+  method static System.Boolean op_Equality(OpenBlade.Protocol.HidSessionResult<T> left, OpenBlade.Protocol.HidSessionResult<T> right)
+  method static System.Boolean op_Inequality(OpenBlade.Protocol.HidSessionResult<T> left, OpenBlade.Protocol.HidSessionResult<T> right)
+  method virtual System.Boolean Equals(OpenBlade.Protocol.HidSessionResult<T> other)
+  property System.Nullable<OpenBlade.Protocol.HidSessionFailureDiagnostic> Diagnostic { get; init; }
+  property System.Nullable<OpenBlade.Protocol.HidSessionFailureKind> Failure { get; init; }
+  property T Value { get; init; }
+type struct OpenBlade.Protocol.HidUnit
+  interface System.IEquatable<OpenBlade.Protocol.HidUnit>
+  method override System.Boolean Equals(System.Object obj)
+  method override System.Int32 GetHashCode()
+  method override System.String ToString()
+  method static System.Boolean op_Equality(OpenBlade.Protocol.HidUnit left, OpenBlade.Protocol.HidUnit right)
+  method static System.Boolean op_Inequality(OpenBlade.Protocol.HidUnit left, OpenBlade.Protocol.HidUnit right)
+  method virtual System.Boolean Equals(OpenBlade.Protocol.HidUnit other)
+type interface OpenBlade.Protocol.IBatteryQuerySequencePort
+  interface System.IAsyncDisposable
+  method abstract System.Threading.Tasks.Task<OpenBlade.Protocol.HidSessionResult<OpenBlade.Protocol.BatteryValidationSetting>> QueryAsync(System.Threading.CancellationToken cancellationToken)
+type interface OpenBlade.Protocol.IBatteryQuerySequenceRunFactory
+  method abstract System.Threading.Tasks.Task<OpenBlade.Protocol.HidSessionResult<OpenBlade.Protocol.IBatteryQuerySequencePort>> OpenAsync(System.Threading.CancellationToken cancellationToken)
+type interface OpenBlade.Protocol.IBatteryValidationPort
+  interface System.IAsyncDisposable
+  method abstract System.Threading.Tasks.Task<OpenBlade.Protocol.HidSessionResult<OpenBlade.Protocol.BatteryValidationSetting>> QueryAsync(System.Threading.CancellationToken cancellationToken)
+  method abstract System.Threading.Tasks.Task<OpenBlade.Protocol.HidSessionResult<OpenBlade.Protocol.HidUnit>> ApplyAsync(OpenBlade.Protocol.BatteryValidationSetting setting, System.Threading.CancellationToken cancellationToken)
+type interface OpenBlade.Protocol.IBatteryValidationRunFactory
+  method abstract System.Threading.Tasks.Task<OpenBlade.Protocol.HidSessionResult<OpenBlade.Protocol.IBatteryValidationPort>> OpenAsync(System.Threading.CancellationToken cancellationToken)
+type interface OpenBlade.Protocol.IBladeDevice
+  method abstract System.Threading.Tasks.Task SetBatteryProtectionOffAsync(System.Threading.CancellationToken cancellationToken)
+  method abstract System.Threading.Tasks.Task SetChargeLimitAsync(OpenBlade.Contracts.BatteryPolicy value, System.Threading.CancellationToken cancellationToken)
+  method abstract System.Threading.Tasks.Task SetFanModeAsync(OpenBlade.Contracts.FanMode value, System.Threading.CancellationToken cancellationToken)
+  method abstract System.Threading.Tasks.Task SetLightingAsync(OpenBlade.Contracts.LightingSettings value, System.Threading.CancellationToken cancellationToken)
+  method abstract System.Threading.Tasks.Task SetPerformanceAsync(OpenBlade.Contracts.PerformancePreset value, System.Threading.CancellationToken cancellationToken)
+  method abstract System.Threading.Tasks.Task SetTemporaryFullChargeAsync(System.Boolean enabled, System.Threading.CancellationToken cancellationToken)
+  method abstract System.Threading.Tasks.Task<OpenBlade.Contracts.AdapterPowerState> ReadAdapterPowerStateAsync(System.Threading.CancellationToken cancellationToken)
+  method abstract System.Threading.Tasks.Task<OpenBlade.Contracts.ConfirmedDeviceState> ReadStateAsync(System.Threading.CancellationToken cancellationToken)
+  method abstract System.Threading.Tasks.Task<OpenBlade.Contracts.DeviceCapabilities> ReadCapabilitiesAsync(System.Threading.CancellationToken cancellationToken)
+  method abstract System.Threading.Tasks.Task<OpenBlade.Protocol.FanRpmReadings> ReadFanRpmAsync(System.Threading.CancellationToken cancellationToken)
+  method virtual System.Threading.Tasks.Task ApplyOneShotLaptopControlAsync(OpenBlade.Contracts.ApplyOneShotLaptopControl value, System.Threading.CancellationToken cancellationToken)
+  method virtual System.Threading.Tasks.Task EnsureDriverModeAsync(System.Threading.CancellationToken cancellationToken)
+  method virtual System.Threading.Tasks.Task PulseReactiveKeyAsync(OpenBlade.Contracts.ReactiveKeyPulse pulse, System.Threading.CancellationToken cancellationToken)
+  method virtual System.Threading.Tasks.Task PushAmbientLightingFrameAsync(OpenBlade.Contracts.AmbientLightingFrame frame, System.Threading.CancellationToken cancellationToken)
+  method virtual System.Threading.Tasks.Task SetFanControlAsync(OpenBlade.Contracts.FanControlSettings value, System.Threading.CancellationToken cancellationToken)
+  method virtual System.Threading.Tasks.Task SetFanTargetsAsync(System.Int32 fan1Rpm, System.Int32 fan2Rpm, System.Threading.CancellationToken cancellationToken)
+  method virtual System.Threading.Tasks.Task SetGpuClockOffsetsAsync(OpenBlade.Contracts.GpuClockOffsetSettings value, System.Threading.CancellationToken cancellationToken)
+  method virtual System.Threading.Tasks.Task SetPerformanceAsync(OpenBlade.Contracts.PerformancePreset value, OpenBlade.Contracts.CustomPerformanceSettings customPerformance, System.Threading.CancellationToken cancellationToken)
+  method virtual System.Threading.Tasks.Task SetPlaybackMuteIndicatorAsync(System.Boolean muted, System.Threading.CancellationToken cancellationToken)
+  method virtual System.Threading.Tasks.Task<OpenBlade.Contracts.ConfirmedDeviceState> ReadLightingStateAsync(System.Threading.CancellationToken cancellationToken)
+  method virtual System.Threading.Tasks.Task<OpenBlade.Contracts.LightingRendererOwnershipState> ReadLightingRendererOwnershipAsync(System.Threading.CancellationToken cancellationToken)
+  method virtual System.Threading.Tasks.Task<System.Byte> StepKeyboardBrightnessAsync(OpenBlade.Contracts.KeyboardBrightnessDirection direction, System.Threading.CancellationToken cancellationToken)
+  method virtual System.Threading.Tasks.Task<System.Nullable<OpenBlade.Contracts.FunctionKeyPrimaryMode>> ReadFunctionKeyPrimaryAsync(System.Threading.CancellationToken cancellationToken)
+  method virtual System.Threading.Tasks.Task<System.Nullable<System.Boolean>> MaintainDriverModeAsync(System.Threading.CancellationToken cancellationToken)
+  method virtual System.Threading.Tasks.Task<System.Nullable<System.Boolean>> ReadDriverModeAsync(System.Threading.CancellationToken cancellationToken)
+  method virtual System.Threading.Tasks.Task<System.Nullable<System.Boolean>> ReadGamingModeAsync(System.Threading.CancellationToken cancellationToken)
+  method virtual System.Threading.Tasks.Task<System.Nullable<System.Boolean>> ReadStartupAnimationAsync(System.Threading.CancellationToken cancellationToken)
+  method virtual System.Threading.Tasks.Task<System.Nullable<System.Boolean>> ReleaseDriverModeAsync(System.Threading.CancellationToken cancellationToken)
+  method virtual System.Threading.Tasks.Task<System.String> ReadMcuVersionAsync(System.Threading.CancellationToken cancellationToken)
+type interface OpenBlade.Protocol.IControllerPresenceMonitor
+  method abstract OpenBlade.Protocol.ControllerPresenceObservation Observe()
+type interface OpenBlade.Protocol.IFanRpmQueryPort
+  interface System.IAsyncDisposable
+  method abstract System.Threading.Tasks.Task<OpenBlade.Protocol.HidSessionResult<OpenBlade.Protocol.FanRpmReadings>> QueryAsync(System.Threading.CancellationToken cancellationToken)
+type interface OpenBlade.Protocol.IFanRpmQueryRunFactory
+  method abstract System.Threading.Tasks.Task<OpenBlade.Protocol.HidSessionResult<OpenBlade.Protocol.IFanRpmQueryPort>> OpenAsync(System.Threading.CancellationToken cancellationToken)
+type interface OpenBlade.Protocol.IHardwareAccessGuard
+  method abstract OpenBlade.Protocol.HardwareAccessDecision Check()
+type interface OpenBlade.Protocol.ILightingBrightnessQueryRunner
+  method abstract System.Threading.Tasks.Task<OpenBlade.Protocol.HidSessionResult<OpenBlade.Protocol.LightingBrightnessReading>> RunAsync(System.Threading.CancellationToken cancellationToken)
+type interface OpenBlade.Protocol.IPerformanceFanDiscriminatorQueryRunner
+  method abstract System.Threading.Tasks.Task<OpenBlade.Protocol.HidSessionResult<OpenBlade.Protocol.PerformanceFanDiscriminatorSnapshot>> RunAsync(System.Threading.CancellationToken cancellationToken)
+type interface OpenBlade.Protocol.IPerformanceFanSetterValidationRunner
+  method abstract System.Threading.Tasks.Task<OpenBlade.Protocol.PerformanceFanSetterValidationResult> RunAsync(OpenBlade.Protocol.PerformanceFanValidationTarget target, System.Threading.CancellationToken cancellationToken)
+type interface OpenBlade.Protocol.IProductionBatteryPort
+  interface System.IAsyncDisposable
+  method abstract OpenBlade.Contracts.DeviceCapabilities get_Capabilities()
+  method abstract System.Boolean get_SupportsTemporaryFullChargeQuery()
+  method abstract System.Threading.Tasks.Task SetChargeLimitAsync(System.Int32 percent, System.Threading.CancellationToken cancellationToken)
+  method abstract System.Threading.Tasks.Task SetFanModeAsync(OpenBlade.Contracts.FanMode value, System.Threading.CancellationToken cancellationToken)
+  method abstract System.Threading.Tasks.Task SetPerformanceAsync(OpenBlade.Contracts.PerformancePreset value, System.Threading.CancellationToken cancellationToken)
+  method abstract System.Threading.Tasks.Task SetProtectionOffAsync(System.Threading.CancellationToken cancellationToken)
+  method abstract System.Threading.Tasks.Task SetTemporaryFullChargeAsync(System.Boolean enabled, System.Threading.CancellationToken cancellationToken)
+  method abstract System.Threading.Tasks.Task<OpenBlade.Contracts.AdapterPowerState> QueryAdapterPowerStateAsync(System.Threading.CancellationToken cancellationToken)
+  method abstract System.Threading.Tasks.Task<OpenBlade.Contracts.ConfirmedBatteryState> QueryProtectionAsync(System.Threading.CancellationToken cancellationToken)
+  method abstract System.Threading.Tasks.Task<OpenBlade.Protocol.ProductionPerformanceFanState> QueryPerformanceFanStateAsync(System.Threading.CancellationToken cancellationToken)
+  method abstract System.Threading.Tasks.Task<System.Nullable<System.Boolean>> QueryTemporaryFullChargeAsync(System.Threading.CancellationToken cancellationToken)
+  method virtual System.Boolean get_SupportsFunctionKeyPrimaryQuery()
+  method virtual System.Boolean get_SupportsGamingModeQuery()
+  method virtual System.Boolean get_SupportsMcuVersionQuery()
+  method virtual System.Boolean get_SupportsStartupAnimationQuery()
+  method virtual System.Threading.Tasks.Task ApplyOneShotLaptopControlAsync(OpenBlade.Contracts.ApplyOneShotLaptopControl value, System.Threading.CancellationToken cancellationToken)
+  method virtual System.Threading.Tasks.Task SetCustomPerformanceAsync(OpenBlade.Contracts.CustomPerformanceSettings value, System.Threading.CancellationToken cancellationToken)
+  method virtual System.Threading.Tasks.Task SetFanControlAsync(OpenBlade.Contracts.FanControlSettings value, System.Threading.CancellationToken cancellationToken)
+  method virtual System.Threading.Tasks.Task SetFanTargetsAsync(System.Int32 fan1Rpm, System.Int32 fan2Rpm, System.Threading.CancellationToken cancellationToken)
+  method virtual System.Threading.Tasks.Task<System.Nullable<OpenBlade.Contracts.FunctionKeyPrimaryMode>> QueryFunctionKeyPrimaryAsync(System.Threading.CancellationToken cancellationToken)
+  method virtual System.Threading.Tasks.Task<System.Nullable<System.Boolean>> QueryGamingModeAsync(System.Threading.CancellationToken cancellationToken)
+  method virtual System.Threading.Tasks.Task<System.Nullable<System.Boolean>> QueryStartupAnimationAsync(System.Threading.CancellationToken cancellationToken)
+  method virtual System.Threading.Tasks.Task<System.String> QueryMcuVersionAsync(System.Threading.CancellationToken cancellationToken)
+  property OpenBlade.Contracts.DeviceCapabilities Capabilities { get; }
+  property System.Boolean SupportsFunctionKeyPrimaryQuery { get; }
+  property System.Boolean SupportsGamingModeQuery { get; }
+  property System.Boolean SupportsMcuVersionQuery { get; }
+  property System.Boolean SupportsStartupAnimationQuery { get; }
+  property System.Boolean SupportsTemporaryFullChargeQuery { get; }
+type interface OpenBlade.Protocol.IProductionBatteryPortFactory
+  method abstract OpenBlade.Contracts.DeviceCapabilities get_Capabilities()
+  method abstract System.Threading.Tasks.Task<OpenBlade.Protocol.HidSessionResult<OpenBlade.Protocol.IProductionBatteryPort>> OpenAsync(System.Threading.CancellationToken cancellationToken)
+  property OpenBlade.Contracts.DeviceCapabilities Capabilities { get; }
+type interface OpenBlade.Protocol.IProductionLightingPort
+  interface System.IAsyncDisposable
+  method abstract OpenBlade.Contracts.DeviceCapabilities get_Capabilities()
+  method abstract OpenBlade.Contracts.LightingRendererOwnershipState get_OwnershipState()
+  method abstract System.Threading.Tasks.Task PulseReactiveKeyAsync(OpenBlade.Contracts.ReactiveKeyPulse pulse, System.Threading.CancellationToken cancellationToken)
+  method abstract System.Threading.Tasks.Task SetLightingAsync(OpenBlade.Contracts.LightingSettings settings, System.Threading.CancellationToken cancellationToken)
+  method abstract System.Threading.Tasks.Task<OpenBlade.Contracts.LightingRendererOwnershipState> InvalidateAsync()
+  method abstract System.Threading.Tasks.Task<OpenBlade.Contracts.LightingSettings> ReadStateAsync(System.Threading.CancellationToken cancellationToken)
+  method virtual System.Threading.Tasks.Task EnsureDriverModeAsync(System.Threading.CancellationToken cancellationToken)
+  method virtual System.Threading.Tasks.Task PushAmbientLightingFrameAsync(OpenBlade.Contracts.AmbientLightingFrame frame, System.Threading.CancellationToken cancellationToken)
+  method virtual System.Threading.Tasks.Task SetPlaybackMuteIndicatorAsync(System.Boolean muted, System.Threading.CancellationToken cancellationToken)
+  method virtual System.Threading.Tasks.Task<System.Boolean> DisposeWithinCleanupDeadlineAsync()
+  method virtual System.Threading.Tasks.Task<System.Byte> StepBrightnessAsync(OpenBlade.Contracts.KeyboardBrightnessDirection direction, System.Threading.CancellationToken cancellationToken)
+  method virtual System.Threading.Tasks.Task<System.Nullable<OpenBlade.Contracts.LogoLightingMode>> ReadLogoStateAsync(System.Threading.CancellationToken cancellationToken)
+  method virtual System.Threading.Tasks.Task<System.Nullable<System.Boolean>> MaintainDriverModeAsync(System.Threading.CancellationToken cancellationToken)
+  method virtual System.Threading.Tasks.Task<System.Nullable<System.Boolean>> ReadDriverModeAsync(System.Threading.CancellationToken cancellationToken)
+  method virtual System.Threading.Tasks.Task<System.Nullable<System.Boolean>> ReleaseDriverModeAsync(System.Threading.CancellationToken cancellationToken)
+  property OpenBlade.Contracts.DeviceCapabilities Capabilities { get; }
+  property OpenBlade.Contracts.LightingRendererOwnershipState OwnershipState { get; }
+type interface OpenBlade.Protocol.IProductionLightingPortFactory
+  method abstract OpenBlade.Contracts.DeviceCapabilities get_Capabilities()
+  method abstract System.Threading.Tasks.Task<OpenBlade.Protocol.HidSessionResult<OpenBlade.Protocol.IProductionLightingPort>> OpenAsync(System.Threading.CancellationToken cancellationToken)
+  property OpenBlade.Contracts.DeviceCapabilities Capabilities { get; }
+type interface OpenBlade.Protocol.IProtectionOffValidationPort
+  interface System.IAsyncDisposable
+  method abstract System.Threading.Tasks.Task<OpenBlade.Protocol.HidSessionResult<OpenBlade.Protocol.BatteryValidationSetting>> QueryProtectionAsync(System.Threading.CancellationToken cancellationToken)
+  method abstract System.Threading.Tasks.Task<OpenBlade.Protocol.HidSessionResult<OpenBlade.Protocol.HidUnit>> ApplyProtectionOffAsync(System.Threading.CancellationToken cancellationToken)
+  method abstract System.Threading.Tasks.Task<OpenBlade.Protocol.HidSessionResult<OpenBlade.Protocol.HidUnit>> RestoreLimit80Async(System.Threading.CancellationToken cancellationToken)
+  method abstract System.Threading.Tasks.Task<OpenBlade.Protocol.HidSessionResult<System.Boolean>> QueryTemporaryFullChargeAsync(System.Threading.CancellationToken cancellationToken)
+type interface OpenBlade.Protocol.IProtectionOffValidationRunFactory
+  method abstract System.Threading.Tasks.Task<OpenBlade.Protocol.HidSessionResult<OpenBlade.Protocol.IProtectionOffValidationPort>> OpenAsync(System.Threading.CancellationToken cancellationToken)
+type interface OpenBlade.Protocol.IRunningProcessSource
+  method abstract System.Collections.Generic.IReadOnlyList<System.String> GetProcessNames()
+type interface OpenBlade.Protocol.ITemporaryFullChargeQueryPort
+  interface System.IAsyncDisposable
+  method abstract System.Threading.Tasks.Task<OpenBlade.Protocol.HidSessionResult<System.Boolean>> QueryAsync(System.Threading.CancellationToken cancellationToken)
+type interface OpenBlade.Protocol.ITemporaryFullChargeQueryRunFactory
+  method abstract System.Threading.Tasks.Task<OpenBlade.Protocol.HidSessionResult<OpenBlade.Protocol.ITemporaryFullChargeQueryPort>> OpenAsync(System.Threading.CancellationToken cancellationToken)
+type interface OpenBlade.Protocol.ITemporaryFullChargeValidationPort
+  interface System.IAsyncDisposable
+  method abstract System.Threading.Tasks.Task<OpenBlade.Protocol.HidSessionResult<OpenBlade.Protocol.BatteryValidationSetting>> QueryProtectionAsync(System.Threading.CancellationToken cancellationToken)
+  method abstract System.Threading.Tasks.Task<OpenBlade.Protocol.HidSessionResult<OpenBlade.Protocol.HidUnit>> ApplyTemporaryFullChargeAsync(System.Threading.CancellationToken cancellationToken)
+  method abstract System.Threading.Tasks.Task<OpenBlade.Protocol.HidSessionResult<OpenBlade.Protocol.HidUnit>> CancelTemporaryFullChargeAsync(System.Threading.CancellationToken cancellationToken)
+  method abstract System.Threading.Tasks.Task<OpenBlade.Protocol.HidSessionResult<System.Boolean>> QueryTemporaryFullChargeAsync(System.Threading.CancellationToken cancellationToken)
+type interface OpenBlade.Protocol.ITemporaryFullChargeValidationRunFactory
+  method abstract System.Threading.Tasks.Task<OpenBlade.Protocol.HidSessionResult<OpenBlade.Protocol.ITemporaryFullChargeValidationPort>> OpenAsync(System.Threading.CancellationToken cancellationToken)
+type interface OpenBlade.Protocol.IWindowsServiceSource
+  method abstract System.Collections.Generic.IReadOnlyList<OpenBlade.Protocol.WindowsServiceSnapshot> GetServices()
+type sealed class OpenBlade.Protocol.LightingBrightnessReading
+  interface System.IEquatable<OpenBlade.Protocol.LightingBrightnessReading>
+  ctor (System.Int32 RawValue)
+  method OpenBlade.Protocol.LightingBrightnessReading <Clone>$()
+  method System.Int32 get_Percent()
+  method System.Int32 get_RawValue()
+  method System.Void Deconstruct(out System.Int32 RawValue)
+  method System.Void set_RawValue(System.Int32 value)
+  method override System.Boolean Equals(System.Object obj)
+  method override System.Int32 GetHashCode()
+  method override System.String ToString()
+  method static System.Boolean op_Equality(OpenBlade.Protocol.LightingBrightnessReading left, OpenBlade.Protocol.LightingBrightnessReading right)
+  method static System.Boolean op_Inequality(OpenBlade.Protocol.LightingBrightnessReading left, OpenBlade.Protocol.LightingBrightnessReading right)
+  method virtual System.Boolean Equals(OpenBlade.Protocol.LightingBrightnessReading other)
+  property System.Int32 Percent { get; }
+  property System.Int32 RawValue { get; init; }
+type sealed class OpenBlade.Protocol.PerformanceFanDiscriminatorReading
+  interface System.IEquatable<OpenBlade.Protocol.PerformanceFanDiscriminatorReading>
+  ctor (System.String Operation, System.String RequestPayloadHex, System.String ResponseHex)
+  method OpenBlade.Protocol.PerformanceFanDiscriminatorReading <Clone>$()
+  method System.String get_Operation()
+  method System.String get_RequestPayloadHex()
+  method System.String get_ResponseHex()
+  method System.Void Deconstruct(out System.String Operation, out System.String RequestPayloadHex, out System.String ResponseHex)
+  method System.Void set_Operation(System.String value)
+  method System.Void set_RequestPayloadHex(System.String value)
+  method System.Void set_ResponseHex(System.String value)
+  method override System.Boolean Equals(System.Object obj)
+  method override System.Int32 GetHashCode()
+  method override System.String ToString()
+  method static System.Boolean op_Equality(OpenBlade.Protocol.PerformanceFanDiscriminatorReading left, OpenBlade.Protocol.PerformanceFanDiscriminatorReading right)
+  method static System.Boolean op_Inequality(OpenBlade.Protocol.PerformanceFanDiscriminatorReading left, OpenBlade.Protocol.PerformanceFanDiscriminatorReading right)
+  method virtual System.Boolean Equals(OpenBlade.Protocol.PerformanceFanDiscriminatorReading other)
+  property System.String Operation { get; init; }
+  property System.String RequestPayloadHex { get; init; }
+  property System.String ResponseHex { get; init; }
+type sealed class OpenBlade.Protocol.PerformanceFanDiscriminatorSnapshot
+  interface System.IEquatable<OpenBlade.Protocol.PerformanceFanDiscriminatorSnapshot>
+  ctor (System.Collections.Generic.IReadOnlyList<OpenBlade.Protocol.PerformanceFanDiscriminatorReading> Readings)
+  method OpenBlade.Protocol.PerformanceFanDiscriminatorSnapshot <Clone>$()
+  method System.Collections.Generic.IReadOnlyList<OpenBlade.Protocol.PerformanceFanDiscriminatorReading> get_Readings()
+  method System.Void Deconstruct(out System.Collections.Generic.IReadOnlyList<OpenBlade.Protocol.PerformanceFanDiscriminatorReading> Readings)
+  method System.Void set_Readings(System.Collections.Generic.IReadOnlyList<OpenBlade.Protocol.PerformanceFanDiscriminatorReading> value)
+  method override System.Boolean Equals(System.Object obj)
+  method override System.Int32 GetHashCode()
+  method override System.String ToString()
+  method static System.Boolean op_Equality(OpenBlade.Protocol.PerformanceFanDiscriminatorSnapshot left, OpenBlade.Protocol.PerformanceFanDiscriminatorSnapshot right)
+  method static System.Boolean op_Inequality(OpenBlade.Protocol.PerformanceFanDiscriminatorSnapshot left, OpenBlade.Protocol.PerformanceFanDiscriminatorSnapshot right)
+  method virtual System.Boolean Equals(OpenBlade.Protocol.PerformanceFanDiscriminatorSnapshot other)
+  property System.Collections.Generic.IReadOnlyList<OpenBlade.Protocol.PerformanceFanDiscriminatorReading> Readings { get; init; }
+type sealed class OpenBlade.Protocol.PerformanceFanSetterValidationResult
+  interface System.IEquatable<OpenBlade.Protocol.PerformanceFanSetterValidationResult>
+  ctor (OpenBlade.Protocol.PerformanceFanValidationTarget Target, OpenBlade.Protocol.PerformanceFanThermalPair Baseline, OpenBlade.Protocol.PerformanceFanThermalPair Candidate, OpenBlade.Protocol.FanRpmReadings CandidateFanRpm, System.Collections.Generic.IReadOnlyList<OpenBlade.Protocol.FanRpmReadings> CandidateFanRpmSamples, OpenBlade.Protocol.PerformanceFanThermalPair Restoration, System.Boolean ApplyAttempted, System.Boolean ApplyAcknowledged, System.Boolean CandidateConfirmed, System.Boolean RestoreAttempted, System.Boolean RestoreAcknowledged, System.Boolean Restored, System.Boolean IndeterminatePartialWrite, System.Boolean ManualRecoveryRequired, OpenBlade.Protocol.PerformanceFanValidationFailure Failure)
+  method OpenBlade.Protocol.FanRpmReadings get_CandidateFanRpm()
+  method OpenBlade.Protocol.PerformanceFanSetterValidationResult <Clone>$()
+  method OpenBlade.Protocol.PerformanceFanThermalPair get_Baseline()
+  method OpenBlade.Protocol.PerformanceFanThermalPair get_Candidate()
+  method OpenBlade.Protocol.PerformanceFanThermalPair get_Restoration()
+  method OpenBlade.Protocol.PerformanceFanValidationFailure get_Failure()
+  method OpenBlade.Protocol.PerformanceFanValidationTarget get_Target()
+  method System.Boolean get_ApplyAcknowledged()
+  method System.Boolean get_ApplyAttempted()
+  method System.Boolean get_CandidateConfirmed()
+  method System.Boolean get_IndeterminatePartialWrite()
+  method System.Boolean get_ManualRecoveryRequired()
+  method System.Boolean get_RestoreAcknowledged()
+  method System.Boolean get_RestoreAttempted()
+  method System.Boolean get_Restored()
+  method System.Boolean get_Success()
+  method System.Collections.Generic.IReadOnlyList<OpenBlade.Protocol.FanRpmReadings> get_CandidateFanRpmSamples()
+  method System.Void Deconstruct(out OpenBlade.Protocol.PerformanceFanValidationTarget Target, out OpenBlade.Protocol.PerformanceFanThermalPair Baseline, out OpenBlade.Protocol.PerformanceFanThermalPair Candidate, out OpenBlade.Protocol.FanRpmReadings CandidateFanRpm, out System.Collections.Generic.IReadOnlyList<OpenBlade.Protocol.FanRpmReadings> CandidateFanRpmSamples, out OpenBlade.Protocol.PerformanceFanThermalPair Restoration, out System.Boolean ApplyAttempted, out System.Boolean ApplyAcknowledged, out System.Boolean CandidateConfirmed, out System.Boolean RestoreAttempted, out System.Boolean RestoreAcknowledged, out System.Boolean Restored, out System.Boolean IndeterminatePartialWrite, out System.Boolean ManualRecoveryRequired, out OpenBlade.Protocol.PerformanceFanValidationFailure Failure)
+  method System.Void set_ApplyAcknowledged(System.Boolean value)
+  method System.Void set_ApplyAttempted(System.Boolean value)
+  method System.Void set_Baseline(OpenBlade.Protocol.PerformanceFanThermalPair value)
+  method System.Void set_Candidate(OpenBlade.Protocol.PerformanceFanThermalPair value)
+  method System.Void set_CandidateConfirmed(System.Boolean value)
+  method System.Void set_CandidateFanRpm(OpenBlade.Protocol.FanRpmReadings value)
+  method System.Void set_CandidateFanRpmSamples(System.Collections.Generic.IReadOnlyList<OpenBlade.Protocol.FanRpmReadings> value)
+  method System.Void set_Failure(OpenBlade.Protocol.PerformanceFanValidationFailure value)
+  method System.Void set_IndeterminatePartialWrite(System.Boolean value)
+  method System.Void set_ManualRecoveryRequired(System.Boolean value)
+  method System.Void set_Restoration(OpenBlade.Protocol.PerformanceFanThermalPair value)
+  method System.Void set_RestoreAcknowledged(System.Boolean value)
+  method System.Void set_RestoreAttempted(System.Boolean value)
+  method System.Void set_Restored(System.Boolean value)
+  method System.Void set_Target(OpenBlade.Protocol.PerformanceFanValidationTarget value)
+  method override System.Boolean Equals(System.Object obj)
+  method override System.Int32 GetHashCode()
+  method override System.String ToString()
+  method static System.Boolean op_Equality(OpenBlade.Protocol.PerformanceFanSetterValidationResult left, OpenBlade.Protocol.PerformanceFanSetterValidationResult right)
+  method static System.Boolean op_Inequality(OpenBlade.Protocol.PerformanceFanSetterValidationResult left, OpenBlade.Protocol.PerformanceFanSetterValidationResult right)
+  method virtual System.Boolean Equals(OpenBlade.Protocol.PerformanceFanSetterValidationResult other)
+  property OpenBlade.Protocol.FanRpmReadings CandidateFanRpm { get; init; }
+  property OpenBlade.Protocol.PerformanceFanThermalPair Baseline { get; init; }
+  property OpenBlade.Protocol.PerformanceFanThermalPair Candidate { get; init; }
+  property OpenBlade.Protocol.PerformanceFanThermalPair Restoration { get; init; }
+  property OpenBlade.Protocol.PerformanceFanValidationFailure Failure { get; init; }
+  property OpenBlade.Protocol.PerformanceFanValidationTarget Target { get; init; }
+  property System.Boolean ApplyAcknowledged { get; init; }
+  property System.Boolean ApplyAttempted { get; init; }
+  property System.Boolean CandidateConfirmed { get; init; }
+  property System.Boolean IndeterminatePartialWrite { get; init; }
+  property System.Boolean ManualRecoveryRequired { get; init; }
+  property System.Boolean RestoreAcknowledged { get; init; }
+  property System.Boolean RestoreAttempted { get; init; }
+  property System.Boolean Restored { get; init; }
+  property System.Boolean Success { get; }
+  property System.Collections.Generic.IReadOnlyList<OpenBlade.Protocol.FanRpmReadings> CandidateFanRpmSamples { get; init; }
+type sealed class OpenBlade.Protocol.PerformanceFanThermalPair
+  interface System.IEquatable<OpenBlade.Protocol.PerformanceFanThermalPair>
+  ctor (System.String Thermal1Hex, System.String Thermal2Hex)
+  method OpenBlade.Protocol.PerformanceFanThermalPair <Clone>$()
+  method System.String get_Thermal1Hex()
+  method System.String get_Thermal2Hex()
+  method System.Void Deconstruct(out System.String Thermal1Hex, out System.String Thermal2Hex)
+  method System.Void set_Thermal1Hex(System.String value)
+  method System.Void set_Thermal2Hex(System.String value)
+  method override System.Boolean Equals(System.Object obj)
+  method override System.Int32 GetHashCode()
+  method override System.String ToString()
+  method static System.Boolean op_Equality(OpenBlade.Protocol.PerformanceFanThermalPair left, OpenBlade.Protocol.PerformanceFanThermalPair right)
+  method static System.Boolean op_Inequality(OpenBlade.Protocol.PerformanceFanThermalPair left, OpenBlade.Protocol.PerformanceFanThermalPair right)
+  method virtual System.Boolean Equals(OpenBlade.Protocol.PerformanceFanThermalPair other)
+  property System.String Thermal1Hex { get; init; }
+  property System.String Thermal2Hex { get; init; }
+type enum OpenBlade.Protocol.PerformanceFanValidationFailure
+  field System.Int32 value__
+  field const OpenBlade.Protocol.PerformanceFanValidationFailure ApplyWriteIndeterminate = 9
+  field const OpenBlade.Protocol.PerformanceFanValidationFailure BaselineFixedSpeedCannotBeRestored = 7
+  field const OpenBlade.Protocol.PerformanceFanValidationFailure BaselinePairMismatch = 6
+  field const OpenBlade.Protocol.PerformanceFanValidationFailure BaselineReadFailed = 5
+  field const OpenBlade.Protocol.PerformanceFanValidationFailure Canceled = 19
+  field const OpenBlade.Protocol.PerformanceFanValidationFailure CandidatePairMismatch = 11
+  field const OpenBlade.Protocol.PerformanceFanValidationFailure CandidateReadFailed = 10
+  field const OpenBlade.Protocol.PerformanceFanValidationFailure CandidateTargetMismatch = 12
+  field const OpenBlade.Protocol.PerformanceFanValidationFailure Conflict = 2
+  field const OpenBlade.Protocol.PerformanceFanValidationFailure ConflictDetectionFailed = 3
+  field const OpenBlade.Protocol.PerformanceFanValidationFailure FixedFanRpmOutOfRange = 18
+  field const OpenBlade.Protocol.PerformanceFanValidationFailure FixedFanRpmReadFailed = 17
+  field const OpenBlade.Protocol.PerformanceFanValidationFailure None = 0
+  field const OpenBlade.Protocol.PerformanceFanValidationFailure OpenFailed = 4
+  field const OpenBlade.Protocol.PerformanceFanValidationFailure RestorationMismatch = 16
+  field const OpenBlade.Protocol.PerformanceFanValidationFailure RestorationPairMismatch = 15
+  field const OpenBlade.Protocol.PerformanceFanValidationFailure RestorationReadFailed = 14
+  field const OpenBlade.Protocol.PerformanceFanValidationFailure RestoreWriteIndeterminate = 13
+  field const OpenBlade.Protocol.PerformanceFanValidationFailure TargetAlreadyActive = 8
+  field const OpenBlade.Protocol.PerformanceFanValidationFailure WrongTarget = 1
+type enum OpenBlade.Protocol.PerformanceFanValidationTarget
+  field System.Int32 value__
+  field const OpenBlade.Protocol.PerformanceFanValidationTarget Balanced = 0
+  field const OpenBlade.Protocol.PerformanceFanValidationTarget BatteryBalanced = 5
+  field const OpenBlade.Protocol.PerformanceFanValidationTarget BatterySaver = 4
+  field const OpenBlade.Protocol.PerformanceFanValidationTarget Fixed5400 = 3
+  field const OpenBlade.Protocol.PerformanceFanValidationTarget Performance = 2
+  field const OpenBlade.Protocol.PerformanceFanValidationTarget Silent = 1
+type sealed class OpenBlade.Protocol.ProductionBatteryFactory
+  interface OpenBlade.Protocol.IProductionBatteryPortFactory
+  method static OpenBlade.Protocol.IProductionBatteryPortFactory CreateWindows()
+  method static OpenBlade.Protocol.IProductionBatteryPortFactory CreateWindowsReadOnly()
+  method virtual OpenBlade.Contracts.DeviceCapabilities get_Capabilities()
+  method virtual System.Threading.Tasks.Task<OpenBlade.Protocol.HidSessionResult<OpenBlade.Protocol.IProductionBatteryPort>> OpenAsync(System.Threading.CancellationToken cancellationToken)
+  property OpenBlade.Contracts.DeviceCapabilities Capabilities { get; }
+type sealed class OpenBlade.Protocol.ProductionLightingFactory
+  interface OpenBlade.Protocol.IProductionLightingPortFactory
+  method static OpenBlade.Protocol.IProductionLightingPortFactory CreateWindows()
+  method static OpenBlade.Protocol.IProductionLightingPortFactory CreateWindowsReadOnly()
+  method virtual OpenBlade.Contracts.DeviceCapabilities get_Capabilities()
+  method virtual System.Threading.Tasks.Task<OpenBlade.Protocol.HidSessionResult<OpenBlade.Protocol.IProductionLightingPort>> OpenAsync(System.Threading.CancellationToken cancellationToken)
+  property OpenBlade.Contracts.DeviceCapabilities Capabilities { get; }
+type struct OpenBlade.Protocol.ProductionPerformanceFanState
+  interface System.IEquatable<OpenBlade.Protocol.ProductionPerformanceFanState>
+  ctor (System.Nullable<OpenBlade.Contracts.PerformancePreset> Performance, System.Nullable<OpenBlade.Contracts.FanMode> Fans)
+  method OpenBlade.Contracts.CustomPerformanceSettings get_CustomPerformance()
+  method System.Nullable<OpenBlade.Contracts.FanMode> get_Fans()
+  method System.Nullable<OpenBlade.Contracts.PerformancePreset> get_Performance()
+  method System.Void Deconstruct(out System.Nullable<OpenBlade.Contracts.PerformancePreset> Performance, out System.Nullable<OpenBlade.Contracts.FanMode> Fans)
+  method System.Void set_CustomPerformance(OpenBlade.Contracts.CustomPerformanceSettings value)
+  method System.Void set_Fans(System.Nullable<OpenBlade.Contracts.FanMode> value)
+  method System.Void set_Performance(System.Nullable<OpenBlade.Contracts.PerformancePreset> value)
+  method override System.Boolean Equals(System.Object obj)
+  method override System.Int32 GetHashCode()
+  method override System.String ToString()
+  method static System.Boolean op_Equality(OpenBlade.Protocol.ProductionPerformanceFanState left, OpenBlade.Protocol.ProductionPerformanceFanState right)
+  method static System.Boolean op_Inequality(OpenBlade.Protocol.ProductionPerformanceFanState left, OpenBlade.Protocol.ProductionPerformanceFanState right)
+  method virtual System.Boolean Equals(OpenBlade.Protocol.ProductionPerformanceFanState other)
+  property OpenBlade.Contracts.CustomPerformanceSettings CustomPerformance { get; init; }
+  property System.Nullable<OpenBlade.Contracts.FanMode> Fans { get; init; }
+  property System.Nullable<OpenBlade.Contracts.PerformancePreset> Performance { get; init; }
+type sealed class OpenBlade.Protocol.RazerProtocolException
+  base System.Exception
+  ctor (System.String message, OpenBlade.Protocol.HidProtocolValidationFailure validationFailure)
+  method OpenBlade.Protocol.HidProtocolValidationFailure get_ValidationFailure()
+  property OpenBlade.Protocol.HidProtocolValidationFailure ValidationFailure { get; }
+type sealed class OpenBlade.Protocol.RunningProcessSource
+  interface OpenBlade.Protocol.IRunningProcessSource
+  ctor ()
+  method virtual System.Collections.Generic.IReadOnlyList<System.String> GetProcessNames()
+type static class OpenBlade.Protocol.TargetBladeDevice
+  field const System.String BiosVersion = "3.01"
+  field const System.String Model = "RZ09-0581"
+  field const System.UInt16 ProductId = 736
+  field const System.UInt16 Usage = 2
+  field const System.UInt16 UsagePage = 1
+  field const System.UInt16 VendorId = 5426
+  method static System.Boolean CanCarryProtocolReport(System.UInt16 featureReportByteLength)
+  method static System.Boolean IsExactInteractiveValidationTarget(System.String model, OpenBlade.Protocol.HidInterfaceInfo interfaceInfo)
+  method static System.Boolean Matches(System.UInt16 vendorId, System.UInt16 productId)
+type sealed class OpenBlade.Protocol.UnvalidatedCommandException
+  base System.Exception
+  ctor (System.String message)
+type sealed class OpenBlade.Protocol.WindowsControllerPresenceMonitor
+  interface OpenBlade.Protocol.IControllerPresenceMonitor
+  ctor (OpenBlade.Protocol.IRunningProcessSource processSource, OpenBlade.Protocol.IWindowsServiceSource serviceSource)
+  method virtual OpenBlade.Protocol.ControllerPresenceObservation Observe()
+type sealed class OpenBlade.Protocol.WindowsHardwareAccessGuard
+  interface OpenBlade.Protocol.IHardwareAccessGuard
+  ctor (OpenBlade.Protocol.IControllerPresenceMonitor monitor)
+  ctor (OpenBlade.Protocol.IRunningProcessSource processSource, OpenBlade.Protocol.IWindowsServiceSource serviceSource)
+  method virtual OpenBlade.Protocol.HardwareAccessDecision Check()
+type static class OpenBlade.Protocol.WindowsHidEnumerator
+  method static System.Collections.Generic.IReadOnlyList<OpenBlade.Protocol.HidInterfaceInfo> FindTargetCollections()
+  method static System.Collections.Generic.IReadOnlyList<OpenBlade.Protocol.HidInterfaceInfo> FindTargetInterfaces()
+  method static System.Collections.Generic.IReadOnlyList<OpenBlade.Protocol.HidInterfaceInfo> SelectProductionInterfaces(System.Collections.Generic.IEnumerable<OpenBlade.Protocol.HidInterfaceInfo> interfaces)
+type sealed class OpenBlade.Protocol.WindowsServiceSnapshot
+  interface System.IEquatable<OpenBlade.Protocol.WindowsServiceSnapshot>
+  ctor (System.String ServiceName, System.String DisplayName, OpenBlade.Protocol.WindowsServiceState State)
+  method OpenBlade.Protocol.WindowsServiceSnapshot <Clone>$()
+  method OpenBlade.Protocol.WindowsServiceState get_State()
+  method System.String get_DisplayName()
+  method System.String get_ServiceName()
+  method System.Void Deconstruct(out System.String ServiceName, out System.String DisplayName, out OpenBlade.Protocol.WindowsServiceState State)
+  method System.Void set_DisplayName(System.String value)
+  method System.Void set_ServiceName(System.String value)
+  method System.Void set_State(OpenBlade.Protocol.WindowsServiceState value)
+  method override System.Boolean Equals(System.Object obj)
+  method override System.Int32 GetHashCode()
+  method override System.String ToString()
+  method static System.Boolean op_Equality(OpenBlade.Protocol.WindowsServiceSnapshot left, OpenBlade.Protocol.WindowsServiceSnapshot right)
+  method static System.Boolean op_Inequality(OpenBlade.Protocol.WindowsServiceSnapshot left, OpenBlade.Protocol.WindowsServiceSnapshot right)
+  method virtual System.Boolean Equals(OpenBlade.Protocol.WindowsServiceSnapshot other)
+  property OpenBlade.Protocol.WindowsServiceState State { get; init; }
+  property System.String DisplayName { get; init; }
+  property System.String ServiceName { get; init; }
+type sealed class OpenBlade.Protocol.WindowsServiceSource
+  interface OpenBlade.Protocol.IWindowsServiceSource
+  ctor ()
+  method virtual System.Collections.Generic.IReadOnlyList<OpenBlade.Protocol.WindowsServiceSnapshot> GetServices()
+type enum OpenBlade.Protocol.WindowsServiceState
+  field System.Int32 value__
+  field const OpenBlade.Protocol.WindowsServiceState ContinuePending = 4
+  field const OpenBlade.Protocol.WindowsServiceState Other = 0
+  field const OpenBlade.Protocol.WindowsServiceState Running = 2
+  field const OpenBlade.Protocol.WindowsServiceState StartPending = 3
+  field const OpenBlade.Protocol.WindowsServiceState Stopped = 1
+type enum OpenBlade.Protocol.WriteSubmissionState
+  field System.Int32 value__
+  field const OpenBlade.Protocol.WriteSubmissionState Indeterminate = 1
+  field const OpenBlade.Protocol.WriteSubmissionState KnownNotApplied = 0

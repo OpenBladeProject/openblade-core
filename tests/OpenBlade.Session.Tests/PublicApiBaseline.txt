@@ -1,0 +1,307 @@
+# Reviewed exported API baseline. Regenerate with build/Update-PublicApiBaselines.ps1 and review the diff.
+type sealed class OpenBlade.Session.ApplyDisplayProfileRequest
+  base OpenBlade.Session.SessionDisplayRequest
+  interface System.IEquatable<OpenBlade.Session.ApplyDisplayProfileRequest>
+  ctor (System.Int32 Version, System.Guid RequestId, OpenBlade.Contracts.PowerSource ExpectedPowerSource, OpenBlade.Contracts.DisplayProfileSettings Settings)
+  method OpenBlade.Contracts.DisplayProfileSettings get_Settings()
+  method OpenBlade.Contracts.PowerSource get_ExpectedPowerSource()
+  method System.Void Deconstruct(out System.Int32 Version, out System.Guid RequestId, out OpenBlade.Contracts.PowerSource ExpectedPowerSource, out OpenBlade.Contracts.DisplayProfileSettings Settings)
+  method System.Void set_ExpectedPowerSource(OpenBlade.Contracts.PowerSource value)
+  method System.Void set_Settings(OpenBlade.Contracts.DisplayProfileSettings value)
+  method override System.Boolean Equals(System.Object obj)
+  method override System.Int32 GetHashCode()
+  method override System.String ToString()
+  method sealed override System.Boolean Equals(OpenBlade.Session.SessionDisplayRequest other)
+  method static System.Boolean op_Equality(OpenBlade.Session.ApplyDisplayProfileRequest left, OpenBlade.Session.ApplyDisplayProfileRequest right)
+  method static System.Boolean op_Inequality(OpenBlade.Session.ApplyDisplayProfileRequest left, OpenBlade.Session.ApplyDisplayProfileRequest right)
+  method virtual OpenBlade.Session.ApplyDisplayProfileRequest <Clone>$()
+  method virtual System.Boolean Equals(OpenBlade.Session.ApplyDisplayProfileRequest other)
+  property OpenBlade.Contracts.DisplayProfileSettings Settings { get; init; }
+  property OpenBlade.Contracts.PowerSource ExpectedPowerSource { get; init; }
+type sealed class OpenBlade.Session.DisplayAutomationCheckpointStore
+  ctor (System.String path)
+  method System.Boolean Save(OpenBlade.Contracts.PowerSource source)
+  method System.Nullable<OpenBlade.Contracts.PowerSource> Load()
+type sealed class OpenBlade.Session.DisplayAutomationCoordinator
+  interface System.IAsyncDisposable
+  ctor (OpenBlade.Session.DisplayPowerContextState powerContext, OpenBlade.Session.IDisplayProfileApplier applier, System.Nullable<OpenBlade.Contracts.PowerSource> lastReconciledPowerSource = null, System.Action<OpenBlade.Contracts.PowerSource> recordReconciledPowerSource = null, System.Func<System.TimeSpan, System.Threading.CancellationToken, System.Threading.Tasks.Task> retryDelay = null)
+  method OpenBlade.Session.DisplayAutomationObservation MarkUnavailable()
+  method OpenBlade.Session.DisplayAutomationObservation Observe(OpenBlade.Contracts.ServiceStatusSnapshot status)
+  method OpenBlade.Session.DisplayTransitionResult get_LastTransitionResult()
+  method System.Nullable<OpenBlade.Contracts.PowerSource> get_LastConfirmedPowerSource()
+  method System.Threading.Tasks.Task WhenIdleAsync(System.Threading.CancellationToken cancellationToken = null)
+  method virtual System.Threading.Tasks.ValueTask DisposeAsync()
+  property OpenBlade.Session.DisplayTransitionResult LastTransitionResult { get; }
+  property System.Nullable<OpenBlade.Contracts.PowerSource> LastConfirmedPowerSource { get; }
+type enum OpenBlade.Session.DisplayAutomationObservation
+  field System.Int32 value__
+  field const OpenBlade.Session.DisplayAutomationObservation BaselineEstablished = 1
+  field const OpenBlade.Session.DisplayAutomationObservation IgnoredUnconfirmed = 0
+  field const OpenBlade.Session.DisplayAutomationObservation SameSource = 2
+  field const OpenBlade.Session.DisplayAutomationObservation TransitionScheduled = 3
+type struct OpenBlade.Session.DisplayPowerContext
+  interface System.IEquatable<OpenBlade.Session.DisplayPowerContext>
+  ctor (OpenBlade.Contracts.PowerSource PowerSource, System.Int64 Generation)
+  method OpenBlade.Contracts.PowerSource get_PowerSource()
+  method System.Boolean get_IsConfirmed()
+  method System.Int64 get_Generation()
+  method System.Void Deconstruct(out OpenBlade.Contracts.PowerSource PowerSource, out System.Int64 Generation)
+  method System.Void set_Generation(System.Int64 value)
+  method System.Void set_PowerSource(OpenBlade.Contracts.PowerSource value)
+  method override System.Boolean Equals(System.Object obj)
+  method override System.Int32 GetHashCode()
+  method override System.String ToString()
+  method static System.Boolean op_Equality(OpenBlade.Session.DisplayPowerContext left, OpenBlade.Session.DisplayPowerContext right)
+  method static System.Boolean op_Inequality(OpenBlade.Session.DisplayPowerContext left, OpenBlade.Session.DisplayPowerContext right)
+  method virtual System.Boolean Equals(OpenBlade.Session.DisplayPowerContext other)
+  property OpenBlade.Contracts.PowerSource PowerSource { get; init; }
+  property System.Boolean IsConfirmed { get; }
+  property System.Int64 Generation { get; init; }
+type sealed class OpenBlade.Session.DisplayPowerContextState
+  interface OpenBlade.Session.IDisplayPowerContextSource
+  ctor ()
+  method System.Void Update(OpenBlade.Contracts.PowerSource powerSource, System.Int64 generation)
+  method virtual OpenBlade.Session.DisplayPowerContext Capture()
+type sealed class OpenBlade.Session.DisplayProfileApplier
+  interface OpenBlade.Session.IDisplayProfileApplier
+  interface System.IDisposable
+  ctor (OpenBlade.Display.IDisplaySettingsController controller, OpenBlade.Session.IDisplayPowerContextSource powerContext)
+  method virtual System.Threading.Tasks.Task<OpenBlade.Session.SessionDisplayExecutionResult> ApplyProfileAsync(OpenBlade.Contracts.PowerSource expectedPowerSource, OpenBlade.Contracts.DisplayProfileSettings settings, System.Threading.CancellationToken cancellationToken = null)
+  method virtual System.Threading.Tasks.Task<OpenBlade.Session.SessionDisplayExecutionResult> ApplyProfileForTransitionAsync(OpenBlade.Contracts.PowerSource expectedPowerSource, System.Int64 expectedGeneration, OpenBlade.Contracts.DisplayProfileSettings settings, System.Threading.CancellationToken cancellationToken)
+  method virtual System.Threading.Tasks.Task<OpenBlade.Session.SessionDisplayExecutionResult> QueryAsync(System.Threading.CancellationToken cancellationToken = null)
+  method virtual System.Threading.Tasks.Task<OpenBlade.Session.SessionDisplayExecutionResult> SetColorProfileAsync(OpenBlade.Contracts.PowerSource expectedPowerSource, System.String colorProfileKey, System.Threading.CancellationToken cancellationToken = null)
+  method virtual System.Threading.Tasks.Task<OpenBlade.Session.SessionDisplayExecutionResult> SetHdrAsync(OpenBlade.Contracts.PowerSource expectedPowerSource, System.Boolean enabled, System.Threading.CancellationToken cancellationToken = null)
+  method virtual System.Threading.Tasks.Task<OpenBlade.Session.SessionDisplayExecutionResult> SetRefreshRateAsync(OpenBlade.Contracts.PowerSource expectedPowerSource, System.String refreshRateKey, System.Threading.CancellationToken cancellationToken = null)
+  method virtual System.Void Dispose()
+type sealed class OpenBlade.Session.DisplayTransitionResult
+  interface System.IEquatable<OpenBlade.Session.DisplayTransitionResult>
+  ctor (System.Int64 Generation, OpenBlade.Contracts.PowerSource PowerSource, OpenBlade.Session.SessionDisplayExecutionResult Result)
+  method OpenBlade.Contracts.PowerSource get_PowerSource()
+  method OpenBlade.Session.DisplayTransitionResult <Clone>$()
+  method OpenBlade.Session.SessionDisplayExecutionResult get_Result()
+  method System.Int64 get_Generation()
+  method System.Void Deconstruct(out System.Int64 Generation, out OpenBlade.Contracts.PowerSource PowerSource, out OpenBlade.Session.SessionDisplayExecutionResult Result)
+  method System.Void set_Generation(System.Int64 value)
+  method System.Void set_PowerSource(OpenBlade.Contracts.PowerSource value)
+  method System.Void set_Result(OpenBlade.Session.SessionDisplayExecutionResult value)
+  method override System.Boolean Equals(System.Object obj)
+  method override System.Int32 GetHashCode()
+  method override System.String ToString()
+  method static System.Boolean op_Equality(OpenBlade.Session.DisplayTransitionResult left, OpenBlade.Session.DisplayTransitionResult right)
+  method static System.Boolean op_Inequality(OpenBlade.Session.DisplayTransitionResult left, OpenBlade.Session.DisplayTransitionResult right)
+  method virtual System.Boolean Equals(OpenBlade.Session.DisplayTransitionResult other)
+  property OpenBlade.Contracts.PowerSource PowerSource { get; init; }
+  property OpenBlade.Session.SessionDisplayExecutionResult Result { get; init; }
+  property System.Int64 Generation { get; init; }
+type interface OpenBlade.Session.IDisplayPowerContextSource
+  method abstract OpenBlade.Session.DisplayPowerContext Capture()
+type interface OpenBlade.Session.IDisplayProfileApplier
+  method abstract System.Threading.Tasks.Task<OpenBlade.Session.SessionDisplayExecutionResult> ApplyProfileAsync(OpenBlade.Contracts.PowerSource expectedPowerSource, OpenBlade.Contracts.DisplayProfileSettings settings, System.Threading.CancellationToken cancellationToken = null)
+  method abstract System.Threading.Tasks.Task<OpenBlade.Session.SessionDisplayExecutionResult> ApplyProfileForTransitionAsync(OpenBlade.Contracts.PowerSource expectedPowerSource, System.Int64 expectedGeneration, OpenBlade.Contracts.DisplayProfileSettings settings, System.Threading.CancellationToken cancellationToken)
+  method abstract System.Threading.Tasks.Task<OpenBlade.Session.SessionDisplayExecutionResult> QueryAsync(System.Threading.CancellationToken cancellationToken = null)
+  method abstract System.Threading.Tasks.Task<OpenBlade.Session.SessionDisplayExecutionResult> SetColorProfileAsync(OpenBlade.Contracts.PowerSource expectedPowerSource, System.String colorProfileKey, System.Threading.CancellationToken cancellationToken = null)
+  method abstract System.Threading.Tasks.Task<OpenBlade.Session.SessionDisplayExecutionResult> SetHdrAsync(OpenBlade.Contracts.PowerSource expectedPowerSource, System.Boolean enabled, System.Threading.CancellationToken cancellationToken = null)
+  method abstract System.Threading.Tasks.Task<OpenBlade.Session.SessionDisplayExecutionResult> SetRefreshRateAsync(OpenBlade.Contracts.PowerSource expectedPowerSource, System.String refreshRateKey, System.Threading.CancellationToken cancellationToken = null)
+type enum OpenBlade.Session.PerformanceShortcutNotificationKind
+  field System.Byte value__
+  field const OpenBlade.Session.PerformanceShortcutNotificationKind CurrentMode = 1
+  field const OpenBlade.Session.PerformanceShortcutNotificationKind Failed = 2
+type struct OpenBlade.Session.PerformanceShortcutNotificationSignal
+  interface System.IEquatable<OpenBlade.Session.PerformanceShortcutNotificationSignal>
+  ctor (OpenBlade.Session.PerformanceShortcutNotificationKind Kind, System.Nullable<OpenBlade.Contracts.PerformancePreset> Preset)
+  method OpenBlade.Session.PerformanceShortcutNotificationKind get_Kind()
+  method System.Nullable<OpenBlade.Contracts.PerformancePreset> get_Preset()
+  method System.UIntPtr Encode()
+  method System.Void Deconstruct(out OpenBlade.Session.PerformanceShortcutNotificationKind Kind, out System.Nullable<OpenBlade.Contracts.PerformancePreset> Preset)
+  method System.Void set_Kind(OpenBlade.Session.PerformanceShortcutNotificationKind value)
+  method System.Void set_Preset(System.Nullable<OpenBlade.Contracts.PerformancePreset> value)
+  method override System.Boolean Equals(System.Object obj)
+  method override System.Int32 GetHashCode()
+  method override System.String ToString()
+  method static System.Boolean TryDecode(System.UIntPtr encoded, out OpenBlade.Session.PerformanceShortcutNotificationSignal signal)
+  method static System.Boolean op_Equality(OpenBlade.Session.PerformanceShortcutNotificationSignal left, OpenBlade.Session.PerformanceShortcutNotificationSignal right)
+  method static System.Boolean op_Inequality(OpenBlade.Session.PerformanceShortcutNotificationSignal left, OpenBlade.Session.PerformanceShortcutNotificationSignal right)
+  method virtual System.Boolean Equals(OpenBlade.Session.PerformanceShortcutNotificationSignal other)
+  property OpenBlade.Session.PerformanceShortcutNotificationKind Kind { get; init; }
+  property System.Nullable<OpenBlade.Contracts.PerformancePreset> Preset { get; init; }
+type sealed class OpenBlade.Session.QueryDisplayRequest
+  base OpenBlade.Session.SessionDisplayRequest
+  interface System.IEquatable<OpenBlade.Session.QueryDisplayRequest>
+  ctor (System.Int32 Version, System.Guid RequestId)
+  method System.Void Deconstruct(out System.Int32 Version, out System.Guid RequestId)
+  method override System.Boolean Equals(System.Object obj)
+  method override System.Int32 GetHashCode()
+  method override System.String ToString()
+  method sealed override System.Boolean Equals(OpenBlade.Session.SessionDisplayRequest other)
+  method static System.Boolean op_Equality(OpenBlade.Session.QueryDisplayRequest left, OpenBlade.Session.QueryDisplayRequest right)
+  method static System.Boolean op_Inequality(OpenBlade.Session.QueryDisplayRequest left, OpenBlade.Session.QueryDisplayRequest right)
+  method virtual OpenBlade.Session.QueryDisplayRequest <Clone>$()
+  method virtual System.Boolean Equals(OpenBlade.Session.QueryDisplayRequest other)
+type sealed class OpenBlade.Session.SessionAgentEventEndpoint
+  interface System.IEquatable<OpenBlade.Session.SessionAgentEventEndpoint>
+  ctor (System.String DisplayBrightnessChangedMessageName, System.String PerformanceShortcutNotificationMessageName)
+  method OpenBlade.Session.SessionAgentEventEndpoint <Clone>$()
+  method System.String get_DisplayBrightnessChangedMessageName()
+  method System.String get_PerformanceShortcutNotificationMessageName()
+  method System.Void Deconstruct(out System.String DisplayBrightnessChangedMessageName, out System.String PerformanceShortcutNotificationMessageName)
+  method System.Void set_DisplayBrightnessChangedMessageName(System.String value)
+  method System.Void set_PerformanceShortcutNotificationMessageName(System.String value)
+  method override System.Boolean Equals(System.Object obj)
+  method override System.Int32 GetHashCode()
+  method override System.String ToString()
+  method static OpenBlade.Session.SessionAgentEventEndpoint Create(System.Security.Principal.SecurityIdentifier userSid)
+  method static System.Boolean op_Equality(OpenBlade.Session.SessionAgentEventEndpoint left, OpenBlade.Session.SessionAgentEventEndpoint right)
+  method static System.Boolean op_Inequality(OpenBlade.Session.SessionAgentEventEndpoint left, OpenBlade.Session.SessionAgentEventEndpoint right)
+  method virtual System.Boolean Equals(OpenBlade.Session.SessionAgentEventEndpoint other)
+  property System.String DisplayBrightnessChangedMessageName { get; init; }
+  property System.String PerformanceShortcutNotificationMessageName { get; init; }
+type sealed class OpenBlade.Session.SessionAgentPipeEndpoint
+  interface System.IEquatable<OpenBlade.Session.SessionAgentPipeEndpoint>
+  ctor (System.String PipeName)
+  method OpenBlade.Session.SessionAgentPipeEndpoint <Clone>$()
+  method System.String get_PipeName()
+  method System.Void Deconstruct(out System.String PipeName)
+  method System.Void set_PipeName(System.String value)
+  method override System.Boolean Equals(System.Object obj)
+  method override System.Int32 GetHashCode()
+  method override System.String ToString()
+  method static OpenBlade.Session.SessionAgentPipeEndpoint Create(System.Security.Principal.SecurityIdentifier userSid)
+  method static System.Boolean op_Equality(OpenBlade.Session.SessionAgentPipeEndpoint left, OpenBlade.Session.SessionAgentPipeEndpoint right)
+  method static System.Boolean op_Inequality(OpenBlade.Session.SessionAgentPipeEndpoint left, OpenBlade.Session.SessionAgentPipeEndpoint right)
+  method virtual System.Boolean Equals(OpenBlade.Session.SessionAgentPipeEndpoint other)
+  property System.String PipeName { get; init; }
+type sealed class OpenBlade.Session.SessionDisplayExecutionResult
+  interface System.IEquatable<OpenBlade.Session.SessionDisplayExecutionResult>
+  ctor (OpenBlade.Session.SessionDisplayOperationStatus Status, System.String Error, OpenBlade.Display.DisplaySettingsSnapshot State)
+  method OpenBlade.Display.DisplaySettingsSnapshot get_State()
+  method OpenBlade.Session.SessionDisplayExecutionResult <Clone>$()
+  method OpenBlade.Session.SessionDisplayOperationStatus get_Status()
+  method System.Boolean get_Succeeded()
+  method System.String get_Error()
+  method System.Void Deconstruct(out OpenBlade.Session.SessionDisplayOperationStatus Status, out System.String Error, out OpenBlade.Display.DisplaySettingsSnapshot State)
+  method System.Void set_Error(System.String value)
+  method System.Void set_State(OpenBlade.Display.DisplaySettingsSnapshot value)
+  method System.Void set_Status(OpenBlade.Session.SessionDisplayOperationStatus value)
+  method override System.Boolean Equals(System.Object obj)
+  method override System.Int32 GetHashCode()
+  method override System.String ToString()
+  method static System.Boolean op_Equality(OpenBlade.Session.SessionDisplayExecutionResult left, OpenBlade.Session.SessionDisplayExecutionResult right)
+  method static System.Boolean op_Inequality(OpenBlade.Session.SessionDisplayExecutionResult left, OpenBlade.Session.SessionDisplayExecutionResult right)
+  method virtual System.Boolean Equals(OpenBlade.Session.SessionDisplayExecutionResult other)
+  property OpenBlade.Display.DisplaySettingsSnapshot State { get; init; }
+  property OpenBlade.Session.SessionDisplayOperationStatus Status { get; init; }
+  property System.Boolean Succeeded { get; }
+  property System.String Error { get; init; }
+type static class OpenBlade.Session.SessionDisplayIpc
+  field const System.Int32 MaximumMessageBytes = 65536
+  field const System.Int32 ProtocolVersion = 1
+  field const System.String PipeNamePrefix = "OpenBlade.Session.Display.v1"
+type static class OpenBlade.Session.SessionDisplayIpcCodec
+  method static System.Threading.Tasks.Task WriteRequestAsync(System.IO.Stream stream, OpenBlade.Session.SessionDisplayRequest request, System.Threading.CancellationToken cancellationToken = null)
+  method static System.Threading.Tasks.Task WriteResponseAsync(System.IO.Stream stream, OpenBlade.Session.SessionDisplayResponse response, System.Threading.CancellationToken cancellationToken = null)
+  method static System.Threading.Tasks.Task<OpenBlade.Session.SessionDisplayRequest> ReadRequestAsync(System.IO.Stream stream, System.Threading.CancellationToken cancellationToken = null)
+  method static System.Threading.Tasks.Task<OpenBlade.Session.SessionDisplayResponse> ReadResponseAsync(System.IO.Stream stream, System.Threading.CancellationToken cancellationToken = null)
+type enum OpenBlade.Session.SessionDisplayOperationStatus
+  field System.Int32 value__
+  field const OpenBlade.Session.SessionDisplayOperationStatus Blocked = 1
+  field const OpenBlade.Session.SessionDisplayOperationStatus Failed = 2
+  field const OpenBlade.Session.SessionDisplayOperationStatus Succeeded = 0
+type abstract class OpenBlade.Session.SessionDisplayRequest
+  interface System.IEquatable<OpenBlade.Session.SessionDisplayRequest>
+  method System.Guid get_RequestId()
+  method System.Int32 get_Version()
+  method System.Void Deconstruct(out System.Int32 Version, out System.Guid RequestId)
+  method System.Void set_RequestId(System.Guid value)
+  method System.Void set_Version(System.Int32 value)
+  method abstract OpenBlade.Session.SessionDisplayRequest <Clone>$()
+  method override System.Boolean Equals(System.Object obj)
+  method override System.Int32 GetHashCode()
+  method override System.String ToString()
+  method static System.Boolean op_Equality(OpenBlade.Session.SessionDisplayRequest left, OpenBlade.Session.SessionDisplayRequest right)
+  method static System.Boolean op_Inequality(OpenBlade.Session.SessionDisplayRequest left, OpenBlade.Session.SessionDisplayRequest right)
+  method virtual System.Boolean Equals(OpenBlade.Session.SessionDisplayRequest other)
+  property System.Guid RequestId { get; init; }
+  property System.Int32 Version { get; init; }
+type sealed class OpenBlade.Session.SessionDisplayResponse
+  interface System.IEquatable<OpenBlade.Session.SessionDisplayResponse>
+  ctor (System.Int32 Version, System.Guid RequestId, OpenBlade.Session.SessionDisplayOperationStatus Status, System.String Error, OpenBlade.Display.DisplaySettingsSnapshot State)
+  method OpenBlade.Display.DisplaySettingsSnapshot get_State()
+  method OpenBlade.Session.SessionDisplayOperationStatus get_Status()
+  method OpenBlade.Session.SessionDisplayResponse <Clone>$()
+  method System.Guid get_RequestId()
+  method System.Int32 get_Version()
+  method System.String get_Error()
+  method System.Void Deconstruct(out System.Int32 Version, out System.Guid RequestId, out OpenBlade.Session.SessionDisplayOperationStatus Status, out System.String Error, out OpenBlade.Display.DisplaySettingsSnapshot State)
+  method System.Void set_Error(System.String value)
+  method System.Void set_RequestId(System.Guid value)
+  method System.Void set_State(OpenBlade.Display.DisplaySettingsSnapshot value)
+  method System.Void set_Status(OpenBlade.Session.SessionDisplayOperationStatus value)
+  method System.Void set_Version(System.Int32 value)
+  method override System.Boolean Equals(System.Object obj)
+  method override System.Int32 GetHashCode()
+  method override System.String ToString()
+  method static System.Boolean op_Equality(OpenBlade.Session.SessionDisplayResponse left, OpenBlade.Session.SessionDisplayResponse right)
+  method static System.Boolean op_Inequality(OpenBlade.Session.SessionDisplayResponse left, OpenBlade.Session.SessionDisplayResponse right)
+  method virtual System.Boolean Equals(OpenBlade.Session.SessionDisplayResponse other)
+  property OpenBlade.Display.DisplaySettingsSnapshot State { get; init; }
+  property OpenBlade.Session.SessionDisplayOperationStatus Status { get; init; }
+  property System.Guid RequestId { get; init; }
+  property System.Int32 Version { get; init; }
+  property System.String Error { get; init; }
+type sealed class OpenBlade.Session.SetColorProfileRequest
+  base OpenBlade.Session.SessionDisplayRequest
+  interface System.IEquatable<OpenBlade.Session.SetColorProfileRequest>
+  ctor (System.Int32 Version, System.Guid RequestId, OpenBlade.Contracts.PowerSource ExpectedPowerSource, System.String ColorProfileKey)
+  method OpenBlade.Contracts.PowerSource get_ExpectedPowerSource()
+  method System.String get_ColorProfileKey()
+  method System.Void Deconstruct(out System.Int32 Version, out System.Guid RequestId, out OpenBlade.Contracts.PowerSource ExpectedPowerSource, out System.String ColorProfileKey)
+  method System.Void set_ColorProfileKey(System.String value)
+  method System.Void set_ExpectedPowerSource(OpenBlade.Contracts.PowerSource value)
+  method override System.Boolean Equals(System.Object obj)
+  method override System.Int32 GetHashCode()
+  method override System.String ToString()
+  method sealed override System.Boolean Equals(OpenBlade.Session.SessionDisplayRequest other)
+  method static System.Boolean op_Equality(OpenBlade.Session.SetColorProfileRequest left, OpenBlade.Session.SetColorProfileRequest right)
+  method static System.Boolean op_Inequality(OpenBlade.Session.SetColorProfileRequest left, OpenBlade.Session.SetColorProfileRequest right)
+  method virtual OpenBlade.Session.SetColorProfileRequest <Clone>$()
+  method virtual System.Boolean Equals(OpenBlade.Session.SetColorProfileRequest other)
+  property OpenBlade.Contracts.PowerSource ExpectedPowerSource { get; init; }
+  property System.String ColorProfileKey { get; init; }
+type sealed class OpenBlade.Session.SetHdrRequest
+  base OpenBlade.Session.SessionDisplayRequest
+  interface System.IEquatable<OpenBlade.Session.SetHdrRequest>
+  ctor (System.Int32 Version, System.Guid RequestId, OpenBlade.Contracts.PowerSource ExpectedPowerSource, System.Boolean Enabled)
+  method OpenBlade.Contracts.PowerSource get_ExpectedPowerSource()
+  method System.Boolean get_Enabled()
+  method System.Void Deconstruct(out System.Int32 Version, out System.Guid RequestId, out OpenBlade.Contracts.PowerSource ExpectedPowerSource, out System.Boolean Enabled)
+  method System.Void set_Enabled(System.Boolean value)
+  method System.Void set_ExpectedPowerSource(OpenBlade.Contracts.PowerSource value)
+  method override System.Boolean Equals(System.Object obj)
+  method override System.Int32 GetHashCode()
+  method override System.String ToString()
+  method sealed override System.Boolean Equals(OpenBlade.Session.SessionDisplayRequest other)
+  method static System.Boolean op_Equality(OpenBlade.Session.SetHdrRequest left, OpenBlade.Session.SetHdrRequest right)
+  method static System.Boolean op_Inequality(OpenBlade.Session.SetHdrRequest left, OpenBlade.Session.SetHdrRequest right)
+  method virtual OpenBlade.Session.SetHdrRequest <Clone>$()
+  method virtual System.Boolean Equals(OpenBlade.Session.SetHdrRequest other)
+  property OpenBlade.Contracts.PowerSource ExpectedPowerSource { get; init; }
+  property System.Boolean Enabled { get; init; }
+type sealed class OpenBlade.Session.SetRefreshRateRequest
+  base OpenBlade.Session.SessionDisplayRequest
+  interface System.IEquatable<OpenBlade.Session.SetRefreshRateRequest>
+  ctor (System.Int32 Version, System.Guid RequestId, OpenBlade.Contracts.PowerSource ExpectedPowerSource, System.String RefreshRateKey)
+  method OpenBlade.Contracts.PowerSource get_ExpectedPowerSource()
+  method System.String get_RefreshRateKey()
+  method System.Void Deconstruct(out System.Int32 Version, out System.Guid RequestId, out OpenBlade.Contracts.PowerSource ExpectedPowerSource, out System.String RefreshRateKey)
+  method System.Void set_ExpectedPowerSource(OpenBlade.Contracts.PowerSource value)
+  method System.Void set_RefreshRateKey(System.String value)
+  method override System.Boolean Equals(System.Object obj)
+  method override System.Int32 GetHashCode()
+  method override System.String ToString()
+  method sealed override System.Boolean Equals(OpenBlade.Session.SessionDisplayRequest other)
+  method static System.Boolean op_Equality(OpenBlade.Session.SetRefreshRateRequest left, OpenBlade.Session.SetRefreshRateRequest right)
+  method static System.Boolean op_Inequality(OpenBlade.Session.SetRefreshRateRequest left, OpenBlade.Session.SetRefreshRateRequest right)
+  method virtual OpenBlade.Session.SetRefreshRateRequest <Clone>$()
+  method virtual System.Boolean Equals(OpenBlade.Session.SetRefreshRateRequest other)
+  property OpenBlade.Contracts.PowerSource ExpectedPowerSource { get; init; }
+  property System.String RefreshRateKey { get; init; }
