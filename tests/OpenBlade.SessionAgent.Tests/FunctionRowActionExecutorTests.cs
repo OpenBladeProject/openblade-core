@@ -338,7 +338,7 @@ public sealed class FunctionRowActionExecutorTests
             throw new NotSupportedException();
     }
 
-    private sealed class RecordingServiceClient : IServiceClient
+    private sealed class RecordingServiceClient : OpenBlade.Testing.UnavailableServiceClient
     {
         public RecordingServiceClient(ServiceStatusSnapshot status)
         {
@@ -354,13 +354,13 @@ public sealed class FunctionRowActionExecutorTests
         public ControlOperationResult LightingResult { get; set; } =
             new(ControlOperationStatus.Applied, "Applied.");
 
-        public Task<ServiceStatusSnapshot> GetStatusAsync(CancellationToken token)
+        public override Task<ServiceStatusSnapshot> GetStatusAsync(CancellationToken token)
         {
             GetStatusCalls++;
             return Task.FromResult(Status);
         }
 
-        public Task<ControlOperationResult> SetLightingOverrideAsync(
+        public override Task<ControlOperationResult> SetLightingOverrideAsync(
             ManualOverride<LightingSettings>? value,
             CancellationToken token)
         {
@@ -368,7 +368,7 @@ public sealed class FunctionRowActionExecutorTests
             return Task.FromResult(LightingResult);
         }
 
-        public Task<ControlOperationResult> StepKeyboardBrightnessAsync(
+        public override Task<ControlOperationResult> StepKeyboardBrightnessAsync(
             KeyboardBrightnessDirection direction,
             OverrideLifetime lifetime,
             CancellationToken token)
@@ -377,37 +377,5 @@ public sealed class FunctionRowActionExecutorTests
             return Task.FromResult(LightingResult);
         }
 
-        public Task<ServiceStatusSnapshot> ObserveStateAsync(
-            bool includeLiveReadings,
-            CancellationToken cancellationToken) =>
-            throw new NotSupportedException();
-        public async IAsyncEnumerable<ServiceWatchUpdate> WatchStatusAsync(
-            [System.Runtime.CompilerServices.EnumeratorCancellation]
-            CancellationToken token)
-        {
-            await Task.CompletedTask;
-            yield break;
-        }
-        public Task<DiagnosticArchive> ExportDiagnosticsAsync(
-            bool liveReadingsEnabled,
-            CancellationToken token) => throw new NotSupportedException();
-        public Task<ControlOperationResult> UpdateProfilesAsync(
-            ProfileSet profiles,
-            CancellationToken token) => throw new NotSupportedException();
-        public Task<ControlOperationResult> SetPerformanceOverrideAsync(
-            ManualOverride<PerformancePreset>? value,
-            CancellationToken token) => throw new NotSupportedException();
-        public Task<ControlOperationResult> SetFanOverrideAsync(
-            ManualOverride<FanMode>? value,
-            CancellationToken token) => throw new NotSupportedException();
-        public Task<ControlOperationResult> SetBatteryPolicyAsync(
-            BatteryPolicy value,
-            CancellationToken token) => throw new NotSupportedException();
-        public Task<ControlOperationResult> SetBatteryProtectionAsync(
-            bool enabled,
-            CancellationToken token) => throw new NotSupportedException();
-        public Task<ControlOperationResult> SetFullChargeOverrideAsync(
-            bool enabled,
-            CancellationToken token) => throw new NotSupportedException();
     }
 }

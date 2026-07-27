@@ -82,7 +82,7 @@ public sealed class ServicePlaybackMuteIndicatorLoopTests
         }
     }
 
-    private sealed class WatchClient : IServiceClient
+    private sealed class WatchClient : OpenBlade.Testing.UnavailableServiceClient
     {
         private readonly Channel<ServiceWatchUpdate> updates =
             Channel.CreateUnbounded<ServiceWatchUpdate>();
@@ -95,7 +95,7 @@ public sealed class ServicePlaybackMuteIndicatorLoopTests
         public void PublishReconnecting() => updates.Writer.TryWrite(
             new ServiceWatchUpdate.Reconnecting());
 
-        public async IAsyncEnumerable<ServiceWatchUpdate> WatchStatusAsync(
+        public override async IAsyncEnumerable<ServiceWatchUpdate> WatchStatusAsync(
             [System.Runtime.CompilerServices.EnumeratorCancellation]
             CancellationToken token)
         {
@@ -105,7 +105,7 @@ public sealed class ServicePlaybackMuteIndicatorLoopTests
             }
         }
 
-        public Task<ControlOperationResult> SetPlaybackMuteIndicatorAsync(
+        public override Task<ControlOperationResult> SetPlaybackMuteIndicatorAsync(
             bool muted,
             CancellationToken token)
         {
@@ -115,44 +115,6 @@ public sealed class ServicePlaybackMuteIndicatorLoopTests
                 "Applied"));
         }
 
-        public Task<ServiceStatusSnapshot> GetStatusAsync(CancellationToken token) =>
-            throw new NotSupportedException();
-
-        public Task<ServiceStatusSnapshot> ObserveStateAsync(
-            bool includeLiveReadings,
-            CancellationToken cancellationToken) => throw new NotSupportedException();
-
-        public Task<DiagnosticArchive> ExportDiagnosticsAsync(
-            bool liveReadingsEnabled,
-            CancellationToken token) => throw new NotSupportedException();
-
-        public Task<ControlOperationResult> UpdateProfilesAsync(
-            ProfileSet profiles,
-            CancellationToken token) => throw new NotSupportedException();
-
-        public Task<ControlOperationResult> SetPerformanceOverrideAsync(
-            ManualOverride<PerformancePreset>? value,
-            CancellationToken token) => throw new NotSupportedException();
-
-        public Task<ControlOperationResult> SetFanOverrideAsync(
-            ManualOverride<FanMode>? value,
-            CancellationToken token) => throw new NotSupportedException();
-
-        public Task<ControlOperationResult> SetLightingOverrideAsync(
-            ManualOverride<LightingSettings>? value,
-            CancellationToken token) => throw new NotSupportedException();
-
-        public Task<ControlOperationResult> SetBatteryPolicyAsync(
-            BatteryPolicy value,
-            CancellationToken token) => throw new NotSupportedException();
-
-        public Task<ControlOperationResult> SetBatteryProtectionAsync(
-            bool enabled,
-            CancellationToken token) => throw new NotSupportedException();
-
-        public Task<ControlOperationResult> SetFullChargeOverrideAsync(
-            bool enabled,
-            CancellationToken token) => throw new NotSupportedException();
     }
 
     private static ServiceStatusSnapshot Status()

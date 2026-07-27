@@ -983,7 +983,7 @@ public sealed class ServiceReactiveLightingLoopTests
         }
     }
 
-    private sealed class WatchClient : IServiceClient
+    private sealed class WatchClient : OpenBlade.Testing.UnavailableServiceClient
     {
         private readonly Channel<ServiceWatchUpdate> updates = Channel.CreateUnbounded<ServiceWatchUpdate>();
         private int deliveryCount;
@@ -1024,7 +1024,7 @@ public sealed class ServiceReactiveLightingLoopTests
         public void FailWatch(Exception exception) =>
             Assert.True(updates.Writer.TryComplete(exception));
 
-        public async IAsyncEnumerable<ServiceWatchUpdate> WatchStatusAsync(
+        public override async IAsyncEnumerable<ServiceWatchUpdate> WatchStatusAsync(
             [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken token)
         {
             await foreach (ServiceWatchUpdate update in updates.Reader.ReadAllAsync(token))
@@ -1034,7 +1034,7 @@ public sealed class ServiceReactiveLightingLoopTests
             }
         }
 
-        public Task<ControlOperationResult> PulseReactiveKeyAsync(
+        public override Task<ControlOperationResult> PulseReactiveKeyAsync(
             ReactiveKeyPulse pulse,
             CancellationToken token)
         {
@@ -1044,10 +1044,7 @@ public sealed class ServiceReactiveLightingLoopTests
                 "Applied"));
         }
 
-        public Task<ServiceStatusSnapshot> GetStatusAsync(CancellationToken token) =>
-            throw new NotSupportedException();
-
-        public Task<ServiceStatusSnapshot> ObserveStateAsync(
+        public override Task<ServiceStatusSnapshot> ObserveStateAsync(
             bool includeLiveReadings,
             CancellationToken cancellationToken)
         {
@@ -1055,15 +1052,7 @@ public sealed class ServiceReactiveLightingLoopTests
             return Task.FromResult(ObservationStatus);
         }
 
-        public Task<DiagnosticArchive> ExportDiagnosticsAsync(
-            bool liveReadingsEnabled,
-            CancellationToken token) => throw new NotSupportedException();
-
-        public Task<ControlOperationResult> UpdateProfilesAsync(
-            ProfileSet profiles,
-            CancellationToken token) => throw new NotSupportedException();
-
-        public Task<ControlOperationResult> SetPerformanceOverrideAsync(
+        public override Task<ControlOperationResult> SetPerformanceOverrideAsync(
             ManualOverride<PerformancePreset>? value,
             CancellationToken token) => SetPerformanceConfigurationOverrideAsync(
                 value is null
@@ -1071,7 +1060,7 @@ public sealed class ServiceReactiveLightingLoopTests
                     : new PerformanceOverride(value.Value, value.Lifetime),
                 token);
 
-        public Task<ControlOperationResult> SetPerformanceConfigurationOverrideAsync(
+        public override Task<ControlOperationResult> SetPerformanceConfigurationOverrideAsync(
             PerformanceOverride? value,
             CancellationToken token)
         {
@@ -1084,7 +1073,7 @@ public sealed class ServiceReactiveLightingLoopTests
                 ?? Task.FromResult(PerformanceShortcutResult);
         }
 
-        public Task<ControlOperationResult> CyclePerformanceShortcutAsync(
+        public override Task<ControlOperationResult> CyclePerformanceShortcutAsync(
             PerformanceShortcutSource source,
             CancellationToken token)
         {
@@ -1093,7 +1082,7 @@ public sealed class ServiceReactiveLightingLoopTests
                 ?? Task.FromResult(PerformanceShortcutResult);
         }
 
-        public Task<ControlOperationResult> SetPerformanceShortcutPreviewAsync(
+        public override Task<ControlOperationResult> SetPerformanceShortcutPreviewAsync(
             Guid sessionId,
             long generation,
             PerformancePreset? preset,
@@ -1105,25 +1094,6 @@ public sealed class ServiceReactiveLightingLoopTests
                 "Stored"));
         }
 
-        public Task<ControlOperationResult> SetFanOverrideAsync(
-            ManualOverride<FanMode>? value,
-            CancellationToken token) => throw new NotSupportedException();
-
-        public Task<ControlOperationResult> SetLightingOverrideAsync(
-            ManualOverride<LightingSettings>? value,
-            CancellationToken token) => throw new NotSupportedException();
-
-        public Task<ControlOperationResult> SetBatteryPolicyAsync(
-            BatteryPolicy value,
-            CancellationToken token) => throw new NotSupportedException();
-
-        public Task<ControlOperationResult> SetBatteryProtectionAsync(
-            bool enabled,
-            CancellationToken token) => throw new NotSupportedException();
-
-        public Task<ControlOperationResult> SetFullChargeOverrideAsync(
-            bool enabled,
-            CancellationToken token) => throw new NotSupportedException();
     }
 
     private sealed class RecordingNotificationSink : IPerformanceShortcutNotificationSink

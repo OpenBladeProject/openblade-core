@@ -290,14 +290,14 @@ public sealed class SpecialKeyActionExecutorTests
             Launches.Add((target, requireWebAddress));
     }
 
-    private sealed class RecordingServiceClient : IServiceClient
+    private sealed class RecordingServiceClient : OpenBlade.Testing.UnavailableServiceClient
     {
         public int PerformanceCycles { get; private set; }
         public int GamingModeWrites { get; private set; }
         public bool? GamingModeEnabled { get; set; }
         public bool? MicrophoneMuteIndicator { get; private set; }
 
-        public Task<ControlOperationResult> CyclePerformanceShortcutAsync(
+        public override Task<ControlOperationResult> CyclePerformanceShortcutAsync(
             PerformanceShortcutSource source,
             CancellationToken token)
         {
@@ -307,10 +307,10 @@ public sealed class SpecialKeyActionExecutorTests
                 "Applied."));
         }
 
-        public Task<ServiceStatusSnapshot> GetStatusAsync(CancellationToken token) =>
+        public override Task<ServiceStatusSnapshot> GetStatusAsync(CancellationToken token) =>
             Task.FromResult(CreateStatus(GamingModeEnabled));
 
-        public Task<ControlOperationResult> ApplyOneShotLaptopControlAsync(
+        public override Task<ControlOperationResult> ApplyOneShotLaptopControlAsync(
             ApplyOneShotLaptopControl value,
             CancellationToken token)
         {
@@ -330,59 +330,6 @@ public sealed class SpecialKeyActionExecutorTests
                 ControlOperationStatus.Applied,
                 "Applied."));
         }
-
-        public Task<ServiceStatusSnapshot> ObserveStateAsync(
-            bool includeLiveReadings,
-            CancellationToken cancellationToken) =>
-            throw new NotSupportedException();
-
-        public async IAsyncEnumerable<ServiceWatchUpdate> WatchStatusAsync(
-            [System.Runtime.CompilerServices.EnumeratorCancellation]
-            CancellationToken token)
-        {
-            await Task.CompletedTask;
-            yield break;
-        }
-
-        public Task<DiagnosticArchive> ExportDiagnosticsAsync(
-            bool liveReadingsEnabled,
-            CancellationToken token) =>
-            throw new NotSupportedException();
-
-        public Task<ControlOperationResult> UpdateProfilesAsync(
-            ProfileSet profiles,
-            CancellationToken token) =>
-            throw new NotSupportedException();
-
-        public Task<ControlOperationResult> SetPerformanceOverrideAsync(
-            ManualOverride<PerformancePreset>? value,
-            CancellationToken token) =>
-            throw new NotSupportedException();
-
-        public Task<ControlOperationResult> SetFanOverrideAsync(
-            ManualOverride<FanMode>? value,
-            CancellationToken token) =>
-            throw new NotSupportedException();
-
-        public Task<ControlOperationResult> SetLightingOverrideAsync(
-            ManualOverride<LightingSettings>? value,
-            CancellationToken token) =>
-            throw new NotSupportedException();
-
-        public Task<ControlOperationResult> SetBatteryPolicyAsync(
-            BatteryPolicy value,
-            CancellationToken token) =>
-            throw new NotSupportedException();
-
-        public Task<ControlOperationResult> SetBatteryProtectionAsync(
-            bool enabled,
-            CancellationToken token) =>
-            throw new NotSupportedException();
-
-        public Task<ControlOperationResult> SetFullChargeOverrideAsync(
-            bool enabled,
-            CancellationToken token) =>
-            throw new NotSupportedException();
 
         private static ServiceStatusSnapshot CreateStatus(bool? gamingModeEnabled)
         {

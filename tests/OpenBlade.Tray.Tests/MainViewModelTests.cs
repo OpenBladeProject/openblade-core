@@ -4948,7 +4948,7 @@ public sealed class MainViewModelTests
         public void Advance(TimeSpan amount) => now += amount;
     }
 
-    private sealed class FakeServiceClient : IServiceClient
+    private sealed class FakeServiceClient : OpenBlade.Testing.UnavailableServiceClient
     {
         private readonly Channel<ServiceWatchUpdate> statuses = Channel.CreateUnbounded<ServiceWatchUpdate>();
         private readonly TaskCompletionSource mutationCompletion = new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -4994,7 +4994,7 @@ public sealed class MainViewModelTests
         public void CompleteMutation() => mutationCompletion.TrySetResult();
         public void CompleteExport() => exportCompletion.TrySetResult();
 
-        public async IAsyncEnumerable<ServiceWatchUpdate> WatchStatusAsync(
+        public override async IAsyncEnumerable<ServiceWatchUpdate> WatchStatusAsync(
             [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken token)
         {
             WatchCalls++;
@@ -5011,14 +5011,14 @@ public sealed class MainViewModelTests
             }
         }
 
-        public Task<ServiceStatusSnapshot> GetStatusAsync(CancellationToken token)
+        public override Task<ServiceStatusSnapshot> GetStatusAsync(CancellationToken token)
         {
             token.ThrowIfCancellationRequested();
             return Task.FromResult(CurrentStatus ?? throw new InvalidOperationException(
                 "No status has been published."));
         }
 
-        public Task<ServiceStatusSnapshot> ObserveStateAsync(
+        public override Task<ServiceStatusSnapshot> ObserveStateAsync(
             bool includeLiveReadings,
             CancellationToken cancellationToken)
         {
@@ -5027,7 +5027,7 @@ public sealed class MainViewModelTests
                 cancellationToken);
         }
 
-        public Task<ServiceStatusSnapshot> ObserveStateAsync(
+        public override Task<ServiceStatusSnapshot> ObserveStateAsync(
             LiveReadingSensors requestedLiveReadings,
             CancellationToken cancellationToken)
         {
@@ -5040,7 +5040,7 @@ public sealed class MainViewModelTests
                 : throw new NotSupportedException();
         }
 
-        public async Task<DiagnosticArchive> ExportDiagnosticsAsync(
+        public override async Task<DiagnosticArchive> ExportDiagnosticsAsync(
             bool liveReadingsEnabled,
             CancellationToken token)
         {
@@ -5054,18 +5054,20 @@ public sealed class MainViewModelTests
             return NextArchive;
         }
 
-        public Task<ControlOperationResult> UpdateProfilesAsync(ProfileSet profiles, CancellationToken token)
+        public override Task<ControlOperationResult> UpdateProfilesAsync(
+            ProfileSet profiles,
+            CancellationToken token)
         {
             LastProfiles = profiles;
             return MutateAsync(token);
         }
 
-        public Task<ControlOperationResult> SetPerformanceOverrideAsync(
+        public override Task<ControlOperationResult> SetPerformanceOverrideAsync(
             ManualOverride<PerformancePreset>? value,
             CancellationToken token)
             => SetPerformanceConfigurationOverrideAsync(value, token);
 
-        public Task<ControlOperationResult> SetPerformanceConfigurationOverrideAsync(
+        public override Task<ControlOperationResult> SetPerformanceConfigurationOverrideAsync(
             PerformanceOverride? value,
             CancellationToken token)
         {
@@ -5080,7 +5082,7 @@ public sealed class MainViewModelTests
             return MutateAsync(token);
         }
 
-        public Task<ControlOperationResult> SetFanOverrideAsync(
+        public override Task<ControlOperationResult> SetFanOverrideAsync(
             ManualOverride<FanMode>? value,
             CancellationToken token)
         {
@@ -5095,7 +5097,7 @@ public sealed class MainViewModelTests
             return MutateAsync(token);
         }
 
-        public Task<ControlOperationResult> SetFanControlOverrideAsync(
+        public override Task<ControlOperationResult> SetFanControlOverrideAsync(
             ManualOverride<FanMode>? value,
             FanControlSettings? settings,
             CancellationToken token)
@@ -5104,7 +5106,7 @@ public sealed class MainViewModelTests
             return SetFanOverrideAsync(value, token);
         }
 
-        public Task<ControlOperationResult> SetLightingOverrideAsync(
+        public override Task<ControlOperationResult> SetLightingOverrideAsync(
             ManualOverride<LightingSettings>? value,
             CancellationToken token)
         {
@@ -5119,7 +5121,7 @@ public sealed class MainViewModelTests
             return MutateAsync(token);
         }
 
-        public Task<ControlOperationResult> SetExternalLightingOverridePolicyAsync(
+        public override Task<ControlOperationResult> SetExternalLightingOverridePolicyAsync(
             bool enabled,
             CancellationToken token)
         {
@@ -5127,11 +5129,11 @@ public sealed class MainViewModelTests
             return MutateAsync(token);
         }
 
-        public Task<ControlOperationResult> SetBatteryPolicyAsync(
+        public override Task<ControlOperationResult> SetBatteryPolicyAsync(
             BatteryPolicy value,
             CancellationToken token) => MutateAsync(token);
 
-        public Task<ControlOperationResult> SetBatteryProtectionAsync(
+        public override Task<ControlOperationResult> SetBatteryProtectionAsync(
             bool enabled,
             CancellationToken token)
         {
@@ -5139,7 +5141,7 @@ public sealed class MainViewModelTests
             return MutateAsync(token);
         }
 
-        public Task<ControlOperationResult> SetFullChargeOverrideAsync(
+        public override Task<ControlOperationResult> SetFullChargeOverrideAsync(
             bool enabled,
             CancellationToken token)
         {
@@ -5149,7 +5151,7 @@ public sealed class MainViewModelTests
 
         public ApplyOneShotLaptopControl? OneShotLaptopControl { get; private set; }
 
-        public Task<ControlOperationResult> ApplyOneShotLaptopControlAsync(
+        public override Task<ControlOperationResult> ApplyOneShotLaptopControlAsync(
             ApplyOneShotLaptopControl value,
             CancellationToken token)
         {
@@ -5157,7 +5159,8 @@ public sealed class MainViewModelTests
             return MutateAsync(token);
         }
 
-        public Task<ControlOperationResult> ShutdownOpenBladeAsync(CancellationToken token)
+        public override Task<ControlOperationResult> ShutdownOpenBladeAsync(
+            CancellationToken token)
         {
             token.ThrowIfCancellationRequested();
             ShutdownRequested = true;

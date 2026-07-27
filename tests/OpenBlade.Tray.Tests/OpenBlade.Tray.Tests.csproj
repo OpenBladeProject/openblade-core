@@ -21,6 +21,8 @@
 
   <ItemGroup>
     <Compile Include="..\OpenBlade.Testing\AsyncTest.cs" Link="AsyncTest.cs" />
+    <Compile Include="..\OpenBlade.Testing\UnavailableServiceClient.cs"
+             Link="UnavailableServiceClient.cs" />
   </ItemGroup>
 
   <ItemGroup>

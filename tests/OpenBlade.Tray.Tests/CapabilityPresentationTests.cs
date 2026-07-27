@@ -1955,7 +1955,7 @@ public sealed class CapabilityPresentationTests
         }
     }
 
-    private sealed class PresentationClient : IServiceClient
+    private sealed class PresentationClient : OpenBlade.Testing.UnavailableServiceClient
     {
         private readonly Channel<ServiceWatchUpdate> statuses = Channel.CreateUnbounded<ServiceWatchUpdate>();
         public ProfileSet? SavedProfiles { get; private set; }
@@ -1963,7 +1963,7 @@ public sealed class CapabilityPresentationTests
         public bool? SavedBatteryProtection { get; private set; }
         public void Publish(ServiceStatusSnapshot status) =>
             statuses.Writer.TryWrite(new ServiceWatchUpdate.Connected(status));
-        public async IAsyncEnumerable<ServiceWatchUpdate> WatchStatusAsync(
+        public override async IAsyncEnumerable<ServiceWatchUpdate> WatchStatusAsync(
             [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken token)
         {
             await foreach (ServiceWatchUpdate status in statuses.Reader.ReadAllAsync(token))
@@ -1971,32 +1971,47 @@ public sealed class CapabilityPresentationTests
                 yield return status;
             }
         }
-        public Task<ControlOperationResult> UpdateProfilesAsync(ProfileSet profiles, CancellationToken token)
+        public override Task<ControlOperationResult> UpdateProfilesAsync(
+            ProfileSet profiles,
+            CancellationToken token)
         {
             SavedProfiles = profiles;
             return Result();
         }
-        public Task<ServiceStatusSnapshot> GetStatusAsync(CancellationToken token) => throw new NotSupportedException();
-        public Task<ServiceStatusSnapshot> ObserveStateAsync(
+        public override Task<ServiceStatusSnapshot> GetStatusAsync(
+            CancellationToken token) => throw new NotSupportedException();
+        public override Task<ServiceStatusSnapshot> ObserveStateAsync(
             bool includeLiveReadings,
             CancellationToken cancellationToken) => throw new NotSupportedException();
-        public Task<DiagnosticArchive> ExportDiagnosticsAsync(
+        public override Task<DiagnosticArchive> ExportDiagnosticsAsync(
             bool liveReadingsEnabled,
             CancellationToken token) => throw new NotSupportedException();
-        public Task<ControlOperationResult> SetPerformanceOverrideAsync(ManualOverride<PerformancePreset>? value, CancellationToken token) => Result();
-        public Task<ControlOperationResult> SetFanOverrideAsync(ManualOverride<FanMode>? value, CancellationToken token) => Result();
-        public Task<ControlOperationResult> SetLightingOverrideAsync(ManualOverride<LightingSettings>? value, CancellationToken token) => Result();
-        public Task<ControlOperationResult> SetBatteryPolicyAsync(BatteryPolicy value, CancellationToken token)
+        public override Task<ControlOperationResult> SetPerformanceOverrideAsync(
+            ManualOverride<PerformancePreset>? value,
+            CancellationToken token) => Result();
+        public override Task<ControlOperationResult> SetFanOverrideAsync(
+            ManualOverride<FanMode>? value,
+            CancellationToken token) => Result();
+        public override Task<ControlOperationResult> SetLightingOverrideAsync(
+            ManualOverride<LightingSettings>? value,
+            CancellationToken token) => Result();
+        public override Task<ControlOperationResult> SetBatteryPolicyAsync(
+            BatteryPolicy value,
+            CancellationToken token)
         {
             SavedBatteryPolicy = value;
             return Result();
         }
-        public Task<ControlOperationResult> SetBatteryProtectionAsync(bool enabled, CancellationToken token)
+        public override Task<ControlOperationResult> SetBatteryProtectionAsync(
+            bool enabled,
+            CancellationToken token)
         {
             SavedBatteryProtection = enabled;
             return Result();
         }
-        public Task<ControlOperationResult> SetFullChargeOverrideAsync(bool enabled, CancellationToken token) => Result();
+        public override Task<ControlOperationResult> SetFullChargeOverrideAsync(
+            bool enabled,
+            CancellationToken token) => Result();
         private static Task<ControlOperationResult> Result() => Task.FromResult(
             new ControlOperationResult(ControlOperationStatus.Applied, "Applied"));
     }

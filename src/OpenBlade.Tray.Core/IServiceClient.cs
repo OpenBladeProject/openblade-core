@@ -28,9 +28,7 @@ public interface IServiceClient : IServiceStatusWatcher
 
     Task<ServiceStatusSnapshot> ObserveStateAsync(
         LiveReadingSensors requestedLiveReadings,
-        CancellationToken cancellationToken) => ObserveStateAsync(
-            requestedLiveReadings != LiveReadingSensors.None,
-            cancellationToken);
+        CancellationToken cancellationToken);
 
     Task<DiagnosticArchive> ExportDiagnosticsAsync(
         bool liveReadingsEnabled,
@@ -46,31 +44,17 @@ public interface IServiceClient : IServiceStatusWatcher
 
     Task<ControlOperationResult> SetPerformanceConfigurationOverrideAsync(
         PerformanceOverride? value,
-        CancellationToken token) => value is { Value: PerformancePreset.Custom }
-            ? Task.FromResult(new ControlOperationResult(
-                ControlOperationStatus.Blocked,
-                "Custom performance is unavailable."))
-            : SetPerformanceOverrideAsync(
-                value is null
-                    ? null
-                    : new ManualOverride<PerformancePreset>(value.Value, value.Lifetime),
-                token);
+        CancellationToken token);
 
     Task<ControlOperationResult> CyclePerformanceShortcutAsync(
         PerformanceShortcutSource source,
-        CancellationToken token) => Task.FromResult(
-            new ControlOperationResult(
-                ControlOperationStatus.Blocked,
-                "Performance shortcuts are unavailable."));
+        CancellationToken token);
 
     Task<ControlOperationResult> SetPerformanceShortcutPreviewAsync(
         Guid sessionId,
         long generation,
         PerformancePreset? preset,
-        CancellationToken token) => Task.FromResult(
-            new ControlOperationResult(
-                ControlOperationStatus.Blocked,
-                "Performance shortcut previews are unavailable."));
+        CancellationToken token);
 
     Task<ControlOperationResult> SetFanOverrideAsync(
         ManualOverride<FanMode>? value,
@@ -79,7 +63,7 @@ public interface IServiceClient : IServiceStatusWatcher
     Task<ControlOperationResult> SetFanControlOverrideAsync(
         ManualOverride<FanMode>? value,
         FanControlSettings? settings,
-        CancellationToken token) => SetFanOverrideAsync(value, token);
+        CancellationToken token);
 
     Task<ControlOperationResult> SetLightingOverrideAsync(
         ManualOverride<LightingSettings>? value,
@@ -88,46 +72,28 @@ public interface IServiceClient : IServiceStatusWatcher
     Task<ControlOperationResult> StepKeyboardBrightnessAsync(
         KeyboardBrightnessDirection direction,
         OverrideLifetime lifetime,
-        CancellationToken token) => Task.FromResult(
-            new ControlOperationResult(
-                ControlOperationStatus.Blocked,
-                "Keyboard brightness stepping is unavailable."));
+        CancellationToken token);
 
     Task<ControlOperationResult> SetExternalLightingOverridePolicyAsync(
         bool enabled,
-        CancellationToken token) => Task.FromResult(
-            new ControlOperationResult(
-                ControlOperationStatus.Blocked,
-                "External lighting override policy is unavailable."));
+        CancellationToken token);
 
     Task<ControlOperationResult> SetLightingSuppressionAsync(
         LightingSuppressionReason reason,
         bool suppressed,
-        CancellationToken token) => Task.FromResult(
-            new ControlOperationResult(
-                ControlOperationStatus.Blocked,
-                "Lighting power policy is unavailable."));
+        CancellationToken token);
 
     Task<ControlOperationResult> PulseReactiveKeyAsync(
         ReactiveKeyPulse pulse,
-        CancellationToken token) => Task.FromResult(
-            new ControlOperationResult(
-                ControlOperationStatus.Blocked,
-                "Reactive lighting input is unavailable."));
+        CancellationToken token);
 
     Task<ControlOperationResult> PushAmbientLightingFrameAsync(
         AmbientLightingFrame frame,
-        CancellationToken token) => Task.FromResult(
-            new ControlOperationResult(
-                ControlOperationStatus.Blocked,
-                "Ambient Awareness input is unavailable."));
+        CancellationToken token);
 
     Task<ControlOperationResult> SetPlaybackMuteIndicatorAsync(
         bool muted,
-        CancellationToken token) => Task.FromResult(
-            new ControlOperationResult(
-                ControlOperationStatus.Blocked,
-                "Playback mute indication is unavailable."));
+        CancellationToken token);
 
     Task<ControlOperationResult> SetBatteryPolicyAsync(
         BatteryPolicy value,
@@ -143,14 +109,8 @@ public interface IServiceClient : IServiceStatusWatcher
 
     Task<ControlOperationResult> ApplyOneShotLaptopControlAsync(
         ApplyOneShotLaptopControl value,
-        CancellationToken token) => Task.FromResult(
-            new ControlOperationResult(
-                ControlOperationStatus.Blocked,
-                "One-shot laptop controls are unavailable."));
+        CancellationToken token);
 
-    Task<ControlOperationResult> ShutdownOpenBladeAsync(CancellationToken token) =>
-        Task.FromResult(new ControlOperationResult(
-            ControlOperationStatus.Blocked,
-            "OpenBlade shutdown is unavailable."));
+    Task<ControlOperationResult> ShutdownOpenBladeAsync(CancellationToken token);
 
 }
