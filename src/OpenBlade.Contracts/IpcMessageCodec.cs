@@ -245,80 +245,196 @@ public static class IpcMessageCodec
 
     private static bool ValidateStatus(ServiceStatusSnapshot? status)
     {
-        if (status is null
-            || status.Revision < 0
-            || status.PotentialControllers is null
-            || status.ExternalChanges is null
-            || status.Message is null
-            || status.Profiles is null
-            || status.DesiredState is null
-            || !ValidPerformanceState(
-                status.DesiredState.Performance.Value,
-                status.DesiredState.CustomPerformance)
-            || status.ConfirmedState is { } confirmed
-                && !ValidPerformanceState(
-                    confirmed.Performance,
-                    confirmed.CustomPerformance)
-            || status.ConfirmedState?.GpuClockOffsets is { } gpuClockOffsets
-                && (!gpuClockOffsets.IsWellFormed
-                    || status.ConfirmedState.Performance != PerformancePreset.Custom
-                    || status.ConfirmedState.CustomPerformance?.GpuClockOffsets
-                        != gpuClockOffsets.Current)
-            || status.PerformanceOverride is { } performanceOverride
-                && !performanceOverride.IsWellFormed()
-            || status.PerformanceShortcutPreview is { } preview
-                && (preview.SessionId == Guid.Empty
-                    || preview.Generation <= 0
-                    || !Enum.IsDefined(preview.Preset))
-            || !Enum.IsDefined(status.ActivePowerSource)
-            || !Enum.IsDefined(status.LightingRendererOwnership)
-            || status.FunctionKeyPrimary is { } functionKeyPrimary
-                && !Enum.IsDefined(functionKeyPrimary)
-            || status.BatteryHealth is { } batteryHealth
-                && (batteryHealth.DesignCapacityMilliwattHours is <= 0 or > 1_000_000
-                    || batteryHealth.FullChargeCapacityMilliwattHours
-                        is <= 0 or > 1_000_000
-                    || batteryHealth.FullChargeCapacityMilliwattHours
-                        > batteryHealth.DesignCapacityMilliwattHours * 2L)
-            || status.LightingSuppressions is { } suppressions
-                && (suppressions.Count > 2
-                    || suppressions.Any(reason => !Enum.IsDefined(reason))
-                    || suppressions.Distinct().Count() != suppressions.Count
-                    || !suppressions.SequenceEqual(suppressions.Order()))
-            || status.Capabilities is { } capabilities
-                && (capabilities.PerformancePresets is null
-                    || capabilities.FanModes is null
-                    || capabilities.LightingEffects is null
-                    || capabilities.ChargeLimits is null
-                    || capabilities.OneShotLaptopControls is null
-                    || capabilities.OneShotLaptopControls.Any(value => !Enum.IsDefined(value))
-                    || capabilities.OneShotLaptopControls.Distinct().Count()
-                        != capabilities.OneShotLaptopControls.Count
-                    || !ValidChargeLimits(capabilities.ChargeLimits)))
+        if (status is null)
         {
-            return false;
+            throw InvalidStatus("snapshot is missing");
         }
 
-        return status.PotentialControllers.Count <= 16
-            && status.PotentialControllers.Distinct(StringComparer.Ordinal).Count()
-                == status.PotentialControllers.Count
-            && status.PotentialControllers.SequenceEqual(
+        if (status.Revision < 0)
+        {
+            throw InvalidStatus("revision must be nonnegative");
+        }
+
+        if (status.PotentialControllers is null)
+        {
+            throw InvalidStatus("potential-controller collection is missing");
+        }
+
+        if (status.PotentialControllers.Count > 16)
+        {
+            throw InvalidStatus("potential-controller collection exceeds 16 entries");
+        }
+
+        if (status.PotentialControllers.Distinct(StringComparer.Ordinal).Count()
+            != status.PotentialControllers.Count)
+        {
+            throw InvalidStatus("potential-controller collection contains duplicates");
+        }
+
+        if (!status.PotentialControllers.SequenceEqual(
                 status.PotentialControllers.OrderBy(
                     controller => controller,
                     StringComparer.Ordinal),
-                StringComparer.Ordinal)
-            && status.ExternalChanges.Count <= 4
-            && status.ExternalChanges.All(Enum.IsDefined)
-            && status.ExternalChanges.Distinct().Count() == status.ExternalChanges.Count
-            && status.ExternalChanges.SequenceEqual(status.ExternalChanges.Order())
-            && !string.IsNullOrWhiteSpace(status.ServiceVersion)
-            && status.ServiceVersion.Length <= 64
-            && string.Equals(
+                StringComparer.Ordinal))
+        {
+            throw InvalidStatus("potential-controller collection is not ordinally sorted");
+        }
+
+        if (status.ExternalChanges is null)
+        {
+            throw InvalidStatus("external-change collection is missing");
+        }
+
+        if (status.ExternalChanges.Count > 4)
+        {
+            throw InvalidStatus("external-change collection exceeds four entries");
+        }
+
+        if (!status.ExternalChanges.All(Enum.IsDefined))
+        {
+            throw InvalidStatus("external-change collection contains an unknown subsystem");
+        }
+
+        if (status.ExternalChanges.Distinct().Count() != status.ExternalChanges.Count)
+        {
+            throw InvalidStatus("external-change collection contains duplicates");
+        }
+
+        if (!status.ExternalChanges.SequenceEqual(status.ExternalChanges.Order()))
+        {
+            throw InvalidStatus("external-change collection is not sorted");
+        }
+
+        if (status.Message is null)
+        {
+            throw InvalidStatus("message is missing");
+        }
+
+        if (status.Profiles is null)
+        {
+            throw InvalidStatus("profile set is missing");
+        }
+
+        if (status.DesiredState is null)
+        {
+            throw InvalidStatus("desired state is missing");
+        }
+
+        if (!ValidPerformanceState(
+                status.DesiredState.Performance.Value,
+                status.DesiredState.CustomPerformance))
+        {
+            throw InvalidStatus("desired performance state is inconsistent");
+        }
+
+        if (status.ConfirmedState is { } confirmed
+            && !ValidPerformanceState(
+                confirmed.Performance,
+                confirmed.CustomPerformance))
+        {
+            throw InvalidStatus("confirmed performance state is inconsistent");
+        }
+
+        if (status.ConfirmedState?.GpuClockOffsets is { } gpuClockOffsets
+            && (!gpuClockOffsets.IsWellFormed
+                || status.ConfirmedState.Performance != PerformancePreset.Custom
+                || status.ConfirmedState.CustomPerformance?.GpuClockOffsets
+                    != gpuClockOffsets.Current))
+        {
+            throw InvalidStatus("confirmed GPU clock-offset state is inconsistent");
+        }
+
+        if (status.PerformanceOverride is { } performanceOverride
+            && !performanceOverride.IsWellFormed())
+        {
+            throw InvalidStatus("performance override is malformed");
+        }
+
+        if (status.PerformanceShortcutPreview is { } preview
+            && (preview.SessionId == Guid.Empty
+                || preview.Generation <= 0
+                || !Enum.IsDefined(preview.Preset)))
+        {
+            throw InvalidStatus("performance-shortcut preview is malformed");
+        }
+
+        if (!Enum.IsDefined(status.ActivePowerSource))
+        {
+            throw InvalidStatus("active power source is unknown");
+        }
+
+        if (!Enum.IsDefined(status.LightingRendererOwnership))
+        {
+            throw InvalidStatus("lighting-renderer ownership is unknown");
+        }
+
+        if (status.FunctionKeyPrimary is { } functionKeyPrimary
+            && !Enum.IsDefined(functionKeyPrimary))
+        {
+            throw InvalidStatus("function-key primary mode is unknown");
+        }
+
+        if (status.BatteryHealth is { } batteryHealth
+            && (batteryHealth.DesignCapacityMilliwattHours is <= 0 or > 1_000_000
+                || batteryHealth.FullChargeCapacityMilliwattHours
+                    is <= 0 or > 1_000_000
+                || batteryHealth.FullChargeCapacityMilliwattHours
+                    > batteryHealth.DesignCapacityMilliwattHours * 2L))
+        {
+            throw InvalidStatus("battery-health capacities are outside the valid range");
+        }
+
+        if (status.LightingSuppressions is { } suppressions
+            && (suppressions.Count > 2
+                || suppressions.Any(reason => !Enum.IsDefined(reason))
+                || suppressions.Distinct().Count() != suppressions.Count
+                || !suppressions.SequenceEqual(suppressions.Order())))
+        {
+            throw InvalidStatus("lighting-suppression collection is malformed");
+        }
+
+        if (status.Capabilities is { } capabilities
+            && (capabilities.PerformancePresets is null
+                || capabilities.FanModes is null
+                || capabilities.LightingEffects is null
+                || capabilities.ChargeLimits is null
+                || capabilities.OneShotLaptopControls is null
+                || capabilities.OneShotLaptopControls.Any(value => !Enum.IsDefined(value))
+                || capabilities.OneShotLaptopControls.Distinct().Count()
+                    != capabilities.OneShotLaptopControls.Count
+                || !ValidChargeLimits(capabilities.ChargeLimits)))
+        {
+            throw InvalidStatus("capability collections are malformed");
+        }
+
+        if (string.IsNullOrWhiteSpace(status.ServiceVersion))
+        {
+            throw InvalidStatus("service version is missing");
+        }
+
+        if (status.ServiceVersion.Length > 64)
+        {
+            throw InvalidStatus("service version exceeds 64 characters");
+        }
+
+        if (!string.Equals(
                 status.ServiceVersion,
                 status.ServiceVersion.Trim(),
-                StringComparison.Ordinal)
-            && (status.LiveReadings is null || ValidLiveReadings(status.LiveReadings));
+                StringComparison.Ordinal))
+        {
+            throw InvalidStatus("service version contains surrounding whitespace");
+        }
+
+        if (status.LiveReadings is not null && !ValidLiveReadings(status.LiveReadings))
+        {
+            throw InvalidStatus("live readings are outside the valid range");
+        }
+
+        return true;
     }
+
+    private static InvalidDataException InvalidStatus(string reason) =>
+        new($"IPC server status is invalid: {reason}.");
 
     private static bool ValidPerformanceState(
         PerformancePreset? performance,

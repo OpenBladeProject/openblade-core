@@ -548,8 +548,11 @@ public sealed class IpcMessageCodecTests
                 LightingRendererOwnership = (LightingRendererOwnershipState)999,
             });
 
-        await Assert.ThrowsAsync<InvalidDataException>(() =>
+        InvalidDataException exception = await Assert.ThrowsAsync<InvalidDataException>(() =>
             IpcMessageCodec.WriteServerFrameAsync(stream, frame, CancellationToken.None));
+        Assert.Equal(
+            "IPC server status is invalid: lighting-renderer ownership is unknown.",
+            exception.Message);
     }
 
     [Theory]
