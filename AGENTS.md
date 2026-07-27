@@ -81,6 +81,21 @@ The current production target is the Razer Blade 16 RZ09-0581, USB
    without a concrete current requirement. Favor the smallest design that
    fully implements the requested behavior and remains understandable.
 
+### Tray async context
+
+`OpenBlade.Tray.Core` deliberately uses two async-context modes. Command paths
+capture the WinUI context: the bare `await Task.Yield()` in
+`AsyncRelayCommand.RunAsync` is the mechanism, and `SetPerformanceAsync`,
+`SetCustomPerformanceAsync`, `ApplyFanControlAsync`, `SetLightingAsync`,
+`SetChargeLimitAsync`, `ToggleBatteryProtectionAsync`, and
+`ToggleFullChargeAsync` mutate bound state in a `finally` after an await.
+Background pumps, loops, queues, and `ServiceClient` use
+`ConfigureAwait(false)`.
+
+xunit runs without a `SynchronizationContext`, so tests cannot distinguish
+these modes or detect a wrong annotation in a UI-affine path. Do not enable
+CA2007 or bulk-add `ConfigureAwait(false)` in Tray.Core.
+
 ## Hardware and capture safety
 
 - Treat all uncaptured write commands as unsafe and unsupported.
