@@ -724,7 +724,12 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         }
     }
 
-    private async void OnStartAtSignInToggled(object sender, RoutedEventArgs args)
+    private async void OnStartAtSignInToggled(object sender, RoutedEventArgs args) =>
+        await RunHandlerAsync(
+            () => HandleStartAtSignInToggledAsync(sender),
+            nameof(OnStartAtSignInToggled));
+
+    private async Task HandleStartAtSignInToggledAsync(object sender)
     {
         if (sender is not ToggleSwitch toggle
             || Volatile.Read(ref disposed) != 0
@@ -768,7 +773,12 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
 
     private async void OnExternalLightingOverridePolicyToggled(
         object sender,
-        RoutedEventArgs args)
+        RoutedEventArgs args) =>
+        await RunHandlerAsync(
+            () => HandleExternalLightingOverridePolicyToggledAsync(sender),
+            nameof(OnExternalLightingOverridePolicyToggled));
+
+    private async Task HandleExternalLightingOverridePolicyToggledAsync(object sender)
     {
         if (changingExternalLightingPolicy
             || Volatile.Read(ref disposed) != 0
@@ -961,7 +971,12 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
 
     private async void OnBlockWindowsKeyInGamingModeToggled(
         object sender,
-        RoutedEventArgs args)
+        RoutedEventArgs args) =>
+        await RunHandlerAsync(
+            () => HandleBlockWindowsKeyInGamingModeToggledAsync(sender),
+            nameof(OnBlockWindowsKeyInGamingModeToggled));
+
+    private async Task HandleBlockWindowsKeyInGamingModeToggledAsync(object sender)
     {
         if (changingGamingModeKeyPolicy
             || Volatile.Read(ref disposed) != 0
@@ -988,7 +1003,12 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
 
     private async void OnBlockAltTabInGamingModeToggled(
         object sender,
-        RoutedEventArgs args)
+        RoutedEventArgs args) =>
+        await RunHandlerAsync(
+            () => HandleBlockAltTabInGamingModeToggledAsync(sender),
+            nameof(OnBlockAltTabInGamingModeToggled));
+
+    private async Task HandleBlockAltTabInGamingModeToggledAsync(object sender)
     {
         if (changingGamingModeKeyPolicy
             || Volatile.Read(ref disposed) != 0
@@ -1815,7 +1835,12 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
 
     private async void OnSaveCurrentDisplaySettingsToProfile(
         object sender,
-        RoutedEventArgs args)
+        RoutedEventArgs args) =>
+        await RunHandlerAsync(
+            HandleSaveCurrentDisplaySettingsToProfileAsync,
+            nameof(OnSaveCurrentDisplaySettingsToProfile));
+
+    private async Task HandleSaveCurrentDisplaySettingsToProfileAsync()
     {
         PowerSource sourceAtStart = ViewModel.ActivePowerSource;
         if (sourceAtStart is not (PowerSource.PluggedIn
@@ -1844,9 +1869,27 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
 
     private async void OnUseDisplayProfileSettings(
         object sender,
-        RoutedEventArgs args)
+        RoutedEventArgs args) =>
+        await RunHandlerAsync(
+            () => ViewModel.UseActiveDisplayProfileSettingsAsync(),
+            nameof(OnUseDisplayProfileSettings));
+
+    private async Task RunHandlerAsync(Func<Task> operation, string label)
     {
-        await ViewModel.UseActiveDisplayProfileSettingsAsync();
+        try
+        {
+            await operation();
+        }
+        catch (OperationCanceledException) when (Volatile.Read(ref disposed) != 0)
+        {
+        }
+        catch (ObjectDisposedException) when (Volatile.Read(ref disposed) != 0)
+        {
+        }
+        catch (Exception exception)
+        {
+            Trace.TraceError("OpenBlade {0} failed: {1}", label, exception);
+        }
     }
 
     private async Task<bool> OnSavedDisplayProfileRestoreRequested(
@@ -2067,7 +2110,12 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         QueuePreferenceSave();
     }
 
-    private async void OnCustomizeDashboard(object sender, RoutedEventArgs args)
+    private async void OnCustomizeDashboard(object sender, RoutedEventArgs args) =>
+        await RunHandlerAsync(
+            HandleCustomizeDashboardAsync,
+            nameof(OnCustomizeDashboard));
+
+    private async Task HandleCustomizeDashboardAsync()
     {
         if (dashboardCustomizerDialog is not null)
         {
@@ -2206,7 +2254,12 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         QueuePreferenceSave();
     }
 
-    private async void OnCustomizePageSections(object sender, RoutedEventArgs args)
+    private async void OnCustomizePageSections(object sender, RoutedEventArgs args) =>
+        await RunHandlerAsync(
+            () => HandleCustomizePageSectionsAsync(sender),
+            nameof(OnCustomizePageSections));
+
+    private async Task HandleCustomizePageSectionsAsync(object sender)
     {
         if (sender is not FrameworkElement element
             || element.Tag is not string pageName
@@ -2493,7 +2546,12 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         QueuePreferenceSave();
     }
 
-    private async void OnChooseCustomAccentColor(object sender, RoutedEventArgs args)
+    private async void OnChooseCustomAccentColor(object sender, RoutedEventArgs args) =>
+        await RunHandlerAsync(
+            HandleChooseCustomAccentColorAsync,
+            nameof(OnChooseCustomAccentColor));
+
+    private async Task HandleChooseCustomAccentColorAsync()
     {
         var picker = new ColorPicker
         {

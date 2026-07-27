@@ -202,6 +202,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Prevented asynchronous Settings, display-profile, customization, and accent
+  color actions from terminating the tray when an operation fails.
 - Fixed page scrollbars remaining visible after scrolling instead of
   auto-hiding.
 - Bounded service shutdown while a hardware operation or lighting-port cleanup
