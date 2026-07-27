@@ -28,9 +28,10 @@ public sealed class ServiceReactiveLightingLoopTests
         await using var loop = new ServiceReactiveLightingLoop(
             client,
             factory,
-            failures.Add,
-            notifications,
-            performanceShortcutQuietPeriod: TimeSpan.FromMilliseconds(25));
+            new ServiceReactiveLightingLoopOptions(
+                failures.Add,
+                notifications,
+                PerformanceShortcutQuietPeriod: TimeSpan.FromMilliseconds(25)));
         using var cancellation = new CancellationTokenSource();
         Task running = loop.RunAsync(cancellation.Token);
 
@@ -80,8 +81,9 @@ public sealed class ServiceReactiveLightingLoopTests
         await using var loop = new ServiceReactiveLightingLoop(
             client,
             factory,
-            shortcutNotifications: notifications,
-            performanceShortcutQuietPeriod: TimeSpan.FromMilliseconds(25));
+            new ServiceReactiveLightingLoopOptions(
+                ShortcutNotifications: notifications,
+                PerformanceShortcutQuietPeriod: TimeSpan.FromMilliseconds(25)));
         using var cancellation = new CancellationTokenSource();
         Task running = loop.RunAsync(cancellation.Token);
 
@@ -130,8 +132,9 @@ public sealed class ServiceReactiveLightingLoopTests
         await using var loop = new ServiceReactiveLightingLoop(
             client,
             factory,
-            shortcutNotifications: notifications,
-            performanceShortcutQuietPeriod: TimeSpan.FromMilliseconds(25));
+            new ServiceReactiveLightingLoopOptions(
+                ShortcutNotifications: notifications,
+                PerformanceShortcutQuietPeriod: TimeSpan.FromMilliseconds(25)));
         using var cancellation = new CancellationTokenSource();
         Task running = loop.RunAsync(cancellation.Token);
 
@@ -177,9 +180,10 @@ public sealed class ServiceReactiveLightingLoopTests
         await using var loop = new ServiceReactiveLightingLoop(
             client,
             factory,
-            failures.Enqueue,
-            notifications,
-            performanceShortcutQuietPeriod: TimeSpan.FromMilliseconds(25));
+            new ServiceReactiveLightingLoopOptions(
+                failures.Enqueue,
+                notifications,
+                PerformanceShortcutQuietPeriod: TimeSpan.FromMilliseconds(25)));
         using var cancellation = new CancellationTokenSource();
         Task running = loop.RunAsync(cancellation.Token);
 
@@ -213,8 +217,9 @@ public sealed class ServiceReactiveLightingLoopTests
         await using var loop = new ServiceReactiveLightingLoop(
             client,
             factory,
-            shortcutNotifications: notifications,
-            performanceShortcutQuietPeriod: TimeSpan.FromMilliseconds(40));
+            new ServiceReactiveLightingLoopOptions(
+                ShortcutNotifications: notifications,
+                PerformanceShortcutQuietPeriod: TimeSpan.FromMilliseconds(40)));
         using var cancellation = new CancellationTokenSource();
         Task running = loop.RunAsync(cancellation.Token);
 
@@ -256,8 +261,9 @@ public sealed class ServiceReactiveLightingLoopTests
         await using var loop = new ServiceReactiveLightingLoop(
             client,
             factory,
-            shortcutNotifications: notifications,
-            performanceShortcutQuietPeriod: TimeSpan.FromSeconds(5));
+            new ServiceReactiveLightingLoopOptions(
+                ShortcutNotifications: notifications,
+                PerformanceShortcutQuietPeriod: TimeSpan.FromSeconds(5)));
         using var cancellation = new CancellationTokenSource();
         Task running = loop.RunAsync(cancellation.Token);
 
@@ -291,7 +297,7 @@ public sealed class ServiceReactiveLightingLoopTests
         await using var loop = new ServiceReactiveLightingLoop(
             client,
             factory,
-            shortcutNotifications: notifications);
+            new ServiceReactiveLightingLoopOptions(ShortcutNotifications: notifications));
         using var cancellation = new CancellationTokenSource();
         Task running = loop.RunAsync(cancellation.Token);
 
@@ -320,7 +326,7 @@ public sealed class ServiceReactiveLightingLoopTests
         await using var loop = new ServiceReactiveLightingLoop(
             client,
             factory,
-            failures.Enqueue);
+            new ServiceReactiveLightingLoopOptions(ErrorHandler: failures.Enqueue));
         using var cancellation = new CancellationTokenSource();
         Task running = loop.RunAsync(cancellation.Token);
 
@@ -474,7 +480,7 @@ public sealed class ServiceReactiveLightingLoopTests
         await using var loop = new ServiceReactiveLightingLoop(
             client,
             factory,
-            failures.Enqueue);
+            new ServiceReactiveLightingLoopOptions(ErrorHandler: failures.Enqueue));
         using var cancellation = new CancellationTokenSource();
         Task running = loop.RunAsync(cancellation.Token);
 
@@ -504,9 +510,10 @@ public sealed class ServiceReactiveLightingLoopTests
         await using var loop = new ServiceReactiveLightingLoop(
             client,
             factory,
-            failures.Enqueue,
-            new ThrowingNotificationSink(),
-            performanceShortcutQuietPeriod: TimeSpan.FromMilliseconds(25));
+            new ServiceReactiveLightingLoopOptions(
+                failures.Enqueue,
+                new ThrowingNotificationSink(),
+                PerformanceShortcutQuietPeriod: TimeSpan.FromMilliseconds(25)));
         using var cancellation = new CancellationTokenSource();
         Task running = loop.RunAsync(cancellation.Token);
 
@@ -533,8 +540,9 @@ public sealed class ServiceReactiveLightingLoopTests
         await using var loop = new ServiceReactiveLightingLoop(
             client,
             factory,
-            failures.Add,
-            performanceShortcutQuietPeriod: TimeSpan.FromMilliseconds(25));
+            new ServiceReactiveLightingLoopOptions(
+                ErrorHandler: failures.Add,
+                PerformanceShortcutQuietPeriod: TimeSpan.FromMilliseconds(25)));
         using var cancellation = new CancellationTokenSource();
         Task running = loop.RunAsync(cancellation.Token);
 
@@ -591,12 +599,13 @@ public sealed class ServiceReactiveLightingLoopTests
         await using var loop = new ServiceReactiveLightingLoop(
             client,
             factory,
-            shouldOverrideSpecialKey: slot => slot == SpecialKeySlot.M3,
-            executeSpecialKeyAsync: (slot, _) =>
-            {
-                delivered.Enqueue(slot);
-                return Task.CompletedTask;
-            });
+            new ServiceReactiveLightingLoopOptions(
+                ShouldOverrideSpecialKey: slot => slot == SpecialKeySlot.M3,
+                ExecuteSpecialKeyAsync: (slot, _) =>
+                {
+                    delivered.Enqueue(slot);
+                    return Task.CompletedTask;
+                }));
         using var cancellation = new CancellationTokenSource();
         Task running = loop.RunAsync(cancellation.Token);
 
@@ -622,17 +631,18 @@ public sealed class ServiceReactiveLightingLoopTests
         await using var loop = new ServiceReactiveLightingLoop(
             client,
             factory,
-            shouldOverrideSpecialKey: _ => true,
-            executeSpecialKeyAsync: (slot, _) =>
-            {
-                configured.Enqueue(slot);
-                return Task.CompletedTask;
-            },
-            executeDefaultLaptopKeyAsync: (slot, _) =>
-            {
-                defaults.Enqueue(slot);
-                return Task.CompletedTask;
-            });
+            new ServiceReactiveLightingLoopOptions(
+                ShouldOverrideSpecialKey: _ => true,
+                ExecuteSpecialKeyAsync: (slot, _) =>
+                {
+                    configured.Enqueue(slot);
+                    return Task.CompletedTask;
+                },
+                ExecuteDefaultLaptopKeyAsync: (slot, _) =>
+                {
+                    defaults.Enqueue(slot);
+                    return Task.CompletedTask;
+                }));
         using var cancellation = new CancellationTokenSource();
         Task running = loop.RunAsync(cancellation.Token);
 
@@ -656,11 +666,12 @@ public sealed class ServiceReactiveLightingLoopTests
         await using var loop = new ServiceReactiveLightingLoop(
             client,
             factory,
-            executeFunctionRowActionAsync: (action, _) =>
-            {
-                delivered.Enqueue(action);
-                return Task.CompletedTask;
-            });
+            new ServiceReactiveLightingLoopOptions(
+                ExecuteFunctionRowActionAsync: (action, _) =>
+                {
+                    delivered.Enqueue(action);
+                    return Task.CompletedTask;
+                }));
         using var cancellation = new CancellationTokenSource();
         Task running = loop.RunAsync(cancellation.Token);
 

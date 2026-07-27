@@ -139,13 +139,14 @@ internal static class Program
                 await using var reactive = new ServiceReactiveLightingLoop(
                     reactiveServiceClient,
                     WindowsReactiveKeyboardSourceFactory.Instance,
-                    inputErrorHandler,
-                    shortcutNotifications,
-                    statusFeed,
-                    specialKeyBindings.ShouldHandleInDriverMode,
-                    specialKeyExecutor.ExecuteAsync,
-                    specialKeyExecutor.ExecuteDefaultAsync,
-                    functionRowActions.ExecuteAsync);
+                    new ServiceReactiveLightingLoopOptions(
+                        inputErrorHandler,
+                        shortcutNotifications,
+                        statusFeed,
+                        specialKeyBindings.ShouldHandleInDriverMode,
+                        specialKeyExecutor.ExecuteAsync,
+                        specialKeyExecutor.ExecuteDefaultAsync,
+                        functionRowActions.ExecuteAsync));
                 await using var ambientServiceClient = new ServiceClient();
                 await using var ambient = new ServiceAmbientLightingLoop(
                     ambientServiceClient,

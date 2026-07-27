@@ -25,6 +25,16 @@ public interface IReactiveKeyboardSourceFactory
     IReactiveKeyboardSource Create(ReactiveKeyboardSourceOptions options);
 }
 
+public sealed record ServiceReactiveLightingLoopOptions(
+    Action<Exception>? ErrorHandler = null,
+    IPerformanceShortcutNotificationSink? ShortcutNotifications = null,
+    IServiceStatusWatcher? StatusWatcher = null,
+    Func<SpecialKeySlot, bool>? ShouldOverrideSpecialKey = null,
+    Func<SpecialKeySlot, CancellationToken, Task>? ExecuteSpecialKeyAsync = null,
+    Func<SpecialKeySlot, CancellationToken, Task>? ExecuteDefaultLaptopKeyAsync = null,
+    Func<FunctionRowAction, CancellationToken, Task>? ExecuteFunctionRowActionAsync = null,
+    TimeSpan? PerformanceShortcutQuietPeriod = null);
+
 /// <summary>
 /// Owns the one session-local Raw Input registration used by key-triggered
 /// lighting and the captured performance shortcuts. The SessionAgent remains
@@ -64,43 +74,37 @@ public sealed class ServiceReactiveLightingLoop : IAsyncDisposable
     public ServiceReactiveLightingLoop(
         IServiceClient serviceClient,
         IReactiveKeyboardSourceFactory sourceFactory,
-        Action<Exception>? errorHandler = null,
-        IPerformanceShortcutNotificationSink? shortcutNotifications = null,
-        IServiceStatusWatcher? statusWatcher = null,
-        Func<SpecialKeySlot, bool>? shouldOverrideSpecialKey = null,
-        Func<SpecialKeySlot, CancellationToken, Task>? executeSpecialKeyAsync = null,
-        Func<SpecialKeySlot, CancellationToken, Task>? executeDefaultLaptopKeyAsync = null,
-        Func<FunctionRowAction, CancellationToken, Task>? executeFunctionRowActionAsync = null,
-        TimeSpan? performanceShortcutQuietPeriod = null)
+        ServiceReactiveLightingLoopOptions? options = null)
     {
+        options ??= new();
         this.serviceClient = serviceClient ?? throw new ArgumentNullException(nameof(serviceClient));
         this.sourceFactory = sourceFactory ?? throw new ArgumentNullException(nameof(sourceFactory));
-        this.statusWatcher = statusWatcher ?? serviceClient;
-        this.errorHandler = errorHandler;
-        this.shortcutNotifications = shortcutNotifications
+        statusWatcher = options.StatusWatcher ?? serviceClient;
+        errorHandler = options.ErrorHandler;
+        shortcutNotifications = options.ShortcutNotifications
             ?? NullPerformanceShortcutNotificationSink.Instance;
         pulsePump = new ReactiveKeyPulsePump(SendPulseAsync, errorHandler: ReportFailure);
         shortcutPump = new PerformanceShortcutTriggerPump(
             SendPerformanceShortcutAsync,
-            performanceShortcutQuietPeriod,
+            options.PerformanceShortcutQuietPeriod,
             errorHandler: ReportFailure);
-        this.shouldOverrideSpecialKey = shouldOverrideSpecialKey ?? (_ => false);
-        if (executeFunctionRowActionAsync is not null)
+        shouldOverrideSpecialKey = options.ShouldOverrideSpecialKey ?? (_ => false);
+        if (options.ExecuteFunctionRowActionAsync is not null)
         {
             functionRowActionPump = new BoundedEnumActionPump<FunctionRowAction>(
-                executeFunctionRowActionAsync,
+                options.ExecuteFunctionRowActionAsync,
                 errorHandler: ReportFailure);
         }
-        if (executeSpecialKeyAsync is not null)
+        if (options.ExecuteSpecialKeyAsync is not null)
         {
             specialKeyPump = new BoundedEnumActionPump<SpecialKeySlot>(
-                executeSpecialKeyAsync,
+                options.ExecuteSpecialKeyAsync,
                 errorHandler: ReportFailure);
         }
-        if (executeDefaultLaptopKeyAsync is not null)
+        if (options.ExecuteDefaultLaptopKeyAsync is not null)
         {
             defaultLaptopKeyPump = new BoundedEnumActionPump<SpecialKeySlot>(
-                executeDefaultLaptopKeyAsync,
+                options.ExecuteDefaultLaptopKeyAsync,
                 errorHandler: ReportFailure);
         }
     }
