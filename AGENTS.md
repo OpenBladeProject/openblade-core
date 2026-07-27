@@ -112,6 +112,17 @@ CA2007 or bulk-add `ConfigureAwait(false)` in Tray.Core.
 - Preserve untracked `.capture-control-*` and `.query-control-*` directories
   unless their owner explicitly asks to remove them.
 
+### Captures history boundary
+
+The `captures` submodule history was rewritten; super-repo commit `568fa88` is
+the boundary. Commits before it reference submodule commits absent from the
+remote, so `git submodule update`, `git bisect` across the boundary, and
+historical CI re-runs fail by design, not by fault. An existing local clone may
+still resolve the old pointers from unreferenced objects, while a fresh clone
+will not; do not conclude from local success that CI is misconfigured. To
+investigate older super-repo commits, check them out without recursing
+submodules.
+
 ## Change workflow
 
 1. Inspect `git status`, the affected contracts, and existing tests before
