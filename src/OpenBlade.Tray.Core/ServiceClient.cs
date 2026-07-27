@@ -45,7 +45,7 @@ public sealed class ServiceClient : IServiceClient, IAsyncDisposable
     public async Task<ServiceStatusSnapshot> GetStatusAsync(CancellationToken token)
     {
         var request = new GetStatusRequest(OpenBladeIpc.ProtocolVersion, Guid.NewGuid());
-        ServiceResponse response = await SendOnceAsync(request, token);
+        ServiceResponse response = await SendOnceAsync(request, token).ConfigureAwait(false);
         return response.Status
             ?? throw new InvalidDataException("Service status response is missing its status body.");
     }
@@ -53,8 +53,9 @@ public sealed class ServiceClient : IServiceClient, IAsyncDisposable
     public async Task<ServiceStatusSnapshot> ObserveStateAsync(
         bool includeLiveReadings,
         CancellationToken cancellationToken) => await ObserveStateAsync(
-            includeLiveReadings ? LiveReadingSensors.All : LiveReadingSensors.None,
-            cancellationToken);
+                includeLiveReadings ? LiveReadingSensors.All : LiveReadingSensors.None,
+                cancellationToken)
+            .ConfigureAwait(false);
 
     public async Task<ServiceStatusSnapshot> ObserveStateAsync(
         LiveReadingSensors requestedLiveReadings,
@@ -67,7 +68,8 @@ public sealed class ServiceClient : IServiceClient, IAsyncDisposable
         {
             RequestedLiveReadings = requestedLiveReadings,
         };
-        ServiceResponse response = await SendOnceAsync(request, cancellationToken);
+        ServiceResponse response = await SendOnceAsync(request, cancellationToken)
+            .ConfigureAwait(false);
         return response.Status
             ?? throw new InvalidDataException(
                 "Service observation response is missing its status body.");
@@ -81,7 +83,7 @@ public sealed class ServiceClient : IServiceClient, IAsyncDisposable
             OpenBladeIpc.ProtocolVersion,
             Guid.NewGuid(),
             liveReadingsEnabled);
-        ServiceResponse response = await SendOnceAsync(request, token);
+        ServiceResponse response = await SendOnceAsync(request, token).ConfigureAwait(false);
         return response.Archive
             ?? throw new InvalidDataException(
                 "Service diagnostic response is missing its archive body.");
@@ -192,19 +194,21 @@ public sealed class ServiceClient : IServiceClient, IAsyncDisposable
             OpenBladeIpc.ProtocolVersion,
             Guid.NewGuid(),
             pulse);
-        await reactivePulseGate.WaitAsync(token);
+        await reactivePulseGate.WaitAsync(token).ConfigureAwait(false);
         try
         {
             ObjectDisposedException.ThrowIf(Volatile.Read(ref disposed) != 0, this);
             for (int attempt = 0; ; attempt++)
             {
-                Stream connection = reactivePulseConnection ??= await connectAsync(token);
+                Stream connection = reactivePulseConnection ??=
+                    await connectAsync(token).ConfigureAwait(false);
                 try
                 {
                     ServiceResponse response = await SendOverConnectionAsync(
-                        connection,
-                        request,
-                        token);
+                            connection,
+                            request,
+                            token)
+                        .ConfigureAwait(false);
                     return response.Result
                         ?? throw new InvalidDataException(
                             "Service mutation response is missing its result body.");
@@ -217,7 +221,7 @@ public sealed class ServiceClient : IServiceClient, IAsyncDisposable
                     // The service intentionally expires an idle pulse burst.
                     // Discard that stale pipe and retry this pulse once on a new
                     // exact ACL-protected connection instead of dropping it.
-                    await ResetReactivePulseConnectionCoreAsync();
+                    await ResetReactivePulseConnectionCoreAsync().ConfigureAwait(false);
                 }
                 catch
                 {
@@ -225,7 +229,7 @@ public sealed class ServiceClient : IServiceClient, IAsyncDisposable
                     // request or a late response in this byte stream. It must
                     // never be reused by the next pulse, whose request ID would
                     // otherwise be matched against stale framing.
-                    await ResetReactivePulseConnectionCoreAsync();
+                    await ResetReactivePulseConnectionCoreAsync().ConfigureAwait(false);
                     throw;
                 }
             }
@@ -245,19 +249,21 @@ public sealed class ServiceClient : IServiceClient, IAsyncDisposable
             OpenBladeIpc.ProtocolVersion,
             Guid.NewGuid(),
             frame.ToRgbBytes());
-        await ambientFrameGate.WaitAsync(token);
+        await ambientFrameGate.WaitAsync(token).ConfigureAwait(false);
         try
         {
             ObjectDisposedException.ThrowIf(Volatile.Read(ref disposed) != 0, this);
             for (int attempt = 0; ; attempt++)
             {
-                Stream connection = ambientFrameConnection ??= await connectAsync(token);
+                Stream connection = ambientFrameConnection ??=
+                    await connectAsync(token).ConfigureAwait(false);
                 try
                 {
                     ServiceResponse response = await SendOverConnectionAsync(
-                        connection,
-                        request,
-                        token);
+                            connection,
+                            request,
+                            token)
+                        .ConfigureAwait(false);
                     return response.Result
                         ?? throw new InvalidDataException(
                             "Service mutation response is missing its result body.");
@@ -267,11 +273,11 @@ public sealed class ServiceClient : IServiceClient, IAsyncDisposable
                     && !token.IsCancellationRequested
                     && IsRetryableTransportFailure(exception))
                 {
-                    await ResetAmbientFrameConnectionCoreAsync();
+                    await ResetAmbientFrameConnectionCoreAsync().ConfigureAwait(false);
                 }
                 catch
                 {
-                    await ResetAmbientFrameConnectionCoreAsync();
+                    await ResetAmbientFrameConnectionCoreAsync().ConfigureAwait(false);
                     throw;
                 }
             }
@@ -338,16 +344,18 @@ public sealed class ServiceClient : IServiceClient, IAsyncDisposable
         {
             ObjectDisposedException.ThrowIf(Volatile.Read(ref disposed) != 0, this);
             token.ThrowIfCancellationRequested();
-            SubscriptionOpenResult openResult = await OpenSubscriptionAsync(token);
+            SubscriptionOpenResult openResult = await OpenSubscriptionAsync(token)
+                .ConfigureAwait(false);
             if (openResult.TransportFailed)
             {
                 yield return new ServiceWatchUpdate.Reconnecting();
-                await Task.Delay(reconnectDelay, timeProvider, token);
+                await Task.Delay(reconnectDelay, timeProvider, token).ConfigureAwait(false);
                 reconnectDelay = NextDelay(reconnectDelay);
                 continue;
             }
 
-            await using (Stream connection = openResult.Connection!)
+            Stream connection = openResult.Connection!;
+            await using (connection.ConfigureAwait(false))
             {
                 reconnectDelay = InitialReconnectDelay;
                 yield return new ServiceWatchUpdate.Connected(openResult.InitialStatus!);
@@ -355,8 +363,9 @@ public sealed class ServiceClient : IServiceClient, IAsyncDisposable
                 while (true)
                 {
                     SubscriptionReadResult readResult = await ReadSubscriptionFrameAsync(
-                        connection,
-                        token);
+                            connection,
+                            token)
+                        .ConfigureAwait(false);
                     if (readResult.TransportFailed)
                     {
                         break;
@@ -388,7 +397,7 @@ public sealed class ServiceClient : IServiceClient, IAsyncDisposable
         ServiceRequest request,
         CancellationToken token)
     {
-        ServiceResponse response = await SendOnceAsync(request, token);
+        ServiceResponse response = await SendOnceAsync(request, token).ConfigureAwait(false);
         return response.Result
             ?? throw new InvalidDataException("Service mutation response is missing its result body.");
     }
@@ -398,33 +407,36 @@ public sealed class ServiceClient : IServiceClient, IAsyncDisposable
         CancellationToken token)
     {
         ObjectDisposedException.ThrowIf(Volatile.Read(ref disposed) != 0, this);
-        await reactivePulseGate.WaitAsync(token);
+        await reactivePulseGate.WaitAsync(token).ConfigureAwait(false);
         try
         {
             ObjectDisposedException.ThrowIf(Volatile.Read(ref disposed) != 0, this);
             // Only consecutive key-triggered pulses share a connection. Any
             // ordinary request ends the burst so request classes can never be
             // accidentally multiplexed onto the latency-sensitive channel.
-            await ResetReactivePulseConnectionCoreAsync();
+            await ResetReactivePulseConnectionCoreAsync().ConfigureAwait(false);
         }
         finally
         {
             reactivePulseGate.Release();
         }
 
-        await ambientFrameGate.WaitAsync(token);
+        await ambientFrameGate.WaitAsync(token).ConfigureAwait(false);
         try
         {
             ObjectDisposedException.ThrowIf(Volatile.Read(ref disposed) != 0, this);
-            await ResetAmbientFrameConnectionCoreAsync();
+            await ResetAmbientFrameConnectionCoreAsync().ConfigureAwait(false);
         }
         finally
         {
             ambientFrameGate.Release();
         }
 
-        await using Stream connection = await connectAsync(token);
-        return await SendOverConnectionAsync(connection, request, token);
+        Stream connection = await connectAsync(token).ConfigureAwait(false);
+        await using (connection.ConfigureAwait(false))
+        {
+            return await SendOverConnectionAsync(connection, request, token).ConfigureAwait(false);
+        }
     }
 
     public async ValueTask DisposeAsync()
@@ -460,8 +472,9 @@ public sealed class ServiceClient : IServiceClient, IAsyncDisposable
         ServiceRequest request,
         CancellationToken token)
     {
-        await IpcMessageCodec.WriteRequestAsync(connection, request, token);
-        ServiceServerFrame frame = await IpcMessageCodec.ReadServerFrameAsync(connection, token);
+        await IpcMessageCodec.WriteRequestAsync(connection, request, token).ConfigureAwait(false);
+        ServiceServerFrame frame = await IpcMessageCodec.ReadServerFrameAsync(connection, token)
+            .ConfigureAwait(false);
         return ValidateResponse(frame, request);
     }
 
@@ -473,7 +486,7 @@ public sealed class ServiceClient : IServiceClient, IAsyncDisposable
         {
             try
             {
-                await connection.DisposeAsync();
+                await connection.DisposeAsync().ConfigureAwait(false);
             }
             catch
             {
@@ -489,7 +502,7 @@ public sealed class ServiceClient : IServiceClient, IAsyncDisposable
         {
             try
             {
-                await connection.DisposeAsync();
+                await connection.DisposeAsync().ConfigureAwait(false);
             }
             catch
             {
@@ -533,14 +546,16 @@ public sealed class ServiceClient : IServiceClient, IAsyncDisposable
         Stream? connection = null;
         try
         {
-            connection = await connectAsync(token);
+            connection = await connectAsync(token).ConfigureAwait(false);
             var request = new SubscribeStatusRequest(
                 OpenBladeIpc.ProtocolVersion,
                 Guid.NewGuid());
-            await IpcMessageCodec.WriteRequestAsync(connection, request, token);
+            await IpcMessageCodec.WriteRequestAsync(connection, request, token)
+                .ConfigureAwait(false);
             ServiceServerFrame frame = await IpcMessageCodec.ReadServerFrameAsync(
-                connection,
-                token);
+                    connection,
+                    token)
+                .ConfigureAwait(false);
             ServiceResponse response = ValidateResponse(frame, request);
             ServiceStatusSnapshot initial = response.Status
                 ?? throw new InvalidDataException(
@@ -553,7 +568,7 @@ public sealed class ServiceClient : IServiceClient, IAsyncDisposable
         {
             if (connection is not null)
             {
-                await connection.DisposeAsync();
+                await connection.DisposeAsync().ConfigureAwait(false);
             }
             return new SubscriptionOpenResult(null, null, true);
         }
@@ -561,7 +576,7 @@ public sealed class ServiceClient : IServiceClient, IAsyncDisposable
         {
             if (connection is not null)
             {
-                await connection.DisposeAsync();
+                await connection.DisposeAsync().ConfigureAwait(false);
             }
             throw;
         }
@@ -574,7 +589,7 @@ public sealed class ServiceClient : IServiceClient, IAsyncDisposable
         try
         {
             return new SubscriptionReadResult(
-                await IpcMessageCodec.ReadServerFrameAsync(connection, token),
+                await IpcMessageCodec.ReadServerFrameAsync(connection, token).ConfigureAwait(false),
                 false);
         }
         catch (Exception exception) when (
@@ -608,12 +623,12 @@ public sealed class ServiceClient : IServiceClient, IAsyncDisposable
             PipeOptions.Asynchronous);
         try
         {
-            await pipe.ConnectAsync(ConnectionTimeoutMilliseconds, token);
+            await pipe.ConnectAsync(ConnectionTimeoutMilliseconds, token).ConfigureAwait(false);
             return pipe;
         }
         catch
         {
-            await pipe.DisposeAsync();
+            await pipe.DisposeAsync().ConfigureAwait(false);
             throw;
         }
     }
