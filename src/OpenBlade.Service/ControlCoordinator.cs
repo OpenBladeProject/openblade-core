@@ -275,9 +275,7 @@ public sealed class ControlCoordinator
             automaticWriteExclusionResolver = null)
     {
         ArgumentNullException.ThrowIfNull(desired);
-        var attempted = new HashSet<DeviceSubsystem>();
-        var matched = new HashSet<DeviceSubsystem>();
-        var contradicted = new HashSet<DeviceSubsystem>();
+        var transition = new FullTransitionApplyState();
         DeviceCapabilities capabilities;
         ConfirmedDeviceState initial;
         try
@@ -300,13 +298,96 @@ public sealed class ControlCoordinator
             return new FullTransitionApplyOutcome(
                 new SubsystemApplyResults(failed, failed, failed, failed),
                 null,
-                attempted,
-                matched,
-                contradicted,
+                transition.Attempted,
+                transition.Matched,
+                transition.Contradicted,
                 null,
                 DeviceAccessFailed: true);
         }
 
+        Dictionary<DeviceSubsystem, PendingSubsystem> states =
+            CreatePendingSubsystems(desired, capabilities, initial);
+
+        try
+        {
+            await ApplyPendingSubsystemWritesAsync(
+                desired,
+                initial,
+                states,
+                automaticWriteExclusions,
+                transition,
+                cancellationToken);
+
+            if (transition.Attempted.Count == 0)
+            {
+                return CreateFullOutcome(
+                    transition.Provisional,
+                    initial,
+                    transition.Attempted,
+                    transition.Matched,
+                    transition.Contradicted,
+                    capabilities,
+                    DeviceAccessFailed: false);
+            }
+
+            cancellationToken.ThrowIfCancellationRequested();
+            ConfirmedDeviceState final;
+            try
+            {
+                final = await device.ReadStateAsync(cancellationToken);
+                cancellationToken.ThrowIfCancellationRequested();
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception exception)
+            {
+                foreach (DeviceSubsystem subsystem in transition.Attempted)
+                {
+                    transition.Provisional[subsystem] =
+                        Indeterminate(states[subsystem].Name, exception);
+                }
+
+                transition.Matched.Clear();
+
+                return CreateFullOutcome(
+                    transition.Provisional,
+                    null,
+                    transition.Attempted,
+                    transition.Matched,
+                    transition.Contradicted,
+                    capabilities,
+                    DeviceAccessFailed: true);
+            }
+
+            ReconcileFinalReadback(desired, states, final, transition);
+
+            return CreateFullOutcome(
+                transition.Provisional,
+                final,
+                transition.Attempted,
+                transition.Matched,
+                transition.Contradicted,
+                capabilities,
+                transition.DeviceAccessFailed);
+        }
+        catch (OperationCanceledException exception)
+            when (cancellationToken.IsCancellationRequested
+                && transition.Attempted.Count > 0)
+        {
+            throw new IntentionalWriteCanceledException(
+                new HashSet<DeviceSubsystem>(transition.Attempted),
+                cancellationToken,
+                exception);
+        }
+    }
+
+    private Dictionary<DeviceSubsystem, PendingSubsystem> CreatePendingSubsystems(
+        DesiredDeviceState desired,
+        DeviceCapabilities capabilities,
+        ConfirmedDeviceState initial)
+    {
         BatteryOperationPlan batteryPlan = CreateBatteryPlan(
             desired.Battery,
             capabilities,
@@ -314,7 +395,7 @@ public sealed class ControlCoordinator
         bool thermalCombinationSupported = IsVerifiedThermalCombination(
             desired.Performance.Value,
             desired.Fans.Value);
-        var states = new Dictionary<DeviceSubsystem, PendingSubsystem>
+        return new Dictionary<DeviceSubsystem, PendingSubsystem>
         {
             [DeviceSubsystem.Performance] = new(
                 "Performance",
@@ -376,123 +457,92 @@ public sealed class ControlCoordinator
                 AcceptSetterCompletionWithoutReadback:
                     desired.Lighting.Value.Effect != LightingEffect.Off),
         };
-        var provisional = new Dictionary<DeviceSubsystem, ControlResult>();
+    }
+
+    private async Task ApplyPendingSubsystemWritesAsync(
+        DesiredDeviceState desired,
+        ConfirmedDeviceState initial,
+        IReadOnlyDictionary<DeviceSubsystem, PendingSubsystem> states,
+        IReadOnlySet<DeviceSubsystem>? automaticWriteExclusions,
+        FullTransitionApplyState transition,
+        CancellationToken cancellationToken)
+    {
         bool stopFurtherWrites = false;
         string? stopReason = null;
         bool stopThermalWrites = false;
         string? thermalStopReason = null;
+        IReadOnlyList<DeviceSubsystem> orderedSubsystems =
+            IsManualFanMode(initial.Fans)
+                && desired.Fans.Value == FanMode.Automatic
+                ? FansFirstOrderedSubsystems
+                : OrderedSubsystems;
 
-        try
+        foreach (DeviceSubsystem subsystem in orderedSubsystems)
         {
-            IReadOnlyList<DeviceSubsystem> orderedSubsystems =
-                IsManualFanMode(initial.Fans)
-                    && desired.Fans.Value == FanMode.Automatic
-                    ? FansFirstOrderedSubsystems
-                    : OrderedSubsystems;
-            foreach (DeviceSubsystem subsystem in orderedSubsystems)
+            PendingSubsystem pending = states[subsystem];
+            if (automaticWriteExclusions?.Contains(subsystem) == true)
             {
-                PendingSubsystem pending = states[subsystem];
-                if (automaticWriteExclusions?.Contains(subsystem) == true)
-                {
-                    provisional[subsystem] = ExternalChangePreserved(pending.Name);
-                    continue;
-                }
-
-                if (!pending.Supported)
-                {
-                    provisional[subsystem] = Unsupported(pending.Name);
-                    if (IsThermalSubsystem(subsystem) && !pending.InitiallyMatching)
-                    {
-                        stopThermalWrites = true;
-                        thermalStopReason = provisional[subsystem].Message;
-                    }
-                    continue;
-                }
-
-                if (pending.InitiallyMatching)
-                {
-                    provisional[subsystem] = Unchanged(pending.Name);
-                    matched.Add(subsystem);
-                    continue;
-                }
-
-                if (stopFurtherWrites)
-                {
-                    provisional[subsystem] = SubsequentWritesBlocked(stopReason!);
-                    continue;
-                }
-
-                if (stopThermalWrites && IsThermalSubsystem(subsystem))
-                {
-                    provisional[subsystem] = SubsequentWritesBlocked(thermalStopReason!);
-                    continue;
-                }
-
-                cancellationToken.ThrowIfCancellationRequested();
-                attempted.Add(subsystem);
-                try
-                {
-                    await (pending.StateAwareSetter is null
-                        ? pending.Setter(cancellationToken)
-                        : pending.StateAwareSetter(initial, cancellationToken));
-                    provisional[subsystem] = Indeterminate(pending.Name, null);
-                }
-                catch (BladeWriteException exception)
-                    when (exception.SubmissionState is WriteSubmissionState.KnownNotApplied)
-                {
-                    attempted.Remove(subsystem);
-                    provisional[subsystem] = WriteRejected(pending.Name, exception);
-                    if (IsThermalSubsystem(subsystem))
-                    {
-                        stopThermalWrites = true;
-                        thermalStopReason = provisional[subsystem].Message;
-                    }
-                }
-                catch (BladeWriteException exception)
-                    when (exception.SubmissionState is WriteSubmissionState.Indeterminate)
-                {
-                    provisional[subsystem] = Indeterminate(pending.Name, exception);
-                    stopFurtherWrites = true;
-                    stopReason = provisional[subsystem].Message;
-                }
-                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-                {
-                    throw;
-                }
-                catch (Exception exception)
-                {
-                    provisional[subsystem] = Indeterminate(pending.Name, exception);
-                    if (IsThermalSubsystem(subsystem))
-                    {
-                        stopThermalWrites = true;
-                        thermalStopReason = provisional[subsystem].Message;
-                    }
-                    if (IsTerminalDeviceFailure(exception))
-                    {
-                        stopFurtherWrites = true;
-                        stopReason = provisional[subsystem].Message;
-                    }
-                }
+                transition.Provisional[subsystem] = ExternalChangePreserved(pending.Name);
+                continue;
             }
 
-            if (attempted.Count == 0)
+            if (!pending.Supported)
             {
-                return CreateFullOutcome(
-                    provisional,
-                    initial,
-                    attempted,
-                    matched,
-                    contradicted,
-                    capabilities,
-                    DeviceAccessFailed: false);
+                transition.Provisional[subsystem] = Unsupported(pending.Name);
+                if (IsThermalSubsystem(subsystem) && !pending.InitiallyMatching)
+                {
+                    stopThermalWrites = true;
+                    thermalStopReason = transition.Provisional[subsystem].Message;
+                }
+                continue;
+            }
+
+            if (pending.InitiallyMatching)
+            {
+                transition.Provisional[subsystem] = Unchanged(pending.Name);
+                transition.Matched.Add(subsystem);
+                continue;
+            }
+
+            if (stopFurtherWrites)
+            {
+                transition.Provisional[subsystem] = SubsequentWritesBlocked(stopReason!);
+                continue;
+            }
+
+            if (stopThermalWrites && IsThermalSubsystem(subsystem))
+            {
+                transition.Provisional[subsystem] =
+                    SubsequentWritesBlocked(thermalStopReason!);
+                continue;
             }
 
             cancellationToken.ThrowIfCancellationRequested();
-            ConfirmedDeviceState final;
+            transition.Attempted.Add(subsystem);
             try
             {
-                final = await device.ReadStateAsync(cancellationToken);
-                cancellationToken.ThrowIfCancellationRequested();
+                await (pending.StateAwareSetter is null
+                    ? pending.Setter(cancellationToken)
+                    : pending.StateAwareSetter(initial, cancellationToken));
+                transition.Provisional[subsystem] = Indeterminate(pending.Name, null);
+            }
+            catch (BladeWriteException exception)
+                when (exception.SubmissionState is WriteSubmissionState.KnownNotApplied)
+            {
+                transition.Attempted.Remove(subsystem);
+                transition.Provisional[subsystem] = WriteRejected(pending.Name, exception);
+                if (IsThermalSubsystem(subsystem))
+                {
+                    stopThermalWrites = true;
+                    thermalStopReason = transition.Provisional[subsystem].Message;
+                }
+            }
+            catch (BladeWriteException exception)
+                when (exception.SubmissionState is WriteSubmissionState.Indeterminate)
+            {
+                transition.Provisional[subsystem] = Indeterminate(pending.Name, exception);
+                stopFurtherWrites = true;
+                stopReason = transition.Provisional[subsystem].Message;
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
@@ -500,79 +550,67 @@ public sealed class ControlCoordinator
             }
             catch (Exception exception)
             {
-                foreach (DeviceSubsystem subsystem in attempted)
+                transition.Provisional[subsystem] = Indeterminate(pending.Name, exception);
+                if (IsThermalSubsystem(subsystem))
                 {
-                    provisional[subsystem] = Indeterminate(states[subsystem].Name, exception);
+                    stopThermalWrites = true;
+                    thermalStopReason = transition.Provisional[subsystem].Message;
                 }
-
-                matched.Clear();
-
-                return CreateFullOutcome(
-                    provisional,
-                    null,
-                    attempted,
-                    matched,
-                    contradicted,
-                    capabilities,
-                    DeviceAccessFailed: true);
-            }
-
-            matched.Clear();
-            foreach (DeviceSubsystem subsystem in OrderedSubsystems)
-            {
-                PendingSubsystem pending = states[subsystem];
-                if (attempted.Contains(subsystem))
+                if (IsTerminalDeviceFailure(exception))
                 {
-                    if (pending.Matches(final))
-                    {
-                        provisional[subsystem] = Applied(pending.Name);
-                        matched.Add(subsystem);
-                    }
-                    else
-                    {
-                        provisional[subsystem] =
-                            pending.AcceptSetterCompletionWithoutReadback
-                                && (subsystem != DeviceSubsystem.Lighting
-                                    || LogoMatches(final, desired.Lighting.Value))
-                                ? AppliedWithoutReadback(pending.Name)
-                                : Indeterminate(pending.Name, null);
-                    }
-                }
-                else if (provisional[subsystem].Status == ControlResultStatus.Unchanged)
-                {
-                    if (pending.Matches(final))
-                    {
-                        matched.Add(subsystem);
-                    }
-                    else
-                    {
-                        provisional[subsystem] = FinalReadbackChanged(pending.Name);
-                        if (subsystem == DeviceSubsystem.Battery
-                            && !desired.Battery.TemporaryFullCharge
-                            && final.Battery is { ProtectionEnabled: false })
-                        {
-                            contradicted.Add(DeviceSubsystem.Battery);
-                        }
-                    }
+                    stopFurtherWrites = true;
+                    stopReason = transition.Provisional[subsystem].Message;
                 }
             }
-
-            return CreateFullOutcome(
-                provisional,
-                final,
-                attempted,
-                matched,
-                contradicted,
-                capabilities,
-                DeviceAccessFailed: stopFurtherWrites);
         }
-        catch (OperationCanceledException exception)
-            when (cancellationToken.IsCancellationRequested && attempted.Count > 0)
+
+        transition.DeviceAccessFailed = stopFurtherWrites;
+    }
+
+    private static void ReconcileFinalReadback(
+        DesiredDeviceState desired,
+        IReadOnlyDictionary<DeviceSubsystem, PendingSubsystem> states,
+        ConfirmedDeviceState final,
+        FullTransitionApplyState transition)
+    {
+        transition.Matched.Clear();
+        foreach (DeviceSubsystem subsystem in OrderedSubsystems)
         {
-            throw new IntentionalWriteCanceledException(
-                new HashSet<DeviceSubsystem>(attempted),
-                cancellationToken,
-                exception);
+            PendingSubsystem pending = states[subsystem];
+            if (transition.Attempted.Contains(subsystem))
+            {
+                if (pending.Matches(final))
+                {
+                    transition.Provisional[subsystem] = Applied(pending.Name);
+                    transition.Matched.Add(subsystem);
+                }
+                else
+                {
+                    transition.Provisional[subsystem] =
+                        pending.AcceptSetterCompletionWithoutReadback
+                            && (subsystem != DeviceSubsystem.Lighting
+                                || LogoMatches(final, desired.Lighting.Value))
+                            ? AppliedWithoutReadback(pending.Name)
+                            : Indeterminate(pending.Name, null);
+                }
+            }
+            else if (transition.Provisional[subsystem].Status == ControlResultStatus.Unchanged)
+            {
+                if (pending.Matches(final))
+                {
+                    transition.Matched.Add(subsystem);
+                }
+                else
+                {
+                    transition.Provisional[subsystem] = FinalReadbackChanged(pending.Name);
+                    if (subsystem == DeviceSubsystem.Battery
+                        && !desired.Battery.TemporaryFullCharge
+                        && final.Battery is { ProtectionEnabled: false })
+                    {
+                        transition.Contradicted.Add(DeviceSubsystem.Battery);
+                    }
+                }
+            }
         }
     }
 
@@ -1231,6 +1269,15 @@ public sealed class ControlCoordinator
 
     private static bool IsThermalSubsystem(DeviceSubsystem subsystem) =>
         subsystem is DeviceSubsystem.Performance or DeviceSubsystem.Fans;
+
+    private sealed class FullTransitionApplyState
+    {
+        public Dictionary<DeviceSubsystem, ControlResult> Provisional { get; } = [];
+        public HashSet<DeviceSubsystem> Attempted { get; } = [];
+        public HashSet<DeviceSubsystem> Matched { get; } = [];
+        public HashSet<DeviceSubsystem> Contradicted { get; } = [];
+        public bool DeviceAccessFailed { get; set; }
+    }
 
     private sealed record PendingSubsystem(
         string Name,
