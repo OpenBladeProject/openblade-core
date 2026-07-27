@@ -3653,66 +3653,31 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             return;
         }
 
-        IsConnected = true;
         bool checkingLaptopConnection = IsCheckingLaptopConnection(status);
-        bool controllable = status.DeviceVerified
-            && !status.WritesBlocked
-            && !checkingLaptopConnection;
-        IsReadOnly = !controllable;
-        CanControlHardware = controllable
-            && status.ActivePowerSource != PowerSource.ExternalUnknown;
-        ConnectionStatus = status.Message;
-        ControlAccessStatus = FormatControlAccessStatus(status);
-        HasControllerAdvisory = status.PotentialControllers.Count > 0;
-        ControllerAdvisoryText = HasControllerAdvisory
-            ? $"Another controller may change laptop settings: {string.Join(", ", status.PotentialControllers)}. Automatic profile changes pause for settings changed elsewhere; manual actions still apply."
-            : string.Empty;
-        HasControllerDetectionWarning = !string.IsNullOrWhiteSpace(
-            status.ControllerDetectionWarning);
-        ControllerDetectionWarningText = status.ControllerDetectionWarning ?? string.Empty;
-        DeviceSubsystem[] externalChanges = status.ExternalChanges
-            .Distinct()
-            .OrderBy(value => value.ToString(), StringComparer.Ordinal)
-            .ToArray();
-        HasExternalChanges = externalChanges.Length > 0;
-        ExternalChangesText = HasExternalChanges
-            ? $"Changed outside OpenBlade: {string.Join(", ", externalChanges.Select(SubsystemLabel))}. Your saved profiles are unchanged. Automatic profile updates for these controls are paused until you change them in OpenBlade."
-            : string.Empty;
-        AlwaysOverrideExternalLightingChanges =
-            status.AlwaysOverrideExternalLightingChanges;
-        Profiles = status.Profiles;
-        if (!lightingPowerPolicyEditorDirty)
-        {
-            LoadLightingPowerPolicyEditor(
-                status.ActivePowerSource is PowerSource.PluggedIn
-                    or PowerSource.Battery
-                    or PowerSource.UsbC
-                    ? GetPresentedProfile(status.ActivePowerSource)
-                        .EffectiveLightingPowerPolicy
-                    : LightingPowerPolicy.Disabled);
-        }
-        if (!profileEditorsDirty)
-        {
-            LoadProfileEditors(status.Profiles);
-        }
-        DeviceCapabilities incomingCapabilities = status.Capabilities
-            ?? DeviceCapabilities.Unavailable();
-        DeviceCapabilities capabilities =
-            ShouldPreserveCapabilityPresentationDuringRefresh(
-                status,
-                previousStatus,
-                incomingCapabilities)
-                ? Capabilities
-                : incomingCapabilities;
-        Capabilities = capabilities;
-        int[] chargeLimits = HasBatteryCapability(capabilities)
-            ? capabilities.ChargeLimits.Order().ToArray()
-            : [];
-        if (!ChargeLimitOptions.SequenceEqual(chargeLimits))
-        {
-            ChargeLimitOptions = chargeLimits;
-        }
+        DeviceSubsystem[] externalChanges = ApplyConnectionPresentation(
+            status,
+            checkingLaptopConnection);
+        DeviceCapabilities capabilities = ApplyCapabilityPresentation(
+            status,
+            previousStatus);
         ConfirmedDeviceState? confirmed = status.ConfirmedState;
+        ApplyDeviceStatePresentation(
+            status,
+            confirmed,
+            capabilities,
+            checkingLaptopConnection);
+        ApplySourcePresentation(status, confirmed, externalChanges);
+        ApplyCapabilityOptions(capabilities);
+        NotifyCommands();
+        NotifyPresentationState();
+    }
+
+    private void ApplyDeviceStatePresentation(
+        ServiceStatusSnapshot status,
+        ConfirmedDeviceState? confirmed,
+        DeviceCapabilities capabilities,
+        bool checkingLaptopConnection)
+    {
         UpdateOneShotReadbacks(status);
         SelectedPerformance = ResolvePresentedPerformance(status, confirmed, capabilities);
         SelectedFanMode = pendingFanControl?.Mode
@@ -3797,6 +3762,13 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             PowerSource.ExternalUnknown => "Checking power source",
             _ => "Power source unavailable",
         };
+    }
+
+    private void ApplySourcePresentation(
+        ServiceStatusSnapshot status,
+        ConfirmedDeviceState? confirmed,
+        IReadOnlyCollection<DeviceSubsystem> externalChanges)
+    {
         PerformanceSourceLabel = SourceLabel(
             DeviceSubsystem.Performance,
             confirmed?.Performance is not null,
@@ -3816,6 +3788,84 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
             confirmed?.Battery,
             externalChanges.Contains(DeviceSubsystem.Battery),
             status);
+    }
+
+    private DeviceSubsystem[] ApplyConnectionPresentation(
+        ServiceStatusSnapshot status,
+        bool checkingLaptopConnection)
+    {
+        IsConnected = true;
+        bool controllable = status.DeviceVerified
+            && !status.WritesBlocked
+            && !checkingLaptopConnection;
+        IsReadOnly = !controllable;
+        CanControlHardware = controllable
+            && status.ActivePowerSource != PowerSource.ExternalUnknown;
+        ConnectionStatus = status.Message;
+        ControlAccessStatus = FormatControlAccessStatus(status);
+        HasControllerAdvisory = status.PotentialControllers.Count > 0;
+        ControllerAdvisoryText = HasControllerAdvisory
+            ? $"Another controller may change laptop settings: {string.Join(", ", status.PotentialControllers)}. Automatic profile changes pause for settings changed elsewhere; manual actions still apply."
+            : string.Empty;
+        HasControllerDetectionWarning = !string.IsNullOrWhiteSpace(
+            status.ControllerDetectionWarning);
+        ControllerDetectionWarningText = status.ControllerDetectionWarning ?? string.Empty;
+        DeviceSubsystem[] externalChanges = status.ExternalChanges
+            .Distinct()
+            .OrderBy(value => value.ToString(), StringComparer.Ordinal)
+            .ToArray();
+        HasExternalChanges = externalChanges.Length > 0;
+        ExternalChangesText = HasExternalChanges
+            ? $"Changed outside OpenBlade: {string.Join(", ", externalChanges.Select(SubsystemLabel))}. Your saved profiles are unchanged. Automatic profile updates for these controls are paused until you change them in OpenBlade."
+            : string.Empty;
+        AlwaysOverrideExternalLightingChanges =
+            status.AlwaysOverrideExternalLightingChanges;
+        Profiles = status.Profiles;
+        if (!lightingPowerPolicyEditorDirty)
+        {
+            LoadLightingPowerPolicyEditor(
+                status.ActivePowerSource is PowerSource.PluggedIn
+                    or PowerSource.Battery
+                    or PowerSource.UsbC
+                    ? GetPresentedProfile(status.ActivePowerSource)
+                        .EffectiveLightingPowerPolicy
+                    : LightingPowerPolicy.Disabled);
+        }
+        if (!profileEditorsDirty)
+        {
+            LoadProfileEditors(status.Profiles);
+        }
+
+        return externalChanges;
+    }
+
+    private DeviceCapabilities ApplyCapabilityPresentation(
+        ServiceStatusSnapshot status,
+        ServiceStatusSnapshot? previousStatus)
+    {
+        DeviceCapabilities incomingCapabilities = status.Capabilities
+            ?? DeviceCapabilities.Unavailable();
+        DeviceCapabilities capabilities =
+            ShouldPreserveCapabilityPresentationDuringRefresh(
+                status,
+                previousStatus,
+                incomingCapabilities)
+                ? Capabilities
+                : incomingCapabilities;
+        Capabilities = capabilities;
+        int[] chargeLimits = HasBatteryCapability(capabilities)
+            ? capabilities.ChargeLimits.Order().ToArray()
+            : [];
+        if (!ChargeLimitOptions.SequenceEqual(chargeLimits))
+        {
+            ChargeLimitOptions = chargeLimits;
+        }
+
+        return capabilities;
+    }
+
+    private void ApplyCapabilityOptions(DeviceCapabilities capabilities)
+    {
         PerformancePreset[] performancePresets = capabilities.PerformancePresets
             .Where(Enum.IsDefined)
             .Order()
@@ -3983,8 +4033,6 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         PropertyChanged?.Invoke(
             this,
             new PropertyChangedEventArgs(nameof(IsProfileControlVisible)));
-        NotifyCommands();
-        NotifyPresentationState();
     }
 
     private static LightingEffectOption CreateLightingEffectOption(LightingEffect effect) =>
