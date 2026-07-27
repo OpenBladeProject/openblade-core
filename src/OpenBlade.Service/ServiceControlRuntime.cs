@@ -810,163 +810,228 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 current.ConfirmedState ?? UnknownConfirmedState).Lighting.Value;
             if (lighting.Effect == LightingEffect.Off)
             {
-                if (direction == KeyboardBrightnessDirection.Decrease)
-                {
-                    return new ControlOperationResult(
-                        ControlOperationStatus.Applied,
-                        "Keyboard brightness is already at its minimum.");
-                }
-
-                LightingSettings baseline = ResolveVisibleLightingBaseline(powerSource);
-                LightingSettings visible = baseline with
-                {
-                    Brightness = 6,
-                    LogoMode = lighting.LogoMode ?? baseline.LogoMode,
-                };
-                var restored = new ManualOverride<LightingSettings>(visible, lifetime);
-                await SetLightingOverrideCoreAsync(restored, token).ConfigureAwait(false);
-                return await ApplyScopedIntentAsync(
-                    DeviceSubsystem.Lighting,
-                    powerSource,
-                    (coordinator, desired, cancellationToken) =>
-                        coordinator.ApplyLightingOutcomeAsync(
-                            desired.Lighting.Value,
-                            cancellationToken),
-                    token).ConfigureAwait(false);
-            }
-
-            IBladeDevice device;
-            try
-            {
-                bool available = deviceProvider.TryGetVerifiedDevice(out device);
-                token.ThrowIfCancellationRequested();
-                if (!available)
-                {
-                    return PublishScopedUnavailable(
-                        DeviceSubsystem.Lighting,
-                        powerSource,
-                        "The laptop could not be admitted for this control operation.",
-                        preserveCurrentAvailability: true);
-                }
-            }
-            catch (OperationCanceledException) when (token.IsCancellationRequested)
-            {
-                throw;
-            }
-            catch (Exception exception)
-            {
-                return PublishScopedUnavailable(
-                    DeviceSubsystem.Lighting,
-                    powerSource,
-                    $"Verified device admission failed: {exception.Message}",
-                    failed: true,
-                    preserveCurrentAvailability: true);
-            }
-
-            byte resultingBrightness;
-            try
-            {
-                resultingBrightness = await device.StepKeyboardBrightnessAsync(
+                return await StepKeyboardBrightnessFromOffAsync(
                     direction,
+                    lifetime,
+                    powerSource,
+                    lighting,
                     token).ConfigureAwait(false);
             }
-            catch (OperationCanceledException) when (token.IsCancellationRequested)
-            {
-                throw;
-            }
-            catch (BladeWriteException exception)
-            {
-                driftTracker.ConfirmIntentional(DeviceSubsystem.Lighting, matched: false);
-                var failed = new ControlResult(
-                    exception.SubmissionState == WriteSubmissionState.KnownNotApplied
-                        ? ControlResultStatus.Blocked
-                        : ControlResultStatus.Failed,
-                    exception.Message);
-                history.RecordSubsystemResult(DeviceSubsystem.Lighting, failed);
-                PublishScopedStatus(
-                    powerSource,
-                    current.ConfirmedState,
-                    current.Capabilities,
-                    failed.Message,
-                    deviceVerified: current.DeviceVerified,
-                    writesBlocked: current.WritesBlocked);
-                return ToOperationResult(failed);
-            }
-            catch (Exception exception)
-            {
-                driftTracker.ConfirmIntentional(DeviceSubsystem.Lighting, matched: false);
-                var failed = new ControlResult(
-                    ControlResultStatus.Failed,
-                    $"Keyboard brightness could not be changed: {exception.Message}");
-                history.RecordSubsystemResult(DeviceSubsystem.Lighting, failed);
-                PublishScopedStatus(
-                    powerSource,
-                    current.ConfirmedState,
-                    current.Capabilities,
-                    failed.Message,
-                    deviceVerified: current.DeviceVerified,
-                    writesBlocked: current.WritesBlocked);
-                return ToOperationResult(failed);
-            }
 
-            LightingSettings next = resultingBrightness == 0
-                ? LightingSettingsFactory.Off() with { LogoMode = lighting.LogoMode }
-                : lighting with { Brightness = resultingBrightness };
-            try
-            {
-                await SetLightingOverrideCoreAsync(
-                    new ManualOverride<LightingSettings>(next, lifetime),
-                    token).ConfigureAwait(false);
-            }
-            catch (Exception exception) when (IsIntentFailure(exception))
-            {
-                var failed = new ControlResult(
-                    ControlResultStatus.Failed,
-                    $"Keyboard brightness changed, but its override could not be saved: {exception.Message}");
-                history.RecordSubsystemResult(DeviceSubsystem.Lighting, failed);
-                PublishScopedStatus(
-                    powerSource,
-                    current.ConfirmedState,
-                    current.Capabilities,
-                    failed.Message,
-                    deviceVerified: true,
-                    writesBlocked: false);
-                return ToOperationResult(failed);
-            }
-
-            LightingRendererOwnershipState ownership = resultingBrightness == 0
-                ? LightingRendererOwnershipState.None
-                : current.LightingRendererOwnership;
-            UpdateOwnedLightingSnapshot(
-                ownership,
-                resultingBrightness == 0 ? next : lighting with { Brightness = resultingBrightness });
-            await TryPersistLastKnownLightingAsync(next, token).ConfigureAwait(false);
-            driftTracker.AcknowledgeIntentionalWithoutReadback(DeviceSubsystem.Lighting);
-            var applied = new ControlResult(
-                ControlResultStatus.Applied,
-                $"Keyboard brightness changed to {resultingBrightness}%.");
-            history.RecordSubsystemResult(DeviceSubsystem.Lighting, applied);
-            PublishScopedStatus(
+            ControlOperationResult? admissionFailure = TryAdmitKeyboardBrightnessDevice(
                 powerSource,
-                current.ConfirmedState,
-                current.Capabilities,
-                applied.Message,
-                deviceVerified: true,
-                writesBlocked: false);
-            if (ownership != current.LightingRendererOwnership)
+                token,
+                out IBladeDevice device);
+            if (admissionFailure is not null)
             {
-                PublishIfChanged(GetStatus() with
-                {
-                    LightingRendererOwnership = ownership,
-                });
+                return admissionFailure;
             }
 
-            return ToOperationResult(applied);
+            (byte resultingBrightness, ControlOperationResult? stepFailure) =
+                await StepVerifiedKeyboardBrightnessDeviceAsync(
+                    device,
+                    direction,
+                    powerSource,
+                    current,
+                    token).ConfigureAwait(false);
+            if (stepFailure is not null)
+            {
+                return stepFailure;
+            }
+            return await CompleteKeyboardBrightnessStepAsync(
+                resultingBrightness,
+                lifetime,
+                powerSource,
+                current,
+                lighting,
+                token).ConfigureAwait(false);
         }
         finally
         {
             operationGate.Release();
         }
+    }
+
+    private async Task<ControlOperationResult> StepKeyboardBrightnessFromOffAsync(
+        KeyboardBrightnessDirection direction,
+        OverrideLifetime lifetime,
+        PowerSource powerSource,
+        LightingSettings lighting,
+        CancellationToken token)
+    {
+        if (direction == KeyboardBrightnessDirection.Decrease)
+        {
+            return new ControlOperationResult(
+                ControlOperationStatus.Applied,
+                "Keyboard brightness is already at its minimum.");
+        }
+
+        LightingSettings baseline = ResolveVisibleLightingBaseline(powerSource);
+        LightingSettings visible = baseline with
+        {
+            Brightness = 6,
+            LogoMode = lighting.LogoMode ?? baseline.LogoMode,
+        };
+        var restored = new ManualOverride<LightingSettings>(visible, lifetime);
+        await SetLightingOverrideCoreAsync(restored, token).ConfigureAwait(false);
+        return await ApplyScopedIntentAsync(
+            DeviceSubsystem.Lighting,
+            powerSource,
+            (coordinator, desired, cancellationToken) =>
+                coordinator.ApplyLightingOutcomeAsync(
+                    desired.Lighting.Value,
+                    cancellationToken),
+            token).ConfigureAwait(false);
+    }
+
+    private ControlOperationResult? TryAdmitKeyboardBrightnessDevice(
+        PowerSource powerSource,
+        CancellationToken token,
+        out IBladeDevice device)
+    {
+        try
+        {
+            bool available = deviceProvider.TryGetVerifiedDevice(out device);
+            token.ThrowIfCancellationRequested();
+            return available
+                ? null
+                : PublishScopedUnavailable(
+                    DeviceSubsystem.Lighting,
+                    powerSource,
+                    "The laptop could not be admitted for this control operation.",
+                    preserveCurrentAvailability: true);
+        }
+        catch (OperationCanceledException) when (token.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception exception)
+        {
+            device = null!;
+            return PublishScopedUnavailable(
+                DeviceSubsystem.Lighting,
+                powerSource,
+                $"Verified device admission failed: {exception.Message}",
+                failed: true,
+                preserveCurrentAvailability: true);
+        }
+    }
+
+    private async Task<(byte Brightness, ControlOperationResult? Failure)>
+        StepVerifiedKeyboardBrightnessDeviceAsync(
+            IBladeDevice device,
+            KeyboardBrightnessDirection direction,
+            PowerSource powerSource,
+            ServiceStatusSnapshot current,
+            CancellationToken token)
+    {
+        try
+        {
+            byte resultingBrightness = await device.StepKeyboardBrightnessAsync(
+                direction,
+                token).ConfigureAwait(false);
+            return (resultingBrightness, null);
+        }
+        catch (OperationCanceledException) when (token.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (BladeWriteException exception)
+        {
+            driftTracker.ConfirmIntentional(DeviceSubsystem.Lighting, matched: false);
+            var failed = new ControlResult(
+                exception.SubmissionState == WriteSubmissionState.KnownNotApplied
+                    ? ControlResultStatus.Blocked
+                    : ControlResultStatus.Failed,
+                exception.Message);
+            return (0, PublishKeyboardBrightnessFailure(powerSource, current, failed));
+        }
+        catch (Exception exception)
+        {
+            driftTracker.ConfirmIntentional(DeviceSubsystem.Lighting, matched: false);
+            var failed = new ControlResult(
+                ControlResultStatus.Failed,
+                $"Keyboard brightness could not be changed: {exception.Message}");
+            return (0, PublishKeyboardBrightnessFailure(powerSource, current, failed));
+        }
+    }
+
+    private async Task<ControlOperationResult> CompleteKeyboardBrightnessStepAsync(
+        byte resultingBrightness,
+        OverrideLifetime lifetime,
+        PowerSource powerSource,
+        ServiceStatusSnapshot current,
+        LightingSettings lighting,
+        CancellationToken token)
+    {
+        LightingSettings next = resultingBrightness == 0
+            ? LightingSettingsFactory.Off() with { LogoMode = lighting.LogoMode }
+            : lighting with { Brightness = resultingBrightness };
+        try
+        {
+            await SetLightingOverrideCoreAsync(
+                new ManualOverride<LightingSettings>(next, lifetime),
+                token).ConfigureAwait(false);
+        }
+        catch (Exception exception) when (IsIntentFailure(exception))
+        {
+            var failed = new ControlResult(
+                ControlResultStatus.Failed,
+                $"Keyboard brightness changed, but its override could not be saved: {exception.Message}");
+            return PublishKeyboardBrightnessFailure(
+                powerSource,
+                current,
+                failed,
+                deviceVerified: true,
+                writesBlocked: false);
+        }
+
+        LightingRendererOwnershipState ownership = resultingBrightness == 0
+            ? LightingRendererOwnershipState.None
+            : current.LightingRendererOwnership;
+        UpdateOwnedLightingSnapshot(
+            ownership,
+            resultingBrightness == 0 ? next : lighting with { Brightness = resultingBrightness });
+        await TryPersistLastKnownLightingAsync(next, token).ConfigureAwait(false);
+        driftTracker.AcknowledgeIntentionalWithoutReadback(DeviceSubsystem.Lighting);
+        var applied = new ControlResult(
+            ControlResultStatus.Applied,
+            $"Keyboard brightness changed to {resultingBrightness}%.");
+        history.RecordSubsystemResult(DeviceSubsystem.Lighting, applied);
+        PublishScopedStatus(
+            powerSource,
+            current.ConfirmedState,
+            current.Capabilities,
+            applied.Message,
+            deviceVerified: true,
+            writesBlocked: false);
+        if (ownership != current.LightingRendererOwnership)
+        {
+            PublishIfChanged(GetStatus() with
+            {
+                LightingRendererOwnership = ownership,
+            });
+        }
+
+        return ToOperationResult(applied);
+    }
+
+    private ControlOperationResult PublishKeyboardBrightnessFailure(
+        PowerSource powerSource,
+        ServiceStatusSnapshot current,
+        ControlResult failed,
+        bool? deviceVerified = null,
+        bool? writesBlocked = null)
+    {
+        history.RecordSubsystemResult(DeviceSubsystem.Lighting, failed);
+        PublishScopedStatus(
+            powerSource,
+            current.ConfirmedState,
+            current.Capabilities,
+            failed.Message,
+            deviceVerified: deviceVerified ?? current.DeviceVerified,
+            writesBlocked: writesBlocked ?? current.WritesBlocked);
+        return ToOperationResult(failed);
     }
 
     public async Task<ControlOperationResult> SetExternalLightingOverridePolicyAsync(
