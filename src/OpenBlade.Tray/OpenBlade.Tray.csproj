@@ -20,10 +20,8 @@
     <ImportFrameworkWinFXTargets>true</ImportFrameworkWinFXTargets>
   </PropertyGroup>
   <ItemGroup>
-    <!-- Reference only the WinUI component. The umbrella package also deploys
-         AI, ML, and Widgets binaries that OpenBlade does not use. -->
-    <PackageReference Include="Microsoft.WindowsAppSDK.WinUI" Version="[2.2.1]" />
-    <PackageReference Include="Microsoft.WindowsAppSDK.Runtime" Version="[2.2.0]" />
+    <PackageReference Include="Microsoft.WindowsAppSDK.WinUI" />
+    <PackageReference Include="Microsoft.WindowsAppSDK.Runtime" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\OpenBlade.Contracts\OpenBlade.Contracts.csproj" />

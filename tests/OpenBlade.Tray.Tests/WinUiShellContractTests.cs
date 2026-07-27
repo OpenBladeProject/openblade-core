@@ -803,6 +803,7 @@ public sealed class WinUiShellContractTests
     public void TrayExecutableIsPinnedUnpackagedSelfContainedWinUiAndContainsNoWpf()
     {
         string project = ReadRepositoryFile("src", "OpenBlade.Tray", "OpenBlade.Tray.csproj");
+        string packageVersions = ReadRepositoryFile("Directory.Packages.props");
         Assert.Contains("<OutputType>WinExe</OutputType>", project, StringComparison.Ordinal);
         Assert.Contains("<TargetFramework>net10.0-windows10.0.26100.0</TargetFramework>", project, StringComparison.Ordinal);
         Assert.Contains("<SupportedOSPlatformVersion>10.0.26100.0</SupportedOSPlatformVersion>", project, StringComparison.Ordinal);
@@ -821,7 +822,20 @@ public sealed class WinUiShellContractTests
         Assert.Contains("<Content Update=\"Assets\\Brand\\OpenBlade.png\">", project, StringComparison.Ordinal);
         Assert.Contains("<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>", project, StringComparison.Ordinal);
         Assert.Contains("<CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>", project, StringComparison.Ordinal);
-        Assert.Contains("Include=\"Microsoft.WindowsAppSDK.WinUI\" Version=\"[2.2.1]\"", project, StringComparison.Ordinal);
+        Assert.Contains("<PackageReference Include=\"Microsoft.WindowsAppSDK.WinUI\" />", project, StringComparison.Ordinal);
+        Assert.Contains("<PackageReference Include=\"Microsoft.WindowsAppSDK.Runtime\" />", project, StringComparison.Ordinal);
+        Assert.Contains(
+            "<PackageVersion Include=\"Microsoft.WindowsAppSDK.WinUI\" Version=\"[2.2.1]\" />",
+            packageVersions,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "<PackageVersion Include=\"Microsoft.WindowsAppSDK.Runtime\" Version=\"[2.2.0]\" />",
+            packageVersions,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "The umbrella package also deploys",
+            packageVersions,
+            StringComparison.Ordinal);
         Assert.DoesNotContain("Include=\"Microsoft.WindowsAppSDK\"", project, StringComparison.Ordinal);
         Assert.Contains("<ImportFrameworkWinFXTargets>true</ImportFrameworkWinFXTargets>", project, StringComparison.Ordinal);
         Assert.Contains("prevents the Windows Desktop SDK from sending WinUI XAML through the WPF compiler", project, StringComparison.Ordinal);
