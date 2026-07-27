@@ -2649,10 +2649,64 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 preserveCurrentAvailability: true);
         }
 
-        ScopedApplyOutcome outcome;
+        ScopedApplyOutcome outcome = await ApplyScopedIntentOutcomeAsync(
+            subsystem,
+            powerSource,
+            current,
+            cachedConfirmed,
+            device,
+            desired,
+            apply,
+            token);
+        (outcome, ConfirmedDeviceState? confirmed) =
+            await ReconcileScopedIntentReadbackAsync(
+                subsystem,
+                device,
+                desired,
+                cachedConfirmed,
+                outcome,
+                token).ConfigureAwait(false);
+
+        if (!outcome.ReadbackMatched && outcome.WriteAttempted)
+        {
+            driftTracker.ConfirmIntentional(subsystem, matched: false);
+        }
+
+        ControlOperationResult? commitFailure = await CommitScopedIntentAsync(
+            subsystem,
+            powerSource,
+            current,
+            desired,
+            confirmed,
+            outcome,
+            commitIntent,
+            token).ConfigureAwait(false);
+        if (commitFailure is not null)
+        {
+            return commitFailure;
+        }
+
+        return PublishScopedIntentOutcome(
+            subsystem,
+            powerSource,
+            current,
+            confirmed,
+            outcome);
+    }
+
+    private async Task<ScopedApplyOutcome> ApplyScopedIntentOutcomeAsync(
+        DeviceSubsystem subsystem,
+        PowerSource powerSource,
+        ServiceStatusSnapshot current,
+        ConfirmedDeviceState? cachedConfirmed,
+        IBladeDevice device,
+        DesiredDeviceState desired,
+        Func<ControlCoordinator, DesiredDeviceState, CancellationToken, Task<ScopedApplyOutcome>> apply,
+        CancellationToken token)
+    {
         try
         {
-            outcome = await apply(new ControlCoordinator(device), desired, token);
+            return await apply(new ControlCoordinator(device), desired, token);
         }
         catch (IntentionalWriteCanceledException exception)
             when (token.IsCancellationRequested)
@@ -2679,7 +2733,17 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         {
             throw;
         }
+    }
 
+    private async Task<(ScopedApplyOutcome Outcome, ConfirmedDeviceState? Confirmed)>
+        ReconcileScopedIntentReadbackAsync(
+            DeviceSubsystem subsystem,
+            IBladeDevice device,
+            DesiredDeviceState desired,
+            ConfirmedDeviceState? cachedConfirmed,
+            ScopedApplyOutcome outcome,
+            CancellationToken token)
+    {
         ConfirmedDeviceState? confirmed = cachedConfirmed;
         if (outcome.Readback is not null)
         {
@@ -2690,88 +2754,109 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             driftTracker.Observe(confirmed);
         }
 
-        if (subsystem == DeviceSubsystem.Lighting)
+        if (subsystem != DeviceSubsystem.Lighting)
         {
-            LightingRendererOwnershipState observed =
-                await PublishObservedLightingOwnershipAsync(device, token)
-                    .ConfigureAwait(false);
-            LightingSettings requested = desired.Lighting.Value;
-            if (outcome.Result.Status is ControlResultStatus.Applied
-                    or ControlResultStatus.Unchanged
-                && !OwnershipMatches(observed, requested))
-            {
-                outcome = outcome with
-                {
-                    Result = new ControlResult(
-                        ControlResultStatus.Failed,
-                        "Keyboard lighting did not remain active after the change."),
-                    ReadbackMatched = false,
-                };
-            }
-            UpdateOwnedLightingSnapshot(
-                observed,
-                outcome.Result.Status is ControlResultStatus.Applied
-                    or ControlResultStatus.Unchanged
-                    ? requested
-                    : null);
+            return (outcome, confirmed);
         }
 
-        if (!outcome.ReadbackMatched && outcome.WriteAttempted)
+        LightingRendererOwnershipState observed =
+            await PublishObservedLightingOwnershipAsync(device, token)
+                .ConfigureAwait(false);
+        LightingSettings requested = desired.Lighting.Value;
+        if (outcome.Result.Status is ControlResultStatus.Applied
+                or ControlResultStatus.Unchanged
+            && !OwnershipMatches(observed, requested))
+        {
+            outcome = outcome with
+            {
+                Result = new ControlResult(
+                    ControlResultStatus.Failed,
+                    "Keyboard lighting did not remain active after the change."),
+                ReadbackMatched = false,
+            };
+        }
+        UpdateOwnedLightingSnapshot(
+            observed,
+            outcome.Result.Status is ControlResultStatus.Applied
+                or ControlResultStatus.Unchanged
+                ? requested
+                : null);
+        return (outcome, confirmed);
+    }
+
+    private async Task<ControlOperationResult?> CommitScopedIntentAsync(
+        DeviceSubsystem subsystem,
+        PowerSource powerSource,
+        ServiceStatusSnapshot current,
+        DesiredDeviceState desired,
+        ConfirmedDeviceState? confirmed,
+        ScopedApplyOutcome outcome,
+        Func<CancellationToken, Task>? commitIntent,
+        CancellationToken token)
+    {
+        if (outcome.Result.Status is not (
+            ControlResultStatus.Applied or ControlResultStatus.Unchanged))
+        {
+            return null;
+        }
+
+        try
+        {
+            if (commitIntent is not null)
+            {
+                await commitIntent(token);
+            }
+
+            if (subsystem == DeviceSubsystem.Lighting)
+            {
+                await TryPersistLastKnownLightingAsync(
+                    desired.Lighting.Value,
+                    token).ConfigureAwait(false);
+            }
+        }
+        catch (OperationCanceledException) when (token.IsCancellationRequested)
         {
             driftTracker.ConfirmIntentional(subsystem, matched: false);
+            var canceledCommit = new ControlResult(
+                ControlResultStatus.Failed,
+                $"{subsystem} hardware was confirmed, but persistence was canceled.");
+            history.RecordSubsystemResult(subsystem, canceledCommit);
+            PublishScopedStatus(
+                powerSource,
+                confirmed,
+                outcome.Capabilities ?? current.Capabilities,
+                canceledCommit.Message,
+                deviceVerified: !outcome.DeviceAccessFailed,
+                writesBlocked: outcome.DeviceAccessFailed);
+            throw;
         }
-
-        if (outcome.Result.Status is ControlResultStatus.Applied
-            or ControlResultStatus.Unchanged)
+        catch (Exception exception) when (IsIntentFailure(exception))
         {
-            try
-            {
-                if (commitIntent is not null)
-                {
-                    await commitIntent(token);
-                }
-
-                if (subsystem == DeviceSubsystem.Lighting)
-                {
-                    await TryPersistLastKnownLightingAsync(
-                        desired.Lighting.Value,
-                        token).ConfigureAwait(false);
-                }
-            }
-            catch (OperationCanceledException) when (token.IsCancellationRequested)
-            {
-                driftTracker.ConfirmIntentional(subsystem, matched: false);
-                var canceledCommit = new ControlResult(
-                    ControlResultStatus.Failed,
-                    $"{subsystem} hardware was confirmed, but persistence was canceled.");
-                history.RecordSubsystemResult(subsystem, canceledCommit);
-                PublishScopedStatus(
-                    powerSource,
-                    confirmed,
-                    outcome.Capabilities ?? current.Capabilities,
-                    canceledCommit.Message,
-                    deviceVerified: !outcome.DeviceAccessFailed,
-                    writesBlocked: outcome.DeviceAccessFailed);
-                throw;
-            }
-            catch (Exception exception) when (IsIntentFailure(exception))
-            {
-                driftTracker.ConfirmIntentional(subsystem, matched: false);
-                var failedCommit = new ControlResult(
-                    ControlResultStatus.Failed,
-                    $"Confirmed hardware intent could not be committed: {exception.Message}");
-                history.RecordSubsystemResult(subsystem, failedCommit);
-                PublishScopedStatus(
-                    powerSource,
-                    confirmed,
-                    outcome.Capabilities ?? current.Capabilities,
-                    failedCommit.Message,
-                    deviceVerified: !outcome.DeviceAccessFailed,
-                    writesBlocked: outcome.DeviceAccessFailed);
-                return ToOperationResult(failedCommit);
-            }
+            driftTracker.ConfirmIntentional(subsystem, matched: false);
+            var failedCommit = new ControlResult(
+                ControlResultStatus.Failed,
+                $"Confirmed hardware intent could not be committed: {exception.Message}");
+            history.RecordSubsystemResult(subsystem, failedCommit);
+            PublishScopedStatus(
+                powerSource,
+                confirmed,
+                outcome.Capabilities ?? current.Capabilities,
+                failedCommit.Message,
+                deviceVerified: !outcome.DeviceAccessFailed,
+                writesBlocked: outcome.DeviceAccessFailed);
+            return ToOperationResult(failedCommit);
         }
 
+        return null;
+    }
+
+    private ControlOperationResult PublishScopedIntentOutcome(
+        DeviceSubsystem subsystem,
+        PowerSource powerSource,
+        ServiceStatusSnapshot current,
+        ConfirmedDeviceState? confirmed,
+        ScopedApplyOutcome outcome)
+    {
         if (outcome.ReadbackMatched)
         {
             // Matching hardware becomes the new drift baseline only after any durable
