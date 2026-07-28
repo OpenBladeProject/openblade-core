@@ -78,7 +78,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
 - Added Microsoft Store EXE readiness checks for silent offline installation,
   stable Burn upgrades, supported-hardware disclosure, and Authenticode
   inventory. Release publishing now emits a machine-readable report that
-  rejects unsigned third-party payloads while first-party signing is deferred.
+  rejects unsigned third-party payloads while first-party signing is deferred,
+  and can verify the rendered public privacy policy before submission.
 - Added JSON profile import alongside export. Profile files use a versioned
   envelope and schema-specific readers so future releases can add explicit
   migrations without silently reinterpreting older structures.
@@ -94,9 +95,11 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 - Fixed graphical-installer upgrades to compare installed versions, pinned the
   Burn upgrade family, added explicit orphaned-marker recovery, and restricted
-  installation to Windows 11 x64.
+  installation to Windows 11 version 24H2 x64 to match the tray's declared
+  platform.
 - Added the signed Microsoft Visual C++ runtime to the offline installer chain
-  and wired payload-before-bundle Authenticode signing hooks for public builds.
+  with version-aware detection that replaces stale 14.x runtimes, and wired
+  payload-before-bundle Authenticode signing hooks for public builds.
 - Added first-run consent before GitHub update checks, success-based intervals,
   ETag caching, rate-limit backoff, cancellation-safe shutdown, and resilient
   release parsing.

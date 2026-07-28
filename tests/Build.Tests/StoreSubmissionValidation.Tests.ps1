@@ -44,6 +44,25 @@ $installer = Join-Path $testRoot 'OpenBlade-Setup.exe'
 $reportPath = Join-Path $testRoot 'store-readiness.json'
 $unsignedFixture = Join-Path $testRoot 'OpenBlade.UnsignedFixture.dll'
 $invalidContract = Join-Path $testRoot 'invalid-store-contract.json'
+$renderedPrivacyPolicy = @'
+<!doctype html>
+<html><body><h1 class="type-page-title">Your data stays on your PC</h1></body></html>
+'@
+$privacyPolicyRequest = {
+    param([Uri]$Uri)
+
+    if ($Uri.AbsoluteUri -ne 'https://openblade.sh/privacy.html') {
+        throw "Unexpected privacy-policy URL: $Uri"
+    }
+
+    return [pscustomobject]@{
+        StatusCode = 200
+        Headers = @{
+            'Content-Type' = 'text/html; charset=utf-8'
+        }
+        Content = $renderedPrivacyPolicy
+    }
+}
 
 try {
     New-Item -ItemType Directory -Path $payload -Force | Out-Null
@@ -74,10 +93,38 @@ try {
         'Every unsigned first-party fixture must be reported.'
     Assert-True (
         $report.storeContract.privacyPolicyUrl -eq
-            'https://github.com/OSSBlade/openblade-docs/blob/main/site/privacy.html') `
+            'https://openblade.sh/privacy.html') `
         'The readiness report must carry the absolute privacy-policy URL.'
     Assert-True (Test-Path -LiteralPath $reportPath -PathType Leaf) `
         'The Store readiness JSON report was not written.'
+
+    $verifiedReport = Write-OpenBladeStoreReadinessReport `
+        -Bundle $bundle `
+        -Installer $installer `
+        -ReportPath $reportPath `
+        -VerifyPrivacyPolicy `
+        -PrivacyPolicyRequest $privacyPolicyRequest
+    Assert-True $verifiedReport.localPreflightPassed `
+        'A rendered canonical privacy policy must pass the release preflight.'
+
+    Assert-Throws {
+        Assert-OpenBladePrivacyPolicyResponse `
+            -StatusCode 404 `
+            -ContentType 'text/html; charset=utf-8' `
+            -Content $renderedPrivacyPolicy
+    } 'did not return HTTP 200'
+    Assert-Throws {
+        Assert-OpenBladePrivacyPolicyResponse `
+            -StatusCode 200 `
+            -ContentType 'text/plain' `
+            -Content $renderedPrivacyPolicy
+    } 'did not return text/html'
+    Assert-Throws {
+        Assert-OpenBladePrivacyPolicyResponse `
+            -StatusCode 200 `
+            -ContentType 'text/html; charset=utf-8' `
+            -Content '<pre>&lt;h1&gt;Your data stays on your PC&lt;/h1&gt;</pre>'
+    } 'does not contain the rendered OpenBlade privacy heading'
 
     Assert-Throws {
         Write-OpenBladeStoreReadinessReport `
@@ -100,6 +147,16 @@ try {
         Join-Path $repository 'build\store\OpenBlade.StoreSubmission.json') -Raw |
         ConvertFrom-Json
     $contract.privacyPolicyUrl = 'privacy.html'
+    $contract | ConvertTo-Json -Depth 4 |
+        Set-Content -LiteralPath $invalidContract -Encoding UTF8
+    Assert-Throws {
+        Get-OpenBladeStoreSubmissionContract -ContractPath $invalidContract | Out-Null
+    } 'Store submission contract is invalid'
+
+    $contract = Get-Content -LiteralPath (
+        Join-Path $repository 'build\store\OpenBlade.StoreSubmission.json') -Raw |
+        ConvertFrom-Json
+    $contract.minimumOperatingSystem = 'Windows 11 x64'
     $contract | ConvertTo-Json -Depth 4 |
         Set-Content -LiteralPath $invalidContract -Encoding UTF8
     Assert-Throws {

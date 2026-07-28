@@ -24,16 +24,62 @@ function Get-OpenBladeStoreSubmissionContract {
         ($contract.installerParameters -ne '/quiet /norestart') -or
         ($contract.offlineInstaller -ne $true) -or
         ($contract.requiresElevation -ne $true) -or
-        [string]::IsNullOrWhiteSpace($contract.minimumOperatingSystem) -or
+        ($contract.minimumOperatingSystem -ne
+            'Windows 11 version 24H2 x64 (build 26100 or later)') -or
         [string]::IsNullOrWhiteSpace($contract.supportedHardware) -or
         (-not $privacyPolicyValid) -or
         ($privacyPolicyUri.Scheme -ne [Uri]::UriSchemeHttps) -or
         ($privacyPolicyUri.AbsoluteUri -ne
-            'https://github.com/OSSBlade/openblade-docs/blob/main/site/privacy.html')) {
+            'https://openblade.sh/privacy.html')) {
         throw "The OpenBlade Store submission contract is invalid."
     }
 
     return $contract
+}
+
+function Assert-OpenBladePrivacyPolicyResponse {
+    param(
+        [Parameter(Mandatory)][int]$StatusCode,
+        [Parameter(Mandatory)][string]$ContentType,
+        [Parameter(Mandatory)][string]$Content
+    )
+
+    if ($StatusCode -ne 200) {
+        throw "The OpenBlade privacy-policy URL did not return HTTP 200."
+    }
+
+    $mediaType = ($ContentType -split ';', 2)[0].Trim()
+    if (-not [string]::Equals(
+            $mediaType,
+            'text/html',
+            [StringComparison]::OrdinalIgnoreCase)) {
+        throw "The OpenBlade privacy-policy URL did not return text/html."
+    }
+
+    if ($Content -notmatch
+        '(?is)<h1\b[^>]*>\s*Your data stays on your PC\s*</h1>') {
+        throw "The OpenBlade privacy-policy URL does not contain the rendered OpenBlade privacy heading."
+    }
+}
+
+function Assert-OpenBladePrivacyPolicyEndpoint {
+    param(
+        [Parameter(Mandatory)][Uri]$Uri,
+        [scriptblock]$Request
+    )
+
+    $response = if ($null -eq $Request) {
+        Invoke-WebRequest -Uri $Uri -UseBasicParsing
+    }
+    else {
+        & $Request $Uri
+    }
+
+    $contentType = [string]$response.Headers['Content-Type']
+    Assert-OpenBladePrivacyPolicyResponse `
+        -StatusCode ([int]$response.StatusCode) `
+        -ContentType $contentType `
+        -Content ([string]$response.Content)
 }
 
 function Write-OpenBladeStoreReadinessReport {
@@ -43,10 +89,17 @@ function Write-OpenBladeStoreReadinessReport {
         [Parameter(Mandatory)][string]$ReportPath,
         [string]$ContractPath = (
             Join-Path $PSScriptRoot 'store\OpenBlade.StoreSubmission.json'),
-        [switch]$RequireSignatures
+        [switch]$RequireSignatures,
+        [switch]$VerifyPrivacyPolicy,
+        [scriptblock]$PrivacyPolicyRequest
     )
 
     $contract = Get-OpenBladeStoreSubmissionContract -ContractPath $ContractPath
+    if ($VerifyPrivacyPolicy) {
+        Assert-OpenBladePrivacyPolicyEndpoint `
+            -Uri ([Uri]$contract.privacyPolicyUrl) `
+            -Request $PrivacyPolicyRequest
+    }
     if (-not (Test-Path -LiteralPath $Bundle -PathType Container)) {
         throw "The OpenBlade bundle is missing: $Bundle"
     }
@@ -155,7 +208,7 @@ function Write-OpenBladeStoreReadinessReport {
         remainingExternalSteps = @(
             'Authenticode-sign first-party payloads before Burn embeds them, then sign the detached Burn engine and final installer.',
             'Publish the immutable installer at a versioned HTTPS URL.',
-            'Verify the checked-in absolute privacy-policy URL is public and enter it in Partner Center.',
+            'Confirm the privacy-policy URL returns HTTP 200 text/html with the rendered OpenBlade privacy heading, then enter it in Partner Center.',
             'Complete Microsoft Partner Center certification and hardware disclosures.'
         )
     }

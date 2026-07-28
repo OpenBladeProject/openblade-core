@@ -15,7 +15,7 @@ the fields that must stay synchronized with the release:
 | Architecture | x64 |
 | Language | en-US |
 | Installer parameters | `/quiet /norestart` |
-| Minimum operating system | Windows 11 x64 |
+| Minimum operating system | Windows 11 version 24H2 x64, build 26100 or later |
 | Supported hardware | Razer Blade 16 (2026), RZ09-0581, USB `1532:02E0` |
 
 The submitted package URL must be HTTPS, immutable, and versioned. Never replace
@@ -23,9 +23,8 @@ the file behind an existing URL. A suitable shape is
 `https://<release-host>/vX.Y.Z/OpenBlade-Setup.exe`.
 
 The checked-in public privacy-policy URL is
-<https://github.com/OSSBlade/openblade-docs/blob/main/site/privacy.html>.
-Keep that absolute HTTPS contract synchronized with the deployed documentation
-and Partner Center.
+<https://openblade.sh/privacy.html>. Keep that absolute HTTPS contract
+synchronized with the deployed documentation and Partner Center.
 
 ## Package behavior
 
@@ -44,8 +43,9 @@ and Partner Center.
   the explicit upgrade-family code is
   `{FF859CA9-D69F-4995-A2AD-69E540E45724}`. Higher product versions compare
   against the installed marker version and replace the same bundle family.
-- The bundle refuses platforms older than Windows 11 build 22000 and non-x64
-  Windows installations.
+- The bundle refuses platforms older than Windows 11 version 24H2 build 26100
+  and non-x64 Windows installations, matching the tray's declared supported
+  platform.
 
 ## Certification notes
 
@@ -95,14 +95,15 @@ test that authoring and manifest checks cannot simulate:
 3. Repeat the upgrade with `/quiet /norestart` and verify the same result
    without an application prompt or automatic restart.
 4. Repair, uninstall, and reinstall the new version. Verify the Microsoft
-   Visual C++ prerequisite works on a VM where it was not already installed.
+   Visual C++ prerequisite works both when absent and when the VM has an older
+   14.x runtime below 14.50.35719.
 5. Exercise `uninstall --recover-orphaned-bundle` only in a snapshot where the
    Burn registration was deliberately removed while the OpenBlade ownership
    marker remained; verify a failed binary removal restores that marker.
 
-For a signed release, pass `-SigningThumbprint` to `build/Publish.ps1`.
-Publishing signs the first-party payload before WiX embeds it, then uses WiX's
-detached-engine and final-bundle signing hooks. Before Partner Center
-submission, rerun the preflight with `-RequireSignatures`, verify the absolute
-privacy URL, publish the installer at an immutable HTTPS URL, and complete the
-external certification fields.
+For a signed release, pass `-SigningThumbprint` and `-VerifyPrivacyPolicy` to
+`build/Publish.ps1`. Publishing signs the first-party payload before WiX embeds
+it, then uses WiX's detached-engine and final-bundle signing hooks. The privacy
+switch requires the canonical URL to return HTTP 200 with `text/html` and the
+rendered policy heading. Publish the installer at an immutable HTTPS URL and
+complete the external Partner Center fields.

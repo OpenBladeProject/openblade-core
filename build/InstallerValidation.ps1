@@ -103,8 +103,8 @@ function Assert-OpenBladeInstallerBundle {
             $namespaces)
         if (($manifest.DocumentElement.GetAttribute('Win64') -ne 'yes') -or
             ($null -eq $condition) -or
-            ($condition.InnerText -ne 'VersionNT64 >= v10.0.22000')) {
-            throw "The Burn manifest does not enforce the Windows 11 x64 platform gate."
+            ($condition.InnerText -ne 'VersionNT64 >= v10.0.26100')) {
+            throw "The Burn manifest does not enforce the Windows 11 24H2 x64 platform gate."
         }
 
         $registration = $manifest.SelectSingleNode(
@@ -184,10 +184,21 @@ function Assert-OpenBladeInstallerBundle {
         $vcPackage = $manifest.SelectSingleNode(
             '/burn:BurnManifest/burn:Chain/burn:ExePackage[@Id="OpenBladeVcRuntime"]',
             $namespaces)
+        $expectedVcDetectCondition = @(
+            'OpenBladeVcRuntimeInstalled AND OpenBladeVcRuntimeMajor AND '
+            'OpenBladeVcRuntimeMinor AND OpenBladeVcRuntimeBuild AND '
+            'OpenBladeVcRuntimeInstalled = 1 AND '
+            '(OpenBladeVcRuntimeMajor > 14 OR '
+            '(OpenBladeVcRuntimeMajor = 14 AND '
+            '(OpenBladeVcRuntimeMinor > 50 OR '
+            '(OpenBladeVcRuntimeMinor = 50 AND '
+            'OpenBladeVcRuntimeBuild >= 35719))))'
+        ) -join ''
         if (($null -eq $vcPackage) -or
             ($vcPackage.GetAttribute('InstallArguments') -ne '/install /quiet /norestart') -or
             ($vcPackage.GetAttribute('RepairArguments') -ne '/repair /quiet /norestart') -or
-            ($vcPackage.GetAttribute('DetectCondition') -ne 'OpenBladeVcRuntimeInstalled = 1') -or
+            ($vcPackage.GetAttribute('DetectCondition') -ne
+                $expectedVcDetectCondition) -or
             ($vcPackage.GetAttribute('Permanent') -ne 'yes') -or
             ($vcPackage.GetAttribute('Cache') -ne 'remove') -or
             ($vcPackage.GetAttribute('Scope') -ne 'perMachine') -or
@@ -206,6 +217,37 @@ function Assert-OpenBladeInstallerBundle {
             ($vcSearch.GetAttribute('Type') -ne 'value') -or
             ($vcSearch.GetAttribute('Win64') -ne 'yes')) {
             throw "The Burn manifest has an unexpected Visual C++ runtime detection search."
+        }
+
+        foreach ($expectedSearch in @(
+                @{
+                    Id = 'OpenBladeVcRuntimeMajorSearch'
+                    Variable = 'OpenBladeVcRuntimeMajor'
+                    Value = 'Major'
+                },
+                @{
+                    Id = 'OpenBladeVcRuntimeMinorSearch'
+                    Variable = 'OpenBladeVcRuntimeMinor'
+                    Value = 'Minor'
+                },
+                @{
+                    Id = 'OpenBladeVcRuntimeBuildSearch'
+                    Variable = 'OpenBladeVcRuntimeBuild'
+                    Value = 'Bld'
+                })) {
+            $versionSearch = $manifest.SelectSingleNode(
+                "/burn:BurnManifest/burn:RegistrySearch[@Id='$($expectedSearch.Id)']",
+                $namespaces)
+            if (($null -eq $versionSearch) -or
+                ($versionSearch.GetAttribute('Variable') -ne $expectedSearch.Variable) -or
+                ($versionSearch.GetAttribute('Root') -ne 'HKLM') -or
+                ($versionSearch.GetAttribute('Key') -ne
+                    'SOFTWARE\Microsoft\VisualStudio\14.0\VC\Runtimes\x64') -or
+                ($versionSearch.GetAttribute('Value') -ne $expectedSearch.Value) -or
+                ($versionSearch.GetAttribute('Type') -ne 'value') -or
+                ($versionSearch.GetAttribute('Win64') -ne 'yes')) {
+                throw "The Burn manifest has an unexpected Visual C++ runtime version search."
+            }
         }
 
         $extractedVcRuntime = Join-Path (

@@ -11,7 +11,7 @@
       AboutUrl="https://github.com/OSSBlade/openblade-core"
       HelpUrl="https://github.com/OSSBlade/openblade-docs"
       IconSourceFile="!(bindpath.BrandAssets)\OpenBlade.ico"
-      Condition="VersionNT64 &gt;= v10.0.22000"
+      Condition="VersionNT64 &gt;= v10.0.26100"
       Compressed="yes">
     <BootstrapperApplication>
       <bal:WixStandardBootstrapperApplication
@@ -40,6 +40,33 @@
         Result="value"
         Bitness="always64" />
 
+    <util:RegistrySearch
+        Id="OpenBladeVcRuntimeMajorSearch"
+        Variable="OpenBladeVcRuntimeMajor"
+        Root="HKLM"
+        Key="SOFTWARE\Microsoft\VisualStudio\14.0\VC\Runtimes\x64"
+        Value="Major"
+        Result="value"
+        Bitness="always64" />
+
+    <util:RegistrySearch
+        Id="OpenBladeVcRuntimeMinorSearch"
+        Variable="OpenBladeVcRuntimeMinor"
+        Root="HKLM"
+        Key="SOFTWARE\Microsoft\VisualStudio\14.0\VC\Runtimes\x64"
+        Value="Minor"
+        Result="value"
+        Bitness="always64" />
+
+    <util:RegistrySearch
+        Id="OpenBladeVcRuntimeBuildSearch"
+        Variable="OpenBladeVcRuntimeBuild"
+        Root="HKLM"
+        Key="SOFTWARE\Microsoft\VisualStudio\14.0\VC\Runtimes\x64"
+        Value="Bld"
+        Result="value"
+        Bitness="always64" />
+
     <Chain>
       <ExePackage
           Id="OpenBladeVcRuntime"
@@ -49,7 +76,7 @@
           InstallArguments="/install /quiet /norestart"
           RepairArguments="/repair /quiet /norestart"
           UninstallArguments="/uninstall /quiet /norestart"
-          DetectCondition="OpenBladeVcRuntimeInstalled = 1"
+          DetectCondition="OpenBladeVcRuntimeInstalled AND OpenBladeVcRuntimeMajor AND OpenBladeVcRuntimeMinor AND OpenBladeVcRuntimeBuild AND OpenBladeVcRuntimeInstalled = 1 AND (OpenBladeVcRuntimeMajor &gt; 14 OR (OpenBladeVcRuntimeMajor = 14 AND (OpenBladeVcRuntimeMinor &gt; 50 OR (OpenBladeVcRuntimeMinor = 50 AND OpenBladeVcRuntimeBuild &gt;= 35719))))"
           PerMachine="yes"
           Permanent="yes"
           Cache="remove"

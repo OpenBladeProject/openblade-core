@@ -61,8 +61,8 @@ Assert-True ($bundle.GetAttribute('ProviderKey') -eq 'OSSBlade.OpenBlade') `
     'The Burn dependency provider key must remain stable across upgrades.'
 Assert-True ($bundle.GetAttribute('Version') -eq '$(OpenBladeVersion)') `
     'The Burn bundle must use the product version source of truth.'
-Assert-True ($bundle.GetAttribute('Condition') -eq 'VersionNT64 >= v10.0.22000') `
-    'The Burn bundle must require Windows 11 x64.'
+Assert-True ($bundle.GetAttribute('Condition') -eq 'VersionNT64 >= v10.0.26100') `
+    'The Burn bundle must require Windows 11 version 24H2 x64.'
 
 $standardBa = $bundle.SelectSingleNode(
     "*[local-name()='BootstrapperApplication']/*[local-name()='WixStandardBootstrapperApplication']")
@@ -125,7 +125,7 @@ Assert-True ($null -ne $vcPackage) `
 foreach ($entry in ([ordered]@{
         InstallArguments = '/install /quiet /norestart'
         RepairArguments = '/repair /quiet /norestart'
-        DetectCondition = 'OpenBladeVcRuntimeInstalled = 1'
+        DetectCondition = 'OpenBladeVcRuntimeInstalled AND OpenBladeVcRuntimeMajor AND OpenBladeVcRuntimeMinor AND OpenBladeVcRuntimeBuild AND OpenBladeVcRuntimeInstalled = 1 AND (OpenBladeVcRuntimeMajor > 14 OR (OpenBladeVcRuntimeMajor = 14 AND (OpenBladeVcRuntimeMinor > 50 OR (OpenBladeVcRuntimeMinor = 50 AND OpenBladeVcRuntimeBuild >= 35719))))'
         PerMachine = 'yes'
         Permanent = 'yes'
         Cache = 'remove'
@@ -133,6 +133,35 @@ foreach ($entry in ([ordered]@{
     }).GetEnumerator()) {
     Assert-True ($vcPackage.GetAttribute($entry.Key) -eq $entry.Value) `
         "The Visual C++ package attribute $($entry.Key) changed unexpectedly."
+}
+
+foreach ($expectedSearch in @(
+        @{
+            Id = 'OpenBladeVcRuntimeMajorSearch'
+            Variable = 'OpenBladeVcRuntimeMajor'
+            Value = 'Major'
+        },
+        @{
+            Id = 'OpenBladeVcRuntimeMinorSearch'
+            Variable = 'OpenBladeVcRuntimeMinor'
+            Value = 'Minor'
+        },
+        @{
+            Id = 'OpenBladeVcRuntimeBuildSearch'
+            Variable = 'OpenBladeVcRuntimeBuild'
+            Value = 'Bld'
+        })) {
+    $versionSearch = $bundle.SelectSingleNode(
+        "*[local-name()='RegistrySearch'][@Id='$($expectedSearch.Id)']")
+    Assert-True ($null -ne $versionSearch) `
+        "The Visual C++ $($expectedSearch.Value) registry search is missing."
+    Assert-True (
+        $versionSearch.GetAttribute('Variable') -eq $expectedSearch.Variable) `
+        "The Visual C++ $($expectedSearch.Value) variable changed unexpectedly."
+    Assert-True ($versionSearch.GetAttribute('Value') -eq $expectedSearch.Value) `
+        "The Visual C++ $($expectedSearch.Value) value changed unexpectedly."
+    Assert-True ($versionSearch.GetAttribute('Bitness') -eq 'always64') `
+        "The Visual C++ $($expectedSearch.Value) search must use the 64-bit view."
 }
 
 $signEngineTarget = $project.SelectSingleNode(
@@ -167,6 +196,7 @@ foreach ($requiredText in @(
         'Write-OpenBladeStoreReadinessReport',
         'Invoke-OpenBladeSigning',
         'OpenBladeSigningThumbprint',
+        'VerifyPrivacyPolicy',
         'upgradeProbeVersion',
         'upgrade-probe-validation')) {
     Assert-True ($publish.IndexOf($requiredText, [StringComparison]::Ordinal) -ge 0) `
@@ -191,7 +221,11 @@ Assert-True ($storeContract.offlineInstaller -eq $true) `
     'The Store submission must remain a self-contained offline installer.'
 Assert-True (
     $storeContract.privacyPolicyUrl -eq
-        'https://github.com/OSSBlade/openblade-docs/blob/main/site/privacy.html') `
+        'https://openblade.sh/privacy.html') `
     'The Store submission must pin the absolute public privacy-policy URL.'
+Assert-True (
+    $storeContract.minimumOperatingSystem -eq
+        'Windows 11 version 24H2 x64 (build 26100 or later)') `
+    'The Store submission must match the tray and installer OS floor.'
 
 Write-Host 'Installer authoring tests passed.'

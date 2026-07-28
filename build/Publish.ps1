@@ -5,7 +5,8 @@ param(
     [string]$VcRedistPath,
     [string]$SigningThumbprint,
     [string]$SignTool,
-    [string]$TimestampUrl = 'http://timestamp.digicert.com'
+    [string]$TimestampUrl = 'http://timestamp.digicert.com',
+    [switch]$VerifyPrivacyPolicy
 )
 
 Set-StrictMode -Version 3.0
@@ -239,7 +240,8 @@ try {
         -Bundle $stagingBundle `
         -Installer $stagingInstaller `
         -ReportPath $stagingStoreReadiness `
-        -RequireSignatures:$signingEnabled | Out-Null
+        -RequireSignatures:$signingEnabled `
+        -VerifyPrivacyPolicy:$VerifyPrivacyPolicy | Out-Null
 
     Complete-ValidatedBundleReplacement `
         -StagingBundle $stagingBundle `
