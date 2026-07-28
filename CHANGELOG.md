@@ -92,6 +92,14 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Changed
 
+- Fixed graphical-installer upgrades to compare installed versions, pinned the
+  Burn upgrade family, added explicit orphaned-marker recovery, and restricted
+  installation to Windows 11 x64.
+- Added the signed Microsoft Visual C++ runtime to the offline installer chain
+  and wired payload-before-bundle Authenticode signing hooks for public builds.
+- Added first-run consent before GitHub update checks, success-based intervals,
+  ETag caching, rate-limit backoff, cancellation-safe shutdown, and resilient
+  release parsing.
 - Advanced the service IPC protocol to version 24 for the battery-health status
   field. Service, Tray, and Session Agent components must be upgraded together
   through the coordinated installer.

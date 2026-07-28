@@ -7,17 +7,13 @@ public enum SetupCommand
     UninstallAndPurge,
 }
 
-public readonly record struct SetupInvocation(SetupCommand Command, bool BundleManaged);
+public readonly record struct SetupInvocation(
+    SetupCommand Command,
+    bool BundleManaged,
+    bool RecoverOrphanedBundle = false);
 
 public static class SetupCommandParser
 {
-    public static bool TryParse(IReadOnlyList<string> arguments, out SetupCommand command)
-    {
-        bool parsed = TryParseInvocation(arguments, out SetupInvocation invocation);
-        command = invocation.Command;
-        return parsed;
-    }
-
     public static bool TryParseInvocation(
         IReadOnlyList<string> arguments,
         out SetupInvocation invocation)
@@ -51,6 +47,20 @@ public static class SetupCommandParser
         if (IsBundleManaged(arguments, "uninstall"))
         {
             invocation = new(SetupCommand.Uninstall, BundleManaged: true);
+            return true;
+        }
+
+        if (arguments.Count == 2
+            && string.Equals(arguments[0], "uninstall", StringComparison.OrdinalIgnoreCase)
+            && string.Equals(
+                arguments[1],
+                "--recover-orphaned-bundle",
+                StringComparison.OrdinalIgnoreCase))
+        {
+            invocation = new(
+                SetupCommand.Uninstall,
+                BundleManaged: false,
+                RecoverOrphanedBundle: true);
             return true;
         }
 

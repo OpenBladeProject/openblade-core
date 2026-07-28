@@ -1,3 +1,10 @@
+Set-StrictMode -Version 3.0
+$ErrorActionPreference = 'Stop'
+
+if (-not (Get-Command Get-CanonicalPublishPath -ErrorAction SilentlyContinue)) {
+    . (Join-Path $PSScriptRoot 'PublishPayloadValidation.ps1')
+}
+
 function Get-WixCommandAssembly {
     param([Parameter(Mandatory)][string]$InstallerProject)
 
@@ -91,6 +98,14 @@ function Assert-OpenBladeInstallerBundle {
         [xml]$manifest = Get-Content -LiteralPath $manifestPath
         $namespaces = [Xml.XmlNamespaceManager]::new($manifest.NameTable)
         $namespaces.AddNamespace('burn', 'http://wixtoolset.org/schemas/v4/2008/Burn')
+        $condition = $manifest.SelectSingleNode(
+            '/burn:BurnManifest/burn:Condition',
+            $namespaces)
+        if (($manifest.DocumentElement.GetAttribute('Win64') -ne 'yes') -or
+            ($null -eq $condition) -or
+            ($condition.InnerText -ne 'VersionNT64 >= v10.0.22000')) {
+            throw "The Burn manifest does not enforce the Windows 11 x64 platform gate."
+        }
 
         $registration = $manifest.SelectSingleNode(
             '/burn:BurnManifest/burn:Registration',
@@ -103,10 +118,12 @@ function Assert-OpenBladeInstallerBundle {
             throw "The Burn manifest has an unexpected bundle registration."
         }
 
+        $expectedUpgradeCode = [Guid]'FF859CA9-D69F-4995-A2AD-69E540E45724'
         $primaryUpgradeCode = $registration.GetAttribute('PrimaryUpgradeCode')
         $parsedUpgradeCode = [Guid]::Empty
-        if (-not [Guid]::TryParse($primaryUpgradeCode, [ref]$parsedUpgradeCode)) {
-            throw "The Burn manifest does not contain a valid stable upgrade-family code."
+        if ((-not [Guid]::TryParse($primaryUpgradeCode, [ref]$parsedUpgradeCode)) -or
+            ($parsedUpgradeCode -ne $expectedUpgradeCode)) {
+            throw "The Burn manifest does not contain the pinned OpenBlade upgrade-family code."
         }
 
         $relatedBundles = @($manifest.SelectNodes(
@@ -137,8 +154,9 @@ function Assert-OpenBladeInstallerBundle {
             InstallArguments = 'install --bundle-managed'
             RepairArguments = 'install --bundle-managed'
             UninstallArguments = 'uninstall --bundle-managed'
-            DetectCondition = 'OpenBladeBundleManaged'
+            DetectCondition = "OpenBladeInstalledVersion AND OpenBladeInstalledVersion >= v$ExpectedVersion"
             Scope = 'perMachine'
+            Cache = 'keep'
             Vital = 'yes'
         }
         foreach ($entry in $expectedAttributes.GetEnumerator()) {
@@ -154,12 +172,59 @@ function Assert-OpenBladeInstallerBundle {
             '/burn:BurnManifest/burn:RegistrySearch[@Id="OpenBladeBundleOwnershipSearch"]',
             $namespaces)
         if (($null -eq $search) -or
-            ($search.GetAttribute('Variable') -ne 'OpenBladeBundleManaged') -or
+            ($search.GetAttribute('Variable') -ne 'OpenBladeInstalledVersion') -or
             ($search.GetAttribute('Root') -ne 'HKLM') -or
             ($search.GetAttribute('Key') -ne 'SOFTWARE\OSSBlade\OpenBlade\Installer') -or
-            ($search.GetAttribute('Type') -ne 'exists') -or
+            ($search.GetAttribute('Value') -ne 'InstalledVersion') -or
+            ($search.GetAttribute('Type') -ne 'value') -or
             ($search.GetAttribute('Win64') -ne 'yes')) {
             throw "The Burn manifest has an unexpected OpenBlade ownership detection search."
+        }
+
+        $vcPackage = $manifest.SelectSingleNode(
+            '/burn:BurnManifest/burn:Chain/burn:ExePackage[@Id="OpenBladeVcRuntime"]',
+            $namespaces)
+        if (($null -eq $vcPackage) -or
+            ($vcPackage.GetAttribute('InstallArguments') -ne '/install /quiet /norestart') -or
+            ($vcPackage.GetAttribute('RepairArguments') -ne '/repair /quiet /norestart') -or
+            ($vcPackage.GetAttribute('DetectCondition') -ne 'OpenBladeVcRuntimeInstalled = 1') -or
+            ($vcPackage.GetAttribute('Permanent') -ne 'yes') -or
+            ($vcPackage.GetAttribute('Cache') -ne 'remove') -or
+            ($vcPackage.GetAttribute('Scope') -ne 'perMachine') -or
+            ($vcPackage.GetAttribute('Vital') -ne 'yes')) {
+            throw "The Burn manifest has an unexpected Visual C++ runtime package."
+        }
+
+        $vcSearch = $manifest.SelectSingleNode(
+            '/burn:BurnManifest/burn:RegistrySearch[@Id="OpenBladeVcRuntimeSearch"]',
+            $namespaces)
+        if (($null -eq $vcSearch) -or
+            ($vcSearch.GetAttribute('Variable') -ne 'OpenBladeVcRuntimeInstalled') -or
+            ($vcSearch.GetAttribute('Root') -ne 'HKLM') -or
+            ($vcSearch.GetAttribute('Key') -ne 'SOFTWARE\Microsoft\VisualStudio\14.0\VC\Runtimes\x64') -or
+            ($vcSearch.GetAttribute('Value') -ne 'Installed') -or
+            ($vcSearch.GetAttribute('Type') -ne 'value') -or
+            ($vcSearch.GetAttribute('Win64') -ne 'yes')) {
+            throw "The Burn manifest has an unexpected Visual C++ runtime detection search."
+        }
+
+        $extractedVcRuntime = Join-Path (
+            Join-Path $payloadOutput 'WixAttachedContainer') 'VC_redist.x64.exe'
+        if (-not (Test-Path -LiteralPath $extractedVcRuntime -PathType Leaf)) {
+            throw "The Burn installer does not embed the Visual C++ runtime."
+        }
+        $vcHash = (Get-FileHash -LiteralPath $extractedVcRuntime -Algorithm SHA256).Hash
+        if ($vcHash -ne
+            '8995548DFFFCDE7C49987029C764355612BA6850EE09A7B6F0FDDC85BDC5C280') {
+            throw "The embedded Visual C++ runtime is not the pinned release."
+        }
+        $vcSignature = Get-AuthenticodeSignature -LiteralPath $extractedVcRuntime
+        if (($vcSignature.Status -ne [Management.Automation.SignatureStatus]::Valid) -or
+            ($null -eq $vcSignature.SignerCertificate) -or
+            (-not $vcSignature.SignerCertificate.Subject.StartsWith(
+                'CN=Microsoft Corporation,',
+                [StringComparison]::Ordinal))) {
+            throw "The embedded Visual C++ runtime does not have a valid Microsoft signature."
         }
 
         $payloadsById = @{}

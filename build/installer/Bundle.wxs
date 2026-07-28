@@ -3,6 +3,7 @@
      xmlns:util="http://wixtoolset.org/schemas/v4/wxs/util">
   <Bundle
       Id="OSSBlade.OpenBlade"
+      UpgradeCode="{FF859CA9-D69F-4995-A2AD-69E540E45724}"
       ProviderKey="OSSBlade.OpenBlade"
       Name="OpenBlade"
       Version="$(OpenBladeVersion)"
@@ -10,6 +11,7 @@
       AboutUrl="https://github.com/OSSBlade/openblade-core"
       HelpUrl="https://github.com/OSSBlade/openblade-docs"
       IconSourceFile="!(bindpath.BrandAssets)\OpenBlade.ico"
+      Condition="VersionNT64 &gt;= v10.0.22000"
       Compressed="yes">
     <BootstrapperApplication>
       <bal:WixStandardBootstrapperApplication
@@ -22,13 +24,37 @@
 
     <util:RegistrySearch
         Id="OpenBladeBundleOwnershipSearch"
-        Variable="OpenBladeBundleManaged"
+        Variable="OpenBladeInstalledVersion"
         Root="HKLM"
         Key="SOFTWARE\OSSBlade\OpenBlade\Installer"
-        Result="exists"
+        Value="InstalledVersion"
+        Result="value"
+        Bitness="always64" />
+
+    <util:RegistrySearch
+        Id="OpenBladeVcRuntimeSearch"
+        Variable="OpenBladeVcRuntimeInstalled"
+        Root="HKLM"
+        Key="SOFTWARE\Microsoft\VisualStudio\14.0\VC\Runtimes\x64"
+        Value="Installed"
+        Result="value"
         Bitness="always64" />
 
     <Chain>
+      <ExePackage
+          Id="OpenBladeVcRuntime"
+          SourceFile="!(bindpath.OpenBladePrerequisites)\VC_redist.x64.exe"
+          DisplayName="Microsoft Visual C++ Redistributable"
+          Description="Installs the Microsoft Visual C++ runtime required by OpenBlade."
+          InstallArguments="/install /quiet /norestart"
+          RepairArguments="/repair /quiet /norestart"
+          UninstallArguments="/uninstall /quiet /norestart"
+          DetectCondition="OpenBladeVcRuntimeInstalled = 1"
+          PerMachine="yes"
+          Permanent="yes"
+          Cache="remove"
+          Vital="yes" />
+
       <ExePackage
           Id="OpenBladeSetup"
           SourceFile="!(bindpath.OpenBladeBundle)\OpenBlade.Setup.exe"
@@ -37,8 +63,9 @@
           InstallArguments="install --bundle-managed"
           RepairArguments="install --bundle-managed"
           UninstallArguments="uninstall --bundle-managed"
-          DetectCondition="OpenBladeBundleManaged"
+          DetectCondition="OpenBladeInstalledVersion AND OpenBladeInstalledVersion &gt;= v$(OpenBladeVersion)"
           PerMachine="yes"
+          Cache="keep"
           Vital="yes">
         <Payloads Include="!(bindpath.OpenBladeBundle)\**">
           <Exclude Files="!(bindpath.OpenBladeBundle)\OpenBlade.Setup.exe" />

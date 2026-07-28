@@ -8,13 +8,18 @@ public sealed class SetupCommandParserTests
     [InlineData(SetupCommand.Install, "install")]
     [InlineData(SetupCommand.Uninstall, "UNINSTALL")]
     [InlineData(SetupCommand.Uninstall, "uninstall", "--INTERACTIVE")]
+    [InlineData(SetupCommand.Uninstall, "uninstall", "--RECOVER-ORPHANED-BUNDLE")]
     [InlineData(SetupCommand.UninstallAndPurge, "uninstall", "--PURGE")]
-    public void TryParse_RecognizesOnlySupportedCommands(SetupCommand expected, params string[] arguments)
+    public void TryParseInvocation_RecognizesOnlySupportedCommands(
+        SetupCommand expected,
+        params string[] arguments)
     {
-        bool parsed = SetupCommandParser.TryParse(arguments, out SetupCommand command);
+        bool parsed = SetupCommandParser.TryParseInvocation(
+            arguments,
+            out SetupInvocation invocation);
 
         Assert.True(parsed);
-        Assert.Equal(expected, command);
+        Assert.Equal(expected, invocation.Command);
     }
 
     [Theory]
@@ -30,6 +35,7 @@ public sealed class SetupCommandParserTests
         Assert.True(parsed);
         Assert.Equal(expected, invocation.Command);
         Assert.False(invocation.BundleManaged);
+        Assert.False(invocation.RecoverOrphanedBundle);
     }
 
     [Theory]
@@ -44,6 +50,20 @@ public sealed class SetupCommandParserTests
         Assert.True(parsed);
         Assert.Equal(expected, invocation.Command);
         Assert.True(invocation.BundleManaged);
+        Assert.False(invocation.RecoverOrphanedBundle);
+    }
+
+    [Fact]
+    public void TryParseInvocation_RecognizesExactOrphanedBundleRecoveryCommand()
+    {
+        bool parsed = SetupCommandParser.TryParseInvocation(
+            ["UNINSTALL", "--RECOVER-ORPHANED-BUNDLE"],
+            out SetupInvocation invocation);
+
+        Assert.True(parsed);
+        Assert.Equal(SetupCommand.Uninstall, invocation.Command);
+        Assert.False(invocation.BundleManaged);
+        Assert.True(invocation.RecoverOrphanedBundle);
     }
 
     [Fact]
@@ -59,11 +79,13 @@ public sealed class SetupCommandParserTests
     [InlineData("install", "--purge")]
     [InlineData("install", "--bundle-managed", "extra")]
     [InlineData("uninstall", "--bundle-managed", "--purge")]
+    [InlineData("uninstall", "--recover-orphaned-bundle", "extra")]
     [InlineData("uninstall", "--purge", "extra")]
     [InlineData("--purge", "uninstall")]
     [InlineData("remove")]
-    public void TryParse_RejectsUnknownFlagsExtraArgumentsAndWrongOrdering(params string[] arguments)
+    public void TryParseInvocation_RejectsUnknownFlagsExtraArgumentsAndWrongOrdering(
+        params string[] arguments)
     {
-        Assert.False(SetupCommandParser.TryParse(arguments, out _));
+        Assert.False(SetupCommandParser.TryParseInvocation(arguments, out _));
     }
 }

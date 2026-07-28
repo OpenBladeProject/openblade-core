@@ -13,6 +13,7 @@ public sealed class InstalledUninstallBootstrapperTests
     [Theory]
     [InlineData("uninstall")]
     [InlineData("uninstall", "--purge")]
+    [InlineData("uninstall", "--recover-orphaned-bundle")]
     public void InstalledUninstallInvocation_RequiresExactInstalledSetupPath(params string[] arguments)
     {
         Assert.True(InstalledUninstallBootstrapper.IsInstalledUninstallInvocation(

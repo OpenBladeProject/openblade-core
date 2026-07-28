@@ -12,6 +12,8 @@ public interface IBundleOwnershipRegistration
 internal sealed class WindowsBundleOwnershipRegistration : IBundleOwnershipRegistration
 {
     internal const string RegistryPath = @"SOFTWARE\OSSBlade\OpenBlade\Installer";
+    internal const string ProductRegistryPath = @"SOFTWARE\OSSBlade\OpenBlade";
+    internal const string PublisherRegistryPath = @"SOFTWARE\OSSBlade";
 
     public bool Exists()
     {
@@ -27,10 +29,12 @@ internal sealed class WindowsBundleOwnershipRegistration : IBundleOwnershipRegis
         using RegistryKey baseKey = RegistryKey.OpenBaseKey(
             RegistryHive.LocalMachine,
             RegistryView.Registry64);
-        using RegistryKey key = baseKey.CreateSubKey(RegistryPath, writable: true)
-            ?? throw new InvalidOperationException(
-                "Could not record graphical installer ownership for OpenBlade.");
+        using RegistryKey key = baseKey.CreateSubKey(RegistryPath, writable: true);
         key.SetValue("Owner", "WiX Burn", RegistryValueKind.String);
+        key.SetValue(
+            "InstalledVersion",
+            FormatInstalledVersion(typeof(WindowsBundleOwnershipRegistration).Assembly.GetName().Version),
+            RegistryValueKind.String);
     }
 
     public void Remove()
@@ -39,5 +43,26 @@ internal sealed class WindowsBundleOwnershipRegistration : IBundleOwnershipRegis
             RegistryHive.LocalMachine,
             RegistryView.Registry64);
         baseKey.DeleteSubKeyTree(RegistryPath, throwOnMissingSubKey: false);
+        DeleteIfEmpty(baseKey, ProductRegistryPath);
+        DeleteIfEmpty(baseKey, PublisherRegistryPath);
+    }
+
+    internal static string FormatInstalledVersion(Version? version) =>
+        version is null
+            ? "0.0.0"
+            : $"{Math.Max(version.Major, 0)}.{Math.Max(version.Minor, 0)}.{Math.Max(version.Build, 0)}";
+
+    private static void DeleteIfEmpty(RegistryKey baseKey, string path)
+    {
+        bool isEmpty;
+        using (RegistryKey? key = baseKey.OpenSubKey(path, writable: false))
+        {
+            isEmpty = key is not null && key.SubKeyCount == 0 && key.ValueCount == 0;
+        }
+
+        if (isEmpty)
+        {
+            baseKey.DeleteSubKey(path, throwOnMissingSubKey: false);
+        }
     }
 }

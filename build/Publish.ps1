@@ -1,14 +1,20 @@
 [CmdletBinding()]
 param(
     [ValidateSet('Debug', 'Release')]
-    [string]$Configuration = 'Release'
+    [string]$Configuration = 'Release',
+    [string]$VcRedistPath,
+    [string]$SigningThumbprint,
+    [string]$SignTool,
+    [string]$TimestampUrl = 'http://timestamp.digicert.com'
 )
 
+Set-StrictMode -Version 3.0
 $ErrorActionPreference = 'Stop'
 $repository = Split-Path -Parent $PSScriptRoot
 $artifacts = [IO.Path]::GetFullPath((Join-Path $repository 'artifacts'))
 . (Join-Path $PSScriptRoot 'PublishPayloadValidation.ps1')
 . (Join-Path $PSScriptRoot 'InstallerValidation.ps1')
+. (Join-Path $PSScriptRoot 'InstallerPrerequisites.ps1')
 . (Join-Path $PSScriptRoot 'StoreSubmissionValidation.ps1')
 . (Join-Path $PSScriptRoot 'WindowsAppRuntimeNotificationResource.ps1')
 
@@ -26,6 +32,12 @@ $stagingRoot = [IO.Path]::GetFullPath((Join-Path $artifacts ('.staging\' + [Guid
 $stagingBundle = Join-Path $stagingRoot 'OpenBlade'
 $stagingDeveloperTools = Join-Path $stagingRoot 'OpenBlade.DeveloperTools'
 $stagingInstallerOutput = Join-Path $stagingRoot 'installer'
+$stagingUpgradeProbeOutput = Join-Path $stagingRoot 'installer-upgrade-probe'
+$stagingUpgradeProbe = Join-Path $stagingUpgradeProbeOutput 'OpenBlade-Setup.exe'
+$stagingUpgradeProbeObj = (
+    Join-Path $stagingRoot 'installer-upgrade-probe-obj').TrimEnd(
+        [IO.Path]::DirectorySeparatorChar) + [IO.Path]::DirectorySeparatorChar
+$stagingPrerequisites = Join-Path $stagingRoot 'prerequisites'
 $stagingInstaller = Join-Path $stagingInstallerOutput 'OpenBlade-Setup.exe'
 $stagingStoreReadiness = Join-Path $stagingRoot 'OpenBlade-Store-Readiness.json'
 $payload = Join-Path $stagingBundle 'payload'
@@ -67,6 +79,23 @@ if ($null -eq $openBladeVersionNode -or
     [string]::IsNullOrWhiteSpace($openBladeVersionNode.InnerText)) {
     throw 'Directory.Build.props does not define OpenBladeVersion.'
 }
+
+function Invoke-OpenBladeSigning {
+    param(
+        [Parameter(Mandatory)][string]$Path,
+        [Parameter(Mandatory)][string]$ResolvedSignTool
+    )
+
+    & $ResolvedSignTool sign `
+        /sha1 $SigningThumbprint `
+        /fd SHA256 `
+        /tr $TimestampUrl `
+        /td SHA256 `
+        $Path
+    if ($LASTEXITCODE -ne 0) {
+        throw "Authenticode signing failed with exit code $LASTEXITCODE for $Path"
+    }
+}
 $openBladeVersion = $openBladeVersionNode.InnerText
 
 $publishArguments = @(
@@ -87,6 +116,20 @@ $setupPublishArguments = @(
     '--property:IncludeNativeLibrariesForSelfExtract=true',
     '--property:EnableCompressionInSingleFile=true'
 )
+$signingEnabled = -not [string]::IsNullOrWhiteSpace($SigningThumbprint)
+$resolvedSignTool = $null
+if ($signingEnabled) {
+    if ([string]::IsNullOrWhiteSpace($SignTool)) {
+        $signToolCommand = Get-Command 'signtool.exe' -ErrorAction Stop
+        $resolvedSignTool = $signToolCommand.Source
+    }
+    else {
+        $resolvedSignTool = [IO.Path]::GetFullPath($SignTool)
+        if (-not (Test-Path -LiteralPath $resolvedSignTool -PathType Leaf)) {
+            throw "The requested SignTool executable is missing: $resolvedSignTool"
+        }
+    }
+}
 
 try {
     New-Item -ItemType Directory -Path $payload -Force | Out-Null
@@ -122,13 +165,38 @@ try {
         -DeveloperTools $stagingDeveloperTools
 
     Assert-ProductionBundleFootprint -Bundle $stagingBundle
+    [void](Copy-OpenBladeVcRedist `
+        -SourcePath $VcRedistPath `
+        -DestinationDirectory $stagingPrerequisites)
+
+    if ($signingEnabled) {
+        foreach ($file in Get-ChildItem -LiteralPath $stagingBundle -Recurse -File |
+            Where-Object {
+                ($_.Extension -in @('.exe', '.dll')) -and
+                $_.Name.StartsWith('OpenBlade.', [StringComparison]::Ordinal)
+            }) {
+            Invoke-OpenBladeSigning -Path $file.FullName -ResolvedSignTool $resolvedSignTool
+        }
+    }
 
     New-Item -ItemType Directory -Path $stagingInstallerOutput -Force | Out-Null
-    & dotnet build (Join-Path $repository 'build\installer\OpenBlade.Installer.wixproj') `
-        --configuration $Configuration `
-        --property:NuGetAudit=false `
-        --property:OpenBladeBundle=$stagingBundle `
-        --output $stagingInstallerOutput
+    $installerBuildArguments = @(
+        'build',
+        (Join-Path $repository 'build\installer\OpenBlade.Installer.wixproj'),
+        '--configuration', $Configuration,
+        '--property:NuGetAudit=false',
+        "--property:OpenBladeBundle=$stagingBundle",
+        "--property:OpenBladePrerequisites=$stagingPrerequisites",
+        '--output', $stagingInstallerOutput
+    )
+    if ($signingEnabled) {
+        $installerBuildArguments += @(
+            "--property:OpenBladeSigningThumbprint=$SigningThumbprint",
+            "--property:OpenBladeSignTool=$resolvedSignTool",
+            "--property:OpenBladeTimestampUrl=$TimestampUrl"
+        )
+    }
+    & dotnet @installerBuildArguments
     if ($LASTEXITCODE -ne 0) {
         throw "OpenBlade installer build failed with exit code $LASTEXITCODE"
     }
@@ -141,10 +209,37 @@ try {
         -ValidationRoot (Join-Path $stagingRoot 'installer-validation') `
         -PermittedRoot $artifacts
 
+    $parsedVersion = [Version]$openBladeVersion
+    $upgradeProbeVersion = '{0}.{1}.{2}' -f @(
+        $parsedVersion.Major,
+        $parsedVersion.Minor,
+        ($parsedVersion.Build + 1))
+    New-Item -ItemType Directory -Path $stagingUpgradeProbeOutput -Force | Out-Null
+    & dotnet build (Join-Path $repository 'build\installer\OpenBlade.Installer.wixproj') `
+        --configuration $Configuration `
+        --property:NuGetAudit=false `
+        --property:OpenBladeBundle=$stagingBundle `
+        --property:OpenBladePrerequisites=$stagingPrerequisites `
+        --property:OpenBladeVersion=$upgradeProbeVersion `
+        --property:BaseIntermediateOutputPath=$stagingUpgradeProbeObj `
+        --property:MSBuildProjectExtensionsPath=$stagingUpgradeProbeObj `
+        --output $stagingUpgradeProbeOutput
+    if ($LASTEXITCODE -ne 0) {
+        throw "OpenBlade upgrade-identity probe build failed with exit code $LASTEXITCODE"
+    }
+    Assert-OpenBladeInstallerBundle `
+        -Installer $stagingUpgradeProbe `
+        -PublishedBundle $stagingBundle `
+        -InstallerProject (Join-Path $repository 'build\installer\OpenBlade.Installer.wixproj') `
+        -ExpectedVersion $upgradeProbeVersion `
+        -ValidationRoot (Join-Path $stagingRoot 'upgrade-probe-validation') `
+        -PermittedRoot $artifacts
+
     Write-OpenBladeStoreReadinessReport `
         -Bundle $stagingBundle `
         -Installer $stagingInstaller `
-        -ReportPath $stagingStoreReadiness | Out-Null
+        -ReportPath $stagingStoreReadiness `
+        -RequireSignatures:$signingEnabled | Out-Null
 
     Complete-ValidatedBundleReplacement `
         -StagingBundle $stagingBundle `

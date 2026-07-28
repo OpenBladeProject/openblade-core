@@ -1,3 +1,6 @@
+Set-StrictMode -Version 3.0
+$ErrorActionPreference = 'Stop'
+
 function Get-OpenBladeStoreSubmissionContract {
     param(
         [string]$ContractPath = (
@@ -9,6 +12,11 @@ function Get-OpenBladeStoreSubmissionContract {
     }
 
     $contract = Get-Content -LiteralPath $ContractPath -Raw | ConvertFrom-Json
+    $privacyPolicyUri = $null
+    $privacyPolicyValid = [Uri]::TryCreate(
+        [string]$contract.privacyPolicyUrl,
+        [UriKind]::Absolute,
+        [ref]$privacyPolicyUri)
     if (($contract.schemaVersion -ne 1) -or
         ($contract.appType -ne 'EXE') -or
         ($contract.architecture -ne 'x64') -or
@@ -18,7 +26,10 @@ function Get-OpenBladeStoreSubmissionContract {
         ($contract.requiresElevation -ne $true) -or
         [string]::IsNullOrWhiteSpace($contract.minimumOperatingSystem) -or
         [string]::IsNullOrWhiteSpace($contract.supportedHardware) -or
-        ($contract.privacyPolicyRelativeUrl -ne 'privacy.html')) {
+        (-not $privacyPolicyValid) -or
+        ($privacyPolicyUri.Scheme -ne [Uri]::UriSchemeHttps) -or
+        ($privacyPolicyUri.AbsoluteUri -ne
+            'https://github.com/OSSBlade/openblade-docs/blob/main/site/privacy.html')) {
         throw "The OpenBlade Store submission contract is invalid."
     }
 
@@ -62,6 +73,7 @@ function Write-OpenBladeStoreReadinessReport {
     }
 
     $signatureEntries = [Collections.Generic.List[object]]::new()
+    $unsignedThirdParty = [Collections.Generic.List[string]]::new()
     foreach ($file in @($files) + @(Get-Item -LiteralPath $installerPath)) {
         $relativePath = if ($file.FullName.StartsWith(
                 $bundlePrefix,
@@ -81,13 +93,13 @@ function Write-OpenBladeStoreReadinessReport {
             $signature.SignerCertificate.Subject
         }
         $isFirstParty = ($relativePath -eq 'OpenBlade-Setup.exe') -or
-            ($relativePath -match '^(?:payload\\)?OpenBlade\.[^\\]+\.(?:dll|exe)$')
+            ($relativePath -match '^(?:[^\\]+\\)*OpenBlade\.[^\\]+\.(?:dll|exe)$')
 
         if (($status -ne 'Valid') -and ($status -ne 'NotSigned')) {
             throw "Portable executable '$relativePath' has invalid signature status '$status'."
         }
         if (($status -eq 'NotSigned') -and -not $isFirstParty) {
-            throw "Third-party portable executable '$relativePath' is unsigned."
+            $unsignedThirdParty.Add($relativePath)
         }
 
         $signatureEntries.Add([ordered]@{
@@ -99,6 +111,10 @@ function Write-OpenBladeStoreReadinessReport {
     }
 
     $orderedEntries = @($signatureEntries | Sort-Object path)
+    if ($unsignedThirdParty.Count -gt 0) {
+        throw "Third-party portable executables are unsigned: " `
+            + (@($unsignedThirdParty | Sort-Object) -join ', ')
+    }
     $unsignedFirstParty = @($orderedEntries |
         Where-Object { $_.status -eq 'NotSigned' } |
         ForEach-Object { $_.path })
@@ -126,20 +142,20 @@ function Write-OpenBladeStoreReadinessReport {
             requiresElevation = $contract.requiresElevation
             minimumOperatingSystem = $contract.minimumOperatingSystem
             supportedHardware = $contract.supportedHardware
-            privacyPolicyRelativeUrl = $contract.privacyPolicyRelativeUrl
+            privacyPolicyUrl = $contract.privacyPolicyUrl
         }
         signatureSummary = [ordered]@{
             portableExecutableCount = $orderedEntries.Count
             validSignatureCount = @(
                 $orderedEntries | Where-Object { $_.status -eq 'Valid' }).Count
             unsignedFirstPartyCount = $unsignedFirstParty.Count
-            unsignedThirdPartyCount = 0
+            unsignedThirdPartyCount = $unsignedThirdParty.Count
         }
         unsignedFirstParty = $unsignedFirstParty
         remainingExternalSteps = @(
-            'Authenticode-sign every unsigned first-party PE and the final installer.',
+            'Authenticode-sign first-party payloads before Burn embeds them, then sign the detached Burn engine and final installer.',
             'Publish the immutable installer at a versioned HTTPS URL.',
-            'Deploy privacy.html and enter its public URL in Partner Center.',
+            'Verify the checked-in absolute privacy-policy URL is public and enter it in Partner Center.',
             'Complete Microsoft Partner Center certification and hardware disclosures.'
         )
     }

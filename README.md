@@ -140,6 +140,18 @@ profiles and preferences are preserved. The standalone command-line setup also
 supports `uninstall --purge` for explicitly deleting saved data when it owns
 the installation.
 
+If the graphical installer itself is gone but its ownership marker remains,
+the standalone payload has one explicit recovery command:
+
+```powershell
+.\artifacts\win-x64\OpenBlade\OpenBlade.Setup.exe uninstall --recover-orphaned-bundle
+```
+
+Release signing is optional during development. A public signed build supplies
+the certificate thumbprint to `Publish.ps1`; the script signs first-party
+payload files before WiX embeds them, then signs the detached Burn engine and
+the final installer.
+
 The same offline installer is prepared for a future Microsoft Store EXE
 listing. Store installs use `/quiet /norestart`; direct downloads retain the
 graphical UI. See

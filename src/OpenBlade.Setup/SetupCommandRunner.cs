@@ -64,7 +64,9 @@ public sealed class SetupCommandRunner(ISetupPlatform platform)
     {
         if (!SetupCommandParser.TryParseInvocation(arguments, out SetupInvocation invocation))
         {
-            Console.Error.WriteLine("Usage: OpenBlade.Setup.exe install | OpenBlade.Setup.exe uninstall [--purge]");
+            Console.Error.WriteLine(
+                "Usage: OpenBlade.Setup.exe install | OpenBlade.Setup.exe uninstall "
+                + "[--purge | --recover-orphaned-bundle]");
             return 2;
         }
 
@@ -245,7 +247,14 @@ public sealed class SetupCommandRunner(ISetupPlatform platform)
 
         SetupInstallLifecycleState uninstallLifecycle =
             await platform.CaptureInstallLifecycleStateAsync(cancellationToken);
-        if (uninstallLifecycle.BundleOwnershipExisted && !invocation.BundleManaged)
+        if (invocation.RecoverOrphanedBundle && !uninstallLifecycle.BundleOwnershipExisted)
+        {
+            throw new InvalidOperationException(
+                "No orphaned graphical-installer ownership marker was found.");
+        }
+        if (uninstallLifecycle.BundleOwnershipExisted
+            && !invocation.BundleManaged
+            && !invocation.RecoverOrphanedBundle)
         {
             throw new InvalidOperationException(
                 "This OpenBlade installation is managed by the graphical installer. "
@@ -261,7 +270,7 @@ public sealed class SetupCommandRunner(ISetupPlatform platform)
         {
             await platform.RemoveUninstallShortcutAsync(cancellationToken);
             await platform.RemoveUninstallRegistrationAsync(cancellationToken);
-            if (invocation.BundleManaged)
+            if (invocation.BundleManaged || invocation.RecoverOrphanedBundle)
             {
                 await platform.RemoveBundleOwnershipAsync(cancellationToken);
             }
@@ -285,7 +294,8 @@ public sealed class SetupCommandRunner(ISetupPlatform platform)
                     recoveryFailures);
             }
 
-            if (invocation.BundleManaged && uninstallLifecycle.BundleOwnershipExisted)
+            if ((invocation.BundleManaged || invocation.RecoverOrphanedBundle)
+                && uninstallLifecycle.BundleOwnershipExisted)
             {
                 await RecoverAsync(
                     () => platform.InstallBundleOwnershipAsync(recoveryTimeout.Token),

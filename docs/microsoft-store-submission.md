@@ -22,12 +22,16 @@ The submitted package URL must be HTTPS, immutable, and versioned. Never replace
 the file behind an existing URL. A suitable shape is
 `https://<release-host>/vX.Y.Z/OpenBlade-Setup.exe`.
 
-The public privacy-policy URL must point to the deployed `privacy.html` page in
-the OpenBlade documentation site.
+The checked-in public privacy-policy URL is
+<https://github.com/OSSBlade/openblade-docs/blob/main/site/privacy.html>.
+Keep that absolute HTTPS contract synchronized with the deployed documentation
+and Partner Center.
 
 ## Package behavior
 
-- The bundle is an offline installer: every package and payload is embedded.
+- The bundle is an offline installer: every package and payload is embedded,
+  including the pinned, Microsoft-signed Visual C++ runtime required by the
+  unpackaged Windows App SDK deployment.
 - Interactive direct downloads show WixStdBA. Partner Center supplies
   `/quiet /norestart`, which suppresses installer UI and prevents an automatic
   restart.
@@ -36,9 +40,12 @@ the OpenBlade documentation site.
 - Exit code `0` means installation succeeded. Until end-to-end Store lifecycle
   testing proves additional stable Burn exit codes, leave optional Partner
   Center mappings unset and treat nonzero values as installation failures.
-- The stable Burn bundle ID and provider key are both `OSSBlade.OpenBlade`.
-  Higher product versions upgrade the same bundle family instead of installing
-  side by side.
+- The stable Burn bundle ID and provider key are both `OSSBlade.OpenBlade`;
+  the explicit upgrade-family code is
+  `{FF859CA9-D69F-4995-A2AD-69E540E45724}`. Higher product versions compare
+  against the installed marker version and replace the same bundle family.
+- The bundle refuses platforms older than Windows 11 build 22000 and non-x64
+  Windows installations.
 
 ## Certification notes
 
@@ -73,7 +80,29 @@ device admission for certification.
 - every unsigned PE is a first-party OpenBlade binary awaiting release signing;
 - the stable Burn upgrade family is present in the compiled manifest.
 
-Before Partner Center submission, rerun the preflight with
-`Write-OpenBladeStoreReadinessReport -RequireSignatures`, deploy the privacy
-page, publish the installer at an immutable HTTPS URL, and complete the external
-certification fields.
+## Release VM gate
+
+Before publishing a version, use a clean Windows 11 x64 VM for the lifecycle
+test that authoring and manifest checks cannot simulate:
+
+1. Install the previous public installer and verify one OpenBlade entry in
+   Installed apps, a healthy service, a running Session Agent, and a usable
+   tray.
+2. Save a recognizable profile, then run the new higher-version installer.
+   Verify it replaces the installed files, preserves the profile, leaves one
+   Installed apps entry, and updates the installed-version marker under
+   `HKLM\SOFTWARE\OSSBlade\OpenBlade\Installer`.
+3. Repeat the upgrade with `/quiet /norestart` and verify the same result
+   without an application prompt or automatic restart.
+4. Repair, uninstall, and reinstall the new version. Verify the Microsoft
+   Visual C++ prerequisite works on a VM where it was not already installed.
+5. Exercise `uninstall --recover-orphaned-bundle` only in a snapshot where the
+   Burn registration was deliberately removed while the OpenBlade ownership
+   marker remained; verify a failed binary removal restores that marker.
+
+For a signed release, pass `-SigningThumbprint` to `build/Publish.ps1`.
+Publishing signs the first-party payload before WiX embeds it, then uses WiX's
+detached-engine and final-bundle signing hooks. Before Partner Center
+submission, rerun the preflight with `-RequireSignatures`, verify the absolute
+privacy URL, publish the installer at an immutable HTTPS URL, and complete the
+external certification fields.

@@ -1,6 +1,7 @@
 [CmdletBinding()]
 param()
 
+Set-StrictMode -Version 3.0
 $ErrorActionPreference = 'Stop'
 $repository = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 . (Join-Path $repository 'build\StoreSubmissionValidation.ps1')
@@ -42,6 +43,7 @@ $payload = Join-Path $bundle 'payload'
 $installer = Join-Path $testRoot 'OpenBlade-Setup.exe'
 $reportPath = Join-Path $testRoot 'store-readiness.json'
 $unsignedFixture = Join-Path $testRoot 'OpenBlade.UnsignedFixture.dll'
+$invalidContract = Join-Path $testRoot 'invalid-store-contract.json'
 
 try {
     New-Item -ItemType Directory -Path $payload -Force | Out-Null
@@ -51,6 +53,10 @@ try {
         -Destination (Join-Path $bundle 'OpenBlade.Setup.exe')
     Copy-Item -LiteralPath $unsignedFixture `
         -Destination (Join-Path $payload 'OpenBlade.Service.exe')
+    $nestedFirstPartyDirectory = Join-Path $payload 'runtimes\win-x64\native'
+    New-Item -ItemType Directory -Path $nestedFirstPartyDirectory -Force | Out-Null
+    Copy-Item -LiteralPath $unsignedFixture `
+        -Destination (Join-Path $nestedFirstPartyDirectory 'OpenBlade.Native.dll')
     Copy-Item -LiteralPath $unsignedFixture -Destination $installer
 
     $report = Write-OpenBladeStoreReadinessReport `
@@ -62,10 +68,14 @@ try {
     Assert-True (-not $report.signingComplete) 'Signing must remain visibly incomplete.'
     Assert-True (-not $report.readyForPartnerCenterSubmission) `
         'A local report must not claim that external submission is complete.'
-    Assert-True ($report.signatureSummary.portableExecutableCount -eq 3) `
+    Assert-True ($report.signatureSummary.portableExecutableCount -eq 4) `
         'Every fixture PE must be inventoried.'
-    Assert-True ($report.signatureSummary.unsignedFirstPartyCount -eq 3) `
+    Assert-True ($report.signatureSummary.unsignedFirstPartyCount -eq 4) `
         'Every unsigned first-party fixture must be reported.'
+    Assert-True (
+        $report.storeContract.privacyPolicyUrl -eq
+            'https://github.com/OSSBlade/openblade-docs/blob/main/site/privacy.html') `
+        'The readiness report must carry the absolute privacy-policy URL.'
     Assert-True (Test-Path -LiteralPath $reportPath -PathType Leaf) `
         'The Store readiness JSON report was not written.'
 
@@ -77,14 +87,24 @@ try {
             -RequireSignatures | Out-Null
     } 'Store submission requires signatures'
 
-    $thirdParty = Join-Path $payload 'Unexpected.Dependency.dll'
+    $thirdParty = Join-Path $nestedFirstPartyDirectory 'Unexpected.Dependency.dll'
     Copy-Item -LiteralPath $unsignedFixture -Destination $thirdParty
     Assert-Throws {
         Write-OpenBladeStoreReadinessReport `
             -Bundle $bundle `
             -Installer $installer `
             -ReportPath $reportPath | Out-Null
-    } 'Third-party portable executable'
+    } 'Third-party portable executables are unsigned'
+
+    $contract = Get-Content -LiteralPath (
+        Join-Path $repository 'build\store\OpenBlade.StoreSubmission.json') -Raw |
+        ConvertFrom-Json
+    $contract.privacyPolicyUrl = 'privacy.html'
+    $contract | ConvertTo-Json -Depth 4 |
+        Set-Content -LiteralPath $invalidContract -Encoding UTF8
+    Assert-Throws {
+        Get-OpenBladeStoreSubmissionContract -ContractPath $invalidContract | Out-Null
+    } 'Store submission contract is invalid'
 }
 finally {
     $canonicalTestRoot = [IO.Path]::GetFullPath($testRoot)

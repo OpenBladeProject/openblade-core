@@ -15,6 +15,7 @@
 
   <ItemGroup>
     <BindPath Include="$(OpenBladeBundle)" BindName="OpenBladeBundle" />
+    <BindPath Include="$(OpenBladePrerequisites)" BindName="OpenBladePrerequisites" />
     <BindPath Include="$(MSBuildThisFileDirectory)..\..\src\OpenBlade.Tray\Assets\Brand"
               BindName="BrandAssets" />
   </ItemGroup>
@@ -26,6 +27,18 @@
            Text="OpenBladeBundle is missing OpenBlade.Setup.exe." />
     <Error Condition="!Exists('$(OpenBladeBundle)\payload\OpenBlade.Service.exe')"
            Text="OpenBladeBundle is missing payload\OpenBlade.Service.exe." />
+    <Error Condition="'$(OpenBladePrerequisites)' == ''"
+           Text="OpenBladePrerequisites must point to the validated prerequisite directory." />
+    <Error Condition="!Exists('$(OpenBladePrerequisites)\VC_redist.x64.exe')"
+           Text="OpenBladePrerequisites is missing VC_redist.x64.exe." />
+  </Target>
+
+  <Target Name="SignBundleEngine" Condition="'$(OpenBladeSigningThumbprint)' != ''">
+    <Exec Command="&quot;$(OpenBladeSignTool)&quot; sign /sha1 &quot;$(OpenBladeSigningThumbprint)&quot; /fd SHA256 /tr &quot;$(OpenBladeTimestampUrl)&quot; /td SHA256 &quot;@(SignBundleEngine)&quot;" />
+  </Target>
+
+  <Target Name="SignBundle" Condition="'$(OpenBladeSigningThumbprint)' != ''">
+    <Exec Command="&quot;$(OpenBladeSignTool)&quot; sign /sha1 &quot;$(OpenBladeSigningThumbprint)&quot; /fd SHA256 /tr &quot;$(OpenBladeTimestampUrl)&quot; /td SHA256 &quot;@(SignBundle)&quot;" />
   </Target>
 
 </Project>

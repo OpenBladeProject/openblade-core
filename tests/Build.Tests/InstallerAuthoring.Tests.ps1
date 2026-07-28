@@ -1,6 +1,7 @@
 [CmdletBinding()]
 param()
 
+Set-StrictMode -Version 3.0
 $ErrorActionPreference = 'Stop'
 $repository = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 $installerProject = Join-Path $repository 'build\installer\OpenBlade.Installer.wixproj'
@@ -25,8 +26,9 @@ Assert-True ($project.Project.PropertyGroup.OutputType -eq 'Bundle') `
 Assert-True ($project.Project.PropertyGroup.AcceptEula -eq 'wix7') `
     'WiX 7 OSMF acceptance must remain explicit in the installer project.'
 
-$packageReferences = @($project.Project.ItemGroup.PackageReference |
-    ForEach-Object { [string]$_.Include })
+$packageReferences = @($project.SelectNodes(
+        "/*[local-name()='Project']/*[local-name()='ItemGroup']/*[local-name()='PackageReference']") |
+    ForEach-Object { [string]$_.GetAttribute('Include') })
 Assert-True ($packageReferences -contains 'WixToolset.BootstrapperApplications.wixext') `
     'The installer must reference the standard bootstrapper application extension.'
 Assert-True ($packageReferences -contains 'WixToolset.Util.wixext') `
@@ -34,8 +36,10 @@ Assert-True ($packageReferences -contains 'WixToolset.Util.wixext') `
 
 [xml]$packages = Get-Content -LiteralPath (Join-Path $repository 'Directory.Packages.props')
 $packageVersions = @{}
-foreach ($package in $packages.Project.ItemGroup.PackageVersion) {
-    $packageVersions[[string]$package.Include] = [string]$package.Version
+foreach ($package in $packages.SelectNodes(
+        "/*[local-name()='Project']/*[local-name()='ItemGroup']/*[local-name()='PackageVersion']")) {
+    $packageVersions[[string]$package.GetAttribute('Include')] =
+        [string]$package.GetAttribute('Version')
 }
 Assert-True (
     $packageVersions['WixToolset.BootstrapperApplications.wixext'] -eq '7.0.0') `
@@ -49,10 +53,16 @@ $bundle = $bundleDocument.SelectSingleNode(
 Assert-True ($null -ne $bundle) 'Bundle.wxs must contain a Bundle element.'
 Assert-True ($bundle.GetAttribute('Id') -eq 'OSSBlade.OpenBlade') `
     'The Burn bundle identity changed unexpectedly.'
+Assert-True (
+    $bundle.GetAttribute('UpgradeCode') -eq
+        '{FF859CA9-D69F-4995-A2AD-69E540E45724}') `
+    'The pinned Burn upgrade-family code changed unexpectedly.'
 Assert-True ($bundle.GetAttribute('ProviderKey') -eq 'OSSBlade.OpenBlade') `
     'The Burn dependency provider key must remain stable across upgrades.'
 Assert-True ($bundle.GetAttribute('Version') -eq '$(OpenBladeVersion)') `
     'The Burn bundle must use the product version source of truth.'
+Assert-True ($bundle.GetAttribute('Condition') -eq 'VersionNT64 >= v10.0.22000') `
+    'The Burn bundle must require Windows 11 x64.'
 
 $standardBa = $bundle.SelectSingleNode(
     "*[local-name()='BootstrapperApplication']/*[local-name()='WixStandardBootstrapperApplication']")
@@ -63,26 +73,32 @@ Assert-True ($standardBa.GetAttribute('Theme') -eq 'hyperlinkLargeLicense') `
 Assert-True ([string]::IsNullOrEmpty($standardBa.GetAttribute('LicenseUrl'))) `
     'The free OpenBlade installer must not present a separate license link.'
 
-$search = $bundle.SelectSingleNode("*[local-name()='RegistrySearch']")
+$search = $bundle.SelectSingleNode(
+    "*[local-name()='RegistrySearch'][@Id='OpenBladeBundleOwnershipSearch']")
 Assert-True ($null -ne $search) 'The bundle ownership registry search is missing.'
 Assert-True ($search.GetAttribute('Id') -eq 'OpenBladeBundleOwnershipSearch') `
     'The bundle ownership registry search identity changed unexpectedly.'
-Assert-True ($search.GetAttribute('Variable') -eq 'OpenBladeBundleManaged') `
-    'The bundle must detect its dedicated ownership marker.'
+Assert-True ($search.GetAttribute('Variable') -eq 'OpenBladeInstalledVersion') `
+    'The bundle must read its installed version marker.'
 Assert-True ($search.GetAttribute('Key') -eq 'SOFTWARE\OSSBlade\OpenBlade\Installer') `
     'The bundle ownership registry path changed unexpectedly.'
 Assert-True ($search.GetAttribute('Bitness') -eq 'always64') `
     'The bundle ownership search must use the 64-bit registry view.'
+Assert-True ($search.GetAttribute('Value') -eq 'InstalledVersion') `
+    'The bundle ownership search must read InstalledVersion.'
+Assert-True ($search.GetAttribute('Result') -eq 'value') `
+    'The bundle ownership search must return its version value.'
 
 $package = $bundle.SelectSingleNode(
-    "*[local-name()='Chain']/*[local-name()='ExePackage']")
+    "*[local-name()='Chain']/*[local-name()='ExePackage'][@Id='OpenBladeSetup']")
 Assert-True ($null -ne $package) 'The OpenBlade setup executable package is missing.'
 $expectedPackageAttributes = [ordered]@{
     InstallArguments = 'install --bundle-managed'
     RepairArguments = 'install --bundle-managed'
     UninstallArguments = 'uninstall --bundle-managed'
-    DetectCondition = 'OpenBladeBundleManaged'
+    DetectCondition = 'OpenBladeInstalledVersion AND OpenBladeInstalledVersion >= v$(OpenBladeVersion)'
     PerMachine = 'yes'
+    Cache = 'keep'
     Vital = 'yes'
 }
 foreach ($entry in $expectedPackageAttributes.GetEnumerator()) {
@@ -102,6 +118,37 @@ Assert-True (
         [StringComparison]::Ordinal)) `
     'OpenBlade.Setup.exe must not be duplicated as a child payload.'
 
+$vcPackage = $bundle.SelectSingleNode(
+    "*[local-name()='Chain']/*[local-name()='ExePackage'][@Id='OpenBladeVcRuntime']")
+Assert-True ($null -ne $vcPackage) `
+    'The offline installer must chain the Visual C++ runtime prerequisite.'
+foreach ($entry in ([ordered]@{
+        InstallArguments = '/install /quiet /norestart'
+        RepairArguments = '/repair /quiet /norestart'
+        DetectCondition = 'OpenBladeVcRuntimeInstalled = 1'
+        PerMachine = 'yes'
+        Permanent = 'yes'
+        Cache = 'remove'
+        Vital = 'yes'
+    }).GetEnumerator()) {
+    Assert-True ($vcPackage.GetAttribute($entry.Key) -eq $entry.Value) `
+        "The Visual C++ package attribute $($entry.Key) changed unexpectedly."
+}
+
+$signEngineTarget = $project.SelectSingleNode(
+    "/*[local-name()='Project']/*[local-name()='Target'][@Name='SignBundleEngine']")
+$signBundleTarget = $project.SelectSingleNode(
+    "/*[local-name()='Project']/*[local-name()='Target'][@Name='SignBundle']")
+Assert-True ($null -ne $signEngineTarget) `
+    'The WiX detached bundle-engine signing hook is missing.'
+Assert-True ($null -ne $signBundleTarget) `
+    'The WiX final bundle signing hook is missing.'
+Assert-True (
+    ([string]$signEngineTarget.Exec.Command).Contains('@(SignBundleEngine)')) `
+    'The detached engine signing target must sign the WiX engine item.'
+Assert-True (([string]$signBundleTarget.Exec.Command).Contains('@(SignBundle)')) `
+    'The final bundle signing target must sign the reattached WiX bundle item.'
+
 $solution = Get-Content -LiteralPath (Join-Path $repository 'OpenBlade.slnx') -Raw
 Assert-True ($solution.IndexOf(
         'OpenBlade.Installer.wixproj',
@@ -111,12 +158,17 @@ Assert-True ($solution.IndexOf(
 $publish = Get-Content -LiteralPath (Join-Path $repository 'build\Publish.ps1') -Raw
 foreach ($requiredText in @(
         'InstallerValidation.ps1',
+        'InstallerPrerequisites.ps1',
         'StoreSubmissionValidation.ps1',
         'build\installer\OpenBlade.Installer.wixproj',
         'OpenBlade-Setup.exe',
         'OpenBlade-Store-Readiness.json',
         'Assert-OpenBladeInstallerBundle',
-        'Write-OpenBladeStoreReadinessReport')) {
+        'Write-OpenBladeStoreReadinessReport',
+        'Invoke-OpenBladeSigning',
+        'OpenBladeSigningThumbprint',
+        'upgradeProbeVersion',
+        'upgrade-probe-validation')) {
     Assert-True ($publish.IndexOf($requiredText, [StringComparison]::Ordinal) -ge 0) `
         "Publish.ps1 is missing required installer integration '$requiredText'."
 }
@@ -137,5 +189,9 @@ Assert-True ($storeContract.installerParameters -eq '/quiet /norestart') `
     'The Store must invoke Burn without installer UI or automatic restart.'
 Assert-True ($storeContract.offlineInstaller -eq $true) `
     'The Store submission must remain a self-contained offline installer.'
+Assert-True (
+    $storeContract.privacyPolicyUrl -eq
+        'https://github.com/OSSBlade/openblade-docs/blob/main/site/privacy.html') `
+    'The Store submission must pin the absolute public privacy-policy URL.'
 
 Write-Host 'Installer authoring tests passed.'

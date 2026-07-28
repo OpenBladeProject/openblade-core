@@ -16,8 +16,11 @@ public static class InstalledUninstallBootstrapper
     {
         ArgumentNullException.ThrowIfNull(arguments);
         ArgumentNullException.ThrowIfNull(paths);
-        if (!SetupCommandParser.TryParse(arguments, out SetupCommand command)
-            || command is not (SetupCommand.Uninstall or SetupCommand.UninstallAndPurge)
+        if (!SetupCommandParser.TryParseInvocation(
+                arguments,
+                out SetupInvocation invocation)
+            || invocation.Command is not (
+                SetupCommand.Uninstall or SetupCommand.UninstallAndPurge)
             || string.IsNullOrWhiteSpace(executablePath))
         {
             return false;

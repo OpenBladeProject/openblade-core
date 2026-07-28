@@ -8,5 +8,5 @@
   "requiresElevation": true,
   "minimumOperatingSystem": "Windows 11 x64",
   "supportedHardware": "Razer Blade 16 (2026), model RZ09-0581, USB 1532:02E0",
-  "privacyPolicyRelativeUrl": "privacy.html"
+  "privacyPolicyUrl": "https://github.com/OSSBlade/openblade-docs/blob/main/site/privacy.html"
 }

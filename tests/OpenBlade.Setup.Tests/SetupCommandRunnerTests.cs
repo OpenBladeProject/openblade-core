@@ -583,6 +583,54 @@ public sealed class SetupCommandRunnerTests
     }
 
     [Fact]
+    public async Task Uninstall_OrphanedBundleRecovery_RemovesOwnershipBeforeBinaries()
+    {
+        RecordingSetupPlatform platform = new() { BundleOwnershipExisted = true };
+
+        int exitCode = await new SetupCommandRunner(platform)
+            .RunAsync(["uninstall", "--recover-orphaned-bundle"], CancellationToken.None);
+
+        Assert.Equal(0, exitCode);
+        AssertEndsWith(
+            platform.Operations,
+            [
+                "uninstall-shortcut-remove", "uninstall-registration-remove",
+                "bundle-ownership-remove", "binaries-remove",
+            ]);
+    }
+
+    [Fact]
+    public async Task Uninstall_OrphanedBundleRecoveryRequiresOwnershipMarker()
+    {
+        RecordingSetupPlatform platform = new();
+
+        InvalidOperationException failure = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => new SetupCommandRunner(platform)
+                .RunAsync(["uninstall", "--recover-orphaned-bundle"], CancellationToken.None));
+
+        Assert.Contains("No orphaned", failure.Message, StringComparison.Ordinal);
+        Assert.Equal(["lifecycle-capture"], platform.Operations);
+    }
+
+    [Fact]
+    public async Task Uninstall_OrphanedBundleRecoveryFailure_RestoresOwnership()
+    {
+        RecordingSetupPlatform platform = new()
+        {
+            BundleOwnershipExisted = true,
+            FailurePoint = "binaries-remove",
+        };
+
+        await Assert.ThrowsAsync<InvalidOperationException>(
+            () => new SetupCommandRunner(platform)
+                .RunAsync(["uninstall", "--recover-orphaned-bundle"], CancellationToken.None));
+
+        AssertEndsWith(
+            platform.Operations,
+            ["bundle-ownership-remove", "binaries-remove", "bundle-ownership-install"]);
+    }
+
+    [Fact]
     public async Task Uninstall_StandaloneCommandRejectsBundleManagedInstallationBeforeMutation()
     {
         RecordingSetupPlatform platform = new() { BundleOwnershipExisted = true };
@@ -607,7 +655,7 @@ public sealed class SetupCommandRunnerTests
 
             Assert.Equal(2, exitCode);
             Assert.Contains("OpenBlade.Setup.exe install", errors.ToString(), StringComparison.Ordinal);
-            Assert.Contains("OpenBlade.Setup.exe uninstall [--purge]", errors.ToString(), StringComparison.Ordinal);
+            Assert.Contains("--recover-orphaned-bundle", errors.ToString(), StringComparison.Ordinal);
         }
         finally
         {
