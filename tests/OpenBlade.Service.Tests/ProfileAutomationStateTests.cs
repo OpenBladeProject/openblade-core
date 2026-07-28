@@ -287,6 +287,23 @@ public sealed class ProfileAutomationStateTests
     }
 
     [Fact]
+    public void ExternalUnknown_LabelsObservedLightingAsConfirmedFirmwareState()
+    {
+        LightingSettings observed = LightingSettingsFactory.Off();
+        ProfileAutomationState state = CreateState(PowerSource.ExternalUnknown);
+
+        ResolvedSetting<LightingSettings> lighting = state.Resolve(
+            new ConfirmedDeviceState(
+                PerformancePreset.Balanced,
+                FanMode.Automatic,
+                Battery: null,
+                Lighting: observed)).Lighting;
+
+        Assert.Equal(observed, lighting.Value);
+        Assert.Equal(SettingValueSource.ConfirmedFirmwareState, lighting.Source);
+    }
+
+    [Fact]
     public void Constructor_RestoresDifferentLastKnownLightingUntilPowerSourceChanges()
     {
         LightingSettings lastKnown = LightingSettingsFactory.Static(

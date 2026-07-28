@@ -142,6 +142,12 @@ submodules.
 6. Update `CHANGELOG.md` under `Unreleased` for user-visible changes.
 7. Commit and push coherent slices. Do not bundle capture evidence, product
    code, history maintenance, and unrelated formatting in one commit.
+8. Preserve the line endings declared by `.editorconfig` and `.gitattributes`.
+   Patch application can insert LF-only lines into an existing CRLF file, and
+   `git diff --check` does not detect that mixed state. Before committing,
+   inspect every touched text file for mixed endings and normalize the complete
+   file to its declared convention. Treat Git's `LF will be replaced by CRLF`
+   warning as unfinished work, not as a harmless staging detail.
 
 ## Versioning and commits
 

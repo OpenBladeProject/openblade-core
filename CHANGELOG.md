@@ -221,6 +221,10 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Fixed
 
+- Kept temporary display-off lighting suppression from replacing the saved
+  lighting effect with Off. Unplugging and immediately closing the lid now
+  preserves the destination battery profile's lighting across resume or a
+  service restart.
 - Prevented asynchronous Settings, display-profile, customization, and accent
   color actions from terminating the tray when an operation fails.
 - Fixed page scrollbars remaining visible after scrolling instead of
