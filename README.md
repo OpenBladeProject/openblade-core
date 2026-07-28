@@ -42,6 +42,7 @@ similar laptops or relax identity checks to make a device appear compatible.
 - Display profiles, brightness behavior, function-row behavior, and M1 through
   M5 Fn-layer bindings
 - Battery power and health, fan RPM, CPU temperature, and NVIDIA GPU telemetry
+- Optional GitHub release checks with a user-selected startup interval
 - Bounded, redacted diagnostics and guided firmware-update smoke tests
 
 The visible tray can exit without stopping profile automation, display
@@ -114,23 +115,37 @@ policy, setup transactions, and release-payload boundaries.
 
 ## Publish and install
 
-Create the self-contained `win-x64` production bundle and separate developer
-tools:
+Create the graphical installer, self-contained `win-x64` production bundle,
+and separate developer tools:
 
 ```powershell
 .\build\Publish.ps1
 ```
 
-The production bundle is written to `artifacts\win-x64\OpenBlade`. From an
-elevated terminal, install it with:
+The user-facing installer is written to
+`artifacts\win-x64\OpenBlade-Setup.exe`. Double-click it and choose Install;
+Windows requests administrator approval only when setup is ready to make
+system changes.
+
+The unpacked production bundle remains available at
+`artifacts\win-x64\OpenBlade` for development and recovery. Its command-line
+setup entry point can be run from an elevated terminal when needed:
 
 ```powershell
 .\artifacts\win-x64\OpenBlade\OpenBlade.Setup.exe install
 ```
 
-Uninstall from Windows Settings, the Start menu entry, or the installed setup
-executable. Saved profiles and preferences are preserved unless `--purge` is
-passed explicitly.
+Uninstall from Windows Settings or rerun the graphical installer. Saved
+profiles and preferences are preserved. The standalone command-line setup also
+supports `uninstall --purge` for explicitly deleting saved data when it owns
+the installation.
+
+The same offline installer is prepared for a future Microsoft Store EXE
+listing. Store installs use `/quiet /norestart`; direct downloads retain the
+graphical UI. See
+[Microsoft Store submission](docs/microsoft-store-submission.md) for the
+checked-in package contract, certification notes, hardware disclosure, and
+remaining external release steps.
 
 ## Hardware development
 

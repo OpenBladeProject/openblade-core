@@ -7,6 +7,9 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Added
 
+- Added GitHub release checks to About with Every startup, Daily, Weekly,
+  Monthly, and Manual only intervals. Checks run at most once during tray
+  startup when due, and available releases open in the user's browser.
 - Added battery health to About using Windows' read-only design and full-charge
   capacity data. If the battery is not ready during service startup, OpenBlade
   retries after the first successful laptop verification and on later
@@ -66,11 +69,16 @@ All notable changes to OpenBlade are documented in this file. The project follow
   reloading the window.
 - Added persistent left-navigation ordering plus app accent choices for Razer
   green, the live Windows accent, and a custom RGB color.
-- Added a shipped uninstaller to Windows Installed apps and the Start menu.
-  The user-facing path confirms removal and preserves profiles by default;
-  `uninstall --purge` remains an explicit command for deleting saved data. Setup
-  installs its single-file uninstaller transactionally and verifies its length
-  and SHA-256 instead of shipping a duplicate copy inside the payload.
+- Added a branded WiX Burn installer with Install, Repair, and Uninstall
+  actions plus Windows Installed apps ownership. It delegates system changes
+  to the existing transactional setup engine, migrates earlier standalone
+  installations without duplicate uninstall entries, and preserves profiles
+  by default. The standalone setup remains available for development and
+  recovery, including explicit `uninstall --purge`.
+- Added Microsoft Store EXE readiness checks for silent offline installation,
+  stable Burn upgrades, supported-hardware disclosure, and Authenticode
+  inventory. Release publishing now emits a machine-readable report that
+  rejects unsigned third-party payloads while first-party signing is deferred.
 - Added JSON profile import alongside export. Profile files use a versioned
   envelope and schema-specific readers so future releases can add explicit
   migrations without silently reinterpreting older structures.
