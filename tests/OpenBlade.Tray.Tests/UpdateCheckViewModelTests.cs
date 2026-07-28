@@ -6,96 +6,284 @@ public sealed class UpdateCheckViewModelTests
         new(2026, 7, 27, 12, 0, 0, TimeSpan.Zero);
 
     [Fact]
-    public async Task AutomaticCheckDoesNotRunBeforeDailyIntervalIsDue()
+    public async Task AutomaticCheckWaitsForFirstRunConsent()
     {
-        var client = new FakeReleaseUpdateClient(
-            new ReleaseUpdateInfo(new Version(1, 1, 0), "v1.1.0", ReleaseUri));
-        await using var viewModel = new UpdateCheckViewModel(
-            client,
-            "1.0.0",
-            new FixedTimeProvider(Now));
-        viewModel.ApplyPreferences(UpdateCheckInterval.Daily, Now.AddHours(-12));
+        var client = SuccessfulClient(NewerRelease);
+        await using var viewModel = Create(client);
+        Apply(viewModel, promptShown: false, lastSuccessfulCheckAt: null);
 
         viewModel.StartAutomaticCheck();
         await Task.Yield();
 
         Assert.Equal(0, client.CallCount);
-        Assert.Equal("Updates have not been checked.", viewModel.StatusText);
+        Assert.True(viewModel.NeedsConsentPrompt);
     }
 
     [Fact]
-    public async Task DueAutomaticCheckReportsAvailableReleaseAndRecordsAttempt()
+    public async Task DailyConsentAllowsDueAutomaticCheck()
     {
-        var client = new FakeReleaseUpdateClient(
-            new ReleaseUpdateInfo(new Version(1, 1, 0), "v1.1.0", ReleaseUri));
-        await using var viewModel = new UpdateCheckViewModel(
-            client,
-            "1.0.0+abcdef",
-            new FixedTimeProvider(Now));
-        viewModel.ApplyPreferences(UpdateCheckInterval.Weekly, Now.AddDays(-7));
+        var client = SuccessfulClient(NewerRelease);
+        await using var viewModel = Create(client);
+        Apply(viewModel, promptShown: false, lastSuccessfulCheckAt: null);
         int preferenceChanges = 0;
         viewModel.PreferencesChanged += (_, _) => preferenceChanges++;
 
+        viewModel.RecordConsent(UpdateCheckInterval.Daily);
         viewModel.StartAutomaticCheck();
         await WaitUntilAsync(() => client.CallCount == 1 && !viewModel.IsChecking);
 
+        Assert.False(viewModel.NeedsConsentPrompt);
+        Assert.Equal(UpdateCheckInterval.Daily, viewModel.Interval);
+        Assert.Equal(Now, viewModel.LastSuccessfulCheckAt);
         Assert.True(viewModel.IsUpdateAvailable);
-        Assert.Equal(ReleaseUri, viewModel.ReleasePageUri);
-        Assert.Equal("OpenBlade 1.1.0 is available.", viewModel.StatusText);
-        Assert.Equal(Now, viewModel.LastCheckAt);
-        Assert.Equal(1, preferenceChanges);
+        Assert.Equal(2, preferenceChanges);
     }
 
     [Fact]
-    public async Task ManualOnlyStillAllowsCheckNow()
+    public async Task AutomaticCheckDoesNotRunBeforeSuccessfulIntervalIsDue()
     {
-        var client = new FakeReleaseUpdateClient(
-            new ReleaseUpdateInfo(new Version(1, 0, 0), "v1.0.0", ReleaseUri));
-        await using var viewModel = new UpdateCheckViewModel(
-            client,
-            "1.0.0",
-            new FixedTimeProvider(Now));
-        viewModel.ApplyPreferences(UpdateCheckInterval.ManualOnly, null);
+        var client = SuccessfulClient(NewerRelease);
+        await using var viewModel = Create(client);
+        Apply(
+            viewModel,
+            promptShown: true,
+            lastSuccessfulCheckAt: Now.AddHours(-12));
+
         viewModel.StartAutomaticCheck();
         await Task.Yield();
+
         Assert.Equal(0, client.CallCount);
-
-        await Assert.IsType<AsyncRelayCommand>(viewModel.CheckForUpdatesCommand)
-            .ExecuteAsync(null);
-
-        Assert.Equal(1, client.CallCount);
-        Assert.False(viewModel.IsUpdateAvailable);
-        Assert.Equal("OpenBlade is up to date.", viewModel.StatusText);
-        Assert.Equal(Now, viewModel.LastCheckAt);
     }
 
     [Fact]
-    public async Task FailedCheckKeepsTheAttemptTimestampAndShowsRetryMessage()
+    public async Task FailedCheckUsesShortBackoffWithoutRecordingSuccess()
+    {
+        var firstClient = new FakeReleaseUpdateClient(
+            new ReleaseUpdateException("Unavailable."));
+        DateTimeOffset? retryAfter;
+        await using (var first = Create(firstClient))
+        {
+            Apply(first, promptShown: true, lastSuccessfulCheckAt: null);
+            first.StartAutomaticCheck();
+            await WaitUntilAsync(() => firstClient.CallCount == 1 && !first.IsChecking);
+
+            Assert.Null(first.LastSuccessfulCheckAt);
+            retryAfter = first.RetryAfter;
+            Assert.Equal(
+                Now.AddMinutes(5),
+                retryAfter);
+            Assert.Equal(
+                "Couldn't check for updates. Try again later.",
+                first.StatusText);
+        }
+
+        var secondClient = SuccessfulClient(NewerRelease);
+        await using var second = Create(secondClient);
+        Apply(
+            second,
+            promptShown: true,
+            lastSuccessfulCheckAt: null,
+            retryAfter: retryAfter);
+        second.StartAutomaticCheck();
+        await Task.Yield();
+
+        Assert.Equal(0, secondClient.CallCount);
+
+        var laterClient = SuccessfulClient(NewerRelease);
+        await using var later = new UpdateCheckViewModel(
+            laterClient,
+            "1.0.0",
+            new FixedTimeProvider(retryAfter!.Value));
+        Apply(
+            later,
+            promptShown: true,
+            lastSuccessfulCheckAt: null,
+            retryAfter: retryAfter);
+        later.StartAutomaticCheck();
+        await WaitUntilAsync(() => laterClient.CallCount == 1 && !later.IsChecking);
+
+        Assert.Equal(retryAfter, later.LastSuccessfulCheckAt);
+    }
+
+    [Fact]
+    public async Task UnexpectedClientFailureIsContained()
     {
         var client = new FakeReleaseUpdateClient(
-            new ReleaseUpdateException("Unavailable."));
-        await using var viewModel = new UpdateCheckViewModel(
-            client,
-            "1.0.0",
-            new FixedTimeProvider(Now));
+            new InvalidOperationException("handler failed"));
+        await using var viewModel = Create(client);
 
-        await Assert.IsType<AsyncRelayCommand>(viewModel.CheckForUpdatesCommand)
-            .ExecuteAsync(null);
+        await Command(viewModel).ExecuteAsync(null);
 
-        Assert.Equal(Now, viewModel.LastCheckAt);
-        Assert.False(viewModel.IsUpdateAvailable);
-        Assert.Null(viewModel.ReleasePageUri);
+        Assert.Null(viewModel.LastSuccessfulCheckAt);
+        Assert.Equal(
+            Now.AddMinutes(5),
+            viewModel.RetryAfter);
         Assert.Equal(
             "Couldn't check for updates. Try again later.",
             viewModel.StatusText);
     }
 
     [Fact]
-    public async Task ChoosingIntervalRaisesPreferenceChange()
+    public async Task ManualOnlyStillAllowsCheckNow()
+    {
+        var client = SuccessfulClient(CurrentRelease);
+        await using var viewModel = Create(client);
+        Apply(
+            viewModel,
+            promptShown: true,
+            lastSuccessfulCheckAt: null,
+            interval: UpdateCheckInterval.ManualOnly);
+        viewModel.StartAutomaticCheck();
+        await Task.Yield();
+        Assert.Equal(0, client.CallCount);
+
+        await Command(viewModel).ExecuteAsync(null);
+
+        Assert.Equal(1, client.CallCount);
+        Assert.False(viewModel.IsUpdateAvailable);
+        Assert.Equal("OpenBlade is up to date.", viewModel.StatusText);
+        Assert.Equal(Now, viewModel.LastSuccessfulCheckAt);
+    }
+
+    [Fact]
+    public async Task OlderRemoteReleaseIsUpToDate()
+    {
+        var client = SuccessfulClient(
+            new(new Version(0, 9, 0, 0), "v0.9.0", ReleaseUri));
+        await using var viewModel = Create(client);
+
+        await Command(viewModel).ExecuteAsync(null);
+
+        Assert.False(viewModel.IsUpdateAvailable);
+        Assert.Equal("OpenBlade is up to date.", viewModel.StatusText);
+    }
+
+    [Fact]
+    public async Task MissingLocalVersionDoesNotCrashTrayOrHideRelease()
+    {
+        var client = SuccessfulClient(NewerRelease);
+        await using var viewModel = new UpdateCheckViewModel(
+            client,
+            "Unavailable",
+            new FixedTimeProvider(Now));
+
+        await Command(viewModel).ExecuteAsync(null);
+
+        Assert.False(viewModel.IsUpdateAvailable);
+        Assert.True(viewModel.HasReleasePage);
+        Assert.Equal(ReleaseUri, viewModel.ReleasePageUri);
+        Assert.Contains(
+            "could not be compared",
+            viewModel.StatusText,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task RateLimitPersistsRetryBoundaryWithoutRecordingSuccess()
+    {
+        var retryAfter = Now.AddMinutes(10);
+        var client = new FakeReleaseUpdateClient(
+            new ReleaseUpdateRateLimitException(retryAfter));
+        await using var viewModel = Create(client);
+        int preferenceChanges = 0;
+        viewModel.PreferencesChanged += (_, _) => preferenceChanges++;
+
+        await Command(viewModel).ExecuteAsync(null);
+
+        Assert.Null(viewModel.LastSuccessfulCheckAt);
+        Assert.Equal(retryAfter, viewModel.RetryAfter);
+        Assert.Equal(1, preferenceChanges);
+        Assert.Contains("rate limit", viewModel.StatusText, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task ServerBackoffPersistsRetryBoundaryWithoutRecordingSuccess()
+    {
+        var retryAfter = Now.AddMinutes(3);
+        var client = new FakeReleaseUpdateClient(
+            new ReleaseUpdateRetryException("Unavailable.", retryAfter));
+        await using var viewModel = Create(client);
+
+        await Command(viewModel).ExecuteAsync(null);
+
+        Assert.Null(viewModel.LastSuccessfulCheckAt);
+        Assert.Equal(retryAfter, viewModel.RetryAfter);
+        Assert.Contains(
+            "temporarily unavailable",
+            viewModel.StatusText,
+            StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task NotModifiedUsesPersistedReleaseCacheAndRefreshesSuccessTime()
     {
         var client = new FakeReleaseUpdateClient(
-            new ReleaseUpdateInfo(new Version(1, 0, 0), "v1.0.0", ReleaseUri));
-        await using var viewModel = new UpdateCheckViewModel(client, "1.0.0");
+            new ReleaseUpdateResult(
+                ReleaseUpdateDisposition.NotModified,
+                Release: null,
+                "\"etag\""));
+        await using var viewModel = Create(client);
+        Apply(
+            viewModel,
+            promptShown: true,
+            lastSuccessfulCheckAt: Now.AddDays(-2),
+            entityTag: "\"etag\"",
+            cachedReleaseTag: "v1.1.0",
+            cachedReleaseUrl: ReleaseUri.AbsoluteUri);
+
+        await Command(viewModel).ExecuteAsync(null);
+
+        Assert.Equal("\"etag\"", client.LastEntityTag);
+        Assert.Equal(Now, viewModel.LastSuccessfulCheckAt);
+        Assert.True(viewModel.IsUpdateAvailable);
+        Assert.Equal(ReleaseUri, viewModel.ReleasePageUri);
+    }
+
+    [Fact]
+    public async Task NoEligibleReleaseIsSuccessfulAndClearsCache()
+    {
+        var client = new FakeReleaseUpdateClient(
+            new ReleaseUpdateResult(
+                ReleaseUpdateDisposition.NoEligibleRelease,
+                Release: null,
+                "\"new\""));
+        await using var viewModel = Create(client);
+        Apply(
+            viewModel,
+            promptShown: true,
+            lastSuccessfulCheckAt: null,
+            cachedReleaseTag: "v1.1.0",
+            cachedReleaseUrl: ReleaseUri.AbsoluteUri);
+
+        await Command(viewModel).ExecuteAsync(null);
+
+        Assert.Equal(Now, viewModel.LastSuccessfulCheckAt);
+        Assert.Null(viewModel.CachedReleaseTag);
+        Assert.Equal(
+            "No eligible published release is available.",
+            viewModel.StatusText);
+    }
+
+    [Fact]
+    public async Task DisposeCancelsAndWaitsForInFlightAutomaticCheck()
+    {
+        var client = new BlockingReleaseUpdateClient();
+        var viewModel = Create(client);
+        Apply(viewModel, promptShown: true, lastSuccessfulCheckAt: null);
+        viewModel.StartAutomaticCheck();
+        await client.Started.Task.WaitAsync(TimeSpan.FromSeconds(2));
+
+        await viewModel.DisposeAsync();
+
+        Assert.True(client.CancellationObserved);
+        Assert.Equal("Update check canceled.", viewModel.StatusText);
+    }
+
+    [Fact]
+    public async Task ChoosingIntervalRaisesPreferenceChange()
+    {
+        var client = SuccessfulClient(CurrentRelease);
+        await using var viewModel = Create(client);
         int preferenceChanges = 0;
         viewModel.PreferencesChanged += (_, _) => preferenceChanges++;
 
@@ -106,8 +294,44 @@ public sealed class UpdateCheckViewModelTests
         Assert.Equal(1, preferenceChanges);
     }
 
+    private static UpdateCheckViewModel Create(IReleaseUpdateClient client) =>
+        new(client, "1.0.0+abcdef", new FixedTimeProvider(Now));
+
+    private static void Apply(
+        UpdateCheckViewModel viewModel,
+        bool promptShown,
+        DateTimeOffset? lastSuccessfulCheckAt,
+        UpdateCheckInterval interval = UpdateCheckInterval.Daily,
+        DateTimeOffset? retryAfter = null,
+        string? entityTag = null,
+        string? cachedReleaseTag = null,
+        string? cachedReleaseUrl = null) =>
+        viewModel.ApplyPreferences(
+            interval,
+            promptShown,
+            lastSuccessfulCheckAt,
+            retryAfter,
+            entityTag,
+            cachedReleaseTag,
+            cachedReleaseUrl);
+
+    private static AsyncRelayCommand Command(UpdateCheckViewModel viewModel) =>
+        Assert.IsType<AsyncRelayCommand>(viewModel.CheckForUpdatesCommand);
+
+    private static FakeReleaseUpdateClient SuccessfulClient(ReleaseUpdateInfo release) =>
+        new(new ReleaseUpdateResult(
+            ReleaseUpdateDisposition.PublishedRelease,
+            release,
+            "\"release\""));
+
     private static Uri ReleaseUri { get; } = new(
         "https://github.com/OSSBlade/openblade-core/releases/tag/v1.1.0");
+
+    private static ReleaseUpdateInfo CurrentRelease { get; } =
+        new(new Version(1, 0, 0, 0), "v1.0.0", ReleaseUri);
+
+    private static ReleaseUpdateInfo NewerRelease { get; } =
+        new(new Version(1, 1, 0, 0), "v1.1.0", ReleaseUri);
 
     private sealed class FixedTimeProvider(DateTimeOffset now) : TimeProvider
     {
@@ -116,13 +340,13 @@ public sealed class UpdateCheckViewModelTests
 
     private sealed class FakeReleaseUpdateClient : IReleaseUpdateClient
     {
-        private readonly ReleaseUpdateInfo? release;
+        private readonly ReleaseUpdateResult? result;
         private readonly Exception? exception;
         private int callCount;
 
-        public FakeReleaseUpdateClient(ReleaseUpdateInfo release)
+        public FakeReleaseUpdateClient(ReleaseUpdateResult result)
         {
-            this.release = release;
+            this.result = result;
         }
 
         public FakeReleaseUpdateClient(Exception exception)
@@ -132,16 +356,45 @@ public sealed class UpdateCheckViewModelTests
 
         public int CallCount => Volatile.Read(ref callCount);
 
-        public Task<ReleaseUpdateInfo> GetLatestReleaseAsync(
+        public string? LastEntityTag { get; private set; }
+
+        public Task<ReleaseUpdateResult> GetLatestReleaseAsync(
+            string? entityTag,
             CancellationToken cancellationToken)
         {
             Interlocked.Increment(ref callCount);
+            LastEntityTag = entityTag;
             if (exception is not null)
             {
-                return Task.FromException<ReleaseUpdateInfo>(exception);
+                return Task.FromException<ReleaseUpdateResult>(exception);
             }
 
-            return Task.FromResult(release!);
+            return Task.FromResult(result!);
+        }
+    }
+
+    private sealed class BlockingReleaseUpdateClient : IReleaseUpdateClient
+    {
+        public TaskCompletionSource Started { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public bool CancellationObserved { get; private set; }
+
+        public async Task<ReleaseUpdateResult> GetLatestReleaseAsync(
+            string? entityTag,
+            CancellationToken cancellationToken)
+        {
+            Started.TrySetResult();
+            try
+            {
+                await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+                throw new InvalidOperationException("The infinite delay completed.");
+            }
+            catch (OperationCanceledException)
+            {
+                CancellationObserved = true;
+                throw;
+            }
         }
     }
 }

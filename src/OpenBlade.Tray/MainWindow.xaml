@@ -3127,7 +3127,7 @@
                                         <StackPanel Spacing="3" VerticalAlignment="Center">
                                             <TextBlock Text="Check interval"
                                                        Style="{StaticResource CardTitleStyle}" />
-                                            <TextBlock Text="OpenBlade checks GitHub once at startup when the selected interval is due."
+                                            <TextBlock Text="After you choose an interval, OpenBlade checks GitHub at startup when that interval is due."
                                                        Style="{StaticResource SecondaryTextStyle}"
                                                        TextWrapping="Wrap" />
                                         </StackPanel>
@@ -3165,7 +3165,7 @@
                                                           AutomationProperties.Name="Checking GitHub for updates" />
                                             <HyperlinkButton Content="View release"
                                                              NavigateUri="{x:Bind UpdateViewModel.ReleasePageUri, Mode=OneWay}"
-                                                             Visibility="{x:Bind UpdateViewModel.IsUpdateAvailable, Mode=OneWay}"
+                                                             Visibility="{x:Bind UpdateViewModel.HasReleasePage, Mode=OneWay}"
                                                              AutomationProperties.Name="View available OpenBlade release" />
                                             <Button Content="Check now"
                                                     Command="{x:Bind UpdateViewModel.CheckForUpdatesCommand}"

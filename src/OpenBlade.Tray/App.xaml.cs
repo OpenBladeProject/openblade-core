@@ -247,13 +247,31 @@ public partial class App : Microsoft.UI.Xaml.Application
             return;
         }
 
-        if (initialLaunch && mainWindow?.StartMinimized == true)
+        MainWindow? window = mainWindow;
+        if (window is null)
         {
-            mainWindow.StartHiddenObservation();
             return;
         }
 
-        exitLifecycle.TryRunWhileActive(() => mainWindow?.ShowAndActivate());
+        if (initialLaunch
+            && window.StartMinimized
+            && !window.UpdateViewModel.NeedsConsentPrompt)
+        {
+            window.StartHiddenObservation();
+            await window.StartUpdateCheckingAsync();
+            return;
+        }
+
+        bool shown = false;
+        exitLifecycle.TryRunWhileActive(() =>
+        {
+            window.ShowAndActivate();
+            shown = true;
+        });
+        if (shown)
+        {
+            await window.StartUpdateCheckingAsync();
+        }
     }
 
     private void Enqueue(Action action)

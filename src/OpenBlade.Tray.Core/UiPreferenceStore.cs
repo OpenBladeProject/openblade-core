@@ -30,7 +30,12 @@ public sealed record UiPreferences(
     IReadOnlyList<SpecialKeyBindingPreference>? SpecialKeyBindings = null,
     IReadOnlyList<PageLayoutPreference>? PageLayouts = null,
     UpdateCheckInterval UpdateCheckInterval = UpdateCheckInterval.Daily,
-    DateTimeOffset? LastUpdateCheckAt = null)
+    bool UpdateCheckPromptShown = false,
+    DateTimeOffset? LastSuccessfulUpdateCheckAt = null,
+    DateTimeOffset? UpdateCheckRetryAfter = null,
+    string? UpdateCheckEntityTag = null,
+    string? LastKnownReleaseTag = null,
+    string? LastKnownReleaseUrl = null)
 {
     public static UiPreferences Default { get; } = new(
         ThemePreference.FollowWindows,
@@ -47,7 +52,12 @@ public sealed record UiPreferences(
         SpecialKeyBindings: SpecialKeyBindingDefaults.Bindings,
         PageLayouts: PageLayoutPreferenceDefaults.Layouts,
         UpdateCheckInterval: UpdateCheckInterval.Daily,
-        LastUpdateCheckAt: null);
+        UpdateCheckPromptShown: false,
+        LastSuccessfulUpdateCheckAt: null,
+        UpdateCheckRetryAfter: null,
+        UpdateCheckEntityTag: null,
+        LastKnownReleaseTag: null,
+        LastKnownReleaseUrl: null);
 
     public LiveReadingsCadence EffectiveLiveReadingsCadence =>
         !LiveReadingsEnabled

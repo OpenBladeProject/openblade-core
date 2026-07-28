@@ -27,7 +27,10 @@ public sealed class UiPreferenceStoreTests : IDisposable
             preferences.TrayHoverLabelMode);
         Assert.False(preferences.StartMinimized);
         Assert.Equal(UpdateCheckInterval.Daily, preferences.EffectiveUpdateCheckInterval);
-        Assert.Null(preferences.LastUpdateCheckAt);
+        Assert.False(preferences.UpdateCheckPromptShown);
+        Assert.Null(preferences.LastSuccessfulUpdateCheckAt);
+        Assert.Null(preferences.UpdateCheckRetryAfter);
+        Assert.Null(preferences.UpdateCheckEntityTag);
         Assert.Equal(
             TelemetryPreferenceDefaults.DashboardItems,
             preferences.EffectiveDashboardTelemetryItems);
@@ -100,14 +103,27 @@ public sealed class UiPreferenceStoreTests : IDisposable
                     new SpecialKeyAction(SpecialKeyActionKind.Disabled)),
             ],
             UpdateCheckInterval: UpdateCheckInterval.Monthly,
-            LastUpdateCheckAt: new DateTimeOffset(
+            UpdateCheckPromptShown: true,
+            LastSuccessfulUpdateCheckAt: new DateTimeOffset(
                 2026,
                 7,
                 27,
                 12,
                 30,
                 0,
-                TimeSpan.Zero)));
+                TimeSpan.Zero),
+            UpdateCheckRetryAfter: new DateTimeOffset(
+                2026,
+                7,
+                27,
+                13,
+                0,
+                0,
+                TimeSpan.Zero),
+            UpdateCheckEntityTag: "\"release-etag\"",
+            LastKnownReleaseTag: "v1.2.0",
+            LastKnownReleaseUrl:
+                "https://github.com/OSSBlade/openblade-core/releases/tag/v1.2.0"));
 
         UiPreferences reloaded = await store.LoadAsync();
         using JsonDocument document = JsonDocument.Parse(await File.ReadAllTextAsync(path));
@@ -161,9 +177,15 @@ public sealed class UiPreferenceStoreTests : IDisposable
             SpecialKeyActionKind.Disabled,
             reloaded.EffectiveSpecialKeyBindings[(int)SpecialKeySlot.M4].Action.Kind);
         Assert.Equal(UpdateCheckInterval.Monthly, reloaded.EffectiveUpdateCheckInterval);
+        Assert.True(reloaded.UpdateCheckPromptShown);
         Assert.Equal(
             new DateTimeOffset(2026, 7, 27, 12, 30, 0, TimeSpan.Zero),
-            reloaded.LastUpdateCheckAt);
+            reloaded.LastSuccessfulUpdateCheckAt);
+        Assert.Equal(
+            new DateTimeOffset(2026, 7, 27, 13, 0, 0, TimeSpan.Zero),
+            reloaded.UpdateCheckRetryAfter);
+        Assert.Equal("\"release-etag\"", reloaded.UpdateCheckEntityTag);
+        Assert.Equal("v1.2.0", reloaded.LastKnownReleaseTag);
         Assert.Equal("Dark", document.RootElement.GetProperty("theme").GetString());
         Assert.False(document.RootElement.TryGetProperty(
             "keepManualChangesUntilCleared",
@@ -205,7 +227,9 @@ public sealed class UiPreferenceStoreTests : IDisposable
             document.RootElement.GetProperty("updateCheckInterval").GetString());
         Assert.Equal(
             "2026-07-27T12:30:00+00:00",
-            document.RootElement.GetProperty("lastUpdateCheckAt").GetString());
+            document.RootElement.GetProperty("lastSuccessfulUpdateCheckAt").GetString());
+        Assert.True(
+            document.RootElement.GetProperty("updateCheckPromptShown").GetBoolean());
     }
 
     [Fact]
@@ -220,6 +244,20 @@ public sealed class UiPreferenceStoreTests : IDisposable
         UiPreferences preferences = await new UiPreferenceStore(path).LoadAsync();
 
         Assert.Equal(UpdateCheckInterval.Daily, preferences.EffectiveUpdateCheckInterval);
+    }
+
+    [Fact]
+    public async Task LoadAsync_ExistingPreferencesWithoutUpdateKeysRequireConsent()
+    {
+        Directory.CreateDirectory(directory);
+        string path = Path.Combine(directory, "preferences.json");
+        await File.WriteAllTextAsync(path, """{"theme":"Dark"}""");
+
+        UiPreferences preferences = await new UiPreferenceStore(path).LoadAsync();
+
+        Assert.Equal(UpdateCheckInterval.Daily, preferences.EffectiveUpdateCheckInterval);
+        Assert.False(preferences.UpdateCheckPromptShown);
+        Assert.Null(preferences.LastSuccessfulUpdateCheckAt);
     }
 
     [Fact]

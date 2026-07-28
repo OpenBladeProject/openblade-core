@@ -22,15 +22,50 @@ public sealed record ReleaseUpdateInfo(
     string TagName,
     Uri ReleasePageUri);
 
-public interface IReleaseUpdateClient
+public enum ReleaseUpdateDisposition
 {
-    Task<ReleaseUpdateInfo> GetLatestReleaseAsync(CancellationToken cancellationToken);
+    PublishedRelease,
+    NoEligibleRelease,
+    NotModified,
 }
 
-public sealed class ReleaseUpdateException : Exception
+public sealed record ReleaseUpdateResult(
+    ReleaseUpdateDisposition Disposition,
+    ReleaseUpdateInfo? Release,
+    string? EntityTag);
+
+public interface IReleaseUpdateClient
+{
+    Task<ReleaseUpdateResult> GetLatestReleaseAsync(
+        string? entityTag,
+        CancellationToken cancellationToken);
+}
+
+public class ReleaseUpdateException : Exception
 {
     public ReleaseUpdateException(string message, Exception? innerException = null)
         : base(message, innerException)
+    {
+    }
+}
+
+public class ReleaseUpdateRetryException : ReleaseUpdateException
+{
+    public ReleaseUpdateRetryException(string message, DateTimeOffset retryAfter)
+        : base(message)
+    {
+        RetryAfter = retryAfter;
+    }
+
+    public DateTimeOffset RetryAfter { get; }
+}
+
+public sealed class ReleaseUpdateRateLimitException : ReleaseUpdateRetryException
+{
+    public ReleaseUpdateRateLimitException(DateTimeOffset retryAfter)
+        : base(
+            "GitHub temporarily rate-limited the OpenBlade release check.",
+            retryAfter)
     {
     }
 }
@@ -39,7 +74,7 @@ public static class ReleaseVersion
 {
     public static bool TryParse(string? value, out Version version)
     {
-        version = new Version();
+        version = new Version(0, 0, 0, 0);
         if (string.IsNullOrWhiteSpace(value))
         {
             return false;
@@ -62,7 +97,11 @@ public static class ReleaseVersion
             return false;
         }
 
-        version = parsed;
+        version = new Version(
+            parsed.Major,
+            parsed.Minor,
+            Math.Max(parsed.Build, 0),
+            Math.Max(parsed.Revision, 0));
         return true;
     }
 }
@@ -71,7 +110,8 @@ public static class UpdateCheckSchedule
 {
     public static bool IsDue(
         UpdateCheckInterval interval,
-        DateTimeOffset? lastCheckAt,
+        DateTimeOffset? lastSuccessfulCheckAt,
+        DateTimeOffset? retryAfter,
         DateTimeOffset now)
     {
         if (!Enum.IsDefined(interval))
@@ -79,22 +119,25 @@ public static class UpdateCheckSchedule
             interval = UpdateCheckInterval.Daily;
         }
 
-        if (interval == UpdateCheckInterval.ManualOnly)
+        if (interval == UpdateCheckInterval.ManualOnly
+            || retryAfter is DateTimeOffset retryNotBefore
+                && retryNotBefore > now)
         {
             return false;
         }
 
-        if (interval == UpdateCheckInterval.EveryStartup || lastCheckAt is null)
+        if (interval == UpdateCheckInterval.EveryStartup
+            || lastSuccessfulCheckAt is null)
         {
             return true;
         }
 
-        if (lastCheckAt > now)
+        if (lastSuccessfulCheckAt > now)
         {
             return true;
         }
 
-        TimeSpan elapsed = now - lastCheckAt.Value;
+        TimeSpan elapsed = now - lastSuccessfulCheckAt.Value;
         return elapsed >= interval switch
         {
             UpdateCheckInterval.Daily => TimeSpan.FromDays(1),
@@ -108,7 +151,9 @@ public static class UpdateCheckSchedule
 
 public sealed class GitHubReleaseUpdateClient : IReleaseUpdateClient
 {
+    public const string ApiVersion = "2022-11-28";
     private const int MaximumResponseBytes = 256 * 1024;
+    private static readonly TimeSpan RequestTimeout = TimeSpan.FromSeconds(10);
     private static readonly Uri LatestReleaseEndpoint = new(
         "https://api.github.com/repos/OSSBlade/openblade-core/releases/latest");
     private static readonly HttpClient SharedHttpClient = CreateSharedHttpClient();
@@ -124,49 +169,87 @@ public sealed class GitHubReleaseUpdateClient : IReleaseUpdateClient
         this.httpClient = httpClient ?? throw new ArgumentNullException(nameof(httpClient));
     }
 
-    public async Task<ReleaseUpdateInfo> GetLatestReleaseAsync(
+    public async Task<ReleaseUpdateResult> GetLatestReleaseAsync(
+        string? entityTag,
         CancellationToken cancellationToken)
     {
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        timeout.CancelAfter(RequestTimeout);
         try
         {
             using var request = new HttpRequestMessage(HttpMethod.Get, LatestReleaseEndpoint);
             request.Headers.Accept.Add(
                 new MediaTypeWithQualityHeaderValue("application/vnd.github+json"));
             request.Headers.UserAgent.ParseAdd("OpenBlade");
-            request.Headers.Add("X-GitHub-Api-Version", "2026-03-10");
+            request.Headers.Add("X-GitHub-Api-Version", ApiVersion);
+            if (EntityTagHeaderValue.TryParse(entityTag, out EntityTagHeaderValue? parsedTag))
+            {
+                request.Headers.IfNoneMatch.Add(parsedTag);
+            }
 
             using HttpResponseMessage response = await httpClient.SendAsync(
                 request,
                 HttpCompletionOption.ResponseHeadersRead,
-                cancellationToken).ConfigureAwait(false);
+                timeout.Token).ConfigureAwait(false);
+            string? responseTag = response.Headers.ETag?.ToString() ?? entityTag;
+            if (response.StatusCode == HttpStatusCode.NotModified)
+            {
+                return new(
+                    ReleaseUpdateDisposition.NotModified,
+                    Release: null,
+                    responseTag);
+            }
+
             if (response.StatusCode == HttpStatusCode.NotFound)
             {
-                throw new ReleaseUpdateException(
-                    "The OpenBlade release feed does not contain a published release.");
+                return new(
+                    ReleaseUpdateDisposition.NoEligibleRelease,
+                    Release: null,
+                    responseTag);
+            }
+
+            if (response.StatusCode is HttpStatusCode.Forbidden
+                or HttpStatusCode.TooManyRequests)
+            {
+                throw new ReleaseUpdateRateLimitException(
+                    ResolveRetryAfter(
+                        response,
+                        DateTimeOffset.UtcNow,
+                        TimeSpan.FromMinutes(1)));
+            }
+
+            if ((int)response.StatusCode >= 500)
+            {
+                throw new ReleaseUpdateRetryException(
+                    "GitHub is temporarily unavailable.",
+                    ResolveRetryAfter(
+                        response,
+                        DateTimeOffset.UtcNow,
+                        TimeSpan.FromMinutes(5)));
             }
 
             response.EnsureSuccessStatusCode();
             await response.Content.LoadIntoBufferAsync(
                 MaximumResponseBytes,
-                cancellationToken).ConfigureAwait(false);
+                timeout.Token).ConfigureAwait(false);
             await using Stream content = await response.Content.ReadAsStreamAsync(
-                cancellationToken).ConfigureAwait(false);
+                timeout.Token).ConfigureAwait(false);
             using JsonDocument document = await JsonDocument.ParseAsync(
                 content,
-                cancellationToken: cancellationToken).ConfigureAwait(false);
+                cancellationToken: timeout.Token).ConfigureAwait(false);
 
             JsonElement root = document.RootElement;
             string tagName = RequiredString(root, "tag_name");
-            if (!ReleaseVersion.TryParse(tagName, out Version version))
+            bool draft = RequiredBoolean(root, "draft");
+            bool prerelease = RequiredBoolean(root, "prerelease");
+            if (draft
+                || prerelease
+                || !ReleaseVersion.TryParse(tagName, out Version version))
             {
-                throw new InvalidDataException(
-                    $"GitHub returned an invalid OpenBlade release tag '{tagName}'.");
-            }
-
-            if (RequiredBoolean(root, "draft") || RequiredBoolean(root, "prerelease"))
-            {
-                throw new InvalidDataException(
-                    "GitHub returned a non-public OpenBlade release.");
+                return new(
+                    ReleaseUpdateDisposition.NoEligibleRelease,
+                    Release: null,
+                    responseTag);
             }
 
             string releasePage = RequiredString(root, "html_url");
@@ -184,11 +267,20 @@ public sealed class GitHubReleaseUpdateClient : IReleaseUpdateClient
                     "GitHub returned an invalid OpenBlade release page.");
             }
 
-            return new ReleaseUpdateInfo(version, tagName, releasePageUri);
+            return new(
+                ReleaseUpdateDisposition.PublishedRelease,
+                new ReleaseUpdateInfo(version, tagName, releasePageUri),
+                responseTag);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
             throw;
+        }
+        catch (OperationCanceledException exception) when (timeout.IsCancellationRequested)
+        {
+            throw new ReleaseUpdateException(
+                "The OpenBlade release check timed out.",
+                exception);
         }
         catch (ReleaseUpdateException)
         {
@@ -196,15 +288,53 @@ public sealed class GitHubReleaseUpdateClient : IReleaseUpdateClient
         }
         catch (Exception exception) when (
             exception is HttpRequestException
+                or IOException
                 or JsonException
                 or InvalidDataException
-                or NotSupportedException
-                or TaskCanceledException)
+                or NotSupportedException)
         {
             throw new ReleaseUpdateException(
                 "The OpenBlade release feed could not be read.",
                 exception);
         }
+    }
+
+    private static DateTimeOffset ResolveRetryAfter(
+        HttpResponseMessage response,
+        DateTimeOffset now,
+        TimeSpan fallbackDelay)
+    {
+        if (response.Headers.RetryAfter?.Date is DateTimeOffset retryDate)
+        {
+            return retryDate > now ? retryDate : now + fallbackDelay;
+        }
+
+        if (response.Headers.RetryAfter?.Delta is TimeSpan retryDelta
+            && retryDelta > TimeSpan.Zero)
+        {
+            return now + retryDelta;
+        }
+
+        if (response.Headers.TryGetValues(
+                "x-ratelimit-reset",
+                out IEnumerable<string>? resetValues)
+            && long.TryParse(resetValues.FirstOrDefault(), out long resetSeconds))
+        {
+            try
+            {
+                DateTimeOffset reset =
+                    DateTimeOffset.FromUnixTimeSeconds(resetSeconds);
+                if (reset > now)
+                {
+                    return reset;
+                }
+            }
+            catch (ArgumentOutOfRangeException)
+            {
+            }
+        }
+
+        return now + fallbackDelay;
     }
 
     private static string RequiredString(JsonElement root, string propertyName)
@@ -233,8 +363,11 @@ public sealed class GitHubReleaseUpdateClient : IReleaseUpdateClient
     }
 
     private static HttpClient CreateSharedHttpClient() =>
-        new()
+        new(new SocketsHttpHandler
         {
-            Timeout = TimeSpan.FromSeconds(10),
+            PooledConnectionLifetime = TimeSpan.FromMinutes(15),
+        })
+        {
+            Timeout = Timeout.InfiniteTimeSpan,
         };
 }

@@ -73,6 +73,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
     private bool enforcingMinimumWindowSize;
     private bool windowVisible;
     private int openDisplayPickerCount;
+    private int updateCheckingStarted;
     private int disposed;
     private ContentDialog? dashboardCustomizerDialog;
     private Action? dashboardCustomizerRefresh;
@@ -261,6 +262,28 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         trayObservationLoop.StartOrWake();
     }
 
+    public async Task StartUpdateCheckingAsync()
+    {
+        ObjectDisposedException.ThrowIf(Volatile.Read(ref disposed) != 0, this);
+        if (Interlocked.Exchange(ref updateCheckingStarted, 1) != 0)
+        {
+            return;
+        }
+
+        try
+        {
+            await ShowUpdateCheckConsentIfNeededAsync();
+            UpdateViewModel.StartAutomaticCheck();
+        }
+        catch (Exception exception)
+        {
+            Interlocked.Exchange(ref updateCheckingStarted, 0);
+            Trace.TraceError(
+                "OpenBlade update-check initialization failed: {0}",
+                exception);
+        }
+    }
+
     public async ValueTask DisposeAsync()
     {
         if (Interlocked.Exchange(ref disposed, 1) != 0)
@@ -319,12 +342,41 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         micaBackdropHost.Dispose();
         accentColorManager.ColorChanged -= OnAccentColorChanged;
         accentColorManager.Dispose();
-        await visibleObservationLoop.DisposeAsync();
-        await trayObservationLoop.DisposeAsync();
-        await UpdateViewModel.DisposeAsync();
-        await preferenceSaveQueue.DisposeAsync();
-        await DisplayViewModel.DisposeAsync();
-        await ViewModel.DisposeAsync();
+        await DisposeComponentSafelyAsync(
+            "visible observation loop",
+            visibleObservationLoop.DisposeAsync);
+        await DisposeComponentSafelyAsync(
+            "tray observation loop",
+            trayObservationLoop.DisposeAsync);
+        await DisposeComponentSafelyAsync(
+            "update checker",
+            UpdateViewModel.DisposeAsync);
+        await DisposeComponentSafelyAsync(
+            "preference save queue",
+            preferenceSaveQueue.DisposeAsync);
+        await DisposeComponentSafelyAsync(
+            "display view model",
+            DisplayViewModel.DisposeAsync);
+        await DisposeComponentSafelyAsync(
+            "main view model",
+            ViewModel.DisposeAsync);
+    }
+
+    private static async ValueTask DisposeComponentSafelyAsync(
+        string component,
+        Func<ValueTask> dispose)
+    {
+        try
+        {
+            await dispose();
+        }
+        catch (Exception exception)
+        {
+            Trace.TraceError(
+                "OpenBlade {0} disposal failed: {1}",
+                component,
+                exception);
+        }
     }
 
     private async Task InitializeCoreAsync()
@@ -349,7 +401,12 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         AppAccentColorMode initialAccentColorMode = AppAccentColorMode.RazerGreen;
         string initialCustomAccentColor = AppAccentColorPreferenceDefaults.RazerGreenHex;
         UpdateCheckInterval initialUpdateCheckInterval = UpdateCheckInterval.Daily;
-        DateTimeOffset? initialLastUpdateCheckAt = null;
+        bool initialUpdateCheckPromptShown = false;
+        DateTimeOffset? initialLastSuccessfulUpdateCheckAt = null;
+        DateTimeOffset? initialUpdateCheckRetryAfter = null;
+        string? initialUpdateCheckEntityTag = null;
+        string? initialLastKnownReleaseTag = null;
+        string? initialLastKnownReleaseUrl = null;
         try
         {
             UiPreferences preferences = await preferenceStore.LoadAsync();
@@ -367,7 +424,13 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             initialCustomAccentColor = preferences.EffectiveCustomAccentColor;
             StartMinimized = preferences.StartMinimized;
             initialUpdateCheckInterval = preferences.EffectiveUpdateCheckInterval;
-            initialLastUpdateCheckAt = preferences.LastUpdateCheckAt;
+            initialUpdateCheckPromptShown = preferences.UpdateCheckPromptShown;
+            initialLastSuccessfulUpdateCheckAt =
+                preferences.LastSuccessfulUpdateCheckAt;
+            initialUpdateCheckRetryAfter = preferences.UpdateCheckRetryAfter;
+            initialUpdateCheckEntityTag = preferences.UpdateCheckEntityTag;
+            initialLastKnownReleaseTag = preferences.LastKnownReleaseTag;
+            initialLastKnownReleaseUrl = preferences.LastKnownReleaseUrl;
         }
         catch (Exception exception)
         {
@@ -398,7 +461,12 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         StartMinimizedToggle.IsOn = StartMinimized;
         UpdateViewModel.ApplyPreferences(
             initialUpdateCheckInterval,
-            initialLastUpdateCheckAt);
+            initialUpdateCheckPromptShown,
+            initialLastSuccessfulUpdateCheckAt,
+            initialUpdateCheckRetryAfter,
+            initialUpdateCheckEntityTag,
+            initialLastKnownReleaseTag,
+            initialLastKnownReleaseUrl);
         try
         {
             ApplyTheme(ViewModel.Theme);
@@ -444,7 +512,6 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         DisplayViewModel.HasPendingProfileChange = ViewModel.HasDisplayProfileDraft;
         DisplayViewModel.ProfilePersistenceAvailable = ViewModel.CanControlHardware;
         await RefreshDisplaySettingsAsync();
-        UpdateViewModel.StartAutomaticCheck();
     }
 
     private void OnViewModelPropertyChanged(object? sender, PropertyChangedEventArgs args)
@@ -630,7 +697,12 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
                             .ToArray()))
                     .ToArray(),
                 UpdateCheckInterval: UpdateViewModel.Interval,
-                LastUpdateCheckAt: UpdateViewModel.LastCheckAt));
+                UpdateCheckPromptShown: !UpdateViewModel.NeedsConsentPrompt,
+                LastSuccessfulUpdateCheckAt: UpdateViewModel.LastSuccessfulCheckAt,
+                UpdateCheckRetryAfter: UpdateViewModel.RetryAfter,
+                UpdateCheckEntityTag: UpdateViewModel.EntityTag,
+                LastKnownReleaseTag: UpdateViewModel.CachedReleaseTag,
+                LastKnownReleaseUrl: UpdateViewModel.CachedReleaseUrl));
         }
         catch (ObjectDisposedException)
         {
@@ -792,6 +864,31 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
 
     private void OnUpdatePreferencesChanged(object? sender, EventArgs args) =>
         QueuePreferenceSave();
+
+    private async Task ShowUpdateCheckConsentIfNeededAsync()
+    {
+        if (!UpdateViewModel.NeedsConsentPrompt || Volatile.Read(ref disposed) != 0)
+        {
+            return;
+        }
+
+        var dialog = new ContentDialog
+        {
+            XamlRoot = Root.XamlRoot,
+            Title = "Check for OpenBlade updates?",
+            Content = "OpenBlade can check GitHub for a new release once per day when "
+                + "the tray starts. The check sends no hardware state, profiles, "
+                + "settings, or diagnostics. You can change this later in About.",
+            PrimaryButtonText = "Use daily checks",
+            CloseButtonText = "Manual only",
+            DefaultButton = ContentDialogButton.Primary,
+        };
+
+        ContentDialogResult result = await dialog.ShowAsync();
+        UpdateViewModel.RecordConsent(result == ContentDialogResult.Primary
+            ? UpdateCheckInterval.Daily
+            : UpdateCheckInterval.ManualOnly);
+    }
 
     private async void OnExternalLightingOverridePolicyToggled(
         object sender,

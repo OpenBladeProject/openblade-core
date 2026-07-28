@@ -767,9 +767,8 @@ public sealed class WinUiShellContractTests
         Assert.DoesNotContain("UiAccessInputKeyboardSourceFactory", sessionProgram, StringComparison.Ordinal);
         Assert.DoesNotContain("OpenBlade.InputAgent.csproj", publish, StringComparison.Ordinal);
         Assert.DoesNotContain("UiAccessSigningCertificateThumbprint", publish, StringComparison.Ordinal);
-        Assert.DoesNotContain("Resolve-SignToolPath", publish, StringComparison.Ordinal);
-        Assert.DoesNotContain("signtool.exe", publish, StringComparison.Ordinal);
-        Assert.DoesNotContain("Get-AuthenticodeSignature", publish, StringComparison.Ordinal);
+        Assert.Contains("SigningThumbprint", publish, StringComparison.Ordinal);
+        Assert.Contains("Invoke-OpenBladeSigning", publish, StringComparison.Ordinal);
         Assert.Contains("must not contain the abandoned UIAccess input agent", validation, StringComparison.Ordinal);
         Assert.False(File.Exists(RepositoryPath(
             "src",
@@ -1126,7 +1125,8 @@ public sealed class WinUiShellContractTests
         Assert.Contains("preferenceSaveQueue.Enqueue", source, StringComparison.Ordinal);
         Assert.Contains("StartMinimized = preferences.StartMinimized", source, StringComparison.Ordinal);
         Assert.Contains("StartMinimizedToggle.IsOn = StartMinimized", source, StringComparison.Ordinal);
-        Assert.Contains("await preferenceSaveQueue.DisposeAsync()", source, StringComparison.Ordinal);
+        Assert.Contains("\"preference save queue\"", source, StringComparison.Ordinal);
+        Assert.Contains("preferenceSaveQueue.DisposeAsync", source, StringComparison.Ordinal);
 
         int load = source.IndexOf("await preferenceStore.LoadAsync", StringComparison.Ordinal);
         int apply = source.IndexOf("ApplyTheme(ViewModel.Theme)", StringComparison.Ordinal);
@@ -1166,12 +1166,24 @@ public sealed class WinUiShellContractTests
         int hide = window.IndexOf("AppWindow.Hide()", closing, StringComparison.Ordinal);
         Assert.True(closing >= 0 && stop > closing && hide > stop);
 
-        Assert.Contains("mainWindow.StartHiddenObservation()", app, StringComparison.Ordinal);
+        Assert.Contains("window.StartHiddenObservation()", app, StringComparison.Ordinal);
+        Assert.Contains(
+            "!window.UpdateViewModel.NeedsConsentPrompt",
+            app,
+            StringComparison.Ordinal);
+        Assert.Contains("await window.StartUpdateCheckingAsync()", app, StringComparison.Ordinal);
 
-        int disposeLoop = window.IndexOf("await visibleObservationLoop.DisposeAsync()", StringComparison.Ordinal);
-        int disposeTrayLoop = window.IndexOf("await trayObservationLoop.DisposeAsync()", StringComparison.Ordinal);
-        int disposeViewModel = window.IndexOf("await ViewModel.DisposeAsync()", StringComparison.Ordinal);
+        int disposeLoop = window.IndexOf(
+            "visibleObservationLoop.DisposeAsync",
+            StringComparison.Ordinal);
+        int disposeTrayLoop = window.IndexOf(
+            "trayObservationLoop.DisposeAsync",
+            StringComparison.Ordinal);
+        int disposeViewModel = window.IndexOf(
+            "\"main view model\"",
+            StringComparison.Ordinal);
         Assert.True(disposeLoop >= 0 && disposeTrayLoop > disposeLoop && disposeViewModel > disposeTrayLoop);
+        Assert.Contains("DisposeComponentSafelyAsync", window, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -1195,7 +1207,7 @@ public sealed class WinUiShellContractTests
         Assert.True(trayIcon < initialShow);
         Assert.Contains("exitLifecycle.TryRunWhileActive", app, StringComparison.Ordinal);
         Assert.Contains(
-            "initialLaunch && mainWindow?.StartMinimized == true",
+            "&& window.StartMinimized",
             app,
             StringComparison.Ordinal);
         Assert.Contains(

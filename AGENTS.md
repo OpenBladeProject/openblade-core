@@ -89,6 +89,9 @@ capture the WinUI context: the bare `await Task.Yield()` in
 `SetCustomPerformanceAsync`, `ApplyFanControlAsync`, `SetLightingAsync`,
 `SetChargeLimitAsync`, `ToggleBatteryProtectionAsync`, and
 `ToggleFullChargeAsync` mutate bound state in a `finally` after an await.
+`UpdateCheckViewModel.RunAutomaticCheckAsync` and `CheckCoreAsync` also capture
+the UI context because they mutate bound update status after awaiting the
+release client.
 Background pumps, loops, queues, and `ServiceClient` use
 `ConfigureAwait(false)`.
 
