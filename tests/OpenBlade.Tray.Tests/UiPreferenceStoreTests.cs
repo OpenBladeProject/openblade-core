@@ -26,6 +26,8 @@ public sealed class UiPreferenceStoreTests : IDisposable
             TrayHoverLabelMode.ProfileAndPowerFlow,
             preferences.TrayHoverLabelMode);
         Assert.False(preferences.StartMinimized);
+        Assert.Equal(UpdateCheckInterval.Daily, preferences.EffectiveUpdateCheckInterval);
+        Assert.Null(preferences.LastUpdateCheckAt);
         Assert.Equal(
             TelemetryPreferenceDefaults.DashboardItems,
             preferences.EffectiveDashboardTelemetryItems);
@@ -96,7 +98,16 @@ public sealed class UiPreferenceStoreTests : IDisposable
                 new(
                     SpecialKeySlot.M4,
                     new SpecialKeyAction(SpecialKeyActionKind.Disabled)),
-            ]));
+            ],
+            UpdateCheckInterval: UpdateCheckInterval.Monthly,
+            LastUpdateCheckAt: new DateTimeOffset(
+                2026,
+                7,
+                27,
+                12,
+                30,
+                0,
+                TimeSpan.Zero)));
 
         UiPreferences reloaded = await store.LoadAsync();
         using JsonDocument document = JsonDocument.Parse(await File.ReadAllTextAsync(path));
@@ -149,6 +160,10 @@ public sealed class UiPreferenceStoreTests : IDisposable
         Assert.Equal(
             SpecialKeyActionKind.Disabled,
             reloaded.EffectiveSpecialKeyBindings[(int)SpecialKeySlot.M4].Action.Kind);
+        Assert.Equal(UpdateCheckInterval.Monthly, reloaded.EffectiveUpdateCheckInterval);
+        Assert.Equal(
+            new DateTimeOffset(2026, 7, 27, 12, 30, 0, TimeSpan.Zero),
+            reloaded.LastUpdateCheckAt);
         Assert.Equal("Dark", document.RootElement.GetProperty("theme").GetString());
         Assert.False(document.RootElement.TryGetProperty(
             "keepManualChangesUntilCleared",
@@ -185,6 +200,26 @@ public sealed class UiPreferenceStoreTests : IDisposable
             "M1",
             document.RootElement.GetProperty("specialKeyBindings")[0]
                 .GetProperty("slot").GetString());
+        Assert.Equal(
+            "Monthly",
+            document.RootElement.GetProperty("updateCheckInterval").GetString());
+        Assert.Equal(
+            "2026-07-27T12:30:00+00:00",
+            document.RootElement.GetProperty("lastUpdateCheckAt").GetString());
+    }
+
+    [Fact]
+    public async Task LoadAsync_InvalidUpdateIntervalFallsBackToDaily()
+    {
+        Directory.CreateDirectory(directory);
+        string path = Path.Combine(directory, "preferences.json");
+        await File.WriteAllTextAsync(
+            path,
+            """{"theme":"Dark","updateCheckInterval":999}""");
+
+        UiPreferences preferences = await new UiPreferenceStore(path).LoadAsync();
+
+        Assert.Equal(UpdateCheckInterval.Daily, preferences.EffectiveUpdateCheckInterval);
     }
 
     [Fact]

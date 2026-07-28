@@ -614,7 +614,14 @@ public sealed class CapabilityPresentationTests
         Assert.DoesNotContain(settingsPage.Descendants(), element =>
             element.Name.LocalName == "TextBlock"
             && Attribute(element, "Text") == "Support");
-        foreach (string section in new[] { "Versions", "Device information", "Support", "Troubleshooting" })
+        foreach (string section in new[]
+                 {
+                     "Versions",
+                     "Updates",
+                     "Device information",
+                     "Support",
+                     "Troubleshooting",
+                 })
         {
             Assert.Contains(aboutPage.Descendants(), element =>
                 element.Name.LocalName == "TextBlock"

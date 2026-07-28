@@ -30,6 +30,7 @@ public enum PageSectionKind
     SettingsShutdown,
     AboutOverview,
     AboutVersions,
+    AboutUpdates,
     AboutDeviceInformation,
     AboutSupport,
     AboutTroubleshooting,
@@ -173,6 +174,11 @@ public static class PageLayoutPreferenceDefaults
             PageSectionKind.AboutVersions,
             "Versions",
             "Show the installed app and service versions."),
+        new(
+            CustomizablePageKind.About,
+            PageSectionKind.AboutUpdates,
+            "Updates",
+            "Choose when OpenBlade checks GitHub for new releases."),
         new(
             CustomizablePageKind.About,
             PageSectionKind.AboutDeviceInformation,

@@ -166,6 +166,7 @@ public sealed class PageLayoutPreferenceTests
                      "AboutSectionHost",
                      "AboutOverviewSection",
                      "AboutVersionsSection",
+                     "AboutUpdatesSection",
                      "AboutDeviceInformationSection",
                      "AboutSupportSection",
                      "AboutTroubleshootingSection",

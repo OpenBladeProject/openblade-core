@@ -1348,11 +1348,15 @@ public sealed class WinUiShellContractTests
             window,
             StringComparison.Ordinal);
         Assert.Contains(
-            "IServiceClient serviceClient = new ServiceClient();\n        ViewModel = new MainViewModel(\n            serviceClient,\n            new WinUiDispatcher(dispatcherQueue),",
+            "IServiceClient serviceClient = new ServiceClient();",
             window.Replace("\r\n", "\n", StringComparison.Ordinal),
             StringComparison.Ordinal);
         Assert.Contains(
-            "uiVersion: OpenBladeProductVersion.Read(typeof(MainWindow).Assembly)",
+            "string uiVersion = OpenBladeProductVersion.Read(typeof(MainWindow).Assembly);",
+            window,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "uiVersion: uiVersion",
             window,
             StringComparison.Ordinal);
     }

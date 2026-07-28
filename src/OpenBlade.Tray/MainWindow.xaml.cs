@@ -94,16 +94,21 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             ?? throw new InvalidOperationException("The tray must start on a dispatcher thread.");
         dispatcherQueue.EnsureSystemDispatcherQueue();
         IServiceClient serviceClient = new ServiceClient();
+        string uiVersion = OpenBladeProductVersion.Read(typeof(MainWindow).Assembly);
         ViewModel = new MainViewModel(
             serviceClient,
             new WinUiDispatcher(dispatcherQueue),
             new DiagnosticArchiveSaver(new WinUiDiagnosticArchiveDestination(AppWindow.Id)),
             new WindowsStartupRegistration(),
-            uiVersion: OpenBladeProductVersion.Read(typeof(MainWindow).Assembly),
+            uiVersion: uiVersion,
             sessionAgentVersion: InstalledComponentVersion.ReadSibling(
                 "OpenBlade.SessionAgent.exe"),
             installedServiceVersion: InstalledComponentVersion.ReadSibling(
                 "OpenBlade.Service.exe"));
+        UpdateViewModel = new UpdateCheckViewModel(
+            new GitHubReleaseUpdateClient(),
+            uiVersion);
+        UpdateViewModel.PreferencesChanged += OnUpdatePreferencesChanged;
         displaySettingsAdapter = new SessionDisplaySettingsAdapter();
         DisplayViewModel = new DisplaySettingsViewModel(displaySettingsAdapter);
         DisplayViewModel.UserSettingsChanged += OnDisplayUserSettingsChanged;
@@ -170,6 +175,8 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
     public MainViewModel ViewModel { get; }
 
     public DisplaySettingsViewModel DisplayViewModel { get; }
+
+    public UpdateCheckViewModel UpdateViewModel { get; }
 
     public bool StartMinimized { get; private set; }
 
@@ -273,6 +280,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         }
 
         ViewModel.PropertyChanged -= OnViewModelPropertyChanged;
+        UpdateViewModel.PreferencesChanged -= OnUpdatePreferencesChanged;
         DashboardCards.CollectionChanged -= OnDashboardCardsCollectionChanged;
         PrimaryNavigationItems.CollectionChanged -= OnPrimaryNavigationItemsCollectionChanged;
         foreach (DashboardCardOption option in DashboardCards)
@@ -313,6 +321,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         accentColorManager.Dispose();
         await visibleObservationLoop.DisposeAsync();
         await trayObservationLoop.DisposeAsync();
+        await UpdateViewModel.DisposeAsync();
         await preferenceSaveQueue.DisposeAsync();
         await DisplayViewModel.DisposeAsync();
         await ViewModel.DisposeAsync();
@@ -339,6 +348,8 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             PageLayoutPreferenceDefaults.Layouts;
         AppAccentColorMode initialAccentColorMode = AppAccentColorMode.RazerGreen;
         string initialCustomAccentColor = AppAccentColorPreferenceDefaults.RazerGreenHex;
+        UpdateCheckInterval initialUpdateCheckInterval = UpdateCheckInterval.Daily;
+        DateTimeOffset? initialLastUpdateCheckAt = null;
         try
         {
             UiPreferences preferences = await preferenceStore.LoadAsync();
@@ -355,6 +366,8 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             initialAccentColorMode = preferences.EffectiveAccentColorMode;
             initialCustomAccentColor = preferences.EffectiveCustomAccentColor;
             StartMinimized = preferences.StartMinimized;
+            initialUpdateCheckInterval = preferences.EffectiveUpdateCheckInterval;
+            initialLastUpdateCheckAt = preferences.LastUpdateCheckAt;
         }
         catch (Exception exception)
         {
@@ -383,6 +396,9 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         changingAccentColor = false;
         NotifyAccentColorPropertiesChanged();
         StartMinimizedToggle.IsOn = StartMinimized;
+        UpdateViewModel.ApplyPreferences(
+            initialUpdateCheckInterval,
+            initialLastUpdateCheckAt);
         try
         {
             ApplyTheme(ViewModel.Theme);
@@ -428,6 +444,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         DisplayViewModel.HasPendingProfileChange = ViewModel.HasDisplayProfileDraft;
         DisplayViewModel.ProfilePersistenceAvailable = ViewModel.CanControlHardware;
         await RefreshDisplaySettingsAsync();
+        UpdateViewModel.StartAutomaticCheck();
     }
 
     private void OnViewModelPropertyChanged(object? sender, PropertyChangedEventArgs args)
@@ -611,7 +628,9 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
                                 section.Kind,
                                 section.IsVisible))
                             .ToArray()))
-                    .ToArray()));
+                    .ToArray(),
+                UpdateCheckInterval: UpdateViewModel.Interval,
+                LastUpdateCheckAt: UpdateViewModel.LastCheckAt));
         }
         catch (ObjectDisposedException)
         {
@@ -770,6 +789,9 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
         StartMinimized = toggle.IsOn;
         QueuePreferenceSave();
     }
+
+    private void OnUpdatePreferencesChanged(object? sender, EventArgs args) =>
+        QueuePreferenceSave();
 
     private async void OnExternalLightingOverridePolicyToggled(
         object sender,
@@ -2747,6 +2769,8 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             AboutOverviewSection;
         pageSectionPresentations[PageSectionKind.AboutVersions] =
             AboutVersionsSection;
+        pageSectionPresentations[PageSectionKind.AboutUpdates] =
+            AboutUpdatesSection;
         pageSectionPresentations[PageSectionKind.AboutDeviceInformation] =
             AboutDeviceInformationSection;
         pageSectionPresentations[PageSectionKind.AboutSupport] =

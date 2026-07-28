@@ -28,7 +28,9 @@ public sealed record UiPreferences(
     AppAccentColorMode AccentColorMode = AppAccentColorMode.RazerGreen,
     string? CustomAccentColor = null,
     IReadOnlyList<SpecialKeyBindingPreference>? SpecialKeyBindings = null,
-    IReadOnlyList<PageLayoutPreference>? PageLayouts = null)
+    IReadOnlyList<PageLayoutPreference>? PageLayouts = null,
+    UpdateCheckInterval UpdateCheckInterval = UpdateCheckInterval.Daily,
+    DateTimeOffset? LastUpdateCheckAt = null)
 {
     public static UiPreferences Default { get; } = new(
         ThemePreference.FollowWindows,
@@ -43,7 +45,9 @@ public sealed record UiPreferences(
         AccentColorMode: AppAccentColorMode.RazerGreen,
         CustomAccentColor: AppAccentColorPreferenceDefaults.RazerGreenHex,
         SpecialKeyBindings: SpecialKeyBindingDefaults.Bindings,
-        PageLayouts: PageLayoutPreferenceDefaults.Layouts);
+        PageLayouts: PageLayoutPreferenceDefaults.Layouts,
+        UpdateCheckInterval: UpdateCheckInterval.Daily,
+        LastUpdateCheckAt: null);
 
     public LiveReadingsCadence EffectiveLiveReadingsCadence =>
         !LiveReadingsEnabled
@@ -82,6 +86,11 @@ public sealed record UiPreferences(
 
     public IReadOnlyList<PageLayoutPreference> EffectivePageLayouts =>
         PageLayoutPreferenceDefaults.Normalize(PageLayouts);
+
+    public UpdateCheckInterval EffectiveUpdateCheckInterval =>
+        Enum.IsDefined(UpdateCheckInterval)
+            ? UpdateCheckInterval
+            : UpdateCheckInterval.Daily;
 }
 
 public sealed class UiPreferenceStore
