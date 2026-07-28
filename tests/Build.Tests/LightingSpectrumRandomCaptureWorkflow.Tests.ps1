@@ -122,8 +122,9 @@ Assert-True (@($plan.annotationGuidance | Where-Object { $_ -match 'raw PCAP out
 Assert-True (@($plan.annotationGuidance | Where-Object { $_ -match 'not OpenBlade typed-apply' }).Count -eq 1) `
     'The plan must preserve the Synapse-oracle evidence boundary.'
 
-# Exercise the failure-before-readiness path with a fake runner. No USBPcap,
-# console event, service, elevation, Synapse, or hardware is touched.
+# Exercise the failure-before-readiness path through the production
+# file-controlled automation mode. No USBPcap, console event, service,
+# elevation, Synapse, or hardware is touched.
 $testRoot = Join-Path ([IO.Path]::GetTempPath()) `
     ('OpenBlade.LightingCaptureWorkflow.Tests.' + [Guid]::NewGuid().ToString('N'))
 try {
@@ -170,12 +171,14 @@ exit 0
         '-PlanPath', $planPath,
         '-UsbPcapExecutablePath', $fakeUsbPcap,
         '-TsharkPath', $fakeTshark,
-        '-ReadyTimeoutSeconds', '1')
+        '-ReadyTimeoutSeconds', '1',
+        '-FileControlled',
+        '-ApprovalPhrase', 'CAPTURE SPECTRUM AND RANDOM BREATHING',
+        '-PreCaptureSetting', 'Static white at 50%')
     $startInfo = [Diagnostics.ProcessStartInfo]::new()
     $startInfo.FileName = 'powershell.exe'
     $startInfo.UseShellExecute = $false
     $startInfo.CreateNoWindow = $true
-    $startInfo.RedirectStandardInput = $true
     $startInfo.RedirectStandardOutput = $true
     $startInfo.RedirectStandardError = $true
     $startInfo.Arguments = (($arguments | ForEach-Object { ConvertTo-NativeArgument $_ }) -join ' ')
@@ -185,9 +188,6 @@ exit 0
     try {
         $standardOutput = $process.StandardOutput.ReadToEndAsync()
         $standardError = $process.StandardError.ReadToEndAsync()
-        $process.StandardInput.WriteLine('CAPTURE SPECTRUM AND RANDOM BREATHING')
-        $process.StandardInput.WriteLine('Static white at 50%')
-        $process.StandardInput.Close()
         Assert-True ($process.WaitForExit(10000)) `
             'The failure-before-readiness workflow did not finish within ten seconds.'
         $output = $standardOutput.GetAwaiter().GetResult()
