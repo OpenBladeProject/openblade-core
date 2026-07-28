@@ -16,6 +16,7 @@ internal static class WindowsSetupPlatformTestFactory
         ISetupPayloadFileSystem? payloadFileSystem = null,
         IMachineDataDirectorySecurity? machineDataDirectorySecurity = null,
         IUninstallRegistration? uninstallRegistration = null,
+        IBundleOwnershipRegistration? bundleOwnershipRegistration = null,
         IInstalledUninstallerWriter? installedUninstallerWriter = null,
         string? setupExecutablePath = null) =>
         new(
@@ -31,6 +32,7 @@ internal static class WindowsSetupPlatformTestFactory
                 PayloadFileSystem: payloadFileSystem,
                 MachineDataDirectorySecurity: machineDataDirectorySecurity,
                 UninstallRegistration: uninstallRegistration,
+                BundleOwnershipRegistration: bundleOwnershipRegistration,
                 InstalledUninstallerWriter: installedUninstallerWriter,
                 SetupExecutablePath: setupExecutablePath));
 }

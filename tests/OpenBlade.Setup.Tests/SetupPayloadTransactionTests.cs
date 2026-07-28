@@ -955,6 +955,8 @@ public sealed class SetupPayloadTransactionTests
         public Task RemoveUninstallShortcutAsync(CancellationToken cancellationToken) => throw new NotSupportedException();
         public Task InstallUninstallRegistrationAsync(CancellationToken cancellationToken) => throw new NotSupportedException();
         public Task RemoveUninstallRegistrationAsync(CancellationToken cancellationToken) => throw new NotSupportedException();
+        public Task InstallBundleOwnershipAsync(CancellationToken cancellationToken) => throw new NotSupportedException();
+        public Task RemoveBundleOwnershipAsync(CancellationToken cancellationToken) => throw new NotSupportedException();
         public Task RemoveServiceAsync(CancellationToken cancellationToken) => throw new NotSupportedException();
         public Task StopTrayAsync(CancellationToken cancellationToken) => throw new NotSupportedException();
         public Task StopSessionAgentAsync(CancellationToken cancellationToken) => throw new NotSupportedException();

@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "appType": "EXE",
+  "architecture": "x64",
+  "language": "en-US",
+  "installerParameters": "/quiet /norestart",
+  "offlineInstaller": true,
+  "requiresElevation": true,
+  "minimumOperatingSystem": "Windows 11 x64",
+  "supportedHardware": "Razer Blade 16 (2026), model RZ09-0581, USB 1532:02E0",
+  "privacyPolicyRelativeUrl": "privacy.html"
+}

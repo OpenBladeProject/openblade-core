@@ -7,27 +7,50 @@ public enum SetupCommand
     UninstallAndPurge,
 }
 
+public readonly record struct SetupInvocation(SetupCommand Command, bool BundleManaged);
+
 public static class SetupCommandParser
 {
     public static bool TryParse(IReadOnlyList<string> arguments, out SetupCommand command)
     {
+        bool parsed = TryParseInvocation(arguments, out SetupInvocation invocation);
+        command = invocation.Command;
+        return parsed;
+    }
+
+    public static bool TryParseInvocation(
+        IReadOnlyList<string> arguments,
+        out SetupInvocation invocation)
+    {
         if (arguments.Count == 1
             && string.Equals(arguments[0], "install", StringComparison.OrdinalIgnoreCase))
         {
-            command = SetupCommand.Install;
+            invocation = new(SetupCommand.Install, BundleManaged: false);
+            return true;
+        }
+
+        if (IsBundleManaged(arguments, "install"))
+        {
+            invocation = new(SetupCommand.Install, BundleManaged: true);
             return true;
         }
 
         if (arguments.Count == 1
             && string.Equals(arguments[0], "uninstall", StringComparison.OrdinalIgnoreCase))
         {
-            command = SetupCommand.Uninstall;
+            invocation = new(SetupCommand.Uninstall, BundleManaged: false);
             return true;
         }
 
         if (IsInteractiveUninstall(arguments))
         {
-            command = SetupCommand.Uninstall;
+            invocation = new(SetupCommand.Uninstall, BundleManaged: false);
+            return true;
+        }
+
+        if (IsBundleManaged(arguments, "uninstall"))
+        {
+            invocation = new(SetupCommand.Uninstall, BundleManaged: true);
             return true;
         }
 
@@ -35,11 +58,11 @@ public static class SetupCommandParser
             && string.Equals(arguments[0], "uninstall", StringComparison.OrdinalIgnoreCase)
             && string.Equals(arguments[1], "--purge", StringComparison.OrdinalIgnoreCase))
         {
-            command = SetupCommand.UninstallAndPurge;
+            invocation = new(SetupCommand.UninstallAndPurge, BundleManaged: false);
             return true;
         }
 
-        command = default;
+        invocation = default;
         return false;
     }
 
@@ -47,4 +70,9 @@ public static class SetupCommandParser
         arguments.Count == 2
         && string.Equals(arguments[0], "uninstall", StringComparison.OrdinalIgnoreCase)
         && string.Equals(arguments[1], "--interactive", StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsBundleManaged(IReadOnlyList<string> arguments, string command) =>
+        arguments.Count == 2
+        && string.Equals(arguments[0], command, StringComparison.OrdinalIgnoreCase)
+        && string.Equals(arguments[1], "--bundle-managed", StringComparison.OrdinalIgnoreCase);
 }

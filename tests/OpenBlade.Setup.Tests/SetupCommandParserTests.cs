@@ -17,6 +17,35 @@ public sealed class SetupCommandParserTests
         Assert.Equal(expected, command);
     }
 
+    [Theory]
+    [InlineData(SetupCommand.Install, "install")]
+    [InlineData(SetupCommand.Uninstall, "uninstall")]
+    [InlineData(SetupCommand.UninstallAndPurge, "uninstall", "--purge")]
+    public void TryParseInvocation_DefaultsPublicCommandsToSelfManaged(
+        SetupCommand expected,
+        params string[] arguments)
+    {
+        bool parsed = SetupCommandParser.TryParseInvocation(arguments, out SetupInvocation invocation);
+
+        Assert.True(parsed);
+        Assert.Equal(expected, invocation.Command);
+        Assert.False(invocation.BundleManaged);
+    }
+
+    [Theory]
+    [InlineData(SetupCommand.Install, "INSTALL", "--BUNDLE-MANAGED")]
+    [InlineData(SetupCommand.Uninstall, "UNINSTALL", "--BUNDLE-MANAGED")]
+    public void TryParseInvocation_RecognizesExactBundleManagedCommands(
+        SetupCommand expected,
+        params string[] arguments)
+    {
+        bool parsed = SetupCommandParser.TryParseInvocation(arguments, out SetupInvocation invocation);
+
+        Assert.True(parsed);
+        Assert.Equal(expected, invocation.Command);
+        Assert.True(invocation.BundleManaged);
+    }
+
     [Fact]
     public void InteractiveMarker_IsLimitedToExactUserFacingUninstallInvocation()
     {
@@ -28,6 +57,8 @@ public sealed class SetupCommandParserTests
     [Theory]
     [InlineData()]
     [InlineData("install", "--purge")]
+    [InlineData("install", "--bundle-managed", "extra")]
+    [InlineData("uninstall", "--bundle-managed", "--purge")]
     [InlineData("uninstall", "--purge", "extra")]
     [InlineData("--purge", "uninstall")]
     [InlineData("remove")]

@@ -1,0 +1,49 @@
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
+     xmlns:bal="http://wixtoolset.org/schemas/v4/wxs/bal"
+     xmlns:util="http://wixtoolset.org/schemas/v4/wxs/util">
+  <Bundle
+      Id="OSSBlade.OpenBlade"
+      ProviderKey="OSSBlade.OpenBlade"
+      Name="OpenBlade"
+      Version="$(OpenBladeVersion)"
+      Manufacturer="OSSBlade"
+      AboutUrl="https://github.com/OSSBlade/openblade-core"
+      HelpUrl="https://github.com/OSSBlade/openblade-docs"
+      IconSourceFile="!(bindpath.BrandAssets)\OpenBlade.ico"
+      Compressed="yes">
+    <BootstrapperApplication>
+      <bal:WixStandardBootstrapperApplication
+          Theme="hyperlinkLargeLicense"
+          LicenseUrl=""
+          LogoFile="!(bindpath.BrandAssets)\OpenBlade.png"
+          ShowVersion="yes"
+          SuppressOptionsUI="yes" />
+    </BootstrapperApplication>
+
+    <util:RegistrySearch
+        Id="OpenBladeBundleOwnershipSearch"
+        Variable="OpenBladeBundleManaged"
+        Root="HKLM"
+        Key="SOFTWARE\OSSBlade\OpenBlade\Installer"
+        Result="exists"
+        Bitness="always64" />
+
+    <Chain>
+      <ExePackage
+          Id="OpenBladeSetup"
+          SourceFile="!(bindpath.OpenBladeBundle)\OpenBlade.Setup.exe"
+          DisplayName="OpenBlade setup"
+          Description="Installs, repairs, or removes OpenBlade."
+          InstallArguments="install --bundle-managed"
+          RepairArguments="install --bundle-managed"
+          UninstallArguments="uninstall --bundle-managed"
+          DetectCondition="OpenBladeBundleManaged"
+          PerMachine="yes"
+          Vital="yes">
+        <Payloads Include="!(bindpath.OpenBladeBundle)\**">
+          <Exclude Files="!(bindpath.OpenBladeBundle)\OpenBlade.Setup.exe" />
+        </Payloads>
+      </ExePackage>
+    </Chain>
+  </Bundle>
+</Wix>

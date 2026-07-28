@@ -1,0 +1,31 @@
+<Project Sdk="WixToolset.Sdk/7.0.0">
+
+  <PropertyGroup>
+    <OutputType>Bundle</OutputType>
+    <InstallerPlatform>x64</InstallerPlatform>
+    <OutputName>OpenBlade-Setup</OutputName>
+    <AcceptEula>wix7</AcceptEula>
+    <DefineConstants>OpenBladeVersion=$(OpenBladeVersion)</DefineConstants>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="WixToolset.BootstrapperApplications.wixext" />
+    <PackageReference Include="WixToolset.Util.wixext" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <BindPath Include="$(OpenBladeBundle)" BindName="OpenBladeBundle" />
+    <BindPath Include="$(MSBuildThisFileDirectory)..\..\src\OpenBlade.Tray\Assets\Brand"
+              BindName="BrandAssets" />
+  </ItemGroup>
+
+  <Target Name="ValidateOpenBladeBundle" BeforeTargets="BeforeBuild">
+    <Error Condition="'$(OpenBladeBundle)' == ''"
+           Text="OpenBladeBundle must point to a validated OpenBlade publish bundle." />
+    <Error Condition="!Exists('$(OpenBladeBundle)\OpenBlade.Setup.exe')"
+           Text="OpenBladeBundle is missing OpenBlade.Setup.exe." />
+    <Error Condition="!Exists('$(OpenBladeBundle)\payload\OpenBlade.Service.exe')"
+           Text="OpenBladeBundle is missing payload\OpenBlade.Service.exe." />
+  </Target>
+
+</Project>

@@ -42,6 +42,75 @@ public sealed class SetupCommandRunnerTests
     }
 
     [Fact]
+    public async Task Install_BundleManaged_LeavesUninstallOwnershipToBurn()
+    {
+        RecordingSetupPlatform platform = new()
+        {
+            ServiceExists = true,
+            UninstallShortcutExisted = true,
+            UninstallRegistrationExisted = true,
+            Transaction = new RecordingPayloadTransaction(hadExistingInstall: true),
+        };
+
+        int exitCode = await new SetupCommandRunner(platform)
+            .RunAsync(["install", "--bundle-managed"], CancellationToken.None);
+
+        Assert.Equal(0, exitCode);
+        Assert.Contains("uninstall-shortcut-remove", platform.Operations);
+        Assert.Contains("uninstall-registration-remove", platform.Operations);
+        Assert.DoesNotContain("uninstaller-install", platform.Operations);
+        Assert.DoesNotContain("uninstall-shortcut-install", platform.Operations);
+        Assert.DoesNotContain("uninstall-registration-install", platform.Operations);
+        Assert.Contains("bundle-ownership-install", platform.Operations);
+        Assert.Equal("payload-commit", platform.Operations[^1]);
+    }
+
+    [Fact]
+    public async Task Install_StandaloneCommandRejectsBundleManagedInstallationBeforeMutation()
+    {
+        RecordingSetupPlatform platform = new()
+        {
+            BundleOwnershipExisted = true,
+            ServiceExists = true,
+            Transaction = new RecordingPayloadTransaction(hadExistingInstall: true),
+        };
+
+        InvalidOperationException failure = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => new SetupCommandRunner(platform).RunAsync(["install"], CancellationToken.None));
+
+        Assert.Contains("graphical installer", failure.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(
+            ["payload-stage", "lifecycle-capture", "payload-rollback"],
+            platform.Operations);
+    }
+
+    [Fact]
+    public async Task Install_BundleManagedFailure_RestoresPriorStandaloneUninstallOwnership()
+    {
+        RecordingSetupPlatform platform = new()
+        {
+            ServiceExists = true,
+            UninstallShortcutExisted = true,
+            UninstallRegistrationExisted = true,
+            FailurePoint = "service-health",
+            Transaction = new RecordingPayloadTransaction(hadExistingInstall: true),
+        };
+
+        await Assert.ThrowsAsync<InvalidOperationException>(
+            () => new SetupCommandRunner(platform)
+                .RunAsync(["install", "--bundle-managed"], CancellationToken.None));
+
+        Assert.Contains("payload-rollback", platform.Operations);
+        AssertEndsWith(
+            platform.Operations,
+            [
+                "service-restore", "agent-shortcut-install", "shortcut-install", "start-menu-install",
+                "uninstall-shortcut-install", "uninstall-registration-install",
+                "bundle-ownership-remove",
+            ]);
+    }
+
+    [Fact]
     public async Task Install_UpdateWithDisabledTrayStartup_PreservesMissingTrayShortcutAndRepairsAgentShortcut()
     {
         RecordingSetupPlatform platform = new()
@@ -478,6 +547,54 @@ public sealed class SetupCommandRunnerTests
     }
 
     [Fact]
+    public async Task Uninstall_BundleManaged_RemovesOwnershipBeforeBinaries()
+    {
+        RecordingSetupPlatform platform = new() { BundleOwnershipExisted = true };
+
+        int exitCode = await new SetupCommandRunner(platform)
+            .RunAsync(["uninstall", "--bundle-managed"], CancellationToken.None);
+
+        Assert.Equal(0, exitCode);
+        AssertEndsWith(
+            platform.Operations,
+            [
+                "uninstall-shortcut-remove", "uninstall-registration-remove",
+                "bundle-ownership-remove", "binaries-remove",
+            ]);
+    }
+
+    [Fact]
+    public async Task Uninstall_BundleManagedBinaryFailure_RestoresOwnership()
+    {
+        RecordingSetupPlatform platform = new()
+        {
+            BundleOwnershipExisted = true,
+            FailurePoint = "binaries-remove",
+        };
+
+        InvalidOperationException failure = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => new SetupCommandRunner(platform)
+                .RunAsync(["uninstall", "--bundle-managed"], CancellationToken.None));
+
+        Assert.Equal("binaries-remove failed", failure.Message);
+        AssertEndsWith(
+            platform.Operations,
+            ["bundle-ownership-remove", "binaries-remove", "bundle-ownership-install"]);
+    }
+
+    [Fact]
+    public async Task Uninstall_StandaloneCommandRejectsBundleManagedInstallationBeforeMutation()
+    {
+        RecordingSetupPlatform platform = new() { BundleOwnershipExisted = true };
+
+        InvalidOperationException failure = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => new SetupCommandRunner(platform).RunAsync(["uninstall"], CancellationToken.None));
+
+        Assert.Contains("graphical installer", failure.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(["lifecycle-capture"], platform.Operations);
+    }
+
+    [Fact]
     public async Task InvalidCommand_PrintsShippedExecutableSyntax()
     {
         RecordingSetupPlatform platform = new();
@@ -516,6 +633,7 @@ public sealed class SetupCommandRunnerTests
         public bool StartMenuShortcutExisted { get; init; } = true;
         public bool UninstallShortcutExisted { get; init; }
         public bool UninstallRegistrationExisted { get; init; }
+        public bool BundleOwnershipExisted { get; init; }
         public string? FailurePoint { get; set; }
         public CancellationTokenSource? Cancellation { get; init; }
         public Exception? UninstallerFailure { get; init; }
@@ -572,7 +690,8 @@ public sealed class SetupCommandRunnerTests
                     sessionAgentShortcutPresent,
                     startMenuShortcutPresent,
                     UninstallShortcutExisted,
-                    UninstallRegistrationExisted)));
+                    UninstallRegistrationExisted),
+                BundleOwnershipExisted));
         }
 
         public Task PrepareServiceForInstallAsync(CancellationToken cancellationToken)
@@ -665,6 +784,10 @@ public sealed class SetupCommandRunnerTests
             AddAsync("uninstall-registration-install", cancellationToken);
         public Task RemoveUninstallRegistrationAsync(CancellationToken cancellationToken) =>
             AddAsync("uninstall-registration-remove", cancellationToken);
+        public Task InstallBundleOwnershipAsync(CancellationToken cancellationToken) =>
+            AddAsync("bundle-ownership-install", cancellationToken);
+        public Task RemoveBundleOwnershipAsync(CancellationToken cancellationToken) =>
+            AddAsync("bundle-ownership-remove", cancellationToken);
         public Task RemoveServiceAsync(CancellationToken cancellationToken)
         {
             serviceRegistered = false;

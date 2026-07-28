@@ -28,6 +28,7 @@ public sealed record WindowsSetupPlatformOptions(
     ISetupPayloadFileSystem? PayloadFileSystem = null,
     IMachineDataDirectorySecurity? MachineDataDirectorySecurity = null,
     IUninstallRegistration? UninstallRegistration = null,
+    IBundleOwnershipRegistration? BundleOwnershipRegistration = null,
     IInstalledUninstallerWriter? InstalledUninstallerWriter = null,
     string? SetupExecutablePath = null);
 
@@ -47,6 +48,7 @@ public sealed class WindowsSetupPlatform : ISetupPlatform
     private readonly ISetupProcessOperations processOperations;
     private readonly IMachineDataDirectorySecurity machineDataDirectorySecurity;
     private readonly IUninstallRegistration uninstallRegistration;
+    private readonly IBundleOwnershipRegistration bundleOwnershipRegistration;
     private readonly IInstalledUninstallerWriter installedUninstallerWriter;
     private readonly string setupExecutablePath;
 
@@ -65,6 +67,8 @@ public sealed class WindowsSetupPlatform : ISetupPlatform
         machineDataDirectorySecurity = options.MachineDataDirectorySecurity
             ?? new WindowsMachineDataDirectorySecurity();
         uninstallRegistration = options.UninstallRegistration ?? new WindowsUninstallRegistration();
+        bundleOwnershipRegistration = options.BundleOwnershipRegistration
+            ?? new WindowsBundleOwnershipRegistration();
         installedUninstallerWriter = options.InstalledUninstallerWriter
             ?? new VerifiedInstalledUninstallerWriter();
         setupExecutablePath = options.SetupExecutablePath
@@ -85,6 +89,7 @@ public sealed class WindowsSetupPlatform : ISetupPlatform
         bool startMenuShortcutExisted = fileOperations.FileExists(paths.StartMenuFile);
         bool uninstallShortcutExisted = fileOperations.FileExists(paths.UninstallStartMenuFile);
         bool uninstallRegistrationExisted = uninstallRegistration.Exists();
+        bool bundleOwnershipExisted = bundleOwnershipRegistration.Exists();
         return new(
             new(state is not null, state == SetupServiceState.Running),
             new(
@@ -92,7 +97,8 @@ public sealed class WindowsSetupPlatform : ISetupPlatform
                 sessionAgentShortcutExisted,
                 startMenuShortcutExisted,
                 uninstallShortcutExisted,
-                uninstallRegistrationExisted));
+                uninstallRegistrationExisted),
+            bundleOwnershipExisted);
     }
 
     public async Task PrepareServiceForInstallAsync(CancellationToken cancellationToken)
@@ -343,6 +349,20 @@ public sealed class WindowsSetupPlatform : ISetupPlatform
     {
         cancellationToken.ThrowIfCancellationRequested();
         uninstallRegistration.Remove();
+        return Task.CompletedTask;
+    }
+
+    public Task InstallBundleOwnershipAsync(CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        bundleOwnershipRegistration.Install();
+        return Task.CompletedTask;
+    }
+
+    public Task RemoveBundleOwnershipAsync(CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        bundleOwnershipRegistration.Remove();
         return Task.CompletedTask;
     }
 

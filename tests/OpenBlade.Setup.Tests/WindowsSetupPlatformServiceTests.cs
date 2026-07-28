@@ -468,15 +468,32 @@ public sealed class WindowsSetupPlatformServiceTests
     {
         RecordingFileOperations files = new() { FileExistsResult = true };
         RecordingUninstallRegistration registration = new() { EntryExists = true };
+        RecordingBundleOwnershipRegistration bundleOwnership = new() { EntryExists = true };
         WindowsSetupPlatform platform = WindowsSetupPlatformTestFactory.Create(
             fileOperations: files,
-            uninstallRegistration: registration);
+            uninstallRegistration: registration,
+            bundleOwnershipRegistration: bundleOwnership);
 
         SetupInstallLifecycleState state =
             await platform.CaptureInstallLifecycleStateAsync(CancellationToken.None);
 
         Assert.True(state.Startup.UninstallShortcutExisted);
         Assert.True(state.Startup.UninstallRegistrationExisted);
+        Assert.True(state.BundleOwnershipExisted);
+    }
+
+    [Fact]
+    public async Task BundleOwnershipOperations_ForwardToRegistration()
+    {
+        RecordingBundleOwnershipRegistration bundleOwnership = new();
+        WindowsSetupPlatform platform = WindowsSetupPlatformTestFactory.Create(
+            bundleOwnershipRegistration: bundleOwnership);
+
+        await platform.InstallBundleOwnershipAsync(CancellationToken.None);
+        await platform.RemoveBundleOwnershipAsync(CancellationToken.None);
+
+        Assert.Equal(1, bundleOwnership.Installs);
+        Assert.Equal(1, bundleOwnership.Removals);
     }
 
     [Theory]
@@ -663,6 +680,17 @@ public sealed class WindowsSetupPlatformServiceTests
 
         public bool Exists() => EntryExists;
         public void Install(UninstallRegistrationRequest request) => Installs.Add(request);
+        public void Remove() => Removals++;
+    }
+
+    private sealed class RecordingBundleOwnershipRegistration : IBundleOwnershipRegistration
+    {
+        public bool EntryExists { get; init; }
+        public int Installs { get; private set; }
+        public int Removals { get; private set; }
+
+        public bool Exists() => EntryExists;
+        public void Install() => Installs++;
         public void Remove() => Removals++;
     }
 

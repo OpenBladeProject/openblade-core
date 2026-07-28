@@ -64,3 +64,9 @@ jobs:
           --no-restore
           -m:1
           --verbosity minimal
+
+      - name: Validate installer and Store authoring
+        shell: powershell
+        run: |
+          .\tests\Build.Tests\InstallerAuthoring.Tests.ps1
+          .\tests\Build.Tests\StoreSubmissionValidation.Tests.ps1

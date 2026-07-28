@@ -23,7 +23,8 @@ public sealed record SetupStartupInstallState(
 
 public sealed record SetupInstallLifecycleState(
     SetupServiceInstallState Service,
-    SetupStartupInstallState Startup);
+    SetupStartupInstallState Startup,
+    bool BundleOwnershipExisted = false);
 
 public interface ISetupPlatform
 {
@@ -48,6 +49,8 @@ public interface ISetupPlatform
     Task RemoveUninstallShortcutAsync(CancellationToken cancellationToken);
     Task InstallUninstallRegistrationAsync(CancellationToken cancellationToken);
     Task RemoveUninstallRegistrationAsync(CancellationToken cancellationToken);
+    Task InstallBundleOwnershipAsync(CancellationToken cancellationToken);
+    Task RemoveBundleOwnershipAsync(CancellationToken cancellationToken);
     Task RemoveServiceAsync(CancellationToken cancellationToken);
     Task StopTrayAsync(CancellationToken cancellationToken);
     Task StopSessionAgentAsync(CancellationToken cancellationToken);
@@ -59,12 +62,13 @@ public sealed class SetupCommandRunner(ISetupPlatform platform)
 {
     public async Task<int> RunAsync(IReadOnlyList<string> arguments, CancellationToken cancellationToken)
     {
-        if (!SetupCommandParser.TryParse(arguments, out SetupCommand command))
+        if (!SetupCommandParser.TryParseInvocation(arguments, out SetupInvocation invocation))
         {
             Console.Error.WriteLine("Usage: OpenBlade.Setup.exe install | OpenBlade.Setup.exe uninstall [--purge]");
             return 2;
         }
 
+        SetupCommand command = invocation.Command;
         if (command == SetupCommand.Install)
         {
             await using ISetupPayloadTransaction transaction =
@@ -74,6 +78,12 @@ public sealed class SetupCommandRunner(ISetupPlatform platform)
             try
             {
                 priorLifecycle = await platform.CaptureInstallLifecycleStateAsync(cancellationToken);
+                if (priorLifecycle.BundleOwnershipExisted && !invocation.BundleManaged)
+                {
+                    throw new InvalidOperationException(
+                        "This OpenBlade installation is managed by the graphical installer. "
+                        + "Use Windows Installed apps or OpenBlade-Setup.exe to repair or remove it.");
+                }
                 if (priorLifecycle.Service.Existed && !transaction.HadExistingInstall)
                 {
                     throw new InvalidOperationException(
@@ -91,17 +101,27 @@ public sealed class SetupCommandRunner(ISetupPlatform platform)
                 await platform.StopTrayAsync(cancellationToken);
                 await platform.StopSessionAgentAsync(cancellationToken);
                 await transaction.ActivateAsync(cancellationToken);
-                await platform.InstallUninstallerAsync(cancellationToken);
+                if (!invocation.BundleManaged)
+                {
+                    await platform.InstallUninstallerAsync(cancellationToken);
+                }
                 await platform.WriteAuthorizedUserSidAsync(platform.CurrentUserSid, cancellationToken);
                 await platform.InstallServiceAsync(cancellationToken);
                 await platform.VerifyServiceHealthAsync(cancellationToken);
                 await platform.InstallSessionAgentStartupShortcutAsync(cancellationToken);
                 await platform.InstallStartMenuShortcutAsync(cancellationToken);
-                await platform.InstallUninstallShortcutAsync(cancellationToken);
-                await platform.InstallUninstallRegistrationAsync(cancellationToken);
+                if (!invocation.BundleManaged)
+                {
+                    await platform.InstallUninstallShortcutAsync(cancellationToken);
+                    await platform.InstallUninstallRegistrationAsync(cancellationToken);
+                }
                 if (!transaction.HadExistingInstall || priorLifecycle.Startup.TrayShortcutExisted)
                 {
                     await platform.InstallStartupShortcutAsync(cancellationToken);
+                }
+                if (invocation.BundleManaged)
+                {
+                    await platform.InstallBundleOwnershipAsync(cancellationToken);
                 }
                 await transaction.CommitAsync(cancellationToken);
                 WriteCommitWarningNoThrow(transaction.CommitWarning);
@@ -195,6 +215,22 @@ public sealed class SetupCommandRunner(ISetupPlatform platform)
                             () => platform.InstallUninstallRegistrationAsync(recoveryToken),
                             recoveryFailures);
                     }
+
+                    if (invocation.BundleManaged)
+                    {
+                        if (priorLifecycle?.BundleOwnershipExisted == true)
+                        {
+                            await RecoverAsync(
+                                () => platform.InstallBundleOwnershipAsync(recoveryToken),
+                                recoveryFailures);
+                        }
+                        else
+                        {
+                            await RecoverAsync(
+                                () => platform.RemoveBundleOwnershipAsync(recoveryToken),
+                                recoveryFailures);
+                        }
+                    }
                 }
 
                 if (recoveryFailures.Count > 0)
@@ -209,6 +245,12 @@ public sealed class SetupCommandRunner(ISetupPlatform platform)
 
         SetupInstallLifecycleState uninstallLifecycle =
             await platform.CaptureInstallLifecycleStateAsync(cancellationToken);
+        if (uninstallLifecycle.BundleOwnershipExisted && !invocation.BundleManaged)
+        {
+            throw new InvalidOperationException(
+                "This OpenBlade installation is managed by the graphical installer. "
+                + "Use Windows Installed apps or OpenBlade-Setup.exe to remove it.");
+        }
         await platform.RemoveStartupShortcutAsync(cancellationToken);
         await platform.RemoveSessionAgentStartupShortcutAsync(cancellationToken);
         await platform.RemoveStartMenuShortcutAsync(cancellationToken);
@@ -219,6 +261,10 @@ public sealed class SetupCommandRunner(ISetupPlatform platform)
         {
             await platform.RemoveUninstallShortcutAsync(cancellationToken);
             await platform.RemoveUninstallRegistrationAsync(cancellationToken);
+            if (invocation.BundleManaged)
+            {
+                await platform.RemoveBundleOwnershipAsync(cancellationToken);
+            }
             await platform.RemoveBinariesAsync(cancellationToken);
         }
         catch (Exception failure)
@@ -236,6 +282,13 @@ public sealed class SetupCommandRunner(ISetupPlatform platform)
             {
                 await RecoverAsync(
                     () => platform.InstallUninstallRegistrationAsync(recoveryTimeout.Token),
+                    recoveryFailures);
+            }
+
+            if (invocation.BundleManaged && uninstallLifecycle.BundleOwnershipExisted)
+            {
+                await RecoverAsync(
+                    () => platform.InstallBundleOwnershipAsync(recoveryTimeout.Token),
                     recoveryFailures);
             }
 

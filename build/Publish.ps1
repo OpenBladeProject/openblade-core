@@ -8,6 +8,8 @@ $ErrorActionPreference = 'Stop'
 $repository = Split-Path -Parent $PSScriptRoot
 $artifacts = [IO.Path]::GetFullPath((Join-Path $repository 'artifacts'))
 . (Join-Path $PSScriptRoot 'PublishPayloadValidation.ps1')
+. (Join-Path $PSScriptRoot 'InstallerValidation.ps1')
+. (Join-Path $PSScriptRoot 'StoreSubmissionValidation.ps1')
 . (Join-Path $PSScriptRoot 'WindowsAppRuntimeNotificationResource.ps1')
 
 & (Join-Path $PSScriptRoot 'Verify-Branding.ps1') -Repository $repository
@@ -16,10 +18,16 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 $bundle = [IO.Path]::GetFullPath((Join-Path $artifacts 'win-x64\OpenBlade'))
+$installer = [IO.Path]::GetFullPath((Join-Path $artifacts 'win-x64\OpenBlade-Setup.exe'))
+$storeReadiness = [IO.Path]::GetFullPath((
+    Join-Path $artifacts 'win-x64\OpenBlade-Store-Readiness.json'))
 $developerTools = [IO.Path]::GetFullPath((Join-Path $artifacts 'win-x64\OpenBlade.DeveloperTools'))
 $stagingRoot = [IO.Path]::GetFullPath((Join-Path $artifacts ('.staging\' + [Guid]::NewGuid().ToString('N'))))
 $stagingBundle = Join-Path $stagingRoot 'OpenBlade'
 $stagingDeveloperTools = Join-Path $stagingRoot 'OpenBlade.DeveloperTools'
+$stagingInstallerOutput = Join-Path $stagingRoot 'installer'
+$stagingInstaller = Join-Path $stagingInstallerOutput 'OpenBlade-Setup.exe'
+$stagingStoreReadiness = Join-Path $stagingRoot 'OpenBlade-Store-Readiness.json'
 $payload = Join-Path $stagingBundle 'payload'
 
 function Assert-SafeArtifactPath {
@@ -47,8 +55,19 @@ function Invoke-CheckedPublish {
 }
 
 Assert-SafeArtifactPath -Path $bundle
+Assert-SafeArtifactPath -Path $installer
+Assert-SafeArtifactPath -Path $storeReadiness
 Assert-SafeArtifactPath -Path $developerTools
 Assert-SafeArtifactPath -Path $stagingRoot
+
+[xml]$buildProperties = Get-Content -LiteralPath (Join-Path $repository 'Directory.Build.props')
+$openBladeVersionNode = $buildProperties.SelectSingleNode(
+    '/Project/PropertyGroup/OpenBladeVersion')
+if ($null -eq $openBladeVersionNode -or
+    [string]::IsNullOrWhiteSpace($openBladeVersionNode.InnerText)) {
+    throw 'Directory.Build.props does not define OpenBladeVersion.'
+}
+$openBladeVersion = $openBladeVersionNode.InnerText
 
 $publishArguments = @(
     '--configuration', $Configuration,
@@ -104,6 +123,29 @@ try {
 
     Assert-ProductionBundleFootprint -Bundle $stagingBundle
 
+    New-Item -ItemType Directory -Path $stagingInstallerOutput -Force | Out-Null
+    & dotnet build (Join-Path $repository 'build\installer\OpenBlade.Installer.wixproj') `
+        --configuration $Configuration `
+        --property:NuGetAudit=false `
+        --property:OpenBladeBundle=$stagingBundle `
+        --output $stagingInstallerOutput
+    if ($LASTEXITCODE -ne 0) {
+        throw "OpenBlade installer build failed with exit code $LASTEXITCODE"
+    }
+
+    Assert-OpenBladeInstallerBundle `
+        -Installer $stagingInstaller `
+        -PublishedBundle $stagingBundle `
+        -InstallerProject (Join-Path $repository 'build\installer\OpenBlade.Installer.wixproj') `
+        -ExpectedVersion $openBladeVersion `
+        -ValidationRoot (Join-Path $stagingRoot 'installer-validation') `
+        -PermittedRoot $artifacts
+
+    Write-OpenBladeStoreReadinessReport `
+        -Bundle $stagingBundle `
+        -Installer $stagingInstaller `
+        -ReportPath $stagingStoreReadiness | Out-Null
+
     Complete-ValidatedBundleReplacement `
         -StagingBundle $stagingBundle `
         -Bundle $bundle `
@@ -114,6 +156,16 @@ try {
     }
     New-Item -ItemType Directory -Path (Split-Path -Parent $developerTools) -Force | Out-Null
     Move-Item -LiteralPath $stagingDeveloperTools -Destination $developerTools
+
+    if (Test-Path -LiteralPath $installer) {
+        Remove-ValidatedPublishPath -Path $installer -PermittedRoot $artifacts
+    }
+    Move-Item -LiteralPath $stagingInstaller -Destination $installer
+
+    if (Test-Path -LiteralPath $storeReadiness) {
+        Remove-ValidatedPublishPath -Path $storeReadiness -PermittedRoot $artifacts
+    }
+    Move-Item -LiteralPath $stagingStoreReadiness -Destination $storeReadiness
 }
 finally {
     if (Test-Path -LiteralPath $stagingRoot) {
@@ -122,4 +174,6 @@ finally {
 }
 
 Write-Host "Self-contained production bundle created at $bundle"
+Write-Host "Graphical production installer created at $installer"
+Write-Host "Microsoft Store readiness report created at $storeReadiness"
 Write-Host "Self-contained developer tools created at $developerTools"
