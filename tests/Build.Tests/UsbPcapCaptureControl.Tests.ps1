@@ -123,6 +123,50 @@ function Test-ProcessAlive {
     }
 }
 
+function Assert-FinalizedPcap {
+    param([Parameter(Mandatory)][string]$Path)
+
+    $stream = [IO.File]::Open(
+        $Path,
+        [IO.FileMode]::Open,
+        [IO.FileAccess]::Read,
+        [IO.FileShare]::ReadWrite)
+    $reader = [IO.BinaryReader]::new($stream)
+    try {
+        Assert-True (
+            $reader.ReadUInt32() -eq [uint32]0xa1b2c3d4L) `
+            'The finalized capture has an invalid PCAP magic number.'
+        Assert-True (
+            $reader.ReadUInt16() -eq 2 -and $reader.ReadUInt16() -eq 4) `
+            'The finalized capture has an unsupported PCAP version.'
+        [void]$reader.ReadInt32()
+        [void]$reader.ReadUInt32()
+        Assert-True ($reader.ReadUInt32() -eq 65535) `
+            'The finalized capture has an unexpected snapshot length.'
+        Assert-True ($reader.ReadUInt32() -eq 1) `
+            'The finalized capture does not contain Ethernet frames.'
+
+        [void]$reader.ReadUInt32()
+        [void]$reader.ReadUInt32()
+        $includedLength = $reader.ReadUInt32()
+        $originalLength = $reader.ReadUInt32()
+        Assert-True (
+            $includedLength -eq 60 -and $originalLength -eq $includedLength) `
+            'The finalized capture does not contain the complete synthetic packet.'
+
+        $frame = $reader.ReadBytes([int]$includedLength)
+        Assert-True (
+            $frame.Length -eq $includedLength -and
+            $frame[12] -eq 0x08 -and
+            $frame[13] -eq 0x00 -and
+            $stream.Position -eq $stream.Length) `
+            'The finalized capture packet is truncated or malformed.'
+    }
+    finally {
+        $reader.Dispose()
+    }
+}
+
 Assert-True (Test-Path -LiteralPath $startHelper -PathType Leaf) 'The paired USBPcap start helper is missing.'
 Assert-True (Test-Path -LiteralPath $stopHelper -PathType Leaf) 'The USBPcap stop helper is missing.'
 
@@ -398,23 +442,7 @@ internal static class ConsoleControlProbe
     Assert-True (-not (Test-Path -LiteralPath $sentinelEvent)) `
         'An unrelated console process received a console control event.'
 
-    $tshark = 'C:\Program Files\Wireshark\tshark.exe'
-    Assert-True (Test-Path -LiteralPath $tshark -PathType Leaf) `
-        'tshark is required to prove the finalized capture is decodable.'
-    $decode = Start-TestProcess -FilePath $tshark `
-        -ArgumentList @('-n', '-r', $pcapPath, '-T', 'fields', '-e', 'frame.number') `
-        -CreateNoWindow $true -RedirectOutput $true
-    try {
-        $decodeOutput = $decode.StandardOutput.ReadToEnd()
-        $decodeError = $decode.StandardError.ReadToEnd()
-        $decode.WaitForExit()
-        Assert-True ($decode.ExitCode -eq 0) "tshark could not decode the finalized PCAP: $decodeError"
-        Assert-True (($decodeOutput -split '\r?\n') -contains '1') `
-            'tshark did not decode the finalized packet.'
-    }
-    finally {
-        $decode.Dispose()
-    }
+    Assert-FinalizedPcap -Path $pcapPath
 
     $ignoredReady = Join-Path $testRoot 'ignored.ready'
     $ignoredSession = Join-Path $testRoot 'ignored.session.json'
