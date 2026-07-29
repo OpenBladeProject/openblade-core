@@ -21,6 +21,7 @@ public sealed record FirmwareSmokeCapabilities(
     IReadOnlyList<string> PerformancePresets,
     IReadOnlyList<string> FanModes,
     IReadOnlyList<string> LightingEffects,
+    IReadOnlyList<string> ObservedLightingEffects,
     IReadOnlyList<int> ChargeLimits,
     bool SupportsBatteryProtectionOff,
     bool SupportsTemporaryFullCharge,

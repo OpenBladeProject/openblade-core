@@ -572,8 +572,9 @@ Lighting capture follow-up:
   separately from writable `LightingEffects`. The tray identifies them in an
   informational card, diagnostics emit both writable and observed lighting
   keys, and the effect picker still contains only independently admitted
-  effects. Adding this strict contract field advanced service IPC from version
-  26 to 27.
+  effects. Firmware-smoke schema 2 also records the observed set and treats a
+  post-update loss as a capability regression. Adding this strict contract
+  field advanced service IPC from version 26 to 27.
 - A read-only exact PID scan found ten HID collections but no 375-byte feature
   collection. The exact device has the 91-byte control collection and a
   51-byte usage-`0059:0001` collection; do not route PID `02C6` through the

@@ -19,7 +19,8 @@ All notable changes to OpenBlade are documented in this file. The project follow
    validated. Synapse's Spectrum Cycling, Static, Starlight, Ripple, Tidal,
    Wave, and Wheel quick effects are likewise retained as observed-only
    exact-model capabilities while the writable effect picker remains limited
-   to independently validated commands.
+   to independently validated commands. Firmware-smoke schema 2 records those
+   observed effects separately so an update cannot silently lose them.
 - Added GitHub release checks to About with Every startup, Daily, Weekly,
   Monthly, and Manual only intervals. Checks run at most once during tray
   startup when due, and available releases open in the user's browser.

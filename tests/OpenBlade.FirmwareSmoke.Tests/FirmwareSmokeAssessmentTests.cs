@@ -79,6 +79,35 @@ public sealed class FirmwareSmokeAssessmentTests
     }
 
     [Fact]
+    public void PostUpdateRejectsLostObservedLightingCapability()
+    {
+        FirmwareSmokeSnapshot baseline = CreateSnapshot("1.5.0.0") with
+        {
+            Capabilities = CreateSnapshot("1.5.0.0").Capabilities with
+            {
+                ObservedLightingEffects = ["Spectrum", "Static"],
+            },
+        };
+        FirmwareSmokeSnapshot current = CreateSnapshot("1.6.0.0") with
+        {
+            Capabilities = baseline.Capabilities with
+            {
+                ObservedLightingEffects = ["Static"],
+            },
+        };
+
+        FirmwareSmokeReport report = FirmwareSmokeAssessment.ComparePostUpdate(
+            baseline,
+            current,
+            requireMcuChange: true);
+
+        Assert.False(report.Succeeded);
+        Assert.Equal(
+            FirmwareSmokeOutcome.Failed,
+            Assert.Single(report.Checks, check => check.Id == "capabilities.unchanged").Outcome);
+    }
+
+    [Fact]
     public void PostUpdateRejectsBaselineThatDidNotPassItsHealthGate()
     {
         FirmwareSmokeSnapshot baseline = CreateSnapshot("1.5.0.0") with
@@ -167,6 +196,7 @@ public sealed class FirmwareSmokeAssessmentTests
                 "Wave",
                 "Wheel",
             ],
+            [],
             [50, 55, 60, 65, 70, 75, 80],
             SupportsBatteryProtectionOff: true,
             SupportsTemporaryFullCharge: true,
@@ -222,6 +252,7 @@ public sealed class FirmwareSmokeAssessmentTests
             PerformancePresets = value.PerformancePresets.ToArray(),
             FanModes = value.FanModes.ToArray(),
             LightingEffects = value.LightingEffects.ToArray(),
+            ObservedLightingEffects = value.ObservedLightingEffects.ToArray(),
             ChargeLimits = value.ChargeLimits.ToArray(),
             LogoLightingModes = value.LogoLightingModes.ToArray(),
             OneShotLaptopControls = value.OneShotLaptopControls.ToArray(),

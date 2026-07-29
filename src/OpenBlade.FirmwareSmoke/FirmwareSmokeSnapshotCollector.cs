@@ -6,7 +6,7 @@ namespace OpenBlade.FirmwareSmoke;
 
 public sealed class FirmwareSmokeSnapshotCollector(IFirmwareSmokeClient client)
 {
-    public const int CurrentSchemaVersion = 1;
+    public const int CurrentSchemaVersion = 2;
     private const int MaximumObservationAttempts = 5;
 
     public async Task<FirmwareSmokeSnapshot> CaptureAsync(
@@ -83,6 +83,7 @@ public sealed class FirmwareSmokeSnapshotCollector(IFirmwareSmokeClient client)
                 Names(capabilities.PerformancePresets),
                 Names(capabilities.FanModes),
                 Names(capabilities.LightingEffects),
+                Names(capabilities.ObservedLightingEffects),
                 capabilities.ChargeLimits.Order().ToArray(),
                 capabilities.SupportsBatteryProtectionOff,
                 capabilities.SupportsTemporaryFullCharge,
