@@ -26,6 +26,20 @@ public sealed class Rz090528BatteryValidationFactoryTests
     }
 
     [Fact]
+    public void ProductionReadEvidence_AdmitsOnlyExactValidatedQueries()
+    {
+        ProductionBatteryReadEvidence evidence =
+            BatteryValidationFactory.CreateRz090528ProductionBatteryReadEvidence();
+
+        Assert.True(evidence.SupportsTemporaryFullChargeQuery);
+        Assert.True(evidence.SupportsAdapterPowerQuery);
+        Assert.True(evidence.SupportsMcuVersionQuery);
+        Assert.True(evidence.SupportsStartupAnimationQuery);
+        Assert.True(evidence.SupportsFunctionKeyPrimaryQuery);
+        Assert.True(evidence.SupportsGamingModeQuery);
+    }
+
+    [Fact]
     public async Task Port_UsesTypedQueryAndSetterWithMonotonicTransactions()
     {
         var session = new ScriptedSession([0xD0]);

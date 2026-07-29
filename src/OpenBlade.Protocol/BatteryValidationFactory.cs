@@ -128,16 +128,8 @@ public static class BatteryValidationFactory
                     ReadBack: true,
                     Restored: true),
             ]);
-        var readEvidence = new ProductionBatteryReadEvidence(
-            new HashSet<ProductionBatteryQueryCapability>
-            {
-                ProductionBatteryQueryCapability.TemporaryFullCharge,
-                ProductionBatteryQueryCapability.AdapterPower,
-                ProductionBatteryQueryCapability.McuVersion,
-                ProductionBatteryQueryCapability.StartupAnimation,
-                ProductionBatteryQueryCapability.FunctionKeyPrimary,
-                ProductionBatteryQueryCapability.GamingMode,
-            });
+        ProductionBatteryReadEvidence readEvidence =
+            CreateRz090528ProductionBatteryReadEvidence();
         var native = new WindowsHidNative();
         var registry = new WindowsRegistryValueSource();
         var guard = new WindowsHardwareAccessGuard(
@@ -175,6 +167,19 @@ public static class BatteryValidationFactory
             DefaultCleanupDrainTimeout,
             PendingDisposalRegistry.Shared);
     }
+
+    internal static ProductionBatteryReadEvidence
+        CreateRz090528ProductionBatteryReadEvidence() =>
+        new(
+            new HashSet<ProductionBatteryQueryCapability>
+            {
+                ProductionBatteryQueryCapability.TemporaryFullCharge,
+                ProductionBatteryQueryCapability.AdapterPower,
+                ProductionBatteryQueryCapability.McuVersion,
+                ProductionBatteryQueryCapability.StartupAnimation,
+                ProductionBatteryQueryCapability.FunctionKeyPrimary,
+                ProductionBatteryQueryCapability.GamingMode,
+            });
 
     internal static IProductionLightingPortFactory
         CreateWindowsProductionLightingForService() =>
