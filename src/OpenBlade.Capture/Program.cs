@@ -121,10 +121,19 @@ if (args.Length == 1 && args[0].Equals(
         Console.Out);
 }
 
-if (args.Length is >= 1 and <= 3 && args[0].Equals(
-    "probe-special-keys",
-    StringComparison.OrdinalIgnoreCase))
+if (args.Length is >= 1 and <= 3
+    && (args[0].Equals(
+            "probe-special-keys",
+            StringComparison.OrdinalIgnoreCase)
+        || args[0].Equals(
+            "probe-rz09-0528-02c6-special-keys",
+            StringComparison.OrdinalIgnoreCase)))
 {
+    string targetProductIdHex = args[0].Equals(
+        "probe-rz09-0528-02c6-special-keys",
+        StringComparison.OrdinalIgnoreCase)
+            ? "02C6"
+            : "02E0";
     int seconds = args.Length >= 2 && int.TryParse(args[1], out int parsedSeconds)
         ? parsedSeconds
         : 30;
@@ -132,7 +141,7 @@ if (args.Length is >= 1 and <= 3 && args[0].Equals(
     {
         if (args.Length < 3)
         {
-            return new SpecialKeyInputProbe(Console.Out).Run(
+            return new SpecialKeyInputProbe(Console.Out, targetProductIdHex).Run(
                 TimeSpan.FromSeconds(seconds));
         }
 
@@ -146,7 +155,7 @@ if (args.Length is >= 1 and <= 3 && args[0].Equals(
         {
             AutoFlush = true,
         };
-        return new SpecialKeyInputProbe(outputWriter).Run(
+        return new SpecialKeyInputProbe(outputWriter, targetProductIdHex).Run(
             TimeSpan.FromSeconds(seconds));
     }
     catch (Exception exception) when (
@@ -1419,6 +1428,8 @@ Console.WriteLine(
     "  OpenBlade.Capture validate-display-hdr WINDOWS-INTERNAL-DISPLAY:RESTORE");
 Console.WriteLine("  OpenBlade.Capture probe-gpu-clock-offsets");
 Console.WriteLine("  OpenBlade.Capture probe-special-keys [seconds] [output-file]");
+Console.WriteLine(
+    "  OpenBlade.Capture probe-rz09-0528-02c6-special-keys [seconds] [output-file]");
 Console.WriteLine("  OpenBlade.Capture validate <fixtures.json>");
 Console.WriteLine("  OpenBlade.Capture probe-battery");
 Console.WriteLine("  OpenBlade.Capture query-battery");
