@@ -8,6 +8,38 @@ public enum DeviceSubsystem
     Lighting,
 }
 
+public sealed record FanSpeedRange(
+    int MinimumRpm,
+    int MaximumRpm,
+    int StepRpm)
+{
+    public bool IsWellFormed =>
+        MinimumRpm >= FanControlSettings.MinimumSpeedRpm
+        && MaximumRpm <= FanControlSettings.MaximumSpeedRpm
+        && MinimumRpm <= MaximumRpm
+        && StepRpm == FanControlSettings.SpeedStepRpm
+        && MinimumRpm % StepRpm == 0
+        && MaximumRpm % StepRpm == 0;
+
+    public bool Supports(int speedRpm) =>
+        IsWellFormed
+        && speedRpm >= MinimumRpm
+        && speedRpm <= MaximumRpm
+        && speedRpm % StepRpm == 0;
+
+    public int Quantize(int speedRpm) => Math.Clamp(
+        (int)Math.Round(
+            speedRpm / (double)StepRpm,
+            MidpointRounding.AwayFromZero) * StepRpm,
+        MinimumRpm,
+        MaximumRpm);
+
+    public static FanSpeedRange Standard { get; } = new(
+        FanControlSettings.MinimumSpeedRpm,
+        FanControlSettings.MaximumSpeedRpm,
+        FanControlSettings.SpeedStepRpm);
+}
+
 public sealed record DeviceCapabilities(
     IReadOnlySet<PerformancePreset> PerformancePresets,
     IReadOnlySet<FanMode> FanModes,
@@ -17,6 +49,8 @@ public sealed record DeviceCapabilities(
     bool SupportsTemporaryFullCharge)
 {
     public bool SupportsKeyboardBrightness { get; init; }
+
+    public FanSpeedRange? FanSpeedRange { get; init; }
 
     public IReadOnlySet<LogoLightingMode> LogoLightingModes { get; init; } =
         new HashSet<LogoLightingMode>();
@@ -41,6 +75,7 @@ public sealed record DeviceCapabilities(
         SupportsTemporaryFullCharge: false)
     {
         SupportsKeyboardBrightness = true,
+        FanSpeedRange = FanSpeedRange.Standard,
     };
 }
 

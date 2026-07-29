@@ -7,7 +7,7 @@ namespace OpenBlade.Contracts;
 
 public static class OpenBladeIpc
 {
-    public const int ProtocolVersion = 24;
+    public const int ProtocolVersion = 25;
     public const int MaximumMessageBytes = 64 * 1024;
     public const int MaximumDiagnosticArchiveBytes = 32 * 1024;
     public const string PipeName = "OpenBlade.Service.v2";
@@ -402,6 +402,9 @@ public static class IpcMessageCodec
                 || capabilities.OneShotLaptopControls.Any(value => !Enum.IsDefined(value))
                 || capabilities.OneShotLaptopControls.Distinct().Count()
                     != capabilities.OneShotLaptopControls.Count
+                || capabilities.FanSpeedRange is { IsWellFormed: false }
+                || capabilities.FanModes.Any(IsManualFanMode)
+                    && capabilities.FanSpeedRange is null
                 || !ValidChargeLimits(capabilities.ChargeLimits)))
         {
             throw InvalidStatus("capability collections are malformed");
@@ -484,6 +487,9 @@ public static class IpcMessageCodec
             && values.Distinct().Count() == values.Length
             && values.All(value => value is >= 50 and <= 80 && value % 5 == 0);
     }
+
+    private static bool IsManualFanMode(FanMode mode) =>
+        mode is FanMode.Fixed or FanMode.ManualCurve or FanMode.Maximum;
 
     private sealed class BatteryPolicyJsonConverter : JsonConverter<BatteryPolicy>
     {

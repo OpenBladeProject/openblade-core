@@ -331,6 +331,7 @@ type sealed class OpenBlade.Contracts.DeviceCapabilities
   interface System.IEquatable<OpenBlade.Contracts.DeviceCapabilities>
   ctor (System.Collections.Generic.IReadOnlySet<OpenBlade.Contracts.PerformancePreset> PerformancePresets, System.Collections.Generic.IReadOnlySet<OpenBlade.Contracts.FanMode> FanModes, System.Collections.Generic.IReadOnlySet<OpenBlade.Contracts.LightingEffect> LightingEffects, System.Collections.Generic.IReadOnlySet<System.Int32> ChargeLimits, System.Boolean SupportsBatteryProtectionOff, System.Boolean SupportsTemporaryFullCharge)
   method OpenBlade.Contracts.DeviceCapabilities <Clone>$()
+  method OpenBlade.Contracts.FanSpeedRange get_FanSpeedRange()
   method System.Boolean get_SupportsBatteryProtectionOff()
   method System.Boolean get_SupportsKeyboardBrightness()
   method System.Boolean get_SupportsTemporaryFullCharge()
@@ -343,6 +344,7 @@ type sealed class OpenBlade.Contracts.DeviceCapabilities
   method System.Void Deconstruct(out System.Collections.Generic.IReadOnlySet<OpenBlade.Contracts.PerformancePreset> PerformancePresets, out System.Collections.Generic.IReadOnlySet<OpenBlade.Contracts.FanMode> FanModes, out System.Collections.Generic.IReadOnlySet<OpenBlade.Contracts.LightingEffect> LightingEffects, out System.Collections.Generic.IReadOnlySet<System.Int32> ChargeLimits, out System.Boolean SupportsBatteryProtectionOff, out System.Boolean SupportsTemporaryFullCharge)
   method System.Void set_ChargeLimits(System.Collections.Generic.IReadOnlySet<System.Int32> value)
   method System.Void set_FanModes(System.Collections.Generic.IReadOnlySet<OpenBlade.Contracts.FanMode> value)
+  method System.Void set_FanSpeedRange(OpenBlade.Contracts.FanSpeedRange value)
   method System.Void set_LightingEffects(System.Collections.Generic.IReadOnlySet<OpenBlade.Contracts.LightingEffect> value)
   method System.Void set_LogoLightingModes(System.Collections.Generic.IReadOnlySet<OpenBlade.Contracts.LogoLightingMode> value)
   method System.Void set_OneShotLaptopControls(System.Collections.Generic.IReadOnlySet<OpenBlade.Contracts.OneShotLaptopControl> value)
@@ -358,6 +360,7 @@ type sealed class OpenBlade.Contracts.DeviceCapabilities
   method static System.Boolean op_Equality(OpenBlade.Contracts.DeviceCapabilities left, OpenBlade.Contracts.DeviceCapabilities right)
   method static System.Boolean op_Inequality(OpenBlade.Contracts.DeviceCapabilities left, OpenBlade.Contracts.DeviceCapabilities right)
   method virtual System.Boolean Equals(OpenBlade.Contracts.DeviceCapabilities other)
+  property OpenBlade.Contracts.FanSpeedRange FanSpeedRange { get; init; }
   property System.Boolean SupportsBatteryProtectionOff { get; init; }
   property System.Boolean SupportsKeyboardBrightness { get; init; }
   property System.Boolean SupportsTemporaryFullCharge { get; init; }
@@ -472,6 +475,32 @@ type enum OpenBlade.Contracts.FanMode
   field const OpenBlade.Contracts.FanMode Fixed = 1
   field const OpenBlade.Contracts.FanMode ManualCurve = 2
   field const OpenBlade.Contracts.FanMode Maximum = 3
+type sealed class OpenBlade.Contracts.FanSpeedRange
+  interface System.IEquatable<OpenBlade.Contracts.FanSpeedRange>
+  ctor (System.Int32 MinimumRpm, System.Int32 MaximumRpm, System.Int32 StepRpm)
+  method OpenBlade.Contracts.FanSpeedRange <Clone>$()
+  method System.Boolean Supports(System.Int32 speedRpm)
+  method System.Boolean get_IsWellFormed()
+  method System.Int32 Quantize(System.Int32 speedRpm)
+  method System.Int32 get_MaximumRpm()
+  method System.Int32 get_MinimumRpm()
+  method System.Int32 get_StepRpm()
+  method System.Void Deconstruct(out System.Int32 MinimumRpm, out System.Int32 MaximumRpm, out System.Int32 StepRpm)
+  method System.Void set_MaximumRpm(System.Int32 value)
+  method System.Void set_MinimumRpm(System.Int32 value)
+  method System.Void set_StepRpm(System.Int32 value)
+  method override System.Boolean Equals(System.Object obj)
+  method override System.Int32 GetHashCode()
+  method override System.String ToString()
+  method static OpenBlade.Contracts.FanSpeedRange get_Standard()
+  method static System.Boolean op_Equality(OpenBlade.Contracts.FanSpeedRange left, OpenBlade.Contracts.FanSpeedRange right)
+  method static System.Boolean op_Inequality(OpenBlade.Contracts.FanSpeedRange left, OpenBlade.Contracts.FanSpeedRange right)
+  method virtual System.Boolean Equals(OpenBlade.Contracts.FanSpeedRange other)
+  property OpenBlade.Contracts.FanSpeedRange Standard { get; }
+  property System.Boolean IsWellFormed { get; }
+  property System.Int32 MaximumRpm { get; init; }
+  property System.Int32 MinimumRpm { get; init; }
+  property System.Int32 StepRpm { get; init; }
 type sealed class OpenBlade.Contracts.FirmwareVersions
   interface System.IEquatable<OpenBlade.Contracts.FirmwareVersions>
   ctor (System.String BiosVersion, System.String EcVersion, System.String McuVersion, System.String VbiosVersion, System.String ModelNumber = "Unavailable")
@@ -865,7 +894,7 @@ type enum OpenBlade.Contracts.OneShotLaptopControl
 type static class OpenBlade.Contracts.OpenBladeIpc
   field const System.Int32 MaximumDiagnosticArchiveBytes = 32768
   field const System.Int32 MaximumMessageBytes = 65536
-  field const System.Int32 ProtocolVersion = 24
+  field const System.Int32 ProtocolVersion = 25
   field const System.String PipeName = "OpenBlade.Service.v2"
 type static class OpenBlade.Contracts.OpenBladeProductVersion
   method static System.String Read(System.Reflection.Assembly assembly)
