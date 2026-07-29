@@ -928,6 +928,30 @@ preserve this state. Strict service IPC advanced from version 28 to 29. This is
 a coordinated install boundary: do not live-patch only the tray or Session
 Agent across it.
 
+The Session Agent now contains the production read-only observation boundary.
+It starts only when the service reports a verified RZ09-0528, the complete
+tested BIOS `2.02` / EC `1.09` / MCU `1.9.0.0` tuple, and explicit
+`ObservedOnly` or `ReadWrite` LampArray access. The Windows source:
+
+- performs a ten-second-bounded enumeration every 30 seconds while eligible
+  and retries failures after five seconds;
+- filters exact VID/PID in memory and never reports `DeviceInformation.Id`;
+- recomputes the captured geometry-and-virtual-key fingerprint;
+- treats zero, duplicate, or fingerprint-mismatched exact devices as
+  non-controllable observations;
+- publishes only a sanitized state summary when the observation changes.
+
+The observer interface deliberately contains only `ObserveAsync`; it cannot
+request priority, set colors or brightness, or claim renderer ownership. Keep
+that fail-closed boundary until signed package identity and the reversible
+write/restoration matrix are complete.
+
+On 2026-07-29, a temporary focused test executed this production source against
+the connected laptop. It found exactly one exact device, reproduced the
+approved fingerprint, observed connected/enabled state, and independently
+confirmed `IsAvailable=false`. The temporary test source was removed after the
+run; no device identifier or unsanitized output was retained.
+
 ## Preserve discovered special keys without borrowing PID 02E0 reports
 
 Synapse exposes the M1–M5 shortcut surface on RZ09-0528, but OpenBlade's
@@ -1015,8 +1039,8 @@ Final validation at the current LampArray-capability checkpoint:
   (sanitized, read-only LampArray geometry probe);
 - documentation commits: `1083340`, `6c3c631`, and `c545805`;
 - Release build: 0 warnings and 0 errors;
-- full Release suite: 3,237 tests passed across all ten projects
-  (Display 38, Capture 253, Session 33, Contracts 192, SessionAgent 147,
+- full Release suite: 3,244 tests passed across all ten projects
+  (Display 38, Capture 253, Session 33, Contracts 192, SessionAgent 154,
   Protocol 1,049, Tray 615, Service 685, Setup 206, FirmwareSmoke 19);
 - `dotnet format OpenBlade.slnx --verify-no-changes --no-restore`: clean;
 - Windows PowerShell 5.1 capture toolkit: all five regression suites passed

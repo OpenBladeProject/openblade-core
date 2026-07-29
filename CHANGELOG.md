@@ -23,7 +23,11 @@ All notable changes to OpenBlade are documented in this file. The project follow
   the exact keyboard as an 85-lamp, virtual-key-aware LampArray. OpenBlade
   surfaces that OS-native path as observed-only while packaged background
   ownership, writes, ownership-loss behavior, and restoration remain under
-  validation. The model's M1–M5 shortcut surface is
+  validation. The Session Agent now performs bounded, read-only enumeration
+  only after the service verifies the exact tested firmware tuple, and rejects
+  any array whose 85-lamp geometry fingerprint differs from captured evidence.
+  Its observation source exposes no priority or mutation operation. The
+  model's M1–M5 shortcut surface is
   also retained as observed-only: editable bindings stay hidden and inactive
   until PID `02C6` input reports are independently captured and admitted.
   Firmware-smoke schema 4 records these observed capabilities separately so an

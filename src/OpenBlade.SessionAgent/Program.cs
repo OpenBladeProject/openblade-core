@@ -172,6 +172,15 @@ internal static class Program
                         "OpenBlade playback mute indication failed: {0}",
                         exception.Message),
                     statusWatcher: statusFeed);
+                var lampArrayObservation = new ServiceLampArrayObservationLoop(
+                    statusFeed,
+                    new WindowsLampArrayObservationSource(),
+                    observation => System.Diagnostics.Trace.TraceInformation(
+                        "OpenBlade LampArray observation: {0}",
+                        observation.ToSanitizedSummary()),
+                    exception => System.Diagnostics.Trace.TraceWarning(
+                        "OpenBlade LampArray observation failed: {0}",
+                        exception.Message));
 
                 Task statusFeedTask = statusFeed.RunAsync(lifetime.Token);
                 Task specialKeyBindingsTask = specialKeyBindings.RunAsync(lifetime.Token);
@@ -181,6 +190,8 @@ internal static class Program
                 Task ambientTask = ambient.RunAsync(lifetime.Token);
                 Task lightingIdleTask = lightingIdlePolicy.RunAsync(lifetime.Token);
                 Task playbackMuteTask = playbackMuteIndicator.RunAsync(lifetime.Token);
+                Task lampArrayObservationTask =
+                    lampArrayObservation.RunAsync(lifetime.Token);
                 Task completed = await Task.WhenAny(
                     serverTask,
                     statusFeedTask,
@@ -189,7 +200,8 @@ internal static class Program
                     reactiveTask,
                     ambientTask,
                     lightingIdleTask,
-                    playbackMuteTask).ConfigureAwait(false);
+                    playbackMuteTask,
+                    lampArrayObservationTask).ConfigureAwait(false);
                 Exception? terminalFailure = completed.IsFaulted
                     ? completed.Exception?.GetBaseException()
                     : null;
@@ -208,7 +220,8 @@ internal static class Program
                             reactiveTask,
                             ambientTask,
                             lightingIdleTask,
-                            playbackMuteTask)
+                            playbackMuteTask,
+                            lampArrayObservationTask)
                         .ConfigureAwait(false);
                 }
                 catch (OperationCanceledException) when (lifetime.IsCancellationRequested)
