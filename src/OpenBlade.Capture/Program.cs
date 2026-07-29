@@ -683,6 +683,44 @@ if (args.Length == 1 && args[0].Equals(
     return await command.RunAsync([], CancellationToken.None);
 }
 
+if (args.Length == 1 && args[0].Equals(
+    "query-rz09-0528-02c6-production-performance-fan",
+    StringComparison.OrdinalIgnoreCase))
+{
+    Console.WriteLine("Target=RZ09-0528 1532:02C6 BIOS 2.02");
+    IProductionBatteryPortFactory factory =
+        BatteryValidationFactory.CreateWindowsRz090528ProductionBattery();
+    HidSessionResult<IProductionBatteryPort> opened =
+        await factory.OpenAsync(CancellationToken.None);
+    if (opened.Value is not { } port || opened.Failure is not null)
+    {
+        Console.WriteLine($"OpenFailure={opened.Failure?.ToString() ?? "Unavailable"}");
+        Console.WriteLine("Success=False");
+        return 2;
+    }
+
+    await using (port)
+    {
+        try
+        {
+            ProductionPerformanceFanState state =
+                await port.QueryPerformanceFanStateAsync(CancellationToken.None);
+            Console.WriteLine(
+                $"Performance={state.Performance?.ToString() ?? "Unavailable"}");
+            Console.WriteLine($"Fans={state.Fans?.ToString() ?? "Unavailable"}");
+            Console.WriteLine("Success=True");
+            return 0;
+        }
+        catch (Exception exception)
+        {
+            Console.WriteLine($"Failure={exception.GetType().Name}");
+            Console.WriteLine($"Message={exception.Message}");
+            Console.WriteLine("Success=False");
+            return 2;
+        }
+    }
+}
+
 if (args.Length > 0 && args[0].Equals(
     "probe-function-key-primary-getter",
     StringComparison.OrdinalIgnoreCase))
@@ -883,6 +921,8 @@ Console.WriteLine(
 Console.WriteLine("  OpenBlade.Capture query-performance-fan-discriminator");
 Console.WriteLine(
     "  OpenBlade.Capture query-rz09-0528-02c6-performance-fan-discriminator");
+Console.WriteLine(
+    "  OpenBlade.Capture query-rz09-0528-02c6-production-performance-fan");
 Console.WriteLine("  OpenBlade.Capture probe-function-key-primary-getter");
 Console.WriteLine("  OpenBlade.Capture probe-gaming-mode-getter");
 Console.WriteLine(
