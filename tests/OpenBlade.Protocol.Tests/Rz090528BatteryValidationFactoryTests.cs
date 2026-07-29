@@ -1,3 +1,4 @@
+using OpenBlade.Contracts;
 using OpenBlade.Protocol;
 
 namespace OpenBlade.Protocol.Tests;
@@ -5,14 +6,16 @@ namespace OpenBlade.Protocol.Tests;
 public sealed class Rz090528BatteryValidationFactoryTests
 {
     [Fact]
-    public void ProductionFactory_AdmitsCapturedLimit70AndTemporaryFullCharge()
+    public void ProductionFactory_AdmitsCapturedPerformanceBatteryAndTemporaryFullCharge()
     {
         IProductionBatteryPortFactory factory =
             BatteryValidationFactory.CreateWindowsRz090528ProductionBattery();
 
         Assert.Equal([70], factory.Capabilities.ChargeLimits);
-        Assert.Empty(factory.Capabilities.PerformancePresets);
-        Assert.Empty(factory.Capabilities.FanModes);
+        Assert.Equal(
+            [PerformancePreset.Balanced, PerformancePreset.Silent],
+            factory.Capabilities.PerformancePresets);
+        Assert.Equal([FanMode.Automatic], factory.Capabilities.FanModes);
         Assert.Empty(factory.Capabilities.LightingEffects);
         Assert.False(factory.Capabilities.SupportsBatteryProtectionOff);
         Assert.True(factory.Capabilities.SupportsTemporaryFullCharge);

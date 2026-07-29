@@ -18,6 +18,7 @@ public sealed class PerformanceFanDiscriminatorQueryCommand
     private readonly Func<CancellationToken,
         Task<HidSessionResult<PerformanceFanDiscriminatorSnapshot>>> run;
     private readonly TextWriter output;
+    private readonly DeviceIdentity device;
     private readonly Func<Action, IDisposable> registerCancellation;
 
     public PerformanceFanDiscriminatorQueryCommand(
@@ -25,9 +26,28 @@ public sealed class PerformanceFanDiscriminatorQueryCommand
             Task<HidSessionResult<PerformanceFanDiscriminatorSnapshot>>> run,
         TextWriter output,
         Func<Action, IDisposable>? registerCancellation = null)
+        : this(
+            run,
+            output,
+            new DeviceIdentity(
+                TargetBladeDevice.Model,
+                TargetBladeDevice.VendorId,
+                TargetBladeDevice.ProductId,
+                TargetBladeDevice.BiosVersion),
+            registerCancellation)
+    {
+    }
+
+    internal PerformanceFanDiscriminatorQueryCommand(
+        Func<CancellationToken,
+            Task<HidSessionResult<PerformanceFanDiscriminatorSnapshot>>> run,
+        TextWriter output,
+        DeviceIdentity device,
+        Func<Action, IDisposable>? registerCancellation = null)
     {
         this.run = run ?? throw new ArgumentNullException(nameof(run));
         this.output = output ?? throw new ArgumentNullException(nameof(output));
+        this.device = device ?? throw new ArgumentNullException(nameof(device));
         this.registerCancellation = registerCancellation ?? ConsoleCancellation.Register;
     }
 
@@ -54,7 +74,7 @@ public sealed class PerformanceFanDiscriminatorQueryCommand
                 await run(commandCancellation.Token).ConfigureAwait(false);
             commandCancellation.Token.ThrowIfCancellationRequested();
             await output.WriteLineAsync(JsonSerializer.Serialize(
-                CreateDocument(result),
+                CreateDocument(result, device),
                 JsonOptions)).ConfigureAwait(false);
             return result.Failure is null && result.Value is not null
                 ? 0
@@ -68,13 +88,14 @@ public sealed class PerformanceFanDiscriminatorQueryCommand
     }
 
     private static CaptureDocument CreateDocument(
-        HidSessionResult<PerformanceFanDiscriminatorSnapshot> result) => new(
+        HidSessionResult<PerformanceFanDiscriminatorSnapshot> result,
+        DeviceIdentity device) => new(
         SchemaVersion: 1,
         Device: new(
-            TargetBladeDevice.Model,
-            TargetBladeDevice.VendorId.ToString("X4"),
-            TargetBladeDevice.ProductId.ToString("X4"),
-            TargetBladeDevice.BiosVersion),
+            device.Model,
+            device.VendorId.ToString("X4"),
+            device.ProductId.ToString("X4"),
+            device.BiosVersion),
         ReadOnly: true,
         ProductionAdmitted: false,
         Success: result.Failure is null && result.Value is not null,

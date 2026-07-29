@@ -7,6 +7,26 @@ namespace OpenBlade.Capture.Tests;
 public sealed class PerformanceFanDiscriminatorQueryCommandTests
 {
     [Fact]
+    public async Task RunAsync_UsesSuppliedDeviceIdentity()
+    {
+        var snapshot = new PerformanceFanDiscriminatorSnapshot([]);
+        using var output = new StringWriter();
+        var command = new PerformanceFanDiscriminatorQueryCommand(
+            _ => Task.FromResult(
+                new HidSessionResult<PerformanceFanDiscriminatorSnapshot>(snapshot, null)),
+            output,
+            new DeviceIdentity("RZ09-0528", 0x1532, 0x02C6, "2.02"),
+            _ => NoopDisposable.Instance);
+
+        int exitCode = await command.RunAsync([], default);
+
+        Assert.Equal(0, exitCode);
+        Assert.Contains("\"model\": \"RZ09-0528\"", output.ToString());
+        Assert.Contains("\"productId\": \"02C6\"", output.ToString());
+        Assert.Contains("\"biosVersion\": \"2.02\"", output.ToString());
+    }
+
+    [Fact]
     public async Task RunAsync_RendersSanitizedStructuredJsonForFixedQueries()
     {
         var snapshot = new PerformanceFanDiscriminatorSnapshot(

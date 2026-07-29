@@ -220,12 +220,22 @@ if (args.Length == 1 && args[0].Equals(
                 await port.QueryProtectionAsync(CancellationToken.None);
             bool? temporaryFullCharge =
                 await port.QueryTemporaryFullChargeAsync(CancellationToken.None);
+            ProductionPerformanceFanState performance =
+                await port.QueryPerformanceFanStateAsync(CancellationToken.None);
             Console.WriteLine($"Protection={state}");
             Console.WriteLine(
                 $"TemporaryFullCharge={temporaryFullCharge?.ToString() ?? "Unavailable"}");
+            Console.WriteLine($"Performance={performance.Performance}");
+            Console.WriteLine($"Fans={performance.Fans}");
             bool success = factory.Capabilities.ChargeLimits.SequenceEqual([70])
+                && factory.Capabilities.PerformancePresets.SetEquals(
+                    [PerformancePreset.Balanced, PerformancePreset.Silent])
+                && factory.Capabilities.FanModes.SetEquals([FanMode.Automatic])
                 && factory.Capabilities.SupportsTemporaryFullCharge
-                && temporaryFullCharge is false;
+                && temporaryFullCharge is false
+                && performance == new ProductionPerformanceFanState(
+                    PerformancePreset.Balanced,
+                    FanMode.Automatic);
             Console.WriteLine($"Success={success}");
             return success ? 0 : 2;
         }
@@ -235,6 +245,91 @@ if (args.Length == 1 && args[0].Equals(
             Console.WriteLine("Success=False");
             return 2;
         }
+    }
+}
+
+if (args.Length == 2 && args[0].Equals(
+    "validate-rz09-0528-02c6-performance-silent",
+    StringComparison.OrdinalIgnoreCase))
+{
+    const string exactConfirmation = "RZ09-0528:1532:02C6:2.02";
+    if (!args[1].Equals(exactConfirmation, StringComparison.Ordinal))
+    {
+        Console.WriteLine(
+            "Usage: OpenBlade.Capture validate-rz09-0528-02c6-performance-silent " +
+            exactConfirmation);
+        return 1;
+    }
+
+    IProductionBatteryPortFactory factory =
+        BatteryValidationFactory.CreateWindowsRz090528ProductionBattery();
+    HidSessionResult<IProductionBatteryPort> opened =
+        await factory.OpenAsync(CancellationToken.None);
+    Console.WriteLine("Target=RZ09-0528 1532:02C6 BIOS 2.02");
+    Console.WriteLine($"OpenFailure={opened.Failure?.ToString() ?? "None"}");
+    if (opened.Value is not { } port)
+    {
+        Console.WriteLine("Success=False");
+        return 2;
+    }
+
+    await using (port)
+    {
+        ProductionPerformanceFanState baseline =
+            await port.QueryPerformanceFanStateAsync(CancellationToken.None);
+        Console.WriteLine($"Baseline={baseline.Performance}/{baseline.Fans}");
+        if (baseline != new ProductionPerformanceFanState(
+                PerformancePreset.Balanced,
+                FanMode.Automatic))
+        {
+            Console.WriteLine("Refused=Baseline must be Balanced/Automatic");
+            Console.WriteLine("Success=False");
+            return 2;
+        }
+
+        ProductionPerformanceFanState? applied = null;
+        ProductionPerformanceFanState? restored = null;
+        Exception? failure = null;
+        try
+        {
+            await port.SetPerformanceAsync(
+                PerformancePreset.Silent,
+                CancellationToken.None);
+            applied = await port.QueryPerformanceFanStateAsync(CancellationToken.None);
+        }
+        catch (Exception exception)
+        {
+            failure = exception;
+        }
+        finally
+        {
+            try
+            {
+                await port.SetPerformanceAsync(
+                    PerformancePreset.Balanced,
+                    CancellationToken.None);
+                restored = await port.QueryPerformanceFanStateAsync(CancellationToken.None);
+            }
+            catch (Exception exception)
+            {
+                failure ??= exception;
+            }
+        }
+
+        Console.WriteLine(
+            $"Applied={applied?.Performance.ToString() ?? "Unavailable"}/" +
+            $"{applied?.Fans.ToString() ?? "Unavailable"}");
+        Console.WriteLine(
+            $"Restored={restored?.Performance.ToString() ?? "Unavailable"}/" +
+            $"{restored?.Fans.ToString() ?? "Unavailable"}");
+        Console.WriteLine($"Failure={failure?.GetType().Name ?? "None"}");
+        bool success = failure is null
+            && applied == new ProductionPerformanceFanState(
+                PerformancePreset.Silent,
+                FanMode.Automatic)
+            && restored == baseline;
+        Console.WriteLine($"Success={success}");
+        return success ? 0 : 2;
     }
 }
 
@@ -471,11 +566,12 @@ if (args.Length == 1 && args[0].Equals(
     bool success = probe.Classification is
             BatteryValidationProbeClassification.Ready
             or BatteryValidationProbeClassification.ReadyWithAccessFallback
-        && battery.Capabilities.PerformancePresets.Count == 0
-        && battery.Capabilities.FanModes.Count == 0
-        && battery.Capabilities.ChargeLimits.Count == 0
+        && battery.Capabilities.PerformancePresets.SetEquals(
+            [PerformancePreset.Balanced, PerformancePreset.Silent])
+        && battery.Capabilities.FanModes.SetEquals([FanMode.Automatic])
+        && battery.Capabilities.ChargeLimits.SetEquals([70])
         && !battery.Capabilities.SupportsBatteryProtectionOff
-        && !battery.Capabilities.SupportsTemporaryFullCharge
+        && battery.Capabilities.SupportsTemporaryFullCharge
         && lighting.Capabilities.LightingEffects.Count == 0
         && lighting.Capabilities.LogoLightingModes.Count == 0
         && lighting.Capabilities.SupportsKeyboardBrightness
@@ -495,6 +591,20 @@ if (args.Length > 0 && args[0].Equals(
         BatteryValidationFactory.CreateWindowsPerformanceFanDiscriminatorQuery();
     var command = new PerformanceFanDiscriminatorQueryCommand(runner.RunAsync, Console.Out);
     return await command.RunAsync(args[1..], CancellationToken.None);
+}
+
+if (args.Length == 1 && args[0].Equals(
+    "query-rz09-0528-02c6-performance-fan-discriminator",
+    StringComparison.OrdinalIgnoreCase))
+{
+    Console.WriteLine("Target=RZ09-0528 1532:02C6 BIOS 2.02");
+    IPerformanceFanDiscriminatorQueryRunner runner =
+        BatteryValidationFactory.CreateWindowsRz090528PerformanceFanDiscriminatorQuery();
+    var command = new PerformanceFanDiscriminatorQueryCommand(
+        runner.RunAsync,
+        Console.Out,
+        new DeviceIdentity("RZ09-0528", 0x1532, 0x02C6, "2.02"));
+    return await command.RunAsync([], CancellationToken.None);
 }
 
 if (args.Length > 0 && args[0].Equals(
@@ -637,6 +747,9 @@ Console.WriteLine("  OpenBlade.Capture query-rz09-0528-02c6-battery");
 Console.WriteLine("  OpenBlade.Capture query-rz09-0528-02c6-battery-raw");
 Console.WriteLine("  OpenBlade.Capture validate-rz09-0528-02c6-battery <50|55|60|65|70|75|80>");
 Console.WriteLine("  OpenBlade.Capture probe-rz09-0528-02c6-production-battery");
+Console.WriteLine(
+    "  OpenBlade.Capture validate-rz09-0528-02c6-performance-silent " +
+    "RZ09-0528:1532:02C6:2.02");
 Console.WriteLine("  OpenBlade.Capture query-temporary-full-charge");
 Console.WriteLine("  OpenBlade.Capture query-rz09-0528-02c6-temporary-full-charge");
 Console.WriteLine("  OpenBlade.Capture query-fan-rpm");
@@ -651,6 +764,8 @@ Console.WriteLine(
 Console.WriteLine(
     "  OpenBlade.Capture probe-rz09-0528-02c6-production-admission");
 Console.WriteLine("  OpenBlade.Capture query-performance-fan-discriminator");
+Console.WriteLine(
+    "  OpenBlade.Capture query-rz09-0528-02c6-performance-fan-discriminator");
 Console.WriteLine("  OpenBlade.Capture probe-function-key-primary-getter");
 Console.WriteLine("  OpenBlade.Capture probe-gaming-mode-getter");
 Console.WriteLine(

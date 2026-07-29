@@ -30,6 +30,50 @@ public static class BatteryValidationFactory
             [
                 new CapturedCommandFixture(
                     target,
+                    ProductionBatteryPort.PerformanceBalancedFirstAction,
+                    CommandClass: 0x0D,
+                    CommandId: 0x02,
+                    Payload: [0x01, 0x01, 0x00, 0x00],
+                    Captured: true,
+                    Decoded: true,
+                    Applied: true,
+                    ReadBack: true,
+                    Restored: true),
+                new CapturedCommandFixture(
+                    target,
+                    ProductionBatteryPort.PerformanceBalancedSecondAction,
+                    CommandClass: 0x0D,
+                    CommandId: 0x02,
+                    Payload: [0x01, 0x02, 0x00, 0x00],
+                    Captured: true,
+                    Decoded: true,
+                    Applied: true,
+                    ReadBack: true,
+                    Restored: true),
+                new CapturedCommandFixture(
+                    target,
+                    ProductionBatteryPort.PerformanceSilentFirstAction,
+                    CommandClass: 0x0D,
+                    CommandId: 0x02,
+                    Payload: [0x01, 0x01, 0x05, 0x00],
+                    Captured: true,
+                    Decoded: true,
+                    Applied: true,
+                    ReadBack: true,
+                    Restored: true),
+                new CapturedCommandFixture(
+                    target,
+                    ProductionBatteryPort.PerformanceSilentSecondAction,
+                    CommandClass: 0x0D,
+                    CommandId: 0x02,
+                    Payload: [0x01, 0x02, 0x05, 0x00],
+                    Captured: true,
+                    Decoded: true,
+                    Applied: true,
+                    ReadBack: true,
+                    Restored: true),
+                new CapturedCommandFixture(
+                    target,
                     ProductionBatteryPort.Limit70Action,
                     CommandClass: 0x07,
                     CommandId: 0x12,
@@ -334,6 +378,20 @@ public static class BatteryValidationFactory
             new WindowsServiceSource(),
             native,
             new OverlappedFeatureOperation(native),
+            TimeProvider.System,
+            DefaultExchangeTimeout,
+            DefaultCleanupDrainTimeout);
+    }
+
+    internal static IPerformanceFanDiscriminatorQueryRunner
+        CreateWindowsRz090528PerformanceFanDiscriminatorQuery()
+    {
+        ValidationActorFactory actorFactory =
+            CreateWindowsRz090528TemporaryFullChargeActorFactory(
+                ControllerExclusivityPolicy.Advisory);
+        return new PerformanceFanDiscriminatorQueryRunner(
+            static () => new ValidationRunContext(),
+            actorFactory,
             TimeProvider.System,
             DefaultExchangeTimeout,
             DefaultCleanupDrainTimeout);
