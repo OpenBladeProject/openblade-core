@@ -331,7 +331,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     }
 
     [Fact]
-    public async Task Observe_PublishesObservedLightingCapabilityOnlyChanges()
+    public async Task Observe_PublishesObservedCapabilityOnlyChanges()
     {
         TestContext context = CreateContext(providerAvailable: true);
         context.Device.Capabilities = DeviceCapabilities.SafeTargetDefaults();
@@ -345,6 +345,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         int publications = context.Hub.Published.Count;
         context.Device.Capabilities = context.Device.Capabilities with
         {
+            SpecialKeyBindingsAccess = DeviceFeatureAccess.ObservedOnly,
             ObservedLightingEffects =
                 new HashSet<LightingEffect> { LightingEffect.Spectrum },
         };
@@ -355,6 +356,9 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         Assert.Equal(publications + 1, context.Hub.Published.Count);
         Assert.True(context.Runtime.GetStatus().Capabilities!.ObservedLightingEffects.SetEquals(
             [LightingEffect.Spectrum]));
+        Assert.Equal(
+            DeviceFeatureAccess.ObservedOnly,
+            context.Runtime.GetStatus().Capabilities!.SpecialKeyBindingsAccess);
         Assert.Equal(0, context.Device.TotalSetterCalls);
     }
 

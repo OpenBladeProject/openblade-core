@@ -1886,6 +1886,27 @@ public sealed class CapabilityPresentationTests
         Assert.DoesNotContain("Ripple", lightingXaml, StringComparison.OrdinalIgnoreCase);
     }
 
+    [Fact]
+    public void MainWindow_SpecialKeyBindingsRequireExplicitWritableCapability()
+    {
+        XDocument document = XDocument.Parse(ReadMainWindowXaml());
+        XElement section = NamedElement(document, "StackPanel", "ShortcutKeysSection");
+        XElement infoBar = NamedElement(
+            document,
+            "InfoBar",
+            "SpecialKeyBindingsObservedOnlyInfoBar");
+
+        Assert.Equal(
+            "{x:Bind ViewModel.IsSpecialKeyBindingsEditable, Mode=OneWay}",
+            Attribute(section, "Visibility"));
+        Assert.Equal(
+            "{x:Bind ViewModel.IsSpecialKeyBindingsObservedOnlyVisible, Mode=OneWay}",
+            Attribute(infoBar, "IsOpen"));
+        Assert.Equal(
+            "{x:Bind ViewModel.SpecialKeyBindingsAccessSummary, Mode=OneWay}",
+            Attribute(infoBar, "Message"));
+    }
+
     private static string ReadMainWindowXaml() => ReadTraySource("MainWindow.xaml");
 
     private static string? Attribute(XElement element, string localName) =>

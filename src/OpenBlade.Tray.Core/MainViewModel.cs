@@ -1418,6 +1418,27 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             Capabilities.GpuOverclock?.Access,
             "Ranges are documented, but writes remain disabled until exact-device setter validation.");
 
+    public bool IsSpecialKeyBindingsEditable =>
+        Capabilities.SpecialKeyBindingsAccess == DeviceFeatureAccess.ReadWrite;
+
+    public bool IsSpecialKeyBindingsObservedOnlyVisible =>
+        Capabilities.SpecialKeyBindingsAccess is
+            DeviceFeatureAccess.ObservedOnly or DeviceFeatureAccess.ReadOnly;
+
+    public string SpecialKeyBindingsAccessSummary =>
+        Capabilities.SpecialKeyBindingsAccess switch
+        {
+            DeviceFeatureAccess.ObservedOnly =>
+                "Synapse exposes M1 through M5 on this exact model, but PID 02C6 input reports "
+                + "have not been mapped and independently validated. Saved bindings stay inactive "
+                + "until exact-device captures admit the decoder.",
+            DeviceFeatureAccess.ReadOnly =>
+                "Special-key input reports are recognized, but binding changes are unavailable.",
+            DeviceFeatureAccess.ReadWrite =>
+                "Special-key bindings are available.",
+            _ => UnavailableLabel,
+        };
+
     public bool IsObservedLightingEffectsVisible =>
         Capabilities.ObservedLightingEffects.Any(Enum.IsDefined);
 
@@ -1920,6 +1941,9 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             Notify(nameof(IsGpuOverclockPolicyVisible));
             Notify(nameof(GpuOverclockPolicyLabel));
             Notify(nameof(GpuClockTuningAccessLabel));
+            Notify(nameof(IsSpecialKeyBindingsEditable));
+            Notify(nameof(IsSpecialKeyBindingsObservedOnlyVisible));
+            Notify(nameof(SpecialKeyBindingsAccessSummary));
             Notify(nameof(IsObservedLightingEffectsVisible));
             Notify(nameof(ObservedLightingEffectsSummary));
             NotifyObservedPowerSourceBehavior();

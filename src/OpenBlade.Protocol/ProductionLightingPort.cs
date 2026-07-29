@@ -83,6 +83,9 @@ internal sealed class ProductionLightingPort : IProductionLightingPort
         SupportsBatteryProtectionOff: false,
         SupportsTemporaryFullCharge: false)
     {
+        SpecialKeyBindingsAccess = admitted
+            ? DeviceFeatureAccess.ReadWrite
+            : null,
         LogoLightingModes = admitted
             ? new HashSet<LogoLightingMode>(Enum.GetValues<LogoLightingMode>())
             : new HashSet<LogoLightingMode>(),

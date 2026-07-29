@@ -317,6 +317,7 @@ public sealed class IpcMessageCodecTests
             SupportsBatteryProtectionOff: true,
             SupportsTemporaryFullCharge: false)
         {
+            SpecialKeyBindingsAccess = DeviceFeatureAccess.ReadWrite,
             ObservedLightingEffects = new HashSet<LightingEffect>
             {
                 LightingEffect.Spectrum,
@@ -351,12 +352,15 @@ public sealed class IpcMessageCodecTests
             DesiredState = CreateStatus().DesiredState with { Battery = desired },
         };
 
-        Assert.Equal(27, OpenBladeIpc.ProtocolVersion);
+        Assert.Equal(28, OpenBladeIpc.ProtocolVersion);
         Assert.Equal(request, await RoundTripRequestAsync(request));
         ServiceStatusSnapshot roundTrip = await RoundTripStatusAsync(status);
         Assert.Equal([80], roundTrip.Capabilities!.ChargeLimits);
         Assert.True(capabilities.ObservedLightingEffects.SetEquals(
             roundTrip.Capabilities.ObservedLightingEffects));
+        Assert.Equal(
+            DeviceFeatureAccess.ReadWrite,
+            roundTrip.Capabilities.SpecialKeyBindingsAccess);
         Assert.Equal(
             capabilities.ObservedPowerSourceBehaviors,
             roundTrip.Capabilities.ObservedPowerSourceBehaviors);
@@ -509,8 +513,28 @@ public sealed class IpcMessageCodecTests
 
         ServiceStatusSnapshot actual = await RoundTripStatusAsync(expected);
 
-        Assert.Equal(27, OpenBladeIpc.ProtocolVersion);
+        Assert.Equal(28, OpenBladeIpc.ProtocolVersion);
         AssertStatusEqual(expected, actual);
+    }
+
+    [Fact]
+    public async Task WriteServerFrameAsync_RejectsUnknownSpecialKeyBindingsAccess()
+    {
+        ServiceServerFrame frame = new ServiceStatusEvent(
+            OpenBladeIpc.ProtocolVersion,
+            CreateStatus() with
+            {
+                Capabilities = DeviceCapabilities.Unavailable() with
+                {
+                    SpecialKeyBindingsAccess = (DeviceFeatureAccess)999,
+                },
+            });
+
+        await Assert.ThrowsAsync<InvalidDataException>(() =>
+            IpcMessageCodec.WriteServerFrameAsync(
+                new MemoryStream(),
+                frame,
+                CancellationToken.None));
     }
 
     [Fact]

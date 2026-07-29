@@ -284,6 +284,9 @@ public sealed class WindowsVerifiedBladeDeviceProviderTests
             capabilities.LightingEffects.Order());
         Assert.True(capabilities.ObservedLightingEffects.SetEquals(
             [LightingEffect.Ripple, LightingEffect.Wheel]));
+        Assert.Equal(
+            DeviceFeatureAccess.ObservedOnly,
+            capabilities.SpecialKeyBindingsAccess);
         Assert.Empty(capabilities.PerformancePresets);
         Assert.Empty(capabilities.FanModes);
         Assert.Empty(capabilities.ChargeLimits);
@@ -1342,6 +1345,7 @@ public sealed class WindowsVerifiedBladeDeviceProviderTests
             false,
             false)
         {
+            SpecialKeyBindingsAccess = DeviceFeatureAccess.ObservedOnly,
             ObservedLightingEffects =
                 new HashSet<LightingEffect> { LightingEffect.Ripple, LightingEffect.Wheel },
         };
@@ -1369,6 +1373,7 @@ public sealed class WindowsVerifiedBladeDeviceProviderTests
             false,
             false)
         {
+            SpecialKeyBindingsAccess = DeviceFeatureAccess.ObservedOnly,
             ObservedLightingEffects =
                 new HashSet<LightingEffect> { LightingEffect.Ripple, LightingEffect.Wheel },
         };

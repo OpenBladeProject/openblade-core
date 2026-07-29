@@ -1,3 +1,4 @@
+using OpenBlade.Contracts;
 using OpenBlade.FirmwareSmoke;
 
 namespace OpenBlade.FirmwareSmoke.Tests;
@@ -108,6 +109,29 @@ public sealed class FirmwareSmokeAssessmentTests
     }
 
     [Fact]
+    public void PostUpdateRejectsChangedSpecialKeyBindingAccess()
+    {
+        FirmwareSmokeSnapshot baseline = CreateSnapshot("1.5.0.0");
+        FirmwareSmokeSnapshot current = CreateSnapshot("1.6.0.0") with
+        {
+            Capabilities = baseline.Capabilities with
+            {
+                SpecialKeyBindingsAccess = DeviceFeatureAccess.ObservedOnly.ToString(),
+            },
+        };
+
+        FirmwareSmokeReport report = FirmwareSmokeAssessment.ComparePostUpdate(
+            baseline,
+            current,
+            requireMcuChange: true);
+
+        Assert.False(report.Succeeded);
+        Assert.Equal(
+            FirmwareSmokeOutcome.Failed,
+            Assert.Single(report.Checks, check => check.Id == "capabilities.unchanged").Outcome);
+    }
+
+    [Fact]
     public void PostUpdateRejectsBaselineThatDidNotPassItsHealthGate()
     {
         FirmwareSmokeSnapshot baseline = CreateSnapshot("1.5.0.0") with
@@ -197,6 +221,7 @@ public sealed class FirmwareSmokeAssessmentTests
                 "Wheel",
             ],
             [],
+            SpecialKeyBindingsAccess: DeviceFeatureAccess.ReadWrite.ToString(),
             [50, 55, 60, 65, 70, 75, 80],
             SupportsBatteryProtectionOff: true,
             SupportsTemporaryFullCharge: true,

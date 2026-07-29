@@ -337,6 +337,10 @@ public sealed class DiagnosticArchiveProvider : IDiagnosticArchiveProvider
             capabilities.GpuOverclock?.IsWellFormed == true;
         result["performance.gpuOverclock.write"] =
             capabilities.GpuOverclock?.Access == DeviceFeatureAccess.ReadWrite;
+        result["laptop.specialKeyBindings.observed"] =
+            capabilities.SpecialKeyBindingsAccess is not null;
+        result["laptop.specialKeyBindings.write"] =
+            capabilities.SpecialKeyBindingsAccess == DeviceFeatureAccess.ReadWrite;
         foreach (PowerSourceBehaviorObservation observation
             in capabilities.ObservedPowerSourceBehaviors)
         {
@@ -419,6 +423,8 @@ public sealed class DiagnosticArchiveProvider : IDiagnosticArchiveProvider
                 capabilities.ObservedLightingEffects
                     .Where(Enum.IsDefined)
                     .Order()),
+            ["capability.specialKeyBindingsAccess"] =
+                capabilities.SpecialKeyBindingsAccess?.ToString() ?? "Unavailable",
             ["capability.fanSpeedMinimumRpm"] = NumberOrUnavailable(
                 capabilities.FanSpeedRange?.MinimumRpm),
             ["capability.fanSpeedMaximumRpm"] = NumberOrUnavailable(

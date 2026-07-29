@@ -439,6 +439,7 @@ public static class FirmwareSmokeAssessment
         $"Fans={capabilities.FanModes.Count}; " +
         $"Lighting={capabilities.LightingEffects.Count}; " +
         $"ObservedLighting={capabilities.ObservedLightingEffects.Count}; " +
+        $"SpecialKeys={capabilities.SpecialKeyBindingsAccess ?? "Unavailable"}; " +
         $"ChargeLimits={capabilities.ChargeLimits.Count}; " +
         $"Logo={capabilities.LogoLightingModes.Count}; " +
         $"Laptop={capabilities.OneShotLaptopControls.Count}";
@@ -450,6 +451,10 @@ public static class FirmwareSmokeAssessment
         && left.FanModes.SequenceEqual(right.FanModes)
         && left.LightingEffects.SequenceEqual(right.LightingEffects)
         && left.ObservedLightingEffects.SequenceEqual(right.ObservedLightingEffects)
+        && string.Equals(
+            left.SpecialKeyBindingsAccess,
+            right.SpecialKeyBindingsAccess,
+            StringComparison.Ordinal)
         && left.ChargeLimits.SequenceEqual(right.ChargeLimits)
         && left.SupportsBatteryProtectionOff == right.SupportsBatteryProtectionOff
         && left.SupportsTemporaryFullCharge == right.SupportsTemporaryFullCharge

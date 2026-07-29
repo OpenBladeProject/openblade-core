@@ -2463,7 +2463,16 @@
                                         ContentTemplate="{StaticResource DashboardStartupAnimationCardTemplate}"
                                         HorizontalContentAlignment="Stretch" />
 
-                        <StackPanel x:Name="ShortcutKeysSection">
+                        <InfoBar x:Name="SpecialKeyBindingsObservedOnlyInfoBar"
+                                 IsOpen="{x:Bind ViewModel.IsSpecialKeyBindingsObservedOnlyVisible, Mode=OneWay}"
+                                 Visibility="{x:Bind ViewModel.IsSpecialKeyBindingsObservedOnlyVisible, Mode=OneWay}"
+                                 Severity="Informational"
+                                 IsClosable="False"
+                                 Title="Shortcut keys captured, not yet controllable"
+                                 Message="{x:Bind ViewModel.SpecialKeyBindingsAccessSummary, Mode=OneWay}" />
+
+                        <StackPanel x:Name="ShortcutKeysSection"
+                                    Visibility="{x:Bind ViewModel.IsSpecialKeyBindingsEditable, Mode=OneWay}">
                             <TextBlock Text="Shortcut keys"
                                        Style="{StaticResource SectionHeaderStyle}"
                                        Margin="0,0,0,10" />

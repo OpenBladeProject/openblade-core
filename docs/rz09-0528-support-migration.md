@@ -863,5 +863,39 @@ harness, retain `-NonInteractive` or close stdin explicitly. Leaving a writable
 stdin pipe open reproduces the intentional missing-parameter prompt and makes
 the test process appear hung even though the validator has not failed.
 
+## Preserve discovered special keys without borrowing PID 02E0 reports
+
+Synapse exposes the M1–M5 shortcut surface on RZ09-0528, but OpenBlade's
+Session Agent decoders (`Rz09_0581SpecialKeyRawHidInput`,
+`Rz09_0581DefaultLaptopKeyRawHidInput`, and
+`Rz09_0581PerformanceShortcutRawHidInput`) are intentionally scoped to the
+RZ09-0581 / PID `02E0` raw-input path. PID `02C6` has no independently captured
+and validated report mapping yet. Do not make the older path accept `02C6`, and
+do not infer report bytes from the visible Synapse controls.
+
+The capability contract now carries `SpecialKeyBindingsAccess`:
+
+- PID `02E0` production lighting reports `ReadWrite`;
+- PID `02C6` exact lighting reports `ObservedOnly`;
+- unavailable or unadmitted devices report no access value.
+
+The Laptop page only shows editable M1–M5 bindings for `ReadWrite`. On this
+model it instead shows an observed-only information card, preserves any saved
+global bindings, and explains that they remain inactive. The Session Agent
+continues to reject PID `02C6`, so the UI and runtime fail closed together.
+Diagnostics and firmware-smoke schema 3 record the access level, and strict
+service IPC advanced from version 27 to 28.
+
+For future evidence collection, use the exact-device probe:
+
+```text
+OpenBlade.Capture probe-rz09-0528-02c6-special-keys [seconds] [output-file]
+```
+
+Capture and validate every M1–M5 press/release report on the exact PID before
+adding a decoder. Keep raw output private, add only sanitized fixtures, and
+prove that an admitted decoder rejects PID `02E0`-specific assumptions that do
+not hold for `02C6`.
+
 Update this section after every evidence, implementation, or documentation
 checkpoint.

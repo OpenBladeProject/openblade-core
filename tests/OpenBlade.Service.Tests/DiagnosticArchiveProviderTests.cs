@@ -17,6 +17,7 @@ public sealed class DiagnosticArchiveProviderTests
             AlwaysOverrideExternalLightingChanges = true,
             Capabilities = DeviceCapabilities.Unavailable() with
             {
+                SpecialKeyBindingsAccess = DeviceFeatureAccess.ObservedOnly,
                 ObservedLightingEffects =
                     new HashSet<LightingEffect>
                     {
@@ -100,12 +101,19 @@ public sealed class DiagnosticArchiveProviderTests
         Assert.Equal(
             "Static, Spectrum",
             configuration.RootElement.GetProperty("capability.observedLightingEffects").GetString());
+        Assert.Equal(
+            DeviceFeatureAccess.ObservedOnly.ToString(),
+            configuration.RootElement.GetProperty("capability.specialKeyBindingsAccess").GetString());
         using JsonDocument capabilities = JsonDocument.Parse(
             await ReadEntryAsync(archive, "capabilities.json"));
         Assert.True(
             capabilities.RootElement.GetProperty("lighting.observed.Spectrum").GetBoolean());
         Assert.False(
             capabilities.RootElement.GetProperty("lighting.Spectrum").GetBoolean());
+        Assert.True(
+            capabilities.RootElement.GetProperty("laptop.specialKeyBindings.observed").GetBoolean());
+        Assert.False(
+            capabilities.RootElement.GetProperty("laptop.specialKeyBindings.write").GetBoolean());
         Assert.DoesNotContain(
             configuration.RootElement.EnumerateObject(),
             property => property.Name.StartsWith("telemetry.", StringComparison.Ordinal));

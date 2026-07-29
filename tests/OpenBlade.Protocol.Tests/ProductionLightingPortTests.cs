@@ -41,6 +41,9 @@ public sealed class ProductionLightingPortTests
         Assert.Equal(
             Enum.GetValues<LightingEffect>().Order(),
             factory.Capabilities.LightingEffects.Order());
+        Assert.Equal(
+            DeviceFeatureAccess.ReadWrite,
+            factory.Capabilities.SpecialKeyBindingsAccess);
         Assert.Empty(factory.Capabilities.PerformancePresets);
         Assert.Empty(factory.Capabilities.FanModes);
         Assert.Empty(factory.Capabilities.ChargeLimits);
@@ -56,6 +59,9 @@ public sealed class ProductionLightingPortTests
             Rz090528BrightnessLightingPort.CreateCapabilities();
 
         Assert.True(capabilities.SupportsKeyboardBrightness);
+        Assert.Equal(
+            DeviceFeatureAccess.ObservedOnly,
+            capabilities.SpecialKeyBindingsAccess);
         Assert.Equal([LightingEffect.Off], capabilities.LightingEffects);
         Assert.True(capabilities.ObservedLightingEffects.SetEquals(
         [

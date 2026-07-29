@@ -1975,6 +1975,7 @@ public sealed class MainViewModelTests
                     new DeviceNumericRange(-30, -1, 1),
                     DeviceFeatureAccess.ObservedOnly),
                 GpuOverclock = observedGpuPolicy,
+                SpecialKeyBindingsAccess = DeviceFeatureAccess.ObservedOnly,
                 ObservedLightingEffects = new HashSet<LightingEffect>
                 {
                     LightingEffect.Spectrum,
@@ -2034,6 +2035,10 @@ public sealed class MainViewModelTests
         Assert.True(viewModel.IsGpuOverclockPolicyVisible);
         Assert.Contains("core -1000 to 400 MHz", viewModel.GpuOverclockPolicyLabel);
         Assert.False(viewModel.CanEditGpuClockTuning);
+        Assert.False(viewModel.IsSpecialKeyBindingsEditable);
+        Assert.True(viewModel.IsSpecialKeyBindingsObservedOnlyVisible);
+        Assert.Contains("PID 02C6 input reports", viewModel.SpecialKeyBindingsAccessSummary);
+        Assert.Contains("Saved bindings stay inactive", viewModel.SpecialKeyBindingsAccessSummary);
         Assert.True(viewModel.IsObservedLightingEffectsVisible);
         Assert.Contains("Spectrum Cycling", viewModel.ObservedLightingEffectsSummary);
         Assert.Contains("Wheel", viewModel.ObservedLightingEffectsSummary);
