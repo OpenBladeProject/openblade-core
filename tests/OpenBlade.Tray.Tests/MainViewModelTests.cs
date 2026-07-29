@@ -2017,8 +2017,10 @@ public sealed class MainViewModelTests
                 CustomPerformanceLevel.Medium)));
         Assert.True(viewModel.IsCpuPowerLimitVisible);
         Assert.Equal("45–95 W, 1 W steps", viewModel.CpuPowerLimitRangeLabel);
-        Assert.Contains("No safe OpenBlade backend", viewModel.CpuPowerLimitAccessLabel);
+        Assert.Contains("RzAMDOverClock service", viewModel.CpuPowerLimitAccessLabel);
+        Assert.Contains("read-only", viewModel.CpuPowerLimitAccessLabel);
         Assert.True(viewModel.IsCpuVoltageOptimizerVisible);
+        Assert.Contains("refresh path can reapply values", viewModel.CpuVoltageOptimizerAccessLabel);
         Assert.True(viewModel.IsGpuOverclockPolicyVisible);
         Assert.Contains("core -1000 to 400 MHz", viewModel.GpuOverclockPolicyLabel);
         Assert.False(viewModel.CanEditGpuClockTuning);

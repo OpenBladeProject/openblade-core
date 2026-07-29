@@ -37,7 +37,7 @@ model-independent operating-system APIs.
 | Keyboard-brightness setter | Admitted | `03/03`, arguments `0105xx` |
 | Lighting effects and logo | Partially admitted | Keyboard Off and logo Off/Static/Breathing admitted with selector `00`; animated keyboard effects remain non-discriminating |
 | Performance and fans | Partially admitted | AC Balanced, Silent, Performance, Custom, exact CPU/GPU combinations, Automatic/fixed/maximum/manual-curve fans, exact 2000-5000 RPM range, and fan RPM; other power-source setters remain unadmitted |
-| Model-specific tuning UI | Observed-only | CPU Power Limit 45-95 W in 1 W steps, CPU Voltage Optimizer -30..-1, and Synapse GPU policy ranges are first-class capabilities; no safe backend/readback, so OpenBlade shows them without editable controls |
+| Model-specific tuning UI | Observed-only | CPU Power Limit 45-95 W in 1 W steps, CPU Voltage Optimizer -30..-1, and Synapse GPU policy ranges are first-class capabilities. Synapse's CPU backend is identified as RzAMDOverClock/RzDLLService but is not admitted because its refresh lifecycle can write; OpenBlade shows these features without editable controls |
 | Power-source matrix | Captured, not admitted | Nine exact-device sessions cover barrel AC, USB-C-only, battery, both quiet baselines, and all directed transitions; exact PID 02C6 USB-C reply and independent thermal readback remain missing |
 | Battery charge limit | Admitted | Query, 50/55/60/65/70/75/80-percent setters, protection off, readback, and restoration |
 | Temporary full charge | Admitted | Query, enable, cancel, readback, and restoration |
@@ -591,6 +591,25 @@ Custom performance and model-specific power-control follow-up:
 - CPU Voltage Optimizer exposes -30 through -1 and was restored On at its saved
   `-1.000` value. Its observed `0D/07` writes collide exactly with CPU preset
   setters and are not admitted as optimizer protocol.
+- Static inspection of Synapse 4.0.698.98 identified the actual CPU-control
+  backend as `RzAMDOverClock_v1.1.15.0.dll` communicating with
+  `RzDLLService_v1.0.29.0.exe` over a named pipe. Its FFI surface includes
+  asynchronous power-limit and curve-optimizer getters and setters plus an
+  explicit callback-registration lifecycle. This supersedes the earlier
+  “backend unidentified” note; it does not admit the proprietary interface.
+- Sanitized vendor logs recorded 45 successful curve-optimizer reads returning
+  `-1`, three returning `0`, three successful automatic writes of `-1`, and
+  seven successful reapplications of the persisted 60 W limit. Cached Synapse
+  JavaScript confirms that a `0` optimizer response is converted to `-1` and
+  written, and that a power-limit response which differs from persisted state
+  schedules a setter. A Synapse refresh is therefore a mutating workflow, not
+  independent readback.
+- Do not call a vendor getter through Synapse and label the result read-only.
+  A future OpenBlade backend must own an isolated `DeviceInit` / callback
+  registration / getter-or-setter / unregister / `DeviceTerminate` lifecycle,
+  must prevent Synapse from racing or restoring its own persisted value, and
+  must save, independently read back, and restore the original setting.
+  Until that is demonstrated, both CPU controls remain observed-only UI.
 - GPU Overclock was toggled only long enough to inventory the exact-model
   policy ranges; both offsets remained zero and the toggle was restored Off.
 - Future agents must add newly discovered model features to the capability

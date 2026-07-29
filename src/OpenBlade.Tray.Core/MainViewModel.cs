@@ -1384,7 +1384,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     public string CpuPowerLimitAccessLabel =>
         FormatFeatureAccess(
             Capabilities.CpuPowerLimit?.Access,
-            "No safe OpenBlade backend or readback has been identified yet.");
+            "Synapse routes this through its RzAMDOverClock service. OpenBlade keeps it read-only until the proprietary getter/setter lifecycle has independent validation.");
 
     public bool IsCpuVoltageOptimizerVisible =>
         ActivePowerSource == PowerSource.PluggedIn
@@ -1396,7 +1396,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     public string CpuVoltageOptimizerAccessLabel =>
         FormatFeatureAccess(
             Capabilities.CpuVoltageOptimizer?.Access,
-            "Observed in Synapse; its HID writes collide with CPU preset writes, so control remains unavailable.");
+            "Synapse routes this through its RzAMDOverClock service. Its refresh path can reapply values, so OpenBlade keeps it read-only until that lifecycle is independently validated.");
 
     public bool IsGpuOverclockPolicyVisible =>
         ActivePowerSource == PowerSource.PluggedIn
