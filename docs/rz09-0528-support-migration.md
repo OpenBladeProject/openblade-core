@@ -610,6 +610,18 @@ Custom performance and model-specific power-control follow-up:
   must prevent Synapse from racing or restoring its own persisted value, and
   must save, independently read back, and restore the original setting.
   Until that is demonstrated, both CPU controls remain observed-only UI.
+- The first OpenBlade getter-only probe proved this is not theoretical. At
+  `2026-07-29T20:50:09.015Z` it invoked only `GetPowerLimitValueAsync`; the
+  backend returned 55 W at `20:50:09.402Z` while Synapse persisted 60 W.
+  Synapse's active listener called `SetPowerLimitValueAsync(60)` at
+  `20:50:09.912Z`, and restoration succeeded at `20:50:10.379Z`. OpenBlade
+  neither bound nor invoked a setter export, but the shared response still
+  caused a write. Its own callback timed out and the client was torn down at
+  `20:50:19.022Z`.
+- Preserve that run as a failed, mutating discovery session. The exact-hash
+  capture command now checks for `RazerAppEngine` before loading the vendor
+  DLL and again immediately before its first getter; if Synapse is active it
+  fails before issuing a request. Do not weaken or bypass this interlock.
 - GPU Overclock was toggled only long enough to inventory the exact-model
   policy ranges; both offsets remained zero and the toggle was restored Off.
 - Future agents must add newly discovered model features to the capability
