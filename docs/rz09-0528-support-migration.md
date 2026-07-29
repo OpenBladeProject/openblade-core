@@ -21,24 +21,24 @@ or device-instance identifiers.
 
 ## Current production status
 
-Keyboard brightness, battery limit 70, temporary full charge, the three AC
-performance presets, and Automatic fan control are the admitted hardware
-controls for this model. Exact read-only support also covers fan RPM, startup
-animation, function-key primary mode, Gaming mode, device mode, MCU version,
-and the current adapter-power class. Windows display controls are admitted
-through model-independent operating-system APIs.
+Keyboard brightness, the 50-to-80-percent battery-limit ladder, battery
+protection off, temporary full charge, the three AC performance presets,
+Automatic/fixed/maximum fan control, startup animation, function-key primary
+mode, and Gaming mode are admitted hardware controls for this model. Exact
+read-only support also covers fan RPM, device mode, MCU version, and the
+current adapter-power class. Windows display controls are admitted through
+model-independent operating-system APIs.
 
 | Area | Status | Production scope |
 | --- | --- | --- |
 | Exact host and HID identity | Admitted | Model, BIOS, PID, usage `0001:0002`, and 91-byte feature reports |
 | Keyboard-brightness query | Admitted | `03/83`, arguments `010500` |
 | Keyboard-brightness setter | Admitted | `03/03`, arguments `0105xx` |
-| Lighting effects and logo | Unavailable | No PID `02C6` production writes |
-| Performance and fans | Partially admitted | AC Balanced, Silent, Performance, Automatic fans, and fan RPM |
-| Battery charge limit | Partially admitted | Query plus captured 70-percent setter only |
+| Lighting effects and logo | Captured, not admitted | Logo selector `00` setters captured; quick-effect captures were not discriminating; no independent getter |
+| Performance and fans | Partially admitted | AC Balanced, Silent, Performance, Automatic/fixed/maximum fans, exact 2000-5000 RPM range, and fan RPM |
+| Battery charge limit | Admitted | Query, 50/55/60/65/70/75/80-percent setters, protection off, readback, and restoration |
 | Temporary full charge | Admitted | Query, enable, cancel, readback, and restoration |
-| Other battery settings | Unavailable | Other limits and protection-off are not admitted |
-| Keyboard behavior and special keys | Read-only | Function-key primary, Gaming mode, startup animation, and device mode |
+| Keyboard behavior and special keys | Partially admitted | Function-key primary, Gaming mode, and startup-animation setters; device mode read-only; special keys pending |
 | Display controls | Admitted | Refresh, DRR, HDR state, and SDR color profiles through Windows APIs |
 | NVIDIA GPU clock offsets | Validated, gated | Driver query succeeded; not exposed until exact Custom mode is admitted |
 
@@ -71,26 +71,32 @@ Do not replace independent firmware readback with visual Synapse confirmation.
 Sanitized evidence is stored in:
 
 - `annotations/2026-07-29-rz09-0528-battery-limit-70-admission.json`
+- `annotations/2026-07-29-rz09-0528-battery-limit-matrix.json`
 - `decoded/rz09-0528-pid-02c6-bios-2.02-evidence.json`
 - `decoded/rz09-0528-pid-02c6-bios-2.02-device-coverage.json`
 
 The exact-device facts are:
 
-- one 80-to-70 Synapse capture produced `07/12` arguments `C6`;
+- the complete Synapse ladder produced `07/12` arguments `B2`, `B7`, `BC`,
+  `C1`, `C6`, `CB`, and `D0` for 50, 55, 60, 65, 70, 75, and 80 percent;
+- disabling battery protection produced `07/12 50`;
 - `07/92 00` returned `C6` at 70 percent and `D0` at 80 percent three
   times each;
 - OpenBlade completed reversible 80-to-70-to-80 and 80-to-75-to-80
   validations in a quiet-controller window;
 - with Synapse still running but keyboard lighting switched off by operator
   request, ten queries and two more reversible validations succeeded;
-- the exact production factory opened and returned confirmed 80-percent state
-  three times while exposing only charge limit 70;
+- exact reversible validations succeeded for 50, 55, 60, 65, and 75 percent
+  and protection off, each with independent readback and restoration;
+- the exact production factory exposes the complete captured ladder plus
+  protection off and returned the restored 80-percent state;
 - the final firmware and visible Synapse state was restored to 80 percent, and
   keyboard lighting was intentionally left off.
 
-Only 70 percent is production-admitted. The 75-percent setter was reversibly
-validated but not independently captured. The other limits and protection-off
-remain unavailable.
+The exact setter encoding is `0x80 + percentage` for the captured 50-to-80
+range in five-percent steps. Protection off is `0x50`. Treat that formula as
+device-scoped evidence, not a reason to extrapolate beyond the captured values
+or to another PID.
 
 Active Synapse Spectrum traffic can overwrite the shared feature response with
 an unrelated `03/0B` reply. This appears as `TransactionMismatch`; never weaken
@@ -154,6 +160,24 @@ these commands for another PID or BIOS based on this evidence.
 Never run USBPcap and an OpenBlade HID query or write against the interface at
 the same time.
 
+### Elevated capture broker
+
+When the operator is present, front-load the UAC boundary with the private,
+ignored `.capture-broker` workflow in `openblade-captures/raw`. The established
+broker is fixed to `\\.\USBPcap2`, accepts bounded request files, uses
+`-SkipServiceManagement`, and may use `-SkipAdministratorCheck` only when the
+child process lacks an administrator token while the already-installed driver
+remains accessible.
+
+The broker does not make a transient device address permanent. Immediately
+before every request, visually re-resolve the exact `1532:02C6` device in
+USBView; address `3` was current during the 2026-07-29 sessions. Never submit a
+request if that value no longer matches. Wait for the prior request to finish,
+verify that capture is idle, and only then run a direct HID query. Shut down the
+broker through its sentinel after the elevated matrix is complete. The broker,
+request files, raw PCAPs, hashes that can be correlated to private captures, and
+local identifiers must remain ignored and uncommitted.
+
 Before interpreting a query failure, check whether host-rendered Synapse
 lighting is continuously issuing `03/0B` traffic. Preserve the failure as
 contention evidence. Do not treat a successful quiet-window query as proof that
@@ -163,12 +187,16 @@ concurrent traffic is safe.
 
 Work through read/query-backed controls before one-shot setters.
 
-1. Battery charge limit and temporary full charge
+1. Battery charge limit and temporary full charge — admitted
 2. Performance presets for AC, USB-C, and battery power
-3. Automatic, fixed, maximum, and manual-curve fan control plus RPM readback
+3. Automatic, fixed, maximum, and manual-curve fan control plus RPM readback —
+   fixed 2000-5000 RPM, maximum, automatic, and RPM admitted; host-rendered
+   manual curve still under review
 4. Keyboard lighting effects, matrix geometry, cadence, effect getter, and
-   logo modes
-5. Function-key primary mode, Gaming mode, startup animation, and device mode
+   logo modes — setter captures exist, but no independently discriminating
+   getter exists
+5. Function-key primary mode, Gaming mode, startup animation, and device mode —
+   first three setters admitted; device mode remains query-only
 6. Special-key report mapping and default-action preservation
 7. Windows display modes, DRR, HDR, and color profiles
 8. Conflict, timeout, malformed-response, disconnect, and lifecycle validation
@@ -244,6 +272,17 @@ convention and run `git diff --check`.
   `openblade-docs` `6d29375`: exact-machine display validation and publication
 - `openblade-captures` `3cd2182` and `openblade-core` `1f25572`: read-only
   NVIDIA clock-offset capability probe and guarded coverage record
+- `openblade-captures` `bf9c3d7` and `openblade-core` `38148fd`, `579a49e`,
+  and `29386c7`: exact fixed-fan capture, device range contract, and fixed-fan
+  admission
+- `openblade-core` `4895f13`: propagate the exact 2000-5000 RPM, 100-RPM-step
+  range through service, diagnostics, and tray UI
+- `openblade-captures` `de97f7a`: elevated AC control matrix, including
+  manual-curve selection and a second Battery-to-Lighting negative control
+- `openblade-captures` `2dbd30d` and `openblade-core` `2929c12`: complete
+  battery-limit/protection-off matrix and production admission
+- `openblade-core` `233ae9a`: exact startup, function-primary, and Gaming-mode
+  setter admission with bounded one-shot validation
 
 Verification at the battery checkpoint:
 
@@ -423,21 +462,73 @@ NVIDIA GPU clock-offset follow-up:
 - Do not bypass the Custom-mode gate or advertise offset control independently.
   Finish the exact Custom CPU matrix and reversible validation first.
 
-Unattended capture constraint:
+Elevated capture follow-up:
 
-- A later fixed-fan capture attempt caused USBPcap to request UAC even with the
-  established skip-check flags. The prompt was not approved. The private
-  session finished as `Failed` with no PCAP and is not evidence.
-- Do not start another USBPcap capture while the operator is unavailable.
-  Continue only non-elevating read-only probes, tests, and repository work until
-  an operator can explicitly handle the consent boundary.
+- The initially unapproved fixed-fan session remains preserved privately as
+  `Failed` with no PCAP and is not evidence.
+- After the operator returned, one UAC approval started the private elevated
+  broker and front-loaded the remaining Synapse action captures.
+- Every request targeted only `\\.\USBPcap2` after visually rechecking exact
+  PID `02C6` at transient address `3`. Every bounded session ended through the
+  graceful timeout path and was decoded with Windows PowerShell 5.1.
+- The clean Battery-to-Lighting navigation capture again contained no device
+  command envelope and no `03/83 010500`. It is a second negative control, not
+  readback evidence.
 
-Latest verification after the display, full-AC, and GPU-query checkpoints:
+Battery and keyboard-behavior setter follow-up:
+
+- The captured battery ladder is 50=`B2`, 55=`B7`, 60=`BC`, 65=`C1`,
+  70=`C6`, 75=`CB`, and 80=`D0`; protection off is `50`.
+- Direct reversible validations for 50, 55, 60, 65, 75, and protection off all
+  reported `Applied=True`, `ReadBack=True`, `Restored=True`, and
+  `Success=True`.
+- Startup animation uses exact setter `0F/18`, arguments `0001` for off and
+  `0000` for on.
+- Function-key primary uses exact setter `02/06`, arguments `0000` for
+  Function Keys and `0001` for Multimedia Keys. PID `02E0` uses
+  `0100`/`0101`; copying that encoding to PID `02C6` would be incorrect.
+- Gaming mode uses exact setter `00/08`, arguments `01000000` for on and
+  `00000000` for off.
+- Bounded production validations restored startup enabled, Function Keys
+  primary, and Gaming mode disabled. A final read-only production probe
+  returned all three restored values with `Success=True`.
+
+Lighting capture follow-up:
+
+- Exact logo writes use selector `00`: Static emitted `03/02 000400` followed
+  by `03/00 000401`; off changed the latter to `000400`; Breathing used
+  `03/02 000402`.
+- This differs from the PID `02E0` selector `01` assumption. Logo support
+  remains unadmitted because there is no independent exact-device getter.
+- Quick-effect transitions among Spectrum, Static, Starlight, Ripple, Tidal,
+  Wave, and Wheel produced only generic Chroma traffic and no reliably
+  effect-discriminating payload. They remain captured, not admitted.
+- The final visible keyboard quick effect was restored to Static. Keyboard
+  brightness was restored to its saved off value.
+
+Final user-visible state before quiet HID validation:
+
+- Battery optimizer enabled at 80 percent; temporary full charge disabled.
+- AC Performance Balanced; fans Automatic.
+- CPU Voltage Optimizer enabled at its pre-existing `-1.000` value.
+- Keyboard brightness off; keyboard quick effect Static (green); logo Static.
+- Startup animation enabled; Function Keys primary; Gaming mode disabled.
+- Synapse was then closed intentionally to isolate direct HID validation and
+  remains closed at this checkpoint.
+
+Latest verification after the battery, fan-range, and behavior checkpoints:
 
 - full Release build: 0 warnings and 0 errors;
-- full solution tests: 3,168 passed;
-- Windows PowerShell 5.1 capture toolkit: all tests passed;
-- documentation site: 11 HTML pages validated.
+- service tests: 682 passed;
+- tray tests: 612 passed;
+- protocol tests: 1,038 passed;
+- capture tests: 223 passed;
+- Windows PowerShell 5.1 capture-evidence, comparison, and device-coverage
+  regression suites: all passed;
+- exact production read-only probe: battery 80/on, temporary full charge off,
+  Balanced/Automatic, fan RPM 2100/2100, brightness raw 0, startup enabled,
+  Function Keys primary, Gaming mode off, Driver device mode, MCU `1.9.0.0`,
+  adapter `FullPower280W`, and `Success=True`.
 
 Update this section after every evidence, implementation, or documentation
 checkpoint.
