@@ -243,5 +243,38 @@ Verification at the temporary-full-charge checkpoint:
 - full solution tests: 3,165 passed;
 - Windows PowerShell 5.1 capture toolkit: all tests passed.
 
+Performance discovery checkpoint:
+
+- Battery-to-Performance navigation was a negative control: it produced no
+  feature traffic on the captured interface because Synapse had cached the
+  page state.
+- The developer-only discriminator must use
+  `CreateWindowsRz090528PerformanceFanDiscriminatorQuery`; the generic factory
+  targets RZ09-0581 / PID `02E0`.
+- `PerformanceFanDiscriminatorQueryCommand` previously hardcoded the generic
+  device identity in its JSON. It now accepts an internal explicit identity;
+  never accept a result whose embedded device provenance disagrees with the
+  exact factory and CLI target.
+- At AC Balanced + Auto, `0D/82` readback is `01010000` and `01020000`. At AC
+  Silent + Auto, it is `01010500` and `01020500`.
+- Valid host-token Synapse captures decoded paired `0D/02` writes:
+  Silent `01010500`, `01020500`; Balanced restoration `01010000`,
+  `01020000`.
+- Silent capture: 2,810 bytes, SHA-256
+  `C37066107F567ED19E56329EE5A1FA790DE535A218AE12374C3BBECE6B010833`.
+- Balanced restoration capture: 2,810 bytes, SHA-256
+  `00B866C6B426807FBBB7F8FB73B09634AD2F8109850BF6BD951F6F298E894A32`.
+- Both captures ended through bounded timeout with graceful stop. The earlier
+  sandbox-token attempts reported ready but produced no PCAP; their failed
+  state is preserved privately and they are not evidence.
+- Exact production-port validation confirmed
+  `Balanced/Automatic -> Silent/Automatic -> Balanced/Automatic`, and three
+  subsequent production probes reported the restored state.
+- Only AC Balanced, AC Silent, and Automatic fans are admitted at this
+  checkpoint. Performance, Custom, battery presets, fixed/manual/maximum fans,
+  and RPM readback still require exact-device evidence.
+- CPU Voltage Optimizer remained enabled at its pre-existing visible value and
+  was never changed.
+
 Update this section after every evidence, implementation, or documentation
 checkpoint.
