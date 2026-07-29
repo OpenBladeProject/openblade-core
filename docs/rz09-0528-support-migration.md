@@ -278,8 +278,13 @@ From `openblade-captures`, use Windows PowerShell 5.1:
 
 ```powershell
 & "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" `
-  -NoProfile -ExecutionPolicy Bypass -File .\tests\Run-All.ps1
+  -NoProfile -NonInteractive -ExecutionPolicy Bypass `
+  -File .\tests\Run-All.ps1
 ```
+
+Do not omit `-NonInteractive` in automation. The capture-evidence regression
+deliberately tests a missing mandatory validation mode; an interactive host
+prompts instead of throwing and appears to hang.
 
 Before each commit, inspect every touched file for its declared line-ending
 convention and run `git diff --check`.
