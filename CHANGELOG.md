@@ -27,7 +27,12 @@ All notable changes to OpenBlade are documented in this file. The project follow
   only after the service verifies the exact tested firmware tuple, and rejects
   any array whose 85-lamp geometry fingerprint differs from captured evidence.
   Its observation source exposes no priority or mutation operation. The
-  model's M1–M5 shortcut surface is
+  signed release pipeline now builds a sparse external-location MSIX identity
+  for the Session Agent with the `com.microsoft.windows.lighting` extension,
+  embeds the matching certificate-derived identity claim in the executable,
+  and validates the package/descriptor pair before publishing. Unsigned builds
+  omit both the package and executable identity claim. The model's M1–M5
+  shortcut surface is
   also retained as observed-only: editable bindings stay hidden and inactive
   until PID `02C6` input reports are independently captured and admitted.
   Firmware-smoke schema 4 records these observed capabilities separately so an

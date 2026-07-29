@@ -63,8 +63,106 @@ function Assert-ManagedAssemblyIdentity {
     }
 }
 
+function Assert-DynamicLightingIdentityPayload {
+    param([Parameter(Mandatory)][string]$Payload)
+
+    $packagePath = Join-Path $Payload 'OpenBlade.DynamicLighting.msix'
+    $descriptorPath = Join-Path $Payload 'OpenBlade.DynamicLighting.identity.json'
+    $packageExists = Test-Path -LiteralPath $packagePath -PathType Leaf
+    $descriptorExists = Test-Path -LiteralPath $descriptorPath -PathType Leaf
+    if (-not $packageExists -and -not $descriptorExists) {
+        return
+    }
+    if ($packageExists -ne $descriptorExists) {
+        throw 'The Dynamic Lighting identity package and descriptor must either both be present or both be absent.'
+    }
+
+    try {
+        $descriptor = Get-Content -Raw -LiteralPath $descriptorPath |
+            ConvertFrom-Json
+    }
+    catch {
+        throw "The Dynamic Lighting identity descriptor is invalid: $($_.Exception.Message)"
+    }
+    if ($descriptor.schemaVersion -ne 1 -or
+        $descriptor.packageName -ne 'OSSBlade.OpenBlade.DynamicLighting' -or
+        $descriptor.applicationId -ne 'SessionAgent' -or
+        $descriptor.packageFile -ne 'OpenBlade.DynamicLighting.msix' -or
+        $descriptor.externalLocation -ne 'OpenBlade install directory' -or
+        [string]::IsNullOrWhiteSpace([string]$descriptor.publisher)) {
+        throw 'The Dynamic Lighting identity descriptor does not match the reviewed schema.'
+    }
+
+    Add-Type -AssemblyName System.IO.Compression.FileSystem
+    $archive = $null
+    $reader = $null
+    try {
+        $archive = [IO.Compression.ZipFile]::OpenRead($packagePath)
+        $manifestEntry = @($archive.Entries | Where-Object {
+            $_.FullName -eq 'AppxManifest.xml'
+        })
+        if ($manifestEntry.Count -ne 1) {
+            throw 'The Dynamic Lighting identity package must contain exactly one AppxManifest.xml.'
+        }
+        $reader = [IO.StreamReader]::new(
+            $manifestEntry[0].Open(),
+            [Text.Encoding]::UTF8,
+            $true)
+        [xml]$manifest = $reader.ReadToEnd()
+    }
+    catch {
+        throw "The Dynamic Lighting identity package is invalid: $($_.Exception.Message)"
+    }
+    finally {
+        if ($null -ne $reader) {
+            $reader.Dispose()
+        }
+        if ($null -ne $archive) {
+            $archive.Dispose()
+        }
+    }
+
+    $namespaces = [Xml.XmlNamespaceManager]::new($manifest.NameTable)
+    $namespaces.AddNamespace(
+        'f',
+        'http://schemas.microsoft.com/appx/manifest/foundation/windows10')
+    $namespaces.AddNamespace(
+        'uap3',
+        'http://schemas.microsoft.com/appx/manifest/uap/windows10/3')
+    $namespaces.AddNamespace(
+        'uap10',
+        'http://schemas.microsoft.com/appx/manifest/uap/windows10/10')
+    $identity = $manifest.SelectSingleNode(
+        '/f:Package/f:Identity',
+        $namespaces)
+    $application = $manifest.SelectSingleNode(
+        '/f:Package/f:Applications/f:Application',
+        $namespaces)
+    $allowExternal = $manifest.SelectSingleNode(
+        '/f:Package/f:Properties/uap10:AllowExternalContent',
+        $namespaces)
+    $extension = $manifest.SelectSingleNode(
+        '/f:Package/f:Applications/f:Application/f:Extensions/uap3:Extension/uap3:AppExtension',
+        $namespaces)
+    if ($null -eq $identity -or
+        $identity.GetAttribute('Name') -ne [string]$descriptor.packageName -or
+        $identity.GetAttribute('Publisher') -ne [string]$descriptor.publisher -or
+        $null -eq $application -or
+        $application.GetAttribute('Id') -ne [string]$descriptor.applicationId -or
+        $application.GetAttribute('Executable') -ne 'OpenBlade.SessionAgent.exe' -or
+        $null -eq $allowExternal -or
+        $allowExternal.InnerText -ne 'true' -or
+        $null -eq $extension -or
+        $extension.GetAttribute('Name') -ne 'com.microsoft.windows.lighting' -or
+        $extension.GetAttribute('PublicFolder') -ne 'public') {
+        throw 'The Dynamic Lighting identity package manifest differs from its reviewed descriptor.'
+    }
+}
+
 function Assert-ServicePublishPayload {
     param([Parameter(Mandatory)][string]$Payload)
+
+    Assert-DynamicLightingIdentityPayload -Payload $Payload
 
     $requiredSessionAgentFiles = @(
         'OpenBlade.SessionAgent.exe',

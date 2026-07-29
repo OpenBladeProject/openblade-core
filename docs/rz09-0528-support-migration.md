@@ -952,6 +952,56 @@ approved fingerprint, observed connected/enabled state, and independently
 confirmed `IsAvailable=false`. The temporary test source was removed after the
 run; no device identifier or unsanitized output was retained.
 
+### Sparse package identity authoring
+
+The signed release pipeline now creates the current-user identity needed for
+background Dynamic Lighting without replacing the existing executable/WiX
+installation model:
+
+- package identity: `OSSBlade.OpenBlade.DynamicLighting`;
+- application ID: `SessionAgent`;
+- external executable: `OpenBlade.SessionAgent.exe`;
+- runtime/trust: `packagedClassicApp`, `mediumIL`, and the required
+  `runFullTrust` capability;
+- app extension: `com.microsoft.windows.lighting`, with the package-owned
+  `public` folder;
+- external-content declaration:
+  `uap10:AllowExternalContent=true`.
+
+`Publish.ps1` resolves the signing certificate first and uses its exact subject
+for both the sparse-package Publisher and the Session Agent's embedded
+`urn:schemas-microsoft-com:msix.v1` claim. A signed build fails if the
+certificate is missing, expired, lacks a private key or Code Signing EKU, or
+if MakeAppx/SignTool fails. The product's three-part version is converted to a
+four-part MSIX version. Because the executable is intentionally supplied by
+the registered external location rather than stored inside the package,
+MakeAppx pack/unpack uses `/nv`; checked-in tests independently validate every
+identity, extension, external-content, visual-asset, and descriptor field.
+
+The production payload contains either both
+`OpenBlade.DynamicLighting.msix` and
+`OpenBlade.DynamicLighting.identity.json`, or neither. Payload validation
+rejects a partial pair, malformed descriptor, or Publisher/name/application
+mismatch. Unsigned developer builds deliberately contain neither artifact and
+compile the Session Agent without an MSIX identity claim, so they cannot
+silently impersonate the background-lighting package.
+
+The Session Agent project copies its selected manifest source to one effective
+intermediate manifest and force-touches that input before every compile. This
+is intentional: without it, an identity-enabled apphost in the shared `obj`
+tree can survive a later unsigned publish because the older baseline manifest
+does not make the SDK's incremental compiler run. The authoring test publishes
+identity-enabled and then unsigned executables through the same `obj` tree and
+extracts both PE manifests; the second executable must contain no
+`urn:schemas-microsoft-com:msix.v1` element.
+
+Windows PowerShell 5.1 and PowerShell 7 authoring tests both completed a real
+unsigned MakeAppx pack/unpack cycle. A separate temporary publish embedded a
+test Publisher in the Session Agent; `mt.exe` extracted and confirmed the
+expected package name and application ID. No package was signed, registered,
+or installed during these checks. Setup registration, rollback, and uninstall
+integration remain the next boundary.
+
 ## Preserve discovered special keys without borrowing PID 02E0 reports
 
 Synapse exposes the M1–M5 shortcut surface on RZ09-0528, but OpenBlade's
