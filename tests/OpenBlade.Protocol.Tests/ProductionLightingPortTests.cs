@@ -50,14 +50,15 @@ public sealed class ProductionLightingPortTests
     }
 
     [Fact]
-    public void Rz090528Capabilities_AdmitOnlyKeyboardBrightness()
+    public void Rz090528Capabilities_AdmitKeyboardOffBrightnessAndLogo()
     {
         DeviceCapabilities capabilities =
             Rz090528BrightnessLightingPort.CreateCapabilities();
 
         Assert.True(capabilities.SupportsKeyboardBrightness);
-        Assert.Empty(capabilities.LightingEffects);
-        Assert.Empty(capabilities.LogoLightingModes);
+        Assert.Equal([LightingEffect.Off], capabilities.LightingEffects);
+        Assert.True(capabilities.LogoLightingModes.SetEquals(
+            Enum.GetValues<LogoLightingMode>()));
         Assert.Empty(capabilities.PerformancePresets);
         Assert.Empty(capabilities.FanModes);
         Assert.Empty(capabilities.ChargeLimits);
@@ -88,6 +89,41 @@ public sealed class ProductionLightingPortTests
                 (0x03, 0x83, "010500"),
             ],
             session.Commands.Select(CommandTuple).ToArray());
+    }
+
+    [Fact]
+    public async Task Rz090528LightingOffAndLogo_UseExactSelectorAndReadback()
+    {
+        var session = new LightingSession(initialBrightness: 49);
+        await using var port = new Rz090528BrightnessLightingPort(
+            new ValidationActor(
+                session,
+                new BatteryCommands(),
+                new TemporaryCommands()),
+            TimeSpan.FromSeconds(1));
+
+        await port.SetLightingAsync(
+            LightingSettingsFactory.Off() with
+            {
+                LogoMode = LogoLightingMode.Breathing,
+            },
+            default);
+
+        Assert.Equal(0, session.Brightness);
+        Assert.True(session.LogoEnabled);
+        Assert.Equal(LogoLightingProtocol.BreathingEffect, session.LogoEffect);
+        Assert.Equal(LogoLightingMode.Breathing, await port.ReadLogoStateAsync(default));
+        Assert.Contains(
+            (0x03, 0x02, "000402"),
+            session.Commands.Select(CommandTuple));
+        Assert.Contains(
+            (0x03, 0x00, "000401"),
+            session.Commands.Select(CommandTuple));
+        Assert.All(
+            session.Commands.Where(command =>
+                command.ClassId == 0x03
+                && command.CommandId is 0x80 or 0x82),
+            command => Assert.Equal(0x00, command.Arguments.Span[0]));
     }
 
     [Fact]
@@ -1619,8 +1655,10 @@ public sealed class ProductionLightingPortTests
                         : Brightness],
                 (0x03, 0x03) => SetBrightness(command.Arguments.Span),
                 (0x03, 0x80) =>
-                    [0x01, 0x04, LogoEnabled ? (byte)0x01 : (byte)0x00],
-                (0x03, 0x82) => [0x01, 0x04, LogoEffect],
+                    [command.Arguments.Span[0], 0x04,
+                        LogoEnabled ? (byte)0x01 : (byte)0x00],
+                (0x03, 0x82) =>
+                    [command.Arguments.Span[0], 0x04, LogoEffect],
                 (0x03, 0x00) => SetLogoState(command.Arguments.Span),
                 (0x03, 0x02) => SetLogoEffect(command.Arguments.Span),
                 (0x00, 0x86) => [0x01, 0x00, 0x00],

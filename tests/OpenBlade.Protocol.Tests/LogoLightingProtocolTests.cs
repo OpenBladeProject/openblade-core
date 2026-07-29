@@ -6,6 +6,33 @@ namespace OpenBlade.Protocol.Tests;
 public sealed class LogoLightingProtocolTests
 {
     [Theory]
+    [InlineData("000400", "000400", LogoLightingMode.Off)]
+    [InlineData("000401", "000400", LogoLightingMode.Static)]
+    [InlineData("000401", "000402", LogoLightingMode.Breathing)]
+    public void ExactSelectorZeroDecodesCapturedModes(
+        string stateHex,
+        string effectHex,
+        LogoLightingMode expected)
+    {
+        Assert.Equal("000400", Convert.ToHexString(
+            LogoLightingProtocol.QueryArguments(0x00)));
+        Assert.Equal(
+            effectHex,
+            Convert.ToHexString(
+                LogoLightingProtocol.SetEffectArguments(expected, 0x00)));
+        Assert.Equal(
+            stateHex,
+            Convert.ToHexString(
+                LogoLightingProtocol.SetStateArguments(expected, 0x00)));
+        Assert.True(LogoLightingProtocol.TryDecodeMode(
+            Convert.FromHexString(stateHex),
+            Convert.FromHexString(effectHex),
+            0x00,
+            out LogoLightingMode actual));
+        Assert.Equal(expected, actual);
+    }
+
+    [Theory]
     [InlineData(LogoLightingMode.Static, "010400", "010401")]
     [InlineData(LogoLightingMode.Breathing, "010402", "010401")]
     [InlineData(LogoLightingMode.Off, "010400", "010400")]

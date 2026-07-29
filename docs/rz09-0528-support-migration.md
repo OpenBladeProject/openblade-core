@@ -34,7 +34,7 @@ model-independent operating-system APIs.
 | Exact host and HID identity | Admitted | Model, BIOS, PID, usage `0001:0002`, and 91-byte feature reports |
 | Keyboard-brightness query | Admitted | `03/83`, arguments `010500` |
 | Keyboard-brightness setter | Admitted | `03/03`, arguments `0105xx` |
-| Lighting effects and logo | Captured, not admitted | Logo selector `00` setters captured; quick-effect captures were not discriminating; no independent getter |
+| Lighting effects and logo | Partially admitted | Keyboard Off and logo Off/Static/Breathing admitted with selector `00`; animated keyboard effects remain non-discriminating |
 | Performance and fans | Partially admitted | AC Balanced, Silent, Performance, Automatic/fixed/maximum/manual-curve fans, exact 2000-5000 RPM range, and fan RPM; other power sources pending |
 | Battery charge limit | Admitted | Query, 50/55/60/65/70/75/80-percent setters, protection off, readback, and restoration |
 | Temporary full charge | Admitted | Query, enable, cancel, readback, and restoration |
@@ -193,8 +193,8 @@ Work through read/query-backed controls before one-shot setters.
    admitted on AC; manual curve is host-rendered through the validated fixed
    target primitive and fresh temperature telemetry
 4. Keyboard lighting effects, matrix geometry, cadence, effect getter, and
-   logo modes — setter captures exist, but no independently discriminating
-   getter exists
+   logo modes — logo modes and keyboard Off admitted; animated keyboard effects
+   and matrix geometry remain pending
 5. Function-key primary mode, Gaming mode, startup animation, and device mode —
    first three setters admitted; device mode remains query-only
 6. Special-key report mapping and default-action preservation
@@ -283,6 +283,8 @@ convention and run `git diff --check`.
   battery-limit/protection-off matrix and production admission
 - `openblade-core` `233ae9a`: exact startup, function-primary, and Gaming-mode
   setter admission with bounded one-shot validation
+- `openblade-captures` `f4e333c`: exact selector-`00` logo queries,
+  discriminating readback, bounded round trip, and restoration evidence
 
 Verification at the battery checkpoint:
 
@@ -499,7 +501,11 @@ Lighting capture follow-up:
   by `03/00 000401`; off changed the latter to `000400`; Breathing used
   `03/02 000402`.
 - This differs from the PID `02E0` selector `01` assumption. Logo support
-  remains unadmitted because there is no independent exact-device getter.
+  queries use `03/80 000400` and `03/82 000400`.
+- The exact production path completed
+  `Static -> Breathing -> Off -> Static`, independently read each state, and
+  confirmed final restoration. Keyboard Off and logo Off/Static/Breathing are
+  production-admitted; no animated keyboard effect is implied.
 - Quick-effect transitions among Spectrum, Static, Starlight, Ripple, Tidal,
   Wave, and Wheel produced only generic Chroma traffic and no reliably
   effect-discriminating payload. They remain captured, not admitted.
@@ -521,14 +527,16 @@ Latest verification after the battery, fan-range, and behavior checkpoints:
 - full Release build: 0 warnings and 0 errors;
 - service tests: 682 passed;
 - tray tests: 612 passed;
-- protocol tests: 1,038 passed;
+- protocol tests: 1,042 passed;
 - capture tests: 223 passed;
 - Windows PowerShell 5.1 capture-evidence, comparison, and device-coverage
   regression suites: all passed;
+- full solution tests: 3,174 passed;
 - exact production read-only probe: battery 80/on, temporary full charge off,
-  Balanced/Automatic, fan RPM 2100/2100, brightness raw 0, startup enabled,
+  Balanced/Automatic, fan RPM 2300/2200, brightness raw 0, startup enabled,
   Function Keys primary, Gaming mode off, Driver device mode, MCU `1.9.0.0`,
-  adapter `FullPower280W`, and `Success=True`.
+  adapter `FullPower280W`, logo Static, four fan modes, keyboard Off plus three
+  logo modes, and `Success=True`.
 
 Update this section after every evidence, implementation, or documentation
 checkpoint.

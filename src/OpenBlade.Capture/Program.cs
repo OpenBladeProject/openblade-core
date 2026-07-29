@@ -260,6 +260,146 @@ if (args.Length == 1 && args[0].Equals(
     }
 }
 
+if (args.Length == 2 && args[0].Equals(
+    "probe-rz09-0528-02c6-logo",
+    StringComparison.OrdinalIgnoreCase))
+{
+    const string exactConfirmation = "RZ09-0528:1532:02C6:2.02";
+    if (!args[1].Equals(exactConfirmation, StringComparison.Ordinal))
+    {
+        Console.Error.WriteLine(
+            $"Validation requires: probe-rz09-0528-02c6-logo {exactConfirmation}");
+        return 2;
+    }
+
+    IProductionLightingPortFactory factory =
+        BatteryValidationFactory.CreateWindowsRz090528BrightnessLighting();
+    HidSessionResult<IProductionLightingPort> opened =
+        await factory.OpenAsync(CancellationToken.None);
+    Console.WriteLine("Target=RZ09-0528 1532:02C6 BIOS 2.02");
+    Console.WriteLine($"OpenFailure={opened.Failure?.ToString() ?? "None"}");
+    if (opened.Value is not Rz090528BrightnessLightingPort port)
+    {
+        Console.WriteLine("Success=False");
+        return 2;
+    }
+
+    await using (port)
+    {
+        try
+        {
+            LogoLightingMode mode =
+                await port.ReadLogoCandidateStateAsync(CancellationToken.None);
+            Console.WriteLine($"LogoMode={mode}");
+            Console.WriteLine("Success=True");
+            return 0;
+        }
+        catch (Exception exception)
+        {
+            Console.WriteLine($"QueryFailure={exception.GetType().Name}");
+            Console.WriteLine("Success=False");
+            return 2;
+        }
+    }
+}
+
+if (args.Length == 2 && args[0].Equals(
+    "validate-rz09-0528-02c6-logo",
+    StringComparison.OrdinalIgnoreCase))
+{
+    const string exactConfirmation = "RZ09-0528:1532:02C6:2.02";
+    if (!args[1].Equals(exactConfirmation, StringComparison.Ordinal))
+    {
+        Console.Error.WriteLine(
+            $"Validation requires: validate-rz09-0528-02c6-logo {exactConfirmation}");
+        return 2;
+    }
+
+    IProductionLightingPortFactory factory =
+        BatteryValidationFactory.CreateWindowsRz090528BrightnessLighting();
+    HidSessionResult<IProductionLightingPort> opened =
+        await factory.OpenAsync(CancellationToken.None);
+    Console.WriteLine("Target=RZ09-0528 1532:02C6 BIOS 2.02");
+    Console.WriteLine($"OpenFailure={opened.Failure?.ToString() ?? "None"}");
+    if (opened.Value is not Rz090528BrightnessLightingPort port)
+    {
+        Console.WriteLine("Success=False");
+        return 2;
+    }
+
+    await using (port)
+    {
+        LogoLightingMode baseline =
+            await port.ReadLogoCandidateStateAsync(CancellationToken.None);
+        Console.WriteLine($"Baseline={baseline}");
+        if (baseline != LogoLightingMode.Static)
+        {
+            Console.WriteLine("Refused=Baseline must be Static");
+            Console.WriteLine("Success=False");
+            return 2;
+        }
+
+        LogoLightingMode? breathing = null;
+        LogoLightingMode? off = null;
+        LogoLightingMode? restored = null;
+        Exception? primaryFailure = null;
+        Exception? restorationFailure = null;
+        try
+        {
+            await port.SetLightingAsync(
+                LightingSettingsFactory.Off() with
+                {
+                    LogoMode = LogoLightingMode.Breathing,
+                },
+                CancellationToken.None);
+            breathing = await port.ReadLogoStateAsync(CancellationToken.None);
+            await port.SetLightingAsync(
+                LightingSettingsFactory.Off() with
+                {
+                    LogoMode = LogoLightingMode.Off,
+                },
+                CancellationToken.None);
+            off = await port.ReadLogoStateAsync(CancellationToken.None);
+        }
+        catch (Exception exception)
+        {
+            primaryFailure = exception;
+        }
+        finally
+        {
+            try
+            {
+                await port.SetLightingAsync(
+                    LightingSettingsFactory.Off() with
+                    {
+                        LogoMode = LogoLightingMode.Static,
+                    },
+                    CancellationToken.None);
+                restored = await port.ReadLogoStateAsync(CancellationToken.None);
+            }
+            catch (Exception exception)
+            {
+                restorationFailure = exception;
+            }
+        }
+
+        bool success = primaryFailure is null
+            && restorationFailure is null
+            && breathing == LogoLightingMode.Breathing
+            && off == LogoLightingMode.Off
+            && restored == LogoLightingMode.Static;
+        Console.WriteLine($"BreathingReadback={breathing?.ToString() ?? "Unavailable"}");
+        Console.WriteLine($"OffReadback={off?.ToString() ?? "Unavailable"}");
+        Console.WriteLine($"RestoredReadback={restored?.ToString() ?? "Unavailable"}");
+        Console.WriteLine(
+            $"PrimaryFailure={primaryFailure?.GetType().Name ?? "None"}");
+        Console.WriteLine(
+            $"RestorationFailure={restorationFailure?.GetType().Name ?? "None"}");
+        Console.WriteLine($"Success={success}");
+        return success ? 0 : 2;
+    }
+}
+
 if (args.Length == 3 && args[0].Equals(
     "validate-rz09-0528-02c6-one-shot",
     StringComparison.OrdinalIgnoreCase))
@@ -710,12 +850,14 @@ if (args.Length == 1 && args[0].Equals(
     HidSessionResult<IProductionLightingPort> opened =
         await lighting.OpenAsync(CancellationToken.None);
     bool? driverMode = null;
+    LogoLightingMode? logoMode = null;
     if (opened.Value is { } port && opened.Failure is null)
     {
         await using (port)
         {
             _ = await port.ReadStateAsync(CancellationToken.None);
             driverMode = await port.ReadDriverModeAsync(CancellationToken.None);
+            logoMode = await port.ReadLogoStateAsync(CancellationToken.None);
         }
     }
 
@@ -760,6 +902,7 @@ if (args.Length == 1 && args[0].Equals(
         $"FunctionKeyPrimary={functionKeyPrimary?.ToString() ?? "Unavailable"}");
     Console.WriteLine($"GamingMode={gamingMode?.ToString() ?? "Unavailable"}");
     Console.WriteLine($"DriverMode={driverMode?.ToString() ?? "Unavailable"}");
+    Console.WriteLine($"LogoMode={logoMode?.ToString() ?? "Unavailable"}");
     bool success = probe.Classification is
             BatteryValidationProbeClassification.Ready
             or BatteryValidationProbeClassification.ReadyWithAccessFallback
@@ -770,7 +913,12 @@ if (args.Length == 1 && args[0].Equals(
                 PerformancePreset.Performance,
             ])
         && battery.Capabilities.FanModes.SetEquals(
-            [FanMode.Automatic, FanMode.Fixed, FanMode.Maximum])
+            [
+                FanMode.Automatic,
+                FanMode.Fixed,
+                FanMode.ManualCurve,
+                FanMode.Maximum,
+            ])
         && battery.Capabilities.ChargeLimits.SetEquals([50, 55, 60, 65, 70, 75, 80])
         && battery.Capabilities.SupportsBatteryProtectionOff
         && battery.Capabilities.OneShotLaptopControls.SetEquals(
@@ -786,10 +934,12 @@ if (args.Length == 1 && args[0].Equals(
         && functionKeyPrimary is not null
         && gamingMode is not null
         && driverMode is not null
+        && logoMode == LogoLightingMode.Static
         && openedBattery.Failure is null
         && battery.Capabilities.SupportsTemporaryFullCharge
-        && lighting.Capabilities.LightingEffects.Count == 0
-        && lighting.Capabilities.LogoLightingModes.Count == 0
+        && lighting.Capabilities.LightingEffects.SetEquals([LightingEffect.Off])
+        && lighting.Capabilities.LogoLightingModes.SetEquals(
+            Enum.GetValues<LogoLightingMode>())
         && lighting.Capabilities.SupportsKeyboardBrightness
         && opened.Value is not null
         && opened.Failure is null

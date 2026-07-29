@@ -82,6 +82,7 @@ internal sealed class Rz090528BrightnessLightingFactory : IProductionLightingPor
 internal sealed class Rz090528BrightnessLightingPort : IProductionLightingPort
 {
     private const byte StepPercent = 10;
+    private const byte LogoStorageSelector = 0x00;
     private readonly ValidationActor actor;
     private readonly IRazerCommandSession session;
     private readonly TimeSpan exchangeTimeout;
@@ -107,12 +108,14 @@ internal sealed class Rz090528BrightnessLightingPort : IProductionLightingPort
     internal static DeviceCapabilities CreateCapabilities() => new(
         new HashSet<PerformancePreset>(),
         new HashSet<FanMode>(),
-        new HashSet<LightingEffect>(),
+        new HashSet<LightingEffect> { LightingEffect.Off },
         new HashSet<int>(),
         SupportsBatteryProtectionOff: false,
         SupportsTemporaryFullCharge: false)
     {
         SupportsKeyboardBrightness = true,
+        LogoLightingModes = new HashSet<LogoLightingMode>(
+            Enum.GetValues<LogoLightingMode>()),
     };
 
     public async Task<bool?> ReadDriverModeAsync(
@@ -162,21 +165,110 @@ internal sealed class Rz090528BrightnessLightingPort : IProductionLightingPort
         }
     }
 
-    public Task<LogoLightingMode?> ReadLogoStateAsync(
+    public async Task<LogoLightingMode?> ReadLogoStateAsync(
+        CancellationToken cancellationToken) =>
+        await ReadLogoCandidateStateAsync(cancellationToken).ConfigureAwait(false);
+
+    internal async Task<LogoLightingMode> ReadLogoCandidateStateAsync(
         CancellationToken cancellationToken)
     {
-        cancellationToken.ThrowIfCancellationRequested();
-        return Task.FromResult<LogoLightingMode?>(null);
+        await EnterAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            return await QueryLogoCoreAsync(cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            operationGate.Release();
+        }
     }
 
-    public Task SetLightingAsync(
+    internal async Task SetLogoCandidateStateAsync(
+        LogoLightingMode mode,
+        CancellationToken cancellationToken)
+    {
+        if (!Enum.IsDefined(mode))
+        {
+            throw new ArgumentOutOfRangeException(nameof(mode));
+        }
+
+        await EnterAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            await SetLogoCoreAsync(mode, cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            operationGate.Release();
+        }
+    }
+
+    public async Task SetLightingAsync(
         LightingSettings settings,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(settings);
-        cancellationToken.ThrowIfCancellationRequested();
-        return Task.FromException(new CapabilityUnavailableException(
-            "PID 02C6 lighting effects and logo control are not admitted."));
+        settings = LightingSettingsFactory.NormalizeLegacyOff(settings);
+        if (!LightingSettingsValidation.IsWellFormed(settings)
+            || settings.Effect != LightingEffect.Off
+            || settings.LogoMode is { } logoMode
+                && !Capabilities.LogoLightingModes.Contains(logoMode))
+        {
+            throw new CapabilityUnavailableException(
+                "PID 02C6 admits keyboard Off and exact logo modes only.");
+        }
+
+        await EnterAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            byte baselineRaw = await QueryRawCoreAsync(cancellationToken)
+                .ConfigureAwait(false);
+            LogoLightingMode? baselineLogo = settings.LogoMode is null
+                ? null
+                : await QueryLogoCoreAsync(cancellationToken).ConfigureAwait(false);
+            try
+            {
+                if (baselineRaw != 0)
+                {
+                    await SetRawCoreAsync(0, cancellationToken).ConfigureAwait(false);
+                    if (await QueryRawCoreAsync(cancellationToken).ConfigureAwait(false) != 0)
+                    {
+                        throw new BladeWriteException(
+                            WriteSubmissionState.Indeterminate,
+                            "PID 02C6 keyboard Off did not match independent readback.");
+                    }
+                }
+
+                if (settings.LogoMode is { } requestedLogo
+                    && requestedLogo != baselineLogo)
+                {
+                    await SetLogoCoreAsync(requestedLogo, cancellationToken)
+                        .ConfigureAwait(false);
+                }
+            }
+            catch (Exception exception)
+            {
+                bool brightnessRestored = baselineRaw == 0
+                    || await TryRestoreCoreAsync(baselineRaw).ConfigureAwait(false);
+                bool logoRestored = baselineLogo is null
+                    || settings.LogoMode == baselineLogo
+                    || await TryRestoreLogoCoreAsync(baselineLogo.Value)
+                        .ConfigureAwait(false);
+                if (!brightnessRestored || !logoRestored)
+                {
+                    throw new BladeWriteException(
+                        WriteSubmissionState.Indeterminate,
+                        "PID 02C6 lighting update failed and restoration was not confirmed.",
+                        exception);
+                }
+
+                throw;
+            }
+        }
+        finally
+        {
+            operationGate.Release();
+        }
     }
 
     public async Task<byte> StepBrightnessAsync(
@@ -412,6 +504,100 @@ internal sealed class Rz090528BrightnessLightingPort : IProductionLightingPort
             await SetRawCoreAsync(baselineRaw, CancellationToken.None).ConfigureAwait(false);
             return await QueryRawCoreAsync(CancellationToken.None).ConfigureAwait(false)
                 == baselineRaw;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private async Task<LogoLightingMode> QueryLogoCoreAsync(
+        CancellationToken cancellationToken)
+    {
+        ReadOnlyMemory<byte> state = await ExecuteCoreAsync(
+            new RazerCommandSpec(
+                LogoLightingProtocol.CommandClass,
+                LogoLightingProtocol.QueryStateCommandId,
+                LogoLightingProtocol.QueryArguments(LogoStorageSelector),
+                expectedPayloadLength: 3,
+                payload => LogoLightingProtocol.TryDecodeState(
+                    payload.Span,
+                    LogoStorageSelector,
+                    out _)),
+            write: false,
+            cancellationToken).ConfigureAwait(false);
+        ReadOnlyMemory<byte> effect = await ExecuteCoreAsync(
+            new RazerCommandSpec(
+                LogoLightingProtocol.CommandClass,
+                LogoLightingProtocol.QueryEffectCommandId,
+                LogoLightingProtocol.QueryArguments(LogoStorageSelector),
+                expectedPayloadLength: 3,
+                payload => LogoLightingProtocol.TryDecodeEffect(
+                    payload.Span,
+                    LogoStorageSelector,
+                    out _)),
+            write: false,
+            cancellationToken).ConfigureAwait(false);
+        if (!LogoLightingProtocol.TryDecodeMode(
+                state.Span,
+                effect.Span,
+                LogoStorageSelector,
+                out LogoLightingMode mode))
+        {
+            throw new IOException(
+                "PID 02C6 logo response was malformed or unsupported.");
+        }
+
+        return mode;
+    }
+
+    private async Task SetLogoCoreAsync(
+        LogoLightingMode mode,
+        CancellationToken cancellationToken)
+    {
+        if (mode != LogoLightingMode.Off)
+        {
+            byte[] effect = LogoLightingProtocol.SetEffectArguments(
+                mode,
+                LogoStorageSelector);
+            _ = await ExecuteCoreAsync(
+                new RazerCommandSpec(
+                    LogoLightingProtocol.CommandClass,
+                    LogoLightingProtocol.SetEffectCommandId,
+                    effect,
+                    expectedPayloadLength: effect.Length,
+                    payload => payload.Span.SequenceEqual(effect)),
+                write: true,
+                cancellationToken).ConfigureAwait(false);
+        }
+
+        byte[] state = LogoLightingProtocol.SetStateArguments(
+            mode,
+            LogoStorageSelector);
+        _ = await ExecuteCoreAsync(
+            new RazerCommandSpec(
+                LogoLightingProtocol.CommandClass,
+                LogoLightingProtocol.SetStateCommandId,
+                state,
+                expectedPayloadLength: state.Length,
+                payload => payload.Span.SequenceEqual(state)),
+            write: true,
+            cancellationToken).ConfigureAwait(false);
+
+        if (await QueryLogoCoreAsync(cancellationToken).ConfigureAwait(false) != mode)
+        {
+            throw new BladeWriteException(
+                WriteSubmissionState.Indeterminate,
+                "PID 02C6 logo mode did not match independent readback.");
+        }
+    }
+
+    private async Task<bool> TryRestoreLogoCoreAsync(LogoLightingMode mode)
+    {
+        try
+        {
+            await SetLogoCoreAsync(mode, CancellationToken.None).ConfigureAwait(false);
+            return true;
         }
         catch
         {
