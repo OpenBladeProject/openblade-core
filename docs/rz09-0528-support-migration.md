@@ -30,7 +30,8 @@ Keyboard brightness is the only admitted hardware control for this model.
 | Keyboard-brightness setter | Admitted | `03/03`, arguments `0105xx` |
 | Lighting effects and logo | Unavailable | No PID `02C6` production writes |
 | Performance and fans | Unavailable | No PID `02C6` production writes |
-| Battery settings | Unavailable | Read-only factory only |
+| Battery charge limit | Partially admitted | Query plus captured 70-percent setter only |
+| Other battery settings | Unavailable | Other limits, protection-off, and temporary full charge are not admitted |
 | Keyboard behavior and special keys | Unavailable | No PID `02C6` production admission |
 
 The brightness implementation is in
@@ -57,6 +58,39 @@ The admitted facts are:
 
 Do not replace independent firmware readback with visual Synapse confirmation.
 
+## Battery charge-limit evidence chain
+
+Sanitized evidence is stored in:
+
+- `annotations/2026-07-29-rz09-0528-battery-limit-70-admission.json`
+- `decoded/rz09-0528-pid-02c6-bios-2.02-evidence.json`
+- `decoded/rz09-0528-pid-02c6-bios-2.02-device-coverage.json`
+
+The exact-device facts are:
+
+- one 80-to-70 Synapse capture produced `07/12` arguments `C6`;
+- `07/92 00` returned `C6` at 70 percent and `D0` at 80 percent three
+  times each;
+- OpenBlade completed reversible 80-to-70-to-80 and 80-to-75-to-80
+  validations in a quiet-controller window;
+- with Synapse still running but keyboard lighting switched off by operator
+  request, ten queries and two more reversible validations succeeded;
+- the exact production factory opened and returned confirmed 80-percent state
+  three times while exposing only charge limit 70;
+- the final firmware and visible Synapse state was restored to 80 percent, and
+  keyboard lighting was intentionally left off.
+
+Only 70 percent is production-admitted. The 75-percent setter was reversibly
+validated but not independently captured. The other limits, protection-off,
+and temporary-full-charge controls remain unavailable.
+
+Active Synapse Spectrum traffic can overwrite the shared feature response with
+an unrelated `03/0B` reply. This appears as `TransactionMismatch`; never weaken
+transaction or command validation to hide it. The production path must reject
+the unrelated acknowledgement. Do not stop Synapse as routine product
+behavior. An operator-controlled developer validation may close and relaunch
+it only with explicit authorization and must record that fact.
+
 ## Required workflow for every remaining control
 
 1. Record the exact device, firmware, power source, Synapse version, visible
@@ -81,6 +115,11 @@ Do not replace independent firmware readback with visual Synapse confirmation.
 
 Never run USBPcap and an OpenBlade HID query or write against the interface at
 the same time.
+
+Before interpreting a query failure, check whether host-rendered Synapse
+lighting is continuously issuing `03/0B` traffic. Preserve the failure as
+contention evidence. Do not treat a successful quiet-window query as proof that
+concurrent traffic is safe.
 
 ## Remaining full-support matrix
 
@@ -137,6 +176,20 @@ convention and run `git diff --check`.
 - `openblade-captures` `eaf1c41`: PowerShell 5.1 transaction-tool fixes
 - `openblade-captures` `95098b6`: sanitized brightness evidence
 - `openblade-core` `ce2fd41`: exact-device brightness production admission
+- `openblade-core` `ad39ca5`: initial future-agent migration guide
+- `openblade-captures` `56b9881`: sanitized limit-70 evidence and exhaustive
+  device coverage
+- `openblade-core` `34cb0c0`: exact-device battery query, validation tooling,
+  and limit-70 production admission
+
+Verification at the battery checkpoint:
+
+- Windows PowerShell 5.1 capture toolkit: all tests passed;
+- sanitized schema-2 annotation: valid, with private PCAP hash verified;
+- focused RZ09-0528 battery tests: 3 passed;
+- full solution build: 0 warnings and 0 errors;
+- full solution tests: 3,165 passed after removing a temporary diagnostic field
+  that changed record equality; the final rebuild also completed cleanly.
 
 Update this section after every evidence, implementation, or documentation
 checkpoint.
