@@ -2020,7 +2020,7 @@ public sealed class MainViewModelTests
         Assert.Contains("RzAMDOverClock service", viewModel.CpuPowerLimitAccessLabel);
         Assert.Contains("read-only", viewModel.CpuPowerLimitAccessLabel);
         Assert.True(viewModel.IsCpuVoltageOptimizerVisible);
-        Assert.Contains("refresh path can reapply values", viewModel.CpuVoltageOptimizerAccessLabel);
+        Assert.Contains("getter can make active Synapse reapply", viewModel.CpuVoltageOptimizerAccessLabel);
         Assert.True(viewModel.IsGpuOverclockPolicyVisible);
         Assert.Contains("core -1000 to 400 MHz", viewModel.GpuOverclockPolicyLabel);
         Assert.False(viewModel.CanEditGpuClockTuning);

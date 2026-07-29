@@ -622,6 +622,21 @@ Custom performance and model-specific power-control follow-up:
   capture command now checks for `RazerAppEngine` before loading the vendor
   DLL and again immediately before its first getter; if Synapse is active it
   fails before issuing a request. Do not weaken or bypass this interlock.
+- An isolated follow-up shut down only the verified Synapse
+  `RazerAppEngine.exe` family. When its last clients disconnected at
+  `2026-07-29T20:54:56.172Z`, the generic service closed its named-pipe server
+  and terminated the AMD module even though the `RzDLLService` process
+  remained. The exact getter at `20:55:11.588Z` was rejected before a request
+  could be written; no setter was bound or invoked.
+- OpenBlade must not start `RzDLLService`, initialize its privileged tuning
+  driver, or bypass the Synapse-process guard merely to make this probe pass.
+  Those are a separate backend-ownership feature requiring explicit lifecycle
+  design, crash recovery, conflict exclusion, version/hash admission, and
+  save/readback/restore validation.
+- Synapse was relaunched after the isolated failure. At
+  `2026-07-29T20:57:00.239Z`, its visible state was reconfirmed as Plugged In,
+  Balanced, Automatic fans, and CPU Voltage Optimizer On at `-1.000`, then the
+  app was returned to the tray.
 - GPU Overclock was toggled only long enough to inventory the exact-model
   policy ranges; both offsets remained zero and the toggle was restored Off.
 - Future agents must add newly discovered model features to the capability
