@@ -114,6 +114,16 @@ internal sealed class Rz090528BrightnessLightingPort : IProductionLightingPort
         SupportsTemporaryFullCharge: false)
     {
         SupportsKeyboardBrightness = true,
+        ObservedLightingEffects = new HashSet<LightingEffect>
+        {
+            LightingEffect.Spectrum,
+            LightingEffect.Static,
+            LightingEffect.Starlight,
+            LightingEffect.Ripple,
+            LightingEffect.Tidal,
+            LightingEffect.Wave,
+            LightingEffect.Wheel,
+        },
         LogoLightingModes = new HashSet<LogoLightingMode>(
             Enum.GetValues<LogoLightingMode>()),
     };

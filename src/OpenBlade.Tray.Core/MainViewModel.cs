@@ -1418,6 +1418,26 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             Capabilities.GpuOverclock?.Access,
             "Ranges are documented, but writes remain disabled until exact-device setter validation.");
 
+    public bool IsObservedLightingEffectsVisible =>
+        Capabilities.ObservedLightingEffects.Any(Enum.IsDefined);
+
+    public string ObservedLightingEffectsSummary
+    {
+        get
+        {
+            string[] labels = Capabilities.ObservedLightingEffects
+                .Where(Enum.IsDefined)
+                .Select(effect => CreateLightingEffectOption(effect).Label)
+                .Order(StringComparer.CurrentCultureIgnoreCase)
+                .ToArray();
+            return labels.Length == 0
+                ? UnavailableLabel
+                : $"Synapse exposes {string.Join(", ", labels)} on this exact model. "
+                    + "Their captures did not reveal an effect-specific PID 02C6 payload, "
+                    + "so OpenBlade keeps them separate from the writable effect picker.";
+        }
+    }
+
     public bool IsObservedPowerSourceBehaviorVisible =>
         ActiveObservedPowerSourceBehavior is { IsWellFormed: true };
 
@@ -1900,6 +1920,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             Notify(nameof(IsGpuOverclockPolicyVisible));
             Notify(nameof(GpuOverclockPolicyLabel));
             Notify(nameof(GpuClockTuningAccessLabel));
+            Notify(nameof(IsObservedLightingEffectsVisible));
+            Notify(nameof(ObservedLightingEffectsSummary));
             NotifyObservedPowerSourceBehavior();
             NotifyGamingModeKeyPolicy();
             NotifyFirmwareFieldLoadingState();

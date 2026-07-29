@@ -7,7 +7,7 @@ namespace OpenBlade.Contracts;
 
 public static class OpenBladeIpc
 {
-    public const int ProtocolVersion = 26;
+    public const int ProtocolVersion = 27;
     public const int MaximumMessageBytes = 64 * 1024;
     public const int MaximumDiagnosticArchiveBytes = 32 * 1024;
     public const string PipeName = "OpenBlade.Service.v2";
@@ -397,9 +397,11 @@ public static class IpcMessageCodec
             && (capabilities.PerformancePresets is null
                 || capabilities.FanModes is null
                 || capabilities.LightingEffects is null
+                || capabilities.ObservedLightingEffects is null
                 || capabilities.ChargeLimits is null
                 || capabilities.OneShotLaptopControls is null
                 || capabilities.ObservedPowerSourceBehaviors is null
+                || capabilities.ObservedLightingEffects.Any(value => !Enum.IsDefined(value))
                 || capabilities.OneShotLaptopControls.Any(value => !Enum.IsDefined(value))
                 || capabilities.OneShotLaptopControls.Distinct().Count()
                     != capabilities.OneShotLaptopControls.Count

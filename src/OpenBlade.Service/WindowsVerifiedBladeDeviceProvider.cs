@@ -305,6 +305,8 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
                     : batteryCapabilities with
                     {
                         LightingEffects = lighting.Capabilities.LightingEffects,
+                        ObservedLightingEffects =
+                            lighting.Capabilities.ObservedLightingEffects,
                         LogoLightingModes = lighting.Capabilities.LogoLightingModes,
                         SupportsKeyboardBrightness =
                             lighting.Capabilities.SupportsKeyboardBrightness,

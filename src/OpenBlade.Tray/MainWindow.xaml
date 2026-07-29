@@ -1114,6 +1114,14 @@
                         <TextBlock Text="Keyboard"
                                    Style="{StaticResource SectionHeaderStyle}"
                                    Margin="0,0,0,10" />
+                        <InfoBar x:Name="ObservedLightingEffectsInfoBar"
+                                 Margin="0,0,0,10"
+                                 IsOpen="{x:Bind IsObservedLightingEffectsVisible, Mode=OneWay}"
+                                 Visibility="{x:Bind IsObservedLightingEffectsVisible, Mode=OneWay}"
+                                 IsClosable="False"
+                                 Severity="Informational"
+                                 Title="Quick effects observed in Synapse"
+                                 Message="{x:Bind ObservedLightingEffectsSummary, Mode=OneWay}" />
                         <Border Style="{StaticResource SettingsGroupStyle}">
                             <StackPanel>
                                 <Border Style="{StaticResource SettingsLastRowStyle}">

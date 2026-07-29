@@ -317,6 +317,12 @@ public sealed class IpcMessageCodecTests
             SupportsBatteryProtectionOff: true,
             SupportsTemporaryFullCharge: false)
         {
+            ObservedLightingEffects = new HashSet<LightingEffect>
+            {
+                LightingEffect.Spectrum,
+                LightingEffect.Static,
+                LightingEffect.Wheel,
+            },
             ObservedPowerSourceBehaviors =
             [
                 new PowerSourceBehaviorObservation(
@@ -345,10 +351,12 @@ public sealed class IpcMessageCodecTests
             DesiredState = CreateStatus().DesiredState with { Battery = desired },
         };
 
-        Assert.Equal(26, OpenBladeIpc.ProtocolVersion);
+        Assert.Equal(27, OpenBladeIpc.ProtocolVersion);
         Assert.Equal(request, await RoundTripRequestAsync(request));
         ServiceStatusSnapshot roundTrip = await RoundTripStatusAsync(status);
         Assert.Equal([80], roundTrip.Capabilities!.ChargeLimits);
+        Assert.True(capabilities.ObservedLightingEffects.SetEquals(
+            roundTrip.Capabilities.ObservedLightingEffects));
         Assert.Equal(
             capabilities.ObservedPowerSourceBehaviors,
             roundTrip.Capabilities.ObservedPowerSourceBehaviors);
@@ -419,6 +427,7 @@ public sealed class IpcMessageCodecTests
     [InlineData("PerformancePresets")]
     [InlineData("FanModes")]
     [InlineData("LightingEffects")]
+    [InlineData("ObservedLightingEffects")]
     [InlineData("OneShotLaptopControls")]
     [InlineData("ObservedPowerSourceBehaviors")]
     public async Task ReadServerFrameAsync_RejectsNullNestedCapabilityCollection(
@@ -440,6 +449,27 @@ public sealed class IpcMessageCodecTests
 
         await Assert.ThrowsAsync<InvalidDataException>(() =>
             IpcMessageCodec.ReadServerFrameAsync(stream, CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task WriteServerFrameAsync_RejectsUnknownObservedLightingEffect()
+    {
+        ServiceServerFrame frame = new ServiceStatusEvent(
+            OpenBladeIpc.ProtocolVersion,
+            CreateStatus() with
+            {
+                Capabilities = DeviceCapabilities.Unavailable() with
+                {
+                    ObservedLightingEffects =
+                        new HashSet<LightingEffect> { (LightingEffect)999 },
+                },
+            });
+
+        await Assert.ThrowsAsync<InvalidDataException>(() =>
+            IpcMessageCodec.WriteServerFrameAsync(
+                new MemoryStream(),
+                frame,
+                CancellationToken.None));
     }
 
     [Fact]
@@ -479,7 +509,7 @@ public sealed class IpcMessageCodecTests
 
         ServiceStatusSnapshot actual = await RoundTripStatusAsync(expected);
 
-        Assert.Equal(26, OpenBladeIpc.ProtocolVersion);
+        Assert.Equal(27, OpenBladeIpc.ProtocolVersion);
         AssertStatusEqual(expected, actual);
     }
 
@@ -1226,6 +1256,8 @@ public sealed class IpcMessageCodecTests
         Assert.True(expected.Capabilities.PerformancePresets.SetEquals(actual.Capabilities.PerformancePresets));
         Assert.True(expected.Capabilities.FanModes.SetEquals(actual.Capabilities.FanModes));
         Assert.True(expected.Capabilities.LightingEffects.SetEquals(actual.Capabilities.LightingEffects));
+        Assert.True(expected.Capabilities.ObservedLightingEffects.SetEquals(
+            actual.Capabilities.ObservedLightingEffects));
         Assert.True(expected.Capabilities.ChargeLimits.SetEquals(actual.Capabilities.ChargeLimits));
         Assert.Equal(expected.Capabilities.SupportsBatteryProtectionOff, actual.Capabilities.SupportsBatteryProtectionOff);
         Assert.Equal(expected.Capabilities.SupportsTemporaryFullCharge, actual.Capabilities.SupportsTemporaryFullCharge);

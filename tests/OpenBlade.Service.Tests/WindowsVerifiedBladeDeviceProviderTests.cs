@@ -282,6 +282,8 @@ public sealed class WindowsVerifiedBladeDeviceProviderTests
         Assert.Equal(
             Enum.GetValues<LightingEffect>().Order(),
             capabilities.LightingEffects.Order());
+        Assert.True(capabilities.ObservedLightingEffects.SetEquals(
+            [LightingEffect.Ripple, LightingEffect.Wheel]));
         Assert.Empty(capabilities.PerformancePresets);
         Assert.Empty(capabilities.FanModes);
         Assert.Empty(capabilities.ChargeLimits);
@@ -1338,7 +1340,11 @@ public sealed class WindowsVerifiedBladeDeviceProviderTests
             new HashSet<LightingEffect>(Enum.GetValues<LightingEffect>()),
             new HashSet<int>(),
             false,
-            false);
+            false)
+        {
+            ObservedLightingEffects =
+                new HashSet<LightingEffect> { LightingEffect.Ripple, LightingEffect.Wheel },
+        };
 
         public int OpenCount { get; private set; }
 
@@ -1361,7 +1367,11 @@ public sealed class WindowsVerifiedBladeDeviceProviderTests
             new HashSet<LightingEffect>(Enum.GetValues<LightingEffect>()),
             new HashSet<int>(),
             false,
-            false);
+            false)
+        {
+            ObservedLightingEffects =
+                new HashSet<LightingEffect> { LightingEffect.Ripple, LightingEffect.Wheel },
+        };
 
         public LightingRendererOwnershipState OwnershipState { get; set; }
 

@@ -15,6 +15,15 @@ public sealed class DiagnosticArchiveProviderTests
         {
             ControllerDetectionWarning = $"Enumeration warning: {secret}",
             AlwaysOverrideExternalLightingChanges = true,
+            Capabilities = DeviceCapabilities.Unavailable() with
+            {
+                ObservedLightingEffects =
+                    new HashSet<LightingEffect>
+                    {
+                        LightingEffect.Spectrum,
+                        LightingEffect.Static,
+                    },
+            },
         });
         var history = new DiagnosticHistory();
         history.RecordSummary(ControlOperationStatus.Blocked, $"Blocked for {secret}");
@@ -88,6 +97,15 @@ public sealed class DiagnosticArchiveProviderTests
         Assert.Equal(
             bool.TrueString,
             configuration.RootElement.GetProperty("lighting.alwaysOverrideExternalChanges").GetString());
+        Assert.Equal(
+            "Static, Spectrum",
+            configuration.RootElement.GetProperty("capability.observedLightingEffects").GetString());
+        using JsonDocument capabilities = JsonDocument.Parse(
+            await ReadEntryAsync(archive, "capabilities.json"));
+        Assert.True(
+            capabilities.RootElement.GetProperty("lighting.observed.Spectrum").GetBoolean());
+        Assert.False(
+            capabilities.RootElement.GetProperty("lighting.Spectrum").GetBoolean());
         Assert.DoesNotContain(
             configuration.RootElement.EnumerateObject(),
             property => property.Name.StartsWith("telemetry.", StringComparison.Ordinal));

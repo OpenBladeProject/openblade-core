@@ -316,6 +316,8 @@ public sealed class DiagnosticArchiveProvider : IDiagnosticArchiveProvider
         foreach (LightingEffect value in Enum.GetValues<LightingEffect>())
         {
             result[$"lighting.{value}"] = capabilities.LightingEffects.Contains(value);
+            result[$"lighting.observed.{value}"] =
+                capabilities.ObservedLightingEffects.Contains(value);
         }
 
         result["battery.chargeLimit"] = capabilities.ChargeLimits.Count > 0;
@@ -412,6 +414,11 @@ public sealed class DiagnosticArchiveProvider : IDiagnosticArchiveProvider
                 capabilities.SupportsBatteryProtectionOff.ToString(),
             ["capability.supportsTemporaryFullCharge"] =
                 capabilities.SupportsTemporaryFullCharge.ToString(),
+            ["capability.observedLightingEffects"] = string.Join(
+                ", ",
+                capabilities.ObservedLightingEffects
+                    .Where(Enum.IsDefined)
+                    .Order()),
             ["capability.fanSpeedMinimumRpm"] = NumberOrUnavailable(
                 capabilities.FanSpeedRange?.MinimumRpm),
             ["capability.fanSpeedMaximumRpm"] = NumberOrUnavailable(

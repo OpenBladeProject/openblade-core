@@ -1803,6 +1803,10 @@ public sealed class CapabilityPresentationTests
         XElement effectPicker = NamedElement(document, "ComboBox", "LightingEffectPicker");
         XElement controls = NamedElement(document, "ContentControl", "LightingControls");
         XElement infoBar = NamedElement(document, "InfoBar", "LightingUnavailableInfoBar");
+        XElement observedInfoBar = NamedElement(
+            document,
+            "InfoBar",
+            "ObservedLightingEffectsInfoBar");
         XElement displayOffToggle = NamedElement(
             document,
             "ToggleSwitch",
@@ -1828,6 +1832,12 @@ public sealed class CapabilityPresentationTests
         Assert.Equal(
             "{x:Bind LightingControlUnavailableMessage, Mode=OneWay}",
             Attribute(infoBar, "Message"));
+        Assert.Equal(
+            "{x:Bind IsObservedLightingEffectsVisible, Mode=OneWay}",
+            Attribute(observedInfoBar, "IsOpen"));
+        Assert.Equal(
+            "{x:Bind ObservedLightingEffectsSummary, Mode=OneWay}",
+            Attribute(observedInfoBar, "Message"));
         Assert.Equal(
             "{x:Bind AvailableLightingEffectOptions, Mode=OneWay}",
             Attribute(effectPicker, "ItemsSource"));

@@ -50,13 +50,23 @@ public sealed class ProductionLightingPortTests
     }
 
     [Fact]
-    public void Rz090528Capabilities_AdmitKeyboardOffBrightnessAndLogo()
+    public void Rz090528Capabilities_AdmitKeyboardOffBrightnessAndLogoAndExposeObservedQuickEffects()
     {
         DeviceCapabilities capabilities =
             Rz090528BrightnessLightingPort.CreateCapabilities();
 
         Assert.True(capabilities.SupportsKeyboardBrightness);
         Assert.Equal([LightingEffect.Off], capabilities.LightingEffects);
+        Assert.True(capabilities.ObservedLightingEffects.SetEquals(
+        [
+            LightingEffect.Spectrum,
+            LightingEffect.Static,
+            LightingEffect.Starlight,
+            LightingEffect.Ripple,
+            LightingEffect.Tidal,
+            LightingEffect.Wave,
+            LightingEffect.Wheel,
+        ]));
         Assert.True(capabilities.LogoLightingModes.SetEquals(
             Enum.GetValues<LogoLightingMode>()));
         Assert.Empty(capabilities.PerformancePresets);

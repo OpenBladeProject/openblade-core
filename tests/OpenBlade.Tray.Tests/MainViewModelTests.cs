@@ -1975,6 +1975,16 @@ public sealed class MainViewModelTests
                     new DeviceNumericRange(-30, -1, 1),
                     DeviceFeatureAccess.ObservedOnly),
                 GpuOverclock = observedGpuPolicy,
+                ObservedLightingEffects = new HashSet<LightingEffect>
+                {
+                    LightingEffect.Spectrum,
+                    LightingEffect.Static,
+                    LightingEffect.Starlight,
+                    LightingEffect.Ripple,
+                    LightingEffect.Tidal,
+                    LightingEffect.Wave,
+                    LightingEffect.Wheel,
+                },
                 ObservedPowerSourceBehaviors =
                 [
                     new PowerSourceBehaviorObservation(
@@ -2024,6 +2034,12 @@ public sealed class MainViewModelTests
         Assert.True(viewModel.IsGpuOverclockPolicyVisible);
         Assert.Contains("core -1000 to 400 MHz", viewModel.GpuOverclockPolicyLabel);
         Assert.False(viewModel.CanEditGpuClockTuning);
+        Assert.True(viewModel.IsObservedLightingEffectsVisible);
+        Assert.Contains("Spectrum Cycling", viewModel.ObservedLightingEffectsSummary);
+        Assert.Contains("Wheel", viewModel.ObservedLightingEffectsSummary);
+        Assert.Contains(
+            "separate from the writable effect picker",
+            viewModel.ObservedLightingEffectsSummary);
         Assert.False(viewModel.IsObservedPowerSourceBehaviorVisible);
 
         client.Publish(baseline with

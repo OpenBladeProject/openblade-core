@@ -153,6 +153,9 @@ public sealed record DeviceCapabilities(
 
     public GpuOverclockCapabilities? GpuOverclock { get; init; }
 
+    public IReadOnlySet<LightingEffect> ObservedLightingEffects { get; init; } =
+        new HashSet<LightingEffect>();
+
     public IReadOnlyList<PowerSourceBehaviorObservation> ObservedPowerSourceBehaviors
     {
         get;
