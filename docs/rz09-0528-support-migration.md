@@ -22,8 +22,9 @@ or device-instance identifiers.
 ## Current production status
 
 Keyboard brightness, the 50-to-80-percent battery-limit ladder, battery
-protection off, temporary full charge, the three AC performance presets,
-Automatic/fixed/maximum fan control, startup animation, function-key primary
+protection off, temporary full charge, all four AC performance presets
+including exact-model Custom CPU/GPU combinations, Automatic/fixed/maximum
+fan control, startup animation, function-key primary
 mode, and Gaming mode are admitted hardware controls for this model. Exact
 read-only support also covers fan RPM, device mode, MCU version, and the
 current adapter-power class. Windows display controls are admitted through
@@ -35,12 +36,14 @@ model-independent operating-system APIs.
 | Keyboard-brightness query | Admitted | `03/83`, arguments `010500` |
 | Keyboard-brightness setter | Admitted | `03/03`, arguments `0105xx` |
 | Lighting effects and logo | Partially admitted | Keyboard Off and logo Off/Static/Breathing admitted with selector `00`; animated keyboard effects remain non-discriminating |
-| Performance and fans | Partially admitted | AC Balanced, Silent, Performance, Automatic/fixed/maximum/manual-curve fans, exact 2000-5000 RPM range, and fan RPM; other power sources pending |
+| Performance and fans | Partially admitted | AC Balanced, Silent, Performance, Custom, exact CPU/GPU combinations, Automatic/fixed/maximum/manual-curve fans, exact 2000-5000 RPM range, and fan RPM; other power-source setters remain unadmitted |
+| Model-specific tuning UI | Observed-only | CPU Power Limit 45-95 W in 1 W steps, CPU Voltage Optimizer -30..-1, and Synapse GPU policy ranges are first-class capabilities; no safe backend/readback, so OpenBlade shows them without editable controls |
+| Power-source matrix | Captured, not admitted | Nine exact-device sessions cover barrel AC, USB-C-only, battery, both quiet baselines, and all directed transitions; exact PID 02C6 USB-C reply and independent thermal readback remain missing |
 | Battery charge limit | Admitted | Query, 50/55/60/65/70/75/80-percent setters, protection off, readback, and restoration |
 | Temporary full charge | Admitted | Query, enable, cancel, readback, and restoration |
 | Keyboard behavior and special keys | Partially admitted | Function-key primary, Gaming mode, and startup-animation setters; device mode read-only; special keys pending |
 | Display controls | Admitted | Refresh, DRR, HDR state, and SDR color profiles through Windows APIs |
-| NVIDIA GPU clock offsets | Validated, gated | Driver query succeeded; not exposed until exact Custom mode is admitted |
+| NVIDIA GPU clock offsets | Query validated, writes gated | Driver query succeeded; exact-model Synapse policy is visible in the UI, but writes remain disabled |
 
 The brightness implementation is in
 `src/OpenBlade.Protocol/Rz090528BrightnessLightingFactory.cs`. Service
@@ -183,12 +186,54 @@ lighting is continuously issuing `03/0B` traffic. Preserve the failure as
 contention evidence. Do not treat a successful quiet-window query as proof that
 concurrent traffic is safe.
 
+### Power-source matrix checkpoint
+
+The sanitized matrix is:
+
+- `annotations/2026-07-29-rz09-0528-power-source-matrix.json`
+- `decoded/rz09-0528-pid-02c6-bios-2.02-power-source-matrix.json`
+
+Nine successful sessions targeted only the visually reverified
+`\\.\USBPcap2` device address 3 and ended through the sentinel-driven graceful
+stop path. Two earlier sessions failed before capture readiness because a
+USBPcap listing process was active; they remain preserved privately as failures.
+
+The observed source-specific behavior is:
+
+- battery: `On Battery`, Battery Saver, Auto fan, fixed fan unavailable;
+- USB-C-only: `Plugged In`, Balanced, Auto fan, Performance and Custom
+  unavailable, with the inadequate-power warning visible;
+- barrel AC: `Plugged In`, Balanced, Auto fan, Performance and Custom
+  available, with no inadequate-power warning.
+
+The outgoing exact-device command correlation is:
+
+- adapter-power query form: `07/8C 0000`;
+- Battery Saver/Automatic: `0D/02 01010300` and `01020300`;
+- Balanced/Automatic: `0D/02 01010000` and `01020000`.
+
+The first successful AC-to-USB-C session physically passed through a cable-free
+battery interval. Its `On Battery` UI was not delayed USB-C recognition. The
+session originally labeled as a USB-C-to-AC restoration was a no-action stable
+USB-C baseline; retain that correction in every downstream interpretation.
+
+USBPcap decoded outgoing feature reports only. It did not capture an exact PID
+`02C6` USB-C `07/8C` reply or an independent `0D/82` destination-state
+readback. Therefore the matrix advances those coverage leaves to `Captured`,
+not `QueryValidated`, `SetterValidated`, or `ProductionAdmitted`. Do not copy
+the generic PID `02E0` `0711` USB-C mapping into this device. The next agent
+must obtain direct exact-device readback while physically on USB-C and battery
+before admitting source-specific setters.
+
 ## Remaining full-support matrix
 
 Work through read/query-backed controls before one-shot setters.
 
 1. Battery charge limit and temporary full charge — admitted
-2. Performance presets for AC, USB-C, and battery power
+2. Performance presets for AC, USB-C, and battery power — all AC modes are
+   admitted; USB-C-only Balanced and battery Battery Saver availability plus
+   outgoing setter pairs are captured, but exact independent readback is still
+   required before those setters can be admitted
 3. Automatic, fixed, maximum, and manual-curve fan control plus RPM readback —
    admitted on AC; manual curve is host-rendered through the validated fixed
    target primitive and fresh temperature telemetry
@@ -201,7 +246,9 @@ Work through read/query-backed controls before one-shot setters.
 7. Windows display modes, DRR, HDR, and color profiles
 8. Conflict, timeout, malformed-response, disconnect, and lifecycle validation
 9. Cold boot, sign-in, service restart, sleep/resume, and reconnect validation
-10. AC, USB-C, and battery transition validation
+10. AC, USB-C, and battery transition validation — the physical/UI/USBPcap
+    matrix is captured; exact PID `02C6` USB-C `07/8C` response and independent
+    destination-state readback remain pending
 
 Display controls implemented entirely through Windows APIs may become
 `SoftwareOnly` after exact-machine validation; they must not be described as
