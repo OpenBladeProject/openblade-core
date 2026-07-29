@@ -40,6 +40,27 @@ public sealed class ProductionBatteryPortTests
         Assert.Equal(2, command.ExpectedPayloadLength);
     }
 
+    [Theory]
+    [InlineData("0711", AdapterPowerState.Unknown)]
+    [InlineData("1111", AdapterPowerState.FullPower280W)]
+    [InlineData("FFFF", AdapterPowerState.Unknown)]
+    public async Task AdapterPowerQuery_FiltersValuesOutsideDeviceAdmission(
+        string responseHex,
+        AdapterPowerState expected)
+    {
+        var session = new ScriptedSession(
+            Success(Convert.FromHexString(responseHex)));
+        await using var port = CreatePort(
+            session,
+            DeviceCommandCatalog.Empty,
+            AcceptedAdapterPowerReadEvidence(),
+            admittedAdapterPowerStates:
+                new HashSet<AdapterPowerState> { AdapterPowerState.FullPower280W });
+
+        Assert.Equal(expected, await port.QueryAdapterPowerStateAsync(default));
+        Assert.Single(session.Commands);
+    }
+
     [Fact]
     public async Task McuVersionQuery_WithoutCodeControlledEvidenceReturnsNullWithoutIo()
     {
@@ -1296,14 +1317,16 @@ public sealed class ProductionBatteryPortTests
         DeviceCommandCatalog catalog,
         ProductionBatteryReadEvidence? evidence = null,
         FanSpeedRange? fanSpeedRange = null,
-        IReadOnlySet<FanMode>? admittedFanModes = null) => new(
+        IReadOnlySet<FanMode>? admittedFanModes = null,
+        IReadOnlySet<AdapterPowerState>? admittedAdapterPowerStates = null) => new(
             session,
             catalog,
             evidence ?? NoTemporaryReadEvidence(),
             new ValidationRunContext(),
             TimeSpan.FromSeconds(1),
             fanSpeedRange,
-            admittedFanModes);
+            admittedFanModes,
+            admittedAdapterPowerStates);
 
     private static DeviceCommandCatalog Catalog(params CapturedCommandFixture[] fixtures) =>
         DeviceCommandCatalog.Create(CapturedFixtureFile.TargetDevice, fixtures);

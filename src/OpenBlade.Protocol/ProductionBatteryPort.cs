@@ -77,6 +77,7 @@ internal sealed class ProductionBatteryPort : IProductionBatteryPort
     private readonly GamingModeCommandClient gamingModeCommands;
     private readonly FanSpeedRange fanSpeedRange;
     private readonly IReadOnlySet<FanMode>? admittedFanModes;
+    private readonly IReadOnlySet<AdapterPowerState>? admittedAdapterPowerStates;
     private readonly SemaphoreSlim operationGate = new(1, 1);
     private readonly object lifecycleSync = new();
     private readonly IAsyncDisposable ownedSession;
@@ -92,7 +93,8 @@ internal sealed class ProductionBatteryPort : IProductionBatteryPort
         ValidationRunContext context,
         TimeSpan exchangeTimeout,
         FanSpeedRange? fanSpeedRange = null,
-        IReadOnlySet<FanMode>? admittedFanModes = null)
+        IReadOnlySet<FanMode>? admittedFanModes = null,
+        IReadOnlySet<AdapterPowerState>? admittedAdapterPowerStates = null)
         : this(
             session,
             session,
@@ -101,7 +103,8 @@ internal sealed class ProductionBatteryPort : IProductionBatteryPort
             context,
             exchangeTimeout,
             fanSpeedRange,
-            admittedFanModes)
+            admittedFanModes,
+            admittedAdapterPowerStates)
     {
     }
 
@@ -112,7 +115,8 @@ internal sealed class ProductionBatteryPort : IProductionBatteryPort
         ValidationRunContext context,
         TimeSpan exchangeTimeout,
         FanSpeedRange? fanSpeedRange = null,
-        IReadOnlySet<FanMode>? admittedFanModes = null)
+        IReadOnlySet<FanMode>? admittedFanModes = null,
+        IReadOnlySet<AdapterPowerState>? admittedAdapterPowerStates = null)
         : this(
             actor.Session,
             actor,
@@ -121,7 +125,8 @@ internal sealed class ProductionBatteryPort : IProductionBatteryPort
             context,
             exchangeTimeout,
             fanSpeedRange,
-            admittedFanModes)
+            admittedFanModes,
+            admittedAdapterPowerStates)
     {
     }
 
@@ -133,7 +138,8 @@ internal sealed class ProductionBatteryPort : IProductionBatteryPort
         ValidationRunContext context,
         TimeSpan exchangeTimeout,
         FanSpeedRange? fanSpeedRange,
-        IReadOnlySet<FanMode>? admittedFanModes)
+        IReadOnlySet<FanMode>? admittedFanModes,
+        IReadOnlySet<AdapterPowerState>? admittedAdapterPowerStates)
     {
         this.session = session ?? throw new ArgumentNullException(nameof(session));
         this.ownedSession = ownedSession ?? throw new ArgumentNullException(nameof(ownedSession));
@@ -153,6 +159,9 @@ internal sealed class ProductionBatteryPort : IProductionBatteryPort
         this.admittedFanModes = admittedFanModes is null
             ? null
             : new HashSet<FanMode>(admittedFanModes);
+        this.admittedAdapterPowerStates = admittedAdapterPowerStates is null
+            ? null
+            : new HashSet<AdapterPowerState>(admittedAdapterPowerStates);
 
         batteryCommands = new BatteryCommandClient(session, exchangeTimeout);
         temporaryCommands = new TemporaryFullChargeCommandClient(session, exchangeTimeout);
@@ -279,6 +288,13 @@ internal sealed class ProductionBatteryPort : IProductionBatteryPort
             if (result.Failure is not null)
             {
                 ThrowReadFailure(result.Failure.Value, result.Diagnostic, cancellationToken);
+            }
+
+            if (result.Value != AdapterPowerState.Unknown
+                && admittedAdapterPowerStates is not null
+                && !admittedAdapterPowerStates.Contains(result.Value))
+            {
+                return AdapterPowerState.Unknown;
             }
 
             return result.Value;

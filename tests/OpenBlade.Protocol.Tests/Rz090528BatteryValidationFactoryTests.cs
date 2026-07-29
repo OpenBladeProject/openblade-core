@@ -10,6 +10,7 @@ public sealed class Rz090528BatteryValidationFactoryTests
     {
         IProductionBatteryPortFactory factory =
             BatteryValidationFactory.CreateWindowsRz090528ProductionBattery();
+        var productionFactory = Assert.IsType<ProductionBatteryFactory>(factory);
 
         Assert.Equal([50, 55, 60, 65, 70, 75, 80], factory.Capabilities.ChargeLimits);
         Assert.Equal(
@@ -84,6 +85,8 @@ public sealed class Rz090528BatteryValidationFactoryTests
                 OneShotLaptopControl.FunctionKeyPrimary,
                 OneShotLaptopControl.GamingMode,
             ]));
+        Assert.True(productionFactory.AdmittedAdapterPowerStates!.SetEquals(
+            [AdapterPowerState.FullPower280W]));
     }
 
     [Fact]

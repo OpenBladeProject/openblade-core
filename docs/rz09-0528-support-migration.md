@@ -626,6 +626,11 @@ Power-source behavior contract checkpoint:
   `productionAdmitted: false` marker means the source-specific interpretation
   is still discovery evidence; it does not mean the fixed read-only query
   envelopes are arbitrary.
+- Keep raw decoding separate from production admission. The shared adapter
+  decoder recognizes `0711` as USB-C for PID `02E0`, but RZ09-0528 has only
+  validated `1111` full AC. Its production factory therefore filters every
+  other recognized adapter state to `Unknown`; the exact raw probe still emits
+  the bytes needed to admit a future PID `02C6` USB-C response.
 
 Final user-visible state before quiet HID validation:
 

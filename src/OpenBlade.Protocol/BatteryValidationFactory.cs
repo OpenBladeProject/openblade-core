@@ -513,7 +513,11 @@ public static class BatteryValidationFactory
                     PerformanceModeAvailable: false,
                     CustomModeAvailable: false,
                     InadequatePowerWarningVisible: true),
-            ]);
+            ],
+            new HashSet<AdapterPowerState>
+            {
+                AdapterPowerState.FullPower280W,
+            });
     }
 
     internal static ProductionBatteryReadEvidence

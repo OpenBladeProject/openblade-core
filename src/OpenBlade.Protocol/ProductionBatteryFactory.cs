@@ -24,6 +24,7 @@ public sealed class ProductionBatteryFactory : IProductionBatteryPortFactory
     private readonly CpuVoltageOptimizerCapabilities? cpuVoltageOptimizerCapabilities;
     private readonly GpuOverclockCapabilities? gpuOverclockCapabilities;
     private readonly IReadOnlyList<PowerSourceBehaviorObservation> observedPowerSourceBehaviors;
+    private readonly IReadOnlySet<AdapterPowerState>? admittedAdapterPowerStates;
 
     internal ProductionBatteryFactory(
         DeviceCommandCatalog catalog,
@@ -40,7 +41,8 @@ public sealed class ProductionBatteryFactory : IProductionBatteryPortFactory
         CpuPowerLimitCapabilities? cpuPowerLimitCapabilities = null,
         CpuVoltageOptimizerCapabilities? cpuVoltageOptimizerCapabilities = null,
         GpuOverclockCapabilities? gpuOverclockCapabilities = null,
-        IReadOnlyList<PowerSourceBehaviorObservation>? observedPowerSourceBehaviors = null)
+        IReadOnlyList<PowerSourceBehaviorObservation>? observedPowerSourceBehaviors = null,
+        IReadOnlySet<AdapterPowerState>? admittedAdapterPowerStates = null)
     {
         this.catalog = catalog ?? throw new ArgumentNullException(nameof(catalog));
         this.readEvidence = readEvidence ?? throw new ArgumentNullException(nameof(readEvidence));
@@ -72,6 +74,9 @@ public sealed class ProductionBatteryFactory : IProductionBatteryPortFactory
         this.observedPowerSourceBehaviors = observedPowerSourceBehaviors is null
             ? []
             : [.. observedPowerSourceBehaviors];
+        this.admittedAdapterPowerStates = admittedAdapterPowerStates is null
+            ? null
+            : new HashSet<AdapterPowerState>(admittedAdapterPowerStates);
         Capabilities = ProductionBatteryPort.CreateCapabilities(
             catalog,
             readEvidence,
@@ -85,6 +90,9 @@ public sealed class ProductionBatteryFactory : IProductionBatteryPortFactory
     }
 
     public DeviceCapabilities Capabilities { get; }
+
+    internal IReadOnlySet<AdapterPowerState>? AdmittedAdapterPowerStates =>
+        admittedAdapterPowerStates;
 
     public static IProductionBatteryPortFactory CreateWindows()
     {
@@ -167,7 +175,8 @@ public sealed class ProductionBatteryFactory : IProductionBatteryPortFactory
                 context,
                 exchangeTimeout,
                 fanSpeedRange,
-                admittedFanModes),
+                admittedFanModes,
+                admittedAdapterPowerStates),
             null);
     }
 
