@@ -21,7 +21,8 @@ public sealed class RzAmdOverclockProbeTests
         Assert.Contains("PowerLimitWatts=60", output.ToString());
         Assert.Contains("CurveOptimizerValue=-1", output.ToString());
         Assert.Contains("CurveOptimizerEnabled=True", output.ToString());
-        Assert.Contains("ReadOnly=True", output.ToString());
+        Assert.Contains("SetterExportsInvoked=False", output.ToString());
+        Assert.Contains("SynapseProcessGuard=True", output.ToString());
         Assert.Contains("Success=True", output.ToString());
     }
 

@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Text.Json;
@@ -42,7 +43,8 @@ public static class CpuPowerServiceProbeCommand
             output.WriteLine($"PowerLimitWatts={state.PowerLimitWatts}");
             output.WriteLine($"CurveOptimizerValue={state.CurveOptimizerValue}");
             output.WriteLine($"CurveOptimizerEnabled={state.CurveOptimizerValue < 0}");
-            output.WriteLine("ReadOnly=True");
+            output.WriteLine("SetterExportsInvoked=False");
+            output.WriteLine("SynapseProcessGuard=True");
             output.WriteLine("Success=True");
             return 0;
         }
@@ -58,7 +60,8 @@ public static class CpuPowerServiceProbeCommand
             or TimeoutException)
         {
             output.WriteLine($"Failure={exception.Message}");
-            output.WriteLine("ReadOnly=True");
+            output.WriteLine("SetterExportsInvoked=False");
+            output.WriteLine("SynapseProcessGuard=True");
             output.WriteLine("Success=False");
             return 2;
         }
@@ -88,6 +91,8 @@ internal sealed class WindowsRzAmdOverclockProbe : ICpuPowerServiceProbe
             throw new PlatformNotSupportedException(
                 "The read-only CPU power probe is restricted to the exact RZ09-0528 BIOS 2.02 Windows host.");
         }
+
+        EnsureSynapseInactive();
 
         string serviceDirectory = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
@@ -183,6 +188,7 @@ internal sealed class WindowsRzAmdOverclockProbe : ICpuPowerServiceProbe
             }
 
             registered = true;
+            EnsureSynapseInactive();
             int powerLimit = await QueryValueAsync(
                 getPowerLimit,
                 messages.Reader,
@@ -315,6 +321,26 @@ internal sealed class WindowsRzAmdOverclockProbe : ICpuPowerServiceProbe
         {
             throw new InvalidDataException(
                 $"The installed {Path.GetFileName(path)} hash has not been admitted.");
+        }
+    }
+
+    private static void EnsureSynapseInactive()
+    {
+        Process[] processes = Process.GetProcessesByName("RazerAppEngine");
+        try
+        {
+            if (processes.Length > 0)
+            {
+                throw new InvalidOperationException(
+                    "RazerAppEngine is active. The getter response can make Synapse reapply a persisted value, so the probe is blocked.");
+            }
+        }
+        finally
+        {
+            foreach (Process process in processes)
+            {
+                process.Dispose();
+            }
         }
     }
 
