@@ -325,5 +325,24 @@ Fan RPM readback follow-up:
 - Fixed speed, maximum, and manual fan curves remain pending exact setter and
   restoration evidence.
 
+Startup-animation readback follow-up:
+
+- The exact discriminator's `0F/98 00` response decoded as enabled under the
+  existing typed protocol.
+- Startup-animation query evidence was added only to the exact RZ09-0528
+  production read set. The production service probe reopened the exact battery
+  port, returned `StartupAnimation=True`, and completed with `Success=True`.
+- No startup-animation setter is admitted. Enable/disable writes still require
+  exact setter capture, independent readback, and restoration.
+
+Unattended capture constraint:
+
+- A later fixed-fan capture attempt caused USBPcap to request UAC even with the
+  established skip-check flags. The prompt was not approved. The private
+  session finished as `Failed` with no PCAP and is not evidence.
+- Do not start another USBPcap capture while the operator is unavailable.
+  Continue only non-elevating read-only probes, tests, and repository work until
+  an operator can explicitly handle the consent boundary.
+
 Update this section after every evidence, implementation, or documentation
 checkpoint.

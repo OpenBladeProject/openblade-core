@@ -132,6 +132,7 @@ public static class BatteryValidationFactory
             new HashSet<ProductionBatteryQueryCapability>
             {
                 ProductionBatteryQueryCapability.TemporaryFullCharge,
+                ProductionBatteryQueryCapability.StartupAnimation,
             });
         var native = new WindowsHidNative();
         var registry = new WindowsRegistryValueSource();

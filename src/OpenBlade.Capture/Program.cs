@@ -552,6 +552,17 @@ if (args.Length == 1 && args[0].Equals(
     var fanSession = new FanRpmQuerySession(
         BatteryValidationFactory.CreateWindowsFanRpmForService());
     FanRpmQueryResult fanRpm = await fanSession.RunAsync(CancellationToken.None);
+    HidSessionResult<IProductionBatteryPort> openedBattery =
+        await battery.OpenAsync(CancellationToken.None);
+    bool? startupAnimation = null;
+    if (openedBattery.Value is { } batteryPort && openedBattery.Failure is null)
+    {
+        await using (batteryPort)
+        {
+            startupAnimation =
+                await batteryPort.QueryStartupAnimationAsync(CancellationToken.None);
+        }
+    }
     HidSessionResult<IProductionLightingPort> opened =
         await lighting.OpenAsync(CancellationToken.None);
     if (opened.Value is { } port && opened.Failure is null)
@@ -593,6 +604,10 @@ if (args.Length == 1 && args[0].Equals(
         $"FanRpm={fanRpm.Readings?.Selector1Rpm.ToString() ?? "Unavailable"}/" +
         $"{fanRpm.Readings?.Selector2Rpm.ToString() ?? "Unavailable"}");
     Console.WriteLine($"FanRpmFailure={fanRpm.Failure}");
+    Console.WriteLine(
+        $"StartupAnimation={startupAnimation?.ToString() ?? "Unavailable"}");
+    Console.WriteLine(
+        $"BatteryOpenFailure={openedBattery.Failure?.ToString() ?? "None"}");
     bool success = probe.Classification is
             BatteryValidationProbeClassification.Ready
             or BatteryValidationProbeClassification.ReadyWithAccessFallback
@@ -606,6 +621,8 @@ if (args.Length == 1 && args[0].Equals(
         && battery.Capabilities.ChargeLimits.SetEquals([70])
         && !battery.Capabilities.SupportsBatteryProtectionOff
         && fanRpm.Success
+        && startupAnimation is not null
+        && openedBattery.Failure is null
         && battery.Capabilities.SupportsTemporaryFullCharge
         && lighting.Capabilities.LightingEffects.Count == 0
         && lighting.Capabilities.LogoLightingModes.Count == 0
