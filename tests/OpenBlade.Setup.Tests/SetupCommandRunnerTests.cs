@@ -34,7 +34,8 @@ public sealed class SetupCommandRunnerTests
                 "payload-stage", "lifecycle-capture", "shortcut-remove", "agent-shortcut-remove", "start-menu-remove",
                 "uninstall-shortcut-remove", "uninstall-registration-remove",
                 "service-prepare", "tray-stop", "session-agent-stop",
-                "payload-activate", "uninstaller-install", "sid:S-1-5-21-test", "service-install",
+                "dynamic-lighting-remove", "payload-activate", "dynamic-lighting-install",
+                "uninstaller-install", "sid:S-1-5-21-test", "service-install",
                 "service-health", "agent-shortcut-install", "start-menu-install",
                 "uninstall-shortcut-install", "uninstall-registration-install", "shortcut-install", "payload-commit",
             ],
@@ -177,6 +178,7 @@ public sealed class SetupCommandRunnerTests
     [InlineData("start-menu-install")]
     [InlineData("uninstall-shortcut-install")]
     [InlineData("uninstall-registration-install")]
+    [InlineData("dynamic-lighting-install")]
     public async Task Install_UpdatePostActivationFailure_RestoresOldTreeServiceAndShortcut(string failurePoint)
     {
         RecordingSetupPlatform platform = new()
@@ -197,7 +199,8 @@ public sealed class SetupCommandRunnerTests
             platform.Operations,
             [
                 "shortcut-remove", "agent-shortcut-remove", "start-menu-remove",
-                "uninstall-shortcut-remove", "uninstall-registration-remove", "service-prepare", "tray-stop",
+                "uninstall-shortcut-remove", "uninstall-registration-remove",
+                "dynamic-lighting-remove", "service-prepare", "tray-stop",
                 "session-agent-stop", "payload-rollback", "service-restore",
                 "agent-shortcut-install", "shortcut-install", "start-menu-install",
             ]);
@@ -213,6 +216,7 @@ public sealed class SetupCommandRunnerTests
     [InlineData("service-prepare")]
     [InlineData("tray-stop")]
     [InlineData("session-agent-stop")]
+    [InlineData("dynamic-lighting-remove")]
     public async Task Install_UpdatePreActivationFailureRestoresCapturedLifecycle(
         string failurePoint)
     {
@@ -258,7 +262,8 @@ public sealed class SetupCommandRunnerTests
             platform.Operations,
             [
                 "shortcut-remove", "agent-shortcut-remove", "start-menu-remove",
-                "uninstall-shortcut-remove", "uninstall-registration-remove", "service-remove", "tray-stop",
+                "uninstall-shortcut-remove", "uninstall-registration-remove",
+                "dynamic-lighting-remove", "service-remove", "tray-stop",
                 "session-agent-stop", "payload-rollback",
             ]);
         Assert.DoesNotContain("shortcut-install", platform.Operations);
@@ -317,6 +322,30 @@ public sealed class SetupCommandRunnerTests
     }
 
     [Fact]
+    public async Task Install_UpdateFailure_ReregistersPriorDynamicLightingIdentityAfterPayloadRollback()
+    {
+        RecordingSetupPlatform platform = new()
+        {
+            ServiceExists = true,
+            DynamicLightingIdentityRegistered = true,
+            FailurePoint = "service-health",
+            Transaction = new RecordingPayloadTransaction(hadExistingInstall: true),
+        };
+
+        await Assert.ThrowsAsync<InvalidOperationException>(
+            () => new SetupCommandRunner(platform).RunAsync(["install"], CancellationToken.None));
+
+        int rollbackIndex = platform.Operations.IndexOf("payload-rollback");
+        int restoreIdentityIndex = platform.Operations.LastIndexOf("dynamic-lighting-install");
+        int restoreServiceIndex = platform.Operations.IndexOf("service-restore");
+        Assert.True(rollbackIndex >= 0);
+        Assert.True(restoreIdentityIndex > rollbackIndex);
+        Assert.True(restoreServiceIndex > restoreIdentityIndex);
+        Assert.Equal(2, platform.Operations.Count(
+            operation => operation == "dynamic-lighting-install"));
+    }
+
+    [Fact]
     public async Task Install_ServicePrepareFailureAfterCapture_RestoresPriorRunningServiceAndShortcut()
     {
         RecordingSetupPlatform platform = new()
@@ -334,7 +363,8 @@ public sealed class SetupCommandRunnerTests
             platform.Operations,
             [
                 "shortcut-remove", "agent-shortcut-remove", "start-menu-remove",
-                "uninstall-shortcut-remove", "uninstall-registration-remove", "payload-rollback", "service-restore",
+                "uninstall-shortcut-remove", "uninstall-registration-remove",
+                "dynamic-lighting-remove", "payload-rollback", "service-restore",
                 "agent-shortcut-install", "shortcut-install", "start-menu-install",
             ]);
         Assert.DoesNotContain("service-remove", platform.Operations);
@@ -508,7 +538,7 @@ public sealed class SetupCommandRunnerTests
 
         Assert.Equal(0, exitCode);
         Assert.Equal(
-            ["lifecycle-capture", "shortcut-remove", "agent-shortcut-remove", "start-menu-remove", "service-remove", "tray-stop", "session-agent-stop", "uninstall-shortcut-remove", "uninstall-registration-remove", "binaries-remove"],
+            ["lifecycle-capture", "shortcut-remove", "agent-shortcut-remove", "start-menu-remove", "service-remove", "tray-stop", "session-agent-stop", "dynamic-lighting-remove", "uninstall-shortcut-remove", "uninstall-registration-remove", "binaries-remove"],
             platform.Operations);
         Assert.DoesNotContain("data-remove", platform.Operations);
     }
@@ -522,7 +552,7 @@ public sealed class SetupCommandRunnerTests
 
         Assert.Equal(0, exitCode);
         Assert.Equal(
-            ["lifecycle-capture", "shortcut-remove", "agent-shortcut-remove", "start-menu-remove", "service-remove", "tray-stop", "session-agent-stop", "uninstall-shortcut-remove", "uninstall-registration-remove", "binaries-remove", "data-remove"],
+            ["lifecycle-capture", "shortcut-remove", "agent-shortcut-remove", "start-menu-remove", "service-remove", "tray-stop", "session-agent-stop", "dynamic-lighting-remove", "uninstall-shortcut-remove", "uninstall-registration-remove", "binaries-remove", "data-remove"],
             platform.Operations);
     }
 
@@ -544,6 +574,23 @@ public sealed class SetupCommandRunnerTests
             platform.Operations,
             ["uninstall-shortcut-remove", "uninstall-registration-remove", "binaries-remove",
              "uninstall-shortcut-install", "uninstall-registration-install"]);
+    }
+
+    [Fact]
+    public async Task Uninstall_BinaryRemovalFailure_ReregistersPriorDynamicLightingIdentity()
+    {
+        RecordingSetupPlatform platform = new()
+        {
+            DynamicLightingIdentityRegistered = true,
+            FailurePoint = "binaries-remove",
+        };
+
+        await Assert.ThrowsAsync<InvalidOperationException>(
+            () => new SetupCommandRunner(platform).RunAsync(["uninstall"], CancellationToken.None));
+
+        int binaryFailureIndex = platform.Operations.IndexOf("binaries-remove");
+        int identityRecoveryIndex = platform.Operations.LastIndexOf("dynamic-lighting-install");
+        Assert.True(identityRecoveryIndex > binaryFailureIndex);
     }
 
     [Fact]
@@ -682,6 +729,7 @@ public sealed class SetupCommandRunnerTests
         public bool UninstallShortcutExisted { get; init; }
         public bool UninstallRegistrationExisted { get; init; }
         public bool BundleOwnershipExisted { get; init; }
+        public bool DynamicLightingIdentityRegistered { get; init; }
         public string? FailurePoint { get; set; }
         public CancellationTokenSource? Cancellation { get; init; }
         public Exception? UninstallerFailure { get; init; }
@@ -739,7 +787,8 @@ public sealed class SetupCommandRunnerTests
                     startMenuShortcutPresent,
                     UninstallShortcutExisted,
                     UninstallRegistrationExisted),
-                BundleOwnershipExisted));
+                BundleOwnershipExisted,
+                DynamicLightingIdentityRegistered));
         }
 
         public Task PrepareServiceForInstallAsync(CancellationToken cancellationToken)
@@ -836,6 +885,10 @@ public sealed class SetupCommandRunnerTests
             AddAsync("bundle-ownership-install", cancellationToken);
         public Task RemoveBundleOwnershipAsync(CancellationToken cancellationToken) =>
             AddAsync("bundle-ownership-remove", cancellationToken);
+        public Task InstallDynamicLightingIdentityAsync(CancellationToken cancellationToken) =>
+            AddAsync("dynamic-lighting-install", cancellationToken);
+        public Task RemoveDynamicLightingIdentityAsync(CancellationToken cancellationToken) =>
+            AddAsync("dynamic-lighting-remove", cancellationToken);
         public Task RemoveServiceAsync(CancellationToken cancellationToken)
         {
             serviceRegistered = false;
@@ -854,7 +907,8 @@ public sealed class SetupCommandRunnerTests
             if (Operations.Contains("payload-activate")
                 && operation is "shortcut-remove" or "agent-shortcut-remove" or "start-menu-remove"
                     or "uninstall-shortcut-remove" or "uninstall-registration-remove"
-                    or "service-remove" or "tray-stop" or "session-agent-stop")
+                    or "dynamic-lighting-remove" or "service-remove" or "tray-stop"
+                    or "session-agent-stop")
             {
                 CleanupTokens.Add(token);
             }

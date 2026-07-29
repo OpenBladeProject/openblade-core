@@ -496,6 +496,35 @@ public sealed class WindowsSetupPlatformServiceTests
         Assert.Equal(1, bundleOwnership.Removals);
     }
 
+    [Fact]
+    public async Task DynamicLightingIdentityOperations_UseInstallDirectoryAndInstallingUser()
+    {
+        RecordingDynamicLightingIdentityRegistration identity = new()
+        {
+            Registered = true,
+        };
+        WindowsSetupPlatform platform = WindowsSetupPlatformTestFactory.Create(
+            dynamicLightingIdentityRegistration: identity);
+
+        SetupInstallLifecycleState state =
+            await platform.CaptureInstallLifecycleStateAsync(CancellationToken.None);
+        await platform.RemoveDynamicLightingIdentityAsync(CancellationToken.None);
+        await platform.InstallDynamicLightingIdentityAsync(CancellationToken.None);
+
+        Assert.True(state.DynamicLightingIdentityRegistered);
+        DynamicLightingIdentityRequest query = Assert.Single(identity.Queries);
+        DynamicLightingIdentityRequest removal = Assert.Single(identity.Removals);
+        DynamicLightingIdentityRequest install = Assert.Single(identity.Installs);
+        Assert.Equal(query, removal);
+        Assert.Equal(query, install);
+        Assert.True(Path.IsPathFullyQualified(query.InstallDirectory));
+        Assert.EndsWith(
+            Path.Combine("Program Files", "OpenBlade"),
+            query.InstallDirectory,
+            StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(platform.CurrentUserSid, query.UserSid);
+    }
+
     [Theory]
     [InlineData("")]
     [InlineData("not-a-sid")]
@@ -703,6 +732,46 @@ public sealed class WindowsSetupPlatformServiceTests
             CancellationToken cancellationToken)
         {
             Requests.Add(request);
+            return Task.CompletedTask;
+        }
+    }
+
+    private sealed record DynamicLightingIdentityRequest(
+        string InstallDirectory,
+        string UserSid);
+
+    private sealed class RecordingDynamicLightingIdentityRegistration
+        : IDynamicLightingIdentityRegistration
+    {
+        public bool Registered { get; init; }
+        public List<DynamicLightingIdentityRequest> Queries { get; } = [];
+        public List<DynamicLightingIdentityRequest> Installs { get; } = [];
+        public List<DynamicLightingIdentityRequest> Removals { get; } = [];
+
+        public Task<bool> IsRegisteredAsync(
+            string installDirectory,
+            string userSid,
+            CancellationToken cancellationToken)
+        {
+            Queries.Add(new(installDirectory, userSid));
+            return Task.FromResult(Registered);
+        }
+
+        public Task InstallIfPresentAsync(
+            string installDirectory,
+            string userSid,
+            CancellationToken cancellationToken)
+        {
+            Installs.Add(new(installDirectory, userSid));
+            return Task.CompletedTask;
+        }
+
+        public Task RemoveIfPresentAsync(
+            string installDirectory,
+            string userSid,
+            CancellationToken cancellationToken)
+        {
+            Removals.Add(new(installDirectory, userSid));
             return Task.CompletedTask;
         }
     }

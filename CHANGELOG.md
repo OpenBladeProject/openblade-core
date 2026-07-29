@@ -30,8 +30,11 @@ All notable changes to OpenBlade are documented in this file. The project follow
   signed release pipeline now builds a sparse external-location MSIX identity
   for the Session Agent with the `com.microsoft.windows.lighting` extension,
   embeds the matching certificate-derived identity claim in the executable,
-  and validates the package/descriptor pair before publishing. Unsigned builds
-  omit both the package and executable identity claim. The model's M1–M5
+  and validates the package/descriptor pair before publishing. Transactional
+  setup now validates and registers that exact Publisher-scoped identity for
+  the installing user, restores the prior identity after a failed update, and
+  removes or recovers it with uninstall. Unsigned builds omit both the package
+  and executable identity claim. The model's M1–M5
   shortcut surface is
   also retained as observed-only: editable bindings stay hidden and inactive
   until PID `02C6` input reports are independently captured and admitted.

@@ -30,6 +30,7 @@ public sealed record WindowsSetupPlatformOptions(
     IUninstallRegistration? UninstallRegistration = null,
     IBundleOwnershipRegistration? BundleOwnershipRegistration = null,
     IInstalledUninstallerWriter? InstalledUninstallerWriter = null,
+    IDynamicLightingIdentityRegistration? DynamicLightingIdentityRegistration = null,
     string? SetupExecutablePath = null);
 
 public sealed class WindowsSetupPlatform : ISetupPlatform
@@ -50,6 +51,7 @@ public sealed class WindowsSetupPlatform : ISetupPlatform
     private readonly IUninstallRegistration uninstallRegistration;
     private readonly IBundleOwnershipRegistration bundleOwnershipRegistration;
     private readonly IInstalledUninstallerWriter installedUninstallerWriter;
+    private readonly IDynamicLightingIdentityRegistration dynamicLightingIdentityRegistration;
     private readonly string setupExecutablePath;
 
     public WindowsSetupPlatform(WindowsSetupPlatformOptions? options = null)
@@ -71,6 +73,8 @@ public sealed class WindowsSetupPlatform : ISetupPlatform
             ?? new WindowsBundleOwnershipRegistration();
         installedUninstallerWriter = options.InstalledUninstallerWriter
             ?? new VerifiedInstalledUninstallerWriter();
+        dynamicLightingIdentityRegistration = options.DynamicLightingIdentityRegistration
+            ?? new DynamicLightingIdentityRegistration();
         setupExecutablePath = options.SetupExecutablePath
             ?? Environment.ProcessPath
             ?? throw new InvalidOperationException("The OpenBlade setup executable path is unavailable.");
@@ -90,6 +94,11 @@ public sealed class WindowsSetupPlatform : ISetupPlatform
         bool uninstallShortcutExisted = fileOperations.FileExists(paths.UninstallStartMenuFile);
         bool uninstallRegistrationExisted = uninstallRegistration.Exists();
         bool bundleOwnershipExisted = bundleOwnershipRegistration.Exists();
+        bool dynamicLightingIdentityRegistered =
+            await dynamicLightingIdentityRegistration.IsRegisteredAsync(
+                paths.InstallDirectory,
+                CurrentUserSid,
+                cancellationToken);
         return new(
             new(state is not null, state == SetupServiceState.Running),
             new(
@@ -98,7 +107,8 @@ public sealed class WindowsSetupPlatform : ISetupPlatform
                 startMenuShortcutExisted,
                 uninstallShortcutExisted,
                 uninstallRegistrationExisted),
-            bundleOwnershipExisted);
+            bundleOwnershipExisted,
+            dynamicLightingIdentityRegistered);
     }
 
     public async Task PrepareServiceForInstallAsync(CancellationToken cancellationToken)
@@ -365,6 +375,18 @@ public sealed class WindowsSetupPlatform : ISetupPlatform
         bundleOwnershipRegistration.Remove();
         return Task.CompletedTask;
     }
+
+    public Task InstallDynamicLightingIdentityAsync(CancellationToken cancellationToken) =>
+        dynamicLightingIdentityRegistration.InstallIfPresentAsync(
+            paths.InstallDirectory,
+            CurrentUserSid,
+            cancellationToken);
+
+    public Task RemoveDynamicLightingIdentityAsync(CancellationToken cancellationToken) =>
+        dynamicLightingIdentityRegistration.RemoveIfPresentAsync(
+            paths.InstallDirectory,
+            CurrentUserSid,
+            cancellationToken);
 
     public async Task RemoveServiceAsync(CancellationToken cancellationToken)
     {

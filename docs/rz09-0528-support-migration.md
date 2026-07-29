@@ -915,10 +915,11 @@ existing WiX install lifecycle. The renderer must:
    require an independently observed restoration before production admission.
 
 The unpackaged background probe reported `IsAvailable=false`. Treat that as the
-current integration boundary, not as device absence. Package identity,
-background priority, one bounded static-color apply, ownership-loss behavior,
-and restoration all remain to be validated before the capability can become
-`ProductionAdmitted`.
+current integration boundary, not as device absence. Signed identity
+registration is now authored and transactionally integrated with setup, but
+live registration, background priority, one bounded static-color apply,
+ownership-loss behavior, and restoration all remain to be validated before the
+capability can become `ProductionAdmitted`.
 
 The shared capability contract now carries `LampArrayLightingAccess`. PID
 `02C6` reports `ObservedOnly`; PID `02E0` and unknown models report no value
@@ -998,9 +999,79 @@ extracts both PE manifests; the second executable must contain no
 Windows PowerShell 5.1 and PowerShell 7 authoring tests both completed a real
 unsigned MakeAppx pack/unpack cycle. A separate temporary publish embedded a
 test Publisher in the Session Agent; `mt.exe` extracted and confirmed the
-expected package name and application ID. No package was signed, registered,
-or installed during these checks. Setup registration, rollback, and uninstall
-integration remain the next boundary.
+expected package name and application ID.
+
+### Sparse package setup lifecycle
+
+Setup now owns the per-user sparse-package registration as part of the same
+transaction as the external executable tree. The Setup project targets Windows
+11 build 26100 APIs and uses `PackageManager.AddPackageByUriAsync` with
+`AddPackageOptions.ExternalLocationUri` pointing at the exact OpenBlade install
+directory. Do not replace this with an unscoped `Add-AppxPackage` subprocess.
+
+Before setup stages any files, it validates the optional package/descriptor
+pair through the same strict reader used at registration time. Validation
+requires:
+
+- exactly the six reviewed descriptor properties and schema version 1;
+- the fixed package name, application ID, package filename, and external
+  location marker;
+- a nonempty Publisher that exactly matches `AppxManifest.xml`;
+- one bounded manifest parsed with DTD processing prohibited;
+- the reviewed Session Agent executable, external-content declaration,
+  Dynamic Lighting app extension, public folder, and `runFullTrust`
+  capability.
+
+A partial, malformed, oversized, or mismatched pair fails while the payload is
+still only a source directory. No installed shortcut, service, process,
+registration, or binary tree has changed at that point.
+
+The install/update order is deliberate:
+
+1. capture whether the exact package name **and descriptor Publisher** are
+   registered for the installing user's SID;
+2. stop the installed Session Agent;
+3. remove only package full names returned by that exact
+   user/name/Publisher query;
+4. atomically activate the new external executable tree;
+5. if the new tree has a validated pair, register it with the exact install
+   directory as its external location and independently query that it became
+   active;
+6. restore normal service and startup artifacts, then commit the payload.
+
+This also handles a signed-to-unsigned developer downgrade: the old signed
+registration is removed while its descriptor is still present, the new
+unsigned tree activates, and registration becomes an intentional no-op because
+the new pair is absent.
+
+If any later install step fails, recovery first removes a possibly registered
+new identity while the new descriptor is present, rolls the external tree back,
+then re-registers the old identity only when lifecycle capture proved it was
+previously active. Uninstall removes the identity after the Session Agent stops
+and before deleting binaries. If binary removal fails, the old registration is
+recreated while the old tree remains available. A failed identity recovery is
+preserved alongside the original setup failure rather than being hidden.
+
+Add/remove operations share a linked 30-second bound. Deployment failures
+surface only the operation, exception type or HRESULT; package paths, user SIDs,
+Publisher text, and Windows deployment error text are not logged. Never broaden
+removal to package name alone: a different Publisher is outside OpenBlade's
+ownership.
+
+The automated matrix covers absent unsigned pairs, partial pairs, strict JSON
+and XML rejection, DTD rejection, exact Publisher scoping, multiple exact
+package versions, external-location URI selection, deployment HRESULTs,
+timeouts, caller cancellation, install rollback, uninstall recovery, and
+signed-pair payload preservation.
+
+No package has been signed, registered, or installed during this work. When an
+operator is available, live validation must use a trusted release certificate
+and the normal transactional setup path. Confirm the exact current-user
+registration, Session Agent package identity, `IsAvailable` transition,
+repair, signed-to-unsigned removal, uninstall removal, and an induced
+post-registration rollback before any LampArray write test. Preserve only
+sanitized results; never record package full names, user SIDs, certificate
+thumbprints, or local paths.
 
 ## Preserve discovered special keys without borrowing PID 02E0 reports
 
@@ -1081,18 +1152,23 @@ build if any of these exact-model facts disappears or changes:
 The gate is independently unit tested to reject dropped discoveries and an
 older-model Custom combination assumption.
 
-Final validation at the current LampArray-capability checkpoint:
+Final validation at the current transactional-identity checkpoint:
 
 - core commits: `b611f0b` (special-key capability/UI) and `eda8d67`
   (model-derived identity and firmware smoke), followed by `d987a73`
   (exact-model production-admission capability gate) and `cde59dd`
-  (sanitized, read-only LampArray geometry probe);
+  (sanitized, read-only LampArray geometry probe), `e96b2f2` (production
+  read-only Session Agent observer), and `44b06a4` (signed sparse-package
+  authoring); the subsequent `feat(setup): transact background identity`
+  commit is the lifecycle checkpoint described above;
 - documentation commits: `1083340`, `6c3c631`, and `c545805`;
 - Release build: 0 warnings and 0 errors;
-- full Release suite: 3,244 tests passed across all ten projects
+- full Release suite: 3,265 tests passed across all ten projects
   (Display 38, Capture 253, Session 33, Contracts 192, SessionAgent 154,
-  Protocol 1,049, Tray 615, Service 685, Setup 206, FirmwareSmoke 19);
+  Protocol 1,049, Tray 615, Service 685, Setup 227, FirmwareSmoke 19);
 - `dotnet format OpenBlade.slnx --verify-no-changes --no-restore`: clean;
+- Windows PowerShell 5.1 sparse-package identity, publish-payload, and
+  installer-authoring suites: all passed;
 - Windows PowerShell 5.1 capture toolkit: all five regression suites passed
   with `-NonInteractive`;
 - public documentation: all local links and assets resolved across 11 pages;
@@ -1135,8 +1211,9 @@ The main physical-evidence groups still blocking broader admission are:
   through a lifecycle OpenBlade can own without Synapse;
 - quick-effect parameters and effect getter; the model's 51-byte collection is
   now query-validated as an 85-lamp Windows LampArray, while background
-  identity, priority, write, ownership-loss, and restoration validation remain
-  incomplete;
+  identity authoring and setup lifecycle are implemented, but live signed
+  registration, priority, write, ownership-loss, and restoration validation
+  remain incomplete;
 - exact Normal/Driver device-mode setter round trips;
 - M1-M5 and performance-key press/release reports;
 - cold boot, sign-in, service restart, sleep/resume, and device reconnect.

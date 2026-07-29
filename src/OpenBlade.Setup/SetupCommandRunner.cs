@@ -24,7 +24,8 @@ public sealed record SetupStartupInstallState(
 public sealed record SetupInstallLifecycleState(
     SetupServiceInstallState Service,
     SetupStartupInstallState Startup,
-    bool BundleOwnershipExisted = false);
+    bool BundleOwnershipExisted = false,
+    bool DynamicLightingIdentityRegistered = false);
 
 public interface ISetupPlatform
 {
@@ -51,6 +52,8 @@ public interface ISetupPlatform
     Task RemoveUninstallRegistrationAsync(CancellationToken cancellationToken);
     Task InstallBundleOwnershipAsync(CancellationToken cancellationToken);
     Task RemoveBundleOwnershipAsync(CancellationToken cancellationToken);
+    Task InstallDynamicLightingIdentityAsync(CancellationToken cancellationToken);
+    Task RemoveDynamicLightingIdentityAsync(CancellationToken cancellationToken);
     Task RemoveServiceAsync(CancellationToken cancellationToken);
     Task StopTrayAsync(CancellationToken cancellationToken);
     Task StopSessionAgentAsync(CancellationToken cancellationToken);
@@ -102,7 +105,9 @@ public sealed class SetupCommandRunner(ISetupPlatform platform)
                 await platform.PrepareServiceForInstallAsync(cancellationToken);
                 await platform.StopTrayAsync(cancellationToken);
                 await platform.StopSessionAgentAsync(cancellationToken);
+                await platform.RemoveDynamicLightingIdentityAsync(cancellationToken);
                 await transaction.ActivateAsync(cancellationToken);
+                await platform.InstallDynamicLightingIdentityAsync(cancellationToken);
                 if (!invocation.BundleManaged)
                 {
                     await platform.InstallUninstallerAsync(cancellationToken);
@@ -152,6 +157,9 @@ public sealed class SetupCommandRunner(ISetupPlatform platform)
                     await RecoverAsync(
                         () => platform.RemoveUninstallRegistrationAsync(recoveryToken),
                         recoveryFailures);
+                    await RecoverAsync(
+                        () => platform.RemoveDynamicLightingIdentityAsync(recoveryToken),
+                        recoveryFailures);
                 }
 
                 bool wasActivated = transaction.IsActivated;
@@ -174,6 +182,13 @@ public sealed class SetupCommandRunner(ISetupPlatform platform)
 
                 if (mutationStarted)
                 {
+                    if (priorLifecycle?.DynamicLightingIdentityRegistered == true)
+                    {
+                        await RecoverAsync(
+                            () => platform.InstallDynamicLightingIdentityAsync(recoveryToken),
+                            recoveryFailures);
+                    }
+
                     if (priorLifecycle?.Service is { Existed: true } priorService)
                     {
                         await RecoverAsync(
@@ -268,6 +283,7 @@ public sealed class SetupCommandRunner(ISetupPlatform platform)
         await platform.StopSessionAgentAsync(cancellationToken);
         try
         {
+            await platform.RemoveDynamicLightingIdentityAsync(cancellationToken);
             await platform.RemoveUninstallShortcutAsync(cancellationToken);
             await platform.RemoveUninstallRegistrationAsync(cancellationToken);
             if (invocation.BundleManaged || invocation.RecoverOrphanedBundle)
@@ -280,6 +296,13 @@ public sealed class SetupCommandRunner(ISetupPlatform platform)
         {
             List<Exception> recoveryFailures = [];
             using CancellationTokenSource recoveryTimeout = new(TimeSpan.FromSeconds(30));
+            if (uninstallLifecycle.DynamicLightingIdentityRegistered)
+            {
+                await RecoverAsync(
+                    () => platform.InstallDynamicLightingIdentityAsync(recoveryTimeout.Token),
+                    recoveryFailures);
+            }
+
             if (uninstallLifecycle.Startup.UninstallShortcutExisted)
             {
                 await RecoverAsync(

@@ -123,7 +123,7 @@ public sealed class SetupPayloadTransaction : ISetupPayloadTransaction
         string payloadRoot = NormalizeRoot(payloadDirectory);
         IReadOnlyDictionary<string, PayloadEntry> sourceManifest =
             BuildManifest(payloadRoot, files, cancellationToken);
-        ValidateProductionPayload(sourceManifest);
+        ValidateProductionPayload(payloadRoot, sourceManifest, files);
         cancellationToken.ThrowIfCancellationRequested();
 
         EnsureNoAmbiguousTransactionSiblings(paths, files);
@@ -515,7 +515,10 @@ public sealed class SetupPayloadTransaction : ISetupPayloadTransaction
         return new(relative, length, hash);
     }
 
-    private static void ValidateProductionPayload(IReadOnlyDictionary<string, PayloadEntry> manifest)
+    private static void ValidateProductionPayload(
+        string payloadRoot,
+        IReadOnlyDictionary<string, PayloadEntry> manifest,
+        ISetupPayloadFileSystem files)
     {
         string? forbiddenCaptureTool = manifest.Keys.FirstOrDefault(relativePath =>
             Path.GetFileName(relativePath).StartsWith(
@@ -536,6 +539,11 @@ public sealed class SetupPayloadTransaction : ISetupPayloadTransaction
                     $"The setup payload is incomplete: '{required}' is missing.");
             }
         }
+
+        DynamicLightingIdentityRegistration.ValidatePayloadArtifacts(
+            payloadRoot,
+            manifest.Keys,
+            files);
     }
 
     private static void RequireExactManifest(
