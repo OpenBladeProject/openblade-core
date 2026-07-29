@@ -223,6 +223,27 @@ convention and run `git diff --check`.
   cancel, query, readback, and restoration evidence
 - `openblade-core` `6cf04ef`: exact-device temporary-full-charge production
   admission and developer validation entry points
+- `openblade-captures` `4d3c128` and `openblade-core` `261046f`: AC Balanced
+  and Silent capture evidence, typed readback, setters, and restoration
+- `openblade-captures` `35f334d` and `openblade-core` `094397b`: AC
+  Performance capture evidence, admission, and restoration
+- `openblade-captures` `da15d62`: partial Custom CPU/GPU evidence; Custom
+  remains unadmitted
+- `openblade-captures` `56d8b2e` and `openblade-core` `9c86633`: exact-device
+  fan-RPM query evidence and production routing
+- `openblade-captures` `a094424` and `openblade-core` `24ea042`: startup
+  animation readback
+- `openblade-captures` `3e52bac` and `openblade-core` `00693bf`: function-key,
+  Gaming-mode, and device-mode readbacks
+- `openblade-captures` `55bd102` and `openblade-core` `540a897`: EC/MCU
+  evidence and MCU production readback
+- `openblade-captures` `73f3272` and `openblade-core` `c9147a7`: full-AC
+  adapter-class readback
+- `openblade-core` `25620fe`: exact RZ09-0528 production-read regression guard
+- `openblade-captures` `c9389c0`, `openblade-core` `52fd4d6`, and
+  `openblade-docs` `6d29375`: exact-machine display validation and publication
+- `openblade-captures` `3cd2182` and `openblade-core` `1f25572`: read-only
+  NVIDIA clock-offset capability probe and guarded coverage record
 
 Verification at the battery checkpoint:
 
@@ -410,6 +431,13 @@ Unattended capture constraint:
 - Do not start another USBPcap capture while the operator is unavailable.
   Continue only non-elevating read-only probes, tests, and repository work until
   an operator can explicitly handle the consent boundary.
+
+Latest verification after the display, full-AC, and GPU-query checkpoints:
+
+- full Release build: 0 warnings and 0 errors;
+- full solution tests: 3,168 passed;
+- Windows PowerShell 5.1 capture toolkit: all tests passed;
+- documentation site: 11 HTML pages validated.
 
 Update this section after every evidence, implementation, or documentation
 checkpoint.
