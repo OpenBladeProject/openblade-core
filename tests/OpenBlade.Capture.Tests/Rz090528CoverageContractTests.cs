@@ -16,6 +16,7 @@ public sealed class Rz090528CoverageContractTests
         "keyboardLighting.effects.tidal.base=Captured",
         "keyboardLighting.effects.wave.base=Captured",
         "keyboardLighting.effects.wheel.base=Captured",
+        "keyboardLighting.lampArrayInterfaceDiscovery=QueryValidated",
         "performance.ac.cpuPowerLimitWatts=Captured",
         "performance.ac.cpuVoltageOptimizer=Captured",
         "performance.ac.gpuClockOffsetUiPolicy=Captured",
@@ -63,12 +64,28 @@ public sealed class Rz090528CoverageContractTests
                 StringComparer.Ordinal);
 
         Assert.Equal(48, counts["ProductionAdmitted"]);
-        Assert.Equal(2, counts["QueryValidated"]);
+        Assert.Equal(3, counts["QueryValidated"]);
         Assert.Equal(23, counts["Captured"]);
         Assert.Equal(1, counts["SetterValidated"]);
         Assert.Equal(10, counts["SoftwareOnly"]);
         Assert.Equal(3, counts["Absent"]);
         Assert.Equal(54, counts["NotInvestigated"]);
+    }
+
+    [Fact]
+    public void EvidenceCheckpoint_IdentifiesCanonicalCaptureRevision()
+    {
+        using JsonDocument document = LoadCoverage();
+        JsonElement root = document.RootElement;
+        JsonElement source = root.GetProperty("source");
+        JsonElement device = root.GetProperty("device");
+
+        Assert.Equal("openblade-captures", source.GetProperty("repository").GetString());
+        Assert.Equal("151a632", source.GetProperty("revision").GetString());
+        Assert.Equal("RZ09-0528", device.GetProperty("modelNumber").GetString());
+        Assert.Equal("1532", device.GetProperty("vendorIdHex").GetString());
+        Assert.Equal("02C6", device.GetProperty("productIdHex").GetString());
+        Assert.Equal("2.02", device.GetProperty("bios").GetString());
     }
 
     private static IEnumerable<CoverageItem> Flatten(
@@ -100,9 +117,10 @@ public sealed class Rz090528CoverageContractTests
 
     private static JsonDocument LoadCoverage() => JsonDocument.Parse(
         File.ReadAllText(RepositoryFile(
-            "captures",
-            "decoded",
-            "rz09-0528-pid-02c6-bios-2.02-device-coverage.json")));
+            "tests",
+            "OpenBlade.Capture.Tests",
+            "Fixtures",
+            "Rz090528CoverageCheckpoint.json")));
 
     private static string RepositoryFile(params string[] relativeSegments)
     {

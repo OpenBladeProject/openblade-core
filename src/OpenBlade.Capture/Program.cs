@@ -75,6 +75,16 @@ if (args.Length == 1 && args[0].Equals(
     return interfaces.Count > 0 ? 0 : 3;
 }
 
+if (args.Length > 0 && args[0].Equals(
+    "probe-rz09-0528-02c6-lamp-array",
+    StringComparison.OrdinalIgnoreCase))
+{
+    var command = new LampArrayDiscoveryCommand(
+        new WindowsLampArrayDiscoveryProbe(),
+        Console.Out);
+    return await command.RunAsync(args[1..], CancellationToken.None);
+}
+
 if (args.Length == 1 && args[0].Equals("query-display", StringComparison.OrdinalIgnoreCase))
 {
     using var controller = new WindowsDisplaySettingsController();
@@ -1431,6 +1441,8 @@ Console.WriteLine("  OpenBlade.Capture probe-gpu-clock-offsets");
 Console.WriteLine("  OpenBlade.Capture probe-special-keys [seconds] [output-file]");
 Console.WriteLine(
     "  OpenBlade.Capture probe-rz09-0528-02c6-special-keys [seconds] [output-file]");
+Console.WriteLine(
+    "  OpenBlade.Capture probe-rz09-0528-02c6-lamp-array");
 Console.WriteLine("  OpenBlade.Capture validate <fixtures.json>");
 Console.WriteLine("  OpenBlade.Capture probe-battery");
 Console.WriteLine("  OpenBlade.Capture query-battery");

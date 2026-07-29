@@ -863,6 +863,63 @@ harness, retain `-NonInteractive` or close stdin explicitly. Leaving a writable
 stdin pipe open reproduces the intentional missing-parameter prompt and makes
 the test process appear hung even though the validator has not failed.
 
+## Use Windows LampArray for the PID 02C6 matrix
+
+Do not interpret the missing PID `02E0`-style 375-byte feature collection as
+proof that RZ09-0528 lacks individually addressable keyboard lighting. Windows
+Dynamic Lighting exposes the exact `1532:02C6` keyboard through
+`Windows.Devices.Lights.LampArray`.
+
+The read-only exact-device probe
+`probe-rz09-0528-02c6-lamp-array` established:
+
+- one exact `Keyboard` array with 85 lamps;
+- connected and enabled state, RGB control purposes, and virtual-key support;
+- a 33,333 microsecond minimum update interval;
+- a `0.308 x 0.110 x 0.015` metre bounding box;
+- 72 non-empty virtual-key mappings and six lamps without a virtual-key
+  mapping;
+- sanitized geometry-and-key-map SHA-256
+  `C82E71D69DCAADDCB8530C0744B7B3240CC2E9C8FEF6CDAF1AB16B76F7A6A450`.
+
+The probe deliberately excludes `DeviceInformation.Id`, the device name, HID
+instance suffixes, and serial data. It calls no color, brightness, effect, or
+priority mutation API. The canonical sanitized evidence is
+`openblade-captures` commit `151a632`; the core regression suite carries a
+self-contained checkpoint fixture so a clean `openblade-core` checkout does
+not accidentally depend on the ignored local `captures` directory.
+
+Keep these boundaries explicit:
+
+- `LampArray.BrightnessLevel` is an OS lighting value, not firmware command
+  `03/83` readback.
+- `keyboardLighting.matrixInterfaceDiscovery=Absent` continues to describe the
+  older raw 375-byte transport.
+- `keyboardLighting.lampArrayInterfaceDiscovery=QueryValidated` describes the
+  exact OS-native transport.
+- Read-only discovery does not admit production writes.
+
+The production owner must be `OpenBlade.SessionAgent`, not the LocalSystem
+service. LampArray is a current-user API and Dynamic Lighting arbitrates
+foreground/background ownership per user. Background access requires package
+identity plus the `com.microsoft.windows.lighting` application extension; use
+an MSIX or sparse-package/external-location identity without replacing the
+existing WiX install lifecycle. The renderer must:
+
+1. filter the runtime array to exact VID/PID before exposing write access;
+2. use runtime lamp geometry and virtual-key mappings instead of hard-coded
+   PID `02E0` report layouts;
+3. honor `IsAvailable` and Windows priority rather than fighting Synapse;
+4. pace updates at or below `MinUpdateInterval`;
+5. save the current OpenBlade intent, stop cleanly on ownership loss, and
+   require an independently observed restoration before production admission.
+
+The unpackaged background probe reported `IsAvailable=false`. Treat that as the
+current integration boundary, not as device absence. Package identity,
+background priority, one bounded static-color apply, ownership-loss behavior,
+and restoration all remain to be validated before the capability can become
+`ProductionAdmitted`.
+
 ## Preserve discovered special keys without borrowing PID 02E0 reports
 
 Synapse exposes the M1–M5 shortcut surface on RZ09-0528, but OpenBlade's
@@ -969,10 +1026,10 @@ checkpoint.
 
 Do not interpret the green admission probe as full RZ09-0528 feature coverage.
 The sanitized schema-2 coverage ledger is the completion source of truth. At the
-`d987a73` checkpoint its 141 leaves contain:
+`151a632` LampArray-evidence checkpoint its 142 leaves contain:
 
 - 48 `ProductionAdmitted`;
-- 2 `QueryValidated`;
+- 3 `QueryValidated`;
 - 23 `Captured`;
 - 1 `SetterValidated`;
 - 10 `SoftwareOnly`;
@@ -991,9 +1048,10 @@ The main physical-evidence groups still blocking broader admission are:
   `02C6` adapter-class response and thermal readback;
 - CPU Power Limit, CPU Voltage Optimizer, and GPU overclock setters/readback
   through a lifecycle OpenBlade can own without Synapse;
-- quick-effect parameters, effect getter, and the model's 51-byte lighting
-  collection; PID `02E0`'s 375-byte matrix interface is absent and must not be
-  substituted;
+- quick-effect parameters and effect getter; the model's 51-byte collection is
+  now query-validated as an 85-lamp Windows LampArray, while background
+  identity, priority, write, ownership-loss, and restoration validation remain
+  incomplete;
 - exact Normal/Driver device-mode setter round trips;
 - M1-M5 and performance-key press/release reports;
 - cold boot, sign-in, service restart, sleep/resume, and device reconnect.
