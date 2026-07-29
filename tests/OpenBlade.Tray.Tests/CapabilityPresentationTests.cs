@@ -639,6 +639,11 @@ public sealed class CapabilityPresentationTests
         Assert.Contains("ViewModel.AboutSessionAgentVersionStatus", aboutPage.ToString(), StringComparison.Ordinal);
         Assert.Contains("ViewModel.AboutServiceVersionStatus", aboutPage.ToString(), StringComparison.Ordinal);
         Assert.Contains("ViewModel.AboutBatteryHealthStatus", aboutPage.ToString(), StringComparison.Ordinal);
+        Assert.Contains(
+            "ViewModel.TroubleshootingUsbDeviceStatus",
+            aboutPage.ToString(),
+            StringComparison.Ordinal);
+        Assert.DoesNotContain("VID 1532 · PID 02E0", aboutPage.ToString(), StringComparison.Ordinal);
         Assert.Contains(aboutPage.Descendants(), element =>
             element.Name.LocalName == "TextBlock"
             && Attribute(element, "Text") == "Battery health");

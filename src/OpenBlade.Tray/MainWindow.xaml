@@ -3321,7 +3321,7 @@
                                     <Grid ColumnSpacing="24">
                                         <Grid.ColumnDefinitions><ColumnDefinition Width="2*" /><ColumnDefinition Width="3*" /></Grid.ColumnDefinitions>
                                         <TextBlock Text="USB device" Style="{StaticResource CardTitleStyle}" />
-                                        <TextBlock Grid.Column="1" Text="VID 1532 · PID 02E0" Style="{StaticResource TroubleshootingValueStyle}" />
+                                        <TextBlock Grid.Column="1" Text="{x:Bind ViewModel.TroubleshootingUsbDeviceStatus, Mode=OneWay}" Style="{StaticResource TroubleshootingValueStyle}" />
                                     </Grid>
                                 </Border>
                                 <Border Style="{StaticResource SettingsLastRowStyle}">

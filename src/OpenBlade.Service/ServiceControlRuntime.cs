@@ -2975,7 +2975,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             token.ThrowIfCancellationRequested();
             if (!available)
             {
-                PublishFullUnavailable(powerSource, "No verified PID 02E0 device is available.");
+                PublishFullUnavailable(powerSource, "No verified supported device is available.");
                 return;
             }
         }
@@ -3544,7 +3544,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         PublishObservationUnavailable(
             powerSource,
             liveReadings,
-            "No verified PID 02E0 device is available.");
+            "No verified supported device is available.");
     }
 
     private async Task<FullDeviceObservation> ReadFullDeviceObservationAsync(
@@ -3765,7 +3765,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
                 PublishObservationUnavailable(
                     powerSource,
                     new LiveReadings(batteryPowerFlowMilliwatts, null, null),
-                    "No verified PID 02E0 device is available.");
+                    "No verified supported device is available.");
             }
             return;
         }
@@ -4234,7 +4234,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
     {
         ServiceStatusSnapshot current = GetStatus();
         // Do not flash all controls unavailable for one missed enumeration.
-        // Hardware operations independently re-admit PID 02E0 before access;
+        // Hardware operations independently re-admit the exact supported device before access;
         // a second consecutive miss still publishes the fail-closed state.
         PublishIfChanged(current with
         {
@@ -4269,7 +4269,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             PotentialControllers: [],
             ControllerDetectionWarning: null,
             ExternalChanges: driftTracker.ExternalChanges,
-            Message: "No verified PID 02E0 device is available.",
+            Message: "No verified supported device is available.",
             Capabilities: UnavailableCapabilities,
             ConfirmedState: null,
             Profiles: Automation.Profiles,

@@ -19,6 +19,44 @@ public sealed class FirmwareSmokeAssessmentTests
     }
 
     [Fact]
+    public void HealthyRz090528BaselineUsesItsExactCapabilityGate()
+    {
+        FirmwareSmokeSnapshot snapshot = CreateSnapshot("1.9.0.0") with
+        {
+            TargetModel = RazerBladeModelCatalog.Rz090528ModelNumber,
+            Firmware = new FirmwareIdentity("2.02", "1.09", "1.9.0.0", "Unavailable"),
+            Capabilities = CreateSnapshot("1.9.0.0").Capabilities with
+            {
+                PerformancePresets = ["Balanced", "Custom", "Performance", "Silent"],
+                LightingEffects = ["Off"],
+                ObservedLightingEffects =
+                [
+                    "Ripple",
+                    "Spectrum",
+                    "Starlight",
+                    "Static",
+                    "Tidal",
+                    "Wave",
+                    "Wheel",
+                ],
+                SpecialKeyBindingsAccess = DeviceFeatureAccess.ObservedOnly.ToString(),
+                OneShotLaptopControls =
+                    ["FunctionKeyPrimary", "GamingMode", "StartupAnimation"],
+            },
+        };
+
+        FirmwareSmokeReport report = FirmwareSmokeAssessment.ValidateBaseline(snapshot);
+
+        Assert.True(report.Succeeded);
+        Assert.DoesNotContain(
+            report.Checks,
+            check => check.Outcome == FirmwareSmokeOutcome.Failed);
+        Assert.Equal(
+            FirmwareSmokeOutcome.Passed,
+            Assert.Single(report.Checks, check => check.Id == "capabilities.special-keys").Outcome);
+    }
+
+    [Fact]
     public void PostUpdateAcceptsEqualCapabilityValuesFromDifferentCollections()
     {
         FirmwareSmokeSnapshot baseline = CreateSnapshot("1.5.0.0");
@@ -52,6 +90,26 @@ public sealed class FirmwareSmokeAssessmentTests
         Assert.Equal(
             FirmwareSmokeOutcome.Failed,
             Assert.Single(report.Checks, check => check.Id == "firmware.mcu").Outcome);
+    }
+
+    [Fact]
+    public void PostUpdateRejectsDifferentSupportedTargetModel()
+    {
+        FirmwareSmokeSnapshot baseline = CreateSnapshot("1.5.0.0");
+        FirmwareSmokeSnapshot current = CreateSnapshot("1.6.0.0") with
+        {
+            TargetModel = RazerBladeModelCatalog.Rz090528ModelNumber,
+        };
+
+        FirmwareSmokeReport report = FirmwareSmokeAssessment.ComparePostUpdate(
+            baseline,
+            current,
+            requireMcuChange: true);
+
+        Assert.False(report.Succeeded);
+        Assert.Equal(
+            FirmwareSmokeOutcome.Failed,
+            Assert.Single(report.Checks, check => check.Id == "snapshot.target").Outcome);
     }
 
     [Fact]

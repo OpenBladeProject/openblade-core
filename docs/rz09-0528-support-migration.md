@@ -897,5 +897,29 @@ adding a decoder. Keep raw output private, add only sanitized fixtures, and
 prove that an admitted decoder rejects PID `02E0`-specific assumptions that do
 not hold for `02C6`.
 
+## Keep user-facing identity and firmware smoke model-specific
+
+Do not use `TargetBladeDevice` for generic service, diagnostics, tray, or
+firmware-smoke presentation. That type intentionally describes the older
+RZ09-0581 / PID `02E0` protocol target. The shared
+`RazerBladeModelCatalog` now carries the canonical USB VID/PID for both
+supported models:
+
+- RZ09-0581 -> `1532:02E0`;
+- RZ09-0528 -> `1532:02C6`.
+
+Diagnostics derive `device.json` from the verified firmware model, About binds
+the USB row dynamically, and an unknown model is reported as unavailable
+instead of being mislabeled. `TestedPlatformCatalog` includes the validated
+RZ09-0528 BIOS `2.02`, EC `1.09`, and MCU `1.9.0.0` tuple.
+
+Firmware-smoke schema 3 resolves the target from the service observation and
+uses an exact capability gate per model. RZ09-0528 expects four AC performance
+presets, four fan modes, keyboard Off, seven observed quick effects, all three
+logo modes, three admitted laptop controls, and observed-only special keys.
+Reversible and recovery confirmation tokens are derived from the baseline
+model (`RZ09-0528-MCU-SMOKE` here), and recovery additionally proves the live
+device model matches the baseline before any setter can run.
+
 Update this section after every evidence, implementation, or documentation
 checkpoint.

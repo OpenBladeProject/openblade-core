@@ -21,7 +21,7 @@ public sealed class FirmwareSmokeRecovery(IFirmwareSmokeClient client)
         ServiceStatusSnapshot current = await client.ObserveStateAsync(
             LiveReadingSensors.None,
             cancellationToken).ConfigureAwait(false);
-        ValidatePreconditions(current);
+        ValidatePreconditions(current, baseline.TargetModel);
 
         var checks = new List<FirmwareSmokeCheck>
         {
@@ -322,15 +322,23 @@ public sealed class FirmwareSmokeRecovery(IFirmwareSmokeClient client)
         return false;
     }
 
-    private static void ValidatePreconditions(ServiceStatusSnapshot status)
+    private static void ValidatePreconditions(
+        ServiceStatusSnapshot status,
+        string baselineTargetModel)
     {
+        string? currentModel = RazerBladeModelCatalog.Find(
+            status.Firmware?.ModelNumber)?.ModelNumber;
         if (!status.DeviceVerified
             || status.WritesBlocked
             || status.PotentialControllers.Count > 0
-            || status.ActivePowerSource != PowerSource.PluggedIn)
+            || status.ActivePowerSource != PowerSource.PluggedIn
+            || !string.Equals(
+                currentModel,
+                RazerBladeModelCatalog.Find(baselineTargetModel)?.ModelNumber,
+                StringComparison.OrdinalIgnoreCase))
         {
             throw new InvalidOperationException(
-                "Baseline recovery requires a verified, write-enabled device on the full-power AC adapter with no controller conflict.");
+                "Baseline recovery requires the same verified, write-enabled device on the full-power AC adapter with no controller conflict.");
         }
     }
 

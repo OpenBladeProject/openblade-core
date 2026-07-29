@@ -279,7 +279,7 @@ public sealed class DiagnosticArchiveProvider : IDiagnosticArchiveProvider
 
         DiagnosticBundle bundle = new(
             versions,
-            new DiagnosticDeviceIdentity("RZ09-0581", "1532", "02E0", SerialNumber: null),
+            CreateDeviceIdentity(status),
             CreateCapabilities(status.Capabilities),
             CreateConfiguration(status, liveReadingsEnabled),
             historySnapshot.CommandResults,
@@ -296,6 +296,24 @@ public sealed class DiagnosticArchiveProvider : IDiagnosticArchiveProvider
 
         string fileName = $"OpenBlade-diagnostics-{metadata.CapturedAt.UtcDateTime:yyyyMMdd-HHmmssZ}.zip";
         return new DiagnosticArchive(fileName, destination.ToArray());
+    }
+
+    private static DiagnosticDeviceIdentity CreateDeviceIdentity(
+        ServiceStatusSnapshot status)
+    {
+        string? reportedModel = status.Firmware?.ModelNumber;
+        RazerBladeModelInfo? model = RazerBladeModelCatalog.Find(reportedModel);
+        return model is null
+            ? new DiagnosticDeviceIdentity(
+                string.IsNullOrWhiteSpace(reportedModel) ? "Unavailable" : reportedModel.Trim(),
+                "Unavailable",
+                "Unavailable",
+                SerialNumber: null)
+            : new DiagnosticDeviceIdentity(
+                model.ModelNumber,
+                model.UsbVendorId,
+                model.UsbProductId,
+                SerialNumber: null);
     }
 
     private static IReadOnlyDictionary<string, bool> CreateCapabilities(

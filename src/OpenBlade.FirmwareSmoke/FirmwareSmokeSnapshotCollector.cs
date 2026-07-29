@@ -1,6 +1,5 @@
 using System.Diagnostics;
 using OpenBlade.Contracts;
-using OpenBlade.Protocol;
 
 namespace OpenBlade.FirmwareSmoke;
 
@@ -63,7 +62,7 @@ public sealed class FirmwareSmokeSnapshotCollector(IFirmwareSmokeClient client)
             CurrentSchemaVersion,
             DateTimeOffset.UtcNow,
             observationAttempts,
-            TargetBladeDevice.Model,
+            ResolveTargetModel(status),
             status.ServiceVersion,
             status.DeviceVerified,
             status.WritesBlocked,
@@ -124,6 +123,15 @@ public sealed class FirmwareSmokeSnapshotCollector(IFirmwareSmokeClient client)
         values.Select(value => value.ToString())
             .Order(StringComparer.Ordinal)
             .ToArray();
+
+    private static string ResolveTargetModel(ServiceStatusSnapshot status)
+    {
+        string? reportedModel = status.Firmware?.ModelNumber;
+        return RazerBladeModelCatalog.Find(reportedModel)?.ModelNumber
+            ?? (string.IsNullOrWhiteSpace(reportedModel)
+                ? "Unavailable"
+                : reportedModel.Trim());
+    }
 
     private static bool HasCompleteRequiredReadback(ServiceStatusSnapshot status) =>
         status.DeviceVerified

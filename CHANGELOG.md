@@ -23,7 +23,10 @@ All notable changes to OpenBlade are documented in this file. The project follow
   also retained as observed-only: editable bindings stay hidden and inactive
   until PID `02C6` input reports are independently captured and admitted.
   Firmware-smoke schema 3 records these observed capabilities separately so an
-  update cannot silently lose them.
+  update cannot silently lose them. Diagnostics, About, tested-platform
+  assessment, and firmware smoke now derive the RZ09-0528 / PID `02C6` identity
+  from the verified model instead of displaying or validating the older
+  RZ09-0581 / PID `02E0` target.
 - Added GitHub release checks to About with Every startup, Daily, Weekly,
   Monthly, and Manual only intervals. Checks run at most once during tray
   startup when due, and available releases open in the user's browser.

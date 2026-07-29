@@ -112,12 +112,6 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         new(LightingDirection.Rightward, "Inward"),
     ];
 
-    private static readonly RazerBladeModelInfo TargetLaptop =
-        RazerBladeModelCatalog.Find(RazerBladeModelCatalog.OpenBladeTargetModelNumber)
-        ?? throw new InvalidOperationException("The supported laptop is missing from the model catalog.");
-    private static readonly string TargetLaptopLabel =
-        $"{TargetLaptop.DisplayName}, {TargetLaptop.ModelNumber}";
-
     private readonly IServiceClient serviceClient;
     private readonly IUiDispatcher dispatcher;
     private readonly IDiagnosticArchiveSaver diagnosticArchiveSaver;
@@ -1059,13 +1053,41 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             ? installedServiceVersion
             : latestStatus.ServiceVersion.Trim();
 
-    public string AboutDetectedLaptopStatus => !IsConnected
-        ? "Unavailable"
-        : latestStatus?.DeviceVerified == true
-            ? TargetLaptopLabel
-            : HasConcreteFirmwareValue(latestStatus?.Firmware?.ModelNumber)
-                ? FirmwareValue(latestStatus?.Firmware?.ModelNumber)
+    public string AboutDetectedLaptopStatus
+    {
+        get
+        {
+            if (!IsConnected)
+            {
+                return "Unavailable";
+            }
+
+            string? modelNumber = latestStatus?.Firmware?.ModelNumber;
+            if (HasConcreteFirmwareValue(modelNumber))
+            {
+                RazerBladeModelInfo? model = RazerBladeModelCatalog.Find(modelNumber);
+                return model is null
+                    ? FirmwareValue(modelNumber)
+                    : $"{model.DisplayName}, {model.ModelNumber}";
+            }
+
+            return latestStatus?.DeviceVerified == true
+                ? "Verified Razer Blade"
                 : "Not detected";
+        }
+    }
+
+    public string TroubleshootingUsbDeviceStatus
+    {
+        get
+        {
+            RazerBladeModelInfo? model = RazerBladeModelCatalog.Find(
+                latestStatus?.Firmware?.ModelNumber);
+            return model is null
+                ? UnavailableLabel
+                : $"VID {model.UsbVendorId} · PID {model.UsbProductId}";
+        }
+    }
 
     public string AboutBiosVersionStatus => FirmwareValue(latestStatus?.Firmware?.BiosVersion);
 
@@ -1122,12 +1144,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             string? modelNumber = latestStatus?.Firmware?.ModelNumber;
             if (!HasConcreteFirmwareValue(modelNumber))
             {
-                if (latestStatus?.DeviceVerified != true)
-                {
-                    return new(false, []);
-                }
-
-                modelNumber = TargetLaptop.ModelNumber;
+                return new(false, []);
             }
 
             return TestedPlatformCatalog.Assess(
@@ -7361,6 +7378,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         Notify(nameof(TroubleshootingPowerSourceStatus));
         Notify(nameof(TroubleshootingControlsStatus));
         Notify(nameof(TroubleshootingKeyboardDriverModeStatus));
+        Notify(nameof(TroubleshootingUsbDeviceStatus));
         Notify(nameof(TroubleshootingOtherRazerSoftwareStatus));
         Notify(nameof(AboutServiceVersionStatus));
         Notify(nameof(AboutDetectedLaptopStatus));

@@ -2771,7 +2771,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         Assert.Equal(["RazerAppEngine"], conflict.PotentialControllers);
         Assert.Null(conflict.ControllerDetectionWarning);
         Assert.Empty(conflict.ExternalChanges);
-        Assert.Equal("No verified PID 02E0 device is available.", conflict.Message);
+        Assert.Equal("No verified supported device is available.", conflict.Message);
         Assert.Equal(conflict.Revision + 1, detectionFailure.Revision);
         Assert.Equal(
             "process enumeration failed",
@@ -2901,7 +2901,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
             "Windows service enumeration failed.",
             status.ControllerDetectionWarning);
         Assert.Empty(status.ExternalChanges);
-        Assert.Equal("No verified PID 02E0 device is available.", status.Message);
+        Assert.Equal("No verified supported device is available.", status.Message);
         Assert.Equal(0, context.Provider.TryGetCount);
         Assert.Equal(0, context.Device.TotalCalls);
     }

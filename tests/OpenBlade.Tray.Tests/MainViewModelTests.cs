@@ -3703,6 +3703,7 @@ public sealed class MainViewModelTests
         Assert.Matches("^0\\.1\\.0\\+[0-9a-f]{8}$", viewModel.AboutUiVersionStatus);
         Assert.Equal("Unavailable", viewModel.AboutServiceVersionStatus);
         Assert.Equal("Unavailable", viewModel.AboutDetectedLaptopStatus);
+        Assert.Equal("Unavailable", viewModel.TroubleshootingUsbDeviceStatus);
         Assert.False(viewModel.HasTroubleshootingRecentError);
         Assert.Empty(viewModel.TroubleshootingRecentErrorStatus);
 
@@ -3758,7 +3759,12 @@ public sealed class MainViewModelTests
         client.Publish(CreateStatus(verified: true, blocked: false) with
         {
             Revision = 3,
-            Firmware = new FirmwareVersions("3.01", "1.04", "Unavailable", "98.3.5c.40.3d"),
+            Firmware = new FirmwareVersions(
+                "3.01",
+                "1.04",
+                "Unavailable",
+                "98.3.5c.40.3d",
+                RazerBladeModelCatalog.OpenBladeTargetModelNumber),
             KeyboardDriverModeActive = true,
         });
         await WaitUntilAsync(() =>
@@ -3771,6 +3777,7 @@ public sealed class MainViewModelTests
         Assert.Equal("None", viewModel.TroubleshootingOtherRazerSoftwareStatus);
         Assert.Equal("Loaded", viewModel.TroubleshootingKeyboardDriverModeStatus);
         Assert.Equal("Razer Blade 16 (2026), RZ09-0581", viewModel.AboutDetectedLaptopStatus);
+        Assert.Equal("VID 1532 · PID 02E0", viewModel.TroubleshootingUsbDeviceStatus);
         Assert.Equal("3.01", viewModel.AboutBiosVersionStatus);
         Assert.Equal("1.04", viewModel.AboutEcVersionStatus);
         Assert.Equal("Unavailable", viewModel.AboutMcuVersionStatus);
@@ -4208,6 +4215,23 @@ public sealed class MainViewModelTests
         Assert.Equal(
             "OpenBlade has not tested this configuration: Model RZ09-9999ABC.",
             viewModel.DashboardTestedPlatformWarningMessage);
+
+        client.Publish(stable with
+        {
+            Revision = stable.Revision + 3,
+            Firmware = new FirmwareVersions(
+                "2.02",
+                "1.09",
+                "1.9.0.0",
+                "Unavailable",
+                RazerBladeModelCatalog.Rz090528ModelNumber),
+        });
+        await WaitUntilAsync(() =>
+            viewModel.AboutDetectedLaptopStatus == "Razer Blade 16 (2025), RZ09-0528");
+
+        Assert.Equal("VID 1532 · PID 02C6", viewModel.TroubleshootingUsbDeviceStatus);
+        Assert.False(viewModel.HasUntestedPlatformVersion);
+        Assert.Equal(string.Empty, viewModel.DashboardTestedPlatformWarningMessage);
     }
 
     [Fact]

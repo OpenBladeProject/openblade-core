@@ -58,9 +58,9 @@ public sealed class DiagnosticArchiveProviderTests
         }
 
         using JsonDocument device = JsonDocument.Parse(await ReadEntryAsync(archive, "device.json"));
-        Assert.Equal("RZ09-0581", device.RootElement.GetProperty("model").GetString());
+        Assert.Equal("RZ09-0528", device.RootElement.GetProperty("model").GetString());
         Assert.Equal("1532", device.RootElement.GetProperty("vendorId").GetString());
-        Assert.Equal("02E0", device.RootElement.GetProperty("productId").GetString());
+        Assert.Equal("02C6", device.RootElement.GetProperty("productId").GetString());
         Assert.Equal(JsonValueKind.Null, device.RootElement.GetProperty("serialNumber").ValueKind);
 
         using JsonDocument configuration = JsonDocument.Parse(
@@ -287,7 +287,15 @@ public sealed class DiagnosticArchiveProviderTests
             PerformanceOverride: null,
             FanOverride: null,
             LightingOverride: null,
-            FullChargeOverride: false);
+            FullChargeOverride: false)
+        {
+            Firmware = new FirmwareVersions(
+                "2.02",
+                "1.09",
+                "1.9.0.0",
+                "Unavailable",
+                RazerBladeModelCatalog.Rz090528ModelNumber),
+        };
     }
 
     private sealed class FixedMetadataSource(
