@@ -335,6 +335,22 @@ Startup-animation readback follow-up:
 - No startup-animation setter is admitted. Enable/disable writes still require
   exact setter capture, independent readback, and restoration.
 
+Additional keyboard-behavior readbacks:
+
+- Exact advisory probes returned `02/86 0100` = FunctionKeys,
+  `00/88 00000000` = Gaming Mode disabled, and `00/84 0300` = Driver device
+  mode.
+- Candidate probe JSON now accepts explicit device identity; do not allow
+  exact PID `02C6` results to be mislabeled as the PID `02E0` target.
+- Function-key and gaming-mode read evidence was added only to the exact
+  RZ09-0528 production battery factory. Device-mode query-only support was
+  added to the exact brightness lighting port; it does not claim ownership or
+  write Normal/Driver mode.
+- The exact production probe reconfirmed FunctionKeys, Gaming Mode false, and
+  Driver mode true with `Success=True`.
+- All corresponding setters remain unavailable until exact captures and
+  reversible validation exist.
+
 Unattended capture constraint:
 
 - A later fixed-fan capture attempt caused USBPcap to request UAC even with the

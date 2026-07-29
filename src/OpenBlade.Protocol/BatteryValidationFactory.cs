@@ -133,6 +133,8 @@ public static class BatteryValidationFactory
             {
                 ProductionBatteryQueryCapability.TemporaryFullCharge,
                 ProductionBatteryQueryCapability.StartupAnimation,
+                ProductionBatteryQueryCapability.FunctionKeyPrimary,
+                ProductionBatteryQueryCapability.GamingMode,
             });
         var native = new WindowsHidNative();
         var registry = new WindowsRegistryValueSource();

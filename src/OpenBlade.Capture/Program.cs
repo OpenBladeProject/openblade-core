@@ -555,21 +555,29 @@ if (args.Length == 1 && args[0].Equals(
     HidSessionResult<IProductionBatteryPort> openedBattery =
         await battery.OpenAsync(CancellationToken.None);
     bool? startupAnimation = null;
+    FunctionKeyPrimaryMode? functionKeyPrimary = null;
+    bool? gamingMode = null;
     if (openedBattery.Value is { } batteryPort && openedBattery.Failure is null)
     {
         await using (batteryPort)
         {
             startupAnimation =
                 await batteryPort.QueryStartupAnimationAsync(CancellationToken.None);
+            functionKeyPrimary =
+                await batteryPort.QueryFunctionKeyPrimaryAsync(CancellationToken.None);
+            gamingMode =
+                await batteryPort.QueryGamingModeAsync(CancellationToken.None);
         }
     }
     HidSessionResult<IProductionLightingPort> opened =
         await lighting.OpenAsync(CancellationToken.None);
+    bool? driverMode = null;
     if (opened.Value is { } port && opened.Failure is null)
     {
         await using (port)
         {
             _ = await port.ReadStateAsync(CancellationToken.None);
+            driverMode = await port.ReadDriverModeAsync(CancellationToken.None);
         }
     }
 
@@ -608,6 +616,10 @@ if (args.Length == 1 && args[0].Equals(
         $"StartupAnimation={startupAnimation?.ToString() ?? "Unavailable"}");
     Console.WriteLine(
         $"BatteryOpenFailure={openedBattery.Failure?.ToString() ?? "None"}");
+    Console.WriteLine(
+        $"FunctionKeyPrimary={functionKeyPrimary?.ToString() ?? "Unavailable"}");
+    Console.WriteLine($"GamingMode={gamingMode?.ToString() ?? "Unavailable"}");
+    Console.WriteLine($"DriverMode={driverMode?.ToString() ?? "Unavailable"}");
     bool success = probe.Classification is
             BatteryValidationProbeClassification.Ready
             or BatteryValidationProbeClassification.ReadyWithAccessFallback
@@ -622,6 +634,9 @@ if (args.Length == 1 && args[0].Equals(
         && !battery.Capabilities.SupportsBatteryProtectionOff
         && fanRpm.Success
         && startupAnimation is not null
+        && functionKeyPrimary is not null
+        && gamingMode is not null
+        && driverMode is not null
         && openedBattery.Failure is null
         && battery.Capabilities.SupportsTemporaryFullCharge
         && lighting.Capabilities.LightingEffects.Count == 0
@@ -671,6 +686,19 @@ if (args.Length > 0 && args[0].Equals(
     return await command.RunAsync(args[1..], CancellationToken.None);
 }
 
+if (args.Length == 1 && args[0].Equals(
+    "probe-rz09-0528-02c6-function-key-primary-getter",
+    StringComparison.OrdinalIgnoreCase))
+{
+    IGetterCandidateProbeRunner runner =
+        GetterCandidateProbeFactory.CreateFunctionKeyPrimaryRz090528Windows();
+    var command = new FunctionKeyPrimaryGetterCandidateProbeCommand(
+        runner.RunAsync,
+        Console.Out,
+        device: new DeviceIdentity("RZ09-0528", 0x1532, 0x02C6, "2.02"));
+    return await command.RunAsync([], CancellationToken.None);
+}
+
 if (args.Length > 0 && args[0].Equals(
     "probe-gaming-mode-getter",
     StringComparison.OrdinalIgnoreCase))
@@ -681,6 +709,19 @@ if (args.Length > 0 && args[0].Equals(
     return await command.RunAsync(args[1..], CancellationToken.None);
 }
 
+if (args.Length == 1 && args[0].Equals(
+    "probe-rz09-0528-02c6-gaming-mode-getter",
+    StringComparison.OrdinalIgnoreCase))
+{
+    IGetterCandidateProbeRunner runner =
+        GetterCandidateProbeFactory.CreateGamingModeRz090528Windows();
+    var command = new GamingModeGetterCandidateProbeCommand(
+        runner.RunAsync,
+        Console.Out,
+        device: new DeviceIdentity("RZ09-0528", 0x1532, 0x02C6, "2.02"));
+    return await command.RunAsync([], CancellationToken.None);
+}
+
 if (args.Length > 0 && args[0].Equals(
     "query-device-mode",
     StringComparison.OrdinalIgnoreCase))
@@ -689,6 +730,17 @@ if (args.Length > 0 && args[0].Equals(
         GetterCandidateProbeFactory.CreateDeviceModeWindows();
     var command = new DeviceModeQueryCommand(runner.RunAsync, Console.Out);
     return await command.RunAsync(args[1..], CancellationToken.None);
+}
+
+if (args.Length == 1 && args[0].Equals(
+    "query-rz09-0528-02c6-device-mode",
+    StringComparison.OrdinalIgnoreCase))
+{
+    Console.WriteLine("Target=RZ09-0528 1532:02C6 BIOS 2.02");
+    IGetterCandidateProbeRunner runner =
+        GetterCandidateProbeFactory.CreateDeviceModeRz090528Windows();
+    var command = new DeviceModeQueryCommand(runner.RunAsync, Console.Out);
+    return await command.RunAsync([], CancellationToken.None);
 }
 
 if (args.Length > 0 && args[0].Equals(
@@ -824,6 +876,11 @@ Console.WriteLine(
     "  OpenBlade.Capture query-rz09-0528-02c6-performance-fan-discriminator");
 Console.WriteLine("  OpenBlade.Capture probe-function-key-primary-getter");
 Console.WriteLine("  OpenBlade.Capture probe-gaming-mode-getter");
+Console.WriteLine(
+    "  OpenBlade.Capture probe-rz09-0528-02c6-function-key-primary-getter");
+Console.WriteLine(
+    "  OpenBlade.Capture probe-rz09-0528-02c6-gaming-mode-getter");
+Console.WriteLine("  OpenBlade.Capture query-rz09-0528-02c6-device-mode");
 Console.WriteLine(
     "  OpenBlade.Capture validate-performance-fan " +
     "<balanced|silent|performance|fixed5400|battery-saver|battery-balanced> " +

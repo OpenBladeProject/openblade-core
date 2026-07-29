@@ -115,6 +115,38 @@ internal sealed class Rz090528BrightnessLightingPort : IProductionLightingPort
         SupportsKeyboardBrightness = true,
     };
 
+    public async Task<bool?> ReadDriverModeAsync(
+        CancellationToken cancellationToken)
+    {
+        await EnterAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            ReadOnlyMemory<byte> response = await ExecuteCoreAsync(
+                new RazerCommandSpec(
+                    DeviceModeProtocol.OperationClass,
+                    DeviceModeProtocol.QueryOperationId,
+                    DeviceModeProtocol.QueryArguments.ToArray(),
+                    expectedPayloadLength: 2,
+                    payload => DeviceModeProtocol.TryDecodeQuery(
+                        payload.Span,
+                        out _)),
+                write: false,
+                cancellationToken).ConfigureAwait(false);
+            if (!DeviceModeProtocol.TryDecodeQuery(
+                    response.Span,
+                    out RazerDeviceMode mode))
+            {
+                throw new IOException("PID 02C6 device-mode response was malformed.");
+            }
+
+            return mode == RazerDeviceMode.Driver;
+        }
+        finally
+        {
+            operationGate.Release();
+        }
+    }
+
     public async Task<LightingSettings?> ReadStateAsync(
         CancellationToken cancellationToken)
     {

@@ -32,6 +32,31 @@ internal static class GetterCandidateProbeFactory
             ExchangeTimeout,
             CleanupTimeout);
 
+    internal static IGetterCandidateProbeRunner
+        CreateFunctionKeyPrimaryRz090528Windows() =>
+        new FunctionKeyPrimaryGetterCandidateProbeRunner(
+            static () => new ValidationRunContext(),
+            CreateRz090528AdvisoryActorFactory(),
+            TimeProvider.System,
+            ExchangeTimeout,
+            CleanupTimeout);
+
+    internal static IGetterCandidateProbeRunner CreateGamingModeRz090528Windows() =>
+        new GamingModeGetterCandidateProbeRunner(
+            static () => new ValidationRunContext(),
+            CreateRz090528AdvisoryActorFactory(),
+            TimeProvider.System,
+            ExchangeTimeout,
+            CleanupTimeout);
+
+    internal static IGetterCandidateProbeRunner CreateDeviceModeRz090528Windows() =>
+        new DeviceModeQueryRunner(
+            static () => new ValidationRunContext(),
+            CreateRz090528AdvisoryActorFactory(),
+            TimeProvider.System,
+            ExchangeTimeout,
+            CleanupTimeout);
+
     internal static IGetterCandidateProbeRunner CreateDeviceModeWindows() =>
         new DeviceModeQueryRunner(
             static () => new ValidationRunContext(),
@@ -70,6 +95,37 @@ internal static class GetterCandidateProbeFactory
             ExchangeTimeout,
             ControllerExclusivityPolicy.Strict,
             FeatureReportSettleDelay);
+    }
+
+    private static IValidationActorFactory CreateRz090528AdvisoryActorFactory()
+    {
+        var native = new WindowsHidNative();
+        var registry = new WindowsRegistryValueSource();
+        var guard = new WindowsHardwareAccessGuard(
+            new RunningProcessSource(),
+            new WindowsServiceSource());
+        var opener = new WindowsRazerHidSessionOpener(
+            new WindowsHostIdentitySource(
+                registry,
+                new RuntimeWindowsPlatformEvidenceSource(registry),
+                WindowsHostIdentitySource.Rz090528Identity),
+            guard,
+            native,
+            ControllerExclusivityPolicy.Advisory,
+            new HidHandleIdentity(
+                VendorId: 0x1532,
+                ProductId: 0x02C6,
+                UsagePage: 0x0001,
+                Usage: 0x0002,
+                FeatureReportByteLength: 91));
+        return new ValidationActorFactory(
+            opener,
+            new OverlappedFeatureOperation(native),
+            guard,
+            TimeProvider.System,
+            ExchangeTimeout,
+            ControllerExclusivityPolicy.Advisory,
+            TimeSpan.FromMilliseconds(30));
     }
 }
 

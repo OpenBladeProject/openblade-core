@@ -91,6 +91,26 @@ public sealed class ProductionLightingPortTests
     }
 
     [Fact]
+    public async Task Rz090528ReadDriverMode_UsesQueryOnly()
+    {
+        var session = new LightingSession(initialBrightness: 0)
+        {
+            DeviceMode = RazerDeviceMode.Driver,
+        };
+        await using var port = new Rz090528BrightnessLightingPort(
+            new ValidationActor(
+                session,
+                new BatteryCommands(),
+                new TemporaryCommands()),
+            TimeSpan.FromSeconds(1));
+
+        Assert.True(await port.ReadDriverModeAsync(default));
+        Assert.Equal(
+            [(0x00, 0x84, "0000")],
+            session.Commands.Select(CommandTuple).ToArray());
+    }
+
+    [Fact]
     public async Task DriverModeLifecycle_AcquiresVerifiedModeAndRestoresOwnedBaseline()
     {
         var session = new LightingSession(initialBrightness: 0xC5)
