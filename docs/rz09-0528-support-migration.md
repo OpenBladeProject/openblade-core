@@ -290,5 +290,24 @@ AC Performance follow-up:
 - AC Balanced, Silent, Performance, and Automatic fans are admitted. Custom,
   battery presets, fixed/manual/maximum fans, and RPM readback remain pending.
 
+AC Custom partial follow-up:
+
+- Selecting Custom on AC emitted paired `0D/02` arguments `01010400` and
+  `01020400`, then reapplied saved component values with `0D/07`.
+- On this exact PID, visible CPU Medium reads back as `010102`. This differs
+  from the existing PID `02E0` assumptions and must remain device-scoped.
+- Visible GPU Low, Medium, and High map to `010200`, `010201`, and `010202`.
+  All three were independently captured and read back, including a clean
+  High-to-Low restoration.
+- CPU Low and High could not be exercised because Synapse disabled the CPU
+  preset controls while CPU Voltage Optimizer was enabled. The optimizer was
+  deliberately preserved. Custom and its component setters therefore remain
+  outside the production factory despite the partial evidence.
+- Timeout-bound sessions that ended before a delayed UI click were preserved
+  as negative controls rather than attributed to the later click.
+- Final state was restored to AC Balanced, Auto (Default); typed `0D/82`
+  readback returned `01010000` and `01020000`. Saved component readback
+  remained CPU `010102` and GPU `010200`.
+
 Update this section after every evidence, implementation, or documentation
 checkpoint.
