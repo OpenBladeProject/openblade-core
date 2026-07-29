@@ -495,7 +495,25 @@ public static class BatteryValidationFactory
             new GpuOverclockCapabilities(
                 new DeviceNumericRange(-1000, 400, null),
                 new DeviceNumericRange(-1000, 3000, null),
-                DeviceFeatureAccess.ObservedOnly));
+                DeviceFeatureAccess.ObservedOnly),
+            [
+                new PowerSourceBehaviorObservation(
+                    PowerSource.Battery,
+                    PerformancePreset.BatterySaver,
+                    FanMode.Automatic,
+                    FixedFanControlAvailable: false,
+                    PerformanceModeAvailable: false,
+                    CustomModeAvailable: false,
+                    InadequatePowerWarningVisible: false),
+                new PowerSourceBehaviorObservation(
+                    PowerSource.UsbC,
+                    PerformancePreset.Balanced,
+                    FanMode.Automatic,
+                    FixedFanControlAvailable: false,
+                    PerformanceModeAvailable: false,
+                    CustomModeAvailable: false,
+                    InadequatePowerWarningVisible: true),
+            ]);
     }
 
     internal static ProductionBatteryReadEvidence

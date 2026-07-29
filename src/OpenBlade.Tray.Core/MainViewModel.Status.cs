@@ -54,6 +54,8 @@ public sealed partial class MainViewModel
             && left.CpuPowerLimit == right.CpuPowerLimit
             && left.CpuVoltageOptimizer == right.CpuVoltageOptimizer
             && left.GpuOverclock == right.GpuOverclock
+            && left.ObservedPowerSourceBehaviors.SequenceEqual(
+                right.ObservedPowerSourceBehaviors)
             && left.FanModes.SetEquals(right.FanModes)
             && left.FanSpeedRange == right.FanSpeedRange
             && left.LightingEffects.SetEquals(right.LightingEffects)

@@ -315,7 +315,20 @@ public sealed class IpcMessageCodecTests
             new HashSet<LightingEffect>(),
             new HashSet<int> { 80 },
             SupportsBatteryProtectionOff: true,
-            SupportsTemporaryFullCharge: false);
+            SupportsTemporaryFullCharge: false)
+        {
+            ObservedPowerSourceBehaviors =
+            [
+                new PowerSourceBehaviorObservation(
+                    PowerSource.UsbC,
+                    PerformancePreset.Balanced,
+                    FanMode.Automatic,
+                    FixedFanControlAvailable: false,
+                    PerformanceModeAvailable: false,
+                    CustomModeAvailable: false,
+                    InadequatePowerWarningVisible: true),
+            ],
+        };
         var desired = new DesiredBatteryState(BatteryPolicy.Create(80), true, false);
         var confirmed = new ConfirmedBatteryState(true, 80, false);
         ServiceRequest request = new SetBatteryProtectionRequest(
@@ -332,10 +345,13 @@ public sealed class IpcMessageCodecTests
             DesiredState = CreateStatus().DesiredState with { Battery = desired },
         };
 
-        Assert.Equal(25, OpenBladeIpc.ProtocolVersion);
+        Assert.Equal(26, OpenBladeIpc.ProtocolVersion);
         Assert.Equal(request, await RoundTripRequestAsync(request));
         ServiceStatusSnapshot roundTrip = await RoundTripStatusAsync(status);
         Assert.Equal([80], roundTrip.Capabilities!.ChargeLimits);
+        Assert.Equal(
+            capabilities.ObservedPowerSourceBehaviors,
+            roundTrip.Capabilities.ObservedPowerSourceBehaviors);
         Assert.Equal(desired, roundTrip.DesiredState.Battery);
         Assert.Equal(confirmed, roundTrip.ConfirmedState!.Battery);
     }
@@ -404,6 +420,7 @@ public sealed class IpcMessageCodecTests
     [InlineData("FanModes")]
     [InlineData("LightingEffects")]
     [InlineData("OneShotLaptopControls")]
+    [InlineData("ObservedPowerSourceBehaviors")]
     public async Task ReadServerFrameAsync_RejectsNullNestedCapabilityCollection(
         string propertyName)
     {
@@ -426,6 +443,33 @@ public sealed class IpcMessageCodecTests
     }
 
     [Fact]
+    public async Task ReadServerFrameAsync_RejectsDuplicateObservedPowerSourceBehaviors()
+    {
+        var observation = new PowerSourceBehaviorObservation(
+            PowerSource.UsbC,
+            PerformancePreset.Balanced,
+            FanMode.Automatic,
+            FixedFanControlAvailable: false,
+            PerformanceModeAvailable: false,
+            CustomModeAvailable: false,
+            InadequatePowerWarningVisible: true);
+        ServiceServerFrame frame = new ServiceStatusEvent(
+            OpenBladeIpc.ProtocolVersion,
+            CreateStatus() with
+            {
+                Capabilities = DeviceCapabilities.Unavailable() with
+                {
+                    ObservedPowerSourceBehaviors = [observation, observation],
+                },
+            });
+
+        await Assert.ThrowsAsync<InvalidDataException>(() =>
+            IpcMessageCodec.ReadServerFrameAsync(
+                FrameJson(JsonSerializer.Serialize(frame)),
+                CancellationToken.None));
+    }
+
+    [Fact]
     public async Task VersionFourteenStatus_AcceptsCompleteCapabilityCollections()
     {
         ServiceStatusSnapshot expected = CreateStatus() with
@@ -435,7 +479,7 @@ public sealed class IpcMessageCodecTests
 
         ServiceStatusSnapshot actual = await RoundTripStatusAsync(expected);
 
-        Assert.Equal(25, OpenBladeIpc.ProtocolVersion);
+        Assert.Equal(26, OpenBladeIpc.ProtocolVersion);
         AssertStatusEqual(expected, actual);
     }
 

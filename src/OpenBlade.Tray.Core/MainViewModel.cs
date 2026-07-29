@@ -800,6 +800,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             Notify(nameof(IsCpuPowerLimitVisible));
             Notify(nameof(IsCpuVoltageOptimizerVisible));
             Notify(nameof(IsGpuOverclockPolicyVisible));
+            NotifyObservedPowerSourceBehavior();
             Notify(nameof(ActiveSavedDisplayProfile));
             Notify(nameof(SaveToActiveProfileLabel));
             NotifyGamingModeKeyPolicy();
@@ -1417,6 +1418,47 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             Capabilities.GpuOverclock?.Access,
             "Ranges are documented, but writes remain disabled until exact-device setter validation.");
 
+    public bool IsObservedPowerSourceBehaviorVisible =>
+        ActiveObservedPowerSourceBehavior is { IsWellFormed: true };
+
+    public string ObservedPowerSourceBehaviorTitle => ActivePowerSource switch
+    {
+        PowerSource.Battery => "Captured battery behavior",
+        PowerSource.UsbC => "Captured USB-C behavior",
+        _ => "Captured power-source behavior",
+    };
+
+    public string ObservedPowerSourceBehaviorSummary
+    {
+        get
+        {
+            PowerSourceBehaviorObservation? observation =
+                ActiveObservedPowerSourceBehavior;
+            if (observation is not { IsWellFormed: true })
+            {
+                return UnavailableLabel;
+            }
+
+            string warning = observation.InadequatePowerWarningVisible == true
+                ? " Synapse showed its inadequate-power warning."
+                : string.Empty;
+            return $"Synapse selected {PerformancePresetPresentation.Label(observation.SelectedPerformance)} with {FanModePresentation.Label(observation.SelectedFans)} fans. "
+                + $"Fixed fan control, Performance, and Custom were unavailable.{warning} "
+                + "This is captured UI evidence only; OpenBlade does not expose a write path without exact-device readback.";
+        }
+    }
+
+    private PowerSourceBehaviorObservation? ActiveObservedPowerSourceBehavior =>
+        Capabilities.ObservedPowerSourceBehaviors.FirstOrDefault(
+            observation => observation.Source == ActivePowerSource);
+
+    private void NotifyObservedPowerSourceBehavior()
+    {
+        Notify(nameof(IsObservedPowerSourceBehaviorVisible));
+        Notify(nameof(ObservedPowerSourceBehaviorTitle));
+        Notify(nameof(ObservedPowerSourceBehaviorSummary));
+    }
+
     public GpuClockOffsetCapabilities? GpuClockOffsetCapabilities
     {
         get => gpuClockOffsetCapabilities;
@@ -1858,6 +1900,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             Notify(nameof(IsGpuOverclockPolicyVisible));
             Notify(nameof(GpuOverclockPolicyLabel));
             Notify(nameof(GpuClockTuningAccessLabel));
+            NotifyObservedPowerSourceBehavior();
             NotifyGamingModeKeyPolicy();
             NotifyFirmwareFieldLoadingState();
         }

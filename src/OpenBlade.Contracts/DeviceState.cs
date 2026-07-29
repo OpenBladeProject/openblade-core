@@ -118,6 +118,21 @@ public sealed record GpuOverclockCapabilities(
         && Enum.IsDefined(Access);
 }
 
+public sealed record PowerSourceBehaviorObservation(
+    PowerSource Source,
+    PerformancePreset SelectedPerformance,
+    FanMode SelectedFans,
+    bool? FixedFanControlAvailable,
+    bool? PerformanceModeAvailable,
+    bool? CustomModeAvailable,
+    bool? InadequatePowerWarningVisible)
+{
+    public bool IsWellFormed =>
+        Enum.IsDefined(Source)
+        && Enum.IsDefined(SelectedPerformance)
+        && Enum.IsDefined(SelectedFans);
+}
+
 public sealed record DeviceCapabilities(
     IReadOnlySet<PerformancePreset> PerformancePresets,
     IReadOnlySet<FanMode> FanModes,
@@ -137,6 +152,12 @@ public sealed record DeviceCapabilities(
     public CpuVoltageOptimizerCapabilities? CpuVoltageOptimizer { get; init; }
 
     public GpuOverclockCapabilities? GpuOverclock { get; init; }
+
+    public IReadOnlyList<PowerSourceBehaviorObservation> ObservedPowerSourceBehaviors
+    {
+        get;
+        init;
+    } = [];
 
     public IReadOnlySet<LogoLightingMode> LogoLightingModes { get; init; } =
         new HashSet<LogoLightingMode>();

@@ -1975,6 +1975,25 @@ public sealed class MainViewModelTests
                     new DeviceNumericRange(-30, -1, 1),
                     DeviceFeatureAccess.ObservedOnly),
                 GpuOverclock = observedGpuPolicy,
+                ObservedPowerSourceBehaviors =
+                [
+                    new PowerSourceBehaviorObservation(
+                        PowerSource.Battery,
+                        PerformancePreset.BatterySaver,
+                        FanMode.Automatic,
+                        FixedFanControlAvailable: false,
+                        PerformanceModeAvailable: false,
+                        CustomModeAvailable: false,
+                        InadequatePowerWarningVisible: false),
+                    new PowerSourceBehaviorObservation(
+                        PowerSource.UsbC,
+                        PerformancePreset.Balanced,
+                        FanMode.Automatic,
+                        FixedFanControlAvailable: false,
+                        PerformanceModeAvailable: false,
+                        CustomModeAvailable: false,
+                        InadequatePowerWarningVisible: true),
+                ],
             },
             ConfirmedState = baseline.ConfirmedState! with
             {
@@ -2003,6 +2022,33 @@ public sealed class MainViewModelTests
         Assert.True(viewModel.IsGpuOverclockPolicyVisible);
         Assert.Contains("core -1000 to 400 MHz", viewModel.GpuOverclockPolicyLabel);
         Assert.False(viewModel.CanEditGpuClockTuning);
+        Assert.False(viewModel.IsObservedPowerSourceBehaviorVisible);
+
+        client.Publish(baseline with
+        {
+            Revision = baseline.Revision + 1,
+            ActivePowerSource = PowerSource.UsbC,
+            Capabilities = baseline.Capabilities! with
+            {
+                ObservedPowerSourceBehaviors =
+                [
+                    new PowerSourceBehaviorObservation(
+                        PowerSource.UsbC,
+                        PerformancePreset.Balanced,
+                        FanMode.Automatic,
+                        FixedFanControlAvailable: false,
+                        PerformanceModeAvailable: false,
+                        CustomModeAvailable: false,
+                        InadequatePowerWarningVisible: true),
+                ],
+            },
+        });
+        await WaitUntilAsync(() => viewModel.IsObservedPowerSourceBehaviorVisible);
+
+        Assert.Equal("Captured USB-C behavior", viewModel.ObservedPowerSourceBehaviorTitle);
+        Assert.Contains("Synapse selected Balanced", viewModel.ObservedPowerSourceBehaviorSummary);
+        Assert.Contains("inadequate-power warning", viewModel.ObservedPowerSourceBehaviorSummary);
+        Assert.Contains("does not expose a write path", viewModel.ObservedPowerSourceBehaviorSummary);
     }
 
     [Fact]

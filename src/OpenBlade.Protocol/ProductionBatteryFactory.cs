@@ -23,6 +23,7 @@ public sealed class ProductionBatteryFactory : IProductionBatteryPortFactory
     private readonly CpuPowerLimitCapabilities? cpuPowerLimitCapabilities;
     private readonly CpuVoltageOptimizerCapabilities? cpuVoltageOptimizerCapabilities;
     private readonly GpuOverclockCapabilities? gpuOverclockCapabilities;
+    private readonly IReadOnlyList<PowerSourceBehaviorObservation> observedPowerSourceBehaviors;
 
     internal ProductionBatteryFactory(
         DeviceCommandCatalog catalog,
@@ -38,7 +39,8 @@ public sealed class ProductionBatteryFactory : IProductionBatteryPortFactory
         CustomPerformanceCapabilities? customPerformanceCapabilities = null,
         CpuPowerLimitCapabilities? cpuPowerLimitCapabilities = null,
         CpuVoltageOptimizerCapabilities? cpuVoltageOptimizerCapabilities = null,
-        GpuOverclockCapabilities? gpuOverclockCapabilities = null)
+        GpuOverclockCapabilities? gpuOverclockCapabilities = null,
+        IReadOnlyList<PowerSourceBehaviorObservation>? observedPowerSourceBehaviors = null)
     {
         this.catalog = catalog ?? throw new ArgumentNullException(nameof(catalog));
         this.readEvidence = readEvidence ?? throw new ArgumentNullException(nameof(readEvidence));
@@ -67,6 +69,9 @@ public sealed class ProductionBatteryFactory : IProductionBatteryPortFactory
         this.cpuPowerLimitCapabilities = cpuPowerLimitCapabilities;
         this.cpuVoltageOptimizerCapabilities = cpuVoltageOptimizerCapabilities;
         this.gpuOverclockCapabilities = gpuOverclockCapabilities;
+        this.observedPowerSourceBehaviors = observedPowerSourceBehaviors is null
+            ? []
+            : [.. observedPowerSourceBehaviors];
         Capabilities = ProductionBatteryPort.CreateCapabilities(
             catalog,
             readEvidence,
@@ -75,7 +80,8 @@ public sealed class ProductionBatteryFactory : IProductionBatteryPortFactory
             this.customPerformanceCapabilities,
             this.cpuPowerLimitCapabilities,
             this.cpuVoltageOptimizerCapabilities,
-            this.gpuOverclockCapabilities);
+            this.gpuOverclockCapabilities,
+            this.observedPowerSourceBehaviors);
     }
 
     public DeviceCapabilities Capabilities { get; }

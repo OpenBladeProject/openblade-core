@@ -335,6 +335,20 @@ public sealed class DiagnosticArchiveProvider : IDiagnosticArchiveProvider
             capabilities.GpuOverclock?.IsWellFormed == true;
         result["performance.gpuOverclock.write"] =
             capabilities.GpuOverclock?.Access == DeviceFeatureAccess.ReadWrite;
+        foreach (PowerSourceBehaviorObservation observation
+            in capabilities.ObservedPowerSourceBehaviors)
+        {
+            string prefix = $"powerSource.{observation.Source}";
+            result[$"{prefix}.observed"] = observation.IsWellFormed;
+            result[$"{prefix}.fixedFansAvailable"] =
+                observation.FixedFanControlAvailable == true;
+            result[$"{prefix}.performanceModeAvailable"] =
+                observation.PerformanceModeAvailable == true;
+            result[$"{prefix}.customModeAvailable"] =
+                observation.CustomModeAvailable == true;
+            result[$"{prefix}.inadequatePowerWarningVisible"] =
+                observation.InadequatePowerWarningVisible == true;
+        }
         return result;
     }
 
@@ -414,6 +428,23 @@ public sealed class DiagnosticArchiveProvider : IDiagnosticArchiveProvider
                 ? "None"
                 : $"{status.LightingOverride.Value.Effect} ({status.LightingOverride.Lifetime})",
         };
+
+        foreach (PowerSourceBehaviorObservation observation
+            in capabilities.ObservedPowerSourceBehaviors)
+        {
+            string prefix = $"capability.powerSource.{observation.Source}";
+            configuration[$"{prefix}.selectedPerformance"] =
+                observation.SelectedPerformance.ToString();
+            configuration[$"{prefix}.selectedFans"] = observation.SelectedFans.ToString();
+            configuration[$"{prefix}.fixedFansAvailable"] =
+                BoolOrUnavailable(observation.FixedFanControlAvailable);
+            configuration[$"{prefix}.performanceModeAvailable"] =
+                BoolOrUnavailable(observation.PerformanceModeAvailable);
+            configuration[$"{prefix}.customModeAvailable"] =
+                BoolOrUnavailable(observation.CustomModeAvailable);
+            configuration[$"{prefix}.inadequatePowerWarningVisible"] =
+                BoolOrUnavailable(observation.InadequatePowerWarningVisible);
+        }
 
         return configuration;
     }

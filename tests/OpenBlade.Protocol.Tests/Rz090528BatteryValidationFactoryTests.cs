@@ -45,6 +45,26 @@ public sealed class Rz090528BatteryValidationFactoryTests
                 new DeviceNumericRange(-1000, 3000, null),
                 DeviceFeatureAccess.ObservedOnly),
             factory.Capabilities.GpuOverclock);
+        Assert.Equal(
+            [
+                new PowerSourceBehaviorObservation(
+                    PowerSource.Battery,
+                    PerformancePreset.BatterySaver,
+                    FanMode.Automatic,
+                    FixedFanControlAvailable: false,
+                    PerformanceModeAvailable: false,
+                    CustomModeAvailable: false,
+                    InadequatePowerWarningVisible: false),
+                new PowerSourceBehaviorObservation(
+                    PowerSource.UsbC,
+                    PerformancePreset.Balanced,
+                    FanMode.Automatic,
+                    FixedFanControlAvailable: false,
+                    PerformanceModeAvailable: false,
+                    CustomModeAvailable: false,
+                    InadequatePowerWarningVisible: true),
+            ],
+            factory.Capabilities.ObservedPowerSourceBehaviors);
         Assert.True(factory.Capabilities.FanModes.SetEquals(
             [
                 FanMode.Automatic,

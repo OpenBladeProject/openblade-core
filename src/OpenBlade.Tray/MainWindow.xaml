@@ -508,6 +508,19 @@
                             </Border>
                             <Border Style="{StaticResource SettingsSubcardStyle}"
                                     Visibility="Collapsed"
+                                    local:AnimatedVisibility.IsVisible="{Binding IsObservedPowerSourceBehaviorVisible}">
+                                <StackPanel Spacing="3">
+                                    <TextBlock Text="{Binding ObservedPowerSourceBehaviorTitle}"
+                                               Style="{StaticResource CardTitleStyle}" />
+                                    <TextBlock Text="{Binding ObservedPowerSourceBehaviorSummary}"
+                                               MaxWidth="620"
+                                               TextWrapping="Wrap"
+                                               Style="{StaticResource SecondaryTextStyle}"
+                                               AutomationProperties.Name="Captured power-source behavior" />
+                                </StackPanel>
+                            </Border>
+                            <Border Style="{StaticResource SettingsSubcardStyle}"
+                                    Visibility="Collapsed"
                                     local:AnimatedVisibility.IsVisible="{Binding IsCustomPerformanceVisible}">
                                 <Grid ColumnSpacing="20">
                                     <Grid.ColumnDefinitions>

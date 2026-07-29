@@ -598,6 +598,24 @@ Custom performance and model-specific power-control follow-up:
   unavailable. “Observed only” is an explicit state; silently omitting the
   feature is not acceptable.
 
+Power-source behavior contract checkpoint:
+
+- `DeviceCapabilities.ObservedPowerSourceBehaviors` is deliberately separate
+  from the writable `PerformancePresets` and `FanModes` collections. An
+  observation must never make its selected preset or fan mode commandable.
+- Exact RZ09-0528 observations record Battery Saver plus Automatic fans on
+  battery, and Balanced plus Automatic fans on USB-C. Fixed fan control,
+  Performance, and Custom were visibly unavailable in both states; USB-C also
+  showed Synapse's inadequate-power warning.
+- The tray surfaces the matching observation as a read-only card only while
+  that source is active. The card states that this is captured UI evidence and
+  that no write path is exposed without exact-device readback.
+- The observations round-trip over IPC, appear in diagnostic archives, reject
+  duplicate source entries, and participate in status equality. Adding the
+  contract field advanced the strict IPC version from 25 to 26.
+- Do not populate unobserved choices. In particular, the existing captures do
+  not establish Battery Balanced as available on PID `02C6`.
+
 Final user-visible state before quiet HID validation:
 
 - Battery optimizer enabled at 80 percent; temporary full charge disabled.
@@ -617,7 +635,8 @@ Latest verification after the battery, fan-range, and behavior checkpoints:
 - capture tests: 223 passed;
 - Windows PowerShell 5.1 capture-evidence, comparison, and device-coverage
   regression suites: all passed;
-- contracts tests: 186 passed;
+- contracts tests: 188 passed after adding power-source observation IPC
+  coverage;
 - full solution tests: 3,182 passed across all ten Release test projects;
 - exact production read-only probe: battery 80/on, temporary full charge off,
   current barrel AC `FullPower280W`, brightness raw 0, startup enabled,

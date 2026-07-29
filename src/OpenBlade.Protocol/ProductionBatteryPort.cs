@@ -859,7 +859,8 @@ internal sealed class ProductionBatteryPort : IProductionBatteryPort
         CustomPerformanceCapabilities? customPerformanceCapabilities = null,
         CpuPowerLimitCapabilities? cpuPowerLimitCapabilities = null,
         CpuVoltageOptimizerCapabilities? cpuVoltageOptimizerCapabilities = null,
-        GpuOverclockCapabilities? gpuOverclockCapabilities = null)
+        GpuOverclockCapabilities? gpuOverclockCapabilities = null,
+        IReadOnlyList<PowerSourceBehaviorObservation>? observedPowerSourceBehaviors = null)
     {
         var limits = new HashSet<int>();
         foreach ((int percent, string action) in ChargeLimitActions)
@@ -989,6 +990,9 @@ internal sealed class ProductionBatteryPort : IProductionBatteryPort
             CpuPowerLimit = cpuPowerLimitCapabilities,
             CpuVoltageOptimizer = cpuVoltageOptimizerCapabilities,
             GpuOverclock = gpuOverclockCapabilities,
+            ObservedPowerSourceBehaviors = observedPowerSourceBehaviors is null
+                ? []
+                : [.. observedPowerSourceBehaviors],
         };
     }
 

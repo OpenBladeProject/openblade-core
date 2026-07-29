@@ -413,6 +413,7 @@ type sealed class OpenBlade.Contracts.DeviceCapabilities
   method System.Boolean get_SupportsBatteryProtectionOff()
   method System.Boolean get_SupportsKeyboardBrightness()
   method System.Boolean get_SupportsTemporaryFullCharge()
+  method System.Collections.Generic.IReadOnlyList<OpenBlade.Contracts.PowerSourceBehaviorObservation> get_ObservedPowerSourceBehaviors()
   method System.Collections.Generic.IReadOnlySet<OpenBlade.Contracts.FanMode> get_FanModes()
   method System.Collections.Generic.IReadOnlySet<OpenBlade.Contracts.LightingEffect> get_LightingEffects()
   method System.Collections.Generic.IReadOnlySet<OpenBlade.Contracts.LogoLightingMode> get_LogoLightingModes()
@@ -429,6 +430,7 @@ type sealed class OpenBlade.Contracts.DeviceCapabilities
   method System.Void set_GpuOverclock(OpenBlade.Contracts.GpuOverclockCapabilities value)
   method System.Void set_LightingEffects(System.Collections.Generic.IReadOnlySet<OpenBlade.Contracts.LightingEffect> value)
   method System.Void set_LogoLightingModes(System.Collections.Generic.IReadOnlySet<OpenBlade.Contracts.LogoLightingMode> value)
+  method System.Void set_ObservedPowerSourceBehaviors(System.Collections.Generic.IReadOnlyList<OpenBlade.Contracts.PowerSourceBehaviorObservation> value)
   method System.Void set_OneShotLaptopControls(System.Collections.Generic.IReadOnlySet<OpenBlade.Contracts.OneShotLaptopControl> value)
   method System.Void set_PerformancePresets(System.Collections.Generic.IReadOnlySet<OpenBlade.Contracts.PerformancePreset> value)
   method System.Void set_SupportsBatteryProtectionOff(System.Boolean value)
@@ -450,6 +452,7 @@ type sealed class OpenBlade.Contracts.DeviceCapabilities
   property System.Boolean SupportsBatteryProtectionOff { get; init; }
   property System.Boolean SupportsKeyboardBrightness { get; init; }
   property System.Boolean SupportsTemporaryFullCharge { get; init; }
+  property System.Collections.Generic.IReadOnlyList<OpenBlade.Contracts.PowerSourceBehaviorObservation> ObservedPowerSourceBehaviors { get; init; }
   property System.Collections.Generic.IReadOnlySet<OpenBlade.Contracts.FanMode> FanModes { get; init; }
   property System.Collections.Generic.IReadOnlySet<OpenBlade.Contracts.LightingEffect> LightingEffects { get; init; }
   property System.Collections.Generic.IReadOnlySet<OpenBlade.Contracts.LogoLightingMode> LogoLightingModes { get; init; }
@@ -1030,7 +1033,7 @@ type enum OpenBlade.Contracts.OneShotLaptopControl
 type static class OpenBlade.Contracts.OpenBladeIpc
   field const System.Int32 MaximumDiagnosticArchiveBytes = 32768
   field const System.Int32 MaximumMessageBytes = 65536
-  field const System.Int32 ProtocolVersion = 25
+  field const System.Int32 ProtocolVersion = 26
   field const System.String PipeName = "OpenBlade.Service.v2"
 type static class OpenBlade.Contracts.OpenBladeProductVersion
   method static System.String Read(System.Reflection.Assembly assembly)
@@ -1140,6 +1143,40 @@ type enum OpenBlade.Contracts.PowerSource
   field const OpenBlade.Contracts.PowerSource ExternalUnknown = 3
   field const OpenBlade.Contracts.PowerSource PluggedIn = 0
   field const OpenBlade.Contracts.PowerSource UsbC = 2
+type sealed class OpenBlade.Contracts.PowerSourceBehaviorObservation
+  interface System.IEquatable<OpenBlade.Contracts.PowerSourceBehaviorObservation>
+  ctor (OpenBlade.Contracts.PowerSource Source, OpenBlade.Contracts.PerformancePreset SelectedPerformance, OpenBlade.Contracts.FanMode SelectedFans, System.Nullable<System.Boolean> FixedFanControlAvailable, System.Nullable<System.Boolean> PerformanceModeAvailable, System.Nullable<System.Boolean> CustomModeAvailable, System.Nullable<System.Boolean> InadequatePowerWarningVisible)
+  method OpenBlade.Contracts.FanMode get_SelectedFans()
+  method OpenBlade.Contracts.PerformancePreset get_SelectedPerformance()
+  method OpenBlade.Contracts.PowerSource get_Source()
+  method OpenBlade.Contracts.PowerSourceBehaviorObservation <Clone>$()
+  method System.Boolean get_IsWellFormed()
+  method System.Nullable<System.Boolean> get_CustomModeAvailable()
+  method System.Nullable<System.Boolean> get_FixedFanControlAvailable()
+  method System.Nullable<System.Boolean> get_InadequatePowerWarningVisible()
+  method System.Nullable<System.Boolean> get_PerformanceModeAvailable()
+  method System.Void Deconstruct(out OpenBlade.Contracts.PowerSource Source, out OpenBlade.Contracts.PerformancePreset SelectedPerformance, out OpenBlade.Contracts.FanMode SelectedFans, out System.Nullable<System.Boolean> FixedFanControlAvailable, out System.Nullable<System.Boolean> PerformanceModeAvailable, out System.Nullable<System.Boolean> CustomModeAvailable, out System.Nullable<System.Boolean> InadequatePowerWarningVisible)
+  method System.Void set_CustomModeAvailable(System.Nullable<System.Boolean> value)
+  method System.Void set_FixedFanControlAvailable(System.Nullable<System.Boolean> value)
+  method System.Void set_InadequatePowerWarningVisible(System.Nullable<System.Boolean> value)
+  method System.Void set_PerformanceModeAvailable(System.Nullable<System.Boolean> value)
+  method System.Void set_SelectedFans(OpenBlade.Contracts.FanMode value)
+  method System.Void set_SelectedPerformance(OpenBlade.Contracts.PerformancePreset value)
+  method System.Void set_Source(OpenBlade.Contracts.PowerSource value)
+  method override System.Boolean Equals(System.Object obj)
+  method override System.Int32 GetHashCode()
+  method override System.String ToString()
+  method static System.Boolean op_Equality(OpenBlade.Contracts.PowerSourceBehaviorObservation left, OpenBlade.Contracts.PowerSourceBehaviorObservation right)
+  method static System.Boolean op_Inequality(OpenBlade.Contracts.PowerSourceBehaviorObservation left, OpenBlade.Contracts.PowerSourceBehaviorObservation right)
+  method virtual System.Boolean Equals(OpenBlade.Contracts.PowerSourceBehaviorObservation other)
+  property OpenBlade.Contracts.FanMode SelectedFans { get; init; }
+  property OpenBlade.Contracts.PerformancePreset SelectedPerformance { get; init; }
+  property OpenBlade.Contracts.PowerSource Source { get; init; }
+  property System.Boolean IsWellFormed { get; }
+  property System.Nullable<System.Boolean> CustomModeAvailable { get; init; }
+  property System.Nullable<System.Boolean> FixedFanControlAvailable { get; init; }
+  property System.Nullable<System.Boolean> InadequatePowerWarningVisible { get; init; }
+  property System.Nullable<System.Boolean> PerformanceModeAvailable { get; init; }
 type static class OpenBlade.Contracts.ProfileDefaults
   method static OpenBlade.Contracts.ProfileSet CreateSafeDefaults()
 type sealed class OpenBlade.Contracts.ProfileSet
