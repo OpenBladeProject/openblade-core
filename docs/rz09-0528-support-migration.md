@@ -285,6 +285,10 @@ convention and run `git diff --check`.
   setter admission with bounded one-shot validation
 - `openblade-captures` `f4e333c`: exact selector-`00` logo queries,
   discriminating readback, bounded round trip, and restoration evidence
+- `openblade-core` `d452989`: rollback-safe exact keyboard-Off and logo
+  production admission, bounded validator, and full regression coverage
+- `openblade-docs` `786b98e`: publish the expanded exact-device compatibility
+  and protocol summary while retaining `In development` status
 
 Verification at the battery checkpoint:
 
@@ -509,6 +513,10 @@ Lighting capture follow-up:
 - Quick-effect transitions among Spectrum, Static, Starlight, Ripple, Tidal,
   Wave, and Wheel produced only generic Chroma traffic and no reliably
   effect-discriminating payload. They remain captured, not admitted.
+- A read-only exact PID scan found ten HID collections but no 375-byte feature
+  collection. The exact device has the 91-byte control collection and a
+  51-byte usage-`0059:0001` collection; do not route PID `02C6` through the
+  PID `02E0` matrix writer.
 - The final visible keyboard quick effect was restored to Static. Keyboard
   brightness was restored to its saved off value.
 
