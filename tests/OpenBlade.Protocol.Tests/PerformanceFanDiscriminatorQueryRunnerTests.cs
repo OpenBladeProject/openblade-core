@@ -14,12 +14,12 @@ public sealed class PerformanceFanDiscriminatorQueryRunnerTests
             await runner.RunAsync(default);
 
         Assert.Null(result.Failure);
-        Assert.Equal([1, 2, 3, 4, 5, 6], session.TransactionIds);
-        Assert.Equal([0x8F, 0x82, 0x82, 0x87, 0x87, 0x98],
+        Assert.Equal([1, 2, 3, 4, 5, 6, 7], session.TransactionIds);
+        Assert.Equal([0x8F, 0x82, 0x82, 0x87, 0x87, 0x98, 0x87],
             session.Commands.Select(command => command.CommandId).ToArray());
-        Assert.Equal([0x07, 0x0D, 0x0D, 0x0D, 0x0D, 0x0F],
+        Assert.Equal([0x07, 0x0D, 0x0D, 0x0D, 0x0D, 0x0F, 0x00],
             session.Commands.Select(command => command.ClassId).ToArray());
-        Assert.Equal([1, 4, 4, 3, 3, 1],
+        Assert.Equal([1, 4, 4, 3, 3, 1, 4],
             session.Commands.Select(command => command.Arguments.Length).ToArray());
         Assert.Equal([0x01, 0x01, 0x00, 0x00], session.Commands[1].Arguments.ToArray());
         Assert.Equal([0x01, 0x02, 0x00, 0x00], session.Commands[2].Arguments.ToArray());
@@ -27,6 +27,7 @@ public sealed class PerformanceFanDiscriminatorQueryRunnerTests
         Assert.Equal([0x01, 0x01, 0x00], session.Commands[3].Arguments.ToArray());
         Assert.Equal([0x01, 0x02, 0x00], session.Commands[4].Arguments.ToArray());
         Assert.Equal([0x00], session.Commands[5].Arguments.ToArray());
+        Assert.Equal([0x00, 0x00, 0x00, 0x00], session.Commands[6].Arguments.ToArray());
         Assert.Equal(
             [
                 "07/8F power control",
@@ -35,6 +36,7 @@ public sealed class PerformanceFanDiscriminatorQueryRunnerTests
                 "0D/87 custom CPU component",
                 "0D/87 custom GPU component",
                 "0F/98 startup animation candidate",
+                "00/87 MCU version",
             ],
             result.Value!.Readings.Select(reading => reading.Operation).ToArray());
         Assert.Equal(8, result.Value.Readings[1].RequestPayloadHex.Length);

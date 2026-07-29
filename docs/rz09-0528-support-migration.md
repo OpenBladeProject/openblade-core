@@ -351,6 +351,16 @@ Additional keyboard-behavior readbacks:
 - All corresponding setters remain unavailable until exact captures and
   reversible validation exist.
 
+Firmware readback follow-up:
+
+- Windows firmware metadata reported EC `1.09`; no system SKU or other
+  potentially identifying registry value was committed.
+- The exact discriminator added read-only `00/87 00000000` and returned
+  `01090000`, decoded by the existing typed protocol as MCU `1.9.0.0`.
+- MCU evidence was admitted only in the exact RZ09-0528 production read set.
+  The exact production probe returned `McuVersion=1.9.0.0` and
+  `Success=True`.
+
 Unattended capture constraint:
 
 - A later fixed-fan capture attempt caused USBPcap to request UAC even with the

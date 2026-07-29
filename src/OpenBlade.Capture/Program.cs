@@ -555,12 +555,14 @@ if (args.Length == 1 && args[0].Equals(
     HidSessionResult<IProductionBatteryPort> openedBattery =
         await battery.OpenAsync(CancellationToken.None);
     bool? startupAnimation = null;
+    string? mcuVersion = null;
     FunctionKeyPrimaryMode? functionKeyPrimary = null;
     bool? gamingMode = null;
     if (openedBattery.Value is { } batteryPort && openedBattery.Failure is null)
     {
         await using (batteryPort)
         {
+            mcuVersion = await batteryPort.QueryMcuVersionAsync(CancellationToken.None);
             startupAnimation =
                 await batteryPort.QueryStartupAnimationAsync(CancellationToken.None);
             functionKeyPrimary =
@@ -614,6 +616,7 @@ if (args.Length == 1 && args[0].Equals(
     Console.WriteLine($"FanRpmFailure={fanRpm.Failure}");
     Console.WriteLine(
         $"StartupAnimation={startupAnimation?.ToString() ?? "Unavailable"}");
+    Console.WriteLine($"McuVersion={mcuVersion ?? "Unavailable"}");
     Console.WriteLine(
         $"BatteryOpenFailure={openedBattery.Failure?.ToString() ?? "None"}");
     Console.WriteLine(
@@ -634,6 +637,7 @@ if (args.Length == 1 && args[0].Equals(
         && !battery.Capabilities.SupportsBatteryProtectionOff
         && fanRpm.Success
         && startupAnimation is not null
+        && !string.IsNullOrWhiteSpace(mcuVersion)
         && functionKeyPrimary is not null
         && gamingMode is not null
         && driverMode is not null
