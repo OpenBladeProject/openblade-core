@@ -976,6 +976,20 @@ if (args.Length == 1 && args[0].Equals(
 }
 
 if (args.Length == 1 && args[0].Equals(
+    "query-rz09-0528-02c6-power-source",
+    StringComparison.OrdinalIgnoreCase))
+{
+    Console.WriteLine("Target=RZ09-0528 1532:02C6 BIOS 2.02");
+    IPerformanceFanDiscriminatorQueryRunner runner =
+        BatteryValidationFactory.CreateWindowsRz090528PowerSourceQuery();
+    var command = new PerformanceFanDiscriminatorQueryCommand(
+        runner.RunAsync,
+        Console.Out,
+        new DeviceIdentity("RZ09-0528", 0x1532, 0x02C6, "2.02"));
+    return await command.RunAsync([], CancellationToken.None);
+}
+
+if (args.Length == 1 && args[0].Equals(
     "query-rz09-0528-02c6-production-performance-fan",
     StringComparison.OrdinalIgnoreCase))
 {
@@ -1384,6 +1398,8 @@ Console.WriteLine(
 Console.WriteLine("  OpenBlade.Capture query-performance-fan-discriminator");
 Console.WriteLine(
     "  OpenBlade.Capture query-rz09-0528-02c6-performance-fan-discriminator");
+Console.WriteLine(
+    "  OpenBlade.Capture query-rz09-0528-02c6-power-source");
 Console.WriteLine(
     "  OpenBlade.Capture query-rz09-0528-02c6-production-performance-fan");
 Console.WriteLine(

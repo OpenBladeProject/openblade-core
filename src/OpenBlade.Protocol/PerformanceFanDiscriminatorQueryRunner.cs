@@ -17,7 +17,7 @@ public interface IPerformanceFanDiscriminatorQueryRunner
 internal sealed class PerformanceFanDiscriminatorQueryRunner
     : IPerformanceFanDiscriminatorQueryRunner
 {
-    private static readonly QueryDefinition[] Queries =
+    private static readonly QueryDefinition[] DiscriminatorQueries =
     [
         new("07/8F power control", 0x07, 0x8F, [0x00], 1),
         new("0D/82 class1 thermal1", 0x0D, 0x82, [0x01, 0x01, 0x00, 0x00], 4),
@@ -29,12 +29,20 @@ internal sealed class PerformanceFanDiscriminatorQueryRunner
         new("07/8C adapter power", 0x07, 0x8C, [0x00, 0x00], 2),
     ];
 
+    private static readonly QueryDefinition[] PowerSourceQueries =
+    [
+        new("07/8C adapter power", 0x07, 0x8C, [0x00, 0x00], 2),
+        new("0D/82 class1 thermal1", 0x0D, 0x82, [0x01, 0x01, 0x00, 0x00], 4),
+        new("0D/82 class1 thermal2", 0x0D, 0x82, [0x01, 0x02, 0x00, 0x00], 4),
+    ];
+
     private readonly Func<ValidationRunContext> createContext;
     private readonly IValidationActorFactory actorFactory;
     private readonly TimeProvider timeProvider;
     private readonly TimeSpan exchangeTimeout;
     private readonly TimeSpan cleanupDrainTimeout;
     private readonly PendingDisposalRegistry pendingDisposals;
+    private readonly IReadOnlyList<QueryDefinition> queries;
     private int started;
 
     internal PerformanceFanDiscriminatorQueryRunner(
@@ -43,7 +51,8 @@ internal sealed class PerformanceFanDiscriminatorQueryRunner
         TimeProvider timeProvider,
         TimeSpan exchangeTimeout,
         TimeSpan cleanupDrainTimeout,
-        PendingDisposalRegistry? pendingDisposals = null)
+        PendingDisposalRegistry? pendingDisposals = null,
+        bool powerSourceOnly = false)
     {
         this.createContext = createContext ?? throw new ArgumentNullException(nameof(createContext));
         this.actorFactory = actorFactory ?? throw new ArgumentNullException(nameof(actorFactory));
@@ -53,6 +62,7 @@ internal sealed class PerformanceFanDiscriminatorQueryRunner
         this.exchangeTimeout = exchangeTimeout;
         this.cleanupDrainTimeout = cleanupDrainTimeout;
         this.pendingDisposals = pendingDisposals ?? PendingDisposalRegistry.Shared;
+        queries = powerSourceOnly ? PowerSourceQueries : DiscriminatorQueries;
     }
 
     public async Task<HidSessionResult<PerformanceFanDiscriminatorSnapshot>> RunAsync(
@@ -69,7 +79,7 @@ internal sealed class PerformanceFanDiscriminatorQueryRunner
         }
 
         ValidationRunContext context;
-        var transactionIds = new byte[Queries.Length];
+        var transactionIds = new byte[queries.Count];
         try
         {
             context = createContext() ?? throw new InvalidOperationException();
@@ -100,10 +110,10 @@ internal sealed class PerformanceFanDiscriminatorQueryRunner
             }
 
             cancellationToken.ThrowIfCancellationRequested();
-            var readings = new PerformanceFanDiscriminatorReading[Queries.Length];
-            for (int index = 0; index < Queries.Length; index++)
+            var readings = new PerformanceFanDiscriminatorReading[queries.Count];
+            for (int index = 0; index < queries.Count; index++)
             {
-                QueryDefinition query = Queries[index];
+                QueryDefinition query = queries[index];
                 byte transactionId = transactionIds[index];
                 HidSessionResult<ReadOnlyMemory<byte>> response =
                     await actor.Session.ExecuteAsync(

@@ -795,6 +795,21 @@ public static class BatteryValidationFactory
             DefaultCleanupDrainTimeout);
     }
 
+    internal static IPerformanceFanDiscriminatorQueryRunner
+        CreateWindowsRz090528PowerSourceQuery()
+    {
+        ValidationActorFactory actorFactory =
+            CreateWindowsRz090528TemporaryFullChargeActorFactory(
+                ControllerExclusivityPolicy.Advisory);
+        return new PerformanceFanDiscriminatorQueryRunner(
+            static () => new ValidationRunContext(),
+            actorFactory,
+            TimeProvider.System,
+            DefaultExchangeTimeout,
+            DefaultCleanupDrainTimeout,
+            powerSourceOnly: true);
+    }
+
     public static IPerformanceFanSetterValidationRunner
         CreateWindowsPerformanceFanSetterValidation()
     {

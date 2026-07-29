@@ -615,6 +615,17 @@ Power-source behavior contract checkpoint:
   contract field advanced the strict IPC version from 25 to 26.
 - Do not populate unobserved choices. In particular, the existing captures do
   not establish Battery Balanced as available on PID `02C6`.
+- For the next physical source session, run the exact read-only
+  `query-rz09-0528-02c6-power-source` command. It sends only `07/8C 0000` and
+  the two `0D/82` thermal queries, emits sanitized exact-device JSON, and
+  performs no writes. Preserve the raw responses; do not reduce visual
+  Synapse confirmation to protocol readback.
+- The first live invocation on barrel AC succeeded without elevation and
+  returned adapter `1111` plus thermal pairs `01010000` and `01020000`,
+  reconfirming the full-AC Balanced/Automatic baseline. The command's
+  `productionAdmitted: false` marker means the source-specific interpretation
+  is still discovery evidence; it does not mean the fixed read-only query
+  envelopes are arbitrary.
 
 Final user-visible state before quiet HID validation:
 
@@ -631,7 +642,8 @@ Latest verification after the battery, fan-range, and behavior checkpoints:
 - full Release build: 0 warnings and 0 errors;
 - service tests: 684 passed;
 - tray tests: 613 passed;
-- protocol tests: 1,045 passed;
+- protocol tests: 1,046 passed after adding the focused power-source query
+  sequence guard;
 - capture tests: 223 passed;
 - Windows PowerShell 5.1 capture-evidence, comparison, and device-coverage
   regression suites: all passed;
