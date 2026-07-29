@@ -384,6 +384,7 @@ public static class BatteryValidationFactory
             {
                 FanMode.Automatic,
                 FanMode.Fixed,
+                FanMode.ManualCurve,
                 FanMode.Maximum,
             });
     }

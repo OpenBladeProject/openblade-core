@@ -35,7 +35,7 @@ model-independent operating-system APIs.
 | Keyboard-brightness query | Admitted | `03/83`, arguments `010500` |
 | Keyboard-brightness setter | Admitted | `03/03`, arguments `0105xx` |
 | Lighting effects and logo | Captured, not admitted | Logo selector `00` setters captured; quick-effect captures were not discriminating; no independent getter |
-| Performance and fans | Partially admitted | AC Balanced, Silent, Performance, Automatic/fixed/maximum fans, exact 2000-5000 RPM range, and fan RPM |
+| Performance and fans | Partially admitted | AC Balanced, Silent, Performance, Automatic/fixed/maximum/manual-curve fans, exact 2000-5000 RPM range, and fan RPM; other power sources pending |
 | Battery charge limit | Admitted | Query, 50/55/60/65/70/75/80-percent setters, protection off, readback, and restoration |
 | Temporary full charge | Admitted | Query, enable, cancel, readback, and restoration |
 | Keyboard behavior and special keys | Partially admitted | Function-key primary, Gaming mode, and startup-animation setters; device mode read-only; special keys pending |
@@ -190,8 +190,8 @@ Work through read/query-backed controls before one-shot setters.
 1. Battery charge limit and temporary full charge — admitted
 2. Performance presets for AC, USB-C, and battery power
 3. Automatic, fixed, maximum, and manual-curve fan control plus RPM readback —
-   fixed 2000-5000 RPM, maximum, automatic, and RPM admitted; host-rendered
-   manual curve still under review
+   admitted on AC; manual curve is host-rendered through the validated fixed
+   target primitive and fresh temperature telemetry
 4. Keyboard lighting effects, matrix geometry, cadence, effect getter, and
    logo modes — setter captures exist, but no independently discriminating
    getter exists
