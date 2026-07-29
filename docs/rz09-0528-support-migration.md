@@ -371,6 +371,17 @@ Adapter-power readback follow-up:
 - This proves the current full-AC class only. USB-C 100 W, battery operation,
   and every power-source transition remain pending physical-state evidence.
 
+Display capability follow-up:
+
+- The existing production display query successfully selected the internal
+  panel and reported `2560x1600`.
+- Available refresh choices were fixed 60 Hz, fixed 240 Hz, and Dynamic
+  48-240 Hz. The observed current mode was fixed 60 Hz.
+- HDR was supported and observed off. SDR color-profile control reported
+  Native, DCI-P3, sRGB, Rec. 709, and Adobe RGB, with Native active.
+- These model-independent Windows display paths are production-admitted for
+  RZ09-0528. HDR-mode color profiles were not exercised.
+
 Unattended capture constraint:
 
 - A later fixed-fan capture attempt caused USBPcap to request UAC even with the
