@@ -94,6 +94,24 @@ if (args.Length == 1 && args[0].Equals("query-display", StringComparison.Ordinal
     return state.IsAvailable ? 0 : 3;
 }
 
+if (args.Length == 2
+    && args[0].Equals("validate-display-hdr", StringComparison.OrdinalIgnoreCase))
+{
+    const string exactConfirmation = "WINDOWS-INTERNAL-DISPLAY:RESTORE";
+    if (!args[1].Equals(exactConfirmation, StringComparison.Ordinal))
+    {
+        Console.Error.WriteLine(
+            $"Validation requires: validate-display-hdr {exactConfirmation}");
+        return 2;
+    }
+
+    using var controller = new WindowsDisplaySettingsController();
+    return await DisplayHdrValidationCommand.RunAsync(
+        controller,
+        Console.Out,
+        CancellationToken.None);
+}
+
 if (args.Length == 1 && args[0].Equals(
     "probe-gpu-clock-offsets",
     StringComparison.OrdinalIgnoreCase))
@@ -1397,6 +1415,8 @@ Console.WriteLine("  OpenBlade.Capture scan");
 Console.WriteLine("  OpenBlade.Capture scan-all");
 Console.WriteLine("  OpenBlade.Capture scan-rz09-0528-02c6");
 Console.WriteLine("  OpenBlade.Capture query-display");
+Console.WriteLine(
+    "  OpenBlade.Capture validate-display-hdr WINDOWS-INTERNAL-DISPLAY:RESTORE");
 Console.WriteLine("  OpenBlade.Capture probe-gpu-clock-offsets");
 Console.WriteLine("  OpenBlade.Capture probe-special-keys [seconds] [output-file]");
 Console.WriteLine("  OpenBlade.Capture validate <fixtures.json>");
