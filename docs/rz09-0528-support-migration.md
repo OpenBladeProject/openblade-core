@@ -276,5 +276,19 @@ Performance discovery checkpoint:
 - CPU Voltage Optimizer remained enabled at its pre-existing visible value and
   was never changed.
 
+AC Performance follow-up:
+
+- Performance + Auto captured `0D/02 01010200` and `01020200`; exact `0D/82`
+  readback returned the same `02` mode on both channels.
+- The action capture was 2,810 bytes with SHA-256
+  `61289DAF0E95BA21A6E7661A35272DCF1A2CD35FEDB3C5BE8CE0AF51012FC8D0`.
+- The separate Balanced restoration capture was 2,810 bytes with SHA-256
+  `550E8A0BE710A6DEBF9F1BEFC83D5DEF89CDB6D6B1B4D77A3DE07719530DAEE3`.
+- Both captures timed out through the normal graceful-stop path.
+- Exact production-port validation confirmed
+  `Balanced/Automatic -> Performance/Automatic -> Balanced/Automatic`.
+- AC Balanced, Silent, Performance, and Automatic fans are admitted. Custom,
+  battery presets, fixed/manual/maximum fans, and RPM readback remain pending.
+
 Update this section after every evidence, implementation, or documentation
 checkpoint.
