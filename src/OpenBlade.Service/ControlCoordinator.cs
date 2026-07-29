@@ -112,7 +112,9 @@ public sealed class ControlCoordinator
                 && (value == PerformancePreset.Custom
                     ? CustomPerformanceSettings.IsWellFormed(customPerformance)
                     : customPerformance is null),
-            capabilities => capabilities.PerformancePresets.Contains(value),
+            capabilities => capabilities.PerformancePresets.Contains(value)
+                && (value != PerformancePreset.Custom
+                    || capabilities.CustomPerformance?.Supports(customPerformance) != false),
             state => PerformanceMatches(state, value, customPerformance),
             token => device.SetPerformanceAsync(value, customPerformance, token),
             cancellationToken,

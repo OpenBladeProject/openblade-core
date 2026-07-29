@@ -241,6 +241,80 @@ type enum OpenBlade.Contracts.ControlResultStatus
   field const OpenBlade.Contracts.ControlResultStatus Blocked = 2
   field const OpenBlade.Contracts.ControlResultStatus Failed = 3
   field const OpenBlade.Contracts.ControlResultStatus Unchanged = 1
+type sealed class OpenBlade.Contracts.CpuPowerLimitCapabilities
+  interface System.IEquatable<OpenBlade.Contracts.CpuPowerLimitCapabilities>
+  ctor (OpenBlade.Contracts.DeviceNumericRange Watts, OpenBlade.Contracts.DeviceFeatureAccess Access)
+  method OpenBlade.Contracts.CpuPowerLimitCapabilities <Clone>$()
+  method OpenBlade.Contracts.DeviceFeatureAccess get_Access()
+  method OpenBlade.Contracts.DeviceNumericRange get_Watts()
+  method System.Boolean get_IsWellFormed()
+  method System.Void Deconstruct(out OpenBlade.Contracts.DeviceNumericRange Watts, out OpenBlade.Contracts.DeviceFeatureAccess Access)
+  method System.Void set_Access(OpenBlade.Contracts.DeviceFeatureAccess value)
+  method System.Void set_Watts(OpenBlade.Contracts.DeviceNumericRange value)
+  method override System.Boolean Equals(System.Object obj)
+  method override System.Int32 GetHashCode()
+  method override System.String ToString()
+  method static System.Boolean op_Equality(OpenBlade.Contracts.CpuPowerLimitCapabilities left, OpenBlade.Contracts.CpuPowerLimitCapabilities right)
+  method static System.Boolean op_Inequality(OpenBlade.Contracts.CpuPowerLimitCapabilities left, OpenBlade.Contracts.CpuPowerLimitCapabilities right)
+  method virtual System.Boolean Equals(OpenBlade.Contracts.CpuPowerLimitCapabilities other)
+  property OpenBlade.Contracts.DeviceFeatureAccess Access { get; init; }
+  property OpenBlade.Contracts.DeviceNumericRange Watts { get; init; }
+  property System.Boolean IsWellFormed { get; }
+type sealed class OpenBlade.Contracts.CpuVoltageOptimizerCapabilities
+  interface System.IEquatable<OpenBlade.Contracts.CpuVoltageOptimizerCapabilities>
+  ctor (OpenBlade.Contracts.DeviceNumericRange Value, OpenBlade.Contracts.DeviceFeatureAccess Access)
+  method OpenBlade.Contracts.CpuVoltageOptimizerCapabilities <Clone>$()
+  method OpenBlade.Contracts.DeviceFeatureAccess get_Access()
+  method OpenBlade.Contracts.DeviceNumericRange get_Value()
+  method System.Boolean get_IsWellFormed()
+  method System.Void Deconstruct(out OpenBlade.Contracts.DeviceNumericRange Value, out OpenBlade.Contracts.DeviceFeatureAccess Access)
+  method System.Void set_Access(OpenBlade.Contracts.DeviceFeatureAccess value)
+  method System.Void set_Value(OpenBlade.Contracts.DeviceNumericRange value)
+  method override System.Boolean Equals(System.Object obj)
+  method override System.Int32 GetHashCode()
+  method override System.String ToString()
+  method static System.Boolean op_Equality(OpenBlade.Contracts.CpuVoltageOptimizerCapabilities left, OpenBlade.Contracts.CpuVoltageOptimizerCapabilities right)
+  method static System.Boolean op_Inequality(OpenBlade.Contracts.CpuVoltageOptimizerCapabilities left, OpenBlade.Contracts.CpuVoltageOptimizerCapabilities right)
+  method virtual System.Boolean Equals(OpenBlade.Contracts.CpuVoltageOptimizerCapabilities other)
+  property OpenBlade.Contracts.DeviceFeatureAccess Access { get; init; }
+  property OpenBlade.Contracts.DeviceNumericRange Value { get; init; }
+  property System.Boolean IsWellFormed { get; }
+type sealed class OpenBlade.Contracts.CustomPerformanceCapabilities
+  interface System.IEquatable<OpenBlade.Contracts.CustomPerformanceCapabilities>
+  ctor (System.Collections.Generic.IReadOnlySet<OpenBlade.Contracts.CustomPerformanceCombination> AllowedCombinations)
+  method OpenBlade.Contracts.CustomPerformanceCapabilities <Clone>$()
+  method System.Boolean Supports(OpenBlade.Contracts.CustomPerformanceSettings settings)
+  method System.Boolean get_IsWellFormed()
+  method System.Collections.Generic.IReadOnlySet<OpenBlade.Contracts.CustomPerformanceCombination> get_AllowedCombinations()
+  method System.Void Deconstruct(out System.Collections.Generic.IReadOnlySet<OpenBlade.Contracts.CustomPerformanceCombination> AllowedCombinations)
+  method System.Void set_AllowedCombinations(System.Collections.Generic.IReadOnlySet<OpenBlade.Contracts.CustomPerformanceCombination> value)
+  method override System.Boolean Equals(System.Object obj)
+  method override System.Int32 GetHashCode()
+  method override System.String ToString()
+  method static System.Boolean op_Equality(OpenBlade.Contracts.CustomPerformanceCapabilities left, OpenBlade.Contracts.CustomPerformanceCapabilities right)
+  method static System.Boolean op_Inequality(OpenBlade.Contracts.CustomPerformanceCapabilities left, OpenBlade.Contracts.CustomPerformanceCapabilities right)
+  method virtual System.Boolean Equals(OpenBlade.Contracts.CustomPerformanceCapabilities other)
+  property System.Boolean IsWellFormed { get; }
+  property System.Collections.Generic.IReadOnlySet<OpenBlade.Contracts.CustomPerformanceCombination> AllowedCombinations { get; init; }
+type sealed class OpenBlade.Contracts.CustomPerformanceCombination
+  interface System.IEquatable<OpenBlade.Contracts.CustomPerformanceCombination>
+  ctor (OpenBlade.Contracts.CustomPerformanceLevel Cpu, OpenBlade.Contracts.CustomPerformanceLevel Gpu)
+  method OpenBlade.Contracts.CustomPerformanceCombination <Clone>$()
+  method OpenBlade.Contracts.CustomPerformanceLevel get_Cpu()
+  method OpenBlade.Contracts.CustomPerformanceLevel get_Gpu()
+  method System.Boolean get_IsWellFormed()
+  method System.Void Deconstruct(out OpenBlade.Contracts.CustomPerformanceLevel Cpu, out OpenBlade.Contracts.CustomPerformanceLevel Gpu)
+  method System.Void set_Cpu(OpenBlade.Contracts.CustomPerformanceLevel value)
+  method System.Void set_Gpu(OpenBlade.Contracts.CustomPerformanceLevel value)
+  method override System.Boolean Equals(System.Object obj)
+  method override System.Int32 GetHashCode()
+  method override System.String ToString()
+  method static System.Boolean op_Equality(OpenBlade.Contracts.CustomPerformanceCombination left, OpenBlade.Contracts.CustomPerformanceCombination right)
+  method static System.Boolean op_Inequality(OpenBlade.Contracts.CustomPerformanceCombination left, OpenBlade.Contracts.CustomPerformanceCombination right)
+  method virtual System.Boolean Equals(OpenBlade.Contracts.CustomPerformanceCombination other)
+  property OpenBlade.Contracts.CustomPerformanceLevel Cpu { get; init; }
+  property OpenBlade.Contracts.CustomPerformanceLevel Gpu { get; init; }
+  property System.Boolean IsWellFormed { get; }
 type enum OpenBlade.Contracts.CustomPerformanceLevel
   field System.Int32 value__
   field const OpenBlade.Contracts.CustomPerformanceLevel High = 2
@@ -330,8 +404,12 @@ type sealed class OpenBlade.Contracts.DesiredDeviceState
 type sealed class OpenBlade.Contracts.DeviceCapabilities
   interface System.IEquatable<OpenBlade.Contracts.DeviceCapabilities>
   ctor (System.Collections.Generic.IReadOnlySet<OpenBlade.Contracts.PerformancePreset> PerformancePresets, System.Collections.Generic.IReadOnlySet<OpenBlade.Contracts.FanMode> FanModes, System.Collections.Generic.IReadOnlySet<OpenBlade.Contracts.LightingEffect> LightingEffects, System.Collections.Generic.IReadOnlySet<System.Int32> ChargeLimits, System.Boolean SupportsBatteryProtectionOff, System.Boolean SupportsTemporaryFullCharge)
+  method OpenBlade.Contracts.CpuPowerLimitCapabilities get_CpuPowerLimit()
+  method OpenBlade.Contracts.CpuVoltageOptimizerCapabilities get_CpuVoltageOptimizer()
+  method OpenBlade.Contracts.CustomPerformanceCapabilities get_CustomPerformance()
   method OpenBlade.Contracts.DeviceCapabilities <Clone>$()
   method OpenBlade.Contracts.FanSpeedRange get_FanSpeedRange()
+  method OpenBlade.Contracts.GpuOverclockCapabilities get_GpuOverclock()
   method System.Boolean get_SupportsBatteryProtectionOff()
   method System.Boolean get_SupportsKeyboardBrightness()
   method System.Boolean get_SupportsTemporaryFullCharge()
@@ -343,8 +421,12 @@ type sealed class OpenBlade.Contracts.DeviceCapabilities
   method System.Collections.Generic.IReadOnlySet<System.Int32> get_ChargeLimits()
   method System.Void Deconstruct(out System.Collections.Generic.IReadOnlySet<OpenBlade.Contracts.PerformancePreset> PerformancePresets, out System.Collections.Generic.IReadOnlySet<OpenBlade.Contracts.FanMode> FanModes, out System.Collections.Generic.IReadOnlySet<OpenBlade.Contracts.LightingEffect> LightingEffects, out System.Collections.Generic.IReadOnlySet<System.Int32> ChargeLimits, out System.Boolean SupportsBatteryProtectionOff, out System.Boolean SupportsTemporaryFullCharge)
   method System.Void set_ChargeLimits(System.Collections.Generic.IReadOnlySet<System.Int32> value)
+  method System.Void set_CpuPowerLimit(OpenBlade.Contracts.CpuPowerLimitCapabilities value)
+  method System.Void set_CpuVoltageOptimizer(OpenBlade.Contracts.CpuVoltageOptimizerCapabilities value)
+  method System.Void set_CustomPerformance(OpenBlade.Contracts.CustomPerformanceCapabilities value)
   method System.Void set_FanModes(System.Collections.Generic.IReadOnlySet<OpenBlade.Contracts.FanMode> value)
   method System.Void set_FanSpeedRange(OpenBlade.Contracts.FanSpeedRange value)
+  method System.Void set_GpuOverclock(OpenBlade.Contracts.GpuOverclockCapabilities value)
   method System.Void set_LightingEffects(System.Collections.Generic.IReadOnlySet<OpenBlade.Contracts.LightingEffect> value)
   method System.Void set_LogoLightingModes(System.Collections.Generic.IReadOnlySet<OpenBlade.Contracts.LogoLightingMode> value)
   method System.Void set_OneShotLaptopControls(System.Collections.Generic.IReadOnlySet<OpenBlade.Contracts.OneShotLaptopControl> value)
@@ -360,7 +442,11 @@ type sealed class OpenBlade.Contracts.DeviceCapabilities
   method static System.Boolean op_Equality(OpenBlade.Contracts.DeviceCapabilities left, OpenBlade.Contracts.DeviceCapabilities right)
   method static System.Boolean op_Inequality(OpenBlade.Contracts.DeviceCapabilities left, OpenBlade.Contracts.DeviceCapabilities right)
   method virtual System.Boolean Equals(OpenBlade.Contracts.DeviceCapabilities other)
+  property OpenBlade.Contracts.CpuPowerLimitCapabilities CpuPowerLimit { get; init; }
+  property OpenBlade.Contracts.CpuVoltageOptimizerCapabilities CpuVoltageOptimizer { get; init; }
+  property OpenBlade.Contracts.CustomPerformanceCapabilities CustomPerformance { get; init; }
   property OpenBlade.Contracts.FanSpeedRange FanSpeedRange { get; init; }
+  property OpenBlade.Contracts.GpuOverclockCapabilities GpuOverclock { get; init; }
   property System.Boolean SupportsBatteryProtectionOff { get; init; }
   property System.Boolean SupportsKeyboardBrightness { get; init; }
   property System.Boolean SupportsTemporaryFullCharge { get; init; }
@@ -370,6 +456,34 @@ type sealed class OpenBlade.Contracts.DeviceCapabilities
   property System.Collections.Generic.IReadOnlySet<OpenBlade.Contracts.OneShotLaptopControl> OneShotLaptopControls { get; init; }
   property System.Collections.Generic.IReadOnlySet<OpenBlade.Contracts.PerformancePreset> PerformancePresets { get; init; }
   property System.Collections.Generic.IReadOnlySet<System.Int32> ChargeLimits { get; init; }
+type enum OpenBlade.Contracts.DeviceFeatureAccess
+  field System.Int32 value__
+  field const OpenBlade.Contracts.DeviceFeatureAccess ObservedOnly = 0
+  field const OpenBlade.Contracts.DeviceFeatureAccess ReadOnly = 1
+  field const OpenBlade.Contracts.DeviceFeatureAccess ReadWrite = 2
+type sealed class OpenBlade.Contracts.DeviceNumericRange
+  interface System.IEquatable<OpenBlade.Contracts.DeviceNumericRange>
+  ctor (System.Int32 Minimum, System.Int32 Maximum, System.Nullable<System.Int32> Step)
+  method OpenBlade.Contracts.DeviceNumericRange <Clone>$()
+  method System.Boolean Supports(System.Int32 value)
+  method System.Boolean get_IsWellFormed()
+  method System.Int32 get_Maximum()
+  method System.Int32 get_Minimum()
+  method System.Nullable<System.Int32> get_Step()
+  method System.Void Deconstruct(out System.Int32 Minimum, out System.Int32 Maximum, out System.Nullable<System.Int32> Step)
+  method System.Void set_Maximum(System.Int32 value)
+  method System.Void set_Minimum(System.Int32 value)
+  method System.Void set_Step(System.Nullable<System.Int32> value)
+  method override System.Boolean Equals(System.Object obj)
+  method override System.Int32 GetHashCode()
+  method override System.String ToString()
+  method static System.Boolean op_Equality(OpenBlade.Contracts.DeviceNumericRange left, OpenBlade.Contracts.DeviceNumericRange right)
+  method static System.Boolean op_Inequality(OpenBlade.Contracts.DeviceNumericRange left, OpenBlade.Contracts.DeviceNumericRange right)
+  method virtual System.Boolean Equals(OpenBlade.Contracts.DeviceNumericRange other)
+  property System.Boolean IsWellFormed { get; }
+  property System.Int32 Maximum { get; init; }
+  property System.Int32 Minimum { get; init; }
+  property System.Nullable<System.Int32> Step { get; init; }
 type enum OpenBlade.Contracts.DeviceSubsystem
   field System.Int32 value__
   field const OpenBlade.Contracts.DeviceSubsystem Battery = 2
@@ -630,6 +744,28 @@ type sealed class OpenBlade.Contracts.GpuClockOffsetSettings
   property OpenBlade.Contracts.GpuClockOffsetSettings Default { get; }
   property System.Int32 CoreMegahertz { get; }
   property System.Int32 MemoryMegahertz { get; }
+type sealed class OpenBlade.Contracts.GpuOverclockCapabilities
+  interface System.IEquatable<OpenBlade.Contracts.GpuOverclockCapabilities>
+  ctor (OpenBlade.Contracts.DeviceNumericRange CoreOffsetMegahertz, OpenBlade.Contracts.DeviceNumericRange MemoryOffsetMegahertz, OpenBlade.Contracts.DeviceFeatureAccess Access)
+  method OpenBlade.Contracts.DeviceFeatureAccess get_Access()
+  method OpenBlade.Contracts.DeviceNumericRange get_CoreOffsetMegahertz()
+  method OpenBlade.Contracts.DeviceNumericRange get_MemoryOffsetMegahertz()
+  method OpenBlade.Contracts.GpuOverclockCapabilities <Clone>$()
+  method System.Boolean get_IsWellFormed()
+  method System.Void Deconstruct(out OpenBlade.Contracts.DeviceNumericRange CoreOffsetMegahertz, out OpenBlade.Contracts.DeviceNumericRange MemoryOffsetMegahertz, out OpenBlade.Contracts.DeviceFeatureAccess Access)
+  method System.Void set_Access(OpenBlade.Contracts.DeviceFeatureAccess value)
+  method System.Void set_CoreOffsetMegahertz(OpenBlade.Contracts.DeviceNumericRange value)
+  method System.Void set_MemoryOffsetMegahertz(OpenBlade.Contracts.DeviceNumericRange value)
+  method override System.Boolean Equals(System.Object obj)
+  method override System.Int32 GetHashCode()
+  method override System.String ToString()
+  method static System.Boolean op_Equality(OpenBlade.Contracts.GpuOverclockCapabilities left, OpenBlade.Contracts.GpuOverclockCapabilities right)
+  method static System.Boolean op_Inequality(OpenBlade.Contracts.GpuOverclockCapabilities left, OpenBlade.Contracts.GpuOverclockCapabilities right)
+  method virtual System.Boolean Equals(OpenBlade.Contracts.GpuOverclockCapabilities other)
+  property OpenBlade.Contracts.DeviceFeatureAccess Access { get; init; }
+  property OpenBlade.Contracts.DeviceNumericRange CoreOffsetMegahertz { get; init; }
+  property OpenBlade.Contracts.DeviceNumericRange MemoryOffsetMegahertz { get; init; }
+  property System.Boolean IsWellFormed { get; }
 type static class OpenBlade.Contracts.IpcMessageCodec
   method static System.Threading.Tasks.Task WriteRequestAsync(System.IO.Stream stream, OpenBlade.Contracts.ServiceRequest request, System.Threading.CancellationToken token)
   method static System.Threading.Tasks.Task WriteServerFrameAsync(System.IO.Stream stream, OpenBlade.Contracts.ServiceServerFrame frame, System.Threading.CancellationToken token)

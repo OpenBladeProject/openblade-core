@@ -1946,6 +1946,66 @@ public sealed class MainViewModelTests
     }
 
     [Fact]
+    public async Task ExactModelCapabilities_ExposeDiscoveriesAndEnforceHighCpuGpuLowOnly()
+    {
+        var client = new FakeServiceClient();
+        await using var viewModel = new MainViewModel(client, new RecordingDispatcher());
+        await viewModel.StartAsync();
+        ServiceStatusSnapshot baseline = CreateStatus(verified: true, blocked: false);
+        var exactCombinations = new CustomPerformanceCapabilities(
+            new HashSet<CustomPerformanceCombination>
+            {
+                new(CustomPerformanceLevel.Low, CustomPerformanceLevel.Low),
+                new(CustomPerformanceLevel.Medium, CustomPerformanceLevel.High),
+                new(CustomPerformanceLevel.High, CustomPerformanceLevel.Low),
+            });
+        var observedGpuPolicy = new GpuOverclockCapabilities(
+            new DeviceNumericRange(-1000, 400, null),
+            new DeviceNumericRange(-1000, 3000, null),
+            DeviceFeatureAccess.ObservedOnly);
+        client.Publish(baseline with
+        {
+            Capabilities = baseline.Capabilities! with
+            {
+                CustomPerformance = exactCombinations,
+                CpuPowerLimit = new(
+                    new DeviceNumericRange(45, 95, 1),
+                    DeviceFeatureAccess.ObservedOnly),
+                CpuVoltageOptimizer = new(
+                    new DeviceNumericRange(-30, -1, 1),
+                    DeviceFeatureAccess.ObservedOnly),
+                GpuOverclock = observedGpuPolicy,
+            },
+            ConfirmedState = baseline.ConfirmedState! with
+            {
+                Performance = PerformancePreset.Custom,
+                CustomPerformance = new CustomPerformanceSettings(
+                    CustomPerformanceLevel.High,
+                    CustomPerformanceLevel.Low),
+                GpuClockOffsets = new GpuClockOffsetCapabilities(
+                    "NVIDIA GPU",
+                    new GpuClockOffsetRange(-1000, 400, 0),
+                    new GpuClockOffsetRange(-1000, 3000, 0)),
+            },
+        });
+        await WaitUntilAsync(() =>
+            viewModel.SelectedCustomCpuLevel == CustomPerformanceLevel.High);
+
+        Assert.Equal([CustomPerformanceLevel.Low], viewModel.AvailableCustomGpuLevels);
+        Assert.False(viewModel.SetCustomPerformanceCommand.CanExecute(
+            new CustomPerformanceSettings(
+                CustomPerformanceLevel.High,
+                CustomPerformanceLevel.Medium)));
+        Assert.True(viewModel.IsCpuPowerLimitVisible);
+        Assert.Equal("45–95 W, 1 W steps", viewModel.CpuPowerLimitRangeLabel);
+        Assert.Contains("No safe OpenBlade backend", viewModel.CpuPowerLimitAccessLabel);
+        Assert.True(viewModel.IsCpuVoltageOptimizerVisible);
+        Assert.True(viewModel.IsGpuOverclockPolicyVisible);
+        Assert.Contains("core -1000 to 400 MHz", viewModel.GpuOverclockPolicyLabel);
+        Assert.False(viewModel.CanEditGpuClockTuning);
+    }
+
+    [Fact]
     public async Task GpuClockTuning_UsesDriverRangesAndSendsTypedCustomOverride()
     {
         var client = new FakeServiceClient();

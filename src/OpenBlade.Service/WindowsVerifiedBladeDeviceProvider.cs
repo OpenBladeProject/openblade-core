@@ -494,7 +494,7 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
                         .ConfigureAwait(false);
                 GpuClockOffsetCapabilities? gpuOffsets =
                     performanceFan.Performance == PerformancePreset.Custom
-                        ? gpuClockOffsets.Query()
+                        ? ApplyGpuPolicy(gpuClockOffsets.Query())
                         : null;
                 CustomPerformanceSettings? customPerformance =
                     performanceFan.CustomPerformance;
@@ -837,6 +837,8 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
             if (!batteryFactory.Capabilities.PerformancePresets.Contains(value)
                 || (value == PerformancePreset.Custom
                     ? !CustomPerformanceSettings.IsWellFormed(customPerformance)
+                        || batteryFactory.Capabilities.CustomPerformance?.Supports(
+                            customPerformance) == false
                     : customPerformance is not null))
             {
                 await RejectProductionWrite(
@@ -848,7 +850,11 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
             if (value == PerformancePreset.Custom
                 && customPerformance?.GpuClockOffsets is { } preflightOffsets)
             {
-                GpuClockOffsetCapabilities? capabilities = gpuClockOffsets.Query();
+                GpuClockOffsetCapabilities? capabilities =
+                    batteryFactory.Capabilities.GpuOverclock is null
+                        or { Access: DeviceFeatureAccess.ReadWrite }
+                        ? ApplyGpuPolicy(gpuClockOffsets.Query())
+                        : null;
                 if (capabilities is null || !capabilities.Supports(preflightOffsets))
                 {
                     await RejectProductionWrite(
@@ -919,7 +925,11 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
             try
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                GpuClockOffsetCapabilities? capabilities = gpuClockOffsets.Query();
+                GpuClockOffsetCapabilities? capabilities =
+                    batteryFactory.Capabilities.GpuOverclock is null
+                        or { Access: DeviceFeatureAccess.ReadWrite }
+                        ? ApplyGpuPolicy(gpuClockOffsets.Query())
+                        : null;
                 if (capabilities is null || !capabilities.Supports(value))
                 {
                     throw new CapabilityUnavailableException(
@@ -951,6 +961,52 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
                     port => port.SetFanModeAsync(value, cancellationToken),
                     cancellationToken)
                 : RejectProductionWrite("The requested fan mode is not admitted.");
+
+        private GpuClockOffsetCapabilities? ApplyGpuPolicy(
+            GpuClockOffsetCapabilities? driver)
+        {
+            GpuOverclockCapabilities? policy = batteryFactory.Capabilities.GpuOverclock;
+            if (driver is null || policy?.IsWellFormed != true)
+            {
+                return driver;
+            }
+
+            int coreMinimum = Math.Max(
+                driver.Core.MinimumMegahertz,
+                policy.CoreOffsetMegahertz.Minimum);
+            int coreMaximum = Math.Min(
+                driver.Core.MaximumMegahertz,
+                policy.CoreOffsetMegahertz.Maximum);
+            int memoryMinimum = Math.Max(
+                driver.Memory.MinimumMegahertz,
+                policy.MemoryOffsetMegahertz.Minimum);
+            int memoryMaximum = Math.Min(
+                driver.Memory.MaximumMegahertz,
+                policy.MemoryOffsetMegahertz.Maximum);
+            if (coreMinimum > coreMaximum
+                || memoryMinimum > memoryMaximum
+                || driver.Core.CurrentMegahertz < coreMinimum
+                || driver.Core.CurrentMegahertz > coreMaximum
+                || driver.Memory.CurrentMegahertz < memoryMinimum
+                || driver.Memory.CurrentMegahertz > memoryMaximum)
+            {
+                return null;
+            }
+
+            return driver with
+            {
+                Core = driver.Core with
+                {
+                    MinimumMegahertz = coreMinimum,
+                    MaximumMegahertz = coreMaximum,
+                },
+                Memory = driver.Memory with
+                {
+                    MinimumMegahertz = memoryMinimum,
+                    MaximumMegahertz = memoryMaximum,
+                },
+            };
+        }
 
         public Task SetFanControlAsync(
             FanControlSettings value,

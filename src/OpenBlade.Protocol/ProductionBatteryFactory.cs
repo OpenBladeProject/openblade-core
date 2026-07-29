@@ -19,6 +19,10 @@ public sealed class ProductionBatteryFactory : IProductionBatteryPortFactory
     private readonly PendingDisposalRegistry pendingDisposals;
     private readonly FanSpeedRange fanSpeedRange;
     private readonly IReadOnlySet<FanMode>? admittedFanModes;
+    private readonly CustomPerformanceCapabilities? customPerformanceCapabilities;
+    private readonly CpuPowerLimitCapabilities? cpuPowerLimitCapabilities;
+    private readonly CpuVoltageOptimizerCapabilities? cpuVoltageOptimizerCapabilities;
+    private readonly GpuOverclockCapabilities? gpuOverclockCapabilities;
 
     internal ProductionBatteryFactory(
         DeviceCommandCatalog catalog,
@@ -30,7 +34,11 @@ public sealed class ProductionBatteryFactory : IProductionBatteryPortFactory
         TimeSpan cleanupDrainTimeout,
         PendingDisposalRegistry pendingDisposals,
         FanSpeedRange? fanSpeedRange = null,
-        IReadOnlySet<FanMode>? admittedFanModes = null)
+        IReadOnlySet<FanMode>? admittedFanModes = null,
+        CustomPerformanceCapabilities? customPerformanceCapabilities = null,
+        CpuPowerLimitCapabilities? cpuPowerLimitCapabilities = null,
+        CpuVoltageOptimizerCapabilities? cpuVoltageOptimizerCapabilities = null,
+        GpuOverclockCapabilities? gpuOverclockCapabilities = null)
     {
         this.catalog = catalog ?? throw new ArgumentNullException(nameof(catalog));
         this.readEvidence = readEvidence ?? throw new ArgumentNullException(nameof(readEvidence));
@@ -55,11 +63,19 @@ public sealed class ProductionBatteryFactory : IProductionBatteryPortFactory
         this.admittedFanModes = admittedFanModes is null
             ? null
             : new HashSet<FanMode>(admittedFanModes);
+        this.customPerformanceCapabilities = customPerformanceCapabilities;
+        this.cpuPowerLimitCapabilities = cpuPowerLimitCapabilities;
+        this.cpuVoltageOptimizerCapabilities = cpuVoltageOptimizerCapabilities;
+        this.gpuOverclockCapabilities = gpuOverclockCapabilities;
         Capabilities = ProductionBatteryPort.CreateCapabilities(
             catalog,
             readEvidence,
             this.fanSpeedRange,
-            this.admittedFanModes);
+            this.admittedFanModes,
+            this.customPerformanceCapabilities,
+            this.cpuPowerLimitCapabilities,
+            this.cpuVoltageOptimizerCapabilities,
+            this.gpuOverclockCapabilities);
     }
 
     public DeviceCapabilities Capabilities { get; }

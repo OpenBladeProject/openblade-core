@@ -132,6 +132,72 @@ public sealed class WindowsVerifiedBladeDeviceProviderProductionTests
     }
 
     [Fact]
+    public async Task ExactModelObservedOnlyGpuPolicy_BlocksOffsetWritesBeforeFirmwareWrite()
+    {
+        DeviceCapabilities capabilities = ThermalCapabilities(
+            new HashSet<PerformancePreset> { PerformancePreset.Custom },
+            new HashSet<FanMode> { FanMode.Automatic }) with
+        {
+            GpuOverclock = new(
+                new DeviceNumericRange(-1000, 400, null),
+                new DeviceNumericRange(-1000, 3000, null),
+                DeviceFeatureAccess.ObservedOnly),
+        };
+        var port = new FakeProductionPort(
+            capabilities,
+            BatteryValidationSetting.Limit80,
+            temporary: null);
+        var factory = new FakeProductionFactory(capabilities, port);
+        var gpu = new FakeGpuClockOffsetController();
+        using var provider = ReadyProvider(factory, gpu);
+        provider.TryGetVerifiedDevice(out IBladeDevice device);
+        var requested = new CustomPerformanceSettings(
+            CustomPerformanceLevel.Medium,
+            CustomPerformanceLevel.High)
+        {
+            GpuClockOffsets = new GpuClockOffsetSettings(125, 500),
+        };
+
+        await Assert.ThrowsAsync<CapabilityUnavailableException>(() =>
+            device.SetPerformanceAsync(
+                PerformancePreset.Custom,
+                requested,
+                default));
+
+        Assert.Equal(0, factory.OpenCount);
+        Assert.Equal(0, gpu.QueryCount);
+        Assert.Empty(gpu.Writes);
+    }
+
+    [Fact]
+    public async Task ExactModelCombinationPolicy_BlocksUnsupportedPairBeforeOpeningDevice()
+    {
+        DeviceCapabilities capabilities = ThermalCapabilities(
+            new HashSet<PerformancePreset> { PerformancePreset.Custom },
+            new HashSet<FanMode> { FanMode.Automatic }) with
+        {
+            CustomPerformance = new(
+                new HashSet<CustomPerformanceCombination>
+                {
+                    new(CustomPerformanceLevel.High, CustomPerformanceLevel.Low),
+                }),
+        };
+        var factory = new FakeProductionFactory(capabilities);
+        using var provider = ReadyProvider(factory);
+        provider.TryGetVerifiedDevice(out IBladeDevice device);
+
+        await Assert.ThrowsAsync<CapabilityUnavailableException>(() =>
+            device.SetPerformanceAsync(
+                PerformancePreset.Custom,
+                new CustomPerformanceSettings(
+                    CustomPerformanceLevel.High,
+                    CustomPerformanceLevel.Medium),
+                default));
+
+        Assert.Equal(0, factory.OpenCount);
+    }
+
+    [Fact]
     public async Task SetCustomPerformance_GpuWriteFailureReportsPartialOperationAsIndeterminate()
     {
         DeviceCapabilities capabilities = ThermalCapabilities(

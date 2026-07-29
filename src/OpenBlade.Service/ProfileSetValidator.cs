@@ -10,18 +10,22 @@ public sealed class ProfileValidationPolicy
 {
     public ProfileValidationPolicy(
         IReadOnlySet<PerformanceFanCombination> supportedPerformanceFanCombinations,
-        IReadOnlySet<LightingEffect> supportedLightingEffects)
+        IReadOnlySet<LightingEffect> supportedLightingEffects,
+        CustomPerformanceCapabilities? customPerformance = null)
     {
         ArgumentNullException.ThrowIfNull(supportedPerformanceFanCombinations);
         ArgumentNullException.ThrowIfNull(supportedLightingEffects);
         SupportedPerformanceFanCombinations =
             new HashSet<PerformanceFanCombination>(supportedPerformanceFanCombinations);
         SupportedLightingEffects = new HashSet<LightingEffect>(supportedLightingEffects);
+        CustomPerformance = customPerformance;
     }
 
     public IReadOnlySet<PerformanceFanCombination> SupportedPerformanceFanCombinations { get; }
 
     public IReadOnlySet<LightingEffect> SupportedLightingEffects { get; }
+
+    public CustomPerformanceCapabilities? CustomPerformance { get; }
 
     public static ProfileValidationPolicy CreateUnverifiedSafeDefaults() => new(
         new HashSet<PerformanceFanCombination>
@@ -51,7 +55,8 @@ public sealed class ProfileValidationPolicy
             capabilities.LightingEffects.Where(Enum.IsDefined));
         return new ProfileValidationPolicy(
             safeDefaults.SupportedPerformanceFanCombinations,
-            supportedLightingEffects);
+            supportedLightingEffects,
+            capabilities.CustomPerformance);
     }
 }
 
@@ -175,7 +180,7 @@ public sealed class ProfileSetValidator(ProfileValidationPolicy policy)
         }
     }
 
-    private static void ValidateCustomPerformance(PowerProfile profile, string name)
+    private void ValidateCustomPerformance(PowerProfile profile, string name)
     {
         if (profile.Performance == PerformancePreset.Custom
             && !CustomPerformanceSettings.IsWellFormed(profile.CustomPerformance))
@@ -188,6 +193,13 @@ public sealed class ProfileSetValidator(ProfileValidationPolicy policy)
             && !CustomPerformanceSettings.IsWellFormed(profile.CustomPerformance))
         {
             throw Invalid($"The {name} saved custom performance levels are invalid.");
+        }
+
+        if (profile.CustomPerformance is not null
+            && validationPolicy.CustomPerformance?.Supports(profile.CustomPerformance) == false)
+        {
+            throw Invalid(
+                $"The {name} custom performance combination is not supported by this device.");
         }
     }
 

@@ -40,6 +40,84 @@ public sealed record FanSpeedRange(
         FanControlSettings.SpeedStepRpm);
 }
 
+public sealed record CustomPerformanceCombination(
+    CustomPerformanceLevel Cpu,
+    CustomPerformanceLevel Gpu)
+{
+    public bool IsWellFormed =>
+        Enum.IsDefined(Cpu)
+        && Enum.IsDefined(Gpu)
+        && (Cpu, Gpu) is not (CustomPerformanceLevel.High, CustomPerformanceLevel.High);
+}
+
+public sealed record CustomPerformanceCapabilities(
+    IReadOnlySet<CustomPerformanceCombination> AllowedCombinations)
+{
+    public bool IsWellFormed =>
+        AllowedCombinations is { Count: > 0 }
+        && AllowedCombinations.All(combination => combination is not null && combination.IsWellFormed);
+
+    public bool Supports(CustomPerformanceSettings? settings) =>
+        CustomPerformanceSettings.IsWellFormed(settings)
+        && AllowedCombinations.Contains(new(settings!.Cpu, settings.Gpu));
+}
+
+public enum DeviceFeatureAccess
+{
+    ObservedOnly,
+    ReadOnly,
+    ReadWrite,
+}
+
+public sealed record DeviceNumericRange(
+    int Minimum,
+    int Maximum,
+    int? Step)
+{
+    public bool IsWellFormed =>
+        Minimum <= Maximum
+        && (!Step.HasValue
+            || Step.Value > 0
+            && (Maximum - Minimum) % Step.Value == 0);
+
+    public bool Supports(int value) =>
+        IsWellFormed
+        && Step.HasValue
+        && value >= Minimum
+        && value <= Maximum
+        && (value - Minimum) % Step.Value == 0;
+}
+
+public sealed record CpuPowerLimitCapabilities(
+    DeviceNumericRange Watts,
+    DeviceFeatureAccess Access)
+{
+    public bool IsWellFormed =>
+        Watts is { IsWellFormed: true }
+        && Watts.Minimum > 0
+        && Enum.IsDefined(Access);
+}
+
+public sealed record CpuVoltageOptimizerCapabilities(
+    DeviceNumericRange Value,
+    DeviceFeatureAccess Access)
+{
+    public bool IsWellFormed =>
+        Value is { IsWellFormed: true }
+        && Enum.IsDefined(Access);
+}
+
+public sealed record GpuOverclockCapabilities(
+    DeviceNumericRange CoreOffsetMegahertz,
+    DeviceNumericRange MemoryOffsetMegahertz,
+    DeviceFeatureAccess Access)
+{
+    public bool IsWellFormed =>
+        CoreOffsetMegahertz is { IsWellFormed: true }
+        && MemoryOffsetMegahertz is { IsWellFormed: true }
+        && Enum.IsDefined(Access);
+}
+
 public sealed record DeviceCapabilities(
     IReadOnlySet<PerformancePreset> PerformancePresets,
     IReadOnlySet<FanMode> FanModes,
@@ -51,6 +129,14 @@ public sealed record DeviceCapabilities(
     public bool SupportsKeyboardBrightness { get; init; }
 
     public FanSpeedRange? FanSpeedRange { get; init; }
+
+    public CustomPerformanceCapabilities? CustomPerformance { get; init; }
+
+    public CpuPowerLimitCapabilities? CpuPowerLimit { get; init; }
+
+    public CpuVoltageOptimizerCapabilities? CpuVoltageOptimizer { get; init; }
+
+    public GpuOverclockCapabilities? GpuOverclock { get; init; }
 
     public IReadOnlySet<LogoLightingMode> LogoLightingModes { get; init; } =
         new HashSet<LogoLightingMode>();

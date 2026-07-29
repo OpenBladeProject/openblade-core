@@ -461,7 +461,8 @@ internal sealed class ProductionBatteryPort : IProductionBatteryPort
         CustomPerformanceSettings value,
         CancellationToken cancellationToken)
     {
-        if (!CustomPerformanceSettings.IsWellFormed(value))
+        if (!CustomPerformanceSettings.IsWellFormed(value)
+            || Capabilities.CustomPerformance?.Supports(value) == false)
         {
             return Task.FromException(KnownNotApplied(
                 "The custom performance CPU/GPU combination is invalid."));
@@ -854,7 +855,11 @@ internal sealed class ProductionBatteryPort : IProductionBatteryPort
         DeviceCommandCatalog catalog,
         ProductionBatteryReadEvidence readEvidence,
         FanSpeedRange? fanSpeedRange = null,
-        IReadOnlySet<FanMode>? admittedFanModes = null)
+        IReadOnlySet<FanMode>? admittedFanModes = null,
+        CustomPerformanceCapabilities? customPerformanceCapabilities = null,
+        CpuPowerLimitCapabilities? cpuPowerLimitCapabilities = null,
+        CpuVoltageOptimizerCapabilities? cpuVoltageOptimizerCapabilities = null,
+        GpuOverclockCapabilities? gpuOverclockCapabilities = null)
     {
         var limits = new HashSet<int>();
         foreach ((int percent, string action) in ChargeLimitActions)
@@ -978,6 +983,12 @@ internal sealed class ProductionBatteryPort : IProductionBatteryPort
         {
             OneShotLaptopControls = oneShotControls,
             FanSpeedRange = admittedFanSpeedRange,
+            CustomPerformance = performance.Contains(PerformancePreset.Custom)
+                ? customPerformanceCapabilities
+                : null,
+            CpuPowerLimit = cpuPowerLimitCapabilities,
+            CpuVoltageOptimizer = cpuVoltageOptimizerCapabilities,
+            GpuOverclock = gpuOverclockCapabilities,
         };
     }
 
@@ -1329,11 +1340,12 @@ internal sealed class ProductionBatteryPort : IProductionBatteryPort
         CustomPerformanceLevel gpu = await QueryCustomPerformanceLevelAsync(
             CustomPerformanceDomain.Gpu,
             cancellationToken).ConfigureAwait(false);
-        if ((cpu, gpu) is (CustomPerformanceLevel.High, CustomPerformanceLevel.High))
+        var custom = new CustomPerformanceSettings(cpu, gpu);
+        if (Capabilities.CustomPerformance?.Supports(custom) == false)
         {
             poisoned = true;
             throw new RazerProtocolException(
-                "Custom performance returned the unsupported CPU High and GPU High combination.",
+                "Custom performance returned a combination not admitted for this exact device.",
                 HidProtocolValidationFailure.PayloadValidator);
         }
 
@@ -1341,7 +1353,7 @@ internal sealed class ProductionBatteryPort : IProductionBatteryPort
             PerformancePreset.Custom,
             FanMode.Automatic)
         {
-            CustomPerformance = new CustomPerformanceSettings(cpu, gpu),
+            CustomPerformance = custom,
         };
     }
 

@@ -911,7 +911,9 @@ if (args.Length == 1 && args[0].Equals(
                 PerformancePreset.Balanced,
                 PerformancePreset.Silent,
                 PerformancePreset.Performance,
+                PerformancePreset.Custom,
             ])
+        && battery.Capabilities.CustomPerformance?.IsWellFormed == true
         && battery.Capabilities.FanModes.SetEquals(
             [
                 FanMode.Automatic,
@@ -998,6 +1000,10 @@ if (args.Length == 1 && args[0].Equals(
             Console.WriteLine(
                 $"Performance={state.Performance?.ToString() ?? "Unavailable"}");
             Console.WriteLine($"Fans={state.Fans?.ToString() ?? "Unavailable"}");
+            Console.WriteLine(
+                $"CustomCpu={state.CustomPerformance?.Cpu.ToString() ?? "Unavailable"}");
+            Console.WriteLine(
+                $"CustomGpu={state.CustomPerformance?.Gpu.ToString() ?? "Unavailable"}");
             Console.WriteLine("Success=True");
             return 0;
         }
@@ -1005,6 +1011,170 @@ if (args.Length == 1 && args[0].Equals(
         {
             Console.WriteLine($"Failure={exception.GetType().Name}");
             Console.WriteLine($"Message={exception.Message}");
+            Console.WriteLine("Success=False");
+            return 2;
+        }
+    }
+}
+
+if (args.Length > 0 && args[0].Equals(
+    "validate-rz09-0528-02c6-custom-performance",
+    StringComparison.OrdinalIgnoreCase))
+{
+    const string exactConfirmation = "RZ09-0528:1532:02C6:2.02";
+    if (args.Length != 4
+        || !args[1].Equals(exactConfirmation, StringComparison.Ordinal)
+        || !Enum.TryParse(args[2], ignoreCase: true, out CustomPerformanceLevel cpu)
+        || !Enum.IsDefined(cpu)
+        || !Enum.TryParse(args[3], ignoreCase: true, out CustomPerformanceLevel gpu)
+        || !Enum.IsDefined(gpu))
+    {
+        Console.Error.WriteLine(
+            $"Usage: OpenBlade.Capture validate-rz09-0528-02c6-custom-performance " +
+            $"{exactConfirmation} <low|medium|high> <low|medium|high>");
+        return 2;
+    }
+
+    CustomPerformanceSettings target;
+    try
+    {
+        target = new CustomPerformanceSettings(cpu, gpu);
+    }
+    catch (ArgumentException exception)
+    {
+        Console.Error.WriteLine($"Target rejected: {exception.Message}");
+        return 2;
+    }
+
+    IProductionBatteryPortFactory factory =
+        BatteryValidationFactory.CreateWindowsRz090528ProductionBattery();
+    if (factory.Capabilities.CustomPerformance?.Supports(target) != true)
+    {
+        Console.Error.WriteLine(
+            "The requested CPU/GPU pair is not admitted for this exact device.");
+        return 2;
+    }
+
+    HidSessionResult<IProductionBatteryPort> opened =
+        await factory.OpenAsync(CancellationToken.None);
+    if (opened.Value is not { } port || opened.Failure is not null)
+    {
+        if (opened.Value is not null)
+        {
+            await opened.Value.DisposeAsync();
+        }
+
+        Console.WriteLine("Target=RZ09-0528 1532:02C6 BIOS 2.02");
+        Console.WriteLine($"OpenFailure={opened.Failure?.ToString() ?? "Unavailable"}");
+        Console.WriteLine("RestorationConfirmed=False");
+        Console.WriteLine("Success=False");
+        return 2;
+    }
+
+    await using (port)
+    {
+        ProductionPerformanceFanState? baselineState = null;
+        bool applyStarted = false;
+        try
+        {
+            ProductionPerformanceFanState baseline =
+                await port.QueryPerformanceFanStateAsync(CancellationToken.None);
+            baselineState = baseline;
+            if (baseline.Performance is null || baseline.Fans != FanMode.Automatic)
+            {
+                throw new InvalidOperationException(
+                    "Validation requires a confirmed named performance preset with Automatic fans.");
+            }
+
+            applyStarted = true;
+            await port.SetCustomPerformanceAsync(target, CancellationToken.None);
+            ProductionPerformanceFanState applied =
+                await port.QueryPerformanceFanStateAsync(CancellationToken.None);
+            if (applied.Performance != PerformancePreset.Custom
+                || applied.Fans != FanMode.Automatic
+                || applied.CustomPerformance != target)
+            {
+                throw new InvalidOperationException(
+                    "The applied Custom state did not match the requested CPU/GPU pair.");
+            }
+
+            if (baseline.Performance == PerformancePreset.Custom)
+            {
+                await port.SetCustomPerformanceAsync(
+                    baseline.CustomPerformance
+                        ?? throw new InvalidOperationException(
+                            "The baseline Custom state did not include component readback."),
+                    CancellationToken.None);
+            }
+            else
+            {
+                await port.SetPerformanceAsync(
+                    baseline.Performance.Value,
+                    CancellationToken.None);
+            }
+
+            ProductionPerformanceFanState restored =
+                await port.QueryPerformanceFanStateAsync(CancellationToken.None);
+            bool restorationConfirmed =
+                restored.Performance == baseline.Performance
+                && restored.Fans == baseline.Fans
+                && (baseline.Performance != PerformancePreset.Custom
+                    || restored.CustomPerformance == baseline.CustomPerformance);
+            Console.WriteLine("Target=RZ09-0528 1532:02C6 BIOS 2.02");
+            Console.WriteLine(
+                $"Baseline={baseline.Performance}/{baseline.Fans}/" +
+                $"{baseline.CustomPerformance?.Cpu.ToString() ?? "N/A"}/" +
+                $"{baseline.CustomPerformance?.Gpu.ToString() ?? "N/A"}");
+            Console.WriteLine($"Applied=Custom/Automatic/{cpu}/{gpu}");
+            Console.WriteLine(
+                $"Restored={restored.Performance}/{restored.Fans}/" +
+                $"{restored.CustomPerformance?.Cpu.ToString() ?? "N/A"}/" +
+                $"{restored.CustomPerformance?.Gpu.ToString() ?? "N/A"}");
+            Console.WriteLine($"RestorationConfirmed={restorationConfirmed}");
+            Console.WriteLine($"Success={restorationConfirmed}");
+            return restorationConfirmed ? 0 : 2;
+        }
+        catch (Exception exception)
+        {
+            bool restorationConfirmed = false;
+            if (applyStarted
+                && baselineState is { } baseline
+                && baseline.Performance is { } baselinePreset)
+            {
+                try
+                {
+                    if (baselinePreset == PerformancePreset.Custom
+                        && baseline.CustomPerformance is { } baselineCustom)
+                    {
+                        await port.SetCustomPerformanceAsync(
+                            baselineCustom,
+                            CancellationToken.None);
+                    }
+                    else
+                    {
+                        await port.SetPerformanceAsync(
+                            baselinePreset,
+                            CancellationToken.None);
+                    }
+
+                    ProductionPerformanceFanState restored =
+                        await port.QueryPerformanceFanStateAsync(CancellationToken.None);
+                    restorationConfirmed =
+                        restored.Performance == baselinePreset
+                        && restored.Fans == baseline.Fans
+                        && (baselinePreset != PerformancePreset.Custom
+                            || restored.CustomPerformance == baseline.CustomPerformance);
+                }
+                catch
+                {
+                    restorationConfirmed = false;
+                }
+            }
+
+            Console.WriteLine("Target=RZ09-0528 1532:02C6 BIOS 2.02");
+            Console.WriteLine($"Failure={exception.GetType().Name}");
+            Console.WriteLine($"Message={exception.Message}");
+            Console.WriteLine($"RestorationConfirmed={restorationConfirmed}");
             Console.WriteLine("Success=False");
             return 2;
         }
@@ -1216,6 +1386,9 @@ Console.WriteLine(
     "  OpenBlade.Capture query-rz09-0528-02c6-performance-fan-discriminator");
 Console.WriteLine(
     "  OpenBlade.Capture query-rz09-0528-02c6-production-performance-fan");
+Console.WriteLine(
+    "  OpenBlade.Capture validate-rz09-0528-02c6-custom-performance " +
+    "RZ09-0528:1532:02C6:2.02 <low|medium|high> <low|medium|high>");
 Console.WriteLine("  OpenBlade.Capture probe-function-key-primary-getter");
 Console.WriteLine("  OpenBlade.Capture probe-gaming-mode-getter");
 Console.WriteLine(

@@ -17,8 +17,34 @@ public sealed class Rz090528BatteryValidationFactoryTests
                 PerformancePreset.Balanced,
                 PerformancePreset.Silent,
                 PerformancePreset.Performance,
+                PerformancePreset.Custom,
             ],
             factory.Capabilities.PerformancePresets);
+        Assert.True(factory.Capabilities.CustomPerformance?.IsWellFormed);
+        Assert.True(factory.Capabilities.CustomPerformance!.Supports(
+            new CustomPerformanceSettings(
+                CustomPerformanceLevel.High,
+                CustomPerformanceLevel.Low)));
+        Assert.False(factory.Capabilities.CustomPerformance.Supports(
+            new CustomPerformanceSettings(
+                CustomPerformanceLevel.High,
+                CustomPerformanceLevel.Medium)));
+        Assert.Equal(
+            new CpuPowerLimitCapabilities(
+                new DeviceNumericRange(45, 95, 1),
+                DeviceFeatureAccess.ObservedOnly),
+            factory.Capabilities.CpuPowerLimit);
+        Assert.Equal(
+            new CpuVoltageOptimizerCapabilities(
+                new DeviceNumericRange(-30, -1, 1),
+                DeviceFeatureAccess.ObservedOnly),
+            factory.Capabilities.CpuVoltageOptimizer);
+        Assert.Equal(
+            new GpuOverclockCapabilities(
+                new DeviceNumericRange(-1000, 400, null),
+                new DeviceNumericRange(-1000, 3000, null),
+                DeviceFeatureAccess.ObservedOnly),
+            factory.Capabilities.GpuOverclock);
         Assert.True(factory.Capabilities.FanModes.SetEquals(
             [
                 FanMode.Automatic,

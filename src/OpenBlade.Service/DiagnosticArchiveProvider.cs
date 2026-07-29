@@ -321,6 +321,20 @@ public sealed class DiagnosticArchiveProvider : IDiagnosticArchiveProvider
         result["battery.chargeLimit"] = capabilities.ChargeLimits.Count > 0;
         result["battery.protectionOff"] = capabilities.SupportsBatteryProtectionOff;
         result["battery.temporaryFullCharge"] = capabilities.SupportsTemporaryFullCharge;
+        result["performance.customCombinations"] =
+            capabilities.CustomPerformance?.IsWellFormed == true;
+        result["performance.cpuPowerLimit.observed"] =
+            capabilities.CpuPowerLimit?.IsWellFormed == true;
+        result["performance.cpuPowerLimit.write"] =
+            capabilities.CpuPowerLimit?.Access == DeviceFeatureAccess.ReadWrite;
+        result["performance.cpuVoltageOptimizer.observed"] =
+            capabilities.CpuVoltageOptimizer?.IsWellFormed == true;
+        result["performance.cpuVoltageOptimizer.write"] =
+            capabilities.CpuVoltageOptimizer?.Access == DeviceFeatureAccess.ReadWrite;
+        result["performance.gpuOverclock.observed"] =
+            capabilities.GpuOverclock?.IsWellFormed == true;
+        result["performance.gpuOverclock.write"] =
+            capabilities.GpuOverclock?.Access == DeviceFeatureAccess.ReadWrite;
         return result;
     }
 

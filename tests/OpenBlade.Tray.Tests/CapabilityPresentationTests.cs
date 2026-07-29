@@ -61,13 +61,17 @@ public sealed class CapabilityPresentationTests
             .Where(element => Attribute(element, "AnimatedVisibility.IsVisible") is not null)
             .ToArray();
 
-        Assert.Equal(20, animated.Length);
+        Assert.Equal(23, animated.Length);
         Assert.All(animated, element => Assert.Equal(
             "Collapsed",
             Attribute(element, "Visibility")));
         Assert.Contains(animated, element =>
             Attribute(element, "AnimatedVisibility.IsVisible")?.Contains(
                 "IsCustomPerformanceVisible",
+                StringComparison.Ordinal) is true);
+        Assert.Contains(animated, element =>
+            Attribute(element, "AnimatedVisibility.IsVisible")?.Contains(
+                "IsCpuPowerLimitVisible",
                 StringComparison.Ordinal) is true);
         Assert.Contains(animated, element =>
             Attribute(element, "AnimatedVisibility.IsVisible")?.Contains(

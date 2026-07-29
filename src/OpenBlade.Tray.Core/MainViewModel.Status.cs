@@ -48,6 +48,12 @@ public sealed partial class MainViewModel
         ReferenceEquals(left, right)
         || (left is not null && right is not null
             && left.PerformancePresets.SetEquals(right.PerformancePresets)
+            && CustomPerformanceCapabilitiesEqual(
+                left.CustomPerformance,
+                right.CustomPerformance)
+            && left.CpuPowerLimit == right.CpuPowerLimit
+            && left.CpuVoltageOptimizer == right.CpuVoltageOptimizer
+            && left.GpuOverclock == right.GpuOverclock
             && left.FanModes.SetEquals(right.FanModes)
             && left.FanSpeedRange == right.FanSpeedRange
             && left.LightingEffects.SetEquals(right.LightingEffects)
@@ -56,4 +62,12 @@ public sealed partial class MainViewModel
             && left.ChargeLimits.SetEquals(right.ChargeLimits)
             && left.SupportsBatteryProtectionOff == right.SupportsBatteryProtectionOff
             && left.SupportsTemporaryFullCharge == right.SupportsTemporaryFullCharge);
+
+    private static bool CustomPerformanceCapabilitiesEqual(
+        CustomPerformanceCapabilities? left,
+        CustomPerformanceCapabilities? right) =>
+        ReferenceEquals(left, right)
+        || (left is not null
+            && right is not null
+            && left.AllowedCombinations.SetEquals(right.AllowedCombinations));
 }

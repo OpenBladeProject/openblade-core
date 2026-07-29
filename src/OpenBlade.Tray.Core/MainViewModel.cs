@@ -100,12 +100,6 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     private static readonly IReadOnlyList<CustomPerformanceLevel> AllCustomPerformanceLevels =
         Enum.GetValues<CustomPerformanceLevel>();
 
-    private static readonly IReadOnlyList<CustomPerformanceLevel> NonHighCustomPerformanceLevels =
-    [
-        CustomPerformanceLevel.Low,
-        CustomPerformanceLevel.Medium,
-    ];
-
     private static readonly IReadOnlyList<LightingDirectionOption> StandardLightingDirectionOptions =
     [
         new(LightingDirection.Leftward, "Leftward"),
@@ -178,6 +172,10 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     private PerformancePreset selectedPerformance = PerformancePreset.Balanced;
     private CustomPerformanceLevel selectedCustomCpuLevel = CustomPerformanceLevel.Medium;
     private CustomPerformanceLevel selectedCustomGpuLevel = CustomPerformanceLevel.High;
+    private IReadOnlyList<CustomPerformanceLevel> availableCustomCpuLevels =
+        AllCustomPerformanceLevels;
+    private IReadOnlyList<CustomPerformanceLevel> availableCustomGpuLevels =
+        AllCustomPerformanceLevels;
     private GpuClockOffsetCapabilities? gpuClockOffsetCapabilities;
     private int gpuCoreClockOffsetMegahertz;
     private int gpuMemoryClockOffsetMegahertz;
@@ -799,6 +797,9 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             Notify(nameof(IsCustomPerformanceVisible));
             Notify(nameof(IsGpuClockTuningAvailable));
             Notify(nameof(CanEditGpuClockTuning));
+            Notify(nameof(IsCpuPowerLimitVisible));
+            Notify(nameof(IsCpuVoltageOptimizerVisible));
+            Notify(nameof(IsGpuOverclockPolicyVisible));
             Notify(nameof(ActiveSavedDisplayProfile));
             Notify(nameof(SaveToActiveProfileLabel));
             NotifyGamingModeKeyPolicy();
@@ -1372,6 +1373,50 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         IsCustomPerformanceVisible
         && GpuClockOffsetCapabilities?.IsWellFormed == true;
 
+    public bool IsCpuPowerLimitVisible =>
+        ActivePowerSource == PowerSource.PluggedIn
+        && Capabilities.CpuPowerLimit?.IsWellFormed == true;
+
+    public string CpuPowerLimitRangeLabel =>
+        FormatObservedRange(Capabilities.CpuPowerLimit?.Watts, "W");
+
+    public string CpuPowerLimitAccessLabel =>
+        FormatFeatureAccess(
+            Capabilities.CpuPowerLimit?.Access,
+            "No safe OpenBlade backend or readback has been identified yet.");
+
+    public bool IsCpuVoltageOptimizerVisible =>
+        ActivePowerSource == PowerSource.PluggedIn
+        && Capabilities.CpuVoltageOptimizer?.IsWellFormed == true;
+
+    public string CpuVoltageOptimizerRangeLabel =>
+        FormatObservedRange(Capabilities.CpuVoltageOptimizer?.Value, string.Empty);
+
+    public string CpuVoltageOptimizerAccessLabel =>
+        FormatFeatureAccess(
+            Capabilities.CpuVoltageOptimizer?.Access,
+            "Observed in Synapse; its HID writes collide with CPU preset writes, so control remains unavailable.");
+
+    public bool IsGpuOverclockPolicyVisible =>
+        ActivePowerSource == PowerSource.PluggedIn
+        && Capabilities.GpuOverclock?.IsWellFormed == true;
+
+    public string GpuOverclockPolicyLabel
+    {
+        get
+        {
+            GpuOverclockCapabilities? policy = Capabilities.GpuOverclock;
+            return policy?.IsWellFormed == true
+                ? $"Synapse policy: core {policy.CoreOffsetMegahertz.Minimum} to {policy.CoreOffsetMegahertz.Maximum} MHz; memory {policy.MemoryOffsetMegahertz.Minimum} to {policy.MemoryOffsetMegahertz.Maximum} MHz."
+                : UnavailableLabel;
+        }
+    }
+
+    public string GpuClockTuningAccessLabel =>
+        FormatFeatureAccess(
+            Capabilities.GpuOverclock?.Access,
+            "Ranges are documented, but writes remain disabled until exact-device setter validation.");
+
     public GpuClockOffsetCapabilities? GpuClockOffsetCapabilities
     {
         get => gpuClockOffsetCapabilities;
@@ -1431,7 +1476,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             }
 
             SetField(ref selectedCustomCpuLevel, value);
-            Notify(nameof(AvailableCustomGpuLevels));
+            RefreshCustomPerformanceOptions();
         }
     }
 
@@ -1446,19 +1491,15 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             }
 
             SetField(ref selectedCustomGpuLevel, value);
-            Notify(nameof(AvailableCustomCpuLevels));
+            RefreshCustomPerformanceOptions();
         }
     }
 
     public IReadOnlyList<CustomPerformanceLevel> AvailableCustomCpuLevels =>
-        SelectedCustomGpuLevel == CustomPerformanceLevel.High
-            ? NonHighCustomPerformanceLevels
-            : AllCustomPerformanceLevels;
+        availableCustomCpuLevels;
 
     public IReadOnlyList<CustomPerformanceLevel> AvailableCustomGpuLevels =>
-        SelectedCustomCpuLevel == CustomPerformanceLevel.High
-            ? NonHighCustomPerformanceLevels
-            : AllCustomPerformanceLevels;
+        availableCustomGpuLevels;
 
     public FanMode SelectedFanMode
     {
@@ -1552,7 +1593,10 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         CanRequestHardwareControl && !IsPerformanceOperationInProgress;
 
     public bool CanEditGpuClockTuning =>
-        CanEditPerformance && IsGpuClockTuningAvailable;
+        CanEditPerformance
+        && IsGpuClockTuningAvailable
+        && Capabilities.GpuOverclock
+            is not { Access: not DeviceFeatureAccess.ReadWrite };
 
     public bool IsPerformanceOperationInProgress
     {
@@ -1788,6 +1832,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             }
 
             SetField(ref capabilities, value);
+            RefreshCustomPerformanceOptions();
             int normalizedFanSpeed = ActiveFanSpeedRange.Quantize(fixedFanSpeedRpm);
             SetField(
                 ref fixedFanSpeedRpm,
@@ -1803,6 +1848,16 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             Notify(nameof(SupportsStartupAnimation));
             Notify(nameof(SupportsFunctionKeyPrimary));
             Notify(nameof(SupportsGamingMode));
+            Notify(nameof(CanEditGpuClockTuning));
+            Notify(nameof(IsCpuPowerLimitVisible));
+            Notify(nameof(CpuPowerLimitRangeLabel));
+            Notify(nameof(CpuPowerLimitAccessLabel));
+            Notify(nameof(IsCpuVoltageOptimizerVisible));
+            Notify(nameof(CpuVoltageOptimizerRangeLabel));
+            Notify(nameof(CpuVoltageOptimizerAccessLabel));
+            Notify(nameof(IsGpuOverclockPolicyVisible));
+            Notify(nameof(GpuOverclockPolicyLabel));
+            Notify(nameof(GpuClockTuningAccessLabel));
             NotifyGamingModeKeyPolicy();
             NotifyFirmwareFieldLoadingState();
         }
@@ -3157,6 +3212,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     private bool CanSetCustomPerformance(object? parameter) =>
         parameter is CustomPerformanceSettings value
         && CustomPerformanceSettings.IsWellFormed(value)
+        && CommandCapabilities.CustomPerformance?.Supports(value) != false
         && (value.GpuClockOffsets is null
             || GpuClockOffsetCapabilities?.Supports(value.GpuClockOffsets) == true)
         && IsCustomPerformanceVisible
@@ -3164,6 +3220,60 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         && CanMutate
         && HasConfirmedPowerSource
         && !MaximumFansAreEffectiveOrConfirmed();
+
+    private bool SupportsCustomPerformance(
+        CustomPerformanceLevel cpu,
+        CustomPerformanceLevel gpu)
+    {
+        var combination = new CustomPerformanceCombination(cpu, gpu);
+        return combination.IsWellFormed
+            && (Capabilities.CustomPerformance?.AllowedCombinations.Contains(combination)
+                ?? true);
+    }
+
+    private void RefreshCustomPerformanceOptions()
+    {
+        CustomPerformanceLevel[] cpu = AllCustomPerformanceLevels
+            .Where(level => SupportsCustomPerformance(level, SelectedCustomGpuLevel))
+            .ToArray();
+        CustomPerformanceLevel[] gpu = AllCustomPerformanceLevels
+            .Where(level => SupportsCustomPerformance(SelectedCustomCpuLevel, level))
+            .ToArray();
+        if (!availableCustomCpuLevels.SequenceEqual(cpu))
+        {
+            availableCustomCpuLevels = cpu;
+            Notify(nameof(AvailableCustomCpuLevels));
+        }
+        if (!availableCustomGpuLevels.SequenceEqual(gpu))
+        {
+            availableCustomGpuLevels = gpu;
+            Notify(nameof(AvailableCustomGpuLevels));
+        }
+    }
+
+    private static string FormatObservedRange(DeviceNumericRange? range, string unit)
+    {
+        if (range?.IsWellFormed != true)
+        {
+            return UnavailableLabel;
+        }
+
+        string suffix = string.IsNullOrEmpty(unit) ? string.Empty : $" {unit}";
+        string step = range.Step.HasValue
+            ? $", {range.Step.Value}{suffix} steps"
+            : ", step not yet validated";
+        return $"{range.Minimum}–{range.Maximum}{suffix}{step}";
+    }
+
+    private static string FormatFeatureAccess(
+        DeviceFeatureAccess? access,
+        string observedOnlyText) => access switch
+        {
+            DeviceFeatureAccess.ReadWrite => "Available",
+            DeviceFeatureAccess.ReadOnly => "Read-only",
+            DeviceFeatureAccess.ObservedOnly => observedOnlyText,
+            _ => UnavailableLabel,
+        };
 
     private bool CanSetFanMode(object? parameter)
     {
