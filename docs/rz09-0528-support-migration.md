@@ -943,8 +943,9 @@ older-model Custom combination assumption.
 Final validation at this checkpoint:
 
 - core commits: `b611f0b` (special-key capability/UI) and `eda8d67`
-  (model-derived identity and firmware smoke);
-- documentation commits: `1083340` and `6c3c631`;
+  (model-derived identity and firmware smoke), followed by `d987a73`
+  (exact-model production-admission capability gate);
+- documentation commits: `1083340`, `6c3c631`, and `c545805`;
 - Release build: 0 warnings and 0 errors;
 - full Release suite: 3,229 tests passed across all ten projects
   (Display 38, Capture 247, Session 33, Contracts 191, SessionAgent 147,
@@ -963,3 +964,40 @@ Final validation at this checkpoint:
 
 Update this section after every evidence, implementation, or documentation
 checkpoint.
+
+## Remaining exact-device completion frontier
+
+Do not interpret the green admission probe as full RZ09-0528 feature coverage.
+The sanitized schema-2 coverage ledger is the completion source of truth. At the
+`d987a73` checkpoint its 141 leaves contain:
+
+- 48 `ProductionAdmitted`;
+- 2 `QueryValidated`;
+- 23 `Captured`;
+- 1 `SetterValidated`;
+- 10 `SoftwareOnly`;
+- 3 `Absent`;
+- 54 `NotInvestigated`.
+
+`Rz090528CoverageContractTests` pins both those counts and every
+`Captured`/`QueryValidated`/`SetterValidated` path. Advancing evidence must
+deliberately update that checkpoint and the exact-model capability gate. This
+prevents a new model-specific discovery from disappearing merely because the
+current admitted subset still builds.
+
+The main physical-evidence groups still blocking broader admission are:
+
+- independent USB-C and battery performance/readback, including an exact PID
+  `02C6` adapter-class response and thermal readback;
+- CPU Power Limit, CPU Voltage Optimizer, and GPU overclock setters/readback
+  through a lifecycle OpenBlade can own without Synapse;
+- quick-effect parameters, effect getter, and the model's 51-byte lighting
+  collection; PID `02E0`'s 375-byte matrix interface is absent and must not be
+  substituted;
+- exact Normal/Driver device-mode setter round trips;
+- M1-M5 and performance-key press/release reports;
+- cold boot, sign-in, service restart, sleep/resume, and device reconnect.
+
+The next agent should rerun the coverage-contract test before and after changing
+the ledger. A failing frontier is a prompt to represent or admit the new fact,
+not to weaken the expected set.
