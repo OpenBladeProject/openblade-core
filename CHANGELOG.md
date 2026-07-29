@@ -14,9 +14,12 @@ All notable changes to OpenBlade are documented in this file. The project follow
   battery protection and 50–80 percent limits, temporary full charge, keyboard
   brightness and Off, logo Off/Static/Breathing, startup animation,
   function-key primary behavior, and Gaming mode. Model-specific CPU Power
-  Limit, CPU Voltage Optimizer, and GPU-overclock policy ranges are surfaced as
-  observed-only capabilities until safe backends and exact readback are
-  validated.
+   Limit, CPU Voltage Optimizer, and GPU-overclock policy ranges are surfaced as
+   observed-only capabilities until safe backends and exact readback are
+   validated. Synapse's Spectrum Cycling, Static, Starlight, Ripple, Tidal,
+   Wave, and Wheel quick effects are likewise retained as observed-only
+   exact-model capabilities while the writable effect picker remains limited
+   to independently validated commands.
 - Added GitHub release checks to About with Every startup, Daily, Weekly,
   Monthly, and Manual only intervals. Checks run at most once during tray
   startup when due, and available releases open in the user's browser.

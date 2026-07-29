@@ -35,7 +35,7 @@ model-independent operating-system APIs.
 | Exact host and HID identity | Admitted | Model, BIOS, PID, usage `0001:0002`, and 91-byte feature reports |
 | Keyboard-brightness query | Admitted | `03/83`, arguments `010500` |
 | Keyboard-brightness setter | Admitted | `03/03`, arguments `0105xx` |
-| Lighting effects and logo | Partially admitted | Keyboard Off and logo Off/Static/Breathing admitted with selector `00`; animated keyboard effects remain non-discriminating |
+| Lighting effects and logo | Partially admitted | Keyboard Off and logo Off/Static/Breathing admitted with selector `00`; Spectrum, Static, Starlight, Ripple, Tidal, Wave, and Wheel are explicit observed-only capabilities because their traffic remains non-discriminating |
 | Performance and fans | Partially admitted | AC Balanced, Silent, Performance, Custom, exact CPU/GPU combinations, Automatic/fixed/maximum/manual-curve fans, exact 2000-5000 RPM range, and fan RPM; other power-source setters remain unadmitted |
 | Model-specific tuning UI | Observed-only | CPU Power Limit 45-95 W in 1 W steps, CPU Voltage Optimizer -30..-1, and Synapse GPU policy ranges are first-class capabilities. Synapse's CPU backend is identified as RzAMDOverClock/RzDLLService but is not admitted because its refresh lifecycle can write; OpenBlade shows these features without editable controls |
 | Power-source matrix | Captured, not admitted | Nine exact-device sessions cover barrel AC, USB-C-only, battery, both quiet baselines, and all directed transitions; exact PID 02C6 USB-C reply and independent thermal readback remain missing |
@@ -238,8 +238,9 @@ Work through read/query-backed controls before one-shot setters.
    admitted on AC; manual curve is host-rendered through the validated fixed
    target primitive and fresh temperature telemetry
 4. Keyboard lighting effects, matrix geometry, cadence, effect getter, and
-   logo modes — logo modes and keyboard Off admitted; animated keyboard effects
-   and matrix geometry remain pending
+   logo modes — logo modes and keyboard Off admitted; seven Synapse quick
+   effects are represented as observed-only capabilities, while effect-specific
+   writes, getter, and matrix geometry remain pending
 5. Function-key primary mode, Gaming mode, startup animation, and device mode —
    first three setters admitted; device mode remains query-only
 6. Special-key report mapping and default-action preservation
@@ -341,6 +342,9 @@ convention and run `git diff --check`.
   production admission, bounded validator, and full regression coverage
 - `openblade-docs` `786b98e`: publish the expanded exact-device compatibility
   and protocol summary while retaining `In development` status
+- `openblade-core` `fef9944`: preserve seven captured Synapse quick effects as
+  observed-only capabilities across IPC, diagnostics, and tray UI without
+  adding them to the writable effect set
 
 Verification at the battery checkpoint:
 
@@ -564,6 +568,12 @@ Lighting capture follow-up:
 - Quick-effect transitions among Spectrum, Static, Starlight, Ripple, Tidal,
   Wave, and Wheel produced only generic Chroma traffic and no reliably
   effect-discriminating payload. They remain captured, not admitted.
+- `DeviceCapabilities.ObservedLightingEffects` preserves all seven discoveries
+  separately from writable `LightingEffects`. The tray identifies them in an
+  informational card, diagnostics emit both writable and observed lighting
+  keys, and the effect picker still contains only independently admitted
+  effects. Adding this strict contract field advanced service IPC from version
+  26 to 27.
 - A read-only exact PID scan found ten HID collections but no 375-byte feature
   collection. The exact device has the 91-byte control collection and a
   51-byte usage-`0059:0001` collection; do not route PID `02C6` through the
@@ -660,7 +670,8 @@ Power-source behavior contract checkpoint:
   that no write path is exposed without exact-device readback.
 - The observations round-trip over IPC, appear in diagnostic archives, reject
   duplicate source entries, and participate in status equality. Adding the
-  contract field advanced the strict IPC version from 25 to 26.
+  power-source contract field advanced the strict IPC version from 25 to 26;
+  the later observed-lighting contract field advanced it from 26 to 27.
 - Do not populate unobserved choices. In particular, the existing captures do
   not establish Battery Balanced as available on PID `02C6`.
 - For the next physical source session, run the exact read-only
@@ -720,7 +731,10 @@ Latest verification after the battery, fan-range, and behavior checkpoints:
 - PowerShell noninteractive invocation guidance:
   `openblade-captures` `0d40759` and `openblade-core` `fb3f008`.
 - source-observation contract and UI: `openblade-core` `51dcba2`; the strict
-  service IPC version is now 26;
+  service IPC version advanced to 26 at that checkpoint;
+- observed quick-effect contract and UI: `openblade-core` `fef9944`; the strict
+  service IPC version is now 27, writable lighting remains keyboard Off, and
+  2,536 targeted Contracts, Protocol, Service, and Tray tests passed;
 - focused exact-device source query: `openblade-core` `9a30aa8`; its live
   barrel-AC run returned `1111`, `01010000`, and `01020000` with
   `success: true`;
