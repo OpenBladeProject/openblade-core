@@ -930,6 +930,32 @@ if (args.Length == 1 && args[0].Equals(
         $"LogoModes={lighting.Capabilities.LogoLightingModes.Count}");
     Console.WriteLine(
         $"KeyboardBrightness={lighting.Capabilities.SupportsKeyboardBrightness}");
+    Console.WriteLine(
+        $"ObservedLightingEffects={lighting.Capabilities.ObservedLightingEffects.Count}");
+    Console.WriteLine(
+        $"SpecialKeyBindingsAccess=" +
+        $"{lighting.Capabilities.SpecialKeyBindingsAccess?.ToString() ?? "Unavailable"}");
+    Console.WriteLine(
+        $"CpuPowerLimit=" +
+        $"{battery.Capabilities.CpuPowerLimit?.Watts.Minimum.ToString() ?? "Unavailable"}-" +
+        $"{battery.Capabilities.CpuPowerLimit?.Watts.Maximum.ToString() ?? "Unavailable"}/" +
+        $"{battery.Capabilities.CpuPowerLimit?.Watts.Step?.ToString() ?? "Unavailable"}/" +
+        $"{battery.Capabilities.CpuPowerLimit?.Access.ToString() ?? "Unavailable"}");
+    Console.WriteLine(
+        $"CpuVoltageOptimizer=" +
+        $"{battery.Capabilities.CpuVoltageOptimizer?.Value.Minimum.ToString() ?? "Unavailable"}-" +
+        $"{battery.Capabilities.CpuVoltageOptimizer?.Value.Maximum.ToString() ?? "Unavailable"}/" +
+        $"{battery.Capabilities.CpuVoltageOptimizer?.Value.Step?.ToString() ?? "Unavailable"}/" +
+        $"{battery.Capabilities.CpuVoltageOptimizer?.Access.ToString() ?? "Unavailable"}");
+    Console.WriteLine(
+        $"GpuOverclock=" +
+        $"{battery.Capabilities.GpuOverclock?.CoreOffsetMegahertz.Minimum.ToString() ?? "Unavailable"}-" +
+        $"{battery.Capabilities.GpuOverclock?.CoreOffsetMegahertz.Maximum.ToString() ?? "Unavailable"}/" +
+        $"{battery.Capabilities.GpuOverclock?.MemoryOffsetMegahertz.Minimum.ToString() ?? "Unavailable"}-" +
+        $"{battery.Capabilities.GpuOverclock?.MemoryOffsetMegahertz.Maximum.ToString() ?? "Unavailable"}/" +
+        $"{battery.Capabilities.GpuOverclock?.Access.ToString() ?? "Unavailable"}");
+    Console.WriteLine(
+        $"PowerSourceObservations={battery.Capabilities.ObservedPowerSourceBehaviors.Count}");
     Console.WriteLine($"OpenFailure={opened.Failure?.ToString() ?? "None"}");
     Console.WriteLine(
         $"BrightnessRaw={brightness.Value?.RawValue.ToString() ?? "Unavailable"}");
@@ -955,29 +981,9 @@ if (args.Length == 1 && args[0].Equals(
     bool success = probe.Classification is
             BatteryValidationProbeClassification.Ready
             or BatteryValidationProbeClassification.ReadyWithAccessFallback
-        && battery.Capabilities.PerformancePresets.SetEquals(
-            [
-                PerformancePreset.Balanced,
-                PerformancePreset.Silent,
-                PerformancePreset.Performance,
-                PerformancePreset.Custom,
-            ])
-        && battery.Capabilities.CustomPerformance?.IsWellFormed == true
-        && battery.Capabilities.FanModes.SetEquals(
-            [
-                FanMode.Automatic,
-                FanMode.Fixed,
-                FanMode.ManualCurve,
-                FanMode.Maximum,
-            ])
-        && battery.Capabilities.ChargeLimits.SetEquals([50, 55, 60, 65, 70, 75, 80])
-        && battery.Capabilities.SupportsBatteryProtectionOff
-        && battery.Capabilities.OneShotLaptopControls.SetEquals(
-            [
-                OneShotLaptopControl.StartupAnimation,
-                OneShotLaptopControl.FunctionKeyPrimary,
-                OneShotLaptopControl.GamingMode,
-            ])
+        && Rz090528ProductionAdmissionCapabilityGate.Matches(
+            battery.Capabilities,
+            lighting.Capabilities)
         && fanRpm.Success
         && startupAnimation is not null
         && !string.IsNullOrWhiteSpace(mcuVersion)
@@ -987,11 +993,6 @@ if (args.Length == 1 && args[0].Equals(
         && driverMode is not null
         && logoMode == LogoLightingMode.Static
         && openedBattery.Failure is null
-        && battery.Capabilities.SupportsTemporaryFullCharge
-        && lighting.Capabilities.LightingEffects.SetEquals([LightingEffect.Off])
-        && lighting.Capabilities.LogoLightingModes.SetEquals(
-            Enum.GetValues<LogoLightingMode>())
-        && lighting.Capabilities.SupportsKeyboardBrightness
         && opened.Value is not null
         && opened.Failure is null
         && brightness.Value is not null

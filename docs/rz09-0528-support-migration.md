@@ -921,5 +921,45 @@ Reversible and recovery confirmation tokens are derived from the baseline
 model (`RZ09-0528-MCU-SMOKE` here), and recovery additionally proves the live
 device model matches the baseline before any setter can run.
 
+## Final exact-model capability-integrity checkpoint
+
+The read-only `probe-rz09-0528-02c6-production-admission` success gate must
+cover both admitted controls and observed-only discoveries. It now rejects a
+build if any of these exact-model facts disappears or changes:
+
+- four AC performance presets and the seven allowed Custom CPU/GPU pairs;
+- the 2,000-5,000 RPM fan range, all four fan modes, and all seven charge
+  limits;
+- CPU Power Limit 45-95 W, CPU Voltage Optimizer -30 to -1, and the GPU offset
+  policy as observed-only;
+- the complete Battery and USB-C behavior observations;
+- keyboard Off, all seven observed quick effects, three logo modes, keyboard
+  brightness, and observed-only special keys;
+- startup animation, function-key primary behavior, and Gaming mode.
+
+The gate is independently unit tested to reject dropped discoveries and an
+older-model Custom combination assumption.
+
+Final validation at this checkpoint:
+
+- core commits: `b611f0b` (special-key capability/UI) and `eda8d67`
+  (model-derived identity and firmware smoke);
+- documentation commits: `1083340` and `6c3c631`;
+- Release build: 0 warnings and 0 errors;
+- full Release suite: 3,229 tests passed across all ten projects
+  (Display 38, Capture 247, Session 33, Contracts 191, SessionAgent 147,
+  Protocol 1,049, Tray 615, Service 685, Setup 206, FirmwareSmoke 18);
+- `dotnet format OpenBlade.slnx --verify-no-changes --no-restore`: clean;
+- Windows PowerShell 5.1 capture toolkit: all four regression suites passed
+  with `-NonInteractive`;
+- public documentation: all local links and assets resolved across 11 pages;
+- final non-mutating production probe: `ReadyWithAccessFallback`, exact
+  4/4/7 battery capability counts, seven observed lighting effects,
+  `SpecialKeyBindingsAccess=ObservedOnly`, all three observed CPU/GPU ranges,
+  two power-source observations, brightness raw 0, fan RPM 2800/2700, startup
+  enabled, MCU `1.9.0.0`, full-power 280 W AC, Function Keys primary, Gaming
+  mode off, Driver mode, logo Static, no open/query failures, and
+  `Success=True`.
+
 Update this section after every evidence, implementation, or documentation
 checkpoint.
