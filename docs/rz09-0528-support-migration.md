@@ -679,6 +679,9 @@ Latest verification after the battery, fan-range, and behavior checkpoints:
   FirmwareSmoke 10, Contracts 188, Protocol 1,046);
 - post-change Windows PowerShell 5.1 capture toolkit: all four regression
   suites passed with `-NonInteractive`;
+- final post-build production probe returned `ReadyWithAccessFallback`, no
+  open/query failures, fan RPM `2100/2100`, brightness 0 percent, full-power
+  280 W AC, the restored keyboard/startup/logo states, and `Success=True`;
 - the remaining source-admission blocker is physical evidence: run the new
   read-only probe while truly USB-C-only and while cable-free on battery.
   Do not admit PID `02C6` source setters from the existing UI observations or
