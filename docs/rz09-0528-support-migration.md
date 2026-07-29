@@ -309,5 +309,21 @@ AC Custom partial follow-up:
   readback returned `01010000` and `01020000`. Saved component readback
   remained CPU `010102` and GPU `010200`.
 
+Fan RPM readback follow-up:
+
+- The existing read-only `0D/88` selector protocol was routed through the
+  exact RZ09-0528/PID `02C6` actor factory rather than the PID `02E0` factory.
+- Three independent probes succeeded. Observed selector pairs were
+  `2600/2500`, `2500/2200`, and `2500/2200` RPM while the fan mode remained
+  Automatic.
+- The service composition now selects the exact-device fan query factory on
+  this host. The exact production-admission probe returned `2300/2100` RPM,
+  `Failure=None`, and `Success=True`.
+- The production probe also reconfirmed access fallback, three admitted AC
+  presets, Automatic-only fan writes, limit 70, temporary full charge,
+  brightness raw 0/0 percent, and no admitted effect or logo writes.
+- Fixed speed, maximum, and manual fan curves remain pending exact setter and
+  restoration evidence.
+
 Update this section after every evidence, implementation, or documentation
 checkpoint.

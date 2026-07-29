@@ -326,6 +326,24 @@ public static class BatteryValidationFactory
             DefaultCleanupDrainTimeout);
     }
 
+    internal static IFanRpmQueryRunFactory CreateWindowsRz090528FanRpmQuery()
+    {
+        ValidationActorFactory actorFactory =
+            CreateWindowsRz090528TemporaryFullChargeActorFactory(
+                ControllerExclusivityPolicy.Advisory);
+        return new FanRpmQueryRunFactory(
+            static () => new ValidationRunContext(),
+            actorFactory,
+            TimeProvider.System,
+            DefaultExchangeTimeout,
+            DefaultCleanupDrainTimeout);
+    }
+
+    internal static IFanRpmQueryRunFactory CreateWindowsFanRpmForService() =>
+        WindowsHostIdentitySource.IsExactRz090528WindowsHost()
+            ? CreateWindowsRz090528FanRpmQuery()
+            : CreateWindowsFanRpmQuery();
+
     public static ILightingBrightnessQueryRunner CreateWindowsLightingBrightnessQuery()
     {
         var native = new WindowsHidNative();

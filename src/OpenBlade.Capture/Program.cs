@@ -371,6 +371,17 @@ if (args.Length > 0 && args[0].Equals("query-fan-rpm", StringComparison.OrdinalI
 }
 
 if (args.Length == 1 && args[0].Equals(
+    "query-rz09-0528-02c6-fan-rpm",
+    StringComparison.OrdinalIgnoreCase))
+{
+    Console.WriteLine("Target=RZ09-0528 1532:02C6 BIOS 2.02");
+    var session = new FanRpmQuerySession(
+        BatteryValidationFactory.CreateWindowsRz090528FanRpmQuery());
+    var command = new FanRpmQueryCommand(session.RunAsync, Console.Out);
+    return await command.RunAsync([], CancellationToken.None);
+}
+
+if (args.Length == 1 && args[0].Equals(
     "query-lighting-brightness",
     StringComparison.OrdinalIgnoreCase))
 {
@@ -538,6 +549,9 @@ if (args.Length == 1 && args[0].Equals(
         BatteryValidationFactory.CreateWindowsProductionBatteryForService();
     IProductionLightingPortFactory lighting =
         BatteryValidationFactory.CreateWindowsProductionLightingForService();
+    var fanSession = new FanRpmQuerySession(
+        BatteryValidationFactory.CreateWindowsFanRpmForService());
+    FanRpmQueryResult fanRpm = await fanSession.RunAsync(CancellationToken.None);
     HidSessionResult<IProductionLightingPort> opened =
         await lighting.OpenAsync(CancellationToken.None);
     if (opened.Value is { } port && opened.Failure is null)
@@ -575,6 +589,10 @@ if (args.Length == 1 && args[0].Equals(
         $"BrightnessPercent={brightness.Value?.Percent.ToString() ?? "Unavailable"}");
     Console.WriteLine(
         $"BrightnessQueryFailure={brightness.Failure?.ToString() ?? "None"}");
+    Console.WriteLine(
+        $"FanRpm={fanRpm.Readings?.Selector1Rpm.ToString() ?? "Unavailable"}/" +
+        $"{fanRpm.Readings?.Selector2Rpm.ToString() ?? "Unavailable"}");
+    Console.WriteLine($"FanRpmFailure={fanRpm.Failure}");
     bool success = probe.Classification is
             BatteryValidationProbeClassification.Ready
             or BatteryValidationProbeClassification.ReadyWithAccessFallback
@@ -587,6 +605,7 @@ if (args.Length == 1 && args[0].Equals(
         && battery.Capabilities.FanModes.SetEquals([FanMode.Automatic])
         && battery.Capabilities.ChargeLimits.SetEquals([70])
         && !battery.Capabilities.SupportsBatteryProtectionOff
+        && fanRpm.Success
         && battery.Capabilities.SupportsTemporaryFullCharge
         && lighting.Capabilities.LightingEffects.Count == 0
         && lighting.Capabilities.LogoLightingModes.Count == 0
@@ -772,6 +791,7 @@ Console.WriteLine(
 Console.WriteLine("  OpenBlade.Capture query-temporary-full-charge");
 Console.WriteLine("  OpenBlade.Capture query-rz09-0528-02c6-temporary-full-charge");
 Console.WriteLine("  OpenBlade.Capture query-fan-rpm");
+Console.WriteLine("  OpenBlade.Capture query-rz09-0528-02c6-fan-rpm");
 Console.WriteLine("  OpenBlade.Capture query-lighting-brightness");
 Console.WriteLine("  OpenBlade.Capture query-rz09-0528-02c6-lighting-brightness");
 Console.WriteLine(

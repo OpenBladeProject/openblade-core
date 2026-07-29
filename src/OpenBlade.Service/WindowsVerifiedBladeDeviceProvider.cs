@@ -21,7 +21,7 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
         ServiceComposition.CreateProductionBatteryFactory;
 
     internal static Func<IFanRpmQueryRunFactory> ProductionFanRpmFactory { get; } =
-        BatteryValidationFactory.CreateWindowsFanRpmQuery;
+        BatteryValidationFactory.CreateWindowsFanRpmForService;
 
     internal static Func<IProductionLightingPortFactory> ProductionLightingPortFactory { get; } =
         ServiceComposition.CreateProductionLightingFactory;

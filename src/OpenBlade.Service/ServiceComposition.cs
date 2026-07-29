@@ -44,7 +44,7 @@ internal static class ServiceComposition
             CreateProfileSetValidator(
                 provider.GetRequiredService<IProductionLightingPortFactory>()));
         services.AddSingleton<IFanRpmQueryRunFactory>(_ =>
-            BatteryValidationFactory.CreateWindowsFanRpmQuery());
+            BatteryValidationFactory.CreateWindowsFanRpmForService());
         services.AddSingleton<IGpuClockOffsetController>(_ =>
             new NvidiaGpuClockOffsetController());
         services.AddSingleton<IVerifiedBladeDeviceProvider>(provider =>

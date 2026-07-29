@@ -19,7 +19,7 @@ public sealed class WindowsVerifiedBladeDeviceProviderTests
             nameof(ServiceComposition.CreateProductionBatteryFactory),
             WindowsVerifiedBladeDeviceProvider.ProductionPortFactory.Method.Name);
         Assert.Equal(
-            nameof(BatteryValidationFactory.CreateWindowsFanRpmQuery),
+            "CreateWindowsFanRpmForService",
             WindowsVerifiedBladeDeviceProvider.ProductionFanRpmFactory.Method.Name);
         Assert.Equal(
             nameof(ServiceComposition.CreateProductionLightingFactory),
