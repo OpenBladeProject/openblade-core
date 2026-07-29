@@ -21,8 +21,12 @@ or device-instance identifiers.
 
 ## Current production status
 
-Keyboard brightness, battery limit 70, and temporary full charge are the
-admitted hardware controls for this model.
+Keyboard brightness, battery limit 70, temporary full charge, the three AC
+performance presets, and Automatic fan control are the admitted hardware
+controls for this model. Exact read-only support also covers fan RPM, startup
+animation, function-key primary mode, Gaming mode, device mode, MCU version,
+and the current adapter-power class. Windows display controls are admitted
+through model-independent operating-system APIs.
 
 | Area | Status | Production scope |
 | --- | --- | --- |
@@ -30,11 +34,13 @@ admitted hardware controls for this model.
 | Keyboard-brightness query | Admitted | `03/83`, arguments `010500` |
 | Keyboard-brightness setter | Admitted | `03/03`, arguments `0105xx` |
 | Lighting effects and logo | Unavailable | No PID `02C6` production writes |
-| Performance and fans | Unavailable | No PID `02C6` production writes |
+| Performance and fans | Partially admitted | AC Balanced, Silent, Performance, Automatic fans, and fan RPM |
 | Battery charge limit | Partially admitted | Query plus captured 70-percent setter only |
 | Temporary full charge | Admitted | Query, enable, cancel, readback, and restoration |
 | Other battery settings | Unavailable | Other limits and protection-off are not admitted |
-| Keyboard behavior and special keys | Unavailable | No PID `02C6` production admission |
+| Keyboard behavior and special keys | Read-only | Function-key primary, Gaming mode, startup animation, and device mode |
+| Display controls | Admitted | Refresh, DRR, HDR state, and SDR color profiles through Windows APIs |
+| NVIDIA GPU clock offsets | Validated, gated | Driver query succeeded; not exposed until exact Custom mode is admitted |
 
 The brightness implementation is in
 `src/OpenBlade.Protocol/Rz090528BrightnessLightingFactory.cs`. Service
@@ -381,6 +387,20 @@ Display capability follow-up:
   Native, DCI-P3, sRGB, Rec. 709, and Adobe RGB, with Native active.
 - These model-independent Windows display paths are production-admitted for
   RZ09-0528. HDR-mode color profiles were not exercised.
+
+NVIDIA GPU clock-offset follow-up:
+
+- The read-only NVML probe selected the NVIDIA GeForce RTX 5090 Laptop GPU and
+  reported current core and memory offsets of 0 MHz.
+- The NVIDIA driver reported a core range of -1000 to 1000 MHz and a memory
+  range of -2000 to 6000 MHz.
+- No offset was written and no visible setting changed.
+- Production intentionally queries and exposes these offsets only while the
+  firmware reports Custom performance mode. Because the exact PID `02C6`
+  Custom setters are still incomplete, this is validated platform capability,
+  not production-admitted user control.
+- Do not bypass the Custom-mode gate or advertise offset control independently.
+  Finish the exact Custom CPU matrix and reversible validation first.
 
 Unattended capture constraint:
 
