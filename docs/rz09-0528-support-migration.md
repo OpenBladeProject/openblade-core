@@ -459,14 +459,13 @@ NVIDIA GPU clock-offset follow-up:
 - The read-only NVML probe selected the NVIDIA GeForce RTX 5090 Laptop GPU and
   reported current core and memory offsets of 0 MHz.
 - The NVIDIA driver reported a core range of -1000 to 1000 MHz and a memory
-  range of -2000 to 6000 MHz.
+  range of -2000 to 6000 MHz. Synapse exposes the narrower exact-model policy
+  ranges core -1000 to +400 MHz and memory -1000 to +3000 MHz.
 - No offset was written and no visible setting changed.
-- Production intentionally queries and exposes these offsets only while the
-  firmware reports Custom performance mode. Because the exact PID `02C6`
-  Custom setters are still incomplete, this is validated platform capability,
-  not production-admitted user control.
-- Do not bypass the Custom-mode gate or advertise offset control independently.
-  Finish the exact Custom CPU matrix and reversible validation first.
+- The policy ranges are first-class device capabilities and appear in the UI,
+  but exact-model writes remain disabled. A read-only NVML range is not setter
+  validation, and OpenBlade must not silently substitute the broader driver
+  range for the vendor's narrower exact-model policy.
 
 Elevated capture follow-up:
 
@@ -520,6 +519,33 @@ Lighting capture follow-up:
 - The final visible keyboard quick effect was restored to Static. Keyboard
   brightness was restored to its saved off value.
 
+Custom performance and model-specific power-control follow-up:
+
+- Controlled captures established the exact CPU mapping: Low=`00`,
+  Medium=`01`, and High=`02` in `0D/07 0101xx`. The earlier partial-session
+  note correlating visible Medium with raw `02` was wrong; raw `02` is High.
+- GPU Low, Medium, and High likewise map to `00`, `01`, and `02` with selector
+  `0102`.
+- RZ09-0528 permits CPU High with GPU Low only. This is represented by an
+  exact-device allowed-combination capability, not by changing the generic
+  PID `02E0` rule.
+- Production round trips applied and independently read back Low/Low,
+  High/Low, and Medium/High. Every run restored the original
+  Balanced/Automatic state. A timed Low/Low repeat ran from
+  `2026-07-29T19:38:18.338Z` to `2026-07-29T19:38:20.138Z` and also restored.
+- Disabling CPU Voltage Optimizer exposed CPU Power Limit 45–95 W with a
+  validated 1 W UI step. No target PID `02C6` transaction appeared, so the UI
+  documents the capability but does not offer a write or claim readback.
+- CPU Voltage Optimizer exposes -30 through -1 and was restored On at its saved
+  `-1.000` value. Its observed `0D/07` writes collide exactly with CPU preset
+  setters and are not admitted as optimizer protocol.
+- GPU Overclock was toggled only long enough to inventory the exact-model
+  policy ranges; both offsets remained zero and the toggle was restored Off.
+- Future agents must add newly discovered model features to the capability
+  contract, diagnostics, documentation, and gated UI even when the backend is
+  unavailable. “Observed only” is an explicit state; silently omitting the
+  feature is not acceptable.
+
 Final user-visible state before quiet HID validation:
 
 - Battery optimizer enabled at 80 percent; temporary full charge disabled.
@@ -533,18 +559,20 @@ Final user-visible state before quiet HID validation:
 Latest verification after the battery, fan-range, and behavior checkpoints:
 
 - full Release build: 0 warnings and 0 errors;
-- service tests: 682 passed;
-- tray tests: 612 passed;
+- service tests: 684 passed;
+- tray tests: 613 passed;
 - protocol tests: 1,042 passed;
 - capture tests: 223 passed;
 - Windows PowerShell 5.1 capture-evidence, comparison, and device-coverage
   regression suites: all passed;
-- full solution tests: 3,174 passed;
+- contracts tests: 186 passed;
+- full solution tests: 3,179 passed;
 - exact production read-only probe: battery 80/on, temporary full charge off,
   Balanced/Automatic, fan RPM 2300/2200, brightness raw 0, startup enabled,
   Function Keys primary, Gaming mode off, Driver device mode, MCU `1.9.0.0`,
-  adapter `FullPower280W`, logo Static, four fan modes, keyboard Off plus three
-  logo modes, and `Success=True`.
+  adapter `FullPower280W`, logo Static, four AC performance presets including
+  Custom, four fan modes, keyboard Off plus three logo modes, and
+  `Success=True`.
 
 Update this section after every evidence, implementation, or documentation
 checkpoint.

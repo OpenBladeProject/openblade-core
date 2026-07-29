@@ -9,10 +9,14 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 - Added exact-device keyboard-brightness support for the Razer Blade 16
   `RZ09-0528`, USB `1532:02C6`, on BIOS `2.02`. Admission is limited to the
-  independently captured and reversibly validated brightness path and the
-  captured 70-percent battery charge limit. Other charge limits, lighting
-  effects, logo lighting, performance, and fan writes remain unavailable on
-  this model.
+  independently captured and reversibly validated device paths: AC presets and
+  Custom CPU/GPU levels, Automatic/fixed/maximum/host-rendered-curve fans,
+  battery protection and 50–80 percent limits, temporary full charge, keyboard
+  brightness and Off, logo Off/Static/Breathing, startup animation,
+  function-key primary behavior, and Gaming mode. Model-specific CPU Power
+  Limit, CPU Voltage Optimizer, and GPU-overclock policy ranges are surfaced as
+  observed-only capabilities until safe backends and exact readback are
+  validated.
 - Added GitHub release checks to About with Every startup, Daily, Weekly,
   Monthly, and Manual only intervals. Checks run at most once during tray
   startup when due, and available releases open in the user's browser.

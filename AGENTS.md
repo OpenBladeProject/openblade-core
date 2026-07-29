@@ -12,8 +12,10 @@ only for a model and firmware combination backed by sanitized, reviewed capture
 evidence. Never copy a command from another model, expose raw firmware commands,
 or weaken exact-device checks to make a feature appear supported.
 
-The current production target is the Razer Blade 16 RZ09-0581, USB
-`1532:02E0`, on Windows 11 x64.
+Production support is exact-device scoped. Current admitted targets include the
+Razer Blade 16 RZ09-0581 (`1532:02E0`) and RZ09-0528 (`1532:02C6`) on their
+documented firmware baselines; neither model's device-specific assumptions may
+be copied to the other.
 
 ## Codebase map
 
@@ -80,6 +82,11 @@ The current production target is the Razer Blade 16 RZ09-0581, USB
 8. Do not add abstraction layers, background loops, or broad test matrices
    without a concrete current requirement. Favor the smallest design that
    fully implements the requested behavior and remains understandable.
+9. Never silently drop a feature discovered on a different model. Represent it
+   in the shared capability contract, diagnostics, model documentation, and
+   gated UI even when the only honest access state is `ObservedOnly`. A missing
+   backend or readback blocks mutation; it does not justify hiding the model
+   difference or substituting another model's assumptions.
 
 ### Tray async context
 
