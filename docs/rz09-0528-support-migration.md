@@ -634,9 +634,11 @@ Custom performance and model-specific power-control follow-up:
   design, crash recovery, conflict exclusion, version/hash admission, and
   save/readback/restore validation.
 - Synapse was relaunched after the isolated failure. At
-  `2026-07-29T20:57:00.239Z`, its visible state was reconfirmed as Plugged In,
-  Balanced, Automatic fans, and CPU Voltage Optimizer On at `-1.000`, then the
-  app was returned to the tray.
+  `2026-07-29T20:56:33.782Z`, its own startup getter returned optimizer `0`;
+  the saved-value handler successfully restored `-1` at `20:56:34.552Z`.
+  At `20:57:00.239Z`, the visible state was reconfirmed as Plugged In,
+  Balanced, Automatic fans, and CPU Voltage Optimizer On at `-1.000`, then
+  the app was returned to the tray.
 - GPU Overclock was toggled only long enough to inventory the exact-model
   policy ranges; both offsets remained zero and the toggle was restored Off.
 - Future agents must add newly discovered model features to the capability
