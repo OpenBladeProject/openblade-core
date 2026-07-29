@@ -227,15 +227,23 @@ if (args.Length == 1 && args[0].Equals(
                 $"TemporaryFullCharge={temporaryFullCharge?.ToString() ?? "Unavailable"}");
             Console.WriteLine($"Performance={performance.Performance}");
             Console.WriteLine($"Fans={performance.Fans}");
-            bool success = factory.Capabilities.ChargeLimits.SequenceEqual([70])
+            bool success = factory.Capabilities.ChargeLimits.SequenceEqual(
+                    [50, 55, 60, 65, 70, 75, 80])
+                && factory.Capabilities.SupportsBatteryProtectionOff
                 && factory.Capabilities.PerformancePresets.SetEquals(
                     [
                         PerformancePreset.Balanced,
                         PerformancePreset.Silent,
                         PerformancePreset.Performance,
                     ])
-                && factory.Capabilities.FanModes.SetEquals([FanMode.Automatic])
+                && factory.Capabilities.FanModes.SetEquals(
+                    [FanMode.Automatic, FanMode.Fixed, FanMode.Maximum])
                 && factory.Capabilities.SupportsTemporaryFullCharge
+                && state is
+                {
+                    ProtectionEnabled: true,
+                    ChargeLimitPercent: 80,
+                }
                 && temporaryFullCharge is false
                 && performance == new ProductionPerformanceFanState(
                     PerformancePreset.Balanced,
@@ -637,7 +645,8 @@ if (args.Length == 1 && args[0].Equals(
                 PerformancePreset.Performance,
             ])
         && battery.Capabilities.FanModes.SetEquals([FanMode.Automatic])
-        && battery.Capabilities.ChargeLimits.SetEquals([70])
+        && battery.Capabilities.ChargeLimits.SetEquals([50, 55, 60, 65, 70, 75, 80])
+        && battery.Capabilities.SupportsBatteryProtectionOff
         && !battery.Capabilities.SupportsBatteryProtectionOff
         && fanRpm.Success
         && startupAnimation is not null

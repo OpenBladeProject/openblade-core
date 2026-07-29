@@ -11,7 +11,7 @@ public sealed class Rz090528BatteryValidationFactoryTests
         IProductionBatteryPortFactory factory =
             BatteryValidationFactory.CreateWindowsRz090528ProductionBattery();
 
-        Assert.Equal([70], factory.Capabilities.ChargeLimits);
+        Assert.Equal([50, 55, 60, 65, 70, 75, 80], factory.Capabilities.ChargeLimits);
         Assert.Equal(
             [
                 PerformancePreset.Balanced,
@@ -25,7 +25,7 @@ public sealed class Rz090528BatteryValidationFactoryTests
             new FanSpeedRange(2000, 5000, 100),
             factory.Capabilities.FanSpeedRange);
         Assert.Empty(factory.Capabilities.LightingEffects);
-        Assert.False(factory.Capabilities.SupportsBatteryProtectionOff);
+        Assert.True(factory.Capabilities.SupportsBatteryProtectionOff);
         Assert.True(factory.Capabilities.SupportsTemporaryFullCharge);
     }
 
