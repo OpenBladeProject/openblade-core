@@ -331,6 +331,34 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     }
 
     [Fact]
+    public async Task Observe_PublishesObservedLightingCapabilityOnlyChanges()
+    {
+        TestContext context = CreateContext(providerAvailable: true);
+        context.Device.Capabilities = DeviceCapabilities.SafeTargetDefaults();
+        context.Device.ConfirmedState = new ConfirmedDeviceState(
+            PerformancePreset.Balanced,
+            FanMode.Automatic,
+            ConfirmedBattery(80),
+            ProfileDefaults.CreateSafeDefaults().PluggedIn.Lighting);
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        long revision = context.Runtime.GetStatus().Revision;
+        int publications = context.Hub.Published.Count;
+        context.Device.Capabilities = context.Device.Capabilities with
+        {
+            ObservedLightingEffects =
+                new HashSet<LightingEffect> { LightingEffect.Spectrum },
+        };
+
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+
+        Assert.Equal(revision + 1, context.Runtime.GetStatus().Revision);
+        Assert.Equal(publications + 1, context.Hub.Published.Count);
+        Assert.True(context.Runtime.GetStatus().Capabilities!.ObservedLightingEffects.SetEquals(
+            [LightingEffect.Spectrum]));
+        Assert.Equal(0, context.Device.TotalSetterCalls);
+    }
+
+    [Fact]
     public async Task ReactivePulse_RequiresOwnedReactiveRendererWithoutEffectReadback()
     {
         ProfileSetValidator validator = ProfileSetValidator.CreateForLightingCapabilities(

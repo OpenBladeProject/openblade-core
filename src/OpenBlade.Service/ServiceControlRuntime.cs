@@ -4912,10 +4912,16 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             && left.CpuPowerLimit == right.CpuPowerLimit
             && left.CpuVoltageOptimizer == right.CpuVoltageOptimizer
             && left.GpuOverclock == right.GpuOverclock
+            && left.ObservedPowerSourceBehaviors.SequenceEqual(
+                right.ObservedPowerSourceBehaviors)
             && left.FanModes.SetEquals(right.FanModes)
             && left.FanSpeedRange == right.FanSpeedRange
             && left.LightingEffects.SetEquals(right.LightingEffects)
+            && left.ObservedLightingEffects.SetEquals(right.ObservedLightingEffects)
+            && left.LogoLightingModes.SetEquals(right.LogoLightingModes)
+            && left.OneShotLaptopControls.SetEquals(right.OneShotLaptopControls)
             && left.ChargeLimits.SetEquals(right.ChargeLimits)
+            && left.SupportsKeyboardBrightness == right.SupportsKeyboardBrightness
             && left.SupportsBatteryProtectionOff == right.SupportsBatteryProtectionOff
             && left.SupportsTemporaryFullCharge == right.SupportsTemporaryFullCharge);
 
