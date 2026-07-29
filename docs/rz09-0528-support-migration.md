@@ -361,6 +361,16 @@ Firmware readback follow-up:
   The exact production probe returned `McuVersion=1.9.0.0` and
   `Success=True`.
 
+Adapter-power readback follow-up:
+
+- The exact discriminator added read-only `07/8C 0000` and returned `1111`,
+  decoded by the existing typed protocol as `FullPower280W`.
+- Adapter-power evidence was admitted only in the exact RZ09-0528 production
+  read set. The production probe reconfirmed `AdapterPower=FullPower280W` and
+  `Success=True`.
+- This proves the current full-AC class only. USB-C 100 W, battery operation,
+  and every power-source transition remain pending physical-state evidence.
+
 Unattended capture constraint:
 
 - A later fixed-fan capture attempt caused USBPcap to request UAC even with the

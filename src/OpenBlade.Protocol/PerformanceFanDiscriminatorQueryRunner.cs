@@ -26,6 +26,7 @@ internal sealed class PerformanceFanDiscriminatorQueryRunner
         new("0D/87 custom GPU component", 0x0D, 0x87, [0x01, 0x02, 0x00], 3),
         new("0F/98 startup animation candidate", 0x0F, 0x98, [0x00], 1),
         new("00/87 MCU version", 0x00, 0x87, [0x00, 0x00, 0x00, 0x00], 4),
+        new("07/8C adapter power", 0x07, 0x8C, [0x00, 0x00], 2),
     ];
 
     private readonly Func<ValidationRunContext> createContext;

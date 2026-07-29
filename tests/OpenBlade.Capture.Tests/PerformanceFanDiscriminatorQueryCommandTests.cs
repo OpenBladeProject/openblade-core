@@ -38,6 +38,7 @@ public sealed class PerformanceFanDiscriminatorQueryCommandTests
             new("0D/87 custom GPU component", "010200", "010202"),
             new("0F/98 startup animation candidate", "00", "00"),
             new("00/87 MCU version", "00000000", "01020304"),
+            new("07/8C adapter power", "0000", "1111"),
         ]);
         var output = new StringWriter();
         var command = new PerformanceFanDiscriminatorQueryCommand(
@@ -69,10 +70,20 @@ public sealed class PerformanceFanDiscriminatorQueryCommandTests
                 "0D/87 custom GPU component",
                 "0F/98 startup animation candidate",
                 "00/87 MCU version",
+                "07/8C adapter power",
             ],
             responses.Select(response => response.GetProperty("operation").GetString()!).ToArray());
         Assert.Equal(
-            ["00", "01010000", "01020000", "010100", "010200", "00", "00000000"],
+            [
+                "00",
+                "01010000",
+                "01020000",
+                "010100",
+                "010200",
+                "00",
+                "00000000",
+                "0000",
+            ],
             responses.Select(response =>
                 response.GetProperty("requestPayloadHex").GetString()!).ToArray());
         Assert.All(responses, response =>

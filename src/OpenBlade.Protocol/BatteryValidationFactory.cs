@@ -132,6 +132,7 @@ public static class BatteryValidationFactory
             new HashSet<ProductionBatteryQueryCapability>
             {
                 ProductionBatteryQueryCapability.TemporaryFullCharge,
+                ProductionBatteryQueryCapability.AdapterPower,
                 ProductionBatteryQueryCapability.McuVersion,
                 ProductionBatteryQueryCapability.StartupAnimation,
                 ProductionBatteryQueryCapability.FunctionKeyPrimary,

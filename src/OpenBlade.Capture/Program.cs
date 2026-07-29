@@ -556,12 +556,15 @@ if (args.Length == 1 && args[0].Equals(
         await battery.OpenAsync(CancellationToken.None);
     bool? startupAnimation = null;
     string? mcuVersion = null;
+    AdapterPowerState adapterPower = AdapterPowerState.Unknown;
     FunctionKeyPrimaryMode? functionKeyPrimary = null;
     bool? gamingMode = null;
     if (openedBattery.Value is { } batteryPort && openedBattery.Failure is null)
     {
         await using (batteryPort)
         {
+            adapterPower =
+                await batteryPort.QueryAdapterPowerStateAsync(CancellationToken.None);
             mcuVersion = await batteryPort.QueryMcuVersionAsync(CancellationToken.None);
             startupAnimation =
                 await batteryPort.QueryStartupAnimationAsync(CancellationToken.None);
@@ -617,6 +620,7 @@ if (args.Length == 1 && args[0].Equals(
     Console.WriteLine(
         $"StartupAnimation={startupAnimation?.ToString() ?? "Unavailable"}");
     Console.WriteLine($"McuVersion={mcuVersion ?? "Unavailable"}");
+    Console.WriteLine($"AdapterPower={adapterPower}");
     Console.WriteLine(
         $"BatteryOpenFailure={openedBattery.Failure?.ToString() ?? "None"}");
     Console.WriteLine(
@@ -638,6 +642,7 @@ if (args.Length == 1 && args[0].Equals(
         && fanRpm.Success
         && startupAnimation is not null
         && !string.IsNullOrWhiteSpace(mcuVersion)
+        && adapterPower == AdapterPowerState.FullPower280W
         && functionKeyPrimary is not null
         && gamingMode is not null
         && driverMode is not null
