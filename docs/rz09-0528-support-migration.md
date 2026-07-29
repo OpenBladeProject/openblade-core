@@ -345,6 +345,16 @@ convention and run `git diff --check`.
 - `openblade-core` `fef9944`: preserve seven captured Synapse quick effects as
   observed-only capabilities across IPC, diagnostics, and tray UI without
   adding them to the writable effect set
+- `openblade-captures` `9da267e` and `openblade-docs` `6512f86`: align
+  sanitized coverage and public protocol documentation with the observed-only
+  quick-effect boundary
+- `openblade-core` `4e09376`: make the safe production probe verify the current
+  four AC presets, four fan modes, and Battery/USB-C observations
+- `openblade-core` `58d981e`: publish capability-only changes instead of
+  silently suppressing observed lighting, power-source, logo, laptop-control,
+  or keyboard-brightness changes
+- `openblade-core` `3b76ae6`: advance firmware-smoke snapshots to schema 2 and
+  treat loss of observed lighting effects as a post-update regression
 
 Verification at the battery checkpoint:
 
@@ -736,6 +746,19 @@ Latest verification after the battery, fan-range, and behavior checkpoints:
 - observed quick-effect contract and UI: `openblade-core` `fef9944`; the strict
   service IPC version is now 27, writable lighting remains keyboard Off, and
   2,536 targeted Contracts, Protocol, Service, and Tray tests passed;
+- final Release build at `3b76ae6`: 0 warnings and 0 errors;
+- final full Release suite: 3,198 tests passed across all ten projects;
+- `dotnet format OpenBlade.slnx --verify-no-changes --no-restore`: clean after
+  normalizing the touched Windows source files to their declared CRLF policy;
+- Windows PowerShell 5.1 capture-toolkit regression: all four suites passed;
+- documentation validation: all local links and assets resolved across 11
+  HTML pages;
+- final safe read-only exact-device probes reported battery protection on at
+  80%, temporary full charge off, Balanced/Automatic, four admitted AC
+  presets, four admitted fan modes, Battery/USB-C observations, fan RPM
+  2700/2500, keyboard brightness raw 0, logo Static, Driver device mode,
+  adapter response `1111`, and thermal responses `01010000`/`01020000`.
+  Every probe returned success and no setter was invoked;
 - focused exact-device source query: `openblade-core` `9a30aa8`; its live
   barrel-AC run returned `1111`, `01010000`, and `01020000` with
   `success: true`;
