@@ -13,7 +13,11 @@ public sealed class Rz090528BatteryValidationFactoryTests
 
         Assert.Equal([70], factory.Capabilities.ChargeLimits);
         Assert.Equal(
-            [PerformancePreset.Balanced, PerformancePreset.Silent],
+            [
+                PerformancePreset.Balanced,
+                PerformancePreset.Silent,
+                PerformancePreset.Performance,
+            ],
             factory.Capabilities.PerformancePresets);
         Assert.Equal([FanMode.Automatic], factory.Capabilities.FanModes);
         Assert.Empty(factory.Capabilities.LightingEffects);

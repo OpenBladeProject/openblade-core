@@ -229,7 +229,11 @@ if (args.Length == 1 && args[0].Equals(
             Console.WriteLine($"Fans={performance.Fans}");
             bool success = factory.Capabilities.ChargeLimits.SequenceEqual([70])
                 && factory.Capabilities.PerformancePresets.SetEquals(
-                    [PerformancePreset.Balanced, PerformancePreset.Silent])
+                    [
+                        PerformancePreset.Balanced,
+                        PerformancePreset.Silent,
+                        PerformancePreset.Performance,
+                    ])
                 && factory.Capabilities.FanModes.SetEquals([FanMode.Automatic])
                 && factory.Capabilities.SupportsTemporaryFullCharge
                 && temporaryFullCharge is false
@@ -248,16 +252,24 @@ if (args.Length == 1 && args[0].Equals(
     }
 }
 
-if (args.Length == 2 && args[0].Equals(
-    "validate-rz09-0528-02c6-performance-silent",
-    StringComparison.OrdinalIgnoreCase))
+if (args.Length == 2 && (
+    args[0].Equals(
+        "validate-rz09-0528-02c6-performance-silent",
+        StringComparison.OrdinalIgnoreCase)
+    || args[0].Equals(
+        "validate-rz09-0528-02c6-performance-performance",
+        StringComparison.OrdinalIgnoreCase)))
 {
     const string exactConfirmation = "RZ09-0528:1532:02C6:2.02";
+    PerformancePreset targetPreset = args[0].EndsWith(
+        "-silent",
+        StringComparison.OrdinalIgnoreCase)
+        ? PerformancePreset.Silent
+        : PerformancePreset.Performance;
     if (!args[1].Equals(exactConfirmation, StringComparison.Ordinal))
     {
         Console.WriteLine(
-            "Usage: OpenBlade.Capture validate-rz09-0528-02c6-performance-silent " +
-            exactConfirmation);
+            $"Usage: OpenBlade.Capture {args[0]} {exactConfirmation}");
         return 1;
     }
 
@@ -293,7 +305,7 @@ if (args.Length == 2 && args[0].Equals(
         try
         {
             await port.SetPerformanceAsync(
-                PerformancePreset.Silent,
+                targetPreset,
                 CancellationToken.None);
             applied = await port.QueryPerformanceFanStateAsync(CancellationToken.None);
         }
@@ -325,7 +337,7 @@ if (args.Length == 2 && args[0].Equals(
         Console.WriteLine($"Failure={failure?.GetType().Name ?? "None"}");
         bool success = failure is null
             && applied == new ProductionPerformanceFanState(
-                PerformancePreset.Silent,
+                targetPreset,
                 FanMode.Automatic)
             && restored == baseline;
         Console.WriteLine($"Success={success}");
@@ -567,7 +579,11 @@ if (args.Length == 1 && args[0].Equals(
             BatteryValidationProbeClassification.Ready
             or BatteryValidationProbeClassification.ReadyWithAccessFallback
         && battery.Capabilities.PerformancePresets.SetEquals(
-            [PerformancePreset.Balanced, PerformancePreset.Silent])
+            [
+                PerformancePreset.Balanced,
+                PerformancePreset.Silent,
+                PerformancePreset.Performance,
+            ])
         && battery.Capabilities.FanModes.SetEquals([FanMode.Automatic])
         && battery.Capabilities.ChargeLimits.SetEquals([70])
         && !battery.Capabilities.SupportsBatteryProtectionOff
@@ -749,6 +765,9 @@ Console.WriteLine("  OpenBlade.Capture validate-rz09-0528-02c6-battery <50|55|60
 Console.WriteLine("  OpenBlade.Capture probe-rz09-0528-02c6-production-battery");
 Console.WriteLine(
     "  OpenBlade.Capture validate-rz09-0528-02c6-performance-silent " +
+    "RZ09-0528:1532:02C6:2.02");
+Console.WriteLine(
+    "  OpenBlade.Capture validate-rz09-0528-02c6-performance-performance " +
     "RZ09-0528:1532:02C6:2.02");
 Console.WriteLine("  OpenBlade.Capture query-temporary-full-charge");
 Console.WriteLine("  OpenBlade.Capture query-rz09-0528-02c6-temporary-full-charge");
