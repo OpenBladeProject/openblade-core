@@ -612,10 +612,10 @@
                                             <Run Text=" RPM" />
                                         </TextBlock>
                                         <Slider x:Name="FixedFanSpeedSlider"
-                                                Minimum="2000"
-                                                Maximum="5400"
-                                                StepFrequency="100"
-                                                SmallChange="100"
+                                                Minimum="{Binding FixedFanSpeedMinimumRpm}"
+                                                Maximum="{Binding FixedFanSpeedMaximumRpm}"
+                                                StepFrequency="{Binding FixedFanSpeedStepRpm}"
+                                                SmallChange="{Binding FixedFanSpeedStepRpm}"
                                                 LargeChange="500"
                                                 SnapsTo="StepValues"
                                                 IsThumbToolTipEnabled="True"

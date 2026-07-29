@@ -4907,6 +4907,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         || (left is not null && right is not null
             && left.PerformancePresets.SetEquals(right.PerformancePresets)
             && left.FanModes.SetEquals(right.FanModes)
+            && left.FanSpeedRange == right.FanSpeedRange
             && left.LightingEffects.SetEquals(right.LightingEffects)
             && left.ChargeLimits.SetEquals(right.ChargeLimits)
             && left.SupportsBatteryProtectionOff == right.SupportsBatteryProtectionOff

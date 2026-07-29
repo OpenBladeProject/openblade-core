@@ -1482,7 +1482,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         get => fixedFanSpeedRpm;
         set
         {
-            int normalized = FanControlSettings.QuantizeSpeed(value);
+            int normalized = ActiveFanSpeedRange.Quantize(value);
             if (fixedFanSpeedRpm == normalized)
             {
                 return;
@@ -1492,6 +1492,17 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             Notify(nameof(CurrentFanControlSettings));
         }
     }
+
+    public int FixedFanSpeedMinimumRpm => ActiveFanSpeedRange.MinimumRpm;
+
+    public int FixedFanSpeedMaximumRpm => ActiveFanSpeedRange.MaximumRpm;
+
+    public int FixedFanSpeedStepRpm => ActiveFanSpeedRange.StepRpm;
+
+    private FanSpeedRange ActiveFanSpeedRange =>
+        Capabilities.FanSpeedRange is { IsWellFormed: true } range
+            ? range
+            : FanSpeedRange.Standard;
 
     public bool UseHigherFanTemperature
     {
@@ -1777,6 +1788,15 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             }
 
             SetField(ref capabilities, value);
+            int normalizedFanSpeed = ActiveFanSpeedRange.Quantize(fixedFanSpeedRpm);
+            SetField(
+                ref fixedFanSpeedRpm,
+                normalizedFanSpeed,
+                nameof(FixedFanSpeedRpm));
+            Notify(nameof(FixedFanSpeedMinimumRpm));
+            Notify(nameof(FixedFanSpeedMaximumRpm));
+            Notify(nameof(FixedFanSpeedStepRpm));
+            Notify(nameof(CurrentFanControlSettings));
             Notify(nameof(FullChargeActionLabel));
             Notify(nameof(HasOneShotLaptopControls));
             Notify(nameof(HasKeyboardLaptopControls));
@@ -3163,7 +3183,9 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
 
     private bool CanSetFanControl(object? parameter) =>
         parameter is FanControlSettings value
-        && CanSetFanMode(value.Mode);
+        && CanSetFanMode(value.Mode)
+        && (value.Mode != FanMode.Fixed
+            || ActiveFanSpeedRange.Supports(value.FixedSpeedRpm));
 
     private bool CanApplyOneShotLaptopControl(object? parameter) =>
         parameter is ApplyOneShotLaptopControl value
@@ -4157,7 +4179,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         FanControlSettings settings = new(
             requested,
             requested == FanMode.Maximum
-                ? FanControlSettings.MaximumSpeedRpm
+                ? ActiveFanSpeedRange.MaximumRpm
                 : FixedFanSpeedRpm,
             CurrentFanControlSettings.ManualCurve);
         return ApplyFanControlAsync(settings, token);
@@ -7339,7 +7361,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     {
         SetField(
             ref fixedFanSpeedRpm,
-            value.FixedSpeedRpm,
+            ActiveFanSpeedRange.Quantize(value.FixedSpeedRpm),
             nameof(FixedFanSpeedRpm));
         SetField(
             ref useHigherFanTemperature,

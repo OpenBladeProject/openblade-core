@@ -228,9 +228,9 @@ public sealed class CapabilityPresentationTests
         Assert.Contains(fansTemplate.Descendants(), element =>
             element.Name.LocalName == "Slider"
             && Attribute(element, "Name") == "FixedFanSpeedSlider"
-            && Attribute(element, "Minimum") == "2000"
-            && Attribute(element, "Maximum") == "5400"
-            && Attribute(element, "StepFrequency") == "100");
+            && Attribute(element, "Minimum") == "{Binding FixedFanSpeedMinimumRpm}"
+            && Attribute(element, "Maximum") == "{Binding FixedFanSpeedMaximumRpm}"
+            && Attribute(element, "StepFrequency") == "{Binding FixedFanSpeedStepRpm}");
         Assert.DoesNotContain("\u00c2", xaml, StringComparison.Ordinal);
     }
 

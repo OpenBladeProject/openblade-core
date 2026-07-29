@@ -384,6 +384,12 @@ public sealed class DiagnosticArchiveProvider : IDiagnosticArchiveProvider
                 capabilities.SupportsBatteryProtectionOff.ToString(),
             ["capability.supportsTemporaryFullCharge"] =
                 capabilities.SupportsTemporaryFullCharge.ToString(),
+            ["capability.fanSpeedMinimumRpm"] = NumberOrUnavailable(
+                capabilities.FanSpeedRange?.MinimumRpm),
+            ["capability.fanSpeedMaximumRpm"] = NumberOrUnavailable(
+                capabilities.FanSpeedRange?.MaximumRpm),
+            ["capability.fanSpeedStepRpm"] = NumberOrUnavailable(
+                capabilities.FanSpeedRange?.StepRpm),
             ["override.performance"] = status.PerformanceOverride is null
                 ? "None"
                 : $"{status.PerformanceOverride.Value} ({status.PerformanceOverride.Lifetime})",

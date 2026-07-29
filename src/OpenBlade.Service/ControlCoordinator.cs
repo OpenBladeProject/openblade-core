@@ -141,7 +141,9 @@ public sealed class ControlCoordinator
             DeviceSubsystem.Fans,
             "Fans",
             IsDefined(value.Mode),
-            capabilities => capabilities.FanModes.Contains(value.Mode),
+            capabilities => capabilities.FanModes.Contains(value.Mode)
+                && (value.Mode != FanMode.Fixed
+                    || capabilities.FanSpeedRange?.Supports(value.FixedSpeedRpm) == true),
             state => FanModeMatches(state.Fans, value.Mode),
             token => device.SetFanControlAsync(value, token),
             cancellationToken,

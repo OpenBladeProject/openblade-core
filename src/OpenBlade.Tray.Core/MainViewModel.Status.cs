@@ -49,6 +49,7 @@ public sealed partial class MainViewModel
         || (left is not null && right is not null
             && left.PerformancePresets.SetEquals(right.PerformancePresets)
             && left.FanModes.SetEquals(right.FanModes)
+            && left.FanSpeedRange == right.FanSpeedRange
             && left.LightingEffects.SetEquals(right.LightingEffects)
             && left.LogoLightingModes.SetEquals(right.LogoLightingModes)
             && left.OneShotLaptopControls.SetEquals(right.OneShotLaptopControls)

@@ -957,7 +957,10 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
             CancellationToken cancellationToken)
         {
             ArgumentNullException.ThrowIfNull(value);
-            return batteryFactory.Capabilities.FanModes.Contains(value.Mode)
+            DeviceCapabilities capabilities = batteryFactory.Capabilities;
+            return capabilities.FanModes.Contains(value.Mode)
+                && (value.Mode != FanMode.Fixed
+                    || capabilities.FanSpeedRange?.Supports(value.FixedSpeedRpm) == true)
                 ? ExecuteProductionWriteAsync(
                     port => port.SetFanControlAsync(value, cancellationToken),
                     cancellationToken)
