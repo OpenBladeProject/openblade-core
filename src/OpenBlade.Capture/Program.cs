@@ -990,6 +990,18 @@ if (args.Length == 1 && args[0].Equals(
 }
 
 if (args.Length == 1 && args[0].Equals(
+    "query-rz09-0528-02c6-cpu-power-service",
+    StringComparison.OrdinalIgnoreCase))
+{
+    Console.WriteLine("Target=RZ09-0528 1532:02C6 BIOS 2.02");
+    Console.WriteLine("MutationPolicy=GetterExportsOnly");
+    return await CpuPowerServiceProbeCommand.RunAsync(
+        new WindowsRzAmdOverclockProbe(),
+        Console.Out,
+        CancellationToken.None);
+}
+
+if (args.Length == 1 && args[0].Equals(
     "query-rz09-0528-02c6-production-performance-fan",
     StringComparison.OrdinalIgnoreCase))
 {
@@ -1400,6 +1412,8 @@ Console.WriteLine(
     "  OpenBlade.Capture query-rz09-0528-02c6-performance-fan-discriminator");
 Console.WriteLine(
     "  OpenBlade.Capture query-rz09-0528-02c6-power-source");
+Console.WriteLine(
+    "  OpenBlade.Capture query-rz09-0528-02c6-cpu-power-service");
 Console.WriteLine(
     "  OpenBlade.Capture query-rz09-0528-02c6-production-performance-fan");
 Console.WriteLine(
