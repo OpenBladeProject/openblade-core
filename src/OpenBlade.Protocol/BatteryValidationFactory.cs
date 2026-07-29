@@ -230,6 +230,96 @@ public static class BatteryValidationFactory
                     Restored: true),
                 new CapturedCommandFixture(
                     target,
+                    ProductionBatteryPort.StartupAnimationOnAction,
+                    CommandClass: 0x0F,
+                    CommandId: 0x18,
+                    Payload: [0x00, 0x00],
+                    Captured: true,
+                    Decoded: true,
+                    Applied: true,
+                    ReadBack: false,
+                    Restored: true)
+                {
+                    OneShotOnly = true,
+                    ExpectedResponsePayload = [0x00, 0x00],
+                },
+                new CapturedCommandFixture(
+                    target,
+                    ProductionBatteryPort.StartupAnimationOffAction,
+                    CommandClass: 0x0F,
+                    CommandId: 0x18,
+                    Payload: [0x00, 0x01],
+                    Captured: true,
+                    Decoded: true,
+                    Applied: true,
+                    ReadBack: false,
+                    Restored: true)
+                {
+                    OneShotOnly = true,
+                    ExpectedResponsePayload = [0x00, 0x01],
+                },
+                new CapturedCommandFixture(
+                    target,
+                    ProductionBatteryPort.FunctionKeysPrimaryAction,
+                    CommandClass: 0x02,
+                    CommandId: 0x06,
+                    Payload: [0x00, 0x00],
+                    Captured: true,
+                    Decoded: true,
+                    Applied: true,
+                    ReadBack: false,
+                    Restored: true)
+                {
+                    OneShotOnly = true,
+                    ExpectedResponsePayload = [0x00, 0x00],
+                },
+                new CapturedCommandFixture(
+                    target,
+                    ProductionBatteryPort.MultimediaKeysPrimaryAction,
+                    CommandClass: 0x02,
+                    CommandId: 0x06,
+                    Payload: [0x00, 0x01],
+                    Captured: true,
+                    Decoded: true,
+                    Applied: true,
+                    ReadBack: false,
+                    Restored: true)
+                {
+                    OneShotOnly = true,
+                    ExpectedResponsePayload = [0x00, 0x01],
+                },
+                new CapturedCommandFixture(
+                    target,
+                    ProductionBatteryPort.GamingModeOnAction,
+                    CommandClass: 0x00,
+                    CommandId: 0x08,
+                    Payload: [0x01, 0x00, 0x00, 0x00],
+                    Captured: true,
+                    Decoded: true,
+                    Applied: true,
+                    ReadBack: false,
+                    Restored: true)
+                {
+                    OneShotOnly = true,
+                    ExpectedResponsePayload = [0x32, 0x0A, 0x00, 0x00],
+                },
+                new CapturedCommandFixture(
+                    target,
+                    ProductionBatteryPort.GamingModeOffAction,
+                    CommandClass: 0x00,
+                    CommandId: 0x08,
+                    Payload: [0x00, 0x00, 0x00, 0x00],
+                    Captured: true,
+                    Decoded: true,
+                    Applied: true,
+                    ReadBack: false,
+                    Restored: true)
+                {
+                    OneShotOnly = true,
+                    ExpectedResponsePayload = [0x32, 0x0A, 0x00, 0x00],
+                },
+                new CapturedCommandFixture(
+                    target,
                     ProductionBatteryPort.TemporaryEnableAction,
                     CommandClass: 0x07,
                     CommandId: 0x0F,

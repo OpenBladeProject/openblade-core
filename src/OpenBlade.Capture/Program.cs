@@ -260,6 +260,131 @@ if (args.Length == 1 && args[0].Equals(
     }
 }
 
+if (args.Length == 3 && args[0].Equals(
+    "validate-rz09-0528-02c6-one-shot",
+    StringComparison.OrdinalIgnoreCase))
+{
+    const string exactConfirmation = "RZ09-0528:1532:02C6:2.02";
+    if (!args[2].Equals(exactConfirmation, StringComparison.Ordinal)
+        || args[1] is not ("startup" or "function" or "gaming"))
+    {
+        Console.Error.WriteLine(
+            "Validation requires: " +
+            "validate-rz09-0528-02c6-one-shot <startup|function|gaming> " +
+            exactConfirmation);
+        return 2;
+    }
+
+    IProductionBatteryPortFactory factory =
+        BatteryValidationFactory.CreateWindowsRz090528ProductionBattery();
+    HidSessionResult<IProductionBatteryPort> opened =
+        await factory.OpenAsync(CancellationToken.None);
+    Console.WriteLine("Target=RZ09-0528 1532:02C6 BIOS 2.02");
+    Console.WriteLine($"Control={args[1]}");
+    Console.WriteLine($"OpenFailure={opened.Failure?.ToString() ?? "None"}");
+    if (opened.Value is not { } port)
+    {
+        Console.WriteLine("Success=False");
+        return 2;
+    }
+
+    await using (port)
+    {
+        ApplyOneShotLaptopControl candidate;
+        ApplyOneShotLaptopControl restoration;
+        Func<Task<string>> query;
+        string expectedCandidate;
+        string expectedRestoration;
+        switch (args[1])
+        {
+            case "startup":
+                candidate = new(
+                    OneShotLaptopControl.StartupAnimation,
+                    Enabled: false);
+                restoration = new(
+                    OneShotLaptopControl.StartupAnimation,
+                    Enabled: true);
+                query = async () =>
+                    (await port.QueryStartupAnimationAsync(CancellationToken.None))
+                        ?.ToString() ?? "Unavailable";
+                expectedCandidate = bool.FalseString;
+                expectedRestoration = bool.TrueString;
+                break;
+            case "function":
+                candidate = new(
+                    OneShotLaptopControl.FunctionKeyPrimary,
+                    FunctionKeyMode: FunctionKeyPrimaryMode.MultimediaKeys);
+                restoration = new(
+                    OneShotLaptopControl.FunctionKeyPrimary,
+                    FunctionKeyMode: FunctionKeyPrimaryMode.FunctionKeys);
+                query = async () =>
+                    (await port.QueryFunctionKeyPrimaryAsync(CancellationToken.None))
+                        ?.ToString() ?? "Unavailable";
+                expectedCandidate = FunctionKeyPrimaryMode.MultimediaKeys.ToString();
+                expectedRestoration = FunctionKeyPrimaryMode.FunctionKeys.ToString();
+                break;
+            default:
+                candidate = new(
+                    OneShotLaptopControl.GamingMode,
+                    Enabled: true);
+                restoration = new(
+                    OneShotLaptopControl.GamingMode,
+                    Enabled: false);
+                query = async () =>
+                    (await port.QueryGamingModeAsync(CancellationToken.None))
+                        ?.ToString() ?? "Unavailable";
+                expectedCandidate = bool.TrueString;
+                expectedRestoration = bool.FalseString;
+                break;
+        }
+
+        string baseline = await query();
+        string candidateReadback = "Unavailable";
+        string restorationReadback = "Unavailable";
+        Exception? primaryFailure = null;
+        Exception? restorationFailure = null;
+        try
+        {
+            await port.ApplyOneShotLaptopControlAsync(
+                candidate,
+                CancellationToken.None);
+            candidateReadback = await query();
+        }
+        catch (Exception exception)
+        {
+            primaryFailure = exception;
+        }
+        finally
+        {
+            try
+            {
+                await port.ApplyOneShotLaptopControlAsync(
+                    restoration,
+                    CancellationToken.None);
+                restorationReadback = await query();
+            }
+            catch (Exception exception)
+            {
+                restorationFailure = exception;
+            }
+        }
+
+        bool success = primaryFailure is null
+            && restorationFailure is null
+            && candidateReadback == expectedCandidate
+            && restorationReadback == expectedRestoration;
+        Console.WriteLine($"Baseline={baseline}");
+        Console.WriteLine($"CandidateReadback={candidateReadback}");
+        Console.WriteLine($"RestorationReadback={restorationReadback}");
+        Console.WriteLine(
+            $"PrimaryFailure={primaryFailure?.GetType().Name ?? "None"}");
+        Console.WriteLine(
+            $"RestorationFailure={restorationFailure?.GetType().Name ?? "None"}");
+        Console.WriteLine($"Success={success}");
+        return success ? 0 : 2;
+    }
+}
+
 if (args.Length == 2 && (
     args[0].Equals(
         "validate-rz09-0528-02c6-performance-silent",
@@ -644,10 +769,16 @@ if (args.Length == 1 && args[0].Equals(
                 PerformancePreset.Silent,
                 PerformancePreset.Performance,
             ])
-        && battery.Capabilities.FanModes.SetEquals([FanMode.Automatic])
+        && battery.Capabilities.FanModes.SetEquals(
+            [FanMode.Automatic, FanMode.Fixed, FanMode.Maximum])
         && battery.Capabilities.ChargeLimits.SetEquals([50, 55, 60, 65, 70, 75, 80])
         && battery.Capabilities.SupportsBatteryProtectionOff
-        && !battery.Capabilities.SupportsBatteryProtectionOff
+        && battery.Capabilities.OneShotLaptopControls.SetEquals(
+            [
+                OneShotLaptopControl.StartupAnimation,
+                OneShotLaptopControl.FunctionKeyPrimary,
+                OneShotLaptopControl.GamingMode,
+            ])
         && fanRpm.Success
         && startupAnimation is not null
         && !string.IsNullOrWhiteSpace(mcuVersion)
@@ -907,6 +1038,9 @@ Console.WriteLine("  OpenBlade.Capture query-rz09-0528-02c6-battery");
 Console.WriteLine("  OpenBlade.Capture query-rz09-0528-02c6-battery-raw");
 Console.WriteLine("  OpenBlade.Capture validate-rz09-0528-02c6-battery <50|55|60|65|70|75|80>");
 Console.WriteLine("  OpenBlade.Capture probe-rz09-0528-02c6-production-battery");
+Console.WriteLine(
+    "  OpenBlade.Capture validate-rz09-0528-02c6-one-shot " +
+    "<startup|function|gaming> RZ09-0528:1532:02C6:2.02");
 Console.WriteLine(
     "  OpenBlade.Capture validate-rz09-0528-02c6-performance-silent " +
     "RZ09-0528:1532:02C6:2.02");
