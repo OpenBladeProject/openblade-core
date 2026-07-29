@@ -605,26 +605,36 @@ Final user-visible state before quiet HID validation:
 - CPU Voltage Optimizer enabled at its pre-existing `-1.000` value.
 - Keyboard brightness off; keyboard quick effect Static (green); logo Static.
 - Startup animation enabled; Function Keys primary; Gaming mode disabled.
-- Synapse was then closed intentionally to isolate direct HID validation and
-  remains closed at this checkpoint.
+- Synapse was relaunched after quiet HID validation and is minimized at this
+  checkpoint. No OpenBlade service is installed.
 
 Latest verification after the battery, fan-range, and behavior checkpoints:
 
 - full Release build: 0 warnings and 0 errors;
 - service tests: 684 passed;
 - tray tests: 613 passed;
-- protocol tests: 1,042 passed;
+- protocol tests: 1,045 passed;
 - capture tests: 223 passed;
 - Windows PowerShell 5.1 capture-evidence, comparison, and device-coverage
   regression suites: all passed;
 - contracts tests: 186 passed;
-- full solution tests: 3,179 passed;
+- full solution tests: 3,182 passed across all ten Release test projects;
 - exact production read-only probe: battery 80/on, temporary full charge off,
-  Balanced/Automatic, fan RPM 2300/2200, brightness raw 0, startup enabled,
+  current barrel AC `FullPower280W`, brightness raw 0, startup enabled,
   Function Keys primary, Gaming mode off, Driver device mode, MCU `1.9.0.0`,
-  adapter `FullPower280W`, logo Static, four AC performance presets including
+  logo Static, four AC performance presets including
   Custom, four fan modes, keyboard Off plus three logo modes, and
   `Success=True`.
+- final read-only production probe at commit `fb3f008` returned
+  `ReadyWithAccessFallback`, no open/query failures, fan RPM `0/0` while the
+  fans were stopped, and `Success=True`; it issued no hardware writes;
+- documentation site validation resolved all local links and assets across 11
+  HTML pages;
+- power-source evidence and regression commits:
+  `openblade-captures` `62e86d3`, `openblade-core` `0d39d10`, and
+  `openblade-docs` `7892c2b`;
+- PowerShell noninteractive invocation guidance:
+  `openblade-captures` `0d40759` and `openblade-core` `fb3f008`.
 
 Update this section after every evidence, implementation, or documentation
 checkpoint.
