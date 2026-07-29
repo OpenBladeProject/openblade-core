@@ -421,6 +421,7 @@ type sealed class OpenBlade.Contracts.DeviceCapabilities
   method System.Collections.Generic.IReadOnlySet<OpenBlade.Contracts.OneShotLaptopControl> get_OneShotLaptopControls()
   method System.Collections.Generic.IReadOnlySet<OpenBlade.Contracts.PerformancePreset> get_PerformancePresets()
   method System.Collections.Generic.IReadOnlySet<System.Int32> get_ChargeLimits()
+  method System.Nullable<OpenBlade.Contracts.DeviceFeatureAccess> get_LampArrayLightingAccess()
   method System.Nullable<OpenBlade.Contracts.DeviceFeatureAccess> get_SpecialKeyBindingsAccess()
   method System.Void Deconstruct(out System.Collections.Generic.IReadOnlySet<OpenBlade.Contracts.PerformancePreset> PerformancePresets, out System.Collections.Generic.IReadOnlySet<OpenBlade.Contracts.FanMode> FanModes, out System.Collections.Generic.IReadOnlySet<OpenBlade.Contracts.LightingEffect> LightingEffects, out System.Collections.Generic.IReadOnlySet<System.Int32> ChargeLimits, out System.Boolean SupportsBatteryProtectionOff, out System.Boolean SupportsTemporaryFullCharge)
   method System.Void set_ChargeLimits(System.Collections.Generic.IReadOnlySet<System.Int32> value)
@@ -430,6 +431,7 @@ type sealed class OpenBlade.Contracts.DeviceCapabilities
   method System.Void set_FanModes(System.Collections.Generic.IReadOnlySet<OpenBlade.Contracts.FanMode> value)
   method System.Void set_FanSpeedRange(OpenBlade.Contracts.FanSpeedRange value)
   method System.Void set_GpuOverclock(OpenBlade.Contracts.GpuOverclockCapabilities value)
+  method System.Void set_LampArrayLightingAccess(System.Nullable<OpenBlade.Contracts.DeviceFeatureAccess> value)
   method System.Void set_LightingEffects(System.Collections.Generic.IReadOnlySet<OpenBlade.Contracts.LightingEffect> value)
   method System.Void set_LogoLightingModes(System.Collections.Generic.IReadOnlySet<OpenBlade.Contracts.LogoLightingMode> value)
   method System.Void set_ObservedLightingEffects(System.Collections.Generic.IReadOnlySet<OpenBlade.Contracts.LightingEffect> value)
@@ -464,6 +466,7 @@ type sealed class OpenBlade.Contracts.DeviceCapabilities
   property System.Collections.Generic.IReadOnlySet<OpenBlade.Contracts.OneShotLaptopControl> OneShotLaptopControls { get; init; }
   property System.Collections.Generic.IReadOnlySet<OpenBlade.Contracts.PerformancePreset> PerformancePresets { get; init; }
   property System.Collections.Generic.IReadOnlySet<System.Int32> ChargeLimits { get; init; }
+  property System.Nullable<OpenBlade.Contracts.DeviceFeatureAccess> LampArrayLightingAccess { get; init; }
   property System.Nullable<OpenBlade.Contracts.DeviceFeatureAccess> SpecialKeyBindingsAccess { get; init; }
 type enum OpenBlade.Contracts.DeviceFeatureAccess
   field System.Int32 value__
@@ -1039,7 +1042,7 @@ type enum OpenBlade.Contracts.OneShotLaptopControl
 type static class OpenBlade.Contracts.OpenBladeIpc
   field const System.Int32 MaximumDiagnosticArchiveBytes = 32768
   field const System.Int32 MaximumMessageBytes = 65536
-  field const System.Int32 ProtocolVersion = 28
+  field const System.Int32 ProtocolVersion = 29
   field const System.String PipeName = "OpenBlade.Service.v2"
 type static class OpenBlade.Contracts.OpenBladeProductVersion
   method static System.String Read(System.Reflection.Assembly assembly)

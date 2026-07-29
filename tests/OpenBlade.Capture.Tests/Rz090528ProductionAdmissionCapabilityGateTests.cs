@@ -23,6 +23,7 @@ public sealed class Rz090528ProductionAdmissionCapabilityGateTests
             (battery with { GpuOverclock = null }, lighting),
             (battery with { ObservedPowerSourceBehaviors = [] }, lighting),
             (battery, lighting with { SpecialKeyBindingsAccess = null }),
+            (battery, lighting with { LampArrayLightingAccess = null }),
             (
                 battery,
                 lighting with
@@ -144,6 +145,7 @@ public sealed class Rz090528ProductionAdmissionCapabilityGateTests
         {
             SupportsKeyboardBrightness = true,
             SpecialKeyBindingsAccess = DeviceFeatureAccess.ObservedOnly,
+            LampArrayLightingAccess = DeviceFeatureAccess.ObservedOnly,
             ObservedLightingEffects = new HashSet<LightingEffect>
             {
                 LightingEffect.Spectrum,

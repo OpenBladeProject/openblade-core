@@ -55,6 +55,7 @@ public sealed partial class MainViewModel
             && left.CpuVoltageOptimizer == right.CpuVoltageOptimizer
             && left.GpuOverclock == right.GpuOverclock
             && left.SpecialKeyBindingsAccess == right.SpecialKeyBindingsAccess
+            && left.LampArrayLightingAccess == right.LampArrayLightingAccess
             && left.ObservedPowerSourceBehaviors.SequenceEqual(
                 right.ObservedPowerSourceBehaviors)
             && left.FanModes.SetEquals(right.FanModes)

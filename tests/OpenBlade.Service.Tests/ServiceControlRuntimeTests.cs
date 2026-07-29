@@ -346,6 +346,7 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         context.Device.Capabilities = context.Device.Capabilities with
         {
             SpecialKeyBindingsAccess = DeviceFeatureAccess.ObservedOnly,
+            LampArrayLightingAccess = DeviceFeatureAccess.ObservedOnly,
             ObservedLightingEffects =
                 new HashSet<LightingEffect> { LightingEffect.Spectrum },
         };
@@ -359,6 +360,9 @@ public sealed class ServiceControlRuntimeTests : IDisposable
         Assert.Equal(
             DeviceFeatureAccess.ObservedOnly,
             context.Runtime.GetStatus().Capabilities!.SpecialKeyBindingsAccess);
+        Assert.Equal(
+            DeviceFeatureAccess.ObservedOnly,
+            context.Runtime.GetStatus().Capabilities!.LampArrayLightingAccess);
         Assert.Equal(0, context.Device.TotalSetterCalls);
     }
 

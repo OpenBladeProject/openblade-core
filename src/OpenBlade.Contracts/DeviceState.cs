@@ -155,6 +155,8 @@ public sealed record DeviceCapabilities(
 
     public DeviceFeatureAccess? SpecialKeyBindingsAccess { get; init; }
 
+    public DeviceFeatureAccess? LampArrayLightingAccess { get; init; }
+
     public IReadOnlySet<LightingEffect> ObservedLightingEffects { get; init; } =
         new HashSet<LightingEffect>();
 

@@ -129,6 +129,7 @@ internal static class Rz090528ProductionAdmissionCapabilityGate
         && lighting.LightingEffects.SetEquals([LightingEffect.Off])
         && lighting.ObservedLightingEffects.SetEquals(ObservedLightingEffects)
         && lighting.SpecialKeyBindingsAccess == DeviceFeatureAccess.ObservedOnly
+        && lighting.LampArrayLightingAccess == DeviceFeatureAccess.ObservedOnly
         && lighting.LogoLightingModes.SetEquals(Enum.GetValues<LogoLightingMode>())
         && lighting.SupportsKeyboardBrightness;
 }

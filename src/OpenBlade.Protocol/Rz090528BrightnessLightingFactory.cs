@@ -115,6 +115,7 @@ internal sealed class Rz090528BrightnessLightingPort : IProductionLightingPort
     {
         SupportsKeyboardBrightness = true,
         SpecialKeyBindingsAccess = DeviceFeatureAccess.ObservedOnly,
+        LampArrayLightingAccess = DeviceFeatureAccess.ObservedOnly,
         ObservedLightingEffects = new HashSet<LightingEffect>
         {
             LightingEffect.Spectrum,

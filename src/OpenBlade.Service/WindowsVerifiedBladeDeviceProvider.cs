@@ -309,6 +309,8 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
                             lighting.Capabilities.ObservedLightingEffects,
                         SpecialKeyBindingsAccess =
                             lighting.Capabilities.SpecialKeyBindingsAccess,
+                        LampArrayLightingAccess =
+                            lighting.Capabilities.LampArrayLightingAccess,
                         LogoLightingModes = lighting.Capabilities.LogoLightingModes,
                         SupportsKeyboardBrightness =
                             lighting.Capabilities.SupportsKeyboardBrightness,

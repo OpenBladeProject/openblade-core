@@ -19,10 +19,14 @@ All notable changes to OpenBlade are documented in this file. The project follow
   validated. Synapse's Spectrum Cycling, Static, Starlight, Ripple, Tidal,
   Wave, and Wheel quick effects are likewise retained as observed-only
   exact-model capabilities while the writable effect picker remains limited
-  to independently validated commands. The model's M1–M5 shortcut surface is
+  to independently validated commands. Windows Dynamic Lighting also exposes
+  the exact keyboard as an 85-lamp, virtual-key-aware LampArray. OpenBlade
+  surfaces that OS-native path as observed-only while packaged background
+  ownership, writes, ownership-loss behavior, and restoration remain under
+  validation. The model's M1–M5 shortcut surface is
   also retained as observed-only: editable bindings stay hidden and inactive
   until PID `02C6` input reports are independently captured and admitted.
-  Firmware-smoke schema 3 records these observed capabilities separately so an
+  Firmware-smoke schema 4 records these observed capabilities separately so an
   update cannot silently lose them. Diagnostics, About, tested-platform
   assessment, and firmware smoke now derive the RZ09-0528 / PID `02C6` identity
   from the verified model instead of displaying or validating the older

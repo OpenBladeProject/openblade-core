@@ -318,6 +318,7 @@ public sealed class IpcMessageCodecTests
             SupportsTemporaryFullCharge: false)
         {
             SpecialKeyBindingsAccess = DeviceFeatureAccess.ReadWrite,
+            LampArrayLightingAccess = DeviceFeatureAccess.ObservedOnly,
             ObservedLightingEffects = new HashSet<LightingEffect>
             {
                 LightingEffect.Spectrum,
@@ -352,7 +353,7 @@ public sealed class IpcMessageCodecTests
             DesiredState = CreateStatus().DesiredState with { Battery = desired },
         };
 
-        Assert.Equal(28, OpenBladeIpc.ProtocolVersion);
+        Assert.Equal(29, OpenBladeIpc.ProtocolVersion);
         Assert.Equal(request, await RoundTripRequestAsync(request));
         ServiceStatusSnapshot roundTrip = await RoundTripStatusAsync(status);
         Assert.Equal([80], roundTrip.Capabilities!.ChargeLimits);
@@ -361,6 +362,9 @@ public sealed class IpcMessageCodecTests
         Assert.Equal(
             DeviceFeatureAccess.ReadWrite,
             roundTrip.Capabilities.SpecialKeyBindingsAccess);
+        Assert.Equal(
+            DeviceFeatureAccess.ObservedOnly,
+            roundTrip.Capabilities.LampArrayLightingAccess);
         Assert.Equal(
             capabilities.ObservedPowerSourceBehaviors,
             roundTrip.Capabilities.ObservedPowerSourceBehaviors);
@@ -513,7 +517,7 @@ public sealed class IpcMessageCodecTests
 
         ServiceStatusSnapshot actual = await RoundTripStatusAsync(expected);
 
-        Assert.Equal(28, OpenBladeIpc.ProtocolVersion);
+        Assert.Equal(29, OpenBladeIpc.ProtocolVersion);
         AssertStatusEqual(expected, actual);
     }
 
@@ -527,6 +531,26 @@ public sealed class IpcMessageCodecTests
                 Capabilities = DeviceCapabilities.Unavailable() with
                 {
                     SpecialKeyBindingsAccess = (DeviceFeatureAccess)999,
+                },
+            });
+
+        await Assert.ThrowsAsync<InvalidDataException>(() =>
+            IpcMessageCodec.WriteServerFrameAsync(
+                new MemoryStream(),
+                frame,
+                CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task WriteServerFrameAsync_RejectsUnknownLampArrayLightingAccess()
+    {
+        ServiceServerFrame frame = new ServiceStatusEvent(
+            OpenBladeIpc.ProtocolVersion,
+            CreateStatus() with
+            {
+                Capabilities = DeviceCapabilities.Unavailable() with
+                {
+                    LampArrayLightingAccess = (DeviceFeatureAccess)999,
                 },
             });
 
@@ -1282,6 +1306,9 @@ public sealed class IpcMessageCodecTests
         Assert.True(expected.Capabilities.LightingEffects.SetEquals(actual.Capabilities.LightingEffects));
         Assert.True(expected.Capabilities.ObservedLightingEffects.SetEquals(
             actual.Capabilities.ObservedLightingEffects));
+        Assert.Equal(
+            expected.Capabilities.LampArrayLightingAccess,
+            actual.Capabilities.LampArrayLightingAccess);
         Assert.True(expected.Capabilities.ChargeLimits.SetEquals(actual.Capabilities.ChargeLimits));
         Assert.Equal(expected.Capabilities.SupportsBatteryProtectionOff, actual.Capabilities.SupportsBatteryProtectionOff);
         Assert.Equal(expected.Capabilities.SupportsTemporaryFullCharge, actual.Capabilities.SupportsTemporaryFullCharge);

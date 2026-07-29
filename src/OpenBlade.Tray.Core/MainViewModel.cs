@@ -1459,6 +1459,24 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     public bool IsObservedLightingEffectsVisible =>
         Capabilities.ObservedLightingEffects.Any(Enum.IsDefined);
 
+    public bool IsLampArrayLightingAccessVisible =>
+        Capabilities.LampArrayLightingAccess is not null;
+
+    public string LampArrayLightingAccessSummary =>
+        Capabilities.LampArrayLightingAccess switch
+        {
+            DeviceFeatureAccess.ObservedOnly =>
+                "Windows Dynamic Lighting exposes an exact 85-lamp keyboard array. "
+                + "Background ownership, writes, ownership-loss handling, and restoration "
+                + "remain disabled until the packaged Session Agent path is independently validated.",
+            DeviceFeatureAccess.ReadOnly =>
+                "Windows Dynamic Lighting exposes the keyboard array, but lighting writes "
+                + "are unavailable.",
+            DeviceFeatureAccess.ReadWrite =>
+                "OpenBlade can use the Windows Dynamic Lighting keyboard array.",
+            _ => UnavailableLabel,
+        };
+
     public string ObservedLightingEffectsSummary
     {
         get
@@ -1963,6 +1981,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             Notify(nameof(SpecialKeyBindingsAccessSummary));
             Notify(nameof(IsObservedLightingEffectsVisible));
             Notify(nameof(ObservedLightingEffectsSummary));
+            Notify(nameof(IsLampArrayLightingAccessVisible));
+            Notify(nameof(LampArrayLightingAccessSummary));
             NotifyObservedPowerSourceBehavior();
             NotifyGamingModeKeyPolicy();
             NotifyFirmwareFieldLoadingState();

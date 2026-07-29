@@ -56,7 +56,8 @@ public static class FirmwareSmokeAssessment
         ExpectedChargeLimits,
         ExpectedLogoModes,
         ExpectedLaptopControls,
-        DeviceFeatureAccess.ReadWrite.ToString());
+        DeviceFeatureAccess.ReadWrite.ToString(),
+        "Unavailable");
 
     private static readonly FirmwareSmokeCapabilityExpectation Rz090528Expectation = new(
         ["Balanced", "Custom", "Performance", "Silent"],
@@ -65,6 +66,7 @@ public static class FirmwareSmokeAssessment
         ExpectedChargeLimits,
         ExpectedLogoModes,
         ["FunctionKeyPrimary", "GamingMode", "StartupAnimation"],
+        DeviceFeatureAccess.ObservedOnly.ToString(),
         DeviceFeatureAccess.ObservedOnly.ToString());
 
     public static IReadOnlyList<string> ManualChecks { get; } =
@@ -350,6 +352,15 @@ public static class FirmwareSmokeAssessment
                 expected.SpecialKeyBindingsAccess,
                 snapshot.Capabilities.SpecialKeyBindingsAccess ?? "Unavailable"),
             Check(
+                "capabilities.lamp-array",
+                "Windows LampArray access matches the exact model",
+                string.Equals(
+                    snapshot.Capabilities.LampArrayLightingAccess ?? "Unavailable",
+                    expected.LampArrayLightingAccess,
+                    StringComparison.Ordinal),
+                expected.LampArrayLightingAccess,
+                snapshot.Capabilities.LampArrayLightingAccess ?? "Unavailable"),
+            Check(
                 "readback.performance",
                 "Performance readback is available",
                 snapshot.Controls.Performance is not null,
@@ -480,6 +491,7 @@ public static class FirmwareSmokeAssessment
         $"Lighting={capabilities.LightingEffects.Count}; " +
         $"ObservedLighting={capabilities.ObservedLightingEffects.Count}; " +
         $"SpecialKeys={capabilities.SpecialKeyBindingsAccess ?? "Unavailable"}; " +
+        $"LampArray={capabilities.LampArrayLightingAccess ?? "Unavailable"}; " +
         $"ChargeLimits={capabilities.ChargeLimits.Count}; " +
         $"Logo={capabilities.LogoLightingModes.Count}; " +
         $"Laptop={capabilities.OneShotLaptopControls.Count}";
@@ -495,6 +507,10 @@ public static class FirmwareSmokeAssessment
             left.SpecialKeyBindingsAccess,
             right.SpecialKeyBindingsAccess,
             StringComparison.Ordinal)
+        && string.Equals(
+            left.LampArrayLightingAccess,
+            right.LampArrayLightingAccess,
+            StringComparison.Ordinal)
         && left.ChargeLimits.SequenceEqual(right.ChargeLimits)
         && left.SupportsBatteryProtectionOff == right.SupportsBatteryProtectionOff
         && left.SupportsTemporaryFullCharge == right.SupportsTemporaryFullCharge
@@ -507,7 +523,7 @@ public static class FirmwareSmokeAssessment
         {
             RazerBladeModelCatalog.OpenBladeTargetModelNumber => Rz090581Expectation,
             RazerBladeModelCatalog.Rz090528ModelNumber => Rz090528Expectation,
-            _ => new([], [], [], [], [], [], "Unavailable"),
+            _ => new([], [], [], [], [], [], "Unavailable", "Unavailable"),
         };
 
     private static string List<T>(IReadOnlyList<T> values) =>
@@ -524,5 +540,6 @@ public static class FirmwareSmokeAssessment
         IReadOnlyList<int> ChargeLimits,
         IReadOnlyList<string> LogoLightingModes,
         IReadOnlyList<string> OneShotLaptopControls,
-        string SpecialKeyBindingsAccess);
+        string SpecialKeyBindingsAccess,
+        string LampArrayLightingAccess);
 }

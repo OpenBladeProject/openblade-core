@@ -1812,6 +1812,10 @@ public sealed class CapabilityPresentationTests
             document,
             "InfoBar",
             "ObservedLightingEffectsInfoBar");
+        XElement lampArrayInfoBar = NamedElement(
+            document,
+            "InfoBar",
+            "LampArrayLightingAccessInfoBar");
         XElement displayOffToggle = NamedElement(
             document,
             "ToggleSwitch",
@@ -1843,6 +1847,12 @@ public sealed class CapabilityPresentationTests
         Assert.Equal(
             "{x:Bind ObservedLightingEffectsSummary, Mode=OneWay}",
             Attribute(observedInfoBar, "Message"));
+        Assert.Equal(
+            "{x:Bind IsLampArrayLightingAccessVisible, Mode=OneWay}",
+            Attribute(lampArrayInfoBar, "IsOpen"));
+        Assert.Equal(
+            "{x:Bind LampArrayLightingAccessSummary, Mode=OneWay}",
+            Attribute(lampArrayInfoBar, "Message"));
         Assert.Equal(
             "{x:Bind AvailableLightingEffectOptions, Mode=OneWay}",
             Attribute(effectPicker, "ItemsSource"));

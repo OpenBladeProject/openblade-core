@@ -1976,6 +1976,7 @@ public sealed class MainViewModelTests
                     DeviceFeatureAccess.ObservedOnly),
                 GpuOverclock = observedGpuPolicy,
                 SpecialKeyBindingsAccess = DeviceFeatureAccess.ObservedOnly,
+                LampArrayLightingAccess = DeviceFeatureAccess.ObservedOnly,
                 ObservedLightingEffects = new HashSet<LightingEffect>
                 {
                     LightingEffect.Spectrum,
@@ -2039,6 +2040,11 @@ public sealed class MainViewModelTests
         Assert.True(viewModel.IsSpecialKeyBindingsObservedOnlyVisible);
         Assert.Contains("PID 02C6 input reports", viewModel.SpecialKeyBindingsAccessSummary);
         Assert.Contains("Saved bindings stay inactive", viewModel.SpecialKeyBindingsAccessSummary);
+        Assert.True(viewModel.IsLampArrayLightingAccessVisible);
+        Assert.Contains("exact 85-lamp keyboard array", viewModel.LampArrayLightingAccessSummary);
+        Assert.Contains(
+            "remain disabled",
+            viewModel.LampArrayLightingAccessSummary);
         Assert.True(viewModel.IsObservedLightingEffectsVisible);
         Assert.Contains("Spectrum Cycling", viewModel.ObservedLightingEffectsSummary);
         Assert.Contains("Wheel", viewModel.ObservedLightingEffectsSummary);

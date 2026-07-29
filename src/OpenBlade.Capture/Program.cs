@@ -946,6 +946,9 @@ if (args.Length == 1 && args[0].Equals(
         $"SpecialKeyBindingsAccess=" +
         $"{lighting.Capabilities.SpecialKeyBindingsAccess?.ToString() ?? "Unavailable"}");
     Console.WriteLine(
+        $"LampArrayLightingAccess=" +
+        $"{lighting.Capabilities.LampArrayLightingAccess?.ToString() ?? "Unavailable"}");
+    Console.WriteLine(
         $"CpuPowerLimit=" +
         $"{battery.Capabilities.CpuPowerLimit?.Watts.Minimum.ToString() ?? "Unavailable"}-" +
         $"{battery.Capabilities.CpuPowerLimit?.Watts.Maximum.ToString() ?? "Unavailable"}/" +

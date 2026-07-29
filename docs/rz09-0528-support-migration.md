@@ -920,6 +920,14 @@ background priority, one bounded static-color apply, ownership-loss behavior,
 and restoration all remain to be validated before the capability can become
 `ProductionAdmitted`.
 
+The shared capability contract now carries `LampArrayLightingAccess`. PID
+`02C6` reports `ObservedOnly`; PID `02E0` and unknown models report no value
+because no exact LampArray evidence exists for them. Diagnostics, the Lighting
+page, the exact production-admission gate, and firmware-smoke schema 4 all
+preserve this state. Strict service IPC advanced from version 28 to 29. This is
+a coordinated install boundary: do not live-patch only the tray or Session
+Agent across it.
+
 ## Preserve discovered special keys without borrowing PID 02E0 reports
 
 Synapse exposes the M1–M5 shortcut surface on RZ09-0528, but OpenBlade's
@@ -940,8 +948,9 @@ The Laptop page only shows editable M1–M5 bindings for `ReadWrite`. On this
 model it instead shows an observed-only information card, preserves any saved
 global bindings, and explains that they remain inactive. The Session Agent
 continues to reject PID `02C6`, so the UI and runtime fail closed together.
-Diagnostics and firmware-smoke schema 3 record the access level, and strict
-service IPC advanced from version 27 to 28.
+Diagnostics and firmware smoke retain the access level (schema 3 introduced
+it; schema 4 adds LampArray access), and strict service IPC advanced from
+version 27 to 28 at that checkpoint.
 
 For future evidence collection, use the exact-device probe:
 
@@ -970,10 +979,11 @@ the USB row dynamically, and an unknown model is reported as unavailable
 instead of being mislabeled. `TestedPlatformCatalog` includes the validated
 RZ09-0528 BIOS `2.02`, EC `1.09`, and MCU `1.9.0.0` tuple.
 
-Firmware-smoke schema 3 resolves the target from the service observation and
+Firmware-smoke schema 4 resolves the target from the service observation and
 uses an exact capability gate per model. RZ09-0528 expects four AC performance
 presets, four fan modes, keyboard Off, seven observed quick effects, all three
-logo modes, three admitted laptop controls, and observed-only special keys.
+logo modes, three admitted laptop controls, observed-only special keys, and
+observed-only LampArray access.
 Reversible and recovery confirmation tokens are derived from the baseline
 model (`RZ09-0528-MCU-SMOKE` here), and recovery additionally proves the live
 device model matches the baseline before any setter can run.
@@ -991,24 +1001,25 @@ build if any of these exact-model facts disappears or changes:
   policy as observed-only;
 - the complete Battery and USB-C behavior observations;
 - keyboard Off, all seven observed quick effects, three logo modes, keyboard
-  brightness, and observed-only special keys;
+  brightness, observed-only special keys, and observed-only LampArray access;
 - startup animation, function-key primary behavior, and Gaming mode.
 
 The gate is independently unit tested to reject dropped discoveries and an
 older-model Custom combination assumption.
 
-Final validation at this checkpoint:
+Final validation at the current LampArray-capability checkpoint:
 
 - core commits: `b611f0b` (special-key capability/UI) and `eda8d67`
   (model-derived identity and firmware smoke), followed by `d987a73`
-  (exact-model production-admission capability gate);
+  (exact-model production-admission capability gate) and `cde59dd`
+  (sanitized, read-only LampArray geometry probe);
 - documentation commits: `1083340`, `6c3c631`, and `c545805`;
 - Release build: 0 warnings and 0 errors;
-- full Release suite: 3,229 tests passed across all ten projects
-  (Display 38, Capture 247, Session 33, Contracts 191, SessionAgent 147,
-  Protocol 1,049, Tray 615, Service 685, Setup 206, FirmwareSmoke 18);
+- full Release suite: 3,237 tests passed across all ten projects
+  (Display 38, Capture 253, Session 33, Contracts 192, SessionAgent 147,
+  Protocol 1,049, Tray 615, Service 685, Setup 206, FirmwareSmoke 19);
 - `dotnet format OpenBlade.slnx --verify-no-changes --no-restore`: clean;
-- Windows PowerShell 5.1 capture toolkit: all four regression suites passed
+- Windows PowerShell 5.1 capture toolkit: all five regression suites passed
   with `-NonInteractive`;
 - public documentation: all local links and assets resolved across 11 pages;
 - final non-mutating production probe: `ReadyWithAccessFallback`, exact

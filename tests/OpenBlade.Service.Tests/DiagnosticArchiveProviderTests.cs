@@ -18,6 +18,7 @@ public sealed class DiagnosticArchiveProviderTests
             Capabilities = DeviceCapabilities.Unavailable() with
             {
                 SpecialKeyBindingsAccess = DeviceFeatureAccess.ObservedOnly,
+                LampArrayLightingAccess = DeviceFeatureAccess.ObservedOnly,
                 ObservedLightingEffects =
                     new HashSet<LightingEffect>
                     {
@@ -104,6 +105,9 @@ public sealed class DiagnosticArchiveProviderTests
         Assert.Equal(
             DeviceFeatureAccess.ObservedOnly.ToString(),
             configuration.RootElement.GetProperty("capability.specialKeyBindingsAccess").GetString());
+        Assert.Equal(
+            DeviceFeatureAccess.ObservedOnly.ToString(),
+            configuration.RootElement.GetProperty("capability.lampArrayLightingAccess").GetString());
         using JsonDocument capabilities = JsonDocument.Parse(
             await ReadEntryAsync(archive, "capabilities.json"));
         Assert.True(
@@ -114,6 +118,10 @@ public sealed class DiagnosticArchiveProviderTests
             capabilities.RootElement.GetProperty("laptop.specialKeyBindings.observed").GetBoolean());
         Assert.False(
             capabilities.RootElement.GetProperty("laptop.specialKeyBindings.write").GetBoolean());
+        Assert.True(
+            capabilities.RootElement.GetProperty("lighting.lampArray.observed").GetBoolean());
+        Assert.False(
+            capabilities.RootElement.GetProperty("lighting.lampArray.write").GetBoolean());
         Assert.DoesNotContain(
             configuration.RootElement.EnumerateObject(),
             property => property.Name.StartsWith("telemetry.", StringComparison.Ordinal));

@@ -44,6 +44,7 @@ public sealed class ProductionLightingPortTests
         Assert.Equal(
             DeviceFeatureAccess.ReadWrite,
             factory.Capabilities.SpecialKeyBindingsAccess);
+        Assert.Null(factory.Capabilities.LampArrayLightingAccess);
         Assert.Empty(factory.Capabilities.PerformancePresets);
         Assert.Empty(factory.Capabilities.FanModes);
         Assert.Empty(factory.Capabilities.ChargeLimits);
@@ -62,6 +63,9 @@ public sealed class ProductionLightingPortTests
         Assert.Equal(
             DeviceFeatureAccess.ObservedOnly,
             capabilities.SpecialKeyBindingsAccess);
+        Assert.Equal(
+            DeviceFeatureAccess.ObservedOnly,
+            capabilities.LampArrayLightingAccess);
         Assert.Equal([LightingEffect.Off], capabilities.LightingEffects);
         Assert.True(capabilities.ObservedLightingEffects.SetEquals(
         [

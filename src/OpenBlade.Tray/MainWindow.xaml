@@ -1114,6 +1114,14 @@
                         <TextBlock Text="Keyboard"
                                    Style="{StaticResource SectionHeaderStyle}"
                                    Margin="0,0,0,10" />
+                        <InfoBar x:Name="LampArrayLightingAccessInfoBar"
+                                 Margin="0,0,0,10"
+                                 IsOpen="{x:Bind IsLampArrayLightingAccessVisible, Mode=OneWay}"
+                                 Visibility="{x:Bind IsLampArrayLightingAccessVisible, Mode=OneWay}"
+                                 IsClosable="False"
+                                 Severity="Informational"
+                                 Title="Windows Dynamic Lighting interface detected"
+                                 Message="{x:Bind LampArrayLightingAccessSummary, Mode=OneWay}" />
                         <InfoBar x:Name="ObservedLightingEffectsInfoBar"
                                  Margin="0,0,0,10"
                                  IsOpen="{x:Bind IsObservedLightingEffectsVisible, Mode=OneWay}"

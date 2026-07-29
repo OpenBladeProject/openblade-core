@@ -359,6 +359,10 @@ public sealed class DiagnosticArchiveProvider : IDiagnosticArchiveProvider
             capabilities.SpecialKeyBindingsAccess is not null;
         result["laptop.specialKeyBindings.write"] =
             capabilities.SpecialKeyBindingsAccess == DeviceFeatureAccess.ReadWrite;
+        result["lighting.lampArray.observed"] =
+            capabilities.LampArrayLightingAccess is not null;
+        result["lighting.lampArray.write"] =
+            capabilities.LampArrayLightingAccess == DeviceFeatureAccess.ReadWrite;
         foreach (PowerSourceBehaviorObservation observation
             in capabilities.ObservedPowerSourceBehaviors)
         {
@@ -443,6 +447,8 @@ public sealed class DiagnosticArchiveProvider : IDiagnosticArchiveProvider
                     .Order()),
             ["capability.specialKeyBindingsAccess"] =
                 capabilities.SpecialKeyBindingsAccess?.ToString() ?? "Unavailable",
+            ["capability.lampArrayLightingAccess"] =
+                capabilities.LampArrayLightingAccess?.ToString() ?? "Unavailable",
             ["capability.fanSpeedMinimumRpm"] = NumberOrUnavailable(
                 capabilities.FanSpeedRange?.MinimumRpm),
             ["capability.fanSpeedMaximumRpm"] = NumberOrUnavailable(
