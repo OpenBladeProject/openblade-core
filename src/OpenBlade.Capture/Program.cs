@@ -227,6 +227,18 @@ if (args.Length == 1 && args[0].Equals(
                 $"TemporaryFullCharge={temporaryFullCharge?.ToString() ?? "Unavailable"}");
             Console.WriteLine($"Performance={performance.Performance}");
             Console.WriteLine($"Fans={performance.Fans}");
+            string performancePresets = string.Join(
+                ",",
+                factory.Capabilities.PerformancePresets.Order());
+            string fanModes = string.Join(",", factory.Capabilities.FanModes.Order());
+            string observedPowerSources = string.Join(
+                ",",
+                factory.Capabilities.ObservedPowerSourceBehaviors
+                    .Select(value => value.Source)
+                    .Order());
+            Console.WriteLine($"PerformancePresets={performancePresets}");
+            Console.WriteLine($"FanModes={fanModes}");
+            Console.WriteLine($"ObservedPowerSources={observedPowerSources}");
             bool success = factory.Capabilities.ChargeLimits.SequenceEqual(
                     [50, 55, 60, 65, 70, 75, 80])
                 && factory.Capabilities.SupportsBatteryProtectionOff
@@ -235,9 +247,19 @@ if (args.Length == 1 && args[0].Equals(
                         PerformancePreset.Balanced,
                         PerformancePreset.Silent,
                         PerformancePreset.Performance,
+                        PerformancePreset.Custom,
                     ])
                 && factory.Capabilities.FanModes.SetEquals(
-                    [FanMode.Automatic, FanMode.Fixed, FanMode.Maximum])
+                    [
+                        FanMode.Automatic,
+                        FanMode.Fixed,
+                        FanMode.ManualCurve,
+                        FanMode.Maximum,
+                    ])
+                && factory.Capabilities.ObservedPowerSourceBehaviors
+                    .Select(value => value.Source)
+                    .ToHashSet()
+                    .SetEquals([PowerSource.Battery, PowerSource.UsbC])
                 && factory.Capabilities.SupportsTemporaryFullCharge
                 && state is
                 {
