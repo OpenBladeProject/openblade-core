@@ -16,6 +16,8 @@ public sealed record DeviceCapabilities(
     bool SupportsBatteryProtectionOff,
     bool SupportsTemporaryFullCharge)
 {
+    public bool SupportsKeyboardBrightness { get; init; }
+
     public IReadOnlySet<LogoLightingMode> LogoLightingModes { get; init; } =
         new HashSet<LogoLightingMode>();
 
@@ -36,7 +38,10 @@ public sealed record DeviceCapabilities(
         new HashSet<LightingEffect> { LightingEffect.Off },
         new HashSet<int>(),
         SupportsBatteryProtectionOff: false,
-        SupportsTemporaryFullCharge: false);
+        SupportsTemporaryFullCharge: false)
+    {
+        SupportsKeyboardBrightness = true,
+    };
 }
 
 public sealed record ConfirmedDeviceState(

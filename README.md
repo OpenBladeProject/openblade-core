@@ -28,10 +28,13 @@ exact laptop and firmware.
 | Laptop | USB identity | BIOS | EC | MCU |
 | --- | --- | --- | --- | --- |
 | Razer Blade 16 (2026), `RZ09-0581` | `1532:02E0` | `3.01` | `1.04` | `1.5.0.0`, `1.6.0.0` |
+| Razer Blade 16 (2025), `RZ09-0528` | `1532:02C6` | `2.02` | Unavailable | Unavailable |
 
-Other Blade models remain unsupported until their commands have equivalent
-capture and restoration evidence. OpenBlade does not reuse commands from
-similar laptops or relax identity checks to make a device appear compatible.
+The `RZ09-0528` admission currently includes keyboard brightness only. Other
+controls and other Blade models remain unsupported until their commands have
+equivalent capture and restoration evidence. OpenBlade does not reuse commands
+from similar laptops or relax identity checks to make a device appear
+compatible.
 
 ## What it controls
 

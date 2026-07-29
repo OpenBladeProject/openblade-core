@@ -1,4 +1,5 @@
 using OpenBlade.Capture;
+using OpenBlade.Contracts;
 using OpenBlade.Display;
 using OpenBlade.Protocol;
 
@@ -49,6 +50,26 @@ if (args.Length == 1 && args[0].Equals("scan-all", StringComparison.OrdinalIgnor
     {
         Console.WriteLine(
             $"Usage {device.UsagePage:X4}:{device.Usage:X4}, feature bytes {device.FeatureReportByteLength}: {device.DevicePath}");
+    }
+
+    return interfaces.Count > 0 ? 0 : 3;
+}
+
+if (args.Length == 1 && args[0].Equals(
+    "scan-rz09-0528-02c6",
+    StringComparison.OrdinalIgnoreCase))
+{
+    const ushort vendorId = 0x1532;
+    const ushort productId = 0x02C6;
+    IReadOnlyList<HidInterfaceInfo> interfaces =
+        WindowsHidEnumerator.FindCollections(vendorId, productId);
+    Console.WriteLine(
+        $"Found {interfaces.Count} HID collection(s) for {vendorId:X4}:{productId:X4}.");
+    foreach (HidInterfaceInfo device in interfaces)
+    {
+        Console.WriteLine(
+            $"Usage {device.UsagePage:X4}:{device.Usage:X4}, " +
+            $"feature bytes {device.FeatureReportByteLength}.");
     }
 
     return interfaces.Count > 0 ? 0 : 3;
@@ -163,6 +184,212 @@ if (args.Length == 1 && args[0].Equals(
         $"ProtocolValidation={result.Diagnostic?.ProtocolValidationFailure?.ToString() ?? "None"}");
     Console.WriteLine($"Success={result.Failure is null && result.Value is not null}");
     return result.Failure is null && result.Value is not null ? 0 : 2;
+}
+
+if (args.Length == 1 && args[0].Equals(
+    "query-rz09-0528-02c6-lighting-brightness",
+    StringComparison.OrdinalIgnoreCase))
+{
+    ILightingBrightnessQueryRunner runner =
+        BatteryValidationFactory.CreateWindowsRz090528LightingBrightnessQuery();
+    HidSessionResult<LightingBrightnessReading> result =
+        await runner.RunAsync(CancellationToken.None);
+    Console.WriteLine("Target=RZ09-0528 1532:02C6 BIOS 2.02");
+    Console.WriteLine($"RawValue={result.Value?.RawValue.ToString() ?? "Unavailable"}");
+    Console.WriteLine($"Percent={result.Value?.Percent.ToString() ?? "Unavailable"}");
+    Console.WriteLine($"Failure={result.Failure?.ToString() ?? "None"}");
+    Console.WriteLine($"FailurePhase={result.Diagnostic?.Phase.ToString() ?? "None"}");
+    Console.WriteLine(
+        $"ProtocolValidation={result.Diagnostic?.ProtocolValidationFailure?.ToString() ?? "None"}");
+    Console.WriteLine($"Success={result.Failure is null && result.Value is not null}");
+    return result.Failure is null && result.Value is not null ? 0 : 2;
+}
+
+if (args.Length == 3 && args[0].Equals(
+    "validate-rz09-0528-02c6-lighting-brightness",
+    StringComparison.OrdinalIgnoreCase))
+{
+    const string exactConfirmation = "RZ09-0528:1532:02C6:2.02";
+    if (!args[1].Equals(exactConfirmation, StringComparison.Ordinal)
+        || !byte.TryParse(args[2], out byte targetPercent)
+        || targetPercent != 60)
+    {
+        Console.Error.WriteLine(
+            $"Validation requires: {exactConfirmation} 60");
+        return 2;
+    }
+
+    IProductionLightingPortFactory factory =
+        BatteryValidationFactory.CreateWindowsRz090528BrightnessLighting();
+    HidSessionResult<IProductionLightingPort> opened =
+        await factory.OpenAsync(CancellationToken.None);
+    if (opened.Value is not Rz090528BrightnessLightingPort port
+        || opened.Failure is not null)
+    {
+        if (opened.Value is not null)
+        {
+            await opened.Value.DisposeAsync();
+        }
+
+        Console.WriteLine("Target=RZ09-0528 1532:02C6 BIOS 2.02");
+        Console.WriteLine($"Failure={opened.Failure?.ToString() ?? "NativeIoFailure"}");
+        Console.WriteLine("RestorationConfirmed=False");
+        Console.WriteLine("Success=False");
+        return 2;
+    }
+
+    await using (port)
+    {
+        try
+        {
+            BrightnessRoundTripResult result =
+                await port.ValidateRoundTripAsync(60, CancellationToken.None);
+            Console.WriteLine("Target=RZ09-0528 1532:02C6 BIOS 2.02");
+            Console.WriteLine($"BaselineRaw={result.BaselineRaw}");
+            Console.WriteLine($"TargetRaw={result.TargetRaw}");
+            Console.WriteLine($"AppliedRaw={result.AppliedRaw}");
+            Console.WriteLine($"RestoredRaw={result.RestoredRaw}");
+            Console.WriteLine(
+                $"RestorationConfirmed={result.RestoredRaw == result.BaselineRaw}");
+            Console.WriteLine("Success=True");
+            return 0;
+        }
+        catch (Exception exception)
+        {
+            Console.WriteLine("Target=RZ09-0528 1532:02C6 BIOS 2.02");
+            Console.WriteLine($"Failure={exception.GetType().Name}");
+            Console.WriteLine($"Message={exception.Message}");
+            Console.WriteLine("Success=False");
+            return 2;
+        }
+    }
+}
+
+if (args.Length == 2 && args[0].Equals(
+    "validate-rz09-0528-02c6-lighting-brightness-step",
+    StringComparison.OrdinalIgnoreCase))
+{
+    const string exactConfirmation = "RZ09-0528:1532:02C6:2.02";
+    if (!args[1].Equals(exactConfirmation, StringComparison.Ordinal))
+    {
+        Console.Error.WriteLine(
+            $"Validation requires: {exactConfirmation}");
+        return 2;
+    }
+
+    IProductionLightingPortFactory factory =
+        BatteryValidationFactory.CreateWindowsRz090528BrightnessLighting();
+    HidSessionResult<IProductionLightingPort> opened =
+        await factory.OpenAsync(CancellationToken.None);
+    if (opened.Value is not Rz090528BrightnessLightingPort port
+        || opened.Failure is not null)
+    {
+        if (opened.Value is not null)
+        {
+            await opened.Value.DisposeAsync();
+        }
+
+        Console.WriteLine("Target=RZ09-0528 1532:02C6 BIOS 2.02");
+        Console.WriteLine($"Failure={opened.Failure?.ToString() ?? "NativeIoFailure"}");
+        Console.WriteLine("RestorationConfirmed=False");
+        Console.WriteLine("Success=False");
+        return 2;
+    }
+
+    await using (port)
+    {
+        try
+        {
+            BrightnessRoundTripResult result =
+                await port.ValidateStepRoundTripAsync(
+                    KeyboardBrightnessDirection.Increase,
+                    CancellationToken.None);
+            Console.WriteLine("Target=RZ09-0528 1532:02C6 BIOS 2.02");
+            Console.WriteLine("Direction=Increase");
+            Console.WriteLine($"BaselineRaw={result.BaselineRaw}");
+            Console.WriteLine($"TargetRaw={result.TargetRaw}");
+            Console.WriteLine($"AppliedRaw={result.AppliedRaw}");
+            Console.WriteLine($"RestoredRaw={result.RestoredRaw}");
+            Console.WriteLine(
+                $"RestorationConfirmed={result.RestoredRaw == result.BaselineRaw}");
+            Console.WriteLine("Success=True");
+            return 0;
+        }
+        catch (Exception exception)
+        {
+            Console.WriteLine("Target=RZ09-0528 1532:02C6 BIOS 2.02");
+            Console.WriteLine($"Failure={exception.GetType().Name}");
+            Console.WriteLine($"Message={exception.Message}");
+            Console.WriteLine("Success=False");
+            return 2;
+        }
+    }
+}
+
+if (args.Length == 1 && args[0].Equals(
+    "probe-rz09-0528-02c6-production-admission",
+    StringComparison.OrdinalIgnoreCase))
+{
+    BatteryValidationProbeResult probe =
+        BatteryValidationFactory.ProbeWindowsForService();
+    IProductionBatteryPortFactory battery =
+        BatteryValidationFactory.CreateWindowsProductionBatteryForService();
+    IProductionLightingPortFactory lighting =
+        BatteryValidationFactory.CreateWindowsProductionLightingForService();
+    HidSessionResult<IProductionLightingPort> opened =
+        await lighting.OpenAsync(CancellationToken.None);
+    if (opened.Value is { } port && opened.Failure is null)
+    {
+        await using (port)
+        {
+            _ = await port.ReadStateAsync(CancellationToken.None);
+        }
+    }
+
+    ILightingBrightnessQueryRunner query =
+        BatteryValidationFactory.CreateWindowsRz090528LightingBrightnessQuery();
+    HidSessionResult<LightingBrightnessReading> brightness =
+        await query.RunAsync(CancellationToken.None);
+
+    Console.WriteLine("Target=RZ09-0528 1532:02C6 BIOS 2.02");
+    Console.WriteLine($"Probe={probe.Classification}");
+    Console.WriteLine(
+        $"BatteryWriteCapabilities=" +
+        $"{battery.Capabilities.PerformancePresets.Count}/" +
+        $"{battery.Capabilities.FanModes.Count}/" +
+        $"{battery.Capabilities.ChargeLimits.Count}/" +
+        $"{battery.Capabilities.SupportsBatteryProtectionOff}/" +
+        $"{battery.Capabilities.SupportsTemporaryFullCharge}");
+    Console.WriteLine(
+        $"LightingEffects={lighting.Capabilities.LightingEffects.Count}");
+    Console.WriteLine(
+        $"LogoModes={lighting.Capabilities.LogoLightingModes.Count}");
+    Console.WriteLine(
+        $"KeyboardBrightness={lighting.Capabilities.SupportsKeyboardBrightness}");
+    Console.WriteLine($"OpenFailure={opened.Failure?.ToString() ?? "None"}");
+    Console.WriteLine(
+        $"BrightnessRaw={brightness.Value?.RawValue.ToString() ?? "Unavailable"}");
+    Console.WriteLine(
+        $"BrightnessPercent={brightness.Value?.Percent.ToString() ?? "Unavailable"}");
+    Console.WriteLine(
+        $"BrightnessQueryFailure={brightness.Failure?.ToString() ?? "None"}");
+    bool success = probe.Classification is
+            BatteryValidationProbeClassification.Ready
+            or BatteryValidationProbeClassification.ReadyWithAccessFallback
+        && battery.Capabilities.PerformancePresets.Count == 0
+        && battery.Capabilities.FanModes.Count == 0
+        && battery.Capabilities.ChargeLimits.Count == 0
+        && !battery.Capabilities.SupportsBatteryProtectionOff
+        && !battery.Capabilities.SupportsTemporaryFullCharge
+        && lighting.Capabilities.LightingEffects.Count == 0
+        && lighting.Capabilities.LogoLightingModes.Count == 0
+        && lighting.Capabilities.SupportsKeyboardBrightness
+        && opened.Value is not null
+        && opened.Failure is null
+        && brightness.Value is not null
+        && brightness.Failure is null;
+    Console.WriteLine($"Success={success}");
+    return success ? 0 : 2;
 }
 
 if (args.Length > 0 && args[0].Equals(
@@ -283,6 +510,7 @@ Console.WriteLine("OpenBlade capture utility (no raw hardware command support)")
 Console.WriteLine("  OpenBlade.Capture target");
 Console.WriteLine("  OpenBlade.Capture scan");
 Console.WriteLine("  OpenBlade.Capture scan-all");
+Console.WriteLine("  OpenBlade.Capture scan-rz09-0528-02c6");
 Console.WriteLine("  OpenBlade.Capture query-display");
 Console.WriteLine("  OpenBlade.Capture probe-gpu-clock-offsets");
 Console.WriteLine("  OpenBlade.Capture probe-special-keys [seconds] [output-file]");
@@ -292,6 +520,15 @@ Console.WriteLine("  OpenBlade.Capture query-battery");
 Console.WriteLine("  OpenBlade.Capture query-temporary-full-charge");
 Console.WriteLine("  OpenBlade.Capture query-fan-rpm");
 Console.WriteLine("  OpenBlade.Capture query-lighting-brightness");
+Console.WriteLine("  OpenBlade.Capture query-rz09-0528-02c6-lighting-brightness");
+Console.WriteLine(
+    "  OpenBlade.Capture validate-rz09-0528-02c6-lighting-brightness " +
+    "RZ09-0528:1532:02C6:2.02 60");
+Console.WriteLine(
+    "  OpenBlade.Capture validate-rz09-0528-02c6-lighting-brightness-step " +
+    "RZ09-0528:1532:02C6:2.02");
+Console.WriteLine(
+    "  OpenBlade.Capture probe-rz09-0528-02c6-production-admission");
 Console.WriteLine("  OpenBlade.Capture query-performance-fan-discriminator");
 Console.WriteLine("  OpenBlade.Capture probe-function-key-primary-getter");
 Console.WriteLine("  OpenBlade.Capture probe-gaming-mode-getter");

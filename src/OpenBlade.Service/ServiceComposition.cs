@@ -60,7 +60,7 @@ internal static class ServiceComposition
 
     internal static IProductionBatteryPortFactory CreateProductionBatteryFactory() =>
         CreateProductionBatteryFactory(
-            ProductionBatteryFactory.CreateWindows,
+            BatteryValidationFactory.CreateWindowsProductionBatteryForService,
             ProductionBatteryFactory.CreateWindowsReadOnly);
 
     internal static IProductionBatteryPortFactory CreateProductionBatteryFactory(
@@ -85,7 +85,7 @@ internal static class ServiceComposition
 
     internal static IProductionLightingPortFactory CreateProductionLightingFactory() =>
         CreateProductionLightingFactory(
-            ProductionLightingFactory.CreateWindows,
+            BatteryValidationFactory.CreateWindowsProductionLightingForService,
             ProductionLightingFactory.CreateWindowsReadOnly);
 
     internal static IProductionLightingPortFactory CreateProductionLightingFactory(

@@ -48,6 +48,37 @@ public sealed class WindowsHidEnumeratorTests
         Assert.Equal(0, native.BindCalls);
     }
 
+    [Fact]
+    public void FindCollections_UsesExplicitVidPidWithoutProductionAdmission()
+    {
+        DiagnosticNative native = new();
+        OpenedCandidateHandle first = native.Add(
+            "pid02c6-control",
+            new HidHandleIdentity(0x1532, 0x02C6, 1, 2, 91));
+        OpenedCandidateHandle second = native.Add(
+            "pid02c6-consumer",
+            new HidHandleIdentity(0x1532, 0x02C6, 12, 1, 375));
+        OpenedCandidateHandle production = native.Add(
+            "pid02e0",
+            new HidHandleIdentity(0x1532, 0x02E0, 1, 2, 91));
+
+        IReadOnlyList<HidInterfaceInfo> result =
+            WindowsHidEnumerator.FindCollections(native, 0x1532, 0x02C6);
+
+        Assert.Equal(
+            [
+                new HidInterfaceInfo("pid02c6-control", 0x1532, 0x02C6, 1, 2, 91),
+                new HidInterfaceInfo("pid02c6-consumer", 0x1532, 0x02C6, 12, 1, 375),
+            ],
+            result);
+        Assert.Equal([first, second, production], native.ReadHandles);
+        Assert.All(native.OpenParameters, parameters => Assert.Equal(
+            new HidOpenParameters(0, 3, 3, 0, false),
+            parameters));
+        Assert.Equal(0, native.BindCalls);
+        Assert.All([first, second, production], handle => Assert.True(handle.FileHandle.IsClosed));
+    }
+
     private sealed class DiagnosticNative : IHidCandidateNative
     {
         private readonly Dictionary<string, (OpenedCandidateHandle Handle, HidHandleIdentity Identity)>

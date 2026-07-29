@@ -332,6 +332,7 @@ type sealed class OpenBlade.Contracts.DeviceCapabilities
   ctor (System.Collections.Generic.IReadOnlySet<OpenBlade.Contracts.PerformancePreset> PerformancePresets, System.Collections.Generic.IReadOnlySet<OpenBlade.Contracts.FanMode> FanModes, System.Collections.Generic.IReadOnlySet<OpenBlade.Contracts.LightingEffect> LightingEffects, System.Collections.Generic.IReadOnlySet<System.Int32> ChargeLimits, System.Boolean SupportsBatteryProtectionOff, System.Boolean SupportsTemporaryFullCharge)
   method OpenBlade.Contracts.DeviceCapabilities <Clone>$()
   method System.Boolean get_SupportsBatteryProtectionOff()
+  method System.Boolean get_SupportsKeyboardBrightness()
   method System.Boolean get_SupportsTemporaryFullCharge()
   method System.Collections.Generic.IReadOnlySet<OpenBlade.Contracts.FanMode> get_FanModes()
   method System.Collections.Generic.IReadOnlySet<OpenBlade.Contracts.LightingEffect> get_LightingEffects()
@@ -347,6 +348,7 @@ type sealed class OpenBlade.Contracts.DeviceCapabilities
   method System.Void set_OneShotLaptopControls(System.Collections.Generic.IReadOnlySet<OpenBlade.Contracts.OneShotLaptopControl> value)
   method System.Void set_PerformancePresets(System.Collections.Generic.IReadOnlySet<OpenBlade.Contracts.PerformancePreset> value)
   method System.Void set_SupportsBatteryProtectionOff(System.Boolean value)
+  method System.Void set_SupportsKeyboardBrightness(System.Boolean value)
   method System.Void set_SupportsTemporaryFullCharge(System.Boolean value)
   method override System.Boolean Equals(System.Object obj)
   method override System.Int32 GetHashCode()
@@ -357,6 +359,7 @@ type sealed class OpenBlade.Contracts.DeviceCapabilities
   method static System.Boolean op_Inequality(OpenBlade.Contracts.DeviceCapabilities left, OpenBlade.Contracts.DeviceCapabilities right)
   method virtual System.Boolean Equals(OpenBlade.Contracts.DeviceCapabilities other)
   property System.Boolean SupportsBatteryProtectionOff { get; init; }
+  property System.Boolean SupportsKeyboardBrightness { get; init; }
   property System.Boolean SupportsTemporaryFullCharge { get; init; }
   property System.Collections.Generic.IReadOnlySet<OpenBlade.Contracts.FanMode> FanModes { get; init; }
   property System.Collections.Generic.IReadOnlySet<OpenBlade.Contracts.LightingEffect> LightingEffects { get; init; }
@@ -1038,6 +1041,7 @@ type sealed class OpenBlade.Contracts.PushAmbientLightingFrameRequest
   property System.Byte[] RgbBytes { get; init; }
 type static class OpenBlade.Contracts.RazerBladeModelCatalog
   field const System.String OpenBladeTargetModelNumber = "RZ09-0581"
+  field const System.String Rz090528ModelNumber = "RZ09-0528"
   method static OpenBlade.Contracts.RazerBladeModelInfo Find(System.String modelNumber)
 type sealed class OpenBlade.Contracts.RazerBladeModelInfo
   interface System.IEquatable<OpenBlade.Contracts.RazerBladeModelInfo>

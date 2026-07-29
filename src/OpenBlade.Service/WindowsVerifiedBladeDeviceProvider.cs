@@ -306,6 +306,8 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
                     {
                         LightingEffects = lighting.Capabilities.LightingEffects,
                         LogoLightingModes = lighting.Capabilities.LogoLightingModes,
+                        SupportsKeyboardBrightness =
+                            lighting.Capabilities.SupportsKeyboardBrightness,
                     };
             }
             finally
@@ -1413,7 +1415,8 @@ public sealed class WindowsVerifiedBladeDeviceProvider : IVerifiedBladeDevicePro
             try
             {
                 port = await GetLightingPortCoreAsync(cancellationToken).ConfigureAwait(false);
-                if (port is null || port.Capabilities.LightingEffects.Count == 0)
+                if (port is null
+                    || !port.Capabilities.SupportsKeyboardBrightness)
                 {
                     throw new BladeWriteException(
                         WriteSubmissionState.KnownNotApplied,

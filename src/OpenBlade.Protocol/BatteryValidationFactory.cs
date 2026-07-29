@@ -8,6 +8,56 @@ public static class BatteryValidationFactory
         TimeSpan.FromMilliseconds(20);
     private static readonly TimeSpan TemporaryFullChargeValidationFeatureReportSettleDelay =
         TimeSpan.FromMilliseconds(30);
+    private static readonly TimeSpan Rz090528BrightnessFeatureReportSettleDelay =
+        TimeSpan.FromMilliseconds(30);
+
+    internal static IProductionBatteryPortFactory
+        CreateWindowsProductionBatteryForService() =>
+        WindowsHostIdentitySource.IsExactRz090528WindowsHost()
+            ? ProductionBatteryFactory.CreateWindowsReadOnly()
+            : ProductionBatteryFactory.CreateWindows();
+
+    internal static IProductionLightingPortFactory
+        CreateWindowsProductionLightingForService() =>
+        WindowsHostIdentitySource.IsExactRz090528WindowsHost()
+            ? CreateWindowsRz090528BrightnessLighting()
+            : ProductionLightingFactory.CreateWindows();
+
+    internal static IProductionLightingPortFactory
+        CreateWindowsRz090528BrightnessLighting()
+    {
+        var native = new WindowsHidNative();
+        var registry = new WindowsRegistryValueSource();
+        var guard = new WindowsHardwareAccessGuard(
+            new RunningProcessSource(),
+            new WindowsServiceSource());
+        var hostIdentity = new WindowsHostIdentitySource(
+            registry,
+            new RuntimeWindowsPlatformEvidenceSource(registry),
+            WindowsHostIdentitySource.Rz090528Identity);
+        var opener = new WindowsRazerHidSessionOpener(
+            hostIdentity,
+            guard,
+            native,
+            ControllerExclusivityPolicy.Advisory,
+            new HidHandleIdentity(
+                VendorId: 0x1532,
+                ProductId: 0x02C6,
+                UsagePage: 0x0001,
+                Usage: 0x0002,
+                FeatureReportByteLength: 91));
+        var actorFactory = new ValidationActorFactory(
+            opener,
+            new OverlappedFeatureOperation(native),
+            guard,
+            TimeProvider.System,
+            DefaultExchangeTimeout,
+            ControllerExclusivityPolicy.Advisory,
+            Rz090528BrightnessFeatureReportSettleDelay);
+        return new Rz090528BrightnessLightingFactory(
+            static () => new ValidationRunContext(),
+            actorFactory);
+    }
 
     public static IBatteryValidationRunFactory CreateWindows()
     {
@@ -84,6 +134,52 @@ public static class BatteryValidationFactory
             new WindowsServiceSource(),
             native,
             new OverlappedFeatureOperation(native),
+            TimeProvider.System,
+            DefaultExchangeTimeout,
+            DefaultCleanupDrainTimeout);
+    }
+
+    internal static ILightingBrightnessQueryRunner
+        CreateWindowsRz090528LightingBrightnessQuery()
+    {
+        var native = new WindowsHidNative();
+        var registry = new WindowsRegistryValueSource();
+        var platform = new RuntimeWindowsPlatformEvidenceSource(registry);
+        var processSource = new RunningProcessSource();
+        var serviceSource = new WindowsServiceSource();
+        var hardwareAccessGuard = new WindowsHardwareAccessGuard(
+            processSource,
+            serviceSource);
+        var hostIdentity = new WindowsHostIdentitySource(
+            registry,
+            platform,
+            new ExpectedHostIdentity(
+                "Razer",
+                "Blade 16 - RZ09-0528",
+                "RZ09-05289EN4",
+                "2.02"));
+        var opener = new WindowsRazerHidSessionOpener(
+            hostIdentity,
+            hardwareAccessGuard,
+            native,
+            ControllerExclusivityPolicy.Advisory,
+            new HidHandleIdentity(
+                VendorId: 0x1532,
+                ProductId: 0x02C6,
+                UsagePage: 0x0001,
+                Usage: 0x0002,
+                FeatureReportByteLength: 91));
+        var actorFactory = new ValidationActorFactory(
+            opener,
+            new OverlappedFeatureOperation(native),
+            hardwareAccessGuard,
+            TimeProvider.System,
+            DefaultExchangeTimeout,
+            ControllerExclusivityPolicy.Advisory,
+            BatteryFeatureReportSettleDelay);
+        return new LightingBrightnessQueryRunner(
+            static () => new ValidationRunContext(),
+            actorFactory,
             TimeProvider.System,
             DefaultExchangeTimeout,
             DefaultCleanupDrainTimeout);
@@ -213,14 +309,36 @@ public static class BatteryValidationFactory
         IWindowsPlatformEvidenceSource platform,
         IRunningProcessSource processSource,
         IWindowsServiceSource serviceSource,
-        IHidCandidateNative native) =>
-        ProbeWindows(
+        IHidCandidateNative native)
+    {
+        BatteryValidationProbeResult production = ProbeWindows(
             registry,
             platform,
             processSource,
             serviceSource,
             native,
             ControllerExclusivityPolicy.Advisory);
+        if (production.Classification
+            != BatteryValidationProbeClassification.HostIdentityBlocked)
+        {
+            return production;
+        }
+
+        return ProbeWindows(
+            registry,
+            platform,
+            processSource,
+            serviceSource,
+            native,
+            ControllerExclusivityPolicy.Advisory,
+            WindowsHostIdentitySource.Rz090528Identity,
+            new HidHandleIdentity(
+                VendorId: 0x1532,
+                ProductId: 0x02C6,
+                UsagePage: 0x0001,
+                Usage: 0x0002,
+                FeatureReportByteLength: 91));
+    }
 
     private static BatteryValidationProbeResult ProbeWindows(
         IRegistryValueSource registry,
@@ -228,7 +346,9 @@ public static class BatteryValidationFactory
         IRunningProcessSource processSource,
         IWindowsServiceSource serviceSource,
         IHidCandidateNative native,
-        ControllerExclusivityPolicy exclusivityPolicy)
+        ControllerExclusivityPolicy exclusivityPolicy,
+        ExpectedHostIdentity? expectedHostIdentity = null,
+        HidHandleIdentity? exactHandleIdentity = null)
     {
         ArgumentNullException.ThrowIfNull(registry);
         ArgumentNullException.ThrowIfNull(platform);
@@ -237,12 +357,21 @@ public static class BatteryValidationFactory
         ArgumentNullException.ThrowIfNull(native);
 
         var guard = new WindowsHardwareAccessGuard(processSource, serviceSource);
-        var hostIdentity = new WindowsHostIdentitySource(registry, platform);
-        var evaluator = new WindowsRazerHidEvidenceEvaluator(
-            hostIdentity,
-            guard,
-            native,
-            exclusivityPolicy);
+        var hostIdentity = expectedHostIdentity is { } expected
+            ? new WindowsHostIdentitySource(registry, platform, expected)
+            : new WindowsHostIdentitySource(registry, platform);
+        var evaluator = exactHandleIdentity is { } exact
+            ? new WindowsRazerHidEvidenceEvaluator(
+                hostIdentity,
+                guard,
+                native,
+                exclusivityPolicy,
+                exact)
+            : new WindowsRazerHidEvidenceEvaluator(
+                hostIdentity,
+                guard,
+                native,
+                exclusivityPolicy);
         using HidEvidenceEvaluation evaluation = evaluator.Evaluate();
         return evaluation.Result;
     }

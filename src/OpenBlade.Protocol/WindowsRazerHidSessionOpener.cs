@@ -13,15 +13,37 @@ internal sealed class WindowsRazerHidSessionOpener
         IHardwareAccessGuard hardwareAccessGuard,
         IHidCandidateNative native,
         ControllerExclusivityPolicy exclusivityPolicy)
+        : this(
+            hostIdentity,
+            hardwareAccessGuard,
+            native,
+            exclusivityPolicy,
+            exactIdentity: null)
+    {
+    }
+
+    internal WindowsRazerHidSessionOpener(
+        IHostIdentitySource hostIdentity,
+        IHardwareAccessGuard hardwareAccessGuard,
+        IHidCandidateNative native,
+        ControllerExclusivityPolicy exclusivityPolicy,
+        HidHandleIdentity? exactIdentity)
     {
         ArgumentNullException.ThrowIfNull(hostIdentity);
         ArgumentNullException.ThrowIfNull(hardwareAccessGuard);
         ArgumentNullException.ThrowIfNull(native);
-        evaluator = new WindowsRazerHidEvidenceEvaluator(
-            hostIdentity,
-            hardwareAccessGuard,
-            native,
-            exclusivityPolicy);
+        evaluator = exactIdentity is null
+            ? new WindowsRazerHidEvidenceEvaluator(
+                hostIdentity,
+                hardwareAccessGuard,
+                native,
+                exclusivityPolicy)
+            : new WindowsRazerHidEvidenceEvaluator(
+                hostIdentity,
+                hardwareAccessGuard,
+                native,
+                exclusivityPolicy,
+                exactIdentity.Value);
         this.native = native;
     }
 

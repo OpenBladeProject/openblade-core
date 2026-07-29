@@ -11,11 +11,13 @@ public sealed record RazerBladeModelInfo(
 public static class RazerBladeModelCatalog
 {
     public const string OpenBladeTargetModelNumber = "RZ09-0581";
+    public const string Rz090528ModelNumber = "RZ09-0528";
 
     // Razer support Answer ID 5481: How to identify a Razer Blade model.
     private static readonly RazerBladeModelInfo[] Models =
     [
         new(OpenBladeTargetModelNumber, "Razer Blade 16", 2026),
+        new(Rz090528ModelNumber, "Razer Blade 16", 2025),
     ];
 
     public static RazerBladeModelInfo? Find(string? modelNumber)

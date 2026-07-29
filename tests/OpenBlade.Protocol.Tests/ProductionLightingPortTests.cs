@@ -50,6 +50,47 @@ public sealed class ProductionLightingPortTests
     }
 
     [Fact]
+    public void Rz090528Capabilities_AdmitOnlyKeyboardBrightness()
+    {
+        DeviceCapabilities capabilities =
+            Rz090528BrightnessLightingPort.CreateCapabilities();
+
+        Assert.True(capabilities.SupportsKeyboardBrightness);
+        Assert.Empty(capabilities.LightingEffects);
+        Assert.Empty(capabilities.LogoLightingModes);
+        Assert.Empty(capabilities.PerformancePresets);
+        Assert.Empty(capabilities.FanModes);
+        Assert.Empty(capabilities.ChargeLimits);
+        Assert.False(capabilities.SupportsBatteryProtectionOff);
+        Assert.False(capabilities.SupportsTemporaryFullCharge);
+    }
+
+    [Fact]
+    public async Task Rz090528BrightnessStep_UsesExactQuerySetReadbackSequence()
+    {
+        var session = new LightingSession(initialBrightness: 49);
+        await using var port = new Rz090528BrightnessLightingPort(
+            new ValidationActor(
+                session,
+                new BatteryCommands(),
+                new TemporaryCommands()),
+            TimeSpan.FromSeconds(1));
+
+        byte result = await port.StepBrightnessAsync(
+            KeyboardBrightnessDirection.Increase,
+            default);
+
+        Assert.Equal(29, result);
+        Assert.Equal(
+            [
+                (0x03, 0x83, "010500"),
+                (0x03, 0x03, "01054A"),
+                (0x03, 0x83, "010500"),
+            ],
+            session.Commands.Select(CommandTuple).ToArray());
+    }
+
+    [Fact]
     public async Task DriverModeLifecycle_AcquiresVerifiedModeAndRestoresOwnedBaseline()
     {
         var session = new LightingSession(initialBrightness: 0xC5)

@@ -7,6 +7,11 @@ All notable changes to OpenBlade are documented in this file. The project follow
 
 ### Added
 
+- Added exact-device keyboard-brightness support for the Razer Blade 16
+  `RZ09-0528`, USB `1532:02C6`, on BIOS `2.02`. Admission is limited to the
+  independently captured and reversibly validated brightness query/set path;
+  lighting effects, logo lighting, performance, fan, and battery-setting
+  writes remain unavailable on this model.
 - Added GitHub release checks to About with Every startup, Daily, Weekly,
   Monthly, and Manual only intervals. Checks run at most once during tray
   startup when due, and available releases open in the user's browser.
