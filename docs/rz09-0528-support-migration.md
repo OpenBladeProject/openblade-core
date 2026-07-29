@@ -666,6 +666,23 @@ Latest verification after the battery, fan-range, and behavior checkpoints:
   `openblade-docs` `7892c2b`;
 - PowerShell noninteractive invocation guidance:
   `openblade-captures` `0d40759` and `openblade-core` `fb3f008`.
+- source-observation contract and UI: `openblade-core` `51dcba2`; the strict
+  service IPC version is now 26;
+- focused exact-device source query: `openblade-core` `9a30aa8`; its live
+  barrel-AC run returned `1111`, `01010000`, and `01020000` with
+  `success: true`;
+- public source-observation and probe documentation: `openblade-docs`
+  `d3747f1`;
+- post-change full Release build: 0 warnings and 0 errors;
+- post-change tests: 3,185 passed across all ten projects (Tray 613, Setup
+  206, SessionAgent 147, Session 33, Service 684, Display 35, Capture 223,
+  FirmwareSmoke 10, Contracts 188, Protocol 1,046);
+- post-change Windows PowerShell 5.1 capture toolkit: all four regression
+  suites passed with `-NonInteractive`;
+- the remaining source-admission blocker is physical evidence: run the new
+  read-only probe while truly USB-C-only and while cable-free on battery.
+  Do not admit PID `02C6` source setters from the existing UI observations or
+  outgoing capture traffic alone.
 
 Update this section after every evidence, implementation, or documentation
 checkpoint.
