@@ -212,18 +212,28 @@ The outgoing exact-device command correlation is:
 - Battery Saver/Automatic: `0D/02 01010300` and `01020300`;
 - Balanced/Automatic: `0D/02 01010000` and `01020000`.
 
+A later private-transaction re-audit also found exact 16-byte input reports on
+endpoint `0x82`: `05/33 0011`, `05/33 0711`, and `05/33 1111`. They correlate
+with battery, USB-C, and barrel-AC transitions, respectively. However, the quiet
+USB-C no-action baseline also replayed `1111` without a captured `07/8C`
+request. Preserve these as candidate source-event reports; they are not an
+independently matched feature-query reply and do not admit the generic PID
+`02E0` decoder mapping.
+
 The first successful AC-to-USB-C session physically passed through a cable-free
 battery interval. Its `On Battery` UI was not delayed USB-C recognition. The
 session originally labeled as a USB-C-to-AC restoration was a no-action stable
 USB-C baseline; retain that correction in every downstream interpretation.
 
-USBPcap decoded outgoing feature reports only. It did not capture an exact PID
-`02C6` USB-C `07/8C` reply or an independent `0D/82` destination-state
-readback. Therefore the matrix advances those coverage leaves to `Captured`,
-not `QueryValidated`, `SetterValidated`, or `ProductionAdmitted`. Do not copy
-the generic PID `02E0` `0711` USB-C mapping into this device. The next agent
-must obtain direct exact-device readback while physically on USB-C and battery
-before admitting source-specific setters.
+USBPcap decoded outgoing feature reports plus the candidate input reports. It
+did not capture an exact PID `02C6` USB-C `07/8C` reply that OpenBlade
+independently matched, nor an independent `0D/82` destination-state readback.
+The source-event candidates do not change that gate. Therefore the matrix
+advances those coverage leaves to `Captured`, not `QueryValidated`,
+`SetterValidated`, or `ProductionAdmitted`. Do not copy the generic PID
+`02E0` `0711` USB-C mapping into this device. The next agent must obtain direct
+exact-device readback while physically on USB-C and battery before admitting
+source-specific setters.
 
 ## Remaining full-support matrix
 
@@ -365,6 +375,11 @@ convention and run `git diff --check`.
 - `openblade-captures` `d1eb8f5`: classify deterministic malformed-response,
   checksum, command-mismatch, status-failure, disconnect, and cancellation
   coverage as software-only fail-closed validation
+- `openblade-core` `9711409`: add an exact PID `02C6` raw-input probe instead
+  of silently filtering this model through the legacy PID `02E0` target
+- `openblade-captures` `6311ad0`, `a3211a0`, and `cb5f7c3`: enforce the shared
+  coverage-status vocabulary, advance already-proven software-only leaves, and
+  preserve the newly re-audited source-event report candidates
 
 Verification at the battery checkpoint:
 
@@ -723,6 +738,13 @@ Power-source behavior contract checkpoint:
   validated `1111` full AC. Its production factory therefore filters every
   other recognized adapter state to `Unknown`; the exact raw probe still emits
   the bytes needed to admit a future PID `02C6` USB-C response.
+- For the next special-key session, run
+  `probe-rz09-0528-02c6-special-keys [seconds] [output-file]`. The older
+  `probe-special-keys` command intentionally retains its PID `02E0` target.
+  The exact command records raw HID reports and scan codes without translating
+  text or taking ownership of the control interface. Do not add a PID `02C6`
+  decoder until all five operator-correlated press/release reports and default
+  actions are captured.
 
 Deterministic HID failure-safety checkpoint:
 
