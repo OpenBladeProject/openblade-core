@@ -359,6 +359,12 @@ convention and run `git diff --check`.
   treat loss of observed lighting effects as a post-update regression
 - `openblade-core` `40b4be0`: reconcile Windows HDR setter results against
   independent readback and add a bounded save/set/readback/restore validator
+- `openblade-core` `ce7170a`, `openblade-captures` `5df3b67`, and
+  `openblade-docs` `6ebdfa4`: record and publish the successful reversible HDR
+  validation while preserving the HDR-on SDR-profile exclusion
+- `openblade-captures` `d1eb8f5`: classify deterministic malformed-response,
+  checksum, command-mismatch, status-failure, disconnect, and cancellation
+  coverage as software-only fail-closed validation
 
 Verification at the battery checkpoint:
 
@@ -718,6 +724,23 @@ Power-source behavior contract checkpoint:
   other recognized adapter state to `Unknown`; the exact raw probe still emits
   the bytes needed to admit a future PID `02C6` USB-C response.
 
+Deterministic HID failure-safety checkpoint:
+
+- The exact RZ09-0528 ports use the shared 91-byte production actor. Its
+  deterministic tests reject a malformed report ID or report length, checksum
+  mismatch, command-class mismatch, command-ID mismatch, non-success firmware
+  status, transport failure, and cancellation.
+- An ambiguous transaction poisons the actor session. The production path does
+  not retry a write whose acknowledgement cannot be matched, because replaying
+  an unknown write result could duplicate a firmware mutation.
+- These coverage leaves are `SoftwareOnly`, not hardware admissions. No
+  malformed report was injected into the physical laptop merely to exercise a
+  failure path, and no test result should be described as exact-device response
+  evidence.
+- Future ports must preserve this fail-closed behavior and add deterministic
+  tests for any new report geometry or transaction mechanism before exposing a
+  setter.
+
 Final user-visible state before quiet HID validation:
 
 - Battery optimizer enabled at 80 percent; temporary full charge disabled.
@@ -793,6 +816,30 @@ Latest verification after the battery, fan-range, and behavior checkpoints:
   read-only probe while truly USB-C-only and while cable-free on battery.
   Do not admit PID `02C6` source setters from the existing UI observations or
   outgoing capture traffic alone.
+
+Latest post-HDR handoff verification:
+
+- full Release build: 0 warnings and 0 errors;
+- full Release suite: 3,204 tests passed across all ten projects
+  (Display 38, Setup 206, Protocol 1,049, Service 685, SessionAgent 147,
+  FirmwareSmoke 11, Contracts 190, Capture 232, Tray 613, Session 33);
+- `dotnet format OpenBlade.slnx --verify-no-changes --no-restore`: clean;
+- Windows PowerShell 5.1 capture-toolkit regression: all four suites passed;
+- documentation validation: all local links and assets resolved across 11 HTML
+  pages;
+- the final non-mutating reconnection probe returned adapter `1111` and thermal
+  pairs `01010000` and `01020000`, confirming the full-power AC
+  Balanced/Automatic baseline;
+- Synapse was returned to the tray after the probe. The saved visible state
+  remains keyboard brightness off, keyboard Static, logo Static, battery
+  protection 80%, temporary full charge off, Balanced/Automatic, CPU Voltage
+  Optimizer on at `-1.000`, and GPU overclock off. No OpenBlade service is
+  installed.
+
+When invoking the capture-tool suite from a Node or other redirected-process
+harness, retain `-NonInteractive` or close stdin explicitly. Leaving a writable
+stdin pipe open reproduces the intentional missing-parameter prompt and makes
+the test process appear hung even though the validator has not failed.
 
 Update this section after every evidence, implementation, or documentation
 checkpoint.
