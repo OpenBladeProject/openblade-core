@@ -1159,9 +1159,10 @@ Final validation at the current transactional-identity checkpoint:
   (exact-model production-admission capability gate) and `cde59dd`
   (sanitized, read-only LampArray geometry probe), `e96b2f2` (production
   read-only Session Agent observer), and `44b06a4` (signed sparse-package
-  authoring); the subsequent `feat(setup): transact background identity`
-  commit is the lifecycle checkpoint described above;
-- documentation commits: `1083340`, `6c3c631`, and `c545805`;
+  authoring); `c19fe0c` (`feat(setup): transact background identity`) is the
+  lifecycle checkpoint described above;
+- documentation commits: `1083340`, `6c3c631`, `c545805`, and public-site
+  checkpoint `c38e993`;
 - Release build: 0 warnings and 0 errors;
 - full Release suite: 3,265 tests passed across all ten projects
   (Display 38, Capture 253, Session 33, Contracts 192, SessionAgent 154,
@@ -1172,10 +1173,12 @@ Final validation at the current transactional-identity checkpoint:
 - Windows PowerShell 5.1 capture toolkit: all five regression suites passed
   with `-NonInteractive`;
 - public documentation: all local links and assets resolved across 11 pages;
-- final non-mutating production probe: `ReadyWithAccessFallback`, exact
+- post-`c19fe0c` non-mutating production probe:
+  `ReadyWithAccessFallback`, exact
   4/4/7 battery capability counts, seven observed lighting effects,
   `SpecialKeyBindingsAccess=ObservedOnly`, all three observed CPU/GPU ranges,
-  two power-source observations, brightness raw 0, fan RPM 2800/2700, startup
+  `LampArrayLightingAccess=ObservedOnly`, two power-source observations,
+  brightness raw 0, idle fan RPM 0/0, startup
   enabled, MCU `1.9.0.0`, full-power 280 W AC, Function Keys primary, Gaming
   mode off, Driver mode, logo Static, no open/query failures, and
   `Success=True`.
