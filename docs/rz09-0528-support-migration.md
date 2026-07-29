@@ -21,7 +21,8 @@ or device-instance identifiers.
 
 ## Current production status
 
-Keyboard brightness is the only admitted hardware control for this model.
+Keyboard brightness, battery limit 70, and temporary full charge are the
+admitted hardware controls for this model.
 
 | Area | Status | Production scope |
 | --- | --- | --- |
@@ -31,7 +32,8 @@ Keyboard brightness is the only admitted hardware control for this model.
 | Lighting effects and logo | Unavailable | No PID `02C6` production writes |
 | Performance and fans | Unavailable | No PID `02C6` production writes |
 | Battery charge limit | Partially admitted | Query plus captured 70-percent setter only |
-| Other battery settings | Unavailable | Other limits, protection-off, and temporary full charge are not admitted |
+| Temporary full charge | Admitted | Query, enable, cancel, readback, and restoration |
+| Other battery settings | Unavailable | Other limits and protection-off are not admitted |
 | Keyboard behavior and special keys | Unavailable | No PID `02C6` production admission |
 
 The brightness implementation is in
@@ -81,8 +83,8 @@ The exact-device facts are:
   keyboard lighting was intentionally left off.
 
 Only 70 percent is production-admitted. The 75-percent setter was reversibly
-validated but not independently captured. The other limits, protection-off,
-and temporary-full-charge controls remain unavailable.
+validated but not independently captured. The other limits and protection-off
+remain unavailable.
 
 Active Synapse Spectrum traffic can overwrite the shared feature response with
 an unrelated `03/0B` reply. This appears as `TransactionMismatch`; never weaken
@@ -90,6 +92,36 @@ transaction or command validation to hide it. The production path must reject
 the unrelated acknowledgement. Do not stop Synapse as routine product
 behavior. An operator-controlled developer validation may close and relaunch
 it only with explicit authorization and must record that fact.
+
+## Temporary-full-charge evidence chain
+
+Sanitized evidence is stored in:
+
+- `annotations/2026-07-29-rz09-0528-temporary-full-charge-admission.json`
+- `decoded/rz09-0528-pid-02c6-bios-2.02-evidence.json`
+- `decoded/rz09-0528-pid-02c6-bios-2.02-device-coverage.json`
+
+The exact-device facts are:
+
+- the idle baseline stopped gracefully and contained no setting action;
+- one unchecked-to-checked Synapse capture produced `07/8F 00` followed by
+  `07/0F 04`;
+- one separately prepared checked-to-unchecked capture produced `07/8F 00`
+  followed by `07/0F 00`;
+- the enable and cancel action PCAPs both stopped gracefully and their hashes
+  and byte lengths were preserved privately;
+- independent typed queries distinguished inactive `00`, active `04`, and
+  restored inactive `00`;
+- the reversible validator started at `Limit80` and inactive, enabled and read
+  back active, cancelled and read back inactive, then confirmed `Limit80`;
+- three exact production-factory probes exposed temporary-full-charge support
+  and returned inactive;
+- the final visible state was Battery / optimizer 80% / temporary full charge
+  unchecked, with actual battery state still on AC at 79%.
+
+The temporary-full-charge production fixtures are exact-device scoped. The
+query is `07/8F 00`; enable is `07/0F 04`; cancel is `07/0F 00`. Do not admit
+these commands for another PID or BIOS based on this evidence.
 
 ## Required workflow for every remaining control
 
@@ -181,6 +213,10 @@ convention and run `git diff --check`.
   device coverage
 - `openblade-core` `34cb0c0`: exact-device battery query, validation tooling,
   and limit-70 production admission
+- `openblade-captures` `f984c01`: sanitized temporary-full-charge enable,
+  cancel, query, readback, and restoration evidence
+- `openblade-core` `6cf04ef`: exact-device temporary-full-charge production
+  admission and developer validation entry points
 
 Verification at the battery checkpoint:
 
@@ -189,7 +225,23 @@ Verification at the battery checkpoint:
 - focused RZ09-0528 battery tests: 3 passed;
 - full solution build: 0 warnings and 0 errors;
 - full solution tests: 3,165 passed after removing a temporary diagnostic field
-  that changed record equality; the final rebuild also completed cleanly.
+that changed record equality; the final rebuild also completed cleanly.
+
+Verification at the temporary-full-charge checkpoint:
+
+- enable capture: 2,438 bytes, bounded timeout with graceful stop, sanitized
+  schema-2 annotation valid and private PCAP hash verified;
+- cancel capture: 2,438 bytes, bounded timeout with graceful stop, decoded
+  `07/8F 00` followed by `07/0F 00`;
+- independent readback: inactive, active, then restored inactive;
+- reversible validation: `Limit80/False` to `Limit80/True` to
+  `Limit80/False`, with restoration confirmed;
+- exact production factory: three successful read-only probes with temporary
+  full charge inactive;
+- focused exact-device protocol tests: 3 passed;
+- full Release build: 0 warnings and 0 errors;
+- full solution tests: 3,165 passed;
+- Windows PowerShell 5.1 capture toolkit: all tests passed.
 
 Update this section after every evidence, implementation, or documentation
 checkpoint.
