@@ -19,7 +19,11 @@ public sealed class Rz090528BatteryValidationFactoryTests
                 PerformancePreset.Performance,
             ],
             factory.Capabilities.PerformancePresets);
-        Assert.Equal([FanMode.Automatic], factory.Capabilities.FanModes);
+        Assert.True(factory.Capabilities.FanModes.SetEquals(
+            [FanMode.Automatic, FanMode.Fixed, FanMode.Maximum]));
+        Assert.Equal(
+            new FanSpeedRange(2000, 5000, 100),
+            factory.Capabilities.FanSpeedRange);
         Assert.Empty(factory.Capabilities.LightingEffects);
         Assert.False(factory.Capabilities.SupportsBatteryProtectionOff);
         Assert.True(factory.Capabilities.SupportsTemporaryFullCharge);

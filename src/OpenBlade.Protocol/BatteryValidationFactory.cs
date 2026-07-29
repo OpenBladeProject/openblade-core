@@ -1,3 +1,5 @@
+using OpenBlade.Contracts;
+
 namespace OpenBlade.Protocol;
 
 public static class BatteryValidationFactory
@@ -96,6 +98,50 @@ public static class BatteryValidationFactory
                     Restored: true),
                 new CapturedCommandFixture(
                     target,
+                    ProductionBatteryPort.FanMaximumStateFirstAction,
+                    CommandClass: 0x0D,
+                    CommandId: 0x02,
+                    Payload: [0x01, 0x01, 0x00, 0x01],
+                    Captured: true,
+                    Decoded: true,
+                    Applied: true,
+                    ReadBack: true,
+                    Restored: true),
+                new CapturedCommandFixture(
+                    target,
+                    ProductionBatteryPort.FanMaximumStateSecondAction,
+                    CommandClass: 0x0D,
+                    CommandId: 0x02,
+                    Payload: [0x01, 0x02, 0x00, 0x01],
+                    Captured: true,
+                    Decoded: true,
+                    Applied: true,
+                    ReadBack: true,
+                    Restored: true),
+                new CapturedCommandFixture(
+                    target,
+                    ProductionBatteryPort.FanMaximumSpeedFirstAction,
+                    CommandClass: 0x0D,
+                    CommandId: 0x01,
+                    Payload: [0x01, 0x01, 0x32],
+                    Captured: true,
+                    Decoded: true,
+                    Applied: true,
+                    ReadBack: true,
+                    Restored: true),
+                new CapturedCommandFixture(
+                    target,
+                    ProductionBatteryPort.FanMaximumSpeedSecondAction,
+                    CommandClass: 0x0D,
+                    CommandId: 0x01,
+                    Payload: [0x01, 0x02, 0x32],
+                    Captured: true,
+                    Decoded: true,
+                    Applied: true,
+                    ReadBack: true,
+                    Restored: true),
+                new CapturedCommandFixture(
+                    target,
                     ProductionBatteryPort.Limit70Action,
                     CommandClass: 0x07,
                     CommandId: 0x12,
@@ -165,7 +211,14 @@ public static class BatteryValidationFactory
             TimeProvider.System,
             DefaultExchangeTimeout,
             DefaultCleanupDrainTimeout,
-            PendingDisposalRegistry.Shared);
+            PendingDisposalRegistry.Shared,
+            new FanSpeedRange(2000, 5000, 100),
+            new HashSet<FanMode>
+            {
+                FanMode.Automatic,
+                FanMode.Fixed,
+                FanMode.Maximum,
+            });
     }
 
     internal static ProductionBatteryReadEvidence

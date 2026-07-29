@@ -75,6 +75,8 @@ internal sealed class ProductionBatteryPort : IProductionBatteryPort
     private readonly StartupAnimationCommandClient startupAnimationCommands;
     private readonly FunctionKeyPrimaryCommandClient functionKeyPrimaryCommands;
     private readonly GamingModeCommandClient gamingModeCommands;
+    private readonly FanSpeedRange fanSpeedRange;
+    private readonly IReadOnlySet<FanMode>? admittedFanModes;
     private readonly SemaphoreSlim operationGate = new(1, 1);
     private readonly object lifecycleSync = new();
     private readonly IAsyncDisposable ownedSession;
@@ -88,8 +90,18 @@ internal sealed class ProductionBatteryPort : IProductionBatteryPort
         DeviceCommandCatalog catalog,
         ProductionBatteryReadEvidence readEvidence,
         ValidationRunContext context,
-        TimeSpan exchangeTimeout)
-        : this(session, session, catalog, readEvidence, context, exchangeTimeout)
+        TimeSpan exchangeTimeout,
+        FanSpeedRange? fanSpeedRange = null,
+        IReadOnlySet<FanMode>? admittedFanModes = null)
+        : this(
+            session,
+            session,
+            catalog,
+            readEvidence,
+            context,
+            exchangeTimeout,
+            fanSpeedRange,
+            admittedFanModes)
     {
     }
 
@@ -98,8 +110,18 @@ internal sealed class ProductionBatteryPort : IProductionBatteryPort
         DeviceCommandCatalog catalog,
         ProductionBatteryReadEvidence readEvidence,
         ValidationRunContext context,
-        TimeSpan exchangeTimeout)
-        : this(actor.Session, actor, catalog, readEvidence, context, exchangeTimeout)
+        TimeSpan exchangeTimeout,
+        FanSpeedRange? fanSpeedRange = null,
+        IReadOnlySet<FanMode>? admittedFanModes = null)
+        : this(
+            actor.Session,
+            actor,
+            catalog,
+            readEvidence,
+            context,
+            exchangeTimeout,
+            fanSpeedRange,
+            admittedFanModes)
     {
     }
 
@@ -109,7 +131,9 @@ internal sealed class ProductionBatteryPort : IProductionBatteryPort
         DeviceCommandCatalog catalog,
         ProductionBatteryReadEvidence readEvidence,
         ValidationRunContext context,
-        TimeSpan exchangeTimeout)
+        TimeSpan exchangeTimeout,
+        FanSpeedRange? fanSpeedRange,
+        IReadOnlySet<FanMode>? admittedFanModes)
     {
         this.session = session ?? throw new ArgumentNullException(nameof(session));
         this.ownedSession = ownedSession ?? throw new ArgumentNullException(nameof(ownedSession));
@@ -118,6 +142,18 @@ internal sealed class ProductionBatteryPort : IProductionBatteryPort
         this.context = context ?? throw new ArgumentNullException(nameof(context));
         RazerCommandSessionTimeout.Validate(exchangeTimeout);
         this.exchangeTimeout = exchangeTimeout;
+        this.fanSpeedRange = fanSpeedRange ?? FanSpeedRange.Standard;
+        if (!this.fanSpeedRange.IsWellFormed)
+        {
+            throw new ArgumentException(
+                "The production fan-speed range is malformed.",
+                nameof(fanSpeedRange));
+        }
+
+        this.admittedFanModes = admittedFanModes is null
+            ? null
+            : new HashSet<FanMode>(admittedFanModes);
+
         batteryCommands = new BatteryCommandClient(session, exchangeTimeout);
         temporaryCommands = new TemporaryFullChargeCommandClient(session, exchangeTimeout);
         adapterPowerCommands = new AdapterPowerCommandClient(session, exchangeTimeout);
@@ -129,7 +165,11 @@ internal sealed class ProductionBatteryPort : IProductionBatteryPort
             session,
             exchangeTimeout);
         gamingModeCommands = new GamingModeCommandClient(session, exchangeTimeout);
-        Capabilities = CreateCapabilities(catalog, readEvidence);
+        Capabilities = CreateCapabilities(
+            catalog,
+            readEvidence,
+            this.fanSpeedRange,
+            this.admittedFanModes);
     }
 
     public DeviceCapabilities Capabilities { get; }
@@ -460,6 +500,12 @@ internal sealed class ProductionBatteryPort : IProductionBatteryPort
         FanMode value,
         CancellationToken cancellationToken)
     {
+        if (admittedFanModes is not null && !admittedFanModes.Contains(value))
+        {
+            return Task.FromException(Unavailable(
+                $"Fan mode '{value}' is not admitted for production use."));
+        }
+
         IReadOnlyList<string>? actions = value switch
         {
             // The verified command that exits fixed maximum on this device is
@@ -498,12 +544,18 @@ internal sealed class ProductionBatteryPort : IProductionBatteryPort
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(value);
+        if (admittedFanModes is not null && !admittedFanModes.Contains(value.Mode))
+        {
+            return Task.FromException(Unavailable(
+                $"Fan mode '{value.Mode}' is not admitted for production use."));
+        }
+
         return value.Mode switch
         {
             FanMode.Automatic => SetFanModeAsync(FanMode.Automatic, cancellationToken),
             FanMode.Maximum => SetFanTargetsWithStateAsync(
-                FanControlSettings.MaximumSpeedRpm,
-                FanControlSettings.MaximumSpeedRpm,
+                fanSpeedRange.MaximumRpm,
+                fanSpeedRange.MaximumRpm,
                 cancellationToken),
             FanMode.Fixed => SetFanTargetsWithStateAsync(
                 value.FixedSpeedRpm,
@@ -512,8 +564,8 @@ internal sealed class ProductionBatteryPort : IProductionBatteryPort
             // Enter manual mode at maximum. The service-owned curve loop lowers
             // the targets only after obtaining fresh temperature readings.
             FanMode.ManualCurve => SetFanTargetsWithStateAsync(
-                FanControlSettings.MaximumSpeedRpm,
-                FanControlSettings.MaximumSpeedRpm,
+                fanSpeedRange.MaximumRpm,
+                fanSpeedRange.MaximumRpm,
                 cancellationToken),
             _ => Task.FromException(Unavailable(
                 $"Fan mode '{value.Mode}' is not admitted for production use.")),
@@ -581,16 +633,16 @@ internal sealed class ProductionBatteryPort : IProductionBatteryPort
             payload);
     }
 
-    private static void ValidateFanSpeed(int speedRpm, string parameterName)
+    private void ValidateFanSpeed(int speedRpm, string parameterName)
     {
-        if (speedRpm is < FanControlSettings.MinimumSpeedRpm
-            or > FanControlSettings.MaximumSpeedRpm
-            || speedRpm % FanControlSettings.SpeedStepRpm != 0)
+        if (!fanSpeedRange.Supports(speedRpm))
         {
             throw new ArgumentOutOfRangeException(
                 parameterName,
                 speedRpm,
-                "Fan speed is outside the captured 2,000-5,400 RPM range or is not a 100 RPM step.");
+                $"Fan speed is outside the admitted {fanSpeedRange.MinimumRpm:N0}-"
+                + $"{fanSpeedRange.MaximumRpm:N0} RPM range or is not a "
+                + $"{fanSpeedRange.StepRpm:N0} RPM step.");
         }
     }
 
@@ -800,7 +852,9 @@ internal sealed class ProductionBatteryPort : IProductionBatteryPort
 
     internal static DeviceCapabilities CreateCapabilities(
         DeviceCommandCatalog catalog,
-        ProductionBatteryReadEvidence readEvidence)
+        ProductionBatteryReadEvidence readEvidence,
+        FanSpeedRange? fanSpeedRange = null,
+        IReadOnlySet<FanMode>? admittedFanModes = null)
     {
         var limits = new HashSet<int>();
         foreach ((int percent, string action) in ChargeLimitActions)
@@ -883,6 +937,16 @@ internal sealed class ProductionBatteryPort : IProductionBatteryPort
             }
         }
 
+        if (admittedFanModes is not null)
+        {
+            fans.IntersectWith(admittedFanModes);
+        }
+
+        FanSpeedRange? admittedFanSpeedRange =
+            fans.Any(mode => mode is FanMode.Fixed or FanMode.ManualCurve or FanMode.Maximum)
+                ? fanSpeedRange ?? FanSpeedRange.Standard
+                : null;
+
         var oneShotControls = new HashSet<OneShotLaptopControl>();
         if (HasOneShotPair(catalog, StartupAnimationOnAction, StartupAnimationOffAction))
         {
@@ -913,6 +977,7 @@ internal sealed class ProductionBatteryPort : IProductionBatteryPort
             SupportsTemporaryFullCharge: temporaryFullCharge)
         {
             OneShotLaptopControls = oneShotControls,
+            FanSpeedRange = admittedFanSpeedRange,
         };
     }
 
