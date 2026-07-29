@@ -5,7 +5,7 @@ namespace OpenBlade.Protocol.Tests;
 public sealed class Rz090528BatteryValidationFactoryTests
 {
     [Fact]
-    public void ProductionFactory_AdmitsOnlyCapturedLimit70()
+    public void ProductionFactory_AdmitsCapturedLimit70AndTemporaryFullCharge()
     {
         IProductionBatteryPortFactory factory =
             BatteryValidationFactory.CreateWindowsRz090528ProductionBattery();
@@ -15,7 +15,7 @@ public sealed class Rz090528BatteryValidationFactoryTests
         Assert.Empty(factory.Capabilities.FanModes);
         Assert.Empty(factory.Capabilities.LightingEffects);
         Assert.False(factory.Capabilities.SupportsBatteryProtectionOff);
-        Assert.False(factory.Capabilities.SupportsTemporaryFullCharge);
+        Assert.True(factory.Capabilities.SupportsTemporaryFullCharge);
     }
 
     [Fact]

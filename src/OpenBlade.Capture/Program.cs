@@ -202,6 +202,8 @@ if (args.Length == 1 && args[0].Equals(
         BatteryValidationFactory.CreateWindowsRz090528ProductionBattery();
     Console.WriteLine(
         $"ChargeLimits={string.Join(",", factory.Capabilities.ChargeLimits.Order())}");
+    Console.WriteLine(
+        $"SupportsTemporaryFullCharge={factory.Capabilities.SupportsTemporaryFullCharge}");
     HidSessionResult<IProductionBatteryPort> opened =
         await factory.OpenAsync(CancellationToken.None);
     Console.WriteLine($"OpenFailure={opened.Failure?.ToString() ?? "None"}");
@@ -216,9 +218,16 @@ if (args.Length == 1 && args[0].Equals(
         {
             ConfirmedBatteryState state =
                 await port.QueryProtectionAsync(CancellationToken.None);
+            bool? temporaryFullCharge =
+                await port.QueryTemporaryFullChargeAsync(CancellationToken.None);
             Console.WriteLine($"Protection={state}");
-            Console.WriteLine("Success=True");
-            return 0;
+            Console.WriteLine(
+                $"TemporaryFullCharge={temporaryFullCharge?.ToString() ?? "Unavailable"}");
+            bool success = factory.Capabilities.ChargeLimits.SequenceEqual([70])
+                && factory.Capabilities.SupportsTemporaryFullCharge
+                && temporaryFullCharge is false;
+            Console.WriteLine($"Success={success}");
+            return success ? 0 : 2;
         }
         catch (Exception exception)
         {
@@ -235,6 +244,16 @@ if (args.Length > 0 && args[0].Equals("query-temporary-full-charge", StringCompa
         BatteryValidationFactory.CreateWindowsTemporaryFullChargeQuery());
     var command = new TemporaryFullChargeQueryCommand(session.RunAsync, Console.Out);
     return await command.RunAsync(args[1..], CancellationToken.None);
+}
+
+if (args.Length == 1 && args[0].Equals(
+    "query-rz09-0528-02c6-temporary-full-charge",
+    StringComparison.OrdinalIgnoreCase))
+{
+    var session = new TemporaryFullChargeQuerySession(
+        BatteryValidationFactory.CreateWindowsRz090528TemporaryFullChargeQuery());
+    var command = new TemporaryFullChargeQueryCommand(session.RunAsync, Console.Out);
+    return await command.RunAsync([], CancellationToken.None);
 }
 
 if (args.Length > 0 && args[0].Equals("query-fan-rpm", StringComparison.OrdinalIgnoreCase))
@@ -582,6 +601,27 @@ if (args.Length > 0 && args[0].Equals("validate-temporary-full-charge", StringCo
     return await command.RunAsync(args[1..], CancellationToken.None);
 }
 
+if (args.Length == 2 && args[0].Equals(
+    "validate-rz09-0528-02c6-temporary-full-charge",
+    StringComparison.OrdinalIgnoreCase))
+{
+    const string exactConfirmation = "RZ09-0528:1532:02C6:2.02";
+    if (!args[1].Equals(exactConfirmation, StringComparison.Ordinal))
+    {
+        Console.Error.WriteLine(
+            $"Validation requires: {exactConfirmation}");
+        return 2;
+    }
+
+    var approval = new ConsoleTemporaryFullChargeApproval(Console.In, Console.Out);
+    var session = new TemporaryFullChargeValidationSession(
+        BatteryValidationFactory.CreateWindowsRz090528TemporaryFullChargeValidation(),
+        approval,
+        TimeSpan.FromSeconds(5));
+    var command = new TemporaryFullChargeValidationCommand(session.RunAsync, Console.Out);
+    return await command.RunAsync([], CancellationToken.None);
+}
+
 Console.WriteLine("OpenBlade capture utility (no raw hardware command support)");
 Console.WriteLine("  OpenBlade.Capture target");
 Console.WriteLine("  OpenBlade.Capture scan");
@@ -598,6 +638,7 @@ Console.WriteLine("  OpenBlade.Capture query-rz09-0528-02c6-battery-raw");
 Console.WriteLine("  OpenBlade.Capture validate-rz09-0528-02c6-battery <50|55|60|65|70|75|80>");
 Console.WriteLine("  OpenBlade.Capture probe-rz09-0528-02c6-production-battery");
 Console.WriteLine("  OpenBlade.Capture query-temporary-full-charge");
+Console.WriteLine("  OpenBlade.Capture query-rz09-0528-02c6-temporary-full-charge");
 Console.WriteLine("  OpenBlade.Capture query-fan-rpm");
 Console.WriteLine("  OpenBlade.Capture query-lighting-brightness");
 Console.WriteLine("  OpenBlade.Capture query-rz09-0528-02c6-lighting-brightness");
@@ -625,5 +666,8 @@ Console.WriteLine("  OpenBlade.Capture probe-battery-sequence");
 Console.WriteLine("  OpenBlade.Capture validate-battery <off|50|55|60|65|70|75|80>");
 Console.WriteLine("  OpenBlade.Capture validate-protection-off");
 Console.WriteLine("  OpenBlade.Capture validate-temporary-full-charge");
+Console.WriteLine(
+    "  OpenBlade.Capture validate-rz09-0528-02c6-temporary-full-charge" +
+    " RZ09-0528:1532:02C6:2.02");
 Console.WriteLine("See captures/README.md for the gated USBPcap workflow.");
 return args.Length == 0 ? 0 : 1;

@@ -39,9 +39,34 @@ public static class BatteryValidationFactory
                     Applied: true,
                     ReadBack: true,
                     Restored: true),
+                new CapturedCommandFixture(
+                    target,
+                    ProductionBatteryPort.TemporaryEnableAction,
+                    CommandClass: 0x07,
+                    CommandId: 0x0F,
+                    Payload: [0x04],
+                    Captured: true,
+                    Decoded: true,
+                    Applied: true,
+                    ReadBack: true,
+                    Restored: true),
+                new CapturedCommandFixture(
+                    target,
+                    ProductionBatteryPort.TemporaryCancelAction,
+                    CommandClass: 0x07,
+                    CommandId: 0x0F,
+                    Payload: [0x00],
+                    Captured: true,
+                    Decoded: true,
+                    Applied: true,
+                    ReadBack: true,
+                    Restored: true),
             ]);
         var readEvidence = new ProductionBatteryReadEvidence(
-            new HashSet<ProductionBatteryQueryCapability>());
+            new HashSet<ProductionBatteryQueryCapability>
+            {
+                ProductionBatteryQueryCapability.TemporaryFullCharge,
+            });
         var native = new WindowsHidNative();
         var registry = new WindowsRegistryValueSource();
         var guard = new WindowsHardwareAccessGuard(
@@ -206,6 +231,19 @@ public static class BatteryValidationFactory
             DefaultCleanupDrainTimeout);
     }
 
+    internal static ITemporaryFullChargeQueryRunFactory
+        CreateWindowsRz090528TemporaryFullChargeQuery()
+    {
+        ValidationActorFactory actorFactory =
+            CreateWindowsRz090528TemporaryFullChargeActorFactory(
+                ControllerExclusivityPolicy.Advisory);
+        return new TemporaryFullChargeQueryRunFactory(
+            static () => new ValidationRunContext(),
+            actorFactory,
+            TimeProvider.System,
+            DefaultCleanupDrainTimeout);
+    }
+
     public static IFanRpmQueryRunFactory CreateWindowsFanRpmQuery()
     {
         var native = new WindowsHidNative();
@@ -348,6 +386,19 @@ public static class BatteryValidationFactory
             new OverlappedFeatureOperation(native),
             TimeProvider.System,
             DefaultExchangeTimeout,
+            DefaultCleanupDrainTimeout);
+    }
+
+    internal static ITemporaryFullChargeValidationRunFactory
+        CreateWindowsRz090528TemporaryFullChargeValidation()
+    {
+        ValidationActorFactory actorFactory =
+            CreateWindowsRz090528TemporaryFullChargeActorFactory(
+                ControllerExclusivityPolicy.Advisory);
+        return new TemporaryFullChargeValidationRunFactory(
+            static () => new ValidationRunContext(),
+            actorFactory,
+            TimeProvider.System,
             DefaultCleanupDrainTimeout);
     }
 
@@ -848,5 +899,39 @@ public static class BatteryValidationFactory
             exchangeTimeout,
             exclusivityPolicy,
             featureReportSettleDelay ?? BatteryFeatureReportSettleDelay);
+    }
+
+    private static ValidationActorFactory
+        CreateWindowsRz090528TemporaryFullChargeActorFactory(
+            ControllerExclusivityPolicy exclusivityPolicy)
+    {
+        var native = new WindowsHidNative();
+        var registry = new WindowsRegistryValueSource();
+        var guard = new WindowsHardwareAccessGuard(
+            new RunningProcessSource(),
+            new WindowsServiceSource());
+        var hostIdentity = new WindowsHostIdentitySource(
+            registry,
+            new RuntimeWindowsPlatformEvidenceSource(registry),
+            WindowsHostIdentitySource.Rz090528Identity);
+        var opener = new WindowsRazerHidSessionOpener(
+            hostIdentity,
+            guard,
+            native,
+            exclusivityPolicy,
+            new HidHandleIdentity(
+                VendorId: 0x1532,
+                ProductId: 0x02C6,
+                UsagePage: 0x0001,
+                Usage: 0x0002,
+                FeatureReportByteLength: 91));
+        return new ValidationActorFactory(
+            opener,
+            new OverlappedFeatureOperation(native),
+            guard,
+            TimeProvider.System,
+            DefaultExchangeTimeout,
+            exclusivityPolicy,
+            TemporaryFullChargeValidationFeatureReportSettleDelay);
     }
 }
