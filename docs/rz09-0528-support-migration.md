@@ -244,7 +244,9 @@ Work through read/query-backed controls before one-shot setters.
 5. Function-key primary mode, Gaming mode, startup animation, and device mode —
    first three setters admitted; device mode remains query-only
 6. Special-key report mapping and default-action preservation
-7. Windows display modes, DRR, HDR, and color profiles
+7. Windows display modes, DRR, HDR, and color profiles — admitted through
+   Windows APIs; HDR-on behavior now has a bounded save/readback/restore
+   validation and explicitly disables SDR color-profile writes
 8. Conflict, timeout, malformed-response, disconnect, and lifecycle validation
 9. Cold boot, sign-in, service restart, sleep/resume, and reconnect validation
 10. AC, USB-C, and battery transition validation — the physical/UI/USBPcap
@@ -355,6 +357,8 @@ convention and run `git diff --check`.
   or keyboard-brightness changes
 - `openblade-core` `3b76ae6`: advance firmware-smoke snapshots to schema 2 and
   treat loss of observed lighting effects as a post-update regression
+- `openblade-core` `40b4be0`: reconcile Windows HDR setter results against
+  independent readback and add a bounded save/set/readback/restore validator
 
 Verification at the battery checkpoint:
 
@@ -517,8 +521,20 @@ Display capability follow-up:
   48-240 Hz. The observed current mode was fixed 60 Hz.
 - HDR was supported and observed off. SDR color-profile control reported
   Native, DCI-P3, sRGB, Rec. 709, and Adobe RGB, with Native active.
+- The first bounded HDR attempt exposed a Windows return-code anomaly: the
+  native call reported access denied after readback showed HDR on, and the
+  matching restoration call likewise left the saved HDR-off state restored.
+  Production now reconciles a native failure only when a fresh query confirms
+  the exact requested state; disagreement remains a failure.
+- A repeated timed validation from `2026-07-29T21:21:08.1366040Z` through
+  `2026-07-29T21:21:08.3525889Z` confirmed
+  `Off -> On -> Off`, `Applied=True`, `ReadBack=True`, `Restored=True`, and
+  `Success=True`. While HDR was on, `ColorProfilesEnabled=False`; no profile
+  write was attempted. The final query reconfirmed fixed 60 Hz, 2560x1600,
+  HDR off, and all five SDR profiles.
 - These model-independent Windows display paths are production-admitted for
-  RZ09-0528. HDR-mode color profiles were not exercised.
+  RZ09-0528. HDR-mode color-profile controls are explicitly unavailable rather
+  than an uninvestigated feature.
 
 NVIDIA GPU clock-offset follow-up:
 

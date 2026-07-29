@@ -45,6 +45,11 @@ All notable changes to OpenBlade are documented in this file. The project follow
   failures. Diagnostic exports now include both user-mode log histories.
 - Added a compact, non-activating Windows-style flyout for built-in display
   brightness changes made with the laptop function keys.
+- HDR changes now reconcile the native Windows result with an independent
+  display-state readback. This handles systems that return an access-denied
+  status after applying the requested HDR state, while still failing closed
+  when readback disagrees. A bounded developer validator saves, applies,
+  reads back, and restores the original HDR state.
 - About now lists the installed app, Session Agent, and Service build
   versions, including each component's commit hash.
 - Added a session-local function-row bridge for validated RZ09-0581 Driver
