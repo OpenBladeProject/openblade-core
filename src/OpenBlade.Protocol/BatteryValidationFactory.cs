@@ -14,8 +14,71 @@ public static class BatteryValidationFactory
     internal static IProductionBatteryPortFactory
         CreateWindowsProductionBatteryForService() =>
         WindowsHostIdentitySource.IsExactRz090528WindowsHost()
-            ? ProductionBatteryFactory.CreateWindowsReadOnly()
+            ? CreateWindowsRz090528ProductionBattery()
             : ProductionBatteryFactory.CreateWindows();
+
+    internal static IProductionBatteryPortFactory
+        CreateWindowsRz090528ProductionBattery()
+    {
+        var target = new DeviceIdentity(
+            Model: "RZ09-0528",
+            VendorId: 0x1532,
+            ProductId: 0x02C6,
+            BiosVersion: "2.02");
+        DeviceCommandCatalog catalog = DeviceCommandCatalog.Create(
+            target,
+            [
+                new CapturedCommandFixture(
+                    target,
+                    ProductionBatteryPort.Limit70Action,
+                    CommandClass: 0x07,
+                    CommandId: 0x12,
+                    Payload: [0xC6],
+                    Captured: true,
+                    Decoded: true,
+                    Applied: true,
+                    ReadBack: true,
+                    Restored: true),
+            ]);
+        var readEvidence = new ProductionBatteryReadEvidence(
+            new HashSet<ProductionBatteryQueryCapability>());
+        var native = new WindowsHidNative();
+        var registry = new WindowsRegistryValueSource();
+        var guard = new WindowsHardwareAccessGuard(
+            new RunningProcessSource(),
+            new WindowsServiceSource());
+        var hostIdentity = new WindowsHostIdentitySource(
+            registry,
+            new RuntimeWindowsPlatformEvidenceSource(registry),
+            WindowsHostIdentitySource.Rz090528Identity);
+        var opener = new WindowsRazerHidSessionOpener(
+            hostIdentity,
+            guard,
+            native,
+            ControllerExclusivityPolicy.Advisory,
+            new HidHandleIdentity(
+                VendorId: 0x1532,
+                ProductId: 0x02C6,
+                UsagePage: 0x0001,
+                Usage: 0x0002,
+                FeatureReportByteLength: 91));
+        return new ProductionBatteryFactory(
+            catalog,
+            readEvidence,
+            static () => new ValidationRunContext(),
+            settleDelay => new ValidationActorFactory(
+                opener,
+                new OverlappedFeatureOperation(native),
+                guard,
+                TimeProvider.System,
+                DefaultExchangeTimeout,
+                ControllerExclusivityPolicy.Advisory,
+                settleDelay),
+            TimeProvider.System,
+            DefaultExchangeTimeout,
+            DefaultCleanupDrainTimeout,
+            PendingDisposalRegistry.Shared);
+    }
 
     internal static IProductionLightingPortFactory
         CreateWindowsProductionLightingForService() =>
@@ -73,6 +136,42 @@ public static class BatteryValidationFactory
             TimeProvider.System,
             DefaultExchangeTimeout,
             DefaultCleanupDrainTimeout);
+    }
+
+    internal static Rz090528BatteryValidationFactory
+        CreateWindowsRz090528BatteryValidation()
+    {
+        var native = new WindowsHidNative();
+        var registry = new WindowsRegistryValueSource();
+        var guard = new WindowsHardwareAccessGuard(
+            new RunningProcessSource(),
+            new WindowsServiceSource());
+        var hostIdentity = new WindowsHostIdentitySource(
+            registry,
+            new RuntimeWindowsPlatformEvidenceSource(registry),
+            WindowsHostIdentitySource.Rz090528Identity);
+        var opener = new WindowsRazerHidSessionOpener(
+            hostIdentity,
+            guard,
+            native,
+            ControllerExclusivityPolicy.Advisory,
+            new HidHandleIdentity(
+                VendorId: 0x1532,
+                ProductId: 0x02C6,
+                UsagePage: 0x0001,
+                Usage: 0x0002,
+                FeatureReportByteLength: 91));
+        var actorFactory = new ValidationActorFactory(
+            opener,
+            new OverlappedFeatureOperation(native),
+            guard,
+            TimeProvider.System,
+            DefaultExchangeTimeout,
+            ControllerExclusivityPolicy.Advisory,
+            BatteryFeatureReportSettleDelay);
+        return new Rz090528BatteryValidationFactory(
+            static () => new ValidationRunContext(),
+            actorFactory);
     }
 
     public static IBatteryQuerySequenceRunFactory CreateWindowsQuerySequence()

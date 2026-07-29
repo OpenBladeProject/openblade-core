@@ -153,6 +153,82 @@ if (args.Length > 0 && args[0].Equals("query-battery", StringComparison.OrdinalI
     return await command.RunAsync(args[1..], CancellationToken.None);
 }
 
+if (args.Length == 1 && args[0].Equals(
+    "query-rz09-0528-02c6-battery",
+    StringComparison.OrdinalIgnoreCase))
+{
+    Console.WriteLine("Target=RZ09-0528 1532:02C6 BIOS 2.02");
+    var session = new BatteryQuerySession(
+        BatteryValidationFactory.CreateWindowsRz090528BatteryValidation());
+    var command = new BatteryQueryCommand(session.RunAsync, Console.Out);
+    return await command.RunAsync([], CancellationToken.None);
+}
+
+if (args.Length == 1 && args[0].Equals(
+    "query-rz09-0528-02c6-battery-raw",
+    StringComparison.OrdinalIgnoreCase))
+{
+    HidSessionResult<byte> result =
+        await BatteryValidationFactory.CreateWindowsRz090528BatteryValidation()
+            .RunRawAsync(CancellationToken.None);
+    Console.WriteLine("Target=RZ09-0528 1532:02C6 BIOS 2.02");
+    Console.WriteLine(
+        $"RawValue={(result.Failure is null ? $"0x{result.Value:X2}" : "Unavailable")}");
+    Console.WriteLine($"Failure={result.Failure?.ToString() ?? "None"}");
+    Console.WriteLine(
+        $"ProtocolValidation={result.Diagnostic?.ProtocolValidationFailure?.ToString() ?? "None"}");
+    Console.WriteLine($"Success={result.Failure is null}");
+    return result.Failure is null ? 0 : 2;
+}
+
+if (args.Length > 0 && args[0].Equals(
+    "validate-rz09-0528-02c6-battery",
+    StringComparison.OrdinalIgnoreCase))
+{
+    var approval = new ConsoleBatteryApproval(Console.In, Console.Out);
+    var session = new BatteryValidationSession(
+        BatteryValidationFactory.CreateWindowsRz090528BatteryValidation(),
+        approval,
+        TimeSpan.FromSeconds(5));
+    var command = new BatteryValidationCommand(session.RunAsync, Console.Out);
+    return await command.RunAsync(args[1..], CancellationToken.None);
+}
+
+if (args.Length == 1 && args[0].Equals(
+    "probe-rz09-0528-02c6-production-battery",
+    StringComparison.OrdinalIgnoreCase))
+{
+    IProductionBatteryPortFactory factory =
+        BatteryValidationFactory.CreateWindowsRz090528ProductionBattery();
+    Console.WriteLine(
+        $"ChargeLimits={string.Join(",", factory.Capabilities.ChargeLimits.Order())}");
+    HidSessionResult<IProductionBatteryPort> opened =
+        await factory.OpenAsync(CancellationToken.None);
+    Console.WriteLine($"OpenFailure={opened.Failure?.ToString() ?? "None"}");
+    if (opened.Value is not { } port)
+    {
+        return 2;
+    }
+
+    await using (port)
+    {
+        try
+        {
+            ConfirmedBatteryState state =
+                await port.QueryProtectionAsync(CancellationToken.None);
+            Console.WriteLine($"Protection={state}");
+            Console.WriteLine("Success=True");
+            return 0;
+        }
+        catch (Exception exception)
+        {
+            Console.WriteLine($"QueryFailure={exception.GetType().Name}");
+            Console.WriteLine("Success=False");
+            return 2;
+        }
+    }
+}
+
 if (args.Length > 0 && args[0].Equals("query-temporary-full-charge", StringComparison.OrdinalIgnoreCase))
 {
     var session = new TemporaryFullChargeQuerySession(
@@ -517,6 +593,10 @@ Console.WriteLine("  OpenBlade.Capture probe-special-keys [seconds] [output-file
 Console.WriteLine("  OpenBlade.Capture validate <fixtures.json>");
 Console.WriteLine("  OpenBlade.Capture probe-battery");
 Console.WriteLine("  OpenBlade.Capture query-battery");
+Console.WriteLine("  OpenBlade.Capture query-rz09-0528-02c6-battery");
+Console.WriteLine("  OpenBlade.Capture query-rz09-0528-02c6-battery-raw");
+Console.WriteLine("  OpenBlade.Capture validate-rz09-0528-02c6-battery <50|55|60|65|70|75|80>");
+Console.WriteLine("  OpenBlade.Capture probe-rz09-0528-02c6-production-battery");
 Console.WriteLine("  OpenBlade.Capture query-temporary-full-charge");
 Console.WriteLine("  OpenBlade.Capture query-fan-rpm");
 Console.WriteLine("  OpenBlade.Capture query-lighting-brightness");

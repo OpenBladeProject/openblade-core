@@ -1,0 +1,151 @@
+using OpenBlade.Protocol;
+
+namespace OpenBlade.Protocol.Tests;
+
+public sealed class Rz090528BatteryValidationFactoryTests
+{
+    [Fact]
+    public void ProductionFactory_AdmitsOnlyCapturedLimit70()
+    {
+        IProductionBatteryPortFactory factory =
+            BatteryValidationFactory.CreateWindowsRz090528ProductionBattery();
+
+        Assert.Equal([70], factory.Capabilities.ChargeLimits);
+        Assert.Empty(factory.Capabilities.PerformancePresets);
+        Assert.Empty(factory.Capabilities.FanModes);
+        Assert.Empty(factory.Capabilities.LightingEffects);
+        Assert.False(factory.Capabilities.SupportsBatteryProtectionOff);
+        Assert.False(factory.Capabilities.SupportsTemporaryFullCharge);
+    }
+
+    [Fact]
+    public async Task Port_UsesTypedQueryAndSetterWithMonotonicTransactions()
+    {
+        var session = new ScriptedSession([0xD0]);
+        var commands = new BatteryCommands();
+        var actor = new ValidationActor(session, commands, new TemporaryCommands());
+        var factory = new Rz090528BatteryValidationFactory(
+            static () => new ValidationRunContext(),
+            new ActorFactory(actor));
+
+        HidSessionResult<IBatteryValidationPort> opened =
+            await factory.OpenAsync(CancellationToken.None);
+        await using IBatteryValidationPort port = Assert.IsAssignableFrom<IBatteryValidationPort>(
+            opened.Value);
+
+        HidSessionResult<BatteryValidationSetting> queried =
+            await port.QueryAsync(CancellationToken.None);
+        HidSessionResult<HidUnit> applied =
+            await port.ApplyAsync(BatteryValidationSetting.Limit70, CancellationToken.None);
+
+        Assert.Equal(BatteryValidationSetting.Limit80, queried.Value);
+        Assert.Null(queried.Failure);
+        Assert.Null(applied.Failure);
+        Assert.Equal(
+            [
+                (TransactionId: (byte)1, Setting: (BatteryValidationSetting?)null),
+                (TransactionId: (byte)2, Setting: (BatteryValidationSetting?)BatteryValidationSetting.Limit70),
+            ],
+            commands.Calls);
+    }
+
+    [Fact]
+    public async Task RawQuery_UsesExactCommandAndReturnsUnmappedByte()
+    {
+        var session = new ScriptedSession([0xC6]);
+        var actor = new ValidationActor(
+            session,
+            new BatteryCommands(),
+            new TemporaryCommands());
+        var factory = new Rz090528BatteryValidationFactory(
+            static () => new ValidationRunContext(),
+            new ActorFactory(actor));
+
+        HidSessionResult<byte> result = await factory.RunRawAsync(CancellationToken.None);
+
+        Assert.Equal(0xC6, result.Value);
+        Assert.Null(result.Failure);
+        RazerCommandSpec command = Assert.Single(session.Commands);
+        Assert.Equal(0x07, command.ClassId);
+        Assert.Equal(0x92, command.CommandId);
+        Assert.Equal([0x00], command.Arguments.ToArray());
+        Assert.Equal(1, command.ExpectedPayloadLength);
+        Assert.Equal([0xC6], Assert.Single(session.Payloads));
+    }
+
+    private sealed class ActorFactory(ValidationActor actor) : IValidationActorFactory
+    {
+        public ValueTask<HidSessionResult<ValidationActor>> OpenAsync(
+            ValidationRunContext context) =>
+            ValueTask.FromResult(new HidSessionResult<ValidationActor>(actor, null));
+    }
+
+    private sealed class ScriptedSession(params byte[][] payloads) : IRazerCommandSession
+    {
+        private readonly Queue<byte[]> remaining = new(payloads);
+
+        internal List<RazerCommandSpec> Commands { get; } = [];
+        internal List<byte[]> Payloads { get; } = [];
+        public RazerCommandSessionDisposition Disposition { get; private set; } =
+            RazerCommandSessionDisposition.Healthy;
+
+        public Task<HidSessionResult<ReadOnlyMemory<byte>>> ExecuteAsync(
+            RazerCommandSpec command,
+            Func<TransactionIdAssignment> assignTransactionId,
+            TimeSpan exchangeTimeout,
+            CancellationToken cancellationToken)
+        {
+            _ = assignTransactionId();
+            byte[] payload = remaining.Dequeue();
+            Commands.Add(command);
+            Payloads.Add(payload);
+            return Task.FromResult(
+                new HidSessionResult<ReadOnlyMemory<byte>>(payload, null));
+        }
+
+        public ValueTask DisposeAsync()
+        {
+            Disposition = RazerCommandSessionDisposition.FullyDisposed;
+            return ValueTask.CompletedTask;
+        }
+    }
+
+    private sealed class BatteryCommands : IBatteryCommandClient
+    {
+        internal List<(byte TransactionId, BatteryValidationSetting? Setting)> Calls { get; } = [];
+
+        public Task<HidSessionResult<BatteryValidationSetting>> QueryAsync(
+            byte transactionId,
+            CancellationToken cancellationToken)
+        {
+            Calls.Add((transactionId, null));
+            return Task.FromResult(
+                new HidSessionResult<BatteryValidationSetting>(
+                    BatteryValidationSetting.Limit80,
+                    null));
+        }
+
+        public Task<HidSessionResult<HidUnit>> SetAsync(
+            byte transactionId,
+            BatteryValidationSetting setting,
+            CancellationToken cancellationToken)
+        {
+            Calls.Add((transactionId, setting));
+            return Task.FromResult(new HidSessionResult<HidUnit>(default, null));
+        }
+    }
+
+    private sealed class TemporaryCommands : ITemporaryFullChargeCommandClient
+    {
+        public Task<HidSessionResult<bool>> QueryAsync(
+            byte transactionId,
+            CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
+
+        public Task<HidSessionResult<HidUnit>> SetAsync(
+            byte transactionId,
+            bool enabled,
+            CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
+    }
+}
