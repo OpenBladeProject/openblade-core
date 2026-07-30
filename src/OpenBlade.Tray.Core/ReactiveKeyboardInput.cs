@@ -262,10 +262,111 @@ public static class Rz09_0581PerformanceShortcutRawHidInput
     }
 }
 
+/// <summary>
+/// Recognizes only the Fn+P sequence captured from PID 02C6. In particular,
+/// 04/0A/D3 is M4 on this model and must never be treated as a dedicated
+/// performance shortcut.
+/// </summary>
+public static class Rz09_0528PerformanceShortcutRawHidInput
+{
+    private const byte KeyboardReportId = 0x01;
+    private const byte PUsage = 0x13;
+
+    public static bool TryCreateTrigger(
+        ReadOnlySpan<byte> report,
+        bool functionKeyPressed,
+        ref bool functionPPressed,
+        out PerformanceShortcutSource source)
+    {
+        source = default;
+        if (report.Length < 3)
+        {
+            return false;
+        }
+        if (report[0] != KeyboardReportId)
+        {
+            if (!functionKeyPressed)
+            {
+                functionPPressed = false;
+            }
+            return false;
+        }
+
+        bool functionPNow = functionKeyPressed
+            && report[1] == 0
+            && report[2] == PUsage;
+        bool trigger = functionPNow && !functionPPressed;
+        functionPPressed = functionPNow;
+        if (!trigger)
+        {
+            return false;
+        }
+
+        source = PerformanceShortcutSource.FunctionP;
+        return true;
+    }
+}
+
+public enum RazerBladeInputDeviceKind
+{
+    Unsupported,
+    Rz09_0581,
+    Rz09_0528,
+}
+
+public static class RazerBladeReactiveInputDevice
+{
+    public static RazerBladeInputDeviceKind ClassifyPath(string? path)
+    {
+        if (string.IsNullOrWhiteSpace(path)
+            || !path.Contains("&MI_01", StringComparison.OrdinalIgnoreCase))
+        {
+            return RazerBladeInputDeviceKind.Unsupported;
+        }
+
+        if (HasIdentity(path, "VID_1532&PID_02E0"))
+        {
+            return RazerBladeInputDeviceKind.Rz09_0581;
+        }
+
+        return HasIdentity(path, "VID_1532&PID_02C6")
+            ? RazerBladeInputDeviceKind.Rz09_0528
+            : RazerBladeInputDeviceKind.Unsupported;
+    }
+
+    public static RazerBladeInputDeviceKind ClassifyModel(string? modelNumber) =>
+        modelNumber switch
+        {
+            RazerBladeModelCatalog.OpenBladeTargetModelNumber =>
+                RazerBladeInputDeviceKind.Rz09_0581,
+            RazerBladeModelCatalog.Rz090528ModelNumber =>
+                RazerBladeInputDeviceKind.Rz09_0528,
+            _ => RazerBladeInputDeviceKind.Unsupported,
+        };
+
+    private static bool HasIdentity(string path, string identity)
+    {
+        int index = path.IndexOf(identity, StringComparison.OrdinalIgnoreCase);
+        if (index < 0)
+        {
+            return false;
+        }
+
+        int suffix = index + identity.Length;
+        return suffix == path.Length || path[suffix] is '&' or '#' or '\\';
+    }
+}
+
 public static class Rz09_0581ReactiveInputDevice
 {
     public static bool IsTargetPath(string? path) =>
-        !string.IsNullOrWhiteSpace(path)
-        && path.Contains("VID_1532&PID_02E0", StringComparison.OrdinalIgnoreCase)
-        && path.Contains("MI_01", StringComparison.OrdinalIgnoreCase);
+        RazerBladeReactiveInputDevice.ClassifyPath(path)
+            == RazerBladeInputDeviceKind.Rz09_0581;
+}
+
+public static class Rz09_0528ReactiveInputDevice
+{
+    public static bool IsTargetPath(string? path) =>
+        RazerBladeReactiveInputDevice.ClassifyPath(path)
+            == RazerBladeInputDeviceKind.Rz09_0528;
 }

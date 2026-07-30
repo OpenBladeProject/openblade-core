@@ -74,6 +74,8 @@ internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
     private readonly Func<FunctionKeyPrimaryMode?> readFunctionKeyPrimaryMode;
     private readonly Func<KeyboardDriverModeObservation> readDriverModeObservation;
     private readonly Func<GamingModeKeyPolicy> readGamingModeKeyPolicy;
+    private readonly Func<RazerBladeInputDeviceKind> readVerifiedInputDeviceKind;
+    private readonly Func<bool> readSpecialKeyInputAdmitted;
     private readonly Rz09_0581FunctionRowInputState functionRowInput = new();
     private readonly GamingModeKeyBlockState gamingModeKeyBlockState = new();
     private readonly LowLevelKeyboardHookHealthTracker hookHealth = new();
@@ -83,7 +85,8 @@ internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
     private readonly TaskCompletionSource completion =
         new(TaskCreationOptions.RunContinuationsAsynchronously);
     private readonly Thread messageThread;
-    private readonly ConcurrentDictionary<nint, bool> targetDevices = new();
+    private readonly ConcurrentDictionary<nint, RazerBladeInputDeviceKind>
+        inputDevices = new();
     private nint rawInputBuffer;
     private int rawInputBufferCapacity;
     private nint windowHandle;
@@ -118,6 +121,10 @@ internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
             ?? throw new ArgumentNullException(nameof(options.ReadDriverModeObservation));
         readGamingModeKeyPolicy = options.ReadGamingModeKeyPolicy
             ?? throw new ArgumentNullException(nameof(options.ReadGamingModeKeyPolicy));
+        readVerifiedInputDeviceKind = options.ReadVerifiedInputDeviceKind
+            ?? throw new ArgumentNullException(nameof(options.ReadVerifiedInputDeviceKind));
+        readSpecialKeyInputAdmitted = options.ReadSpecialKeyInputAdmitted
+            ?? throw new ArgumentNullException(nameof(options.ReadSpecialKeyInputAdmitted));
         messageThread = new Thread(RunMessageWindow)
         {
             IsBackground = true,
@@ -326,7 +333,7 @@ internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
             // Raw Input device handles can be replaced across sleep, reconnect,
             // and driver restarts. Never retain an identity decision for a
             // handle after Windows reports either arrival or removal.
-            changedSource.targetDevices.TryRemove(messageParameter, out _);
+            changedSource.inputDevices.TryRemove(messageParameter, out _);
         }
         else if (message == WindowMessageClose)
         {
@@ -375,7 +382,9 @@ internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
                 {
                     return 1;
                 }
-                if (owner.functionRowInput.Process(
+                if (owner.readVerifiedInputDeviceKind()
+                        == RazerBladeInputDeviceKind.Rz09_0581
+                    && owner.functionRowInput.Process(
                     input.ScanCode,
                     keyDown,
                     owner.performanceFunctionKeyPressed,
@@ -391,6 +400,7 @@ internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
                 }
             }
             if ((input.Flags & LowLevelInjectedFlag) == 0
+                && owner.readSpecialKeyInputAdmitted()
                 && owner.performanceFunctionKeyPressed
                 && (input.VirtualKey == VirtualKeyPageUp
                     && owner.shouldOverrideSpecialKey(SpecialKeySlot.M1)
@@ -423,7 +433,7 @@ internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
             || headerBytes < headerSize
             || header.Size < headerSize
             || header.Size > MaximumRawInputBytes
-            || !IsTargetInputDeviceCached(header.Device))
+            || !TryGetInputDeviceKind(header.Device, out RazerBladeInputDeviceKind deviceKind))
         {
             return;
         }
@@ -456,11 +466,11 @@ internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
 
         if (receivedHeader.Type == RawInputTypeKeyboard)
         {
-            ProcessKeyboard(buffer, headerSize, receivedSize);
+            ProcessKeyboard(buffer, headerSize, receivedSize, deviceKind);
         }
         else if (receivedHeader.Type == RawInputTypeHid)
         {
-            ProcessHid(buffer, headerSize, receivedSize);
+            ProcessHid(buffer, headerSize, receivedSize, deviceKind);
         }
     }
 
@@ -489,7 +499,11 @@ internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
         }
     }
 
-    private void ProcessKeyboard(nint buffer, uint headerSize, uint receivedSize)
+    private void ProcessKeyboard(
+        nint buffer,
+        uint headerSize,
+        uint receivedSize,
+        RazerBladeInputDeviceKind deviceKind)
     {
         int keyboardSize = Marshal.SizeOf<RawKeyboard>();
         if (receivedSize < headerSize + keyboardSize)
@@ -505,7 +519,8 @@ internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
             keyDown,
             Stopwatch.GetTimestamp(),
             HookObservationMaximumAge);
-        if (!observedByHook
+        if (deviceKind == RazerBladeInputDeviceKind.Rz09_0581
+            && !observedByHook
             && Rz09_0581FunctionRowMediaInput.TryOverride(
                 keyboard.MakeCode,
                 keyDown,
@@ -521,7 +536,8 @@ internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
 
             ReinstallKeyboardHook();
         }
-        if (Rz09_0581PerformanceShortcutRawHidInput.TryCreateFunctionPTrigger(
+        if (deviceKind == RazerBladeInputDeviceKind.Rz09_0581
+            && Rz09_0581PerformanceShortcutRawHidInput.TryCreateFunctionPTrigger(
             keyboard.MakeCode,
             keyboard.Flags,
             performanceFunctionKeyPressed,
@@ -530,7 +546,8 @@ internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
         {
             publishPerformanceShortcut(shortcut);
         }
-        if (!ReactiveRawKeyboardInput.TryCreatePulses(
+        if (deviceKind != RazerBladeInputDeviceKind.Rz09_0581
+            || !ReactiveRawKeyboardInput.TryCreatePulses(
             keyboard.MakeCode,
             keyboard.Flags,
             out ReactiveKeyPulse primary,
@@ -547,7 +564,11 @@ internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
         }
     }
 
-    private void ProcessHid(nint buffer, uint headerSize, uint receivedSize)
+    private void ProcessHid(
+        nint buffer,
+        uint headerSize,
+        uint receivedSize,
+        RazerBladeInputDeviceKind deviceKind)
     {
         const int rawHidHeaderSize = sizeof(uint) * 2;
         if (receivedSize < headerSize + rawHidHeaderSize)
@@ -583,12 +604,15 @@ internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
             {
                 report[offset] = Marshal.ReadByte(reportAddress, offset);
             }
-            bool specialTriggered = Rz09_0581SpecialKeyRawHidInput.TryCreateTrigger(
+            bool specialTriggered = RazerBladeSpecialKeyRawHidInput.TryCreateTrigger(
+                deviceKind,
                 report[..inspectedBytes],
                 ref performanceFunctionKeyPressed,
                 specialKeyPressed,
                 out SpecialKeySlot specialKey);
-            bool overrideSpecialKey = specialTriggered
+            bool inputAdmitted = readSpecialKeyInputAdmitted();
+            bool overrideSpecialKey = inputAdmitted
+                && specialTriggered
                 && shouldOverrideSpecialKey(specialKey);
             if (overrideSpecialKey)
             {
@@ -598,6 +622,19 @@ internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
                 && specialKey == SpecialKeySlot.M4
                 && overrideSpecialKey)
             {
+                continue;
+            }
+            if (deviceKind == RazerBladeInputDeviceKind.Rz09_0528)
+            {
+                if (inputAdmitted
+                    && Rz09_0528PerformanceShortcutRawHidInput.TryCreateTrigger(
+                    report[..inspectedBytes],
+                    performanceFunctionKeyPressed,
+                    ref functionPPressed,
+                    out PerformanceShortcutSource exactShortcut))
+                {
+                    publishPerformanceShortcut(exactShortcut);
+                }
                 continue;
             }
             if (Rz09_0581DefaultLaptopKeyRawHidInput.TryCreateTrigger(
@@ -655,31 +692,35 @@ internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
         long observedTimestamp) =>
         new(pulse.MatrixSlot, observedTimestamp);
 
-    private bool IsTargetInputDeviceCached(nint deviceHandle)
+    private bool TryGetInputDeviceKind(
+        nint deviceHandle,
+        out RazerBladeInputDeviceKind deviceKind)
     {
-        if (targetDevices.TryGetValue(deviceHandle, out bool cached))
+        if (inputDevices.TryGetValue(deviceHandle, out deviceKind))
         {
-            return cached;
+            return deviceKind != RazerBladeInputDeviceKind.Unsupported;
         }
 
-        bool? resolved = TryResolveTargetInputDevice(deviceHandle);
-        if (resolved is not { } isTarget)
+        RazerBladeInputDeviceKind? resolved = TryResolveInputDevice(deviceHandle);
+        if (resolved is not { } kind)
         {
             // A failed identity query is not evidence that the device is
             // unsupported. Retry on its next packet instead of permanently
             // caching a transient setup/resume failure.
+            deviceKind = RazerBladeInputDeviceKind.Unsupported;
             return false;
         }
 
-        targetDevices.TryAdd(deviceHandle, isTarget);
-        return isTarget;
+        inputDevices.TryAdd(deviceHandle, kind);
+        deviceKind = kind;
+        return kind != RazerBladeInputDeviceKind.Unsupported;
     }
 
-    private static bool? TryResolveTargetInputDevice(nint deviceHandle)
+    private static RazerBladeInputDeviceKind? TryResolveInputDevice(nint deviceHandle)
     {
         if (deviceHandle == 0)
         {
-            return false;
+            return RazerBladeInputDeviceKind.Unsupported;
         }
 
         uint characterCount = 0;
@@ -694,7 +735,7 @@ internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
         }
         if (characterCount > 4096)
         {
-            return false;
+            return RazerBladeInputDeviceKind.Unsupported;
         }
 
         var name = new StringBuilder(checked((int)characterCount));
@@ -705,7 +746,7 @@ internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
             ref characterCount);
         return result == uint.MaxValue
             ? null
-            : Rz09_0581ReactiveInputDevice.IsTargetPath(name.ToString());
+            : RazerBladeReactiveInputDevice.ClassifyPath(name.ToString());
     }
 
     private static void RegisterRawInput(nint target, uint flags)

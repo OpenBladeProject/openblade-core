@@ -727,13 +727,18 @@ public sealed class WinUiShellContractTests
         Assert.Contains("RawInputDeviceInputSink", source, StringComparison.Ordinal);
         Assert.Contains("RawInputDeviceNotify", source, StringComparison.Ordinal);
         Assert.Contains("WindowMessageInputDeviceChange", source, StringComparison.Ordinal);
-        Assert.Contains("TryResolveTargetInputDevice", source, StringComparison.Ordinal);
-        Assert.Contains("Rz09_0581ReactiveInputDevice", source, StringComparison.Ordinal);
+        Assert.Contains("TryResolveInputDevice", source, StringComparison.Ordinal);
+        Assert.Contains("RazerBladeReactiveInputDevice", source, StringComparison.Ordinal);
         Assert.Contains("GetRawInputHeader", source, StringComparison.Ordinal);
         Assert.Contains("EnsureRawInputBuffer", source, StringComparison.Ordinal);
         Assert.Contains("stackalloc byte[3]", source, StringComparison.Ordinal);
         Assert.Contains(
-            "!IsTargetInputDeviceCached(header.Device)",
+            "Rz09_0528PerformanceShortcutRawHidInput",
+            source,
+            StringComparison.Ordinal);
+        Assert.Contains("readSpecialKeyInputAdmitted", source, StringComparison.Ordinal);
+        Assert.Contains(
+            "!TryGetInputDeviceKind(header.Device",
             source,
             StringComparison.Ordinal);
         Assert.DoesNotContain(
@@ -741,7 +746,7 @@ public sealed class WinUiShellContractTests
             source,
             StringComparison.Ordinal);
         Assert.True(
-            source.IndexOf("!IsTargetInputDeviceCached(header.Device)", StringComparison.Ordinal)
+            source.IndexOf("!TryGetInputDeviceKind(header.Device", StringComparison.Ordinal)
                 < source.IndexOf("EnsureRawInputBuffer(size)", StringComparison.Ordinal),
             "Non-target Raw Input packets must be rejected before the full packet buffer is acquired.");
         Assert.DoesNotContain("GetForegroundWindow", source, StringComparison.Ordinal);

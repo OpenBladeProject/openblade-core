@@ -1094,13 +1094,27 @@ thumbprints, or local paths.
 
 ## Preserve discovered special keys without borrowing PID 02E0 reports
 
-Synapse exposes the M1–M5 shortcut surface on RZ09-0528, but OpenBlade's
-Session Agent decoders (`Rz09_0581SpecialKeyRawHidInput`,
-`Rz09_0581DefaultLaptopKeyRawHidInput`, and
-`Rz09_0581PerformanceShortcutRawHidInput`) are intentionally scoped to the
-RZ09-0581 / PID `02E0` raw-input path. PID `02C6` has no independently captured
-and validated report mapping yet. Do not make the older path accept `02C6`, and
-do not infer report bytes from the visible Synapse controls.
+Synapse exposes the M1–M5 shortcut surface on RZ09-0528, but OpenBlade's older
+Session Agent decoders (`Rz09_0581DefaultLaptopKeyRawHidInput` and
+`Rz09_0581PerformanceShortcutRawHidInput`) remain intentionally scoped to the
+RZ09-0581 / PID `02E0` raw-input path. Exact PID `02C6` captures now establish:
+
+- M1: Fn state plus Page Up usage `01 00 4B`;
+- M2: Fn state plus Page Down usage `01 00 4E`;
+- M3, M4, and M5: `04 0A 03`, `04 0A D3`, and `04 0A D4`;
+- Fn+P: Fn state plus `01 00 13`.
+
+The first M1 session is retained as a corrected Page Up negative control.
+Operator completion-message typing is excluded. Raw sessions remain private;
+the sanitized fixture and annotation are capture commit `29b67f0`.
+
+The production code now classifies the exact `MI_01` raw-input path as either
+PID `02E0` or PID `02C6` before interpreting a report. Both models reuse the
+shared Fn-layer state machine only after that identity decision. PID `02C6`
+uses a separate Fn+P decoder and never enters the older D3 dedicated-
+performance-button path: `04 0A D3` is M4 on this laptop. PID `02C6` also does
+not inherit the older model's reactive matrix, direct default-key, function-
+row reconstruction, or keyboard fallback assumptions.
 
 The capability contract now carries `SpecialKeyBindingsAccess`:
 
@@ -1110,8 +1124,11 @@ The capability contract now carries `SpecialKeyBindingsAccess`:
 
 The Laptop page only shows editable M1–M5 bindings for `ReadWrite`. On this
 model it instead shows an observed-only information card, preserves any saved
-global bindings, and explains that they remain inactive. The Session Agent
-continues to reject PID `02C6`, so the UI and runtime fail closed together.
+global bindings, and explains that they remain inactive. The Session Agent can
+parse PID `02C6` reports, but publishing, Page Up/Page Down suppression, and
+Fn+P actions remain gated on `SpecialKeyBindingsAccess == ReadWrite`. The
+current exact capability remains `ObservedOnly`, so UI and runtime still fail
+closed together.
 Diagnostics and firmware smoke retain the access level (schema 3 introduced
 it; schema 4 adds LampArray access), and strict service IPC advanced from
 version 27 to 28 at that checkpoint.
@@ -1122,10 +1139,28 @@ For future evidence collection, use the exact-device probe:
 OpenBlade.Capture probe-rz09-0528-02c6-special-keys [seconds] [output-file]
 ```
 
-Capture and validate every M1–M5 press/release report on the exact PID before
-adding a decoder. Keep raw output private, add only sanitized fixtures, and
-prove that an admitted decoder rejects PID `02E0`-specific assumptions that do
-not hold for `02C6`.
+The next step is a live OpenBlade decoder validation while the exact capability
+is temporarily enabled in a developer build. Confirm every M1–M5 action,
+ordinary Page Up/Page Down pass-through, Fn+P, and the absence of an M4
+performance-shortcut collision. Only then advance the access level to
+`ReadWrite`.
+
+## Preserve both device-mode validation failures
+
+Capture commit `42bdc2d` records two elevated exact-device attempts without
+publishing raw output:
+
+- the first failed closed on a competing controller before any query or write;
+- after stopping the exact known Razer controller processes, the retry read
+  `Driver` as its baseline and failed `baselineNotNormal`.
+
+Neither attempt issued a setter, neither required a device-mode restoration,
+and OpenBlade, Razer Elevation Service, and Razer Game Manager Service 3 were
+running after both wrappers completed. The result is a negative control, not a
+Driver-mode setter validation. Do not change the validator to accept Driver as
+its starting state: the required evidence is still a reversible Normal-to-
+Driver apply, readback, operator check, restore, and restored readback, followed
+by exact Normal-mode special-key parity.
 
 ## Keep user-facing identity and firmware smoke model-specific
 

@@ -232,6 +232,48 @@ public sealed class SpecialKeyBindingTests
             out _));
     }
 
+    [Fact]
+    public void Rz090528M4_IsSpecialKeyAndNeverNeedsOlderPerformanceSemantics()
+    {
+        bool functionPressed = false;
+        Span<bool> pressed = stackalloc bool[5];
+
+        Assert.False(RazerBladeSpecialKeyRawHidInput.TryCreateTrigger(
+            RazerBladeInputDeviceKind.Rz09_0528,
+            [0x04, 0x0A, 0x00],
+            ref functionPressed,
+            pressed,
+            out _));
+        Assert.True(RazerBladeSpecialKeyRawHidInput.TryCreateTrigger(
+            RazerBladeInputDeviceKind.Rz09_0528,
+            [0x04, 0x0A, 0xD3],
+            ref functionPressed,
+            pressed,
+            out SpecialKeySlot slot));
+        Assert.Equal(SpecialKeySlot.M4, slot);
+        Assert.False(RazerBladeSpecialKeyRawHidInput.TryCreateTrigger(
+            RazerBladeInputDeviceKind.Rz09_0528,
+            [0x04, 0x0A, 0x00],
+            ref functionPressed,
+            pressed,
+            out _));
+    }
+
+    [Fact]
+    public void ModelAwareSpecialKeyInput_RejectsUnsupportedDeviceIdentity()
+    {
+        bool functionPressed = false;
+        Span<bool> pressed = stackalloc bool[5];
+
+        Assert.False(RazerBladeSpecialKeyRawHidInput.TryCreateTrigger(
+            RazerBladeInputDeviceKind.Unsupported,
+            [0x04, 0x0A, 0xD3],
+            ref functionPressed,
+            pressed,
+            out _));
+        Assert.False(functionPressed);
+    }
+
     private static bool Trigger(
         ReadOnlySpan<byte> report,
         ref bool functionPressed,

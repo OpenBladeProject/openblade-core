@@ -21,26 +21,20 @@ All notable changes to OpenBlade are documented in this file. The project follow
   exact-model capabilities while the writable effect picker remains limited
   to independently validated commands. Windows Dynamic Lighting also exposes
   the exact keyboard as an 85-lamp, virtual-key-aware LampArray. OpenBlade
-  surfaces that OS-native path as observed-only while packaged background
-  ownership, writes, ownership-loss behavior, and restoration remain under
-  validation. The Session Agent now performs bounded, read-only enumeration
+  offers an ownership control that delegates keyboard lighting to Windows.
+  While delegated, every OpenBlade keyboard-lighting producer is blocked in
+  the service and the tray links to Windows lighting settings; OpenBlade does
+  not register a competing background LampArray provider. The Session Agent
+  performs bounded, read-only enumeration
   only after the service verifies the exact tested firmware tuple, and rejects
   any array whose 85-lamp geometry fingerprint differs from captured evidence.
   Its observation source exposes no priority or mutation operation. The
-  signed release pipeline now builds a sparse external-location MSIX identity
-  for the Session Agent with the `com.microsoft.windows.lighting` extension,
-  embeds the matching certificate-derived identity claim in the executable,
-  and validates the package/descriptor pair before publishing. Transactional
-  setup now validates and registers that exact Publisher-scoped identity for
-  the installing user, restores the prior identity after a failed update, and
-  removes or recovers it with uninstall. A read-only Session Agent probe can
-  verify the exact package/application identity and approved LampArray
-  availability after installation without starting normal background loops or
-  retaining identifiers. Unsigned builds omit both the package and executable
-  identity claim. The model's M1–M5
-  shortcut surface is
-  also retained as observed-only: editable bindings stay hidden and inactive
-  until PID `02C6` input reports are independently captured and admitted.
+  model's M1–M5 shortcut surface is also retained as observed-only. Exact PID
+  `02C6` M1–M5 and Fn+P reports are captured, and a model-aware decoder is
+  staged behind the capability gate. Editable bindings stay hidden and the
+  decoder remains inactive until a live OpenBlade round trip is validated.
+  PID `02C6` M4 is explicitly isolated from PID `02E0`'s conflicting D3
+  performance-button interpretation.
   Firmware-smoke schema 4 records these observed capabilities separately so an
   update cannot silently lose them. Diagnostics, About, tested-platform
   assessment, and firmware smoke now derive the RZ09-0528 / PID `02C6` identity

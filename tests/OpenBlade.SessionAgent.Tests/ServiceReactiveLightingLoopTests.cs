@@ -709,6 +709,80 @@ public sealed class ServiceReactiveLightingLoopTests
     }
 
     [Fact]
+    public async Task VerifiedFirmwareModelControlsModelSpecificInputAdmission()
+    {
+        var client = new WatchClient();
+        var factory = new RecordingSourceFactory();
+        await using var loop = new ServiceReactiveLightingLoop(client, factory);
+        using var cancellation = new CancellationTokenSource();
+        Task running = loop.RunAsync(cancellation.Token);
+
+        await WaitUntilAsync(() => factory.CreateCount == 1);
+        Assert.Equal(
+            RazerBladeInputDeviceKind.Unsupported,
+            factory.Last!.ReadVerifiedInputDeviceKind());
+        Assert.False(factory.Last.ReadSpecialKeyInputAdmitted());
+
+        DeviceCapabilities observed = DeviceCapabilities.Unavailable() with
+        {
+            SpecialKeyBindingsAccess = DeviceFeatureAccess.ObservedOnly,
+        };
+        client.Publish(Status(LightingRendererOwnershipState.Static) with
+        {
+            Capabilities = observed,
+            Firmware = new FirmwareVersions(
+                "2.02",
+                "1.09",
+                "1.9.0.0",
+                "Unavailable",
+                RazerBladeModelCatalog.Rz090528ModelNumber),
+        });
+        await WaitUntilAsync(
+            () => factory.Last.ReadVerifiedInputDeviceKind()
+                    == RazerBladeInputDeviceKind.Rz09_0528);
+        Assert.False(factory.Last.ReadSpecialKeyInputAdmitted());
+
+        DeviceCapabilities admitted = DeviceCapabilities.Unavailable() with
+        {
+            SpecialKeyBindingsAccess = DeviceFeatureAccess.ReadWrite,
+        };
+        client.Publish(Status(LightingRendererOwnershipState.Static) with
+        {
+            Revision = 2,
+            Capabilities = admitted,
+            Firmware = new FirmwareVersions(
+                "2.02",
+                "1.09",
+                "1.9.0.0",
+                "Unavailable",
+                RazerBladeModelCatalog.Rz090528ModelNumber),
+        });
+        await WaitUntilAsync(
+            () => factory.Last.ReadVerifiedInputDeviceKind()
+                    == RazerBladeInputDeviceKind.Rz09_0528
+                && factory.Last.ReadSpecialKeyInputAdmitted());
+
+        client.Publish(Status(LightingRendererOwnershipState.Static) with
+        {
+            Revision = 3,
+            DeviceVerified = false,
+            Firmware = new FirmwareVersions(
+                "3.01",
+                "1.04",
+                "Unavailable",
+                "Unavailable",
+                RazerBladeModelCatalog.OpenBladeTargetModelNumber),
+        });
+        await WaitUntilAsync(
+            () => factory.Last.ReadVerifiedInputDeviceKind()
+                    == RazerBladeInputDeviceKind.Unsupported
+                && !factory.Last.ReadSpecialKeyInputAdmitted());
+
+        cancellation.Cancel();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => running);
+    }
+
+    [Fact]
     public async Task UnknownVerifiedReadbackPreservesPreferenceButDisablesInterception()
     {
         var client = new WatchClient();
@@ -928,6 +1002,8 @@ public sealed class ServiceReactiveLightingLoopTests
         private readonly Func<FunctionKeyPrimaryMode?> readFunctionKeyPrimaryMode;
         private readonly Func<KeyboardDriverModeObservation> readDriverModeObservation;
         private readonly Func<GamingModeKeyPolicy> readGamingModeKeyPolicy;
+        private readonly Func<RazerBladeInputDeviceKind> readVerifiedInputDeviceKind;
+        private readonly Func<bool> readSpecialKeyInputAdmitted;
 
         public RecordingSource(ReactiveKeyboardSourceOptions options)
         {
@@ -940,6 +1016,8 @@ public sealed class ServiceReactiveLightingLoopTests
             readFunctionKeyPrimaryMode = options.ReadFunctionKeyPrimaryMode;
             readDriverModeObservation = options.ReadDriverModeObservation;
             readGamingModeKeyPolicy = options.ReadGamingModeKeyPolicy;
+            readVerifiedInputDeviceKind = options.ReadVerifiedInputDeviceKind;
+            readSpecialKeyInputAdmitted = options.ReadSpecialKeyInputAdmitted;
         }
 
         public bool Disposed { get; private set; }
@@ -973,6 +1051,11 @@ public sealed class ServiceReactiveLightingLoopTests
 
         public GamingModeKeyPolicy ReadGamingModeKeyPolicy() =>
             readGamingModeKeyPolicy();
+
+        public RazerBladeInputDeviceKind ReadVerifiedInputDeviceKind() =>
+            readVerifiedInputDeviceKind();
+
+        public bool ReadSpecialKeyInputAdmitted() => readSpecialKeyInputAdmitted();
 
         public void Fail(Exception exception) => completion.TrySetException(exception);
 

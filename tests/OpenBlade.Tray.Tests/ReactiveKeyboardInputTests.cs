@@ -269,6 +269,49 @@ public sealed class ReactiveKeyboardInputTests
         Assert.True(functionPressed);
     }
 
+    [Fact]
+    public void Rz090528RawHid_FnPTriggersWithoutAdmittingD3PerformanceButton()
+    {
+        bool functionPPressed = false;
+
+        Assert.False(Rz09_0528PerformanceShortcutRawHidInput.TryCreateTrigger(
+            [0x04, 0x0A, 0xD3, 0x00],
+            functionKeyPressed: true,
+            ref functionPPressed,
+            out _));
+        Assert.True(Rz09_0528PerformanceShortcutRawHidInput.TryCreateTrigger(
+            [0x01, 0x00, 0x13, 0x00],
+            functionKeyPressed: true,
+            ref functionPPressed,
+            out PerformanceShortcutSource source));
+        Assert.Equal(PerformanceShortcutSource.FunctionP, source);
+        Assert.False(Rz09_0528PerformanceShortcutRawHidInput.TryCreateTrigger(
+            [0x01, 0x00, 0x13, 0x00],
+            functionKeyPressed: true,
+            ref functionPPressed,
+            out _));
+        Assert.False(Rz09_0528PerformanceShortcutRawHidInput.TryCreateTrigger(
+            [0x04, 0x00, 0x00, 0x00],
+            functionKeyPressed: false,
+            ref functionPPressed,
+            out _));
+        Assert.True(Rz09_0528PerformanceShortcutRawHidInput.TryCreateTrigger(
+            [0x01, 0x00, 0x13, 0x00],
+            functionKeyPressed: true,
+            ref functionPPressed,
+            out source));
+        Assert.False(Rz09_0528PerformanceShortcutRawHidInput.TryCreateTrigger(
+            [0x01, 0x00, 0x00, 0x00],
+            functionKeyPressed: true,
+            ref functionPPressed,
+            out _));
+        Assert.True(Rz09_0528PerformanceShortcutRawHidInput.TryCreateTrigger(
+            [0x01, 0x00, 0x13, 0x00],
+            functionKeyPressed: true,
+            ref functionPPressed,
+            out source));
+    }
+
     [Theory]
     [InlineData(null)]
     [InlineData("")]
@@ -284,5 +327,40 @@ public sealed class ReactiveKeyboardInputTests
     {
         Assert.True(Rz09_0581ReactiveInputDevice.IsTargetPath(
             "\\\\?\\HID#VID_1532&PID_02E0&MI_01&COL04#function"));
+    }
+
+    [Theory]
+    [InlineData(
+        "\\\\?\\HID#VID_1532&PID_02E0&MI_01&COL04#function",
+        RazerBladeInputDeviceKind.Rz09_0581)]
+    [InlineData(
+        "\\\\?\\HID#VID_1532&PID_02C6&MI_01&COL04#function",
+        RazerBladeInputDeviceKind.Rz09_0528)]
+    [InlineData(
+        "\\\\?\\HID#VID_1532&PID_02C6&MI_00&COL01#keyboard",
+        RazerBladeInputDeviceKind.Unsupported)]
+    [InlineData(
+        "\\\\?\\HID#VID_1532&PID_02E0&MI_02&COL01#mouse",
+        RazerBladeInputDeviceKind.Unsupported)]
+    [InlineData(
+        "\\\\?\\HID#VID_1532&PID_02C60&MI_01&COL04#unrelated",
+        RazerBladeInputDeviceKind.Unsupported)]
+    public void InputDevice_ClassificationPreservesExactPidAndCollection(
+        string path,
+        RazerBladeInputDeviceKind expected)
+    {
+        Assert.Equal(expected, RazerBladeReactiveInputDevice.ClassifyPath(path));
+    }
+
+    [Theory]
+    [InlineData("RZ09-0581", RazerBladeInputDeviceKind.Rz09_0581)]
+    [InlineData("RZ09-0528", RazerBladeInputDeviceKind.Rz09_0528)]
+    [InlineData("RZ09-9999", RazerBladeInputDeviceKind.Unsupported)]
+    [InlineData(null, RazerBladeInputDeviceKind.Unsupported)]
+    public void InputDevice_ModelClassificationFailsClosed(
+        string? model,
+        RazerBladeInputDeviceKind expected)
+    {
+        Assert.Equal(expected, RazerBladeReactiveInputDevice.ClassifyModel(model));
     }
 }

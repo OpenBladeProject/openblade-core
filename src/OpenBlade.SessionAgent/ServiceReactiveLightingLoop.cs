@@ -18,7 +18,9 @@ public sealed record ReactiveKeyboardSourceOptions(
     Action<FunctionRowAction> PublishFunctionRowAction,
     Func<FunctionKeyPrimaryMode?> ReadFunctionKeyPrimaryMode,
     Func<KeyboardDriverModeObservation> ReadDriverModeObservation,
-    Func<GamingModeKeyPolicy> ReadGamingModeKeyPolicy);
+    Func<GamingModeKeyPolicy> ReadGamingModeKeyPolicy,
+    Func<RazerBladeInputDeviceKind> ReadVerifiedInputDeviceKind,
+    Func<bool> ReadSpecialKeyInputAdmitted);
 
 public interface IReactiveKeyboardSourceFactory
 {
@@ -69,6 +71,8 @@ public sealed class ServiceReactiveLightingLoop : IAsyncDisposable
     private int driverModeKnowledge;
     private long driverModeLastConfirmedTimestamp;
     private int gamingModeKeyPolicyBits;
+    private int verifiedInputDeviceKind;
+    private int specialKeyInputAdmitted;
     private int disposed;
 
     public ServiceReactiveLightingLoop(
@@ -272,7 +276,9 @@ public sealed class ServiceReactiveLightingLoop : IAsyncDisposable
                     },
                     ReadFunctionKeyPrimaryMode: ReadFunctionKeyPrimaryMode,
                     ReadDriverModeObservation: ReadDriverModeObservation,
-                    ReadGamingModeKeyPolicy: ReadGamingModeKeyPolicy));
+                    ReadGamingModeKeyPolicy: ReadGamingModeKeyPolicy,
+                    ReadVerifiedInputDeviceKind: ReadVerifiedInputDeviceKind,
+                    ReadSpecialKeyInputAdmitted: ReadSpecialKeyInputAdmitted));
             if (Volatile.Read(ref disposed) != 0
                 || Interlocked.CompareExchange(ref source, created, null) is not null)
             {
@@ -338,6 +344,10 @@ public sealed class ServiceReactiveLightingLoop : IAsyncDisposable
 
         if (!status.DeviceVerified)
         {
+            Interlocked.Exchange(
+                ref verifiedInputDeviceKind,
+                (int)RazerBladeInputDeviceKind.Unsupported);
+            Interlocked.Exchange(ref specialKeyInputAdmitted, 0);
             Interlocked.Exchange(ref functionKeyPrimaryMode, -1);
             SetDriverModeUnknown("The laptop is not currently verified.");
             functionRowActionPump?.ClearPending();
@@ -345,6 +355,16 @@ public sealed class ServiceReactiveLightingLoop : IAsyncDisposable
         }
         else
         {
+            Interlocked.Exchange(
+                ref verifiedInputDeviceKind,
+                (int)RazerBladeReactiveInputDevice.ClassifyModel(
+                    status.Firmware?.ModelNumber));
+            Interlocked.Exchange(
+                ref specialKeyInputAdmitted,
+                status.Capabilities?.SpecialKeyBindingsAccess
+                    == DeviceFeatureAccess.ReadWrite
+                    ? 1
+                    : 0);
             // Function-key preference can safely fall back to the active profile.
             // Driver-mode ownership cannot: an unknown firmware readback must
             // pass keys through instead of risking a stale hook decision.
@@ -497,6 +517,12 @@ public sealed class ServiceReactiveLightingLoop : IAsyncDisposable
             BlockWindowsKey: (bits & 1) != 0,
             BlockAltTab: (bits & 2) != 0);
     }
+
+    private RazerBladeInputDeviceKind ReadVerifiedInputDeviceKind() =>
+        (RazerBladeInputDeviceKind)Volatile.Read(ref verifiedInputDeviceKind);
+
+    private bool ReadSpecialKeyInputAdmitted() =>
+        Volatile.Read(ref specialKeyInputAdmitted) != 0;
 
     private static bool IsTemporaryDeviceAccessStatus(ServiceStatusSnapshot status) =>
         status.Message.StartsWith("Checking", StringComparison.OrdinalIgnoreCase)
