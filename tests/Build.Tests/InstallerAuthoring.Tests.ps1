@@ -61,7 +61,9 @@ Assert-True ($bundle.GetAttribute('ProviderKey') -eq 'OSSBlade.OpenBlade') `
     'The Burn dependency provider key must remain stable across upgrades.'
 Assert-True ($bundle.GetAttribute('Version') -eq '$(OpenBladeVersion)') `
     'The Burn bundle must use the product version source of truth.'
-Assert-True ($bundle.GetAttribute('Condition') -eq 'VersionNT64 >= v10.0.26100') `
+Assert-True (
+    $bundle.GetAttribute('Condition') -eq
+        'VersionNT64 >= v10.0 AND WindowsBuildNumber >= 26100') `
     'The Burn bundle must require Windows 11 version 24H2 x64.'
 
 $standardBa = $bundle.SelectSingleNode(
