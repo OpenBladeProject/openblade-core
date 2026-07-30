@@ -899,20 +899,21 @@ Keep these boundaries explicit:
   exact OS-native transport.
 - Read-only discovery does not admit production writes.
 
-The production owner must be `OpenBlade.SessionAgent`, not the LocalSystem
-service. LampArray is a current-user API and Dynamic Lighting arbitrates
-foreground/background ownership per user. Background access requires package
-identity plus the `com.microsoft.windows.lighting` application extension; use
-an MSIX or sparse-package/external-location identity without replacing the
-existing WiX install lifecycle. The renderer must:
+Windows remains the production LampArray owner. `OpenBlade.SessionAgent` may
+observe the exact array read-only for capability presentation, but production
+publishing must not request background-controller package identity or register
+the `com.microsoft.windows.lighting` extension. The signed sparse-identity
+experiment proved that doing so adds OpenBlade as a competing provider rather
+than improving device support.
 
-1. filter the runtime array to exact VID/PID before exposing write access;
-2. use runtime lamp geometry and virtual-key mappings instead of hard-coded
-   PID `02E0` report layouts;
-3. honor `IsAvailable` and Windows priority rather than fighting Synapse;
-4. pace updates at or below `MinUpdateInterval`;
-5. save the current OpenBlade intent, stop cleanly on ownership loss, and
-   require an independently observed restoration before production admission.
+The supported integration is explicit delegation:
+
+1. expose the Windows ownership option only for an exact observed LampArray;
+2. persist the ownership choice in the service configuration;
+3. gate every OpenBlade keyboard-lighting write at the service boundary;
+4. exclude lighting from automatic power/profile transitions while delegated;
+5. leave the current visible state unchanged when ownership changes and route
+   the user to Windows Dynamic Lighting settings for brightness and effects.
 
 The unpackaged background probe reported `IsAvailable=false`. Treat that as the
 current integration boundary, not as device absence. Signed identity
@@ -1254,15 +1255,15 @@ checkpoint.
 
 Do not interpret the green admission probe as full RZ09-0528 feature coverage.
 The sanitized schema-2 coverage ledger is the completion source of truth. At the
-`151a632` LampArray-evidence checkpoint its 142 leaves contain:
+`29b67f0` special-key-evidence checkpoint its 142 leaves contain:
 
 - 48 `ProductionAdmitted`;
 - 3 `QueryValidated`;
-- 23 `Captured`;
+- 30 `Captured`;
 - 1 `SetterValidated`;
 - 10 `SoftwareOnly`;
 - 3 `Absent`;
-- 54 `NotInvestigated`.
+- 47 `NotInvestigated`.
 
 `Rz090528CoverageContractTests` pins both those counts and every
 `Captured`/`QueryValidated`/`SetterValidated` path. Advancing evidence must
@@ -1280,8 +1281,11 @@ The main physical-evidence groups still blocking broader admission are:
   the model's 51-byte collection is query-validated as an 85-lamp Windows
   LampArray, but OpenBlade delegates to Windows instead of registering a
   competing background renderer;
-- exact Normal/Driver device-mode setter round trips;
-- M1-M5 and performance-key press/release reports;
+- exact Normal/Driver device-mode setter round trips and exact Normal-mode
+  special-key parity;
+- production validation of the PID `02C6` special-key decoder. M1-M5 and Fn+P
+  reports are captured, including the critical M4 `040AD300` collision with
+  the older PID `02E0` performance-key assumption, but remain observed-only;
 - cold boot, sign-in, service restart, sleep/resume, and device reconnect.
 
 The next agent should rerun the coverage-contract test before and after changing

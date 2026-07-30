@@ -33,6 +33,13 @@ public sealed class Rz090528CoverageContractTests
         "power.usbCPowerClasses=Captured",
         "power.usbCToAc=Captured",
         "power.usbCToBattery=Captured",
+        "specialKeys.functionLayerReports=Captured",
+        "specialKeys.m1PageUp=Captured",
+        "specialKeys.m2PageDown=Captured",
+        "specialKeys.m3GamingMode=Captured",
+        "specialKeys.m4PerformanceMode=Captured",
+        "specialKeys.m5MicrophoneMute=Captured",
+        "specialKeys.performanceKey=Captured",
     ];
 
     [Fact]
@@ -65,11 +72,11 @@ public sealed class Rz090528CoverageContractTests
 
         Assert.Equal(48, counts["ProductionAdmitted"]);
         Assert.Equal(3, counts["QueryValidated"]);
-        Assert.Equal(23, counts["Captured"]);
+        Assert.Equal(30, counts["Captured"]);
         Assert.Equal(1, counts["SetterValidated"]);
         Assert.Equal(10, counts["SoftwareOnly"]);
         Assert.Equal(3, counts["Absent"]);
-        Assert.Equal(54, counts["NotInvestigated"]);
+        Assert.Equal(47, counts["NotInvestigated"]);
     }
 
     [Fact]
@@ -81,7 +88,7 @@ public sealed class Rz090528CoverageContractTests
         JsonElement device = root.GetProperty("device");
 
         Assert.Equal("openblade-captures", source.GetProperty("repository").GetString());
-        Assert.Equal("151a632", source.GetProperty("revision").GetString());
+        Assert.Equal("29b67f0", source.GetProperty("revision").GetString());
         Assert.Equal("RZ09-0528", device.GetProperty("modelNumber").GetString());
         Assert.Equal("1532", device.GetProperty("vendorIdHex").GetString());
         Assert.Equal("02C6", device.GetProperty("productIdHex").GetString());
