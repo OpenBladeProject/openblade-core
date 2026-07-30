@@ -1767,11 +1767,31 @@ M1-M5 footer. The Lighting page contained only the compact keyboard WDL row and
 an independently enabled Static lid-logo selector. WDL delegation applies only
 to keyboard effects and brightness; it does not control the lid logo.
 
+A second fresh Computer Use observation resolved a visual ambiguity in the
+dark theme: UI Automation reported **Save to AC profile** as disabled but
+reported **Laptop logo lighting** as an enabled combo box. The grey picker
+surface is therefore the normal picker background, not WDL ownership. Core
+commit `ff7debc` makes that boundary explicit in the visible description and
+accessibility help text: OpenBlade controls the lid logo even when Windows
+controls the keyboard.
+
 The smoke snapshot's `desiredLightingEffect=Off` and renderer ownership `None`
 describe OpenBlade's inactive keyboard renderer while WDL delegation is on.
 They are not physical brightness readback and must not be used to claim the
 keyboard is dark. The latest independent exact-device brightness evidence
 remains the restored Static state with raw 128 before and after service restart.
+
+Two guarded tray-only deployment attempts ended before the elevated child
+started because Windows returned `The operation was canceled by the user`
+after the UAC wait. Neither attempt wrote a deployment report, stopped an
+OpenBlade process, or changed an installed binary. Do not treat them as partial
+installations. The current ignored wrapper is
+`artifacts/.live-validation/Deploy-TrayOnly-ff7debc.ps1`; it expects product
+version `0.1.0+ff7debccc146ca8c10e94d1b6b7ef7093a9c1ca7`, copies only the tray
+payload, verifies source/installed hashes, proves the service and Session Agent
+executables stayed unchanged, and leaves all long-lived launches to the
+unelevated parent. Run it only while an operator can see and approve UAC, then
+require its success report before inspecting the restarted app.
 
 ## Remaining exact-device completion frontier
 
