@@ -613,7 +613,10 @@ internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
             bool inputAdmitted = readSpecialKeyInputAdmitted();
             bool overrideSpecialKey = inputAdmitted
                 && specialTriggered
-                && shouldOverrideSpecialKey(specialKey);
+                && ShouldOverrideSpecialKey(
+                    deviceKind,
+                    specialKey,
+                    shouldOverrideSpecialKey(specialKey));
             if (overrideSpecialKey)
             {
                 publishSpecialKey(specialKey);
@@ -660,6 +663,14 @@ internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
             // the firmware overlay with an incorrect host-rendered frame.
         }
     }
+
+    internal static bool ShouldOverrideSpecialKey(
+        RazerBladeInputDeviceKind deviceKind,
+        SpecialKeySlot specialKey,
+        bool configuredOverride) =>
+        configuredOverride
+        || deviceKind == RazerBladeInputDeviceKind.Rz09_0528
+        && specialKey == SpecialKeySlot.M4;
 
     private void ReinstallKeyboardHook()
     {

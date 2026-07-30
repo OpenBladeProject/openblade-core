@@ -1150,6 +1150,12 @@ performance-shortcut collision. Keep raw output private, commit only a
 sanitized semantic summary, and only then advance the access level to
 `ReadWrite`.
 
+PID 02C6 M4 needs one additional routing rule: when admitted, its default action
+must go through the typed M4 action executor even when no custom binding exists.
+Otherwise the exact-model branch correctly avoids PID 02E0's D3
+dedicated-performance decoder but silently drops the key. Keep PID 02E0 on its
+existing dedicated-button path; the override is exact-model plus M4 only.
+
 ## Preserve the device-mode negative controls and reversible success
 
 Capture commits `42bdc2d` and `ceb52f0` record three elevated exact-device
