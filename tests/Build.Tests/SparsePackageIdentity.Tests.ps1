@@ -49,6 +49,26 @@ Assert-ThrowsLike {
     Get-OpenBladeSigningCertificate -Thumbprint 'not-a-thumbprint'
 } '40 hexadecimal' 'An invalid signing thumbprint'
 
+$stringEku = [pscustomobject]@{
+    ObjectId = '1.3.6.1.5.5.7.3.3'
+}
+Assert-True (
+    (Get-OpenBladeEnhancedKeyUsageOid -Usage $stringEku) -eq
+    '1.3.6.1.5.5.7.3.3') `
+    'String-valued certificate-provider EKUs must be accepted.'
+
+$oidEku = [pscustomobject]@{
+    ObjectId = [Security.Cryptography.Oid]::new('1.3.6.1.5.5.7.3.3')
+}
+Assert-True (
+    (Get-OpenBladeEnhancedKeyUsageOid -Usage $oidEku) -eq
+    '1.3.6.1.5.5.7.3.3') `
+    'Oid-valued certificate-provider EKUs must be accepted.'
+
+Assert-True (
+    $null -eq (Get-OpenBladeEnhancedKeyUsageOid -Usage ([pscustomobject]@{}))) `
+    'Malformed certificate-provider EKUs must be rejected.'
+
 $identityRoot = Join-Path $repository 'build\identity'
 $packageTemplatePath = Join-Path $identityRoot 'AppxManifest.xml.template'
 $agentTemplatePath = Join-Path $identityRoot (

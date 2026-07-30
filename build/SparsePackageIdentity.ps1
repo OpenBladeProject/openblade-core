@@ -32,6 +32,29 @@ function ConvertTo-OpenBladePackageVersion {
     return ($parts -join '.')
 }
 
+function Get-OpenBladeEnhancedKeyUsageOid {
+    param([Parameter(Mandatory)][object]$Usage)
+
+    $objectIdProperty = $Usage.PSObject.Properties['ObjectId']
+    if ($null -eq $objectIdProperty) {
+        return $null
+    }
+
+    $objectId = $objectIdProperty.Value
+    if ($objectId -is [string]) {
+        return $objectId
+    }
+    if ($null -eq $objectId) {
+        return $null
+    }
+
+    $valueProperty = $objectId.PSObject.Properties['Value']
+    if ($null -eq $valueProperty) {
+        return $null
+    }
+    return [string]$valueProperty.Value
+}
+
 function Get-OpenBladeSigningCertificate {
     param([Parameter(Mandatory)][string]$Thumbprint)
 
@@ -60,7 +83,7 @@ function Get-OpenBladeSigningCertificate {
         throw 'The OpenBlade signing certificate is not currently valid.'
     }
     $codeSigningEku = @($certificate.EnhancedKeyUsageList | Where-Object {
-        $_.ObjectId.Value -eq '1.3.6.1.5.5.7.3.3'
+        (Get-OpenBladeEnhancedKeyUsageOid -Usage $_) -eq '1.3.6.1.5.5.7.3.3'
     })
     if ($codeSigningEku.Count -eq 0) {
         throw 'The OpenBlade signing certificate is not valid for code signing.'
