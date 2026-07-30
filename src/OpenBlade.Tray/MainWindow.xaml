@@ -1114,18 +1114,26 @@
                                     <ColumnDefinition Width="*" />
                                     <ColumnDefinition Width="Auto" />
                                 </Grid.ColumnDefinitions>
-                                <StackPanel Spacing="3" VerticalAlignment="Center">
-                                    <TextBlock Text="Let Windows control the keyboard"
-                                               Style="{StaticResource CardTitleStyle}" />
-                                    <TextBlock Text="OpenBlade stops all keyboard-lighting writes. Choose brightness and effects in Windows Dynamic Lighting."
-                                               Style="{StaticResource SecondaryTextStyle}" />
-                                    <HyperlinkButton Content="Open Dynamic Lighting settings"
-                                                     Padding="0,4,0,0"
-                                                     HorizontalAlignment="Left"
-                                                     NavigateUri="ms-settings:personalization-lighting" />
-                                </StackPanel>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                </Grid.RowDefinitions>
+                                <TextBlock Text="Let Windows control the keyboard"
+                                           TextWrapping="Wrap"
+                                           Style="{StaticResource CardTitleStyle}" />
+                                <TextBlock Grid.Row="1"
+                                           Margin="0,3,0,0"
+                                           Text="OpenBlade stops all keyboard-lighting writes. Choose brightness and effects in Windows Dynamic Lighting."
+                                           Style="{StaticResource SecondaryTextStyle}" />
+                                <HyperlinkButton Grid.Row="2"
+                                                 Content="Open Dynamic Lighting settings"
+                                                 Padding="0,4,0,0"
+                                                 HorizontalAlignment="Left"
+                                                 NavigateUri="ms-settings:personalization-lighting" />
                                 <ToggleSwitch x:Name="WindowsDynamicLightingToggle"
                                               Grid.Column="1"
+                                              Grid.RowSpan="3"
                                               HorizontalAlignment="Right"
                                               VerticalAlignment="Center"
                                               MinWidth="0"

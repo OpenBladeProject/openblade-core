@@ -377,6 +377,27 @@ public sealed class WinUiShellContractTests
     }
 
     [Fact]
+    public void WindowsLightingOwnershipCardKeepsItsToggleInsideTheVisibleGrid()
+    {
+        string xaml = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml");
+        int cardStart = xaml.IndexOf(
+            "Text=\"Let Windows control the keyboard\"",
+            StringComparison.Ordinal);
+        int cardEnd = xaml.IndexOf(
+            "</Border>",
+            cardStart,
+            StringComparison.Ordinal);
+
+        Assert.True(cardStart >= 0 && cardEnd > cardStart);
+        string card = xaml[cardStart..cardEnd];
+        Assert.DoesNotContain("<StackPanel", card, StringComparison.Ordinal);
+        Assert.Contains("TextWrapping=\"Wrap\"", card, StringComparison.Ordinal);
+        Assert.Contains("x:Name=\"WindowsDynamicLightingToggle\"", card, StringComparison.Ordinal);
+        Assert.Contains("Grid.Column=\"1\"", card, StringComparison.Ordinal);
+        Assert.Contains("Grid.RowSpan=\"3\"", card, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void SettingsExposeReorderableTelemetryAndDestructiveShutdown()
     {
         string xaml = ReadRepositoryFile("src", "OpenBlade.Tray", "MainWindow.xaml");
