@@ -796,6 +796,12 @@ Custom performance and model-specific power-control follow-up:
   elevated experiment merely to rewrite those private labels: the wrapper's
   ready/isolation ordering and the accepted-getter timeout establish the
   phases, and the sanitized annotation preserves the original output hash.
+- Post-fix verification completed with 3,337 passing Release tests across all
+  ten core projects, a clean `dotnet format --verify-no-changes`, and 14
+  passing Windows PowerShell 5.1 capture-toolkit suites. Core commits
+  `e4fba98` and `cda5b0e` contain the validator and corrected phase telemetry;
+  capture commits `055e8a0` and `518ffa5` contain the wrapper and sanitized
+  negative-control evidence.
 - OpenBlade must not start `RzDLLService`, initialize its privileged tuning
   driver, or bypass the Synapse-process guard merely to make this probe pass.
   Those are a separate backend-ownership feature requiring explicit lifecycle
