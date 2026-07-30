@@ -145,6 +145,46 @@ public sealed class SpecialKeyBindingTests
     }
 
     [Fact]
+    public void Rz090528RawKeyboard_ReconstructsM1AndM2OnlyWhileFnIsHeld()
+    {
+        Span<bool> pressed = stackalloc bool[5];
+
+        Assert.False(Rz09_0528SpecialKeyRawKeyboardInput.TryCreateTrigger(
+            0x49,
+            ReactiveRawKeyboardInput.ExtendedE0Flag,
+            functionKeyPressed: false,
+            pressed,
+            out _));
+        Assert.True(Rz09_0528SpecialKeyRawKeyboardInput.TryCreateTrigger(
+            0x49,
+            ReactiveRawKeyboardInput.ExtendedE0Flag,
+            functionKeyPressed: true,
+            pressed,
+            out SpecialKeySlot m1));
+        Assert.Equal(SpecialKeySlot.M1, m1);
+        Assert.False(Rz09_0528SpecialKeyRawKeyboardInput.TryCreateTrigger(
+            0x49,
+            ReactiveRawKeyboardInput.ExtendedE0Flag,
+            functionKeyPressed: true,
+            pressed,
+            out _));
+        Assert.False(Rz09_0528SpecialKeyRawKeyboardInput.TryCreateTrigger(
+            0x49,
+            ReactiveRawKeyboardInput.ExtendedE0Flag |
+                ReactiveRawKeyboardInput.KeyBreakFlag,
+            functionKeyPressed: true,
+            pressed,
+            out _));
+        Assert.True(Rz09_0528SpecialKeyRawKeyboardInput.TryCreateTrigger(
+            0x51,
+            ReactiveRawKeyboardInput.ExtendedE0Flag,
+            functionKeyPressed: true,
+            pressed,
+            out SpecialKeySlot m2));
+        Assert.Equal(SpecialKeySlot.M2, m2);
+    }
+
+    [Fact]
     public void RawHidInput_DoesNotTreatDirectDefaultActionsAsFnLayerMKeys()
     {
         bool functionPressed = false;

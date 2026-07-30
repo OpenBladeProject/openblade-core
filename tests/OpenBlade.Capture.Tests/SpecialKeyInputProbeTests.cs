@@ -102,4 +102,38 @@ public sealed class SpecialKeyInputProbeTests
             PerformanceShortcutSource.FunctionP,
             functionP.PerformanceShortcut);
     }
+
+    [Theory]
+    [InlineData(0x49, SpecialKeySlot.M1)]
+    [InlineData(0x51, SpecialKeySlot.M2)]
+    public void Rz090528SemanticDecoder_DecodesTranslatedPageKeys(
+        ushort makeCode,
+        SpecialKeySlot expected)
+    {
+        var decoder = new Rz090528SpecialKeySemanticDecoder();
+
+        _ = decoder.Process(Convert.FromHexString("040A0000"));
+        Rz090528DecodedSpecialKeyInput decoded = decoder.ProcessKeyboard(
+            makeCode,
+            ReactiveRawKeyboardInput.ExtendedE0Flag);
+
+        Assert.Equal(expected, decoded.SpecialKey);
+        Assert.Null(decoded.PerformanceShortcut);
+    }
+
+    [Fact]
+    public void Rz090528SemanticDecoder_DecodesTranslatedFunctionP()
+    {
+        var decoder = new Rz090528SpecialKeySemanticDecoder();
+
+        _ = decoder.Process(Convert.FromHexString("040A0000"));
+        Rz090528DecodedSpecialKeyInput decoded = decoder.ProcessKeyboard(
+            0x19,
+            0);
+
+        Assert.Null(decoded.SpecialKey);
+        Assert.Equal(
+            PerformanceShortcutSource.FunctionP,
+            decoded.PerformanceShortcut);
+    }
 }

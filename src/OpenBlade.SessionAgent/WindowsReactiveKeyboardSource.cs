@@ -514,6 +514,36 @@ internal sealed class WindowsReactiveKeyboardSource : IReactiveKeyboardSource
         RawKeyboard keyboard = Marshal.PtrToStructure<RawKeyboard>(
             nint.Add(buffer, checked((int)headerSize)));
         bool keyDown = (keyboard.Flags & RawKeyboardBreakFlag) == 0;
+        if (deviceKind == RazerBladeInputDeviceKind.Rz09_0528)
+        {
+            bool inputAdmitted = readSpecialKeyInputAdmitted();
+            if (Rz09_0528SpecialKeyRawKeyboardInput.TryCreateTrigger(
+                    keyboard.MakeCode,
+                    keyboard.Flags,
+                    performanceFunctionKeyPressed,
+                    specialKeyPressed,
+                    out SpecialKeySlot specialKey)
+                && inputAdmitted
+                && ShouldOverrideSpecialKey(
+                    deviceKind,
+                    specialKey,
+                    shouldOverrideSpecialKey(specialKey)))
+            {
+                publishSpecialKey(specialKey);
+            }
+            if (Rz09_0528PerformanceShortcutRawHidInput.TryCreateFunctionPTrigger(
+                    keyboard.MakeCode,
+                    keyboard.Flags,
+                    performanceFunctionKeyPressed,
+                    ref functionPPressed,
+                    out PerformanceShortcutSource exactShortcut)
+                && inputAdmitted)
+            {
+                publishPerformanceShortcut(exactShortcut);
+            }
+            return;
+        }
+
         bool observedByHook = hookHealth.Consume(
             keyboard.MakeCode,
             keyDown,

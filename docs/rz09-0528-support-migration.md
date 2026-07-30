@@ -1216,6 +1216,19 @@ the missing events. Keep `SpecialKeyBindingsAccess=ObservedOnly`; do not publish
 or suppress M1, M2, or Fn+P until the production path observes them
 independently.
 
+The Windows transport distinction supplies a concrete next test. USBPcap sees
+report-ID-01 keyboard usages `4B`, `4E`, and `13`, but Windows may expose a
+keyboard top-level collection as `RIM_TYPEKEYBOARD` rather than returning its
+original HID bytes through `RIM_TYPEHID`. OpenBlade now has an exact-PID,
+MI_01-only candidate path that reconstructs M1/M2 from extended Page Up/Page
+Down scan codes `49`/`51` and Fn+P from scan code `19`, while sharing the
+existing Fn and edge-latch state so a platform that exposes both forms cannot
+double-fire. The capture probe reports those translated identities, and the
+production path remains behind `SpecialKeyBindingsAccess`; this is an
+implementation hypothesis until a fresh physical probe observes the events.
+Ordinary Page Up/Page Down must continue to pass through when no override is
+configured.
+
 The bounded
 `probe-rz09-0528-02c6-hid-input-access` diagnostic then tested whether a
 shared direct HID reader could replace Raw Input without taking device

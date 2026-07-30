@@ -312,6 +312,43 @@ public sealed class ReactiveKeyboardInputTests
             out source));
     }
 
+    [Fact]
+    public void Rz090528RawKeyboard_FnPUsesTranslatedPScanCode()
+    {
+        bool functionPPressed = false;
+
+        Assert.False(
+            Rz09_0528PerformanceShortcutRawHidInput.TryCreateFunctionPTrigger(
+                0x19,
+                0,
+                functionKeyPressed: false,
+                ref functionPPressed,
+                out _));
+        Assert.True(
+            Rz09_0528PerformanceShortcutRawHidInput.TryCreateFunctionPTrigger(
+                0x19,
+                0,
+                functionKeyPressed: true,
+                ref functionPPressed,
+                out PerformanceShortcutSource source));
+        Assert.Equal(PerformanceShortcutSource.FunctionP, source);
+        Assert.False(
+            Rz09_0528PerformanceShortcutRawHidInput.TryCreateFunctionPTrigger(
+                0x19,
+                0,
+                functionKeyPressed: true,
+                ref functionPPressed,
+                out _));
+        Assert.False(
+            Rz09_0528PerformanceShortcutRawHidInput.TryCreateFunctionPTrigger(
+                0x19,
+                ReactiveRawKeyboardInput.KeyBreakFlag,
+                functionKeyPressed: true,
+                ref functionPPressed,
+                out _));
+        Assert.False(functionPPressed);
+    }
+
     [Theory]
     [InlineData(null)]
     [InlineData("")]

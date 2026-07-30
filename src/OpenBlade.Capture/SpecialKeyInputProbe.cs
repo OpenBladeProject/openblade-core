@@ -287,6 +287,20 @@ public sealed class SpecialKeyInputProbe
         output.WriteLine(
             $"Keyboard Collection={collection};ScanCode={prefix}:{keyboard.MakeCode:X2};" +
             $"VirtualKey={keyboard.VirtualKey:X2};State={state}");
+        if (collection == "MI_01" && exactDecoder is { } decoder)
+        {
+            Rz090528DecodedSpecialKeyInput decoded =
+                decoder.ProcessKeyboard(keyboard.MakeCode, keyboard.Flags);
+            if (decoded.SpecialKey is { } specialKey)
+            {
+                output.WriteLine($"DecodedSpecialKey={specialKey}");
+            }
+            if (decoded.PerformanceShortcut is { } performanceShortcut)
+            {
+                output.WriteLine(
+                    $"DecodedPerformanceShortcut={performanceShortcut}");
+            }
+        }
     }
 
     private void ProcessHid(nint buffer, uint headerSize, uint receivedSize, string collection)
@@ -637,6 +651,31 @@ internal sealed class Rz090528SpecialKeySemanticDecoder
         PerformanceShortcutSource? performanceShortcut =
             Rz09_0528PerformanceShortcutRawHidInput.TryCreateTrigger(
                 report,
+                functionKeyPressed,
+                ref functionPPressed,
+                out PerformanceShortcutSource triggeredPerformanceShortcut)
+                ? triggeredPerformanceShortcut
+                : null;
+        return new(specialKey, performanceShortcut);
+    }
+
+    internal Rz090528DecodedSpecialKeyInput ProcessKeyboard(
+        ushort makeCode,
+        ushort flags)
+    {
+        SpecialKeySlot? specialKey =
+            Rz09_0528SpecialKeyRawKeyboardInput.TryCreateTrigger(
+                makeCode,
+                flags,
+                functionKeyPressed,
+                specialKeyPressed,
+                out SpecialKeySlot triggeredSpecialKey)
+                ? triggeredSpecialKey
+                : null;
+        PerformanceShortcutSource? performanceShortcut =
+            Rz09_0528PerformanceShortcutRawHidInput.TryCreateFunctionPTrigger(
+                makeCode,
+                flags,
                 functionKeyPressed,
                 ref functionPPressed,
                 out PerformanceShortcutSource triggeredPerformanceShortcut)

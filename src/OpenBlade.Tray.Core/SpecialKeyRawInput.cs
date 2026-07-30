@@ -176,6 +176,48 @@ public static class Rz09_0528SpecialKeyRawHidInput
             out slot);
 }
 
+/// <summary>
+/// Reconstructs M1 and M2 when Windows exposes the PID 02C6 keyboard
+/// collection as <c>RIM_TYPEKEYBOARD</c>. USBPcap sees report-ID-01 usages,
+/// while Raw Input translates those same packets into extended Page Up and
+/// Page Down scan codes instead of returning the original HID bytes.
+/// </summary>
+public static class Rz09_0528SpecialKeyRawKeyboardInput
+{
+    private const ushort PageUpScanCode = 0x49;
+    private const ushort PageDownScanCode = 0x51;
+    private const int SpecialKeyCount = 5;
+
+    public static bool TryCreateTrigger(
+        ushort makeCode,
+        ushort flags,
+        bool functionKeyPressed,
+        Span<bool> keyPressed,
+        out SpecialKeySlot slot)
+    {
+        slot = makeCode switch
+        {
+            PageUpScanCode => SpecialKeySlot.M1,
+            PageDownScanCode => SpecialKeySlot.M2,
+            _ => default,
+        };
+        if (makeCode is not PageUpScanCode and not PageDownScanCode
+            || keyPressed.Length < SpecialKeyCount
+            || (flags & ReactiveRawKeyboardInput.ExtendedE0Flag) == 0
+            || (flags & ReactiveRawKeyboardInput.ExtendedE1Flag) != 0)
+        {
+            return false;
+        }
+
+        int index = (int)slot;
+        bool now = functionKeyPressed
+            && (flags & ReactiveRawKeyboardInput.KeyBreakFlag) == 0;
+        bool trigger = now && !keyPressed[index];
+        keyPressed[index] = now;
+        return trigger;
+    }
+}
+
 public static class RazerBladeSpecialKeyRawHidInput
 {
     public static bool TryCreateTrigger(
