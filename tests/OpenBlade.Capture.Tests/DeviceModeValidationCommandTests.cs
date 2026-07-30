@@ -52,7 +52,8 @@ public sealed class DeviceModeValidationCommandTests
 
         Assert.Equal(0, exitCode);
         Assert.True(visualConfirmation);
-        Assert.Contains("normal keyboard effect may be temporarily blank", writer.ToString());
+        Assert.Contains("keyboard effect may be temporarily blank", writer.ToString());
+        Assert.Contains("expected function-layer behavior", writer.ToString());
         Assert.Contains("\"restored\": true", writer.ToString());
         Assert.Contains("\"productionAdmitted\": false", writer.ToString());
     }

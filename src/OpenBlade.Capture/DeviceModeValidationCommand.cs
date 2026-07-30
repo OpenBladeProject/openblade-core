@@ -101,10 +101,10 @@ internal sealed class DeviceModeValidationCommand(
         CancellationToken cancellationToken)
     {
         await output.WriteLineAsync(
-            "Driver mode is confirmed. The normal keyboard effect may be temporarily blank.")
+            "The candidate device mode is confirmed. The keyboard effect may be temporarily blank.")
             .ConfigureAwait(false);
         await output.WriteLineAsync(
-            "Hold Fn and check the extended function layer. Type YES only if it behaves as expected.")
+            "Hold Fn and check the expected function-layer behavior. Type YES only if it behaves as expected.")
             .ConfigureAwait(false);
         string? response = await input.ReadLineAsync(cancellationToken).ConfigureAwait(false);
         return string.Equals(response?.Trim(), "YES", StringComparison.Ordinal);
