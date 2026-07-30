@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using OpenBlade.Contracts;
 
 namespace OpenBlade.FirmwareSmoke;
 
@@ -29,7 +30,12 @@ public sealed record FirmwareSmokeCapabilities(
     bool SupportsBatteryProtectionOff,
     bool SupportsTemporaryFullCharge,
     IReadOnlyList<string> LogoLightingModes,
-    IReadOnlyList<string> OneShotLaptopControls);
+    IReadOnlyList<string> OneShotLaptopControls,
+    CustomPerformanceCapabilities? CustomPerformance,
+    CpuPowerLimitCapabilities? CpuPowerLimit,
+    CpuVoltageOptimizerCapabilities? CpuVoltageOptimizer,
+    GpuOverclockCapabilities? GpuOverclock,
+    IReadOnlyList<PowerSourceBehaviorObservation> ObservedPowerSourceBehaviors);
 
 public sealed record FirmwareSmokeControlState(
     string? Performance,

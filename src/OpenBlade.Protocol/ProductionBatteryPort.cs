@@ -94,7 +94,12 @@ internal sealed class ProductionBatteryPort : IProductionBatteryPort
         TimeSpan exchangeTimeout,
         FanSpeedRange? fanSpeedRange = null,
         IReadOnlySet<FanMode>? admittedFanModes = null,
-        IReadOnlySet<AdapterPowerState>? admittedAdapterPowerStates = null)
+        IReadOnlySet<AdapterPowerState>? admittedAdapterPowerStates = null,
+        CustomPerformanceCapabilities? customPerformanceCapabilities = null,
+        CpuPowerLimitCapabilities? cpuPowerLimitCapabilities = null,
+        CpuVoltageOptimizerCapabilities? cpuVoltageOptimizerCapabilities = null,
+        GpuOverclockCapabilities? gpuOverclockCapabilities = null,
+        IReadOnlyList<PowerSourceBehaviorObservation>? observedPowerSourceBehaviors = null)
         : this(
             session,
             session,
@@ -104,7 +109,12 @@ internal sealed class ProductionBatteryPort : IProductionBatteryPort
             exchangeTimeout,
             fanSpeedRange,
             admittedFanModes,
-            admittedAdapterPowerStates)
+            admittedAdapterPowerStates,
+            customPerformanceCapabilities,
+            cpuPowerLimitCapabilities,
+            cpuVoltageOptimizerCapabilities,
+            gpuOverclockCapabilities,
+            observedPowerSourceBehaviors)
     {
     }
 
@@ -116,7 +126,12 @@ internal sealed class ProductionBatteryPort : IProductionBatteryPort
         TimeSpan exchangeTimeout,
         FanSpeedRange? fanSpeedRange = null,
         IReadOnlySet<FanMode>? admittedFanModes = null,
-        IReadOnlySet<AdapterPowerState>? admittedAdapterPowerStates = null)
+        IReadOnlySet<AdapterPowerState>? admittedAdapterPowerStates = null,
+        CustomPerformanceCapabilities? customPerformanceCapabilities = null,
+        CpuPowerLimitCapabilities? cpuPowerLimitCapabilities = null,
+        CpuVoltageOptimizerCapabilities? cpuVoltageOptimizerCapabilities = null,
+        GpuOverclockCapabilities? gpuOverclockCapabilities = null,
+        IReadOnlyList<PowerSourceBehaviorObservation>? observedPowerSourceBehaviors = null)
         : this(
             actor.Session,
             actor,
@@ -126,7 +141,12 @@ internal sealed class ProductionBatteryPort : IProductionBatteryPort
             exchangeTimeout,
             fanSpeedRange,
             admittedFanModes,
-            admittedAdapterPowerStates)
+            admittedAdapterPowerStates,
+            customPerformanceCapabilities,
+            cpuPowerLimitCapabilities,
+            cpuVoltageOptimizerCapabilities,
+            gpuOverclockCapabilities,
+            observedPowerSourceBehaviors)
     {
     }
 
@@ -139,7 +159,12 @@ internal sealed class ProductionBatteryPort : IProductionBatteryPort
         TimeSpan exchangeTimeout,
         FanSpeedRange? fanSpeedRange,
         IReadOnlySet<FanMode>? admittedFanModes,
-        IReadOnlySet<AdapterPowerState>? admittedAdapterPowerStates)
+        IReadOnlySet<AdapterPowerState>? admittedAdapterPowerStates,
+        CustomPerformanceCapabilities? customPerformanceCapabilities,
+        CpuPowerLimitCapabilities? cpuPowerLimitCapabilities,
+        CpuVoltageOptimizerCapabilities? cpuVoltageOptimizerCapabilities,
+        GpuOverclockCapabilities? gpuOverclockCapabilities,
+        IReadOnlyList<PowerSourceBehaviorObservation>? observedPowerSourceBehaviors)
     {
         this.session = session ?? throw new ArgumentNullException(nameof(session));
         this.ownedSession = ownedSession ?? throw new ArgumentNullException(nameof(ownedSession));
@@ -178,7 +203,12 @@ internal sealed class ProductionBatteryPort : IProductionBatteryPort
             catalog,
             readEvidence,
             this.fanSpeedRange,
-            this.admittedFanModes);
+            this.admittedFanModes,
+            customPerformanceCapabilities,
+            cpuPowerLimitCapabilities,
+            cpuVoltageOptimizerCapabilities,
+            gpuOverclockCapabilities,
+            observedPowerSourceBehaviors);
     }
 
     public DeviceCapabilities Capabilities { get; }

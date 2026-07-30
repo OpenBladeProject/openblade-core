@@ -71,6 +71,58 @@ public static class FirmwareSmokeAssessment
         (SpecialKeySlotSet.M3 | SpecialKeySlotSet.M4 | SpecialKeySlotSet.M5).ToString(),
         DeviceFeatureAccess.ObservedOnly.ToString());
 
+    private static readonly IReadOnlySet<CustomPerformanceCombination>
+        ExpectedRz090528CustomPerformance = new HashSet<CustomPerformanceCombination>
+        {
+            new(CustomPerformanceLevel.Low, CustomPerformanceLevel.Low),
+            new(CustomPerformanceLevel.Low, CustomPerformanceLevel.Medium),
+            new(CustomPerformanceLevel.Low, CustomPerformanceLevel.High),
+            new(CustomPerformanceLevel.Medium, CustomPerformanceLevel.Low),
+            new(CustomPerformanceLevel.Medium, CustomPerformanceLevel.Medium),
+            new(CustomPerformanceLevel.Medium, CustomPerformanceLevel.High),
+            new(CustomPerformanceLevel.High, CustomPerformanceLevel.Low),
+        };
+
+    private static readonly CpuPowerLimitCapabilities ExpectedRz090528CpuPowerLimit =
+        new(new DeviceNumericRange(45, 95, 1), DeviceFeatureAccess.ObservedOnly);
+
+    private static readonly CpuVoltageOptimizerCapabilities
+        ExpectedRz090528CpuVoltageOptimizer = new(
+            new DeviceNumericRange(-30, -1, 1),
+            DeviceFeatureAccess.ObservedOnly)
+        {
+            SupportsEnableDisable = true,
+        };
+
+    private static readonly GpuOverclockCapabilities ExpectedRz090528GpuOverclock = new(
+        new DeviceNumericRange(-1000, 400, null),
+        new DeviceNumericRange(-1000, 3000, null),
+        DeviceFeatureAccess.ObservedOnly)
+    {
+        SupportsEnableDisable = true,
+    };
+
+    private static readonly IReadOnlyList<PowerSourceBehaviorObservation>
+        ExpectedRz090528PowerSourceBehaviors =
+        [
+            new(
+                PowerSource.Battery,
+                PerformancePreset.BatterySaver,
+                FanMode.Automatic,
+                FixedFanControlAvailable: false,
+                PerformanceModeAvailable: false,
+                CustomModeAvailable: false,
+                InadequatePowerWarningVisible: false),
+            new(
+                PowerSource.UsbC,
+                PerformancePreset.Balanced,
+                FanMode.Automatic,
+                FixedFanControlAvailable: false,
+                PerformanceModeAvailable: false,
+                CustomModeAvailable: false,
+                InadequatePowerWarningVisible: true),
+        ];
+
     public static IReadOnlyList<string> ManualChecks { get; } =
     [
         "Confirm keyboard Off and brightness; on models with admitted effects, also confirm Static and one animation.",
@@ -438,6 +490,46 @@ public static class FirmwareSmokeAssessment
                 snapshot.Runtime.SessionAgentProcessCount),
         };
 
+        if (RazerBladeModelCatalog.Find(snapshot.TargetModel)?.ModelNumber
+            == RazerBladeModelCatalog.Rz090528ModelNumber)
+        {
+            checks.Add(Check(
+                "capabilities.custom-performance",
+                "Exact-model Custom performance combinations are retained",
+                snapshot.Capabilities.CustomPerformance?.AllowedCombinations.SetEquals(
+                    ExpectedRz090528CustomPerformance) == true,
+                $"{ExpectedRz090528CustomPerformance.Count} exact combinations",
+                snapshot.Capabilities.CustomPerformance is { } custom
+                    ? $"{custom.AllowedCombinations.Count} combinations"
+                    : "Unavailable"));
+            checks.Add(Check(
+                "capabilities.cpu-power-limit",
+                "Observed CPU power-limit range is retained",
+                snapshot.Capabilities.CpuPowerLimit == ExpectedRz090528CpuPowerLimit,
+                ExpectedRz090528CpuPowerLimit.ToString(),
+                snapshot.Capabilities.CpuPowerLimit?.ToString() ?? "Unavailable"));
+            checks.Add(Check(
+                "capabilities.cpu-voltage-optimizer",
+                "Observed CPU voltage-optimizer range is retained",
+                snapshot.Capabilities.CpuVoltageOptimizer
+                    == ExpectedRz090528CpuVoltageOptimizer,
+                ExpectedRz090528CpuVoltageOptimizer.ToString(),
+                snapshot.Capabilities.CpuVoltageOptimizer?.ToString() ?? "Unavailable"));
+            checks.Add(Check(
+                "capabilities.gpu-overclock",
+                "Observed GPU overclock policy is retained",
+                snapshot.Capabilities.GpuOverclock == ExpectedRz090528GpuOverclock,
+                ExpectedRz090528GpuOverclock.ToString(),
+                snapshot.Capabilities.GpuOverclock?.ToString() ?? "Unavailable"));
+            checks.Add(Check(
+                "capabilities.power-source-behaviors",
+                "Observed battery and USB-C restrictions are retained",
+                snapshot.Capabilities.ObservedPowerSourceBehaviors.SequenceEqual(
+                    ExpectedRz090528PowerSourceBehaviors),
+                $"{ExpectedRz090528PowerSourceBehaviors.Count} exact observations",
+                $"{snapshot.Capabilities.ObservedPowerSourceBehaviors.Count} observations"));
+        }
+
         checks.Add(new FirmwareSmokeCheck(
             "runtime.tray",
             "One OpenBlade Tray process is preferred",
@@ -506,7 +598,13 @@ public static class FirmwareSmokeAssessment
         $"LampArray={capabilities.LampArrayLightingAccess ?? "Unavailable"}; " +
         $"ChargeLimits={capabilities.ChargeLimits.Count}; " +
         $"Logo={capabilities.LogoLightingModes.Count}; " +
-        $"Laptop={capabilities.OneShotLaptopControls.Count}";
+        $"Laptop={capabilities.OneShotLaptopControls.Count}; " +
+        $"CustomPerformance={capabilities.CustomPerformance?.AllowedCombinations.Count ?? 0}; " +
+        $"CpuPowerLimit={capabilities.CpuPowerLimit?.Access.ToString() ?? "Unavailable"}; " +
+        $"CpuVoltageOptimizer=" +
+        $"{capabilities.CpuVoltageOptimizer?.Access.ToString() ?? "Unavailable"}; " +
+        $"GpuOverclock={capabilities.GpuOverclock?.Access.ToString() ?? "Unavailable"}; " +
+        $"PowerSourceBehaviors={capabilities.ObservedPowerSourceBehaviors.Count}";
 
     private static bool CapabilitiesEqual(
         FirmwareSmokeCapabilities left,
@@ -531,7 +629,24 @@ public static class FirmwareSmokeAssessment
         && left.SupportsBatteryProtectionOff == right.SupportsBatteryProtectionOff
         && left.SupportsTemporaryFullCharge == right.SupportsTemporaryFullCharge
         && left.LogoLightingModes.SequenceEqual(right.LogoLightingModes)
-        && left.OneShotLaptopControls.SequenceEqual(right.OneShotLaptopControls);
+        && left.OneShotLaptopControls.SequenceEqual(right.OneShotLaptopControls)
+        && CustomPerformanceEqual(left.CustomPerformance, right.CustomPerformance)
+        && left.CpuPowerLimit == right.CpuPowerLimit
+        && left.CpuVoltageOptimizer == right.CpuVoltageOptimizer
+        && left.GpuOverclock == right.GpuOverclock
+        && left.ObservedPowerSourceBehaviors.SequenceEqual(
+            right.ObservedPowerSourceBehaviors);
+
+    private static bool CustomPerformanceEqual(
+        CustomPerformanceCapabilities? left,
+        CustomPerformanceCapabilities? right) =>
+        (left, right) switch
+        {
+            (null, null) => true,
+            ({ } leftValue, { } rightValue) =>
+                leftValue.AllowedCombinations.SetEquals(rightValue.AllowedCombinations),
+            _ => false,
+        };
 
     private static FirmwareSmokeCapabilityExpectation ExpectedCapabilities(
         string modelNumber) =>

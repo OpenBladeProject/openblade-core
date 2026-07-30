@@ -176,7 +176,12 @@ public sealed class ProductionBatteryFactory : IProductionBatteryPortFactory
                 exchangeTimeout,
                 fanSpeedRange,
                 admittedFanModes,
-                admittedAdapterPowerStates),
+                admittedAdapterPowerStates,
+                customPerformanceCapabilities,
+                cpuPowerLimitCapabilities,
+                cpuVoltageOptimizerCapabilities,
+                gpuOverclockCapabilities,
+                observedPowerSourceBehaviors),
             null);
     }
 

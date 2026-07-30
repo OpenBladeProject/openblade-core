@@ -47,6 +47,52 @@ public sealed class FirmwareSmokeAssessmentTests
                 LampArrayLightingAccess = DeviceFeatureAccess.ObservedOnly.ToString(),
                 OneShotLaptopControls =
                     ["FunctionKeyPrimary", "GamingMode", "StartupAnimation"],
+                CustomPerformance = new CustomPerformanceCapabilities(
+                    new HashSet<CustomPerformanceCombination>
+                    {
+                        new(CustomPerformanceLevel.Low, CustomPerformanceLevel.Low),
+                        new(CustomPerformanceLevel.Low, CustomPerformanceLevel.Medium),
+                        new(CustomPerformanceLevel.Low, CustomPerformanceLevel.High),
+                        new(CustomPerformanceLevel.Medium, CustomPerformanceLevel.Low),
+                        new(CustomPerformanceLevel.Medium, CustomPerformanceLevel.Medium),
+                        new(CustomPerformanceLevel.Medium, CustomPerformanceLevel.High),
+                        new(CustomPerformanceLevel.High, CustomPerformanceLevel.Low),
+                    }),
+                CpuPowerLimit = new CpuPowerLimitCapabilities(
+                    new DeviceNumericRange(45, 95, 1),
+                    DeviceFeatureAccess.ObservedOnly),
+                CpuVoltageOptimizer = new CpuVoltageOptimizerCapabilities(
+                    new DeviceNumericRange(-30, -1, 1),
+                    DeviceFeatureAccess.ObservedOnly)
+                {
+                    SupportsEnableDisable = true,
+                },
+                GpuOverclock = new GpuOverclockCapabilities(
+                    new DeviceNumericRange(-1000, 400, null),
+                    new DeviceNumericRange(-1000, 3000, null),
+                    DeviceFeatureAccess.ObservedOnly)
+                {
+                    SupportsEnableDisable = true,
+                },
+                ObservedPowerSourceBehaviors =
+                [
+                    new(
+                        PowerSource.Battery,
+                        PerformancePreset.BatterySaver,
+                        FanMode.Automatic,
+                        FixedFanControlAvailable: false,
+                        PerformanceModeAvailable: false,
+                        CustomModeAvailable: false,
+                        InadequatePowerWarningVisible: false),
+                    new(
+                        PowerSource.UsbC,
+                        PerformancePreset.Balanced,
+                        FanMode.Automatic,
+                        FixedFanControlAvailable: false,
+                        PerformanceModeAvailable: false,
+                        CustomModeAvailable: false,
+                        InadequatePowerWarningVisible: true),
+                ],
             },
         };
 
@@ -67,6 +113,11 @@ public sealed class FirmwareSmokeAssessmentTests
         Assert.Equal(
             FirmwareSmokeOutcome.Passed,
             Assert.Single(report.Checks, check => check.Id == "capabilities.lamp-array").Outcome);
+        Assert.Equal(
+            FirmwareSmokeOutcome.Passed,
+            Assert.Single(
+                report.Checks,
+                check => check.Id == "capabilities.cpu-voltage-optimizer").Outcome);
     }
 
     [Fact]
@@ -272,7 +323,36 @@ public sealed class FirmwareSmokeAssessmentTests
     [Fact]
     public async Task SnapshotRoundTripsThroughStableJson()
     {
-        FirmwareSmokeSnapshot expected = CreateSnapshot("1.5.0.0");
+        FirmwareSmokeSnapshot expected = CreateSnapshot("1.5.0.0") with
+        {
+            Capabilities = CreateSnapshot("1.5.0.0").Capabilities with
+            {
+                CpuPowerLimit = new CpuPowerLimitCapabilities(
+                    new DeviceNumericRange(45, 95, 1),
+                    DeviceFeatureAccess.ObservedOnly),
+                CpuVoltageOptimizer = new CpuVoltageOptimizerCapabilities(
+                    new DeviceNumericRange(-30, -1, 1),
+                    DeviceFeatureAccess.ObservedOnly)
+                {
+                    SupportsEnableDisable = true,
+                },
+                GpuOverclock = new GpuOverclockCapabilities(
+                    new DeviceNumericRange(-1000, 400, null),
+                    new DeviceNumericRange(-1000, 3000, null),
+                    DeviceFeatureAccess.ObservedOnly),
+                ObservedPowerSourceBehaviors =
+                [
+                    new(
+                        PowerSource.UsbC,
+                        PerformancePreset.Balanced,
+                        FanMode.Automatic,
+                        FixedFanControlAvailable: false,
+                        PerformanceModeAvailable: false,
+                        CustomModeAvailable: false,
+                        InadequatePowerWarningVisible: true),
+                ],
+            },
+        };
         string directory = Path.Combine(
             Path.GetTempPath(),
             "OpenBlade.FirmwareSmoke.Tests",
@@ -291,6 +371,18 @@ public sealed class FirmwareSmokeAssessmentTests
             Assert.Equal(
                 expected.Capabilities.PerformancePresets,
                 actual.Capabilities.PerformancePresets);
+            Assert.Equal(
+                expected.Capabilities.CpuPowerLimit,
+                actual.Capabilities.CpuPowerLimit);
+            Assert.Equal(
+                expected.Capabilities.CpuVoltageOptimizer,
+                actual.Capabilities.CpuVoltageOptimizer);
+            Assert.Equal(
+                expected.Capabilities.GpuOverclock,
+                actual.Capabilities.GpuOverclock);
+            Assert.Equal(
+                expected.Capabilities.ObservedPowerSourceBehaviors,
+                actual.Capabilities.ObservedPowerSourceBehaviors);
             Assert.Equal(expected.Controls, actual.Controls);
         }
         finally
@@ -351,7 +443,12 @@ public sealed class FirmwareSmokeAssessmentTests
                 "GamingMode",
                 "MicrophoneMuteIndicator",
                 "StartupAnimation",
-            ]),
+            ],
+            CustomPerformance: null,
+            CpuPowerLimit: null,
+            CpuVoltageOptimizer: null,
+            GpuOverclock: null,
+            ObservedPowerSourceBehaviors: []),
         new FirmwareSmokeControlState(
             "Balanced",
             "Automatic",
