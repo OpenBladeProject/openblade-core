@@ -1077,7 +1077,7 @@ public sealed class CapabilityPresentationTests
             "{x:Bind ViewModel.HasOperationFeedback, Mode=OneWay}",
             Attribute(NamedElement(document, "InfoBar", "OperationErrorInfoBar"), "Visibility"));
         Assert.Equal(
-            "{x:Bind IsLightingControlUnavailable, Mode=OneWay}",
+            "{x:Bind IsLightingControlUnavailableNoticeVisible, Mode=OneWay}",
             Attribute(NamedElement(document, "InfoBar", "LightingUnavailableInfoBar"), "Visibility"));
         Assert.Contains("{StaticResource TitleLargeTextBlockStyle}", xaml, StringComparison.Ordinal);
         Assert.Contains("{StaticResource AccentButtonStyle}", xaml, StringComparison.Ordinal);
@@ -1811,6 +1811,14 @@ public sealed class CapabilityPresentationTests
         XElement lightingTemplate = NamedTemplate(document, "DashboardLightingCardTemplate");
         XElement effectPicker = NamedElement(document, "ComboBox", "LightingEffectPicker");
         XElement controls = NamedElement(document, "ContentControl", "LightingControls");
+        XElement keyboardSection = NamedElement(
+            document,
+            "StackPanel",
+            "LightingKeyboardSection");
+        XElement powerSavingSection = NamedElement(
+            document,
+            "StackPanel",
+            "LightingPowerSavingSection");
         XElement infoBar = NamedElement(document, "InfoBar", "LightingUnavailableInfoBar");
         XElement displayOffToggle = NamedElement(
             document,
@@ -1829,10 +1837,10 @@ public sealed class CapabilityPresentationTests
         Assert.Null(Attribute(navigation, "Visibility"));
         Assert.Equal("Collapsed", Attribute(page, "Visibility"));
         Assert.Equal(
-            "{x:Bind CanControlLighting, Mode=OneWay}",
+            "{x:Bind CanRequestHardwareControl, Mode=OneWay}",
             Attribute(controls, "IsEnabled"));
         Assert.Equal(
-            "{x:Bind IsLightingControlUnavailable, Mode=OneWay}",
+            "{x:Bind IsLightingControlUnavailableNoticeVisible, Mode=OneWay}",
             Attribute(infoBar, "IsOpen"));
         Assert.Equal(
             "{x:Bind LightingControlUnavailableMessage, Mode=OneWay}",
@@ -1840,6 +1848,13 @@ public sealed class CapabilityPresentationTests
         Assert.Equal(
             "{x:Bind AvailableLightingEffectOptions, Mode=OneWay}",
             Attribute(effectPicker, "ItemsSource"));
+        Assert.All([keyboardSection, powerSavingSection], section =>
+        {
+            Assert.Null(Attribute(section, "IsEnabled"));
+            Assert.Equal(
+                "{x:Bind ShowOpenBladeKeyboardLightingControls, Mode=OneWay}",
+                Attribute(section, "Visibility"));
+        });
         Assert.All([displayOffToggle, idleTimeoutToggle], toggle =>
         {
             Assert.Equal("Right", Attribute(toggle, "HorizontalAlignment"));

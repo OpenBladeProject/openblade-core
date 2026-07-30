@@ -987,7 +987,9 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
                 Notify(nameof(UseWindowsDynamicLighting));
                 Notify(nameof(CanControlLighting));
                 Notify(nameof(IsLightingControlUnavailable));
+                Notify(nameof(IsLightingControlUnavailableNoticeVisible));
                 Notify(nameof(LightingControlUnavailableMessage));
+                Notify(nameof(ShowOpenBladeKeyboardLightingControls));
             }
         }
     }
@@ -998,6 +1000,9 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
 
     public bool IsWindowsDynamicLightingAvailable =>
         Capabilities.LampArrayLightingAccess is not null;
+
+    public bool ShowOpenBladeKeyboardLightingControls =>
+        !UseWindowsDynamicLighting;
 
     public async Task<bool> SetKeyboardLightingControlModeAsync(
         KeyboardLightingControlMode mode,
@@ -1355,6 +1360,9 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
 
     public bool IsLightingControlUnavailable =>
         !CanControlLighting && !IsCheckingLaptopConnection(latestStatus);
+
+    public bool IsLightingControlUnavailableNoticeVisible =>
+        IsLightingControlUnavailable && !UseWindowsDynamicLighting;
 
     public string LightingControlUnavailableMessage
     {
@@ -7497,7 +7505,9 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         Notify(nameof(HasLightingCapability));
         Notify(nameof(CanControlLighting));
         Notify(nameof(IsLightingControlUnavailable));
+        Notify(nameof(IsLightingControlUnavailableNoticeVisible));
         Notify(nameof(LightingControlUnavailableMessage));
+        Notify(nameof(ShowOpenBladeKeyboardLightingControls));
         Notify(nameof(HasActiveChanges));
         Notify(nameof(ActiveChangesText));
         Notify(nameof(HasAttention));

@@ -1100,8 +1100,8 @@
                         <StackPanel>
                         <InfoBar x:Name="LightingUnavailableInfoBar"
                                  Margin="0,0,0,18"
-                                 IsOpen="{x:Bind IsLightingControlUnavailable, Mode=OneWay}"
-                                 Visibility="{x:Bind IsLightingControlUnavailable, Mode=OneWay}"
+                                 IsOpen="{x:Bind IsLightingControlUnavailableNoticeVisible, Mode=OneWay}"
+                                 Visibility="{x:Bind IsLightingControlUnavailableNoticeVisible, Mode=OneWay}"
                                  IsClosable="False"
                                  Severity="Informational"
                                  Title="Lighting controls unavailable"
@@ -1144,9 +1144,10 @@
                         </Border>
                         <ContentControl x:Name="LightingControls"
                                         HorizontalContentAlignment="Stretch"
-                                        IsEnabled="{x:Bind CanControlLighting, Mode=OneWay}">
+                                        IsEnabled="{x:Bind CanRequestHardwareControl, Mode=OneWay}">
                             <StackPanel x:Name="LightingSectionHost">
-                        <StackPanel x:Name="LightingKeyboardSection">
+                        <StackPanel x:Name="LightingKeyboardSection"
+                                    Visibility="{x:Bind ShowOpenBladeKeyboardLightingControls, Mode=OneWay}">
                         <Border Style="{StaticResource SettingsGroupStyle}">
                             <StackPanel>
                                 <Border Style="{StaticResource SettingsLastRowStyle}">
@@ -1513,7 +1514,8 @@
                         </Border>
                         </StackPanel>
 
-                        <StackPanel x:Name="LightingPowerSavingSection">
+                        <StackPanel x:Name="LightingPowerSavingSection"
+                                    Visibility="{x:Bind ShowOpenBladeKeyboardLightingControls, Mode=OneWay}">
                         <TextBlock Text="Switch off lighting"
                                    Style="{StaticResource SectionHeaderStyle}"
                                    Margin="0,24,0,10" />
