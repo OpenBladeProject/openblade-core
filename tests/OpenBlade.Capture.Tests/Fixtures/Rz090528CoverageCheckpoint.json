@@ -1,16 +1,27 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "source": {
     "repository": "openblade-captures",
-    "revision": "29b67f0",
+    "revision": "6aaf65b",
     "path": "decoded/rz09-0528-pid-02c6-bios-2.02-device-coverage.json"
   },
   "device": {
     "modelNumber": "RZ09-0528",
     "vendorIdHex": "1532",
     "productIdHex": "02C6",
-    "bios": "2.02"
+    "bios": "2.02",
+    "ec": "1.09",
+    "mcu": "1.9.0.0"
   },
+  "statusValues": [
+    "NotInvestigated",
+    "Absent",
+    "SoftwareOnly",
+    "Captured",
+    "QueryValidated",
+    "SetterValidated",
+    "ProductionAdmitted"
+  ],
   "capabilities": {
     "identityAndFirmware": {
       "usbDescriptors": "ProductionAdmitted",
@@ -153,8 +164,8 @@
       "gamingModeGetter": "ProductionAdmitted",
       "startupAnimation": "ProductionAdmitted",
       "startupAnimationGetter": "ProductionAdmitted",
-      "normalDeviceMode": "NotInvestigated",
-      "driverDeviceMode": "NotInvestigated",
+      "normalDeviceMode": "ProductionAdmitted",
+      "driverDeviceMode": "ProductionAdmitted",
       "deviceModeGetter": "ProductionAdmitted"
     },
     "specialKeys": {
@@ -194,6 +205,7 @@
     },
     "conflicts": {
       "vendorControllerPresent": "SetterValidated",
+      "windowsDynamicLightingDelegation": "ProductionAdmitted",
       "externalChangeDetection": "SoftwareOnly",
       "defaultZeroWritePolicy": "ProductionAdmitted",
       "explicitReclaim": "SoftwareOnly"

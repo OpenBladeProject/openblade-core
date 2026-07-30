@@ -1170,9 +1170,11 @@ The sanitized record contains only byte lengths, SHA-256 provenance, typed
 results, and service states. It contains no raw output, device path, serial
 number, or unique USB identifier.
 
-Both exact setters are now `SetterValidated`; the validation command still
-reports `productionAdmitted=false`. Review the exact-model capability gate and
-public mutation surface separately before claiming production admission.
+Both exact setters advanced from `SetterValidated` to `ProductionAdmitted` in
+capture commit `6aaf65b` after the ownership-aware production lifecycle landed
+in core commit `3707c49`. The validation command still reports the capture-time
+fact `productionAdmitted=false`; do not rewrite raw provenance to imply that
+the validator itself was a production API.
 
 ## Treat same-version Burn replacement as an ownership transaction
 
@@ -1394,15 +1396,15 @@ checkpoint.
 
 Do not interpret the green admission probe as full RZ09-0528 feature coverage.
 The sanitized schema-2 coverage ledger is the completion source of truth. At the
-`29b67f0` special-key-evidence checkpoint its 142 leaves contain:
+`6aaf65b` device-mode-admission checkpoint its 143 leaves contain:
 
-- 48 `ProductionAdmitted`;
+- 51 `ProductionAdmitted`;
 - 3 `QueryValidated`;
 - 30 `Captured`;
 - 1 `SetterValidated`;
 - 10 `SoftwareOnly`;
 - 3 `Absent`;
-- 47 `NotInvestigated`.
+- 45 `NotInvestigated`.
 
 `Rz090528CoverageContractTests` pins both those counts and every
 `Captured`/`QueryValidated`/`SetterValidated` path. Advancing evidence must
