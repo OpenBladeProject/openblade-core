@@ -141,6 +141,17 @@ public sealed class FanCurveCalculatorTests
                 .TryConvertHighPrecisionKelvin(value));
     }
 
+    [Fact]
+    public void RazerThermalZoneRetainsBothExactModelCounterPaths()
+    {
+        Assert.Equal(
+            [
+                @"\Thermal Zone Information(\_SB.PCI0.SBRG.EC0.TZRZ)\High Precision Temperature",
+                @"\Thermal Zone Information(\_SB.PC00.LPCB.EC0.TZRZ)\High Precision Temperature",
+            ],
+            SafeWindowsFanTemperatureSource.WindowsThermalZone.RazerEcCounterPaths);
+    }
+
     private sealed record FixedGpuActivitySource(bool IsActive) : IGpuActivitySource
     {
         bool IGpuActivitySource.IsActive() => IsActive;

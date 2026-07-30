@@ -1396,6 +1396,25 @@ Final validation at the current transactional-identity checkpoint:
 Update this section after every evidence, implementation, or documentation
 checkpoint.
 
+## Treat the Razer EC thermal-zone path as model-specific
+
+The first exact-device firmware smoke reported CPU temperature unavailable even
+though Windows exposed the Razer EC thermal zone. A read-only PDH enumeration
+showed why:
+
+- RZ09-0528 BIOS 2.02 / EC 1.09 publishes TZRZ as
+  `\_SB.PCI0.SBRG.EC0.TZRZ`; its sampled high-precision value `3182`
+  converted to 45°C;
+- the earlier RZ09-0581 implementation queried only
+  `\_SB.PC00.LPCB.EC0.TZRZ`;
+- Windows also exposed `\_TZ.TZ01`, but OpenBlade must not silently substitute
+  an unrelated thermal zone.
+
+Keep both validated TZRZ counter paths as explicit candidates, newest exact
+model first. Do not replace them with a wildcard or “first thermal zone”
+selection. The conversion remains tenths Kelvin to Celsius with the existing
+0–115°C plausibility bound.
+
 ## Remaining exact-device completion frontier
 
 Do not interpret the green admission probe as full RZ09-0528 feature coverage.
