@@ -393,8 +393,9 @@ public sealed class WinUiShellContractTests
         Assert.DoesNotContain("<StackPanel", card, StringComparison.Ordinal);
         Assert.Contains("TextWrapping=\"Wrap\"", card, StringComparison.Ordinal);
         Assert.Contains("x:Name=\"WindowsDynamicLightingToggle\"", card, StringComparison.Ordinal);
-        Assert.Contains("Grid.Column=\"1\"", card, StringComparison.Ordinal);
-        Assert.Contains("Grid.RowSpan=\"3\"", card, StringComparison.Ordinal);
+        Assert.Contains("Margin=\"52,0,0,0\"", card, StringComparison.Ordinal);
+        Assert.Contains("HorizontalAlignment=\"Left\"", card, StringComparison.Ordinal);
+        Assert.DoesNotContain("Grid.Column=\"1\"", card, StringComparison.Ordinal);
     }
 
     [Fact]

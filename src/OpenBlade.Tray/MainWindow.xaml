@@ -1109,17 +1109,14 @@
                         <Border Style="{StaticResource SettingsGroupStyle}"
                                 Margin="0,0,0,12"
                                 Visibility="{x:Bind IsWindowsDynamicLightingAvailable, Mode=OneWay}">
-                            <Grid ColumnSpacing="20" Padding="16,14">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="*" />
-                                    <ColumnDefinition Width="Auto" />
-                                </Grid.ColumnDefinitions>
+                            <Grid Padding="16,14">
                                 <Grid.RowDefinitions>
                                     <RowDefinition Height="Auto" />
                                     <RowDefinition Height="Auto" />
                                     <RowDefinition Height="Auto" />
                                 </Grid.RowDefinitions>
                                 <TextBlock Text="Let Windows control the keyboard"
+                                           Margin="52,0,0,0"
                                            TextWrapping="Wrap"
                                            Style="{StaticResource CardTitleStyle}" />
                                 <TextBlock Grid.Row="1"
@@ -1132,10 +1129,8 @@
                                                  HorizontalAlignment="Left"
                                                  NavigateUri="ms-settings:personalization-lighting" />
                                 <ToggleSwitch x:Name="WindowsDynamicLightingToggle"
-                                              Grid.Column="1"
-                                              Grid.RowSpan="3"
-                                              HorizontalAlignment="Right"
-                                              VerticalAlignment="Center"
+                                              HorizontalAlignment="Left"
+                                              VerticalAlignment="Top"
                                               MinWidth="0"
                                               AutomationProperties.Name="Let Windows Dynamic Lighting control the keyboard"
                                               OffContent=""
