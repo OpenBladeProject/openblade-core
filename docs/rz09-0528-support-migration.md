@@ -737,6 +737,22 @@ Custom performance and model-specific power-control follow-up:
   and terminated the AMD module even though the `RzDLLService` process
   remained. The exact getter at `20:55:11.588Z` was rejected before a request
   could be written; no setter was bound or invoked.
+- Read-only static inspection of the three exact-hash backend components then
+  preserved the missing feature surface. The client names asynchronous
+  power-limit and curve-optimizer getters/setters, `DeviceInit` /
+  `DeviceTerminate`, callback registration/unregistration, server-state
+  inspection, and `CloseAPPServer`. The server module contains separate
+  `EnableCPUVoltageOptimizer` and `ResetVoltageOffset` symbols. These names
+  prove that enable/disable and value selection are distinct discoveries; they
+  do not establish signatures, authorization, or successful invocation.
+- The next safe lifecycle experiment is not “stop Synapse, then connect”;
+  that already loses the server. A separate bounded validator should register
+  an OpenBlade client while Synapse still owns a live backend, issue no getter
+  or setter, stop only preverified Synapse controller process IDs, recheck
+  isolation, and then issue getter-only requests while the OpenBlade client
+  remains registered. It must unregister/terminate and restore Synapse from a
+  `finally` path. Do not weaken the existing ordinary query command's
+  pre-load Synapse guard to perform this experiment.
 - OpenBlade must not start `RzDLLService`, initialize its privileged tuning
   driver, or bypass the Synapse-process guard merely to make this probe pass.
   Those are a separate backend-ownership feature requiring explicit lifecycle
@@ -1564,7 +1580,7 @@ validation, privacy boundary, and a Windows PowerShell 5.1 regression test.
 
 Do not interpret the green admission probe as full RZ09-0528 feature coverage.
 The sanitized schema-2 coverage ledger is the completion source of truth. At the
-`04281c0` repeated-AC-readback checkpoint its 144 leaves contain:
+`e5b9e14` CPU-backend-discovery checkpoint its 144 leaves contain:
 
 - 53 `ProductionAdmitted`;
 - 3 `QueryValidated`;

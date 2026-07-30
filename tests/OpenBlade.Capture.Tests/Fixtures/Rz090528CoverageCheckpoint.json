@@ -2,7 +2,7 @@
   "schemaVersion": 2,
   "source": {
     "repository": "openblade-captures",
-    "revision": "04281c0",
+    "revision": "e5b9e14",
     "path": "decoded/rz09-0528-pid-02c6-bios-2.02-device-coverage.json"
   },
   "device": {
