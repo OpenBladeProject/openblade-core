@@ -41,7 +41,7 @@ model-independent operating-system APIs.
 | Power-source matrix | Captured, not admitted | Nine exact-device sessions cover barrel AC, USB-C-only, battery, both quiet baselines, and all directed transitions; exact PID 02C6 USB-C reply and independent thermal readback remain missing |
 | Battery charge limit | Admitted | Query, 50/55/60/65/70/75/80-percent setters, protection off, readback, and restoration |
 | Temporary full charge | Admitted | Query, enable, cancel, readback, and restoration |
-| Keyboard behavior and special keys | Partially admitted | Function-key primary, Gaming mode, and startup-animation setters; device mode read-only; special keys pending |
+| Keyboard behavior and special keys | Partially admitted | Function-key primary, Gaming mode, and startup-animation setters; Normal/Driver device-mode setters reversibly validated but not yet production-admitted; special keys pending |
 | Display controls | Admitted | Refresh, DRR, HDR state, and SDR color profiles through Windows APIs |
 | NVIDIA GPU clock offsets | Query validated, writes gated | Driver query succeeded; exact-model Synapse policy is visible in the UI, but writes remain disabled |
 
@@ -252,7 +252,8 @@ Work through read/query-backed controls before one-shot setters.
    effects are represented as observed-only capabilities, while effect-specific
    writes, getter, and matrix geometry remain pending
 5. Function-key primary mode, Gaming mode, startup animation, and device mode —
-   first three setters admitted; device mode remains query-only
+   first three setters admitted; device-mode getter admitted and both exact
+   setters reversibly validated, with production mutation still gated
 6. Special-key report mapping and default-action preservation
 7. Windows display modes, DRR, HDR, and color profiles — admitted through
    Windows APIs; HDR-on behavior now has a bounded save/readback/restore
@@ -1145,22 +1146,33 @@ ordinary Page Up/Page Down pass-through, Fn+P, and the absence of an M4
 performance-shortcut collision. Only then advance the access level to
 `ReadWrite`.
 
-## Preserve both device-mode validation failures
+## Preserve the device-mode negative controls and reversible success
 
-Capture commit `42bdc2d` records two elevated exact-device attempts without
-publishing raw output:
+Capture commits `42bdc2d` and `ceb52f0` record three elevated exact-device
+attempts without publishing raw output:
 
 - the first failed closed on a competing controller before any query or write;
-- after stopping the exact known Razer controller processes, the retry read
-  `Driver` as its baseline and failed `baselineNotNormal`.
+- after stopping the exact known Razer controller processes, the second read
+  `Driver` as its baseline and failed `baselineNotNormal`;
+- after core commit `915149f` made the validator symmetric, the third used
+  `Driver` as its baseline, applied `Normal`, independently read `Normal`,
+  received operator confirmation of expected function-layer behavior, restored
+  `Driver`, and independently read the restored baseline.
 
-Neither attempt issued a setter, neither required a device-mode restoration,
-and OpenBlade, Razer Elevation Service, and Razer Game Manager Service 3 were
-running after both wrappers completed. The result is a negative control, not a
-Driver-mode setter validation. Do not change the validator to accept Driver as
-its starting state: the required evidence is still a reversible Normal-to-
-Driver apply, readback, operator check, restore, and restored readback, followed
-by exact Normal-mode special-key parity.
+The validator must use the opposite of the exact read baseline as its candidate
+and restore that exact baseline. Never hard-code Normal as the required starting
+state: doing so incorrectly rejects a valid Driver-to-Normal-to-Driver
+validation. Retain the first two no-write sessions as negative controls.
+
+The successful wrapper finished with no manual recovery required and with
+OpenBlade, Razer Elevation Service, and Razer Game Manager Service 3 running.
+The sanitized record contains only byte lengths, SHA-256 provenance, typed
+results, and service states. It contains no raw output, device path, serial
+number, or unique USB identifier.
+
+Both exact setters are now `SetterValidated`; the validation command still
+reports `productionAdmitted=false`. Review the exact-model capability gate and
+public mutation surface separately before claiming production admission.
 
 ## Keep user-facing identity and firmware smoke model-specific
 
@@ -1232,6 +1244,13 @@ while delegated, and explains that Windows owns brightness and effects. The
 illuminated lid logo remains a separately labelled firmware endpoint because
 it is not part of the observed keyboard LampArray; do not couple a logo-only
 action to a hidden keyboard write.
+
+Keep the ownership card's title, description, and settings link as direct
+children of a constrained Grid, with the toggle in its own auto-width column
+spanning all three rows. A vertical StackPanel allowed the long description to
+measure wider than the page, leaving the toggle loaded in the accessibility
+tree but clipped beyond the visible window. Core commit `addebe7` fixes that
+layout and adds a shell-contract regression test.
 
 The earlier signed sparse-package registration and priority probe remains
 valuable negative evidence: it proved that an OpenBlade background provider
