@@ -1327,6 +1327,16 @@ visible window. Commits `addebe7` and `ca45ac9` preserve both failed live
 iterations and the final left-edge fix; the shell-contract regression now
 rejects a right-column toggle.
 
+The ownership card exposed a broader WinUI measurement trap at compact window
+sizes. Disabling horizontal scrolling does not by itself constrain a vertical
+`StackPanel` inside a `ScrollViewer`; long card content can still establish an
+oversized desired width and be clipped because the horizontal scrollbar is
+hidden. Every page root therefore binds its `Width` to its own
+`ScrollViewer.ViewportWidth`. Keep that invariant for Dashboard, Profiles,
+Laptop, Lighting, Display, Settings, and About. The tray layout contract test
+enumerates all seven pages so a future card cannot silently reintroduce
+horizontal overflow.
+
 The earlier signed sparse-package registration and priority probe remains
 valuable negative evidence: it proved that an OpenBlade background provider
 would compete with Windows' existing controller. Do not ship that experiment
