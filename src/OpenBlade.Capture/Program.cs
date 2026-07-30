@@ -157,6 +157,46 @@ if (args.Length == 1 && args[0].Equals(
         Console.Out);
 }
 
+if (args.Length == 2 && args[0].Equals(
+    "validate-rz09-0528-02c6-gpu-clock-offsets",
+    StringComparison.OrdinalIgnoreCase))
+{
+    bool confirmationMatched = args[1].Equals(
+        GpuClockOffsetValidationEnvironment.Confirmation,
+        StringComparison.Ordinal);
+    bool exactHost = GpuClockOffsetValidationEnvironment.IsExactHost();
+    bool exactDevice =
+        GpuClockOffsetValidationEnvironment.HasOneExactProtocolCollection();
+    bool synapseInactive =
+        GpuClockOffsetValidationEnvironment.IsSynapseInactive();
+    bool serviceInactive =
+        GpuClockOffsetValidationEnvironment.IsOpenBladeServiceInactive();
+    Console.WriteLine($"ConfirmationMatched={confirmationMatched}");
+    Console.WriteLine($"ExactHost={exactHost}");
+    Console.WriteLine($"ExactDevice={exactDevice}");
+    Console.WriteLine($"SynapseInactive={synapseInactive}");
+    Console.WriteLine($"OpenBladeServiceInactive={serviceInactive}");
+    if (!confirmationMatched
+        || !exactHost
+        || !exactDevice
+        || !synapseInactive
+        || !serviceInactive)
+    {
+        Console.WriteLine("MutationAttempted=False");
+        Console.WriteLine("Success=False");
+        return 2;
+    }
+
+    return GpuClockOffsetValidationCommand.Run(
+        new NvidiaNvmlGpuClockOffsetValidationController(),
+        Console.Out,
+        static () =>
+            GpuClockOffsetValidationEnvironment.IsExactHost()
+            && GpuClockOffsetValidationEnvironment.HasOneExactProtocolCollection()
+            && GpuClockOffsetValidationEnvironment.IsSynapseInactive()
+            && GpuClockOffsetValidationEnvironment.IsOpenBladeServiceInactive());
+}
+
 if (args.Length is >= 1 and <= 3
     && (args[0].Equals(
             "probe-special-keys",
@@ -1481,6 +1521,9 @@ Console.WriteLine("  OpenBlade.Capture query-display");
 Console.WriteLine(
     "  OpenBlade.Capture validate-display-hdr WINDOWS-INTERNAL-DISPLAY:RESTORE");
 Console.WriteLine("  OpenBlade.Capture probe-gpu-clock-offsets");
+Console.WriteLine(
+    "  OpenBlade.Capture validate-rz09-0528-02c6-gpu-clock-offsets " +
+    GpuClockOffsetValidationEnvironment.Confirmation);
 Console.WriteLine("  OpenBlade.Capture probe-special-keys [seconds] [output-file]");
 Console.WriteLine(
     "  OpenBlade.Capture probe-rz09-0528-02c6-special-keys [seconds] [output-file]");

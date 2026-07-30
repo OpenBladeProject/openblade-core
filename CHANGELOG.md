@@ -38,6 +38,10 @@ All notable changes to OpenBlade are documented in this file. The project follow
   records that Windows denies direct shared reads of both keyboard top-level
   collections, preventing an unsafe direct-HID fallback from being mistaken
   for validated special-key access.
+  A separate exact-device GPU offset validator is staged behind host, device,
+  controller-isolation, and exact-confirmation interlocks; it performs an
+  adjacent one-MHz save/set/readback/restore transaction without changing
+  production admission until a live round trip succeeds.
   Firmware-smoke schema 4 records these observed capabilities separately so an
   update cannot silently lose them. Diagnostics, About, tested-platform
   assessment, and firmware smoke now derive the RZ09-0528 / PID `02C6` identity

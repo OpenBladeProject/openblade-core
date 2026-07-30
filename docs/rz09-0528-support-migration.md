@@ -571,6 +571,21 @@ NVIDIA GPU clock-offset follow-up:
   but exact-model writes remain disabled. A read-only NVML range is not setter
   validation, and OpenBlade must not silently substitute the broader driver
   range for the vendor's narrower exact-model policy.
+- The bounded
+  `validate-rz09-0528-02c6-gpu-clock-offsets
+  RZ09-0528:1532:02C6:GPU-OFFSETS:RESTORE` command is the next setter gate.
+  It requires the exact host and one exact PID `02C6` protocol collection,
+  refuses to run while either Synapse or the OpenBlade service is active, and
+  rechecks those isolation conditions immediately before the write. It saves
+  both offsets, chooses a one-MHz adjacent value inside the narrower
+  exact-model policy for both channels, sets both, independently reads both
+  back, and unconditionally restores and verifies the saved pair. Its
+  transactional controller also rolls back a partial core/memory write.
+  A dry invocation with both controllers active proved
+  `MutationAttempted=False`; that is interlock evidence, not setter evidence.
+  Keep `gpuClockOffsets=QueryValidated` and GPU overclock access observed-only
+  until an isolated live run reports `Applied=True`, `ReadBack=True`,
+  `Restored=True`, and `Success=True`.
 
 Elevated capture follow-up:
 
