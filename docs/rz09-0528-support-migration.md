@@ -587,6 +587,15 @@ NVIDIA GPU clock-offset follow-up:
   Keep `gpuClockOffsets=QueryValidated` and GPU overclock access observed-only
   until an isolated live run reports `Applied=True`, `ReadBack=True`,
   `Restored=True`, and `Success=True`.
+- `openblade-captures/tools/Invoke-Rz090528GpuClockOffsetValidation.ps1`
+  packages that run into one elevated Windows PowerShell 5.1 session. It
+  verifies the installed service executables and the signed Synapse app-engine
+  path before stopping anything, records only the verified services/process
+  IDs, restores every initially running service and Synapse from `finally`,
+  and hashes the private output. Pass `-IncludeSpecialKeyProbe` only when the
+  operator is present; it uses the same isolated window for one bounded
+  60-second PID `02C6` special-key retry and hashes that private output
+  separately.
 
 Elevated capture follow-up:
 
