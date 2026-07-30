@@ -1202,6 +1202,13 @@ replacement and require all of the following: the new bundle log plans an
 marker matches the new commit, the service is installed and running, and the
 tray/session processes use that same product version.
 
+That validation completed from `0.1.0+e8b4d5a0` to
+`0.1.0+ca45ac9a`. The installer exited 0, the marker advanced to
+`ca45ac9a`, the installed tray reported the full `ca45ac9` product identity,
+and the OpenBlade service remained Running/Automatic. The final installer
+SHA-256 was
+`3A7A78C17368D000CE638AC1A2CC5204975FCF1B4873E43883B93AD4E04ED2E0`.
+
 Always spell the Store and unattended command as
 `/install /quiet /norestart`. Omitting `/install` leaves the requested Burn
 action ambiguous and is no longer part of the submission contract.
@@ -1277,12 +1284,14 @@ illuminated lid logo remains a separately labelled firmware endpoint because
 it is not part of the observed keyboard LampArray; do not couple a logo-only
 action to a hidden keyboard write.
 
-Keep the ownership card's title, description, and settings link as direct
-children of a constrained Grid, with the toggle in its own auto-width column
-spanning all three rows. A vertical StackPanel allowed the long description to
-measure wider than the page, leaving the toggle loaded in the accessibility
-tree but clipped beyond the visible window. Core commit `addebe7` fixes that
-layout and adds a shell-contract regression test.
+Keep the ownership card's title, description, settings link, and toggle as
+direct children of a Grid, but anchor the toggle to the left edge and offset the
+title beside it. Both the original vertical StackPanel and a star/auto
+two-column Grid allowed the long description to measure wider than the page,
+leaving the toggle loaded in the accessibility tree but clipped beyond the
+visible window. Commits `addebe7` and `ca45ac9` preserve both failed live
+iterations and the final left-edge fix; the shell-contract regression now
+rejects a right-column toggle.
 
 The earlier signed sparse-package registration and priority probe remains
 valuable negative evidence: it proved that an OpenBlade background provider
@@ -1299,6 +1308,26 @@ test records the device lighting-write count, delegates to Windows, exercises
 effect, brightness, and display-off suppression requests, and proves the count
 does not change. It also reloads the machine configuration to prove the choice
 persists.
+
+Live exact-device validation completed on `ca45ac9`:
+
+- Synapse Plugged In visibly showed brightness On at 50 percent, Static quick
+  effect, and Static logo; exact `03/83 010500` readback returned raw `128`;
+- OpenBlade service startup applied the prior OpenBlade-owned Off state before
+  delegation, and exact readback returned raw `0` even while Synapse still
+  displayed its cached On/50/Static state;
+- the left-anchored ownership switch was enabled, OpenBlade reported that
+  Windows owned the keyboard, and all OpenBlade keyboard controls disabled;
+- Synapse was deliberately toggled Off then On once to reapply Static 50 after
+  the ownership boundary; exact readback returned raw `128`;
+- restarting only the OpenBlade service left it Running/Automatic and a final
+  exact readback again returned raw `128`.
+
+This sequence is the required validation pattern: select delegation first,
+then reapply the desired external-controller state once, then independently
+read it back across a service restart. Never use the cached Synapse page as
+firmware readback. Sanitized capture commit `f19a60d` records the sequence
+without a packet capture or unique device identifier.
 
 Final validation at the current transactional-identity checkpoint:
 
