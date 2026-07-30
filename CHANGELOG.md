@@ -34,7 +34,10 @@ All notable changes to OpenBlade are documented in this file. The project follow
   staged behind the capability gate. Editable bindings stay hidden and the
   decoder remains inactive until a live OpenBlade round trip is validated.
   PID `02C6` M4 is explicitly isolated from PID `02E0`'s conflicting D3
-  performance-button interpretation.
+  performance-button interpretation. A bounded exact-device diagnostic also
+  records that Windows denies direct shared reads of both keyboard top-level
+  collections, preventing an unsafe direct-HID fallback from being mistaken
+  for validated special-key access.
   Firmware-smoke schema 4 records these observed capabilities separately so an
   update cannot silently lose them. Diagnostics, About, tested-platform
   assessment, and firmware smoke now derive the RZ09-0528 / PID `02C6` identity

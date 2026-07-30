@@ -75,6 +75,32 @@ if (args.Length == 1 && args[0].Equals(
     return interfaces.Count > 0 ? 0 : 3;
 }
 
+if (args.Length == 1 && args[0].Equals(
+    "probe-rz09-0528-02c6-hid-input-access",
+    StringComparison.OrdinalIgnoreCase))
+{
+    IReadOnlyList<HidInputAccessObservation> observations =
+        new HidInputAccessProbe().Run();
+    Console.WriteLine($"CollectionCount={observations.Count}");
+    foreach (HidInputAccessObservation observation in observations)
+    {
+        Console.WriteLine(
+            $"Collection={observation.Collection};" +
+            $"Usage={observation.UsagePage:X4}:{observation.Usage:X4};" +
+            $"FeatureBytes={observation.FeatureReportByteLength};" +
+            $"ReadHandleOpened={observation.ReadHandleOpened};" +
+            $"IdentityReverified={observation.IdentityReverified};" +
+            $"Win32Error={observation.Win32Error?.ToString() ?? "None"};" +
+            $"Failure={observation.Failure ?? "None"}");
+    }
+    Console.WriteLine(
+        $"ReadHandleOpenCount={observations.Count(item => item.ReadHandleOpened)}");
+    Console.WriteLine(
+        $"AccessDeniedCount={observations.Count(item => item.Win32Error == 5)}");
+    Console.WriteLine("ProbeComplete=True");
+    return observations.Count > 0 ? 0 : 3;
+}
+
 if (args.Length > 0 && args[0].Equals(
     "probe-rz09-0528-02c6-lamp-array",
     StringComparison.OrdinalIgnoreCase))
@@ -1458,6 +1484,8 @@ Console.WriteLine("  OpenBlade.Capture probe-gpu-clock-offsets");
 Console.WriteLine("  OpenBlade.Capture probe-special-keys [seconds] [output-file]");
 Console.WriteLine(
     "  OpenBlade.Capture probe-rz09-0528-02c6-special-keys [seconds] [output-file]");
+Console.WriteLine(
+    "  OpenBlade.Capture probe-rz09-0528-02c6-hid-input-access");
 Console.WriteLine(
     "  OpenBlade.Capture probe-rz09-0528-02c6-lamp-array");
 Console.WriteLine("  OpenBlade.Capture validate <fixtures.json>");

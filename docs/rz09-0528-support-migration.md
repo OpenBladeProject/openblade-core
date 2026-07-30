@@ -1178,6 +1178,22 @@ the missing events. Keep `SpecialKeyBindingsAccess=ObservedOnly`; do not publish
 or suppress M1, M2, or Fn+P until the production path observes them
 independently.
 
+The bounded
+`probe-rz09-0528-02c6-hid-input-access` diagnostic then tested whether a
+shared direct HID reader could replace Raw Input without taking device
+ownership. It retained no paths or unique identifiers. All ten exact PID
+`02C6` top-level collections were found and seven non-keyboard collections
+accepted a shared `GENERIC_READ` handle with identity reverified. Windows
+returned access denied for both keyboard collections (`MI_00` and `MI_01`,
+usage `0001:0006`) and for the `MI_02` protocol collection. This is useful
+negative evidence: an ordinary user-mode HID reader cannot simply open either
+keyboard collection to recover the missing report-ID-01 events. Do not read
+from an adjacent consumer/vendor collection and assume that endpoint-level
+traffic will be routed to it. The next physical isolation retry must still
+prove whether removing Synapse restores the Raw Input keyboard events; the
+first 60-second isolated attempt received no physical input and is preserved
+as a failed zero-input session.
+
 ## Preserve the device-mode negative controls and reversible success
 
 Capture commits `42bdc2d` and `ceb52f0` record three elevated exact-device
