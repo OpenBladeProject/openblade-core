@@ -39,7 +39,7 @@ model-independent operating-system APIs.
 | Performance and fans | Partially admitted | AC Balanced, Silent, Performance, Custom, exact CPU/GPU combinations, Automatic/fixed/maximum/manual-curve fans, exact 2000-5000 RPM range, and fan RPM; other power-source setters remain unadmitted |
 | Sensors | Admitted | CPU temperature through the exact `\_SB.PCI0.SBRG.EC0.TZRZ` Windows thermal-zone counter; the unrelated `\_TZ.TZ01` zone is never substituted |
 | Model-specific tuning UI | Observed-only | CPU Power Limit 45-95 W in 1 W steps, CPU Voltage Optimizer On/Off plus -30..-1, and GPU Overclock On/Off plus Synapse policy ranges are first-class capabilities. Synapse's CPU backend is identified as RzAMDOverClock/RzDLLService but is not admitted because its refresh lifecycle can write; OpenBlade shows these features without editable controls |
-| Power-source matrix | Captured, not admitted | Nine exact-device sessions cover barrel AC, USB-C-only, battery, both quiet baselines, and all directed transitions; exact PID 02C6 USB-C reply and independent thermal readback remain missing |
+| Power-source matrix | Adapter classification admitted; transition lifecycle partial | Three identical exact reads per stable state establish `1111` barrel AC, `0011` battery, and `0711` USB-C, with matching paired thermal readback and restored AC; three directly traversed transitions are query-validated |
 | Battery charge limit | Admitted | Query, 50/55/60/65/70/75/80-percent setters, protection off, readback, and restoration |
 | Temporary full charge | Admitted | Query, enable, cancel, readback, and restoration |
 | Keyboard behavior and special keys | Partially admitted | Function-key primary, Gaming mode, startup-animation, and ownership-aware Normal/Driver device-mode setters; exact PID 02C6 M3/M4/M5 input is live-validated and writable, while M1/M2/Fn+P remain captured and unavailable |
@@ -213,28 +213,24 @@ The outgoing exact-device command correlation is:
 - Battery Saver/Automatic: `0D/02 01010300` and `01020300`;
 - Balanced/Automatic: `0D/02 01010000` and `01020000`.
 
-A later private-transaction re-audit also found exact 16-byte input reports on
-endpoint `0x82`: `05/33 0011`, `05/33 0711`, and `05/33 1111`. They correlate
-with battery, USB-C, and barrel-AC transitions, respectively. However, the quiet
-USB-C no-action baseline also replayed `1111` without a captured `07/8C`
-request. Preserve these as candidate source-event reports; they are not an
-independently matched feature-query reply and do not admit the generic PID
-`02E0` decoder mapping.
+A later private-transaction re-audit found exact 16-byte input reports on
+endpoint `0x82`: `05/33 0011`, `05/33 0711`, and `05/33 1111`. Those were kept
+as candidates until the direct readback matrix below independently reproduced
+the same mapping through matched `07/8C` queries.
 
 The first successful AC-to-USB-C session physically passed through a cable-free
 battery interval. Its `On Battery` UI was not delayed USB-C recognition. The
 session originally labeled as a USB-C-to-AC restoration was a no-action stable
 USB-C baseline; retain that correction in every downstream interpretation.
 
-USBPcap decoded outgoing feature reports plus the candidate input reports. It
-did not capture an exact PID `02C6` USB-C `07/8C` reply that OpenBlade
-independently matched, nor an independent `0D/82` destination-state readback.
-The source-event candidates do not change that gate. Therefore the matrix
-advances those coverage leaves to `Captured`, not `QueryValidated`,
-`SetterValidated`, or `ProductionAdmitted`. Do not copy the generic PID
-`02E0` `0711` USB-C mapping into this device. The next agent must obtain direct
-exact-device readback while physically on USB-C and battery before admitting
-source-specific setters.
+The later direct matrix closed the adapter-readback gap without reinterpreting
+the PCAPs: three identical samples per stable state returned `1111` on barrel
+AC, `0011` on battery, and `0711` on USB-C. Matching paired `0D/82` responses
+were Performance/Automatic (`02`), Battery Saver/Automatic (`03`), and
+Balanced/Automatic (`00`), and final barrel AC exactly matched the initial
+baseline. The exact PID `02C6` factory now admits `UsbCPower100W`; this is not
+permission to generalize `0711` to an untested model. Battery/USB-C preset
+setters still require their own save/apply/readback/restore validation.
 
 ## Remaining full-support matrix
 
@@ -242,9 +238,9 @@ Work through read/query-backed controls before one-shot setters.
 
 1. Battery charge limit and temporary full charge — admitted
 2. Performance presets for AC, USB-C, and battery power — all AC modes are
-   admitted; USB-C-only Balanced and battery Battery Saver availability plus
-   outgoing setter pairs are captured, but exact independent readback is still
-   required before those setters can be admitted
+   admitted; USB-C-only Balanced and battery Battery Saver now have exact
+   query-validated readback, but their outgoing setter pairs still need
+   save/apply/readback/restore validation before those setters can be admitted
 3. Automatic, fixed, maximum, and manual-curve fan control plus RPM readback —
    admitted on AC; manual curve is host-rendered through the validated fixed
    target primitive and fresh temperature telemetry
@@ -648,10 +644,7 @@ Current barrel-AC readback checkpoint:
 - Exact `07/8C` returned `1111` (`FullPower280W`), while the paired `0D/82`
   responses were `01010200` and `01020200`. The earlier exact AC admission
   maps that pair to the current Performance/Automatic state.
-- This was read-only and changed no setting. It reconfirms the AC baseline but
-  does not advance USB-C or battery readback; those exact destination queries
-  still require operator-correlated physical power transitions.
-- Capture commit `6299bf7` prepares the complete retry as
+- Capture commit `6299bf7` prepared the complete retry as
   `tools\Invoke-Rz090528PowerSourceReadbackMatrix.ps1`. Run it under Windows
   PowerShell 5.1 from the captures repository. It requires explicit
   `AC-BASELINE`, `BATTERY`, `USBC`, and `AC-RESTORED` confirmations in that
@@ -659,10 +652,32 @@ Current barrel-AC readback checkpoint:
   powered states, and refuses to capture during the transition interval. It
   takes three identical exact-device queries per state, requires `1111` at
   both barrel-AC endpoints, compares final AC with the baseline, and writes
-  only private hash-pinned output plus a private structured summary. It never
-  changes a setting or process/service state. Because this is a direct
-  exact-HID query rather than USBPcap capture, it does not use a transient USB
-  device address.
+  only private hash-pinned output plus a private structured summary. Because
+  this is a direct exact-HID query rather than USBPcap capture, it does not use
+  a transient USB device address.
+- The first physical run exposed that `Get-FileHash` was unavailable in the
+  launched Windows PowerShell 5.1 environment after its first read-only
+  query. Capture commit `e2cf871` replaces that dependency with an in-process
+  SHA-256 implementation and adds a focused regression assertion.
+- The second run completed all three full-AC samples and one battery sample,
+  then preserved a battery sample-2 `ProtocolFailure`. The installed
+  `OpenBlade` service was running its own source-change and periodic reads on
+  the same feature-report channel. Capture commit `e258614` makes the matrix
+  stop only that exact service when present, require elevation for that
+  isolation, recheck Windows power state after a three-second stabilization
+  interval, and restore the service from `finally`.
+- The corrected elevated run succeeded with three identical samples per state:
+  barrel AC `1111` plus `01010200`/`01020200`; battery `0011` plus
+  `01010300`/`01020300`; USB-C `0711` plus
+  `01010000`/`01020000`; and restored barrel AC exactly matching the first
+  state. It changed no device setting, restored the initially running service,
+  and wrote a 10,799-byte private summary with SHA-256
+  `3C2113C1C3AAE82D5EF578B964D167989CE4E506339331F467AE41DCDF2810D0`.
+- The exact production battery factory now admits `UsbCPower100W` alongside
+  `FullPower280W`. Windows `Offline` remains the authoritative battery
+  classifier; `0011` is supporting exact-device evidence. Source-specific
+  thermal readback is QueryValidated until installed-service lifecycle
+  validation completes.
 
 Lighting capture follow-up:
 
@@ -874,15 +889,16 @@ Power-source behavior contract checkpoint:
   Performance, and Custom were visibly unavailable in both states; USB-C also
   showed Synapse's inadequate-power warning.
 - The tray surfaces the matching observation as a read-only card only while
-  that source is active. The card states that this is captured UI evidence and
-  that no write path is exposed without exact-device readback.
+  that source is active. Exact source and thermal readback now exist, but the
+  card remains non-writable until each source-specific setter completes a
+  save/apply/readback/restore validation.
 - The observations round-trip over IPC, appear in diagnostic archives, reject
   duplicate source entries, and participate in status equality. Adding the
   power-source contract field advanced the strict IPC version from 25 to 26;
   the later observed-lighting contract field advanced it from 26 to 27.
 - Do not populate unobserved choices. In particular, the existing captures do
   not establish Battery Balanced as available on PID `02C6`.
-- For the next physical source session, run the exact read-only
+- The completed physical source session used the exact read-only
   `query-rz09-0528-02c6-power-source` command. It sends only `07/8C 0000` and
   the two `0D/82` thermal queries, emits sanitized exact-device JSON, and
   performs no writes. Preserve the raw responses; do not reduce visual
@@ -893,11 +909,10 @@ Power-source behavior contract checkpoint:
   `productionAdmitted: false` marker means the source-specific interpretation
   is still discovery evidence; it does not mean the fixed read-only query
   envelopes are arbitrary.
-- Keep raw decoding separate from production admission. The shared adapter
-  decoder recognizes `0711` as USB-C for PID `02E0`, but RZ09-0528 has only
-  validated `1111` full AC. Its production factory therefore filters every
-  other recognized adapter state to `Unknown`; the exact raw probe still emits
-  the bytes needed to admit a future PID `02C6` USB-C response.
+- Keep raw decoding separate from production admission. The exact matrix now
+  independently validates `0711` as USB-C on PID `02C6`, so only this exact
+  production factory admits that recognized state alongside `1111`. Other
+  models still require their own evidence.
 - For the next special-key session, run
   `probe-rz09-0528-02c6-special-keys [seconds] [output-file]`. The older
   `probe-special-keys` command intentionally retains its PID `02E0` target.
