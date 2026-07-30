@@ -1101,10 +1101,18 @@ capability can become `ProductionAdmitted`.
 The shared capability contract now carries `LampArrayLightingAccess`. PID
 `02C6` reports `ObservedOnly`; PID `02E0` and unknown models report no value
 because no exact LampArray evidence exists for them. Diagnostics, the Lighting
-page, the exact production-admission gate, and current firmware-smoke schema 5
+page, the exact production-admission gate, and current firmware-smoke schema 6
 all preserve this state. Current strict service IPC is version 32. This is a
 coordinated install boundary: do not live-patch only the tray or Session Agent
 across it.
+
+Keep the normal-user Lighting page aligned with the standard Blade layout.
+Commit `f4a7a7a` represents Windows ownership as one ordinary Keyboard settings
+row with a toggle and an **Open settings** link. The exact LampArray geometry,
+transport boundary, and Synapse-only observed effects remain available through
+capabilities, diagnostics, firmware smoke, and this guide; they do not need
+separate informational banners in the everyday UI. This is presentation
+simplification, not permission to delete model-specific evidence.
 
 The Session Agent now contains the production read-only observation boundary.
 It starts only when the service reports a verified RZ09-0528, the complete
