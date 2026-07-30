@@ -98,7 +98,7 @@ $expectedPackageAttributes = [ordered]@{
     InstallArguments = 'install --bundle-managed'
     RepairArguments = 'install --bundle-managed'
     UninstallArguments = 'uninstall --bundle-managed'
-    DetectCondition = 'OpenBladeInstalledVersion AND OpenBladeInstalledVersion >= v$(OpenBladeVersion)'
+    DetectCondition = 'OpenBladeInstalledVersion AND OpenBladeInstalledVersion > v$(OpenBladeVersion)'
     PerMachine = 'yes'
     Cache = 'keep'
     Vital = 'yes'

@@ -108,7 +108,8 @@ public sealed class WindowsSetupPlatform : ISetupPlatform
                 uninstallShortcutExisted,
                 uninstallRegistrationExisted),
             bundleOwnershipExisted,
-            dynamicLightingIdentityRegistered);
+            dynamicLightingIdentityRegistered,
+            !bundleOwnershipExisted || bundleOwnershipRegistration.IsOwnedByCurrentBuild());
     }
 
     public async Task PrepareServiceForInstallAsync(CancellationToken cancellationToken)

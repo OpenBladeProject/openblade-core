@@ -611,6 +611,22 @@ public sealed class SetupCommandRunnerTests
     }
 
     [Fact]
+    public async Task Uninstall_SupersededBundleManagedCommandLeavesNewerPayloadUntouched()
+    {
+        RecordingSetupPlatform platform = new()
+        {
+            BundleOwnershipExisted = true,
+            BundleOwnershipMatchesCurrentBuild = false,
+        };
+
+        int exitCode = await new SetupCommandRunner(platform)
+            .RunAsync(["uninstall", "--bundle-managed"], CancellationToken.None);
+
+        Assert.Equal(0, exitCode);
+        Assert.Equal(["lifecycle-capture"], platform.Operations);
+    }
+
+    [Fact]
     public async Task Uninstall_BundleManagedBinaryFailure_RestoresOwnership()
     {
         RecordingSetupPlatform platform = new()
@@ -729,6 +745,7 @@ public sealed class SetupCommandRunnerTests
         public bool UninstallShortcutExisted { get; init; }
         public bool UninstallRegistrationExisted { get; init; }
         public bool BundleOwnershipExisted { get; init; }
+        public bool BundleOwnershipMatchesCurrentBuild { get; init; } = true;
         public bool DynamicLightingIdentityRegistered { get; init; }
         public string? FailurePoint { get; set; }
         public CancellationTokenSource? Cancellation { get; init; }
@@ -788,7 +805,8 @@ public sealed class SetupCommandRunnerTests
                     UninstallShortcutExisted,
                     UninstallRegistrationExisted),
                 BundleOwnershipExisted,
-                DynamicLightingIdentityRegistered));
+                DynamicLightingIdentityRegistered,
+                BundleOwnershipMatchesCurrentBuild));
         }
 
         public Task PrepareServiceForInstallAsync(CancellationToken cancellationToken)

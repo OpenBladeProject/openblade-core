@@ -468,7 +468,11 @@ public sealed class WindowsSetupPlatformServiceTests
     {
         RecordingFileOperations files = new() { FileExistsResult = true };
         RecordingUninstallRegistration registration = new() { EntryExists = true };
-        RecordingBundleOwnershipRegistration bundleOwnership = new() { EntryExists = true };
+        RecordingBundleOwnershipRegistration bundleOwnership = new()
+        {
+            EntryExists = true,
+            OwnedByCurrentBuild = false,
+        };
         WindowsSetupPlatform platform = WindowsSetupPlatformTestFactory.Create(
             fileOperations: files,
             uninstallRegistration: registration,
@@ -480,6 +484,7 @@ public sealed class WindowsSetupPlatformServiceTests
         Assert.True(state.Startup.UninstallShortcutExisted);
         Assert.True(state.Startup.UninstallRegistrationExisted);
         Assert.True(state.BundleOwnershipExisted);
+        Assert.False(state.BundleOwnershipMatchesCurrentBuild);
     }
 
     [Fact]
@@ -715,10 +720,12 @@ public sealed class WindowsSetupPlatformServiceTests
     private sealed class RecordingBundleOwnershipRegistration : IBundleOwnershipRegistration
     {
         public bool EntryExists { get; init; }
+        public bool OwnedByCurrentBuild { get; init; } = true;
         public int Installs { get; private set; }
         public int Removals { get; private set; }
 
         public bool Exists() => EntryExists;
+        public bool IsOwnedByCurrentBuild() => OwnedByCurrentBuild;
         public void Install() => Installs++;
         public void Remove() => Removals++;
     }

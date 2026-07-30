@@ -25,7 +25,8 @@ public sealed record SetupInstallLifecycleState(
     SetupServiceInstallState Service,
     SetupStartupInstallState Startup,
     bool BundleOwnershipExisted = false,
-    bool DynamicLightingIdentityRegistered = false);
+    bool DynamicLightingIdentityRegistered = false,
+    bool BundleOwnershipMatchesCurrentBuild = true);
 
 public interface ISetupPlatform
 {
@@ -266,6 +267,15 @@ public sealed class SetupCommandRunner(ISetupPlatform platform)
         {
             throw new InvalidOperationException(
                 "No orphaned graphical-installer ownership marker was found.");
+        }
+        if (invocation.BundleManaged
+            && uninstallLifecycle.BundleOwnershipExisted
+            && !uninstallLifecycle.BundleOwnershipMatchesCurrentBuild)
+        {
+            Console.WriteLine(
+                "A newer OpenBlade payload owns this installation; "
+                + "the superseded bundle uninstall was ignored.");
+            return 0;
         }
         if (uninstallLifecycle.BundleOwnershipExisted
             && !invocation.BundleManaged
