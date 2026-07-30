@@ -1156,6 +1156,27 @@ Otherwise the exact-model branch correctly avoids PID 02E0's D3
 dedicated-performance decoder but silently drops the key. Keep PID 02E0 on its
 existing dedicated-button path; the override is exact-model plus M4 only.
 
+The first live production-decoder pass was deliberately left gated and produced
+a partial negative control:
+
+- M3, M4, and M5 decoded as their exact typed identities;
+- M4 did not collide with the older model's performance-shortcut decoder;
+- ordinary Page Up and Page Down still reached Windows;
+- two operator-correlated Fn+Page Up, Fn+Page Down, and Fn+P retries exposed
+  only `04 0A 00 00` / `04 00 00 00` Fn make/release reports on the target
+  MI_01 stream, with no `01 00 4B`, `01 00 4E`, or `01 00 13` report.
+
+The retries ran after an independent exact device-mode query returned `Driver`.
+Computer Use then inspected Synapse without saving any assignment: the physical
+Fn key was labeled the non-remappable `Razer Hypershift` key, and Page Up's
+Hypershift-layer assignment was still `Page Up`. This rules out the two easy
+explanations—wrong modifier and a remapped key—but does not explain why the
+earlier USBPcap oracle saw the `01` reports while Windows Raw Input did not.
+Treat that as a transport/collection discrepancy, not as permission to infer
+the missing events. Keep `SpecialKeyBindingsAccess=ObservedOnly`; do not publish
+or suppress M1, M2, or Fn+P until the production path observes them
+independently.
+
 ## Preserve the device-mode negative controls and reversible success
 
 Capture commits `42bdc2d` and `ceb52f0` record three elevated exact-device
