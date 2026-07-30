@@ -814,21 +814,38 @@ Custom performance and model-specific power-control follow-up:
   `e4fba98` and `cda5b0e` contain the validator and corrected phase telemetry;
   capture commits `055e8a0` and `518ffa5` contain the wrapper and sanitized
   negative-control evidence.
-- Capture commit `3c90b6a` adds the next read-only discriminator:
+- Capture commit `3c90b6a` added the next read-only discriminator:
   `tools\Get-Rz090528CpuTuningModuleOwnership.ps1`. Run it only from elevated
   Windows PowerShell 5.1 while the exact RZ09-0528 Performance/Custom surface
   is visibly open. It gates model and BIOS, verifies the installed Synapse
   path/signature, inspects `Process.Modules`, and accepts only the three pinned
-  component hashes. Its private JSON records sanitized renderer roles and
+  component hashes. Its private JSON records sanitized controller roles and
   component filenames/hashes; it never stops or starts a process/service and
   never changes a setting. The 16-script Windows PowerShell 5.1 toolkit,
   including its static regression test, passes.
-- A later non-elevated exploratory snapshot could read the current Synapse
-  process modules but found neither CPU DLL in the idle device renderer or
-  background roles, and the Synapse UI had no targetable visible window.
-  Treat this only as navigation guidance, not evidence. The elevated inventory
-  still needs the Performance surface open so it can identify which exact
-  renderer or service host owns the backend before any lifecycle design.
+- The first live launch exposed two toolkit defects without touching a
+  setting: failures before output creation were not preserved, and the host
+  gate compared the shortened model token `RZ09-0528` instead of Windows'
+  exact SMBIOS string `Blade 16 - RZ09-0528`. Capture commits `5e38083` and
+  `b4f5fb9` add private failure-state persistence and correct both the module
+  inventory and power-source matrix gates. Their focused Windows PowerShell
+  5.1 tests pass. Keep the failed attempt as evidence; do not delete or
+  reinterpret it.
+- The corrected elevated run completed on the visibly confirmed Synapse
+  Performance page without changing a setting, process, or service. It found
+  the exact-hash `RzAMDOverClock_v1.1.15.0.dll` client in a
+  `RazerAppEngine` main/utility role and found both the exact-hash
+  `RzAMDOverClockDLL_v1.1.15.0.dll` server and
+  `RzDLLService_v1.0.29.0.exe` image in the `RzDLLService` backend. The
+  private JSON is 6,208 bytes with SHA-256
+  `5C6EEC3A78BAF71855AE9A551A58AF29EA5C00395C2D378BF5821B949798492A`;
+  process IDs remain private and uncommitted.
+- This establishes exact live ownership but does not provide a successful
+  independent callback, a setter signature, privileged backend startup,
+  crash recovery, or conflict exclusion. CPU Power Limit and CPU Voltage
+  Optimizer therefore remain Captured/ObservedOnly. The next implementation
+  step is an explicitly designed exact-version backend owner, not another UI
+  refresh or a weakened Synapse guard.
 - OpenBlade must not start `RzDLLService`, initialize its privileged tuning
   driver, or bypass the Synapse-process guard merely to make this probe pass.
   Those are a separate backend-ownership feature requiring explicit lifecycle
