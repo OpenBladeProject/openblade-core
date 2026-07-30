@@ -641,6 +641,17 @@ Battery and keyboard-behavior setter follow-up:
   primary, and Gaming mode disabled. A final read-only production probe
   returned all three restored values with `Success=True`.
 
+Current barrel-AC readback checkpoint:
+
+- Three consecutive `query-rz09-0528-02c6-power-source` runs under Windows
+  PowerShell 5.1 returned byte-identical 822-byte output.
+- Exact `07/8C` returned `1111` (`FullPower280W`), while the paired `0D/82`
+  responses were `01010200` and `01020200`. The earlier exact AC admission
+  maps that pair to the current Performance/Automatic state.
+- This was read-only and changed no setting. It reconfirms the AC baseline but
+  does not advance USB-C or battery readback; those exact destination queries
+  still require operator-correlated physical power transitions.
+
 Lighting capture follow-up:
 
 - Exact logo writes use selector `00`: Static emitted `03/02 000400` followed
@@ -1553,7 +1564,7 @@ validation, privacy boundary, and a Windows PowerShell 5.1 regression test.
 
 Do not interpret the green admission probe as full RZ09-0528 feature coverage.
 The sanitized schema-2 coverage ledger is the completion source of truth. At the
-`32073d8` service-restart-admission checkpoint its 144 leaves contain:
+`04281c0` repeated-AC-readback checkpoint its 144 leaves contain:
 
 - 53 `ProductionAdmitted`;
 - 3 `QueryValidated`;
