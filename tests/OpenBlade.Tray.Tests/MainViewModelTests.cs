@@ -2116,6 +2116,27 @@ public sealed class MainViewModelTests
         Assert.True(viewModel.IsSpecialKeyBindingsObservedOnlyVisible);
         Assert.Contains("M3, M4, and M5", viewModel.SpecialKeyBindingsAccessSummary);
         Assert.Contains("M1, M2, and Fn+P", viewModel.SpecialKeyBindingsAccessSummary);
+
+        client.Publish(baseline with
+        {
+            Revision = baseline.Revision + 1,
+            Capabilities = baseline.Capabilities! with
+            {
+                SpecialKeyBindingsAccess = DeviceFeatureAccess.ReadWrite,
+                WritableSpecialKeySlots = SpecialKeySlotSet.M4,
+            },
+        });
+        await WaitUntilAsync(() =>
+            viewModel.SpecialKeyBindingsAccessSummary.StartsWith(
+                "M4 ",
+                StringComparison.Ordinal));
+
+        Assert.False(viewModel.IsSpecialKeyBindingSlotEditable(SpecialKeySlot.M3));
+        Assert.True(viewModel.IsSpecialKeyBindingSlotEditable(SpecialKeySlot.M4));
+        Assert.DoesNotContain(
+            "M3, M4, and M5",
+            viewModel.SpecialKeyBindingsAccessSummary,
+            StringComparison.Ordinal);
     }
 
     [Fact]

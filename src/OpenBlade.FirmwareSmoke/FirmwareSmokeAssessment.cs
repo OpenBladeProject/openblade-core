@@ -77,7 +77,7 @@ public static class FirmwareSmokeAssessment
         "Confirm keyboard brightness decreases and increases with the physical function keys.",
         "Confirm media, display-brightness, Project, and Print Screen function-row actions.",
         "Confirm the performance key or Fn+P changes mode and shows the expected notification.",
-        "If special-key access is ReadWrite, confirm M1-M5 overrides and pass-through; if ObservedOnly, confirm the UI keeps bindings inactive.",
+        "If special-key access is ReadWrite, confirm every advertised writable slot and ordinary-key pass-through for every unavailable slot; if ObservedOnly, confirm the UI keeps bindings inactive.",
         "If MicrophoneMuteIndicator is admitted, confirm microphone mute changes Windows state and its keyboard indicator.",
         "Unplug AC, test the Battery profile, then test USB-C and return to the full-power adapter.",
         "Sleep and resume once; confirm lighting, Driver mode, profile state, and readings recover.",

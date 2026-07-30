@@ -1534,11 +1534,34 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             DeviceFeatureAccess.ReadWrite =>
                 Capabilities.WritableSpecialKeySlots == SpecialKeySlotSet.All
                     ? "Special-key bindings are available."
-                    : "M3, M4, and M5 are live-validated and editable. "
-                        + "M1, M2, and Fn+P remain captured but unavailable because "
-                        + "Windows Raw Input exposes the same generic Fn report for all three.",
+                    : Capabilities.WritableSpecialKeySlots
+                        == (SpecialKeySlotSet.M3
+                            | SpecialKeySlotSet.M4
+                            | SpecialKeySlotSet.M5)
+                        ? "M3, M4, and M5 are live-validated and editable. "
+                            + "M1, M2, and Fn+P remain captured but unavailable because "
+                            + "Windows Raw Input exposes the same generic Fn report for all three."
+                        : $"{FormatSpecialKeySlots(Capabilities.WritableSpecialKeySlots)} "
+                            + "are editable. Other shortcut slots remain unavailable until "
+                            + "their exact input reports are independently validated.",
             _ => UnavailableLabel,
         };
+
+    private static string FormatSpecialKeySlots(SpecialKeySlotSet slots)
+    {
+        string[] names = Enum.GetValues<SpecialKeySlotSet>()
+            .Where(slot => slot is not (SpecialKeySlotSet.None or SpecialKeySlotSet.All)
+                && (slots & slot) != 0)
+            .Select(static slot => slot.ToString())
+            .ToArray();
+        return names.Length switch
+        {
+            0 => "No shortcut slots",
+            1 => names[0],
+            2 => $"{names[0]} and {names[1]}",
+            _ => $"{string.Join(", ", names[..^1])}, and {names[^1]}",
+        };
+    }
 
     public bool IsObservedLightingEffectsVisible =>
         Capabilities.ObservedLightingEffects.Any(Enum.IsDefined);
