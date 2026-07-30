@@ -10,8 +10,27 @@ namespace OpenBlade.SessionAgent;
 internal static class Program
 {
     [STAThread]
-    private static int Main()
+    private static int Main(string[] args)
     {
+        if (DynamicLightingIdentityProbeCommand.IsRequested(args))
+        {
+            try
+            {
+                return new DynamicLightingIdentityProbeCommand(
+                        new WindowsDynamicLightingPackageIdentitySource(),
+                        new WindowsLampArrayObservationSource())
+                    .RunAsync(args, CancellationToken.None)
+                    .GetAwaiter()
+                    .GetResult();
+            }
+            catch
+            {
+                // The explicit probe never writes a crash report because
+                // exception details may contain package or device identifiers.
+                return 2;
+            }
+        }
+
         try
         {
             return RunAsync().GetAwaiter().GetResult();

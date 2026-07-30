@@ -1064,6 +1064,24 @@ package versions, external-location URI selection, deployment HRESULTs,
 timeouts, caller cancellation, install rollback, uninstall recovery, and
 signed-pair payload preservation.
 
+The Session Agent also exposes one explicit read-only post-install probe:
+
+```text
+OpenBlade.SessionAgent.exe --probe-dynamic-lighting-identity <absolute-new-json-path>
+```
+
+Launch the WinExe with a wait-capable parent and inspect its exit code plus the
+new report file. It does not acquire normal Session Agent startup ownership or
+start any service, display, input, or lighting loop. It succeeds only when the
+current process has the exact package name and `SessionAgent` application
+identity, exactly one approved RZ09-0528 LampArray is connected and enabled,
+and Windows reports the array available to this background process. The
+schema-1 report contains only enum states, booleans, the exact-array count, and
+a failure type/HRESULT. It omits the AUMID, package family/full name,
+Publisher, user SID, device ID, geometry hash, paths, and exception message.
+The output path must be absolute, name a pre-existing directory, end in
+`.json`, and not already exist.
+
 No package has been signed, registered, or installed during this work. When an
 operator is available, live validation must use a trusted release certificate
 and the normal transactional setup path. Confirm the exact current-user
@@ -1164,12 +1182,15 @@ Final validation at the current transactional-identity checkpoint:
 - documentation commits: `1083340`, `6c3c631`, `c545805`, and public-site
   checkpoint `c38e993`;
 - Release build: 0 warnings and 0 errors;
-- full Release suite: 3,265 tests passed across all ten projects
-  (Display 38, Capture 253, Session 33, Contracts 192, SessionAgent 154,
+- full Release suite: 3,278 tests passed across all ten projects
+  (Display 38, Capture 253, Session 33, Contracts 192, SessionAgent 167,
   Protocol 1,049, Tray 615, Service 685, Setup 227, FirmwareSmoke 19);
 - `dotnet format OpenBlade.slnx --verify-no-changes --no-restore`: clean;
 - Windows PowerShell 5.1 sparse-package identity, publish-payload, and
   installer-authoring suites: all passed;
+- Session Agent identity-probe matrix: exact/missing/mismatched package and
+  application identity, approved/unavailable array, redaction, failure
+  HRESULT, invalid output, and no-overwrite cases passed;
 - Windows PowerShell 5.1 capture toolkit: all five regression suites passed
   with `-NonInteractive`;
 - public documentation: all local links and assets resolved across 11 pages;

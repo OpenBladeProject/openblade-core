@@ -33,8 +33,11 @@ All notable changes to OpenBlade are documented in this file. The project follow
   and validates the package/descriptor pair before publishing. Transactional
   setup now validates and registers that exact Publisher-scoped identity for
   the installing user, restores the prior identity after a failed update, and
-  removes or recovers it with uninstall. Unsigned builds omit both the package
-  and executable identity claim. The model's M1–M5
+  removes or recovers it with uninstall. A read-only Session Agent probe can
+  verify the exact package/application identity and approved LampArray
+  availability after installation without starting normal background loops or
+  retaining identifiers. Unsigned builds omit both the package and executable
+  identity claim. The model's M1–M5
   shortcut surface is
   also retained as observed-only: editable bindings stay hidden and inactive
   until PID `02C6` input reports are independently captured and admitted.
