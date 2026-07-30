@@ -89,6 +89,11 @@ public sealed class ProfileSetValidator(ProfileValidationPolicy policy)
     public void ValidatePreferences(BatteryAutomationPreferences preferences)
     {
         ArgumentNullException.ThrowIfNull(preferences);
+        if (!Enum.IsDefined(preferences.KeyboardLightingControlMode))
+        {
+            throw Invalid("The keyboard lighting control mode is undefined.");
+        }
+
         if (preferences.LastKnownLighting is { } lighting)
         {
             ValidateLighting(lighting, "last-known");

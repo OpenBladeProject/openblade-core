@@ -24,6 +24,7 @@ public sealed record ControlOperationResult(ControlOperationStatus Status, strin
 [JsonDerivedType(typeof(SetFanOverrideRequest), "setFanOverride")]
 [JsonDerivedType(typeof(SetLightingOverrideRequest), "setLightingOverride")]
 [JsonDerivedType(typeof(StepKeyboardBrightnessRequest), "stepKeyboardBrightness")]
+[JsonDerivedType(typeof(SetKeyboardLightingControlModeRequest), "setKeyboardLightingControlMode")]
 [JsonDerivedType(typeof(SetExternalLightingOverridePolicyRequest), "setExternalLightingOverridePolicy")]
 [JsonDerivedType(typeof(SetLightingSuppressionRequest), "setLightingSuppression")]
 [JsonDerivedType(typeof(PulseReactiveKeyRequest), "pulseReactiveKey")]
@@ -124,6 +125,18 @@ public sealed record StepKeyboardBrightnessRequest(
     OverrideLifetime Lifetime)
     : ServiceRequest(Version, RequestId);
 
+public enum KeyboardLightingControlMode
+{
+    OpenBlade,
+    WindowsDynamicLighting,
+}
+
+public sealed record SetKeyboardLightingControlModeRequest(
+    int Version,
+    Guid RequestId,
+    KeyboardLightingControlMode Mode)
+    : ServiceRequest(Version, RequestId);
+
 public sealed record SetExternalLightingOverridePolicyRequest(
     int Version,
     Guid RequestId,
@@ -204,7 +217,9 @@ public sealed record ServiceStatusSnapshot(
     bool? GamingModeEnabled = null,
     bool AlwaysOverrideExternalLightingChanges = false,
     bool? KeyboardDriverModeActive = null,
-    BatteryHealthStatus? BatteryHealth = null)
+    BatteryHealthStatus? BatteryHealth = null,
+    KeyboardLightingControlMode KeyboardLightingControlMode =
+        KeyboardLightingControlMode.OpenBlade)
 {
     public FanControlSettings? FanControlOverride { get; init; }
 

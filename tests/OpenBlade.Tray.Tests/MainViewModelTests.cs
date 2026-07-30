@@ -2043,7 +2043,7 @@ public sealed class MainViewModelTests
         Assert.True(viewModel.IsLampArrayLightingAccessVisible);
         Assert.Contains("exact 85-lamp keyboard array", viewModel.LampArrayLightingAccessSummary);
         Assert.Contains(
-            "remain disabled",
+            "delegate the keyboard to Windows",
             viewModel.LampArrayLightingAccessSummary);
         Assert.True(viewModel.IsObservedLightingEffectsVisible);
         Assert.Contains("Spectrum Cycling", viewModel.ObservedLightingEffectsSummary);

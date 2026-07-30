@@ -147,6 +147,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     private bool hasExternalChanges;
     private string externalChangesText = string.Empty;
     private bool alwaysOverrideExternalLightingChanges;
+    private KeyboardLightingControlMode keyboardLightingControlMode;
     private IReadOnlyList<PerformancePreset> availablePerformancePresets = [];
     private IReadOnlyList<PerformancePresetOption> availablePluggedInPerformanceOptions = [];
     private IReadOnlyList<PerformancePresetOption> availableBatteryPerformanceOptions = [];
@@ -975,6 +976,45 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         private set => SetField(ref alwaysOverrideExternalLightingChanges, value);
     }
 
+    public KeyboardLightingControlMode KeyboardLightingControlMode
+    {
+        get => keyboardLightingControlMode;
+        private set
+        {
+            if (keyboardLightingControlMode != value)
+            {
+                SetField(ref keyboardLightingControlMode, value);
+                Notify(nameof(UseWindowsDynamicLighting));
+                Notify(nameof(CanControlLighting));
+                Notify(nameof(IsLightingControlUnavailable));
+                Notify(nameof(LightingControlUnavailableMessage));
+            }
+        }
+    }
+
+    public bool UseWindowsDynamicLighting =>
+        KeyboardLightingControlMode
+            == KeyboardLightingControlMode.WindowsDynamicLighting;
+
+    public bool IsWindowsDynamicLightingAvailable =>
+        Capabilities.LampArrayLightingAccess is not null;
+
+    public async Task<bool> SetKeyboardLightingControlModeAsync(
+        KeyboardLightingControlMode mode,
+        CancellationToken cancellationToken)
+    {
+        bool accepted = await RunOperationAsync(
+            token => serviceClient.SetKeyboardLightingControlModeAsync(mode, token),
+            cancellationToken);
+        if (accepted)
+        {
+            await dispatcher.InvokeAsync(
+                () => KeyboardLightingControlMode = mode,
+                cancellationToken);
+        }
+        return accepted;
+    }
+
     public async Task<bool> SetExternalLightingOverridePolicyAsync(
         bool enabled,
         CancellationToken cancellationToken)
@@ -1308,7 +1348,10 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
 
     public bool HasLightingCapability => AvailableLightingEffects.Count > 0;
 
-    public bool CanControlLighting => CanRequestHardwareControl && HasLightingCapability;
+    public bool CanControlLighting =>
+        CanRequestHardwareControl
+        && HasLightingCapability
+        && !UseWindowsDynamicLighting;
 
     public bool IsLightingControlUnavailable =>
         !CanControlLighting && !IsCheckingLaptopConnection(latestStatus);
@@ -1317,6 +1360,11 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
     {
         get
         {
+            if (UseWindowsDynamicLighting)
+            {
+                return "Windows Dynamic Lighting owns the keyboard. OpenBlade will not change keyboard brightness, effects, or lighting power policies.";
+            }
+
             if (!IsConnected)
             {
                 return "OpenBlade can’t connect to its service, so lighting controls are unavailable.";
@@ -1467,13 +1515,12 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         {
             DeviceFeatureAccess.ObservedOnly =>
                 "Windows Dynamic Lighting exposes an exact 85-lamp keyboard array. "
-                + "Background ownership, writes, ownership-loss handling, and restoration "
-                + "remain disabled until the packaged Session Agent path is independently validated.",
+                + "You can delegate the keyboard to Windows; OpenBlade then suppresses all keyboard-lighting writes.",
             DeviceFeatureAccess.ReadOnly =>
                 "Windows Dynamic Lighting exposes the keyboard array, but lighting writes "
                 + "are unavailable.",
             DeviceFeatureAccess.ReadWrite =>
-                "OpenBlade can use the Windows Dynamic Lighting keyboard array.",
+                "Windows Dynamic Lighting can own the keyboard while OpenBlade stays out of the lighting path.",
             _ => UnavailableLabel,
         };
 
@@ -1983,6 +2030,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             Notify(nameof(ObservedLightingEffectsSummary));
             Notify(nameof(IsLampArrayLightingAccessVisible));
             Notify(nameof(LampArrayLightingAccessSummary));
+            Notify(nameof(IsWindowsDynamicLightingAvailable));
+            Notify(nameof(CanControlLighting));
             NotifyObservedPowerSourceBehavior();
             NotifyGamingModeKeyPolicy();
             NotifyFirmwareFieldLoadingState();
@@ -3927,6 +3976,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
             : string.Empty;
         AlwaysOverrideExternalLightingChanges =
             status.AlwaysOverrideExternalLightingChanges;
+        KeyboardLightingControlMode = status.KeyboardLightingControlMode;
         Profiles = status.Profiles;
         if (!lightingPowerPolicyEditorDirty)
         {

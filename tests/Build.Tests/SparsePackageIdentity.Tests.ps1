@@ -359,16 +359,20 @@ $publishErrors = $null
     [ref]$publishErrors)
 Assert-True ($publishErrors.Count -eq 0) `
     'Publish.ps1 contains a PowerShell parser error.'
-foreach ($required in @(
-        'SparsePackageIdentity.ps1',
+Assert-True (
+    $publish.IndexOf('SparsePackageIdentity.ps1', [StringComparison]::Ordinal) -ge 0) `
+    'Publish.ps1 no longer loads the retained developer identity tooling.'
+foreach ($retiredProductionIntegration in @(
         'Get-OpenBladeSigningCertificate',
         'New-OpenBladeSessionAgentIdentityManifest',
         '--property:OpenBladeSessionAgentManifestSource=',
         'New-OpenBladeDynamicLightingPackage',
         'dynamicLightingIdentity.PackagePath')) {
     Assert-True (
-        $publish.IndexOf($required, [StringComparison]::Ordinal) -ge 0) `
-        "Publish.ps1 is missing Dynamic Lighting identity integration '$required'."
+        $publish.IndexOf(
+            $retiredProductionIntegration,
+            [StringComparison]::Ordinal) -lt 0) `
+        "Publish.ps1 still ships retired Dynamic Lighting identity integration '$retiredProductionIntegration'."
 }
 
 Write-Host 'Sparse package identity tests passed.'

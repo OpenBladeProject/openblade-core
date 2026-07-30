@@ -1170,6 +1170,49 @@ build if any of these exact-model facts disappears or changes:
 The gate is independently unit tested to reject dropped discoveries and an
 older-model Custom combination assumption.
 
+## Delegate keyboard lighting to Windows; do not become a WDL renderer
+
+The exact 85-lamp LampArray discovery changed the product boundary. Windows
+already recognizes this keyboard and supplies Dynamic Lighting. OpenBlade must
+therefore offer ownership selection, not a second Windows LampArray renderer.
+
+The persisted `KeyboardLightingControlMode` has two values:
+
+- `OpenBlade`: the existing HID-backed keyboard lighting controls are available;
+- `WindowsDynamicLighting`: Windows owns the keyboard and OpenBlade does not
+  send keyboard-lighting writes.
+
+Delegation is enforced in the service, not only by disabled UI. It blocks
+manual effect requests, brightness hotkeys, display/idle suppression, reactive
+key pulses, Ambient Awareness frames, playback-mute indicators, renderer
+recovery, and profile/power-transition lighting application. Selecting the
+mode itself preserves the current visible lighting; returning to OpenBlade
+also performs no immediate write. The next explicit OpenBlade action establishes
+new intent.
+
+The tray presents the ownership toggle beside a link to
+`ms-settings:personalization-lighting`, disables OpenBlade keyboard controls
+while delegated, and explains that Windows owns brightness and effects. The
+illuminated lid logo remains a separately labelled firmware endpoint because
+it is not part of the observed keyboard LampArray; do not couple a logo-only
+action to a hidden keyboard write.
+
+The earlier signed sparse-package registration and priority probe remains
+valuable negative evidence: it proved that an OpenBlade background provider
+would compete with Windows' existing controller. Do not ship that experiment
+as the production lighting architecture. `build/Publish.ps1` therefore no
+longer gives the Session Agent package identity or emits the sparse identity
+package. The authoring/probe code remains as developer evidence and the setup
+removal path remains so upgrades can clean installations made by the
+experiment. Uninstall the temporary validation package/certificates after the
+replacement build is installed and validated.
+
+IPC protocol 30 adds the ownership request and status field. The regression
+test records the device lighting-write count, delegates to Windows, exercises
+effect, brightness, and display-off suppression requests, and proves the count
+does not change. It also reloads the machine configuration to prove the choice
+persists.
+
 Final validation at the current transactional-identity checkpoint:
 
 - core commits: `b611f0b` (special-key capability/UI) and `eda8d67`
@@ -1233,11 +1276,10 @@ The main physical-evidence groups still blocking broader admission are:
   `02C6` adapter-class response and thermal readback;
 - CPU Power Limit, CPU Voltage Optimizer, and GPU overclock setters/readback
   through a lifecycle OpenBlade can own without Synapse;
-- quick-effect parameters and effect getter; the model's 51-byte collection is
-  now query-validated as an 85-lamp Windows LampArray, while background
-  identity authoring and setup lifecycle are implemented, but live signed
-  registration, priority, write, ownership-loss, and restoration validation
-  remain incomplete;
+- quick-effect parameters and effect getter for OpenBlade's native HID path;
+  the model's 51-byte collection is query-validated as an 85-lamp Windows
+  LampArray, but OpenBlade delegates to Windows instead of registering a
+  competing background renderer;
 - exact Normal/Driver device-mode setter round trips;
 - M1-M5 and performance-key press/release reports;
 - cold boot, sign-in, service restart, sleep/resume, and device reconnect.

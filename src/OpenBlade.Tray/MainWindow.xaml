@@ -1106,6 +1106,36 @@
                                  Severity="Informational"
                                  Title="Lighting controls unavailable"
                                  Message="{x:Bind LightingControlUnavailableMessage, Mode=OneWay}" />
+                        <Border Style="{StaticResource SettingsGroupStyle}"
+                                Margin="0,0,0,12"
+                                Visibility="{x:Bind IsWindowsDynamicLightingAvailable, Mode=OneWay}">
+                            <Grid ColumnSpacing="20" Padding="16,14">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <StackPanel Spacing="3" VerticalAlignment="Center">
+                                    <TextBlock Text="Let Windows control the keyboard"
+                                               Style="{StaticResource CardTitleStyle}" />
+                                    <TextBlock Text="OpenBlade stops all keyboard-lighting writes. Choose brightness and effects in Windows Dynamic Lighting."
+                                               Style="{StaticResource SecondaryTextStyle}" />
+                                    <HyperlinkButton Content="Open Dynamic Lighting settings"
+                                                     Padding="0,4,0,0"
+                                                     HorizontalAlignment="Left"
+                                                     NavigateUri="ms-settings:personalization-lighting" />
+                                </StackPanel>
+                                <ToggleSwitch x:Name="WindowsDynamicLightingToggle"
+                                              Grid.Column="1"
+                                              HorizontalAlignment="Right"
+                                              VerticalAlignment="Center"
+                                              MinWidth="0"
+                                              AutomationProperties.Name="Let Windows Dynamic Lighting control the keyboard"
+                                              OffContent=""
+                                              OnContent=""
+                                              IsOn="{x:Bind UseWindowsDynamicLighting, Mode=OneWay}"
+                                              Toggled="OnWindowsDynamicLightingToggled" />
+                            </Grid>
+                        </Border>
                         <ContentControl x:Name="LightingControls"
                                         HorizontalContentAlignment="Stretch"
                                         IsEnabled="{x:Bind CanControlLighting, Mode=OneWay}">

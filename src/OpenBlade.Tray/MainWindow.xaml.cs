@@ -56,6 +56,7 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
     private bool changingGamingModeKeyPolicy;
     private bool changingStartupAnimation;
     private bool changingExternalLightingPolicy;
+    private bool changingWindowsDynamicLighting;
     private bool changingDisplaySettings;
     private bool changingDashboardCards;
     private bool changingPageSections;
@@ -920,6 +921,41 @@ public sealed partial class MainWindow : Window, IAsyncDisposable, INotifyProper
             toggle.IsOn = ViewModel.AlwaysOverrideExternalLightingChanges;
             toggle.IsEnabled = true;
             changingExternalLightingPolicy = false;
+        }
+    }
+
+    private async void OnWindowsDynamicLightingToggled(
+        object sender,
+        RoutedEventArgs args) =>
+        await RunHandlerAsync(
+            () => HandleWindowsDynamicLightingToggledAsync(sender),
+            nameof(OnWindowsDynamicLightingToggled));
+
+    private async Task HandleWindowsDynamicLightingToggledAsync(object sender)
+    {
+        if (changingWindowsDynamicLighting
+            || Volatile.Read(ref disposed) != 0
+            || sender is not ToggleSwitch toggle
+            || toggle.IsOn == ViewModel.UseWindowsDynamicLighting)
+        {
+            return;
+        }
+
+        changingWindowsDynamicLighting = true;
+        toggle.IsEnabled = false;
+        try
+        {
+            await ViewModel.SetKeyboardLightingControlModeAsync(
+                toggle.IsOn
+                    ? KeyboardLightingControlMode.WindowsDynamicLighting
+                    : KeyboardLightingControlMode.OpenBlade,
+                CancellationToken.None);
+        }
+        finally
+        {
+            toggle.IsOn = ViewModel.UseWindowsDynamicLighting;
+            toggle.IsEnabled = true;
+            changingWindowsDynamicLighting = false;
         }
     }
 

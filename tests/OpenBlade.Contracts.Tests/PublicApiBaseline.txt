@@ -787,6 +787,10 @@ type enum OpenBlade.Contracts.KeyboardBrightnessDirection
   field System.Int32 value__
   field const OpenBlade.Contracts.KeyboardBrightnessDirection Decrease = 0
   field const OpenBlade.Contracts.KeyboardBrightnessDirection Increase = 1
+type enum OpenBlade.Contracts.KeyboardLightingControlMode
+  field System.Int32 value__
+  field const OpenBlade.Contracts.KeyboardLightingControlMode OpenBlade = 0
+  field const OpenBlade.Contracts.KeyboardLightingControlMode WindowsDynamicLighting = 1
 type sealed class OpenBlade.Contracts.LaptopBehaviorProfileSettings
   interface System.IEquatable<OpenBlade.Contracts.LaptopBehaviorProfileSettings>
   ctor (System.Nullable<System.Boolean> StartupAnimationEnabled, System.Nullable<OpenBlade.Contracts.FunctionKeyPrimaryMode> FunctionKeyPrimary, System.Nullable<System.Boolean> GamingModeEnabled)
@@ -1042,7 +1046,7 @@ type enum OpenBlade.Contracts.OneShotLaptopControl
 type static class OpenBlade.Contracts.OpenBladeIpc
   field const System.Int32 MaximumDiagnosticArchiveBytes = 32768
   field const System.Int32 MaximumMessageBytes = 65536
-  field const System.Int32 ProtocolVersion = 29
+  field const System.Int32 ProtocolVersion = 30
   field const System.String PipeName = "OpenBlade.Service.v2"
 type static class OpenBlade.Contracts.OpenBladeProductVersion
   method static System.String Read(System.Reflection.Assembly assembly)
@@ -1450,13 +1454,14 @@ type sealed class OpenBlade.Contracts.ServiceStatusEvent
   property OpenBlade.Contracts.ServiceStatusSnapshot Status { get; init; }
 type sealed class OpenBlade.Contracts.ServiceStatusSnapshot
   interface System.IEquatable<OpenBlade.Contracts.ServiceStatusSnapshot>
-  ctor (System.Int64 Revision, System.Boolean DeviceVerified, System.Boolean WritesBlocked, System.Collections.Generic.IReadOnlyList<System.String> PotentialControllers, System.String ControllerDetectionWarning, System.Collections.Generic.IReadOnlyList<OpenBlade.Contracts.DeviceSubsystem> ExternalChanges, System.String Message, OpenBlade.Contracts.DeviceCapabilities Capabilities, OpenBlade.Contracts.ConfirmedDeviceState ConfirmedState, OpenBlade.Contracts.ProfileSet Profiles, OpenBlade.Contracts.DesiredDeviceState DesiredState, OpenBlade.Contracts.PowerSource ActivePowerSource, OpenBlade.Contracts.LiveReadings LiveReadings, OpenBlade.Contracts.PerformanceOverride PerformanceOverride, OpenBlade.Contracts.ManualOverride<OpenBlade.Contracts.FanMode> FanOverride, OpenBlade.Contracts.ManualOverride<OpenBlade.Contracts.LightingSettings> LightingOverride, System.Boolean FullChargeOverride, OpenBlade.Contracts.FirmwareVersions Firmware = null, System.String ServiceVersion = null, OpenBlade.Contracts.LightingRendererOwnershipState LightingRendererOwnership = None, System.Collections.Generic.IReadOnlyList<OpenBlade.Contracts.LightingSuppressionReason> LightingSuppressions = null, System.Nullable<System.Boolean> StartupAnimationEnabled = null, System.Nullable<OpenBlade.Contracts.FunctionKeyPrimaryMode> FunctionKeyPrimary = null, System.Nullable<System.Boolean> GamingModeEnabled = null, System.Boolean AlwaysOverrideExternalLightingChanges = false, System.Nullable<System.Boolean> KeyboardDriverModeActive = null, OpenBlade.Contracts.BatteryHealthStatus BatteryHealth = null)
+  ctor (System.Int64 Revision, System.Boolean DeviceVerified, System.Boolean WritesBlocked, System.Collections.Generic.IReadOnlyList<System.String> PotentialControllers, System.String ControllerDetectionWarning, System.Collections.Generic.IReadOnlyList<OpenBlade.Contracts.DeviceSubsystem> ExternalChanges, System.String Message, OpenBlade.Contracts.DeviceCapabilities Capabilities, OpenBlade.Contracts.ConfirmedDeviceState ConfirmedState, OpenBlade.Contracts.ProfileSet Profiles, OpenBlade.Contracts.DesiredDeviceState DesiredState, OpenBlade.Contracts.PowerSource ActivePowerSource, OpenBlade.Contracts.LiveReadings LiveReadings, OpenBlade.Contracts.PerformanceOverride PerformanceOverride, OpenBlade.Contracts.ManualOverride<OpenBlade.Contracts.FanMode> FanOverride, OpenBlade.Contracts.ManualOverride<OpenBlade.Contracts.LightingSettings> LightingOverride, System.Boolean FullChargeOverride, OpenBlade.Contracts.FirmwareVersions Firmware = null, System.String ServiceVersion = null, OpenBlade.Contracts.LightingRendererOwnershipState LightingRendererOwnership = None, System.Collections.Generic.IReadOnlyList<OpenBlade.Contracts.LightingSuppressionReason> LightingSuppressions = null, System.Nullable<System.Boolean> StartupAnimationEnabled = null, System.Nullable<OpenBlade.Contracts.FunctionKeyPrimaryMode> FunctionKeyPrimary = null, System.Nullable<System.Boolean> GamingModeEnabled = null, System.Boolean AlwaysOverrideExternalLightingChanges = false, System.Nullable<System.Boolean> KeyboardDriverModeActive = null, OpenBlade.Contracts.BatteryHealthStatus BatteryHealth = null, OpenBlade.Contracts.KeyboardLightingControlMode KeyboardLightingControlMode = OpenBlade)
   method OpenBlade.Contracts.BatteryHealthStatus get_BatteryHealth()
   method OpenBlade.Contracts.ConfirmedDeviceState get_ConfirmedState()
   method OpenBlade.Contracts.DesiredDeviceState get_DesiredState()
   method OpenBlade.Contracts.DeviceCapabilities get_Capabilities()
   method OpenBlade.Contracts.FanControlSettings get_FanControlOverride()
   method OpenBlade.Contracts.FirmwareVersions get_Firmware()
+  method OpenBlade.Contracts.KeyboardLightingControlMode get_KeyboardLightingControlMode()
   method OpenBlade.Contracts.LightingRendererOwnershipState get_LightingRendererOwnership()
   method OpenBlade.Contracts.LiveReadings get_LiveReadings()
   method OpenBlade.Contracts.ManualOverride<OpenBlade.Contracts.FanMode> get_FanOverride()
@@ -1481,7 +1486,7 @@ type sealed class OpenBlade.Contracts.ServiceStatusSnapshot
   method System.String get_ControllerDetectionWarning()
   method System.String get_Message()
   method System.String get_ServiceVersion()
-  method System.Void Deconstruct(out System.Int64 Revision, out System.Boolean DeviceVerified, out System.Boolean WritesBlocked, out System.Collections.Generic.IReadOnlyList<System.String> PotentialControllers, out System.String ControllerDetectionWarning, out System.Collections.Generic.IReadOnlyList<OpenBlade.Contracts.DeviceSubsystem> ExternalChanges, out System.String Message, out OpenBlade.Contracts.DeviceCapabilities Capabilities, out OpenBlade.Contracts.ConfirmedDeviceState ConfirmedState, out OpenBlade.Contracts.ProfileSet Profiles, out OpenBlade.Contracts.DesiredDeviceState DesiredState, out OpenBlade.Contracts.PowerSource ActivePowerSource, out OpenBlade.Contracts.LiveReadings LiveReadings, out OpenBlade.Contracts.PerformanceOverride PerformanceOverride, out OpenBlade.Contracts.ManualOverride<OpenBlade.Contracts.FanMode> FanOverride, out OpenBlade.Contracts.ManualOverride<OpenBlade.Contracts.LightingSettings> LightingOverride, out System.Boolean FullChargeOverride, out OpenBlade.Contracts.FirmwareVersions Firmware, out System.String ServiceVersion, out OpenBlade.Contracts.LightingRendererOwnershipState LightingRendererOwnership, out System.Collections.Generic.IReadOnlyList<OpenBlade.Contracts.LightingSuppressionReason> LightingSuppressions, out System.Nullable<System.Boolean> StartupAnimationEnabled, out System.Nullable<OpenBlade.Contracts.FunctionKeyPrimaryMode> FunctionKeyPrimary, out System.Nullable<System.Boolean> GamingModeEnabled, out System.Boolean AlwaysOverrideExternalLightingChanges, out System.Nullable<System.Boolean> KeyboardDriverModeActive, out OpenBlade.Contracts.BatteryHealthStatus BatteryHealth)
+  method System.Void Deconstruct(out System.Int64 Revision, out System.Boolean DeviceVerified, out System.Boolean WritesBlocked, out System.Collections.Generic.IReadOnlyList<System.String> PotentialControllers, out System.String ControllerDetectionWarning, out System.Collections.Generic.IReadOnlyList<OpenBlade.Contracts.DeviceSubsystem> ExternalChanges, out System.String Message, out OpenBlade.Contracts.DeviceCapabilities Capabilities, out OpenBlade.Contracts.ConfirmedDeviceState ConfirmedState, out OpenBlade.Contracts.ProfileSet Profiles, out OpenBlade.Contracts.DesiredDeviceState DesiredState, out OpenBlade.Contracts.PowerSource ActivePowerSource, out OpenBlade.Contracts.LiveReadings LiveReadings, out OpenBlade.Contracts.PerformanceOverride PerformanceOverride, out OpenBlade.Contracts.ManualOverride<OpenBlade.Contracts.FanMode> FanOverride, out OpenBlade.Contracts.ManualOverride<OpenBlade.Contracts.LightingSettings> LightingOverride, out System.Boolean FullChargeOverride, out OpenBlade.Contracts.FirmwareVersions Firmware, out System.String ServiceVersion, out OpenBlade.Contracts.LightingRendererOwnershipState LightingRendererOwnership, out System.Collections.Generic.IReadOnlyList<OpenBlade.Contracts.LightingSuppressionReason> LightingSuppressions, out System.Nullable<System.Boolean> StartupAnimationEnabled, out System.Nullable<OpenBlade.Contracts.FunctionKeyPrimaryMode> FunctionKeyPrimary, out System.Nullable<System.Boolean> GamingModeEnabled, out System.Boolean AlwaysOverrideExternalLightingChanges, out System.Nullable<System.Boolean> KeyboardDriverModeActive, out OpenBlade.Contracts.BatteryHealthStatus BatteryHealth, out OpenBlade.Contracts.KeyboardLightingControlMode KeyboardLightingControlMode)
   method System.Void set_ActivePowerSource(OpenBlade.Contracts.PowerSource value)
   method System.Void set_AlwaysOverrideExternalLightingChanges(System.Boolean value)
   method System.Void set_BatteryHealth(OpenBlade.Contracts.BatteryHealthStatus value)
@@ -1498,6 +1503,7 @@ type sealed class OpenBlade.Contracts.ServiceStatusSnapshot
   method System.Void set_FunctionKeyPrimary(System.Nullable<OpenBlade.Contracts.FunctionKeyPrimaryMode> value)
   method System.Void set_GamingModeEnabled(System.Nullable<System.Boolean> value)
   method System.Void set_KeyboardDriverModeActive(System.Nullable<System.Boolean> value)
+  method System.Void set_KeyboardLightingControlMode(OpenBlade.Contracts.KeyboardLightingControlMode value)
   method System.Void set_LightingOverride(OpenBlade.Contracts.ManualOverride<OpenBlade.Contracts.LightingSettings> value)
   method System.Void set_LightingRendererOwnership(OpenBlade.Contracts.LightingRendererOwnershipState value)
   method System.Void set_LightingSuppressions(System.Collections.Generic.IReadOnlyList<OpenBlade.Contracts.LightingSuppressionReason> value)
@@ -1523,6 +1529,7 @@ type sealed class OpenBlade.Contracts.ServiceStatusSnapshot
   property OpenBlade.Contracts.DeviceCapabilities Capabilities { get; init; }
   property OpenBlade.Contracts.FanControlSettings FanControlOverride { get; init; }
   property OpenBlade.Contracts.FirmwareVersions Firmware { get; init; }
+  property OpenBlade.Contracts.KeyboardLightingControlMode KeyboardLightingControlMode { get; init; }
   property OpenBlade.Contracts.LightingRendererOwnershipState LightingRendererOwnership { get; init; }
   property OpenBlade.Contracts.LiveReadings LiveReadings { get; init; }
   property OpenBlade.Contracts.ManualOverride<OpenBlade.Contracts.FanMode> FanOverride { get; init; }
@@ -1631,6 +1638,22 @@ type sealed class OpenBlade.Contracts.SetFullChargeOverrideRequest
   method virtual OpenBlade.Contracts.SetFullChargeOverrideRequest <Clone>$()
   method virtual System.Boolean Equals(OpenBlade.Contracts.SetFullChargeOverrideRequest other)
   property System.Boolean Enabled { get; init; }
+type sealed class OpenBlade.Contracts.SetKeyboardLightingControlModeRequest
+  base OpenBlade.Contracts.ServiceRequest
+  interface System.IEquatable<OpenBlade.Contracts.SetKeyboardLightingControlModeRequest>
+  ctor (System.Int32 Version, System.Guid RequestId, OpenBlade.Contracts.KeyboardLightingControlMode Mode)
+  method OpenBlade.Contracts.KeyboardLightingControlMode get_Mode()
+  method System.Void Deconstruct(out System.Int32 Version, out System.Guid RequestId, out OpenBlade.Contracts.KeyboardLightingControlMode Mode)
+  method System.Void set_Mode(OpenBlade.Contracts.KeyboardLightingControlMode value)
+  method override System.Boolean Equals(System.Object obj)
+  method override System.Int32 GetHashCode()
+  method override System.String ToString()
+  method sealed override System.Boolean Equals(OpenBlade.Contracts.ServiceRequest other)
+  method static System.Boolean op_Equality(OpenBlade.Contracts.SetKeyboardLightingControlModeRequest left, OpenBlade.Contracts.SetKeyboardLightingControlModeRequest right)
+  method static System.Boolean op_Inequality(OpenBlade.Contracts.SetKeyboardLightingControlModeRequest left, OpenBlade.Contracts.SetKeyboardLightingControlModeRequest right)
+  method virtual OpenBlade.Contracts.SetKeyboardLightingControlModeRequest <Clone>$()
+  method virtual System.Boolean Equals(OpenBlade.Contracts.SetKeyboardLightingControlModeRequest other)
+  property OpenBlade.Contracts.KeyboardLightingControlMode Mode { get; init; }
 type sealed class OpenBlade.Contracts.SetLightingOverrideRequest
   base OpenBlade.Contracts.ServiceRequest
   interface System.IEquatable<OpenBlade.Contracts.SetLightingOverrideRequest>

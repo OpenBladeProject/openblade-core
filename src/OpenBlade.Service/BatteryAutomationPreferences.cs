@@ -5,7 +5,9 @@ namespace OpenBlade.Service;
 public sealed record BatteryAutomationPreferences(
     bool ProtectionEnabled,
     bool AlwaysOverrideExternalLightingChanges = false,
-    LightingSettings? LastKnownLighting = null);
+    LightingSettings? LastKnownLighting = null,
+    KeyboardLightingControlMode KeyboardLightingControlMode =
+        KeyboardLightingControlMode.OpenBlade);
 
 public sealed record BatteryConfiguration(
     ProfileSet Profiles,

@@ -74,6 +74,13 @@ public interface IServiceClient : IServiceStatusWatcher
         OverrideLifetime lifetime,
         CancellationToken token);
 
+    Task<ControlOperationResult> SetKeyboardLightingControlModeAsync(
+        KeyboardLightingControlMode mode,
+        CancellationToken token) => Task.FromResult(
+            new ControlOperationResult(
+                ControlOperationStatus.Blocked,
+                "Keyboard lighting ownership selection is unavailable."));
+
     Task<ControlOperationResult> SetExternalLightingOverridePolicyAsync(
         bool enabled,
         CancellationToken token);

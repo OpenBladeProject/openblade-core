@@ -121,7 +121,6 @@ $setupPublishArguments = @(
 )
 $signingEnabled = -not [string]::IsNullOrWhiteSpace($SigningThumbprint)
 $resolvedSignTool = $null
-$identityCertificate = $null
 if ($signingEnabled) {
     if ([string]::IsNullOrWhiteSpace($SignTool)) {
         $signToolCommand = Get-Command 'signtool.exe' -ErrorAction Stop
@@ -133,8 +132,6 @@ if ($signingEnabled) {
             throw "The requested SignTool executable is missing: $resolvedSignTool"
         }
     }
-    $identityCertificate = Get-OpenBladeSigningCertificate `
-        -Thumbprint $SigningThumbprint
 }
 
 try {
@@ -142,18 +139,8 @@ try {
 
     Invoke-CheckedPublish (Join-Path $repository 'src\OpenBlade.Service\OpenBlade.Service.csproj') `
         $payload $productionPublishArguments
-    $sessionAgentPublishArguments = @($productionPublishArguments)
-    if ($signingEnabled) {
-        $sessionAgentIdentityManifest = New-OpenBladeSessionAgentIdentityManifest `
-            -TemplatePath (Join-Path $repository (
-                'build\identity\OpenBlade.SessionAgent.Identity.manifest.template')) `
-            -OutputPath (Join-Path $stagingRoot 'OpenBlade.SessionAgent.Identity.manifest') `
-            -Publisher $identityCertificate.Subject
-        $sessionAgentPublishArguments += (
-            "--property:OpenBladeSessionAgentManifestSource=$sessionAgentIdentityManifest")
-    }
     Invoke-CheckedPublish (Join-Path $repository 'src\OpenBlade.SessionAgent\OpenBlade.SessionAgent.csproj') `
-        $payload $sessionAgentPublishArguments
+        $payload $productionPublishArguments
     Invoke-CheckedPublish (Join-Path $repository 'src\OpenBlade.Tray\OpenBlade.Tray.csproj') `
         $payload $productionPublishArguments
     $trayAssets = Join-Path $repository (
@@ -170,17 +157,6 @@ try {
         $stagingDeveloperTools $productionPublishArguments
     Invoke-CheckedPublish (Join-Path $repository 'src\OpenBlade.Setup\OpenBlade.Setup.csproj') `
         $stagingBundle ($productionPublishArguments + $setupPublishArguments)
-
-    $dynamicLightingIdentity = $null
-    if ($signingEnabled) {
-        $dynamicLightingIdentity = New-OpenBladeDynamicLightingPackage `
-            -IdentityRoot (Join-Path $repository 'build\identity') `
-            -StagingDirectory (Join-Path $stagingRoot 'dynamic-lighting-identity') `
-            -PayloadDirectory $payload `
-            -ProductVersion $openBladeVersion `
-            -Publisher $identityCertificate.Subject `
-            -MakeAppx $MakeAppx
-    }
 
     $captureExecutable = Join-Path $stagingDeveloperTools 'OpenBlade.Capture.exe'
     if (-not (Test-Path -LiteralPath $captureExecutable -PathType Leaf)) {
@@ -204,9 +180,6 @@ try {
             }) {
             Invoke-OpenBladeSigning -Path $file.FullName -ResolvedSignTool $resolvedSignTool
         }
-        Invoke-OpenBladeSigning `
-            -Path $dynamicLightingIdentity.PackagePath `
-            -ResolvedSignTool $resolvedSignTool
     }
 
     New-Item -ItemType Directory -Path $stagingInstallerOutput -Force | Out-Null

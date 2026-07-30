@@ -1247,6 +1247,63 @@ public sealed class ServiceControlRuntimeTests : IDisposable
     }
 
     [Fact]
+    public async Task WindowsDynamicLightingMode_PersistsAndBlocksKeyboardWrites()
+    {
+        TestContext context = CreateContext(providerAvailable: true);
+        context.Device.Capabilities = DeviceCapabilities.SafeTargetDefaults() with
+        {
+            LampArrayLightingAccess = DeviceFeatureAccess.ObservedOnly,
+        };
+        context.Device.ConfirmedState = new ConfirmedDeviceState(
+            PerformancePreset.Balanced,
+            FanMode.Automatic,
+            ConfirmedBattery(80),
+            LightingSettingsFactory.Off());
+        await context.Runtime.ObserveAsync(CancellationToken.None);
+        int writesBeforeDelegation = context.Device.LightingSetCalls;
+
+        ControlOperationResult delegated =
+            await context.Runtime.SetKeyboardLightingControlModeAsync(
+                KeyboardLightingControlMode.WindowsDynamicLighting,
+                CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Stored, delegated.Status);
+        Assert.Equal(
+            KeyboardLightingControlMode.WindowsDynamicLighting,
+            context.Runtime.GetStatus().KeyboardLightingControlMode);
+        Assert.Equal(writesBeforeDelegation, context.Device.LightingSetCalls);
+
+        ControlOperationResult effect = await context.Runtime.SetLightingOverrideAsync(
+            new ManualOverride<LightingSettings>(
+                LightingSettingsFactory.Off(),
+                OverrideLifetime.UntilPowerSourceChange),
+            CancellationToken.None);
+        ControlOperationResult brightness =
+            await context.Runtime.StepKeyboardBrightnessAsync(
+                KeyboardBrightnessDirection.Increase,
+                OverrideLifetime.UntilPowerSourceChange,
+                CancellationToken.None);
+        ControlOperationResult suppression =
+            await context.Runtime.SetLightingSuppressionAsync(
+                LightingSuppressionReason.DisplayOff,
+                suppressed: true,
+                CancellationToken.None);
+
+        Assert.Equal(ControlOperationStatus.Blocked, effect.Status);
+        Assert.Equal(ControlOperationStatus.Blocked, brightness.Status);
+        Assert.Equal(ControlOperationStatus.Blocked, suppression.Status);
+        Assert.Equal(writesBeforeDelegation, context.Device.LightingSetCalls);
+        Assert.All(
+            new[] { effect, brightness, suppression },
+            result => Assert.Contains("Windows Dynamic Lighting", result.Message));
+
+        BatteryConfiguration saved = await context.Store.LoadAsync(CancellationToken.None);
+        Assert.Equal(
+            KeyboardLightingControlMode.WindowsDynamicLighting,
+            saved.Preferences.KeyboardLightingControlMode);
+    }
+
+    [Fact]
     public async Task Restart_RestoresPersistedLastKnownLighting()
     {
         TestContext original = await CreateOwnedStaticLightingContextAsync();

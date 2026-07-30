@@ -74,6 +74,13 @@ public interface IServiceControlRuntime
                 ControlOperationStatus.Blocked,
                 "Keyboard brightness stepping is unavailable."));
 
+    Task<ControlOperationResult> SetKeyboardLightingControlModeAsync(
+        KeyboardLightingControlMode mode,
+        CancellationToken token) => Task.FromResult(
+            new ControlOperationResult(
+                ControlOperationStatus.Blocked,
+                "Keyboard lighting ownership selection is unavailable."));
+
     Task<ControlOperationResult> SetExternalLightingOverridePolicyAsync(
         bool enabled,
         CancellationToken token) => Task.FromResult(
@@ -793,6 +800,10 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             return RecordRejectedIntent(
                 new ArgumentOutOfRangeException(nameof(direction)));
         }
+        if (IsKeyboardLightingDelegated)
+        {
+            return WindowsDynamicLightingOwnsKeyboard();
+        }
 
         await operationGate.WaitAsync(token).ConfigureAwait(false);
         try
@@ -1049,11 +1060,89 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         return ToOperationResult(failed);
     }
 
+    public async Task<ControlOperationResult> SetKeyboardLightingControlModeAsync(
+        KeyboardLightingControlMode mode,
+        CancellationToken token)
+    {
+        EnsureInitialized();
+        if (!Enum.IsDefined(mode))
+        {
+            return RecordRejectedIntent(new ArgumentOutOfRangeException(nameof(mode)));
+        }
+
+        await operationGate.WaitAsync(token).ConfigureAwait(false);
+        try
+        {
+            if (mode == KeyboardLightingControlMode.WindowsDynamicLighting
+                && GetStatus().Capabilities?.LampArrayLightingAccess is null)
+            {
+                return new ControlOperationResult(
+                    ControlOperationStatus.Blocked,
+                    "Windows Dynamic Lighting is not available for this keyboard.");
+            }
+
+            if (preferences.KeyboardLightingControlMode == mode)
+            {
+                return new ControlOperationResult(
+                    ControlOperationStatus.Stored,
+                    mode == KeyboardLightingControlMode.WindowsDynamicLighting
+                        ? "Keyboard lighting is already delegated to Windows."
+                        : "OpenBlade already controls keyboard lighting.");
+            }
+
+            BatteryAutomationPreferences staged = preferences with
+            {
+                KeyboardLightingControlMode = mode,
+                AlwaysOverrideExternalLightingChanges =
+                    mode == KeyboardLightingControlMode.WindowsDynamicLighting
+                        ? false
+                        : preferences.AlwaysOverrideExternalLightingChanges,
+            };
+            await store.SaveConfigurationAsync(Automation.Profiles, staged, token)
+                .ConfigureAwait(false);
+            preferences = staged;
+
+            if (mode == KeyboardLightingControlMode.WindowsDynamicLighting)
+            {
+                pendingLightingRestore = null;
+                pendingLightingRestoreFromLifecycle = false;
+                faultedLightingRecoveryCandidate = null;
+                lastOwnedLightingSettings = null;
+                lightingSuppressions.Clear();
+            }
+
+            string message = mode == KeyboardLightingControlMode.WindowsDynamicLighting
+                ? "Keyboard lighting was delegated to Windows Dynamic Lighting. OpenBlade will not write keyboard lighting."
+                : "OpenBlade keyboard lighting control is enabled. No lighting change was applied.";
+            PublishIfChanged(GetStatus() with
+            {
+                KeyboardLightingControlMode = mode,
+                AlwaysOverrideExternalLightingChanges =
+                    staged.AlwaysOverrideExternalLightingChanges,
+                LightingRendererOwnership = LightingRendererOwnershipState.None,
+                LightingSuppressions = CurrentLightingSuppressions(),
+                Message = message,
+            });
+            history.RecordSummary(ControlOperationStatus.Stored, message);
+            return new ControlOperationResult(ControlOperationStatus.Stored, message);
+        }
+        finally
+        {
+            operationGate.Release();
+        }
+    }
+
     public async Task<ControlOperationResult> SetExternalLightingOverridePolicyAsync(
         bool enabled,
         CancellationToken token)
     {
         EnsureInitialized();
+        if (enabled && IsKeyboardLightingDelegated)
+        {
+            return new ControlOperationResult(
+                ControlOperationStatus.Blocked,
+                "OpenBlade cannot override external keyboard lighting while control is delegated to Windows.");
+        }
         await operationGate.WaitAsync(token).ConfigureAwait(false);
         try
         {
@@ -1124,6 +1213,10 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         if (!Enum.IsDefined(reason))
         {
             return RecordRejectedIntent(new ArgumentOutOfRangeException(nameof(reason)));
+        }
+        if (IsKeyboardLightingDelegated)
+        {
+            return WindowsDynamicLightingOwnsKeyboard();
         }
 
         await operationGate.WaitAsync(token).ConfigureAwait(false);
@@ -1220,6 +1313,10 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         CancellationToken token)
     {
         EnsureInitialized();
+        if (IsKeyboardLightingDelegated)
+        {
+            return WindowsDynamicLightingOwnsKeyboard();
+        }
         token.ThrowIfCancellationRequested();
         ServiceStatusSnapshot current = GetStatus();
         if (!current.DeviceVerified
@@ -1293,6 +1390,10 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         CancellationToken token)
     {
         EnsureInitialized();
+        if (IsKeyboardLightingDelegated)
+        {
+            return WindowsDynamicLightingOwnsKeyboard();
+        }
         ArgumentNullException.ThrowIfNull(frame);
         if (!frame.IsWellFormed())
         {
@@ -1370,6 +1471,10 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         CancellationToken token)
     {
         EnsureInitialized();
+        if (IsKeyboardLightingDelegated)
+        {
+            return WindowsDynamicLightingOwnsKeyboard();
+        }
         token.ThrowIfCancellationRequested();
         ServiceStatusSnapshot current = GetStatus();
         if (!current.DeviceVerified
@@ -2271,6 +2376,13 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
     private async Task<bool> RestoreLightingRendererCoreAsync(
         CancellationToken cancellationToken)
     {
+        if (IsKeyboardLightingDelegated)
+        {
+            pendingLightingRestore = null;
+            pendingLightingRestoreFromLifecycle = false;
+            return true;
+        }
+
         ServiceStatusSnapshot current = GetStatus();
         LightingSettings? requested = pendingLightingRestore;
         bool lifecycleRestore = pendingLightingRestoreFromLifecycle;
@@ -2642,6 +2754,11 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         Func<DesiredDeviceState, DesiredDeviceState>? stageDesired = null,
         Func<CancellationToken, Task>? commitIntent = null)
     {
+        if (subsystem == DeviceSubsystem.Lighting && IsKeyboardLightingDelegated)
+        {
+            return WindowsDynamicLightingOwnsKeyboard();
+        }
+
         if (powerSource == PowerSource.ExternalUnknown)
         {
             return PublishScopedUnavailable(
@@ -3051,7 +3168,13 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             ConfirmedDeviceState confirmed)
         {
             ObserveAutomaticState(confirmed, priorDesired, desired);
-            return GetCoupledAutomaticWriteExclusions();
+            var exclusions = new HashSet<DeviceSubsystem>(
+                GetCoupledAutomaticWriteExclusions());
+            if (IsKeyboardLightingDelegated)
+            {
+                exclusions.Add(DeviceSubsystem.Lighting);
+            }
+            return exclusions;
         }
 
         try
@@ -3098,9 +3221,14 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         LightingRendererOwnershipState ObservedOwnership)> ReconcileFullTransitionLightingAsync(
             IBladeDevice device,
             DesiredDeviceState desired,
-            FullTransitionApplyOutcome outcome,
-            CancellationToken token)
+        FullTransitionApplyOutcome outcome,
+        CancellationToken token)
     {
+        if (IsKeyboardLightingDelegated)
+        {
+            return (outcome, LightingRendererOwnershipState.None);
+        }
+
         LightingRendererOwnershipState observedLightingOwnership =
             await PublishObservedLightingOwnershipAsync(device, token)
                 .ConfigureAwait(false);
@@ -4286,11 +4414,21 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
             LightingSuppressions: [],
             AlwaysOverrideExternalLightingChanges:
                 preferences.AlwaysOverrideExternalLightingChanges,
-            BatteryHealth: batteryHealth)
+            BatteryHealth: batteryHealth,
+            KeyboardLightingControlMode:
+                preferences.KeyboardLightingControlMode)
         {
             FanControlOverride = Automation.FanControlOverride,
         };
     }
+
+    private bool IsKeyboardLightingDelegated =>
+        preferences.KeyboardLightingControlMode
+            == KeyboardLightingControlMode.WindowsDynamicLighting;
+
+    private static ControlOperationResult WindowsDynamicLightingOwnsKeyboard() => new(
+        ControlOperationStatus.Blocked,
+        "Keyboard lighting is delegated to Windows Dynamic Lighting. OpenBlade did not write the keyboard.");
 
     private void RefreshBatteryHealthAfterPowerSourceChangeCore()
     {
@@ -4557,6 +4695,7 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
         && left.KeyboardDriverModeActive == right.KeyboardDriverModeActive
         && left.AlwaysOverrideExternalLightingChanges
             == right.AlwaysOverrideExternalLightingChanges
+        && left.KeyboardLightingControlMode == right.KeyboardLightingControlMode
         && left.LightingRendererOwnership == right.LightingRendererOwnership
         && (left.LightingSuppressions ?? []).SequenceEqual(
             right.LightingSuppressions ?? [])
@@ -4612,6 +4751,13 @@ public sealed class ServiceControlRuntime : IServiceControlRuntime, IDisposable
     private async Task RecoverFaultedLightingRendererCoreAsync(
         CancellationToken cancellationToken)
     {
+        if (IsKeyboardLightingDelegated)
+        {
+            faultedLightingRecoveryCandidate = null;
+            lastOwnedLightingSettings = null;
+            return;
+        }
+
         if (lightingSuppressions.Count > 0)
         {
             return;
