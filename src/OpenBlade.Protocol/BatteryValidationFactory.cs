@@ -491,11 +491,17 @@ public static class BatteryValidationFactory
                 DeviceFeatureAccess.ObservedOnly),
             new CpuVoltageOptimizerCapabilities(
                 new DeviceNumericRange(-30, -1, 1),
-                DeviceFeatureAccess.ObservedOnly),
+                DeviceFeatureAccess.ObservedOnly)
+            {
+                SupportsEnableDisable = true,
+            },
             new GpuOverclockCapabilities(
                 new DeviceNumericRange(-1000, 400, null),
                 new DeviceNumericRange(-1000, 3000, null),
-                DeviceFeatureAccess.ObservedOnly),
+                DeviceFeatureAccess.ObservedOnly)
+            {
+                SupportsEnableDisable = true,
+            },
             [
                 new PowerSourceBehaviorObservation(
                     PowerSource.Battery,

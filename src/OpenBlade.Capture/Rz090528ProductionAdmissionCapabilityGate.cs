@@ -101,6 +101,7 @@ internal static class Rz090528ProductionAdmissionCapabilityGate
                 Maximum: -1,
                 Step: 1,
             },
+            SupportsEnableDisable: true,
             Access: DeviceFeatureAccess.ObservedOnly,
         }
         && battery.GpuOverclock is
@@ -117,6 +118,7 @@ internal static class Rz090528ProductionAdmissionCapabilityGate
                 Maximum: 3000,
                 Step: null,
             },
+            SupportsEnableDisable: true,
             Access: DeviceFeatureAccess.ObservedOnly,
         }
         && battery.ObservedPowerSourceBehaviors.SequenceEqual(PowerSourceBehaviors)

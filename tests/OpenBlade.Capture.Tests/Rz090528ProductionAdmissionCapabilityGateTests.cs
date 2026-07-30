@@ -20,7 +20,25 @@ public sealed class Rz090528ProductionAdmissionCapabilityGateTests
         {
             (battery with { CpuPowerLimit = null }, lighting),
             (battery with { CpuVoltageOptimizer = null }, lighting),
+            (
+                battery with
+                {
+                    CpuVoltageOptimizer = battery.CpuVoltageOptimizer! with
+                    {
+                        SupportsEnableDisable = false,
+                    },
+                },
+                lighting),
             (battery with { GpuOverclock = null }, lighting),
+            (
+                battery with
+                {
+                    GpuOverclock = battery.GpuOverclock! with
+                    {
+                        SupportsEnableDisable = false,
+                    },
+                },
+                lighting),
             (battery with { ObservedPowerSourceBehaviors = [] }, lighting),
             (battery, lighting with { SpecialKeyBindingsAccess = null }),
             (battery, lighting with { LampArrayLightingAccess = null }),
@@ -104,11 +122,17 @@ public sealed class Rz090528ProductionAdmissionCapabilityGateTests
                 DeviceFeatureAccess.ObservedOnly),
             CpuVoltageOptimizer = new CpuVoltageOptimizerCapabilities(
                 new DeviceNumericRange(-30, -1, 1),
-                DeviceFeatureAccess.ObservedOnly),
+                DeviceFeatureAccess.ObservedOnly)
+            {
+                SupportsEnableDisable = true,
+            },
             GpuOverclock = new GpuOverclockCapabilities(
                 new DeviceNumericRange(-1000, 400, null),
                 new DeviceNumericRange(-1000, 3000, null),
-                DeviceFeatureAccess.ObservedOnly),
+                DeviceFeatureAccess.ObservedOnly)
+            {
+                SupportsEnableDisable = true,
+            },
             ObservedPowerSourceBehaviors =
             [
                 new PowerSourceBehaviorObservation(

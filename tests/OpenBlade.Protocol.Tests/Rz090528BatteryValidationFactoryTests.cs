@@ -38,13 +38,19 @@ public sealed class Rz090528BatteryValidationFactoryTests
         Assert.Equal(
             new CpuVoltageOptimizerCapabilities(
                 new DeviceNumericRange(-30, -1, 1),
-                DeviceFeatureAccess.ObservedOnly),
+                DeviceFeatureAccess.ObservedOnly)
+            {
+                SupportsEnableDisable = true,
+            },
             factory.Capabilities.CpuVoltageOptimizer);
         Assert.Equal(
             new GpuOverclockCapabilities(
                 new DeviceNumericRange(-1000, 400, null),
                 new DeviceNumericRange(-1000, 3000, null),
-                DeviceFeatureAccess.ObservedOnly),
+                DeviceFeatureAccess.ObservedOnly)
+            {
+                SupportsEnableDisable = true,
+            },
             factory.Capabilities.GpuOverclock);
         Assert.Equal(
             [

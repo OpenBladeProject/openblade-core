@@ -1962,7 +1962,10 @@ public sealed class MainViewModelTests
         var observedGpuPolicy = new GpuOverclockCapabilities(
             new DeviceNumericRange(-1000, 400, null),
             new DeviceNumericRange(-1000, 3000, null),
-            DeviceFeatureAccess.ObservedOnly);
+            DeviceFeatureAccess.ObservedOnly)
+        {
+            SupportsEnableDisable = true,
+        };
         client.Publish(baseline with
         {
             Capabilities = baseline.Capabilities! with
@@ -1973,7 +1976,10 @@ public sealed class MainViewModelTests
                     DeviceFeatureAccess.ObservedOnly),
                 CpuVoltageOptimizer = new(
                     new DeviceNumericRange(-30, -1, 1),
-                    DeviceFeatureAccess.ObservedOnly),
+                    DeviceFeatureAccess.ObservedOnly)
+                {
+                    SupportsEnableDisable = true,
+                },
                 GpuOverclock = observedGpuPolicy,
                 SpecialKeyBindingsAccess = DeviceFeatureAccess.ObservedOnly,
                 LampArrayLightingAccess = DeviceFeatureAccess.ObservedOnly,
@@ -2032,8 +2038,10 @@ public sealed class MainViewModelTests
         Assert.Contains("RzAMDOverClock service", viewModel.CpuPowerLimitAccessLabel);
         Assert.Contains("read-only", viewModel.CpuPowerLimitAccessLabel);
         Assert.True(viewModel.IsCpuVoltageOptimizerVisible);
+        Assert.Contains("On/Off", viewModel.CpuVoltageOptimizerRangeLabel);
         Assert.Contains("getter can make active Synapse reapply", viewModel.CpuVoltageOptimizerAccessLabel);
         Assert.True(viewModel.IsGpuOverclockPolicyVisible);
+        Assert.Contains("On/Off captured", viewModel.GpuOverclockPolicyLabel);
         Assert.Contains("core -1000 to 400 MHz", viewModel.GpuOverclockPolicyLabel);
         Assert.False(viewModel.CanEditGpuClockTuning);
         Assert.False(viewModel.IsSpecialKeyBindingsEditable);

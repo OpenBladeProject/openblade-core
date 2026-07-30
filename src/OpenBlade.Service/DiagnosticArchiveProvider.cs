@@ -351,10 +351,14 @@ public sealed class DiagnosticArchiveProvider : IDiagnosticArchiveProvider
             capabilities.CpuVoltageOptimizer?.IsWellFormed == true;
         result["performance.cpuVoltageOptimizer.write"] =
             capabilities.CpuVoltageOptimizer?.Access == DeviceFeatureAccess.ReadWrite;
+        result["performance.cpuVoltageOptimizer.enableDisableObserved"] =
+            capabilities.CpuVoltageOptimizer?.SupportsEnableDisable == true;
         result["performance.gpuOverclock.observed"] =
             capabilities.GpuOverclock?.IsWellFormed == true;
         result["performance.gpuOverclock.write"] =
             capabilities.GpuOverclock?.Access == DeviceFeatureAccess.ReadWrite;
+        result["performance.gpuOverclock.enableDisableObserved"] =
+            capabilities.GpuOverclock?.SupportsEnableDisable == true;
         result["laptop.specialKeyBindings.observed"] =
             capabilities.SpecialKeyBindingsAccess is not null;
         result["laptop.specialKeyBindings.write"] =

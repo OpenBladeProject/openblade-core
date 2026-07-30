@@ -267,8 +267,10 @@ type sealed class OpenBlade.Contracts.CpuVoltageOptimizerCapabilities
   method OpenBlade.Contracts.DeviceFeatureAccess get_Access()
   method OpenBlade.Contracts.DeviceNumericRange get_Value()
   method System.Boolean get_IsWellFormed()
+  method System.Boolean get_SupportsEnableDisable()
   method System.Void Deconstruct(out OpenBlade.Contracts.DeviceNumericRange Value, out OpenBlade.Contracts.DeviceFeatureAccess Access)
   method System.Void set_Access(OpenBlade.Contracts.DeviceFeatureAccess value)
+  method System.Void set_SupportsEnableDisable(System.Boolean value)
   method System.Void set_Value(OpenBlade.Contracts.DeviceNumericRange value)
   method override System.Boolean Equals(System.Object obj)
   method override System.Int32 GetHashCode()
@@ -279,6 +281,7 @@ type sealed class OpenBlade.Contracts.CpuVoltageOptimizerCapabilities
   property OpenBlade.Contracts.DeviceFeatureAccess Access { get; init; }
   property OpenBlade.Contracts.DeviceNumericRange Value { get; init; }
   property System.Boolean IsWellFormed { get; }
+  property System.Boolean SupportsEnableDisable { get; init; }
 type sealed class OpenBlade.Contracts.CustomPerformanceCapabilities
   interface System.IEquatable<OpenBlade.Contracts.CustomPerformanceCapabilities>
   ctor (System.Collections.Generic.IReadOnlySet<OpenBlade.Contracts.CustomPerformanceCombination> AllowedCombinations)
@@ -764,10 +767,12 @@ type sealed class OpenBlade.Contracts.GpuOverclockCapabilities
   method OpenBlade.Contracts.DeviceNumericRange get_MemoryOffsetMegahertz()
   method OpenBlade.Contracts.GpuOverclockCapabilities <Clone>$()
   method System.Boolean get_IsWellFormed()
+  method System.Boolean get_SupportsEnableDisable()
   method System.Void Deconstruct(out OpenBlade.Contracts.DeviceNumericRange CoreOffsetMegahertz, out OpenBlade.Contracts.DeviceNumericRange MemoryOffsetMegahertz, out OpenBlade.Contracts.DeviceFeatureAccess Access)
   method System.Void set_Access(OpenBlade.Contracts.DeviceFeatureAccess value)
   method System.Void set_CoreOffsetMegahertz(OpenBlade.Contracts.DeviceNumericRange value)
   method System.Void set_MemoryOffsetMegahertz(OpenBlade.Contracts.DeviceNumericRange value)
+  method System.Void set_SupportsEnableDisable(System.Boolean value)
   method override System.Boolean Equals(System.Object obj)
   method override System.Int32 GetHashCode()
   method override System.String ToString()
@@ -778,6 +783,7 @@ type sealed class OpenBlade.Contracts.GpuOverclockCapabilities
   property OpenBlade.Contracts.DeviceNumericRange CoreOffsetMegahertz { get; init; }
   property OpenBlade.Contracts.DeviceNumericRange MemoryOffsetMegahertz { get; init; }
   property System.Boolean IsWellFormed { get; }
+  property System.Boolean SupportsEnableDisable { get; init; }
 type static class OpenBlade.Contracts.IpcMessageCodec
   method static System.Threading.Tasks.Task WriteRequestAsync(System.IO.Stream stream, OpenBlade.Contracts.ServiceRequest request, System.Threading.CancellationToken token)
   method static System.Threading.Tasks.Task WriteServerFrameAsync(System.IO.Stream stream, OpenBlade.Contracts.ServiceServerFrame frame, System.Threading.CancellationToken token)
@@ -1046,7 +1052,7 @@ type enum OpenBlade.Contracts.OneShotLaptopControl
 type static class OpenBlade.Contracts.OpenBladeIpc
   field const System.Int32 MaximumDiagnosticArchiveBytes = 32768
   field const System.Int32 MaximumMessageBytes = 65536
-  field const System.Int32 ProtocolVersion = 30
+  field const System.Int32 ProtocolVersion = 31
   field const System.String PipeName = "OpenBlade.Service.v2"
 type static class OpenBlade.Contracts.OpenBladeProductVersion
   method static System.String Read(System.Reflection.Assembly assembly)

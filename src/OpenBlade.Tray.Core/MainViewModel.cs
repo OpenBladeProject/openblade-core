@@ -1456,7 +1456,10 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         && Capabilities.CpuVoltageOptimizer?.IsWellFormed == true;
 
     public string CpuVoltageOptimizerRangeLabel =>
-        FormatObservedRange(Capabilities.CpuVoltageOptimizer?.Value, string.Empty);
+        Capabilities.CpuVoltageOptimizer is { } optimizer
+            ? $"{FormatObservedRange(optimizer.Value, string.Empty)}"
+                + (optimizer.SupportsEnableDisable ? "; On/Off" : string.Empty)
+            : UnavailableLabel;
 
     public string CpuVoltageOptimizerAccessLabel =>
         FormatFeatureAccess(
@@ -1473,7 +1476,8 @@ public sealed partial class MainViewModel : INotifyPropertyChanged, IAsyncDispos
         {
             GpuOverclockCapabilities? policy = Capabilities.GpuOverclock;
             return policy?.IsWellFormed == true
-                ? $"Synapse policy: core {policy.CoreOffsetMegahertz.Minimum} to {policy.CoreOffsetMegahertz.Maximum} MHz; memory {policy.MemoryOffsetMegahertz.Minimum} to {policy.MemoryOffsetMegahertz.Maximum} MHz."
+                ? $"{(policy.SupportsEnableDisable ? "On/Off captured. " : string.Empty)}"
+                    + $"Synapse policy: core {policy.CoreOffsetMegahertz.Minimum} to {policy.CoreOffsetMegahertz.Maximum} MHz; memory {policy.MemoryOffsetMegahertz.Minimum} to {policy.MemoryOffsetMegahertz.Maximum} MHz."
                 : UnavailableLabel;
         }
     }

@@ -102,6 +102,8 @@ public sealed record CpuVoltageOptimizerCapabilities(
     DeviceNumericRange Value,
     DeviceFeatureAccess Access)
 {
+    public bool SupportsEnableDisable { get; init; }
+
     public bool IsWellFormed =>
         Value is { IsWellFormed: true }
         && Enum.IsDefined(Access);
@@ -112,6 +114,8 @@ public sealed record GpuOverclockCapabilities(
     DeviceNumericRange MemoryOffsetMegahertz,
     DeviceFeatureAccess Access)
 {
+    public bool SupportsEnableDisable { get; init; }
+
     public bool IsWellFormed =>
         CoreOffsetMegahertz is { IsWellFormed: true }
         && MemoryOffsetMegahertz is { IsWellFormed: true }
