@@ -167,6 +167,119 @@ public sealed class ProductionLightingPortTests
     }
 
     [Fact]
+    public async Task Rz090528DriverModeLifecycle_AcquiresAndRestoresOwnedMode()
+    {
+        var session = new LightingSession(initialBrightness: 0)
+        {
+            DeviceMode = RazerDeviceMode.Normal,
+        };
+        var port = new Rz090528BrightnessLightingPort(
+            new ValidationActor(
+                session,
+                new BatteryCommands(),
+                new TemporaryCommands()),
+            TimeSpan.FromSeconds(1));
+
+        Assert.True(await port.MaintainDriverModeAsync(default));
+        Assert.Equal(RazerDeviceMode.Driver, session.DeviceMode);
+        Assert.Equal(
+            [
+                (0x00, 0x84, "0000"),
+                (0x00, 0x04, "0300"),
+                (0x00, 0x84, "0000"),
+            ],
+            session.Commands.Select(CommandTuple).ToArray());
+
+        await port.DisposeAsync();
+
+        Assert.Equal(RazerDeviceMode.Normal, session.DeviceMode);
+        Assert.Equal(
+            [
+                (0x00, 0x84, "0000"),
+                (0x00, 0x04, "0300"),
+                (0x00, 0x84, "0000"),
+                (0x00, 0x84, "0000"),
+                (0x00, 0x04, "0000"),
+                (0x00, 0x84, "0000"),
+            ],
+            session.Commands.Select(CommandTuple).ToArray());
+    }
+
+    [Fact]
+    public async Task Rz090528DriverModeLifecycle_PreservesPreExistingDriverMode()
+    {
+        var session = new LightingSession(initialBrightness: 0)
+        {
+            DeviceMode = RazerDeviceMode.Driver,
+        };
+        var port = new Rz090528BrightnessLightingPort(
+            new ValidationActor(
+                session,
+                new BatteryCommands(),
+                new TemporaryCommands()),
+            TimeSpan.FromSeconds(1));
+
+        Assert.True(await port.MaintainDriverModeAsync(default));
+        await port.DisposeAsync();
+
+        Assert.Equal(RazerDeviceMode.Driver, session.DeviceMode);
+        Assert.Equal(
+            [(0x00, 0x84, "0000")],
+            session.Commands.Select(CommandTuple).ToArray());
+    }
+
+    [Fact]
+    public async Task Rz090528ReleaseDriverMode_UsesSetAndIndependentReadback()
+    {
+        var session = new LightingSession(initialBrightness: 0)
+        {
+            DeviceMode = RazerDeviceMode.Driver,
+        };
+        await using var port = new Rz090528BrightnessLightingPort(
+            new ValidationActor(
+                session,
+                new BatteryCommands(),
+                new TemporaryCommands()),
+            TimeSpan.FromSeconds(1));
+
+        Assert.False(await port.ReleaseDriverModeAsync(default));
+
+        Assert.Equal(RazerDeviceMode.Normal, session.DeviceMode);
+        Assert.Equal(
+            [
+                (0x00, 0x84, "0000"),
+                (0x00, 0x04, "0000"),
+                (0x00, 0x84, "0000"),
+            ],
+            session.Commands.Select(CommandTuple).ToArray());
+    }
+
+    [Fact]
+    public async Task Rz090528Invalidate_RestoresOwnedModeAndClosesSession()
+    {
+        var session = new LightingSession(initialBrightness: 0)
+        {
+            DeviceMode = RazerDeviceMode.Normal,
+        };
+        var port = new Rz090528BrightnessLightingPort(
+            new ValidationActor(
+                session,
+                new BatteryCommands(),
+                new TemporaryCommands()),
+            TimeSpan.FromSeconds(1));
+        await port.EnsureDriverModeAsync(default);
+
+        Assert.Equal(
+            LightingRendererOwnershipState.None,
+            await port.InvalidateAsync());
+
+        Assert.Equal(RazerDeviceMode.Normal, session.DeviceMode);
+        Assert.Equal(
+            RazerCommandSessionDisposition.FullyDisposed,
+            session.Disposition);
+    }
+
+    [Fact]
     public async Task DriverModeLifecycle_AcquiresVerifiedModeAndRestoresOwnedBaseline()
     {
         var session = new LightingSession(initialBrightness: 0xC5)

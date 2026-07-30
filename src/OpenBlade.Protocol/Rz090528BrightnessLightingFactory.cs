@@ -88,6 +88,7 @@ internal sealed class Rz090528BrightnessLightingPort : IProductionLightingPort
     private readonly TimeSpan exchangeTimeout;
     private readonly SemaphoreSlim operationGate = new(1, 1);
     private int nextTransaction = 1;
+    private bool ownsDriverMode;
     private int disposed;
 
     internal Rz090528BrightnessLightingPort(
@@ -130,31 +131,95 @@ internal sealed class Rz090528BrightnessLightingPort : IProductionLightingPort
             Enum.GetValues<LogoLightingMode>()),
     };
 
+    public async Task EnsureDriverModeAsync(CancellationToken cancellationToken) =>
+        _ = await MaintainDriverModeAsync(cancellationToken).ConfigureAwait(false);
+
+    public async Task<bool?> MaintainDriverModeAsync(
+        CancellationToken cancellationToken)
+    {
+        await EnterAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            RazerDeviceMode current = await QueryDeviceModeCoreAsync(cancellationToken)
+                .ConfigureAwait(false);
+            if (current == RazerDeviceMode.Driver)
+            {
+                return true;
+            }
+
+            // Mark the transition as ours before submission so an indeterminate
+            // reply still receives a conservative cleanup attempt.
+            ownsDriverMode = true;
+            try
+            {
+                await SetDeviceModeCoreAsync(
+                    RazerDeviceMode.Driver,
+                    cancellationToken).ConfigureAwait(false);
+            }
+            catch (BladeWriteException exception)
+                when (exception.SubmissionState == WriteSubmissionState.KnownNotApplied)
+            {
+                ownsDriverMode = false;
+                throw;
+            }
+
+            RazerDeviceMode confirmed = await QueryDeviceModeCoreAsync(cancellationToken)
+                .ConfigureAwait(false);
+            if (confirmed != RazerDeviceMode.Driver)
+            {
+                throw new BladeWriteException(
+                    WriteSubmissionState.Indeterminate,
+                    "PID 02C6 Driver mode did not match independent readback.");
+            }
+
+            return true;
+        }
+        finally
+        {
+            operationGate.Release();
+        }
+    }
+
+    public async Task<bool?> ReleaseDriverModeAsync(
+        CancellationToken cancellationToken)
+    {
+        await EnterAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            if (await QueryDeviceModeCoreAsync(cancellationToken).ConfigureAwait(false)
+                == RazerDeviceMode.Driver)
+            {
+                await SetDeviceModeCoreAsync(
+                    RazerDeviceMode.Normal,
+                    cancellationToken).ConfigureAwait(false);
+            }
+
+            RazerDeviceMode confirmed = await QueryDeviceModeCoreAsync(cancellationToken)
+                .ConfigureAwait(false);
+            if (confirmed != RazerDeviceMode.Normal)
+            {
+                throw new BladeWriteException(
+                    WriteSubmissionState.Indeterminate,
+                    "PID 02C6 Normal mode did not match independent readback.");
+            }
+
+            ownsDriverMode = false;
+            return false;
+        }
+        finally
+        {
+            operationGate.Release();
+        }
+    }
+
     public async Task<bool?> ReadDriverModeAsync(
         CancellationToken cancellationToken)
     {
         await EnterAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            ReadOnlyMemory<byte> response = await ExecuteCoreAsync(
-                new RazerCommandSpec(
-                    DeviceModeProtocol.OperationClass,
-                    DeviceModeProtocol.QueryOperationId,
-                    DeviceModeProtocol.QueryArguments.ToArray(),
-                    expectedPayloadLength: 2,
-                    payload => DeviceModeProtocol.TryDecodeQuery(
-                        payload.Span,
-                        out _)),
-                write: false,
-                cancellationToken).ConfigureAwait(false);
-            if (!DeviceModeProtocol.TryDecodeQuery(
-                    response.Span,
-                    out RazerDeviceMode mode))
-            {
-                throw new IOException("PID 02C6 device-mode response was malformed.");
-            }
-
-            return mode == RazerDeviceMode.Driver;
+            return await QueryDeviceModeCoreAsync(cancellationToken).ConfigureAwait(false)
+                == RazerDeviceMode.Driver;
         }
         finally
         {
@@ -379,8 +444,11 @@ internal sealed class Rz090528BrightnessLightingPort : IProductionLightingPort
         CancellationToken cancellationToken) =>
         Reject(cancellationToken);
 
-    public Task<LightingRendererOwnershipState> InvalidateAsync() =>
-        Task.FromResult(LightingRendererOwnershipState.None);
+    public async Task<LightingRendererOwnershipState> InvalidateAsync()
+    {
+        await DisposeAsync().ConfigureAwait(false);
+        return LightingRendererOwnershipState.None;
+    }
 
     public async ValueTask DisposeAsync()
     {
@@ -392,6 +460,7 @@ internal sealed class Rz090528BrightnessLightingPort : IProductionLightingPort
         await operationGate.WaitAsync().ConfigureAwait(false);
         try
         {
+            await TryRestoreOwnedDeviceModeCoreAsync().ConfigureAwait(false);
             await actor.DisposeAsync().ConfigureAwait(false);
         }
         finally
@@ -436,6 +505,77 @@ internal sealed class Rz090528BrightnessLightingPort : IProductionLightingPort
             }
 
             throw;
+        }
+    }
+
+    private async Task<RazerDeviceMode> QueryDeviceModeCoreAsync(
+        CancellationToken cancellationToken)
+    {
+        ReadOnlyMemory<byte> response = await ExecuteCoreAsync(
+            new RazerCommandSpec(
+                DeviceModeProtocol.OperationClass,
+                DeviceModeProtocol.QueryOperationId,
+                DeviceModeProtocol.QueryArguments.ToArray(),
+                expectedPayloadLength: 2,
+                payload => DeviceModeProtocol.TryDecodeQuery(
+                    payload.Span,
+                    out _)),
+            write: false,
+            cancellationToken).ConfigureAwait(false);
+        if (!DeviceModeProtocol.TryDecodeQuery(
+                response.Span,
+                out RazerDeviceMode mode))
+        {
+            throw new IOException("PID 02C6 device-mode response was malformed.");
+        }
+
+        return mode;
+    }
+
+    private async Task SetDeviceModeCoreAsync(
+        RazerDeviceMode mode,
+        CancellationToken cancellationToken)
+    {
+        byte[] arguments = DeviceModeProtocol.CreateSetArguments(mode);
+        _ = await ExecuteCoreAsync(
+            new RazerCommandSpec(
+                DeviceModeProtocol.OperationClass,
+                DeviceModeProtocol.SetOperationId,
+                arguments,
+                expectedPayloadLength: arguments.Length,
+                payload => DeviceModeProtocol.TryDecodeSet(payload.Span, mode)),
+            write: true,
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task TryRestoreOwnedDeviceModeCoreAsync()
+    {
+        if (!ownsDriverMode)
+        {
+            return;
+        }
+
+        try
+        {
+            // Never overwrite a mode another controller already changed.
+            if (await QueryDeviceModeCoreAsync(CancellationToken.None).ConfigureAwait(false)
+                == RazerDeviceMode.Driver)
+            {
+                await SetDeviceModeCoreAsync(
+                    RazerDeviceMode.Normal,
+                    CancellationToken.None).ConfigureAwait(false);
+                _ = await QueryDeviceModeCoreAsync(CancellationToken.None)
+                    .ConfigureAwait(false);
+            }
+        }
+        catch
+        {
+            // Closing must still release the HID handle. This bounded cleanup is
+            // not retried in a background fight with another controller.
+        }
+        finally
+        {
+            ownsDriverMode = false;
         }
     }
 

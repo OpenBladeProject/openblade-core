@@ -41,7 +41,7 @@ model-independent operating-system APIs.
 | Power-source matrix | Captured, not admitted | Nine exact-device sessions cover barrel AC, USB-C-only, battery, both quiet baselines, and all directed transitions; exact PID 02C6 USB-C reply and independent thermal readback remain missing |
 | Battery charge limit | Admitted | Query, 50/55/60/65/70/75/80-percent setters, protection off, readback, and restoration |
 | Temporary full charge | Admitted | Query, enable, cancel, readback, and restoration |
-| Keyboard behavior and special keys | Partially admitted | Function-key primary, Gaming mode, and startup-animation setters; Normal/Driver device-mode setters reversibly validated but not yet production-admitted; special keys pending |
+| Keyboard behavior and special keys | Partially admitted | Function-key primary, Gaming mode, startup-animation, and ownership-aware Normal/Driver device-mode setters; special keys pending live decoder validation |
 | Display controls | Admitted | Refresh, DRR, HDR state, and SDR color profiles through Windows APIs |
 | NVIDIA GPU clock offsets | Query validated, writes gated | Driver query succeeded; exact-model Synapse policy is visible in the UI, but writes remain disabled |
 
@@ -1329,6 +1329,30 @@ read it back across a service restart. Never use the cached Synapse page as
 firmware readback. Sanitized capture commit `f19a60d` records the sequence
 without a packet capture or unique device identifier.
 
+## Admit PID 02C6 Normal/Driver mode as an owned lifecycle
+
+The reversible exact-device run began in Driver mode, applied Normal, confirmed
+Normal through `00/84 0000`, restored Driver, and independently confirmed the
+restored baseline. That evidence admits both `00/04 0000` and `00/04 0300`,
+but it does not admit the PID 02C6 special-key decoder.
+
+The production port therefore treats Driver mode as an ownership-aware
+lifecycle:
+
+- a pre-existing Driver mode is observed and preserved;
+- a Normal-to-Driver transition made by OpenBlade is marked as owned before
+  submission and independently read back;
+- disposal or invalidation restores Normal only when OpenBlade owned the
+  transition and the device is still in Driver mode;
+- explicit service shutdown may release a pre-existing Driver mode after the
+  existing Synapse/conflict checks, again with independent readback;
+- invalidating the PID 02C6 port closes its HID actor instead of leaking the
+  command session.
+
+Keep `SpecialKeyBindingsAccess=ObservedOnly` until M1-M5, Fn+P, and ordinary
+Normal-mode key behavior have all exercised the production decoder. Device-mode
+write admission is not evidence that those report mappings are safe.
+
 Final validation at the current transactional-identity checkpoint:
 
 - core commits: `b611f0b` (special-key capability/UI) and `eda8d67`
@@ -1396,8 +1420,7 @@ The main physical-evidence groups still blocking broader admission are:
   the model's 51-byte collection is query-validated as an 85-lamp Windows
   LampArray, but OpenBlade delegates to Windows instead of registering a
   competing background renderer;
-- exact Normal/Driver device-mode setter round trips and exact Normal-mode
-  special-key parity;
+- exact Normal-mode special-key parity;
 - production validation of the PID `02C6` special-key decoder. M1-M5 and Fn+P
   reports are captured, including the critical M4 `040AD300` collision with
   the older PID `02E0` performance-key assumption, but remain observed-only;
