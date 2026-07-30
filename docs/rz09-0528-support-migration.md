@@ -1337,6 +1337,19 @@ Laptop, Lighting, Display, Settings, and About. The tray layout contract test
 enumerates all seven pages so a future card cannot silently reintroduce
 horizontal overflow.
 
+Installed build `0.1.0+4cb95cefc9a6ec0ebbf3fa4a467ce3a034b9da19`
+was visually checked at an 828-by-716 window after a real service restart.
+All seven pages kept their cards inside the viewport, including the long
+Dynamic Lighting and observed-effects notices. The tray, Session Agent, and
+service binaries all reported that exact product version. With ownership still
+delegated to Windows, the exact-device HID brightness query independently read
+raw `128`, decoded as 50%, with no open, query, or protocol failure. The
+post-upgrade firmware smoke produced 26 passes, one warning, and two expected
+failures: the sleeping NVIDIA GPU temperature was unavailable, while
+`RazerAppEngine` and its externally selected Performance mode were deliberately
+reported as competing control. Its private diagnostics remain under the
+ignored `artifacts/validation` tree and must not be committed.
+
 The earlier signed sparse-package registration and priority probe remains
 valuable negative evidence: it proved that an OpenBlade background provider
 would compete with Windows' existing controller. Do not ship that experiment
